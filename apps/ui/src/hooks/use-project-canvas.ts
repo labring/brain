@@ -556,6 +556,9 @@ export function useProjectCanvas(
           setEntryPane(null).catch(() => undefined);
           setServiceUid(uid ?? "").catch(() => undefined);
           setWorkloadPane(pane).catch(() => undefined);
+          if (pane !== WORKLOAD_PANE.terminal) {
+            onResourcePaneOpen?.();
+          }
         });
       };
 
@@ -597,28 +600,23 @@ export function useProjectCanvas(
         ...(data.actions?.quickActions ?? {}),
         calendar: {
           disabled: !hasUrlActions,
-          onClick: hasUrlActions
-            ? () => select(WORKLOAD_PANE.history)
-            : undefined,
+          onClick: () => select(WORKLOAD_PANE.history),
         },
         console: {
-          disabled: true,
+          disabled: !hasUrlActions,
+          onClick: () => select(WORKLOAD_PANE.terminal),
         },
         logs: {
           disabled: !hasUrlActions,
-          onClick: hasUrlActions ? () => select(WORKLOAD_PANE.logs) : undefined,
+          onClick: () => select(WORKLOAD_PANE.logs),
         },
         events: {
           disabled: !hasUrlActions,
-          onClick: hasUrlActions
-            ? () => select(WORKLOAD_PANE.events)
-            : undefined,
+          onClick: () => select(WORKLOAD_PANE.events),
         },
         metrics: {
           disabled: !hasUrlActions,
-          onClick: hasUrlActions
-            ? () => select(WORKLOAD_PANE.metrics)
-            : undefined,
+          onClick: () => select(WORKLOAD_PANE.metrics),
         },
       };
 
@@ -646,6 +644,7 @@ export function useProjectCanvas(
       deleteWorkload,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,
+      onResourcePaneOpen,
       options?.shareToken,
       pendingAddDbDsnReferenceIntent,
       pauseWorkload,
@@ -1036,7 +1035,11 @@ export function useProjectCanvas(
           const nextEntryPane = entryPaneModeForNodeClick(node);
           const nextServiceUid = projectCanvasNodeServiceUid(node);
           const nextResourcePaneOpen = Boolean(
-            nextWorkloadPane ?? nextDatabasePane ?? nextEntryPane
+            (nextWorkloadPane === WORKLOAD_PANE.terminal
+              ? null
+              : nextWorkloadPane) ??
+              nextDatabasePane ??
+              nextEntryPane
           );
           const selectNode = () => {
             frontCanvasNode(node);

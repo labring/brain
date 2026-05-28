@@ -14,7 +14,8 @@ export function normalizeWorkloadPaneMode(
     value === WORKLOAD_PANE.history ||
     value === WORKLOAD_PANE.logs ||
     value === WORKLOAD_PANE.metrics ||
-    value === WORKLOAD_PANE.settings
+    value === WORKLOAD_PANE.settings ||
+    value === WORKLOAD_PANE.terminal
   ) {
     return value;
   }

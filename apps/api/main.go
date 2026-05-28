@@ -71,6 +71,7 @@ func main() {
 
 	// Register API routes (with OpenAPI docs)
 	k8s.Register(api)
+	k8s.RegisterExecWebSocket(router)
 	ap.Register(api)
 	auth.Register(api)
 	project.Register(api)

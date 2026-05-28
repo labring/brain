@@ -20,6 +20,7 @@ export const API_ROUTES = {
     getRoot: "/api/k8s/v1alpha1",
     describe: "/api/k8s/v1alpha1/describe",
     logs: "/api/k8s/v1alpha1/logs",
+    exec: "/api/k8s/v1alpha1/exec",
     top: "/api/k8s/v1alpha1/top",
     apply: "/api/k8s/v1alpha1/apply",
     delete: "/api/k8s/v1alpha1/delete",

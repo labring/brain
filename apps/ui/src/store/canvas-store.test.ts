@@ -82,6 +82,7 @@ test("workload panel mode distinguishes AP pane URL values", () => {
   assert.equal(normalizeWorkloadPaneMode("metrics"), "metrics");
   assert.equal(normalizeWorkloadPaneMode("logs"), "logs");
   assert.equal(normalizeWorkloadPaneMode("history"), "history");
+  assert.equal(normalizeWorkloadPaneMode("terminal"), "terminal");
   assert.equal(normalizeWorkloadPaneMode("Settings"), null);
 });
 

@@ -26,12 +26,14 @@ import {
   ProjectCanvasSidePaneSlot,
   resolveProjectCanvasSidePaneEntry,
 } from "@/lib/project-canvas/panels/project-canvas-side-pane-slot";
+import { WorkloadTerminalPane } from "@/lib/project-canvas/panels/workload-terminal-panel";
 import { telemetryTargetFromCanvasNode } from "@/lib/project-canvas/telemetry/workload-telemetry-node";
 import { WorkloadTelemetryProvider } from "@/lib/project-canvas/telemetry/workload-telemetry-react";
 import type { ProjectSidePaneSurface } from "@/lib/project-side-pane/controller";
 import { useProjectSidePaneSurface } from "@/lib/project-side-pane/react";
 import { projectCanvasEntryForAssistantIntent } from "@/lib/project-side-pane/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import { WORKLOAD_PANE } from "@/store/canvas-store";
 
 const GITHUB_DEPLOYMENT_PANE_QUERY_KEY = "githubDeployment" as const;
 const DATABASE_DEPLOYMENT_PANE_QUERY_KEY = "databaseDeployment" as const;
@@ -152,8 +154,10 @@ export default function ProjectUidPage() {
     [selectedNode]
   );
   const selectedDatabaseData = databaseNodeDataFromNode(selectedNode);
+  const terminalPlaneOpen =
+    workloadPane === WORKLOAD_PANE.terminal && selectedNode != null;
   const canvasResourcePaneOpen = Boolean(
-    workloadPane ?? databasePane ?? entryPane
+    (terminalPlaneOpen ? null : workloadPane) ?? databasePane ?? entryPane
   );
   const canvasSidePaneEntry = resolveProjectCanvasSidePaneEntry({
     databaseDeploymentPaneOpen,
@@ -350,6 +354,12 @@ export default function ProjectUidPage() {
                     resourcePane={canvasResourcePane}
                   />
                   {settingsLeaveGuardDialog}
+                  {terminalPlaneOpen ? (
+                    <WorkloadTerminalPane
+                      node={selectedNode}
+                      onClose={closeResourcePane}
+                    />
+                  ) : null}
                 </Canvas.Flow>
               </div>
             </Canvas.Root>
