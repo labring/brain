@@ -46,14 +46,25 @@ const METRIC_ITEMS = [
 ] as const satisfies readonly CanvasNodeMetricListItem<DatabaseNodeMetricKey>[];
 
 const QUICK_ACTION_ITEMS = [
-  { icon: Activity, key: "metrics", label: "Open metrics" },
-  { icon: TableProperties, key: "dbAccess", label: "Open database access" },
-  { icon: SquareTerminal, key: "console", label: "Open database console" },
-  { icon: FileText, key: "logs", label: "Open logs" },
+  { icon: Activity, key: "metrics", label: "Open metrics", tooltip: "Metrics" },
+  {
+    icon: TableProperties,
+    key: "dbAccess",
+    label: "Open database access",
+    tooltip: "Database access",
+  },
+  {
+    icon: SquareTerminal,
+    key: "console",
+    label: "Open database console",
+    tooltip: "Database console",
+  },
+  { icon: FileText, key: "logs", label: "Open logs", tooltip: "Logs" },
 ] as const satisfies readonly {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   key: DatabaseNodeQuickActionKey;
   label: string;
+  tooltip: string;
 }[];
 
 interface LifecycleActionItem {
@@ -355,7 +366,7 @@ export function DatabaseNodeActionBar({ className }: { className?: string }) {
             action={action}
             aria-label={item.label}
             key={item.key}
-            title={item.label}
+            title={item.tooltip}
           >
             <Icon aria-hidden className="size-4" />
           </CanvasNode.ActionButton>

@@ -38,15 +38,26 @@ const METRIC_ITEMS = [
 ] as const satisfies readonly CanvasNodeMetricListItem<ContainerNodeMetricKey>[];
 
 const QUICK_ACTION_ITEMS = [
-  { icon: Activity, key: "metrics", label: "Open workload metrics" },
-  { icon: SquareTerminal, key: "console", label: "Open console" },
-  { icon: FileText, key: "logs", label: "Open logs" },
-  { icon: CalendarDays, key: "calendar", label: "Open calendar" },
-  { icon: ListTree, key: "events", label: "Open workload events" },
+  {
+    icon: Activity,
+    key: "metrics",
+    label: "Open workload metrics",
+    tooltip: "Workload metrics",
+  },
+  { icon: SquareTerminal, key: "console", label: "Open console", tooltip: "Console" },
+  { icon: FileText, key: "logs", label: "Open logs", tooltip: "Logs" },
+  { icon: CalendarDays, key: "calendar", label: "Open calendar", tooltip: "Calendar" },
+  {
+    icon: ListTree,
+    key: "events",
+    label: "Open workload events",
+    tooltip: "Workload events",
+  },
 ] as const satisfies readonly {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   key: ContainerNodeQuickActionKey;
   label: string;
+  tooltip: string;
 }[];
 
 interface LifecycleActionItem {
@@ -213,7 +224,7 @@ export function ContainerNodeActionBar({ className }: { className?: string }) {
             action={action}
             aria-label={item.label}
             key={item.key}
-            title={item.label}
+            title={item.tooltip}
           >
             <Icon aria-hidden className="size-4" />
           </CanvasNode.ActionButton>

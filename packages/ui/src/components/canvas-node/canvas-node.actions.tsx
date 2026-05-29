@@ -8,6 +8,12 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Spinner } from "@workspace/ui/components/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { Ellipsis } from "lucide-react";
 import type { ComponentProps, ReactNode, SyntheticEvent } from "react";
@@ -73,8 +79,8 @@ export function CanvasNodeActionButton({
   title,
 }: CanvasNodeActionButtonProps) {
   const disabled = action?.disabled || action?.loading || !action?.onClick;
-
-  return (
+  const tooltip = title ?? ariaLabel;
+  const button = (
     <Button
       aria-label={ariaLabel}
       className={cn(
@@ -91,12 +97,26 @@ export function CanvasNodeActionButton({
       onKeyDown={stopCanvasNodeControlEvent}
       onPointerDown={stopCanvasNodeControlEvent}
       size={null}
-      title={title ?? ariaLabel}
       type="button"
       variant={null}
     >
       {action?.loading ? <Spinner className="size-4" /> : children}
     </Button>
+  );
+
+  return (
+    <TooltipProvider delay={420}>
+      <Tooltip>
+        <TooltipTrigger render={button} />
+        <TooltipContent
+          className="canvas-node-action-tooltip rounded-md border-0 bg-white/5 px-2 py-1 font-normal text-xs text-zinc-50 leading-4 shadow-none ring-0 backdrop-blur-xl"
+          side="bottom"
+          sideOffset={6}
+        >
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
