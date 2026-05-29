@@ -10,27 +10,34 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"k8s.io/client-go/tools/remotecommand"
 
 	"sealos/api/middleware"
+	dbsvc "sealos/api/service/db"
 	k8ssvc "sealos/api/service/k8s"
 )
 
 const (
-	execMessageTypeInit  = "init"
-	execMessageTypeInput = "input"
-	execMessageTypeError = "error"
-	execMessageTypeReady = "ready"
-	execMessageTypeClose = "close"
+	execMessageTypeInit   = "init"
+	execMessageTypeInput  = "input"
+	execMessageTypeError  = "error"
+	execMessageTypeReady  = "ready"
+	execMessageTypeClose  = "close"
+	execMessageTypeResize = "resize"
 )
 
 type execClientMessage struct {
 	Command    []string `json:"command,omitempty"`
 	Container  string   `json:"container,omitempty"`
 	Kubeconfig string   `json:"kubeconfig,omitempty"`
+	Kind       string   `json:"kind,omitempty"`
 	Name       string   `json:"name,omitempty"`
 	Namespace  string   `json:"namespace,omitempty"`
+	ProjectUID string   `json:"projectUid,omitempty"`
 	Type       string   `json:"type"`
 	Value      string   `json:"value,omitempty"`
+	Cols       uint16   `json:"cols,omitempty"`
+	Rows       uint16   `json:"rows,omitempty"`
 }
 
 type execServerMessage struct {
@@ -95,15 +102,43 @@ func execWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	stdinReader, stdinWriter := io.Pipe()
 	outputWriter := &webSocketExecWriter{conn: conn}
-	target, err := k8ssvc.ResolveAPWorkloadExecTarget(ctx, restConfig, k8ssvc.APWorkloadExecTargetOptions{
-		Command:   initMsg.Command,
-		Container: initMsg.Container,
-		Name:      initMsg.Name,
-		Namespace: resolved.Namespace,
-	})
-	if err != nil {
-		writeExecError(conn, execErrorMessage(err))
-		return
+
+	execConfig := restConfig
+	var target k8ssvc.APWorkloadExecTarget
+	if strings.EqualFold(initMsg.Kind, "db") {
+		execConfig = resolved.RestConfig
+		store, serr := dbsvc.NewKubernetesAccessHealthStore(resolved.RestConfig)
+		if serr != nil {
+			writeExecError(conn, "failed to initialize DB console store")
+			return
+		}
+		ct, rerr := dbsvc.ResolveConsoleExecTarget(ctx, store, dbsvc.ConsoleExecRequest{
+			Name:       initMsg.Name,
+			Namespace:  resolved.Namespace,
+			ProjectUID: initMsg.ProjectUID,
+		})
+		if rerr != nil {
+			writeExecError(conn, execErrorMessage(rerr))
+			return
+		}
+		target = k8ssvc.APWorkloadExecTarget{
+			Namespace: ct.Namespace,
+			Pod:       ct.Pod,
+			Container: ct.Container,
+			Command:   ct.Command,
+		}
+	} else {
+		var terr error
+		target, terr = k8ssvc.ResolveAPWorkloadExecTarget(ctx, restConfig, k8ssvc.APWorkloadExecTargetOptions{
+			Command:   initMsg.Command,
+			Container: initMsg.Container,
+			Name:      initMsg.Name,
+			Namespace: resolved.Namespace,
+		})
+		if terr != nil {
+			writeExecError(conn, execErrorMessage(terr))
+			return
+		}
 	}
 
 	if err := conn.WriteJSON(execServerMessage{
@@ -115,15 +150,17 @@ func execWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resize := make(chan remotecommand.TerminalSize, 1)
 	done := make(chan error, 1)
 	go func() {
 		defer stdinReader.Close()
-		done <- k8ssvc.StreamPodExec(ctx, restConfig, target, stdinReader, outputWriter, outputWriter)
+		done <- k8ssvc.StreamPodExec(ctx, execConfig, target, stdinReader, outputWriter, outputWriter, resize)
 	}()
 
 	readDone := make(chan error, 1)
 	go func() {
 		defer stdinWriter.Close()
+		defer close(resize)
 		for {
 			var msg execClientMessage
 			if err := conn.ReadJSON(&msg); err != nil {
@@ -135,6 +172,11 @@ func execWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 				if _, err := io.WriteString(stdinWriter, msg.Value); err != nil {
 					readDone <- err
 					return
+				}
+			case execMessageTypeResize:
+				select {
+				case resize <- remotecommand.TerminalSize{Width: msg.Cols, Height: msg.Rows}:
+				default:
 				}
 			case execMessageTypeClose:
 				readDone <- nil

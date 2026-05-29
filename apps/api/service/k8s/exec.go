@@ -119,6 +119,7 @@ func StreamPodExec(
 	stdin io.Reader,
 	stdout io.Writer,
 	stderr io.Writer,
+	resize <-chan remotecommand.TerminalSize,
 ) error {
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
@@ -147,13 +148,19 @@ func StreamPodExec(
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var sizeQueue remotecommand.TerminalSizeQueue
+	if resize != nil {
+		sizeQueue = &channelSizeQueue{ch: resize}
+	}
+
 	done := make(chan error, 1)
 	go func() {
 		done <- executor.StreamWithContext(streamCtx, remotecommand.StreamOptions{
-			Stdin:  stdin,
-			Stdout: stdout,
-			Stderr: stderr,
-			Tty:    true,
+			Stdin:             stdin,
+			Stdout:            stdout,
+			Stderr:            stderr,
+			Tty:               true,
+			TerminalSizeQueue: sizeQueue,
 		})
 	}()
 
@@ -169,4 +176,17 @@ func StreamPodExec(
 			return ctx.Err()
 		}
 	}
+}
+
+// channelSizeQueue adapts a TerminalSize channel to remotecommand.TerminalSizeQueue.
+type channelSizeQueue struct {
+	ch <-chan remotecommand.TerminalSize
+}
+
+func (q *channelSizeQueue) Next() *remotecommand.TerminalSize {
+	size, ok := <-q.ch
+	if !ok {
+		return nil
+	}
+	return &size
 }
