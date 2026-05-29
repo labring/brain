@@ -67,7 +67,8 @@ test("projectCanvasNodeServiceUid prefers EntryPoint selection key", () => {
 test("database panel mode distinguishes settings and metrics URL values", () => {
   assert.equal(normalizeDatabasePaneMode("settings"), "settings");
   assert.equal(normalizeDatabasePaneMode("metrics"), "metrics");
-  assert.equal(normalizeDatabasePaneMode("logs"), null);
+  assert.equal(normalizeDatabasePaneMode("logs"), "logs");
+  assert.equal(normalizeDatabasePaneMode("terminal"), null);
 });
 
 test("database node selection opens settings mode and non-DB selection clears it", () => {

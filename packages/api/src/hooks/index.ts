@@ -29,6 +29,14 @@ export {
 } from "./use-k8s-get-resource";
 export { useK8sNamespacedList } from "./use-k8s-namespaced-list";
 export {
+  buildWorkloadLogsRequest,
+  useWorkloadLogs,
+  type WorkloadLogEntry,
+  type WorkloadLogsResponse,
+  type WorkloadLogsTarget,
+  type WorkloadLogsWindow,
+} from "./use-workload-logs";
+export {
   buildWorkloadTelemetrySeriesRequest,
   useWorkloadTelemetrySeries,
   type WorkloadTelemetrySeriesMetricKey,

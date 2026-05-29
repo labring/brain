@@ -452,6 +452,24 @@ export function useProjectCanvas(
           }
         : undefined;
 
+      const databasePaneQuickAction = (
+        pane: (typeof DATABASE_PANE)[keyof typeof DATABASE_PANE]
+      ) => ({
+        disabled: !hasUrlActions,
+        onClick: hasUrlActions
+          ? () => {
+              requestSettingsLeave("switch", () => {
+                setCanvasAction(null).catch(() => undefined);
+                setSelectedEdge(null);
+                setServiceUid(uid).catch(() => undefined);
+                setEntryPane(null).catch(() => undefined);
+                setWorkloadPane(null).catch(() => undefined);
+                setDatabasePane(pane).catch(() => undefined);
+              });
+            }
+          : undefined,
+      });
+
       return {
         ...node,
         data: {
@@ -483,23 +501,8 @@ export function useProjectCanvas(
                     }
                   : undefined,
               },
-              metrics: {
-                disabled: !hasUrlActions,
-                onClick: hasUrlActions
-                  ? () => {
-                      requestSettingsLeave("switch", () => {
-                        setCanvasAction(null).catch(() => undefined);
-                        setSelectedEdge(null);
-                        setServiceUid(uid).catch(() => undefined);
-                        setEntryPane(null).catch(() => undefined);
-                        setWorkloadPane(null).catch(() => undefined);
-                        setDatabasePane(DATABASE_PANE.metrics).catch(
-                          () => undefined
-                        );
-                      });
-                    }
-                  : undefined,
-              },
+              metrics: databasePaneQuickAction(DATABASE_PANE.metrics),
+              logs: databasePaneQuickAction(DATABASE_PANE.logs),
             },
           },
           connections,

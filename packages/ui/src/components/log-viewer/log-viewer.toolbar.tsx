@@ -9,7 +9,7 @@ import {
 } from "@workspace/ui/components/input-group";
 import { LivePauseToggle } from "@workspace/ui/components/refresh-controls";
 import { TimeRangeSelector } from "@workspace/ui/components/time-range-selector";
-import { Box, Download, Search, Server } from "lucide-react";
+import { Box, Download, RefreshCw, Search, Server } from "lucide-react";
 import { type LogEntry, useLogViewerContext } from "./log-viewer.context";
 
 export function LogViewerToolbar() {
@@ -27,6 +27,8 @@ export function LogViewerToolbar() {
     selectedContainers,
     setSelectedContainers,
     uniqueContainers,
+    onRefresh,
+    refreshMode,
   } = useLogViewerContext();
 
   return (
@@ -74,10 +76,28 @@ export function LogViewerToolbar() {
             value={searchQuery}
           />
         </InputGroup>
-        <LivePauseToggle isLive={isLive} onToggle={() => setIsLive(!isLive)} />
+        {refreshMode === "live" ? (
+          <LivePauseToggle
+            isLive={isLive}
+            onToggle={() => setIsLive(!isLive)}
+          />
+        ) : (
+          <Button
+            aria-label="Refresh logs"
+            disabled={onRefresh === undefined}
+            onClick={onRefresh}
+            size="icon-sm"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        )}
         <Button
+          aria-label="Download logs"
           onClick={() => downloadLogs(filteredEntries)}
           size="icon-sm"
+          type="button"
           variant="outline"
         >
           <Download className="size-4" />

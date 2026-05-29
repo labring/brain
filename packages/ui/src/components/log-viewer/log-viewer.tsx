@@ -52,6 +52,7 @@ function LogViewerVariant0({
   logs,
   className,
   onRefresh,
+  refreshMode,
   timeRange,
   onTimeRangeChange,
   searchQuery,
@@ -60,6 +61,7 @@ function LogViewerVariant0({
   logs: LogsData;
   className?: string;
   onRefresh?: () => void;
+  refreshMode?: "live" | "manual";
   timeRange?: TimeRange;
   onTimeRangeChange?: (range: TimeRange) => void;
   searchQuery?: string;
@@ -73,6 +75,7 @@ function LogViewerVariant0({
       onRefresh={onRefresh}
       onSearchQueryChange={onSearchQueryChange}
       onTimeRangeChange={onTimeRangeChange}
+      refreshMode={refreshMode}
     >
       <LogViewerRoot className={className}>
         <LogViewerToolbar />

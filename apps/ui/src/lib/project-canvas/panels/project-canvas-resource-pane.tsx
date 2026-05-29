@@ -7,6 +7,7 @@ import type { CanvasEntrySelectionRef } from "@/lib/project-canvas/nodes/entry-n
 import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
 import { DATABASE_PANE, ENTRY_PANE, WORKLOAD_PANE } from "@/store/canvas-store";
 import { CanvasResourcePanePresence } from "./canvas-resource-pane";
+import { DatabaseLogsPane } from "./database-logs-pane";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { DatabaseSettingsPane } from "./database-settings-pane";
 import { EntryPointSettingsPane } from "./entrypoint-settings-panel";
@@ -66,6 +67,17 @@ export function renderProjectCanvasResourcePaneContent({
   if (databasePane === DATABASE_PANE.metrics && selectedDatabaseData != null) {
     return (
       <DatabaseMetricsPane
+        kubeconfig={kubeconfig}
+        node={selectedNode}
+        onClose={onClose}
+        open
+      />
+    );
+  }
+
+  if (databasePane === DATABASE_PANE.logs && selectedDatabaseData != null) {
+    return (
+      <DatabaseLogsPane
         kubeconfig={kubeconfig}
         node={selectedNode}
         onClose={onClose}

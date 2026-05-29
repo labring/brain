@@ -26,6 +26,7 @@ interface LogViewerContextValue {
   filteredEntries: LogEntry[];
   isLive: boolean;
   onRefresh?: () => void;
+  refreshMode: "live" | "manual";
   searchQuery: string;
   selectedContainers: string[];
   selectedPods: string[];
@@ -59,6 +60,7 @@ export function LogViewerProvider({
   onTimeRangeChange,
   externalSearchQuery,
   onSearchQueryChange,
+  refreshMode = "live",
 }: {
   logs: LogsData;
   children: React.ReactNode;
@@ -67,6 +69,7 @@ export function LogViewerProvider({
   onTimeRangeChange?: (range: TimeRange) => void;
   externalSearchQuery?: string;
   onSearchQueryChange?: (q: string) => void;
+  refreshMode?: "live" | "manual";
 }) {
   const [selectedPods, setSelectedPods] = useState<string[]>([]);
   const [selectedContainers, setSelectedContainers] = useState<string[]>([]);
@@ -89,14 +92,14 @@ export function LogViewerProvider({
   onRefreshRef.current = onRefresh;
 
   useEffect(() => {
-    if (!(isLive && onRefreshRef.current)) {
+    if (!(refreshMode === "live" && isLive && onRefreshRef.current)) {
       return;
     }
     const id = setInterval(() => {
       onRefreshRef.current?.();
     }, 3000);
     return () => clearInterval(id);
-  }, [isLive]);
+  }, [isLive, refreshMode]);
 
   const uniquePods = useMemo(
     () => [...new Set(logs.map((e) => e.pod))].sort(),
@@ -149,6 +152,7 @@ export function LogViewerProvider({
       isLive,
       setIsLive,
       onRefresh,
+      refreshMode,
     }),
     [
       logs,
@@ -163,6 +167,7 @@ export function LogViewerProvider({
       setTimeRange,
       isLive,
       onRefresh,
+      refreshMode,
     ]
   );
 

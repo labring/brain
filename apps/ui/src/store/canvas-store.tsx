@@ -20,7 +20,7 @@ export const CANVAS_SERVICE_QUERY_KEY = "service" as const;
 /** nuqs key for the AP / Container Node action pane (`?apPane=settings|metrics|terminal|logs|history`). */
 export const WORKLOAD_PANE_QUERY_KEY = "apPane" as const;
 
-/** nuqs key for the database action pane (`?dbPane=settings|metrics`). */
+/** nuqs key for the database action pane (`?dbPane=settings|metrics|logs`). */
 export const DATABASE_PANE_QUERY_KEY = "dbPane" as const;
 
 /** nuqs key for the EntryPoint action pane (`?entryPane=settings`). */
@@ -39,6 +39,7 @@ export const WORKLOAD_PANE = {
 } as const;
 
 export const DATABASE_PANE = {
+  logs: "logs",
   metrics: "metrics",
   settings: "settings",
 } as const;

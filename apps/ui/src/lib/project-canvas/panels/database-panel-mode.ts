@@ -9,7 +9,11 @@ export type DatabasePaneMode =
 export function normalizeDatabasePaneMode(
   value: string | null | undefined
 ): DatabasePaneMode | null {
-  if (value === DATABASE_PANE.metrics || value === DATABASE_PANE.settings) {
+  if (
+    value === DATABASE_PANE.logs ||
+    value === DATABASE_PANE.metrics ||
+    value === DATABASE_PANE.settings
+  ) {
     return value;
   }
   return null;
