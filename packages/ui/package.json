@@ -90,6 +90,7 @@
     "./components/ai-elements/*": "./src/components/ai-elements/*",
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
+    "./assets/devicons": "./src/assets/devicons/index.ts",
     "./assets/runtime-icons": "./src/assets/runtime-icons/index.ts"
   }
 }

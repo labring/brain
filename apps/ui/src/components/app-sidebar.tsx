@@ -5,6 +5,11 @@ import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { PROJECT_UID_LABEL } from "@workspace/crossplane/constants";
 import {
+  type DeviconKey,
+  deviconSrc,
+  devicons,
+} from "@workspace/ui/assets/devicons";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -15,24 +20,18 @@ import { LayoutGrid } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
-import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
-import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 interface WorkloadShortcutCandidate {
   createdAt: string;
-  iconUrl?: string;
+  iconKey: DeviconKey;
   name: string;
   projectUid: string;
-  useDockerIcon?: boolean;
 }
 
-const DOCKER_AP_COMPOSITION_NAMES = new Set([
-  "aps-deployment-ingress-go-templating",
-]);
 const SIDEBAR_ICON_BUTTON_CLASS =
-  "flex size-9 items-center justify-center rounded-lg text-neutral-200 transition-colors hover:bg-white/15 focus-visible:outline-none";
+  "flex size-9 items-center justify-center rounded-lg text-neutral-50 transition-colors hover:bg-white/15 focus-visible:outline-none";
 const SIDEBAR_ICON_BUTTON_ACTIVE_CLASS = "bg-white/15";
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -80,6 +79,22 @@ function compositionNameFromSpec(
   return nonEmptyString(compositionRef?.name);
 }
 
+function databaseIconKeyFromSpec(spec: Record<string, unknown>): DeviconKey {
+  const engine = nonEmptyString(spec.engine)?.toLowerCase();
+  if (engine && engine in devicons && engine !== "docker") {
+    return engine as DeviconKey;
+  }
+
+  const compositionName = compositionNameFromSpec(spec)?.toLowerCase() ?? "";
+  for (const key of ["mongodb", "mysql", "postgresql", "redis"] as const) {
+    if (compositionName.includes(key)) {
+      return key;
+    }
+  }
+
+  return "docker";
+}
+
 function compareWorkloadCandidates(
   a: WorkloadShortcutCandidate,
   b: WorkloadShortcutCandidate
@@ -98,9 +113,37 @@ function compareWorkloadCandidates(
   return a.name.localeCompare(b.name);
 }
 
-function selectedWorkloadByProject(
-  data: K8sGetResponse | undefined,
-  compositionIconByName: ReadonlyMap<string, string>
+function selectedApByProject(
+  data: K8sGetResponse | undefined
+): Map<string, WorkloadShortcutCandidate> {
+  const result = new Map<string, WorkloadShortcutCandidate>();
+
+  for (const item of apItemsFromList(data)) {
+    const projectUid = projectUidFromResource(item);
+    if (projectUid === undefined) {
+      continue;
+    }
+
+    const candidate: WorkloadShortcutCandidate = {
+      createdAt: metadataCreationTimestamp(item),
+      iconKey: "docker",
+      name: metadataName(item),
+      projectUid,
+    };
+    const current = result.get(projectUid);
+    if (
+      current === undefined ||
+      compareWorkloadCandidates(candidate, current) < 0
+    ) {
+      result.set(projectUid, candidate);
+    }
+  }
+
+  return result;
+}
+
+function selectedDbByProject(
+  data: K8sGetResponse | undefined
 ): Map<string, WorkloadShortcutCandidate> {
   const result = new Map<string, WorkloadShortcutCandidate>();
 
@@ -111,20 +154,11 @@ function selectedWorkloadByProject(
     }
 
     const spec = asRecord(asRecord(item)?.spec) ?? {};
-    const compositionName = compositionNameFromSpec(spec);
-    const useDockerIcon =
-      compositionName !== undefined &&
-      DOCKER_AP_COMPOSITION_NAMES.has(compositionName);
-    const iconUrl =
-      compositionName === undefined
-        ? undefined
-        : compositionIconByName.get(compositionName);
     const candidate: WorkloadShortcutCandidate = {
       createdAt: metadataCreationTimestamp(item),
-      ...(iconUrl === undefined || useDockerIcon ? {} : { iconUrl }),
+      iconKey: databaseIconKeyFromSpec(spec),
       name: metadataName(item),
       projectUid,
-      ...(useDockerIcon ? { useDockerIcon } : {}),
     };
     const current = result.get(projectUid);
     if (
@@ -155,27 +189,29 @@ function projectUidFromPathname(pathname: string): string | undefined {
 }
 
 function ProjectShortcutIcon({
-  iconUrl,
-  useDockerIcon,
+  active,
+  iconKey,
 }: {
-  iconUrl?: string;
-  useDockerIcon?: boolean;
+  active?: boolean;
+  iconKey: DeviconKey;
 }) {
-  const resolvedIconUrl = iconUrl?.trim();
+  const icon = devicons[iconKey];
+  const src = deviconSrc(
+    active || iconKey === "mysql" ? icon.original : icon.plain
+  );
 
-  if (resolvedIconUrl && !useDockerIcon) {
-    return (
-      <span
-        aria-hidden
-        className="block size-4 bg-center bg-contain bg-no-repeat"
-        style={{
-          backgroundImage: `url(${JSON.stringify(resolvedIconUrl)})`,
-        }}
-      />
-    );
-  }
-
-  return <DockerLogo />;
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "block size-4 bg-center bg-contain bg-no-repeat transition-[filter]",
+        !active && "brightness-0 invert"
+      )}
+      style={{
+        backgroundImage: `url(${JSON.stringify(src)})`,
+      }}
+    />
+  );
 }
 
 function SealosLogo() {
@@ -249,18 +285,6 @@ function SealosLogo() {
   );
 }
 
-function DockerLogo() {
-  return (
-    <svg aria-hidden className="size-4" fill="none" viewBox="0 0 16 16">
-      <title>Docker</title>
-      <path
-        d="M3.21333 11.5167C2.75733 11.5167 2.344 11.1433 2.344 10.69C2.344 10.2367 2.71733 9.86133 3.214 9.86133C3.71267 9.86133 4.08733 10.2347 4.08733 10.6893C4.08733 11.144 3.67267 11.516 3.21733 11.516L3.21333 11.5167ZM13.888 7.008C13.798 6.34667 13.388 5.808 12.848 5.39467L12.638 5.228L12.4687 5.43467C12.1393 5.808 12.0087 6.47 12.0487 6.96467C12.0887 7.33933 12.2087 7.71133 12.418 8.00067C12.2487 8.08733 12.0393 8.16733 11.878 8.252C11.5161 8.36752 11.1379 8.4238 10.758 8.41867H0.0646667L0.0246667 8.66533C-0.0579994 9.4712 0.0711477 10.2847 0.399333 11.0253L0.562 11.3153V11.3553C1.562 13.0107 3.342 13.7553 5.28067 13.7553C9.01 13.7553 12.0687 12.142 13.5187 8.66667C14.4687 8.708 15.428 8.46 15.8787 7.54933L15.9987 7.34267L15.7987 7.218C15.2587 6.88867 14.5187 6.84467 13.8987 7.01133L13.8867 7.01267L13.888 7.008ZM8.54933 6.34667H6.93067V7.96H8.55067V6.34533L8.54933 6.34733V6.34667ZM8.54933 4.318H6.93067V5.93133H8.55067V4.32L8.54933 4.318ZM8.54933 2.24866H6.93067V3.862H8.55067V2.24866H8.54933ZM10.5293 6.34667H8.92V7.96H10.5333V6.34533L10.5287 6.34733L10.5293 6.34667ZM4.53067 6.34667H2.922V7.96H4.53667V6.34533L4.53 6.34733L4.53067 6.34667ZM6.55067 6.34667H4.95067V7.96H6.56V6.34533L6.55 6.34733L6.55067 6.34667ZM2.53067 6.34667H0.933333V7.96H2.552V6.34533L2.532 6.34733L2.53067 6.34667ZM6.55067 4.318H4.95067V5.93133H6.56V4.32L6.55 4.318H6.55067ZM4.52067 4.318H2.92467V5.93133H4.53333V4.32L4.52267 4.318H4.52067Z"
-        fill="#60A5FA"
-      />
-    </svg>
-  );
-}
-
 export default function AppSidebar() {
   const pathname = usePathname();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
@@ -284,45 +308,8 @@ export default function AppSidebar() {
     labelSelector: projectUidLabelExistence,
     namespace,
   });
-  const { items: apCompositionRows } = useApCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-  const { items: dbCompositionRows } = useDbCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-
-  const apCompositionIconByName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const row of apCompositionRows ?? []) {
-      const iconUrl = row.iconUrl?.trim();
-      if (iconUrl) {
-        map.set(row.metadata.compositionName, iconUrl);
-      }
-    }
-    return map;
-  }, [apCompositionRows]);
-
-  const dbCompositionIconByName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const row of dbCompositionRows ?? []) {
-      const iconUrl = row.iconUrl?.trim();
-      if (iconUrl) {
-        map.set(row.metadata.compositionName, iconUrl);
-      }
-    }
-    return map;
-  }, [dbCompositionRows]);
-
-  const apByProject = useMemo(
-    () => selectedWorkloadByProject(apsData, apCompositionIconByName),
-    [apsData, apCompositionIconByName]
-  );
-  const dbByProject = useMemo(
-    () => selectedWorkloadByProject(dbsData, dbCompositionIconByName),
-    [dbsData, dbCompositionIconByName]
-  );
+  const apByProject = useMemo(() => selectedApByProject(apsData), [apsData]);
+  const dbByProject = useMemo(() => selectedDbByProject(dbsData), [dbsData]);
 
   return (
     <aside
@@ -368,9 +355,7 @@ export default function AppSidebar() {
             const db =
               ap === undefined ? dbByProject.get(project.id) : undefined;
             const shortcut = ap ?? db;
-            const iconUrl = shortcut?.useDockerIcon
-              ? undefined
-              : shortcut?.iconUrl;
+            const iconKey = shortcut?.iconKey ?? "docker";
             const active = currentProjectUid === project.id;
 
             return (
@@ -387,12 +372,7 @@ export default function AppSidebar() {
                     />
                   }
                 >
-                  <ProjectShortcutIcon
-                    iconUrl={iconUrl}
-                    useDockerIcon={
-                      shortcut?.useDockerIcon === true || iconUrl === undefined
-                    }
-                  />
+                  <ProjectShortcutIcon active={active} iconKey={iconKey} />
                 </TooltipTrigger>
                 <TooltipContent side="right">{project.name}</TooltipContent>
               </Tooltip>
