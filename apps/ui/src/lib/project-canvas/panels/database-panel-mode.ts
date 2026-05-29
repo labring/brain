@@ -10,6 +10,7 @@ export function normalizeDatabasePaneMode(
   value: string | null | undefined
 ): DatabasePaneMode | null {
   if (
+    value === DATABASE_PANE.console ||
     value === DATABASE_PANE.logs ||
     value === DATABASE_PANE.metrics ||
     value === DATABASE_PANE.settings

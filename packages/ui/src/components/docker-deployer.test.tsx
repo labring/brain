@@ -21,6 +21,7 @@ const ARIA_BUSY_RE = /aria-busy="true"/;
 const VALUE_8080_RE = /value="8080"/;
 const FEATURE_FLAG_RE = /value="FEATURE_FLAG"/;
 const VALUE_TRUE_RE = /value="true"/;
+const DOCKER_IMAGE_REQUIRED_RE = /Docker image is required\./;
 
 test("DockerDeployer renders Docker Deployment Settings with default network choices", () => {
   const html = renderToStaticMarkup(<DockerDeployer onDeploy={noop} />);
@@ -37,6 +38,7 @@ test("DockerDeployer renders Docker Deployment Settings with default network cho
   assert.match(html, DEPLOY_RE);
   assert.match(html, DISABLED_RE);
   assert.doesNotMatch(html, INGRESS_RE);
+  assert.doesNotMatch(html, DOCKER_IMAGE_REQUIRED_RE);
 });
 
 test("DockerDeployer disables deploy while busy even when settings are valid", () => {

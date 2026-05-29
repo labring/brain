@@ -21,6 +21,7 @@ import {
 } from "@/lib/project-canvas/flow/pending-connections";
 import { isCanvasNodeGeneratedPosition } from "@/lib/project-canvas/layout/placement";
 import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
+import { DatabaseConsolePane } from "@/lib/project-canvas/panels/database-console-pane";
 import { renderProjectCanvasResourcePaneContent } from "@/lib/project-canvas/panels/project-canvas-resource-pane";
 import {
   type ProjectCanvasSidePanePreferredEntry,
@@ -34,7 +35,7 @@ import type { ProjectSidePaneSurface } from "@/lib/project-side-pane/controller"
 import { useProjectSidePaneSurface } from "@/lib/project-side-pane/react";
 import { projectCanvasEntryForAssistantIntent } from "@/lib/project-side-pane/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-import { WORKLOAD_PANE } from "@/store/canvas-store";
+import { DATABASE_PANE, WORKLOAD_PANE } from "@/store/canvas-store";
 
 const GITHUB_DEPLOYMENT_PANE_QUERY_KEY = "githubDeployment" as const;
 const DATABASE_DEPLOYMENT_PANE_QUERY_KEY = "databaseDeployment" as const;
@@ -160,9 +161,13 @@ export default function ProjectUidPage() {
   const canvasActionSurfaceOpen = canvasAction != null;
   const terminalPlaneOpen =
     workloadPane === WORKLOAD_PANE.terminal && selectedNode != null;
+  const databaseConsoleOpen =
+    databasePane === DATABASE_PANE.console && selectedNode != null;
 
   const canvasResourcePaneOpen = Boolean(
-    (terminalPlaneOpen ? null : workloadPane) ?? databasePane ?? entryPane
+    (terminalPlaneOpen ? null : workloadPane) ??
+      (databaseConsoleOpen ? null : databasePane) ??
+      entryPane
   );
   const canvasSidePaneEntry = canvasActionSurfaceOpen
     ? null
@@ -373,6 +378,13 @@ export default function ProjectUidPage() {
                     <WorkloadTerminalPane
                       node={selectedNode}
                       onClose={closeResourcePane}
+                    />
+                  ) : null}
+                  {databaseConsoleOpen ? (
+                    <DatabaseConsolePane
+                      node={selectedNode}
+                      onClose={closeResourcePane}
+                      projectUid={uid}
                     />
                   ) : null}
                 </Canvas.Flow>

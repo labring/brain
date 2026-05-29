@@ -68,6 +68,7 @@ test("database panel mode distinguishes settings and metrics URL values", () => 
   assert.equal(normalizeDatabasePaneMode("settings"), "settings");
   assert.equal(normalizeDatabasePaneMode("metrics"), "metrics");
   assert.equal(normalizeDatabasePaneMode("logs"), "logs");
+  assert.equal(normalizeDatabasePaneMode("console"), "console");
   assert.equal(normalizeDatabasePaneMode("terminal"), null);
 });
 

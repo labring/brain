@@ -503,6 +503,7 @@ export function useProjectCanvas(
               },
               metrics: databasePaneQuickAction(DATABASE_PANE.metrics),
               logs: databasePaneQuickAction(DATABASE_PANE.logs),
+              console: databasePaneQuickAction(DATABASE_PANE.console),
             },
           },
           connections,

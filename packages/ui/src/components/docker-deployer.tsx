@@ -111,6 +111,7 @@ export function DockerDeployer({
   onSettingsChange?: (settings: DockerDeploymentSettings) => void;
 }) {
   const [image, setImage] = useState(initialSettings?.image ?? "");
+  const [imageTouched, setImageTouched] = useState(false);
   const [envRows, setEnvRows] = useState<DockerDeploymentEnvRowState[]>(
     () =>
       initialSettings?.env.map((row) => ({
@@ -137,6 +138,8 @@ export function DockerDeployer({
     [settings]
   );
   const imageError = validation.errors.find((error) => error.field === "image");
+  const visibleImageError =
+    imageTouched || image.trim() !== "" ? imageError : undefined;
   const portError = validation.errors.find(
     (error) => error.field === "appListeningPort"
   );
@@ -160,23 +163,26 @@ export function DockerDeployer({
           <Label htmlFor="docker-deployer-image">Docker image</Label>
           <Input
             aria-describedby={
-              imageError ? "docker-deployer-image-error" : undefined
+              visibleImageError ? "docker-deployer-image-error" : undefined
             }
-            aria-invalid={imageError ? true : undefined}
+            aria-invalid={visibleImageError ? true : undefined}
             autoComplete="off"
             className="border-resource-pane-input bg-transparent text-resource-pane-foreground placeholder:text-resource-pane-muted focus-visible:border-theme-blue focus-visible:ring-[1px] focus-visible:ring-theme-blue/50 dark:bg-transparent"
             disabled={busy}
             id="docker-deployer-image"
-            onChange={(event) => setImage(event.currentTarget.value)}
+            onChange={(event) => {
+              setImageTouched(true);
+              setImage(event.currentTarget.value);
+            }}
             placeholder="ghcr.io/org/image:tag"
             value={image}
           />
-          {imageError ? (
+          {visibleImageError ? (
             <p
               className="text-destructive text-xs leading-4"
               id="docker-deployer-image-error"
             >
-              {imageError.message}
+              {visibleImageError.message}
             </p>
           ) : null}
         </div>
