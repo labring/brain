@@ -143,6 +143,12 @@ A read-only resource workflow for inspecting one DB Service's objects and data w
 
 One active DB Access browsing session for a single DB Service. A DB Access Session keeps object selection and open object tabs while browsing multiple Logical Databases within that DB Service, while closing DB Access or switching to a different DB Service starts a separate session.
 
+### DB Console
+
+An interactive session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Console is distinct from DB Access: DB Access is a read-only browser over a DB Service's objects and data, while a DB Console is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
+
+_Avoid_: using "console" to mean the AP container shell. The AP node's terminal opens a generic pod shell on the AP workload, not a database engine client; the shared "console" label across AP and DB nodes does not denote the same kind of session.
+
 ### Container Node
 
 A canvas node that represents an AP workload. The name is retained as a product/UI term, but it does not mean an individual Kubernetes container.
@@ -214,6 +220,10 @@ A temporary canvas interaction created when a user drags a line between canvas n
 ### Workload Telemetry Series
 
 A normalized time-series representation of workload resource usage for AP and DB workloads. It is consumed by both compact canvas node summaries and detailed metrics panels.
+
+### Resource Logs
+
+A read-only Canvas Resource Pane surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
 
 ### Project Aggregate Status
 
