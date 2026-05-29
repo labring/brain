@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -87,4 +88,79 @@ func selectConsoleLeaderPod(members []InstanceSetMember) (string, error) {
 		return "", errNoConsoleMembers
 	}
 	return fallback, nil
+}
+
+// ConsoleExecStore is the data dependency for resolving a DB Console exec target.
+type ConsoleExecStore interface {
+	AccessHealthStore
+	GetInstanceSetMembers(ctx context.Context, namespace, dbName, component string) ([]InstanceSetMember, error)
+}
+
+// ConsoleExecTarget is the resolved pod + command for a DB Console session.
+type ConsoleExecTarget struct {
+	Namespace string
+	Pod       string
+	Container string
+	Command   []string
+	Engine    string
+}
+
+// ConsoleExecRequest identifies the DB whose console is being opened.
+type ConsoleExecRequest struct {
+	Name       string
+	Namespace  string
+	ProjectUID string
+}
+
+// ResolveConsoleExecTarget reuses guardDBAccess (ownership + readiness + credentials),
+// then resolves the KubeBlocks leader pod and builds the engine client command. All
+// credential handling stays server-side (ADR-0013).
+func ResolveConsoleExecTarget(ctx context.Context, store ConsoleExecStore, req ConsoleExecRequest) (ConsoleExecTarget, error) {
+	req.Name = strings.TrimSpace(req.Name)
+	req.Namespace = strings.TrimSpace(req.Namespace)
+	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	if req.ProjectUID == "" {
+		return ConsoleExecTarget{}, ErrAccessHealthProjectUID
+	}
+
+	engine, creds, err := guardDBAccess(ctx, store, guardedAccessRequest{
+		Name:       req.Name,
+		Namespace:  req.Namespace,
+		ProjectUID: req.ProjectUID,
+	})
+	if err != nil {
+		return ConsoleExecTarget{}, err
+	}
+
+	component, err := consoleEngineComponent(engine)
+	if err != nil {
+		return ConsoleExecTarget{}, err
+	}
+	members, err := store.GetInstanceSetMembers(ctx, req.Namespace, req.Name, component)
+	if err != nil {
+		return ConsoleExecTarget{}, err
+	}
+	pod, err := selectConsoleLeaderPod(members)
+	if err != nil {
+		return ConsoleExecTarget{}, err
+	}
+
+	conn := ConsoleConnection{
+		Host:     creds.Values["Hostname"],
+		Port:     creds.Values["Port"],
+		Username: creds.Values["Username"],
+		Password: creds.Values["Password"],
+		Database: creds.Values["Database"],
+	}
+	command, container, err := consoleCommandForEngine(engine, conn)
+	if err != nil {
+		return ConsoleExecTarget{}, err
+	}
+	return ConsoleExecTarget{
+		Namespace: req.Namespace,
+		Pod:       pod,
+		Container: container,
+		Command:   command,
+		Engine:    engine,
+	}, nil
 }

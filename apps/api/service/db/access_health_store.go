@@ -57,3 +57,35 @@ func (s *KubernetesAccessHealthStore) GetSecret(ctx context.Context, namespace, 
 	}
 	return secret, nil
 }
+
+var consoleInstanceSetGVRs = []schema.GroupVersionResource{
+	{Group: "workloads.kubeblocks.io", Version: "v1", Resource: "instancesets"},
+	{Group: "workloads.kubeblocks.io", Version: "v1alpha1", Resource: "instancesets"},
+}
+
+// GetInstanceSetMembers reads status.membersStatus from the KubeBlocks InstanceSet
+// named "<dbName>-<component>", trying each supported API version.
+func (s *KubernetesAccessHealthStore) GetInstanceSetMembers(ctx context.Context, namespace, dbName, component string) ([]InstanceSetMember, error) {
+	name := dbName + "-" + component
+	var lastErr error
+	for _, gvr := range consoleInstanceSetGVRs {
+		obj, err := s.dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		raw, _, _ := unstructured.NestedSlice(obj.Object, "status", "membersStatus")
+		members := make([]InstanceSetMember, 0, len(raw))
+		for _, item := range raw {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			pod, _, _ := unstructured.NestedString(m, "podName")
+			leader, _, _ := unstructured.NestedBool(m, "role", "isLeader")
+			members = append(members, InstanceSetMember{PodName: pod, IsLeader: leader})
+		}
+		return members, nil
+	}
+	return nil, lastErr
+}
