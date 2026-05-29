@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -127,6 +128,10 @@ func execWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 			Container: ct.Container,
 			Command:   ct.Command,
 		}
+		log.Printf(
+			"db console session opened: namespace=%s db=%s engine=%s pod=%s",
+			ct.Namespace, initMsg.Name, ct.Engine, ct.Pod,
+		)
 	} else {
 		var terr error
 		target, terr = k8ssvc.ResolveAPWorkloadExecTarget(ctx, restConfig, k8ssvc.APWorkloadExecTargetOptions{
