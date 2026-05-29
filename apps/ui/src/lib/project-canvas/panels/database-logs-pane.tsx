@@ -7,8 +7,8 @@ import type { Node } from "@xyflow/react";
 import { ScrollText } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
+import { CanvasActionSurfaceFrame } from "@/lib/project-canvas/actions/canvas-action-surface";
 import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
-import { CanvasResourcePane } from "./canvas-resource-pane";
 import {
   RESOURCE_LOGS_DEFAULT_LIMIT,
   RESOURCE_LOGS_DEFAULT_TIME_RANGE,
@@ -77,13 +77,12 @@ export function DatabaseLogsPane({
   const subtitle = `${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""} · Resource logs`;
 
   return (
-    <CanvasResourcePane
-      bodyClassName="min-h-0 gap-3.5"
+    <CanvasActionSurfaceFrame
+      bodyClassName="flex min-h-0 flex-col gap-3.5 p-4"
       closeAriaLabel="Close database logs"
-      icon={
-        <ScrollText aria-hidden className="size-4 shrink-0 text-blue-500" />
-      }
+      icon={<ScrollText aria-hidden className="size-4 shrink-0" />}
       onClose={onClose}
+      open={open}
       subtitle={subtitle}
       title={`${states.name} Logs`}
     >
@@ -104,6 +103,6 @@ export function DatabaseLogsPane({
         searchQuery={searchQuery}
         timeRange={timeRange}
       />
-    </CanvasResourcePane>
+    </CanvasActionSurfaceFrame>
   );
 }

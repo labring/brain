@@ -185,7 +185,7 @@ A canvas edge that represents an established runtime dependency between resource
 
 ### Canvas Resource Pane
 
-A right-side canvas surface opened from a selected AP or DB node to inspect or change resource-scoped details such as settings, metrics, logs, or history. It is distinct from the project assistant chat pane.
+A right-side canvas surface opened from a selected AP or DB node to inspect or change resource-scoped details such as settings, metrics, or history. It is distinct from the project assistant chat pane.
 
 ### Canvas Action Surface
 
@@ -223,7 +223,7 @@ A normalized time-series representation of workload resource usage for AP and DB
 
 ### Resource Logs
 
-A read-only Canvas Resource Pane surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
+A read-only Canvas Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
 
 ### Project Aggregate Status
 

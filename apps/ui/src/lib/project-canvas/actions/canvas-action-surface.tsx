@@ -4,37 +4,37 @@ import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { Database, X } from "lucide-react";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import { DataBrowserPane } from "@/features/data-browser/DataBrowserPane";
 import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
 import { CANVAS_ACTION } from "@/store/canvas-store";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 
-export interface CanvasActionSurfaceProps {
-  action: string | null | undefined;
-  dbAccessEnabled?: boolean;
-  kubeconfig: string;
-  namespace: string;
+export interface CanvasActionSurfaceFrameProps {
+  bodyClassName?: string;
+  children: ReactNode;
+  closeAriaLabel?: string;
+  icon?: ReactNode;
+  label?: string;
   onClose: () => void;
-  projectUid: string;
-  selectedDatabaseData: CanvasDatabaseNodeData | null;
+  open: boolean;
+  subtitle?: string;
+  title: string;
 }
 
-export function CanvasActionSurface({
-  action,
-  dbAccessEnabled = true,
-  kubeconfig,
-  namespace,
+export function CanvasActionSurfaceFrame({
+  bodyClassName,
+  children,
+  closeAriaLabel = "Close canvas action surface",
+  icon,
+  label = "Canvas action surface",
   onClose,
-  projectUid,
-  selectedDatabaseData,
-}: CanvasActionSurfaceProps) {
+  open,
+  subtitle,
+  title,
+}: CanvasActionSurfaceFrameProps) {
   const assistantPaneOpen = useAtomValue(assistantPaneOpenAtom);
-  const open =
-    dbAccessEnabled &&
-    action === CANVAS_ACTION.dbAccess &&
-    selectedDatabaseData != null;
 
   useEffect(() => {
     if (!open) {
@@ -56,12 +56,9 @@ export function CanvasActionSurface({
     return null;
   }
 
-  const { states } = selectedDatabaseData;
-  const subtitle = `Database ${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""}`;
-
   return (
     <section
-      aria-label="Canvas action surface"
+      aria-label={label}
       className="resource-pane-surface absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-resource-pane text-resource-pane-foreground"
       data-slot="canvas-action-surface"
     >
@@ -72,14 +69,16 @@ export function CanvasActionSurface({
         )}
       >
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-4 shrink-0 items-center justify-center text-blue-400">
-            <Database aria-hidden className="size-4" strokeWidth={2} />
-          </span>
+          {icon == null ? null : (
+            <span className="flex size-4 shrink-0 items-center justify-center text-blue-400">
+              {icon}
+            </span>
+          )}
           <h2
             className="min-w-0 truncate font-medium text-base text-resource-pane-foreground leading-none"
-            title={states.name}
+            title={title}
           >
-            {states.name}
+            {title}
           </h2>
         </div>
         <p
@@ -90,7 +89,7 @@ export function CanvasActionSurface({
         </p>
         <div className="flex min-w-0 justify-end">
           <Button
-            aria-label="Close canvas action surface"
+            aria-label={closeAriaLabel}
             className="hoverable size-7 shrink-0 text-resource-pane-muted hover:text-resource-pane-foreground"
             onClick={onClose}
             size="icon"
@@ -102,16 +101,64 @@ export function CanvasActionSurface({
         </div>
       </header>
       <div
-        className="canvas-action-surface-body-background min-h-0 flex-1"
+        className={cn(
+          "canvas-action-surface-body-background min-h-0 flex-1",
+          bodyClassName
+        )}
         data-slot="canvas-action-surface-body"
       >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+export interface CanvasActionSurfaceProps {
+  action: string | null | undefined;
+  dbAccessEnabled?: boolean;
+  kubeconfig: string;
+  namespace: string;
+  onClose: () => void;
+  projectUid: string;
+  selectedDatabaseData: CanvasDatabaseNodeData | null;
+}
+
+export function CanvasActionSurface({
+  action,
+  dbAccessEnabled = true,
+  kubeconfig,
+  namespace,
+  onClose,
+  projectUid,
+  selectedDatabaseData,
+}: CanvasActionSurfaceProps) {
+  const open =
+    dbAccessEnabled &&
+    action === CANVAS_ACTION.dbAccess &&
+    selectedDatabaseData != null;
+
+  const { states } = selectedDatabaseData ?? { states: null };
+  const subtitle =
+    states == null
+      ? undefined
+      : `Database ${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""}`;
+
+  return (
+    <CanvasActionSurfaceFrame
+      icon={<Database aria-hidden className="size-4" strokeWidth={2} />}
+      onClose={onClose}
+      open={open}
+      subtitle={subtitle}
+      title={states?.name ?? ""}
+    >
+      {selectedDatabaseData == null ? null : (
         <DataBrowserPane
           kubeconfig={kubeconfig}
           namespace={namespace}
           projectUid={projectUid}
           selectedDatabaseData={selectedDatabaseData}
         />
-      </div>
-    </section>
+      )}
+    </CanvasActionSurfaceFrame>
   );
 }

@@ -8,9 +8,9 @@ import { useAtomValue } from "jotai";
 import { ScrollText } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 
+import { CanvasActionSurfaceFrame } from "@/lib/project-canvas/actions/canvas-action-surface";
 import { containerStatesFromNode } from "@/lib/project-canvas/flow/container-node-workload";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-import { CanvasResourcePane } from "./canvas-resource-pane";
 import {
   RESOURCE_LOGS_DEFAULT_LIMIT,
   RESOURCE_LOGS_DEFAULT_TIME_RANGE,
@@ -68,13 +68,12 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
   const logs = useMemo(() => workloadLogsToLogEntries(data), [data]);
 
   return (
-    <CanvasResourcePane
-      bodyClassName="min-h-0 gap-3.5"
+    <CanvasActionSurfaceFrame
+      bodyClassName="flex min-h-0 flex-col gap-3.5 p-4"
       closeAriaLabel="Close workload logs"
-      icon={
-        <ScrollText aria-hidden className="size-4 shrink-0 text-blue-500" />
-      }
+      icon={<ScrollText aria-hidden className="size-4 shrink-0" />}
       onClose={onClose}
+      open
       subtitle={`${states?.kind ?? "Workload"} · Resource logs`}
       title={`${title} Logs`}
     >
@@ -95,7 +94,7 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
         searchQuery={searchQuery}
         timeRange={timeRange}
       />
-    </CanvasResourcePane>
+    </CanvasActionSurfaceFrame>
   );
 });
 

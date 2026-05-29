@@ -17,8 +17,11 @@ import { useProjectCanvasLayout } from "@/hooks/use-project-canvas-layout";
 import { CanvasActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
 import { apMetricsLookupFromSnapshot } from "@/lib/project-canvas/flow/ap-list-to-canvas-state";
 import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
+import { DatabaseLogsPane } from "@/lib/project-canvas/panels/database-logs-pane";
 import { ProjectCanvasResourcePane } from "@/lib/project-canvas/panels/project-canvas-resource-pane";
+import { WorkloadLogsPane } from "@/lib/project-canvas/panels/workload-logs-panel";
 import { buildPreviewProjectCanvasState } from "@/lib/project-canvas/preview/state";
+import { DATABASE_PANE, WORKLOAD_PANE } from "@/store/canvas-store";
 
 const METRICS_REFRESH_MS = 5000;
 
@@ -149,6 +152,7 @@ export default function PreviewProjectPage() {
   const {
     canvasAction,
     closeCanvasActionSurface,
+    closeResourceLogsSurface,
     closeResourcePane,
     connectionOrigin,
     databasePane,
@@ -168,6 +172,10 @@ export default function PreviewProjectPage() {
     shareToken,
   });
   const selectedDatabaseData = databaseNodeDataFromNode(selectedNode);
+  const workloadLogsSurfaceOpen =
+    workloadPane === WORKLOAD_PANE.logs && selectedNode != null;
+  const databaseLogsSurfaceOpen =
+    databasePane === DATABASE_PANE.logs && selectedNode != null;
 
   const missingParams = shareToken === "" || ns === "" || uid === "";
   const blocked = missingParams || isLoading || error != null;
@@ -200,7 +208,7 @@ export default function PreviewProjectPage() {
         >
           <Canvas.Flow>
             <ProjectCanvasResourcePane
-              databasePane={databasePane}
+              databasePane={databaseLogsSurfaceOpen ? null : databasePane}
               entryPane={entryPane}
               onClose={closeResourcePane}
               onSettingsLeaveGuardChange={registerSettingsLeaveGuard}
@@ -210,7 +218,7 @@ export default function PreviewProjectPage() {
               selectedEntryRef={selectedEntryRef}
               selectedNode={selectedNode}
               shareToken={shareToken}
-              workloadPane={workloadPane}
+              workloadPane={workloadLogsSurfaceOpen ? null : workloadPane}
             />
             <CanvasActionSurface
               action={canvasAction}
@@ -221,6 +229,20 @@ export default function PreviewProjectPage() {
               projectUid={uid}
               selectedDatabaseData={selectedDatabaseData}
             />
+            {workloadLogsSurfaceOpen ? (
+              <WorkloadLogsPane
+                node={selectedNode}
+                onClose={closeResourceLogsSurface}
+              />
+            ) : null}
+            {databaseLogsSurfaceOpen ? (
+              <DatabaseLogsPane
+                kubeconfig=""
+                node={selectedNode}
+                onClose={closeResourceLogsSurface}
+                open
+              />
+            ) : null}
             {settingsLeaveGuardDialog}
           </Canvas.Flow>
         </Canvas.Root>

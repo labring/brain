@@ -459,6 +459,9 @@ export function useProjectCanvas(
         onClick: hasUrlActions
           ? () => {
               requestSettingsLeave("switch", () => {
+                if (pane === DATABASE_PANE.logs) {
+                  onResourcePaneOpen?.();
+                }
                 setCanvasAction(null).catch(() => undefined);
                 setSelectedEdge(null);
                 setServiceUid(uid).catch(() => undefined);
@@ -1060,6 +1063,14 @@ export function useProjectCanvas(
   const closeCanvasActionSurface = useCallback(() => {
     setCanvasAction(null).catch(() => undefined);
   }, [setCanvasAction]);
+  const closeResourceLogsSurface = useCallback(() => {
+    if (databasePane === DATABASE_PANE.logs) {
+      setDatabasePane(null).catch(() => undefined);
+    }
+    if (workloadPane === WORKLOAD_PANE.logs) {
+      setWorkloadPane(null).catch(() => undefined);
+    }
+  }, [databasePane, setDatabasePane, setWorkloadPane, workloadPane]);
 
   const meta = useMemo<CanvasMeta>(
     () => ({
@@ -1178,6 +1189,7 @@ export function useProjectCanvas(
     canvasAction,
     clearSelection,
     closeCanvasActionSurface,
+    closeResourceLogsSurface,
     closeResourcePane,
     connectionOrigin,
     databasePane,

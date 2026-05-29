@@ -6,7 +6,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
 import { CANVAS_ACTION } from "@/store/canvas-store";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
-import { CanvasActionSurface } from "./canvas-action-surface";
+import {
+  CanvasActionSurface,
+  CanvasActionSurfaceFrame,
+} from "./canvas-action-surface";
 
 const noop = () => {
   /* test noop */
@@ -21,6 +24,10 @@ const CANVAS_ACTION_BODY_BACKGROUND_RE =
 const DATA_BROWSER_RE = /text-resource-pane-foreground/;
 const SUBTITLE_RE = /Database PostgreSQL 16.4/;
 const ASSISTANT_TOGGLE_OFFSET_RE = /pr-12/;
+const CUSTOM_BODY_RE = /Resource logs/;
+const CUSTOM_CLOSE_LABEL_RE = /Close logs/;
+const CUSTOM_SUBTITLE_RE = /AP · Resource logs/;
+const CUSTOM_TITLE_RE = /web Logs/;
 
 const databaseData = {
   connections: [],
@@ -54,6 +61,29 @@ test("canvas action surface renders shared chrome and empty body slot", () => {
   assert.match(html, RESOURCE_PANE_SURFACE_RE);
   assert.match(html, CANVAS_ACTION_BODY_BACKGROUND_RE);
   assert.match(html, DATA_BROWSER_RE);
+});
+
+test("canvas action surface frame renders custom surface content", () => {
+  const html = renderToStaticMarkup(
+    <CanvasActionSurfaceFrame
+      closeAriaLabel="Close logs"
+      icon={<span data-testid="logs-icon" />}
+      onClose={noop}
+      open
+      subtitle="AP · Resource logs"
+      title="web Logs"
+    >
+      <p>Resource logs</p>
+    </CanvasActionSurfaceFrame>
+  );
+
+  assert.match(html, LABEL_RE);
+  assert.match(html, CUSTOM_CLOSE_LABEL_RE);
+  assert.match(html, CUSTOM_TITLE_RE);
+  assert.match(html, CUSTOM_SUBTITLE_RE);
+  assert.match(html, CUSTOM_BODY_RE);
+  assert.match(html, RESOURCE_PANE_SURFACE_RE);
+  assert.match(html, CANVAS_ACTION_BODY_BACKGROUND_RE);
 });
 
 test("canvas action surface stays absent without supported action data", () => {

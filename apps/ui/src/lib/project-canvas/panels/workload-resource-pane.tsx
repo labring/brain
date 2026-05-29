@@ -6,7 +6,6 @@ import { WORKLOAD_PANE } from "@/store/canvas-store";
 import type { SettingsLeaveGuardRegistration } from "./settings-leave-guard";
 import { WorkloadEventsPane } from "./workload-events-panel";
 import { WorkloadHistoryPane } from "./workload-history-panel";
-import { WorkloadLogsPane } from "./workload-logs-panel";
 import { WorkloadMetricsPane } from "./workload-metrics-panel";
 import { WorkloadSettingsPane } from "./workload-settings-panel";
 
@@ -38,8 +37,6 @@ export function WorkloadResourcePane({
       );
     case WORKLOAD_PANE.metrics:
       return <WorkloadMetricsPane node={node} onClose={onClose} />;
-    case WORKLOAD_PANE.logs:
-      return <WorkloadLogsPane node={node} onClose={onClose} />;
     case WORKLOAD_PANE.history:
       return <WorkloadHistoryPane node={node} onClose={onClose} />;
     default:

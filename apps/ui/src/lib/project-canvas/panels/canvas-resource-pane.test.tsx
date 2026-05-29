@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { WORKLOAD_PANE } from "@/store/canvas-store";
 import { CanvasResourcePane } from "./canvas-resource-pane";
+import { renderProjectCanvasResourcePaneContent } from "./project-canvas-resource-pane";
 
 const noop = () => {
   /* test noop */
@@ -36,4 +38,25 @@ test("canvas resource pane preserves resource-specific chrome while using the sh
   assert.match(html, BODY_RE);
   assert.match(html, RESOURCE_PANE_SURFACE_RE);
   assert.match(html, RESOURCE_PANE_BACKGROUND_RE);
+});
+
+test("project canvas resource pane does not render workload logs as side pane content", () => {
+  const html = renderToStaticMarkup(
+    renderProjectCanvasResourcePaneContent({
+      databasePane: null,
+      entryPane: null,
+      onClose: noop,
+      selectedDatabaseData: null,
+      selectedEntryRef: null,
+      selectedNode: {
+        data: {},
+        id: "ap:web",
+        position: { x: 0, y: 0 },
+        type: "container",
+      },
+      workloadPane: WORKLOAD_PANE.logs,
+    })
+  );
+
+  assert.equal(html, "");
 });

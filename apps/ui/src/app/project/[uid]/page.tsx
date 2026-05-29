@@ -22,12 +22,14 @@ import {
 import { isCanvasNodeGeneratedPosition } from "@/lib/project-canvas/layout/placement";
 import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
 import { DatabaseConsolePane } from "@/lib/project-canvas/panels/database-console-pane";
+import { DatabaseLogsPane } from "@/lib/project-canvas/panels/database-logs-pane";
 import { renderProjectCanvasResourcePaneContent } from "@/lib/project-canvas/panels/project-canvas-resource-pane";
 import {
   type ProjectCanvasSidePanePreferredEntry,
   ProjectCanvasSidePaneSlot,
   resolveProjectCanvasSidePaneEntry,
 } from "@/lib/project-canvas/panels/project-canvas-side-pane-slot";
+import { WorkloadLogsPane } from "@/lib/project-canvas/panels/workload-logs-panel";
 import { WorkloadTerminalPane } from "@/lib/project-canvas/panels/workload-terminal-panel";
 import { telemetryTargetFromCanvasNode } from "@/lib/project-canvas/telemetry/workload-telemetry-node";
 import { WorkloadTelemetryProvider } from "@/lib/project-canvas/telemetry/workload-telemetry-react";
@@ -129,6 +131,7 @@ export default function ProjectUidPage() {
     canvasAction,
     closeResourcePane,
     closeCanvasActionSurface,
+    closeResourceLogsSurface,
     connectionOrigin,
     databasePane,
     entryPane,
@@ -161,23 +164,30 @@ export default function ProjectUidPage() {
   const canvasActionSurfaceOpen = canvasAction != null;
   const terminalPlaneOpen =
     workloadPane === WORKLOAD_PANE.terminal && selectedNode != null;
+  const workloadLogsSurfaceOpen =
+    workloadPane === WORKLOAD_PANE.logs && selectedNode != null;
   const databaseConsoleOpen =
     databasePane === DATABASE_PANE.console && selectedNode != null;
+  const databaseLogsSurfaceOpen =
+    databasePane === DATABASE_PANE.logs && selectedNode != null;
+  const resourceLogsSurfaceOpen =
+    workloadLogsSurfaceOpen || databaseLogsSurfaceOpen;
 
   const canvasResourcePaneOpen = Boolean(
-    (terminalPlaneOpen ? null : workloadPane) ??
-      (databaseConsoleOpen ? null : databasePane) ??
+    (terminalPlaneOpen || workloadLogsSurfaceOpen ? null : workloadPane) ??
+      (databaseConsoleOpen || databaseLogsSurfaceOpen ? null : databasePane) ??
       entryPane
   );
-  const canvasSidePaneEntry = canvasActionSurfaceOpen
-    ? null
-    : resolveProjectCanvasSidePaneEntry({
-        databaseDeploymentPaneOpen,
-        dockerDeploymentPaneOpen,
-        githubDeploymentPaneOpen,
-        preferredEntry: preferredCanvasSidePaneEntry,
-        resourcePaneOpen: canvasResourcePaneOpen,
-      });
+  const canvasSidePaneEntry =
+    canvasActionSurfaceOpen || resourceLogsSurfaceOpen
+      ? null
+      : resolveProjectCanvasSidePaneEntry({
+          databaseDeploymentPaneOpen,
+          dockerDeploymentPaneOpen,
+          githubDeploymentPaneOpen,
+          preferredEntry: preferredCanvasSidePaneEntry,
+          resourcePaneOpen: canvasResourcePaneOpen,
+        });
   const closeDatabaseDeploymentPane = useCallback(() => {
     Promise.resolve(setDatabaseDeploymentPaneOpen(false)).catch(
       () => undefined
@@ -373,6 +383,20 @@ export default function ProjectUidPage() {
                     projectUid={uid}
                     selectedDatabaseData={selectedDatabaseData}
                   />
+                  {workloadLogsSurfaceOpen ? (
+                    <WorkloadLogsPane
+                      node={selectedNode}
+                      onClose={closeResourceLogsSurface}
+                    />
+                  ) : null}
+                  {databaseLogsSurfaceOpen ? (
+                    <DatabaseLogsPane
+                      kubeconfig={kubeconfig}
+                      node={selectedNode}
+                      onClose={closeResourceLogsSurface}
+                      open
+                    />
+                  ) : null}
                   {settingsLeaveGuardDialog}
                   {terminalPlaneOpen ? (
                     <WorkloadTerminalPane
