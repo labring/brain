@@ -1,29 +1,13 @@
-import type { ProjectCreationPaneEntryMode } from "@/components/project-creation-pane-state";
+import type { ProjectSideSurfaceEntry } from "@/lib/project-surfaces/surface-state";
 import type { ProjectSidePaneAssistantIntent } from "./controller";
 
-export type ProjectSidePanePlacement = "overlay" | "reserved";
-
-export type ProjectSidePaneEntry =
-  | {
-      entryMode: ProjectCreationPaneEntryMode;
-      kind: "projectCreation";
-      placement: "reserved";
-    }
-  | {
-      kind: "databaseDeployment";
-      placement: "overlay";
-      projectUid: string;
-    }
-  | {
-      kind: "dockerDeployment";
-      placement: "overlay";
-      projectUid: string;
-    }
-  | {
-      kind: "githubDeployment";
-      placement: "overlay";
-      projectUid: string;
-    };
+export type ProjectSidePaneEntry = Extract<
+  ProjectSideSurfaceEntry,
+  | { kind: "databaseDeployment" }
+  | { kind: "dockerDeployment" }
+  | { kind: "githubDeployment" }
+  | { kind: "projectCreation" }
+>;
 
 export function projectListEntryForAssistantIntent(
   intent: ProjectSidePaneAssistantIntent
@@ -32,21 +16,18 @@ export function projectListEntryForAssistantIntent(
     return {
       entryMode: "githubDirect",
       kind: "projectCreation",
-      placement: "reserved",
     };
   }
   if (intent.type === "database") {
     return {
       entryMode: "databaseDirect",
       kind: "projectCreation",
-      placement: "reserved",
     };
   }
   if (intent.type === "docker") {
     return {
       entryMode: "dockerDirect",
       kind: "projectCreation",
-      placement: "reserved",
     };
   }
   return null;
@@ -63,14 +44,12 @@ export function projectCanvasEntryForAssistantIntent(
   if (intent.type === "database") {
     return {
       kind: "databaseDeployment",
-      placement: "overlay",
       projectUid: uid,
     };
   }
   if (intent.type === "docker") {
     return {
       kind: "dockerDeployment",
-      placement: "overlay",
       projectUid: uid,
     };
   }
@@ -79,7 +58,6 @@ export function projectCanvasEntryForAssistantIntent(
   }
   return {
     kind: "githubDeployment",
-    placement: "overlay",
     projectUid: uid,
   };
 }

@@ -1,8 +1,6 @@
 "use client";
 
-import type { CanvasSelectedEdge } from "@workspace/ui/components/canvas/canvas.types";
-import type { Node, NodeTypes } from "@xyflow/react";
-import { atom } from "jotai";
+import type { NodeTypes } from "@xyflow/react";
 
 import { CanvasContainerNode } from "@/lib/project-canvas/nodes/canvas-container-node";
 import { CanvasDatabaseNode } from "@/lib/project-canvas/nodes/canvas-database-node";
@@ -12,22 +10,6 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/lib/project-canvas/nodes/constants";
-import { canvasNodeSelectionKey } from "@/lib/project-canvas/nodes/resource-identity";
-
-/** nuqs key for the selected workload card (Kubernetes `metadata.uid`). */
-export const CANVAS_SERVICE_QUERY_KEY = "service" as const;
-
-/** nuqs key for the AP / Container Node action pane (`?apPane=settings|metrics|terminal|logs|history`). */
-export const WORKLOAD_PANE_QUERY_KEY = "apPane" as const;
-
-/** nuqs key for the database action pane (`?dbPane=settings|metrics|logs|console`). */
-export const DATABASE_PANE_QUERY_KEY = "dbPane" as const;
-
-/** nuqs key for the EntryPoint action pane (`?entryPane=settings`). */
-export const ENTRY_PANE_QUERY_KEY = "entryPane" as const;
-
-/** nuqs key for the full-width canvas action surface (`?canvasAction=dbAccess`). */
-export const CANVAS_ACTION_QUERY_KEY = "canvasAction" as const;
 
 export const WORKLOAD_PANE = {
   events: "events",
@@ -59,14 +41,8 @@ export const CANVAS_ACTION = {
  */
 export const WORKLOAD_PANEL_REPLICAS = { min: 1, max: 20 } as const;
 
-export function projectCanvasNodeServiceUid(node: Node): string | null {
-  return canvasNodeSelectionKey(node);
-}
-
 export const projectCanvasFlowNodeTypes = {
   [CANVAS_CONTAINER_NODE_TYPE]: CanvasContainerNode,
   [CANVAS_DATABASE_NODE_TYPE]: CanvasDatabaseNode,
   [CANVAS_ENTRY_NODE_TYPE]: CanvasEntryNode,
 } as const satisfies NodeTypes;
-
-export const selectedEdgeAtom = atom<CanvasSelectedEdge>(null);

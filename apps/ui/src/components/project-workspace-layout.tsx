@@ -50,6 +50,11 @@ import {
   ProjectSidePaneProvider,
   useProjectSidePaneController,
 } from "@/lib/project-side-pane/react";
+import type { ProjectCanvasSelection } from "@/lib/project-surfaces/surface-state";
+import {
+  PROJECT_SELECTED_QUERY_KEY,
+  parseProjectCanvasSelection,
+} from "@/lib/project-surfaces/url-codec";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -61,7 +66,6 @@ import {
   runRefreshFrontendSwrCachesTool,
 } from "@/lib/tool/chat-refresh-frontend-swr-tool";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-import { CANVAS_SERVICE_QUERY_KEY } from "@/store/canvas-store";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 
 const DEPLOY_TASK_STATUS_POLL_MS = 3000;
@@ -204,18 +208,33 @@ function logDeployTaskPollError(input: {
 function buildAssistantContextPayload(
   projectName: string | undefined,
   projectUid: string,
-  selectedServiceUid: string
+  selected: ProjectCanvasSelection | null
 ): AssistantContextPayload | undefined {
   const pn = projectName?.trim() ?? "";
   const pu = projectUid.trim();
-  const sw = selectedServiceUid.trim();
-  if (pn === "" && pu === "" && sw === "") {
+  const target = selected?.kind === "edge" ? null : selected?.target;
+  if (pn === "" && pu === "" && target == null) {
     return undefined;
   }
   return {
     ...(pn === "" ? {} : { projectName: pn }),
     ...(pu === "" ? {} : { projectUid: pu }),
-    ...(sw === "" ? {} : { selectedWorkload: { kubernetesUid: sw } }),
+    ...(target == null
+      ? {}
+      : {
+          selectedWorkload:
+            target.kind === "EntryPoint"
+              ? {
+                  kind: target.kind,
+                  name: target.apName,
+                  namespace: target.namespace,
+                }
+              : {
+                  kind: target.kind,
+                  name: target.name,
+                  namespace: target.namespace,
+                },
+        }),
   };
 }
 
@@ -258,21 +277,25 @@ function ProjectAssistantChatSession({
     namespace,
     projectUid,
   });
-  const [serviceUidQuery] = useQueryState(
-    CANVAS_SERVICE_QUERY_KEY,
+  const [selectedQuery] = useQueryState(
+    PROJECT_SELECTED_QUERY_KEY,
     parseAsString
+  );
+  const selected = useMemo(
+    () => parseProjectCanvasSelection(selectedQuery),
+    [selectedQuery]
   );
 
   // Keep a live ref so the transport memo stays stable across URL changes.
   const wireRef = useRef({
     namespace: assistantNamespaceRaw,
     projectUid,
-    selectedServiceUid: serviceUidQuery ?? "",
+    selected,
   });
   wireRef.current = {
     namespace: assistantNamespaceRaw,
     projectUid,
-    selectedServiceUid: serviceUidQuery ?? "",
+    selected,
   };
 
   const transport = useMemo(
@@ -295,7 +318,7 @@ function ProjectAssistantChatSession({
           const assistantContext = buildAssistantContextPayload(
             currentProject.resourceName,
             wire.projectUid,
-            wire.selectedServiceUid
+            wire.selected
           );
 
           return {
@@ -521,11 +544,11 @@ function ProjectAssistantChatSession({
     if (projectUid.trim() !== "") {
       toggles.push("Current Project");
     }
-    if ((serviceUidQuery ?? "").trim() !== "") {
+    if (selected != null && selected.kind !== "edge") {
       toggles.push("Current Service");
     }
     return toggles;
-  }, [projectUid, serviceUidQuery]);
+  }, [projectUid, selected]);
 
   const onPrimaryAction = useCallback(() => {
     if (busy) {

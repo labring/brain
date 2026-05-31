@@ -10,7 +10,6 @@ test("Project List translates assistant GitHub intent to GitHub direct project c
   assert.deepEqual(projectListEntryForAssistantIntent({ type: "github" }), {
     entryMode: "githubDirect",
     kind: "projectCreation",
-    placement: "reserved",
   });
 });
 
@@ -18,7 +17,6 @@ test("Project List translates assistant database intent to database direct proje
   assert.deepEqual(projectListEntryForAssistantIntent({ type: "database" }), {
     entryMode: "databaseDirect",
     kind: "projectCreation",
-    placement: "reserved",
   });
 });
 
@@ -26,7 +24,6 @@ test("Project List translates assistant Docker intent to Docker direct project c
   assert.deepEqual(projectListEntryForAssistantIntent({ type: "docker" }), {
     entryMode: "dockerDirect",
     kind: "projectCreation",
-    placement: "reserved",
   });
 });
 
@@ -38,7 +35,6 @@ test("Project Canvas translates assistant GitHub intent to deployment in the cur
     ),
     {
       kind: "githubDeployment",
-      placement: "overlay",
       projectUid: "project-1",
     }
   );
@@ -52,7 +48,6 @@ test("Project Canvas translates assistant database intent to deployment in the c
     ),
     {
       kind: "databaseDeployment",
-      placement: "overlay",
       projectUid: "project-1",
     }
   );
@@ -66,7 +61,6 @@ test("Project Canvas translates assistant Docker intent to deployment in the cur
     ),
     {
       kind: "dockerDeployment",
-      placement: "overlay",
       projectUid: "project-1",
     }
   );

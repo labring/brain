@@ -4,7 +4,6 @@ import { Canvas } from "@workspace/ui/components/canvas/canvas";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
-import { parseAsBoolean, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DatabaseDeploymentPane } from "@/components/database-deployment-pane";
 import { DockerDeploymentPane } from "@/components/docker-deployment-pane";
@@ -25,9 +24,8 @@ import { DatabaseConsolePane } from "@/lib/project-canvas/panels/database-consol
 import { DatabaseLogsPane } from "@/lib/project-canvas/panels/database-logs-pane";
 import { renderProjectCanvasResourcePaneContent } from "@/lib/project-canvas/panels/project-canvas-resource-pane";
 import {
-  type ProjectCanvasSidePanePreferredEntry,
+  type ProjectCanvasSidePaneEntry,
   ProjectCanvasSidePaneSlot,
-  resolveProjectCanvasSidePaneEntry,
 } from "@/lib/project-canvas/panels/project-canvas-side-pane-slot";
 import { WorkloadLogsPane } from "@/lib/project-canvas/panels/workload-logs-panel";
 import { WorkloadTerminalPane } from "@/lib/project-canvas/panels/workload-terminal-panel";
@@ -39,10 +37,6 @@ import { projectCanvasEntryForAssistantIntent } from "@/lib/project-side-pane/su
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import { DATABASE_PANE, WORKLOAD_PANE } from "@/store/canvas-store";
 
-const GITHUB_DEPLOYMENT_PANE_QUERY_KEY = "githubDeployment" as const;
-const DATABASE_DEPLOYMENT_PANE_QUERY_KEY = "databaseDeployment" as const;
-const DOCKER_DEPLOYMENT_PANE_QUERY_KEY = "dockerDeployment" as const;
-
 export default function ProjectUidPage() {
   const params = useParams<{ uid: string }>();
   const uid = decodeURIComponent(params.uid ?? "");
@@ -51,8 +45,6 @@ export default function ProjectUidPage() {
   const [pendingApDbReferences, setPendingApDbReferences] = useState<
     PendingApDbCanvasReference[]
   >([]);
-  const [preferredCanvasSidePaneEntry, setPreferredCanvasSidePaneEntry] =
-    useState<ProjectCanvasSidePanePreferredEntry | null>(null);
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     namespace,
@@ -101,58 +93,43 @@ export default function ProjectUidPage() {
       ? canvasState.edges
       : [...canvasState.edges, ...pendingEdges];
   }, [canvasState.edges, canvasState.nodes, pendingApDbReferences]);
-  const [githubDeploymentPaneOpen, setGithubDeploymentPaneOpen] = useQueryState(
-    GITHUB_DEPLOYMENT_PANE_QUERY_KEY,
-    parseAsBoolean.withDefault(false)
-  );
-  const [databaseDeploymentPaneOpen, setDatabaseDeploymentPaneOpen] =
-    useQueryState(
-      DATABASE_DEPLOYMENT_PANE_QUERY_KEY,
-      parseAsBoolean.withDefault(false)
-    );
-  const [dockerDeploymentPaneOpen, setDockerDeploymentPaneOpen] = useQueryState(
-    DOCKER_DEPLOYMENT_PANE_QUERY_KEY,
-    parseAsBoolean.withDefault(false)
-  );
-  const replaceDeploymentWithResourcePane = useCallback(() => {
-    setPreferredCanvasSidePaneEntry("resource");
-    Promise.resolve(setGithubDeploymentPaneOpen(false)).catch(() => undefined);
-    Promise.resolve(setDatabaseDeploymentPaneOpen(false)).catch(
-      () => undefined
-    );
-    Promise.resolve(setDockerDeploymentPaneOpen(false)).catch(() => undefined);
-  }, [
-    setDatabaseDeploymentPaneOpen,
-    setDockerDeploymentPaneOpen,
-    setGithubDeploymentPaneOpen,
-  ]);
 
   const {
     canvasAction,
     closeResourcePane,
     closeCanvasActionSurface,
+    closeDrawerSurface,
     closeResourceLogsSurface,
     connectionOrigin,
-    databasePane,
-    entryPane,
+    drawerDatabasePane,
+    drawerNode,
+    drawerWorkloadPane,
+    mainDatabasePane,
+    mainNode,
+    mainWorkloadPane,
     meta: canvasMeta,
     nodes,
+    openSideSurface,
     registerSettingsLeaveGuard,
-    requestResourcePaneReplacement,
     selectedEntryRef,
     selectedEdge,
     selectedNode,
     settingsLeaveGuardDialog,
-    workloadPane,
+    side,
+    sideDatabasePane,
+    sideEntryPane,
+    sideNode,
+    sideVisible,
+    sideWorkloadPane,
   } = useProjectCanvas(canvasState.nodes, {
     dbsData: projectServicesData.dbs,
+    edges: canvasEdges,
     kubeconfig,
     namespace,
     onNodeExpansionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodePositionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onPendingApDbReferencesStart: beginPendingApDbReferences,
-    onResourcePaneOpen: replaceDeploymentWithResourcePane,
     refreshWorkloadLists,
     selectionReady: !isEmptyGraphLoading,
   });
@@ -160,98 +137,44 @@ export default function ProjectUidPage() {
     () => telemetryTargetFromCanvasNode(selectedNode),
     [selectedNode]
   );
-  const selectedDatabaseData = databaseNodeDataFromNode(selectedNode);
-  const canvasActionSurfaceOpen = canvasAction != null;
+  const sideDatabaseData = databaseNodeDataFromNode(sideNode);
+  const mainDatabaseData = databaseNodeDataFromNode(mainNode);
   const terminalPlaneOpen =
-    workloadPane === WORKLOAD_PANE.terminal && selectedNode != null;
+    drawerWorkloadPane === WORKLOAD_PANE.terminal && drawerNode != null;
   const workloadLogsSurfaceOpen =
-    workloadPane === WORKLOAD_PANE.logs && selectedNode != null;
+    mainWorkloadPane === WORKLOAD_PANE.logs && mainNode != null;
   const databaseConsoleOpen =
-    databasePane === DATABASE_PANE.console && selectedNode != null;
+    drawerDatabasePane === DATABASE_PANE.console && drawerNode != null;
   const databaseLogsSurfaceOpen =
-    databasePane === DATABASE_PANE.logs && selectedNode != null;
-  const resourceLogsSurfaceOpen =
-    workloadLogsSurfaceOpen || databaseLogsSurfaceOpen;
+    mainDatabasePane === DATABASE_PANE.logs && mainNode != null;
 
   const canvasResourcePaneOpen = Boolean(
-    (terminalPlaneOpen || workloadLogsSurfaceOpen ? null : workloadPane) ??
-      (databaseConsoleOpen || databaseLogsSurfaceOpen ? null : databasePane) ??
-      entryPane
+    sideWorkloadPane ?? sideDatabasePane ?? sideEntryPane
   );
-  const canvasSidePaneEntry =
-    canvasActionSurfaceOpen || resourceLogsSurfaceOpen
-      ? null
-      : resolveProjectCanvasSidePaneEntry({
-          databaseDeploymentPaneOpen,
-          dockerDeploymentPaneOpen,
-          githubDeploymentPaneOpen,
-          preferredEntry: preferredCanvasSidePaneEntry,
-          resourcePaneOpen: canvasResourcePaneOpen,
-        });
-  const closeDatabaseDeploymentPane = useCallback(() => {
-    Promise.resolve(setDatabaseDeploymentPaneOpen(false)).catch(
-      () => undefined
-    );
-  }, [setDatabaseDeploymentPaneOpen]);
-  const closeGithubDeploymentPane = useCallback(() => {
-    Promise.resolve(setGithubDeploymentPaneOpen(false)).catch(() => undefined);
-  }, [setGithubDeploymentPaneOpen]);
-  const closeDockerDeploymentPane = useCallback(() => {
-    Promise.resolve(setDockerDeploymentPaneOpen(false)).catch(() => undefined);
-  }, [setDockerDeploymentPaneOpen]);
+  const canvasSidePaneEntry = useMemo<ProjectCanvasSidePaneEntry>(() => {
+    if (!(sideVisible && side != null)) {
+      return null;
+    }
+    if (side.kind === "databaseDeployment") {
+      return { kind: "databaseDeployment" };
+    }
+    if (side.kind === "dockerDeployment") {
+      return { kind: "dockerDeployment" };
+    }
+    if (side.kind === "githubDeployment") {
+      return { kind: "githubDeployment" };
+    }
+    return canvasResourcePaneOpen ? { kind: "resource" } : null;
+  }, [canvasResourcePaneOpen, side, sideVisible]);
   const openDatabaseDeploymentPane = useCallback(() => {
-    requestResourcePaneReplacement(() => {
-      setPreferredCanvasSidePaneEntry("databaseDeployment");
-      Promise.resolve(setDockerDeploymentPaneOpen(false)).catch(
-        () => undefined
-      );
-      Promise.resolve(setGithubDeploymentPaneOpen(false)).catch(
-        () => undefined
-      );
-      Promise.resolve(setDatabaseDeploymentPaneOpen(true)).catch(
-        () => undefined
-      );
-    });
-  }, [
-    requestResourcePaneReplacement,
-    setDatabaseDeploymentPaneOpen,
-    setDockerDeploymentPaneOpen,
-    setGithubDeploymentPaneOpen,
-  ]);
+    openSideSurface({ kind: "databaseDeployment", projectUid: uid });
+  }, [openSideSurface, uid]);
   const openDockerDeploymentPane = useCallback(() => {
-    requestResourcePaneReplacement(() => {
-      setPreferredCanvasSidePaneEntry("dockerDeployment");
-      Promise.resolve(setDatabaseDeploymentPaneOpen(false)).catch(
-        () => undefined
-      );
-      Promise.resolve(setGithubDeploymentPaneOpen(false)).catch(
-        () => undefined
-      );
-      Promise.resolve(setDockerDeploymentPaneOpen(true)).catch(() => undefined);
-    });
-  }, [
-    requestResourcePaneReplacement,
-    setDatabaseDeploymentPaneOpen,
-    setDockerDeploymentPaneOpen,
-    setGithubDeploymentPaneOpen,
-  ]);
+    openSideSurface({ kind: "dockerDeployment", projectUid: uid });
+  }, [openSideSurface, uid]);
   const openGithubDeploymentPane = useCallback(() => {
-    requestResourcePaneReplacement(() => {
-      setPreferredCanvasSidePaneEntry("githubDeployment");
-      Promise.resolve(setDatabaseDeploymentPaneOpen(false)).catch(
-        () => undefined
-      );
-      Promise.resolve(setDockerDeploymentPaneOpen(false)).catch(
-        () => undefined
-      );
-      Promise.resolve(setGithubDeploymentPaneOpen(true)).catch(() => undefined);
-    });
-  }, [
-    requestResourcePaneReplacement,
-    setDatabaseDeploymentPaneOpen,
-    setDockerDeploymentPaneOpen,
-    setGithubDeploymentPaneOpen,
-  ]);
+    openSideSurface({ kind: "githubDeployment", projectUid: uid });
+  }, [openSideSurface, uid]);
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneSurface>(
     () => ({
       id: `project-canvas:${uid}`,
@@ -283,16 +206,16 @@ export default function ProjectUidPage() {
   );
   useProjectSidePaneSurface(projectCanvasSidePaneSurface);
   const canvasResourcePane = renderProjectCanvasResourcePaneContent({
-    databasePane,
-    entryPane,
+    databasePane: sideDatabasePane,
+    entryPane: sideEntryPane,
     kubeconfig,
     onClose: closeResourcePane,
     onSettingsLeaveGuardChange: registerSettingsLeaveGuard,
     onUpdated: refreshWorkloadLists,
-    selectedDatabaseData,
+    selectedDatabaseData: sideDatabaseData,
     selectedEntryRef,
-    selectedNode,
-    workloadPane,
+    selectedNode: sideNode,
+    workloadPane: sideWorkloadPane,
   });
   const meta = useMemo(
     () => ({
@@ -353,7 +276,7 @@ export default function ProjectUidPage() {
                       <DatabaseDeploymentPane
                         kubeconfig={kubeconfig}
                         namespace={namespace}
-                        onClose={closeDatabaseDeploymentPane}
+                        onClose={closeResourcePane}
                         onDeployed={refreshWorkloadLists}
                         projectUid={uid}
                       />
@@ -362,16 +285,14 @@ export default function ProjectUidPage() {
                       <DockerDeploymentPane
                         kubeconfig={kubeconfig}
                         namespace={namespace}
-                        onClose={closeDockerDeploymentPane}
+                        onClose={closeResourcePane}
                         onDeployed={refreshWorkloadLists}
                         projectUid={uid}
                       />
                     }
                     entry={canvasSidePaneEntry}
                     githubDeploymentPane={
-                      <GitHubDeploymentPane
-                        onClose={closeGithubDeploymentPane}
-                      />
+                      <GitHubDeploymentPane onClose={closeResourcePane} />
                     }
                     resourcePane={canvasResourcePane}
                   />
@@ -381,18 +302,18 @@ export default function ProjectUidPage() {
                     namespace={namespace}
                     onClose={closeCanvasActionSurface}
                     projectUid={uid}
-                    selectedDatabaseData={selectedDatabaseData}
+                    selectedDatabaseData={mainDatabaseData}
                   />
                   {workloadLogsSurfaceOpen ? (
                     <WorkloadLogsPane
-                      node={selectedNode}
+                      node={mainNode}
                       onClose={closeResourceLogsSurface}
                     />
                   ) : null}
                   {databaseLogsSurfaceOpen ? (
                     <DatabaseLogsPane
                       kubeconfig={kubeconfig}
-                      node={selectedNode}
+                      node={mainNode}
                       onClose={closeResourceLogsSurface}
                       open
                     />
@@ -400,14 +321,14 @@ export default function ProjectUidPage() {
                   {settingsLeaveGuardDialog}
                   {terminalPlaneOpen ? (
                     <WorkloadTerminalPane
-                      node={selectedNode}
-                      onClose={closeResourcePane}
+                      node={drawerNode}
+                      onClose={closeDrawerSurface}
                     />
                   ) : null}
                   {databaseConsoleOpen ? (
                     <DatabaseConsolePane
-                      node={selectedNode}
-                      onClose={closeResourcePane}
+                      node={drawerNode}
+                      onClose={closeDrawerSurface}
                       projectUid={uid}
                     />
                   ) : null}

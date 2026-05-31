@@ -41,9 +41,10 @@ export const assistantContextPayloadSchema = z.object({
   projectUid: z.string().max(256).optional(),
   selectedWorkload: z
     .object({
-      kubernetesUid: z.string().max(256),
+      kubernetesUid: z.string().max(256).optional(),
       name: z.string().max(512).optional(),
       kind: z.string().max(128).optional(),
+      namespace: z.string().max(256).optional(),
     })
     .optional(),
 });

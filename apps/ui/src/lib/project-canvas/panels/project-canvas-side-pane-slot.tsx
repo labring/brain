@@ -10,59 +10,6 @@ export type ProjectCanvasSidePaneEntry =
   | { kind: "resource" }
   | null;
 
-export type ProjectCanvasSidePanePreferredEntry = Exclude<
-  ProjectCanvasSidePaneEntry,
-  null
->["kind"];
-
-export function resolveProjectCanvasSidePaneEntry({
-  databaseDeploymentPaneOpen,
-  dockerDeploymentPaneOpen,
-  githubDeploymentPaneOpen,
-  preferredEntry,
-  resourcePaneOpen,
-}: {
-  databaseDeploymentPaneOpen?: boolean;
-  dockerDeploymentPaneOpen?: boolean;
-  githubDeploymentPaneOpen: boolean;
-  preferredEntry?: ProjectCanvasSidePanePreferredEntry | null;
-  resourcePaneOpen: boolean;
-}): ProjectCanvasSidePaneEntry {
-  if (preferredEntry === "databaseDeployment" && databaseDeploymentPaneOpen) {
-    return { kind: "databaseDeployment" };
-  }
-
-  if (preferredEntry === "dockerDeployment" && dockerDeploymentPaneOpen) {
-    return { kind: "dockerDeployment" };
-  }
-
-  if (preferredEntry === "githubDeployment" && githubDeploymentPaneOpen) {
-    return { kind: "githubDeployment" };
-  }
-
-  if (preferredEntry === "resource" && resourcePaneOpen) {
-    return { kind: "resource" };
-  }
-
-  if (githubDeploymentPaneOpen) {
-    return { kind: "githubDeployment" };
-  }
-
-  if (databaseDeploymentPaneOpen) {
-    return { kind: "databaseDeployment" };
-  }
-
-  if (dockerDeploymentPaneOpen) {
-    return { kind: "dockerDeployment" };
-  }
-
-  if (resourcePaneOpen) {
-    return { kind: "resource" };
-  }
-
-  return null;
-}
-
 export function ProjectCanvasSidePaneSlot({
   databaseDeploymentPane,
   dockerDeploymentPane,

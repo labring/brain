@@ -18,13 +18,11 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Connection, Edge, Node } from "@xyflow/react";
-import { useAtomValue, useSetAtom } from "jotai";
 import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { shouldClearCanvasActionMode } from "@/lib/project-canvas/actions/canvas-action-mode";
 import {
   canvasNodeGeometryFromNode,
   selectCanvasAnchorPair,
@@ -54,45 +52,71 @@ import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
 } from "@/lib/project-canvas/nodes/constants";
-import {
-  canvasHasApForEntrySelection,
-  entryPointSelectionRefFromKey,
-} from "@/lib/project-canvas/nodes/entry-node-selection";
+import type { CanvasEntrySelectionRef } from "@/lib/project-canvas/nodes/entry-node-selection";
 import type {
   CanvasContainerNodeData,
   CanvasDatabaseNodeData,
   CanvasNodeLayoutState,
   CanvasNodeSettingsAccess,
 } from "@/lib/project-canvas/nodes/types";
-import {
-  databasePaneModeForNodeClick,
-  shouldClearDatabasePaneMode,
-} from "@/lib/project-canvas/panels/database-panel-mode";
-import {
-  entryPaneModeForNodeClick,
-  normalizeEntryPaneMode,
-} from "@/lib/project-canvas/panels/entrypoint-panel-mode";
 import { useSettingsLeaveGuardController } from "@/lib/project-canvas/panels/settings-leave-guard";
 import {
-  shouldClearWorkloadPaneMode,
-  workloadPaneModeForNodeClick,
-} from "@/lib/project-canvas/panels/workload-pane-mode";
+  defaultProjectSideSurfaceForNode,
+  drawerSurfaceForApTerminal,
+  drawerSurfaceForDbConsole,
+  findCanvasNodeForProjectTarget,
+  mainSurfaceForDbAccess,
+  mainSurfaceForResourceLogs,
+  projectApTargetFromNode,
+  projectCanvasSelectionFromNode,
+  projectDbTargetFromNode,
+  projectSelectionNode,
+  projectSelectionTargetExists,
+  projectTargetExistsOnCanvas,
+  sideSurfaceForDatabasePane,
+  sideSurfaceForWorkloadPane,
+} from "@/lib/project-canvas/surface/selection";
+import {
+  closeProjectSurfaceSlot,
+  createProjectSurfaceState,
+  openProjectSurface,
+} from "@/lib/project-surfaces/orchestrator";
+import {
+  type ProjectCanvasSelection,
+  type ProjectDrawerSurfaceEntry,
+  type ProjectMainSurfaceEntry,
+  type ProjectSideSurfaceEntry,
+  type ProjectSurfaceIntent,
+  type ProjectSurfaceSlot,
+  type ProjectSurfaceState,
+  projectSideSurfaceVisible,
+  projectSurfaceEntryTarget,
+} from "@/lib/project-surfaces/surface-state";
+import { projectApTarget } from "@/lib/project-surfaces/target-identity";
+import {
+  PROJECT_DRAWER_QUERY_KEY,
+  PROJECT_MAIN_QUERY_KEY,
+  PROJECT_SELECTED_QUERY_KEY,
+  PROJECT_SIDE_QUERY_KEY,
+  parseProjectCanvasSelection,
+  parseProjectDrawerSurfaceEntry,
+  parseProjectMainSurfaceEntry,
+  parseProjectSideSurfaceEntry,
+  serializeProjectCanvasSelection,
+  serializeProjectDrawerSurfaceEntry,
+  serializeProjectMainSurfaceEntry,
+  serializeProjectSideSurfaceEntry,
+} from "@/lib/project-surfaces/url-codec";
 import {
   CANVAS_ACTION,
-  CANVAS_ACTION_QUERY_KEY,
-  CANVAS_SERVICE_QUERY_KEY,
   DATABASE_PANE,
-  DATABASE_PANE_QUERY_KEY,
-  ENTRY_PANE_QUERY_KEY,
   projectCanvasFlowNodeTypes,
-  projectCanvasNodeServiceUid,
-  selectedEdgeAtom,
   WORKLOAD_PANE,
-  WORKLOAD_PANE_QUERY_KEY,
 } from "@/store/canvas-store";
 
 export interface UseProjectCanvasOptions {
   dbsData?: K8sGetResponse;
+  edges?: Edge[];
   kubeconfig?: string;
   namespace?: string;
   onNodeExpansionChange?: (node: Node) => void;
@@ -101,7 +125,6 @@ export interface UseProjectCanvasOptions {
   onPendingApDbReferencesStart?: (
     references: readonly PendingApDbCanvasReference[]
   ) => (() => void) | undefined;
-  onResourcePaneOpen?: () => void;
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
   refreshWorkloadLists?: () => Promise<unknown>;
@@ -224,36 +247,124 @@ function canvasNodeSettingsAccess({
   };
 }
 
+function selectedEntryRefFromSurfaceState({
+  selected,
+  side,
+}: {
+  selected: ProjectCanvasSelection | null;
+  side: ProjectSideSurfaceEntry | null;
+}): CanvasEntrySelectionRef | null {
+  if (side?.kind === "publicAddresses") {
+    return {
+      apName: side.target.apName,
+      namespace: side.target.namespace,
+    };
+  }
+
+  if (selected?.kind !== "publicAddresses") {
+    return null;
+  }
+
+  return {
+    apName: selected.target.apName,
+    namespace: selected.target.namespace,
+  };
+}
+
+function sideWorkloadPaneFromEntry(entry: ProjectSideSurfaceEntry | null) {
+  switch (entry?.kind) {
+    case "apEvents":
+      return WORKLOAD_PANE.events;
+    case "apHistory":
+      return WORKLOAD_PANE.history;
+    case "apMetrics":
+      return WORKLOAD_PANE.metrics;
+    case "apSettings":
+      return WORKLOAD_PANE.settings;
+    default:
+      return null;
+  }
+}
+
+function sideDatabasePaneFromEntry(entry: ProjectSideSurfaceEntry | null) {
+  switch (entry?.kind) {
+    case "dbMetrics":
+      return DATABASE_PANE.metrics;
+    case "dbSettings":
+      return DATABASE_PANE.settings;
+    default:
+      return null;
+  }
+}
+
+function sideEntryPaneFromEntry(entry: ProjectSideSurfaceEntry | null) {
+  return entry?.kind === "publicAddresses" ? "settings" : null;
+}
+
+function mainWorkloadPaneFromEntry(entry: ProjectMainSurfaceEntry | null) {
+  return entry?.kind === "resourceLogs" && entry.target.kind === "AP"
+    ? WORKLOAD_PANE.logs
+    : null;
+}
+
+function mainDatabasePaneFromEntry(entry: ProjectMainSurfaceEntry | null) {
+  return entry?.kind === "resourceLogs" && entry.target.kind === "DB"
+    ? DATABASE_PANE.logs
+    : null;
+}
+
+function drawerWorkloadPaneFromEntry(entry: ProjectDrawerSurfaceEntry | null) {
+  return entry?.kind === "apTerminal" ? WORKLOAD_PANE.terminal : null;
+}
+
+function drawerDatabasePaneFromEntry(entry: ProjectDrawerSurfaceEntry | null) {
+  return entry?.kind === "dbConsole" ? DATABASE_PANE.console : null;
+}
+
 /**
- * Wires URL-driven workload selection (`?service=`), explicit pane mode,
- * edge selection (Jotai), node toolbar actions, **AP** lifecycle menu actions, and canvas `meta` for `<Canvas.Root />`.
+ * Wires slot-based project surface query state, canvas selection, node toolbar actions,
+ * AP lifecycle menu actions, and canvas `meta` for `<Canvas.Root />`.
  */
 export function useProjectCanvas(
   rawNodes: Node[],
   options?: UseProjectCanvasOptions
 ) {
-  const [serviceUid, setServiceUid] = useQueryState(
-    CANVAS_SERVICE_QUERY_KEY,
+  const [selectedQuery, setSelectedQuery] = useQueryState(
+    PROJECT_SELECTED_QUERY_KEY,
     parseAsString
   );
-  const [workloadPane, setWorkloadPane] = useQueryState(
-    WORKLOAD_PANE_QUERY_KEY,
+  const [sideQuery, setSideQuery] = useQueryState(
+    PROJECT_SIDE_QUERY_KEY,
     parseAsString
   );
-  const [databasePane, setDatabasePane] = useQueryState(
-    DATABASE_PANE_QUERY_KEY,
+  const [mainQuery, setMainQuery] = useQueryState(
+    PROJECT_MAIN_QUERY_KEY,
     parseAsString
   );
-  const [entryPane, setEntryPane] = useQueryState(
-    ENTRY_PANE_QUERY_KEY,
+  const [drawerQuery, setDrawerQuery] = useQueryState(
+    PROJECT_DRAWER_QUERY_KEY,
     parseAsString
   );
-  const [canvasAction, setCanvasAction] = useQueryState(
-    CANVAS_ACTION_QUERY_KEY,
-    parseAsString
+  const selected = useMemo(
+    () => parseProjectCanvasSelection(selectedQuery),
+    [selectedQuery]
   );
-  const setSelectedEdge = useSetAtom(selectedEdgeAtom);
-  const selectedEdge = useAtomValue(selectedEdgeAtom);
+  const side = useMemo(
+    () => parseProjectSideSurfaceEntry(sideQuery),
+    [sideQuery]
+  );
+  const main = useMemo(
+    () => parseProjectMainSurfaceEntry(mainQuery),
+    [mainQuery]
+  );
+  const drawer = useMemo(
+    () => parseProjectDrawerSurfaceEntry(drawerQuery),
+    [drawerQuery]
+  );
+  const surfaceState = useMemo(
+    () => createProjectSurfaceState({ drawer, main, selected, side }),
+    [drawer, main, selected, side]
+  );
   const readOnly = options?.readOnly === true;
   const selectionReady = options?.selectionReady ?? rawNodes.length > 0;
   const routingDomain = useMemo(
@@ -311,11 +422,117 @@ export function useProjectCanvas(
   const onNodeExpansionChange = options?.onNodeExpansionChange;
   const onNodePositionChange = options?.onNodePositionChange;
   const onNodeStackOrderChange = options?.onNodeStackOrderChange;
-  const onResourcePaneOpen = options?.onResourcePaneOpen;
   const dbDsnReferenceSources = useMemo(
     () =>
       dbDsnReferenceSourcesFromDbsData(options?.dbsData, options?.namespace),
     [options?.dbsData, options?.namespace]
+  );
+  const writeSelection = useCallback(
+    (next: ProjectCanvasSelection | null) => {
+      setSelectedQuery(serializeProjectCanvasSelection(next)).catch(
+        () => undefined
+      );
+    },
+    [setSelectedQuery]
+  );
+  const writeSide = useCallback(
+    (next: ProjectSideSurfaceEntry | null) => {
+      setSideQuery(serializeProjectSideSurfaceEntry(next)).catch(
+        () => undefined
+      );
+    },
+    [setSideQuery]
+  );
+  const writeMain = useCallback(
+    (next: ProjectMainSurfaceEntry | null) => {
+      setMainQuery(serializeProjectMainSurfaceEntry(next)).catch(
+        () => undefined
+      );
+    },
+    [setMainQuery]
+  );
+  const writeDrawer = useCallback(
+    (next: ProjectDrawerSurfaceEntry | null) => {
+      setDrawerQuery(serializeProjectDrawerSurfaceEntry(next)).catch(
+        () => undefined
+      );
+    },
+    [setDrawerQuery]
+  );
+  const writeSurfaceState = useCallback(
+    (next: ProjectSurfaceState) => {
+      writeSelection(next.selected);
+      writeSide(next.side);
+      writeMain(next.main);
+      writeDrawer(next.drawer);
+    },
+    [writeDrawer, writeMain, writeSelection, writeSide]
+  );
+  const openSurface = useCallback(
+    (intent: ProjectSurfaceIntent) => {
+      writeSurfaceState(openProjectSurface(surfaceState, intent));
+    },
+    [surfaceState, writeSurfaceState]
+  );
+  const closeSurfaceSlot = useCallback(
+    (slot: ProjectSurfaceSlot) => {
+      writeSurfaceState(closeProjectSurfaceSlot(surfaceState, slot));
+    },
+    [surfaceState, writeSurfaceState]
+  );
+  const openSideSurface = useCallback(
+    (
+      entry: ProjectSideSurfaceEntry,
+      nextSelection?: ProjectCanvasSelection | null
+    ) => {
+      const continueOpen = () => {
+        openSurface({
+          entry,
+          select: nextSelection,
+          slot: "side",
+        });
+      };
+
+      if (side == null) {
+        continueOpen();
+        return;
+      }
+      requestSettingsLeave("switch", continueOpen);
+    },
+    [openSurface, requestSettingsLeave, side]
+  );
+  const openMainSurface = useCallback(
+    (
+      entry: ProjectMainSurfaceEntry,
+      nextSelection?: ProjectCanvasSelection | null
+    ) => {
+      const continueOpen = () =>
+        openSurface({
+          entry,
+          select: nextSelection,
+          slot: "main",
+        });
+
+      if (projectSideSurfaceVisible(surfaceState)) {
+        requestSettingsLeave("switch", continueOpen);
+        return;
+      }
+      continueOpen();
+    },
+    [openSurface, requestSettingsLeave, surfaceState]
+  );
+  const openDrawerSurface = useCallback(
+    (
+      entry: ProjectDrawerSurfaceEntry,
+      nextSelection?: ProjectCanvasSelection | null
+    ) => {
+      openSurface({
+        entry,
+        select: nextSelection,
+        slot: "drawer",
+      });
+    },
+    [openSurface]
   );
 
   const afterLifecycle = useCallback(async () => {
@@ -421,8 +638,9 @@ export function useProjectCanvas(
         onClick: () => runMutationThenRefresh(mutation, copy),
       });
       const displayName = data.states.name || name;
-      const uid = data.uid?.trim();
-      const hasUrlActions = uid != null && uid !== "";
+      const target = projectDbTargetFromNode(node);
+      const selection = projectCanvasSelectionFromNode(node);
+      const hasSurfaceActions = target != null;
       const lifecycleActions = canUseLifecycle
         ? {
             delete: dbLifecycleAction(
@@ -455,20 +673,21 @@ export function useProjectCanvas(
       const databasePaneQuickAction = (
         pane: (typeof DATABASE_PANE)[keyof typeof DATABASE_PANE]
       ) => ({
-        disabled: !hasUrlActions,
-        onClick: hasUrlActions
+        disabled: !hasSurfaceActions,
+        onClick: target
           ? () => {
-              requestSettingsLeave("switch", () => {
-                if (pane === DATABASE_PANE.logs) {
-                  onResourcePaneOpen?.();
-                }
-                setCanvasAction(null).catch(() => undefined);
-                setSelectedEdge(null);
-                setServiceUid(uid).catch(() => undefined);
-                setEntryPane(null).catch(() => undefined);
-                setWorkloadPane(null).catch(() => undefined);
-                setDatabasePane(pane).catch(() => undefined);
-              });
+              if (pane === DATABASE_PANE.logs) {
+                openMainSurface(mainSurfaceForResourceLogs(target), selection);
+                return;
+              }
+              if (pane === DATABASE_PANE.console) {
+                openDrawerSurface(drawerSurfaceForDbConsole(target), selection);
+                return;
+              }
+              const entry = sideSurfaceForDatabasePane(target, pane);
+              if (entry != null) {
+                openSideSurface(entry, selection);
+              }
             }
           : undefined,
       });
@@ -487,20 +706,13 @@ export function useProjectCanvas(
             quickActions: {
               ...(data.actions?.quickActions ?? {}),
               dbAccess: {
-                disabled: !hasUrlActions,
-                onClick: hasUrlActions
+                disabled: !hasSurfaceActions,
+                onClick: target
                   ? () => {
-                      requestSettingsLeave("switch", () => {
-                        onResourcePaneOpen?.();
-                        setSelectedEdge(null);
-                        setServiceUid(uid).catch(() => undefined);
-                        setEntryPane(null).catch(() => undefined);
-                        setWorkloadPane(null).catch(() => undefined);
-                        setDatabasePane(null).catch(() => undefined);
-                        setCanvasAction(CANVAS_ACTION.dbAccess).catch(
-                          () => undefined
-                        );
-                      });
+                      openMainSurface(
+                        mainSurfaceForDbAccess(target),
+                        selection
+                      );
                     }
                   : undefined,
               },
@@ -524,20 +736,15 @@ export function useProjectCanvas(
       deleteDbWorkload,
       getPublicAccessPendingTarget,
       isDbLifecycleLoading,
-      onResourcePaneOpen,
+      openDrawerSurface,
+      openMainSurface,
+      openSideSurface,
       restartDbWorkload,
       runMutationThenRefresh,
       readOnly,
-      requestSettingsLeave,
       routingDomain,
-      setCanvasAction,
-      setDatabasePane,
-      setEntryPane,
-      setWorkloadPane,
       startDbWorkload,
       stopDbWorkload,
-      setSelectedEdge,
-      setServiceUid,
       togglePublicAccess,
       options?.shareToken,
     ]
@@ -547,14 +754,15 @@ export function useProjectCanvas(
     (node: Node): Node => {
       const data = node.data as CanvasContainerNodeData;
       const states = data.states;
-      const uid = states.uid?.trim();
       const ns = states.namespace?.trim() ?? "";
       const name = states.name.trim();
+      const target = projectApTargetFromNode(node);
+      const selection = projectCanvasSelectionFromNode(node);
 
       const isApLifecycle =
         apAuthReady && states.kind === "AP" && ns !== "" && name !== "";
 
-      const hasUrlActions = uid != null && uid !== "";
+      const hasSurfaceActions = target != null;
       const dbReferenceIntentData = dbReferenceIntentDataForContainerNode({
         intent: pendingAddDbDsnReferenceIntent,
         nodeId: node.id,
@@ -571,7 +779,7 @@ export function useProjectCanvas(
           onPendingApDbReferencesStart,
         });
 
-      if (!(hasUrlActions || isApLifecycle)) {
+      if (!(hasSurfaceActions || isApLifecycle)) {
         return {
           ...node,
           data: {
@@ -585,17 +793,21 @@ export function useProjectCanvas(
       }
 
       const select = (pane: string) => {
-        requestSettingsLeave("switch", () => {
-          setCanvasAction(null).catch(() => undefined);
-          setSelectedEdge(null);
-          setDatabasePane(null).catch(() => undefined);
-          setEntryPane(null).catch(() => undefined);
-          setServiceUid(uid ?? "").catch(() => undefined);
-          setWorkloadPane(pane).catch(() => undefined);
-          if (pane !== WORKLOAD_PANE.terminal) {
-            onResourcePaneOpen?.();
-          }
-        });
+        if (target == null) {
+          return;
+        }
+        if (pane === WORKLOAD_PANE.terminal) {
+          openDrawerSurface(drawerSurfaceForApTerminal(target), selection);
+          return;
+        }
+        if (pane === WORKLOAD_PANE.logs) {
+          openMainSurface(mainSurfaceForResourceLogs(target), selection);
+          return;
+        }
+        const entry = sideSurfaceForWorkloadPane(target, pane);
+        if (entry != null) {
+          openSideSurface(entry, selection);
+        }
       };
 
       const ref = { name: states.name, namespace: ns };
@@ -635,23 +847,23 @@ export function useProjectCanvas(
       const quickActions = {
         ...(data.actions?.quickActions ?? {}),
         calendar: {
-          disabled: !hasUrlActions,
+          disabled: !hasSurfaceActions,
           onClick: () => select(WORKLOAD_PANE.history),
         },
         console: {
-          disabled: !hasUrlActions,
+          disabled: !hasSurfaceActions,
           onClick: () => select(WORKLOAD_PANE.terminal),
         },
         logs: {
-          disabled: !hasUrlActions,
+          disabled: !hasSurfaceActions,
           onClick: () => select(WORKLOAD_PANE.logs),
         },
         events: {
-          disabled: !hasUrlActions,
+          disabled: !hasSurfaceActions,
           onClick: () => select(WORKLOAD_PANE.events),
         },
         metrics: {
-          disabled: !hasUrlActions,
+          disabled: !hasSurfaceActions,
           onClick: () => select(WORKLOAD_PANE.metrics),
         },
       };
@@ -680,20 +892,15 @@ export function useProjectCanvas(
       deleteWorkload,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,
-      onResourcePaneOpen,
+      openDrawerSurface,
+      openMainSurface,
+      openSideSurface,
       options?.shareToken,
       pendingAddDbDsnReferenceIntent,
       pauseWorkload,
       readOnly,
-      requestSettingsLeave,
-      setCanvasAction,
       restartWorkload,
       runMutationThenRefresh,
-      setDatabasePane,
-      setEntryPane,
-      setSelectedEdge,
-      setServiceUid,
-      setWorkloadPane,
       startWorkload,
     ]
   );
@@ -758,24 +965,36 @@ export function useProjectCanvas(
     ]
   );
 
-  const selectedNode = useMemo<CanvasSelectedNode>(() => {
-    if (!serviceUid) {
-      return null;
-    }
-    return (
-      nodes.find((n) => projectCanvasNodeServiceUid(n) === serviceUid) ?? null
-    );
-  }, [serviceUid, nodes]);
-  const selectedEntryRef = useMemo(
-    () => entryPointSelectionRefFromKey(serviceUid),
-    [serviceUid]
+  const selectedNode = useMemo<CanvasSelectedNode>(
+    () => projectSelectionNode(nodes, selected),
+    [nodes, selected]
   );
-  const selectedEntryApExists = useMemo(
+  const selectedEdge = useMemo(
     () =>
-      selectedEntryRef == null
-        ? false
-        : canvasHasApForEntrySelection(rawNodes, selectedEntryRef),
-    [rawNodes, selectedEntryRef]
+      selected?.kind === "edge"
+        ? ((options?.edges ?? []).find((edge) => edge.id === selected.edgeId) ??
+          null)
+        : null,
+    [options?.edges, selected]
+  );
+  const sideTarget = projectSurfaceEntryTarget(side);
+  const mainTarget = projectSurfaceEntryTarget(main);
+  const drawerTarget = projectSurfaceEntryTarget(drawer);
+  const sideNode = useMemo(
+    () => findCanvasNodeForProjectTarget(nodes, sideTarget),
+    [nodes, sideTarget]
+  );
+  const mainNode = useMemo(
+    () => findCanvasNodeForProjectTarget(nodes, mainTarget),
+    [nodes, mainTarget]
+  );
+  const drawerNode = useMemo(
+    () => findCanvasNodeForProjectTarget(nodes, drawerTarget),
+    [nodes, drawerTarget]
+  );
+  const selectedEntryRef = useMemo(
+    () => selectedEntryRefFromSurfaceState({ selected, side }),
+    [selected, side]
   );
 
   const frontCanvasNode = useCallback(
@@ -836,8 +1055,12 @@ export function useProjectCanvas(
         return;
       }
 
-      const apUid = command.ap.uid;
-      if (apUid == null || apUid === "") {
+      const apTarget = projectApTarget({
+        name: command.ap.name,
+        namespace: command.ap.namespace,
+        observedUid: command.ap.uid,
+      });
+      if (apTarget == null) {
         toast.error("Could not open AP settings for this connection.");
         return;
       }
@@ -850,25 +1073,13 @@ export function useProjectCanvas(
           dbNamespace: command.db.namespace,
           id: `ap-db-${addDbDsnReferenceIntentCounter.current}`,
         });
-        setCanvasAction(null).catch(() => undefined);
-        setSelectedEdge(null);
-        setDatabasePane(null).catch(() => undefined);
-        setEntryPane(null).catch(() => undefined);
-        setServiceUid(apUid).catch(() => undefined);
-        setWorkloadPane(WORKLOAD_PANE.settings).catch(() => undefined);
+        openSideSurface(
+          { kind: "apSettings", target: apTarget },
+          { kind: "resource", target: apTarget }
+        );
       });
     },
-    [
-      nodes,
-      readOnly,
-      requestSettingsLeave,
-      setCanvasAction,
-      setDatabasePane,
-      setEntryPane,
-      setSelectedEdge,
-      setServiceUid,
-      setWorkloadPane,
-    ]
+    [nodes, readOnly, openSideSurface, requestSettingsLeave]
   );
   const isSupportedCanvasConnection = useCallback(
     (connection: Connection) =>
@@ -936,141 +1147,121 @@ export function useProjectCanvas(
     [isSupportedCanvasConnection]
   );
 
-  const isStale =
-    serviceUid != null &&
-    serviceUid !== "" &&
-    selectionReady &&
-    selectedNode == null &&
-    !(normalizeEntryPaneMode(entryPane) != null && selectedEntryApExists);
-
   useEffect(() => {
-    if (isStale) {
-      setCanvasAction(null).catch(() => undefined);
-      setServiceUid(null).catch(() => undefined);
-      setEntryPane(null).catch(() => undefined);
+    if (selectedQuery != null && selected == null) {
+      setSelectedQuery(null).catch(() => undefined);
     }
-  }, [isStale, setCanvasAction, setEntryPane, setServiceUid]);
+  }, [selected, selectedQuery, setSelectedQuery]);
 
   useEffect(() => {
-    if (entryPane == null) {
+    if (sideQuery != null && side == null) {
+      setSideQuery(null).catch(() => undefined);
+    }
+  }, [setSideQuery, side, sideQuery]);
+
+  useEffect(() => {
+    if (mainQuery != null && main == null) {
+      setMainQuery(null).catch(() => undefined);
+    }
+  }, [main, mainQuery, setMainQuery]);
+
+  useEffect(() => {
+    if (drawerQuery != null && drawer == null) {
+      setDrawerQuery(null).catch(() => undefined);
+    }
+  }, [drawer, drawerQuery, setDrawerQuery]);
+
+  useEffect(() => {
+    if (!selectionReady || selected == null) {
+      return;
+    }
+    if (!projectSelectionTargetExists(rawNodes, selected)) {
+      writeSelection(null);
       return;
     }
     if (
-      normalizeEntryPaneMode(entryPane) == null ||
-      selectedEntryRef == null ||
-      (selectionReady && !selectedEntryApExists)
+      selected.kind === "edge" &&
+      (options?.edges ?? []).length > 0 &&
+      selectedEdge == null
     ) {
-      setEntryPane(null).catch(() => undefined);
-      setServiceUid(null).catch(() => undefined);
+      writeSelection(null);
     }
   }, [
-    entryPane,
+    options?.edges,
+    rawNodes,
+    selected,
+    selectedEdge,
     selectionReady,
-    selectedEntryApExists,
-    selectedEntryRef,
-    setEntryPane,
-    setServiceUid,
+    writeSelection,
   ]);
 
   useEffect(() => {
-    if (
-      shouldClearDatabasePaneMode({
-        databasePane,
-        rawNodeCount: rawNodes.length,
-        selectedNode,
-        serviceUid,
-      })
-    ) {
-      setDatabasePane(null).catch(() => undefined);
+    if (!selectionReady || sideTarget == null) {
+      return;
     }
-  }, [
-    databasePane,
-    rawNodes.length,
-    selectedNode,
-    serviceUid,
-    setDatabasePane,
-  ]);
+    if (!projectTargetExistsOnCanvas(rawNodes, sideTarget)) {
+      writeSide(null);
+    }
+  }, [rawNodes, selectionReady, sideTarget, writeSide]);
 
   useEffect(() => {
-    if (
-      shouldClearCanvasActionMode({
-        canvasAction,
-        rawNodeCount: rawNodes.length,
-        selectedNode,
-        serviceUid,
-      })
-    ) {
-      setCanvasAction(null).catch(() => undefined);
+    if (!selectionReady || mainTarget == null) {
+      return;
     }
-  }, [
-    canvasAction,
-    rawNodes.length,
-    selectedNode,
-    serviceUid,
-    setCanvasAction,
-  ]);
+    if (!projectTargetExistsOnCanvas(rawNodes, mainTarget)) {
+      writeMain(null);
+    }
+  }, [mainTarget, rawNodes, selectionReady, writeMain]);
 
   useEffect(() => {
-    if (
-      shouldClearWorkloadPaneMode({
-        rawNodeCount: rawNodes.length,
-        selectedNode,
-        serviceUid,
-        workloadPane,
-      })
-    ) {
-      setWorkloadPane(null).catch(() => undefined);
+    if (!selectionReady || drawerTarget == null) {
+      return;
     }
-  }, [
-    rawNodes.length,
-    selectedNode,
-    serviceUid,
-    setWorkloadPane,
-    workloadPane,
-  ]);
+    if (!projectTargetExistsOnCanvas(rawNodes, drawerTarget)) {
+      writeDrawer(null);
+    }
+  }, [drawerTarget, rawNodes, selectionReady, writeDrawer]);
 
-  const clearSelectedResource = useCallback(() => {
-    setCanvasAction(null).catch(() => undefined);
-    setSelectedEdge(null);
-    setServiceUid(null).catch(() => undefined);
-    setDatabasePane(null).catch(() => undefined);
-    setEntryPane(null).catch(() => undefined);
-    setWorkloadPane(null).catch(() => undefined);
-  }, [
-    setCanvasAction,
-    setDatabasePane,
-    setEntryPane,
-    setSelectedEdge,
-    setServiceUid,
-    setWorkloadPane,
-  ]);
+  const closeSideSurface = useCallback(() => {
+    requestSettingsLeave("close", () => closeSurfaceSlot("side"));
+  }, [closeSurfaceSlot, requestSettingsLeave]);
+
+  const closeMainSurface = useCallback(() => {
+    closeSurfaceSlot("main");
+  }, [closeSurfaceSlot]);
+
+  const closeDrawerSurface = useCallback(() => {
+    closeSurfaceSlot("drawer");
+  }, [closeSurfaceSlot]);
+
+  const clearSelection = useCallback(() => {
+    requestSettingsLeave("close", () => {
+      writeSelection(null);
+      writeSide(null);
+      writeMain(null);
+    });
+  }, [requestSettingsLeave, writeMain, writeSelection, writeSide]);
 
   const requestResourcePaneReplacement = useCallback(
     (continueReplace: () => void) => {
-      requestSettingsLeave("switch", () => {
-        continueReplace();
-        clearSelectedResource();
-      });
+      requestSettingsLeave("switch", continueReplace);
     },
-    [clearSelectedResource, requestSettingsLeave]
+    [requestSettingsLeave]
   );
 
-  const clearSelection = useCallback(() => {
-    requestSettingsLeave("close", clearSelectedResource);
-  }, [clearSelectedResource, requestSettingsLeave]);
+  const closeResourcePane = closeSideSurface;
+  const closeCanvasActionSurface = closeMainSurface;
+  const closeResourceLogsSurface = closeMainSurface;
 
-  const closeResourcePane = clearSelection;
-  const closeCanvasActionSurface = useCallback(() => {
-    setCanvasAction(null).catch(() => undefined);
-  }, [setCanvasAction]);
-  const closeResourceLogsSurface = useCallback(() => {
-    if (databasePane === DATABASE_PANE.logs) {
-      setDatabasePane(null).catch(() => undefined);
-    }
-    if (workloadPane === WORKLOAD_PANE.logs) {
-      setWorkloadPane(null).catch(() => undefined);
-    }
-  }, [databasePane, setDatabasePane, setWorkloadPane, workloadPane]);
+  const sideWorkloadPane = sideWorkloadPaneFromEntry(side);
+  const sideDatabasePane = sideDatabasePaneFromEntry(side);
+  const sideEntryPane = sideEntryPaneFromEntry(side);
+  const mainWorkloadPane = mainWorkloadPaneFromEntry(main);
+  const mainDatabasePane = mainDatabasePaneFromEntry(main);
+  const drawerWorkloadPane = drawerWorkloadPaneFromEntry(drawer);
+  const drawerDatabasePane = drawerDatabasePaneFromEntry(drawer);
+  const canvasAction =
+    main?.kind === "dbAccess" ? CANVAS_ACTION.dbAccess : null;
 
   const meta = useMemo<CanvasMeta>(
     () => ({
@@ -1102,53 +1293,27 @@ export function useProjectCanvas(
           ? undefined
           : projectCanvasConnectionLine,
         onNodeClick: (_, node: Node) => {
-          const nextWorkloadPane = workloadPaneModeForNodeClick(node);
-          const nextDatabasePane = databasePaneModeForNodeClick(node);
-          const nextEntryPane = entryPaneModeForNodeClick(node);
-          const nextServiceUid = projectCanvasNodeServiceUid(node);
-          const nextResourcePaneOpen = Boolean(
-            (nextWorkloadPane === WORKLOAD_PANE.terminal
-              ? null
-              : nextWorkloadPane) ??
-              nextDatabasePane ??
-              nextEntryPane
-          );
+          const nextSelection = projectCanvasSelectionFromNode(node);
+          const nextSide = defaultProjectSideSurfaceForNode(node);
           const selectNode = () => {
             frontCanvasNode(node);
-            setCanvasAction(null).catch(() => undefined);
-            setSelectedEdge(null);
-            setWorkloadPane(nextWorkloadPane).catch(() => undefined);
-            setDatabasePane(nextDatabasePane).catch(() => undefined);
-            setEntryPane(nextEntryPane).catch(() => undefined);
-            setServiceUid(nextServiceUid).catch(() => undefined);
-            if (nextResourcePaneOpen) {
-              onResourcePaneOpen?.();
+            if (nextSide != null) {
+              openSideSurface(nextSide, nextSelection);
+              return;
             }
+            writeSelection(nextSelection);
           };
 
-          if (
-            nextServiceUid === serviceUid &&
-            nextWorkloadPane === workloadPane &&
-            nextDatabasePane === databasePane &&
-            nextEntryPane === entryPane
-          ) {
-            selectNode();
-            return;
-          }
-
-          requestSettingsLeave("switch", selectNode);
+          selectNode();
         },
         onNodeDragStart: (_, node: Node) => {
           frontCanvasNode(node);
         },
         onEdgeClick: (_, edge: Edge) => {
           requestSettingsLeave("switch", () => {
-            setCanvasAction(null).catch(() => undefined);
-            setSelectedEdge(edge);
-            setServiceUid(null).catch(() => undefined);
-            setDatabasePane(null).catch(() => undefined);
-            setEntryPane(null).catch(() => undefined);
-            setWorkloadPane(null).catch(() => undefined);
+            writeSelection({ edgeId: edge.id, kind: "edge" });
+            writeSide(null);
+            writeMain(null);
           });
         },
         onNodeDragStop: (_, node: Node) => {
@@ -1162,26 +1327,19 @@ export function useProjectCanvas(
     [
       clearSelection,
       connectionGestureActive,
-      databasePane,
-      entryPane,
       frontCanvasNode,
       handleConnect,
       handleConnectEnd,
       handleConnectStart,
       isValidCanvasConnection,
       onNodePositionChange,
-      onResourcePaneOpen,
+      openSideSurface,
       projectCanvasConnectionLine,
       readOnly,
       requestSettingsLeave,
-      serviceUid,
-      setCanvasAction,
-      setDatabasePane,
-      setEntryPane,
-      setSelectedEdge,
-      setServiceUid,
-      setWorkloadPane,
-      workloadPane,
+      writeMain,
+      writeSelection,
+      writeSide,
     ]
   );
 
@@ -1189,19 +1347,37 @@ export function useProjectCanvas(
     canvasAction,
     clearSelection,
     closeCanvasActionSurface,
+    closeDrawerSurface,
+    closeMainSurface,
     closeResourceLogsSurface,
     closeResourcePane,
+    closeSideSurface,
     connectionOrigin,
-    databasePane,
-    entryPane,
+    drawer,
+    drawerDatabasePane,
+    drawerNode,
+    drawerWorkloadPane,
+    main,
+    mainDatabasePane,
+    mainNode,
+    mainWorkloadPane,
     meta,
     nodes,
+    openDrawerSurface,
+    openMainSurface,
+    openSideSurface,
     registerSettingsLeaveGuard,
     requestResourcePaneReplacement,
+    selected,
     selectedEntryRef,
     selectedEdge,
     selectedNode,
     settingsLeaveGuardDialog,
-    workloadPane,
+    side,
+    sideDatabasePane,
+    sideEntryPane,
+    sideNode,
+    sideVisible: projectSideSurfaceVisible(surfaceState),
+    sideWorkloadPane,
   };
 }
