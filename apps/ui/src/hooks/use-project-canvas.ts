@@ -108,7 +108,6 @@ import {
   serializeProjectSideSurfaceEntry,
 } from "@/lib/project-surfaces/url-codec";
 import {
-  CANVAS_ACTION,
   DATABASE_PANE,
   projectCanvasFlowNodeTypes,
   WORKLOAD_PANE,
@@ -1250,7 +1249,6 @@ export function useProjectCanvas(
   );
 
   const closeResourcePane = closeSideSurface;
-  const closeCanvasActionSurface = closeMainSurface;
   const closeResourceLogsSurface = closeMainSurface;
 
   const sideWorkloadPane = sideWorkloadPaneFromEntry(side);
@@ -1260,8 +1258,6 @@ export function useProjectCanvas(
   const mainDatabasePane = mainDatabasePaneFromEntry(main);
   const drawerWorkloadPane = drawerWorkloadPaneFromEntry(drawer);
   const drawerDatabasePane = drawerDatabasePaneFromEntry(drawer);
-  const canvasAction =
-    main?.kind === "dbAccess" ? CANVAS_ACTION.dbAccess : null;
 
   const meta = useMemo<CanvasMeta>(
     () => ({
@@ -1344,9 +1340,7 @@ export function useProjectCanvas(
   );
 
   return {
-    canvasAction,
     clearSelection,
-    closeCanvasActionSurface,
     closeDrawerSurface,
     closeMainSurface,
     closeResourceLogsSurface,

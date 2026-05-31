@@ -31,10 +31,6 @@ export const ENTRY_PANE = {
   settings: "settings",
 } as const;
 
-export const CANVAS_ACTION = {
-  dbAccess: "dbAccess",
-} as const;
-
 /**
  * Bounds for AP fixed replicas in the workload Settings panel (`ContainerSettingsPane`).
  * Matches `packages/crossplane/public/service/ap/ap.yaml` (`minimum` / `maximum`).

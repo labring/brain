@@ -4,23 +4,21 @@ import { createStore, Provider as JotaiProvider } from "jotai";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
-import { CANVAS_ACTION } from "@/store/canvas-store";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 import {
-  CanvasActionSurface,
-  CanvasActionSurfaceFrame,
+  MainActionSurface,
+  MainActionSurfaceFrame,
 } from "./canvas-action-surface";
 
 const noop = () => {
   /* test noop */
 };
 
-const CLOSE_LABEL_RE = /Close canvas action surface/;
-const LABEL_RE = /aria-label="Canvas action surface"/;
+const CLOSE_LABEL_RE = /Close Main Action Surface/;
+const LABEL_RE = /aria-label="Main Action Surface"/;
 const NAME_RE = /orders-db/;
 const RESOURCE_PANE_SURFACE_RE = /resource-pane-surface/;
-const CANVAS_ACTION_BODY_BACKGROUND_RE =
-  /canvas-action-surface-body-background/;
+const MAIN_ACTION_BODY_BACKGROUND_RE = /main-action-surface-body-background/;
 const DATA_BROWSER_RE = /text-resource-pane-foreground/;
 const SUBTITLE_RE = /Database PostgreSQL 16.4/;
 const ASSISTANT_TOGGLE_OFFSET_RE = /pr-12/;
@@ -42,10 +40,13 @@ const databaseData = {
   },
 } satisfies CanvasDatabaseNodeData;
 
-test("canvas action surface renders shared chrome and empty body slot", () => {
+test("main action surface renders shared chrome and empty body slot", () => {
   const html = renderToStaticMarkup(
-    <CanvasActionSurface
-      action={CANVAS_ACTION.dbAccess}
+    <MainActionSurface
+      entry={{
+        kind: "dbAccess",
+        target: { kind: "DB", name: "orders-db", namespace: "default" },
+      }}
       kubeconfig="kubeconfig"
       namespace="default"
       onClose={noop}
@@ -59,13 +60,13 @@ test("canvas action surface renders shared chrome and empty body slot", () => {
   assert.match(html, SUBTITLE_RE);
   assert.match(html, CLOSE_LABEL_RE);
   assert.match(html, RESOURCE_PANE_SURFACE_RE);
-  assert.match(html, CANVAS_ACTION_BODY_BACKGROUND_RE);
+  assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
   assert.match(html, DATA_BROWSER_RE);
 });
 
-test("canvas action surface frame renders custom surface content", () => {
+test("main action surface frame renders custom surface content", () => {
   const html = renderToStaticMarkup(
-    <CanvasActionSurfaceFrame
+    <MainActionSurfaceFrame
       closeAriaLabel="Close logs"
       icon={<span data-testid="logs-icon" />}
       onClose={noop}
@@ -74,7 +75,7 @@ test("canvas action surface frame renders custom surface content", () => {
       title="web Logs"
     >
       <p>Resource logs</p>
-    </CanvasActionSurfaceFrame>
+    </MainActionSurfaceFrame>
   );
 
   assert.match(html, LABEL_RE);
@@ -83,13 +84,16 @@ test("canvas action surface frame renders custom surface content", () => {
   assert.match(html, CUSTOM_SUBTITLE_RE);
   assert.match(html, CUSTOM_BODY_RE);
   assert.match(html, RESOURCE_PANE_SURFACE_RE);
-  assert.match(html, CANVAS_ACTION_BODY_BACKGROUND_RE);
+  assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
 });
 
-test("canvas action surface stays absent without supported action data", () => {
+test("main action surface stays absent without supported entry data", () => {
   const html = renderToStaticMarkup(
-    <CanvasActionSurface
-      action={CANVAS_ACTION.dbAccess}
+    <MainActionSurface
+      entry={{
+        kind: "dbAccess",
+        target: { kind: "DB", name: "orders-db", namespace: "default" },
+      }}
       kubeconfig="kubeconfig"
       namespace="default"
       onClose={noop}
@@ -101,11 +105,14 @@ test("canvas action surface stays absent without supported action data", () => {
   assert.equal(html, "");
 });
 
-test("canvas action surface disables database browser for preview access", () => {
+test("main action surface disables database browser for preview access", () => {
   const html = renderToStaticMarkup(
-    <CanvasActionSurface
-      action={CANVAS_ACTION.dbAccess}
+    <MainActionSurface
       dbAccessEnabled={false}
+      entry={{
+        kind: "dbAccess",
+        target: { kind: "DB", name: "orders-db", namespace: "default" },
+      }}
       kubeconfig=""
       namespace="default"
       onClose={noop}
@@ -117,14 +124,17 @@ test("canvas action surface disables database browser for preview access", () =>
   assert.equal(html, "");
 });
 
-test("canvas action surface header leaves room for the assistant pane toggle", () => {
+test("main action surface header leaves room for the assistant pane toggle", () => {
   const store = createStore();
   store.set(assistantPaneOpenAtom, false);
 
   const html = renderToStaticMarkup(
     <JotaiProvider store={store}>
-      <CanvasActionSurface
-        action={CANVAS_ACTION.dbAccess}
+      <MainActionSurface
+        entry={{
+          kind: "dbAccess",
+          target: { kind: "DB", name: "orders-db", namespace: "default" },
+        }}
         kubeconfig="kubeconfig"
         namespace="default"
         onClose={noop}

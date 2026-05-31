@@ -14,7 +14,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import { useProjectCanvas } from "@/hooks/use-project-canvas";
 import { useProjectCanvasLayout } from "@/hooks/use-project-canvas-layout";
-import { CanvasActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
+import { MainActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
 import { apMetricsLookupFromSnapshot } from "@/lib/project-canvas/flow/ap-list-to-canvas-state";
 import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
 import { DatabaseLogsPane } from "@/lib/project-canvas/panels/database-logs-pane";
@@ -150,11 +150,11 @@ export default function PreviewProjectPage() {
     });
 
   const {
-    canvasAction,
-    closeCanvasActionSurface,
+    closeMainSurface,
     closeResourceLogsSurface,
     closeResourcePane,
     connectionOrigin,
+    main,
     mainDatabasePane,
     mainNode,
     mainWorkloadPane,
@@ -226,12 +226,12 @@ export default function PreviewProjectPage() {
               shareToken={shareToken}
               workloadPane={sideWorkloadPane}
             />
-            <CanvasActionSurface
-              action={canvasAction}
+            <MainActionSurface
               dbAccessEnabled={false}
+              entry={main}
               kubeconfig=""
               namespace={ns}
-              onClose={closeCanvasActionSurface}
+              onClose={closeMainSurface}
               projectUid={uid}
               selectedDatabaseData={mainDatabaseData}
             />

@@ -222,14 +222,14 @@
     );
   }
 
-  .canvas-action-surface-body-background {
+  .main-action-surface-body-background {
     position: relative;
     overflow: hidden;
     background-color: var(--color-canvas-surface);
     isolation: isolate;
   }
 
-  .canvas-action-surface-body-background::after {
+  .main-action-surface-body-background::after {
     position: absolute;
     top: 46%;
     left: 50%;

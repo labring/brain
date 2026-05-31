@@ -11,7 +11,7 @@ import { GitHubDeploymentPane } from "@/components/github-deployment-pane";
 import { useProjectCanvas } from "@/hooks/use-project-canvas";
 import { useProjectCanvasLayout } from "@/hooks/use-project-canvas-layout";
 import { useProjectServices } from "@/hooks/use-project-services";
-import { CanvasActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
+import { MainActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
 import {
   addPendingApDbCanvasReferences,
   type PendingApDbCanvasReference,
@@ -95,16 +95,16 @@ export default function ProjectUidPage() {
   }, [canvasState.edges, canvasState.nodes, pendingApDbReferences]);
 
   const {
-    canvasAction,
     closeResourcePane,
-    closeCanvasActionSurface,
     closeDrawerSurface,
+    closeMainSurface,
     closeResourceLogsSurface,
     connectionOrigin,
     drawerDatabasePane,
     drawerNode,
     drawerWorkloadPane,
     mainDatabasePane,
+    main,
     mainNode,
     mainWorkloadPane,
     meta: canvasMeta,
@@ -296,11 +296,11 @@ export default function ProjectUidPage() {
                     }
                     resourcePane={canvasResourcePane}
                   />
-                  <CanvasActionSurface
-                    action={canvasAction}
+                  <MainActionSurface
+                    entry={main}
                     kubeconfig={kubeconfig}
                     namespace={namespace}
-                    onClose={closeCanvasActionSurface}
+                    onClose={closeMainSurface}
                     projectUid={uid}
                     selectedDatabaseData={mainDatabaseData}
                   />

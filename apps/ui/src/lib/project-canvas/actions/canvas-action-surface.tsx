@@ -8,10 +8,10 @@ import { type ReactNode, useEffect } from "react";
 
 import { DataBrowserPane } from "@/features/data-browser/DataBrowserPane";
 import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
-import { CANVAS_ACTION } from "@/store/canvas-store";
+import type { ProjectMainSurfaceEntry } from "@/lib/project-surfaces/surface-state";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 
-export interface CanvasActionSurfaceFrameProps {
+export interface MainActionSurfaceFrameProps {
   bodyClassName?: string;
   children: ReactNode;
   closeAriaLabel?: string;
@@ -23,17 +23,17 @@ export interface CanvasActionSurfaceFrameProps {
   title: string;
 }
 
-export function CanvasActionSurfaceFrame({
+export function MainActionSurfaceFrame({
   bodyClassName,
   children,
-  closeAriaLabel = "Close canvas action surface",
+  closeAriaLabel = "Close Main Action Surface",
   icon,
-  label = "Canvas action surface",
+  label = "Main Action Surface",
   onClose,
   open,
   subtitle,
   title,
-}: CanvasActionSurfaceFrameProps) {
+}: MainActionSurfaceFrameProps) {
   const assistantPaneOpen = useAtomValue(assistantPaneOpenAtom);
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export function CanvasActionSurfaceFrame({
     <section
       aria-label={label}
       className="resource-pane-surface absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-resource-pane text-resource-pane-foreground"
-      data-slot="canvas-action-surface"
+      data-slot="main-action-surface"
     >
       <header
         className={cn(
@@ -102,10 +102,10 @@ export function CanvasActionSurfaceFrame({
       </header>
       <div
         className={cn(
-          "canvas-action-surface-body-background min-h-0 flex-1",
+          "main-action-surface-body-background min-h-0 flex-1",
           bodyClassName
         )}
-        data-slot="canvas-action-surface-body"
+        data-slot="main-action-surface-body"
       >
         {children}
       </div>
@@ -113,9 +113,9 @@ export function CanvasActionSurfaceFrame({
   );
 }
 
-export interface CanvasActionSurfaceProps {
-  action: string | null | undefined;
+export interface MainActionSurfaceProps {
   dbAccessEnabled?: boolean;
+  entry: ProjectMainSurfaceEntry | null | undefined;
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
@@ -123,18 +123,18 @@ export interface CanvasActionSurfaceProps {
   selectedDatabaseData: CanvasDatabaseNodeData | null;
 }
 
-export function CanvasActionSurface({
-  action,
+export function MainActionSurface({
   dbAccessEnabled = true,
+  entry,
   kubeconfig,
   namespace,
   onClose,
   projectUid,
   selectedDatabaseData,
-}: CanvasActionSurfaceProps) {
+}: MainActionSurfaceProps) {
   const open =
     dbAccessEnabled &&
-    action === CANVAS_ACTION.dbAccess &&
+    entry?.kind === "dbAccess" &&
     selectedDatabaseData != null;
 
   const { states } = selectedDatabaseData ?? { states: null };
@@ -144,7 +144,7 @@ export function CanvasActionSurface({
       : `Database ${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""}`;
 
   return (
-    <CanvasActionSurfaceFrame
+    <MainActionSurfaceFrame
       icon={<Database aria-hidden className="size-4" strokeWidth={2} />}
       onClose={onClose}
       open={open}
@@ -159,6 +159,6 @@ export function CanvasActionSurface({
           selectedDatabaseData={selectedDatabaseData}
         />
       )}
-    </CanvasActionSurfaceFrame>
+    </MainActionSurfaceFrame>
   );
 }
