@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { verifyCustomDomainCname } from "@/lib/project-canvas/custom-domain-cname";
+import { verifyCustomDomainCname } from "@/features/project-canvas/custom-domain-cname";
 
 export const runtime = "nodejs";
 

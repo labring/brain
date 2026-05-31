@@ -15,8 +15,10 @@ const GITHUB_API = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
 
 export interface GithubRepoDTO {
+  description: string | null;
   fullName: string;
   id: string;
+  isPrivate: boolean;
   name: string;
   url: string;
 }

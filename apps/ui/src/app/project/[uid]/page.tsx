@@ -5,37 +5,23 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DatabaseDeploymentPane } from "@/components/database-deployment-pane";
-import { DockerDeploymentPane } from "@/components/docker-deployment-pane";
-import { GitHubDeploymentPane } from "@/components/github-deployment-pane";
-import { useProjectCanvas } from "@/hooks/use-project-canvas";
-import { useProjectCanvasLayout } from "@/hooks/use-project-canvas-layout";
-import { useProjectServices } from "@/hooks/use-project-services";
-import { MainActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
 import {
   addPendingApDbCanvasReferences,
   type PendingApDbCanvasReference,
   pendingApDbCanvasConnectionEdges,
   removePendingApDbCanvasReferences,
-} from "@/lib/project-canvas/flow/pending-connections";
-import { isCanvasNodeGeneratedPosition } from "@/lib/project-canvas/layout/placement";
-import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
-import { DatabaseConsolePane } from "@/lib/project-canvas/panels/database-console-pane";
-import { DatabaseLogsPane } from "@/lib/project-canvas/panels/database-logs-pane";
-import { renderProjectCanvasResourcePaneContent } from "@/lib/project-canvas/panels/project-canvas-resource-pane";
-import {
-  type ProjectCanvasSidePaneEntry,
-  ProjectCanvasSidePaneSlot,
-} from "@/lib/project-canvas/panels/project-canvas-side-pane-slot";
-import { WorkloadLogsPane } from "@/lib/project-canvas/panels/workload-logs-panel";
-import { WorkloadTerminalPane } from "@/lib/project-canvas/panels/workload-terminal-panel";
-import { telemetryTargetFromCanvasNode } from "@/lib/project-canvas/telemetry/workload-telemetry-node";
-import { WorkloadTelemetryProvider } from "@/lib/project-canvas/telemetry/workload-telemetry-react";
-import type { ProjectSidePaneSurface } from "@/lib/project-side-pane/controller";
-import { useProjectSidePaneSurface } from "@/lib/project-side-pane/react";
-import { projectCanvasEntryForAssistantIntent } from "@/lib/project-side-pane/surface-intents";
+} from "@/features/project-canvas/flow/pending-connections";
+import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
+import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
+import { useProjectServices } from "@/features/project-canvas/snapshot/use-project-services";
+import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
+import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
+import { ProjectCanvasWorkbenchSurfaces } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
+import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
+import type { ProjectSidePaneSurface } from "@/features/project-surfaces/controller";
+import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
+import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-import { DATABASE_PANE, WORKLOAD_PANE } from "@/store/canvas-store";
 
 export default function ProjectUidPage() {
   const params = useParams<{ uid: string }>();
@@ -94,34 +80,7 @@ export default function ProjectUidPage() {
       : [...canvasState.edges, ...pendingEdges];
   }, [canvasState.edges, canvasState.nodes, pendingApDbReferences]);
 
-  const {
-    closeResourcePane,
-    closeDrawerSurface,
-    closeMainSurface,
-    closeResourceLogsSurface,
-    connectionOrigin,
-    drawerDatabasePane,
-    drawerNode,
-    drawerWorkloadPane,
-    mainDatabasePane,
-    main,
-    mainNode,
-    mainWorkloadPane,
-    meta: canvasMeta,
-    nodes,
-    openSideSurface,
-    registerSettingsLeaveGuard,
-    selectedEntryRef,
-    selectedEdge,
-    selectedNode,
-    settingsLeaveGuardDialog,
-    side,
-    sideDatabasePane,
-    sideEntryPane,
-    sideNode,
-    sideVisible,
-    sideWorkloadPane,
-  } = useProjectCanvas(canvasState.nodes, {
+  const workbench = useProjectCanvas(canvasState.nodes, {
     dbsData: projectServicesData.dbs,
     edges: canvasEdges,
     kubeconfig,
@@ -134,38 +93,10 @@ export default function ProjectUidPage() {
     selectionReady: !isEmptyGraphLoading,
   });
   const selectedTelemetryTarget = useMemo(
-    () => telemetryTargetFromCanvasNode(selectedNode),
-    [selectedNode]
+    () => telemetryTargetFromCanvasNode(workbench.selectedNode),
+    [workbench.selectedNode]
   );
-  const sideDatabaseData = databaseNodeDataFromNode(sideNode);
-  const mainDatabaseData = databaseNodeDataFromNode(mainNode);
-  const terminalPlaneOpen =
-    drawerWorkloadPane === WORKLOAD_PANE.terminal && drawerNode != null;
-  const workloadLogsSurfaceOpen =
-    mainWorkloadPane === WORKLOAD_PANE.logs && mainNode != null;
-  const databaseConsoleOpen =
-    drawerDatabasePane === DATABASE_PANE.console && drawerNode != null;
-  const databaseLogsSurfaceOpen =
-    mainDatabasePane === DATABASE_PANE.logs && mainNode != null;
-
-  const canvasResourcePaneOpen = Boolean(
-    sideWorkloadPane ?? sideDatabasePane ?? sideEntryPane
-  );
-  const canvasSidePaneEntry = useMemo<ProjectCanvasSidePaneEntry>(() => {
-    if (!(sideVisible && side != null)) {
-      return null;
-    }
-    if (side.kind === "databaseDeployment") {
-      return { kind: "databaseDeployment" };
-    }
-    if (side.kind === "dockerDeployment") {
-      return { kind: "dockerDeployment" };
-    }
-    if (side.kind === "githubDeployment") {
-      return { kind: "githubDeployment" };
-    }
-    return canvasResourcePaneOpen ? { kind: "resource" } : null;
-  }, [canvasResourcePaneOpen, side, sideVisible]);
+  const { openSideSurface } = workbench;
   const openDatabaseDeploymentPane = useCallback(() => {
     openSideSurface({ kind: "databaseDeployment", projectUid: uid });
   }, [openSideSurface, uid]);
@@ -205,21 +136,9 @@ export default function ProjectUidPage() {
     ]
   );
   useProjectSidePaneSurface(projectCanvasSidePaneSurface);
-  const canvasResourcePane = renderProjectCanvasResourcePaneContent({
-    databasePane: sideDatabasePane,
-    entryPane: sideEntryPane,
-    kubeconfig,
-    onClose: closeResourcePane,
-    onSettingsLeaveGuardChange: registerSettingsLeaveGuard,
-    onUpdated: refreshWorkloadLists,
-    selectedDatabaseData: sideDatabaseData,
-    selectedEntryRef,
-    selectedNode: sideNode,
-    workloadPane: sideWorkloadPane,
-  });
   const meta = useMemo(
     () => ({
-      ...canvasMeta,
+      ...workbench.meta,
       openingFitView: {
         key: `${namespace}:${uid}`,
       },
@@ -228,7 +147,7 @@ export default function ProjectUidPage() {
         key: `${namespace}:${uid}`,
       },
     }),
-    [canvasMeta, namespace, uid]
+    [workbench.meta, namespace, uid]
   );
 
   return (
@@ -244,11 +163,11 @@ export default function ProjectUidPage() {
               meta={meta}
               state={{
                 ...canvasState,
-                connectionOrigin,
+                connectionOrigin: workbench.connectionOrigin,
                 edges: canvasEdges,
-                nodes,
-                selectedEdge,
-                selectedNode,
+                nodes: workbench.nodes,
+                selectedEdge: workbench.selectedEdge,
+                selectedNode: workbench.selectedNode,
               }}
             >
               <div className="relative min-h-0 flex-1">
@@ -271,67 +190,13 @@ export default function ProjectUidPage() {
                   </div>
                 ) : null}
                 <Canvas.Flow>
-                  <ProjectCanvasSidePaneSlot
-                    databaseDeploymentPane={
-                      <DatabaseDeploymentPane
-                        kubeconfig={kubeconfig}
-                        namespace={namespace}
-                        onClose={closeResourcePane}
-                        onDeployed={refreshWorkloadLists}
-                        projectUid={uid}
-                      />
-                    }
-                    dockerDeploymentPane={
-                      <DockerDeploymentPane
-                        kubeconfig={kubeconfig}
-                        namespace={namespace}
-                        onClose={closeResourcePane}
-                        onDeployed={refreshWorkloadLists}
-                        projectUid={uid}
-                      />
-                    }
-                    entry={canvasSidePaneEntry}
-                    githubDeploymentPane={
-                      <GitHubDeploymentPane onClose={closeResourcePane} />
-                    }
-                    resourcePane={canvasResourcePane}
-                  />
-                  <MainActionSurface
-                    entry={main}
+                  <ProjectCanvasWorkbenchSurfaces
                     kubeconfig={kubeconfig}
                     namespace={namespace}
-                    onClose={closeMainSurface}
                     projectUid={uid}
-                    selectedDatabaseData={mainDatabaseData}
+                    refreshWorkloadLists={refreshWorkloadLists}
+                    workbench={workbench}
                   />
-                  {workloadLogsSurfaceOpen ? (
-                    <WorkloadLogsPane
-                      node={mainNode}
-                      onClose={closeResourceLogsSurface}
-                    />
-                  ) : null}
-                  {databaseLogsSurfaceOpen ? (
-                    <DatabaseLogsPane
-                      kubeconfig={kubeconfig}
-                      node={mainNode}
-                      onClose={closeResourceLogsSurface}
-                      open
-                    />
-                  ) : null}
-                  {settingsLeaveGuardDialog}
-                  {terminalPlaneOpen ? (
-                    <WorkloadTerminalPane
-                      node={drawerNode}
-                      onClose={closeDrawerSurface}
-                    />
-                  ) : null}
-                  {databaseConsoleOpen ? (
-                    <DatabaseConsolePane
-                      node={drawerNode}
-                      onClose={closeDrawerSurface}
-                      projectUid={uid}
-                    />
-                  ) : null}
                 </Canvas.Flow>
               </div>
             </Canvas.Root>

@@ -2,7 +2,7 @@
 
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
-import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
+import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import type { DataBrowserHostContext } from "./api/access-types";
 import { normalizeDataBrowserEngine } from "./api/engine";
 

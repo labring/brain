@@ -193,6 +193,12 @@ A canvas edge that represents an established runtime dependency between resource
 
 A right-side canvas surface opened from a selected AP or DB node to inspect or change resource-scoped details such as settings, metrics, or history. It is distinct from the project assistant chat pane.
 
+### Project Canvas Workbench
+
+The client-side module that owns Project Canvas presentation and Project Canvas-specific interactions for one Project surface, including canvas node decoration, Canvas Resource Pane rendering, Main Action Surface and Session Drawer rendering for canvas-triggered resource work, Canvas Connection gestures, and Canvas Node Stack Order behavior.
+
+Project Canvas Workbench consumes project-level surface state but does not own the Project Surface model itself. Project Surface slots such as Side Pane, Main Action Surface, and Session Drawer remain project-level concepts so assistant chat, toolbar actions, and future project surfaces can open them without depending on canvas-specific selection behavior.
+
 ### Main Action Surface
 
 A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.

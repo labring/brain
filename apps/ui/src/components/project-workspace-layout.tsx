@@ -27,6 +27,15 @@ import {
   useState,
 } from "react";
 import { useSWRConfig } from "swr";
+import {
+  ProjectSidePaneProvider,
+  useProjectSidePaneController,
+} from "@/features/project-surfaces/react";
+import type { ProjectCanvasSelection } from "@/features/project-surfaces/surface-state";
+import {
+  PROJECT_SELECTED_QUERY_KEY,
+  parseProjectCanvasSelection,
+} from "@/features/project-surfaces/url-codec";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
@@ -46,15 +55,6 @@ import {
   DEPLOY_TASK_CREATED_EVENT,
   type DeployTaskCreatedEvent,
 } from "@/lib/deploy-task/browser-events";
-import {
-  ProjectSidePaneProvider,
-  useProjectSidePaneController,
-} from "@/lib/project-side-pane/react";
-import type { ProjectCanvasSelection } from "@/lib/project-surfaces/surface-state";
-import {
-  PROJECT_SELECTED_QUERY_KEY,
-  parseProjectCanvasSelection,
-} from "@/lib/project-surfaces/url-codec";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,

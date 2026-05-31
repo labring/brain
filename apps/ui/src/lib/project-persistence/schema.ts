@@ -8,7 +8,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
-import type { CanvasLayoutNode } from "@/lib/project-canvas/layout/types";
+import type { CanvasLayoutNode } from "@/features/project-canvas/layout/types";
 
 import { PROJECT_DB_SCHEMA } from "./types";
 

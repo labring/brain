@@ -8,11 +8,11 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo } from "react";
 
 import { ProjectCreationPane } from "@/components/project-creation-pane";
+import type { ProjectSidePaneSurface } from "@/features/project-surfaces/controller";
+import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
+import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { useProjectCreator } from "@/hooks/use-project-creator";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
-import type { ProjectSidePaneSurface } from "@/lib/project-side-pane/controller";
-import { useProjectSidePaneSurface } from "@/lib/project-side-pane/react";
-import { projectListEntryForAssistantIntent } from "@/lib/project-side-pane/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 export default function ProjectIndexPage() {
