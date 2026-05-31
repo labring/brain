@@ -140,7 +140,7 @@ function DeploymentCard({
 function DatabaseChoiceIcon({ choice }: { choice: DatabaseDeploymentChoice }) {
   const iconUrl = choice.iconUrl?.trim();
   if (!iconUrl) {
-    return <Database aria-hidden className="size-4 text-theme-blue" />;
+    return <Database aria-hidden className="size-4 text-blue-500" />;
   }
   return (
     <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden">

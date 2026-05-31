@@ -157,7 +157,7 @@ function ColumnSelector() {
           {"Visible columns"}
         </h3>
         <Button
-          className="h-6 p-0 text-sm text-theme-blue"
+          className="h-6 p-0 text-blue-500 text-sm"
           onClick={toggleAllColumns}
           size="sm"
           variant="link"
@@ -170,7 +170,7 @@ function ColumnSelector() {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {columns.map((col) => (
           <div
-            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${selectedColumns.has(col) ? "border-transparent bg-theme-blue/10 text-foreground" : "border-input bg-background text-foreground hover:bg-muted/30"}`}
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${selectedColumns.has(col) ? "border-transparent bg-blue-500/10 text-foreground" : "border-input bg-background text-foreground hover:bg-muted/30"}`}
             key={col}
             onClick={() => toggleColumn(col)}
           >

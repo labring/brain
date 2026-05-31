@@ -107,7 +107,7 @@ export function DockerDeploymentPane({
     <SidePane
       busy={deploying || currentProject.isLoading}
       closeAriaLabel="Close Docker deployment pane"
-      icon={<Package aria-hidden className="size-4 text-theme-blue" />}
+      icon={<Package aria-hidden className="size-4 text-blue-500" />}
       label="Docker deployment pane"
       onClose={onClose}
       subtitle={

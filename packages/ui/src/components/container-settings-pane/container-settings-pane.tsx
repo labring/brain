@@ -1285,7 +1285,7 @@ function publicAddressStatusDotClasses(
     status === "ready" ||
     status === "running"
   ) {
-    return { inner: "bg-theme-green", outer: "bg-theme-green/30" };
+    return { inner: "bg-green-500", outer: "bg-green-500/30" };
   }
 
   if (
@@ -1294,7 +1294,7 @@ function publicAddressStatusDotClasses(
     status === "verifying" ||
     status === "creating"
   ) {
-    return { inner: "bg-theme-yellow", outer: "bg-theme-yellow/30" };
+    return { inner: "bg-amber-500", outer: "bg-amber-500/30" };
   }
 
   if (
@@ -1304,10 +1304,10 @@ function publicAddressStatusDotClasses(
     status === "inaccessible" ||
     status === "unavailable"
   ) {
-    return { inner: "bg-theme-red", outer: "bg-theme-red/30" };
+    return { inner: "bg-red-500", outer: "bg-red-500/30" };
   }
 
-  return { inner: "bg-theme-gray", outer: "bg-theme-gray/30" };
+  return { inner: "bg-zinc-400", outer: "bg-zinc-400/30" };
 }
 
 function customDomainStatusLabel(domain: ContainerNetworkCustomDomain): string {
@@ -1491,7 +1491,7 @@ function PublicAddressRow({
                 <CanvasNode.CopyableRowIndicator
                   className={cn(
                     "text-resource-pane-muted",
-                    copied && "text-theme-green"
+                    copied && "text-green-500"
                   )}
                 />
               </div>

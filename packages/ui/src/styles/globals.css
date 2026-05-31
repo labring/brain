@@ -8,13 +8,6 @@
 @source "../../../../{apps,packages}/**/*.{ts,tsx}";
 
 @theme {
-  --color-theme-blue: #1c86fb;
-  --color-theme-green: #12b981;
-  --color-theme-red: #f87270;
-  --color-theme-yellow: #facc14;
-  --color-theme-purple: #a78afa;
-  --color-theme-gray: #a1a1aa;
-  --color-theme-darkblue: #3c5f89;
   /** `.scrollbar-chat-thin` WebKit scrollbar width (matches prior `w-1`). */
   --scrollbar-chat-width: 0.25rem;
 }
@@ -113,7 +106,7 @@
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
     in oklab,
-    var(--color-theme-gray) 55%,
+    var(--color-zinc-400) 55%,
     transparent
   );
   --resource-pane: oklch(0.105 0.018 265);

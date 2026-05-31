@@ -38,8 +38,8 @@ export function ExportProgress({
       )}
       {!isExporting && isSuccess && (
         <>
-          <CheckCircle className="h-4 w-4 text-theme-green" />
-          <span className="font-medium text-theme-green">
+          <CheckCircle className="h-4 w-4 text-green-500" />
+          <span className="font-medium text-green-500">
             {"Export complete"}
           </span>
         </>

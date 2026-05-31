@@ -1,6 +1,6 @@
 import type { CrossplaneServiceStatusPhase } from "@workspace/crossplane/lib/status";
 
-/** Service phase; aligns with Crossplane/Kubernetes-style statuses and theme tones. */
+/** Service phase; aligns with Crossplane/Kubernetes-style statuses and status colors. */
 export type ContainerNodeStatusTone = CrossplaneServiceStatusPhase;
 
 /** Aggregated node data for canvas/graph payloads; compose v1 UI with explicit per-field props. */

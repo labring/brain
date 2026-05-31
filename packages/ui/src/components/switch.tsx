@@ -18,7 +18,7 @@ function Switch({
       className={cn(
         "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs outline-none transition-all after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 data-[size=default]:h-[18.4px] data-[size=lg]:h-6 data-[size=sm]:h-[14px] data-[size=default]:w-[32px] data-[size=lg]:w-11 data-[size=sm]:w-[24px] data-disabled:cursor-not-allowed data-checked:bg-primary data-unchecked:bg-input data-disabled:opacity-50 dark:data-unchecked:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
         variant === "brand" &&
-          "data-checked:bg-theme-blue data-unchecked:bg-zinc-700 dark:data-checked:bg-theme-blue dark:data-unchecked:bg-zinc-700",
+          "data-checked:bg-blue-500 data-unchecked:bg-zinc-700 dark:data-checked:bg-blue-500 dark:data-unchecked:bg-zinc-700",
         className
       )}
       data-size={size}

@@ -869,7 +869,7 @@ export function SQLEditorView({
                                   "flex h-5 w-5 items-center justify-center rounded-full",
                                   result.isError
                                     ? "bg-destructive/10 text-destructive"
-                                    : "bg-theme-green/10 text-theme-green"
+                                    : "bg-green-500/10 text-green-500"
                                 )}
                               >
                                 {result.isError ? (
@@ -886,7 +886,7 @@ export function SQLEditorView({
                                   "rounded-full px-2 py-0.5 font-medium text-xs",
                                   result.isError
                                     ? "bg-destructive/10 text-destructive"
-                                    : "border border-theme-green/20 bg-theme-green/10 text-theme-green"
+                                    : "border border-green-500/20 bg-green-500/10 text-green-500"
                                 )}
                               >
                                 {result.isError
@@ -1047,7 +1047,7 @@ export function SQLEditorView({
                           {result.isError ? (
                             <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
                           ) : (
-                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-theme-green" />
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />
                           )}
                           <span className="font-medium text-xs">
                             {`Result ${idx + 1}`}

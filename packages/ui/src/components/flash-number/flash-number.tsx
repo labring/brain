@@ -8,32 +8,32 @@ import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 const MotionNumberFlow = motion.create(NumberFlow);
 
-/** Maps 0–100% usage to theme text classes (see `globals.css` `--color-theme-*`). */
+/** Maps 0–100% usage to Tailwind text color classes. */
 export function usagePercentToneClass(value: number): string {
   if (!Number.isFinite(value)) {
-    return "text-theme-gray";
+    return "text-zinc-400";
   }
   if (value > 90) {
-    return "text-theme-red";
+    return "text-red-500";
   }
   if (value >= 75) {
-    return "text-theme-yellow";
+    return "text-amber-500";
   }
-  return "text-theme-green";
+  return "text-green-500";
 }
 
 /** Flash highlight behind digits; same thresholds as {@link usagePercentToneClass}. */
 export function usagePercentFlashBgClass(value: number): string {
   if (!Number.isFinite(value)) {
-    return "bg-theme-gray/40";
+    return "bg-zinc-400/40";
   }
   if (value > 90) {
-    return "bg-theme-red/50";
+    return "bg-red-500/50";
   }
   if (value >= 75) {
-    return "bg-theme-yellow/50";
+    return "bg-amber-500/50";
   }
-  return "bg-theme-green/50";
+  return "bg-green-500/50";
 }
 
 export interface FlashNumberProps {
@@ -49,10 +49,10 @@ export interface FlashNumberProps {
 /**
  * Animated percentage readout with [NumberFlow](https://number-flow.barvian.me) +
  * [Motion](https://motion.dev) for the flash tint only. Digits use usage tone (**&lt; 75%** green,
- * **75–90%** yellow, **&gt; 90%** red); icon uses the same theme tone.
+ * **75–90%** amber, **&gt; 90%** red); icon uses the same tone.
  * Icon and wrapper are static (no Motion `layout`) so first paint does not run layout FLIP from a
  * wrong box when fonts or NumberFlow width settle.
- * On value change, a tinted highlight (**theme-green/yellow/red** at `/50`, same bands as digits)
+ * On value change, a tinted highlight (green/amber/red at `/50`, same bands as digits)
  * behind the numbers fades out quickly.
  */
 export function FlashNumber({

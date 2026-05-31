@@ -95,7 +95,7 @@ export function DatabaseDeploymentPane({
     <SidePane
       busy={deploying || currentProject.isLoading}
       closeAriaLabel="Close database deployment pane"
-      icon={<Database aria-hidden className="size-4 text-theme-blue" />}
+      icon={<Database aria-hidden className="size-4 text-blue-500" />}
       label="Database deployment pane"
       onClose={onClose}
       subtitle={

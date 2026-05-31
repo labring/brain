@@ -69,11 +69,11 @@ function parseCanvasNodeMetricPercentValue(
 
 function getCanvasNodeResourcePressureTextClassName(value: number) {
   if (value > CANVAS_NODE_RESOURCE_PRESSURE_CRITICAL_THRESHOLD) {
-    return "text-theme-red";
+    return "text-red-500";
   }
 
   if (value >= CANVAS_NODE_RESOURCE_PRESSURE_ELEVATED_THRESHOLD) {
-    return "text-theme-yellow";
+    return "text-amber-500";
   }
 
   return "text-muted-foreground";
