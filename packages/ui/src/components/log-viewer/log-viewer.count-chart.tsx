@@ -14,7 +14,7 @@ import { formatLogTime } from "./log-viewer.utils";
 const chartConfig = {
   count: {
     label: "Count",
-    color: "var(--chart-1)",
+    color: "var(--color-blue-500)",
   },
 } satisfies ChartConfig;
 
