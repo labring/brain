@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
+import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import {
   createDataBrowserHostContext,
   dataBrowserRuntimeParts,

@@ -149,6 +149,12 @@ An interactive session that runs a DB Service's native engine client — such as
 
 _Avoid_: using "console" to mean the AP container shell. The AP node's terminal opens a generic pod shell on the AP workload, not a database engine client; the shared "console" label across AP and DB nodes does not denote the same kind of session.
 
+### Session Drawer
+
+A bottom temporary project surface for one interactive resource session, such as an AP terminal or DB Console. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
+
+Within one project surface, Session Drawer is single-active. A Session Drawer may coexist with a Side Pane or Main Action Surface, and it remains pinned to its session target rather than following canvas selection.
+
 ### Container Node
 
 A canvas node that represents an AP workload. The name is retained as a product/UI term, but it does not mean an individual Kubernetes container.
@@ -187,13 +193,21 @@ A canvas edge that represents an established runtime dependency between resource
 
 A right-side canvas surface opened from a selected AP or DB node to inspect or change resource-scoped details such as settings, metrics, or history. It is distinct from the project assistant chat pane.
 
-### Canvas Action Surface
+### Project Canvas Workbench
 
-A temporary canvas surface opened from a node action for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Canvas Action Surface is distinct from a Canvas Resource Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.
+The client-side module that owns Project Canvas presentation and Project Canvas-specific interactions for one Project surface, including canvas node decoration, Canvas Resource Pane rendering, Main Action Surface and Session Drawer rendering for canvas-triggered resource work, Canvas Connection gestures, and Canvas Node Stack Order behavior.
 
-Within one project canvas, a Canvas Action Surface replaces the currently open temporary project surface instead of stacking with a Side Pane or Canvas Resource Pane.
+Project Canvas Workbench consumes project-level surface state but does not own the Project Surface model itself. Project Surface slots such as Side Pane, Main Action Surface, and Session Drawer remain project-level concepts so assistant chat, toolbar actions, and future project surfaces can open them without depending on canvas-specific selection behavior.
 
-A Canvas Action Surface follows the project main area's available width when the Project Assistant Pane is opened or closed.
+### Main Action Surface
+
+A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.
+
+Within one project surface, a Main Action Surface is single-active: opening one Main Action Surface replaces the currently open Main Action Surface instead of stacking multiple main-area surfaces.
+
+A Main Action Surface usually takes focus over the Side Pane in the same project surface rather than presenting both as competing focused work surfaces.
+
+A Main Action Surface follows the project main area's available width when the Project Assistant Pane is opened or closed.
 
 ### Side Pane
 
@@ -223,7 +237,7 @@ A normalized time-series representation of workload resource usage for AP and DB
 
 ### Resource Logs
 
-A read-only Canvas Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
+A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
 
 ### Project Aggregate Status
 

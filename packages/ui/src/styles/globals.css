@@ -8,13 +8,6 @@
 @source "../../../../{apps,packages}/**/*.{ts,tsx}";
 
 @theme {
-  --color-theme-blue: #1c86fb;
-  --color-theme-green: #12b981;
-  --color-theme-red: #f87270;
-  --color-theme-yellow: #facc14;
-  --color-theme-purple: #a78afa;
-  --color-theme-gray: #a1a1aa;
-  --color-theme-darkblue: #3c5f89;
   /** `.scrollbar-chat-thin` WebKit scrollbar width (matches prior `w-1`). */
   --scrollbar-chat-width: 0.25rem;
 }
@@ -29,11 +22,6 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -63,15 +51,6 @@
   --color-resource-pane-input: var(--resource-pane-input);
   --color-resource-pane-muted: var(--resource-pane-muted);
   --color-resource-pane-primary: var(--resource-pane-primary);
-  --color-database-metrics-card: var(--database-metrics-card);
-  --color-database-metrics-chart: var(--database-metrics-chart);
-  --color-database-metrics-grid: var(--database-metrics-grid);
-  --color-database-metrics-pane: var(--database-metrics-pane);
-  --color-database-metrics-pane-overlay: var(--database-metrics-pane-overlay);
-  --color-database-metrics-status-running: var(
-    --database-metrics-status-running
-  );
-  --color-database-metrics-storage-track: var(--database-metrics-storage-track);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -101,13 +80,7 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  /* Metrics / Recharts palette — saturated hues (distinct series on light UI) */
-  --chart-1: oklch(0.53 0.2 259);
-  --chart-2: oklch(0.55 0.18 154);
-  --chart-3: oklch(0.64 0.19 74);
-  --chart-4: oklch(0.55 0.22 303);
-  --chart-5: oklch(0.57 0.21 31);
-  --radius: 0.45rem;
+  --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -124,7 +97,7 @@
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
     in oklab,
-    var(--color-theme-gray) 55%,
+    var(--color-zinc-400) 55%,
     transparent
   );
   --resource-pane: oklch(0.105 0.018 265);
@@ -135,18 +108,10 @@
   --resource-pane-foreground: #fafafa;
   --resource-pane-primary: #e5e5e5;
   --resource-pane-muted: #a1a1a1;
-  /** Compatibility aliases for older metrics names. Prefer `resource-pane-*`. */
-  --database-metrics-pane: var(--resource-pane);
-  --database-metrics-pane-overlay: var(--resource-pane-overlay);
-  --database-metrics-card: var(--resource-pane-card);
-  --database-metrics-chart: var(--color-blue-500);
-  --database-metrics-grid: var(--resource-pane-border);
-  --database-metrics-status-running: oklch(0.72 0.17 149 / 30%);
-  --database-metrics-storage-track: var(--resource-pane-card);
 }
 
 .dark {
-  --background: oklch(0.1286 0 0);
+  --background: oklch(0.145 0 0);
   --background-secondary: oklch(0.1689 0.0021 286.18);
   --background-tertiary: oklch(0.1917 0.002 286.21);
   --background-selected: oklch(0.2138 0.0019 286.23);
@@ -167,12 +132,6 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  /* Metrics / charts on dark UI — brighter chroma-forward strokes & fills */
-  --chart-1: oklch(0.72 0.16 259);
-  --chart-2: oklch(0.73 0.14 154);
-  --chart-3: oklch(0.78 0.16 74);
-  --chart-4: oklch(0.72 0.18 303);
-  --chart-5: oklch(0.74 0.16 31);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -236,24 +195,14 @@
     );
   }
 
-  .database-metrics-pane-surface {
-    color: var(--resource-pane-foreground);
-    background-color: var(--database-metrics-pane);
-    background-image: linear-gradient(
-      90deg,
-      var(--database-metrics-pane-overlay) 0%,
-      var(--database-metrics-pane-overlay) 100%
-    );
-  }
-
-  .canvas-action-surface-body-background {
+  .main-action-surface-body-background {
     position: relative;
     overflow: hidden;
     background-color: var(--color-canvas-surface);
     isolation: isolate;
   }
 
-  .canvas-action-surface-body-background::after {
+  .main-action-surface-body-background::after {
     position: absolute;
     top: 46%;
     left: 50%;

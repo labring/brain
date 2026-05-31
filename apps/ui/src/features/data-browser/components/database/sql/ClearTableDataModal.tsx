@@ -120,7 +120,7 @@ function ClearTableDataModeSelector() {
           className={cn(
             "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 transition-colors",
             mode === "truncate"
-              ? "border-transparent bg-theme-blue/10"
+              ? "border-transparent bg-blue-500/10"
               : "border-input bg-background hover:bg-muted/30"
           )}
         >
@@ -136,7 +136,7 @@ function ClearTableDataModeSelector() {
           className={cn(
             "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 transition-colors",
             mode === "delete"
-              ? "border-transparent bg-theme-blue/10"
+              ? "border-transparent bg-blue-500/10"
               : "border-input bg-background hover:bg-muted/30"
           )}
         >

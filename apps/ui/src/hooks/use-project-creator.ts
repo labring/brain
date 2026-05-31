@@ -19,6 +19,7 @@ import {
   type ProjectCreationPaneEntryMode,
   projectCreationPaneStateReducer,
 } from "@/components/project-creation-pane-state";
+import { k8sApplyYaml } from "@/features/project-canvas/k8s/http/apply-yaml";
 import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
 import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useProjectCompositions } from "@/hooks/compositions/use-project-composition";
@@ -36,7 +37,6 @@ import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-nam
 import { fetchProjectUidByName } from "@/lib/fetch-project-uid";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { k8sApplyYaml } from "@/lib/project-canvas/k8s/http/apply-yaml";
 import { childResourceName } from "@/lib/project-child-resource-name";
 import { mergeProjectMetadataDisplayName } from "@/lib/project-yaml-metadata";
 import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";

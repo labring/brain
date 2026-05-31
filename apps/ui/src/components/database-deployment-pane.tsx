@@ -8,11 +8,11 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Database } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { k8sApplyYaml } from "@/features/project-canvas/k8s/http/apply-yaml";
 import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
 import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
-import { k8sApplyYaml } from "@/lib/project-canvas/k8s/http/apply-yaml";
 import { childResourceName } from "@/lib/project-child-resource-name";
 
 export function DatabaseDeploymentPane({
@@ -95,7 +95,7 @@ export function DatabaseDeploymentPane({
     <SidePane
       busy={deploying || currentProject.isLoading}
       closeAriaLabel="Close database deployment pane"
-      icon={<Database aria-hidden className="size-4 text-theme-blue" />}
+      icon={<Database aria-hidden className="size-4 text-blue-500" />}
       label="Database deployment pane"
       onClose={onClose}
       subtitle={

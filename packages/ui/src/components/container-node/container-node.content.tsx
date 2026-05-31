@@ -44,9 +44,19 @@ const QUICK_ACTION_ITEMS = [
     label: "Open workload metrics",
     tooltip: "Workload metrics",
   },
-  { icon: SquareTerminal, key: "console", label: "Open console", tooltip: "Console" },
+  {
+    icon: SquareTerminal,
+    key: "console",
+    label: "Open terminal",
+    tooltip: "Terminal",
+  },
   { icon: FileText, key: "logs", label: "Open logs", tooltip: "Logs" },
-  { icon: CalendarDays, key: "calendar", label: "Open calendar", tooltip: "Calendar" },
+  {
+    icon: CalendarDays,
+    key: "calendar",
+    label: "Open calendar",
+    tooltip: "Calendar",
+  },
   {
     icon: ListTree,
     key: "events",

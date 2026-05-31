@@ -47,7 +47,7 @@ function LogViewerRow({
     <div
       className={cn(
         "grid items-start gap-2 px-4 py-2 font-mono text-foreground text-xs",
-        entry.stream === "stderr" && "border-theme-red/40 border-l-2"
+        entry.stream === "stderr" && "border-red-500/40 border-l-2"
       )}
       style={{ ...style, gridTemplateColumns: LOG_GRID_TEMPLATE }}
     >

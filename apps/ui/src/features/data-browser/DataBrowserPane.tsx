@@ -2,7 +2,7 @@
 
 import { MainLayout } from "@data-browser/components/layout/MainLayout";
 import { DbAccessSessionProvider } from "@data-browser/state/db-access-session";
-import type { CanvasDatabaseNodeData } from "@/lib/project-canvas/nodes/types";
+import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import { isDataBrowserEngineVisible } from "./capabilities";
 import { DataBrowserRuntimeProvider, useDataBrowserRuntime } from "./runtime";
 

@@ -98,12 +98,11 @@ const REGISTRY_STATE_LABEL: Record<RegistryPreviewState, string> = {
   done: "Done",
 };
 
-/** Matches `--color-registry-*` in globals.css */
 const REGISTRY_STATE_COLOR_CLASS: Record<RegistryPreviewState, string> = {
-  designing: "text-registry-designing",
-  coding: "text-registry-coding",
-  reviewing: "text-registry-reviewing",
-  done: "text-registry-done",
+  designing: "text-violet-500",
+  coding: "text-blue-500",
+  reviewing: "text-amber-500",
+  done: "text-green-500",
 };
 
 export default function AppSidebar({

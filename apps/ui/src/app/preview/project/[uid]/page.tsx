@@ -12,16 +12,11 @@ import { Canvas } from "@workspace/ui/components/canvas/canvas";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
-import { useProjectCanvas } from "@/hooks/use-project-canvas";
-import { useProjectCanvasLayout } from "@/hooks/use-project-canvas-layout";
-import { CanvasActionSurface } from "@/lib/project-canvas/actions/canvas-action-surface";
-import { apMetricsLookupFromSnapshot } from "@/lib/project-canvas/flow/ap-list-to-canvas-state";
-import { databaseNodeDataFromNode } from "@/lib/project-canvas/nodes/database-node-data";
-import { DatabaseLogsPane } from "@/lib/project-canvas/panels/database-logs-pane";
-import { ProjectCanvasResourcePane } from "@/lib/project-canvas/panels/project-canvas-resource-pane";
-import { WorkloadLogsPane } from "@/lib/project-canvas/panels/workload-logs-panel";
-import { buildPreviewProjectCanvasState } from "@/lib/project-canvas/preview/state";
-import { DATABASE_PANE, WORKLOAD_PANE } from "@/store/canvas-store";
+import { apMetricsLookupFromSnapshot } from "@/features/project-canvas/flow/ap-list-to-canvas-state";
+import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
+import { buildPreviewProjectCanvasState } from "@/features/project-canvas/preview/state";
+import { PreviewProjectCanvasWorkbenchSurfaces } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
+import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
 
 const METRICS_REFRESH_MS = 5000;
 
@@ -149,33 +144,13 @@ export default function PreviewProjectPage() {
       uid,
     });
 
-  const {
-    canvasAction,
-    closeCanvasActionSurface,
-    closeResourceLogsSurface,
-    closeResourcePane,
-    connectionOrigin,
-    databasePane,
-    entryPane,
-    meta,
-    nodes,
-    registerSettingsLeaveGuard,
-    selectedEntryRef,
-    selectedEdge,
-    selectedNode,
-    settingsLeaveGuardDialog,
-    workloadPane,
-  } = useProjectCanvas(canvasState.nodes, {
+  const workbench = useProjectCanvas(canvasState.nodes, {
+    edges: canvasState.edges,
     readOnly: true,
     refreshWorkloadLists,
     selectionReady: !isLoading,
     shareToken,
   });
-  const selectedDatabaseData = databaseNodeDataFromNode(selectedNode);
-  const workloadLogsSurfaceOpen =
-    workloadPane === WORKLOAD_PANE.logs && selectedNode != null;
-  const databaseLogsSurfaceOpen =
-    databasePane === DATABASE_PANE.logs && selectedNode != null;
 
   const missingParams = shareToken === "" || ns === "" || uid === "";
   const blocked = missingParams || isLoading || error != null;
@@ -197,53 +172,23 @@ export default function PreviewProjectPage() {
       <div className="flex min-h-0 w-full flex-1 flex-col">
         <Canvas.Root
           key={`${ns}:${uid}:${shareToken}`}
-          meta={meta}
+          meta={workbench.meta}
           state={{
             ...canvasState,
-            connectionOrigin,
-            nodes,
-            selectedEdge,
-            selectedNode,
+            connectionOrigin: workbench.connectionOrigin,
+            nodes: workbench.nodes,
+            selectedEdge: workbench.selectedEdge,
+            selectedNode: workbench.selectedNode,
           }}
         >
           <Canvas.Flow>
-            <ProjectCanvasResourcePane
-              databasePane={databaseLogsSurfaceOpen ? null : databasePane}
-              entryPane={entryPane}
-              onClose={closeResourcePane}
-              onSettingsLeaveGuardChange={registerSettingsLeaveGuard}
-              onUpdated={refreshWorkloadLists}
-              readOnly
-              selectedDatabaseData={selectedDatabaseData}
-              selectedEntryRef={selectedEntryRef}
-              selectedNode={selectedNode}
-              shareToken={shareToken}
-              workloadPane={workloadLogsSurfaceOpen ? null : workloadPane}
-            />
-            <CanvasActionSurface
-              action={canvasAction}
-              dbAccessEnabled={false}
-              kubeconfig=""
+            <PreviewProjectCanvasWorkbenchSurfaces
               namespace={ns}
-              onClose={closeCanvasActionSurface}
               projectUid={uid}
-              selectedDatabaseData={selectedDatabaseData}
+              refreshWorkloadLists={refreshWorkloadLists}
+              shareToken={shareToken}
+              workbench={workbench}
             />
-            {workloadLogsSurfaceOpen ? (
-              <WorkloadLogsPane
-                node={selectedNode}
-                onClose={closeResourceLogsSurface}
-              />
-            ) : null}
-            {databaseLogsSurfaceOpen ? (
-              <DatabaseLogsPane
-                kubeconfig=""
-                node={selectedNode}
-                onClose={closeResourceLogsSurface}
-                open
-              />
-            ) : null}
-            {settingsLeaveGuardDialog}
           </Canvas.Flow>
         </Canvas.Root>
       </div>

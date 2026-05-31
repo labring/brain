@@ -51,9 +51,10 @@ export function createDeployTaskTools(options: {
     projectName?: string;
     projectUid?: string;
     selectedWorkload?: {
-      kubernetesUid: string;
+      kubernetesUid?: string;
       name?: string;
       kind?: string;
+      namespace?: string;
     };
   };
   kubernetesNamespace: string;

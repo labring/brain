@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 const LOG_LEVEL_RE = /^(?:ERROR|WARN|INFO|DEBUG):?\s/;
 
 const LEVEL_CLASS: Record<string, string> = {
-  ERROR: "text-theme-red font-semibold",
-  WARN: "text-theme-yellow font-semibold",
-  INFO: "text-theme-blue font-semibold",
-  DEBUG: "text-theme-gray",
+  ERROR: "text-red-500 font-semibold",
+  WARN: "text-amber-500 font-semibold",
+  INFO: "text-blue-500 font-semibold",
+  DEBUG: "text-zinc-400",
 };
 
 function wrapSearch(text: string, q: string, key: string): ReactNode {
@@ -26,7 +26,7 @@ function wrapSearch(text: string, q: string, key: string): ReactNode {
     }
     parts.push(
       <mark
-        className="rounded-sm bg-theme-yellow/30 text-inherit"
+        className="rounded-sm bg-amber-500/30 text-inherit"
         key={`${key}-${k++}`}
       >
         {text.slice(i, i + q.length)}

@@ -68,7 +68,7 @@ export function ContainerNodeHeaderMenuContent({
 }
 
 const HEADER_MENU_POSITIVE_ICON_HOVER =
-  "hover:[&_svg]:text-theme-green focus:[&_svg]:text-theme-green focus-visible:[&_svg]:text-theme-green hover:[&_svg]:opacity-100 focus:[&_svg]:opacity-100";
+  "hover:[&_svg]:text-green-500 focus:[&_svg]:text-green-500 focus-visible:[&_svg]:text-green-500 hover:[&_svg]:opacity-100 focus:[&_svg]:opacity-100";
 
 /** Menu row — forwards to dropdown item with node-typical sizing and optional leading icon. */
 export function ContainerNodeHeaderMenuItem({
@@ -79,7 +79,7 @@ export function ContainerNodeHeaderMenuItem({
   onClick,
   ...props
 }: ComponentProps<typeof DropdownMenuItem> & {
-  /** Start / Restart: icon uses `text-theme-green` on hover / focus (label color unchanged). */
+  /** Start / Restart: icon uses `text-green-500` on hover / focus (label color unchanged). */
   accentHover?: "positive";
   icon?: LucideIcon;
 }) {

@@ -2,11 +2,3 @@
 
 @source "../**/*.{ts,tsx}";
 @source "../../../../packages/crossplane/src/**/*.ts";
-
-@theme {
-  /* Registry preview lifecycle (sidebar icon + tooltips) — maps to shared theme palette */
-  --color-registry-designing: var(--color-theme-purple);
-  --color-registry-coding: var(--color-theme-blue);
-  --color-registry-reviewing: var(--color-theme-yellow);
-  --color-registry-done: var(--color-theme-green);
-}

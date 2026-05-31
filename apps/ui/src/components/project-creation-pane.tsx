@@ -103,7 +103,7 @@ export function ProjectCreationPane({
     <SidePane
       busy={busy}
       closeAriaLabel="Close project creation pane"
-      icon={<Plus aria-hidden className="size-4 text-theme-blue" />}
+      icon={<Plus aria-hidden className="size-4 text-blue-500" />}
       label="Project creation pane"
       onClose={onClose}
       subtitle={subtitle}

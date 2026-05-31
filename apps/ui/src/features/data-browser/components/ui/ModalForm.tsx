@@ -126,7 +126,7 @@ const ALERT_ICONS: Record<ModalAlert["type"], LucideIcon> = {
 };
 
 const ALERT_STYLES: Record<ModalAlert["type"], string> = {
-  success: "border-theme-green/20 bg-theme-green/5 text-theme-green",
+  success: "border-green-500/20 bg-green-500/5 text-green-500",
   error: "border-destructive/20 bg-destructive/5 text-destructive",
   info: "border-primary/20 bg-primary/5 text-primary",
 };

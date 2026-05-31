@@ -31,7 +31,7 @@ export function AlertModal({
   const getIcon = () => {
     switch (type) {
       case "success":
-        return <CheckCircle className="h-5 w-5 text-theme-green" />;
+        return <CheckCircle className="h-5 w-5 text-green-500" />;
       case "error":
         return <AlertCircle className="h-5 w-5 text-destructive" />;
       default:
@@ -76,7 +76,7 @@ export function AlertModal({
             className={cn(
               "whitespace-pre-wrap rounded-lg border p-4 font-medium text-sm",
               type === "success" &&
-                "border-theme-green/10 bg-theme-green/5 text-theme-green",
+                "border-green-500/10 bg-green-500/5 text-green-500",
               type === "error" &&
                 "border-destructive/10 bg-destructive/5 text-destructive",
               type === "info" &&

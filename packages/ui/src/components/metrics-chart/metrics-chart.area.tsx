@@ -16,11 +16,11 @@ import type { MetricsData } from "./metrics-chart.types";
 import { useMetricsChart } from "./metrics-chart.use";
 
 const CHART_PALETTE = [
-  "chart-1",
-  "chart-2",
-  "chart-3",
-  "chart-4",
-  "chart-5",
+  "var(--color-blue-500)",
+  "var(--color-emerald-500)",
+  "var(--color-amber-500)",
+  "var(--color-fuchsia-500)",
+  "var(--color-rose-500)",
 ] as const;
 
 const METRIC_KEYS_FOR_COLOR = [
@@ -45,8 +45,8 @@ function capitalizeLabel(key: string): string {
 function getColorForMetricKey(key: string): string {
   const lower = key.toLowerCase();
   const idx = (METRIC_KEYS_FOR_COLOR as readonly string[]).indexOf(lower);
-  const paletteKey = CHART_PALETTE[idx >= 0 ? idx % CHART_PALETTE.length : 0];
-  return `var(--${paletteKey})`;
+  const paletteIndex = idx >= 0 ? idx % CHART_PALETTE.length : 0;
+  return CHART_PALETTE[paletteIndex] ?? CHART_PALETTE[0];
 }
 
 function mergeMetricsByTimestamp(

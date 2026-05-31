@@ -1,16 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { validatePreviewShareAccess } from "@/lib/preview/share";
 import {
   assertCanvasLayoutPatchMatchesOwner,
   parseCanvasLayoutGetQuery,
   parseCanvasLayoutPatchRequest,
-} from "@/lib/project-canvas/layout/contract";
-import { CanvasLayoutValidationError } from "@/lib/project-canvas/layout/patch";
+} from "@/features/project-canvas/layout/contract";
+import { CanvasLayoutValidationError } from "@/features/project-canvas/layout/patch";
 import {
   loadProjectCanvasLayout,
   patchProjectCanvasLayout,
-} from "@/lib/project-canvas/layout/repository";
+} from "@/features/project-canvas/layout/repository";
+import { validatePreviewShareAccess } from "@/lib/preview/share";
 import {
   fetchServerCredentials,
   hasDevCredentialBypass,

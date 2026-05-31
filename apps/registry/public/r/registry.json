@@ -701,9 +701,19 @@
           "target": "components/canvas/canvas.edge-anchors.ts"
         },
         {
+          "path": "../../packages/ui/src/components/canvas/canvas.node-merge.ts",
+          "type": "registry:lib",
+          "target": "components/canvas/canvas.node-merge.ts"
+        },
+        {
           "path": "../../packages/ui/src/components/canvas/canvas.upper-right.tsx",
           "type": "registry:component",
           "target": "components/canvas/canvas.upper-right.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/canvas/canvas.viewport-follow.ts",
+          "type": "registry:lib",
+          "target": "components/canvas/canvas.viewport-follow.ts"
         },
         {
           "path": "../../packages/ui/src/components/canvas/canvas.tsx",

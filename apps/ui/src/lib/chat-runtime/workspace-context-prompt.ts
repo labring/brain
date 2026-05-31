@@ -30,16 +30,23 @@ export function buildAssistantWorkspaceContextPrompt(opts: {
   }
 
   const wl = assistantContext?.selectedWorkload;
-  if (wl?.kubernetesUid != null && wl.kubernetesUid !== "") {
+  if (wl != null) {
     lines.push("", "### Selected workload in the canvas / URL");
-    lines.push(
-      `- Kubernetes \`metadata.uid\`: \`${escapeBackticks(wl.kubernetesUid)}\``
-    );
+    if (wl.kubernetesUid != null && wl.kubernetesUid !== "") {
+      lines.push(
+        `- Kubernetes \`metadata.uid\`: \`${escapeBackticks(wl.kubernetesUid)}\``
+      );
+    }
     if (wl.name != null && wl.name.trim() !== "") {
-      lines.push(`- Display name / resource identity: ${wl.name}`);
+      lines.push(
+        `- Resource name / AP-bound target: \`${escapeBackticks(wl.name)}\``
+      );
+    }
+    if (wl.namespace != null && wl.namespace.trim() !== "") {
+      lines.push(`- Namespace: \`${escapeBackticks(wl.namespace)}\``);
     }
     if (wl.kind != null && wl.kind.trim() !== "") {
-      lines.push(`- Kind hint: ${wl.kind}`);
+      lines.push(`- Kind hint: \`${escapeBackticks(wl.kind)}\``);
     }
   }
 

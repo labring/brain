@@ -35,7 +35,7 @@ export function FormatSelector<T extends string>({
             className={cn(
               "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition-colors",
               value === option.id
-                ? "border-transparent bg-theme-blue/10 text-foreground"
+                ? "border-transparent bg-blue-500/10 text-foreground"
                 : "border-input bg-background text-foreground hover:bg-muted/30"
             )}
             disabled={disabled}
