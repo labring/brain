@@ -51,15 +51,6 @@
   --color-resource-pane-input: var(--resource-pane-input);
   --color-resource-pane-muted: var(--resource-pane-muted);
   --color-resource-pane-primary: var(--resource-pane-primary);
-  --color-database-metrics-card: var(--database-metrics-card);
-  --color-database-metrics-chart: var(--database-metrics-chart);
-  --color-database-metrics-grid: var(--database-metrics-grid);
-  --color-database-metrics-pane: var(--database-metrics-pane);
-  --color-database-metrics-pane-overlay: var(--database-metrics-pane-overlay);
-  --color-database-metrics-status-running: var(
-    --database-metrics-status-running
-  );
-  --color-database-metrics-storage-track: var(--database-metrics-storage-track);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -117,14 +108,6 @@
   --resource-pane-foreground: #fafafa;
   --resource-pane-primary: #e5e5e5;
   --resource-pane-muted: #a1a1a1;
-  /** Compatibility aliases for older metrics names. Prefer `resource-pane-*`. */
-  --database-metrics-pane: var(--resource-pane);
-  --database-metrics-pane-overlay: var(--resource-pane-overlay);
-  --database-metrics-card: var(--resource-pane-card);
-  --database-metrics-chart: var(--color-blue-500);
-  --database-metrics-grid: var(--resource-pane-border);
-  --database-metrics-status-running: oklch(0.72 0.17 149 / 30%);
-  --database-metrics-storage-track: var(--resource-pane-card);
 }
 
 .dark {
@@ -209,16 +192,6 @@
       90deg,
       var(--resource-pane-overlay) 0%,
       var(--resource-pane-overlay) 100%
-    );
-  }
-
-  .database-metrics-pane-surface {
-    color: var(--resource-pane-foreground);
-    background-color: var(--database-metrics-pane);
-    background-image: linear-gradient(
-      90deg,
-      var(--database-metrics-pane-overlay) 0%,
-      var(--database-metrics-pane-overlay) 100%
     );
   }
 
