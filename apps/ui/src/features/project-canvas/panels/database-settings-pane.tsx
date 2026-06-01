@@ -82,16 +82,8 @@ function databaseHeaderSubtitle({
   return `Database ${displayEngine}${formattedVersion ? ` ${formattedVersion}` : ""}`;
 }
 
-function formatReplicasValue(value: number) {
-  return `${value} ${value === 1 ? "Replica" : "Replicas"}`;
-}
-
 function cpuValueSuffix(value: number) {
   return value === 1 ? " Core" : " Cores";
-}
-
-function replicasValueSuffix(value: number) {
-  return value === 1 ? " Replica" : " Replicas";
 }
 
 function formatGiValue(value: number) {
@@ -586,7 +578,6 @@ export function DatabaseSettingsPaneContent({
           <SettingsSlider
             ariaLabel="Database replica count"
             disabled={controlsDisabled}
-            formatBound={formatReplicasValue}
             label="Number of Replicas"
             max={DB_SETTINGS_REPLICA_COUNT.max}
             maxDecimals={0}
@@ -599,7 +590,6 @@ export function DatabaseSettingsPaneContent({
             }}
             step={DB_SETTINGS_REPLICA_COUNT.step}
             value={draft.replicas}
-            valueSuffix={replicasValueSuffix}
           />
         </ResourceSettingsInset>
         <ResourceSettingsInset>

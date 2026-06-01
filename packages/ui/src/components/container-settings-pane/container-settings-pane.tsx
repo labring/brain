@@ -788,13 +788,7 @@ function memoryMibValueSuffix(mib: number) {
 
 function formatReplicaValue(replicas: number) {
   const rounded = Math.round(replicas);
-  return `${formatPlainNumber(rounded, 0)} ${
-    rounded === 1 ? "Replica" : "Replicas"
-  }`;
-}
-
-function replicaValueSuffix(replicas: number) {
-  return Math.round(replicas) === 1 ? " Replica" : " Replicas";
+  return formatPlainNumber(rounded, 0);
 }
 
 const DB_REFERENCE_FIELD_LABELS: Record<ContainerEnvDbReferenceField, string> =
@@ -2965,7 +2959,6 @@ function ReplicaStrategySection({
               onValueChange={fixedReplicasSliderParts.onReplicasQuotaChange}
               step={fixedReplicasSliderParts.rest.step ?? 1}
               value={fixedReplicasSliderParts.replicasValue}
-              valueSuffix={replicaValueSuffix}
             />
           </ResourceSettingsInset>
         ) : (
@@ -2982,7 +2975,6 @@ function ReplicaStrategySection({
                 onValueChange={onElasticMinReplicasChange}
                 step={1}
                 value={minReplicas}
-                valueSuffix={replicaValueSuffix}
               />
             </ResourceSettingsInset>
 
@@ -2998,7 +2990,6 @@ function ReplicaStrategySection({
                 onValueChange={onElasticMaxReplicasChange}
                 step={1}
                 value={maxReplicas}
-                valueSuffix={replicaValueSuffix}
               />
             </ResourceSettingsInset>
 

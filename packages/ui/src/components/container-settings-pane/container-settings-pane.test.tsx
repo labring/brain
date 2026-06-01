@@ -73,11 +73,12 @@ const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
 const ELASTIC_SCALING_RE = /Elastic Scaling/;
 const REPLICA_COUNT_RE = /Number of Replicas/;
-const REPLICA_VALUE_RE = />4 Replicas</;
+const REPLICA_VALUE_RE = />4</;
 const MIN_REPLICAS_RE = /Minimum replicas/;
-const MIN_REPLICA_VALUE_RE = />2 Replicas</;
+const MIN_REPLICA_VALUE_RE = />2</;
 const MAX_REPLICAS_RE = /Maximum replicas/;
-const MAX_REPLICA_VALUE_RE = />8 Replicas</;
+const MAX_REPLICA_VALUE_RE = />8</;
+const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
 const CPU_TARGET_RE = /CPU utilization target/;
 const CPU_TARGET_VALUE_RE = />75%/;
 const CPU_TARGET_PERCENT_RE = />75%</;
@@ -452,6 +453,7 @@ test("container settings pane renders fixed replica strategy controls", () => {
   assert.match(html, ELASTIC_SCALING_RE);
   assert.match(html, REPLICA_COUNT_RE);
   assert.match(html, REPLICA_VALUE_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
 });
 
 test("container settings pane renders CPU elastic replica strategy controls", () => {
@@ -492,6 +494,7 @@ test("container settings pane renders CPU elastic replica strategy controls", ()
   assert.match(html, CPU_TARGET_RE);
   assert.match(html, CPU_TARGET_VALUE_RE);
   assert.doesNotMatch(html, REPLICA_COUNT_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
 });
 
 test("container settings pane renders Memory elastic replica strategy controls", () => {
@@ -574,6 +577,7 @@ test("read-only container settings view renders fixed replica strategy without m
   assert.match(html, FIXED_REPLICAS_RE);
   assert.match(html, REPLICA_COUNT_RE);
   assert.match(html, REPLICA_VALUE_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
   assert.doesNotMatch(html, ELASTIC_SCALING_RE);
   assert.doesNotMatch(html, BUTTON_RE);
 });
@@ -616,6 +620,7 @@ test("read-only container settings view renders CPU elastic replica strategy wit
   assert.match(html, SCALING_TARGET_RE);
   assert.match(html, CPU_TARGET_RE);
   assert.match(html, CPU_TARGET_PERCENT_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
   assert.doesNotMatch(html, FIXED_REPLICAS_RE);
   assert.doesNotMatch(html, BUTTON_RE);
 });

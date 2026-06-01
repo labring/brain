@@ -106,6 +106,10 @@ function choiceLabel(choice: DatabaseDeploymentChoice | null): string {
   return choice?.label.trim() || "Database";
 }
 
+export function databaseReplicaOptionLabel(replica: number): string {
+  return String(replica);
+}
+
 function DeploymentCard({
   children,
   description,
@@ -284,7 +288,7 @@ export function DatabaseDeployer({
               <SelectContent>
                 {REPLICA_OPTIONS.map((replica) => (
                   <SelectItem key={replica} value={String(replica)}>
-                    {replica} {replica === 1 ? "replica" : "replicas"}
+                    {databaseReplicaOptionLabel(replica)}
                   </SelectItem>
                 ))}
               </SelectContent>

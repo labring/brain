@@ -24,6 +24,9 @@ const DISABLED_RE = /disabled=""/;
 const UPDATE_BUTTON_RE = />Update</;
 const CANCEL_BUTTON_RE = />Cancel</;
 const PROVISIONING_CONNECTION_RE = /Provisioning connection string/;
+const REPLICA_COUNT_RE = /Number of Replicas/;
+const REPLICA_VALUE_RE = />2</;
+const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
 
 const PRIVATE_CONNECTION = {
   id: "private",
@@ -86,6 +89,14 @@ test("database settings pane renders shared draft actions", () => {
 
   assert.match(html, UPDATE_BUTTON_RE);
   assert.match(html, CANCEL_BUTTON_RE);
+});
+
+test("database settings pane renders replica counts without unit suffix", () => {
+  const html = renderPane();
+
+  assert.match(html, REPLICA_COUNT_RE);
+  assert.match(html, REPLICA_VALUE_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
 });
 
 test("database settings pane hides unprovisioned public address while public access is off", () => {

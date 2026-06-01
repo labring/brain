@@ -16,7 +16,8 @@ const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
 const ELASTIC_SCALING_RE = /Elastic Scaling/;
 const REPLICA_COUNT_RE = /Number of Replicas/;
-const LEGACY_REPLICA_VALUE_RE = />3 Replicas</;
+const LEGACY_REPLICA_VALUE_RE = />3</;
+const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
 const BUTTON_RE = /<button/;
 
 test("AP claim settings reconstruct direct and non-direct environment rows", () => {
@@ -589,6 +590,7 @@ test("read-only AP settings renders legacy replicas as fixed replica strategy", 
   assert.match(html, FIXED_REPLICAS_RE);
   assert.match(html, REPLICA_COUNT_RE);
   assert.match(html, LEGACY_REPLICA_VALUE_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
   assert.doesNotMatch(html, ELASTIC_SCALING_RE);
   assert.doesNotMatch(html, BUTTON_RE);
 });
