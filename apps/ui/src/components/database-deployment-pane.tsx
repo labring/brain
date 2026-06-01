@@ -8,12 +8,14 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Database } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { k8sApplyYaml } from "@/features/project-canvas/k8s/http/apply-yaml";
+import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+import {
+  existingProjectDeploymentTarget,
+  runDeploymentTargetPipeline,
+} from "@/features/deployment-target/pipeline";
 import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
-import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
-import { childResourceName } from "@/lib/project-child-resource-name";
 
 export function DatabaseDeploymentPane({
   kubeconfig,
@@ -42,42 +44,34 @@ export function DatabaseDeploymentPane({
     () => dbDeploymentChoicesFromCompositionRows(dbCompositionRows),
     [dbCompositionRows]
   );
+  const deploymentAdapters = useMemo(
+    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
+    [kubeconfig, namespace]
+  );
   const projectName = currentProject.resourceName?.trim() ?? "";
 
   const deploy = useCallback(
     async (settings: DatabaseDeploymentSettings) => {
-      const choice = databaseOptions.find(
-        (option) => option.id === settings.databaseId
-      );
-      if (kubeconfig.trim() === "" || namespace.trim() === "") {
-        toast.error("Kubeconfig or namespace is missing.");
-        return;
-      }
-      if (projectName === "") {
-        toast.error("Could not resolve the current project.");
-        return;
-      }
-      if (choice == null) {
-        toast.error("Choose a database engine.");
-        return;
-      }
-
-      const dbName = childResourceName(projectName);
-      const yaml = renderDbDeploymentYaml({
-        compositionName: choice.id,
-        engine: choice.engine,
-        name: dbName,
-        namespace,
-        projectName,
-        quota: settings.instancePreset,
-        replicas: settings.replicas,
-        template: choice.template,
-      });
-
       setDeploying(true);
       try {
-        await k8sApplyYaml(kubeconfig, yaml);
-        toast.success(`Deployed database "${dbName}".`);
+        const outcome = await runDeploymentTargetPipeline({
+          adapters: deploymentAdapters,
+          credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
+          databaseOptions,
+          namespace,
+          request: {
+            kind: "database",
+            settings,
+            target: existingProjectDeploymentTarget({
+              projectName,
+              projectUid,
+            }),
+          },
+        });
+        if (outcome.kind !== "database") {
+          return;
+        }
+        toast.success(`Deployed database "${outcome.dbName}".`);
         await onDeployed?.();
         onClose();
       } catch (error) {
@@ -88,7 +82,16 @@ export function DatabaseDeploymentPane({
         setDeploying(false);
       }
     },
-    [databaseOptions, kubeconfig, namespace, onClose, onDeployed, projectName]
+    [
+      databaseOptions,
+      deploymentAdapters,
+      kubeconfig,
+      namespace,
+      onClose,
+      onDeployed,
+      projectName,
+      projectUid,
+    ]
   );
 
   return (

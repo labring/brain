@@ -8,27 +8,14 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Package } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { k8sApplyYaml } from "@/features/project-canvas/k8s/http/apply-yaml";
+import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+import {
+  existingProjectDeploymentTarget,
+  runDeploymentTargetPipeline,
+} from "@/features/deployment-target/pipeline";
 import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import type { CompositionListItem } from "@/lib/crossplane-composition-list";
-import {
-  DEFAULT_DOCKER_AP_COMPOSITION_NAME,
-  renderDockerDeploymentYaml,
-} from "@/lib/docker-deployment-yaml";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { childResourceName } from "@/lib/project-child-resource-name";
-
-function pickApTemplate(
-  rows: CompositionListItem[] | undefined
-): string | undefined {
-  return (
-    rows?.find(
-      (row) =>
-        row.metadata.compositionName === DEFAULT_DOCKER_AP_COMPOSITION_NAME
-    )?.template ?? rows?.find((row) => row.kind === "AP")?.template
-  );
-}
 
 export function DockerDeploymentPane({
   kubeconfig,
@@ -53,43 +40,35 @@ export function DockerDeploymentPane({
     kubeconfig,
     toItems: true,
   });
-  const apTemplate = useMemo(
-    () => pickApTemplate(apCompositionRows),
-    [apCompositionRows]
+  const deploymentAdapters = useMemo(
+    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
+    [kubeconfig, namespace]
   );
   const projectName = currentProject.resourceName?.trim() ?? "";
 
   const deploy = useCallback(
     async (settings: DockerDeploymentSettings) => {
-      if (kubeconfig.trim() === "" || namespace.trim() === "") {
-        toast.error("Kubeconfig or namespace is missing.");
-        return;
-      }
-      if (projectName === "") {
-        toast.error("Could not resolve the current project.");
-        return;
-      }
-      if (!apTemplate?.trim()) {
-        toast.error(
-          "Could not load an AP composition template from the cluster."
-        );
-        return;
-      }
-
-      const apName = childResourceName(projectName);
-      const yaml = renderDockerDeploymentYaml({
-        name: apName,
-        namespace,
-        projectName,
-        routingDomain: routingDomainFromKubeconfig(kubeconfig),
-        settings,
-        template: apTemplate,
-      });
-
       setDeploying(true);
       try {
-        await k8sApplyYaml(kubeconfig, yaml);
-        toast.success(`Deployed Docker AP "${apName}".`);
+        const outcome = await runDeploymentTargetPipeline({
+          adapters: deploymentAdapters,
+          apCompositionRows,
+          credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
+          namespace,
+          request: {
+            kind: "docker",
+            settings,
+            target: existingProjectDeploymentTarget({
+              projectName,
+              projectUid,
+            }),
+          },
+          routingDomain: routingDomainFromKubeconfig(kubeconfig),
+        });
+        if (outcome.kind !== "docker") {
+          return;
+        }
+        toast.success(`Deployed Docker AP "${outcome.apName}".`);
         await onDeployed?.();
         onClose();
       } catch (error) {
@@ -100,7 +79,16 @@ export function DockerDeploymentPane({
         setDeploying(false);
       }
     },
-    [apTemplate, kubeconfig, namespace, onClose, onDeployed, projectName]
+    [
+      apCompositionRows,
+      deploymentAdapters,
+      kubeconfig,
+      namespace,
+      onClose,
+      onDeployed,
+      projectName,
+      projectUid,
+    ]
   );
 
   return (
