@@ -8,6 +8,7 @@ import { ProjectCanvasSidePaneSlot } from "./project-canvas-side-pane-slot";
 const GITHUB_DEPLOYMENT_RE = /GitHub deployment/;
 const DATABASE_DEPLOYMENT_RE = /Database deployment/;
 const DOCKER_DEPLOYMENT_RE = /Docker deployment/;
+const PROJECT_CREATION_RE = /Project creation/;
 const RESOURCE_SETTINGS_RE = /Resource settings/;
 
 function renderSlot(
@@ -23,6 +24,7 @@ function renderSlot(
       ),
       dockerDeploymentPane: createElement("aside", null, "Docker deployment"),
       githubDeploymentPane: createElement("aside", null, "GitHub deployment"),
+      projectCreationPane: createElement("aside", null, "Project creation"),
       resourcePane: createElement("aside", null, "Resource settings"),
     })
   );
@@ -42,6 +44,13 @@ test("canvas side pane slot renders resource inspection entries", () => {
 
   assert.match(html, RESOURCE_SETTINGS_RE);
   assert.doesNotMatch(html, GITHUB_DEPLOYMENT_RE);
+});
+
+test("canvas side pane slot can render Project creation entries", () => {
+  const html = renderSlot({ kind: "projectCreation" });
+
+  assert.match(html, PROJECT_CREATION_RE);
+  assert.doesNotMatch(html, RESOURCE_SETTINGS_RE);
 });
 
 test("canvas side pane slot is absent without an active side entry", () => {

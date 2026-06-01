@@ -7,8 +7,7 @@ import { Database, X } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 
 import { DataBrowserPane } from "@/features/data-browser/DataBrowserPane";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import type { ProjectMainSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectCanvasMainRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 
 export interface MainActionSurfaceFrameProps {
@@ -115,29 +114,27 @@ export function MainActionSurfaceFrame({
 
 export interface MainActionSurfaceProps {
   dbAccessEnabled?: boolean;
-  entry: ProjectMainSurfaceEntry | null | undefined;
   kubeconfig: string;
+  model:
+    | Extract<ProjectCanvasMainRenderModel, { kind: "dbAccess" }>
+    | null
+    | undefined;
   namespace: string;
   onClose: () => void;
   projectUid: string;
-  selectedDatabaseData: CanvasDatabaseNodeData | null;
 }
 
 export function MainActionSurface({
   dbAccessEnabled = true,
-  entry,
   kubeconfig,
+  model,
   namespace,
   onClose,
   projectUid,
-  selectedDatabaseData,
 }: MainActionSurfaceProps) {
-  const open =
-    dbAccessEnabled &&
-    entry?.kind === "dbAccess" &&
-    selectedDatabaseData != null;
+  const open = dbAccessEnabled && model != null;
 
-  const { states } = selectedDatabaseData ?? { states: null };
+  const { states } = model?.databaseData ?? { states: null };
   const subtitle =
     states == null
       ? undefined
@@ -151,12 +148,12 @@ export function MainActionSurface({
       subtitle={subtitle}
       title={states?.name ?? ""}
     >
-      {selectedDatabaseData == null ? null : (
+      {model == null ? null : (
         <DataBrowserPane
           kubeconfig={kubeconfig}
           namespace={namespace}
           projectUid={projectUid}
-          selectedDatabaseData={selectedDatabaseData}
+          selectedDatabaseData={model.databaseData}
         />
       )}
     </MainActionSurfaceFrame>

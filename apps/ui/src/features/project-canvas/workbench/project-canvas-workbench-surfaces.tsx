@@ -4,17 +4,16 @@ import { DatabaseDeploymentPane } from "@/components/database-deployment-pane";
 import { DockerDeploymentPane } from "@/components/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/components/github-deployment-pane";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
-import {
-  DATABASE_PANE,
-  WORKLOAD_PANE,
-} from "@/features/project-canvas/canvas-store";
-import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/database-node-data";
 import { DatabaseConsolePane } from "@/features/project-canvas/panels/database-console-pane";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { ProjectCanvasResourcePane } from "@/features/project-canvas/panels/project-canvas-resource-pane";
-import { ProjectCanvasSidePaneSlot } from "@/features/project-canvas/panels/project-canvas-side-pane-slot";
+import {
+  type ProjectCanvasSidePaneEntry,
+  ProjectCanvasSidePaneSlot,
+} from "@/features/project-canvas/panels/project-canvas-side-pane-slot";
 import { WorkloadLogsPane } from "@/features/project-canvas/panels/workload-logs-panel";
 import { WorkloadTerminalPane } from "@/features/project-canvas/panels/workload-terminal-panel";
+import type { ProjectCanvasSideRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import type { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
 
 type ProjectCanvasWorkbenchState = ReturnType<typeof useProjectCanvas>;
@@ -34,41 +33,11 @@ export function ProjectCanvasWorkbenchSurfaces({
   refreshWorkloadLists,
   workbench,
 }: ProjectCanvasWorkbenchSurfacesProps) {
-  const drawerNode = workbench.drawerNode;
-  const mainNode = workbench.mainNode;
-  const sideDatabaseData = databaseNodeDataFromNode(workbench.sideNode);
-  const mainDatabaseData = databaseNodeDataFromNode(mainNode);
-  const terminalSurfaceOpen =
-    workbench.drawerWorkloadPane === WORKLOAD_PANE.terminal &&
-    drawerNode != null;
-  const workloadLogsSurfaceOpen =
-    workbench.mainWorkloadPane === WORKLOAD_PANE.logs && mainNode != null;
-  const databaseConsoleOpen =
-    workbench.drawerDatabasePane === DATABASE_PANE.console &&
-    drawerNode != null;
-  const databaseLogsSurfaceOpen =
-    workbench.mainDatabasePane === DATABASE_PANE.logs && mainNode != null;
-  const canvasResourcePaneOpen = Boolean(
-    workbench.sideWorkloadPane ??
-      workbench.sideDatabasePane ??
-      workbench.sideEntryPane
-  );
+  const { drawer, main, side } = workbench.surfaceRenderModel;
 
-  const canvasSidePaneEntry = (() => {
-    if (!(workbench.sideVisible && workbench.side != null)) {
-      return null;
-    }
-    if (workbench.side.kind === "databaseDeployment") {
-      return { kind: "databaseDeployment" as const };
-    }
-    if (workbench.side.kind === "dockerDeployment") {
-      return { kind: "dockerDeployment" as const };
-    }
-    if (workbench.side.kind === "githubDeployment") {
-      return { kind: "githubDeployment" as const };
-    }
-    return canvasResourcePaneOpen ? { kind: "resource" as const } : null;
-  })();
+  const canvasSidePaneEntry = canvasSidePaneEntryFromRenderModel(side);
+  const sideResourceContent = side?.kind === "resource" ? side.content : null;
+  const dbAccessMain = main?.kind === "dbAccess" ? main : null;
 
   return (
     <>
@@ -97,55 +66,72 @@ export function ProjectCanvasWorkbenchSurfaces({
         }
         resourcePane={
           <ProjectCanvasResourcePane
-            databasePane={workbench.sideDatabasePane}
-            entryPane={workbench.sideEntryPane}
+            content={sideResourceContent}
             kubeconfig={kubeconfig}
             onClose={workbench.closeResourcePane}
             onSettingsLeaveGuardChange={workbench.registerSettingsLeaveGuard}
             onUpdated={refreshWorkloadLists}
-            selectedDatabaseData={sideDatabaseData}
-            selectedEntryRef={workbench.selectedEntryRef}
-            selectedNode={workbench.sideNode}
-            workloadPane={workbench.sideWorkloadPane}
           />
         }
       />
       <MainActionSurface
-        entry={workbench.main}
         kubeconfig={kubeconfig}
+        model={dbAccessMain}
         namespace={namespace}
         onClose={workbench.closeMainSurface}
         projectUid={projectUid}
-        selectedDatabaseData={mainDatabaseData}
       />
-      {workloadLogsSurfaceOpen ? (
+      {main?.kind === "apLogs" ? (
         <WorkloadLogsPane
-          node={mainNode}
+          node={main.node}
           onClose={workbench.closeResourceLogsSurface}
         />
       ) : null}
-      {databaseLogsSurfaceOpen ? (
+      {main?.kind === "dbLogs" ? (
         <DatabaseLogsPane
           kubeconfig={kubeconfig}
-          node={mainNode}
+          node={main.node}
           onClose={workbench.closeResourceLogsSurface}
           open
         />
       ) : null}
       {workbench.settingsLeaveGuardDialog}
-      {terminalSurfaceOpen ? (
+      {drawer?.kind === "apTerminal" ? (
         <WorkloadTerminalPane
-          node={drawerNode}
+          node={drawer.node}
           onClose={workbench.closeDrawerSurface}
         />
       ) : null}
-      {databaseConsoleOpen ? (
+      {drawer?.kind === "dbConsole" ? (
         <DatabaseConsolePane
-          node={drawerNode}
+          node={drawer.node}
           onClose={workbench.closeDrawerSurface}
           projectUid={projectUid}
         />
       ) : null}
     </>
   );
+}
+
+function canvasSidePaneEntryFromRenderModel(
+  side: ProjectCanvasSideRenderModel
+): ProjectCanvasSidePaneEntry {
+  if (side == null || side.kind === "pendingTarget") {
+    return null;
+  }
+  if (side.kind === "resource") {
+    return { kind: "resource" };
+  }
+  switch (side.entry.kind) {
+    case "databaseDeployment":
+      return { kind: "databaseDeployment" };
+    case "dockerDeployment":
+      return { kind: "dockerDeployment" };
+    case "githubDeployment":
+      return { kind: "githubDeployment" };
+    case "projectCreation":
+      return { kind: "projectCreation" };
+    default:
+      return side.entry satisfies never;
+  }
 }

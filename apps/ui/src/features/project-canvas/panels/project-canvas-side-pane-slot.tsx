@@ -7,6 +7,7 @@ export type ProjectCanvasSidePaneEntry =
   | { kind: "databaseDeployment" }
   | { kind: "dockerDeployment" }
   | { kind: "githubDeployment" }
+  | { kind: "projectCreation" }
   | { kind: "resource" }
   | null;
 
@@ -15,12 +16,14 @@ export function ProjectCanvasSidePaneSlot({
   dockerDeploymentPane,
   entry,
   githubDeploymentPane,
+  projectCreationPane,
   resourcePane,
 }: {
   databaseDeploymentPane?: ReactNode;
   dockerDeploymentPane?: ReactNode;
   entry: ProjectCanvasSidePaneEntry;
   githubDeploymentPane: ReactNode;
+  projectCreationPane?: ReactNode;
   resourcePane: ReactNode;
 }) {
   let pane: ReactNode = null;
@@ -31,6 +34,8 @@ export function ProjectCanvasSidePaneSlot({
     pane = dockerDeploymentPane;
   } else if (entry?.kind === "githubDeployment") {
     pane = githubDeploymentPane;
+  } else if (entry?.kind === "projectCreation") {
+    pane = projectCreationPane;
   } else if (entry?.kind === "resource") {
     pane = resourcePane;
   }
