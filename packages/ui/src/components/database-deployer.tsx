@@ -118,19 +118,17 @@ function DeploymentCard({
   title: string;
 }) {
   return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-resource-pane-border bg-resource-pane-card/40 p-4">
+    <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-white/[2%] p-4">
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-4 shrink-0 items-center justify-center text-resource-pane-foreground">
+          <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
             {icon}
           </span>
-          <h3 className="truncate font-medium text-resource-pane-foreground text-sm leading-5">
+          <h3 className="truncate font-medium text-foreground text-sm leading-5">
             {title}
           </h3>
         </div>
-        <p className="text-resource-pane-muted text-sm leading-5">
-          {description}
-        </p>
+        <p className="text-muted-foreground text-sm leading-5">{description}</p>
       </div>
       {children}
     </section>
@@ -202,7 +200,7 @@ export function DatabaseDeployer({
 
   return (
     <div
-      className={cn("flex min-w-0 flex-col gap-3", className)}
+      className={cn("dark flex min-w-0 flex-col gap-3", className)}
       data-slot="database-deployer"
     >
       <DeploymentCard
@@ -211,7 +209,7 @@ export function DatabaseDeployer({
         title="Type"
       >
         {databaseOptions.length === 0 ? (
-          <div className="flex h-10 items-center rounded-md border border-resource-pane-input px-3 text-resource-pane-muted text-sm leading-5">
+          <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
             {emptyMessage}
           </div>
         ) : (
@@ -220,7 +218,7 @@ export function DatabaseDeployer({
             onValueChange={setDatabaseId}
             value={effectiveDatabaseId}
           >
-            <SelectTrigger className="h-9 border-resource-pane-input bg-transparent text-resource-pane-foreground">
+            <SelectTrigger className="h-9 border-input bg-transparent text-foreground">
               <SelectValue placeholder="Choose a database" />
             </SelectTrigger>
             <SelectContent>
@@ -253,7 +251,7 @@ export function DatabaseDeployer({
             >
               <SelectTrigger
                 aria-label="Database instance preset"
-                className="h-9 border-resource-pane-input bg-transparent text-resource-pane-foreground"
+                className="h-9 border-input bg-transparent text-foreground"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -265,7 +263,7 @@ export function DatabaseDeployer({
                 ))}
               </SelectContent>
             </Select>
-            <p className="min-h-4 text-resource-pane-muted text-xs leading-4">
+            <p className="min-h-4 text-muted-foreground text-xs leading-4">
               {choice == null
                 ? "Select a database engine first."
                 : presetSummary(choice.engine, instancePreset)}
@@ -279,7 +277,7 @@ export function DatabaseDeployer({
             >
               <SelectTrigger
                 aria-label="Database replica count"
-                className="h-9 border-resource-pane-input bg-transparent text-resource-pane-foreground"
+                className="h-9 border-input bg-transparent text-foreground"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -291,7 +289,7 @@ export function DatabaseDeployer({
                 ))}
               </SelectContent>
             </Select>
-            <p className="min-h-4 text-resource-pane-muted text-xs leading-4">
+            <p className="min-h-4 text-muted-foreground text-xs leading-4">
               Private access by default.
             </p>
           </div>
@@ -301,7 +299,7 @@ export function DatabaseDeployer({
       <Button
         aria-busy={busy}
         aria-label="Deploy database"
-        className="h-9 w-full rounded-lg bg-resource-pane-card text-resource-pane-primary hover:bg-resource-pane-input"
+        className="h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input"
         disabled={!canDeploy}
         onClick={async () => {
           if (!(choice && canDeploy)) {

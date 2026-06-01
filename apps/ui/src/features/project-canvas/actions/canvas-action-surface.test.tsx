@@ -17,9 +17,9 @@ const noop = () => {
 const CLOSE_LABEL_RE = /Close Main Action Surface/;
 const LABEL_RE = /aria-label="Main Action Surface"/;
 const NAME_RE = /orders-db/;
-const RESOURCE_PANE_SURFACE_RE = /resource-pane-surface/;
+const ACTION_SURFACE_BACKGROUND_RE = /bg-neutral-950/;
 const MAIN_ACTION_BODY_BACKGROUND_RE = /main-action-surface-body-background/;
-const DATA_BROWSER_RE = /text-resource-pane-foreground/;
+const DATA_BROWSER_RE = /text-foreground/;
 const SUBTITLE_RE = /Database PostgreSQL 16.4/;
 const ASSISTANT_TOGGLE_OFFSET_RE = /pr-12/;
 const CUSTOM_BODY_RE = /Resource logs/;
@@ -59,7 +59,7 @@ test("main action surface renders shared chrome and empty body slot", () => {
   assert.match(html, NAME_RE);
   assert.match(html, SUBTITLE_RE);
   assert.match(html, CLOSE_LABEL_RE);
-  assert.match(html, RESOURCE_PANE_SURFACE_RE);
+  assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
   assert.match(html, DATA_BROWSER_RE);
 });
@@ -83,7 +83,7 @@ test("main action surface frame renders custom surface content", () => {
   assert.match(html, CUSTOM_TITLE_RE);
   assert.match(html, CUSTOM_SUBTITLE_RE);
   assert.match(html, CUSTOM_BODY_RE);
-  assert.match(html, RESOURCE_PANE_SURFACE_RE);
+  assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
 });
 

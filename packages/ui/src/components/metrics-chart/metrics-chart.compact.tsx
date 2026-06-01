@@ -80,10 +80,7 @@ export function MetricsChartCompact({
             />
           </linearGradient>
         </defs>
-        <CartesianGrid
-          stroke="var(--color-resource-pane-border)"
-          vertical={false}
-        />
+        <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="readableTime" hide />
         <YAxis domain={[0, 100]} hide ticks={[50, 100]} />
         <ChartTooltip

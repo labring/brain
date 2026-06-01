@@ -82,12 +82,12 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
         </p>
       )}
       {error == null && isLoading && network == null ? (
-        <p className="text-resource-pane-muted text-sm">
+        <p className="text-muted-foreground text-sm">
           Loading public addresses…
         </p>
       ) : null}
       {error == null && !isLoading && network == null ? (
-        <p className="text-resource-pane-muted text-sm">
+        <p className="text-muted-foreground text-sm">
           Public Address settings are unavailable.
         </p>
       ) : null}

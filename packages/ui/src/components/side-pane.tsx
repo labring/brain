@@ -70,7 +70,7 @@ export function SidePane({
     >
       <div
         className={cn(
-          "resource-pane-surface absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-resource-pane-input border-t border-l bg-resource-pane text-resource-pane-foreground shadow-lg transition-transform duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          "resource-pane-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
           motionOpen ? "translate-x-0" : "translate-x-full",
           className
         )}
@@ -90,14 +90,14 @@ export function SidePane({
                   </span>
                 )}
                 <h2
-                  className="truncate font-semibold text-lg text-resource-pane-foreground leading-none"
+                  className="truncate font-semibold text-foreground text-lg leading-none"
                   title={title}
                 >
                   {title}
                 </h2>
               </div>
               {subtitle == null || subtitle.trim() === "" ? null : (
-                <p className="truncate text-resource-pane-muted text-sm leading-5">
+                <p className="truncate text-muted-foreground text-sm leading-5">
                   {subtitle}
                 </p>
               )}

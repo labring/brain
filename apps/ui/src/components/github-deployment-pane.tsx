@@ -175,7 +175,7 @@ export function GitHubDeploymentPane({ onClose }: { onClose: () => void }) {
       icon={
         <svg
           aria-hidden
-          className="size-4 text-resource-pane-foreground"
+          className="size-4 text-foreground"
           viewBox="0 0 24 24"
           xmlns="http://www.w3.org/2000/svg"
         >

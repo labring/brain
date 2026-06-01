@@ -14,7 +14,6 @@ const ASIDE_RE = /<aside/;
 const BODY_RE = /Resource details/;
 const CLOSE_LABEL_RE = /aria-label="Close resource pane"/;
 const PANE_LABEL_RE = /aria-label="Canvas resource pane"/;
-const RESOURCE_PANE_BACKGROUND_RE = /bg-resource-pane/;
 const RESOURCE_PANE_SURFACE_RE = /resource-pane-surface/;
 const SUBTITLE_RE = /Runtime details/;
 const TITLE_RE = /Container/;
@@ -37,7 +36,6 @@ test("canvas resource pane preserves resource-specific chrome while using the sh
   assert.match(html, SUBTITLE_RE);
   assert.match(html, BODY_RE);
   assert.match(html, RESOURCE_PANE_SURFACE_RE);
-  assert.match(html, RESOURCE_PANE_BACKGROUND_RE);
 });
 
 test("project canvas resource pane does not render workload logs as side pane content", () => {

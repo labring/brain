@@ -208,10 +208,10 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
   return (
     <section
       aria-label="Workload terminal"
-      className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-[38%] min-h-72 flex-col border-resource-pane-input border-t bg-[#10131a]/98 shadow-[0_-18px_60px_rgba(0,0,0,0.36)] backdrop-blur"
+      className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-[38%] min-h-72 flex-col border-input border-t bg-[#10131a]/98 shadow-[0_-18px_60px_rgba(0,0,0,0.36)] backdrop-blur"
       data-slot="exec-terminal-plane"
     >
-      <header className="flex h-15 shrink-0 items-center gap-3 border-resource-pane-input border-b px-6">
+      <header className="flex h-15 shrink-0 items-center gap-3 border-input border-b px-6">
         <SquareTerminal aria-hidden className="size-4 shrink-0 text-blue-500" />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-3">

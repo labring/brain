@@ -139,7 +139,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         subtitle={subtitle}
         title={title}
       >
-        <p className="text-resource-pane-muted text-sm">
+        <p className="text-muted-foreground text-sm">
           Select a workload with a name and configure namespace in settings.
         </p>
       </WorkloadSettingsShell>
@@ -167,7 +167,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         subtitle={subtitle}
         title={title}
       >
-        <p className="text-resource-pane-muted text-sm">Loading workload…</p>
+        <p className="text-muted-foreground text-sm">Loading workload…</p>
       </WorkloadSettingsShell>
     );
   }

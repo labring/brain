@@ -58,9 +58,7 @@ function TabItem({
     <div
       className={cn(
         "group flex h-9 cursor-pointer select-none items-center gap-1 border-sidebar-border border-r p-2 pl-3 transition-colors duration-150",
-        isActive
-          ? "bg-resource-pane-input text-foreground"
-          : "text-foreground hover:bg-resource-pane-input"
+        isActive ? "bg-input text-foreground" : "text-foreground hover:bg-input"
       )}
       data-qa-action="activate"
       data-qa-database={tab.databaseName}

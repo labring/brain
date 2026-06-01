@@ -36,9 +36,9 @@ const ICON: Record<
 };
 
 const ICON_CLASS: Record<ProjectCreatorSourceKind, string> = {
-  github: "text-resource-pane-foreground",
+  github: "text-foreground",
   "docker-image": "text-blue-500",
-  database: "text-resource-pane-muted",
+  database: "text-muted-foreground",
 };
 
 export function ProjectCreatorProjectNameField() {
@@ -49,7 +49,7 @@ export function ProjectCreatorProjectNameField() {
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
       <Label
-        className="text-resource-pane-foreground leading-5"
+        className="text-foreground leading-5"
         htmlFor="project-creator-display-name"
       >
         Project Name
@@ -62,7 +62,7 @@ export function ProjectCreatorProjectNameField() {
         }
         aria-invalid={states.projectDisplayNameError ? true : undefined}
         autoComplete="off"
-        className="border-resource-pane-input bg-transparent text-resource-pane-foreground placeholder:text-resource-pane-muted focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+        className="border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
         id="project-creator-display-name"
         onChange={(event) =>
           actions.setProjectDisplayName(event.currentTarget.value)
@@ -96,7 +96,7 @@ export function ProjectCreatorOptionPicker({
     >
       <ProjectCreatorProjectNameField />
       <div className="flex min-w-0 flex-col gap-3">
-        <p className="font-medium text-resource-pane-foreground text-sm leading-5">
+        <p className="font-medium text-foreground text-sm leading-5">
           Scenario
         </p>
         <div className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
@@ -104,7 +104,7 @@ export function ProjectCreatorOptionPicker({
             const Icon = ICON[id];
             return (
               <button
-                className="flex min-h-[76px] min-w-0 flex-col items-start gap-2 rounded-md border border-transparent p-2.5 text-left outline-none transition-colors hover:bg-resource-pane-card focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 active:bg-resource-pane-card"
+                className="flex min-h-[76px] min-w-0 flex-col items-start gap-2 rounded-md border border-transparent p-2.5 text-left outline-none transition-colors hover:bg-white/5 focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 active:bg-white/5"
                 data-slot="project-creator-option"
                 key={id}
                 onClick={() => actions.pick(id)}
@@ -115,11 +115,11 @@ export function ProjectCreatorOptionPicker({
                     aria-hidden
                     className={cn("size-4 shrink-0", ICON_CLASS[id])}
                   />
-                  <span className="truncate font-medium text-resource-pane-foreground text-sm leading-5">
+                  <span className="truncate font-medium text-foreground text-sm leading-5">
                     {PROJECT_CREATOR_SOURCE_LABEL[id]}
                   </span>
                 </span>
-                <span className="line-clamp-2 text-resource-pane-muted text-xs leading-4">
+                <span className="line-clamp-2 text-muted-foreground text-xs leading-4">
                   {DESCRIPTION[id]}
                 </span>
               </button>

@@ -21,18 +21,15 @@ export function ResourceSettingsSection({
   return (
     <section
       className={cn(
-        "flex min-w-0 flex-col gap-3 rounded-lg border border-resource-pane-border bg-transparent",
+        "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-transparent",
         className
       )}
       {...props}
     >
-      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-resource-pane-border border-b px-2.5">
+      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-border border-b px-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <Icon
-            aria-hidden
-            className="size-4 shrink-0 text-resource-pane-foreground"
-          />
-          <h3 className="truncate font-medium text-resource-pane-foreground text-sm leading-5">
+          <Icon aria-hidden className="size-4 shrink-0 text-foreground" />
+          <h3 className="truncate font-medium text-foreground text-sm leading-5">
             {title}
           </h3>
         </div>
@@ -52,10 +49,7 @@ export function ResourceSettingsInset({
 }: ComponentPropsWithoutRef<"div">) {
   return (
     <div
-      className={cn(
-        "rounded-lg bg-resource-pane-card px-3 pt-2.5 pb-3",
-        className
-      )}
+      className={cn("rounded-lg bg-white/5 px-3 pt-2.5 pb-3", className)}
       {...props}
     >
       {children}
@@ -146,7 +140,7 @@ export function ResourceSettingsDraftFooter({
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
             aria-label={cancelAriaLabel}
-            className="h-9 rounded-lg px-4 text-resource-pane-muted hover:bg-resource-pane-input hover:text-resource-pane-foreground"
+            className="h-9 rounded-lg px-4 text-muted-foreground hover:bg-input hover:text-foreground"
             disabled={!dirty || pending}
             onClick={onCancel}
             type="button"
@@ -156,7 +150,7 @@ export function ResourceSettingsDraftFooter({
           </Button>
           <Button
             aria-label={submitAriaLabel}
-            className="h-9 rounded-lg bg-resource-pane-card px-4 text-resource-pane-primary hover:bg-resource-pane-input"
+            className="h-9 rounded-lg bg-white/5 px-4 text-primary hover:bg-input"
             disabled={!canSubmit}
             onClick={async () => {
               await onSubmit();
@@ -223,24 +217,24 @@ export function ResourceSettingsSlider({
               {Icon == null ? null : (
                 <Icon
                   aria-hidden
-                  className="size-4 shrink-0 text-resource-pane-muted"
+                  className="size-4 shrink-0 text-muted-foreground"
                 />
               )}
-              <ScaleSlider.Label className="truncate text-resource-pane-muted text-sm leading-5">
+              <ScaleSlider.Label className="truncate text-muted-foreground text-sm leading-5">
                 {label}
               </ScaleSlider.Label>
             </ScaleSlider.Group>
-            <span className="shrink-0 text-resource-pane-foreground text-sm leading-5">
+            <span className="shrink-0 text-foreground text-sm leading-5">
               {formatValue(value)}
             </span>
           </ScaleSlider.Header>
           <ScaleSlider.Control aria-label={ariaLabel} className="h-2">
-            <ScaleSlider.Track className="h-2 bg-resource-pane-input">
+            <ScaleSlider.Track className="h-2 bg-input">
               <ScaleSlider.Range className="bg-gradient-to-r from-blue-950 to-blue-500" />
             </ScaleSlider.Track>
-            <ScaleSlider.Thumb className="size-4 border-2 border-resource-pane-primary bg-blue-500 shadow-none ring-0" />
+            <ScaleSlider.Thumb className="size-4 border-2 border-primary bg-blue-500 shadow-none ring-0" />
           </ScaleSlider.Control>
-          <div className="flex min-w-0 items-center justify-between gap-3 text-resource-pane-muted text-sm leading-5">
+          <div className="flex min-w-0 items-center justify-between gap-3 text-muted-foreground text-sm leading-5">
             <span className="truncate">{boundFormatter(min)}</span>
             <span className="truncate text-right">{boundFormatter(max)}</span>
           </div>
