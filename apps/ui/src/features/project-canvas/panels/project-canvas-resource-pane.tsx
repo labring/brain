@@ -1,14 +1,11 @@
 "use client";
 
-import type { Node } from "@xyflow/react";
 import type { ReactNode } from "react";
-import {
-  DATABASE_PANE,
-  ENTRY_PANE,
-  WORKLOAD_PANE,
-} from "@/features/project-canvas/canvas-store";
-import type { CanvasEntrySelectionRef } from "@/features/project-canvas/nodes/entry-node-selection";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
+import { WORKLOAD_PANE } from "@/features/project-canvas/canvas-store";
+import type {
+  ProjectCanvasApResourcePaneKind,
+  ProjectCanvasResourcePaneRenderModel,
+} from "@/features/project-canvas/surface/rendering-adapter";
 import { CanvasResourcePanePresence } from "./canvas-resource-pane";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { DatabaseSettingsPane } from "./database-settings-pane";
@@ -16,68 +13,69 @@ import { EntryPointSettingsPane } from "./entrypoint-settings-panel";
 import type { SettingsLeaveGuardRegistration } from "./settings-leave-guard";
 import { WorkloadResourcePane } from "./workload-resource-pane";
 
-function isWorkloadPaneMode(mode: string | null | undefined): boolean {
-  return (
-    mode === WORKLOAD_PANE.events ||
-    mode === WORKLOAD_PANE.settings ||
-    mode === WORKLOAD_PANE.metrics ||
-    mode === WORKLOAD_PANE.history
-  );
+function workloadPaneMode(kind: ProjectCanvasApResourcePaneKind): string {
+  switch (kind) {
+    case "apEvents":
+      return WORKLOAD_PANE.events;
+    case "apHistory":
+      return WORKLOAD_PANE.history;
+    case "apMetrics":
+      return WORKLOAD_PANE.metrics;
+    case "apSettings":
+      return WORKLOAD_PANE.settings;
+    default:
+      return kind satisfies never;
+  }
 }
 
 export interface ProjectCanvasResourcePaneContentProps {
-  databasePane: string | null | undefined;
-  entryPane: string | null | undefined;
+  content: ProjectCanvasResourcePaneRenderModel | null | undefined;
   kubeconfig?: string;
   onClose: () => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
   readOnly?: boolean;
-  selectedDatabaseData: CanvasDatabaseNodeData | null;
-  selectedEntryRef: CanvasEntrySelectionRef | null;
-  selectedNode: Node | null;
-  workloadPane: string | null | undefined;
 }
 
 export function renderProjectCanvasResourcePaneContent({
-  databasePane,
-  entryPane,
+  content,
   kubeconfig,
   onClose,
   onSettingsLeaveGuardChange,
   onUpdated,
   readOnly = false,
-  selectedDatabaseData,
-  selectedEntryRef,
-  selectedNode,
-  workloadPane,
 }: ProjectCanvasResourcePaneContentProps): ReactNode {
-  if (selectedNode != null && isWorkloadPaneMode(workloadPane)) {
+  if (
+    content?.kind === "apEvents" ||
+    content?.kind === "apHistory" ||
+    content?.kind === "apMetrics" ||
+    content?.kind === "apSettings"
+  ) {
     return (
       <WorkloadResourcePane
-        mode={workloadPane}
-        node={selectedNode}
+        mode={workloadPaneMode(content.kind)}
+        node={content.node}
         onClose={onClose}
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
       />
     );
   }
 
-  if (databasePane === DATABASE_PANE.metrics && selectedDatabaseData != null) {
+  if (content?.kind === "dbMetrics") {
     return (
       <DatabaseMetricsPane
         kubeconfig={kubeconfig}
-        node={selectedNode}
+        node={content.node}
         onClose={onClose}
         open
       />
     );
   }
 
-  if (databasePane === DATABASE_PANE.settings && selectedDatabaseData != null) {
+  if (content?.kind === "dbSettings") {
     return (
       <DatabaseSettingsPane
-        data={selectedDatabaseData}
+        data={content.databaseData}
         kubeconfig={kubeconfig}
         onClose={onClose}
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
@@ -86,7 +84,7 @@ export function renderProjectCanvasResourcePaneContent({
     );
   }
 
-  if (entryPane === ENTRY_PANE.settings && selectedEntryRef != null) {
+  if (content?.kind === "publicAddresses") {
     return (
       <EntryPointSettingsPane
         kubeconfig={kubeconfig}
@@ -94,7 +92,7 @@ export function renderProjectCanvasResourcePaneContent({
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
         onUpdated={onUpdated}
         readOnly={readOnly}
-        selection={selectedEntryRef}
+        selection={content.selection}
       />
     );
   }

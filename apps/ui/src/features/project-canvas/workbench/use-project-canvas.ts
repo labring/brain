@@ -54,7 +54,6 @@ import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import type { CanvasEntrySelectionRef } from "@/features/project-canvas/nodes/entry-node-selection";
 import type {
   CanvasContainerNodeData,
   CanvasDatabaseNodeData,
@@ -62,11 +61,11 @@ import type {
   CanvasNodeSettingsAccess,
 } from "@/features/project-canvas/nodes/types";
 import { useSettingsLeaveGuardController } from "@/features/project-canvas/panels/settings-leave-guard";
+import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import {
   defaultProjectSideSurfaceForNode,
   drawerSurfaceForApTerminal,
   drawerSurfaceForDbConsole,
-  findCanvasNodeForProjectTarget,
   mainSurfaceForDbAccess,
   mainSurfaceForResourceLogs,
   projectApTargetFromNode,
@@ -80,13 +79,7 @@ import {
 } from "@/features/project-canvas/surface/selection";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
-import {
-  type ProjectDrawerSurfaceEntry,
-  type ProjectMainSurfaceEntry,
-  type ProjectSideSurfaceEntry,
-  projectSideSurfaceVisible,
-  projectSurfaceEntryTarget,
-} from "@/features/project-surfaces/surface-state";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { projectApTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
@@ -217,80 +210,6 @@ function canvasNodeSettingsAccess({
   return { readOnly: true };
 }
 
-function selectedEntryRefFromSurfaceState({
-  selected,
-  side,
-}: {
-  selected: ProjectCanvasSelection | null;
-  side: ProjectSideSurfaceEntry | null;
-}): CanvasEntrySelectionRef | null {
-  if (side?.kind === "publicAddresses") {
-    return {
-      apName: side.target.apName,
-      namespace: side.target.namespace,
-    };
-  }
-
-  if (selected?.kind !== "publicAddresses") {
-    return null;
-  }
-
-  return {
-    apName: selected.target.apName,
-    namespace: selected.target.namespace,
-  };
-}
-
-function sideWorkloadPaneFromEntry(entry: ProjectSideSurfaceEntry | null) {
-  switch (entry?.kind) {
-    case "apEvents":
-      return WORKLOAD_PANE.events;
-    case "apHistory":
-      return WORKLOAD_PANE.history;
-    case "apMetrics":
-      return WORKLOAD_PANE.metrics;
-    case "apSettings":
-      return WORKLOAD_PANE.settings;
-    default:
-      return null;
-  }
-}
-
-function sideDatabasePaneFromEntry(entry: ProjectSideSurfaceEntry | null) {
-  switch (entry?.kind) {
-    case "dbMetrics":
-      return DATABASE_PANE.metrics;
-    case "dbSettings":
-      return DATABASE_PANE.settings;
-    default:
-      return null;
-  }
-}
-
-function sideEntryPaneFromEntry(entry: ProjectSideSurfaceEntry | null) {
-  return entry?.kind === "publicAddresses" ? "settings" : null;
-}
-
-function mainWorkloadPaneFromEntry(entry: ProjectMainSurfaceEntry | null) {
-  return entry?.kind === "resourceLogs" && entry.target.kind === "AP"
-    ? WORKLOAD_PANE.logs
-    : null;
-}
-
-function mainDatabasePaneFromEntry(entry: ProjectMainSurfaceEntry | null) {
-  return entry?.kind === "resourceLogs" && entry.target.kind === "DB"
-    ? DATABASE_PANE.logs
-    : null;
-}
-
-function drawerWorkloadPaneFromEntry(entry: ProjectDrawerSurfaceEntry | null) {
-  return entry?.kind === "apTerminal" ? WORKLOAD_PANE.terminal : null;
-}
-
-function drawerDatabasePaneFromEntry(entry: ProjectDrawerSurfaceEntry | null) {
-  return entry?.kind === "dbConsole" ? DATABASE_PANE.console : null;
-}
-
 /**
  * Wires slot-based project surface query state, canvas selection, node toolbar actions,
  * AP lifecycle menu actions, and canvas `meta` for `<Canvas.Root />`.
@@ -368,9 +287,6 @@ export function useProjectCanvas(
     targetExists,
   });
   const selected = workbenchRoute.canvasSelection;
-  const side = workbenchRoute.side;
-  const main = workbenchRoute.main;
-  const drawer = workbenchRoute.drawer;
   const surfaceState = workbenchRoute.surfaces;
   const writeSelection = workbenchRoute.writeCanvasSelection;
   const openSideSurface = workbenchRoute.openSide;
@@ -853,24 +769,13 @@ export function useProjectCanvas(
         : null,
     [options?.edges, selected]
   );
-  const sideTarget = projectSurfaceEntryTarget(side);
-  const mainTarget = projectSurfaceEntryTarget(main);
-  const drawerTarget = projectSurfaceEntryTarget(drawer);
-  const sideNode = useMemo(
-    () => findCanvasNodeForProjectTarget(nodes, sideTarget),
-    [nodes, sideTarget]
-  );
-  const mainNode = useMemo(
-    () => findCanvasNodeForProjectTarget(nodes, mainTarget),
-    [nodes, mainTarget]
-  );
-  const drawerNode = useMemo(
-    () => findCanvasNodeForProjectTarget(nodes, drawerTarget),
-    [nodes, drawerTarget]
-  );
-  const selectedEntryRef = useMemo(
-    () => selectedEntryRefFromSurfaceState({ selected, side }),
-    [selected, side]
+  const surfaceRenderModel = useMemo(
+    () =>
+      createProjectCanvasSurfaceRenderModel({
+        nodes,
+        surfaceState,
+      }),
+    [nodes, surfaceState]
   );
 
   const frontCanvasNode = useCallback(
@@ -1049,14 +954,6 @@ export function useProjectCanvas(
   const closeResourcePane = closeSideSurface;
   const closeResourceLogsSurface = closeMainSurface;
 
-  const sideWorkloadPane = sideWorkloadPaneFromEntry(side);
-  const sideDatabasePane = sideDatabasePaneFromEntry(side);
-  const sideEntryPane = sideEntryPaneFromEntry(side);
-  const mainWorkloadPane = mainWorkloadPaneFromEntry(main);
-  const mainDatabasePane = mainDatabasePaneFromEntry(main);
-  const drawerWorkloadPane = drawerWorkloadPaneFromEntry(drawer);
-  const drawerDatabasePane = drawerDatabasePaneFromEntry(drawer);
-
   const meta = useMemo<CanvasMeta>(
     () => ({
       edgeAnchorResolver: ({
@@ -1142,14 +1039,6 @@ export function useProjectCanvas(
     closeResourcePane,
     closeSideSurface,
     connectionOrigin,
-    drawer,
-    drawerDatabasePane,
-    drawerNode,
-    drawerWorkloadPane,
-    main,
-    mainDatabasePane,
-    mainNode,
-    mainWorkloadPane,
     meta,
     nodes,
     openDrawerSurface,
@@ -1158,15 +1047,9 @@ export function useProjectCanvas(
     registerSettingsLeaveGuard,
     requestResourcePaneReplacement,
     selected,
-    selectedEntryRef,
     selectedEdge,
     selectedNode,
     settingsLeaveGuardDialog,
-    side,
-    sideDatabasePane,
-    sideEntryPane,
-    sideNode,
-    sideVisible: projectSideSurfaceVisible(surfaceState),
-    sideWorkloadPane,
+    surfaceRenderModel,
   };
 }

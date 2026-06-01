@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Node } from "@xyflow/react";
 import { createStore, Provider as JotaiProvider } from "jotai";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -40,18 +41,28 @@ const databaseData = {
   },
 } satisfies CanvasDatabaseNodeData;
 
+const databaseNode = {
+  data: databaseData,
+  id: "db-orders",
+  position: { x: 0, y: 0 },
+  type: "databaseNode",
+} as Node;
+
+const dbAccessModel = {
+  databaseData,
+  kind: "dbAccess" as const,
+  node: databaseNode,
+  target: { kind: "DB" as const, name: "orders-db", namespace: "default" },
+};
+
 test("main action surface renders shared chrome and empty body slot", () => {
   const html = renderToStaticMarkup(
     <MainActionSurface
-      entry={{
-        kind: "dbAccess",
-        target: { kind: "DB", name: "orders-db", namespace: "default" },
-      }}
       kubeconfig="kubeconfig"
+      model={dbAccessModel}
       namespace="default"
       onClose={noop}
       projectUid="project-uid"
-      selectedDatabaseData={databaseData}
     />
   );
 
@@ -90,15 +101,11 @@ test("main action surface frame renders custom surface content", () => {
 test("main action surface stays absent without supported entry data", () => {
   const html = renderToStaticMarkup(
     <MainActionSurface
-      entry={{
-        kind: "dbAccess",
-        target: { kind: "DB", name: "orders-db", namespace: "default" },
-      }}
       kubeconfig="kubeconfig"
+      model={null}
       namespace="default"
       onClose={noop}
       projectUid="project-uid"
-      selectedDatabaseData={null}
     />
   );
 
@@ -109,15 +116,11 @@ test("main action surface disables database browser when requested", () => {
   const html = renderToStaticMarkup(
     <MainActionSurface
       dbAccessEnabled={false}
-      entry={{
-        kind: "dbAccess",
-        target: { kind: "DB", name: "orders-db", namespace: "default" },
-      }}
       kubeconfig=""
+      model={dbAccessModel}
       namespace="default"
       onClose={noop}
       projectUid="project-uid"
-      selectedDatabaseData={databaseData}
     />
   );
 
@@ -131,15 +134,11 @@ test("main action surface header leaves room for the assistant pane toggle", () 
   const html = renderToStaticMarkup(
     <JotaiProvider store={store}>
       <MainActionSurface
-        entry={{
-          kind: "dbAccess",
-          target: { kind: "DB", name: "orders-db", namespace: "default" },
-        }}
         kubeconfig="kubeconfig"
+        model={dbAccessModel}
         namespace="default"
         onClose={noop}
         projectUid="project-uid"
-        selectedDatabaseData={databaseData}
       />
     </JotaiProvider>
   );
