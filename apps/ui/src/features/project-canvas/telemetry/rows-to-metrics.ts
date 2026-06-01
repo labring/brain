@@ -16,7 +16,7 @@ function numericCell(v: number | string): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
-/** Turns flattened API rows (`time`, `cpu`, `memory`, …) into {@link MetricsData} for {@link MetricsPane}. */
+/** Turns flattened API rows (`time`, `cpu`, `memory`, …) into chart-ready metrics data. */
 export function telemetryRowsToMetricsData(
   rows: Record<string, number | string>[] | undefined
 ): MetricsData {

@@ -177,55 +177,6 @@ export const Index: RegistryIndex = {
       ),
   },
 
-  "linear/components/container-node-legacy": {
-    style: "linear",
-    group: "components",
-    name: "container-node-legacy",
-    title: "Container Node Legacy",
-    description:
-      "Legacy Container Node implementations kept for migration comparison: v0 Root+context+Variant0 and v1 Shell/Variant1 explicit-prop layout. Not used by product runtime.",
-    state: "done",
-    type: "registry:preview",
-    registryDependencies: [
-      "preview",
-      "button",
-      "dropdown-menu",
-      "alert-dialog",
-      "scale-slider",
-    ],
-    files: [
-      {
-        path: "registry/linear/components/container-node/v0/container-node-preview-v0.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      {
-        path: "registry/linear/components/container-node/v1/container-node-preview-v1.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      previewUiFile,
-    ],
-    variants: [
-      {
-        id: "v0",
-        load: () =>
-          import(
-            "@registry/linear/components/container-node/v0/container-node-preview-v0"
-          ),
-        title: "v0",
-      },
-      {
-        id: "v1",
-        load: () =>
-          import(
-            "@registry/linear/components/container-node/v1/container-node-preview-v1"
-          ),
-        title: "v1",
-      },
-    ],
-  },
-
   "linear/components/container-settings-pane": {
     style: "linear",
     group: "components",
@@ -315,16 +266,6 @@ export const Index: RegistryIndex = {
       },
       {
         path: "packages/ui/src/components/scale-slider/scale-slider.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/raw-editor.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/lib/parse-env-text.ts",
         target: "",
         type: "registry:ui",
       },
@@ -701,53 +642,6 @@ export const Index: RegistryIndex = {
       ),
   },
 
-  "linear/components/raw-editor": {
-    style: "linear",
-    group: "components",
-    name: "raw-editor",
-    title: "Raw editor",
-    description:
-      "TanStack Form + .env-style KEY=value textarea (K8s env name filtering); compound Provider / Root / Input / Submit / Variant0.",
-    state: "coding",
-    type: "registry:preview",
-    registryDependencies: ["preview", "button", "field", "textarea"],
-    files: [
-      {
-        path: "registry/linear/components/raw-editor/raw-editor-preview.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      {
-        path: "packages/ui/src/components/raw-editor.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/lib/parse-env-text.ts",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/button.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/field.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/textarea.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      previewUiFile,
-    ],
-    load: () =>
-      import("@registry/linear/components/raw-editor/raw-editor-preview"),
-  },
-
   "linear/components/scale-slider": {
     style: "linear",
     group: "components",
@@ -943,38 +837,6 @@ export const Index: RegistryIndex = {
     ],
     load: () =>
       import("@registry/linear/components/metrics-chart/metrics-chart-preview"),
-  },
-
-  "linear/components/metrics-pane": {
-    style: "linear",
-    group: "components",
-    name: "metrics-pane",
-    title: "Metrics pane",
-    description:
-      "Data-driven grid: one MetricsChart per metric key (`cpu`, `memory`, …); auto-fill layout from `MetricsData`.",
-    state: "done",
-    type: "registry:preview",
-    registryDependencies: ["preview", "chart"],
-    files: [
-      {
-        path: "registry/linear/components/metrics-pane/metrics-pane-preview.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      {
-        path: "packages/ui/src/components/metrics-pane/metrics-pane.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "registry/linear/components/metrics-chart/metrics-chart-preview.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      previewUiFile,
-    ],
-    load: () =>
-      import("@registry/linear/components/metrics-pane/metrics-pane-preview"),
   },
 
   "linear/components/agui": {
