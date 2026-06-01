@@ -4,14 +4,8 @@ import { FindBar } from "@data-browser/components/database/shared/FindBar";
 import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
 import { AlertModal } from "@data-browser/components/ui/AlertModal";
 import { ConfirmationModal } from "@data-browser/components/ui/ConfirmationModal";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@data-browser/components/ui/dialog";
 import { ScrollArea } from "@data-browser/components/ui/scroll-area";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import {
   buildPreviewSql,
   summarizeChanges,
@@ -111,12 +105,11 @@ function TableDetailViewContent({
         />
       )}
 
-      <Dialog
+      <AppDialog.Root
         onOpenChange={actions.setShowPreviewModal}
         open={state.showPreviewModal}
       >
-        <DialogContent
-          className="sm:max-w-3xl"
+        <AppDialog.Content
           data-qa-module="sql"
           data-qa-object="changes-preview"
           data-qa-resource-id={tableName}
@@ -124,27 +117,30 @@ function TableDetailViewContent({
           data-qa-risk="resource_mutation"
           data-qa-state="open"
           data-testid="sql.table.changes-preview-dialog"
+          size="lg"
         >
-          <DialogHeader>
-            <DialogTitle>{"Preview changes"}</DialogTitle>
-            <DialogDescription>
+          <AppDialog.Header>
+            <AppDialog.Title>{"Preview changes"}</AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body className="pb-4">
+            <AppDialog.Description>
               {`${state.pendingChangeCount} pending change(s).`}
-            </DialogDescription>
-          </DialogHeader>
+            </AppDialog.Description>
 
-          <ScrollArea className="max-h-[60vh] rounded-md border bg-muted/20">
-            <pre
-              className="whitespace-pre-wrap p-4 font-mono text-xs"
-              data-qa-module="sql"
-              data-qa-object="changes-preview"
-              data-qa-state={state.pendingChangeCount > 0 ? "ready" : "empty"}
-              data-testid="sql.table.changes-preview-sql"
-            >
-              {previewStatements.join("\n\n")}
-            </pre>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+            <ScrollArea className="max-h-[60vh] rounded-md border border-white/10 bg-black/20">
+              <pre
+                className="whitespace-pre-wrap p-4 font-mono text-xs text-zinc-200"
+                data-qa-module="sql"
+                data-qa-object="changes-preview"
+                data-qa-state={state.pendingChangeCount > 0 ? "ready" : "empty"}
+                data-testid="sql.table.changes-preview-sql"
+              >
+                {previewStatements.join("\n\n")}
+              </pre>
+            </ScrollArea>
+          </AppDialog.Body>
+        </AppDialog.Content>
+      </AppDialog.Root>
 
       <ConfirmationModal
         confirmText={"Confirm"}

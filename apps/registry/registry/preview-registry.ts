@@ -104,6 +104,33 @@ export function getRegistryPreviewLoaderByKey(
 }
 
 export const Index: RegistryIndex = {
+  "linear/components/app-dialog": {
+    style: "linear",
+    group: "components",
+    name: "app-dialog",
+    title: "App Dialog",
+    description:
+      "Dark product dialog compound component for confirmations, forms, and loading actions.",
+    state: "done",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-dialog", "button"],
+    files: [
+      {
+        path: "registry/linear/components/app-dialog/app-dialog-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-dialog.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/app-dialog/app-dialog-preview"),
+  },
+
   "linear/components/log-viewer": {
     style: "linear",
     group: "components",
@@ -154,9 +181,9 @@ export const Index: RegistryIndex = {
       "canvas",
       "canvas-node",
       "container-node",
+      "app-dialog",
       "button",
       "dropdown-menu",
-      "alert-dialog",
     ],
     files: [
       {
@@ -193,7 +220,7 @@ export const Index: RegistryIndex = {
       "textarea",
       "field",
       "dropdown-menu",
-      "dialog",
+      "app-dialog",
       "label",
       "input",
     ],
@@ -214,7 +241,7 @@ export const Index: RegistryIndex = {
         type: "registry:lib",
       },
       {
-        path: "packages/ui/src/components/dialog.tsx",
+        path: "packages/ui/src/components/app-dialog.tsx",
         target: "",
         type: "registry:ui",
       },
@@ -343,6 +370,7 @@ export const Index: RegistryIndex = {
       "preview",
       "canvas",
       "database-node",
+      "app-dialog",
       "button",
       "dropdown-menu",
       "switch",
@@ -432,9 +460,8 @@ export const Index: RegistryIndex = {
     registryDependencies: [
       "preview",
       "button",
-      "dialog",
+      "app-dialog",
       "dropdown-menu",
-      "alert-dialog",
       "input",
       "label",
     ],
@@ -630,7 +657,7 @@ export const Index: RegistryIndex = {
       "button",
       "badge",
       "alert",
-      "dialog",
+      "app-dialog",
       "scroll-area",
       "spinner",
     ],
@@ -671,7 +698,7 @@ export const Index: RegistryIndex = {
         type: "registry:ui",
       },
       {
-        path: "packages/ui/src/components/dialog.tsx",
+        path: "packages/ui/src/components/app-dialog.tsx",
         target: "",
         type: "registry:ui",
       },

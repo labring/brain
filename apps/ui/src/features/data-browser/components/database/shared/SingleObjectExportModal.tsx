@@ -4,17 +4,11 @@ import {
   exportObject,
 } from "@data-browser/api/access-adapter";
 import type { AccessObjectRef } from "@data-browser/api/access-types";
-import { Button } from "@data-browser/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@data-browser/components/ui/dialog";
+import { cn } from "@data-browser/lib/utils";
 import { useDataBrowserRuntime } from "@data-browser/runtime";
 import { downloadBlob } from "@data-browser/utils/export-utils";
-import { Download, FileText, Loader2 } from "lucide-react";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
+import { Download, FileText } from "lucide-react";
 import { useState } from "react";
 
 interface SingleObjectExportModalProps {
@@ -56,48 +50,57 @@ export function SingleObjectExportModal({
   }
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title ?? "Export"}</DialogTitle>
-        </DialogHeader>
+    <AppDialog.Root
+      onOpenChange={(nextOpen) => {
+        if (isExporting && !nextOpen) {
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+      open={open}
+    >
+      <AppDialog.Content>
+        <AppDialog.Header>
+          <AppDialog.Title>{title ?? "Export"}</AppDialog.Title>
+        </AppDialog.Header>
 
-        <div className="flex flex-col gap-3">
+        <AppDialog.Body>
           <div className="grid grid-cols-2 gap-2">
             {DATA_BROWSER_EXPORT_FORMATS.map((option) => (
-              <Button
-                className="justify-start gap-2"
+              <button
+                className={cn(
+                  "inline-flex h-9 items-center justify-start gap-2 rounded-lg border border-white/10 px-3 font-medium text-sm/5 outline-none transition-colors",
+                  format === option
+                    ? "bg-white/10 text-zinc-50"
+                    : "bg-white/[0.045] text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
+                )}
                 disabled={isExporting}
                 key={option}
                 onClick={() => setFormat(option)}
                 type="button"
-                variant={format === option ? "default" : "outline"}
               >
                 <FileText className="h-4 w-4" />
                 {FORMAT_LABELS[option]}
-              </Button>
+              </button>
             ))}
           </div>
 
-          {error && <p className="text-destructive text-sm">{error}</p>}
-        </div>
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+        </AppDialog.Body>
 
-        <DialogFooter>
-          <Button
-            className="gap-2"
-            disabled={isExporting}
+        <AppDialog.Footer>
+          <AppDialog.Cancel disabled={isExporting}>Cancel</AppDialog.Cancel>
+          <AppDialog.Action
+            loading={isExporting}
+            loadingLabel="Exporting"
             onClick={handleExport}
             type="button"
           >
-            {isExporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
+            <Download className="h-4 w-4" />
             {"Export"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AppDialog.Action>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }

@@ -5,16 +5,9 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
@@ -392,58 +385,62 @@ export function ContainerHistoryPane({
         </ScrollArea>
       </div>
 
-      <Dialog onOpenChange={handleReviewClose} open={reviewOpen}>
-        <DialogContent className="gap-4 p-6 sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="pr-12">
+      <AppDialog.Root onOpenChange={handleReviewClose} open={reviewOpen}>
+        <AppDialog.Content size="lg">
+          <AppDialog.Header>
+            <AppDialog.Title>
               Backup <span className="font-mono">config.yaml</span>
-            </DialogTitle>
-            <DialogDescription>
+            </AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body>
+            <AppDialog.Description>
               {reviewRow == null
                 ? "Embedded effective spec snapshot for the selected backup ConfigMap."
                 : `ConfigMap ${reviewRow.configMapName}, image ${reviewRow.image.trim() === "" ? "—" : reviewRow.image}, saved ${formatSnapshotTime(reviewRow.createdAt)}.`}
-            </DialogDescription>
-          </DialogHeader>
+            </AppDialog.Description>
 
-          {reviewRow == null ? null : (
-            <div className="flex flex-col gap-1 text-muted-foreground text-sm">
-              <p className="break-all font-mono text-foreground text-xs leading-relaxed">
-                {reviewRow.configMapName}
-              </p>
-              <p>
-                Image:{" "}
-                <span className="text-foreground">
-                  {reviewRow.image.trim() === "" ? "—" : reviewRow.image}
-                </span>
-                {" · "}
-                Saved:{" "}
-                <span className="text-foreground">
-                  {formatSnapshotTime(reviewRow.createdAt)}
-                </span>
-                {reviewHashPreview === "" ? null : (
-                  <>
-                    {" · "}
-                    Hash:{" "}
-                    <span className="font-mono text-foreground">
-                      {reviewHashPreview}
-                    </span>
-                  </>
-                )}
-              </p>
+            {reviewRow == null ? null : (
+              <div className="flex flex-col gap-1 text-sm text-zinc-400">
+                <p className="break-all font-mono text-xs text-zinc-100 leading-relaxed">
+                  {reviewRow.configMapName}
+                </p>
+                <p>
+                  Image:{" "}
+                  <span className="text-zinc-100">
+                    {reviewRow.image.trim() === "" ? "—" : reviewRow.image}
+                  </span>
+                  {" · "}
+                  Saved:{" "}
+                  <span className="text-zinc-100">
+                    {formatSnapshotTime(reviewRow.createdAt)}
+                  </span>
+                  {reviewHashPreview === "" ? null : (
+                    <>
+                      {" · "}
+                      Hash:{" "}
+                      <span className="font-mono text-zinc-100">
+                        {reviewHashPreview}
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+
+            <div className="min-h-0">
+              <ReviewConfigYamlBody
+                yamlBody={yamlBody}
+                yamlError={yamlError}
+                yamlLoading={yamlLoading}
+              />
             </div>
-          )}
+          </AppDialog.Body>
 
-          <div className="min-h-0">
-            <ReviewConfigYamlBody
-              yamlBody={yamlBody}
-              yamlError={yamlError}
-              yamlLoading={yamlLoading}
-            />
-          </div>
-
-          <DialogFooter showCloseButton />
-        </DialogContent>
-      </Dialog>
+          <AppDialog.Footer>
+            <AppDialog.Cancel>Close</AppDialog.Cancel>
+          </AppDialog.Footer>
+        </AppDialog.Content>
+      </AppDialog.Root>
     </div>
   );
 }

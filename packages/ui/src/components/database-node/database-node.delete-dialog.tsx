@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@workspace/ui/components/alert-dialog";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 
@@ -82,30 +74,31 @@ export function DatabaseNodeDeleteDialog({
   open,
 }: DatabaseNodeDeleteDialogProps) {
   return (
-    <AlertDialog onOpenChange={onOpenChange} open={open}>
-      <AlertDialogContent data-slot="database-node-delete-dialog">
-        <AlertDialogHeader>
-          <AlertDialogTitle>{DELETE_TITLE}</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AppDialog.Root onOpenChange={onOpenChange} open={open}>
+      <AppDialog.Content data-slot="database-node-delete-dialog">
+        <AppDialog.Header>
+          <AppDialog.WarningIcon />
+          <AppDialog.Title>{DELETE_TITLE}</AppDialog.Title>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <AppDialog.Description>
             <DatabaseDeleteCopy name={name} />
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <Button
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          </AppDialog.Description>
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel>Cancel</AppDialog.Cancel>
+          <AppDialog.DestructiveAction
             onClick={() => {
               onConfirmDelete?.();
               onOpenChange(false);
             }}
             type="button"
-            variant="destructive"
           >
             Delete
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AppDialog.DestructiveAction>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }
 

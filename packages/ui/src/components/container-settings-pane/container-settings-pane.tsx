@@ -5,17 +5,10 @@ import {
   generatePlatformAddressId,
   platformAddressEndpoint,
 } from "@workspace/crossplane/lib/platform-address";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
 import { Label } from "@workspace/ui/components/label";
 import { PaneInput } from "@workspace/ui/components/pane-input";
 import {
@@ -1733,24 +1726,32 @@ function CnameBindingDialog({
   };
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Bind Custom Domain</DialogTitle>
-          <DialogDescription>
+    <AppDialog.Root
+      onOpenChange={(nextOpen) => {
+        if (pending && !nextOpen) {
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+      open={open}
+    >
+      <AppDialog.Content>
+        <AppDialog.Header>
+          <AppDialog.Title>Bind Custom Domain</AppDialog.Title>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <AppDialog.Description>
             Configure a CNAME record pointing to this Platform Address.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4">
-          <div className="grid gap-1.5">
-            <Label>CNAME target</Label>
-            <div className="min-w-0 truncate rounded-md border border-border bg-white/5 px-2.5 py-2 font-mono text-foreground text-sm">
+          </AppDialog.Description>
+          <AppDialog.Field>
+            <AppDialog.Label>CNAME target</AppDialog.Label>
+            <div className="min-w-0 truncate rounded-md border border-white/10 bg-white/5 px-2.5 py-2 font-mono text-sm text-zinc-100">
               {target === "" ? "Pending domain" : target}
             </div>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor={inputId}>Custom Domain</Label>
-            <PaneInput
+          </AppDialog.Field>
+          <AppDialog.Field>
+            <AppDialog.Label htmlFor={inputId}>Custom Domain</AppDialog.Label>
+            <AppDialog.Input
               aria-invalid={error != null}
               disabled={pending}
               id={inputId}
@@ -1761,28 +1762,26 @@ function CnameBindingDialog({
               placeholder="www.example.com"
               value={domainDraft}
             />
-          </div>
+          </AppDialog.Field>
           {error == null ? null : (
-            <p className="text-destructive text-xs" role="alert">
+            <p className="text-red-400 text-xs" role="alert">
               {error}
             </p>
           )}
-        </div>
-        <DialogFooter>
-          <Button
-            disabled={pending}
-            onClick={() => onOpenChange(false)}
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel disabled={pending}>Cancel</AppDialog.Cancel>
+          <AppDialog.Action
+            loading={pending}
+            loadingLabel="Verifying"
+            onClick={handleVerify}
             type="button"
-            variant="outline"
           >
-            Cancel
-          </Button>
-          <Button disabled={pending} onClick={handleVerify} type="button">
-            {pending ? "Verifying" : "Verify"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            Verify
+          </AppDialog.Action>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }
 

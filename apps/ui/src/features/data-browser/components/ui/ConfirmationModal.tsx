@@ -1,14 +1,5 @@
-import { Input } from "@data-browser/components/ui/Input";
-import { AlertTriangle } from "lucide-react";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import React from "react";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./alert-dialog";
-import { Button } from "./Button";
 
 interface ConfirmationModalProps {
   cancelText?: string;
@@ -65,35 +56,34 @@ export function ConfirmationModal({
   };
 
   return (
-    <AlertDialog
+    <AppDialog.Root
       onOpenChange={(open) => {
+        if (isLoading && !open) {
+          return;
+        }
         if (!open) {
           onClose();
         }
       }}
       open={isOpen}
     >
-      <AlertDialogContent aria-describedby={undefined}>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            {isDestructive && (
-              <AlertTriangle className="h-5 w-5 text-foreground" />
-            )}
-            {title}
-          </AlertDialogTitle>
-        </AlertDialogHeader>
+      <AppDialog.Content aria-describedby={undefined}>
+        <AppDialog.Header>
+          {isDestructive ? <AppDialog.WarningIcon /> : null}
+          <AppDialog.Title>{title}</AppDialog.Title>
+        </AppDialog.Header>
 
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-destructive/10 bg-destructive/5 p-4 font-medium text-destructive text-sm">
+        <AppDialog.Body>
+          <div className="rounded-lg border border-red-400/15 bg-red-400/10 p-4 font-medium text-red-200 text-sm/5">
             {message}
           </div>
 
           {verificationText && (
-            <div className="flex flex-col gap-2">
-              <label className="font-medium text-foreground text-sm">
+            <AppDialog.Field>
+              <AppDialog.Label>
                 {verificationLabel ?? `Type ${verificationText} to confirm.`}
-              </label>
-              <Input
+              </AppDialog.Label>
+              <AppDialog.Input
                 className="font-mono"
                 onChange={(e) => setInputValue(e.target.value)}
                 onPaste={(e) => e.preventDefault()}
@@ -101,31 +91,35 @@ export function ConfirmationModal({
                 type="text"
                 value={inputValue}
               />
-            </div>
+            </AppDialog.Field>
           )}
-        </div>
+        </AppDialog.Body>
 
-        <AlertDialogFooter>
-          <Button disabled={isLoading} onClick={onClose} variant="ghost">
+        <AppDialog.Footer>
+          <AppDialog.Cancel disabled={isLoading}>
             {resolvedCancelText}
-          </Button>
-          <Button
-            className="min-w-[80px]"
-            disabled={isConfirmDisabled}
-            onClick={handleConfirm}
-            variant="default"
-          >
-            {isLoading ? (
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                {"Processing..."}
-              </div>
-            ) : (
-              resolvedConfirmText
-            )}
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AppDialog.Cancel>
+          {isDestructive ? (
+            <AppDialog.DestructiveAction
+              disabled={isConfirmDisabled}
+              loading={isLoading}
+              loadingLabel="Processing..."
+              onClick={handleConfirm}
+            >
+              {resolvedConfirmText}
+            </AppDialog.DestructiveAction>
+          ) : (
+            <AppDialog.Action
+              disabled={isConfirmDisabled}
+              loading={isLoading}
+              loadingLabel="Processing..."
+              onClick={handleConfirm}
+            >
+              {resolvedConfirmText}
+            </AppDialog.Action>
+          )}
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }

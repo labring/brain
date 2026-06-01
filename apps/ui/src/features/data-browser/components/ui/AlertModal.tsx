@@ -1,13 +1,6 @@
 import { cn } from "@data-browser/lib/utils";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AlertCircle, CheckCircle, Info } from "lucide-react";
-import { Button } from "./Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./dialog";
 
 interface AlertModalProps {
   buttonText?: string;
@@ -31,27 +24,16 @@ export function AlertModal({
   const getIcon = () => {
     switch (type) {
       case "success":
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
+        return <CheckCircle aria-hidden className="text-green-400" />;
       case "error":
-        return <AlertCircle className="h-5 w-5 text-destructive" />;
+        return <AlertCircle aria-hidden className="text-red-400" />;
       default:
-        return <Info className="h-5 w-5 text-primary" />;
-    }
-  };
-
-  const getButtonVariant = () => {
-    switch (type) {
-      case "success":
-        return "default" as const;
-      case "error":
-        return "destructive" as const;
-      default:
-        return "default" as const;
+        return <Info aria-hidden className="text-sky-400" />;
     }
   };
 
   return (
-    <Dialog
+    <AppDialog.Root
       onOpenChange={(open) => {
         if (!open) {
           onClose();
@@ -59,44 +41,48 @@ export function AlertModal({
       }}
       open={isOpen}
     >
-      <DialogContent
-        aria-describedby={undefined}
-        className="max-w-sm gap-0 p-0"
-        showCloseButton={false}
-      >
-        <DialogHeader className="flex-row items-center justify-between gap-0 border-b px-6 py-4">
-          <DialogTitle className="flex items-center gap-2">
+      <AppDialog.Content aria-describedby={undefined} size="sm">
+        <AppDialog.Header>
+          <AppDialog.Icon
+            className={cn(
+              type === "success" && "text-green-400",
+              type === "error" && "text-red-400",
+              type === "info" && "text-sky-400"
+            )}
+          >
             {getIcon()}
-            {title}
-          </DialogTitle>
-        </DialogHeader>
+          </AppDialog.Icon>
+          <AppDialog.Title>{title}</AppDialog.Title>
+        </AppDialog.Header>
 
-        <div className="p-6">
+        <AppDialog.Body>
           <div
             className={cn(
-              "whitespace-pre-wrap rounded-lg border p-4 font-medium text-sm",
+              "whitespace-pre-wrap rounded-lg border p-4 font-medium text-sm/5",
               type === "success" &&
-                "border-green-500/10 bg-green-500/5 text-green-500",
+                "border-green-400/15 bg-green-400/10 text-green-200",
               type === "error" &&
-                "border-destructive/10 bg-destructive/5 text-destructive",
+                "border-red-400/15 bg-red-400/10 text-red-200",
               type === "info" &&
-                "border-border bg-muted/50 text-muted-foreground"
+                "border-white/10 bg-white/[0.045] text-zinc-300"
             )}
           >
             {message}
           </div>
-        </div>
+        </AppDialog.Body>
 
-        <DialogFooter className="rounded-b-xl border-t bg-muted/20 px-6 py-4">
-          <Button
-            className="min-w-[80px]"
-            onClick={onClose}
-            variant={getButtonVariant()}
-          >
-            {resolvedButtonText}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <AppDialog.Footer>
+          {type === "error" ? (
+            <AppDialog.DestructiveAction onClick={onClose}>
+              {resolvedButtonText}
+            </AppDialog.DestructiveAction>
+          ) : (
+            <AppDialog.Action onClick={onClose}>
+              {resolvedButtonText}
+            </AppDialog.Action>
+          )}
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }

@@ -1,12 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-} from "@workspace/ui/components/dialog";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import type {
   SettingsLeaveGuardAction,
   SettingsLeaveGuardDecision,
@@ -89,23 +83,26 @@ export function SettingsLeaveGuardDialog({
   pending: boolean;
 }) {
   return (
-    <Dialog
+    <AppDialog.Root
       onOpenChange={(nextOpen) => {
+        if (pending && !nextOpen) {
+          return;
+        }
         if (!nextOpen) {
           onDecision("stay");
         }
       }}
       open={open}
     >
-      <DialogContent showCloseButton={false}>
+      <AppDialog.Content>
         <SettingsLeaveGuardDialogContent
           action={action}
           guard={guard}
           onDecision={onDecision}
           pending={pending}
         />
-      </DialogContent>
-    </Dialog>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }
 
@@ -124,41 +121,42 @@ export function SettingsLeaveGuardDialogContent({
 
   return (
     <>
-      <DialogHeader>
-        <h2 className="font-medium leading-none">
+      <AppDialog.Header>
+        <h2 className="min-w-0 flex-1 truncate font-medium text-lg/7 text-zinc-50">
           {settingsLeaveGuardTitle(guard?.scope ?? "ap")}
         </h2>
-        <p className="text-muted-foreground text-sm">
+      </AppDialog.Header>
+      <AppDialog.Body>
+        <p className="text-sm/5 text-zinc-400">
           {settingsLeaveGuardDescription(action)}
         </p>
-      </DialogHeader>
-      <DialogFooter className="flex-col-reverse sm:flex-row">
-        <Button
+      </AppDialog.Body>
+      <AppDialog.Footer>
+        <AppDialog.Action
           disabled={pending}
           onClick={() => onDecision("stay")}
           type="button"
-          variant="ghost"
         >
           Stay
-        </Button>
-        <Button
+        </AppDialog.Action>
+        <AppDialog.Action
           disabled={pending}
           onClick={() => onDecision("discard")}
           type="button"
-          variant="outline"
         >
           Discard
-        </Button>
-        <Button
+        </AppDialog.Action>
+        <AppDialog.Action
           disabled={saveDisabled}
+          loading={pending}
+          loadingLabel="Saving"
           onClick={() => onDecision("save")}
           type="button"
-          variant="secondary"
         >
           <Save aria-hidden data-icon="inline-start" />
-          {pending ? "Saving" : "Save"}
-        </Button>
-      </DialogFooter>
+          Save
+        </AppDialog.Action>
+      </AppDialog.Footer>
     </>
   );
 }

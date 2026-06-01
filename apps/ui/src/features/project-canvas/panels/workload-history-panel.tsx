@@ -1,16 +1,7 @@
 "use client";
 
 import { useK8sGetResource } from "@workspace/api/hooks";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@workspace/ui/components/alert-dialog";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { ContainerHistoryPane } from "@workspace/ui/components/container-history-pane/container-history-pane";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
@@ -223,7 +214,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
           workloadName={name}
         />
       </WorkloadHistoryShell>
-      <AlertDialog
+      <AppDialog.Root
         onOpenChange={(next) => {
           if (!next) {
             setRollbackConfirmCm(null);
@@ -231,10 +222,13 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         }}
         open={rollbackConfirmCm !== null}
       >
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Rollback to this snapshot?</AlertDialogTitle>
-            <AlertDialogDescription>
+        <AppDialog.Content>
+          <AppDialog.Header>
+            <AppDialog.WarningIcon />
+            <AppDialog.Title>Rollback to this snapshot?</AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body>
+            <AppDialog.Description>
               The AP <span className="font-medium text-foreground">{name}</span>{" "}
               spec will be patched to match the embedded effective spec from{" "}
               <span className="break-all font-mono text-foreground">
@@ -242,11 +236,11 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
               </span>
               . This rolls configuration forward via the claim (Crossplane then
               reconciles workloads).
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            </AppDialog.Description>
+          </AppDialog.Body>
+          <AppDialog.Footer>
+            <AppDialog.Cancel type="button">Cancel</AppDialog.Cancel>
+            <AppDialog.DestructiveAction
               onClick={(e) => {
                 e.preventDefault();
                 confirmRollbackSnapshot();
@@ -254,10 +248,10 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
               type="button"
             >
               Rollback
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </AppDialog.DestructiveAction>
+          </AppDialog.Footer>
+        </AppDialog.Content>
+      </AppDialog.Root>
     </>
   );
 });

@@ -1,32 +1,14 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@workspace/ui/components/alert-dialog";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Button } from "@workspace/ui/components/button";
 import { CanvasNodeStatusDot } from "@workspace/ui/components/canvas-node/canvas-node.status";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { Input } from "@workspace/ui/components/input";
-import { Label } from "@workspace/ui/components/label";
 import { cn } from "@workspace/ui/lib/utils";
 import { EllipsisVertical, SquarePen, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
@@ -202,16 +184,24 @@ export function ProjectExplorerListItem({
         ) : null}
       </div>
 
-      <Dialog onOpenChange={setRenameOpen} open={renameOpen}>
-        <DialogContent
-          className="gap-4"
+      <AppDialog.Root
+        onOpenChange={(nextOpen) => {
+          if (renameBusy && !nextOpen) {
+            return;
+          }
+          setRenameOpen(nextOpen);
+        }}
+        open={renameOpen}
+      >
+        <AppDialog.Content
           data-slot="project-explorer-rename-dialog"
           onClick={(e) => e.stopPropagation()}
-          showCloseButton
         >
-          <DialogHeader>
-            <DialogTitle>Rename project</DialogTitle>
-            <DialogDescription>
+          <AppDialog.Header>
+            <AppDialog.Title>Rename project</AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body>
+            <AppDialog.Description>
               Sets{" "}
               <span className="font-mono text-foreground">
                 metadata.annotations.displayName
@@ -221,97 +211,104 @@ export function ProjectExplorerListItem({
                 {k8sName(project)}
               </span>
               . The Kubernetes resource name does not change.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`project-rename-${project.id}`}>Name</Label>
-            <Input
-              aria-describedby={
-                renameError ? `project-rename-${project.id}-error` : undefined
-              }
-              aria-invalid={renameError ? true : undefined}
-              autoComplete="off"
-              id={`project-rename-${project.id}`}
-              onChange={(e) => {
-                setRenameDraft(e.target.value);
-                if (renameError) {
-                  setRenameError(null);
+            </AppDialog.Description>
+            <AppDialog.Field>
+              <AppDialog.Label htmlFor={`project-rename-${project.id}`}>
+                Name
+              </AppDialog.Label>
+              <AppDialog.Input
+                aria-describedby={
+                  renameError ? `project-rename-${project.id}-error` : undefined
                 }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitRename().catch(() => undefined);
-                }
-              }}
-              value={renameDraft}
-            />
-            {renameError ? (
-              <p
-                className="text-destructive text-xs leading-4"
-                id={`project-rename-${project.id}-error`}
-              >
-                {renameError}
-              </p>
-            ) : null}
-          </div>
-          <DialogFooter className="gap-2">
-            <Button
-              disabled={renameBusy}
-              onClick={() => setRenameOpen(false)}
-              type="button"
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <Button
+                aria-invalid={renameError ? true : undefined}
+                autoComplete="off"
+                id={`project-rename-${project.id}`}
+                onChange={(e) => {
+                  setRenameDraft(e.target.value);
+                  if (renameError) {
+                    setRenameError(null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitRename().catch(() => undefined);
+                  }
+                }}
+                value={renameDraft}
+              />
+              {renameError ? (
+                <p
+                  className="text-red-400 text-xs leading-4"
+                  id={`project-rename-${project.id}-error`}
+                >
+                  {renameError}
+                </p>
+              ) : null}
+            </AppDialog.Field>
+          </AppDialog.Body>
+          <AppDialog.Footer>
+            <AppDialog.Cancel disabled={renameBusy}>Cancel</AppDialog.Cancel>
+            <AppDialog.Action
               disabled={
                 renameBusy ||
                 renameDraft.trim() === "" ||
                 renameDraft.trim() === project.name
               }
+              loading={renameBusy}
+              loadingLabel="Saving"
               onClick={() => submitRename().catch(() => undefined)}
               type="button"
             >
               Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AppDialog.Action>
+          </AppDialog.Footer>
+        </AppDialog.Content>
+      </AppDialog.Root>
 
-      <AlertDialog onOpenChange={setDeleteOpen} open={deleteOpen}>
-        <AlertDialogContent
+      <AppDialog.Root
+        onOpenChange={(nextOpen) => {
+          if (deleteBusy && !nextOpen) {
+            return;
+          }
+          setDeleteOpen(nextOpen);
+        }}
+        open={deleteOpen}
+      >
+        <AppDialog.Content
           data-slot="project-explorer-delete-dialog"
           onClick={(e) => e.stopPropagation()}
         >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete project?</AlertDialogTitle>
-            <AlertDialogDescription>
+          <AppDialog.Header>
+            <AppDialog.WarningIcon />
+            <AppDialog.Title>Delete project?</AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body>
+            <AppDialog.Description>
               This will delete{" "}
               <span className="font-medium text-foreground">
                 {project.name}
               </span>{" "}
               (<span className="font-mono">{k8sName(project)}</span>) from the
               cluster. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
-            <Button
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleteBusy}
+            </AppDialog.Description>
+          </AppDialog.Body>
+          <AppDialog.Footer>
+            <AppDialog.Cancel disabled={deleteBusy}>Cancel</AppDialog.Cancel>
+            <AppDialog.DestructiveAction
+              loading={deleteBusy}
+              loadingLabel="Deleting"
               onClick={(e) => {
                 e.stopPropagation();
                 submitDelete().catch(() => undefined);
               }}
               type="button"
-              variant="destructive"
             >
               Delete
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </AppDialog.DestructiveAction>
+          </AppDialog.Footer>
+        </AppDialog.Content>
+      </AppDialog.Root>
     </li>
   );
 }
