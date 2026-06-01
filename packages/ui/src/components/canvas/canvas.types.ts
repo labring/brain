@@ -52,6 +52,17 @@ export interface CanvasMeta {
   };
   reactFlowProps?: CanvasReactFlowProps;
   /**
+   * Temporary viewport focus for a selected node while another surface covers
+   * part of the canvas. This changes viewport only, never node layout.
+   */
+  viewportFocus?: {
+    active?: boolean;
+    maxZoom?: number;
+    minZoom?: number;
+    nodeId: string | null;
+    rightInset: number;
+  };
+  /**
    * Optional follow behavior for newly seen nodes selected by the host app.
    * The first node-set observed for each key is treated as opening state.
    */

@@ -56,7 +56,10 @@ import type {
   CanvasNodeSettingsAccess,
 } from "@/features/project-canvas/nodes/types";
 import { useSettingsLeaveGuardController } from "@/features/project-canvas/panels/settings-leave-guard";
-import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
+import {
+  createProjectCanvasSurfaceRenderModel,
+  type ProjectCanvasSideRenderModel,
+} from "@/features/project-canvas/surface/rendering-adapter";
 import {
   projectApTargetFromNode,
   projectDbTargetFromNode,
@@ -112,6 +115,27 @@ const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
   "right",
   "top",
 ]);
+const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
+
+function viewportFocusNodeIdFromSideRenderModel(
+  side: ProjectCanvasSideRenderModel
+): string | null {
+  if (side?.kind !== "resource") {
+    return null;
+  }
+
+  if (side.content.kind === "publicAddresses") {
+    return side.content.entryNode?.id ?? null;
+  }
+
+  return side.content.node.id;
+}
+
+function sideRenderModelHasViewportFocusSession(
+  side: ProjectCanvasSideRenderModel
+): boolean {
+  return side?.kind === "resource";
+}
 
 function connectionOriginFromHandle(
   handle: ProjectCanvasConnectionHandle | null
@@ -904,6 +928,14 @@ export function useProjectCanvas(
       }),
     [nodes, surfaceState]
   );
+  const viewportFocusNodeId = useMemo(
+    () => viewportFocusNodeIdFromSideRenderModel(surfaceRenderModel.side),
+    [surfaceRenderModel.side]
+  );
+  const viewportFocusActive = useMemo(
+    () => sideRenderModelHasViewportFocusSession(surfaceRenderModel.side),
+    [surfaceRenderModel.side]
+  );
 
   useEffect(() => {
     if (selectedNode == null) {
@@ -1073,6 +1105,13 @@ export function useProjectCanvas(
         },
         onPaneClick: () => clearSelection(),
       },
+      viewportFocus: {
+        active: viewportFocusActive,
+        maxZoom: 1.05,
+        minZoom: 0.85,
+        nodeId: viewportFocusNodeId,
+        rightInset: PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET,
+      },
     }),
     [
       clearSelection,
@@ -1088,6 +1127,8 @@ export function useProjectCanvas(
       onNodePositionChange,
       projectCanvasConnectionLine,
       readOnly,
+      viewportFocusActive,
+      viewportFocusNodeId,
     ]
   );
 

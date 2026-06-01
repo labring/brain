@@ -167,6 +167,12 @@ A canvas node that represents an AP workload. The name is retained as a product/
 
 A Project-scoped visual arrangement of the canvas, shared by everyone who opens that Project.
 
+### Canvas Viewport Focus
+
+A temporary, per-view adjustment of the Project Canvas viewport that keeps a target canvas node visible within the currently available canvas area without changing Canvas Layout.
+
+_Avoid_: using Canvas Layout to describe temporary viewport movement.
+
 ### Canvas Resource Identity
 
 The product identity of a canvas node's backing AP, DB, or AP-bound EntryPoint surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.
