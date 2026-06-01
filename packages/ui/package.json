@@ -82,7 +82,7 @@
     "./components/database-node/*": "./src/components/database-node/*",
     "./components/entry-node/*": "./src/components/entry-node/*",
     "./components/environment-node/*": "./src/components/environment-node/*",
-    "./components/scale-slider/*": "./src/components/scale-slider/*",
+    "./components/settings-slider/*": "./src/components/settings-slider/*",
     "./components/project-explorer/*": "./src/components/project-explorer/*",
     "./components/project-creator/*": "./src/components/project-creator/*",
     "./components/github-deployer/*": "./src/components/github-deployer/*",

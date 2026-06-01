@@ -3,37 +3,38 @@
 import { cn } from "@workspace/ui/lib/utils";
 import type { ComponentPropsWithoutRef } from "react";
 
-export function ScaleSliderGroup({
+export function SettingsSliderGroup({
   className,
   ...props
 }: ComponentPropsWithoutRef<"div">) {
   return (
     <div
-      className={cn("inline-flex items-center gap-1.5", className)}
+      className={cn("inline-flex min-w-0 items-center gap-1.5", className)}
       {...props}
     />
   );
 }
 
-/** Vertical block: header row + slider (content). */
-export function ScaleSliderStack({
+export function SettingsSliderStack({
   className,
   ...props
 }: ComponentPropsWithoutRef<"div">) {
   return (
-    <div className={cn("flex w-full flex-col gap-1", className)} {...props} />
+    <div
+      className={cn("flex w-full min-w-0 flex-col gap-1.5", className)}
+      {...props}
+    />
   );
 }
 
-/** Top row; default aligns label + value to the end. Override with `className` (e.g. `justify-between`). */
-export function ScaleSliderHeader({
+export function SettingsSliderHeader({
   className,
   ...props
 }: ComponentPropsWithoutRef<"div">) {
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 items-center justify-between gap-2",
+        "mb-0.5 flex h-9 w-full min-w-0 items-center justify-between gap-2",
         className
       )}
       {...props}
@@ -41,7 +42,7 @@ export function ScaleSliderHeader({
   );
 }
 
-export function ScaleSliderLabel({
+export function SettingsSliderLabel({
   className,
   children,
   ...props
@@ -49,7 +50,7 @@ export function ScaleSliderLabel({
   return (
     <span
       className={cn(
-        "shrink-0 whitespace-nowrap text-muted-foreground text-xs",
+        "truncate text-muted-foreground text-sm leading-5",
         className
       )}
       {...props}

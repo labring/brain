@@ -1,4 +1,4 @@
-import { clampScale } from "@workspace/ui/components/scale-slider/scale-slider.utils";
+import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 
 export const AP_REPLICA_LIMITS = { max: 20, min: 1 } as const;
 export const DEFAULT_AP_FIXED_REPLICAS = AP_REPLICA_LIMITS.min;

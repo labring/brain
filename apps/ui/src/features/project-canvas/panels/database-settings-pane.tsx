@@ -11,9 +11,10 @@ import {
 } from "@workspace/ui/components/database-node/database-node";
 import {
   ResourceSettingsDraftFooter,
+  ResourceSettingsInset,
   ResourceSettingsSection,
-  ResourceSettingsSlider,
 } from "@workspace/ui/components/resource-settings/resource-settings";
+import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { Switch } from "@workspace/ui/components/switch";
 import {
   applySettingsDraftBackingResult,
@@ -85,9 +86,12 @@ function formatReplicasValue(value: number) {
   return `${value} ${value === 1 ? "Replica" : "Replicas"}`;
 }
 
-function formatCpuValue(value: number) {
-  const formatted = Number.isInteger(value) ? String(value) : String(value);
-  return `${formatted} ${value === 1 ? "Core" : "Cores"}`;
+function cpuValueSuffix(value: number) {
+  return value === 1 ? " Core" : " Cores";
+}
+
+function replicasValueSuffix(value: number) {
+  return value === 1 ? " Replica" : " Replicas";
 }
 
 function formatGiValue(value: number) {
@@ -95,6 +99,14 @@ function formatGiValue(value: number) {
     return `${Math.round(value * 1024)} Mi`;
   }
   return `${Number.isInteger(value) ? value : value.toFixed(1)} Gi`;
+}
+
+function giDisplayValue(value: number) {
+  return value < 1 ? Math.round(value * 1024) : value;
+}
+
+function giValueSuffix(value: number) {
+  return value < 1 ? " Mi" : " Gi";
 }
 
 function displayConnectionLabel(connection: DatabaseNodeConnection) {
@@ -570,82 +582,92 @@ export function DatabaseSettingsPaneContent({
       title={data.states.name}
     >
       <ResourceSettingsSection icon={Settings2} title="Replicas & Resources">
-        <ResourceSettingsSlider
-          ariaLabel="Database replica count"
-          disabled={controlsDisabled}
-          formatValue={formatReplicasValue}
-          label="Number of Replicas"
-          max={DB_SETTINGS_REPLICA_COUNT.max}
-          maxDecimals={0}
-          min={DB_SETTINGS_REPLICA_COUNT.min}
-          onValueChange={(value) => {
-            setDraft((current) => ({
-              ...current,
-              replicas: normalizeDbSettingsReplicas(value),
-            }));
-          }}
-          step={DB_SETTINGS_REPLICA_COUNT.step}
-          value={draft.replicas}
-        />
-        <ResourceSettingsSlider
-          ariaLabel="Database CPU limit in cores"
-          disabled={controlsDisabled}
-          formatValue={formatCpuValue}
-          icon={Cpu}
-          label="CPU"
-          max={DB_SETTINGS_CPU_LIMIT_CORES.max}
-          maxDecimals={2}
-          min={DB_SETTINGS_CPU_LIMIT_CORES.min}
-          onValueChange={(value) => {
-            setDraft((current) => ({
-              ...current,
-              cpuLimitCores: normalizeDbSettingsCpuLimitCores(value),
-            }));
-          }}
-          step={DB_SETTINGS_CPU_LIMIT_CORES.step}
-          value={draft.cpuLimitCores}
-        />
-        <ResourceSettingsSlider
-          ariaLabel="Database memory limit in Gi"
-          disabled={controlsDisabled}
-          formatBound={formatGiValue}
-          formatValue={formatGiValue}
-          icon={MemoryStick}
-          label="Memory"
-          max={DB_SETTINGS_MEMORY_LIMIT_GIB.max}
-          maxDecimals={1}
-          min={DB_SETTINGS_MEMORY_LIMIT_GIB.min}
-          onValueChange={(value) => {
-            setDraft((current) => ({
-              ...current,
-              memoryLimitGi: normalizeDbSettingsMemoryLimitGi(value),
-            }));
-          }}
-          step={DB_SETTINGS_MEMORY_LIMIT_GIB.step}
-          value={draft.memoryLimitGi}
-        />
+        <ResourceSettingsInset>
+          <SettingsSlider
+            ariaLabel="Database replica count"
+            disabled={controlsDisabled}
+            formatBound={formatReplicasValue}
+            label="Number of Replicas"
+            max={DB_SETTINGS_REPLICA_COUNT.max}
+            maxDecimals={0}
+            min={DB_SETTINGS_REPLICA_COUNT.min}
+            onValueChange={(value) => {
+              setDraft((current) => ({
+                ...current,
+                replicas: normalizeDbSettingsReplicas(value),
+              }));
+            }}
+            step={DB_SETTINGS_REPLICA_COUNT.step}
+            value={draft.replicas}
+            valueSuffix={replicasValueSuffix}
+          />
+        </ResourceSettingsInset>
+        <ResourceSettingsInset>
+          <SettingsSlider
+            ariaLabel="Database CPU limit in cores"
+            disabled={controlsDisabled}
+            icon={Cpu}
+            label="CPU"
+            max={DB_SETTINGS_CPU_LIMIT_CORES.max}
+            maxDecimals={2}
+            min={DB_SETTINGS_CPU_LIMIT_CORES.min}
+            onValueChange={(value) => {
+              setDraft((current) => ({
+                ...current,
+                cpuLimitCores: normalizeDbSettingsCpuLimitCores(value),
+              }));
+            }}
+            step={DB_SETTINGS_CPU_LIMIT_CORES.step}
+            value={draft.cpuLimitCores}
+            valueSuffix={cpuValueSuffix}
+          />
+        </ResourceSettingsInset>
+        <ResourceSettingsInset>
+          <SettingsSlider
+            ariaLabel="Database memory limit in Gi"
+            disabled={controlsDisabled}
+            displayValue={giDisplayValue(draft.memoryLimitGi)}
+            formatBound={formatGiValue}
+            icon={MemoryStick}
+            label="Memory"
+            max={DB_SETTINGS_MEMORY_LIMIT_GIB.max}
+            maxDecimals={1}
+            min={DB_SETTINGS_MEMORY_LIMIT_GIB.min}
+            onValueChange={(value) => {
+              setDraft((current) => ({
+                ...current,
+                memoryLimitGi: normalizeDbSettingsMemoryLimitGi(value),
+              }));
+            }}
+            step={DB_SETTINGS_MEMORY_LIMIT_GIB.step}
+            value={draft.memoryLimitGi}
+            valueSuffix={giValueSuffix(draft.memoryLimitGi)}
+          />
+        </ResourceSettingsInset>
       </ResourceSettingsSection>
 
       <ResourceSettingsSection icon={HardDrive} title="Storage">
-        <ResourceSettingsSlider
-          ariaLabel="Database storage size in Gi"
-          disabled={controlsDisabled}
-          formatBound={formatGiValue}
-          formatValue={formatGiValue}
-          icon={HardDrive}
-          label="Storage"
-          max={DB_SETTINGS_STORAGE_GIB.max}
-          maxDecimals={0}
-          min={DB_SETTINGS_STORAGE_GIB.min}
-          onValueChange={(value) => {
-            setDraft((current) => ({
-              ...current,
-              storageSizeGi: normalizeDbSettingsStorageGi(value),
-            }));
-          }}
-          step={DB_SETTINGS_STORAGE_GIB.step}
-          value={draft.storageSizeGi}
-        />
+        <ResourceSettingsInset>
+          <SettingsSlider
+            ariaLabel="Database storage size in Gi"
+            disabled={controlsDisabled}
+            formatBound={formatGiValue}
+            icon={HardDrive}
+            label="Storage"
+            max={DB_SETTINGS_STORAGE_GIB.max}
+            maxDecimals={0}
+            min={DB_SETTINGS_STORAGE_GIB.min}
+            onValueChange={(value) => {
+              setDraft((current) => ({
+                ...current,
+                storageSizeGi: normalizeDbSettingsStorageGi(value),
+              }));
+            }}
+            step={DB_SETTINGS_STORAGE_GIB.step}
+            value={draft.storageSizeGi}
+            valueSuffix=" Gi"
+          />
+        </ResourceSettingsInset>
       </ResourceSettingsSection>
 
       <ResourceSettingsSection icon={Network} title="Connection Address">

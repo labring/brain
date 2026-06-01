@@ -188,7 +188,7 @@ export const Index: RegistryIndex = {
     type: "registry:preview",
     registryDependencies: [
       "preview",
-      "scale-slider",
+      "settings-slider",
       "button",
       "textarea",
       "field",
@@ -265,7 +265,7 @@ export const Index: RegistryIndex = {
         type: "registry:ui",
       },
       {
-        path: "packages/ui/src/components/scale-slider/scale-slider.tsx",
+        path: "packages/ui/src/components/settings-slider/settings-slider.tsx",
         target: "",
         type: "registry:ui",
       },
@@ -642,26 +642,28 @@ export const Index: RegistryIndex = {
       ),
   },
 
-  "linear/components/scale-slider": {
+  "linear/components/settings-slider": {
     style: "linear",
     group: "components",
-    name: "scale-slider",
-    title: "Scale slider",
+    name: "settings-slider",
+    title: "Settings slider",
     description:
-      "Stack + Header (Label + fixed NumberFlow) above Control; thumb has no label. Optional valueDisplay number (replicas) or percent.",
+      "Settings field slider with animated value, bounds, and compound parts for custom headers.",
     state: "done",
     type: "registry:preview",
     registryDependencies: ["preview"],
     files: [
       {
-        path: "registry/linear/components/scale-slider/scale-slider-preview.tsx",
+        path: "registry/linear/components/settings-slider/settings-slider-preview.tsx",
         type: "registry:preview",
         target: "",
       },
       previewUiFile,
     ],
     load: () =>
-      import("@registry/linear/components/scale-slider/scale-slider-preview"),
+      import(
+        "@registry/linear/components/settings-slider/settings-slider-preview"
+      ),
   },
 
   "linear/components/canvas": {

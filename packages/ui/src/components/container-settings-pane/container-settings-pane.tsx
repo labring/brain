@@ -22,16 +22,15 @@ import {
   ResourceSettingsDraftFooter,
   ResourceSettingsInset,
   ResourceSettingsSection,
-  ResourceSettingsSlider,
 } from "@workspace/ui/components/resource-settings/resource-settings";
-import { ScaleSlider } from "@workspace/ui/components/scale-slider/scale-slider";
-import { clampScale } from "@workspace/ui/components/scale-slider/scale-slider.utils";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
 } from "@workspace/ui/components/select";
+import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
+import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import {
   SlidingToggle,
   type SlidingToggleOption,
@@ -106,7 +105,7 @@ export interface ContainerSettingsControlledQuotaProps {
   max?: number;
   min?: number;
   onValueChange: (value: number) => void;
-  /** Radix Slider step (`ScaleSlider.Root` defaults to `0.1` unless set). */
+  /** Radix Slider step (`SettingsSlider.Root` defaults to `0.1` unless set). */
   step?: number;
   value: number;
 }
@@ -762,9 +761,9 @@ function formatPlainNumber(value: number, maximumFractionDigits: number) {
   }).format(value);
 }
 
-function formatCpuCoresValue(cores: number) {
+function cpuCoresValueSuffix(cores: number) {
   const rounded = Number(cores.toFixed(2));
-  return `${formatPlainNumber(rounded, 2)} ${rounded === 1 ? "Core" : "Cores"}`;
+  return rounded === 1 ? " Core" : " Cores";
 }
 
 function formatMemoryMibValue(mib: number) {
@@ -775,11 +774,27 @@ function formatMemoryMibValue(mib: number) {
   return `${formatPlainNumber(rounded, 0)} Mi`;
 }
 
+function memoryMibDisplayValue(mib: number) {
+  const rounded = Math.round(mib);
+  if (Math.abs(rounded) >= 1024) {
+    return rounded / 1024;
+  }
+  return rounded;
+}
+
+function memoryMibValueSuffix(mib: number) {
+  return Math.abs(Math.round(mib)) >= 1024 ? " Gi" : " Mi";
+}
+
 function formatReplicaValue(replicas: number) {
   const rounded = Math.round(replicas);
   return `${formatPlainNumber(rounded, 0)} ${
     rounded === 1 ? "Replica" : "Replicas"
   }`;
+}
+
+function replicaValueSuffix(replicas: number) {
+  return Math.round(replicas) === 1 ? " Replica" : " Replicas";
 }
 
 const DB_REFERENCE_FIELD_LABELS: Record<ContainerEnvDbReferenceField, string> =
@@ -2819,35 +2834,43 @@ function ScalingTargetSlider({
     targetMetric === "memory"
       ? {
           ariaLabel: "Memory average target",
+          displayValue: memoryMibDisplayValue(memoryTargetMib),
           format: formatMemoryMibValue,
           max: MEMORY_AVERAGE_TARGET_LIMITS.max,
+          maxDecimals: 2,
           min: MEMORY_AVERAGE_TARGET_LIMITS.min,
           onChange: onMemoryTargetChange,
           value: memoryTargetMib,
+          valueSuffix: memoryMibValueSuffix(memoryTargetMib),
         }
       : {
           ariaLabel: "CPU utilization target",
+          displayValue: cpuTargetPercent,
           format: (next: number) => `${formatPlainNumber(next, 0)}%`,
           max: CPU_UTILIZATION_TARGET_LIMITS.max,
+          maxDecimals: 0,
           min: CPU_UTILIZATION_TARGET_LIMITS.min,
           onChange: onCpuTargetChange,
           value: cpuTargetPercent,
+          valueSuffix: "%",
         };
 
   return (
     <ResourceSettingsInset>
-      <ScaleSlider.Root
+      <SettingsSlider.Root
         disabled={disabled}
+        displayValue={config.displayValue}
+        formatBound={config.format}
         max={config.max}
-        maxDecimals={0}
+        maxDecimals={config.maxDecimals}
         min={config.min}
         onValueChange={config.onChange}
         step={1}
         value={config.value}
-        valueDisplay="number"
+        valueSuffix={config.valueSuffix}
       >
-        <ScaleSlider.Stack className="w-full gap-1.5">
-          <ScaleSlider.Header className="mb-0.5 h-9">
+        <SettingsSlider.Stack>
+          <SettingsSlider.Header>
             <SlidingToggle
               ariaLabel="Scaling target"
               className="h-8 w-auto"
@@ -2858,24 +2881,17 @@ function ScalingTargetSlider({
               options={SCALING_TARGET_TOGGLE_OPTIONS}
               value={targetMetric}
             />
-            <span className="shrink-0 text-foreground text-sm leading-5">
-              {config.format(config.value)}
-            </span>
-          </ScaleSlider.Header>
-          <ScaleSlider.Control aria-label={config.ariaLabel} className="h-2">
-            <ScaleSlider.Track className="h-2 bg-input">
-              <ScaleSlider.Range className="bg-gradient-to-r from-blue-950 to-blue-500" />
-            </ScaleSlider.Track>
-            <ScaleSlider.Thumb className="size-4 border-2 border-primary bg-blue-500 shadow-none ring-0" />
-          </ScaleSlider.Control>
-          <div className="flex min-w-0 items-center justify-between gap-3 text-muted-foreground text-sm leading-5">
-            <span className="truncate">{config.format(config.min)}</span>
-            <span className="truncate text-right">
-              {config.format(config.max)}
-            </span>
-          </div>
-        </ScaleSlider.Stack>
-      </ScaleSlider.Root>
+            <SettingsSlider.Value />
+          </SettingsSlider.Header>
+          <SettingsSlider.Control aria-label={config.ariaLabel}>
+            <SettingsSlider.Track>
+              <SettingsSlider.Range />
+            </SettingsSlider.Track>
+            <SettingsSlider.Thumb />
+          </SettingsSlider.Control>
+          <SettingsSlider.Bounds />
+        </SettingsSlider.Stack>
+      </SettingsSlider.Root>
     </ResourceSettingsInset>
   );
 }
@@ -2937,48 +2953,54 @@ function ReplicaStrategySection({
         />
 
         {strategyType === "fixed" ? (
-          <ResourceSettingsSlider
-            ariaLabel="Replica count"
-            disabled={readOnly || fixedReplicasSliderParts.rest.disabled}
-            formatBound={formatReplicaValue}
-            formatValue={formatReplicaValue}
-            label="Number of Replicas"
-            max={fixedReplicasSliderParts.rest.max ?? REPLICA_LIMITS.max}
-            maxDecimals={0}
-            min={fixedReplicasSliderParts.rest.min ?? REPLICA_LIMITS.min}
-            onValueChange={fixedReplicasSliderParts.onReplicasQuotaChange}
-            step={fixedReplicasSliderParts.rest.step ?? 1}
-            value={fixedReplicasSliderParts.replicasValue}
-          />
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="Replica count"
+              disabled={readOnly || fixedReplicasSliderParts.rest.disabled}
+              formatBound={formatReplicaValue}
+              label="Number of Replicas"
+              max={fixedReplicasSliderParts.rest.max ?? REPLICA_LIMITS.max}
+              maxDecimals={0}
+              min={fixedReplicasSliderParts.rest.min ?? REPLICA_LIMITS.min}
+              onValueChange={fixedReplicasSliderParts.onReplicasQuotaChange}
+              step={fixedReplicasSliderParts.rest.step ?? 1}
+              value={fixedReplicasSliderParts.replicasValue}
+              valueSuffix={replicaValueSuffix}
+            />
+          </ResourceSettingsInset>
         ) : (
           <div className="flex flex-col gap-3">
-            <ResourceSettingsSlider
-              ariaLabel="Minimum replicas"
-              disabled={readOnly}
-              formatBound={formatReplicaValue}
-              formatValue={formatReplicaValue}
-              label="Minimum replicas"
-              max={REPLICA_LIMITS.max}
-              maxDecimals={0}
-              min={REPLICA_LIMITS.min}
-              onValueChange={onElasticMinReplicasChange}
-              step={1}
-              value={minReplicas}
-            />
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="Minimum replicas"
+                disabled={readOnly}
+                formatBound={formatReplicaValue}
+                label="Minimum replicas"
+                max={REPLICA_LIMITS.max}
+                maxDecimals={0}
+                min={REPLICA_LIMITS.min}
+                onValueChange={onElasticMinReplicasChange}
+                step={1}
+                value={minReplicas}
+                valueSuffix={replicaValueSuffix}
+              />
+            </ResourceSettingsInset>
 
-            <ResourceSettingsSlider
-              ariaLabel="Maximum replicas"
-              disabled={readOnly}
-              formatBound={formatReplicaValue}
-              formatValue={formatReplicaValue}
-              label="Maximum replicas"
-              max={REPLICA_LIMITS.max}
-              maxDecimals={0}
-              min={REPLICA_LIMITS.min}
-              onValueChange={onElasticMaxReplicasChange}
-              step={1}
-              value={maxReplicas}
-            />
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="Maximum replicas"
+                disabled={readOnly}
+                formatBound={formatReplicaValue}
+                label="Maximum replicas"
+                max={REPLICA_LIMITS.max}
+                maxDecimals={0}
+                min={REPLICA_LIMITS.min}
+                onValueChange={onElasticMaxReplicasChange}
+                step={1}
+                value={maxReplicas}
+                valueSuffix={replicaValueSuffix}
+              />
+            </ResourceSettingsInset>
 
             <ScalingTargetSlider
               cpuTargetPercent={cpuTargetPercent}
@@ -3644,7 +3666,6 @@ export function ContainerSettingsPane({
   } = memorySlider;
 
   const cpuDecimals = 2;
-  const memoryDecimals = 0;
   const cpuValue = clampScale(cpuValueRaw, cpuSlider.min, cpuSlider.max);
   const memoryValue = clampScale(
     memoryValueRaw,
@@ -3908,35 +3929,40 @@ export function ContainerSettingsPane({
           actions={replicasSliderParts == null ? quotaActions : undefined}
           title="CPU / Memory"
         >
-          <ResourceSettingsSlider
-            ariaLabel="CPU quota (cores)"
-            disabled={cpuSliderRest.disabled}
-            formatBound={(next) => formatPlainNumber(next, 2)}
-            formatValue={formatCpuCoresValue}
-            icon={Cpu}
-            label="CPU"
-            max={cpuSlider.max}
-            maxDecimals={cpuDecimals}
-            min={cpuSlider.min}
-            onValueChange={onCpuQuotaChange}
-            step={cpuSliderRest.step}
-            value={cpuValue}
-          />
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="CPU quota (cores)"
+              disabled={cpuSliderRest.disabled}
+              formatBound={(next) => formatPlainNumber(next, 2)}
+              icon={Cpu}
+              label="CPU"
+              max={cpuSlider.max}
+              maxDecimals={cpuDecimals}
+              min={cpuSlider.min}
+              onValueChange={onCpuQuotaChange}
+              step={cpuSliderRest.step}
+              value={cpuValue}
+              valueSuffix={cpuCoresValueSuffix}
+            />
+          </ResourceSettingsInset>
 
-          <ResourceSettingsSlider
-            ariaLabel="Memory quota (MiB)"
-            disabled={memorySliderRest.disabled}
-            formatBound={formatMemoryMibValue}
-            formatValue={formatMemoryMibValue}
-            icon={MemoryStick}
-            label="Memory"
-            max={memorySlider.max}
-            maxDecimals={memoryDecimals}
-            min={memorySlider.min}
-            onValueChange={onMemoryQuotaChange}
-            step={memorySliderRest.step}
-            value={memoryValue}
-          />
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="Memory quota (MiB)"
+              disabled={memorySliderRest.disabled}
+              displayValue={memoryMibDisplayValue(memoryValue)}
+              formatBound={formatMemoryMibValue}
+              icon={MemoryStick}
+              label="Memory"
+              max={memorySlider.max}
+              maxDecimals={2}
+              min={memorySlider.min}
+              onValueChange={onMemoryQuotaChange}
+              step={memorySliderRest.step}
+              value={memoryValue}
+              valueSuffix={memoryMibValueSuffix(memoryValue)}
+            />
+          </ResourceSettingsInset>
         </ResourceSettingsSection>
 
         <ImageSettingsSection

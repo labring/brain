@@ -4,7 +4,7 @@ import type {
   ContainerNetwork,
   ContainerPort,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
-import { clampScale } from "@workspace/ui/components/scale-slider/scale-slider.utils";
+import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
   type ContainerEnvDbDsnSource,
