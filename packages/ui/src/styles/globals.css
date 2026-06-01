@@ -40,9 +40,6 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --color-background-secondary: var(--background-secondary);
-  --color-background-selected: var(--background-selected);
-  --color-background-tertiary: var(--background-tertiary);
   --color-resource-pane: var(--resource-pane);
   --color-resource-pane-overlay: var(--resource-pane-overlay);
   --color-resource-pane-border: var(--resource-pane-border);
@@ -89,9 +86,6 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --background-secondary: oklch(0.97 0 0);
-  --background-selected: oklch(0.94 0 0);
-  --background-tertiary: oklch(0.955 0 0);
   /** Runtime tokens consumed directly by `packages/ui` canvas CSS. */
   --color-canvas-surface: var(--color-neutral-950);
   --color-canvas-glow: var(--color-blue-700);
@@ -112,9 +106,6 @@
 
 .dark {
   --background: oklch(0.145 0 0);
-  --background-secondary: oklch(0.1689 0.0021 286.18);
-  --background-tertiary: oklch(0.1917 0.002 286.21);
-  --background-selected: oklch(0.2138 0.0019 286.23);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -155,7 +146,7 @@
 }
 
 /**
- * Muted by default; transparent background; on hover, foreground text and selected surface.
+ * Muted by default; transparent background; on hover, foreground text and input surface.
  * Use `className="hoverable"` alone (e.g. `SidebarMenuButton`, `AvatarSwitcher`, chat header icons).
  */
 @layer utilities {
@@ -166,7 +157,7 @@
     @apply cursor-not-allowed;
   }
   .hoverable:hover:not(:disabled) {
-    @apply text-foreground !bg-background-selected/80;
+    @apply text-foreground !bg-input;
   }
 
   /** Chat scroll surfaces (transcript, thread picker): thin track, themed thumb — Firefox + WebKit. */
@@ -219,17 +210,5 @@
     mix-blend-mode: screen;
     opacity: 0.175;
     transform: translate(-50%, -50%);
-  }
-}
-
-/**
- * Persistent selected surface (e.g. active route in `SidebarMenuButton`).
- * Defined AFTER `.hoverable` and sidebar CVA styles so equal-specificity rules
- * lose to `.selected`. `!` beats `hover:bg-sidebar-accent` / `bg-transparent`.
- */
-@layer utilities {
-  .selected,
-  .selected:hover:not(:disabled) {
-    /* @apply !bg-background-selected !text-foreground; */
   }
 }

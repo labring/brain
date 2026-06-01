@@ -20,7 +20,7 @@ import { isChatToolPartStateInFlight } from "./chat.tool-group";
 import type { ChatTranscriptProps } from "./chat.types";
 
 const userBubbleClassName =
-  "group-[.is-user]:rounded-3xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:bg-background-selected group-[.is-user]:px-3 group-[.is-user]:py-1.5";
+  "group-[.is-user]:rounded-3xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:bg-secondary group-[.is-user]:px-3 group-[.is-user]:py-1.5";
 
 /** Tool activity is already shown in the transcript; avoid a duplicate loading row. */
 function assistantHasInFlightToolCalls(message: UIMessage): boolean {

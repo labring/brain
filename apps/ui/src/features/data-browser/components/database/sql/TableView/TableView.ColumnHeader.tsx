@@ -24,7 +24,7 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
 
   return (
     <th
-      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border border-r bg-background-secondary px-6 py-2 text-left font-medium text-muted-foreground text-sm"
+      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border border-r bg-muted px-6 py-2 text-left font-medium text-muted-foreground text-sm"
       style={{
         minWidth: `${width}px`,
         ...(state.resizedColumns.has(column) && { maxWidth: `${width}px` }),

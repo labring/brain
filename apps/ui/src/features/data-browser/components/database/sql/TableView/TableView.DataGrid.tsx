@@ -163,7 +163,7 @@ export function TableViewDataGrid() {
         <thead className="border-border border-b bg-transparent">
           <tr>
             <th
-              className="sticky top-0 left-0 z-50 border-border border-r border-b bg-background-secondary px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
+              className="sticky top-0 left-0 z-50 border-border border-r border-b bg-muted px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
               style={{ width: 64, minWidth: 64, maxWidth: 64 }}
             >
               {" "}
@@ -173,7 +173,7 @@ export function TableViewDataGrid() {
             ))}
             {hiddenColumnCount > 0 && (
               <th
-                className="sticky top-0 z-40 border-border border-b bg-background-secondary px-4 py-2 text-center font-medium text-muted-foreground text-xs"
+                className="sticky top-0 z-40 border-border border-b bg-muted px-4 py-2 text-center font-medium text-muted-foreground text-xs"
                 title={`${hiddenColumnCount} hidden column(s)`}
               >
                 <div className="flex items-center justify-center gap-1">
@@ -182,7 +182,7 @@ export function TableViewDataGrid() {
                 </div>
               </th>
             )}
-            <th className="sticky top-0 z-40 w-full border-border border-b bg-background-secondary" />
+            <th className="sticky top-0 z-40 w-full border-border border-b bg-muted" />
           </tr>
         </thead>
         <tbody className="bg-transparent">
