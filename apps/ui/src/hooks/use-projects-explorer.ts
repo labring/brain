@@ -113,10 +113,10 @@ export function useProjectsExplorer(options: {
       })
   );
 
-  // Project Aggregate Status fan-out — see ADR-0007. We list every AP/DB in
-  // the namespace that carries a `crossplane.io/project-uid` label and join in
-  // memory; project names render as soon as the projects request resolves and
-  // dots fill in when these arrive.
+  // Project Aggregate Status fan-out. We list every AP/DB in the namespace
+  // that carries a `crossplane.io/project-uid` label and join in memory;
+  // project names render as soon as the projects request resolves and dots
+  // fill in when these arrive.
   const projectUidLabelExistence = PROJECT_UID_LABEL;
   const { data: apsData } = useApsK8sList({
     kubeconfig,

@@ -1,6 +1,6 @@
 # Orchestrate Project Surfaces Separately from Canvas Selection
 
-Project surface open state is owned by a project-level surface orchestrator, while Project Canvas owns canvas selection identity. This keeps Side Pane, Main Action Surface, and Session Drawer behavior available to assistant chat, toolbar actions, and future project features without coupling those entry points to canvas-specific pane query parameters.
+Project surface open state is owned by a project-level surface orchestrator, Project Canvas owns canvas selection identity, and Project route state owns URL persistence plus coordinated route transitions across those concepts. This keeps Side Pane, Main Action Surface, and Session Drawer behavior available to assistant chat, toolbar actions, and future project features without coupling those entry points to canvas-specific pane query parameters.
 
 Surface intents explicitly name their target slot instead of deriving placement from the interaction source. A canvas node click, node action button, assistant action, toolbar action, or keyboard shortcut may open any supported slot when that is the product behavior.
 
@@ -25,3 +25,5 @@ The URL model should separate canvas selection from project surface slots. Surfa
 The refactor will move directly to the slot-based URL model rather than preserving the old AP, DB, EntryPoint, and canvas action query parameters through a compatibility codec.
 
 The target URL shape should use independent `selected`, `side`, `main`, and `drawer` query keys rather than resource-specific pane keys such as `apPane`, `dbPane`, `entryPane`, or `canvasAction`.
+
+User-initiated route-state transitions use browser history entries so Back can return to a previous workbench state. System repairs such as invalid query cleanup and stale target cleanup replace the current history entry so broken or unsupported state does not remain in the history stack.
