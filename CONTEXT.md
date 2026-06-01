@@ -203,6 +203,14 @@ The client-side module that owns Project Canvas presentation and Project Canvas-
 
 Project Canvas Workbench consumes project-level surface state but does not own the Project Surface model itself. Project Surface slots such as Side Pane, Main Action Surface, and Session Drawer remain project-level concepts so assistant chat, toolbar actions, and future project surfaces can open them without depending on canvas-specific selection behavior.
 
+### Project Canvas Command Model
+
+The Project Canvas Workbench decision model that turns canvas-originated user intents into workbench-level command plans. Inputs include selected canvas nodes, node quick actions, Connecting Edges, read-only state, and current Canvas Resource Identity facts.
+
+A Project Canvas Command Model plan may request a Canvas selection change, Side Pane opening, Main Action Surface opening, Session Drawer opening, Canvas Node Stack Order change, pending Database Binding intent, or discard/feedback reason.
+
+The Project Canvas Command Model does not execute Kubernetes lifecycle mutations directly. Lifecycle mutation adapters handle authentication, K8s calls, toast feedback, and workload list refresh after a command plan has selected the relevant resource action.
+
 ### Main Action Surface
 
 A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.

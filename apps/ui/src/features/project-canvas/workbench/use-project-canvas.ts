@@ -11,28 +11,23 @@ import type {
   CanvasSelectedNode,
 } from "@workspace/ui/components/canvas/canvas.types";
 import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-node/canvas-node";
+import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type { ContainerSettingsPaneAddDbDsnReferenceIntent } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import type {
   DatabaseNodeCopyConnectionHandler,
   DatabaseNodeLifecycleActionKey,
+  DatabaseNodeQuickActionKey,
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Connection, Edge, Node } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  DATABASE_PANE,
-  projectCanvasFlowNodeTypes,
-  WORKLOAD_PANE,
-} from "@/features/project-canvas/canvas-store";
+import { projectCanvasFlowNodeTypes } from "@/features/project-canvas/canvas-store";
 import {
   canvasNodeGeometryFromNode,
   selectCanvasAnchorPair,
 } from "@/features/project-canvas/flow/anchor-pair";
-import {
-  classifyProjectCanvasConnectionCommand,
-  isProjectCanvasConnectionSupported,
-} from "@/features/project-canvas/flow/connection-command";
+import { isProjectCanvasConnectionSupported } from "@/features/project-canvas/flow/connection-command";
 import { createProjectCanvasConnectionLine } from "@/features/project-canvas/flow/connection-line";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
 import {
@@ -63,24 +58,23 @@ import type {
 import { useSettingsLeaveGuardController } from "@/features/project-canvas/panels/settings-leave-guard";
 import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import {
-  defaultProjectSideSurfaceForNode,
-  drawerSurfaceForApTerminal,
-  drawerSurfaceForDbConsole,
-  mainSurfaceForDbAccess,
-  mainSurfaceForResourceLogs,
   projectApTargetFromNode,
-  projectCanvasSelectionFromNode,
   projectDbTargetFromNode,
   projectSelectionNode,
   projectSelectionTargetExists,
   projectTargetExistsOnCanvas,
-  sideSurfaceForDatabasePane,
-  sideSurfaceForWorkloadPane,
 } from "@/features/project-canvas/surface/selection";
+import {
+  type ProjectCanvasCommandPlan,
+  planProjectCanvasCommand,
+} from "@/features/project-canvas/workbench/command-model";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import { projectApTarget } from "@/features/project-surfaces/target-identity";
+import type {
+  ProjectDrawerSurfaceEntry,
+  ProjectMainSurfaceEntry,
+  ProjectSideSurfaceEntry,
+} from "@/features/project-surfaces/surface-state";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 export interface UseProjectCanvasOptions {
@@ -208,6 +202,92 @@ function canvasNodeSettingsAccess({
     return undefined;
   }
   return { readOnly: true };
+}
+
+function commandPlanHasSelection(
+  plan: ProjectCanvasCommandPlan
+): plan is ProjectCanvasCommandPlan & {
+  selection: ProjectCanvasSelection | null;
+} {
+  return "selection" in plan;
+}
+
+interface ProjectCanvasCommandPlanAdapters {
+  bringNodeToFront: (nodeId: string) => void;
+  openDrawerSurface: (
+    entry: ProjectDrawerSurfaceEntry,
+    selection?: ProjectCanvasSelection | null
+  ) => void;
+  openMainSurface: (
+    entry: ProjectMainSurfaceEntry,
+    selection?: ProjectCanvasSelection | null
+  ) => void;
+  openSideSurface: (
+    entry: ProjectSideSurfaceEntry,
+    selection?: ProjectCanvasSelection | null
+  ) => void;
+  startPendingDbReference: (
+    reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
+  ) => void;
+  writeSelection: (selection: ProjectCanvasSelection | null) => void;
+}
+
+function applyCommandFeedback(plan: ProjectCanvasCommandPlan) {
+  if (plan.feedback?.tone === "error") {
+    toast.error(plan.feedback.message);
+    return;
+  }
+  if (plan.feedback?.tone === "info") {
+    toast.info(plan.feedback.message);
+  }
+}
+
+function applyCommandSurface(
+  plan: ProjectCanvasCommandPlan,
+  selection: ProjectCanvasSelection | null | undefined,
+  adapters: ProjectCanvasCommandPlanAdapters
+): boolean {
+  if (plan.surface === undefined) {
+    return false;
+  }
+
+  switch (plan.surface.slot) {
+    case "drawer":
+      adapters.openDrawerSurface(plan.surface.entry, selection);
+      return true;
+    case "main":
+      adapters.openMainSurface(plan.surface.entry, selection);
+      return true;
+    case "side":
+      adapters.openSideSurface(plan.surface.entry, selection);
+      return true;
+    default:
+      return plan.surface satisfies never;
+  }
+}
+
+function executeUnguardedCommandPlan(
+  plan: ProjectCanvasCommandPlan,
+  adapters: ProjectCanvasCommandPlanAdapters
+) {
+  applyCommandFeedback(plan);
+
+  if (plan.stackOrder?.kind === "bringNodeToFront") {
+    adapters.bringNodeToFront(plan.stackOrder.nodeId);
+  }
+
+  if (plan.pendingDbReference !== undefined) {
+    adapters.startPendingDbReference(plan.pendingDbReference);
+  }
+
+  const selection = commandPlanHasSelection(plan) ? plan.selection : undefined;
+  if (applyCommandSurface(plan, selection, adapters)) {
+    return;
+  }
+
+  if (commandPlanHasSelection(plan)) {
+    adapters.writeSelection(plan.selection);
+  }
 }
 
 /**
@@ -387,6 +467,106 @@ export function useProjectCanvas(
     []
   );
 
+  const stackOrderedRawNodes = useMemo(() => {
+    const overridden = rawNodes.map((node) => {
+      const key = canvasNodeResourceStackKey(node);
+      const stackOrder =
+        key === undefined ? undefined : localStackOrderByRef.get(key);
+      return stackOrder === undefined
+        ? node
+        : nodeWithCanvasStackOrder(node, stackOrder);
+    });
+    return applyCanvasStackOrderToNodes(overridden);
+  }, [localStackOrderByRef, rawNodes]);
+
+  const frontCanvasNode = useCallback(
+    (node: Node) => {
+      const sourceNodes = stackOrderedRawNodes.map((candidate) =>
+        candidate.id === node.id
+          ? { ...candidate, position: { ...node.position } }
+          : candidate
+      );
+      const result = bringCanvasNodeToFrontInStackOrder(sourceNodes, node.id);
+      const nextNode = result.node;
+      if (!result.changed || nextNode === undefined) {
+        return;
+      }
+
+      const key = canvasNodeResourceStackKey(nextNode);
+      const stackOrder = canvasNodeStackOrder(nextNode);
+      if (key !== undefined && stackOrder !== undefined) {
+        setLocalStackOrderByRef((current) => {
+          if (current.get(key) === stackOrder) {
+            return current;
+          }
+          const next = new Map(current);
+          next.set(key, stackOrder);
+          return next;
+        });
+      }
+
+      if (!readOnly) {
+        onNodeStackOrderChange?.(nextNode);
+      }
+    },
+    [onNodeStackOrderChange, readOnly, stackOrderedRawNodes]
+  );
+
+  const bringNodeToFrontById = useCallback(
+    (nodeId: string) => {
+      const node = stackOrderedRawNodes.find(
+        (candidate) => candidate.id === nodeId
+      );
+      if (node !== undefined) {
+        frontCanvasNode(node);
+      }
+    },
+    [frontCanvasNode, stackOrderedRawNodes]
+  );
+
+  const startPendingDbReference = useCallback(
+    (
+      reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
+    ) => {
+      addDbDsnReferenceIntentCounter.current += 1;
+      setPendingAddDbDsnReferenceIntent({
+        ...reference,
+        id: `ap-db-${addDbDsnReferenceIntentCounter.current}`,
+      });
+    },
+    []
+  );
+
+  const executeCommandPlan = useCallback(
+    (plan: ProjectCanvasCommandPlan) => {
+      const run = () =>
+        executeUnguardedCommandPlan(plan, {
+          bringNodeToFront: bringNodeToFrontById,
+          openDrawerSurface,
+          openMainSurface,
+          openSideSurface,
+          startPendingDbReference,
+          writeSelection,
+        });
+
+      if (plan.guard?.kind === "settingsLeave") {
+        requestSettingsLeave(plan.guard.action, run);
+        return;
+      }
+
+      run();
+    },
+    [
+      bringNodeToFrontById,
+      openDrawerSurface,
+      openMainSurface,
+      openSideSurface,
+      requestSettingsLeave,
+      startPendingDbReference,
+      writeSelection,
+    ]
+  );
+
   const decorateDatabaseNode = useCallback(
     (node: Node): Node => {
       const data = node.data as CanvasDatabaseNodeData;
@@ -435,7 +615,6 @@ export function useProjectCanvas(
       });
       const displayName = data.states.name || name;
       const target = projectDbTargetFromNode(node);
-      const selection = projectCanvasSelectionFromNode(node);
       const hasSurfaceActions = target != null;
       const lifecycleActions = canUseLifecycle
         ? {
@@ -466,25 +645,17 @@ export function useProjectCanvas(
           }
         : undefined;
 
-      const databasePaneQuickAction = (
-        pane: (typeof DATABASE_PANE)[keyof typeof DATABASE_PANE]
-      ) => ({
+      const databaseQuickAction = (action: DatabaseNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
-        onClick: target
-          ? () => {
-              if (pane === DATABASE_PANE.logs) {
-                openMainSurface(mainSurfaceForResourceLogs(target), selection);
-                return;
-              }
-              if (pane === DATABASE_PANE.console) {
-                openDrawerSurface(drawerSurfaceForDbConsole(target), selection);
-                return;
-              }
-              const entry = sideSurfaceForDatabasePane(target, pane);
-              if (entry != null) {
-                openSideSurface(entry, selection);
-              }
-            }
+        onClick: hasSurfaceActions
+          ? () =>
+              executeCommandPlan(
+                planProjectCanvasCommand({
+                  intent: { action, kind: "databaseQuickAction", node },
+                  nodes: stackOrderedRawNodes,
+                  readOnly,
+                })
+              )
           : undefined,
       });
 
@@ -502,19 +673,11 @@ export function useProjectCanvas(
             quickActions: {
               ...(data.actions?.quickActions ?? {}),
               dbAccess: {
-                disabled: !hasSurfaceActions,
-                onClick: target
-                  ? () => {
-                      openMainSurface(
-                        mainSurfaceForDbAccess(target),
-                        selection
-                      );
-                    }
-                  : undefined,
+                ...databaseQuickAction("dbAccess"),
               },
-              metrics: databasePaneQuickAction(DATABASE_PANE.metrics),
-              logs: databasePaneQuickAction(DATABASE_PANE.logs),
-              console: databasePaneQuickAction(DATABASE_PANE.console),
+              metrics: databaseQuickAction("metrics"),
+              logs: databaseQuickAction("logs"),
+              console: databaseQuickAction("console"),
             },
           },
           connections,
@@ -529,16 +692,15 @@ export function useProjectCanvas(
       clearPublicAccessPendingTarget,
       dbAuthReady,
       deleteDbWorkload,
+      executeCommandPlan,
       getPublicAccessPendingTarget,
       isDbLifecycleLoading,
-      openDrawerSurface,
-      openMainSurface,
-      openSideSurface,
       restartDbWorkload,
       runMutationThenRefresh,
       readOnly,
       routingDomain,
       startDbWorkload,
+      stackOrderedRawNodes,
       stopDbWorkload,
       togglePublicAccess,
     ]
@@ -551,7 +713,6 @@ export function useProjectCanvas(
       const ns = states.namespace?.trim() ?? "";
       const name = states.name.trim();
       const target = projectApTargetFromNode(node);
-      const selection = projectCanvasSelectionFromNode(node);
 
       const isApLifecycle =
         apAuthReady && states.kind === "AP" && ns !== "" && name !== "";
@@ -585,23 +746,17 @@ export function useProjectCanvas(
         };
       }
 
-      const select = (pane: string) => {
-        if (target == null) {
-          return;
-        }
-        if (pane === WORKLOAD_PANE.terminal) {
-          openDrawerSurface(drawerSurfaceForApTerminal(target), selection);
-          return;
-        }
-        if (pane === WORKLOAD_PANE.logs) {
-          openMainSurface(mainSurfaceForResourceLogs(target), selection);
-          return;
-        }
-        const entry = sideSurfaceForWorkloadPane(target, pane);
-        if (entry != null) {
-          openSideSurface(entry, selection);
-        }
-      };
+      const containerQuickAction = (action: ContainerNodeQuickActionKey) => ({
+        disabled: !hasSurfaceActions,
+        onClick: () =>
+          executeCommandPlan(
+            planProjectCanvasCommand({
+              intent: { action, kind: "containerQuickAction", node },
+              nodes: stackOrderedRawNodes,
+              readOnly,
+            })
+          ),
+      });
 
       const ref = { name: states.name, namespace: ns };
       const displayName = states.name;
@@ -639,26 +794,11 @@ export function useProjectCanvas(
         : undefined;
       const quickActions = {
         ...(data.actions?.quickActions ?? {}),
-        calendar: {
-          disabled: !hasSurfaceActions,
-          onClick: () => select(WORKLOAD_PANE.history),
-        },
-        console: {
-          disabled: !hasSurfaceActions,
-          onClick: () => select(WORKLOAD_PANE.terminal),
-        },
-        logs: {
-          disabled: !hasSurfaceActions,
-          onClick: () => select(WORKLOAD_PANE.logs),
-        },
-        events: {
-          disabled: !hasSurfaceActions,
-          onClick: () => select(WORKLOAD_PANE.events),
-        },
-        metrics: {
-          disabled: !hasSurfaceActions,
-          onClick: () => select(WORKLOAD_PANE.metrics),
-        },
+        calendar: containerQuickAction("calendar"),
+        console: containerQuickAction("console"),
+        logs: containerQuickAction("logs"),
+        events: containerQuickAction("events"),
+        metrics: containerQuickAction("metrics"),
       };
 
       return {
@@ -683,17 +823,16 @@ export function useProjectCanvas(
       afterLifecycle,
       dbDsnReferenceSources,
       deleteWorkload,
+      executeCommandPlan,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,
-      openDrawerSurface,
-      openMainSurface,
-      openSideSurface,
       pendingAddDbDsnReferenceIntent,
       pauseWorkload,
       readOnly,
       restartWorkload,
       runMutationThenRefresh,
       startWorkload,
+      stackOrderedRawNodes,
     ]
   );
 
@@ -721,18 +860,6 @@ export function useProjectCanvas(
     },
     [onNodeExpansionChange, readOnly]
   );
-
-  const stackOrderedRawNodes = useMemo(() => {
-    const overridden = rawNodes.map((node) => {
-      const key = canvasNodeResourceStackKey(node);
-      const stackOrder =
-        key === undefined ? undefined : localStackOrderByRef.get(key);
-      return stackOrder === undefined
-        ? node
-        : nodeWithCanvasStackOrder(node, stackOrder);
-    });
-    return applyCanvasStackOrderToNodes(overridden);
-  }, [localStackOrderByRef, rawNodes]);
 
   const nodes = useMemo(
     () =>
@@ -778,39 +905,6 @@ export function useProjectCanvas(
     [nodes, surfaceState]
   );
 
-  const frontCanvasNode = useCallback(
-    (node: Node) => {
-      const sourceNodes = nodes.map((candidate) =>
-        candidate.id === node.id
-          ? { ...candidate, position: { ...node.position } }
-          : candidate
-      );
-      const result = bringCanvasNodeToFrontInStackOrder(sourceNodes, node.id);
-      const nextNode = result.node;
-      if (!result.changed || nextNode === undefined) {
-        return;
-      }
-
-      const key = canvasNodeResourceStackKey(nextNode);
-      const stackOrder = canvasNodeStackOrder(nextNode);
-      if (key !== undefined && stackOrder !== undefined) {
-        setLocalStackOrderByRef((current) => {
-          if (current.get(key) === stackOrder) {
-            return current;
-          }
-          const next = new Map(current);
-          next.set(key, stackOrder);
-          return next;
-        });
-      }
-
-      if (!readOnly) {
-        onNodeStackOrderChange?.(nextNode);
-      }
-    },
-    [nodes, onNodeStackOrderChange, readOnly]
-  );
-
   useEffect(() => {
     if (selectedNode == null) {
       return;
@@ -823,44 +917,15 @@ export function useProjectCanvas(
   >(
     (connection) => {
       connectHandledInGestureRef.current = true;
-      const command = classifyProjectCanvasConnectionCommand({
-        connection,
-        nodes,
-        readOnly,
-      });
-
-      if (command.kind === "discard") {
-        if (command.reason === "unsupported") {
-          toast.info("That canvas connection is not supported yet.");
-        }
-        return;
-      }
-
-      const apTarget = projectApTarget({
-        name: command.ap.name,
-        namespace: command.ap.namespace,
-        observedUid: command.ap.uid,
-      });
-      if (apTarget == null) {
-        toast.error("Could not open AP settings for this connection.");
-        return;
-      }
-
-      requestSettingsLeave("switch", () => {
-        addDbDsnReferenceIntentCounter.current += 1;
-        setPendingAddDbDsnReferenceIntent({
-          apNodeId: command.ap.nodeId,
-          dbName: command.db.name,
-          dbNamespace: command.db.namespace,
-          id: `ap-db-${addDbDsnReferenceIntentCounter.current}`,
-        });
-        openSideSurface(
-          { kind: "apSettings", target: apTarget },
-          { kind: "resource", target: apTarget }
-        );
-      });
+      executeCommandPlan(
+        planProjectCanvasCommand({
+          intent: { connection, kind: "connectingEdge" },
+          nodes,
+          readOnly,
+        })
+      );
     },
-    [nodes, readOnly, openSideSurface, requestSettingsLeave]
+    [executeCommandPlan, nodes, readOnly]
   );
   const isSupportedCanvasConnection = useCallback(
     (connection: Connection) =>
@@ -984,18 +1049,13 @@ export function useProjectCanvas(
           ? undefined
           : projectCanvasConnectionLine,
         onNodeClick: (_, node: Node) => {
-          const nextSelection = projectCanvasSelectionFromNode(node);
-          const nextSide = defaultProjectSideSurfaceForNode(node);
-          const selectNode = () => {
-            frontCanvasNode(node);
-            if (nextSide != null) {
-              openSideSurface(nextSide, nextSelection);
-              return;
-            }
-            writeSelection(nextSelection);
-          };
-
-          selectNode();
+          executeCommandPlan(
+            planProjectCanvasCommand({
+              intent: { kind: "nodeClick", node },
+              nodes,
+              readOnly,
+            })
+          );
         },
         onNodeDragStart: (_, node: Node) => {
           frontCanvasNode(node);
@@ -1017,17 +1077,17 @@ export function useProjectCanvas(
     [
       clearSelection,
       connectionGestureActive,
+      executeCommandPlan,
       frontCanvasNode,
       focusCanvasSelection,
       handleConnect,
       handleConnectEnd,
       handleConnectStart,
       isValidCanvasConnection,
+      nodes,
       onNodePositionChange,
-      openSideSurface,
       projectCanvasConnectionLine,
       readOnly,
-      writeSelection,
     ]
   );
 
