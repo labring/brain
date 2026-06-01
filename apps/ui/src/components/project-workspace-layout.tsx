@@ -27,15 +27,15 @@ import {
   useState,
 } from "react";
 import { useSWRConfig } from "swr";
-import {
-  ProjectSidePaneProvider,
-  useProjectSidePaneController,
-} from "@/features/project-surfaces/react";
-import type { ProjectCanvasSelection } from "@/features/project-surfaces/surface-state";
+import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import {
   PROJECT_SELECTED_QUERY_KEY,
   parseProjectCanvasSelection,
-} from "@/features/project-surfaces/url-codec";
+} from "@/features/project-route-state/workbench-url-codec";
+import {
+  ProjectSidePaneProvider,
+  useProjectSidePaneAssistantRouter,
+} from "@/features/project-surfaces/react";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
@@ -638,7 +638,7 @@ function ProjectAssistantChatSession({
 
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
-  const sidePaneController = useProjectSidePaneController();
+  const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [creatingThread, setCreatingThread] = useState(false);
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
@@ -709,20 +709,20 @@ function ProjectAssistantChatPane() {
   }, [namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
-    sidePaneController
+    sidePaneRouter
       .openAssistantIntent({ type: "github" })
       .catch(() => undefined);
-  }, [sidePaneController]);
+  }, [sidePaneRouter]);
   const openDatabaseIntent = useCallback(() => {
-    sidePaneController
+    sidePaneRouter
       .openAssistantIntent({ type: "database" })
       .catch(() => undefined);
-  }, [sidePaneController]);
+  }, [sidePaneRouter]);
   const openDockerIntent = useCallback(() => {
-    sidePaneController
+    sidePaneRouter
       .openAssistantIntent({ type: "docker" })
       .catch(() => undefined);
-  }, [sidePaneController]);
+  }, [sidePaneRouter]);
 
   if (sessionError) {
     return (

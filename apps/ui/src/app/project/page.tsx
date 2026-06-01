@@ -5,10 +5,12 @@ import { SidePanePresence } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { ProjectCreationPane } from "@/components/project-creation-pane";
-import type { ProjectSidePaneSurface } from "@/features/project-surfaces/controller";
+import type { ProjectCreationPaneEntryMode } from "@/components/project-creation-pane-state";
+import { useProjectSideRouteState } from "@/features/project-route-state/use-project-side-route-state";
+import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { useProjectCreator } from "@/hooks/use-project-creator";
@@ -24,33 +26,62 @@ export default function ProjectIndexPage() {
     kubeconfig,
     ns,
   });
+  const {
+    closeSide: closeProjectSideRoute,
+    openSide: openProjectSideRoute,
+    side: projectSideRouteEntry,
+  } = useProjectSideRouteState({
+    isSideEntrySupported: (entry) => entry.kind === "projectCreation",
+  });
+  const creationSideEntry =
+    projectSideRouteEntry?.kind === "projectCreation"
+      ? projectSideRouteEntry
+      : null;
+  const creationSideEntryMode = creationSideEntry?.entryMode ?? null;
 
   const onProjectCreated = useCallback(
     async (projectUid: string | undefined) => {
+      closeProjectSideRoute("replace");
       await refreshProjects();
       if (projectUid) {
         router.push(`/project/${encodeURIComponent(projectUid)}`);
       }
     },
-    [refreshProjects, router]
+    [closeProjectSideRoute, refreshProjects, router]
   );
 
   const {
     creationPaneEntryMode,
-    creationPaneOpen,
     creatorRootProps,
     creatorResetKey,
     githubDeployerLoading,
     onCreationPaneOpenChange,
-    openCreationPane,
+    openCreationPane: prepareCreationPane,
   } = useProjectCreator({
     existingProjects: states.projects,
     kubeconfig,
     namespace: ns,
     onProjectCreated,
   });
+  useEffect(() => {
+    if (creationSideEntryMode == null) {
+      onCreationPaneOpenChange(false);
+      return;
+    }
+    prepareCreationPane(creationSideEntryMode);
+  }, [creationSideEntryMode, onCreationPaneOpenChange, prepareCreationPane]);
 
-  const projectListSidePaneSurface = useMemo<ProjectSidePaneSurface>(
+  const openProjectCreationPane = useCallback(
+    (entryMode: ProjectCreationPaneEntryMode = "general") => {
+      openProjectSideRoute({
+        entryMode,
+        kind: "projectCreation",
+      });
+    },
+    [openProjectSideRoute]
+  );
+
+  const projectListSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: "project-list",
       openAssistantIntent: (intent) => {
@@ -58,18 +89,19 @@ export default function ProjectIndexPage() {
         if (entry?.kind !== "projectCreation") {
           return { status: "ignored" as const };
         }
-        openCreationPane(entry.entryMode);
+        openProjectSideRoute(entry);
         return { status: "handled" as const };
       },
     }),
-    [openCreationPane]
+    [openProjectSideRoute]
   );
   useProjectSidePaneSurface(projectListSidePaneSurface);
 
   const explorerActions = useMemo(
-    () => ({ ...actions, onNewProject: openCreationPane }),
-    [actions, openCreationPane]
+    () => ({ ...actions, onNewProject: openProjectCreationPane }),
+    [actions, openProjectCreationPane]
   );
+  const creationPaneOpen = creationSideEntry != null;
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -117,7 +149,7 @@ export default function ProjectIndexPage() {
             busy={githubDeployerLoading}
             creatorRootProps={creatorRootProps}
             entryMode={creationPaneEntryMode}
-            onClose={() => onCreationPaneOpenChange(false)}
+            onClose={() => closeProjectSideRoute()}
             resetKey={creatorResetKey}
           />
         ) : null}

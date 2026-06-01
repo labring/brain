@@ -5,7 +5,6 @@ import {
   closeProjectSurfaceSlot,
   createProjectSurfaceState,
   openProjectSurface,
-  setProjectCanvasSelection,
 } from "./orchestrator";
 import { projectSideSurfaceVisible } from "./surface-state";
 import type { ProjectApTarget, ProjectDbTarget } from "./target-identity";
@@ -28,35 +27,27 @@ test("project surface slots are single-active within each slot", () => {
 
   const next = openProjectSurface(state, {
     entry: { kind: "dbSettings", target: db },
-    select: { kind: "resource", target: db },
     slot: "side",
   });
 
   assert.deepEqual(next.side, { kind: "dbSettings", target: db });
-  assert.deepEqual(next.selected, { kind: "resource", target: db });
 });
 
-test("session drawer coexists with side and main surfaces and stays pinned across selection changes", () => {
+test("session drawer coexists with side and main surfaces", () => {
   const withDrawer = openProjectSurface(createProjectSurfaceState(), {
     entry: { kind: "apTerminal", target: ap },
-    select: { kind: "resource", target: ap },
     slot: "drawer",
   });
   const withSide = openProjectSurface(withDrawer, {
     entry: { kind: "dbSettings", target: db },
-    select: { kind: "resource", target: db },
     slot: "side",
   });
-  const selectedElsewhere = setProjectCanvasSelection(withSide, {
-    kind: "resource",
-    target: db,
-  });
 
-  assert.deepEqual(selectedElsewhere.drawer, {
+  assert.deepEqual(withSide.drawer, {
     kind: "apTerminal",
     target: ap,
   });
-  assert.deepEqual(selectedElsewhere.side, { kind: "dbSettings", target: db });
+  assert.deepEqual(withSide.side, { kind: "dbSettings", target: db });
 });
 
 test("opening a second drawer entry replaces the first drawer entry only", () => {
@@ -111,7 +102,6 @@ test("closing one surface slot does not disturb selection or other slots", () =>
   const state = createProjectSurfaceState({
     drawer: { kind: "dbConsole", target: db },
     main: { kind: "dbAccess", target: db },
-    selected: { kind: "resource", target: db },
     side: { kind: "dbSettings", target: db },
   });
 
@@ -120,5 +110,4 @@ test("closing one surface slot does not disturb selection or other slots", () =>
   assert.equal(next.main, null);
   assert.deepEqual(next.drawer, state.drawer);
   assert.deepEqual(next.side, state.side);
-  assert.deepEqual(next.selected, state.selected);
 });

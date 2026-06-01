@@ -3,9 +3,7 @@ import { test } from "node:test";
 
 import type { ProjectSurfaceState } from "./surface-state";
 import {
-  parseProjectCanvasSelection,
   parseProjectSurfaceUrlState,
-  serializeProjectCanvasSelection,
   serializeProjectSurfaceUrlState,
 } from "./url-codec";
 
@@ -18,23 +16,18 @@ const state = {
     kind: "dbAccess",
     target: { kind: "DB", name: "pg", namespace: "data" },
   },
-  selected: {
-    kind: "publicAddresses",
-    target: { apName: "api", kind: "EntryPoint", namespace: "default" },
-  },
   side: {
     kind: "publicAddresses",
     target: { apName: "api", kind: "EntryPoint", namespace: "default" },
   },
 } satisfies ProjectSurfaceState;
 
-test("project surface URL codec parses and serializes selected, side, main, and drawer slots", () => {
+test("project surface URL codec parses and serializes side, main, and drawer slots", () => {
   const serialized = serializeProjectSurfaceUrlState(state);
 
   assert.deepEqual(serialized, {
     drawer: "ap-terminal:ap:default:api",
     main: "db-access:db:data:pg",
-    selected: "entry:default:api",
     side: "public-addresses:entry:default:api",
   });
   assert.deepEqual(parseProjectSurfaceUrlState(serialized), {
@@ -52,22 +45,10 @@ test("project surface URL codec omits empty slots", () => {
     serializeProjectSurfaceUrlState({
       drawer: null,
       main: null,
-      selected: null,
       side: null,
     }),
     {}
   );
-});
-
-test("project surface URL codec handles edge selection independently", () => {
-  assert.equal(
-    serializeProjectCanvasSelection({ edgeId: "edge-1", kind: "edge" }),
-    "edge:edge-1"
-  );
-  assert.deepEqual(parseProjectCanvasSelection("edge:edge-1"), {
-    edgeId: "edge-1",
-    kind: "edge",
-  });
 });
 
 test("project surface URL codec clears invalid and old query entries safely", () => {
@@ -75,13 +56,11 @@ test("project surface URL codec clears invalid and old query entries safely", ()
     parseProjectSurfaceUrlState({
       drawer: "dbPane:console",
       main: "canvasAction:dbAccess",
-      selected: "service:uid",
       side: "apPane:settings",
     }),
     {
       drawer: null,
       main: null,
-      selected: null,
       side: null,
     }
   );

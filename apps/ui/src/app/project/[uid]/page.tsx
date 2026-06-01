@@ -18,7 +18,7 @@ import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemet
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import { ProjectCanvasWorkbenchSurfaces } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
-import type { ProjectSidePaneSurface } from "@/features/project-surfaces/controller";
+import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
@@ -89,6 +89,7 @@ export default function ProjectUidPage() {
     onNodePositionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onPendingApDbReferencesStart: beginPendingApDbReferences,
+    projectUid: uid,
     refreshWorkloadLists,
     selectionReady: !isEmptyGraphLoading,
   });
@@ -106,7 +107,7 @@ export default function ProjectUidPage() {
   const openGithubDeploymentPane = useCallback(() => {
     openSideSurface({ kind: "githubDeployment", projectUid: uid });
   }, [openSideSurface, uid]);
-  const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneSurface>(
+  const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
       openAssistantIntent: (intent) => {

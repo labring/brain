@@ -6,22 +6,22 @@ export type ProjectSidePaneIntentResult =
   | { status: "handled" }
   | { status: "ignored" };
 
-export interface ProjectSidePaneSurface {
+export interface ProjectSidePaneAssistantSurface {
   id: string;
   openAssistantIntent: (
     intent: ProjectSidePaneAssistantIntent
   ) => Promise<ProjectSidePaneIntentResult> | ProjectSidePaneIntentResult;
 }
 
-export interface ProjectSidePaneController {
+export interface ProjectSidePaneAssistantRouter {
   openAssistantIntent: (
     intent: ProjectSidePaneAssistantIntent
   ) => Promise<ProjectSidePaneIntentResult>;
-  registerSurface: (surface: ProjectSidePaneSurface) => () => void;
+  registerSurface: (surface: ProjectSidePaneAssistantSurface) => () => void;
 }
 
-export function createProjectSidePaneController(): ProjectSidePaneController {
-  let currentSurface: ProjectSidePaneSurface | null = null;
+export function createProjectSidePaneAssistantRouter(): ProjectSidePaneAssistantRouter {
+  let currentSurface: ProjectSidePaneAssistantSurface | null = null;
 
   return {
     openAssistantIntent(intent) {
