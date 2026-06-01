@@ -2,7 +2,7 @@ import { buttonVariants } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import Link from "next/link";
 
-/** UI for Next.js `unauthorized()` — missing auth, invalid preview links, etc. */
+/** UI for Next.js `unauthorized()` when workspace auth is missing. */
 export default function Unauthorized() {
   return (
     <main className="flex h-screen min-h-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">

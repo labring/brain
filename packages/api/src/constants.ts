@@ -31,14 +31,6 @@ export const API_ROUTES = {
     nsconfig: "/api/k8s/v1alpha1/nsconfig",
   },
 
-  /**
-   * Project claims + share-token preview (`/api/projects/v1alpha1` in `apps/api/route/project`).
-   */
-  projects: {
-    base: "/api/projects/v1alpha1",
-    share: "/api/projects/v1alpha1/share",
-  },
-
   ap: {
     base: "/api/ap/v1alpha1",
     /** GET list/get, PUT create, PATCH update, DELETE — group root. */

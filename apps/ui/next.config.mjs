@@ -6,7 +6,7 @@ const nextConfig = {
     serverFunctions: false,
   },
   experimental: {
-    /** Enables `unauthorized()` from `next/navigation` (e.g. preview share token checks). */
+    /** Enables `unauthorized()` from `next/navigation` for server-side auth checks. */
     authInterrupts: true,
   },
 };

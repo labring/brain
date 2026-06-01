@@ -128,7 +128,6 @@ export interface UseProjectCanvasOptions {
   refreshWorkloadLists?: () => Promise<unknown>;
   /** True when the resource lists have settled enough to clear stale URL selections. */
   selectionReady?: boolean;
-  shareToken?: string;
 }
 
 interface PendingAddDbDsnReferenceIntent
@@ -230,19 +229,13 @@ function createPendingApDbReferenceMutationStartHandler({
 
 function canvasNodeSettingsAccess({
   readOnly,
-  shareToken,
 }: {
   readOnly: boolean;
-  shareToken: string | undefined;
 }): CanvasNodeSettingsAccess | undefined {
-  const st = shareToken?.trim();
-  if (!(readOnly || st)) {
+  if (!readOnly) {
     return undefined;
   }
-  return {
-    ...(readOnly ? { readOnly: true } : {}),
-    ...(st ? { shareToken: st } : {}),
-  };
+  return { readOnly: true };
 }
 
 function selectedEntryRefFromSurfaceState({
@@ -398,7 +391,6 @@ export function useProjectCanvas(
     startWorkload,
   } = useApLifecycleOperations({
     kubeconfig: readOnly ? undefined : options?.kubeconfig,
-    shareToken: readOnly ? undefined : options?.shareToken,
   });
   const {
     authReady: dbAuthReady,
@@ -412,7 +404,6 @@ export function useProjectCanvas(
     togglePublicAccess,
   } = useDbLifecycleOperations({
     kubeconfig: readOnly ? undefined : options?.kubeconfig,
-    shareToken: readOnly ? undefined : options?.shareToken,
   });
 
   const refreshWorkloadLists = options?.refreshWorkloadLists;
@@ -722,7 +713,6 @@ export function useProjectCanvas(
           connections,
           settingsAccess: canvasNodeSettingsAccess({
             readOnly,
-            shareToken: options?.shareToken,
           }),
         },
       };
@@ -744,7 +734,6 @@ export function useProjectCanvas(
       startDbWorkload,
       stopDbWorkload,
       togglePublicAccess,
-      options?.shareToken,
     ]
   );
 
@@ -768,7 +757,6 @@ export function useProjectCanvas(
       });
       const settingsAccess = canvasNodeSettingsAccess({
         readOnly,
-        shareToken: options?.shareToken,
       });
       const onAddDbDsnReferenceMutationStart =
         createPendingApDbReferenceMutationStartHandler({
@@ -893,7 +881,6 @@ export function useProjectCanvas(
       openDrawerSurface,
       openMainSurface,
       openSideSurface,
-      options?.shareToken,
       pendingAddDbDsnReferenceIntent,
       pauseWorkload,
       readOnly,

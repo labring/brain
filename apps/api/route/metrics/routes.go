@@ -12,7 +12,6 @@ import (
 	"sealos/api/middleware"
 	"sealos/api/route/health"
 	metricssvc "sealos/api/service/metrics"
-	projectsvc "sealos/api/service/project"
 	workloadtelemetry "sealos/api/service/workloadtelemetry"
 )
 
@@ -22,11 +21,7 @@ type workloadTelemetryService interface {
 }
 
 var (
-	adminAuthorizationBearer    = middleware.AdminAuthorizationBearer
-	adminKubeconfigFromEnv      = middleware.AdminKubeconfigFromEnv
 	newWorkloadTelemetryService = func() (workloadTelemetryService, error) { return workloadtelemetry.NewDefaultService() }
-	validateShareAccess         = projectsvc.ValidateShareAccess
-	verifyAPInShareProject      = projectsvc.VerifyAPInShareProject
 )
 
 // Register registers metrics endpoints on the given group (e.g. under /api/telemetry/v1alpha1).
@@ -60,9 +55,7 @@ type snapshotBody struct {
 }
 
 type snapshotInput struct {
-	Authorization string       `header:"Authorization" doc:"Bearer url-encoded kubeconfig (omit when using share token)"`
-	ShareToken    string       `header:"X-Share-Token" doc:"Project share JWT; uses ENCODED_ADMIN_KUBECONFIG; targets must be ap"`
-	ShareTokenQP  string       `query:"shareToken" doc:"Same as X-Share-Token"`
+	Authorization string       `header:"Authorization" required:"true" doc:"Bearer url-encoded kubeconfig"`
 	Body          snapshotBody `doc:"Snapshot batch request"`
 }
 
@@ -95,7 +88,7 @@ func registerSnapshot(grp huma.API) {
 		Description: "Batch latest AP and DB workload telemetry snapshots for canvas footer metrics.",
 		Tags:        []string{"Metrics"},
 	}, func(ctx context.Context, input *snapshotInput) (*snapshotOutput, error) {
-		authz, err := authorizeSnapshotTelemetry(ctx, input)
+		authz, err := authorizeSnapshotTelemetry(input)
 		if err != nil {
 			return nil, err
 		}
@@ -112,61 +105,8 @@ func registerSnapshot(grp huma.API) {
 	})
 }
 
-func authorizeSnapshotTelemetry(ctx context.Context, input *snapshotInput) (string, error) {
-	shareTok := shareTokenValue(input.ShareToken, input.ShareTokenQP)
-	authz := strings.TrimSpace(input.Authorization)
-
-	if shareTok == "" {
-		return authorizeTelemetryNamespaces(authz, snapshotNamespaces(input.Body.Targets)...)
-	}
-	if authz != "" {
-		return "", huma.Error400BadRequest("send either Authorization or share token, not both", nil)
-	}
-
-	return authorizeShareAPTargets(ctx, shareTok, input.Body.Targets)
-}
-
-func shareTokenValue(headerValue string, queryValue string) string {
-	shareTok := strings.TrimSpace(headerValue)
-	if shareTok != "" {
-		return shareTok
-	}
-	return strings.TrimSpace(queryValue)
-}
-
-func authorizeShareAPTargets(ctx context.Context, shareTok string, targets []workloadtelemetry.Target) (string, error) {
-	for _, target := range targets {
-		if target.Kind != workloadtelemetry.WorkloadKindAP {
-			return "", huma.Error403Forbidden("share token metrics snapshot only support kind=ap", nil)
-		}
-	}
-
-	adminCfg, err := adminKubeconfigFromEnv()
-	if err != nil {
-		return "", huma.Error500InternalServerError("admin kubeconfig not configured", err)
-	}
-	validated, err := validateShareAccess(ctx, adminCfg, shareTok)
-	if err != nil {
-		return "", shareTelemetryError(err)
-	}
-	if validated == nil || validated.Claims == nil {
-		return "", huma.Error401Unauthorized("invalid share token", nil)
-	}
-
-	for _, target := range targets {
-		if strings.TrimSpace(target.Namespace) != validated.Claims.Namespace {
-			return "", huma.Error403Forbidden("namespace does not match share token", nil)
-		}
-		if err := verifyAPInShareProject(ctx, adminCfg, target.Namespace, target.Name, validated.ProjectUID); err != nil {
-			return "", huma.Error403Forbidden("AP not part of shared project", err)
-		}
-	}
-
-	bearer, err := adminAuthorizationBearer()
-	if err != nil {
-		return "", huma.Error500InternalServerError("admin authorization not available", err)
-	}
-	return bearer, nil
+func authorizeSnapshotTelemetry(input *snapshotInput) (string, error) {
+	return authorizeTelemetryNamespaces(input.Authorization, snapshotNamespaces(input.Body.Targets)...)
 }
 
 func registerSeries(grp huma.API) {
@@ -262,18 +202,5 @@ func telemetryServiceError(err error) error {
 		return huma.Error500InternalServerError("VMSELECT_URL is not configured", err)
 	default:
 		return huma.Error500InternalServerError("failed to query workload telemetry", err)
-	}
-}
-
-func shareTelemetryError(err error) error {
-	switch {
-	case errors.Is(err, projectsvc.ErrShareProjectNotPublic):
-		return huma.Error403Forbidden("project is not shared publicly", err)
-	case errors.Is(err, projectsvc.ErrShareForbidden):
-		return huma.Error403Forbidden("share permission not allowed", err)
-	case errors.Is(err, projectsvc.ErrShareTokenInvalid):
-		return huma.Error401Unauthorized("invalid share token", err)
-	default:
-		return huma.Error401Unauthorized("share token validation failed", err)
 	}
 }

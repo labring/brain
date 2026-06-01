@@ -51,7 +51,6 @@ export interface UseWorkloadClaimSettingsOptions {
   ) => (() => void) | undefined;
   onWorkloadMutation?: () => Promise<unknown>;
   readOnly?: boolean;
-  shareToken?: string;
   workloadKind: WorkloadClaimKind;
 }
 
@@ -114,7 +113,6 @@ export function useWorkloadClaimSettings(
   } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const readOnly = options.readOnly === true;
-  const shareToken = options.shareToken?.trim() ?? "";
   const dbDsnReferenceSources = options.dbDsnReferenceSources ?? [];
   const isApWorkload = workloadKind === "AP";
   const [claimReconcilePollUntil, setClaimReconcilePollUntil] = useState(0);
@@ -131,7 +129,6 @@ export function useWorkloadClaimSettings(
     namespace,
     refreshInterval:
       claimReconcilePollUntil > Date.now() ? WORKLOAD_RECONCILE_POLL_MS : 0,
-    shareToken: shareToken === "" ? undefined : shareToken,
   });
   const {
     data: entryPointsData,
@@ -146,7 +143,6 @@ export function useWorkloadClaimSettings(
       isApWorkload && claimReconcilePollUntil > Date.now()
         ? WORKLOAD_RECONCILE_POLL_MS
         : 0,
-    shareToken: isApWorkload && shareToken !== "" ? shareToken : undefined,
   });
 
   const claimBodyRef = useRef<Record<string, unknown> | undefined>(undefined);

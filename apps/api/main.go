@@ -22,7 +22,6 @@ import (
 	"sealos/api/route/health"
 	"sealos/api/route/k8s"
 	"sealos/api/route/notif"
-	"sealos/api/route/project"
 	"sealos/api/route/task"
 	"sealos/api/route/telemetry"
 )
@@ -39,7 +38,7 @@ func main() {
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Share-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           86400,
 	}))
@@ -74,7 +73,6 @@ func main() {
 	k8s.RegisterExecWebSocket(router)
 	ap.Register(api)
 	auth.Register(api)
-	project.Register(api)
 	db.Register(api)
 	entrypoint.Register(api)
 	task.Register(api)

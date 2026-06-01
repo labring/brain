@@ -360,14 +360,12 @@ export function DatabaseSettingsPane({
   onUpdated,
 }: DatabaseSettingsPaneProps) {
   const readOnly = data.settingsAccess?.readOnly === true;
-  const shareToken = data.settingsAccess?.shareToken?.trim() ?? "";
   const routingDomain = useMemo(
     () => (readOnly ? "" : routingDomainFromKubeconfig(kubeconfig ?? "")),
     [kubeconfig, readOnly]
   );
   const { authReady, isUpdating, updateSettings } = useDbSettingsOperations({
     kubeconfig: readOnly ? undefined : kubeconfig,
-    shareToken: readOnly ? undefined : shareToken,
   });
 
   const workload = data.workload;

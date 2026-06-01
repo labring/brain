@@ -3,25 +3,20 @@ package k8s
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	corev1 "k8s.io/api/core/v1"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
-	projectsvc "sealos/api/service/project"
 )
 
 func registerGet(grp huma.API) {
 	type getInput struct {
-		Authorization string `header:"Authorization" doc:"Bearer url-encoded kubeconfig (omit when using share token)"`
-		ShareToken    string `header:"X-Share-Token" doc:"Project share JWT; uses ENCODED_ADMIN_KUBECONFIG and confines results to that project"`
-		ShareTokenQP  string `query:"shareToken" doc:"Same as X-Share-Token (for browser links)"`
+		Authorization string `header:"Authorization" doc:"Bearer url-encoded kubeconfig"`
 		Kind          string `query:"kind" required:"true" doc:"Resource kind (e.g. pods, deploy)"`
 		Name          string `query:"name" doc:"Resource name"`
 		Namespace     string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
@@ -33,14 +28,7 @@ func registerGet(grp huma.API) {
 		Body json.RawMessage
 	}
 	handler := func(ctx context.Context, input *getInput) (*getOutput, error) {
-		shareTok := strings.TrimSpace(input.ShareToken)
-		if shareTok == "" {
-			shareTok = strings.TrimSpace(input.ShareTokenQP)
-		}
 		authz := strings.TrimSpace(input.Authorization)
-
-		var cfg *clientcmdapi.Config
-		var err error
 		allNs := input.AllNamespaces == "true" || input.AllNamespaces == "1"
 		opts := k8ssvc.GetOptions{
 			Resource:      input.Kind,
@@ -51,62 +39,24 @@ func registerGet(grp huma.API) {
 			AllNamespaces: allNs,
 		}
 
-		if shareTok != "" {
-			if authz != "" {
-				return nil, huma.Error400BadRequest("send either Authorization or share token, not both", nil)
-			}
-			if allNs {
-				return nil, huma.Error400BadRequest("all-namespaces is not allowed with share token", nil)
-			}
-			if !projectsvc.ShareK8sKindAllowed(input.Kind) {
-				return nil, huma.Error403Forbidden("share token only allows project preview graph kinds for this API", nil)
-			}
-			adminCfg, err := middleware.AdminKubeconfigFromEnv()
-			if err != nil {
-				return nil, huma.Error500InternalServerError("admin kubeconfig not configured", err)
-			}
-			validated, err := projectsvc.ValidateShareAccess(ctx, adminCfg, shareTok)
-			if err != nil {
-				switch {
-				case errors.Is(err, projectsvc.ErrShareProjectNotPublic):
-					return nil, huma.Error403Forbidden("project is not shared publicly", err)
-				case errors.Is(err, projectsvc.ErrShareForbidden):
-					return nil, huma.Error403Forbidden("share permission not allowed", err)
-				case errors.Is(err, projectsvc.ErrShareTokenInvalid):
-					return nil, huma.Error401Unauthorized("invalid share token", err)
-				default:
-					return nil, huma.Error401Unauthorized("share token validation failed", err)
-				}
-			}
-			opts.Namespace = validated.Claims.Namespace
-			opts.LabelSelector = projectsvc.ProjectUIDLabel + "=" + validated.ProjectUID
-			opts.FieldSelector = ""
-			if opts.Name != "" {
-				if err := projectsvc.VerifyResourceInShareProject(ctx, adminCfg, input.Kind, opts.Namespace, opts.Name, validated.ProjectUID); err != nil {
-					return nil, huma.Error403Forbidden("resource not part of shared project", err)
-				}
-			}
-			cfg = adminCfg
-		} else {
-			if authz == "" {
-				return nil, huma.Error400BadRequest("Authorization or share token is required", nil)
-			}
-			_, cfg, err = middleware.RestConfigFromAuth(authz)
-			if err != nil {
-				return nil, huma.Error400BadRequest("invalid kubeconfig", err)
-			}
-			gvr := middleware.PodsGVR()
-			resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-				Namespace:        input.Namespace,
-				AllNamespaces:    allNs,
-				DefaultNamespace: "",
-				AdminCheckGVR:    &gvr,
-			})
-			if err != nil {
-				return nil, huma.Error500InternalServerError("failed to resolve request context", err)
-			}
-			opts.Namespace = resolved.Namespace
+		if authz == "" {
+			return nil, huma.Error400BadRequest("Authorization is required", nil)
 		}
+		_, cfg, err := middleware.RestConfigFromAuth(authz)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
+		}
+		gvr := middleware.PodsGVR()
+		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
+			Namespace:        input.Namespace,
+			AllNamespaces:    allNs,
+			DefaultNamespace: "",
+			AdminCheckGVR:    &gvr,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
+		}
+		opts.Namespace = resolved.Namespace
 
 		jsonBytes, err := k8ssvc.Get(cfg, opts)
 		if err != nil {

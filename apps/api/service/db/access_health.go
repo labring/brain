@@ -10,11 +10,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	projectsvc "sealos/api/service/project"
 )
 
-const ProjectUIDLabel = projectsvc.ProjectUIDLabel
+const ProjectUIDLabel = "crossplane.io/project-uid"
 
 var (
 	ErrAccessHealthDBNotFound       = errors.New("db not found")

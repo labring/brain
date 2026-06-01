@@ -105,7 +105,7 @@ test("main action surface stays absent without supported entry data", () => {
   assert.equal(html, "");
 });
 
-test("main action surface disables database browser for preview access", () => {
+test("main action surface disables database browser when requested", () => {
   const html = renderToStaticMarkup(
     <MainActionSurface
       dbAccessEnabled={false}
