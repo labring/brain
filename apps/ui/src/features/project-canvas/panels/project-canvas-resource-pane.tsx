@@ -6,7 +6,6 @@ import type {
   ProjectCanvasApResourcePaneKind,
   ProjectCanvasResourcePaneRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import { CanvasResourcePanePresence } from "./canvas-resource-pane";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { DatabaseSettingsPane } from "./database-settings-pane";
 import { EntryPointSettingsPane } from "./entrypoint-settings-panel";
@@ -103,9 +102,5 @@ export function renderProjectCanvasResourcePaneContent({
 export function ProjectCanvasResourcePane(
   props: ProjectCanvasResourcePaneContentProps
 ) {
-  return (
-    <CanvasResourcePanePresence>
-      {renderProjectCanvasResourcePaneContent(props)}
-    </CanvasResourcePanePresence>
-  );
+  return renderProjectCanvasResourcePaneContent(props);
 }

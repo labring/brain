@@ -133,8 +133,8 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
   const initialChildren = isRenderablePane(children) ? children : null;
   const [renderedChildren, setRenderedChildren] =
     useState<ReactNode>(initialChildren);
-  const [open, setOpen] = useState(false);
-  const presentRef = useRef(isRenderablePane(children));
+  const [open, setOpen] = useState(initialChildren !== null);
+  const presentRef = useRef(initialChildren !== null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openFrameRef = useRef<number | null>(null);
 
