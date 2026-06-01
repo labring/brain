@@ -67,7 +67,6 @@ const BIND_CUSTOM_DOMAIN_RE = /aria-label="Bind Custom Domain"/;
 const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
 const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
 const ADD_PUBLIC_ADDRESS_LABEL_RE = /Add Public Address/;
-const PORTS_TABLE_RE = /data-slot="ports-table"/;
 const PRIVATE_PORT_VALUE_RE = /value="8080"/;
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
@@ -119,8 +118,6 @@ function renderPane(
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       readOnly={readOnly}
     />
   );
@@ -154,12 +151,11 @@ test("container settings pane shows no AP networking surface without Network dat
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[{ port: 8080, protocol: "tcp" }]}
     />
   );
 
-  assert.doesNotMatch(html, PORTS_TABLE_RE);
+  assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
+  assert.doesNotMatch(html, PUBLIC_ADDRESSES_RE);
 });
 
 test("container settings pane renders address settings instead of Ports for private-only APs", () => {
@@ -177,8 +173,6 @@ test("container settings pane renders address settings instead of Ports for priv
       onEnvChange={noop}
       onImageChange={noop}
       onNetworkChange={noop}
-      onPortsChange={noop}
-      ports={[{ port: 80, protocol: "tcp" }]}
     />
   );
 
@@ -189,7 +183,6 @@ test("container settings pane renders address settings instead of Ports for priv
   assert.match(html, COPY_PRIVATE_ADDRESS_RE);
   assert.match(html, PUBLIC_ADDRESSES_RE);
   assert.match(html, NO_PUBLIC_ADDRESSES_RE);
-  assert.doesNotMatch(html, PORTS_TABLE_RE);
 });
 
 test("container settings pane renders editable public address rows", () => {
@@ -215,8 +208,6 @@ test("container settings pane renders editable public address rows", () => {
       onEnvChange={noop}
       onImageChange={noop}
       onNetworkChange={noop}
-      onPortsChange={noop}
-      ports={[]}
     />
   );
 
@@ -261,8 +252,6 @@ test("container settings pane renders draft-visible Platform Address hosts", () 
       onEnvChange={noop}
       onImageChange={noop}
       onNetworkChange={noop}
-      onPortsChange={noop}
-      ports={[]}
     />
   );
 
@@ -304,8 +293,6 @@ test("container settings pane shows Custom Domain rows instead of bound Platform
       onEnvChange={noop}
       onImageChange={noop}
       onNetworkChange={noop}
-      onPortsChange={noop}
-      ports={[]}
     />
   );
 
@@ -358,8 +345,6 @@ test("container settings pane renders Custom Domain Binding lifecycle detail sta
       onEnvChange={noop}
       onImageChange={noop}
       onNetworkChange={noop}
-      onPortsChange={noop}
-      ports={[]}
     />
   );
 
@@ -421,8 +406,6 @@ test("container settings pane unbinds Custom Domains without deleting Platform A
         onEnvChange={noop}
         onImageChange={noop}
         onNetworkChange={noop}
-        onPortsChange={noop}
-        ports={[]}
       />
     ),
     PUBLIC_ADDRESS_VALUE_RE
@@ -438,8 +421,6 @@ test("container settings pane renders fixed replica strategy controls", () => {
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       replicaStrategy={{
         fixed: { replicas: 4 },
         type: "fixed",
@@ -465,8 +446,6 @@ test("container settings pane renders CPU elastic replica strategy controls", ()
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       replicaStrategy={{
         elastic: {
           maxReplicas: 8,
@@ -506,8 +485,6 @@ test("container settings pane renders Memory elastic replica strategy controls",
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       replicaStrategy={{
         elastic: {
           maxReplicas: 8,
@@ -562,8 +539,6 @@ test("read-only container settings view renders fixed replica strategy without m
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       readOnly
       replicaStrategy={{
         fixed: { replicas: 4 },
@@ -591,8 +566,6 @@ test("read-only container settings view renders CPU elastic replica strategy wit
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       readOnly
       replicaStrategy={{
         elastic: {
@@ -634,8 +607,6 @@ test("read-only container settings view renders Memory elastic replica strategy 
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
       readOnly
       replicaStrategy={{
         elastic: {
@@ -688,8 +659,6 @@ test("read-only network view renders addresses without mutation controls", () =>
       onEnvChange={noop}
       onImageChange={noop}
       onNetworkChange={noop}
-      onPortsChange={noop}
-      ports={[{ port: 80, protocol: "tcp" }]}
       readOnly
     />
   );
@@ -702,7 +671,6 @@ test("read-only network view renders addresses without mutation controls", () =>
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
   assert.doesNotMatch(html, ADD_PUBLIC_ADDRESS_RE);
   assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
-  assert.doesNotMatch(html, PORTS_TABLE_RE);
 });
 
 test("read-only container settings view cannot mutate environment rows", () => {
@@ -777,8 +745,6 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
-      ports={[]}
     />
   );
 
@@ -875,9 +841,7 @@ test("container settings pane exposes panel-level draft actions without environm
       memoryQuota={{ onValueChange: noop, value: 512 }}
       onEnvChange={noop}
       onImageChange={noop}
-      onPortsChange={noop}
       onSettingsDraftCommit={noop}
-      ports={[]}
     />
   );
 

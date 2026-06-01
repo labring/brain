@@ -108,7 +108,6 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
     ignoreEnv,
     ignoreImage,
     ignoreNetwork,
-    ignorePorts,
     ignoreQuota,
     ignoreReplicas,
     isApWorkload,
@@ -207,11 +206,9 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         onEnvChange={canEditAp ? onEnvChange : ignoreEnv}
         onImageChange={canEditAp ? onImageChange : ignoreImage}
         onNetworkChange={canEditAp ? onNetworkChange : ignoreNetwork}
-        onPortsChange={ignorePorts}
         onResourceQuotasCommit={canEditAp ? onResourceQuotasCommit : undefined}
         onSettingsDraftCommit={canEditAp ? onSettingsDraftCommit : undefined}
         onSettingsDraftLeaveGuardChange={onSettingsLeaveGuardChange}
-        ports={display.ports}
         readOnly={!isApWorkload || settingsReadOnly}
         replicaStrategy={display.replicaStrategy}
         replicasQuota={

@@ -17,11 +17,6 @@ const DEMO_ENV = [
   { name: "REDIS_HOST", value: "redis-master.cache.svc" },
 ];
 
-const DEMO_PORTS = [
-  { port: 8080, protocol: "tcp" },
-  { port: 8443, protocol: "tcp" },
-];
-
 const DEMO_NETWORK: ContainerNetwork = {
   privateAddress: "http://api-gateway.default.svc:3000",
   privatePort: 3000,
@@ -56,7 +51,6 @@ export default function ContainerSettingsPanePreview() {
   const [image, setImage] = useState(DEMO_IMAGE);
   const [env, setEnv] = useState(DEMO_ENV);
   const [network, setNetwork] = useState(DEMO_NETWORK);
-  const [ports, setPorts] = useState(DEMO_PORTS);
 
   return (
     <PreviewWrapper className="lg:grid-cols-1">
@@ -82,7 +76,6 @@ export default function ContainerSettingsPanePreview() {
           onEnvChange={setEnv}
           onImageChange={setImage}
           onNetworkChange={setNetwork}
-          onPortsChange={setPorts}
           onSettingsDraftCommit={(draft) => {
             setCpuCores(draft.cpuCores);
             setEnv([...draft.env]);
@@ -95,7 +88,6 @@ export default function ContainerSettingsPanePreview() {
               setReplicas(draft.replicaStrategy.fixed.replicas);
             }
           }}
-          ports={ports}
           replicasQuota={{
             max: 20,
             min: 1,
