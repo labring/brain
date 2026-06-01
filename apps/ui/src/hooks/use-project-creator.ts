@@ -9,8 +9,6 @@ import type {
   ProjectCreatorDatabaseChoice,
 } from "@workspace/ui/components/project-creator/project-creator.types";
 import type { ProjectExplorerProject } from "@workspace/ui/components/project-explorer/project-explorer";
-import { validateDockerDeploymentSettings } from "@workspace/ui/lib/docker-deployment-settings";
-import { randomName } from "@workspace/ui/lib/random-name";
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,34 +17,22 @@ import {
   type ProjectCreationPaneEntryMode,
   projectCreationPaneStateReducer,
 } from "@/components/project-creation-pane-state";
-import { k8sApplyYaml } from "@/features/project-canvas/k8s/http/apply-yaml";
+import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+import {
+  newProjectDeploymentTarget,
+  runDeploymentTargetPipeline,
+} from "@/features/deployment-target/pipeline";
 import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
 import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useProjectCompositions } from "@/hooks/compositions/use-project-composition";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
-import type { CompositionListItem } from "@/lib/crossplane-composition-list";
 import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
-import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
-import {
-  DEFAULT_DOCKER_AP_COMPOSITION_NAME,
-  renderDockerDeploymentYaml,
-} from "@/lib/docker-deployment-yaml";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
-import { fetchProjectUidByName } from "@/lib/fetch-project-uid";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { childResourceName } from "@/lib/project-child-resource-name";
-import { mergeProjectMetadataDisplayName } from "@/lib/project-yaml-metadata";
-import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
-import {
-  joinKubeYamlDocuments,
-  renderCrossplaneCompositionTemplate,
-} from "@/lib/render-crossplane-template";
 
-/** Matches {@link packages/crossplane/public/service/project/project-instance-composition.yaml}. */
-const DEFAULT_PROJECT_COMPOSITION_NAME = "project-instance-go-templating";
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
 
 type CreatorRootPropsForCreationPane = Pick<
@@ -57,68 +43,6 @@ type CreatorRootPropsForCreationPane = Pick<
   | "existingProjectDisplayNames"
   | "githubDeployer"
 >;
-
-function pickProjectTemplate(
-  rows: CompositionListItem[] | undefined
-): string | undefined {
-  return (
-    rows?.find(
-      (r) => r.metadata.compositionName === DEFAULT_PROJECT_COMPOSITION_NAME
-    )?.template ?? rows?.find((r) => r.kind === "Project")?.template
-  );
-}
-
-function pickApTemplate(
-  rows: CompositionListItem[] | undefined
-): string | undefined {
-  return (
-    rows?.find(
-      (r) => r.metadata.compositionName === DEFAULT_DOCKER_AP_COMPOSITION_NAME
-    )?.template ?? rows?.find((r) => r.kind === "AP")?.template
-  );
-}
-
-function projectDisplayNameValidationError(
-  existingProjects: readonly ProjectExplorerProject[],
-  displayName: string
-): string | null {
-  const trimmed = displayName.trim();
-  if (!trimmed) {
-    return "Project name is required.";
-  }
-  if (isProjectDisplayNameTaken(existingProjects, trimmed)) {
-    return `A project named "${trimmed}" already exists.`;
-  }
-  return null;
-}
-
-function deployTaskErrorMessage(body: unknown): string {
-  if (body != null && typeof body === "object" && "error" in body) {
-    const error = (body as { error?: unknown }).error;
-    if (typeof error === "string" && error !== "") {
-      return error;
-    }
-  }
-  return "Could not create deploy task.";
-}
-
-function deployTaskSuccessMessage(body: unknown): string {
-  if (body == null || typeof body !== "object" || !("task" in body)) {
-    return "Deploy task queued.";
-  }
-  const task = (body as { task?: { id?: unknown } }).task;
-  return typeof task?.id === "string" && task.id !== ""
-    ? `Deploy task ${task.id} queued.`
-    : "Deploy task queued.";
-}
-
-function deployTaskId(body: unknown): string | null {
-  if (body == null || typeof body !== "object" || !("task" in body)) {
-    return null;
-  }
-  const task = (body as { task?: { id?: unknown } }).task;
-  return typeof task?.id === "string" && task.id !== "" ? task.id : null;
-}
 
 export interface UseProjectCreatorOptions {
   /** Existing Project rows in the namespace, used for display-name uniqueness checks. */
@@ -229,6 +153,36 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     []
   );
 
+  const deploymentAdapters = useMemo(
+    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
+    [kubeconfig, namespace]
+  );
+
+  const runDeployment = useCallback(
+    (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>
+      runDeploymentTargetPipeline({
+        adapters: deploymentAdapters,
+        apCompositionRows,
+        credentialsReady: hasKubeconfig && namespace !== "",
+        databaseOptions,
+        existingProjects,
+        namespace,
+        projectCompositionRows,
+        request,
+        routingDomain: routingDomainFromKubeconfig(kubeconfig),
+      }),
+    [
+      apCompositionRows,
+      databaseOptions,
+      deploymentAdapters,
+      existingProjects,
+      hasKubeconfig,
+      kubeconfig,
+      namespace,
+      projectCompositionRows,
+    ]
+  );
+
   const actions = useMemo<ProjectCreatorActions>(
     () => ({
       deriveDockerProjectDisplayName: (imageRef: string) =>
@@ -243,166 +197,51 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         projectDisplayName
       ) => {
         const displayName = projectDisplayName.trim();
-        const displayNameError = projectDisplayNameValidationError(
-          existingProjects,
-          displayName
-        );
-        const settingsValidation = validateDockerDeploymentSettings(settings);
-        if (!(kubeconfig && namespace)) {
-          toast.error("Kubeconfig or namespace is missing.");
-          return;
-        }
-        if (displayNameError) {
-          toast.error(displayNameError);
-          return;
-        }
-        if (!settingsValidation.valid) {
-          toast.error(
-            settingsValidation.errors[0]?.message ??
-              "Docker deployment settings are invalid."
-          );
-          return;
-        }
-
-        const projectTpl = pickProjectTemplate(projectCompositionRows);
-        const apTpl = pickApTemplate(apCompositionRows);
-
-        if (!projectTpl?.trim()) {
-          toast.error(
-            "Could not load a Project composition template from the cluster."
-          );
-          return;
-        }
-        if (!apTpl?.trim()) {
-          toast.error(
-            "Could not load an AP composition template from the cluster."
-          );
-          return;
-        }
-
-        const projectClaimName = randomName();
-        const apClaimName = childResourceName(projectClaimName);
-        const routingDomain = routingDomainFromKubeconfig(kubeconfig);
-
-        const projectYaml = mergeProjectMetadataDisplayName(
-          renderCrossplaneCompositionTemplate(projectTpl, {
-            name: projectClaimName,
-            namespace,
-          }),
-          displayName
-        );
-        const apYaml = renderDockerDeploymentYaml({
-          name: apClaimName,
-          namespace,
-          projectName: projectClaimName,
-          routingDomain,
-          settings,
-          template: apTpl,
-        });
-
         await applyWithBusyState(async () => {
-          await k8sApplyYaml(
-            kubeconfig,
-            joinKubeYamlDocuments([projectYaml, apYaml])
-          );
+          const outcome = await runDeployment({
+            kind: "docker",
+            settings,
+            target: newProjectDeploymentTarget(displayName),
+          });
+          if (outcome.kind !== "docker") {
+            return;
+          }
           toast.success(
-            `Applied project "${displayName}" and AP "${apClaimName}".`
+            `Applied project "${displayName}" and AP "${outcome.apName}".`
           );
-          setLastConfirmedKind(`docker:${settings.image}:${projectClaimName}`);
+          setLastConfirmedKind(
+            `docker:${settings.image}:${outcome.projectName}`
+          );
           dispatchCreationPaneState({ type: "close" });
-          const projectUid = await fetchProjectUidByName(
-            kubeconfig,
-            namespace,
-            projectClaimName
-          );
-          await onProjectCreated?.(projectUid);
+          await onProjectCreated?.(outcome.projectUid);
         });
       },
       onDatabaseConfirm: async (
         settings: DatabaseDeploymentSettings,
         projectDisplayName
       ) => {
-        const choice = databaseOptions.find(
-          (d) => d.id === settings.databaseId
-        );
         const displayName = projectDisplayName.trim();
-        const displayNameError = projectDisplayNameValidationError(
-          existingProjects,
-          displayName
-        );
-        if (!(kubeconfig && namespace)) {
-          toast.error("Kubeconfig or namespace is missing.");
-          return;
-        }
-        if (displayNameError) {
-          toast.error(displayNameError);
-          return;
-        }
-        if (choice == null) {
-          toast.error("Choose a database engine.");
-          return;
-        }
-
-        const projectTpl = pickProjectTemplate(projectCompositionRows);
-        if (!projectTpl?.trim()) {
-          toast.error(
-            "Could not load a Project composition template from the cluster."
-          );
-          return;
-        }
-
-        const projectClaimName = randomName();
-        const dbClaimName = childResourceName(projectClaimName);
-
-        const projectYaml = mergeProjectMetadataDisplayName(
-          renderCrossplaneCompositionTemplate(projectTpl, {
-            name: projectClaimName,
-            namespace,
-          }),
-          displayName
-        );
-        const dbYaml = renderDbDeploymentYaml({
-          compositionName: choice.id,
-          engine: choice.engine,
-          name: dbClaimName,
-          namespace,
-          projectName: projectClaimName,
-          quota: settings.instancePreset,
-          replicas: settings.replicas,
-          template: choice.template,
-        });
-
         await applyWithBusyState(async () => {
-          await k8sApplyYaml(
-            kubeconfig,
-            joinKubeYamlDocuments([projectYaml, dbYaml])
-          );
+          const outcome = await runDeployment({
+            kind: "database",
+            settings,
+            target: newProjectDeploymentTarget(displayName),
+          });
+          if (outcome.kind !== "database") {
+            return;
+          }
           toast.success(
-            `Applied project "${displayName}" and database "${dbClaimName}".`
+            `Applied project "${displayName}" and database "${outcome.dbName}".`
           );
           setLastConfirmedKind(
-            `database:${settings.databaseId}:${projectClaimName}`
+            `database:${settings.databaseId}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          const projectUid = await fetchProjectUidByName(
-            kubeconfig,
-            namespace,
-            projectClaimName
-          );
-          await onProjectCreated?.(projectUid);
+          await onProjectCreated?.(outcome.projectUid);
         });
       },
     }),
-    [
-      applyWithBusyState,
-      apCompositionRows,
-      databaseOptions,
-      existingProjects,
-      kubeconfig,
-      namespace,
-      onProjectCreated,
-      projectCompositionRows,
-    ]
+    [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]
   );
 
   const handleGithubDeploy = useCallback(
@@ -413,97 +252,33 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         ),
         repository: repo,
       });
-      const displayNameError = projectDisplayNameValidationError(
-        existingProjects,
-        displayName
-      );
-      const fullName = repo.fullName?.trim();
-      const repoUrl =
-        repo.url?.trim() || (fullName ? `https://github.com/${fullName}` : "");
-
-      if (!(kubeconfig && namespace)) {
-        toast.error("Kubeconfig or namespace is missing.");
-        return;
-      }
-      if (displayNameError) {
-        toast.error(displayNameError);
-        return;
-      }
-      if (!(fullName && repoUrl)) {
-        toast.error("Repository full name is missing.");
-        return;
-      }
-
-      const projectTpl = pickProjectTemplate(projectCompositionRows);
-      if (!projectTpl?.trim()) {
-        toast.error(
-          "Could not load a Project composition template from the cluster."
-        );
-        return;
-      }
-
-      const projectClaimName = randomName();
-      const projectYaml = mergeProjectMetadataDisplayName(
-        renderCrossplaneCompositionTemplate(projectTpl, {
-          name: projectClaimName,
-          namespace,
-        }),
-        displayName
-      );
-
       await applyWithBusyState(async () => {
-        await k8sApplyYaml(kubeconfig, projectYaml);
-        const projectUid = await fetchProjectUidByName(
-          kubeconfig,
-          namespace,
-          projectClaimName
-        );
-
-        const response = await fetch("/api/deploy-tasks", {
-          body: JSON.stringify({
-            encodedKubeconfig: encodeURIComponent(kubeconfig),
-            namespace,
-            projectName: projectClaimName,
-            projectUid,
-            repo: {
-              fullName,
-              id: repo.id,
-              name: repo.name,
-              url: repoUrl,
-            },
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
+        const outcome = await runDeployment({
+          kind: "github",
+          repository: repo,
+          target: newProjectDeploymentTarget(displayName),
         });
-        const body = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(deployTaskErrorMessage(body));
+        if (outcome.kind !== "github") {
+          return;
         }
-        const taskId = deployTaskId(body);
-
         toast.success(
-          `Created project "${displayName}". ${deployTaskSuccessMessage(body)}`
+          `Created project "${displayName}". ${outcome.taskMessage}`
         );
-        if (taskId != null) {
+        if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
-            projectName: projectClaimName,
-            repoFullName: fullName,
-            taskId,
+            projectName: outcome.projectName,
+            repoFullName: outcome.repoFullName,
+            taskId: outcome.taskId,
           });
         }
-        setLastConfirmedKind(`github:${fullName}:${projectClaimName}`);
+        setLastConfirmedKind(
+          `github:${outcome.repoFullName}:${outcome.projectName}`
+        );
         dispatchCreationPaneState({ type: "close" });
-        await onProjectCreated?.(projectUid);
+        await onProjectCreated?.(outcome.projectUid);
       });
     },
-    [
-      applyWithBusyState,
-      existingProjects,
-      kubeconfig,
-      namespace,
-      onProjectCreated,
-      projectCompositionRows,
-    ]
+    [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]
   );
 
   const githubDeployer = useMemo(

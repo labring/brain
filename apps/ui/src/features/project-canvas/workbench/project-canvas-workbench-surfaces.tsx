@@ -62,7 +62,12 @@ export function ProjectCanvasWorkbenchSurfaces({
         }
         entry={canvasSidePaneEntry}
         githubDeploymentPane={
-          <GitHubDeploymentPane onClose={workbench.closeResourcePane} />
+          <GitHubDeploymentPane
+            kubeconfig={kubeconfig}
+            namespace={namespace}
+            onClose={workbench.closeResourcePane}
+            projectUid={projectUid}
+          />
         }
         resourcePane={
           <ProjectCanvasResourcePane

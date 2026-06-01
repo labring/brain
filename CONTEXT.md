@@ -67,6 +67,10 @@ The creation-time choices for a new AP before the AP exists, including Docker im
 
 The Project relationship selected for Docker Deployment Settings before AP creation. A Docker Deployment Target is either a new Project being created in the same flow or an existing Project that will own the new AP.
 
+### GitHub Deployment Target
+
+The Project relationship selected for a GitHub repository deployment before the deployment task starts. A GitHub Deployment Target is either a new Project being created in the same flow or an existing Project that will receive the deployment task.
+
 ### EntryPoint Public Addresses Panel
 
 A narrow UI surface opened from an EntryPoint selection that presents the associated AP's Public Addresses. It is scoped to public routing and is not the full AP Settings surface.
