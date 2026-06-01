@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SidePane } from "./side-pane";
+import { SidePane, SidePanePresence } from "./side-pane";
 
 const noop = () => {
   /* test noop */
@@ -16,6 +16,8 @@ const CLOSED_RE = /aria-hidden="true"/;
 const DESCRIPTION_RE = /Secondary copy/;
 const MOTION_REDUCE_TRANSFORM_RE = /motion-reduce:transform-none/;
 const MOTION_REDUCE_TRANSITION_RE = /motion-reduce:transition-none/;
+const OPEN_ASIDE_RE = /<aside aria-hidden="false"/;
+const OPEN_GEOMETRY_RE = /w-full max-w-screen-sm translate-x-0 opacity-100/;
 const PANE_LABEL_RE = /aria-label="Details pane"/;
 const POINTER_EVENTS_NONE_RE = /pointer-events-none/;
 const RESOURCE_PANE_SURFACE_RE = /resource-pane-surface/;
@@ -93,4 +95,19 @@ test("side pane closed state is non-interactive and keeps reduced-motion structu
   assert.match(html, POINTER_EVENTS_NONE_RE);
   assert.match(html, TRANSLATE_CLOSED_RE);
   assert.match(html, MOTION_REDUCE_TRANSFORM_RE);
+});
+
+test("side pane presence renders initial pane content open", () => {
+  const html = renderToStaticMarkup(
+    <SidePanePresence>
+      <SidePane label="Details pane" onClose={noop} title="Details">
+        <p>Pane body</p>
+      </SidePane>
+    </SidePanePresence>
+  );
+
+  assert.match(html, PANE_LABEL_RE);
+  assert.match(html, OPEN_ASIDE_RE);
+  assert.match(html, OPEN_GEOMETRY_RE);
+  assert.doesNotMatch(html, TRANSLATE_CLOSED_RE);
 });
