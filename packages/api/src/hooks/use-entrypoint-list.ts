@@ -5,11 +5,7 @@ import useSWR from "swr";
 import { API_ROUTES } from "../constants";
 import { fetcher } from "../fetch";
 import { apItemsFromList } from "../lib/ap-list";
-import {
-  type K8sGetResponse,
-  k8sGetQuerySchema,
-  k8sGetResponseSchema,
-} from "../schemas/k8s-get";
+import { type K8sGetResponse, k8sGetResponseSchema } from "../schemas/k8s-get";
 import { ApiUrl } from "../utils";
 import type { K8sNamespacedListRefreshInterval } from "./use-k8s-namespaced-list";
 
@@ -29,7 +25,6 @@ export function useEntryPointList(options: {
   namespace?: string;
   pollWhileEmpty?: boolean;
   refreshInterval?: K8sNamespacedListRefreshInterval;
-  shareToken?: string;
 }) {
   const {
     kubeconfig = "",
@@ -37,16 +32,14 @@ export function useEntryPointList(options: {
     namespace,
     pollWhileEmpty,
     refreshInterval,
-    shareToken,
   } = options;
 
-  const authHeader = useMemo((): Record<string, string> => {
-    const st = shareToken?.trim() ?? "";
-    if (st !== "") {
-      return { "X-Share-Token": st };
-    }
-    return { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` };
-  }, [kubeconfig, shareToken]);
+  const authHeader = useMemo(
+    (): Record<string, string> => ({
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+    }),
+    [kubeconfig]
+  );
   const query = useMemo(
     () => ({
       ...(labelSelector ? { "label-selector": labelSelector } : {}),
@@ -54,55 +47,22 @@ export function useEntryPointList(options: {
     }),
     [labelSelector, namespace]
   );
-  const shareQuery = useMemo(
-    () =>
-      k8sGetQuerySchema.parse({
-        ...query,
-        kind: "entrypoints",
-      }),
-    [query]
-  );
-  const hasShare = shareToken != null && shareToken.trim() !== "";
   const hasKubeconfig = kubeconfig.trim() !== "";
-  const swrKey = (() => {
-    if (hasShare) {
-      if (namespace != null && namespace !== "") {
-        return [API_ROUTES.k8s.get, "share", shareToken, shareQuery] as const;
-      }
-      return null;
-    }
-    if (hasKubeconfig) {
-      return [API_ROUTES.entrypoint.root, query] as const;
-    }
-    return null;
-  })();
+  const swrKey = hasKubeconfig
+    ? ([API_ROUTES.entrypoint.root, query] as const)
+    : null;
 
   return useSWR(
     swrKey,
-    () => {
-      if (hasShare) {
-        return fetcher<K8sGetResponse>({
-          base: ApiUrl(),
-          header: authHeader,
-          method: "GET",
-          path: API_ROUTES.k8s.get,
-          query: {
-            ...shareQuery,
-            shareToken: shareToken?.trim(),
-          },
-          select: (raw) => k8sGetResponseSchema.parse(raw),
-        });
-      }
-
-      return fetcher<K8sGetResponse>({
+    () =>
+      fetcher<K8sGetResponse>({
         base: ApiUrl(),
         header: authHeader,
         method: "GET",
         path: API_ROUTES.entrypoint.root,
         query,
         select: (raw) => k8sGetResponseSchema.parse(raw),
-      });
-    },
+      }),
     {
       refreshInterval: (latestData) => {
         const configuredInterval = resolveRefreshInterval(

@@ -23,12 +23,10 @@ export async function fetchConfigMapConfigYaml(options: {
   configMapName: string;
   kubeconfig: string;
   namespace: string;
-  shareToken?: string;
 }): Promise<string> {
   const kubeconfig = options.kubeconfig.trim();
   const name = options.configMapName.trim();
   const namespace = options.namespace.trim();
-  const shareToken = options.shareToken?.trim() ?? "";
 
   const getParams = k8sGetQuerySchema.parse({
     kind: "configmaps",
@@ -36,20 +34,12 @@ export async function fetchConfigMapConfigYaml(options: {
     namespace,
   });
 
-  const authHeader: Record<string, string> =
-    shareToken === ""
-      ? { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` }
-      : { "X-Share-Token": shareToken };
-
   const raw = await fetcher<K8sGetResponse>({
     base: ApiUrl(),
-    header: authHeader,
+    header: { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` },
     method: "GET",
     path: API_ROUTES.k8s.get,
-    query: {
-      ...getParams,
-      ...(shareToken === "" ? {} : { shareToken }),
-    },
+    query: getParams,
     select: (payload) => k8sGetResponseSchema.parse(payload),
   });
 

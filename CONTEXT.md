@@ -221,7 +221,7 @@ Different project surfaces may place a Side Pane differently. A canvas-oriented 
 
 A Side Pane is scoped to the currently visible project surface. Project Assistant Pane controls can open or replace the current surface's active Side Pane, but they do not own a separate assistant-specific Side Pane stack.
 
-When a Side Pane contains unsaved user edits, closing it or replacing it with another Side Pane must first resolve the edit state. The user can stay on the current Side Pane, discard the edits, or save successfully before the Side Pane closes or is replaced.
+When a Side Pane contains unsaved user edits, closing it, replacing it with another Side Pane, or opening a focused Main Action Surface that hides it must first resolve the edit state. The user can stay on the current Side Pane, discard the edits, or save successfully before the Side Pane closes, is replaced, or is hidden by the focused surface.
 
 ### Project Assistant Pane
 

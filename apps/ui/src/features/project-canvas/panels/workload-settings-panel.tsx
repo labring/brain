@@ -95,7 +95,6 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
   const settingsReadOnly = data?.settingsAccess?.readOnly === true;
-  const settingsShareToken = data?.settingsAccess?.shareToken?.trim() ?? "";
   const canEditAp = workloadKind === "AP" && !settingsReadOnly;
   const title = name === "" ? "Workload Settings" : name;
   const subtitle = workloadSettingsSubtitle({
@@ -122,13 +121,12 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
     claimPayload,
   } = useWorkloadClaimSettings({
     dbDsnReferenceSources: data?.dbDsnReferenceSources,
-    kubeconfig: settingsReadOnly ? "" : kubeconfig,
+    kubeconfig,
     name,
     namespace: ns,
     onAddDbDsnReferenceMutationStart: data?.onAddDbDsnReferenceMutationStart,
     onWorkloadMutation: data?.onWorkloadMutation,
     readOnly: settingsReadOnly,
-    shareToken: settingsShareToken,
     workloadKind,
   });
   const claim = k8sGetClaimBody(claimPayload);
@@ -141,7 +139,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         subtitle={subtitle}
         title={title}
       >
-        <p className="text-resource-pane-muted text-sm">
+        <p className="text-muted-foreground text-sm">
           Select a workload with a name and configure namespace in settings.
         </p>
       </WorkloadSettingsShell>
@@ -169,7 +167,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         subtitle={subtitle}
         title={title}
       >
-        <p className="text-resource-pane-muted text-sm">Loading workload…</p>
+        <p className="text-muted-foreground text-sm">Loading workload…</p>
       </WorkloadSettingsShell>
     );
   }

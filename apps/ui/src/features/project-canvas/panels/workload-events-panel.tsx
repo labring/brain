@@ -66,28 +66,28 @@ function WorkloadEventCard({ event }: { event: APWorkloadEventItem }) {
   const resource = eventResourceLabel(event);
 
   return (
-    <article className="flex min-w-0 flex-col gap-3 rounded-lg bg-resource-pane-card p-4 shadow-sm">
+    <article className="flex min-w-0 flex-col gap-3 rounded-lg bg-white/5 p-4 shadow-sm">
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="truncate font-medium text-base text-resource-pane-foreground leading-6">
+          <h3 className="truncate font-medium text-base text-foreground leading-6">
             {event.reason || "Event"}
           </h3>
           {resource === "" ? null : (
-            <p className="truncate text-resource-pane-muted text-xs leading-4">
+            <p className="truncate text-muted-foreground text-xs leading-4">
               {resource}
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-resource-pane-muted text-sm leading-5">
+        <div className="flex shrink-0 items-center gap-2 text-muted-foreground text-sm leading-5">
           {event.type ? <span>{event.type}</span> : null}
           {age ? <span>{age}</span> : null}
         </div>
       </div>
-      <p className="text-resource-pane-muted text-sm leading-5">
+      <p className="text-muted-foreground text-sm leading-5">
         {event.message || "No event message."}
       </p>
       {event.count && event.count > 1 ? (
-        <p className="text-resource-pane-muted text-xs leading-4">
+        <p className="text-muted-foreground text-xs leading-4">
           Repeated {event.count} times
         </p>
       ) : null}
@@ -118,21 +118,21 @@ function WorkloadEventsBody({
 }) {
   if (error) {
     return (
-      <div className="rounded-lg bg-resource-pane-card p-4 text-resource-pane-muted text-sm leading-5">
+      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5">
         Failed to load events.
       </div>
     );
   }
   if (isLoading) {
     return (
-      <div className="rounded-lg bg-resource-pane-card p-4 text-resource-pane-muted text-sm leading-5">
+      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5">
         Loading events...
       </div>
     );
   }
   if (items.length === 0) {
     return (
-      <div className="rounded-lg bg-resource-pane-card p-4 text-resource-pane-muted text-sm leading-5">
+      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5">
         No recent events.
       </div>
     );
@@ -180,7 +180,7 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
       subtitle={subtitle}
       title={`${name} Events`}
     >
-      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-resource-pane-input p-2.5">
+      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-input p-2.5">
         <WorkloadEventsBody error={error} isLoading={isLoading} items={items} />
       </section>
     </CanvasResourcePane>

@@ -8,44 +8,43 @@ import {
   useMemo,
 } from "react";
 import {
-  createProjectSidePaneController,
-  type ProjectSidePaneController,
-  type ProjectSidePaneSurface,
-} from "./controller";
+  createProjectSidePaneAssistantRouter,
+  type ProjectSidePaneAssistantRouter,
+  type ProjectSidePaneAssistantSurface,
+} from "./assistant-router";
 
-const ProjectSidePaneContext = createContext<ProjectSidePaneController | null>(
-  null
-);
+const ProjectSidePaneContext =
+  createContext<ProjectSidePaneAssistantRouter | null>(null);
 
 export function ProjectSidePaneProvider({ children }: { children: ReactNode }) {
-  const controller = useMemo(() => createProjectSidePaneController(), []);
+  const router = useMemo(() => createProjectSidePaneAssistantRouter(), []);
 
   return (
-    <ProjectSidePaneContext.Provider value={controller}>
+    <ProjectSidePaneContext.Provider value={router}>
       {children}
     </ProjectSidePaneContext.Provider>
   );
 }
 
-export function useProjectSidePaneController(): ProjectSidePaneController {
-  const controller = useContext(ProjectSidePaneContext);
-  if (controller == null) {
+export function useProjectSidePaneAssistantRouter(): ProjectSidePaneAssistantRouter {
+  const router = useContext(ProjectSidePaneContext);
+  if (router == null) {
     throw new Error(
-      "useProjectSidePaneController must be used within ProjectSidePaneProvider"
+      "useProjectSidePaneAssistantRouter must be used within ProjectSidePaneProvider"
     );
   }
-  return controller;
+  return router;
 }
 
 export function useProjectSidePaneSurface(
-  surface: ProjectSidePaneSurface | null
+  surface: ProjectSidePaneAssistantSurface | null
 ) {
-  const controller = useProjectSidePaneController();
+  const router = useProjectSidePaneAssistantRouter();
 
   useEffect(() => {
     if (surface == null) {
       return;
     }
-    return controller.registerSurface(surface);
-  }, [controller, surface]);
+    return router.registerSurface(surface);
+  }, [router, surface]);
 }

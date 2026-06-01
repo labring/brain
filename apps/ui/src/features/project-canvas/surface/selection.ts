@@ -9,8 +9,8 @@ import {
   canvasResourceIdentityFromNode,
   canvasResourceLastSeenUidFromNode,
 } from "@/features/project-canvas/nodes/resource-identity";
+import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import type {
-  ProjectCanvasSelection,
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
   ProjectSideSurfaceEntry,

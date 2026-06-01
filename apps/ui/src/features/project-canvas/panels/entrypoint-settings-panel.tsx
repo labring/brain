@@ -44,7 +44,6 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
   onUpdated,
   readOnly = false,
   selection,
-  shareToken,
 }: {
   kubeconfig?: string;
   onClose: () => void;
@@ -52,16 +51,14 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
   onUpdated?: () => Promise<unknown>;
   readOnly?: boolean;
   selection: CanvasEntrySelectionRef;
-  shareToken?: string;
 }) {
   const { claimPayload, display, error, isLoading, onNetworkDraftCommit } =
     useWorkloadClaimSettings({
-      kubeconfig: readOnly ? "" : kubeconfig,
+      kubeconfig,
       name: selection.apName,
       namespace: selection.namespace,
       onWorkloadMutation: onUpdated,
       readOnly,
-      shareToken,
       workloadKind: "AP",
     });
   const title = `${selection.apName} Public Addresses`;
@@ -85,12 +82,12 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
         </p>
       )}
       {error == null && isLoading && network == null ? (
-        <p className="text-resource-pane-muted text-sm">
+        <p className="text-muted-foreground text-sm">
           Loading public addresses…
         </p>
       ) : null}
       {error == null && !isLoading && network == null ? (
-        <p className="text-resource-pane-muted text-sm">
+        <p className="text-muted-foreground text-sm">
           Public Address settings are unavailable.
         </p>
       ) : null}

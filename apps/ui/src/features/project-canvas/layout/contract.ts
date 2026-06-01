@@ -6,7 +6,6 @@ const finiteNumber = z.number().refine((value) => Number.isFinite(value), {
 });
 const finiteInteger = finiteNumber.int();
 const optionalBoundedString = z.string().trim().max(256).optional();
-const optionalShareToken = z.string().trim().max(4096).optional();
 const optionalTimestamp = z
   .string()
   .trim()
@@ -51,7 +50,6 @@ export const canvasLayoutPatchRequestSchema = z.object({
 export const canvasLayoutGetQuerySchema = z.object({
   namespace: boundedString,
   projectUid: boundedString,
-  shareToken: optionalShareToken,
 });
 
 export type CanvasLayoutPatchRequest = z.infer<

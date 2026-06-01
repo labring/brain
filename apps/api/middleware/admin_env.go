@@ -11,7 +11,7 @@ import (
 )
 
 // AdminKubeconfigFromEnv loads client configuration from ENCODED_ADMIN_KUBECONFIG
-// (URL-encoded kubeconfig YAML). Used for project share preview and other admin-only reads.
+// (URL-encoded kubeconfig YAML). Used for admin-only service integration reads.
 func AdminKubeconfigFromEnv() (*clientcmdapi.Config, error) {
 	encoded := strings.TrimSpace(os.Getenv("ENCODED_ADMIN_KUBECONFIG"))
 	if encoded == "" {

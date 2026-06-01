@@ -10,23 +10,24 @@ import type {
 export type ProjectSurfaceSlot = "drawer" | "main" | "side";
 export type ProjectMainSurfaceFocusPolicy = "focusMain" | "keepSideVisible";
 
-export type ProjectCanvasSelection =
-  | { kind: "edge"; edgeId: string }
-  | { kind: "resource"; target: ProjectResourceTarget }
-  | { kind: "publicAddresses"; target: ProjectApBoundEntryPointTarget };
-
-export type ProjectSideSurfaceEntry =
+export type ProjectResourceSidePaneEntry =
   | { kind: "apEvents"; target: ProjectApTarget }
   | { kind: "apHistory"; target: ProjectApTarget }
   | { kind: "apMetrics"; target: ProjectApTarget }
   | { kind: "apSettings"; target: ProjectApTarget }
-  | { kind: "databaseDeployment"; projectUid: string }
   | { kind: "dbMetrics"; target: ProjectDbTarget }
   | { kind: "dbSettings"; target: ProjectDbTarget }
+  | { kind: "publicAddresses"; target: ProjectApBoundEntryPointTarget };
+
+export type ProjectGlobalSidePaneEntry =
+  | { kind: "databaseDeployment"; projectUid: string }
   | { kind: "dockerDeployment"; projectUid: string }
   | { kind: "githubDeployment"; projectUid: string }
-  | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode }
-  | { kind: "publicAddresses"; target: ProjectApBoundEntryPointTarget };
+  | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode };
+
+export type ProjectSideSurfaceEntry =
+  | ProjectGlobalSidePaneEntry
+  | ProjectResourceSidePaneEntry;
 
 export type ProjectMainSurfaceEntry =
   | {
@@ -47,31 +48,26 @@ export type ProjectDrawerSurfaceEntry =
 export interface ProjectSurfaceState {
   drawer: ProjectDrawerSurfaceEntry | null;
   main: ProjectMainSurfaceEntry | null;
-  selected: ProjectCanvasSelection | null;
   side: ProjectSideSurfaceEntry | null;
 }
 
 export const EMPTY_PROJECT_SURFACE_STATE: ProjectSurfaceState = {
   drawer: null,
   main: null,
-  selected: null,
   side: null,
 };
 
 export type ProjectSurfaceIntent =
   | {
       entry: ProjectSideSurfaceEntry;
-      select?: ProjectCanvasSelection | null;
       slot: "side";
     }
   | {
       entry: ProjectMainSurfaceEntry;
-      select?: ProjectCanvasSelection | null;
       slot: "main";
     }
   | {
       entry: ProjectDrawerSurfaceEntry;
-      select?: ProjectCanvasSelection | null;
       slot: "drawer";
     };
 
@@ -90,15 +86,6 @@ export function projectSurfaceEntryTarget(
     return entry.target;
   }
   return null;
-}
-
-export function projectCanvasSelectionTarget(
-  selection: ProjectCanvasSelection | null | undefined
-): ProjectSurfaceTarget | null {
-  if (selection == null || selection.kind === "edge") {
-    return null;
-  }
-  return selection.target;
 }
 
 export function mainSurfaceFocusPolicy(

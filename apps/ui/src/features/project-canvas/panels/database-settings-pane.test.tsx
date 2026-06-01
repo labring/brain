@@ -146,7 +146,7 @@ test("read-only database settings pane renders addresses without mutation contro
     <DatabaseSettingsPaneContent
       data={{
         ...BASE_DATA,
-        settingsAccess: { readOnly: true, shareToken: "preview-token" },
+        settingsAccess: { readOnly: true },
       }}
       onClose={noop}
       onSubmitPatch={noop}

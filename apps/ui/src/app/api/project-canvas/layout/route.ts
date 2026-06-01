@@ -10,7 +10,6 @@ import {
   loadProjectCanvasLayout,
   patchProjectCanvasLayout,
 } from "@/features/project-canvas/layout/repository";
-import { validatePreviewShareAccess } from "@/lib/preview/share";
 import {
   fetchServerCredentials,
   hasDevCredentialBypass,
@@ -37,27 +36,9 @@ async function authorizeNamespace(namespace: string): Promise<Response | null> {
   return null;
 }
 
-async function authorizeLayoutRead(
-  query: ReturnType<typeof parseCanvasLayoutGetQuery>,
-  request: NextRequest
+function authorizeLayoutRead(
+  query: ReturnType<typeof parseCanvasLayoutGetQuery>
 ): Promise<Response | null> {
-  const shareToken =
-    query.shareToken?.trim() || request.headers.get("X-Share-Token")?.trim();
-  if (shareToken) {
-    const result = await validatePreviewShareAccess({
-      namespace: query.namespace,
-      projectUid: query.projectUid,
-      shareToken,
-    });
-    if (!result.ok) {
-      return jsonError(
-        "Canvas layout share token is not authorized.",
-        result.status
-      );
-    }
-    return null;
-  }
-
   return authorizeNamespace(query.namespace);
 }
 
@@ -77,16 +58,12 @@ export async function GET(request: NextRequest) {
     query = parseCanvasLayoutGetQuery({
       namespace: request.nextUrl.searchParams.get("namespace") ?? "",
       projectUid: request.nextUrl.searchParams.get("projectUid") ?? "",
-      shareToken:
-        request.nextUrl.searchParams.get("shareToken") ??
-        request.headers.get("X-Share-Token") ??
-        undefined,
     });
   } catch (error) {
     return validationError(error) ?? jsonError("Invalid request.", 400);
   }
 
-  const denied = await authorizeLayoutRead(query, request);
+  const denied = await authorizeLayoutRead(query);
   if (denied !== null) {
     return denied;
   }

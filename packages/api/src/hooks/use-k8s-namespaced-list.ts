@@ -39,7 +39,6 @@ export function useK8sNamespacedList(options: {
   kubeconfig?: string;
   labelSelector: string;
   namespace?: string;
-  shareToken?: string;
   pollWhileEmpty?: boolean;
   /**
    * With `pollWhileEmpty`, used to coordinate two lists: fast poll only if this list is empty **and**
@@ -49,19 +48,17 @@ export function useK8sNamespacedList(options: {
   /** Additional SWR refresh cadence. Combined with empty-list polling by choosing the faster active interval. */
   refreshInterval?: K8sNamespacedListRefreshInterval;
 }) {
-  const { kind, labelSelector, namespace, refreshInterval, shareToken } =
-    options;
+  const { kind, labelSelector, namespace, refreshInterval } = options;
   const pollWhileEmpty = options.pollWhileEmpty === true;
   const peerEmpty = options.peerEmpty;
   const kubeconfig = options.kubeconfig ?? "";
 
-  const authHeader = useMemo((): Record<string, string> => {
-    const st = shareToken?.trim() ?? "";
-    if (st !== "") {
-      return { "X-Share-Token": st };
-    }
-    return { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` };
-  }, [kubeconfig, shareToken]);
+  const authHeader = useMemo(
+    (): Record<string, string> => ({
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+    }),
+    [kubeconfig]
+  );
 
   const getParams = useMemo(
     () =>
@@ -73,21 +70,11 @@ export function useK8sNamespacedList(options: {
     [kind, labelSelector, namespace]
   );
 
-  const hasShare = shareToken != null && shareToken.trim() !== "";
   const hasKubeconfig = kubeconfig.trim() !== "";
 
-  const swrKey = (() => {
-    if (hasShare) {
-      if (namespace != null && namespace !== "") {
-        return [API_ROUTES.k8s.get, "share", shareToken, getParams] as const;
-      }
-      return null;
-    }
-    if (hasKubeconfig) {
-      return [API_ROUTES.k8s.get, getParams] as const;
-    }
-    return null;
-  })();
+  const swrKey = hasKubeconfig
+    ? ([API_ROUTES.k8s.get, getParams] as const)
+    : null;
 
   return useSWR(
     swrKey,
@@ -95,12 +82,7 @@ export function useK8sNamespacedList(options: {
       fetcher<K8sGetResponse>({
         base: ApiUrl(),
         path: API_ROUTES.k8s.get,
-        query: {
-          ...getParams,
-          ...(shareToken != null && shareToken.trim() !== ""
-            ? { shareToken: shareToken.trim() }
-            : {}),
-        },
+        query: getParams,
         header: authHeader,
         method: "GET",
         select: (raw) => k8sGetResponseSchema.parse(raw),

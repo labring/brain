@@ -1,5 +1,4 @@
 import type {
-  ProjectCanvasSelection,
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
   ProjectMainSurfaceFocusPolicy,
@@ -14,11 +13,6 @@ import {
   parseProjectTarget,
   serializeProjectTarget,
 } from "./target-identity";
-
-export const PROJECT_SELECTED_QUERY_KEY = "selected" as const;
-export const PROJECT_SIDE_QUERY_KEY = "side" as const;
-export const PROJECT_MAIN_QUERY_KEY = "main" as const;
-export const PROJECT_DRAWER_QUERY_KEY = "drawer" as const;
 
 function encodePart(value: string): string {
   return encodeURIComponent(value);
@@ -96,43 +90,6 @@ function parseFocusPolicy(
   }
   if (value === "keep-side") {
     return "keepSideVisible";
-  }
-  return null;
-}
-
-export function serializeProjectCanvasSelection(
-  selection: ProjectCanvasSelection | null | undefined
-): string | null {
-  if (selection == null) {
-    return null;
-  }
-  if (selection.kind === "edge") {
-    return `edge:${encodePart(selection.edgeId)}`;
-  }
-  return serializeProjectTarget(selection.target);
-}
-
-export function parseProjectCanvasSelection(
-  value: string | null | undefined
-): ProjectCanvasSelection | null {
-  const parts = split(value);
-  if (parts == null) {
-    return null;
-  }
-  if (parts[0] === "edge") {
-    if (parts.length !== 2) {
-      return null;
-    }
-    const edgeId = decodePart(parts[1]);
-    return edgeId == null ? null : { edgeId, kind: "edge" };
-  }
-
-  const target = parseProjectTarget(value);
-  if (target?.kind === "AP" || target?.kind === "DB") {
-    return { kind: "resource", target };
-  }
-  if (target?.kind === "EntryPoint") {
-    return { kind: "publicAddresses", target };
   }
   return null;
 }
@@ -330,13 +287,11 @@ export function parseProjectDrawerSurfaceEntry(
 export function parseProjectSurfaceUrlState(input: {
   drawer?: string | null;
   main?: string | null;
-  selected?: string | null;
   side?: string | null;
 }): ProjectSurfaceState {
   return {
     drawer: parseProjectDrawerSurfaceEntry(input.drawer),
     main: parseProjectMainSurfaceEntry(input.main),
-    selected: parseProjectCanvasSelection(input.selected),
     side: parseProjectSideSurfaceEntry(input.side),
   };
 }
@@ -344,15 +299,13 @@ export function parseProjectSurfaceUrlState(input: {
 export function serializeProjectSurfaceUrlState(
   state: ProjectSurfaceState
 ): Record<string, string> {
-  const selected = serializeProjectCanvasSelection(state.selected);
   const side = serializeProjectSideSurfaceEntry(state.side);
   const main = serializeProjectMainSurfaceEntry(state.main);
   const drawer = serializeProjectDrawerSurfaceEntry(state.drawer);
 
   return {
-    ...(selected == null ? {} : { [PROJECT_SELECTED_QUERY_KEY]: selected }),
-    ...(side == null ? {} : { [PROJECT_SIDE_QUERY_KEY]: side }),
-    ...(main == null ? {} : { [PROJECT_MAIN_QUERY_KEY]: main }),
-    ...(drawer == null ? {} : { [PROJECT_DRAWER_QUERY_KEY]: drawer }),
+    ...(side == null ? {} : { side }),
+    ...(main == null ? {} : { main }),
+    ...(drawer == null ? {} : { drawer }),
   };
 }

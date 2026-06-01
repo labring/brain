@@ -8,8 +8,6 @@ import { ApiUrl } from "../utils";
 
 export interface UseApLifecycleOptions {
   kubeconfig?: string;
-  /** Share-token preview auth (alternative to bearer kubeconfig). */
-  shareToken?: string;
 }
 
 export interface ApLifecycleWorkloadRef {
@@ -52,24 +50,22 @@ function mergePatchAp(
  */
 export function useApLifecycleOperations(options: UseApLifecycleOptions) {
   const kubeconfig = options.kubeconfig ?? "";
-  const shareToken = options.shareToken ?? "";
 
-  const headers = useMemo((): Record<string, string> => {
-    const st = shareToken.trim();
-    if (st !== "") {
-      return { "X-Share-Token": st };
-    }
-    return { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` };
-  }, [kubeconfig, shareToken]);
+  const headers = useMemo(
+    (): Record<string, string> => ({
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+    }),
+    [kubeconfig]
+  );
 
-  const authReady = shareToken.trim() !== "" || kubeconfig.trim() !== "";
+  const authReady = kubeconfig.trim() !== "";
 
   const base = useMemo(() => ApiUrl(), []);
 
   const pauseWorkload = useCallback(
     async (workload: ApLifecycleWorkloadRef) => {
       if (!authReady) {
-        throw new Error("useApLifecycle: kubeconfig or shareToken is required");
+        throw new Error("useApLifecycle: kubeconfig is required");
       }
       await mergePatchAp(base, headers, workload, {
         spec: { paused: true },
@@ -81,7 +77,7 @@ export function useApLifecycleOperations(options: UseApLifecycleOptions) {
   const startWorkload = useCallback(
     async (workload: ApLifecycleWorkloadRef) => {
       if (!authReady) {
-        throw new Error("useApLifecycle: kubeconfig or shareToken is required");
+        throw new Error("useApLifecycle: kubeconfig is required");
       }
       await mergePatchAp(base, headers, workload, {
         spec: { paused: false },
@@ -97,7 +93,7 @@ export function useApLifecycleOperations(options: UseApLifecycleOptions) {
   const restartWorkload = useCallback(
     async (workload: ApLifecycleWorkloadRef) => {
       if (!authReady) {
-        throw new Error("useApLifecycle: kubeconfig or shareToken is required");
+        throw new Error("useApLifecycle: kubeconfig is required");
       }
       const name = workload.name.trim();
       const namespace = workload.namespace.trim();
@@ -127,7 +123,7 @@ export function useApLifecycleOperations(options: UseApLifecycleOptions) {
   const bumpRestartRequest = useCallback(
     async (workload: ApLifecycleWorkloadRef, nextNonce: number) => {
       if (!authReady) {
-        throw new Error("useApLifecycle: kubeconfig or shareToken is required");
+        throw new Error("useApLifecycle: kubeconfig is required");
       }
       if (!Number.isFinite(nextNonce) || nextNonce < 0) {
         throw new Error(
@@ -144,7 +140,7 @@ export function useApLifecycleOperations(options: UseApLifecycleOptions) {
   const deleteWorkload = useCallback(
     async (workload: ApLifecycleWorkloadRef) => {
       if (!authReady) {
-        throw new Error("useApLifecycle: kubeconfig or shareToken is required");
+        throw new Error("useApLifecycle: kubeconfig is required");
       }
       const name = workload.name.trim();
       const namespace = workload.namespace.trim();

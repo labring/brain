@@ -201,7 +201,7 @@ export default function AppSidebar({
             ),
             hidden: isMobile,
             className:
-              "rounded-xl border border-sidebar-border bg-background-selected text-xs text-foreground shadow-md",
+              "rounded-xl border border-sidebar-border bg-popover text-xs text-foreground shadow-md",
           }}
         />
       </SidebarMenuItem>

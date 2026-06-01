@@ -37,7 +37,6 @@ export interface CanvasNodeLayoutState {
 
 export interface CanvasNodeSettingsAccess {
   readOnly?: boolean;
-  shareToken?: string;
 }
 
 export interface CanvasContainerNodeData extends Record<string, unknown> {

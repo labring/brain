@@ -28,23 +28,21 @@ function workloadKey(workload: DbLifecycleWorkloadRef): string {
 
 export function useDbSettingsOperations(options: UseDbLifecycleOptions) {
   const kubeconfig = options.kubeconfig ?? "";
-  const shareToken = options.shareToken ?? "";
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(() => new Set());
 
-  const headers = useMemo((): Record<string, string> => {
-    const st = shareToken.trim();
-    if (st !== "") {
-      return { "X-Share-Token": st };
-    }
-    return { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` };
-  }, [kubeconfig, shareToken]);
+  const headers = useMemo(
+    (): Record<string, string> => ({
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+    }),
+    [kubeconfig]
+  );
 
-  const authReady = shareToken.trim() !== "" || kubeconfig.trim() !== "";
+  const authReady = kubeconfig.trim() !== "";
   const base = useMemo(() => ApiUrl(), []);
 
   const assertAuthReady = useCallback(() => {
     if (!authReady) {
-      throw new Error("useDbSettings: kubeconfig or shareToken is required");
+      throw new Error("useDbSettings: kubeconfig is required");
     }
   }, [authReady]);
 

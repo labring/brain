@@ -103,8 +103,8 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
         className={cn(
           "group flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
           isSelected
-            ? "bg-resource-pane-input font-medium text-resource-pane-foreground"
-            : "text-resource-pane-primary hover:bg-resource-pane-input hover:text-resource-pane-foreground"
+            ? "bg-input font-medium text-foreground"
+            : "text-primary hover:bg-input hover:text-foreground"
         )}
         data-qa-database={node.metadata.database}
         data-qa-db-service-key={node.dbServiceKey || node.id}
@@ -129,8 +129,8 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
             className={cn(
               "rounded p-0.5 transition-colors",
               isSelected
-                ? "text-blue-400 hover:bg-resource-pane-input"
-                : "text-resource-pane-primary hover:bg-resource-pane-input"
+                ? "text-blue-400 hover:bg-input"
+                : "text-primary hover:bg-input"
             )}
             data-qa-action={isExpanded ? "collapse" : "expand"}
             data-qa-module="database"
@@ -168,7 +168,7 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
           <Icon
             className={cn(
               "h-4 w-4 shrink-0",
-              isSelected ? "text-blue-400" : "text-resource-pane-primary"
+              isSelected ? "text-blue-400" : "text-primary"
             )}
           />
         )}
@@ -177,7 +177,7 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
 
         {nodeIsLoading && (
           <Loader2
-            className="h-3 w-3 animate-spin text-resource-pane-primary"
+            className="h-3 w-3 animate-spin text-primary"
             data-qa-module="database"
             data-qa-object="sidebar-node"
             data-qa-resource-id={node.id}
@@ -190,7 +190,7 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
 
       {isExpanded && children && children.length > 0 && (
         <div
-          className="mt-1 ml-3 space-y-0.5 border-resource-pane-border border-l pl-3"
+          className="mt-1 ml-3 space-y-0.5 border-border border-l pl-3"
           data-qa-module="database"
           data-qa-object="sidebar-node-children"
           data-qa-resource-id={node.id}

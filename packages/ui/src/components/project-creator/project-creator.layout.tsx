@@ -9,7 +9,7 @@ export function ProjectCreatorShell({
 }: ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex min-w-0 flex-col gap-4", className)}
+      className={cn("dark flex min-w-0 flex-col gap-4", className)}
       data-slot="project-creator-shell"
       {...props}
     />

@@ -59,12 +59,12 @@ export function MainActionSurfaceFrame({
   return (
     <section
       aria-label={label}
-      className="resource-pane-surface absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-resource-pane text-resource-pane-foreground"
+      className="dark absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-neutral-950 text-foreground"
       data-slot="main-action-surface"
     >
       <header
         className={cn(
-          "grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center border-resource-pane-border border-b py-0 pr-4 pl-4",
+          "grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center border-border border-b py-0 pr-4 pl-4",
           !assistantPaneOpen && "pr-12"
         )}
       >
@@ -75,14 +75,14 @@ export function MainActionSurfaceFrame({
             </span>
           )}
           <h2
-            className="min-w-0 truncate font-medium text-base text-resource-pane-foreground leading-none"
+            className="min-w-0 truncate font-medium text-base text-foreground leading-none"
             title={title}
           >
             {title}
           </h2>
         </div>
         <p
-          className="min-w-0 truncate px-4 text-center text-resource-pane-primary text-sm leading-5"
+          className="min-w-0 truncate px-4 text-center text-primary text-sm leading-5"
           title={subtitle}
         >
           {subtitle}
@@ -90,7 +90,7 @@ export function MainActionSurfaceFrame({
         <div className="flex min-w-0 justify-end">
           <Button
             aria-label={closeAriaLabel}
-            className="hoverable size-7 shrink-0 text-resource-pane-muted hover:text-resource-pane-foreground"
+            className="hoverable size-7 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={onClose}
             size="icon"
             type="button"

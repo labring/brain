@@ -19,27 +19,19 @@ export function useProjectCanvasLayout(options: {
   enabled?: boolean;
   namespace: string;
   projectUid: string;
-  shareToken?: string;
 }) {
   const namespace = options.namespace.trim();
   const projectUid = options.projectUid.trim();
-  const shareToken = options.shareToken?.trim() ?? "";
   const enabled =
     options.enabled === true && namespace !== "" && projectUid !== "";
 
   const swrKey = enabled
-    ? ([
-        PROJECT_CANVAS_LAYOUT_API_PATH,
-        namespace,
-        projectUid,
-        shareToken,
-      ] as const)
+    ? ([PROJECT_CANVAS_LAYOUT_API_PATH, namespace, projectUid] as const)
     : null;
   const { data, error, isLoading, mutate } = useSWR(swrKey, () =>
     fetchProjectCanvasLayout({
       namespace,
       projectUid,
-      ...(shareToken === "" ? {} : { shareToken }),
     })
   );
 
@@ -60,7 +52,7 @@ export function useProjectCanvasLayout(options: {
     async (
       nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
     ) => {
-      if (!enabled || shareToken !== "") {
+      if (!enabled) {
         return;
       }
       try {
@@ -76,7 +68,7 @@ export function useProjectCanvasLayout(options: {
         );
       }
     },
-    [enabled, mutate, namespace, projectUid, shareToken]
+    [enabled, mutate, namespace, projectUid]
   );
 
   const scheduler = useMemo(
@@ -95,7 +87,7 @@ export function useProjectCanvasLayout(options: {
 
   const scheduleNodeLayoutSave = useCallback(
     (node: Node) => {
-      if (!enabled || shareToken !== "") {
+      if (!enabled) {
         return;
       }
       const layoutNode = canvasLayoutNodeFromNode(node);
@@ -103,7 +95,7 @@ export function useProjectCanvasLayout(options: {
         scheduler.schedule(layoutNode);
       }
     },
-    [enabled, scheduler, shareToken]
+    [enabled, scheduler]
   );
 
   return {

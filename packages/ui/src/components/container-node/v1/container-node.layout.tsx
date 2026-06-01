@@ -10,7 +10,7 @@ export function ContainerNodeShell({
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background-secondary text-card-foreground text-xs shadow-xs",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground text-xs shadow-xs",
         className
       )}
       {...props}

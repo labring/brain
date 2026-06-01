@@ -28,15 +28,10 @@ async function jsonOrError<T>(response: Response): Promise<T> {
 export async function fetchProjectCanvasLayout(input: {
   namespace: string;
   projectUid: string;
-  shareToken?: string;
 }): Promise<CanvasLayoutDocument> {
   const url = new URL(PROJECT_CANVAS_LAYOUT_API_PATH, window.location.origin);
   url.searchParams.set("namespace", input.namespace);
   url.searchParams.set("projectUid", input.projectUid);
-  const shareToken = input.shareToken?.trim() ?? "";
-  if (shareToken !== "") {
-    url.searchParams.set("shareToken", shareToken);
-  }
 
   const raw = await jsonOrError<unknown>(
     await fetch(url, { method: "GET", cache: "no-store" })

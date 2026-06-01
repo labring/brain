@@ -192,7 +192,7 @@ function DatabaseSettingsConnectionAddressRow({
   return (
     <CanvasNode.CopyableRow
       className={cn(
-        "relative flex min-w-0 flex-col gap-2 rounded-lg bg-resource-pane-card p-4 shadow-sm transition-colors",
+        "relative flex min-w-0 flex-col gap-2 rounded-lg bg-white/5 p-4 shadow-sm transition-colors",
         displayValue ? "min-h-20" : "min-h-11"
       )}
       copyAriaLabel={`Copy ${displayLabel}`}
@@ -210,7 +210,7 @@ function DatabaseSettingsConnectionAddressRow({
               rowCopyable ? "pointer-events-none" : "pointer-events-auto"
             )}
           >
-            <span className="min-w-0 truncate text-resource-pane-muted text-sm leading-5">
+            <span className="min-w-0 truncate text-muted-foreground text-sm leading-5">
               {displayLabel}
             </span>
             {publicSwitch}
@@ -221,8 +221,8 @@ function DatabaseSettingsConnectionAddressRow({
               className={cn(
                 "relative z-10 flex h-8 min-w-0 items-center justify-between gap-2 py-1.5 text-left text-sm leading-5",
                 rowCopyable
-                  ? "pointer-events-none text-resource-pane-foreground"
-                  : "text-resource-pane-muted"
+                  ? "pointer-events-none text-foreground"
+                  : "text-muted-foreground"
               )}
               data-copied={copied ? "true" : undefined}
               data-slot="database-settings-connection-address-value"
@@ -278,7 +278,7 @@ function DatabaseSettingsConnectionAddressList({
   if (visibleConnections.length === 0) {
     return (
       <div
-        className="flex min-h-11 min-w-0 items-center rounded-lg bg-resource-pane-card px-2.5 text-resource-pane-muted text-sm leading-5"
+        className="flex min-h-11 min-w-0 items-center rounded-lg bg-white/5 px-2.5 text-muted-foreground text-sm leading-5"
         data-slot="database-settings-connection-address-empty"
       >
         No connection addresses
@@ -360,14 +360,12 @@ export function DatabaseSettingsPane({
   onUpdated,
 }: DatabaseSettingsPaneProps) {
   const readOnly = data.settingsAccess?.readOnly === true;
-  const shareToken = data.settingsAccess?.shareToken?.trim() ?? "";
   const routingDomain = useMemo(
     () => (readOnly ? "" : routingDomainFromKubeconfig(kubeconfig ?? "")),
     [kubeconfig, readOnly]
   );
   const { authReady, isUpdating, updateSettings } = useDbSettingsOperations({
     kubeconfig: readOnly ? undefined : kubeconfig,
-    shareToken: readOnly ? undefined : shareToken,
   });
 
   const workload = data.workload;

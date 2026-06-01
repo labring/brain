@@ -18,7 +18,6 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Connection, Edge, Node } from "@xyflow/react";
-import { parseAsString, useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -79,37 +78,16 @@ import {
   sideSurfaceForDatabasePane,
   sideSurfaceForWorkloadPane,
 } from "@/features/project-canvas/surface/selection";
+import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
+import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
 import {
-  closeProjectSurfaceSlot,
-  createProjectSurfaceState,
-  openProjectSurface,
-} from "@/features/project-surfaces/orchestrator";
-import {
-  type ProjectCanvasSelection,
   type ProjectDrawerSurfaceEntry,
   type ProjectMainSurfaceEntry,
   type ProjectSideSurfaceEntry,
-  type ProjectSurfaceIntent,
-  type ProjectSurfaceSlot,
-  type ProjectSurfaceState,
   projectSideSurfaceVisible,
   projectSurfaceEntryTarget,
 } from "@/features/project-surfaces/surface-state";
 import { projectApTarget } from "@/features/project-surfaces/target-identity";
-import {
-  PROJECT_DRAWER_QUERY_KEY,
-  PROJECT_MAIN_QUERY_KEY,
-  PROJECT_SELECTED_QUERY_KEY,
-  PROJECT_SIDE_QUERY_KEY,
-  parseProjectCanvasSelection,
-  parseProjectDrawerSurfaceEntry,
-  parseProjectMainSurfaceEntry,
-  parseProjectSideSurfaceEntry,
-  serializeProjectCanvasSelection,
-  serializeProjectDrawerSurfaceEntry,
-  serializeProjectMainSurfaceEntry,
-  serializeProjectSideSurfaceEntry,
-} from "@/features/project-surfaces/url-codec";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 export interface UseProjectCanvasOptions {
@@ -123,12 +101,12 @@ export interface UseProjectCanvasOptions {
   onPendingApDbReferencesStart?: (
     references: readonly PendingApDbCanvasReference[]
   ) => (() => void) | undefined;
+  projectUid?: string;
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
   refreshWorkloadLists?: () => Promise<unknown>;
   /** True when the resource lists have settled enough to clear stale URL selections. */
   selectionReady?: boolean;
-  shareToken?: string;
 }
 
 interface PendingAddDbDsnReferenceIntent
@@ -230,19 +208,13 @@ function createPendingApDbReferenceMutationStartHandler({
 
 function canvasNodeSettingsAccess({
   readOnly,
-  shareToken,
 }: {
   readOnly: boolean;
-  shareToken: string | undefined;
 }): CanvasNodeSettingsAccess | undefined {
-  const st = shareToken?.trim();
-  if (!(readOnly || st)) {
+  if (!readOnly) {
     return undefined;
   }
-  return {
-    ...(readOnly ? { readOnly: true } : {}),
-    ...(st ? { shareToken: st } : {}),
-  };
+  return { readOnly: true };
 }
 
 function selectedEntryRefFromSurfaceState({
@@ -327,42 +299,6 @@ export function useProjectCanvas(
   rawNodes: Node[],
   options?: UseProjectCanvasOptions
 ) {
-  const [selectedQuery, setSelectedQuery] = useQueryState(
-    PROJECT_SELECTED_QUERY_KEY,
-    parseAsString
-  );
-  const [sideQuery, setSideQuery] = useQueryState(
-    PROJECT_SIDE_QUERY_KEY,
-    parseAsString
-  );
-  const [mainQuery, setMainQuery] = useQueryState(
-    PROJECT_MAIN_QUERY_KEY,
-    parseAsString
-  );
-  const [drawerQuery, setDrawerQuery] = useQueryState(
-    PROJECT_DRAWER_QUERY_KEY,
-    parseAsString
-  );
-  const selected = useMemo(
-    () => parseProjectCanvasSelection(selectedQuery),
-    [selectedQuery]
-  );
-  const side = useMemo(
-    () => parseProjectSideSurfaceEntry(sideQuery),
-    [sideQuery]
-  );
-  const main = useMemo(
-    () => parseProjectMainSurfaceEntry(mainQuery),
-    [mainQuery]
-  );
-  const drawer = useMemo(
-    () => parseProjectDrawerSurfaceEntry(drawerQuery),
-    [drawerQuery]
-  );
-  const surfaceState = useMemo(
-    () => createProjectSurfaceState({ drawer, main, selected, side }),
-    [drawer, main, selected, side]
-  );
   const readOnly = options?.readOnly === true;
   const selectionReady = options?.selectionReady ?? rawNodes.length > 0;
   const routingDomain = useMemo(
@@ -389,6 +325,62 @@ export function useProjectCanvas(
     requestSettingsLeave,
     settingsLeaveGuardDialog,
   } = useSettingsLeaveGuardController();
+  const canvasSelectionExists = useCallback(
+    (selection: ProjectCanvasSelection) => {
+      if (selection.kind === "edge") {
+        const edges = options?.edges ?? [];
+        return (
+          edges.length === 0 ||
+          edges.some((edge) => edge.id === selection.edgeId)
+        );
+      }
+      return projectSelectionTargetExists(rawNodes, selection);
+    },
+    [options?.edges, rawNodes]
+  );
+  const targetExists = useCallback(
+    (target: Parameters<typeof projectTargetExistsOnCanvas>[1]) =>
+      projectTargetExistsOnCanvas(rawNodes, target),
+    [rawNodes]
+  );
+  const isSideEntrySupported = useCallback(
+    (entry: ProjectSideSurfaceEntry) => {
+      if (entry.kind === "projectCreation") {
+        return false;
+      }
+      if (
+        (entry.kind === "databaseDeployment" ||
+          entry.kind === "dockerDeployment" ||
+          entry.kind === "githubDeployment") &&
+        options?.projectUid != null
+      ) {
+        return entry.projectUid === options.projectUid;
+      }
+      return true;
+    },
+    [options?.projectUid]
+  );
+  const workbenchRoute = useProjectWorkbenchRouteState({
+    canvasSelectionExists,
+    isSideEntrySupported,
+    requestSidePaneLeave: requestSettingsLeave,
+    selectionReady,
+    targetExists,
+  });
+  const selected = workbenchRoute.canvasSelection;
+  const side = workbenchRoute.side;
+  const main = workbenchRoute.main;
+  const drawer = workbenchRoute.drawer;
+  const surfaceState = workbenchRoute.surfaces;
+  const writeSelection = workbenchRoute.writeCanvasSelection;
+  const openSideSurface = workbenchRoute.openSide;
+  const openMainSurface = workbenchRoute.openMain;
+  const openDrawerSurface = workbenchRoute.openDrawer;
+  const closeSideRoute = workbenchRoute.closeSide;
+  const closeMainRoute = workbenchRoute.closeMain;
+  const closeDrawerRoute = workbenchRoute.closeDrawer;
+  const clearCanvasFocus = workbenchRoute.clearCanvasFocus;
+  const focusCanvasSelection = workbenchRoute.focusCanvasSelection;
 
   const {
     authReady: apAuthReady,
@@ -398,7 +390,6 @@ export function useProjectCanvas(
     startWorkload,
   } = useApLifecycleOperations({
     kubeconfig: readOnly ? undefined : options?.kubeconfig,
-    shareToken: readOnly ? undefined : options?.shareToken,
   });
   const {
     authReady: dbAuthReady,
@@ -412,7 +403,6 @@ export function useProjectCanvas(
     togglePublicAccess,
   } = useDbLifecycleOperations({
     kubeconfig: readOnly ? undefined : options?.kubeconfig,
-    shareToken: readOnly ? undefined : options?.shareToken,
   });
 
   const refreshWorkloadLists = options?.refreshWorkloadLists;
@@ -425,114 +415,6 @@ export function useProjectCanvas(
       dbDsnReferenceSourcesFromDbsData(options?.dbsData, options?.namespace),
     [options?.dbsData, options?.namespace]
   );
-  const writeSelection = useCallback(
-    (next: ProjectCanvasSelection | null) => {
-      setSelectedQuery(serializeProjectCanvasSelection(next)).catch(
-        () => undefined
-      );
-    },
-    [setSelectedQuery]
-  );
-  const writeSide = useCallback(
-    (next: ProjectSideSurfaceEntry | null) => {
-      setSideQuery(serializeProjectSideSurfaceEntry(next)).catch(
-        () => undefined
-      );
-    },
-    [setSideQuery]
-  );
-  const writeMain = useCallback(
-    (next: ProjectMainSurfaceEntry | null) => {
-      setMainQuery(serializeProjectMainSurfaceEntry(next)).catch(
-        () => undefined
-      );
-    },
-    [setMainQuery]
-  );
-  const writeDrawer = useCallback(
-    (next: ProjectDrawerSurfaceEntry | null) => {
-      setDrawerQuery(serializeProjectDrawerSurfaceEntry(next)).catch(
-        () => undefined
-      );
-    },
-    [setDrawerQuery]
-  );
-  const writeSurfaceState = useCallback(
-    (next: ProjectSurfaceState) => {
-      writeSelection(next.selected);
-      writeSide(next.side);
-      writeMain(next.main);
-      writeDrawer(next.drawer);
-    },
-    [writeDrawer, writeMain, writeSelection, writeSide]
-  );
-  const openSurface = useCallback(
-    (intent: ProjectSurfaceIntent) => {
-      writeSurfaceState(openProjectSurface(surfaceState, intent));
-    },
-    [surfaceState, writeSurfaceState]
-  );
-  const closeSurfaceSlot = useCallback(
-    (slot: ProjectSurfaceSlot) => {
-      writeSurfaceState(closeProjectSurfaceSlot(surfaceState, slot));
-    },
-    [surfaceState, writeSurfaceState]
-  );
-  const openSideSurface = useCallback(
-    (
-      entry: ProjectSideSurfaceEntry,
-      nextSelection?: ProjectCanvasSelection | null
-    ) => {
-      const continueOpen = () => {
-        openSurface({
-          entry,
-          select: nextSelection,
-          slot: "side",
-        });
-      };
-
-      if (side == null) {
-        continueOpen();
-        return;
-      }
-      requestSettingsLeave("switch", continueOpen);
-    },
-    [openSurface, requestSettingsLeave, side]
-  );
-  const openMainSurface = useCallback(
-    (
-      entry: ProjectMainSurfaceEntry,
-      nextSelection?: ProjectCanvasSelection | null
-    ) => {
-      const continueOpen = () =>
-        openSurface({
-          entry,
-          select: nextSelection,
-          slot: "main",
-        });
-
-      if (projectSideSurfaceVisible(surfaceState)) {
-        requestSettingsLeave("switch", continueOpen);
-        return;
-      }
-      continueOpen();
-    },
-    [openSurface, requestSettingsLeave, surfaceState]
-  );
-  const openDrawerSurface = useCallback(
-    (
-      entry: ProjectDrawerSurfaceEntry,
-      nextSelection?: ProjectCanvasSelection | null
-    ) => {
-      openSurface({
-        entry,
-        select: nextSelection,
-        slot: "drawer",
-      });
-    },
-    [openSurface]
-  );
-
   const afterLifecycle = useCallback(async () => {
     try {
       await refreshWorkloadLists?.();
@@ -722,7 +604,6 @@ export function useProjectCanvas(
           connections,
           settingsAccess: canvasNodeSettingsAccess({
             readOnly,
-            shareToken: options?.shareToken,
           }),
         },
       };
@@ -744,7 +625,6 @@ export function useProjectCanvas(
       startDbWorkload,
       stopDbWorkload,
       togglePublicAccess,
-      options?.shareToken,
     ]
   );
 
@@ -768,7 +648,6 @@ export function useProjectCanvas(
       });
       const settingsAccess = canvasNodeSettingsAccess({
         readOnly,
-        shareToken: options?.shareToken,
       });
       const onAddDbDsnReferenceMutationStart =
         createPendingApDbReferenceMutationStartHandler({
@@ -893,7 +772,6 @@ export function useProjectCanvas(
       openDrawerSurface,
       openMainSurface,
       openSideSurface,
-      options?.shareToken,
       pendingAddDbDsnReferenceIntent,
       pauseWorkload,
       readOnly,
@@ -1145,100 +1023,21 @@ export function useProjectCanvas(
     [isSupportedCanvasConnection]
   );
 
-  useEffect(() => {
-    if (selectedQuery != null && selected == null) {
-      setSelectedQuery(null).catch(() => undefined);
-    }
-  }, [selected, selectedQuery, setSelectedQuery]);
-
-  useEffect(() => {
-    if (sideQuery != null && side == null) {
-      setSideQuery(null).catch(() => undefined);
-    }
-  }, [setSideQuery, side, sideQuery]);
-
-  useEffect(() => {
-    if (mainQuery != null && main == null) {
-      setMainQuery(null).catch(() => undefined);
-    }
-  }, [main, mainQuery, setMainQuery]);
-
-  useEffect(() => {
-    if (drawerQuery != null && drawer == null) {
-      setDrawerQuery(null).catch(() => undefined);
-    }
-  }, [drawer, drawerQuery, setDrawerQuery]);
-
-  useEffect(() => {
-    if (!selectionReady || selected == null) {
-      return;
-    }
-    if (!projectSelectionTargetExists(rawNodes, selected)) {
-      writeSelection(null);
-      return;
-    }
-    if (
-      selected.kind === "edge" &&
-      (options?.edges ?? []).length > 0 &&
-      selectedEdge == null
-    ) {
-      writeSelection(null);
-    }
-  }, [
-    options?.edges,
-    rawNodes,
-    selected,
-    selectedEdge,
-    selectionReady,
-    writeSelection,
-  ]);
-
-  useEffect(() => {
-    if (!selectionReady || sideTarget == null) {
-      return;
-    }
-    if (!projectTargetExistsOnCanvas(rawNodes, sideTarget)) {
-      writeSide(null);
-    }
-  }, [rawNodes, selectionReady, sideTarget, writeSide]);
-
-  useEffect(() => {
-    if (!selectionReady || mainTarget == null) {
-      return;
-    }
-    if (!projectTargetExistsOnCanvas(rawNodes, mainTarget)) {
-      writeMain(null);
-    }
-  }, [mainTarget, rawNodes, selectionReady, writeMain]);
-
-  useEffect(() => {
-    if (!selectionReady || drawerTarget == null) {
-      return;
-    }
-    if (!projectTargetExistsOnCanvas(rawNodes, drawerTarget)) {
-      writeDrawer(null);
-    }
-  }, [drawerTarget, rawNodes, selectionReady, writeDrawer]);
-
   const closeSideSurface = useCallback(() => {
-    requestSettingsLeave("close", () => closeSurfaceSlot("side"));
-  }, [closeSurfaceSlot, requestSettingsLeave]);
+    closeSideRoute();
+  }, [closeSideRoute]);
 
   const closeMainSurface = useCallback(() => {
-    closeSurfaceSlot("main");
-  }, [closeSurfaceSlot]);
+    closeMainRoute();
+  }, [closeMainRoute]);
 
   const closeDrawerSurface = useCallback(() => {
-    closeSurfaceSlot("drawer");
-  }, [closeSurfaceSlot]);
+    closeDrawerRoute();
+  }, [closeDrawerRoute]);
 
   const clearSelection = useCallback(() => {
-    requestSettingsLeave("close", () => {
-      writeSelection(null);
-      writeSide(null);
-      writeMain(null);
-    });
-  }, [requestSettingsLeave, writeMain, writeSelection, writeSide]);
+    clearCanvasFocus();
+  }, [clearCanvasFocus]);
 
   const requestResourcePaneReplacement = useCallback(
     (continueReplace: () => void) => {
@@ -1305,10 +1104,9 @@ export function useProjectCanvas(
           frontCanvasNode(node);
         },
         onEdgeClick: (_, edge: Edge) => {
-          requestSettingsLeave("switch", () => {
-            writeSelection({ edgeId: edge.id, kind: "edge" });
-            writeSide(null);
-            writeMain(null);
+          focusCanvasSelection({
+            edgeId: edge.id,
+            kind: "edge",
           });
         },
         onNodeDragStop: (_, node: Node) => {
@@ -1323,6 +1121,7 @@ export function useProjectCanvas(
       clearSelection,
       connectionGestureActive,
       frontCanvasNode,
+      focusCanvasSelection,
       handleConnect,
       handleConnectEnd,
       handleConnectStart,
@@ -1331,10 +1130,7 @@ export function useProjectCanvas(
       openSideSurface,
       projectCanvasConnectionLine,
       readOnly,
-      requestSettingsLeave,
-      writeMain,
       writeSelection,
-      writeSide,
     ]
   );
 

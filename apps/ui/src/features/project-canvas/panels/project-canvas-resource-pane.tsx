@@ -36,7 +36,6 @@ export interface ProjectCanvasResourcePaneContentProps {
   selectedDatabaseData: CanvasDatabaseNodeData | null;
   selectedEntryRef: CanvasEntrySelectionRef | null;
   selectedNode: Node | null;
-  shareToken?: string;
   workloadPane: string | null | undefined;
 }
 
@@ -51,7 +50,6 @@ export function renderProjectCanvasResourcePaneContent({
   selectedDatabaseData,
   selectedEntryRef,
   selectedNode,
-  shareToken,
   workloadPane,
 }: ProjectCanvasResourcePaneContentProps): ReactNode {
   if (selectedNode != null && isWorkloadPaneMode(workloadPane)) {
@@ -97,7 +95,6 @@ export function renderProjectCanvasResourcePaneContent({
         onUpdated={onUpdated}
         readOnly={readOnly}
         selection={selectedEntryRef}
-        shareToken={shareToken}
       />
     );
   }
