@@ -9,7 +9,6 @@ import {
   type ProjectSideSurfaceEntry,
   type ProjectSurfaceState,
   projectSideSurfaceVisible,
-  projectSurfaceEntryTarget,
 } from "@/features/project-surfaces/surface-state";
 import type {
   ProjectApBoundEntryPointTarget,
@@ -21,6 +20,15 @@ import {
   findCanvasNodeForProjectTarget,
   projectTargetExistsOnCanvas,
 } from "./selection";
+
+type ProjectCanvasTargetedSideEntry = Extract<
+  ProjectSideSurfaceEntry,
+  { target: ProjectSurfaceTarget }
+>;
+type ProjectCanvasPendingTargetEntry =
+  | ProjectCanvasTargetedSideEntry
+  | ProjectDrawerSurfaceEntry
+  | ProjectMainSurfaceEntry;
 
 export type ProjectCanvasApResourcePaneKind =
   | "apEvents"
@@ -50,10 +58,8 @@ export type ProjectCanvasResourcePaneRenderModel =
     };
 
 export interface ProjectCanvasPendingTargetRenderModel<
-  TEntry =
-    | ProjectDrawerSurfaceEntry
-    | ProjectMainSurfaceEntry
-    | ProjectSideSurfaceEntry,
+  TEntry extends
+    ProjectCanvasPendingTargetEntry = ProjectCanvasPendingTargetEntry,
 > {
   entry: TEntry;
   kind: "pendingTarget";
@@ -69,7 +75,7 @@ export type ProjectCanvasSideRenderModel =
       entry: ProjectGlobalSidePaneEntry;
       kind: "global";
     }
-  | ProjectCanvasPendingTargetRenderModel<ProjectSideSurfaceEntry>
+  | ProjectCanvasPendingTargetRenderModel<ProjectCanvasTargetedSideEntry>
   | null;
 
 export type ProjectCanvasMainRenderModel =
@@ -112,23 +118,10 @@ export interface ProjectCanvasSurfaceRenderModel {
   side: ProjectCanvasSideRenderModel;
 }
 
-function pendingTargetModel<TEntry extends ProjectSideSurfaceEntry>(
+function pendingTargetModel<TEntry extends ProjectCanvasPendingTargetEntry>(
   entry: TEntry
-): ProjectCanvasPendingTargetRenderModel<TEntry>;
-function pendingTargetModel<TEntry extends ProjectMainSurfaceEntry>(
-  entry: TEntry
-): ProjectCanvasPendingTargetRenderModel<TEntry>;
-function pendingTargetModel<TEntry extends ProjectDrawerSurfaceEntry>(
-  entry: TEntry
-): ProjectCanvasPendingTargetRenderModel<TEntry>;
-function pendingTargetModel(
-  entry:
-    | ProjectDrawerSurfaceEntry
-    | ProjectMainSurfaceEntry
-    | ProjectSideSurfaceEntry
-) {
-  const target = projectSurfaceEntryTarget(entry);
-  return target == null ? null : { entry, kind: "pendingTarget", target };
+): ProjectCanvasPendingTargetRenderModel<TEntry> {
+  return { entry, kind: "pendingTarget", target: entry.target };
 }
 
 function apResourcePaneModel(
