@@ -183,7 +183,7 @@ export const Index: RegistryIndex = {
     name: "container-settings-pane",
     title: "Container settings pane",
     description:
-      "Fully controlled: `image`, `env`, `ports`, and CPU/Memory quota (`value` + `onValueChange`). Image/env editors use dialogs; ports flow through required `onPortsChange`.",
+      "Fully controlled: `image`, `env`, `network`, and CPU/Memory quota (`value` + `onValueChange`). AP network settings manage private target ports and public addresses.",
     state: "coding",
     type: "registry:preview",
     registryDependencies: [
@@ -196,7 +196,6 @@ export const Index: RegistryIndex = {
       "dialog",
       "label",
       "input",
-      "table",
     ],
     files: [
       {
@@ -210,39 +209,9 @@ export const Index: RegistryIndex = {
         type: "registry:ui",
       },
       {
-        path: "packages/ui/src/components/ports-table/ports-table.tsx",
+        path: "packages/ui/src/lib/port-number.ts",
         target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.context.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.helpers.ts",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.parts.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.root.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.types.ts",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.variant0.tsx",
-        target: "",
-        type: "registry:ui",
+        type: "registry:lib",
       },
       {
         path: "packages/ui/src/components/dialog.tsx",
@@ -280,101 +249,6 @@ export const Index: RegistryIndex = {
       import(
         "@registry/linear/components/container-settings-pane/container-settings-pane-preview"
       ),
-  },
-
-  "linear/components/ports-table": {
-    style: "linear",
-    group: "components",
-    name: "ports-table",
-    title: "Ports table",
-    description:
-      "Compound PortsTable (split module): dialogs edit port numbers only; host callbacks receive numbers; addresses are display state.",
-    state: "coding",
-    type: "registry:preview",
-    registryDependencies: [
-      "preview",
-      "button",
-      "dropdown-menu",
-      "dialog",
-      "label",
-      "input",
-      "table",
-    ],
-    files: [
-      {
-        path: "registry/linear/components/ports-table/ports-table-preview.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.context.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.helpers.ts",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.parts.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.root.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.types.ts",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/ports-table/ports-table.variant0.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/button.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/dropdown-menu.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/dialog.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/label.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/input.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      {
-        path: "packages/ui/src/components/table.tsx",
-        target: "",
-        type: "registry:ui",
-      },
-      previewUiFile,
-    ],
-    load: () =>
-      import("@registry/linear/components/ports-table/ports-table-preview"),
   },
 
   "linear/components/chat": {

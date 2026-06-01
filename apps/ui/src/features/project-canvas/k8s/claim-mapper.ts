@@ -2,7 +2,6 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   ContainerEnvVar,
   ContainerNetwork,
-  ContainerPort,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import {
@@ -478,7 +477,6 @@ export interface ClaimContainerSettings {
   image: string;
   memoryMib: number;
   network?: ContainerNetwork;
-  ports: ContainerPort[];
   replicaStrategy: ApReplicaStrategy;
   /** AP fixed replicas (1–20 in UI); legacy `spec.resource.replicas` is a fallback only. */
   replicas: number;
@@ -512,7 +510,6 @@ function mapApClaim(
     image,
     memoryMib,
     network: apNetworkFromSpecAndStatus(metadata, spec, status, options),
-    ports: [],
     replicaStrategy,
     replicas,
   };

@@ -4,7 +4,6 @@ import { useEntryPointList, useK8sGetResource } from "@workspace/api/hooks";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   ContainerEnvVar,
-  ContainerPort,
   ContainerSettingsDraft,
   ContainerSettingsPaneConfirmedAddDbDsnReference,
   ContainerSettingsPaneEnvChangeMeta,
@@ -35,8 +34,6 @@ import {
   type WorkloadClaimKind,
 } from "@/features/project-canvas/k8s/claim-mapper";
 import { existingCustomDomainBindingsFromEntryPoints } from "@/features/project-canvas/k8s/entrypoint-custom-domains";
-
-export type ContainerSettingsOnPortsChange = (ports: ContainerPort[]) => void;
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
@@ -207,9 +204,6 @@ export function useWorkloadClaimSettings(
   }, []);
   const ignoreEnv = useCallback((_env: ContainerEnvVar[]) => {
     /* read-only */
-  }, []);
-  const ignorePorts = useCallback<ContainerSettingsOnPortsChange>((_ports) => {
-    /* read-only: pane is controlled from K8s claim */
   }, []);
   const ignoreNetwork = useCallback(() => {
     /* read-only */
@@ -479,7 +473,6 @@ export function useWorkloadClaimSettings(
     ignoreEnv,
     ignoreImage,
     ignoreNetwork,
-    ignorePorts,
     ignoreQuota,
     ignoreReplicas,
     isApWorkload,

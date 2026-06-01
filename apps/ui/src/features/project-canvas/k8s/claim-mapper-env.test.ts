@@ -82,7 +82,6 @@ test("AP claim settings maps private-only network from desired and observed AP s
     privatePort: 8080,
     publicAddresses: [],
   });
-  assert.deepEqual(settings.ports, []);
 });
 
 test("AP claim settings maps public addresses from observed AP network state", () => {
@@ -451,7 +450,6 @@ test("AP claim settings ignores retired endpoint fields", () => {
   );
 
   assert.equal(settings.network, undefined);
-  assert.deepEqual(settings.ports, []);
 });
 
 test("AP claim settings ignores invalid private-only network ports", () => {
@@ -578,8 +576,6 @@ test("read-only AP settings renders legacy replicas as fixed replica strategy", 
       memoryQuota: { onValueChange: noop, value: settings.memoryMib },
       onEnvChange: noop,
       onImageChange: noop,
-      onPortsChange: noop,
-      ports: settings.ports,
       readOnly: true,
       replicaStrategy: settings.replicaStrategy,
       replicasQuota: { onValueChange: noop, value: settings.replicas },

@@ -57,6 +57,7 @@ import {
   updateContainerEnvRow,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
+import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Copy,
@@ -89,7 +90,6 @@ import {
   syncSettingsDraftBackingState,
 } from "../../lib/settings-draft-backing";
 import type { SettingsLeaveGuardRegistration } from "../../lib/settings-leave-guard";
-import { parsePortNumberDigits } from "../ports-table/ports-table.helpers";
 
 const CPU_QUOTA_DIRTY_EPS = 1e-9;
 const REPLICA_LIMITS = { max: 20, min: 1 } as const;
@@ -115,17 +115,6 @@ export type ContainerSettingsQuotaSliderProps =
   ContainerSettingsControlledQuotaProps;
 
 export interface ContainerEnvVar extends ContainerEnvRow {}
-
-export interface ContainerPort {
-  /** Retained for non-AP callers; AP settings use `network` instead. */
-  host?: string;
-  port: number;
-  /** Retained for non-AP callers; AP settings use `network.privateAddress` instead. */
-  privateAddress?: string;
-  protocol: string;
-  /** Retained for non-AP callers; AP settings use `network.publicAddresses` instead. */
-  publicAddress?: string;
-}
 
 export interface ContainerNetworkPublicAddress {
   host?: string;
@@ -564,7 +553,6 @@ export interface ContainerSettingsPaneProps {
   ) => void;
   onImageChange: (image: string) => void;
   onNetworkChange?: (network: ContainerNetwork) => void | Promise<void>;
-  onPortsChange: (ports: ContainerPort[]) => void;
   /**
    * When set (and not `readOnly`), CPU/memory/replicas sliders keep local drafts until Save; Cancel reverts.
    * Omit for live slider updates via `cpuQuota` / `memoryQuota` / `replicasQuota` `onValueChange`.
@@ -582,10 +570,8 @@ export interface ContainerSettingsPaneProps {
     meta?: ContainerSettingsPaneSettingsDraftCommitMeta
   ) => void | Promise<void>;
   onSettingsDraftLeaveGuardChange?: SettingsLeaveGuardRegistration;
-  /** Exposed container ports + protocol labels. */
-  ports: ContainerPort[];
   /**
-   * When true, image/env/ports are view-only and quota sliders do not send updates.
+   * When true, image/env/network are view-only and quota sliders do not send updates.
    * Host may pass no-op callbacks.
    */
   readOnly?: boolean;
