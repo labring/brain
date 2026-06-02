@@ -4,6 +4,21 @@
   "homepage": "https://github.com/sealai/brain",
   "items": [
     {
+      "name": "app-button",
+      "type": "registry:ui",
+      "title": "App Button",
+      "description": "SealAI product button style layer for non-icon actions",
+      "dependencies": ["class-variance-authority"],
+      "registryDependencies": ["button"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-button.tsx",
+          "type": "registry:component",
+          "target": "components/app-button.tsx"
+        }
+      ]
+    },
+    {
       "name": "log-viewer",
       "type": "registry:ui",
       "title": "Log viewer (Linear)",
