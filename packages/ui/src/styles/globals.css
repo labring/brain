@@ -42,6 +42,7 @@
   --color-background: var(--background);
 
   /** SealAI custom color utilities. */
+  --color-brand-primary-hover: var(--sealai-brand-primary-hover);
   --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
   --color-brand-primary: var(--sealai-brand-primary);
 
@@ -86,6 +87,11 @@
 
   /** SealAI brand tokens. */
   --sealai-brand-primary: var(--color-blue-500);
+  --sealai-brand-primary-hover: color-mix(
+    in oklab,
+    var(--sealai-brand-primary) 90%,
+    #09090b 10%
+  );
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
 
   /** Canvas component tokens. */
@@ -128,6 +134,11 @@
 
   /** SealAI brand tokens. */
   --sealai-brand-primary: var(--color-blue-500);
+  --sealai-brand-primary-hover: color-mix(
+    in oklab,
+    var(--sealai-brand-primary) 90%,
+    #09090b 10%
+  );
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
 }
 

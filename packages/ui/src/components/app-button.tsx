@@ -4,12 +4,12 @@ import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 
 const appButtonVariants = cva(
-  "gap-2 rounded-lg border border-transparent px-3 font-medium text-sm leading-5 shadow-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5 [&_svg:not([class*='size-'])]:size-4",
+  "gap-2 rounded-lg border border-transparent font-medium text-sm leading-5 shadow-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         primary:
-          "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary/90",
+          "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary",
         quiet:
@@ -19,9 +19,10 @@ const appButtonVariants = cva(
         link: "bg-transparent text-primary hover:bg-transparent hover:text-primary hover:underline",
       },
       size: {
-        sm: "h-7 gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
-        default: "h-9",
-        lg: "h-10 px-4",
+        sm: "h-7 gap-1.5 px-2 text-xs has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        default:
+          "h-9 px-4 py-2 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
+        lg: "h-10 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
       },
     },
     defaultVariants: {
