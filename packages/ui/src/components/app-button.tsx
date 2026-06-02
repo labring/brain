@@ -8,7 +8,8 @@ const appButtonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-brand-primary text-secondary-foreground hover:bg-blue-500",
+        primary:
+          "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary/90",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary",
         quiet:

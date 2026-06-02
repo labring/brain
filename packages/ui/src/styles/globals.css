@@ -34,13 +34,17 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
-  --color-brand-primary: var(--brand-primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+
+  /** SealAI custom color utilities. */
+  --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
+  --color-brand-primary: var(--sealai-brand-primary);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -60,7 +64,6 @@
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
-  --brand-primary: #3676de;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -80,7 +83,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  /** Runtime tokens consumed directly by `packages/ui` canvas CSS. */
+
+  /** SealAI brand tokens. */
+  --sealai-brand-primary: var(--color-blue-500);
+  --sealai-brand-primary-foreground: oklch(0.922 0 0);
+
+  /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
@@ -99,7 +107,6 @@
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
-  --brand-primary: #3676de;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -118,6 +125,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /** SealAI brand tokens. */
+  --sealai-brand-primary: var(--color-blue-500);
+  --sealai-brand-primary-foreground: oklch(0.922 0 0);
 }
 
 @layer base {
