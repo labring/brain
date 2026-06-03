@@ -89,7 +89,7 @@ export function ChatGithubDeployPopover({
         aria-label="GitHub"
         className={cn(
           buttonVariants({ variant: "ghost", size: "icon-lg" }),
-          "hoverable shrink-0 rounded-xl",
+          "shrink-0 rounded-xl",
           triggerClassName
         )}
         type="button"

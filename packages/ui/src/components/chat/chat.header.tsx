@@ -285,7 +285,7 @@ export function ChatThreadSelect({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Select thread"
-          className="hoverable flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground text-sm outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-100"
+          className="flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground text-sm outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-100"
           disabled={!canPickHistory}
           type="button"
         >

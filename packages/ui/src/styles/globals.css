@@ -154,21 +154,7 @@
   }
 }
 
-/**
- * Muted by default; transparent background; on hover, foreground text and input surface.
- * Use `className="hoverable"` alone (e.g. `SidebarMenuButton`, `AvatarSwitcher`, chat header icons).
- */
 @layer utilities {
-  .hoverable {
-    @apply cursor-pointer border-transparent bg-transparent text-muted-foreground transition-colors;
-  }
-  .hoverable:disabled {
-    @apply cursor-not-allowed;
-  }
-  .hoverable:hover:not(:disabled) {
-    @apply text-foreground !bg-input;
-  }
-
   /** Chat scroll surfaces (transcript, thread picker): thin track, themed thumb — Firefox + WebKit. */
   .scrollbar-chat-thin {
     scrollbar-color: var(--border) transparent;

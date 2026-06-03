@@ -108,7 +108,12 @@ export function ProjectExplorerListItem({
       className={cn("rounded-xl", className)}
       data-slot="project-explorer-item"
     >
-      <div className="hoverable flex min-w-0 items-center gap-2 rounded-xl p-2.5">
+      <div
+        className={cn(
+          "project-explorer-item-row flex min-w-0 items-center gap-2 rounded-xl bg-transparent p-2.5 transition-colors",
+          interactive && "cursor-pointer"
+        )}
+      >
         <CanvasNodeStatusDot
           size="small"
           status={{ label: "", visualTone: project.status }}

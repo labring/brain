@@ -104,7 +104,7 @@ export function SidePane({
             </div>
             <Button
               aria-label={closeAriaLabel}
-              className="hoverable -mt-1 size-7 shrink-0"
+              className="-mt-1 size-7 shrink-0"
               onClick={onClose}
               size="icon"
               type="button"
