@@ -3,7 +3,6 @@
 import "@xterm/xterm/css/xterm.css";
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
-import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { cn } from "@workspace/ui/lib/utils";
 import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
 import type { Terminal as TerminalType } from "@xterm/xterm";
@@ -44,7 +43,6 @@ export interface ExecTerminalDescriptor {
   namespace: string;
   /** Required for `kind: "db"`; the server enforces project ownership. */
   projectUid?: string;
-  subtitle: string;
   title: string;
 }
 
@@ -81,32 +79,6 @@ function clampTerminalHeight(height: number, maxHeight: number): number {
   return Math.round(Math.min(Math.max(height, MIN_TERMINAL_HEIGHT), maxHeight));
 }
 
-function statusLabel(status: TerminalStatus): string {
-  switch (status) {
-    case "ready":
-      return "Connected";
-    case "error":
-      return "Connection failed";
-    case "closed":
-      return "Session closed";
-    default:
-      return "Connecting...";
-  }
-}
-
-function terminalStatusForDot(status: TerminalStatus) {
-  switch (status) {
-    case "ready":
-      return { label: statusLabel(status), visualTone: "positive" } as const;
-    case "error":
-      return { label: statusLabel(status), visualTone: "negative" } as const;
-    case "closed":
-      return { label: statusLabel(status), visualTone: "neutral" } as const;
-    default:
-      return { label: statusLabel(status), visualTone: "progress" } as const;
-  }
-}
-
 export const ExecTerminalPane = memo(function ExecTerminalPane({
   descriptor,
   onClose,
@@ -115,7 +87,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
   onClose: () => void;
 }) {
   const kubeconfig = useAtomValue(kubeconfigAtom);
-  const [status, setStatus] = useState<TerminalStatus>("connecting");
+  const [, setStatus] = useState<TerminalStatus>("connecting");
   const [isResizing, setIsResizing] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
   const [maxTerminalHeight, setMaxTerminalHeight] = useState(
@@ -131,12 +103,6 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
   const { kind, name, namespace, projectUid } = descriptor;
   const canConnect =
     kubeconfig.trim() !== "" && name !== "" && namespace !== "";
-  const terminalStatusLabel = descriptor.subtitle.trim() || statusLabel(status);
-  const connectionStatusLabel = statusLabel(status);
-  const terminalStatusTitle = descriptor.subtitle.trim()
-    ? `${descriptor.subtitle} · ${connectionStatusLabel}`
-    : connectionStatusLabel;
-  const terminalDotStatus = terminalStatusForDot(status);
 
   const updateTerminalHeight = useCallback((nextHeight: number) => {
     const nextMaxHeight = resolveTerminalMaxHeight(sectionRef.current);
@@ -392,7 +358,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         onPointerUp={endResize}
         tabIndex={0}
       />
-      <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 drop-shadow-[0_4px_2px_rgba(0,0,0,0.25)]">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 py-2.5 drop-shadow-[0_4px_2px_rgba(0,0,0,0.25)]">
         <div className="flex min-w-0 items-center gap-2">
           <SquareTerminal
             aria-hidden
@@ -402,20 +368,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
             {descriptor.title || "Terminal"}
           </h2>
         </div>
-        <div className="flex min-w-0 items-center justify-center">
-          <span
-            className="inline-flex min-w-0 items-center gap-2 text-sm text-zinc-400 leading-5"
-            title={terminalStatusTitle}
-          >
-            <CanvasNode.StatusDot
-              className="size-3.5"
-              size="small"
-              status={terminalDotStatus}
-            />
-            <span className="truncate">{terminalStatusLabel}</span>
-          </span>
-        </div>
-        <div className="flex min-w-0 justify-end">
+        <div className="shrink-0">
           <AppIconButton
             aria-label="Close terminal"
             className="size-9 text-zinc-300 hover:bg-white/10 hover:text-zinc-50"

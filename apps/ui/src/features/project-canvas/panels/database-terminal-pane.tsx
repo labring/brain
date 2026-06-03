@@ -21,7 +21,6 @@ export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
   const data = databaseNodeDataFromNode(node);
   const name = data?.workload.name?.trim() ?? "";
   const namespace = data?.workload.namespace?.trim() ?? "";
-  const displayEngine = data?.states.displayEngine?.trim() ?? "";
 
   const descriptor = useMemo<ExecTerminalDescriptor>(
     () => ({
@@ -29,10 +28,9 @@ export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
       name,
       namespace,
       projectUid,
-      subtitle: displayEngine || namespace,
       title: name || "Terminal",
     }),
-    [displayEngine, name, namespace, projectUid]
+    [name, namespace, projectUid]
   );
 
   return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;

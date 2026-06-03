@@ -22,17 +22,15 @@ export const WorkloadTerminalPane = memo(function WorkloadTerminalPane({
   const states = containerStatesFromNode(node);
   const name = states?.name?.trim() ?? "";
   const namespace = states?.namespace?.trim() || ns;
-  const image = states?.image?.trim() ?? "";
 
   const descriptor = useMemo<ExecTerminalDescriptor>(
     () => ({
       kind: "ap",
       name,
       namespace,
-      subtitle: image || namespace,
       title: name || "Terminal",
     }),
-    [image, name, namespace]
+    [name, namespace]
   );
 
   return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;
