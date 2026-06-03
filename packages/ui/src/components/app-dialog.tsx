@@ -70,7 +70,7 @@ function AppDialogIcon({
   return (
     <span
       className={cn(
-        "inline-flex size-4 shrink-0 items-center justify-center text-yellow-400 [&_svg]:size-4",
+        "inline-flex size-4 shrink-0 items-center justify-center text-zinc-50 [&_svg]:size-4",
         className
       )}
       data-slot="app-dialog-icon"
@@ -81,9 +81,12 @@ function AppDialogIcon({
   );
 }
 
-function AppDialogWarningIcon(props: ComponentProps<typeof AppDialogIcon>) {
+function AppDialogWarningIcon({
+  className,
+  ...props
+}: ComponentProps<typeof AppDialogIcon>) {
   return (
-    <AppDialogIcon {...props}>
+    <AppDialogIcon className={cn("text-yellow-400", className)} {...props}>
       <TriangleAlert aria-hidden />
     </AppDialogIcon>
   );

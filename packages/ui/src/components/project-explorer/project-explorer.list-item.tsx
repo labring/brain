@@ -17,10 +17,6 @@ import { useProjectExplorer } from "./project-explorer.context";
 import type { ProjectExplorerProject } from "./project-explorer.types";
 import { formatCreatedAt, toDate } from "./project-explorer.utils";
 
-function k8sName(project: ProjectExplorerProject): string {
-  return project.resourceName ?? project.name;
-}
-
 export function ProjectExplorerListItem({
   className,
   project,
@@ -33,6 +29,7 @@ export function ProjectExplorerListItem({
   const canRename = actions.onProjectRename != null;
   const canDelete = actions.onProjectDelete != null;
   const showRowMenu = canRename || canDelete;
+  const projectResourceName = project.resourceName ?? project.name;
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -202,19 +199,14 @@ export function ProjectExplorerListItem({
           onClick={(e) => e.stopPropagation()}
         >
           <AppDialog.Header>
+            <AppDialog.Icon>
+              <SquarePen aria-hidden />
+            </AppDialog.Icon>
             <AppDialog.Title>Rename project</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>
-              Sets{" "}
-              <span className="font-mono text-foreground">
-                metadata.annotations.displayName
-              </span>{" "}
-              on project{" "}
-              <span className="font-mono text-foreground">
-                {k8sName(project)}
-              </span>
-              . The Kubernetes resource name does not change.
+              Update the project display name
             </AppDialog.Description>
             <AppDialog.Field>
               <AppDialog.Label htmlFor={`project-rename-${project.id}`}>
@@ -226,6 +218,7 @@ export function ProjectExplorerListItem({
                 }
                 aria-invalid={renameError ? true : undefined}
                 autoComplete="off"
+                className="h-9"
                 id={`project-rename-${project.id}`}
                 onChange={(e) => {
                   setRenameDraft(e.target.value);
@@ -252,8 +245,14 @@ export function ProjectExplorerListItem({
             </AppDialog.Field>
           </AppDialog.Body>
           <AppDialog.Footer>
-            <AppDialog.Cancel disabled={renameBusy}>Cancel</AppDialog.Cancel>
+            <AppDialog.Cancel
+              className="bg-input/30 hover:bg-input"
+              disabled={renameBusy}
+            >
+              Cancel
+            </AppDialog.Cancel>
             <AppDialog.Action
+              className="bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
               disabled={
                 renameBusy ||
                 renameDraft.trim() === "" ||
@@ -293,8 +292,8 @@ export function ProjectExplorerListItem({
               <span className="font-medium text-foreground">
                 {project.name}
               </span>{" "}
-              (<span className="font-mono">{k8sName(project)}</span>) from the
-              cluster. This cannot be undone.
+              (<span className="font-mono">{projectResourceName}</span>) from
+              the cluster. This cannot be undone.
             </AppDialog.Description>
           </AppDialog.Body>
           <AppDialog.Footer>
