@@ -131,7 +131,7 @@ export function ChatComposerShell({
   return (
     <div
       className={cn(
-        "group flex w-full flex-col gap-2 rounded-xl border border-transparent bg-muted p-2 shadow-sm focus-within:border-border group-focus-within:border-border",
+        "group flex w-full flex-col gap-2 rounded-xl border border-transparent bg-input/30 p-2 shadow-sm focus-within:border-border group-focus-within:border-border",
         className
       )}
       data-slot="chat-composer-shell"
@@ -283,7 +283,7 @@ export function ChatComposerContextIndicator({
       <div className="flex min-h-0 items-center justify-center">
         <div
           className={cn(
-            "flex h-12 min-h-8 w-[98%] min-w-0 translate-y-full gap-1 overflow-hidden rounded-xl border border-transparent bg-muted p-1 px-2 text-muted-foreground text-xs opacity-0 shadow-sm",
+            "flex h-12 min-h-8 w-[98%] min-w-0 translate-y-full gap-1 overflow-hidden rounded-xl border border-transparent bg-input/30 p-1 px-2 text-muted-foreground text-xs opacity-0 shadow-sm",
 
             // Base transition (applies to both enter + exit)
             "transition-all duration-300 ease-out motion-reduce:transition-none",
