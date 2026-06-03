@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Tooltip,
   TooltipContent,
@@ -125,22 +125,20 @@ function CanvasControlButton({
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button
+          <AppIconButton
             aria-label={label}
             aria-pressed={active || undefined}
             className={cn(
-              "size-9 rounded-lg text-muted-foreground transition-colors hover:bg-input/70 hover:text-foreground",
-              active &&
-                "bg-input text-foreground shadow-sm ring-1 ring-foreground/10"
+              "text-muted-foreground hover:bg-input/30 hover:text-foreground data-[active=true]:bg-input data-[active=true]:text-brand-primary-foreground"
             )}
             data-active={active || undefined}
             onClick={onClick}
-            size={null}
+            size="lg"
             type="button"
-            variant={null}
+            variant="quiet"
           >
             {children}
-          </Button>
+          </AppIconButton>
         }
       />
       <TooltipContent side="left">{label}</TooltipContent>
@@ -210,7 +208,7 @@ export function CanvasControls({
   return (
     <div
       className={cn(
-        "pointer-events-auto absolute top-2 right-2 z-10 flex flex-col items-center rounded-xl border border-border/50 bg-background/70 p-0.5 shadow-lg backdrop-blur-xl transition-[right,transform,opacity] duration-200 ease-out",
+        "pointer-events-auto absolute top-[52px] right-2 z-10 flex flex-col items-center rounded-lg transition-[right,transform,opacity] duration-200 ease-out",
         className
       )}
       data-slot="canvas-controls"
