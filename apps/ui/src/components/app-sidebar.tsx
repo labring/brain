@@ -213,7 +213,7 @@ function ProjectShortcutIcon({
 }
 
 const APP_SIDEBAR_LINK_CLASS =
-  "shrink-0 border-0 text-neutral-50 active:translate-y-0!";
+  "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
 
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,

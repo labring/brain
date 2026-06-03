@@ -99,7 +99,7 @@ function AppDialogTitle({
   return (
     <DialogTitle
       className={cn(
-        "min-w-0 flex-1 truncate font-medium text-lg/7 text-zinc-50",
+        "min-w-0 flex-1 truncate font-medium text-base/5 text-zinc-50",
         className
       )}
       {...props}
@@ -154,7 +154,7 @@ function AppDialogCancel({
         <AppButton
           className={className}
           type={type}
-          variant="quiet"
+          variant="secondary"
           {...props}
         />
       }

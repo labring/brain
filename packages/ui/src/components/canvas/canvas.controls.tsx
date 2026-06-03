@@ -261,7 +261,7 @@ export function CanvasMiniMap({
   return (
     <div
       className={cn(
-        "pointer-events-auto absolute top-2 left-2 z-10 transition-[right,transform,opacity] duration-200 ease-out",
+        "pointer-events-auto absolute top-[52px] left-2 z-10 transition-[right,transform,opacity] duration-200 ease-out",
         className
       )}
       data-slot="canvas-minimap"
@@ -269,15 +269,15 @@ export function CanvasMiniMap({
     >
       <MiniMap
         ariaLabel="Canvas mini map"
-        bgColor="var(--color-background)"
-        className="overflow-hidden rounded-lg border border-border/50 bg-background/70 shadow-lg backdrop-blur-xl"
-        maskColor="color-mix(in oklab, var(--color-background) 64%, transparent)"
+        bgColor="color-mix(in oklab, var(--input) 30%, transparent)"
+        className="overflow-hidden bg-input/30 shadow-none"
+        maskColor="var(--input)"
         maskStrokeColor="var(--color-border)"
         maskStrokeWidth={1}
         nodeBorderRadius={6}
-        nodeColor="var(--color-muted-foreground)"
-        nodeStrokeColor="var(--color-border)"
-        nodeStrokeWidth={1}
+        nodeColor="var(--color-canvas-surface)"
+        nodeStrokeColor="var(--color-canvas-surface)"
+        nodeStrokeWidth={0}
         pannable
         position="top-left"
         style={{
