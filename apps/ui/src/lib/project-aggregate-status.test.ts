@@ -173,8 +173,8 @@ test("aggregateProjectStatuses: paused workload does not promote severity", () =
 });
 
 test("aggregateProjectStatuses: 'Paused' phase string also reads as neutral", () => {
-  // Crossplane may report `phase: "Paused"` directly; the phase-side mapping
-  // already covers this (see phaseToVisualTone tests).
+  // Direct product views may report `phase: "Paused"` directly; the phase-side
+  // mapping already covers this (see phaseToVisualTone tests).
   const result = aggregateProjectStatuses([
     { projectUid: "p1", phase: "Paused" },
     { projectUid: "p1", phase: "Running" },

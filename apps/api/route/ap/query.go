@@ -4,18 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
+	orchestration "sealos/api/service/orchestration"
 )
 
 func registerGet(grp huma.API) {
 	type getInput struct {
 		middleware.AuthInput
-		Name      string `query:"name" doc:"AP instance name (omit to list all in namespace)"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		LabelSelector string `query:"label-selector" doc:"Optional Kubernetes label selector appended to the Brain-managed AP selector"`
+		Name          string `query:"name" doc:"AP instance name (omit to list all in namespace)"`
+		Namespace     string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
 	}
 	type getOutput struct {
 		Body json.RawMessage
@@ -26,7 +32,7 @@ func registerGet(grp huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/",
 		Summary:     "Get AP(s)",
-		Description: "Get a single AP by name or list APs in the namespace.\n\nParameter usage:\n- `name` is optional. If omitted, the endpoint lists all APs in the resolved namespace.\n- `namespace` is optional. It uses the kubeconfig namespace by default; admins can override it.\n\nWhat the AP represents:\n- AP is the Crossplane composite resource (`example.crossplane.io/v1`, kind `AP`) that composes the Deployment, Service(s), optional Ingress, and generated EntryPoint for `spec.input.network`.\n- The AP spec may include `spec.input.probes` (startup, liveness, readiness) for health checks; each probe supports httpGet, tcpSocket, exec, or grpc.\n\nResponse enrichment:\n- `status.network`: Private Address and Public Address details derived from the Network contract and observed Service/Ingress state when the cluster has not written them yet.\n- `status.backups`: concise summaries of orphaned config snapshots (ConfigMap name, image, createdAt), excluding the managed backup. Ordered newest first.",
+		Description: "Get a single AP by name or list APs in the namespace.\n\nParameter usage:\n- `name` is optional. If omitted, the endpoint lists all Brain-managed APs in the resolved namespace.\n- `namespace` is optional. It uses the kubeconfig namespace by default; admins can override it.\n- `label-selector` is optional and is appended to the mandatory Brain AP selector.\n\nWhat the AP represents:\n- AP is a Brain product view backed by direct Kubernetes resources, primarily a Deployment and private Service.\n- `brain.io/project-id` is the project ownership boundary for list, canvas, and lifecycle operations.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *getInput) (*getOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -46,13 +52,55 @@ func registerGet(grp huma.API) {
 		}
 
 		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "aps",
-			Name:      input.Name,
-			Namespace: resolved.Namespace,
+			LabelSelector: apDeploymentLabelSelector(input.LabelSelector),
+			Resource:      "deployments",
+			Name:          input.Name,
+			Namespace:     resolved.Namespace,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get AP(s)", err)
 		}
-		return &getOutput{Body: json.RawMessage(jsonBytes)}, nil
+		body, err := apResponseFromDeployments(jsonBytes, input.Name != "")
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to adapt AP response", err)
+		}
+		return &getOutput{Body: body}, nil
 	})
+}
+
+func apDeploymentLabelSelector(extra string) string {
+	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return base
+	}
+	return base + "," + extra
+}
+
+func apResponseFromDeployments(jsonBytes []byte, single bool) (json.RawMessage, error) {
+	if single {
+		var deployment appsv1.Deployment
+		if err := json.Unmarshal(jsonBytes, &deployment); err != nil {
+			return nil, err
+		}
+		return json.Marshal(orchestration.APObjectFromDeployment(&deployment))
+	}
+	var list unstructured.UnstructuredList
+	if err := json.Unmarshal(jsonBytes, &list); err != nil {
+		return nil, err
+	}
+	items := make([]interface{}, 0, len(list.Items))
+	for i := range list.Items {
+		var deployment appsv1.Deployment
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(list.Items[i].Object, &deployment); err != nil {
+			return nil, err
+		}
+		items = append(items, orchestration.APObjectFromDeployment(&deployment))
+	}
+	out := map[string]interface{}{
+		"apiVersion": "brain.io/direct",
+		"items":      items,
+		"kind":       "APList",
+	}
+	return json.Marshal(out)
 }

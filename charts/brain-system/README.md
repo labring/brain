@@ -4,8 +4,8 @@ This chart is the preferred entrypoint for deploying the `brain-system` stack.
 
 It renders:
 
-- `DB` claim: `brain-pg`
-- `AP` claims: `sealai-api-staging`, `sealai-ui-staging`, `sealai-registry`
+- Brain direct `DB` manifest: `brain-pg`
+- Brain direct `AP` manifests: `sealai-api-staging`, `sealai-ui-staging`, `sealai-registry`
 - native Kubernetes `Deployment` and `Service`: `whodb`
 - optional app env `Secret` objects
 - optional image pull `Secret`
@@ -14,19 +14,10 @@ It renders:
 
 The cluster must already have these platform resources installed:
 
-- Crossplane `2.2.0`
-- `provider-kubernetes`
-- `function-go-templating`
 - KubeBlocks with PostgreSQL support
 - ingress-nginx `IngressClass/nginx`
+- cert-manager when custom domains or per-domain certificates are used
 - VictoriaMetrics and VictoriaLogs if API metrics/log endpoints are used
-- repo Crossplane XRDs and Compositions from `deploy/brain-system/platform/resources.txt`
-
-Apply the repo platform resources:
-
-```bash
-xargs -I{} kubectl apply -f {} < deploy/brain-system/platform/resources.txt
-```
 
 ## Install
 
@@ -64,7 +55,7 @@ helm upgrade --install brain-system charts/brain-system \
 
 ## First Database Install
 
-The DB controller generates `brain-pg-conn-credential`. The UI still needs a complete `DATABASE_URL`.
+The DB renderer creates a KubeBlocks Cluster named `brain-pg`. KubeBlocks generates `brain-pg-conn-credential`. The UI still needs a complete `DATABASE_URL`.
 
 For a brand-new cluster, the practical sequence is:
 
@@ -83,15 +74,13 @@ Use that password to fill `ui.env.DATABASE_URL`, then run the normal install com
 ## Verify
 
 ```bash
-kubectl -n brain-system get ap,db
-kubectl -n brain-system get deploy,pod,svc,ingress,instanceset -o wide
+kubectl -n brain-system get deploy,pod,svc,ingress,hpa,cluster -o wide
 kubectl -n brain-system rollout status deploy/whodb --timeout=5m
 ```
 
-For AP-generated workloads:
+For Brain-managed resources:
 
 ```bash
-kubectl -n brain-system wait ap/sealai-api-staging --for=condition=Ready --timeout=10m
-kubectl -n brain-system wait ap/sealai-ui-staging --for=condition=Ready --timeout=10m
-kubectl -n brain-system wait ap/sealai-registry --for=condition=Ready --timeout=10m
+kubectl -n brain-system get deploy,svc,ingress,hpa -l brain.io/managed-by=brain
+kubectl -n brain-system get cluster -l brain.io/resource-kind=db
 ```

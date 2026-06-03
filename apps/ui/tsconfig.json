@@ -5,7 +5,6 @@
     "paths": {
       "@data-browser/*": ["./src/features/data-browser/*"],
       "@/*": ["./src/*"],
-      "@workspace/crossplane/*": ["../../packages/crossplane/src/*"],
       "@workspace/ui/*": ["../../packages/ui/src/*"]
     },
     "plugins": [

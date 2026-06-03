@@ -1,10 +1,11 @@
-import { generatePlatformAddressId } from "@workspace/crossplane/lib/platform-address";
 import type {
   DockerDeploymentEnvVar,
   DockerDeploymentSettings,
 } from "@workspace/ui/lib/docker-deployment-settings";
 import YAML from "yaml";
-import { renderCrossplaneCompositionTemplate } from "./render-crossplane-template";
+import { renderYamlTemplate } from "./render-yaml-template";
+
+const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
 export const DEFAULT_DOCKER_AP_COMPOSITION_NAME =
   "aps-deployment-ingress-go-templating";
@@ -22,7 +23,7 @@ interface RenderDockerDeploymentYamlOptions {
 
 function baseApClaim(options: RenderDockerDeploymentYamlOptions) {
   return {
-    apiVersion: "example.crossplane.io/v1",
+    apiVersion: DIRECT_PRODUCT_API_VERSION,
     kind: "AP",
     metadata: {
       name: options.name,
@@ -87,30 +88,39 @@ function metadataWithRoutingDomain(
   return nextMetadata;
 }
 
+function stablePlatformAddressId(input: {
+  name: string;
+  namespace: string;
+  port: number;
+}): string {
+  const source = `${input.namespace}/${input.name}/${input.port}`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 33 + source.charCodeAt(index)) % 2_176_782_336;
+  }
+  return `pa_${hash.toString(36).padStart(6, "0")}000000`.slice(0, 15);
+}
+
 export function renderDockerDeploymentYaml(
   options: RenderDockerDeploymentYamlOptions
 ): string {
   const template =
     options.template == null
       ? undefined
-      : renderCrossplaneCompositionTemplate(options.template, {
+      : renderYamlTemplate(options.template, {
           image: options.settings.image,
           name: options.name,
           namespace: options.namespace,
           region: options.routingDomain,
         });
   const doc = parseTemplate(template) ?? baseApClaim(options);
-  doc.apiVersion = "example.crossplane.io/v1";
+  doc.apiVersion = DIRECT_PRODUCT_API_VERSION;
   doc.kind = "AP";
   doc.metadata = metadataWithRoutingDomain(doc, options);
 
   const spec =
     doc.spec && typeof doc.spec === "object"
       ? { ...(doc.spec as Record<string, unknown>) }
-      : {};
-  const crossplane =
-    spec.crossplane && typeof spec.crossplane === "object"
-      ? { ...(spec.crossplane as Record<string, unknown>) }
       : {};
   const input =
     spec.input && typeof spec.input === "object"
@@ -132,7 +142,13 @@ export function renderDockerDeploymentYaml(
       ...network,
       platformAddresses: [
         {
-          id: options.platformAddressId ?? generatePlatformAddressId(),
+          id:
+            options.platformAddressId ??
+            stablePlatformAddressId({
+              name: options.name,
+              namespace: options.namespace,
+              port: appListeningPort,
+            }),
           port: appListeningPort,
         },
       ],
@@ -146,19 +162,14 @@ export function renderDockerDeploymentYaml(
 
   const nextSpec = {
     ...spec,
-    crossplane: {
-      ...crossplane,
-      compositionRef: {
-        name:
-          options.compositionName?.trim() || DEFAULT_DOCKER_AP_COMPOSITION_NAME,
-      },
-    },
     input: nextInput,
     name: options.name,
-    projectName: options.projectName,
+    projectId: options.projectName,
   };
   doc.spec = Object.fromEntries(
-    Object.entries(nextSpec).filter(([key]) => key !== "resource")
+    Object.entries(nextSpec).filter(
+      ([key]) => key !== "legacyRuntime" && key !== "projectName"
+    )
   );
 
   return YAML.stringify(doc).trimEnd();

@@ -6,7 +6,7 @@ import type { VisualTone } from "./project-aggregate-status";
 /** Key on `metadata.annotations` for the UI display name (merge-patched on rename). */
 export const PROJECT_DISPLAY_NAME_ANNOTATION_KEY = "displayName";
 
-/** One Project from `kubectl get projects -o json` / k8s get `kind=projects` (example.crossplane.io/v1). */
+/** Legacy project-list item shape kept for old parser tests and transition helpers. */
 export interface ProjectListItem {
   metadata?: {
     creationTimestamp?: string;

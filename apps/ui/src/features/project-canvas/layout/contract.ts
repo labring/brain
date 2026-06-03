@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CanvasLayoutDocument } from "./types";
 
 const boundedString = z.string().trim().min(1).max(256);
 const finiteNumber = z.number().refine((value) => Number.isFinite(value), {
@@ -35,6 +36,7 @@ export const canvasLayoutNodeSchema = z.object({
 export const canvasLayoutDocumentSchema = z.object({
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
+  projectId: boundedString.optional(),
   projectNameSnapshot: z.string().trim().max(256).optional(),
   projectUid: boundedString,
   version: z.number().int().min(0),
@@ -43,13 +45,15 @@ export const canvasLayoutDocumentSchema = z.object({
 export const canvasLayoutPatchRequestSchema = z.object({
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
+  projectId: boundedString.optional(),
   projectNameSnapshot: z.string().trim().max(256).optional(),
-  projectUid: boundedString,
+  projectUid: boundedString.optional(),
 });
 
 export const canvasLayoutGetQuerySchema = z.object({
   namespace: boundedString,
-  projectUid: boundedString,
+  projectId: boundedString.optional(),
+  projectUid: boundedString.optional(),
 });
 
 export type CanvasLayoutPatchRequest = z.infer<
@@ -57,10 +61,23 @@ export type CanvasLayoutPatchRequest = z.infer<
 >;
 export type CanvasLayoutGetQuery = z.infer<typeof canvasLayoutGetQuerySchema>;
 
+export function parseCanvasLayoutDocument(
+  input: unknown
+): CanvasLayoutDocument {
+  const parsed = canvasLayoutDocumentSchema.parse(input);
+  const projectId = parsed.projectId ?? parsed.projectUid;
+  return { ...parsed, projectId, projectUid: projectId };
+}
+
 export function parseCanvasLayoutPatchRequest(
   input: unknown
 ): CanvasLayoutPatchRequest {
-  return canvasLayoutPatchRequestSchema.parse(input);
+  const parsed = canvasLayoutPatchRequestSchema.parse(input);
+  const projectId = parsed.projectId ?? parsed.projectUid;
+  if (projectId === undefined || projectId.trim() === "") {
+    throw new Error("Canvas layout projectId is required.");
+  }
+  return { ...parsed, projectId, projectUid: projectId };
 }
 
 export function assertCanvasLayoutPatchMatchesOwner(
@@ -78,5 +95,10 @@ export function assertCanvasLayoutPatchMatchesOwner(
 export function parseCanvasLayoutGetQuery(
   input: unknown
 ): CanvasLayoutGetQuery {
-  return canvasLayoutGetQuerySchema.parse(input);
+  const parsed = canvasLayoutGetQuerySchema.parse(input);
+  const projectId = parsed.projectId ?? parsed.projectUid;
+  if (projectId === undefined || projectId.trim() === "") {
+    throw new Error("Canvas layout projectId is required.");
+  }
+  return { ...parsed, projectId, projectUid: projectId };
 }

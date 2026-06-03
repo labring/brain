@@ -9,15 +9,18 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
+	orchestration "sealos/api/service/orchestration"
 )
 
 func registerCreate(grp huma.API) {
 	type createBody struct {
-		YAML string `json:"yaml" required:"true" doc:"AP manifest (YAML or JSON). Must be a single example.crossplane.io/v1, kind: AP resource.\n\nAP spec fields:\n- spec.name: logical instance name used by the Composition for resource naming; defaults to metadata.name if omitted.\n- spec.projectName: optional Project claim name in the same namespace (labels + ownerReference on composed resources).\n- spec.input.image: container image for the Deployment.\n- spec.input.network.privatePort: App Listening Port targeted by the Private Address.\n- spec.input.network.platformAddresses: Public Address requests, each with a stable opaque id and target App Listening Port.\n- spec.input.network.customDomains: Custom Domain Binding requests containing id, domain, and platformAddressId.\n- spec.input.env: environment variables (name + value or valueFrom).\n- spec.input.probes: health probes (startup, liveness, readiness).\n- spec.input.imagePullPolicy: image pull policy (default Always).\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.resource.requests / spec.resource.limits: container resources (cpu, memory).\n- spec.paused: scale to 0 with SealOS pause annotations when true.\n- spec.restartRequest: bump to roll pods via Composition.\n- spec.ingressAnnotations: extra Ingress annotations."`
+		YAML string `json:"yaml" required:"true" doc:"AP product manifest (YAML or JSON). The Go API renders it directly into Kubernetes Deployment and Service resources. Required fields: metadata.name, spec.projectId, spec.input.image, and spec.input.network.privatePort."`
 	}
 	type createInput struct {
 		middleware.AuthInput
@@ -29,12 +32,13 @@ func registerCreate(grp huma.API) {
 		}
 	}
 
-	exampleYAML := `apiVersion: example.crossplane.io/v1
+	exampleYAML := `apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: my-app
 spec:
   name: my-app
+  projectId: project-id
   input:
     image: nginx:1.27
     network:
@@ -74,8 +78,13 @@ spec:
 		Method:      http.MethodPut,
 		Path:        "/",
 		Summary:     "Create or replace AP",
-		Description: "Create an AP instance by applying a single manifest (PUT). Returns the created resource as YAML.\n\n**Request body usage:**\n- Send exactly one AP resource in the `yaml` field.\n- The manifest must use `apiVersion: example.crossplane.io/v1` and `kind: AP`.\n- The AP `spec` is the desired state consumed by the Crossplane Composition; it drives the generated Deployment, Service(s), optional Ingress, and generated EntryPoint from the Network contract.\n\n**How the AP `spec` is used:**\n- `spec.name`: logical instance name used for composed-resource naming. If omitted, `metadata.name` is used.\n- `spec.projectName`: optional Project claim in the same namespace.\n- `spec.input.image`: container image for the Deployment.\n- `spec.input.network.privatePort`: App Listening Port targeted by the Private Address.\n- `spec.input.network.platformAddresses`: Public Address requests (`id` plus target App Listening Port) used to render platform-owned public access and EntryPoint targets.\n- `spec.input.network.customDomains`: Custom Domain Binding requests (`id`, `domain`, `platformAddressId`) saved by AP Settings after CNAME verification.\n- `spec.input.env`: environment variables (`name` + `value` or `valueFrom`).\n- `spec.input.probes`: health probes (startup, liveness, readiness).\n- `spec.input.imagePullPolicy`: image pull policy (default Always).\n- `spec.resource.replicaStrategy.type`: fixed or elastic AP replica behavior.\n- `spec.resource.replicaStrategy.fixed.replicas`: Fixed Replicas count, 1-20.\n- `spec.resource.replicaStrategy.elastic`: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- `spec.resource.requests` / `spec.resource.limits`: container cpu/memory.\n- `spec.paused` / `spec.restartRequest` / `spec.ingressAnnotations`: lifecycle and Ingress metadata.\n\n**Replica Strategy:** `spec.resource.replicaStrategy` is the canonical AP Replica Strategy model for new AP Settings writes. Fixed Replicas pins the AP to one desired replica count. Elastic Scaling lets the AP Composition reconcile an AP-owned horizontal autoscaler from `minReplicas`, `maxReplicas`, and one CPU or Memory target. Legacy `spec.resource.replicas` remains accepted as a Fixed Replicas fallback only when `spec.resource.replicaStrategy` is absent. AP Settings must not create unmanaged autoscaler resources through the generic Kubernetes autoscale API.\n\n**Response:** Returns the created AP in YAML format (server state after apply).\n\n**Copy-pasteable example (use in `yaml` field):**\n```yaml\n" + exampleYAML + "\n```",
-		Tags:        []string{"AP"},
+		Description: "Create an AP instance from one Brain AP product manifest (PUT). The Go API renders direct Kubernetes Deployment and Service resources and returns the AP product view as YAML.\n\n" +
+			"**Request body usage:**\n" +
+			"- Send exactly one AP manifest in the `yaml` field.\n" +
+			"- Required fields are `metadata.name`, `spec.projectId`, `spec.input.image`, and `spec.input.network.privatePort`.\n\n" +
+			"**Response:** Returns the created AP product view in YAML format.\n\n" +
+			"**Copy-pasteable example (use in `yaml` field):**\n```yaml\n" + exampleYAML + "\n```",
+		Tags: []string{"AP"},
 	}, func(ctx context.Context, input *createInput) (*createOutput, error) {
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
@@ -114,21 +123,31 @@ spec:
 			input.Body.YAML = string(yamlBytes)
 		}
 
-		if err := k8ssvc.ApplyYAML(restConfig, []byte(input.Body.YAML), ns); err != nil {
+		renderInput := apRenderInputFromObject(obj, ns)
+		resources, err := orchestration.RenderAPResources(renderInput)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid AP direct resource request", err)
+		}
+		if err := k8ssvc.ApplyObjects(restConfig, []runtime.Object{resources.Deployment, resources.Service}, ns); err != nil {
 			return nil, huma.Error500InternalServerError("failed to create AP", err)
 		}
 
 		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "aps",
-			Name:      name,
-			Namespace: ns,
+			Resource:      "deployments",
+			Name:          name,
+			Namespace:     ns,
+			LabelSelector: orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get created AP", err)
 		}
 
+		body, err := apResponseFromDeployments(jsonBytes, true)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to adapt created AP", err)
+		}
 		var created map[string]interface{}
-		if err := json.Unmarshal(jsonBytes, &created); err != nil {
+		if err := json.Unmarshal(body, &created); err != nil {
 			return nil, huma.Error500InternalServerError("failed to marshal created AP", err)
 		}
 		yamlBytes, err := yaml.Marshal(created)
@@ -139,6 +158,51 @@ spec:
 		out.Body.YAML = string(yamlBytes)
 		return &out, nil
 	})
+}
+
+func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) orchestration.APResourcesInput {
+	spec, _ := obj.Object["spec"].(map[string]interface{})
+	input, _ := spec["input"].(map[string]interface{})
+	network, _ := input["network"].(map[string]interface{})
+	resourceSpec, _ := spec["resource"].(map[string]interface{})
+	projectID := stringFromMap(spec, "projectId")
+	if projectID == "" {
+		projectID = stringFromMap(spec, "projectID")
+	}
+	return orchestration.APResourcesInput{
+		Image:       stringFromMap(input, "image"),
+		Name:        obj.GetName(),
+		Namespace:   namespace,
+		PrivatePort: int32FromMap(network, "privatePort"),
+		ProjectID:   projectID,
+		Replicas:    int32FromMap(resourceSpec, "replicas"),
+	}
+}
+
+func stringFromMap(values map[string]interface{}, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func int32FromMap(values map[string]interface{}, key string) int32 {
+	if values == nil {
+		return 0
+	}
+	switch value := values[key].(type) {
+	case int:
+		return int32(value)
+	case int32:
+		return value
+	case int64:
+		return int32(value)
+	case float64:
+		return int32(value)
+	default:
+		return 0
+	}
 }
 
 func registerUpdate(grp huma.API) {
@@ -157,7 +221,7 @@ func registerUpdate(grp huma.API) {
 		Method:      http.MethodPatch,
 		Path:        "/",
 		Summary:     "Update AP",
-		Description: "Patch an AP instance by name.\n\nRequest parameter usage:\n- `name` is required and selects the AP to patch.\n- `namespace` is optional; admins can use it to target a different namespace.\n- The request body must be a JSON merge patch fragment for the AP resource.\n\nPatch semantics:\n- Only the fields present in the patch body are changed.\n- Nested objects are merged at the subtree you provide.\n- Arrays such as `spec.input.network.platformAddresses`, `spec.input.network.customDomains`, and `spec.input.env` are replaced as whole lists.\n\nCommon patch targets:\n- `spec.input.image`: change the deployed image.\n- `spec.input.network.privatePort`: change the Private Address target port.\n- `spec.input.network.platformAddresses`: replace Public Address requests.\n- `spec.input.network.customDomains`: replace Custom Domain Binding requests.\n- `spec.resource.replicaStrategy`: change Fixed Replicas or Elastic Scaling canonical desired state.\n- `spec.input.env` / `spec.input.probes`: container env and probes.\n- `spec.resource.requests` / `spec.resource.limits`: container resources.\n- `spec.paused` / `spec.restartRequest` / `spec.ingressAnnotations`: lifecycle and Ingress metadata.\n\nReplica Strategy: `spec.resource.replicaStrategy` is the canonical AP Replica Strategy model for new AP Settings writes. Fixed Replicas pins the AP to one desired replica count. Elastic Scaling lets the AP Composition reconcile an AP-owned horizontal autoscaler from `minReplicas`, `maxReplicas`, and one CPU or Memory target. Legacy `spec.resource.replicas` remains accepted as a Fixed Replicas fallback only when `spec.resource.replicaStrategy` is absent. AP Settings must not create unmanaged autoscaler resources through the generic Kubernetes autoscale API.",
+		Description: "Patch an AP instance by name. The Go API translates supported AP product patch fields into direct Kubernetes Deployment updates. Supported patch targets include `spec.input.image`, `spec.resource.replicas`, and `spec.paused`.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *updateInput) (*updateOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -183,11 +247,11 @@ func registerUpdate(grp huma.API) {
 		}
 
 		jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
-			Resource:  "aps",
+			Resource:  "deployments",
 			Name:      input.Name,
 			Namespace: resolved.Namespace,
-			PatchType: k8ssvc.PatchTypeMerge,
-			Patch:     input.Body,
+			PatchType: k8ssvc.PatchTypeStrategic,
+			Patch:     apDeploymentPatchFromProductPatch(input.Body, input.Name),
 		})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -195,8 +259,68 @@ func registerUpdate(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to update AP", err)
 		}
-		return &updateOutput{Body: json.RawMessage(jsonBytes)}, nil
+		body, err := apResponseFromDeployments(jsonBytes, true)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to adapt AP response", err)
+		}
+		return &updateOutput{Body: body}, nil
 	})
+}
+
+func apDeploymentPatchFromProductPatch(raw json.RawMessage, name string) []byte {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return raw
+	}
+	spec, _ := patch["spec"].(map[string]interface{})
+	deploymentPatch := map[string]interface{}{}
+	templatePatch := map[string]interface{}{}
+	metadataPatch := map[string]interface{}{}
+	annotationsPatch := map[string]interface{}{}
+	paused := false
+	hasPaused := false
+
+	if value, ok := spec["paused"].(bool); ok {
+		paused = value
+		hasPaused = true
+		annotationsPatch[orchestration.LaunchpadPauseAnnotation] = map[bool]string{true: "true", false: "false"}[paused]
+		if paused {
+			deploymentPatch["replicas"] = 0
+		} else {
+			deploymentPatch["replicas"] = 1
+		}
+	}
+	if input, _ := spec["input"].(map[string]interface{}); input != nil {
+		containerPatch := map[string]interface{}{"name": name}
+		if image := stringFromMap(input, "image"); image != "" {
+			containerPatch["image"] = image
+		}
+		if len(containerPatch) > 1 {
+			templatePatch["spec"] = map[string]interface{}{
+				"containers": []interface{}{containerPatch},
+			}
+		}
+	}
+	if resourceSpec, _ := spec["resource"].(map[string]interface{}); resourceSpec != nil {
+		if replicas := int32FromMap(resourceSpec, "replicas"); replicas > 0 && !(hasPaused && paused) {
+			deploymentPatch["replicas"] = replicas
+		}
+	}
+	if len(annotationsPatch) > 0 {
+		metadataPatch["annotations"] = annotationsPatch
+	}
+	if len(metadataPatch) > 0 {
+		deploymentPatch["metadata"] = metadataPatch
+	}
+	if len(templatePatch) > 0 {
+		deploymentPatch["template"] = templatePatch
+	}
+	out := map[string]interface{}{"spec": deploymentPatch}
+	bytes, err := json.Marshal(out)
+	if err != nil {
+		return raw
+	}
+	return bytes
 }
 
 func registerDelete(grp huma.API) {
@@ -216,7 +340,7 @@ func registerDelete(grp huma.API) {
 		Method:      http.MethodDelete,
 		Path:        "/",
 		Summary:     "Delete AP",
-		Description: "Delete an AP instance by name.\n\nParameter usage:\n- `name` is required and selects the AP to delete.\n- `namespace` is optional; admins can override the namespace from kubeconfig.\n\nBehavior:\n- The AP and its composed resources (Deployment, Services, Ingress) are owned by Crossplane and should be garbage-collected when the AP is deleted.",
+		Description: "Delete an AP instance by name.\n\nParameter usage:\n- `name` is required and selects the AP to delete.\n- `namespace` is optional; admins can override the namespace from kubeconfig.\n\nBehavior:\n- The Go API explicitly deletes Brain-managed public routing support resources, private Service, and Deployment using brain.io labels.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *deleteInput) (*deleteOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -238,12 +362,7 @@ func registerDelete(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
-		_, err = k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-			Resource:  "aps",
-			Name:      input.Name,
-			Namespace: resolved.Namespace,
-		})
-		if err != nil {
+		if err := deleteAPDirectResources(cfg, input.Name, resolved.Namespace); err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("AP not found", err)
 			}
@@ -257,6 +376,29 @@ func registerDelete(grp huma.API) {
 			},
 		}, nil
 	})
+}
+
+func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namespace string) error {
+	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name
+	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets"} {
+		_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
+			LabelSelector: selector,
+			Namespace:     namespace,
+			Resource:      resource,
+		})
+		if err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+			return err
+		}
+	}
+	_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
+		Name:      name,
+		Namespace: namespace,
+		Resource:  "deployments",
+	})
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // Composed Deployment name matches the AP (metadata.name); see

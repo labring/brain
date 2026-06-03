@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -22,20 +23,8 @@ import (
 // implicitNamespace is used when a namespaced object has an empty metadata.namespace
 // (typically the current context namespace from kubeconfig when set at the route layer).
 func ApplyYAML(config *rest.Config, yamlBytes []byte, implicitNamespace string) error {
-	client, err := dynamic.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-	discoveryClient := memory.NewMemCacheClient(clientset.Discovery())
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(discoveryClient)
-
+	objects := []*unstructured.Unstructured{}
 	docs := splitYAMLDocuments(yamlBytes)
-	ctx := context.Background()
-
 	for _, doc := range docs {
 		doc = strings.TrimSpace(doc)
 		if doc == "" {
@@ -48,7 +37,44 @@ func ApplyYAML(config *rest.Config, yamlBytes []byte, implicitNamespace string) 
 		if len(m) == 0 {
 			continue
 		}
-		obj := &unstructured.Unstructured{Object: m}
+		objects = append(objects, &unstructured.Unstructured{Object: m})
+	}
+	return ApplyUnstructured(config, objects, implicitNamespace)
+}
+
+func ApplyObjects(config *rest.Config, objects []runtime.Object, implicitNamespace string) error {
+	unstructuredObjects := make([]*unstructured.Unstructured, 0, len(objects))
+	for _, object := range objects {
+		if object == nil {
+			continue
+		}
+		m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
+		if err != nil {
+			return err
+		}
+		unstructuredObjects = append(unstructuredObjects, &unstructured.Unstructured{Object: m})
+	}
+	return ApplyUnstructured(config, unstructuredObjects, implicitNamespace)
+}
+
+func ApplyUnstructured(config *rest.Config, objects []*unstructured.Unstructured, implicitNamespace string) error {
+	client, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+	discoveryClient := memory.NewMemCacheClient(clientset.Discovery())
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(discoveryClient)
+
+	ctx := context.Background()
+
+	for _, obj := range objects {
+		if obj == nil || len(obj.Object) == 0 {
+			continue
+		}
 		gvk := obj.GroupVersionKind()
 		if gvk.Kind == "" {
 			continue

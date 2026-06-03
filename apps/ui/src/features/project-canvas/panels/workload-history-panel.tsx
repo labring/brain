@@ -234,8 +234,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
               <span className="break-all font-mono text-foreground">
                 {rollbackConfirmCm ?? ""}
               </span>
-              . This rolls configuration forward via the claim (Crossplane then
-              reconciles workloads).
+              . This rolls configuration forward through the AP product API.
             </AppDialog.Description>
           </AppDialog.Body>
           <AppDialog.Footer>

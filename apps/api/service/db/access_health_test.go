@@ -285,8 +285,8 @@ func (r *recordingWhoDBHealthClient) CheckHealth(_ context.Context, credentials 
 
 func readyAccessHealthDB(name, namespace, engine, projectUID string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "example.crossplane.io/v1",
-		"kind":       "DB",
+		"apiVersion": "apps.kubeblocks.io/v1",
+		"kind":       "Cluster",
 		"metadata": map[string]interface{}{
 			"name":      name,
 			"namespace": namespace,
@@ -295,7 +295,7 @@ func readyAccessHealthDB(name, namespace, engine, projectUID string) *unstructur
 			},
 		},
 		"spec": map[string]interface{}{
-			"engine": engine,
+			"clusterDefinitionRef": engine,
 		},
 		"status": map[string]interface{}{
 			"phase":             "Running",

@@ -244,7 +244,7 @@ test("AP network settings backfills routing domain label when adding Public Addr
       publicAddresses: [{ id: "pa_abc123", port: 80 }],
     },
     {
-      metadata: { labels: { "crossplane.io/project-name": "demo" } },
+      metadata: { labels: { "brain.io/project-id": "demo" } },
       routingDomain: "192.168.12.53.nip.io",
     }
   );
@@ -1040,7 +1040,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
     },
     previous,
     {
-      metadata: { labels: { "crossplane.io/project-name": "demo" } },
+      metadata: { labels: { "brain.io/project-id": "demo" } },
       routingDomain: "192.168.12.53.nip.io",
     }
   );

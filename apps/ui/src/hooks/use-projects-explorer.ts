@@ -1,16 +1,9 @@
 "use client";
 
-import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
-import {
-  type K8sGetResponse,
-  k8sGetQuerySchema,
-  k8sGetResponseSchema,
-} from "@workspace/api/schemas/k8s-get";
-import { ApiUrl } from "@workspace/api/utils";
-import { PROJECT_UID_LABEL } from "@workspace/crossplane/constants";
+import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   ProjectExplorerActions,
   ProjectExplorerProject,
@@ -20,21 +13,22 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
+import {
+  type BrainProjectResponse,
+  type BrainProjectsResponse,
+  brainProjectsToExplorerProjects,
+  isProjectDisplayNameTaken,
+} from "@/lib/brain-projects";
 import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
 } from "@/lib/project-aggregate-status";
-import {
-  isProjectDisplayNameTaken,
-  PROJECT_DISPLAY_NAME_ANNOTATION_KEY,
-  projectsListToExplorerProjects,
-} from "@/lib/projects-to-explorer-projects";
 import { openAssistantPane } from "@/store/layout-store";
 
 /**
- * Extracts `{ projectUid, phase, paused }` per workload from an AP or DB list
- * response. Items without a `crossplane.io/project-uid` label are skipped
+ * Extracts `{ projectId, phase, paused }` per workload from an AP or DB list
+ * response. Items without a `brain.io/project-id` label are skipped
  * (they aren't tied to any Project row, so they cannot contribute).
  */
 function projectWorkloadsFromList(
@@ -49,24 +43,20 @@ function projectWorkloadsFromList(
     const item = raw as Record<string, unknown>;
     const meta = item.metadata as Record<string, unknown> | undefined;
     const labels = meta?.labels as Record<string, unknown> | undefined;
-    const projectUid = labels?.[PROJECT_UID_LABEL];
-    if (typeof projectUid !== "string" || projectUid === "") {
+    const projectId = labels?.[BRAIN_PROJECT_ID_LABEL];
+    if (typeof projectId !== "string" || projectId === "") {
       continue;
     }
     const status = item.status as Record<string, unknown> | undefined;
     const phaseRaw = status?.phase;
     const spec = item.spec as Record<string, unknown> | undefined;
     result.push({
-      projectUid,
+      projectUid: projectId,
       phase: typeof phaseRaw === "string" ? phaseRaw : undefined,
       paused: spec?.paused === true,
     });
   }
   return result;
-}
-
-function projectResourceName(p: ProjectExplorerProject): string {
-  return p.resourceName ?? p.name;
 }
 
 export function useProjectsExplorer(options: {
@@ -89,43 +79,33 @@ export function useProjectsExplorer(options: {
   const onNewProjectOverride = options.onNewProject;
   const hasKubeconfig = kubeconfig !== "";
 
-  const getParams = useMemo(
-    () =>
-      k8sGetQuerySchema.parse({
-        kind: "projects",
-        ...(ns ? { namespace: ns } : {}),
-      }),
-    [ns]
-  );
+  const projectsQuery = useMemo(() => ({ namespace: ns }), [ns]);
 
   const { data: rawProjects, mutate } = useSWR(
-    hasKubeconfig ? ([API_ROUTES.k8s.get, getParams] as const) : null,
+    hasKubeconfig && ns !== ""
+      ? (["/api/projects", projectsQuery] as const)
+      : null,
     () =>
-      fetcher<K8sGetResponse>({
-        base: ApiUrl(),
-        path: API_ROUTES.k8s.get,
-        query: { ...getParams },
-        header: {
-          Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-        },
-        method: "GET",
-        select: (raw) => k8sGetResponseSchema.parse(raw),
+      fetcher<BrainProjectsResponse>({
+        base: window.location.origin,
+        path: "/api/projects",
+        query: projectsQuery,
       })
   );
 
   // Project Aggregate Status fan-out. We list every AP/DB in the namespace
-  // that carries a `crossplane.io/project-uid` label and join in memory;
+  // that carries a `brain.io/project-id` label and join in memory;
   // project names render as soon as the projects request resolves and dots
   // fill in when these arrive.
-  const projectUidLabelExistence = PROJECT_UID_LABEL;
+  const projectIdLabelExistence = BRAIN_PROJECT_ID_LABEL;
   const { data: apsData } = useApsK8sList({
     kubeconfig,
-    labelSelector: projectUidLabelExistence,
+    labelSelector: projectIdLabelExistence,
     namespace: ns,
   });
   const { data: dbsData } = useDbsK8sList({
     kubeconfig,
-    labelSelector: projectUidLabelExistence,
+    labelSelector: projectIdLabelExistence,
     namespace: ns,
   });
 
@@ -140,7 +120,7 @@ export function useProjectsExplorer(options: {
   }, [apsData, dbsData]);
 
   const projects = useMemo<ProjectExplorerProject[]>(
-    () => projectsListToExplorerProjects(rawProjects, statusByProjectUid),
+    () => brainProjectsToExplorerProjects(rawProjects, statusByProjectUid),
     [rawProjects, statusByProjectUid]
   );
 
@@ -180,36 +160,25 @@ export function useProjectsExplorer(options: {
         throw new Error(`A project named "${displayName}" already exists.`);
       }
       try {
-        await fetcher({
-          base: ApiUrl(),
-          path: API_ROUTES.k8s.patch,
-          query: {
-            kind: "projects",
-            name: projectResourceName(p),
-            type: "merge",
-            ...(ns === "" ? {} : { namespace: ns }),
-          },
+        const result = await fetcher<BrainProjectResponse>({
+          base: window.location.origin,
+          path: "/api/projects",
           method: "PATCH",
           body: {
-            metadata: {
-              annotations: {
-                [PROJECT_DISPLAY_NAME_ANNOTATION_KEY]: displayName,
-              },
-            },
-          },
-          header: {
-            Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+            displayName,
+            id: p.id,
+            namespace: ns,
           },
         });
         await mutate();
-        toast.success(`Project renamed to "${displayName}".`);
+        toast.success(`Project renamed to "${result.project.displayName}".`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Rename failed";
         toast.error(msg);
         throw e;
       }
     },
-    [hasKubeconfig, kubeconfig, mutate, ns, projects]
+    [hasKubeconfig, mutate, ns, projects]
   );
 
   const onProjectDelete = useCallback(
@@ -220,16 +189,12 @@ export function useProjectsExplorer(options: {
       }
       try {
         await fetcher({
-          base: ApiUrl(),
-          path: API_ROUTES.k8s.delete,
-          query: {
-            kind: "projects",
-            name: projectResourceName(p),
-            ...(ns === "" ? {} : { namespace: ns }),
-          },
+          base: window.location.origin,
+          path: "/api/projects",
           method: "DELETE",
-          header: {
-            Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+          body: {
+            id: p.id,
+            namespace: ns,
           },
         });
         await mutate();
@@ -244,7 +209,7 @@ export function useProjectsExplorer(options: {
         throw e;
       }
     },
-    [hasKubeconfig, kubeconfig, mutate, ns, pathname, router]
+    [hasKubeconfig, mutate, ns, pathname, router]
   );
 
   const actions = useMemo(

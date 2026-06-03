@@ -15,4 +15,4 @@ export {
   platformAddressHost,
   platformAddressIdFromValue,
   platformAddressIdsFromRows,
-} from "@workspace/crossplane/lib/platform-address";
+} from "@workspace/ui/lib/platform-address";

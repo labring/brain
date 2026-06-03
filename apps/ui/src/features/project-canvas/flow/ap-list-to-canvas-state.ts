@@ -5,7 +5,6 @@ import type {
 } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { getToneForStatus } from "@workspace/crossplane/lib/status";
 import type { ContainerNodeStates } from "@workspace/ui/components/container-node/container-node";
 import type {
   DatabaseEngineKey,
@@ -59,6 +58,12 @@ const ENTRY_NODE_PROTOCOL_PATTERN = /^https?:\/\//;
 const ENTRY_NODE_STATUS_SEPARATOR_PATTERN = /[\s_]+/g;
 const ENTRY_NODE_TRAILING_SLASH_PATTERN = /\/$/;
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
+const STATUS_TONES = new Set(["running", "pending", "failed", "paused"]);
+
+function getToneForStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  return normalized && STATUS_TONES.has(normalized) ? normalized : undefined;
+}
 
 export interface WorkloadMetricPercents {
   cpuPercent?: number;
@@ -297,28 +302,12 @@ function databaseMetadataFromResource(
   return { labels };
 }
 
-function databaseCompositionNameFromSpec(
-  spec: Record<string, unknown>
-): string | undefined {
-  const crossplane = asRecord(spec.crossplane);
-  const crossplaneCompositionRef = asRecord(crossplane?.compositionRef);
-  const crossplaneCompositionName = nonEmptyString(
-    crossplaneCompositionRef?.name
-  );
-  if (crossplaneCompositionName !== undefined) {
-    return crossplaneCompositionName;
-  }
-
-  const compositionRef = asRecord(spec.compositionRef);
-  return nonEmptyString(compositionRef?.name);
-}
-
 function entryPointApRefFromResource(input: unknown): string | undefined {
   return nonEmptyString(asRecord(asRecord(input)?.spec)?.apRef);
 }
 
 /**
- * Maps one AP list item (example.crossplane.io/v1 `AP`) into {@link ContainerNodeStates}.
+ * Maps one AP product view into {@link ContainerNodeStates}.
  * Sets **kind**, **image**, **name**, **replicas** (from AP replica strategy), **uid**
  * (from `metadata.uid` when present), and **status** from `status.phase`.
  * When paused or desired replicas are zero, status is shown as **Paused** regardless of `status.phase`.
@@ -428,7 +417,7 @@ export function apsToCanvasState(
 }
 
 /**
- * Maps one DB list item (example.crossplane.io/v1 `DB`) into `DatabaseNode` props.
+ * Maps one DB product view into `DatabaseNode` props.
  */
 export function dbToDatabaseNodeData(
   db: unknown,
@@ -459,11 +448,10 @@ export function dbToDatabaseNodeData(
     engineKey,
     status,
   });
-  const compositionName = databaseCompositionNameFromSpec(spec);
   const iconUrl =
-    compositionName === undefined
+    engineKey === undefined
       ? undefined
-      : options?.compositionIconByName?.get(compositionName);
+      : options?.compositionIconByName?.get(engineKey);
   const metricCapacities = databaseMetricCapacitiesFromStatus(status);
   const mountPath = nonEmptyString(status.mountPath);
 

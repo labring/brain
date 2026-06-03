@@ -34,7 +34,7 @@ export default function ProjectUidPage() {
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     namespace,
-    projectUid: uid,
+    projectId: uid,
   });
 
   const {

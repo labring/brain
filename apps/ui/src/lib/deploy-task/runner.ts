@@ -40,7 +40,7 @@ const DEVBOX_SDK_READY_RETRY_DELAY_MS = 2000;
 const DEVBOX_DEFAULT_MAX_DURATION_MINUTES = 300;
 const DEPLOY_WORKSPACE_DIR = "/home/devbox/project";
 const DEPLOY_OUTPUT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/deployment-output.json`;
-const DEPLOY_AP_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/crossplane/ap.yaml`;
+const DEPLOY_AP_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain/ap.yaml`;
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
 const APPLY_OUTPUT_TIMEOUT_SECONDS = 120;
@@ -237,9 +237,9 @@ function prepareWorkspaceOutputCommand(): string {
   return [
     "set -euo pipefail",
     `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
-    'mkdir -p "$workspace_dir/.sealos/crossplane"',
+    'mkdir -p "$workspace_dir/.sealos/brain"',
     'rm -f "$workspace_dir/.sealos/deployment-output.json"',
-    'rm -f "$workspace_dir/.sealos/crossplane/ap.yaml"',
+    'rm -f "$workspace_dir/.sealos/brain/ap.yaml"',
     "if id devbox >/dev/null 2>&1; then",
     '  if [ "$(id -u)" = "0" ]; then',
     '    chown -R devbox:devbox "$workspace_dir/.sealos"',
@@ -595,7 +595,7 @@ export async function startDeployTaskRunner(
     });
     await recordDeployTaskEvent(task.id, {
       kind: "deploy_task.apply_started",
-      message: "Applying generated Crossplane resources.",
+      message: "Applying generated Brain direct resources.",
       payload: { resources: preparedArtifacts.resources },
       phase: "apply",
     });

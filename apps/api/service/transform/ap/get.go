@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// APCompositeLabel is the label key used to find ingresses for an AP (Application) instance.
-const APCompositeLabel = "crossplane.io/composite"
+// APCompositeLabel is the label key used to find direct support resources for an AP instance.
+const APCompositeLabel = "brain.io/app-name"
 
 // defaultIngressHostFromComposition is a placeholder from older generated templates.
 // It must not surface as a real connection URL.

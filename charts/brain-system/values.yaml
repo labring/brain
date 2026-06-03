@@ -3,6 +3,8 @@ global:
   labels: {}
   annotations: {}
 
+projectId: brain-system
+
 imagePullSecret:
   create: false
   useForWhodb: false
@@ -17,7 +19,6 @@ secrets:
 database:
   enabled: true
   name: brain-pg
-  compositionRef: dbs-postgresql-kubeblocks-go-templating
   engine: postgresql
   quota: xs
   replicas: 1
@@ -40,7 +41,6 @@ database:
 api:
   enabled: true
   name: sealai-api-staging
-  compositionRef: aps-deployment-ingress-go-templating
   image: aimerite/sealai-api:latest
   imagePullPolicy: Always
   port: 9000
@@ -91,7 +91,6 @@ api:
 ui:
   enabled: true
   name: sealai-ui-staging
-  compositionRef: aps-deployment-ingress-go-templating
   image: aimerite/sealai-ui:latest
   imagePullPolicy: Always
   port: 3000
@@ -155,7 +154,6 @@ ui:
 registry:
   enabled: true
   name: sealai-registry
-  compositionRef: aps-deployment-ingress-go-templating
   image: puddlecat/sealai-registry:latest
   imagePullPolicy: Always
   port: 10000

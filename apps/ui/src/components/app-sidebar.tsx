@@ -3,7 +3,6 @@
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { PROJECT_UID_LABEL } from "@workspace/crossplane/constants";
 import {
   type DeviconKey,
   deviconSrc,
@@ -21,6 +20,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 interface WorkloadShortcutCandidate {
@@ -60,36 +60,13 @@ function metadataCreationTimestamp(value: unknown): string {
 
 function projectUidFromResource(value: unknown): string | undefined {
   const labels = asRecord(metadataRecord(value).labels);
-  return nonEmptyString(labels?.[PROJECT_UID_LABEL]);
-}
-
-function compositionNameFromSpec(
-  spec: Record<string, unknown>
-): string | undefined {
-  const crossplane = asRecord(spec.crossplane);
-  const crossplaneCompositionRef = asRecord(crossplane?.compositionRef);
-  const crossplaneCompositionName = nonEmptyString(
-    crossplaneCompositionRef?.name
-  );
-  if (crossplaneCompositionName !== undefined) {
-    return crossplaneCompositionName;
-  }
-
-  const compositionRef = asRecord(spec.compositionRef);
-  return nonEmptyString(compositionRef?.name);
+  return nonEmptyString(labels?.[BRAIN_PROJECT_ID_LABEL]);
 }
 
 function databaseIconKeyFromSpec(spec: Record<string, unknown>): DeviconKey {
   const engine = nonEmptyString(spec.engine)?.toLowerCase();
   if (engine && engine in devicons && engine !== "docker") {
     return engine as DeviconKey;
-  }
-
-  const compositionName = compositionNameFromSpec(spec)?.toLowerCase() ?? "";
-  for (const key of ["mongodb", "mysql", "postgresql", "redis"] as const) {
-    if (compositionName.includes(key)) {
-      return key;
-    }
   }
 
   return "docker";
@@ -297,7 +274,7 @@ export default function AppSidebar() {
     ns: namespace,
   });
 
-  const projectUidLabelExistence = PROJECT_UID_LABEL;
+  const projectUidLabelExistence = BRAIN_PROJECT_ID_LABEL;
   const { data: apsData } = useApsK8sList({
     kubeconfig,
     labelSelector: projectUidLabelExistence,

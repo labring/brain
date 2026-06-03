@@ -60,17 +60,7 @@ func IsUnknownResourceError(err error, resource string) bool {
 // Get retrieves Kubernetes resources and returns them as JSON.
 // Use GetOptions.Resource for the type (pods, deploy, etc.) and GetOptions.Name for a specific resource.
 // Namespace is read from cfg's current context when opts.Namespace is empty.
-// For composition, xrd, compositionrevisions: uses ENCODED_ADMIN_KUBECONFIG and crossplane-system namespace.
 func Get(cfg *clientcmdapi.Config, opts GetOptions) ([]byte, error) {
-	adminCfg, adminNS, err := middleware.AdminConfigForQuery(opts.Resource)
-	if err != nil {
-		return nil, fmt.Errorf("invalid ENCODED_ADMIN_KUBECONFIG: %w", err)
-	}
-	if adminCfg != nil {
-		cfg = adminCfg
-		opts.Namespace = adminNS
-	}
-
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
 		AllNamespaces:    opts.AllNamespaces,

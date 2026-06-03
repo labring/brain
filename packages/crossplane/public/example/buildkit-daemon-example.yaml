@@ -1,7 +1,0 @@
-# BuildKit daemon for S2I — canonical manifest:
-#
-#   kubectl apply -f packages/crossplane/service/task/buildkit-daemon.yaml
-#
-# Namespace: build-system. Tasks default to this URL; you only need spec.buildkitHost if the Service differs.
-#
-# See packages/crossplane/example/s2i-example.yaml.

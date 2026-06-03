@@ -1,5 +1,5 @@
 {{- if .Values.ui.enabled }}
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: {{ .Values.ui.name }}
@@ -12,9 +12,7 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 spec:
-  crossplane:
-    compositionRef:
-      name: {{ .Values.ui.compositionRef }}
+  projectId: {{ .Values.projectId | default .Release.Namespace | quote }}
   input:
     image: {{ .Values.ui.image | quote }}
     imagePullPolicy: {{ .Values.ui.imagePullPolicy }}

@@ -75,14 +75,7 @@ function mergePatchDb(
   });
 }
 
-/**
- * Imperative lifecycle for **example.crossplane.io/v1** `DB` workloads.
- *
- * - **Start/stop** → `POST /api/db/v1alpha1/start|stop`, patching `spec.paused`.
- * - **Restart** → `POST /api/db/v1alpha1/restart`, server-incrementing `spec.restartRequest`.
- * - **Delete** → claim DELETE, preserving terminationPolicy semantics.
- * - **Public access** → `spec.exposeNodePort` -> KubeBlocks NodePort Service reconciliation.
- */
+/** Imperative lifecycle for Brain DB product views backed by KubeBlocks Clusters. */
 export function useDbLifecycleOperations(options: UseDbLifecycleOptions) {
   const kubeconfig = options.kubeconfig ?? "";
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(() => new Set());

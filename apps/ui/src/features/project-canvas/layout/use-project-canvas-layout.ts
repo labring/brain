@@ -18,24 +18,24 @@ const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
 export function useProjectCanvasLayout(options: {
   enabled?: boolean;
   namespace: string;
-  projectUid: string;
+  projectId: string;
 }) {
   const namespace = options.namespace.trim();
-  const projectUid = options.projectUid.trim();
+  const projectId = options.projectId.trim();
   const enabled =
-    options.enabled === true && namespace !== "" && projectUid !== "";
+    options.enabled === true && namespace !== "" && projectId !== "";
 
   const swrKey = enabled
-    ? ([PROJECT_CANVAS_LAYOUT_API_PATH, namespace, projectUid] as const)
+    ? ([PROJECT_CANVAS_LAYOUT_API_PATH, namespace, projectId] as const)
     : null;
   const { data, error, isLoading, mutate } = useSWR(swrKey, () =>
     fetchProjectCanvasLayout({
       namespace,
-      projectUid,
+      projectId,
     })
   );
 
-  const loadToastKey = enabled ? `${namespace}:${projectUid}` : "";
+  const loadToastKey = enabled ? `${namespace}:${projectId}` : "";
   const loadToastShownForRef = useRef("");
   useEffect(() => {
     if (error == null || loadToastKey === "") {
@@ -59,7 +59,7 @@ export function useProjectCanvasLayout(options: {
         const next = await patchProjectCanvasLayoutNodes({
           namespace,
           nodes,
-          projectUid,
+          projectId,
         });
         await mutate(next, { revalidate: false });
       } catch {
@@ -68,7 +68,7 @@ export function useProjectCanvasLayout(options: {
         );
       }
     },
-    [enabled, mutate, namespace, projectUid]
+    [enabled, mutate, namespace, projectId]
   );
 
   const scheduler = useMemo(

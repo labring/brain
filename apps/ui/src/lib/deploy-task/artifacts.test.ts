@@ -23,7 +23,7 @@ function task(
   };
 }
 
-test("prepareDeployTaskArtifacts normalizes supported Crossplane claims", () => {
+test("prepareDeployTaskArtifacts normalizes supported Brain direct manifests", () => {
   const result = prepareDeployTaskArtifacts({
     output: {
       deploymentOutput: {
@@ -32,7 +32,7 @@ test("prepareDeployTaskArtifacts normalizes supported Crossplane claims", () => 
       },
       resourceYamls: [
         `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: web
@@ -48,7 +48,7 @@ spec:
 
   assert.equal(result.resources.length, 1);
   assert.deepEqual(result.resources[0], {
-    apiVersion: "example.crossplane.io/v1",
+    apiVersion: "brain.io/direct",
     kind: "AP",
     name: "web",
     namespace: "tenant-a",
@@ -56,13 +56,11 @@ spec:
 
   const doc = YAML.parse(result.yaml) as Record<string, unknown>;
   assert.equal((doc.metadata as { namespace?: string }).namespace, "tenant-a");
-  assert.equal(
-    (doc.spec as { projectName?: string }).projectName,
-    "demo-project"
-  );
+  assert.equal((doc.spec as { projectId?: string }).projectId, "project-uid");
+  assert.equal((doc.spec as { projectName?: string }).projectName, undefined);
   assert.equal(
     (doc.metadata as { labels?: Record<string, string> }).labels?.[
-      "crossplane.io/project-uid"
+      "brain.io/project-id"
     ],
     "project-uid"
   );
@@ -79,7 +77,7 @@ test("prepareDeployTaskArtifacts rejects failed deployment-output contracts", ()
           },
           resourceYamls: [
             `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: web
@@ -102,7 +100,7 @@ test("prepareDeployTaskArtifacts rejects retired AP top-level image schema", () 
         output: {
           resourceYamls: [
             `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: web
@@ -146,7 +144,7 @@ test("prepareDeployTaskArtifacts requires project name before apply", () => {
         output: {
           resourceYamls: [
             `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: pg

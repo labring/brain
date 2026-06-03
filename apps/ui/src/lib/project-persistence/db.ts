@@ -4,10 +4,11 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import { getAppPostgresPool } from "@/lib/app-postgres/db";
 
-import { projectCanvasLayouts } from "./schema";
+import { projectCanvasLayouts, projects } from "./schema";
 
 const projectSchema = {
   projectCanvasLayouts,
+  projects,
 };
 
 export type ProjectPgDatabase = NodePgDatabase<typeof projectSchema>;

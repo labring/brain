@@ -9,7 +9,7 @@ import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas
 export type VisualTone = CanvasNodeVisualStatusTone;
 
 /**
- * Maps a raw Crossplane phase string (e.g. `"Running"`, `"Creating"`, `"Failed"`,
+ * Maps a raw workload phase string (e.g. `"Running"`, `"Creating"`, `"Failed"`,
  * `"Paused"`, `""`) onto the 5-tone {@link VisualTone}. Case-insensitive; unknown
  * or empty input → `"neutral"`.
  */
@@ -73,7 +73,7 @@ export interface ProjectWorkloadStatusInput {
  *
  * The `warning` slot is included in the severity ordering for forward-
  * compatibility (e.g. future EntryPoint reachability source); no current
- * Crossplane phase maps to `warning` on this surface.
+ * workload phase maps to `warning` on this surface.
  */
 const TONE_SEVERITY: Readonly<Record<VisualTone, number>> = {
   neutral: 0,

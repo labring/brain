@@ -6,10 +6,10 @@ import (
 
 // Register adds the AP (Application) API routes to the Huma API.
 //
-// AP is a Crossplane composite resource (example.crossplane.io/v1, kind: AP, plural: aps).
-// The AP spec is the API contract for the generated Deployment, Service(s), Ingress, and EntryPoint:
+// AP is a Brain product resource rendered by the Go API into Kubernetes Deployment,
+// Service, optional HPA, and public routing support resources:
 // - name: logical instance name used for composed resource naming; defaults to metadata.name if omitted.
-// - projectName: optional Project claim name in the same namespace (labels + ownerReference).
+// - projectId: Brain Project product id used for brain.io/project-id ownership labels.
 // - input: image, network.privatePort, network.platformAddresses, env, probes, imagePullPolicy.
 // - resource: replicas, requests, limits (Kubernetes-shaped).
 // - paused, restartRequest, ingressAnnotations: lifecycle and Ingress metadata.

@@ -258,8 +258,8 @@ type podContainer struct {
 	container string
 }
 
-// getAppPodsAndContainers finds pods whose app label equals or starts with name
-// (Crossplane adds a 4-char suffix: app={name}-{suffix}).
+// getAppPodsAndContainers finds pods whose app label equals or starts with name.
+// Some imported Launchpad-style workloads use app={name}-{suffix}.
 func getAppPodsAndContainers(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) ([]podContainer, error) {
 	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: appLabel,

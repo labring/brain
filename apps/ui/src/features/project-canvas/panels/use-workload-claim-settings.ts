@@ -1,6 +1,9 @@
 "use client";
 
-import { useEntryPointList, useK8sGetResource } from "@workspace/api/hooks";
+import {
+  useBrainProductResource,
+  useEntryPointList,
+} from "@workspace/api/hooks";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   ContainerEnvVar,
@@ -14,7 +17,6 @@ import { settingsDraftSaveFailureMessage } from "@workspace/ui/lib/settings-draf
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { k8sPluralKindForWorkload } from "@/features/project-canvas/flow/container-node-workload";
 import {
   applyApEnv,
   applyApImage,
@@ -119,8 +121,8 @@ export function useWorkloadClaimSettings(
     error,
     isLoading,
     mutate: revalidateClaim,
-  } = useK8sGetResource({
-    kind: k8sPluralKindForWorkload(workloadKind),
+  } = useBrainProductResource({
+    kind: workloadKind,
     kubeconfig,
     name,
     namespace,

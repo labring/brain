@@ -1,10 +1,5 @@
 "use client";
 
-import {
-  generateCustomDomainBindingId,
-  generatePlatformAddressId,
-  platformAddressEndpoint,
-} from "@workspace/crossplane/lib/platform-address";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
@@ -50,6 +45,11 @@ import {
   updateContainerEnvRow,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
+import {
+  generateCustomDomainBindingId,
+  generatePlatformAddressId,
+  platformAddressEndpoint,
+} from "@workspace/ui/lib/platform-address";
 import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {

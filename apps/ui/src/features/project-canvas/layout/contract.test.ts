@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseCanvasLayoutPatchRequest } from "./contract";
+import {
+  parseCanvasLayoutDocument,
+  parseCanvasLayoutPatchRequest,
+} from "./contract";
 
 const validPatch = {
   namespace: "default",
@@ -19,6 +22,31 @@ test("canvas layout patch accepts optional finite integer stack order", () => {
   assert.equal(
     parseCanvasLayoutPatchRequest(validPatch).nodes[0]?.stackOrder,
     12
+  );
+});
+
+test("canvas layout patch normalizes projectId and legacy projectUid", () => {
+  assert.equal(
+    parseCanvasLayoutPatchRequest({
+      ...validPatch,
+      projectId: "project-id",
+      projectUid: undefined,
+    }).projectUid,
+    "project-id"
+  );
+  assert.equal(
+    parseCanvasLayoutPatchRequest(validPatch).projectId,
+    "project-uid"
+  );
+});
+
+test("canvas layout document normalizes projectId from legacy projectUid", () => {
+  assert.equal(
+    parseCanvasLayoutDocument({
+      ...validPatch,
+      version: 1,
+    }).projectId,
+    "project-uid"
   );
 });
 

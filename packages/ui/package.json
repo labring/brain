@@ -24,7 +24,6 @@
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "@tanstack/react-form": "^1.32.0",
-    "@workspace/crossplane": "workspace:*",
     "@xyflow/react": "^12.10.2",
     "ai": "^6.0.169",
     "class-variance-authority": "^0.7.1",

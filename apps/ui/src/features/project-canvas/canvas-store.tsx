@@ -33,7 +33,6 @@ export const ENTRY_PANE = {
 
 /**
  * Bounds for AP fixed replicas in the workload Settings panel (`ContainerSettingsPane`).
- * Matches `packages/crossplane/public/service/ap/ap.yaml` (`minimum` / `maximum`).
  */
 export const WORKLOAD_PANEL_REPLICAS = { min: 1, max: 20 } as const;
 

@@ -11,17 +11,24 @@ import {
 } from "./pipeline";
 
 function testAdapters(overrides?: {
+  createProject?: DeploymentTargetPipelineAdapters["createProject"];
   createGithubDeployTask?: DeploymentTargetPipelineAdapters["createGithubDeployTask"];
   fetchProjectUidByName?: DeploymentTargetPipelineAdapters["fetchProjectUidByName"];
   generateChildResourceName?: DeploymentTargetPipelineAdapters["generateChildResourceName"];
   generateProjectName?: DeploymentTargetPipelineAdapters["generateProjectName"];
-  onApplyYaml?: (yaml: string) => void;
+  onApplyBrainProductManifest?: (yaml: string) => void;
 }): DeploymentTargetPipelineAdapters {
   return {
-    applyYaml: (yaml) => {
-      overrides?.onApplyYaml?.(yaml);
+    applyBrainProductManifest: (yaml) => {
+      overrides?.onApplyBrainProductManifest?.(yaml);
       return Promise.resolve();
     },
+    createProject:
+      overrides?.createProject ??
+      ((input) =>
+        Promise.resolve({
+          id: input.displayName.toLowerCase().replace(/\s+/g, "-"),
+        })),
     createGithubDeployTask:
       overrides?.createGithubDeployTask ??
       (() =>
@@ -34,58 +41,16 @@ function testAdapters(overrides?: {
       (() => Promise.resolve("project-uid")),
     generateChildResourceName:
       overrides?.generateChildResourceName ??
-      ((projectName) => `${projectName}-child`),
+      ((projectName, kind) => `${kind}-${projectName}-child`),
     generateProjectName: overrides?.generateProjectName ?? (() => "project-a"),
   };
 }
 
-const projectCompositionRows = [
-  {
-    description: "",
-    kind: "Project",
-    metadata: { compositionName: "project-instance-go-templating" },
-    name: "Project",
-    template: `
-apiVersion: example.crossplane.io/v1
-kind: Project
-metadata:
-  name: {{ name }}
-  namespace: {{ namespace }}
-spec: {}
-`,
-  },
-];
-
-const apCompositionRows = [
-  {
-    description: "",
-    kind: "AP",
-    metadata: { compositionName: "aps-deployment-ingress-go-templating" },
-    name: "AP",
-    template: `
-apiVersion: example.crossplane.io/v1
-kind: AP
-metadata:
-  name: {{ name }}
-  namespace: {{ namespace }}
-spec: {}
-`,
-  },
-];
-
 const databaseOptions = [
   {
     engine: "postgresql",
-    id: "dbs-postgresql-kubeblocks",
+    id: "postgresql",
     label: "PostgreSQL",
-    template: `
-apiVersion: example.crossplane.io/v1
-kind: DB
-metadata:
-  name: {{ name }}
-  namespace: {{ namespace }}
-spec: {}
-`,
   },
 ] satisfies DatabaseDeploymentChoice[];
 
@@ -105,15 +70,13 @@ test("Deployment Target pipeline creates a new Project with Docker AP", async ()
   let applied = "";
   const outcome = await runDeploymentTargetPipeline({
     adapters: testAdapters({
-      onApplyYaml: (yaml) => {
+      onApplyBrainProductManifest: (yaml) => {
         applied = yaml;
       },
     }),
-    apCompositionRows,
     credentialsReady: true,
     existingProjects,
     namespace: "ns-admin",
-    projectCompositionRows,
     request: {
       kind: "docker",
       settings: {
@@ -127,16 +90,14 @@ test("Deployment Target pipeline creates a new Project with Docker AP", async ()
   });
 
   const docs = YAML.parseAllDocuments(applied).map((doc) => doc.toJS());
-  assert.equal(docs.length, 2);
-  assert.equal(docs[0].kind, "Project");
-  assert.equal(docs[0].metadata.name, "project-a");
-  assert.equal(docs[0].metadata.annotations.displayName, "API Project");
-  assert.equal(docs[1].kind, "AP");
-  assert.equal(docs[1].metadata.name, "project-a-child");
-  assert.equal(docs[1].spec.projectName, "project-a");
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].apiVersion, "brain.io/direct");
+  assert.equal(docs[0].kind, "AP");
+  assert.equal(docs[0].metadata.name, "ap-api-project-child");
+  assert.equal(docs[0].spec.projectId, "api-project");
   assert.equal(outcome.kind, "docker");
-  assert.equal(outcome.apName, "project-a-child");
-  assert.equal(outcome.projectUid, "project-uid");
+  assert.equal(outcome.apName, "ap-api-project-child");
+  assert.equal(outcome.projectUid, "api-project");
   assert.equal(outcome.createdProject, true);
 });
 
@@ -144,7 +105,7 @@ test("Deployment Target pipeline deploys a DB into an existing Project", async (
   let applied = "";
   const outcome = await runDeploymentTargetPipeline({
     adapters: testAdapters({
-      onApplyYaml: (yaml) => {
+      onApplyBrainProductManifest: (yaml) => {
         applied = yaml;
       },
     }),
@@ -154,7 +115,7 @@ test("Deployment Target pipeline deploys a DB into an existing Project", async (
     request: {
       kind: "database",
       settings: {
-        databaseId: "dbs-postgresql-kubeblocks",
+        databaseId: "postgresql",
         instancePreset: "xs",
         replicas: 2,
       },
@@ -167,11 +128,11 @@ test("Deployment Target pipeline deploys a DB into an existing Project", async (
 
   const doc = YAML.parse(applied);
   assert.equal(doc.kind, "DB");
-  assert.equal(doc.metadata.name, "existing-project-child");
-  assert.equal(doc.spec.projectName, "existing-project");
+  assert.equal(doc.metadata.name, "db-existing-project-child");
+  assert.equal(doc.spec.projectId, "existing-project");
   assert.equal(doc.spec.replicas, 2);
   assert.equal(outcome.kind, "database");
-  assert.equal(outcome.dbName, "existing-project-child");
+  assert.equal(outcome.dbName, "db-existing-project-child");
   assert.equal(outcome.projectUid, "existing-uid");
   assert.equal(outcome.createdProject, false);
 });
@@ -187,18 +148,17 @@ test("Deployment Target pipeline creates a new Project before GitHub task", asyn
           taskId: "task-9",
         });
       },
-      fetchProjectUidByName: (name) => {
-        events.push(`fetch:${name}`);
-        return Promise.resolve("project-uid-9");
+      createProject: (input) => {
+        events.push(`project:${input.displayName}:${input.namespace}`);
+        return Promise.resolve({ id: "project-uid-9" });
       },
-      onApplyYaml: () => {
+      onApplyBrainProductManifest: () => {
         events.push("apply");
       },
     }),
     credentialsReady: true,
     existingProjects,
     namespace: "ns-admin",
-    projectCompositionRows,
     request: {
       kind: "github",
       repository: {
@@ -212,12 +172,11 @@ test("Deployment Target pipeline creates a new Project before GitHub task", asyn
   });
 
   assert.deepEqual(events, [
-    "apply",
-    "fetch:project-a",
-    "task:project-a:project-uid-9",
+    "project:web:ns-admin",
+    "task:project-uid-9:project-uid-9",
   ]);
   assert.equal(outcome.kind, "github");
-  assert.equal(outcome.projectName, "project-a");
+  assert.equal(outcome.projectName, "project-uid-9");
   assert.equal(outcome.projectUid, "project-uid-9");
   assert.equal(outcome.taskId, "task-9");
 });
@@ -229,7 +188,6 @@ test("Deployment Target pipeline rejects duplicate new Project display names", a
       credentialsReady: true,
       existingProjects,
       namespace: "ns-admin",
-      projectCompositionRows,
       request: {
         kind: "github",
         repository: {

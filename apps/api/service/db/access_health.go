@@ -10,9 +10,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"sealos/api/service/orchestration"
 )
 
-const ProjectUIDLabel = "crossplane.io/project-uid"
+const ProjectUIDLabel = orchestration.BrainProjectIDLabel
 
 var (
 	ErrAccessHealthDBNotFound       = errors.New("db not found")
@@ -183,8 +185,7 @@ func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAcce
 		return "", WhoDBSourceCredentials{}, ErrAccessHealthDBNotReady
 	}
 
-	engine, _, _ := unstructured.NestedString(db.Object, "spec", "engine")
-	engine = strings.TrimSpace(engine)
+	engine := engineFromCluster(db.Object)
 	sourceType, defaultDatabase, err := whodbSourceForEngine(engine)
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err

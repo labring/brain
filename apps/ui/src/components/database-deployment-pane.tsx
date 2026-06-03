@@ -13,9 +13,8 @@ import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
-import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 
 export function DatabaseDeploymentPane({
   kubeconfig,
@@ -36,14 +35,7 @@ export function DatabaseDeploymentPane({
     namespace,
     projectUid,
   });
-  const { items: dbCompositionRows } = useDbCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-  const databaseOptions = useMemo(
-    () => dbDeploymentChoicesFromCompositionRows(dbCompositionRows),
-    [dbCompositionRows]
-  );
+  const databaseOptions = DIRECT_DB_DEPLOYMENT_OPTIONS;
   const deploymentAdapters = useMemo(
     () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
     [kubeconfig, namespace]
@@ -83,7 +75,6 @@ export function DatabaseDeploymentPane({
       }
     },
     [
-      databaseOptions,
       deploymentAdapters,
       kubeconfig,
       namespace,

@@ -1,4 +1,4 @@
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: sealai-api-staging
@@ -6,9 +6,7 @@ metadata:
   labels:
     region: 192.168.12.53.nip.io
 spec:
-  crossplane:
-    compositionRef:
-      name: aps-deployment-ingress-go-templating
+  projectId: brain-system
   input:
     image: aimerite/sealai-api:latest
     imagePullPolicy: Always

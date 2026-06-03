@@ -1,5 +1,5 @@
 {{- if .Values.registry.enabled }}
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: {{ .Values.registry.name }}
@@ -12,9 +12,7 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 spec:
-  crossplane:
-    compositionRef:
-      name: {{ .Values.registry.compositionRef }}
+  projectId: {{ .Values.projectId | default .Release.Namespace | quote }}
   input:
     image: {{ .Values.registry.image | quote }}
     imagePullPolicy: {{ .Values.registry.imagePullPolicy }}

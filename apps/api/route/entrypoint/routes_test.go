@@ -3,6 +3,7 @@ package entrypoint
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -44,8 +45,8 @@ func TestEntryPointMissingResourceFallbackReturnsEmptyList(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatalf("fallback body is not valid JSON: %v", err)
 	}
-	if list.APIVersion != "example.crossplane.io/v1alpha1" {
-		t.Fatalf("apiVersion = %q, want example.crossplane.io/v1alpha1", list.APIVersion)
+	if list.APIVersion != "brain.io/direct" {
+		t.Fatalf("apiVersion = %q, want brain.io/direct", list.APIVersion)
 	}
 	if list.Kind != "EntryPointList" {
 		t.Fatalf("kind = %q, want EntryPointList", list.Kind)
@@ -58,5 +59,64 @@ func TestEntryPointMissingResourceFallbackReturnsEmptyList(t *testing.T) {
 func TestEntryPointMissingResourceFallbackIgnoresOtherErrors(t *testing.T) {
 	if _, ok := emptyListForMissingEntryPointResource(fmt.Errorf("boom")); ok {
 		t.Fatal("did not expect generic errors to use EntryPoint empty-list fallback")
+	}
+}
+
+func TestEntryPointResponseFromIngressesReturnsEntryPointList(t *testing.T) {
+	raw := []byte(`{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind": "IngressList",
+		"items": [
+			{
+				"apiVersion": "networking.k8s.io/v1",
+				"kind": "Ingress",
+				"metadata": {
+					"labels": {
+						"brain.io/app-name": "web",
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "entrypoint-support"
+					},
+					"name": "web-pa-abc",
+					"namespace": "ns-a"
+				},
+				"spec": {
+					"rules": [{
+						"host": "web.example.com",
+						"http": {"paths": [{
+							"path": "/",
+							"pathType": "Prefix",
+							"backend": {"service": {"name": "web-service", "port": {"number": 8080}}}
+						}]}
+					}]
+				}
+			}
+		]
+	}`)
+	body, err := entryPointResponseFromIngresses(raw, false)
+	if err != nil {
+		t.Fatalf("entryPointResponseFromIngresses returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := out["items"].([]interface{})
+	item := items[0].(map[string]interface{})
+	spec := item["spec"].(map[string]interface{})
+	if got := spec["apRef"]; got != "web" {
+		t.Fatalf("spec.apRef = %v, want web", got)
+	}
+}
+
+func TestEntryPointIngressLabelSelectorKeepsBrainOwnership(t *testing.T) {
+	got := entryPointIngressLabelSelector("brain.io/project-id=project-a")
+	for _, want := range []string{
+		"brain.io/managed-by=brain",
+		"brain.io/resource-kind=entrypoint-support",
+		"brain.io/project-id=project-a",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("selector %q missing %q", got, want)
+		}
 	}
 }

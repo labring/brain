@@ -57,11 +57,6 @@ export const API_ROUTES = {
     root: "/api/entrypoint/v1alpha1",
   },
 
-  task: {
-    base: "/api/task/v1alpha1",
-    s2i: "/api/task/v1alpha1/s2i",
-  },
-
   telemetry: {
     base: "/api/telemetry/v1alpha1",
     logsHealth: "/api/telemetry/v1alpha1/logs/health",

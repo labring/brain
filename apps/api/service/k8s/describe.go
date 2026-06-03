@@ -3,7 +3,6 @@ package k8s
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,17 +38,7 @@ type DescribeResult struct {
 }
 
 // Describe retrieves and describes a resource with events. Returns JSON.
-// For composition, xrd, compositionrevisions: uses ENCODED_ADMIN_KUBECONFIG and crossplane-system namespace.
 func Describe(cfg *clientcmdapi.Config, opts DescribeOptions) ([]byte, error) {
-	adminCfg, adminNS, err := middleware.AdminConfigForQuery(opts.Resource)
-	if err != nil {
-		return nil, fmt.Errorf("invalid ENCODED_ADMIN_KUBECONFIG: %w", err)
-	}
-	if adminCfg != nil {
-		cfg = adminCfg
-		opts.Namespace = adminNS
-	}
-
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
 		AllNamespaces:    opts.AllNamespaces,

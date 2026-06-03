@@ -7,7 +7,6 @@ import {
 } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { PROJECT_UID_LABEL } from "@workspace/crossplane/constants";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -21,7 +20,7 @@ import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
 } from "@/features/project-canvas/layout/types";
-import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import {
   entryPointRefreshIntervalForLifecycle,
   hasTransientWorkloadPhase,
@@ -64,7 +63,10 @@ export function useProjectServices(options: {
     uid,
   } = options;
 
-  const labelSelector = useMemo(() => `${PROJECT_UID_LABEL}=${uid}`, [uid]);
+  const labelSelector = useMemo(
+    () => `${BRAIN_PROJECT_ID_LABEL}=${uid}`,
+    [uid]
+  );
 
   const apsListRef = useRef<K8sGetResponse | undefined>(undefined);
   const dbsListRef = useRef<K8sGetResponse | undefined>(undefined);
@@ -139,11 +141,6 @@ export function useProjectServices(options: {
     namespace,
     refreshInterval: entryPointRefreshInterval,
   });
-  const { items: dbCompositionRows } = useDbCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
 
@@ -159,24 +156,12 @@ export function useProjectServices(options: {
     [apsData, dbsData, entryPointsData]
   );
 
-  const dbCompositionIconByName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const row of dbCompositionRows ?? []) {
-      const iconUrl = row.iconUrl?.trim();
-      if (iconUrl) {
-        map.set(row.metadata.compositionName, iconUrl);
-      }
-    }
-    return map;
-  }, [dbCompositionRows]);
-
   const layoutMerge = useMemo(() => {
     const apBlock = apsToCanvasState(apsData, {
       gridIndexOffset: 0,
       namespaceFallback: namespace,
     });
     const dbBlock = dbsToCanvasState(dbsData, {
-      compositionIconByName: dbCompositionIconByName,
       gridIndexOffset: apBlock.nodes.length,
       namespaceFallback: namespace,
     });
@@ -217,7 +202,6 @@ export function useProjectServices(options: {
     canvasLayoutReady,
     dbsData,
     entryPointsData,
-    dbCompositionIconByName,
     namespace,
   ]);
 

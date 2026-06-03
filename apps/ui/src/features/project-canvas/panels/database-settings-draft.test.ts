@@ -108,7 +108,7 @@ test("DB settings draft adds routing domain when public connection needs region 
       original,
       { ...original, exposeNodePort: true },
       {
-        metadata: { labels: { "crossplane.io/project-name": "project" } },
+        metadata: { labels: { "brain.io/project-id": "project" } },
         routingDomain: "192.168.12.53.nip.io",
       }
     ),
@@ -126,7 +126,7 @@ test("DB settings draft can repair missing region for already-enabled public con
 
   assert.deepEqual(
     buildDbSettingsPatch(original, original, {
-      metadata: { labels: { "crossplane.io/project-name": "project" } },
+      metadata: { labels: { "brain.io/project-id": "project" } },
       routingDomain: "192.168.12.53.nip.io",
     }),
     {

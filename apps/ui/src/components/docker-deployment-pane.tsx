@@ -13,7 +13,6 @@ import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
-import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
@@ -36,10 +35,6 @@ export function DockerDeploymentPane({
     namespace,
     projectUid,
   });
-  const { items: apCompositionRows } = useApCompositions({
-    kubeconfig,
-    toItems: true,
-  });
   const deploymentAdapters = useMemo(
     () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
     [kubeconfig, namespace]
@@ -52,7 +47,6 @@ export function DockerDeploymentPane({
       try {
         const outcome = await runDeploymentTargetPipeline({
           adapters: deploymentAdapters,
-          apCompositionRows,
           credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
           namespace,
           request: {
@@ -80,7 +74,6 @@ export function DockerDeploymentPane({
       }
     },
     [
-      apCompositionRows,
       deploymentAdapters,
       kubeconfig,
       namespace,

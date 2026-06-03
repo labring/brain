@@ -28,8 +28,8 @@ func TestDBPausedPatchSetsOnlyPausedLifecycleFlag(t *testing.T) {
 
 func TestDBRestartPatchIncrementsCurrentRestartRequest(t *testing.T) {
 	current := []byte(`{
-		"apiVersion": "example.crossplane.io/v1",
-		"kind": "DB",
+			"apiVersion": "brain.io/direct",
+			"kind": "DB",
 		"spec": {
 			"engine": "postgresql",
 			"replicas": 3,

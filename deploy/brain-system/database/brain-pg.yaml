@@ -1,4 +1,4 @@
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: brain-pg
@@ -6,9 +6,7 @@ metadata:
   labels:
     region: 192.168.12.53.nip.io
 spec:
-  crossplane:
-    compositionRef:
-      name: dbs-postgresql-kubeblocks-go-templating
+  projectId: brain-system
   engine: postgresql
   exposeNodePort: true
   quota: xs

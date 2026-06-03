@@ -21,6 +21,7 @@ function layout(nodes: CanvasLayoutNode[]): CanvasLayoutDocument {
   return {
     namespace: "default",
     nodes,
+    projectId: "project-uid",
     projectUid: "project-uid",
     version: 0,
   };

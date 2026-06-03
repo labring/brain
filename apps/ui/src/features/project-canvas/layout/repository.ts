@@ -14,7 +14,7 @@ import type { CanvasLayoutDocument, CanvasLayoutPatch } from "./types";
 
 export interface ProjectCanvasLayoutKey {
   namespace: string;
-  projectUid: string;
+  projectId: string;
 }
 
 function emptyLayoutDocument(
@@ -23,7 +23,8 @@ function emptyLayoutDocument(
   return {
     namespace: key.namespace,
     nodes: [],
-    projectUid: key.projectUid,
+    projectId: key.projectId,
+    projectUid: key.projectId,
     version: 0,
   };
 }
@@ -39,6 +40,7 @@ function rowToDocument(
       ...(row.projectNameSnapshot == null
         ? {}
         : { projectNameSnapshot: row.projectNameSnapshot }),
+      projectId: row.projectUid,
       projectUid: row.projectUid,
       version: row.version,
     },
@@ -49,7 +51,7 @@ function rowToDocument(
 function whereLayoutKey(key: ProjectCanvasLayoutKey) {
   return and(
     eq(projectCanvasLayouts.namespace, key.namespace),
-    eq(projectCanvasLayouts.projectUid, key.projectUid)
+    eq(projectCanvasLayouts.projectUid, key.projectId)
   );
 }
 
@@ -109,7 +111,7 @@ export function patchProjectCanvasLayout(
         namespace: key.namespace,
         nodes: [],
         projectNameSnapshot: patch.projectNameSnapshot,
-        projectUid: key.projectUid,
+        projectUid: key.projectId,
         updatedAt: now,
         createdAt: now,
         version: 0,

@@ -14,9 +14,9 @@ import (
 )
 
 var accessHealthDBGVR = schema.GroupVersionResource{
-	Group:    "example.crossplane.io",
+	Group:    "apps.kubeblocks.io",
 	Version:  "v1",
-	Resource: "dbs",
+	Resource: "clusters",
 }
 
 type KubernetesAccessHealthStore struct {

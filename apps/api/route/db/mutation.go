@@ -5,21 +5,24 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
 
 	"sealos/api/middleware"
 	dbsvc "sealos/api/service/db"
 	k8ssvc "sealos/api/service/k8s"
+	orchestration "sealos/api/service/orchestration"
 )
 
 func registerCreate(grp huma.API) {
 	type dbCreateBody struct {
-		YAML string `json:"yaml" required:"true" doc:"DB manifest (YAML or JSON). Must be a single example.crossplane.io/v1, kind: DB resource.\n\nDB metadata (convention):\n- metadata.namespace: target namespace (examples use the literal name default; override in production).\n- metadata.labels.region: optional public URL host base / domain for client-facing URL composition (convention; example 192.168.12.53.nip.io).\n\nDB spec fields:\n- spec.engine: database engine (postgresql, mysql, redis, mongodb).\n- spec.quota: resource preset xs|s|m|l (default xs); per-engine CPU/memory/storage from the active Composition. Omitted cpuRequest, memoryRequest, cpuLimit, memoryLimit, storageSize are filled from the quota preset.\n- spec.replicas: optional; defaults to 1 when omitted (XRD default).\n- spec.storageSize: optional PVC override; when omitted, quota preset supplies engine-specific storage.\n- spec.cpuRequest / spec.memoryRequest: optional overrides for quota preset defaults.\n- spec.cpuLimit / spec.memoryLimit: optional overrides (PostgreSQL, MySQL, Redis).\n- spec.storageClassName: StorageClass for PVCs; omit to use cluster default.\n- spec.terminationPolicy: optional Delete or WipeOut; defaults to Delete when omitted (XRD default).\n- spec.exposeNodePort: optional; when true, compose a NodePort Service {name}-export; nodePort is omitted so the cluster allocates a free port (default false).\n- spec.scheduledBackup: optional cron/retention/repo for KubeBlocks automated backups.\n- spec.restoreFromBackup: optional restore-from-backup (postgresql/mysql/mongodb/redis) with backupName and optional namespace/volumeRestorePolicy.\n- spec.crossplane.compositionRef.name: select Composition (e.g. dbs-postgresql-kubeblocks-go-templating)."`
+		YAML string `json:"yaml" required:"true" doc:"DB product manifest (YAML or JSON). The Go API renders it directly into a KubeBlocks Cluster and support resources. Required fields: metadata.name, spec.projectId, and spec.engine. Optional fields include spec.clusterVersion, spec.replicas, and spec.storageSize."`
 	}
 	type dbCreateInput struct {
 		middleware.AuthInput
@@ -31,27 +34,30 @@ func registerCreate(grp huma.API) {
 		}
 	}
 
-	exampleYAML := `apiVersion: example.crossplane.io/v1
+	exampleYAML := `apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: db-postgresql
   namespace: default
-  labels:
-    region: 192.168.12.53.nip.io
 spec:
-  crossplane:
-    compositionRef:
-      name: dbs-postgresql-kubeblocks-go-templating
+  projectId: project-id
   engine: postgresql
-  quota: xs`
+  clusterVersion: postgresql
+  replicas: 1
+  storageSize: 10Gi`
 
 	huma.Register(grp, huma.Operation{
 		OperationID: "db-create",
 		Method:      http.MethodPut,
 		Path:        "/",
 		Summary:     "Create or replace DB",
-		Description: "Create a DB instance by applying a single manifest (PUT). Returns the created resource as YAML.\n\n**Request body usage:**\n- Send exactly one DB resource in the `yaml` field.\n- The manifest must use `apiVersion: example.crossplane.io/v1` and `kind: DB`.\n- The DB `spec` is the desired state consumed by the Crossplane Composition; it drives the KubeBlocks Cluster.\n\n**How the DB `spec` is used:**\n- `spec.engine`: database engine (postgresql, mysql, redis, mongodb).\n- `metadata.namespace` / `metadata.labels.region`: set target namespace and optional public host base for URL composition.\n- `spec.quota`: resource preset `xs`, `s`, `m`, or `l` (default `xs`); each Composition maps quotas to CPU, memory, storage, and optional limits.\n- `spec.replicas`: optional replica count (XRD default 1 when omitted).\n- `spec.storageSize`, `spec.cpuRequest`, `spec.memoryRequest`, `spec.cpuLimit`, `spec.memoryLimit`: optional overrides for quota preset defaults.\n- `spec.storageClassName`: StorageClass for PVCs; omit to use cluster default.\n- `spec.terminationPolicy`: optional Delete or WipeOut (XRD default Delete).\n- `spec.exposeNodePort`: optional boolean (default false); when true, the Composition creates a NodePort Service `{name}-export` with apiserver-assigned nodePort.\n- `spec.scheduledBackup`: optional automated backup schedule/retention/repo for KubeBlocks (legacy `spec.backup` is deprecated).\n- `spec.restoreFromBackup`: optional restore block for postgres/mysql/mongodb/redis; set `backupName`, optional `namespace` and `volumeRestorePolicy` (default Parallel), plus optional `connectionPassword` for MySQL.\n- `spec.crossplane.compositionRef.name`: select Composition (e.g. dbs-postgresql-kubeblocks-go-templating).\n\n**Response:** Returns the created DB in YAML format (server state after apply).\n\n**Copy-pasteable example (use in `yaml` field):**\n```yaml\n" + exampleYAML + "\n```",
-		Tags:        []string{"DB"},
+		Description: "Create a DB instance from one Brain DB product manifest (PUT). The Go API renders a KubeBlocks Cluster and support resources, then returns the DB product view as YAML.\n\n" +
+			"**Request body usage:**\n" +
+			"- Send exactly one DB manifest in the `yaml` field.\n" +
+			"- Required fields are `metadata.name`, `spec.projectId`, and `spec.engine`.\n\n" +
+			"**Response:** Returns the created DB product view in YAML format.\n\n" +
+			"**Copy-pasteable example (use in `yaml` field):**\n```yaml\n" + exampleYAML + "\n```",
+		Tags: []string{"DB"},
 	}, func(ctx context.Context, input *dbCreateInput) (*dbCreateOutput, error) {
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
@@ -90,21 +96,34 @@ spec:
 			input.Body.YAML = string(yamlBytes)
 		}
 
-		if err := k8ssvc.ApplyYAML(restConfig, []byte(input.Body.YAML), ns); err != nil {
+		renderInput := dbRenderInputFromObject(obj, ns)
+		resources, err := orchestration.RenderDBResources(renderInput)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid DB direct resource request", err)
+		}
+		if err := k8ssvc.ApplyObjects(restConfig, []runtime.Object{resources.ExportService}, ns); err != nil {
+			return nil, huma.Error500InternalServerError("failed to create DB support resources", err)
+		}
+		if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{resources.Cluster}, ns); err != nil {
 			return nil, huma.Error500InternalServerError("failed to create DB", err)
 		}
 
 		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "dbs",
-			Name:      name,
-			Namespace: ns,
+			LabelSelector: dbClusterLabelSelector(""),
+			Resource:      "clusters",
+			Name:          name,
+			Namespace:     ns,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get created DB", err)
 		}
 
+		body, err := dbResponseFromClusters(jsonBytes, true)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to adapt created DB", err)
+		}
 		var created map[string]interface{}
-		if err := json.Unmarshal(jsonBytes, &created); err != nil {
+		if err := json.Unmarshal(body, &created); err != nil {
 			return nil, huma.Error500InternalServerError("failed to marshal created DB", err)
 		}
 		yamlBytes, err := yaml.Marshal(created)
@@ -115,6 +134,54 @@ spec:
 		out.Body.YAML = string(yamlBytes)
 		return &out, nil
 	})
+}
+
+func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) orchestration.DBResourcesInput {
+	spec, _ := obj.Object["spec"].(map[string]interface{})
+	projectID := stringFromMap(spec, "projectId")
+	if projectID == "" {
+		projectID = stringFromMap(spec, "projectID")
+	}
+	engine := stringFromMap(spec, "engine")
+	version := stringFromMap(spec, "clusterVersion")
+	if version == "" {
+		version = stringFromMap(spec, "version")
+	}
+	return orchestration.DBResourcesInput{
+		ClusterVersion: version,
+		Engine:         engine,
+		Name:           obj.GetName(),
+		Namespace:      namespace,
+		ProjectID:      projectID,
+		Replicas:       int64FromMap(spec, "replicas"),
+		StorageSize:    stringFromMap(spec, "storageSize"),
+	}
+}
+
+func stringFromMap(values map[string]interface{}, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func int64FromMap(values map[string]interface{}, key string) int64 {
+	if values == nil {
+		return 0
+	}
+	switch value := values[key].(type) {
+	case int:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
 }
 
 func registerBackup(grp huma.API) {
@@ -192,14 +259,10 @@ func registerStart(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/start",
 		Summary:     "Start DB workload",
-		Description: "Starts a DB by patching only `spec.paused=false` on the DB claim. The configured `spec.replicas` value is preserved and used by the composition when unpaused.",
+		Description: "Starts a DB by clearing the Brain pause annotation on the KubeBlocks Cluster.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		patch, err := dbsvc.DBPausedPatch(false)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to build DB start patch", err)
-		}
-		return patchLifecycleDB(input, patch, "start")
+		return patchLifecycleDB(input, dbClusterPausedPatch(false), "start")
 	})
 }
 
@@ -209,14 +272,10 @@ func registerStop(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/stop",
 		Summary:     "Stop DB workload",
-		Description: "Stops a DB by patching only `spec.paused=true` on the DB claim. Data, configuration, and the configured `spec.replicas` value are preserved.",
+		Description: "Stops a DB by setting the Brain pause annotation on the KubeBlocks Cluster. Data and configuration are preserved.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		patch, err := dbsvc.DBPausedPatch(true)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to build DB stop patch", err)
-		}
-		return patchLifecycleDB(input, patch, "stop")
+		return patchLifecycleDB(input, dbClusterPausedPatch(true), "stop")
 	})
 }
 
@@ -226,44 +285,27 @@ func registerRestart(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/restart",
 		Summary:     "Restart DB workload",
-		Description: "Requests a declarative DB restart by reading the current DB claim, incrementing `spec.restartRequest` server-side, and patching the next counter value. The DB composition turns counter changes into a KubeBlocks Restart OpsRequest.",
+		Description: "Requests a DB restart by creating a KubeBlocks Restart OpsRequest for the Cluster.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		cfg, name, namespace, err := lifecycleDBContext(input)
+		_, name, namespace, err := lifecycleDBContext(input)
 		if err != nil {
 			return nil, err
 		}
 
-		current, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "dbs",
-			Name:      name,
-			Namespace: namespace,
-		})
+		ops, err := orchestration.RenderDBRestartOpsRequest(name, namespace, time.Now())
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, huma.Error404NotFound("DB not found", err)
-			}
-			return nil, huma.Error500InternalServerError("failed to read DB for restart", err)
+			return nil, huma.Error422UnprocessableEntity("invalid DB restart request", err)
 		}
-
-		patch, err := dbsvc.DBRestartPatch(current)
+		restConfig, _, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
-			return nil, huma.Error422UnprocessableEntity("invalid DB restartRequest", err)
+			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
-			Resource:  "dbs",
-			Name:      name,
-			Namespace: namespace,
-			PatchType: k8ssvc.PatchTypeMerge,
-			Patch:     patch,
-		})
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, huma.Error404NotFound("DB not found", err)
-			}
+		if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{ops}, namespace); err != nil {
 			return nil, huma.Error500InternalServerError("failed to restart DB", err)
 		}
-		return &dbLifecycleOutput{Body: json.RawMessage(jsonBytes)}, nil
+		body, _ := json.Marshal(ops.Object)
+		return &dbLifecycleOutput{Body: body}, nil
 	})
 }
 
@@ -274,7 +316,7 @@ func patchLifecycleDB(input *dbLifecycleInput, patch []byte, action string) (*db
 	}
 
 	jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
-		Resource:  "dbs",
+		Resource:  "clusters",
 		Name:      name,
 		Namespace: namespace,
 		PatchType: k8ssvc.PatchTypeMerge,
@@ -286,7 +328,26 @@ func patchLifecycleDB(input *dbLifecycleInput, patch []byte, action string) (*db
 		}
 		return nil, huma.Error500InternalServerError("failed to "+action+" DB", err)
 	}
-	return &dbLifecycleOutput{Body: json.RawMessage(jsonBytes)}, nil
+	body, err := dbResponseFromClusters(jsonBytes, true)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
+	}
+	return &dbLifecycleOutput{Body: body}, nil
+}
+
+func dbClusterPausedPatch(paused bool) []byte {
+	value := "false"
+	if paused {
+		value = "true"
+	}
+	bytes, _ := json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": map[string]interface{}{
+				"brain.io/paused": value,
+			},
+		},
+	})
+	return bytes
 }
 
 func lifecycleDBContext(input *dbLifecycleInput) (*clientcmdapi.Config, string, string, error) {
@@ -354,7 +415,7 @@ func registerUpdate(grp huma.API) {
 		}
 
 		jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
-			Resource:  "dbs",
+			Resource:  "clusters",
 			Name:      input.Name,
 			Namespace: resolved.Namespace,
 			PatchType: k8ssvc.PatchTypeMerge,
@@ -366,7 +427,11 @@ func registerUpdate(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to update DB", err)
 		}
-		return &dbUpdateOutput{Body: json.RawMessage(jsonBytes)}, nil
+		body, err := dbResponseFromClusters(jsonBytes, true)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
+		}
+		return &dbUpdateOutput{Body: body}, nil
 	})
 }
 
@@ -387,7 +452,7 @@ func registerDelete(grp huma.API) {
 		Method:      http.MethodDelete,
 		Path:        "/",
 		Summary:     "Delete DB",
-		Description: "Delete a DB instance by name.\n\nParameter usage:\n- `name` is required and selects the DB to delete.\n- `namespace` is optional; admins can override the namespace from kubeconfig.\n\nBehavior:\n- The DB and its composed resources (KubeBlocks Cluster, PVCs, etc.) are owned by Crossplane and should be garbage-collected when the DB is deleted.\n- `terminationPolicy` (Delete vs WipeOut) controls whether PVCs are retained.",
+		Description: "Delete a DB instance by name.\n\nParameter usage:\n- `name` is required and selects the DB to delete.\n- `namespace` is optional; admins can override the namespace from kubeconfig.\n\nBehavior:\n- The Go API explicitly deletes Brain-managed DB support resources and the KubeBlocks Cluster using brain.io labels.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbDeleteInput) (*dbDeleteOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -409,12 +474,7 @@ func registerDelete(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
-		_, err = k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-			Resource:  "dbs",
-			Name:      input.Name,
-			Namespace: resolved.Namespace,
-		})
-		if err != nil {
+		if err := deleteDBDirectResources(cfg, input.Name, resolved.Namespace); err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("DB not found", err)
 			}
@@ -428,4 +488,27 @@ func registerDelete(grp huma.API) {
 			},
 		}, nil
 	})
+}
+
+func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace string) error {
+	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDBNameLabel + "=" + name
+	for _, resource := range []string{"services", "opsrequests", "configmaps", "secrets"} {
+		_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+			LabelSelector: selector,
+			Namespace:     namespace,
+			Resource:      resource,
+		})
+		if err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+			return err
+		}
+	}
+	_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+		Name:      name,
+		Namespace: namespace,
+		Resource:  "clusters",
+	})
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }

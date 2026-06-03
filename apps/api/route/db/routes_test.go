@@ -2,9 +2,11 @@ package db
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -107,6 +109,61 @@ func TestDBPatchDocsIncludeLifecycleFields(t *testing.T) {
 	for _, want := range []string{"spec.paused", "spec.restartRequest"} {
 		if !bytes.Contains([]byte(description), []byte(want)) {
 			t.Fatalf("expected patch docs to mention %s, got: %s", want, description)
+		}
+	}
+}
+
+func TestDBResponseFromClustersReturnsDBList(t *testing.T) {
+	raw := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1",
+		"kind": "ClusterList",
+		"items": [
+			{
+				"apiVersion": "apps.kubeblocks.io/v1",
+				"kind": "Cluster",
+				"metadata": {
+					"labels": {
+						"brain.io/db-engine": "postgresql",
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "db",
+						"clusterdefinition.kubeblocks.io/name": "postgresql"
+					},
+					"name": "pg",
+					"namespace": "ns-a"
+				},
+				"spec": {"clusterDefinitionRef": "postgresql"},
+				"status": {"conditions": [{"type": "Ready", "status": "True"}]}
+			}
+		]
+	}`)
+	body, err := dbResponseFromClusters(raw, false)
+	if err != nil {
+		t.Fatalf("dbResponseFromClusters returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := out["items"].([]interface{})
+	item := items[0].(map[string]interface{})
+	if got := item["kind"]; got != "DB" {
+		t.Fatalf("item.kind = %v, want DB", got)
+	}
+	spec := item["spec"].(map[string]interface{})
+	if got := spec["engine"]; got != "postgresql" {
+		t.Fatalf("spec.engine = %v, want postgresql", got)
+	}
+}
+
+func TestDBClusterLabelSelectorKeepsBrainOwnership(t *testing.T) {
+	got := dbClusterLabelSelector("brain.io/project-id=project-a")
+	for _, want := range []string{
+		"brain.io/managed-by=brain",
+		"brain.io/resource-kind=db",
+		"brain.io/project-id=project-a",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("selector %q missing %q", got, want)
 		}
 	}
 }

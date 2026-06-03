@@ -21,8 +21,6 @@ import (
 	"sealos/api/route/entrypoint"
 	"sealos/api/route/health"
 	"sealos/api/route/k8s"
-	"sealos/api/route/notif"
-	"sealos/api/route/task"
 	"sealos/api/route/telemetry"
 )
 
@@ -75,8 +73,6 @@ func main() {
 	auth.Register(api)
 	db.Register(api)
 	entrypoint.Register(api)
-	task.Register(api)
-	notif.Register(api)
 	telemetry.Register(api)
 
 	fmt.Println("Server listening on :9000")
@@ -91,12 +87,13 @@ func addAPCreateExample(_ *huma.OpenAPI, op *huma.Operation) {
 	if op.OperationID != "ap-create" {
 		return
 	}
-	exampleYAML := `apiVersion: example.crossplane.io/v1
+	exampleYAML := `apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: my-app
 spec:
   name: my-app
+  projectId: project-id
   input:
     image: nginx:1.27
     network:
@@ -152,7 +149,7 @@ func addDBCreateExample(_ *huma.OpenAPI, op *huma.Operation) {
 	if op.OperationID != "db-create" {
 		return
 	}
-	exampleYAML := `apiVersion: example.crossplane.io/v1
+	exampleYAML := `apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: db-postgresql
@@ -160,9 +157,7 @@ metadata:
   labels:
     region: 192.168.12.53.nip.io
 spec:
-  crossplane:
-    compositionRef:
-      name: dbs-postgresql-kubeblocks-go-templating
+  projectId: project-id
   engine: postgresql
   quota: xs`
 	exampleValue := map[string]any{"yaml": exampleYAML}

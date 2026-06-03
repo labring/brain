@@ -22,13 +22,10 @@ import {
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
-import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
-import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
-import { useProjectCompositions } from "@/hooks/compositions/use-project-composition";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
-import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -84,19 +81,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     null
   );
 
-  const { items: dbCompositionRows } = useDbCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-  const { items: projectCompositionRows } = useProjectCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-  const { items: apCompositionRows } = useApCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-
   const {
     initiateGithubAuth,
     isAuthorized: githubAuthorized,
@@ -128,11 +112,8 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   }, []);
 
   const databaseOptions = useMemo((): ProjectCreatorDatabaseChoice[] => {
-    if (!hasKubeconfig) {
-      return [];
-    }
-    return dbDeploymentChoicesFromCompositionRows(dbCompositionRows);
-  }, [dbCompositionRows, hasKubeconfig]);
+    return [...DIRECT_DB_DEPLOYMENT_OPTIONS];
+  }, []);
 
   const githubDeployerLoading =
     confirmApplying ||
@@ -162,24 +143,20 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>
       runDeploymentTargetPipeline({
         adapters: deploymentAdapters,
-        apCompositionRows,
         credentialsReady: hasKubeconfig && namespace !== "",
         databaseOptions,
         existingProjects,
         namespace,
-        projectCompositionRows,
         request,
         routingDomain: routingDomainFromKubeconfig(kubeconfig),
       }),
     [
-      apCompositionRows,
       databaseOptions,
       deploymentAdapters,
       existingProjects,
       hasKubeconfig,
       kubeconfig,
       namespace,
-      projectCompositionRows,
     ]
   );
 

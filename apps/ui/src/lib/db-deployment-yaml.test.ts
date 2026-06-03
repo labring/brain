@@ -4,7 +4,7 @@ import YAML from "yaml";
 
 import { renderDbDeploymentYaml } from "./db-deployment-yaml";
 
-test("renderDbDeploymentYaml writes deployment settings into a DB claim", () => {
+test("renderDbDeploymentYaml writes deployment settings into a direct DB manifest", () => {
   const out = YAML.parse(
     renderDbDeploymentYaml({
       compositionName: "dbs-mysql-kubeblocks-go-templating",
@@ -17,18 +17,17 @@ test("renderDbDeploymentYaml writes deployment settings into a DB claim", () => 
     })
   );
 
+  assert.equal(out.apiVersion, "brain.io/direct");
   assert.equal(out.kind, "DB");
   assert.equal(out.metadata.name, "project-a-db");
   assert.equal(out.metadata.namespace, "ns-admin");
   assert.equal(out.spec.engine, "mysql");
   assert.equal(out.spec.quota, "s");
   assert.equal(out.spec.replicas, 2);
-  assert.equal(out.spec.projectName, "project-a");
+  assert.equal(out.spec.projectId, "project-a");
+  assert.equal(out.spec.projectName, undefined);
   assert.equal(out.spec.exposeNodePort, false);
-  assert.equal(
-    out.spec.crossplane.compositionRef.name,
-    "dbs-mysql-kubeblocks-go-templating"
-  );
+  assert.equal(out.spec.legacyRuntime, undefined);
 });
 
 test("renderDbDeploymentYaml strips public-only region labels from templates", () => {
@@ -42,7 +41,7 @@ test("renderDbDeploymentYaml strips public-only region labels from templates", (
       quota: "xs",
       replicas: 12,
       template: `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: template-name
@@ -51,9 +50,8 @@ metadata:
     region: 192.168.12.53.nip.io
     keep: yes
 spec:
-  crossplane:
-    compositionRef:
-      name: old
+  legacyRuntime:
+    composition: old
   engine: redis
   quota: l
 `,
@@ -67,10 +65,7 @@ spec:
   assert.equal(out.spec.engine, "postgresql");
   assert.equal(out.spec.quota, "xs");
   assert.equal(out.spec.replicas, 10);
-  assert.equal(
-    out.spec.crossplane.compositionRef.name,
-    "dbs-postgresql-kubeblocks-go-templating"
-  );
+  assert.equal(out.spec.legacyRuntime, undefined);
 });
 
 test("renderDbDeploymentYaml resolves DB template placeholders before parsing", () => {
@@ -84,7 +79,7 @@ test("renderDbDeploymentYaml resolves DB template placeholders before parsing", 
       quota: "m",
       replicas: 1,
       template: `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: {{ name }}
@@ -92,9 +87,8 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ name }}
 spec:
-  crossplane:
-    compositionRef:
-      name: old
+  legacyRuntime:
+    composition: old
   engine: mysql
   quota: xs
 `,

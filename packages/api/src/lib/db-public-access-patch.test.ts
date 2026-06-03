@@ -6,7 +6,7 @@ import { buildDbPublicAccessMergePatch } from "./db-public-access-patch";
 test("DB public access patch adds routing domain when enabling without region label", () => {
   assert.deepEqual(
     buildDbPublicAccessMergePatch(true, {
-      metadata: { labels: { "crossplane.io/project-name": "project" } },
+      metadata: { labels: { "brain.io/project-id": "project" } },
       routingDomain: "192.168.12.53.nip.io",
     }),
     {
