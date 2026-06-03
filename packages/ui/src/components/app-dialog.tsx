@@ -1,5 +1,6 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import {
   Dialog,
   DialogClose,
@@ -138,19 +139,6 @@ function AppDialogFooter({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-const actionToneClass: Record<AppDialogActionTone, string> = {
-  default: "bg-white/[0.045] text-zinc-100 hover:bg-white/10",
-  destructive: "bg-red-500 text-white hover:bg-red-500/90",
-};
-
-function appDialogButtonClass(className?: string) {
-  return cn(
-    "inline-flex h-9 shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 font-medium text-sm/5 outline-none transition-colors",
-    "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-    className
-  );
-}
-
 function AppDialogCancel({
   className,
   children = "Cancel",
@@ -160,11 +148,10 @@ function AppDialogCancel({
   return (
     <DialogClose
       render={
-        <button
-          className={appDialogButtonClass(
-            cn(actionToneClass.default, className)
-          )}
+        <AppButton
+          className={className}
           type={type}
+          variant="quiet"
           {...props}
         />
       }
@@ -191,17 +178,18 @@ function AppDialogAction({
   const isDisabled = disabled || loading;
 
   return (
-    <button
-      className={appDialogButtonClass(cn(actionToneClass[tone], className))}
+    <AppButton
+      className={className}
       data-loading={loading ? "true" : undefined}
       data-tone={tone}
       disabled={isDisabled}
       type={type}
+      variant={tone === "destructive" ? "danger" : "secondary"}
       {...props}
     >
       {loading ? <Loader2 aria-hidden className="animate-spin" /> : null}
       {loading ? (loadingLabel ?? children) : children}
-    </button>
+    </AppButton>
   );
 }
 

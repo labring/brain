@@ -1,4 +1,4 @@
-import { Button } from "@data-browser/components/ui/Button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Database } from "lucide-react";
 
 interface DataViewErrorProps {
@@ -21,17 +21,17 @@ export function DataViewError({ message, onRetry }: DataViewErrorProps) {
         <Database className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
         <p className="text-muted-foreground text-sm">{message}</p>
         {onRetry && (
-          <Button
+          <AppButton
             className="mt-4"
             data-qa-action="retry"
             data-qa-module="data-view"
             data-qa-object="data-load"
             data-testid="data-view.retry-button"
             onClick={onRetry}
-            variant="outline"
+            variant="quiet"
           >
             {"Retry"}
-          </Button>
+          </AppButton>
         )}
       </div>
     </div>

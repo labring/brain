@@ -21,6 +21,7 @@ import {
   useDbAccessService,
 } from "@data-browser/state/db-access-session";
 import { resolveSchemaParam } from "@data-browser/utils/database-features";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Plus, Table, Trash2 } from "lucide-react";
 import {
   createContext,
@@ -232,17 +233,17 @@ function CreateTableColumnEditor() {
         <label className="font-medium text-foreground text-sm">
           {"Columns"}
         </label>
-        <Button
+        <AppButton
           className="h-7 gap-1 px-2 text-primary text-xs hover:text-primary"
           disabled={state.isSubmitting}
           onClick={addColumn}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           <Plus className="h-3 w-3" />
           {"Add column"}
-        </Button>
+        </AppButton>
       </div>
 
       <div className="rounded-md border">

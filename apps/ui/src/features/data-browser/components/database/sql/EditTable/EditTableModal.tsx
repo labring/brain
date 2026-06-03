@@ -1,4 +1,3 @@
-import { Button } from "@data-browser/components/ui/Button";
 import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
 import { ModalForm } from "@data-browser/components/ui/ModalForm";
 import {
@@ -7,6 +6,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@data-browser/components/ui/tabs";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Key, Link as LinkIcon, Loader2, Table } from "lucide-react";
 import { EditTableColumnsTab } from "./EditTable.ColumnsTab";
 import { EditTableForeignKeysTab } from "./EditTable.ForeignKeysTab";
@@ -72,17 +72,18 @@ function EditTableFooter({ onClose }: { onClose: () => void }) {
 
   return (
     <ModalForm.Footer className="shrink-0 border-t bg-muted/5 px-6 py-4">
-      <Button disabled={isExecuting} onClick={onClose} variant="outline">
+      <AppButton disabled={isExecuting} onClick={onClose} variant="quiet">
         {"Close"}
-      </Button>
-      <Button
+      </AppButton>
+      <AppButton
         disabled={isExecuting || pendingChangeCount === 0}
         onClick={actions.applyAllChanges}
+        variant="secondary"
       >
         {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {"Apply changes"}
         {pendingChangeCount > 0 && ` (${pendingChangeCount})`}
-      </Button>
+      </AppButton>
     </ModalForm.Footer>
   );
 }

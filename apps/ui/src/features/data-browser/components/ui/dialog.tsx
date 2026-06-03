@@ -1,5 +1,5 @@
-import { Button } from "@data-browser/components/ui/Button";
 import { cn } from "@data-browser/lib/utils";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
@@ -108,7 +108,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">{"Close"}</Button>
+          <AppButton variant="quiet">{"Close"}</AppButton>
         </DialogPrimitive.Close>
       )}
     </div>

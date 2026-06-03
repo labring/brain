@@ -1,6 +1,6 @@
-import { Button } from "@data-browser/components/ui/Button";
 import { DialogClose, DialogFooter } from "@data-browser/components/ui/dialog";
 import { useModalForm } from "@data-browser/components/ui/ModalForm";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { CheckCircle, Download, Loader2 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ export function ExportFooter({ isSuccess, onClick }: ExportFooterProps) {
     return (
       <DialogFooter>
         <DialogClose asChild>
-          <Button variant="outline">{"Close"}</Button>
+          <AppButton variant="quiet">{"Close"}</AppButton>
         </DialogClose>
       </DialogFooter>
     );
@@ -80,14 +80,15 @@ export function ExportFooter({ isSuccess, onClick }: ExportFooterProps) {
   return (
     <DialogFooter>
       <DialogClose asChild>
-        <Button disabled={state.isSubmitting} type="button" variant="outline">
+        <AppButton disabled={state.isSubmitting} type="button" variant="quiet">
           {"Cancel"}
-        </Button>
+        </AppButton>
       </DialogClose>
-      <Button
+      <AppButton
         className="gap-2"
         disabled={state.isSubmitting}
         onClick={handleClick}
+        variant="secondary"
       >
         {state.isSubmitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -95,7 +96,7 @@ export function ExportFooter({ isSuccess, onClick }: ExportFooterProps) {
           <Download className="h-4 w-4" />
         )}
         {state.isSubmitting ? "Exporting..." : "Start export"}
-      </Button>
+      </AppButton>
     </DialogFooter>
   );
 }
