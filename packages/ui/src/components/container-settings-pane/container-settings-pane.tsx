@@ -7,8 +7,8 @@ import {
 } from "@workspace/crossplane/lib/platform-address";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { Badge } from "@workspace/ui/components/badge";
-import { Button } from "@workspace/ui/components/button";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { Label } from "@workspace/ui/components/label";
 import { PaneInput } from "@workspace/ui/components/pane-input";
@@ -1504,17 +1504,16 @@ function PublicAddressRow({
               </AppButton>
             )}
             {readOnly || onDelete == null ? null : (
-              <Button
+              <AppIconButton
                 aria-label="Delete Public Address"
-                className="size-9 rounded-lg bg-white/5 text-foreground hover:bg-input hover:text-destructive"
                 disabled={pending}
                 onClick={handleDelete}
-                size="icon-lg"
+                size="lg"
                 type="button"
-                variant="ghost"
+                variant="danger"
               >
                 <Trash2 aria-hidden />
-              </Button>
+              </AppIconButton>
             )}
           </CanvasNode.CopyableRowControl>
         </>
@@ -1631,18 +1630,17 @@ function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
         </div>
       </div>
       {readOnly || onUnbind == null ? null : (
-        <Button
+        <AppIconButton
           aria-label="Unbind Custom Domain"
-          className="size-9 rounded-lg bg-white/5 text-foreground hover:bg-input hover:text-destructive"
           disabled={pending}
           onClick={handleUnbind}
-          size="icon-lg"
+          size="lg"
           title="Unbind Custom Domain"
           type="button"
-          variant="ghost"
+          variant="danger"
         >
           <Trash2 aria-hidden />
-        </Button>
+        </AppIconButton>
       )}
     </div>
   );

@@ -104,6 +104,40 @@ export function getRegistryPreviewLoaderByKey(
 }
 
 export const Index: RegistryIndex = {
+  "linear/components/app-icon-button": {
+    style: "linear",
+    group: "components",
+    name: "app-icon-button",
+    title: "App Icon Button",
+    description:
+      "SealAI product icon-only button style layer with shared size and variant semantics.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-icon-button", "button"],
+    files: [
+      {
+        path: "registry/linear/components/app-icon-button/app-icon-button-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-icon-button.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/button.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import(
+        "@registry/linear/components/app-icon-button/app-icon-button-preview"
+      ),
+  },
+
   "linear/components/app-button": {
     style: "linear",
     group: "components",

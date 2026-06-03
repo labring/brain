@@ -3,7 +3,11 @@
   "name": "log-viewer",
   "title": "Log viewer (Linear)",
   "description": "Virtualized log list with filters, time range, and chart",
-  "dependencies": ["react-window", "recharts", "lucide-react"],
+  "dependencies": [
+    "react-window",
+    "recharts",
+    "lucide-react"
+  ],
   "registryDependencies": [
     "button",
     "badge",

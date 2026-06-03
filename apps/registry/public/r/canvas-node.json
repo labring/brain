@@ -3,8 +3,12 @@
   "name": "canvas-node",
   "title": "Canvas Node",
   "description": "Shared canvas node chrome with frame, surface, layout, status, drag, expand, connector, copyable-row, metrics, actions, and card primitives",
-  "dependencies": ["lucide-react"],
-  "registryDependencies": ["button"],
+  "dependencies": [
+    "lucide-react"
+  ],
+  "registryDependencies": [
+    "button"
+  ],
   "files": [
     {
       "path": "../../packages/ui/src/components/canvas-node/canvas-node.types.ts",

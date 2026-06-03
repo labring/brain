@@ -3,8 +3,15 @@
   "name": "canvas",
   "title": "Canvas",
   "description": "React Flow workspace surface with Jotai, provider context, and error fallback",
-  "dependencies": ["@xyflow/react", "jotai"],
-  "registryDependencies": ["preview", "button", "entry-node"],
+  "dependencies": [
+    "@xyflow/react",
+    "jotai"
+  ],
+  "registryDependencies": [
+    "preview",
+    "button",
+    "entry-node"
+  ],
   "files": [
     {
       "path": "../../packages/ui/src/components/canvas/canvas.types.ts",
@@ -32,7 +39,7 @@
     },
     {
       "path": "../../packages/ui/src/components/canvas/canvas.error-fallback.tsx",
-      "content": "\"use client\";\n\nimport { cn } from \"@workspace/ui/lib/utils\";\nimport { Button } from \"../button\";\n\nexport function CanvasErrorFallback({\n  error,\n  reset,\n  className,\n}: {\n  error: Error & { digest?: string };\n  reset: () => void;\n  /** Merged with default layout; omit for full-viewport route errors. */\n  className?: string;\n}) {\n  return (\n    <div\n      className={cn(\n        \"flex flex-col items-center justify-center gap-4 p-6 text-center\",\n        className ?? \"h-dvh\"\n      )}\n    >\n      <h1 className=\"font-medium text-lg\">Canvas failed to load</h1>\n      <p className=\"max-w-md text-muted-foreground text-sm\">{error.message}</p>\n      <Button onClick={reset}>Try again</Button>\n    </div>\n  );\n}\n",
+      "content": "\"use client\";\n\nimport { AppButton } from \"@workspace/ui/components/app-button\";\nimport { cn } from \"@workspace/ui/lib/utils\";\n\nexport function CanvasErrorFallback({\n  error,\n  reset,\n  className,\n}: {\n  error: Error & { digest?: string };\n  reset: () => void;\n  /** Merged with default layout; omit for full-viewport route errors. */\n  className?: string;\n}) {\n  return (\n    <div\n      className={cn(\n        \"flex flex-col items-center justify-center gap-4 p-6 text-center\",\n        className ?? \"h-dvh\"\n      )}\n    >\n      <h1 className=\"font-medium text-lg\">Canvas failed to load</h1>\n      <p className=\"max-w-md text-muted-foreground text-sm\">{error.message}</p>\n      <AppButton onClick={reset} variant=\"secondary\">\n        Try again\n      </AppButton>\n    </div>\n  );\n}\n",
       "type": "registry:component",
       "target": "components/canvas/canvas.error-fallback.tsx"
     },

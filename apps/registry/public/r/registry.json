@@ -4,6 +4,21 @@
   "homepage": "https://github.com/sealai/brain",
   "items": [
     {
+      "name": "app-icon-button",
+      "type": "registry:ui",
+      "title": "App Icon Button",
+      "description": "SealAI product icon-only button style layer",
+      "dependencies": ["class-variance-authority"],
+      "registryDependencies": ["button"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-icon-button.tsx",
+          "type": "registry:component",
+          "target": "components/app-icon-button.tsx"
+        }
+      ]
+    },
+    {
       "name": "app-button",
       "type": "registry:ui",
       "title": "App Button",
