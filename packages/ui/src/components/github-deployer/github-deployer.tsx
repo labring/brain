@@ -1,8 +1,8 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import { Button } from "@workspace/ui/components/button";
-import { Input } from "@workspace/ui/components/input";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -222,7 +222,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
             strokeWidth={2}
           />
-          <Input
+          <AppInput
             aria-invalid={showInvalid || undefined}
             className="h-10 rounded-md border-border bg-transparent pl-10 text-sm"
             disabled={isLoading}
@@ -373,7 +373,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
           strokeWidth={2}
         />
-        <Input
+        <AppInput
           className="h-10 rounded-md border-border bg-transparent pl-10 text-sm"
           disabled={isLoading}
           onChange={(event) => {

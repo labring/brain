@@ -1,6 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import {
   Dialog,
   DialogClose,
@@ -9,7 +10,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@workspace/ui/components/dialog";
-import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { cn } from "@workspace/ui/lib/utils";
 import { Loader2, TriangleAlert } from "lucide-react";
@@ -221,16 +221,11 @@ function AppDialogLabel({ className, ...props }: ComponentProps<typeof Label>) {
   );
 }
 
-function AppDialogInput({ className, ...props }: ComponentProps<typeof Input>) {
-  return (
-    <Input
-      className={cn(
-        "h-8 border-white/15 bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/25 focus-visible:ring-white/10 dark:bg-transparent",
-        className
-      )}
-      {...props}
-    />
-  );
+function AppDialogInput({
+  className,
+  ...props
+}: ComponentProps<typeof AppInput>) {
+  return <AppInput className={className} {...props} />;
 }
 
 export const AppDialog = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
-import { Input } from "@workspace/ui/components/input";
+import { AppInput } from "@workspace/ui/components/app-input";
 import { cn } from "@workspace/ui/lib/utils";
 import { LayoutGrid, Plus, Search } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -53,7 +53,7 @@ export function ProjectExplorerSearchField({
   className,
   placeholder = "Search projects…",
   ...props
-}: Omit<ComponentProps<typeof Input>, "onChange" | "type" | "value"> & {
+}: Omit<ComponentProps<typeof AppInput>, "onChange" | "type" | "value"> & {
   placeholder?: string;
 }) {
   const { searchQuery, setSearchQuery } = useProjectExplorer();
@@ -67,7 +67,7 @@ export function ProjectExplorerSearchField({
         aria-hidden
         className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
       />
-      <Input
+      <AppInput
         aria-label="Search projects"
         className="pl-9 shadow-xs"
         onChange={(e) => setSearchQuery(e.target.value)}
