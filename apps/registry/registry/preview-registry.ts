@@ -170,6 +170,38 @@ export const Index: RegistryIndex = {
       import("@registry/linear/components/app-button/app-button-preview"),
   },
 
+  "linear/components/app-input": {
+    style: "linear",
+    group: "components",
+    name: "app-input",
+    title: "App Input",
+    description:
+      "SealAI product input style layer for pane and settings forms, built on the shared primitive Input.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-input", "input"],
+    files: [
+      {
+        path: "registry/linear/components/app-input/app-input-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/app-input/app-input-preview"),
+  },
+
   "linear/components/app-dialog": {
     style: "linear",
     group: "components",

@@ -36,7 +36,7 @@ const PreviewCanvasContainerNode = memo(function PreviewCanvasContainerNode({
       }}
       quickActions={{
         calendar: { disabled: true },
-        console: { disabled: true },
+        terminal: { disabled: true },
         logs: { disabled: true },
         metrics: { disabled: true },
       }}

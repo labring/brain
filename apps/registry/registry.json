@@ -34,6 +34,20 @@
       ]
     },
     {
+      "name": "app-input",
+      "type": "registry:ui",
+      "title": "App Input",
+      "description": "SealAI product input style layer for pane and settings forms",
+      "registryDependencies": ["input"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-input.tsx",
+          "type": "registry:component",
+          "target": "components/app-input.tsx"
+        }
+      ]
+    },
+    {
       "name": "log-viewer",
       "type": "registry:ui",
       "title": "Log viewer (Linear)",

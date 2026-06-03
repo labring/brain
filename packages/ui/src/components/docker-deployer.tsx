@@ -2,8 +2,8 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import { Label } from "@workspace/ui/components/label";
-import { PaneInput } from "@workspace/ui/components/pane-input";
 import { Spinner } from "@workspace/ui/components/spinner";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,
@@ -160,7 +160,7 @@ export function DockerDeployer({
       >
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="docker-deployer-image">Docker image</Label>
-          <PaneInput
+          <AppInput
             aria-describedby={
               visibleImageError ? "docker-deployer-image-error" : undefined
             }
@@ -228,7 +228,7 @@ export function DockerDeployer({
                     className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2"
                     key={row.id}
                   >
-                    <PaneInput
+                    <AppInput
                       aria-invalid={rowError ? true : undefined}
                       aria-label={`Environment variable ${index + 1} name`}
                       disabled={busy}
@@ -245,7 +245,7 @@ export function DockerDeployer({
                       placeholder="NAME"
                       value={row.name}
                     />
-                    <PaneInput
+                    <AppInput
                       aria-label={`Environment variable ${index + 1} value`}
                       disabled={busy}
                       onChange={(event) => {
@@ -296,7 +296,7 @@ export function DockerDeployer({
         <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="docker-deployer-port">App Listening Port</Label>
-            <PaneInput
+            <AppInput
               aria-describedby={
                 portError ? "docker-deployer-port-error" : undefined
               }

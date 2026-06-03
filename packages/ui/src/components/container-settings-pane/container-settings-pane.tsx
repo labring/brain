@@ -8,10 +8,10 @@ import {
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import { Badge } from "@workspace/ui/components/badge";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { Label } from "@workspace/ui/components/label";
-import { PaneInput } from "@workspace/ui/components/pane-input";
 import {
   ResourceSettingsDraftFooter,
   ResourceSettingsInset,
@@ -1114,7 +1114,7 @@ function EditableEnvValueControl({
   }
 
   return (
-    <PaneInput
+    <AppInput
       aria-label="Environment variable value"
       onChange={(event) =>
         onUpdateRow(index, {
@@ -1154,7 +1154,7 @@ function EditableEnvRows({
           return (
             <div className="grid min-w-0 gap-1.5" key={rowKey}>
               <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <PaneInput
+                <AppInput
                   aria-invalid={error != null}
                   aria-label="Environment variable name"
                   onChange={(event) =>
@@ -1964,7 +1964,7 @@ function AddPublicAddressForm({
     <div className="grid min-w-0 gap-3 rounded-md border border-border border-dashed bg-transparent p-3">
       <div className="grid min-w-0 gap-1.5">
         <Label htmlFor={portInputId}>Public Address target port</Label>
-        <PaneInput
+        <AppInput
           aria-describedby={error == null ? undefined : errorId}
           aria-invalid={error != null}
           className="max-w-32"
@@ -2307,7 +2307,7 @@ function NetworkSettingsSection({
           >
             Private Address target port
           </Label>
-          <PaneInput
+          <AppInput
             aria-describedby={
               effectivePortError == null ? undefined : `${networkInputId}-error`
             }
@@ -3024,7 +3024,7 @@ function ImageSettingsSection({
             <span className="min-w-0 truncate">{shownImage}</span>
           </div>
         ) : (
-          <PaneInput
+          <AppInput
             aria-label="Container image"
             id={imageInputId}
             onBlur={onBlur}
