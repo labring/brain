@@ -212,12 +212,8 @@ function ProjectShortcutIcon({
   );
 }
 
-const APP_SIDEBAR_LINK_BASE_CLASS =
+const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0!";
-const APP_SIDEBAR_LINK_INACTIVE_CLASS =
-  "aria-expanded:bg-input/30 aria-expanded:text-neutral-50 data-[state=open]:bg-input/30 data-popup-open:bg-input/30 data-[state=open]:text-neutral-50 data-popup-open:text-neutral-50";
-const APP_SIDEBAR_LINK_ACTIVE_CLASS =
-  "bg-input! text-blue-400! hover:bg-input! aria-expanded:bg-input! aria-expanded:text-blue-400! data-[state=open]:bg-input! data-popup-open:bg-input! data-[state=open]:text-blue-400! data-popup-open:text-blue-400!";
 
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
@@ -242,16 +238,11 @@ function AppSidebarLinkButton({
           <AppIconButton
             aria-current={active ? "page" : undefined}
             aria-label={ariaLabel}
-            className={cn(
-              APP_SIDEBAR_LINK_BASE_CLASS,
-              active
-                ? APP_SIDEBAR_LINK_ACTIVE_CLASS
-                : APP_SIDEBAR_LINK_INACTIVE_CLASS
-            )}
+            className={APP_SIDEBAR_LINK_CLASS}
             nativeButton={false}
             render={<Link href={href} />}
             size="lg"
-            variant="node"
+            variant="quiet"
           >
             {children}
           </AppIconButton>
