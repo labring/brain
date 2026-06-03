@@ -3,15 +3,8 @@
   "name": "canvas",
   "title": "Canvas",
   "description": "React Flow workspace surface with Jotai, provider context, and error fallback",
-  "dependencies": [
-    "@xyflow/react",
-    "jotai"
-  ],
-  "registryDependencies": [
-    "preview",
-    "button",
-    "entry-node"
-  ],
+  "dependencies": ["@xyflow/react", "jotai"],
+  "registryDependencies": ["preview", "button", "entry-node"],
   "files": [
     {
       "path": "../../packages/ui/src/components/canvas/canvas.types.ts",

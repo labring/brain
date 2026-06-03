@@ -2,7 +2,7 @@
 
 import "@xterm/xterm/css/xterm.css";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
 import type { Terminal as TerminalType } from "@xterm/xterm";
 import { useAtomValue } from "jotai";
@@ -229,16 +229,15 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
             </span>
           </div>
         </div>
-        <Button
+        <AppIconButton
           aria-label="Close terminal"
-          className="size-8 rounded-md text-zinc-200 hover:bg-white/10"
           onClick={onClose}
-          size="icon"
+          size="md"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           <X aria-hidden className="size-4" />
-        </Button>
+        </AppIconButton>
       </header>
       <div
         className="min-h-0 flex-1 overflow-hidden px-4 py-3"

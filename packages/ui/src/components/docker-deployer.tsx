@@ -1,7 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { Label } from "@workspace/ui/components/label";
 import { PaneInput } from "@workspace/ui/components/pane-input";
 import { Spinner } from "@workspace/ui/components/spinner";
@@ -199,9 +199,8 @@ export function DockerDeployer({
             <p className="font-medium text-foreground text-sm leading-5">
               Environment Variables
             </p>
-            <Button
+            <AppIconButton
               aria-label="Add environment variable"
-              className="size-8 rounded-lg"
               disabled={busy}
               onClick={() =>
                 setEnvRows((rows) => [
@@ -209,12 +208,12 @@ export function DockerDeployer({
                   { id: createEnvRowId(), name: nextEnvName(rows), value: "" },
                 ])
               }
-              size="icon"
+              size="md"
               type="button"
-              variant="ghost"
+              variant="quiet"
             >
               <Plus aria-hidden className="size-4" />
-            </Button>
+            </AppIconButton>
           </div>
           {envRows.length === 0 ? (
             <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
@@ -262,21 +261,20 @@ export function DockerDeployer({
                       placeholder="value"
                       value={row.value}
                     />
-                    <Button
+                    <AppIconButton
                       aria-label="Remove environment variable"
-                      className="size-8 rounded-lg"
                       disabled={busy}
                       onClick={() =>
                         setEnvRows((rows) =>
                           rows.filter((_, rowIndex) => rowIndex !== index)
                         )
                       }
-                      size="icon"
+                      size="md"
                       type="button"
-                      variant="ghost"
+                      variant="danger"
                     >
                       <Trash2 aria-hidden className="size-4" />
-                    </Button>
+                    </AppIconButton>
                     {rowError ? (
                       <p className="col-span-3 text-destructive text-xs leading-4">
                         {rowError.message}

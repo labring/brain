@@ -3,12 +3,8 @@
   "name": "app-button",
   "title": "App Button",
   "description": "SealAI product button style layer for non-icon actions",
-  "dependencies": [
-    "class-variance-authority"
-  ],
-  "registryDependencies": [
-    "button"
-  ],
+  "dependencies": ["class-variance-authority"],
+  "registryDependencies": ["button"],
   "files": [
     {
       "path": "../../packages/ui/src/components/app-button.tsx",

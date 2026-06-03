@@ -3,9 +3,7 @@
   "name": "container-node",
   "title": "Container Node",
   "description": "AP workload canvas node composed with shared Canvas Node chrome, Root/Content state, lifecycle actions, quick actions, footer metrics, and expansion behavior",
-  "dependencies": [
-    "lucide-react"
-  ],
+  "dependencies": ["lucide-react"],
   "registryDependencies": [
     "canvas-node",
     "app-dialog",

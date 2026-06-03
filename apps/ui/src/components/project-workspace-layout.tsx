@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat as useAIChat } from "@ai-sdk/react";
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Chat,
   downloadChatMessagesJson,
@@ -832,24 +832,24 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       >
         <ProjectAssistantChatPane />
       </aside>
-      <Button
+      <AppIconButton
         aria-controls="project-assistant-pane"
         aria-expanded={assistantPaneOpen}
         aria-label={
           assistantPaneOpen ? "Close assistant pane" : "Open assistant pane"
         }
-        className="hoverable aria-expanded:!bg-transparent absolute top-2 right-2 z-40 size-9 rounded-xl"
+        className="absolute top-2 right-2 z-40"
         onClick={toggleAssistantPane}
-        size="icon-lg"
+        size="lg"
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         {assistantPaneOpen ? (
           <PanelRightClose aria-hidden className="size-4" strokeWidth={2} />
         ) : (
           <PanelRightOpen aria-hidden className="size-4" strokeWidth={2} />
         )}
-      </Button>
+      </AppIconButton>
     </div>
   );
 }

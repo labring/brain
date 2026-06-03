@@ -3,9 +3,7 @@
   "name": "database-node",
   "title": "Database Node",
   "description": "Managed database canvas node with connection rows, public-access toggle, lifecycle and quick actions, footer metrics, and metadata-driven icons",
-  "dependencies": [
-    "lucide-react"
-  ],
+  "dependencies": ["lucide-react"],
   "registryDependencies": [
     "app-dialog",
     "button",

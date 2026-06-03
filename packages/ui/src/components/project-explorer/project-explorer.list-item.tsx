@@ -1,7 +1,7 @@
 "use client";
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { CanvasNodeStatusDot } from "@workspace/ui/components/canvas-node/canvas-node.status";
 import {
   DropdownMenu,
@@ -141,19 +141,18 @@ export function ProjectExplorerListItem({
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button
+                <AppIconButton
                   aria-label={`Actions for ${project.name}`}
-                  className="size-9 shrink-0 rounded-lg text-foreground hover:bg-input/50 hover:text-foreground aria-expanded:bg-input/50 data-popup-open:bg-input/50"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                  size={null}
+                  size="lg"
                   type="button"
-                  variant="ghost"
-                />
+                  variant="quiet"
+                >
+                  <EllipsisVertical aria-hidden className="size-4" />
+                </AppIconButton>
               }
-            >
-              <EllipsisVertical aria-hidden className="size-4" />
-            </DropdownMenuTrigger>
+            />
             <DropdownMenuContent
               align="start"
               className="w-38 min-w-38 rounded-md border border-border bg-input/30 p-1 text-foreground shadow-none ring-0! backdrop-blur-xl"

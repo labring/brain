@@ -13,7 +13,7 @@ const appIconButtonVariants = cva(
         secondary:
           "bg-input/30 text-brand-primary-foreground hover:bg-input aria-expanded:bg-input data-[state=open]:bg-input",
         quiet:
-          "bg-transparent text-muted-foreground hover:bg-input/30 hover:text-foreground aria-expanded:bg-input/30 aria-expanded:text-foreground aria-[current=page]:bg-input/30 aria-[current=page]:text-foreground data-[active=true]:bg-input/30 data-[state=open]:bg-input/30 data-[active=true]:text-foreground data-[state=open]:text-foreground",
+          "bg-transparent text-brand-primary-foreground hover:bg-input/30 aria-expanded:bg-input/30 aria-[current=page]:bg-input/30 data-[active=true]:bg-input/30 data-[state=open]:bg-input/30",
         danger:
           "bg-input/30 text-foreground hover:bg-input hover:text-red-500 focus-visible:border-destructive/40 focus-visible:ring-destructive/25 aria-expanded:bg-input aria-expanded:text-red-500 data-[state=open]:bg-input data-[state=open]:text-red-500",
       },
@@ -36,11 +36,13 @@ type AppIconButtonProps = Omit<
 > &
   VariantProps<typeof appIconButtonVariants> & {
     "aria-label": string;
+    "data-slot"?: string;
     children: React.ReactNode;
   };
 
 function AppIconButton({
   className,
+  "data-slot": dataSlot = "app-icon-button",
   size = "md",
   variant = "quiet",
   ...props
@@ -50,7 +52,7 @@ function AppIconButton({
       {...props}
       className={cn(appIconButtonVariants({ variant, size }), className)}
       data-size={size}
-      data-slot="app-icon-button"
+      data-slot={dataSlot}
       data-variant={variant}
       size={null}
       variant={null}
