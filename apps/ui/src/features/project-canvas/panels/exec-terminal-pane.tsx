@@ -24,6 +24,10 @@ const MIN_TERMINAL_HEIGHT = 288;
 const TERMINAL_HEIGHT_STEP = 24;
 const TERMINAL_VIEWPORT_GUTTER = 32;
 const TERMINAL_VIEWPORT_MAX_RATIO = 0.8;
+const TERMINAL_BACKGROUND_BASE = "#080A11";
+const TERMINAL_BACKGROUND_COMPOSITE = "#13151C";
+const TERMINAL_BACKGROUND_OVERLAY =
+  "linear-gradient(90deg, color-mix(in oklab, var(--input) 30%, transparent), color-mix(in oklab, var(--input) 30%, transparent))";
 
 interface TerminalServerMessage {
   message?: string;
@@ -293,7 +297,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         fontSize: 14,
         lineHeight: 1.43,
         theme: {
-          background: "#10131a",
+          background: TERMINAL_BACKGROUND_COMPOSITE,
           cursor: "#fafafa",
           foreground: "#e5e5e5",
           selectionBackground: "rgba(59, 130, 246, 0.32)",
@@ -377,14 +381,14 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
     <section
       aria-label="Terminal session"
       className={cn(
-        "pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t bg-[#080a11] text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)]",
+        "pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)]",
         isResizing ? "border-input" : "border-white/10"
       )}
       data-slot="exec-terminal-plane"
       ref={sectionRef}
       style={{
-        backgroundImage:
-          "linear-gradient(90deg, rgba(255,255,255,0.045), rgba(255,255,255,0.045))",
+        backgroundColor: TERMINAL_BACKGROUND_BASE,
+        backgroundImage: TERMINAL_BACKGROUND_OVERLAY,
         height: terminalHeight,
       }}
     >
@@ -406,7 +410,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         <div className="flex min-w-0 items-center gap-2">
           <SquareTerminal
             aria-hidden
-            className="size-4 shrink-0 text-blue-500"
+            className="size-4 shrink-0 text-blue-400"
           />
           <h2 className="truncate font-semibold text-lg text-zinc-50 leading-7">
             {descriptor.title || "Terminal"}
@@ -440,10 +444,11 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         </AppIconButton>
       </header>
       <div
-        className="[&_.xterm-viewport]:!bg-transparent min-h-0 flex-1 overflow-hidden px-4 pt-1 pb-4 [&_.xterm-viewport]:[scrollbar-color:rgba(255,255,255,0.15)_transparent] [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm]:h-full"
+        className="[&_.xterm-scrollable-element]:!bg-transparent [&_.xterm-viewport]:!bg-transparent min-h-0 flex-1 overflow-hidden [&_.xterm-viewport]:[scrollbar-color:rgba(255,255,255,0.15)_transparent] [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm]:h-full"
         data-slot="exec-terminal-surface"
-        ref={containerRef}
-      />
+      >
+        <div className="h-full px-4 pt-2 pb-4" ref={containerRef} />
+      </div>
     </section>
   );
 });

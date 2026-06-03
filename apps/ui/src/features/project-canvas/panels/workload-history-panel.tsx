@@ -38,7 +38,7 @@ function WorkloadHistoryShell({
   return (
     <CanvasResourcePane
       closeAriaLabel="Close workload history"
-      icon={<History aria-hidden className="size-4 shrink-0 text-blue-500" />}
+      icon={<History aria-hidden className="size-4 shrink-0 text-blue-400" />}
       onClose={onClose}
       subtitle={subtitle}
       title={title}
