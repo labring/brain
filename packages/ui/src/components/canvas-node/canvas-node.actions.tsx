@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,11 +81,11 @@ export function CanvasNodeActionButton({
   const disabled = action?.disabled || action?.loading || !action?.onClick;
   const tooltip = title ?? ariaLabel;
   const button = (
-    <Button
+    <AppIconButton
       aria-label={ariaLabel}
       className={cn(
         RF_CONTROL_CLASS,
-        "canvas-node-action-button flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-0 bg-zinc-950/20 p-0 text-zinc-50 shadow-none transition-colors hover:text-zinc-50",
+        "canvas-node-action-button shrink-0 cursor-pointer border-0",
         className
       )}
       disabled={disabled}
@@ -96,12 +96,12 @@ export function CanvasNodeActionButton({
       onDoubleClick={stopCanvasNodeControlEvent}
       onKeyDown={stopCanvasNodeControlEvent}
       onPointerDown={stopCanvasNodeControlEvent}
-      size={null}
+      size="md"
       type="button"
-      variant={null}
+      variant="node"
     >
       {action?.loading ? <Spinner className="size-4" /> : children}
-    </Button>
+    </AppIconButton>
   );
 
   return (
@@ -137,22 +137,22 @@ export function CanvasNodeActionMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button
+          <AppIconButton
             aria-label={ariaLabel}
             className={cn(
               RF_CONTROL_CLASS,
-              "canvas-node-action-menu-trigger flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-0 bg-zinc-950/20 p-0 text-zinc-50 shadow-none transition-colors hover:text-zinc-50 aria-expanded:bg-white/15 data-popup-open:bg-white/15",
+              "canvas-node-action-menu-trigger shrink-0 cursor-pointer border-0",
               className
             )}
             onClick={stopCanvasNodeControlEvent}
-            size={null}
+            size="md"
             type="button"
-            variant={null}
-          />
+            variant="node"
+          >
+            <Ellipsis aria-hidden className="size-4" />
+          </AppIconButton>
         }
-      >
-        <Ellipsis aria-hidden className="size-4" />
-      </DropdownMenuTrigger>
+      />
       <DropdownMenuContent
         align="start"
         alignOffset={CANVAS_NODE_MENU_ALIGN_OFFSET}

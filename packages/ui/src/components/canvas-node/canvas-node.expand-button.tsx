@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 
@@ -16,7 +16,7 @@ export function CanvasNodeExpandButton({ className }: { className?: string }) {
   const Icon = meta.expanded ? PanelRightOpen : PanelRightClose;
 
   return (
-    <Button
+    <AppIconButton
       aria-label={meta.expanded ? "Collapse" : "Expand"}
       className={cn(
         "nodrag nopan canvas-node-expand-button flex items-center justify-center rounded-lg border-[0.5px] border-white/10 p-0 shadow-none active:translate-y-0!",
@@ -50,11 +50,11 @@ export function CanvasNodeExpandButton({ className }: { className?: string }) {
 
         actions.expand();
       }}
-      size={null}
+      size="md"
       type="button"
-      variant={null}
+      variant="node"
     >
       <Icon aria-hidden className="size-4 -rotate-90" />
-    </Button>
+    </AppIconButton>
   );
 }
