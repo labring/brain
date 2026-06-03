@@ -1,7 +1,7 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
-import { Button } from "../button";
 
 export function CanvasErrorFallback({
   error,
@@ -22,7 +22,9 @@ export function CanvasErrorFallback({
     >
       <h1 className="font-medium text-lg">Canvas failed to load</h1>
       <p className="max-w-md text-muted-foreground text-sm">{error.message}</p>
-      <Button onClick={reset}>Try again</Button>
+      <AppButton onClick={reset} variant="secondary">
+        Try again
+      </AppButton>
     </div>
   );
 }

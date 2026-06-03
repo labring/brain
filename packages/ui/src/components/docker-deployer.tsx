@@ -1,5 +1,6 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Button } from "@workspace/ui/components/button";
 import { Label } from "@workspace/ui/components/label";
 import { PaneInput } from "@workspace/ui/components/pane-input";
@@ -339,7 +340,7 @@ export function DockerDeployer({
 
       {childrenBeforeDeploy}
 
-      <Button
+      <AppButton
         aria-busy={busy}
         aria-label="Deploy Docker image"
         className="h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input"
@@ -351,7 +352,7 @@ export function DockerDeployer({
           await onDeploy?.(normalizeDockerDeploymentSettings(settings));
         }}
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         {busy ? (
           <Spinner aria-hidden className="size-4 shrink-0" />
@@ -359,7 +360,7 @@ export function DockerDeployer({
           <Rocket aria-hidden className="size-4 shrink-0" />
         )}
         {busy ? "Deploying" : deployLabel}
-      </Button>
+      </AppButton>
     </div>
   );
 }

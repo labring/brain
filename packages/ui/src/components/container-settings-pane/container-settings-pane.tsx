@@ -5,6 +5,7 @@ import {
   generatePlatformAddressId,
   platformAddressEndpoint,
 } from "@workspace/crossplane/lib/platform-address";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
@@ -1170,17 +1171,17 @@ function EditableEnvRows({
                   onUpdateRow={onUpdateRow}
                   row={row}
                 />
-                <Button
+                <AppButton
                   aria-label="Remove environment variable"
                   className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                   onClick={() => onDeleteRow(index)}
                   size="lg"
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                 >
                   <Trash2 aria-hidden data-icon="inline-start" />
                   Delete
-                </Button>
+                </AppButton>
               </div>
               {error == null ? null : (
                 <p className="text-destructive text-xs" role="status">
@@ -1490,17 +1491,17 @@ function PublicAddressRow({
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
             {readOnly || onBindCustomDomain == null ? null : (
-              <Button
+              <AppButton
                 aria-label="Bind Custom Domain"
                 className="h-9 min-w-20 rounded-lg bg-white/5 px-4 text-foreground text-sm hover:bg-input"
                 disabled={value === ""}
                 onClick={onBindCustomDomain}
                 size="lg"
                 type="button"
-                variant="ghost"
+                variant="quiet"
               >
                 CNAME
-              </Button>
+              </AppButton>
             )}
             {readOnly || onDelete == null ? null : (
               <Button
@@ -1842,16 +1843,16 @@ function NetworkSectionActions({
 }: NetworkSectionActionsProps) {
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Button
+      <AppButton
         className="h-7 px-2 text-xs"
         disabled={pending}
         onClick={onCancel}
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         Cancel
-      </Button>
-      <Button
+      </AppButton>
+      <AppButton
         className="h-7 px-2 text-xs"
         disabled={!canSave}
         onClick={async () => {
@@ -1861,7 +1862,7 @@ function NetworkSectionActions({
         variant="secondary"
       >
         Save
-      </Button>
+      </AppButton>
     </div>
   );
 }
@@ -1985,16 +1986,16 @@ function AddPublicAddressForm({
         </p>
       )}
       <div className="flex justify-end gap-1">
-        <Button
+        <AppButton
           disabled={pending}
           onClick={onCancel}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           Cancel
-        </Button>
-        <Button
+        </AppButton>
+        <AppButton
           disabled={pending || onSubmit == null}
           onClick={handleSubmit}
           size="sm"
@@ -2002,7 +2003,7 @@ function AddPublicAddressForm({
           variant="secondary"
         >
           Add
-        </Button>
+        </AppButton>
       </div>
     </div>
   );
@@ -2052,7 +2053,7 @@ function DomainListSection({
   return (
     <NetworkCard title="Public Addresses">
       {readOnly ? null : (
-        <Button
+        <AppButton
           aria-label="Add Public Address"
           className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
           disabled={addOpen || !canMutateNetwork}
@@ -2062,7 +2063,7 @@ function DomainListSection({
         >
           <Plus aria-hidden />
           Add Public Address
-        </Button>
+        </AppButton>
       )}
       {addOpen ? (
         <AddPublicAddressForm
@@ -2114,15 +2115,14 @@ function DomainListSection({
         </CanvasNode.CopyFeedbackScope>
       )}
       {hiddenPublicAddressCount > 0 ? (
-        <Button
+        <AppButton
           className="h-4 justify-self-center px-2 text-muted-foreground text-xs hover:text-foreground"
           onClick={onShowAllPublicAddresses}
-          size="xs"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           View All
-        </Button>
+        </AppButton>
       ) : null}
     </NetworkCard>
   );
@@ -3651,16 +3651,16 @@ export function ContainerSettingsPane({
   const quotaActions =
     quotaCommitMode && !settingsCommitMode && quotasDirty ? (
       <>
-        <Button
+        <AppButton
           className="h-7 px-2 text-xs"
           disabled={quotaSavePending}
           onClick={handleQuotaCancel}
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           Cancel
-        </Button>
-        <Button
+        </AppButton>
+        <AppButton
           className="h-7 px-2 text-xs"
           disabled={quotaSavePending}
           onClick={async () => {
@@ -3670,7 +3670,7 @@ export function ContainerSettingsPane({
           variant="secondary"
         >
           Save
-        </Button>
+        </AppButton>
       </>
     ) : null;
 
@@ -3974,53 +3974,53 @@ export function ContainerSettingsPane({
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {!settingsCommitMode && envDirty ? (
               <>
-                <Button
+                <AppButton
                   aria-label="Cancel environment changes"
                   className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                   onClick={handleCancelEnvRows}
                   size="lg"
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                 >
                   <X aria-hidden data-icon="inline-start" />
                   Cancel
-                </Button>
-                <Button
+                </AppButton>
+                <AppButton
                   className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                   disabled={!canSaveEnv}
                   onClick={handleSaveEnvRows}
                   size="lg"
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                 >
                   <Save aria-hidden data-icon="inline-start" />
                   Save environment
-                </Button>
+                </AppButton>
               </>
             ) : null}
-            <Button
+            <AppButton
               aria-label="Add environment variable"
               className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
               onClick={handleAddEnvRow}
               size="lg"
               type="button"
-              variant="ghost"
+              variant="quiet"
             >
               <Plus aria-hidden data-icon="inline-start" />
               Add
-            </Button>
+            </AppButton>
             {canAddDbDsnReference ? (
-              <Button
+              <AppButton
                 aria-label="Add Project DB reference"
                 className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                 onClick={handleAddDbDsnReferenceRow}
                 size="lg"
                 type="button"
-                variant="ghost"
+                variant="quiet"
               >
                 <Plus aria-hidden data-icon="inline-start" />
                 Add Reference
-              </Button>
+              </AppButton>
             ) : null}
           </div>
         )}

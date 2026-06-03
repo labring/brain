@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import {
   Select,
   SelectContent,
@@ -300,7 +300,7 @@ export function DatabaseDeployer({
         </div>
       </DeploymentCard>
 
-      <Button
+      <AppButton
         aria-busy={busy}
         aria-label="Deploy database"
         className="h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input"
@@ -316,7 +316,7 @@ export function DatabaseDeployer({
           });
         }}
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         {busy ? (
           <Spinner aria-hidden className="size-4 shrink-0" />
@@ -324,7 +324,7 @@ export function DatabaseDeployer({
           <Rocket aria-hidden className="size-4 shrink-0" />
         )}
         {busy ? "Deploying" : deployLabel}
-      </Button>
+      </AppButton>
     </div>
   );
 }

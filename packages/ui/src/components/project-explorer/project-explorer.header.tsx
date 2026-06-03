@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Input } from "@workspace/ui/components/input";
 import { cn } from "@workspace/ui/lib/utils";
 import { LayoutGrid, Plus, Search } from "lucide-react";
@@ -85,19 +85,19 @@ export function ProjectExplorerNewProjectButton({
   className,
   children,
   ...props
-}: ComponentProps<typeof Button>) {
+}: ComponentProps<typeof AppButton>) {
   const { actions } = useProjectExplorer();
   const { onClick, ...rest } = props;
 
   return (
-    <Button
+    <AppButton
       className={cn(
         "h-9 gap-1.5 bg-blue-500 px-3 text-sm text-white hover:bg-blue-500/90",
         className
       )}
       size="lg"
       type="button"
-      variant="default"
+      variant="secondary"
       {...rest}
       onClick={(e) => {
         onClick?.(e);
@@ -112,6 +112,6 @@ export function ProjectExplorerNewProjectButton({
           New Project
         </>
       )}
-    </Button>
+    </AppButton>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Spinner } from "@workspace/ui/components/spinner";
@@ -178,7 +179,7 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
   }
 
   return (
-    <Button
+    <AppButton
       aria-label="Authorize GitHub"
       className={cn(
         "h-10 w-full gap-2 rounded-md border-border bg-muted/30 text-sm hover:bg-muted/50",
@@ -188,11 +189,11 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
       disabled={!onAuthorize}
       onClick={onAuthorize}
       type="button"
-      variant="outline"
+      variant="quiet"
     >
       <ShieldCheck aria-hidden className="size-4 shrink-0" strokeWidth={2} />
       <span>Authorize GitHub</span>
-    </Button>
+    </AppButton>
   );
 }
 
@@ -231,7 +232,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
             value={repoUrl}
           />
         </div>
-        <Button
+        <AppButton
           className="h-10 min-w-24 rounded-md bg-muted text-foreground text-sm hover:bg-muted/80"
           data-slot="github-deployer-url-deploy"
           disabled={!(parsedRepo && onDeploy) || isLoading}
@@ -241,10 +242,11 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
             }
           }}
           type="button"
+          variant="secondary"
         >
           <Rocket aria-hidden className="size-4" strokeWidth={2} />
           Deploy
-        </Button>
+        </AppButton>
       </div>
       {showInvalid ? (
         <p
@@ -296,7 +298,7 @@ function GithubRepoCard({
           {repoDescription(repo)}
         </p>
       </div>
-      <Button
+      <AppButton
         className={cn(
           "h-10 min-w-28 gap-2 rounded-md bg-muted text-foreground text-sm shadow-sm hover:bg-muted/80",
           featured && "text-primary"
@@ -305,10 +307,11 @@ function GithubRepoCard({
         disabled={!onDeploy}
         onClick={() => onDeploy?.(repo)}
         type="button"
+        variant="secondary"
       >
         <Rocket aria-hidden className="size-4" strokeWidth={2} />
         Deploy
-      </Button>
+      </AppButton>
     </article>
   );
 }
