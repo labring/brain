@@ -11,11 +11,11 @@ const appButtonVariants = cva(
         primary:
           "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary",
+          "bg-input/30 text-brand-primary-foreground hover:bg-input aria-expanded:bg-input",
         quiet:
-          "bg-input/35 text-foreground hover:bg-input/65 aria-expanded:bg-input/65 dark:bg-white/5 dark:hover:bg-input",
+          "bg-transparent text-brand-primary-foreground hover:bg-input/30 aria-expanded:bg-input/30",
         danger:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:border-destructive/40 focus-visible:ring-destructive/25",
+          "bg-[color-mix(in_oklab,var(--color-red-500)_90%,#09090b_10%)] text-white hover:bg-red-500 focus-visible:border-destructive/40 focus-visible:ring-destructive/25",
         link: "bg-transparent text-primary hover:bg-transparent hover:text-primary hover:underline",
       },
       size: {

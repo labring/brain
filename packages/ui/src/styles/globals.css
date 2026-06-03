@@ -86,12 +86,12 @@
   --sidebar-ring: oklch(0.708 0 0);
 
   /** SealAI brand tokens. */
-  --sealai-brand-primary: var(--color-blue-500);
-  --sealai-brand-primary-hover: color-mix(
+  --sealai-brand-primary: color-mix(
     in oklab,
-    var(--sealai-brand-primary) 90%,
+    var(--color-blue-500) 90%,
     #09090b 10%
   );
+  --sealai-brand-primary-hover: var(--color-blue-500);
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
 
   /** Canvas component tokens. */
@@ -133,12 +133,12 @@
   --sidebar-ring: oklch(0.556 0 0);
 
   /** SealAI brand tokens. */
-  --sealai-brand-primary: var(--color-blue-500);
-  --sealai-brand-primary-hover: color-mix(
+  --sealai-brand-primary: color-mix(
     in oklab,
-    var(--sealai-brand-primary) 90%,
+    var(--color-blue-500) 90%,
     #09090b 10%
   );
+  --sealai-brand-primary-hover: var(--color-blue-500);
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
 }
 

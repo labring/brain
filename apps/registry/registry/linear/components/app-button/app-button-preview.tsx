@@ -9,31 +9,21 @@ const variants = [
     label: "Primary",
     value: "primary",
     icon: Rocket,
-    copy: "Main product action",
   },
   {
     label: "Secondary",
     value: "secondary",
     icon: Check,
-    copy: "Neutral follow-up action",
   },
   {
     label: "Quiet",
     value: "quiet",
     icon: Trash2,
-    copy: "Low-emphasis row action",
   },
   {
     label: "Danger",
     value: "danger",
     icon: Trash2,
-    copy: "Destructive confirmation",
-  },
-  {
-    label: "Link",
-    value: "link",
-    icon: Plus,
-    copy: "Inline additive action",
   },
 ] as const;
 
@@ -47,19 +37,18 @@ export default function AppButtonPreview() {
   return (
     <PreviewWrapper className="lg:grid-cols-1">
       <Preview title="Variants">
-        <div className="grid gap-3">
-          {variants.map(({ label, value, icon: Icon, copy }) => (
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {variants.map(({ label, value, icon: Icon }) => (
             <div
-              className="grid min-w-0 items-center gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+              className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border/80 bg-muted/25 px-3 py-2"
               key={value}
             >
               <div className="min-w-0">
-                <p className="font-medium text-foreground text-sm">{label}</p>
-                <p className="text-muted-foreground text-xs leading-5">
-                  {copy}
+                <p className="truncate font-medium text-foreground text-sm">
+                  {label}
                 </p>
               </div>
-              <AppButton variant={value}>
+              <AppButton className="shrink-0" variant={value}>
                 <Icon aria-hidden data-icon="inline-start" />
                 {label}
               </AppButton>
