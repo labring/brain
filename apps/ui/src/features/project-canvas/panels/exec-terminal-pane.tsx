@@ -3,6 +3,7 @@
 import "@xterm/xterm/css/xterm.css";
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { cn } from "@workspace/ui/lib/utils";
 import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
 import type { Terminal as TerminalType } from "@xterm/xterm";
@@ -83,44 +84,29 @@ function clampTerminalHeight(height: number, maxHeight: number): number {
   return Math.round(Math.min(Math.max(height, MIN_TERMINAL_HEIGHT), maxHeight));
 }
 
-function statusDotClassNames(status: TerminalStatus): {
-  inner: string;
-  outer: string;
-} {
+function statusLabel(status: TerminalStatus): string {
   switch (status) {
     case "ready":
-      return {
-        inner: "bg-emerald-500",
-        outer: "bg-emerald-500/30",
-      };
-    case "error":
-      return {
-        inner: "bg-red-500",
-        outer: "bg-red-500/30",
-      };
-    case "closed":
-      return {
-        inner: "bg-zinc-500",
-        outer: "bg-zinc-500/30",
-      };
-    default:
-      return {
-        inner: "bg-amber-500",
-        outer: "bg-amber-500/30",
-      };
-  }
-}
-
-function statusLabel(status: TerminalStatus, subtitle: string): string {
-  switch (status) {
-    case "ready":
-      return subtitle;
+      return "Connected";
     case "error":
       return "Connection failed";
     case "closed":
       return "Session closed";
     default:
       return "Connecting...";
+  }
+}
+
+function terminalStatusForDot(status: TerminalStatus) {
+  switch (status) {
+    case "ready":
+      return { label: statusLabel(status), visualTone: "positive" } as const;
+    case "error":
+      return { label: statusLabel(status), visualTone: "negative" } as const;
+    case "closed":
+      return { label: statusLabel(status), visualTone: "neutral" } as const;
+    default:
+      return { label: statusLabel(status), visualTone: "progress" } as const;
   }
 }
 
@@ -148,7 +134,12 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
   const { kind, name, namespace, projectUid } = descriptor;
   const canConnect =
     kubeconfig.trim() !== "" && name !== "" && namespace !== "";
-  const statusDot = statusDotClassNames(status);
+  const terminalStatusLabel = descriptor.subtitle.trim() || statusLabel(status);
+  const connectionStatusLabel = statusLabel(status);
+  const terminalStatusTitle = descriptor.subtitle.trim()
+    ? `${descriptor.subtitle} · ${connectionStatusLabel}`
+    : connectionStatusLabel;
+  const terminalDotStatus = terminalStatusForDot(status);
 
   const updateTerminalHeight = useCallback((nextHeight: number) => {
     const nextMaxHeight = resolveTerminalMaxHeight(sectionRef.current);
@@ -406,7 +397,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         onPointerUp={endResize}
         tabIndex={0}
       />
-      <header className="grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(10rem,auto)_2.25rem] items-center gap-3 px-4 py-2.5 pr-2.5 drop-shadow-[0_4px_2px_rgba(0,0,0,0.25)]">
+      <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 drop-shadow-[0_4px_2px_rgba(0,0,0,0.25)]">
         <div className="flex min-w-0 items-center gap-2">
           <SquareTerminal
             aria-hidden
@@ -417,31 +408,30 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
           </h2>
         </div>
         <div className="flex min-w-0 items-center justify-center">
-          <span className="inline-flex min-w-0 items-center gap-2 text-sm text-zinc-400 leading-5">
-            <span
-              aria-hidden
-              className={cn(
-                "flex size-3.5 shrink-0 items-center justify-center rounded-full",
-                statusDot.outer
-              )}
-            >
-              <span className={cn("size-2 rounded-full", statusDot.inner)} />
-            </span>
-            <span className="truncate">
-              {statusLabel(status, descriptor.subtitle)}
-            </span>
+          <span
+            className="inline-flex min-w-0 items-center gap-2 text-sm text-zinc-400 leading-5"
+            title={terminalStatusTitle}
+          >
+            <CanvasNode.StatusDot
+              className="size-3.5"
+              size="small"
+              status={terminalDotStatus}
+            />
+            <span className="truncate">{terminalStatusLabel}</span>
           </span>
         </div>
-        <AppIconButton
-          aria-label="Close terminal"
-          className="size-9 text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
-          onClick={onClose}
-          size="lg"
-          type="button"
-          variant="quiet"
-        >
-          <X aria-hidden className="size-4" />
-        </AppIconButton>
+        <div className="flex min-w-0 justify-end">
+          <AppIconButton
+            aria-label="Close terminal"
+            className="size-9 text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
+            onClick={onClose}
+            size="lg"
+            type="button"
+            variant="quiet"
+          >
+            <X aria-hidden className="size-4" />
+          </AppIconButton>
+        </div>
       </header>
       <div
         className="[&_.xterm-scrollable-element]:!bg-transparent [&_.xterm-viewport]:!bg-transparent min-h-0 flex-1 overflow-hidden [&_.xterm-viewport]:[scrollbar-color:rgba(255,255,255,0.15)_transparent] [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm]:h-full"
