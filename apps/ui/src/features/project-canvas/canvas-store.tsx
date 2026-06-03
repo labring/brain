@@ -21,10 +21,10 @@ export const WORKLOAD_PANE = {
 } as const;
 
 export const DATABASE_PANE = {
-  console: "console",
   logs: "logs",
   metrics: "metrics",
   settings: "settings",
+  terminal: "terminal",
 } as const;
 
 export const ENTRY_PANE = {

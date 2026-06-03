@@ -3,16 +3,27 @@
 import "@xterm/xterm/css/xterm.css";
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { cn } from "@workspace/ui/lib/utils";
 import type { FitAddon as FitAddonType } from "@xterm/addon-fit";
 import type { Terminal as TerminalType } from "@xterm/xterm";
 import { useAtomValue } from "jotai";
-import { Circle, SquareTerminal, X } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { SquareTerminal, X } from "lucide-react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { kubeconfigAtom } from "@/store/auth-store";
 import { workloadTerminalWebSocketUrl } from "./workload-terminal-url";
 
 type TerminalStatus = "connecting" | "closed" | "error" | "ready";
+
+const DEFAULT_TERMINAL_HEIGHT = 315;
+const MIN_TERMINAL_HEIGHT = 288;
+const TERMINAL_HEIGHT_STEP = 24;
+const TERMINAL_VIEWPORT_GUTTER = 32;
+const TERMINAL_VIEWPORT_MAX_RATIO = 0.8;
 
 interface TerminalServerMessage {
   message?: string;
@@ -49,16 +60,50 @@ function parseTerminalMessage(
   }
 }
 
-function statusDotClassName(status: TerminalStatus): string {
+function resolveTerminalMaxHeight(section: HTMLElement | null): number {
+  const viewportHeight =
+    typeof window === "undefined" ? 720 : window.innerHeight;
+  const parentHeight = section?.parentElement?.getBoundingClientRect().height;
+  const availableHeight =
+    (parentHeight && parentHeight > 0 ? parentHeight : viewportHeight) -
+    TERMINAL_VIEWPORT_GUTTER;
+  const viewportMax = viewportHeight * TERMINAL_VIEWPORT_MAX_RATIO;
+
+  return Math.max(
+    MIN_TERMINAL_HEIGHT,
+    Math.floor(Math.min(availableHeight, viewportMax))
+  );
+}
+
+function clampTerminalHeight(height: number, maxHeight: number): number {
+  return Math.round(Math.min(Math.max(height, MIN_TERMINAL_HEIGHT), maxHeight));
+}
+
+function statusDotClassNames(status: TerminalStatus): {
+  inner: string;
+  outer: string;
+} {
   switch (status) {
     case "ready":
-      return "fill-emerald-500 text-emerald-500";
+      return {
+        inner: "bg-emerald-500",
+        outer: "bg-emerald-500/30",
+      };
     case "error":
-      return "fill-red-500 text-red-500";
+      return {
+        inner: "bg-red-500",
+        outer: "bg-red-500/30",
+      };
     case "closed":
-      return "fill-zinc-500 text-zinc-500";
+      return {
+        inner: "bg-zinc-500",
+        outer: "bg-zinc-500/30",
+      };
     default:
-      return "fill-amber-500 text-amber-500";
+      return {
+        inner: "bg-amber-500",
+        outer: "bg-amber-500/30",
+      };
   }
 }
 
@@ -71,7 +116,7 @@ function statusLabel(status: TerminalStatus, subtitle: string): string {
     case "closed":
       return "Session closed";
     default:
-      return "Connecting…";
+      return "Connecting...";
   }
 }
 
@@ -84,11 +129,129 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
 }) {
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
+  const [isResizing, setIsResizing] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
+  const [maxTerminalHeight, setMaxTerminalHeight] = useState(
+    DEFAULT_TERMINAL_HEIGHT
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const resizeDragRef = useRef<{
+    startHeight: number;
+    startY: number;
+  } | null>(null);
 
   const { kind, name, namespace, projectUid } = descriptor;
   const canConnect =
     kubeconfig.trim() !== "" && name !== "" && namespace !== "";
+  const statusDot = statusDotClassNames(status);
+
+  const updateTerminalHeight = useCallback((nextHeight: number) => {
+    const nextMaxHeight = resolveTerminalMaxHeight(sectionRef.current);
+    setMaxTerminalHeight(nextMaxHeight);
+    setTerminalHeight(clampTerminalHeight(nextHeight, nextMaxHeight));
+  }, []);
+
+  const beginResize = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      const currentHeight =
+        sectionRef.current?.getBoundingClientRect().height ?? terminalHeight;
+      const nextMaxHeight = resolveTerminalMaxHeight(sectionRef.current);
+
+      setMaxTerminalHeight(nextMaxHeight);
+      resizeDragRef.current = {
+        startHeight: currentHeight,
+        startY: event.clientY,
+      };
+      setIsResizing(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    },
+    [terminalHeight]
+  );
+
+  const resize = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const drag = resizeDragRef.current;
+      if (drag === null) {
+        return;
+      }
+      updateTerminalHeight(drag.startHeight + drag.startY - event.clientY);
+      event.preventDefault();
+    },
+    [updateTerminalHeight]
+  );
+
+  const endResize = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (resizeDragRef.current === null) {
+      return;
+    }
+    resizeDragRef.current = null;
+    setIsResizing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const handleResizeKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      const currentHeight =
+        sectionRef.current?.getBoundingClientRect().height ?? terminalHeight;
+      const nextMaxHeight = resolveTerminalMaxHeight(sectionRef.current);
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setMaxTerminalHeight(nextMaxHeight);
+        setTerminalHeight(
+          clampTerminalHeight(
+            currentHeight + TERMINAL_HEIGHT_STEP,
+            nextMaxHeight
+          )
+        );
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setMaxTerminalHeight(nextMaxHeight);
+        setTerminalHeight(
+          clampTerminalHeight(
+            currentHeight - TERMINAL_HEIGHT_STEP,
+            nextMaxHeight
+          )
+        );
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        setMaxTerminalHeight(nextMaxHeight);
+        setTerminalHeight(MIN_TERMINAL_HEIGHT);
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        setMaxTerminalHeight(nextMaxHeight);
+        setTerminalHeight(nextMaxHeight);
+      }
+    },
+    [terminalHeight]
+  );
+
+  useEffect(() => {
+    const updateMaxHeight = () => {
+      const nextMaxHeight = resolveTerminalMaxHeight(sectionRef.current);
+      setMaxTerminalHeight(nextMaxHeight);
+      setTerminalHeight((currentHeight) =>
+        clampTerminalHeight(currentHeight, nextMaxHeight)
+      );
+    };
+
+    updateMaxHeight();
+    window.addEventListener("resize", updateMaxHeight);
+    return () => window.removeEventListener("resize", updateMaxHeight);
+  }, []);
 
   useEffect(() => {
     const mount = containerRef.current;
@@ -126,10 +289,15 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
       }
       term = new Terminal({
         cursorBlink: true,
-        fontFamily:
-          "var(--font-geist-mono, ui-monospace, SFMono-Regular, monospace)",
-        fontSize: 13,
-        theme: { background: "#10131a", foreground: "#f4f4f5" },
+        fontFamily: "var(--font-mono, ui-monospace, SFMono-Regular, monospace)",
+        fontSize: 14,
+        lineHeight: 1.43,
+        theme: {
+          background: "#10131a",
+          cursor: "#fafafa",
+          foreground: "#e5e5e5",
+          selectionBackground: "rgba(59, 130, 246, 0.32)",
+        },
       });
       fit = new FitAddon();
       term.loadAddon(fit);
@@ -207,32 +375,64 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
 
   return (
     <section
-      aria-label="Workload terminal"
-      className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-[38%] min-h-72 flex-col border-input border-t bg-[#10131a]/98 shadow-[0_-18px_60px_rgba(0,0,0,0.36)] backdrop-blur"
+      aria-label="Terminal session"
+      className={cn(
+        "pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t bg-[#080a11] text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)]",
+        isResizing ? "border-input" : "border-white/10"
+      )}
       data-slot="exec-terminal-plane"
+      ref={sectionRef}
+      style={{
+        backgroundImage:
+          "linear-gradient(90deg, rgba(255,255,255,0.045), rgba(255,255,255,0.045))",
+        height: terminalHeight,
+      }}
     >
-      <header className="flex h-15 shrink-0 items-center gap-3 border-input border-b px-6">
-        <SquareTerminal aria-hidden className="size-4 shrink-0 text-blue-500" />
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-3">
-            <h2 className="truncate font-semibold text-lg text-zinc-100">
-              {descriptor.title || "Terminal"}
-            </h2>
-            <span className="inline-flex min-w-0 items-center gap-2 text-sm text-zinc-400">
-              <Circle
-                aria-hidden
-                className={`size-3 shrink-0 ${statusDotClassName(status)}`}
-              />
-              <span className="truncate">
-                {statusLabel(status, descriptor.subtitle)}
-              </span>
+      <hr
+        aria-label="Resize terminal"
+        aria-orientation="horizontal"
+        aria-valuemax={maxTerminalHeight}
+        aria-valuemin={MIN_TERMINAL_HEIGHT}
+        aria-valuenow={terminalHeight}
+        className="absolute inset-x-0 top-0 z-10 h-3 -translate-y-1/2 cursor-ns-resize touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        onKeyDown={handleResizeKeyDown}
+        onPointerCancel={endResize}
+        onPointerDown={beginResize}
+        onPointerMove={resize}
+        onPointerUp={endResize}
+        tabIndex={0}
+      />
+      <header className="grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(10rem,auto)_2.25rem] items-center gap-3 px-4 py-2.5 pr-2.5 drop-shadow-[0_4px_2px_rgba(0,0,0,0.25)]">
+        <div className="flex min-w-0 items-center gap-2">
+          <SquareTerminal
+            aria-hidden
+            className="size-4 shrink-0 text-blue-500"
+          />
+          <h2 className="truncate font-semibold text-lg text-zinc-50 leading-7">
+            {descriptor.title || "Terminal"}
+          </h2>
+        </div>
+        <div className="flex min-w-0 items-center justify-center">
+          <span className="inline-flex min-w-0 items-center gap-2 text-sm text-zinc-400 leading-5">
+            <span
+              aria-hidden
+              className={cn(
+                "flex size-3.5 shrink-0 items-center justify-center rounded-full",
+                statusDot.outer
+              )}
+            >
+              <span className={cn("size-2 rounded-full", statusDot.inner)} />
             </span>
-          </div>
+            <span className="truncate">
+              {statusLabel(status, descriptor.subtitle)}
+            </span>
+          </span>
         </div>
         <AppIconButton
           aria-label="Close terminal"
+          className="size-9 text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
           onClick={onClose}
-          size="md"
+          size="lg"
           type="button"
           variant="quiet"
         >
@@ -240,7 +440,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         </AppIconButton>
       </header>
       <div
-        className="min-h-0 flex-1 overflow-hidden px-4 py-3"
+        className="[&_.xterm-viewport]:!bg-transparent min-h-0 flex-1 overflow-hidden px-4 pt-1 pb-4 [&_.xterm-viewport]:[scrollbar-color:rgba(255,255,255,0.15)_transparent] [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm]:h-full"
         data-slot="exec-terminal-surface"
         ref={containerRef}
       />

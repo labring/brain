@@ -4,8 +4,8 @@ import { DatabaseDeploymentPane } from "@/components/database-deployment-pane";
 import { DockerDeploymentPane } from "@/components/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/components/github-deployment-pane";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
-import { DatabaseConsolePane } from "@/features/project-canvas/panels/database-console-pane";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
+import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";
 import { ProjectCanvasResourcePane } from "@/features/project-canvas/panels/project-canvas-resource-pane";
 import {
   type ProjectCanvasSidePaneEntry,
@@ -107,8 +107,8 @@ export function ProjectCanvasWorkbenchSurfaces({
           onClose={workbench.closeDrawerSurface}
         />
       ) : null}
-      {drawer?.kind === "dbConsole" ? (
-        <DatabaseConsolePane
+      {drawer?.kind === "dbTerminal" ? (
+        <DatabaseTerminalPane
           node={drawer.node}
           onClose={workbench.closeDrawerSurface}
           projectUid={projectUid}

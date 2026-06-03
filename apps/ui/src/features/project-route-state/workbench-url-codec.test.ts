@@ -82,10 +82,25 @@ test("project workbench route codec omits empty entries as null values", () => {
   );
 });
 
+test("project workbench route codec uses DB terminal drawer entries", () => {
+  const parsed = parseProjectWorkbenchRouteState({
+    drawer: "db-terminal:db:data:pg",
+  });
+
+  assert.deepEqual(parsed.surfaces.drawer, {
+    kind: "dbTerminal",
+    target: { kind: "DB", name: "pg", namespace: "data" },
+  });
+  assert.equal(
+    serializeProjectWorkbenchRouteState(parsed).drawer,
+    "db-terminal:db:data:pg"
+  );
+});
+
 test("project workbench route codec clears invalid and old query entries safely", () => {
   assert.deepEqual(
     parseProjectWorkbenchRouteState({
-      drawer: "dbPane:console",
+      drawer: "db-console:db:data:pg",
       main: "canvasAction:dbAccess",
       selected: "service:uid",
       side: "apPane:settings",

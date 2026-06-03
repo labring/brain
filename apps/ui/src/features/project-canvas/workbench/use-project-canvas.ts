@@ -701,7 +701,7 @@ export function useProjectCanvas(
               },
               metrics: databaseQuickAction("metrics"),
               logs: databaseQuickAction("logs"),
-              console: databaseQuickAction("console"),
+              terminal: databaseQuickAction("terminal"),
             },
           },
           connections,
@@ -819,10 +819,10 @@ export function useProjectCanvas(
       const quickActions = {
         ...(data.actions?.quickActions ?? {}),
         calendar: containerQuickAction("calendar"),
-        console: containerQuickAction("console"),
         logs: containerQuickAction("logs"),
         events: containerQuickAction("events"),
         metrics: containerQuickAction("metrics"),
+        terminal: containerQuickAction("terminal"),
       };
 
       return {

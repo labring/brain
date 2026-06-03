@@ -147,15 +147,21 @@ A read-only resource workflow for inspecting one DB Service's objects and data w
 
 One active DB Access browsing session for a single DB Service. A DB Access Session keeps object selection and open object tabs while browsing multiple Logical Databases within that DB Service, while closing DB Access or switching to a different DB Service starts a separate session.
 
-### DB Console
+### DB Terminal
 
-An interactive session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Console is distinct from DB Access: DB Access is a read-only browser over a DB Service's objects and data, while a DB Console is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
+An interactive terminal session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Terminal is distinct from DB Access: DB Access is a read-only browser over a DB Service's objects and data, while a DB Terminal is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
 
-_Avoid_: using "console" to mean the AP container shell. The AP node's terminal opens a generic pod shell on the AP workload, not a database engine client; the shared "console" label across AP and DB nodes does not denote the same kind of session.
+_Avoid_: DB Console, console.
+
+### AP Terminal
+
+An interactive terminal session that opens a generic pod shell on an AP workload. An AP Terminal is distinct from a DB Terminal: both are terminals in the UI, but an AP Terminal is a workload shell while a DB Terminal is a database engine-client session.
+
+_Avoid_: AP Console, console.
 
 ### Session Drawer
 
-A bottom temporary project surface for one interactive resource session, such as an AP terminal or DB Console. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
+A bottom temporary project surface for one interactive resource session, such as an AP Terminal or DB Terminal. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
 
 Within one project surface, Session Drawer is single-active. A Session Drawer may coexist with a Side Pane or Main Action Surface, and it remains pinned to its session target rather than following canvas selection.
 
@@ -255,7 +261,7 @@ A normalized time-series representation of workload resource usage for AP and DB
 
 ### Resource Logs
 
-A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
+A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP Terminal or DB Terminal.
 
 ### Project Aggregate Status
 

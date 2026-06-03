@@ -124,7 +124,11 @@ test("EntryPoint node click opens AP-bound Public Addresses", () => {
 test("AP quick actions plan the matching project surface slot", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { action: "console", kind: "containerQuickAction", node: apNode },
+      intent: {
+        action: "terminal",
+        kind: "containerQuickAction",
+        node: apNode,
+      },
       nodes: [apNode],
       readOnly: false,
     }).surface,
@@ -163,7 +167,7 @@ test("AP quick actions plan the matching project surface slot", () => {
   );
 });
 
-test("DB quick actions plan DB Access, logs, console, and metrics surfaces", () => {
+test("DB quick actions plan DB Access, logs, terminal, and metrics surfaces", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
       intent: { action: "dbAccess", kind: "databaseQuickAction", node: dbNode },

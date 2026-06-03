@@ -51,10 +51,24 @@ test("project surface URL codec omits empty slots", () => {
   );
 });
 
+test("project surface URL codec uses DB terminal drawer entries", () => {
+  const parsed = parseProjectSurfaceUrlState({
+    drawer: "db-terminal:db:data:pg",
+  });
+
+  assert.deepEqual(parsed.drawer, {
+    kind: "dbTerminal",
+    target: { kind: "DB", name: "pg", namespace: "data" },
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    drawer: "db-terminal:db:data:pg",
+  });
+});
+
 test("project surface URL codec clears invalid and old query entries safely", () => {
   assert.deepEqual(
     parseProjectSurfaceUrlState({
-      drawer: "dbPane:console",
+      drawer: "db-console:db:data:pg",
       main: "canvasAction:dbAccess",
       side: "apPane:settings",
     }),
