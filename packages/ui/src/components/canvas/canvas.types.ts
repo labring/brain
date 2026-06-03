@@ -5,8 +5,11 @@ import type {
   NodeTypes,
   ReactFlowProps,
 } from "@xyflow/react";
+import type { RefObject } from "react";
 import type { CanvasNodeConnectionSide } from "../canvas-node/canvas-node.types";
 import type { CanvasEdgeAnchorResolver } from "./canvas.edge-anchors";
+
+export type CanvasInteractionMode = "hand" | "pointer";
 
 /** Props forwarded to `<ReactFlow />`; canvas owns nodes/edges/types/change handlers. */
 export type CanvasReactFlowProps = Omit<
@@ -37,6 +40,11 @@ export type CanvasSelectedNode = CanvasState["selectedNode"];
 export type CanvasSelectedEdge = CanvasState["selectedEdge"];
 
 export interface CanvasMeta {
+  /**
+   * Session-local canvas interaction mode. Pointer mode supports canvas element
+   * selection and resource gestures; hand mode is viewport browsing only.
+   */
+  defaultInteractionMode?: CanvasInteractionMode;
   /**
    * Optional render-layer edge anchor resolver. When provided, edges with missing endpoint nodes
    * are skipped and resolved pairs are applied as React Flow source/target handles.
@@ -73,6 +81,9 @@ export interface CanvasMeta {
 }
 
 export interface CanvasContextValue {
+  interactionMode: CanvasInteractionMode;
   meta: CanvasMeta;
+  rootRef: RefObject<HTMLDivElement | null>;
+  setInteractionMode: (mode: CanvasInteractionMode) => void;
   state: CanvasState;
 }

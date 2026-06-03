@@ -179,6 +179,30 @@ A temporary, per-view adjustment of the Project Canvas viewport that keeps a tar
 
 _Avoid_: using Canvas Layout to describe temporary viewport movement.
 
+### Canvas Pointer Mode
+
+The Project Canvas interaction mode for selecting resources, opening resource-scoped surfaces, moving canvas nodes, and starting Connecting Edge gestures.
+
+Canvas Pointer Mode may change Canvas Layout when a canvas node is moved, depending on the Project Canvas read/write state. It is distinct from Canvas Viewport movement, which changes only the user's current view. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
+
+### Canvas Hand Mode
+
+The Project Canvas interaction mode for browsing the canvas by moving the viewport without selecting resources, using resource quick actions, opening resource-scoped surfaces, moving canvas nodes, or starting Connecting Edge gestures.
+
+Canvas Hand Mode preserves the current canvas selection and active project surfaces, and does not change Canvas Layout. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
+
+### Canvas MiniMap
+
+A Project Canvas navigation aid that shows the relationship between the current viewport and the overall Canvas Layout.
+
+Canvas MiniMap changes only the current viewport. It does not select resources, open project surfaces, move canvas nodes, or create Canvas Connections.
+
+### Canvas Viewport Control
+
+A Project Canvas control that changes the current user's canvas viewport, such as fitting the visible graph or adjusting zoom.
+
+Canvas Viewport Controls are not persisted in Canvas Layout and do not affect other users' view of the Project Canvas.
+
 ### Canvas Resource Identity
 
 The product identity of a canvas node's backing AP, DB, or AP-bound EntryPoint surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.

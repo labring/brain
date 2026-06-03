@@ -67,6 +67,7 @@ export function SidePane({
           ? "w-full max-w-screen-sm translate-x-0 opacity-100"
           : "pointer-events-none w-0 max-w-0 translate-x-4 opacity-0"
       )}
+      data-slot="side-pane"
     >
       <div
         className={cn(

@@ -21,6 +21,7 @@ import {
 } from "@xyflow/react";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { CanvasControls, CanvasMiniMap } from "./canvas.controls";
 import {
   type CanvasEdgeAnchorPair,
   resolveCanvasEdgeAnchors,
@@ -219,8 +220,75 @@ function userControlledViewportFocusState(
   };
 }
 
+function resolveCanvasReactFlowProps({
+  handMode,
+  onMove,
+  onMoveStart,
+  userReactFlowProps,
+}: {
+  handMode: boolean;
+  onMove: NonNullable<CanvasReactFlowProps["onMove"]>;
+  onMoveStart: NonNullable<CanvasReactFlowProps["onMoveStart"]>;
+  userReactFlowProps: CanvasReactFlowProps;
+}): CanvasReactFlowProps {
+  const userConnectionLineStyle = userReactFlowProps.connectionLineStyle;
+  const userDefaultEdgeOptions = userReactFlowProps.defaultEdgeOptions;
+  const interactionOverrides: CanvasReactFlowProps = handMode
+    ? {
+        autoPanOnNodeFocus: false,
+        deleteKeyCode: null,
+        edgesFocusable: false,
+        elementsSelectable: false,
+        isValidConnection: () => false,
+        multiSelectionKeyCode: null,
+        nodesConnectable: false,
+        nodesDraggable: false,
+        nodesFocusable: false,
+        onConnect: undefined,
+        onConnectEnd: undefined,
+        onConnectStart: undefined,
+        onEdgeClick: undefined,
+        onNodeClick: undefined,
+        onNodeContextMenu: undefined,
+        onNodeDoubleClick: undefined,
+        onNodeDragStart: undefined,
+        onNodeDragStop: undefined,
+        onPaneClick: undefined,
+        selectionKeyCode: null,
+      }
+    : {};
+
+  return {
+    connectionMode: ConnectionMode.Loose,
+    maxZoom: 1.2,
+    minZoom: 0.3,
+    panOnDrag: true,
+    panOnScroll: true,
+    proOptions: { hideAttribution: true },
+    selectNodesOnDrag: false,
+    snapGrid: [8, 8],
+    snapToGrid: true,
+    ...userReactFlowProps,
+    ...interactionOverrides,
+    fitView: false,
+    onMove,
+    onMoveStart,
+    connectionLineStyle: {
+      ...CANVAS_DEFAULT_EDGE_STYLE,
+      ...(userConnectionLineStyle ?? {}),
+    },
+    defaultEdgeOptions: {
+      ...userDefaultEdgeOptions,
+      style: {
+        ...CANVAS_DEFAULT_EDGE_STYLE,
+        ...(userDefaultEdgeOptions?.style ?? {}),
+      },
+    },
+  };
+}
+
 function CanvasFlow({ children }: CanvasFlowProps) {
-  const { meta, state } = useCanvas();
+  const { interactionMode, meta, rootRef, state } = useCanvas();
   const [nodes, setNodes, onNodesChange] = useNodesState(state.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(state.edges);
   const {
@@ -303,8 +371,6 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   }, [edgeAnchorResolver, edgeAnchorResolution.anchorPairs]);
 
   const userReactFlowProps = meta.reactFlowProps ?? {};
-  const userDefaultEdgeOptions = userReactFlowProps.defaultEdgeOptions;
-  const userConnectionLineStyle = userReactFlowProps.connectionLineStyle;
   const openingFitViewOptions = userReactFlowProps.fitViewOptions;
   const shouldFitOpeningView = userReactFlowProps.fitView !== false;
   const viewportFocus = meta.viewportFocus;
@@ -333,32 +399,13 @@ function CanvasFlow({ children }: CanvasFlowProps) {
     }
     userReactFlowProps.onMove?.(event, viewport);
   };
-  const passThrough: CanvasReactFlowProps = {
-    connectionMode: ConnectionMode.Loose,
-    maxZoom: 1.2,
-    minZoom: 0.3,
-    panOnDrag: true,
-    panOnScroll: true,
-    proOptions: { hideAttribution: true },
-    selectNodesOnDrag: false,
-    snapGrid: [8, 8],
-    snapToGrid: true,
-    ...userReactFlowProps,
-    fitView: false,
+  const handMode = interactionMode === "hand";
+  const passThrough = resolveCanvasReactFlowProps({
+    handMode,
     onMove: handleMove,
     onMoveStart: handleMoveStart,
-    connectionLineStyle: {
-      ...CANVAS_DEFAULT_EDGE_STYLE,
-      ...(userConnectionLineStyle ?? {}),
-    },
-    defaultEdgeOptions: {
-      ...userDefaultEdgeOptions,
-      style: {
-        ...CANVAS_DEFAULT_EDGE_STYLE,
-        ...(userDefaultEdgeOptions?.style ?? {}),
-      },
-    },
-  };
+    userReactFlowProps,
+  });
   const openingFitKey = meta.openingFitView?.key ?? DEFAULT_OPENING_FIT_KEY;
   const nodeCount = nodes.length;
   const viewportFollow = meta.viewportFollow;
@@ -576,11 +623,22 @@ function CanvasFlow({ children }: CanvasFlowProps) {
 
   return (
     <CanvasUpperRightProvider>
-      <div className="relative h-full min-h-0 w-full min-w-0">
+      <div
+        className="relative h-full min-h-0 w-full min-w-0"
+        data-slot="canvas-flow-root"
+        ref={rootRef}
+      >
         <CanvasUpperRightAnchor />
         <div className="canvas-surface">
           <ReactFlow
             {...passThrough}
+            className={
+              handMode
+                ? [userReactFlowProps.className, "canvas-interaction-hand"]
+                    .filter(Boolean)
+                    .join(" ")
+                : userReactFlowProps.className
+            }
             edges={edgeAnchorResolution.edges}
             edgeTypes={meta.edgeTypes}
             nodes={nodes}
@@ -621,7 +679,9 @@ function CanvasSurface({ children }: CanvasFlowProps) {
 }
 
 export const Canvas = Object.assign(CanvasSurface, {
+  Controls: CanvasControls,
   Flow: CanvasSurface,
+  MiniMap: CanvasMiniMap,
   Root: CanvasRoot,
   UpperRight: CanvasUpperRight,
 });

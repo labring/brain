@@ -115,7 +115,7 @@ const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
   "right",
   "top",
 ]);
-const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
+export const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
 
 function viewportFocusNodeIdFromSideRenderModel(
   side: ProjectCanvasSideRenderModel
