@@ -45,6 +45,7 @@
   --color-brand-primary-hover: var(--sealai-brand-primary-hover);
   --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
   --color-brand-primary: var(--sealai-brand-primary);
+  --color-project-chrome-surface: var(--project-chrome-surface);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -101,6 +102,19 @@
     in oklab,
     var(--color-zinc-400) 55%,
     transparent
+  );
+
+  /** Project chrome surface tokens. */
+  --project-chrome-surface-base: #080a11;
+  --project-chrome-surface: color-mix(
+    in oklab,
+    var(--input) 30%,
+    var(--project-chrome-surface-base)
+  );
+  --project-chrome-surface-overlay: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--input) 30%, transparent),
+    color-mix(in oklab, var(--input) 30%, transparent)
   );
 }
 
@@ -171,13 +185,9 @@
     background-color: var(--border);
   }
 
-  .resource-pane-surface {
-    background-color: #080a11;
-    background-image: linear-gradient(
-      90deg,
-      color-mix(in oklab, var(--color-white) 4.5%, transparent) 0%,
-      color-mix(in oklab, var(--color-white) 4.5%, transparent) 100%
-    );
+  .project-chrome-surface {
+    background-color: var(--project-chrome-surface-base);
+    background-image: var(--project-chrome-surface-overlay);
   }
 
   .main-action-surface-body-background {

@@ -72,7 +72,7 @@ function ChatShell({ className, children, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex min-h-0 w-full flex-1 flex-col bg-background",
+        "project-chrome-surface flex min-h-0 w-full flex-1 flex-col",
         className
       )}
       data-slot="chat"

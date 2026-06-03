@@ -313,11 +313,8 @@ export default function AppSidebar() {
 
   return (
     <aside
-      className="flex h-svh w-13 shrink-0 flex-col items-center border-white/10 border-r"
+      className="project-chrome-surface flex h-svh w-13 shrink-0 flex-col items-center border-white/10 border-r"
       data-slot="app-sidebar"
-      style={{
-        backgroundColor: "#101219",
-      }}
     >
       <div className="flex min-h-0 flex-1 flex-col items-start gap-3 px-2 py-2.5">
         <span

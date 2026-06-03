@@ -70,7 +70,7 @@ export function SidePane({
     >
       <div
         className={cn(
-          "resource-pane-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
           motionOpen ? "translate-x-0" : "translate-x-full",
           className
         )}
