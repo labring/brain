@@ -46,7 +46,7 @@ const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
 const PRIVATE_ADDRESS_VALUE_RE =
   /http:\/\/api-service-port-8080.default.svc:8080/;
 const COPY_PRIVATE_ADDRESS_RE = /aria-label="Copy Private Address"/;
-const PUBLIC_ADDRESSES_RE = /Public Addresses/;
+const DOMAIN_LIST_RE = /Domain List/;
 const NO_PUBLIC_ADDRESSES_RE = /No public addresses yet/;
 const PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api.example.com\//;
 const DRAFT_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/ffyrwq.apps.example.com\//;
@@ -65,7 +65,7 @@ const CNAME_RE = /CNAME/;
 const BIND_CUSTOM_DOMAIN_RE = /aria-label="Bind Custom Domain"/;
 const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
 const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
-const ADD_PUBLIC_ADDRESS_LABEL_RE = /Add Public Address/;
+const ADD_DOMAIN_LABEL_RE = /Add Domain/;
 const PRIVATE_PORT_VALUE_RE = /value="8080"/;
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
@@ -154,7 +154,7 @@ test("container settings pane shows no AP networking surface without Network dat
   );
 
   assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
-  assert.doesNotMatch(html, PUBLIC_ADDRESSES_RE);
+  assert.doesNotMatch(html, DOMAIN_LIST_RE);
 });
 
 test("container settings pane renders address settings instead of Ports for private-only APs", () => {
@@ -180,7 +180,7 @@ test("container settings pane renders address settings instead of Ports for priv
   assert.match(html, PRIVATE_ADDRESS_TARGET_RE);
   assert.match(html, PRIVATE_PORT_VALUE_RE);
   assert.match(html, COPY_PRIVATE_ADDRESS_RE);
-  assert.match(html, PUBLIC_ADDRESSES_RE);
+  assert.match(html, DOMAIN_LIST_RE);
   assert.match(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
@@ -210,7 +210,7 @@ test("container settings pane renders editable public address rows", () => {
     />
   );
 
-  assert.match(html, PUBLIC_ADDRESSES_RE);
+  assert.match(html, DOMAIN_LIST_RE);
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, PUBLIC_ADDRESS_STATUS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
@@ -218,7 +218,7 @@ test("container settings pane renders editable public address rows", () => {
   assert.match(html, BIND_CUSTOM_DOMAIN_RE);
   assert.match(html, DELETE_PUBLIC_ADDRESS_RE);
   assert.match(html, ADD_PUBLIC_ADDRESS_RE);
-  assert.match(html, ADD_PUBLIC_ADDRESS_LABEL_RE);
+  assert.match(html, ADD_DOMAIN_LABEL_RE);
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
@@ -664,7 +664,7 @@ test("read-only network view renders addresses without mutation controls", () =>
 
   assert.match(html, PRIVATE_ADDRESS_RE);
   assert.match(html, PRIVATE_ADDRESS_DEFAULT_VALUE_RE);
-  assert.match(html, PUBLIC_ADDRESSES_RE);
+  assert.match(html, DOMAIN_LIST_RE);
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, COPY_PRIVATE_ADDRESS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);

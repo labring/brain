@@ -1687,10 +1687,12 @@ function CnameBindingDialog({
         return;
       }
       onBind({
+        cnameTarget: target,
         domain,
         id: generateCustomDomainBindingId(),
         platformAddressId,
         status: "verified",
+        targetPort: address?.port,
       });
       onOpenChange(false);
     } catch (caught) {
@@ -1868,33 +1870,50 @@ interface PublicAddressDraft extends ContainerNetworkPublicAddress {
   port: number;
 }
 
-type PublicAddressDraftValidation =
-  | { address: PublicAddressDraft; ok: true }
-  | { message: string; ok: false };
-
-function validatePublicAddressDraft(
-  portDraft: string,
-  platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext
-): PublicAddressDraftValidation {
-  const parsedPort = parsePortNumberDigits(portDraft.trim());
-  if (!parsedPort.ok) {
-    return { message: parsedPort.message, ok: false };
-  }
-
-  return {
-    address: platformAddressDraftFromPort(
-      parsedPort.n,
-      platformAddressDraftContext
-    ),
-    ok: true,
-  };
-}
-
 interface AddPublicAddressFormProps {
   defaultPort: number;
   onCancel: () => void;
-  onSubmit?: (address: PublicAddressDraft) => void | Promise<void>;
+  onSubmit?: (
+    address: PublicAddressDraft,
+    customDomain?: ContainerNetworkCustomDomain
+  ) => void | Promise<void>;
   platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext;
+  verify?: ContainerCustomDomainCnameVerifier;
+}
+
+async function verifiedCustomDomainDraft({
+  cnameTarget,
+  domain,
+  platformAddressId,
+  port,
+  verify,
+}: {
+  cnameTarget: string;
+  domain: string;
+  platformAddressId: string;
+  port: number;
+  verify: ContainerCustomDomainCnameVerifier;
+}): Promise<ContainerNetworkCustomDomain | { error: string }> {
+  let result: ContainerCustomDomainCnameVerificationResult;
+  try {
+    result = await verify({ domain, target: cnameTarget });
+  } catch (caught) {
+    return {
+      error:
+        caught instanceof Error ? caught.message : "CNAME verification failed.",
+    };
+  }
+  if (!result.ok) {
+    return { error: result.message ?? "CNAME verification failed." };
+  }
+  return {
+    cnameTarget,
+    domain,
+    id: generateCustomDomainBindingId(),
+    platformAddressId,
+    status: "verified",
+    targetPort: port,
+  };
 }
 
 function AddPublicAddressForm({
@@ -1902,29 +1921,67 @@ function AddPublicAddressForm({
   onCancel,
   onSubmit,
   platformAddressDraftContext,
+  verify,
 }: AddPublicAddressFormProps) {
+  const domainInputId = useId();
   const portInputId = useId();
+  const cnameHostInputId = useId();
+  const cnameTargetInputId = useId();
   const errorId = `${portInputId}-error`;
+  const cnameErrorId = `${cnameHostInputId}-error`;
+  const [draftAddress] = useState(() =>
+    platformAddressDraftFromPort(defaultPort, platformAddressDraftContext)
+  );
   const [draftPort, setDraftPort] = useState(() => String(defaultPort));
+  const [cnameHostDraft, setCnameHostDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [cnameError, setCnameError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const domainValue = publicAddressHostValue(draftAddress) || "Pending domain";
+  const cnameTarget = publicAddressHostValue(draftAddress);
+  const normalizedCnameHost = normalizeCustomDomainDraft(cnameHostDraft);
 
   const handleSubmit = async () => {
     if (onSubmit == null) {
       return;
     }
-    const validation = validatePublicAddressDraft(
-      draftPort,
-      platformAddressDraftContext
-    );
-    if (!validation.ok) {
-      setError(validation.message);
+    const parsedPort = parsePortNumberDigits(draftPort.trim());
+    if (!parsedPort.ok) {
+      setError(parsedPort.message);
+      return;
+    }
+    if (normalizedCnameHost !== "" && cnameTarget === "") {
+      setCnameError("Platform Address host is not ready.");
+      return;
+    }
+    if (normalizedCnameHost !== "" && verify == null) {
+      setCnameError("CNAME verification is unavailable.");
       return;
     }
 
     setPending(true);
     try {
-      await onSubmit(validation.address);
+      let customDomain: ContainerNetworkCustomDomain | undefined;
+      if (normalizedCnameHost !== "") {
+        const verifier = verify;
+        if (verifier == null) {
+          setCnameError("CNAME verification is unavailable.");
+          return;
+        }
+        const verified = await verifiedCustomDomainDraft({
+          cnameTarget,
+          domain: normalizedCnameHost,
+          platformAddressId: draftAddress.id,
+          port: parsedPort.n,
+          verify: verifier,
+        });
+        if ("error" in verified) {
+          setCnameError(verified.error);
+          return;
+        }
+        customDomain = verified;
+      }
+      await onSubmit({ ...draftAddress, port: parsedPort.n }, customDomain);
     } finally {
       setPending(false);
     }
@@ -1932,43 +1989,93 @@ function AddPublicAddressForm({
   };
 
   return (
-    <div className="grid min-w-0 gap-3 rounded-md border border-border border-dashed bg-transparent p-3">
+    <div className="grid min-w-0 gap-4 rounded-lg border border-border border-dashed bg-transparent p-2.5">
+      <AppInputField
+        disabled
+        id={domainInputId}
+        label="Domain"
+        value={domainValue}
+      />
       <AppInputField
         disabled={pending}
         error={error}
         errorId={errorId}
         id={portInputId}
-        inputClassName="max-w-32"
         inputMode="numeric"
-        label="Public Address target port"
+        label="Port"
         onChange={(event) => {
           setDraftPort(event.target.value);
           setError(null);
         }}
         value={draftPort}
       />
-      <div className="flex justify-end gap-1">
-        <AppButton
-          disabled={pending}
-          onClick={onCancel}
-          size="sm"
-          type="button"
-          variant="quiet"
-        >
-          Cancel
-        </AppButton>
-        <AppButton
-          disabled={pending || onSubmit == null}
-          onClick={handleSubmit}
-          size="sm"
-          type="button"
-          variant="secondary"
-        >
-          Add
-        </AppButton>
+      <AppInputField
+        disabled={pending}
+        error={cnameError}
+        errorId={cnameErrorId}
+        id={cnameHostInputId}
+        label="CNAME Host"
+        onChange={(event) => {
+          setCnameHostDraft(event.target.value);
+          setCnameError(null);
+        }}
+        placeholder="www.example.com"
+        value={cnameHostDraft}
+      />
+      <AppInputField
+        disabled
+        id={cnameTargetInputId}
+        label="CNAME Target"
+        value={cnameTarget === "" ? "Pending domain" : cnameTarget}
+      />
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 text-foreground text-xs leading-4">
+          Auto-generated subdomain. Set port and CNAME.
+        </p>
+        <div className="flex shrink-0 gap-2">
+          <AppButton
+            className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+            disabled={pending}
+            onClick={onCancel}
+            type="button"
+            variant="quiet"
+          >
+            <X aria-hidden data-icon="inline-start" />
+            Cancel
+          </AppButton>
+          <AppButton
+            className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+            disabled={pending || onSubmit == null}
+            onClick={handleSubmit}
+            type="button"
+            variant="quiet"
+          >
+            <Plus aria-hidden data-icon="inline-start" />
+            Add
+          </AppButton>
+        </div>
       </div>
     </div>
   );
+}
+
+interface AddPublicAddressDraft {
+  customDomain?: ContainerNetworkCustomDomain;
+  publicAddress: PublicAddressDraft;
+}
+
+function networkWithAddedPublicAddressDraft(
+  network: ContainerNetwork,
+  draft: AddPublicAddressDraft
+): ContainerNetwork {
+  return {
+    ...network,
+    customDomains:
+      draft.customDomain == null
+        ? network.customDomains
+        : [...(network.customDomains ?? []), draft.customDomain],
+    publicAddresses: [...network.publicAddresses, draft.publicAddress],
+  };
 }
 
 interface DomainListSectionProps {
@@ -1976,7 +2083,10 @@ interface DomainListSectionProps {
   canMutateNetwork: boolean;
   defaultPort: number;
   hiddenPublicAddressCount: number;
-  onAddPublicAddress: (address: PublicAddressDraft) => void | Promise<void>;
+  onAddPublicAddress: (
+    address: PublicAddressDraft,
+    customDomain?: ContainerNetworkCustomDomain
+  ) => void | Promise<void>;
   onBindAddress: (address: ContainerNetworkPublicAddress) => void;
   onCancelAddPublicAddress: () => void;
   onDeletePublicAddress: (index: number) => void | Promise<void>;
@@ -1987,6 +2097,7 @@ interface DomainListSectionProps {
   ) => void | Promise<void>;
   platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext;
   readOnly: boolean;
+  verify?: ContainerCustomDomainCnameVerifier;
   visibleDomainRows: VisibleDomainRows;
   visiblePublicAddresses: ContainerNetworkPublicAddress[];
 }
@@ -2005,6 +2116,7 @@ function DomainListSection({
   onUnbindCustomDomain,
   platformAddressDraftContext,
   readOnly,
+  verify,
   visibleDomainRows,
   visiblePublicAddresses,
 }: DomainListSectionProps) {
@@ -2013,18 +2125,18 @@ function DomainListSection({
     visibleDomainRows.customDomains.length === 0;
 
   return (
-    <NetworkCard title="Public Addresses">
+    <NetworkCard title="Domain List">
       {readOnly ? null : (
         <AppButton
           aria-label="Add Public Address"
-          className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
+          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
           disabled={addOpen || !canMutateNetwork}
           onClick={onOpenAddPublicAddress}
           type="button"
           variant="secondary"
         >
           <Plus aria-hidden />
-          Add Public Address
+          Add Domain
         </AppButton>
       )}
       {addOpen ? (
@@ -2033,6 +2145,7 @@ function DomainListSection({
           onCancel={onCancelAddPublicAddress}
           onSubmit={canMutateNetwork ? onAddPublicAddress : undefined}
           platformAddressDraftContext={platformAddressDraftContext}
+          verify={verify}
         />
       ) : null}
       {noDomains ? (
@@ -2189,12 +2302,15 @@ function NetworkSettingsSection({
     setAddOpen(false);
   };
 
-  const handleAddPublicAddress = async (address: PublicAddressDraft) => {
+  const handleAddPublicAddress = async (
+    address: PublicAddressDraft,
+    customDomain?: ContainerNetworkCustomDomain
+  ) => {
     await commitNetworkChange(
-      {
-        ...network,
-        publicAddresses: [...network.publicAddresses, address],
-      },
+      networkWithAddedPublicAddressDraft(network, {
+        customDomain,
+        publicAddress: address,
+      }),
       { onNetworkChange, onNetworkDraftChange }
     );
   };
@@ -2297,6 +2413,7 @@ function NetworkSettingsSection({
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={platformAddressDraftContext}
         readOnly={readOnly}
+        verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
       />
@@ -2502,11 +2619,16 @@ export function ContainerPublicAddressesSettingsPane({
     saveNetworkDraft,
   ]);
 
-  const handleAddPublicAddress = (address: PublicAddressDraft) => {
-    setDraftNetwork({
-      ...networkForRender,
-      publicAddresses: [...networkForRender.publicAddresses, address],
-    });
+  const handleAddPublicAddress = (
+    address: PublicAddressDraft,
+    customDomain?: ContainerNetworkCustomDomain
+  ) => {
+    setDraftNetwork(
+      networkWithAddedPublicAddressDraft(networkForRender, {
+        customDomain,
+        publicAddress: address,
+      })
+    );
   };
 
   const handleDeletePublicAddress = (index: number) => {
@@ -2553,6 +2675,7 @@ export function ContainerPublicAddressesSettingsPane({
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={networkPlatformAddressDraftContext}
         readOnly={readOnly}
+        verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
       />
