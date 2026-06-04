@@ -178,8 +178,10 @@ SelectLabel.displayName = SelectPrimitiveLabel.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitiveItem>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitiveItem>
->(({ className, children, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof SelectPrimitiveItem> & {
+    indicator?: boolean;
+  }
+>(({ className, children, indicator = true, ...props }, ref) => {
   const contentCorners = React.useContext(SelectContentCornersContext);
 
   return (
@@ -195,11 +197,13 @@ const SelectItem = React.forwardRef<
       ref={ref}
       {...props}
     >
-      <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-        <SelectPrimitiveItemIndicator>
-          <Check className="h-4 w-4" />
-        </SelectPrimitiveItemIndicator>
-      </span>
+      {indicator ? (
+        <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+          <SelectPrimitiveItemIndicator>
+            <Check className="h-4 w-4" />
+          </SelectPrimitiveItemIndicator>
+        </span>
+      ) : null}
 
       <SelectPrimitiveItemText>{children}</SelectPrimitiveItemText>
     </SelectPrimitiveItem>

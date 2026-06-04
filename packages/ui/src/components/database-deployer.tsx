@@ -9,6 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select";
+import {
+  SingleSelect,
+  type SingleSelectOption,
+} from "@workspace/ui/components/single-select";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
@@ -167,6 +171,15 @@ export function DatabaseDeployer({
 
   const choice = selectedChoice(databaseOptions, databaseId);
   const effectiveDatabaseId = choice?.id ?? "";
+  const databaseSelectOptions = useMemo(
+    (): SingleSelectOption[] =>
+      databaseOptions.map((option) => ({
+        icon: <DatabaseChoiceIcon choice={option} />,
+        label: option.label,
+        value: option.id,
+      })),
+    [databaseOptions]
+  );
   const replicaCount = Number(replicas);
   const canDeploy =
     !busy &&
@@ -188,34 +201,15 @@ export function DatabaseDeployer({
           title="Type"
         >
           <DeploymentSettings.Control>
-            {databaseOptions.length === 0 ? (
-              <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
-                {emptyMessage}
-              </div>
-            ) : (
-              <Select
-                disabled={busy}
-                onValueChange={setDatabaseId}
-                value={effectiveDatabaseId}
-              >
-                <SelectTrigger
-                  aria-label="Database engine"
-                  className="h-9 border-input bg-transparent text-foreground"
-                >
-                  <SelectValue placeholder="Choose a database" />
-                </SelectTrigger>
-                <SelectContent>
-                  {databaseOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      <span className="flex min-w-0 items-center gap-2">
-                        <DatabaseChoiceIcon choice={option} />
-                        <span className="min-w-0 truncate">{option.label}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <SingleSelect
+              aria-label="Database engine"
+              disabled={busy}
+              emptyMessage={emptyMessage}
+              onValueChange={setDatabaseId}
+              options={databaseSelectOptions}
+              placeholder="Choose a database"
+              value={effectiveDatabaseId}
+            />
           </DeploymentSettings.Control>
         </DeploymentSettings.Section>
 
