@@ -12,11 +12,11 @@ import {
 export const DatabaseConsolePane = memo(function DatabaseConsolePane({
   node,
   onClose,
-  projectUid,
+  projectId,
 }: {
   node: Node;
   onClose: () => void;
-  projectUid: string;
+  projectId: string;
 }) {
   const data = databaseNodeDataFromNode(node);
   const name = data?.workload.name?.trim() ?? "";
@@ -28,11 +28,11 @@ export const DatabaseConsolePane = memo(function DatabaseConsolePane({
       kind: "db",
       name,
       namespace,
-      projectUid,
+      projectId,
       subtitle: displayEngine ? `${displayEngine} console` : "Database console",
       title: name || "Database console",
     }),
-    [displayEngine, name, namespace, projectUid]
+    [displayEngine, name, namespace, projectId]
   );
 
   return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;

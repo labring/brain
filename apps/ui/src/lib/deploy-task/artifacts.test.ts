@@ -18,7 +18,7 @@ function task(
   return {
     namespace: "tenant-a",
     projectName: "demo-project",
-    projectUid: "project-uid",
+    projectId: "project-uid",
     ...overrides,
   };
 }

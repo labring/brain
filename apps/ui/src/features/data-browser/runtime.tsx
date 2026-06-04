@@ -14,7 +14,7 @@ export interface DataBrowserRuntimeProviderProps {
   children: ReactNode;
   kubeconfig: string;
   namespace: string;
-  projectUid: string;
+  projectId: string;
   selectedDatabaseData: CanvasDatabaseNodeData;
 }
 
@@ -37,7 +37,7 @@ export function dataBrowserRuntimeParts(
 export function createDataBrowserHostContext({
   kubeconfig,
   namespace,
-  projectUid,
+  projectId,
   selectedDatabaseData,
 }: Omit<DataBrowserRuntimeProviderProps, "children">): DataBrowserHostContext {
   const parts = dataBrowserRuntimeParts(selectedDatabaseData);
@@ -58,7 +58,7 @@ export function createDataBrowserHostContext({
     engine: parts.engine,
     kubeconfig,
     namespace,
-    projectUid,
+    projectId,
   };
 }
 
@@ -66,7 +66,7 @@ export function DataBrowserRuntimeProvider({
   children,
   kubeconfig,
   namespace,
-  projectUid,
+  projectId,
   selectedDatabaseData,
 }: DataBrowserRuntimeProviderProps) {
   const {
@@ -95,7 +95,7 @@ export function DataBrowserRuntimeProvider({
       engine,
       kubeconfig,
       namespace,
-      projectUid,
+      projectId,
     }),
     [
       databaseDisplayEngine,
@@ -107,7 +107,7 @@ export function DataBrowserRuntimeProvider({
       engine,
       kubeconfig,
       namespace,
-      projectUid,
+      projectId,
     ]
   );
 

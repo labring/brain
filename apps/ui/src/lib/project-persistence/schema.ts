@@ -47,8 +47,9 @@ export const projectCanvasLayouts = ns.table(
   "project_canvas_layouts",
   {
     namespace: text("namespace").notNull(),
-    // Keep the physical column name for now; app-level meaning is Brain DB projectId.
-    projectUid: text("project_uid").notNull(),
+    // Storage migration boundary: the physical column remains `project_uid`;
+    // the app-level contract is the Brain Project ID.
+    projectId: text("project_uid").notNull(),
     projectNameSnapshot: text("project_name_snapshot"),
     version: integer("version").notNull().default(0),
     nodes: jsonb("nodes").notNull().$type<CanvasLayoutNode[]>(),
@@ -61,7 +62,7 @@ export const projectCanvasLayouts = ns.table(
   },
   (table) => [
     primaryKey({
-      columns: [table.namespace, table.projectUid],
+      columns: [table.namespace, table.projectId],
       name: "project_canvas_layouts_pk",
     }),
     index("project_canvas_layouts_updated_at_idx").on(table.updatedAt),

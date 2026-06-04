@@ -79,5 +79,5 @@ export interface DataBrowserHostContext {
   engine: DataBrowserEngine;
   kubeconfig: string;
   namespace: string;
-  projectUid: string;
+  projectId: string;
 }

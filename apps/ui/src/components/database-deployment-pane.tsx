@@ -21,19 +21,19 @@ export function DatabaseDeploymentPane({
   namespace,
   onClose,
   onDeployed,
-  projectUid,
+  projectId,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
   onDeployed?: () => Promise<unknown>;
-  projectUid: string;
+  projectId: string;
 }) {
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
-    projectUid,
+    projectId,
   });
   const databaseOptions = DIRECT_DB_DEPLOYMENT_OPTIONS;
   const deploymentAdapters = useMemo(
@@ -56,7 +56,7 @@ export function DatabaseDeploymentPane({
             settings,
             target: existingProjectDeploymentTarget({
               projectName,
-              projectUid,
+              projectId,
             }),
           },
         });
@@ -81,7 +81,7 @@ export function DatabaseDeploymentPane({
       onClose,
       onDeployed,
       projectName,
-      projectUid,
+      projectId,
     ]
   );
 

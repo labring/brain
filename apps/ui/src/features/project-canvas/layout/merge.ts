@@ -153,7 +153,6 @@ function layoutDocumentsEqual(
     a.namespace === b.namespace &&
     a.projectId === b.projectId &&
     a.projectNameSnapshot === b.projectNameSnapshot &&
-    a.projectUid === b.projectUid &&
     a.version === b.version &&
     a.nodes.length === b.nodes.length &&
     a.nodes.every((node, index) => {

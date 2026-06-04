@@ -36,24 +36,21 @@ export const canvasLayoutNodeSchema = z.object({
 export const canvasLayoutDocumentSchema = z.object({
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
-  projectId: boundedString.optional(),
   projectNameSnapshot: z.string().trim().max(256).optional(),
-  projectUid: boundedString,
+  projectId: boundedString,
   version: z.number().int().min(0),
 });
 
 export const canvasLayoutPatchRequestSchema = z.object({
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
-  projectId: boundedString.optional(),
   projectNameSnapshot: z.string().trim().max(256).optional(),
-  projectUid: boundedString.optional(),
+  projectId: boundedString,
 });
 
 export const canvasLayoutGetQuerySchema = z.object({
   namespace: boundedString,
-  projectId: boundedString.optional(),
-  projectUid: boundedString.optional(),
+  projectId: boundedString,
 });
 
 export type CanvasLayoutPatchRequest = z.infer<
@@ -64,20 +61,13 @@ export type CanvasLayoutGetQuery = z.infer<typeof canvasLayoutGetQuerySchema>;
 export function parseCanvasLayoutDocument(
   input: unknown
 ): CanvasLayoutDocument {
-  const parsed = canvasLayoutDocumentSchema.parse(input);
-  const projectId = parsed.projectId ?? parsed.projectUid;
-  return { ...parsed, projectId, projectUid: projectId };
+  return canvasLayoutDocumentSchema.parse(input);
 }
 
 export function parseCanvasLayoutPatchRequest(
   input: unknown
 ): CanvasLayoutPatchRequest {
-  const parsed = canvasLayoutPatchRequestSchema.parse(input);
-  const projectId = parsed.projectId ?? parsed.projectUid;
-  if (projectId === undefined || projectId.trim() === "") {
-    throw new Error("Canvas layout projectId is required.");
-  }
-  return { ...parsed, projectId, projectUid: projectId };
+  return canvasLayoutPatchRequestSchema.parse(input);
 }
 
 export function assertCanvasLayoutPatchMatchesOwner(
@@ -95,10 +85,5 @@ export function assertCanvasLayoutPatchMatchesOwner(
 export function parseCanvasLayoutGetQuery(
   input: unknown
 ): CanvasLayoutGetQuery {
-  const parsed = canvasLayoutGetQuerySchema.parse(input);
-  const projectId = parsed.projectId ?? parsed.projectUid;
-  if (projectId === undefined || projectId.trim() === "") {
-    throw new Error("Canvas layout projectId is required.");
-  }
-  return { ...parsed, projectId, projectUid: projectId };
+  return canvasLayoutGetQuerySchema.parse(input);
 }

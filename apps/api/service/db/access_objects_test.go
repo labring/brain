@@ -29,9 +29,9 @@ func TestAccessObjectsListsRootObjectsThroughGuardedDBAccess(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.List(context.Background(), AccessObjectsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
 	})
 	if err != nil {
 		t.Fatalf("expected object browsing to succeed: %v", err)
@@ -80,10 +80,10 @@ func TestAccessObjectReturnsSafeMetadataThroughGuardedDBAccess(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Get(context.Background(), AccessObjectRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
 	})
 	if err != nil {
 		t.Fatalf("expected object detail to succeed: %v", err)
@@ -127,10 +127,10 @@ func TestAccessObjectFallsBackToParentListingWhenDirectLookupMissesReturnedRef(t
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Get(context.Background(), AccessObjectRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "view", Path: []string{"postgres", "public", "pg_auth_mon"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "view", Path: []string{"postgres", "public", "pg_auth_mon"}},
 	})
 	if err != nil {
 		t.Fatalf("expected object detail fallback to succeed: %v", err)
@@ -156,10 +156,10 @@ func TestAccessObjectPreservesNotFoundWhenFallbackCannotFindRef(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	_, err := svc.Get(context.Background(), AccessObjectRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "missing"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "missing"}},
 	})
 	if err == nil || !errors.Is(err, ErrAccessObjectsNotFound) {
 		t.Fatalf("expected original not found error, got %v", err)
@@ -184,10 +184,10 @@ func TestAccessColumnsReturnsColumnShapeThroughGuardedDBAccess(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Columns(context.Background(), AccessColumnsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
 	})
 	if err != nil {
 		t.Fatalf("expected column inspection to succeed: %v", err)
@@ -238,10 +238,10 @@ func TestAccessRowsReturnsRowsThroughGuardedDBAccessWithDefaultPagination(t *tes
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Rows(context.Background(), AccessRowsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
 	})
 	if err != nil {
 		t.Fatalf("expected row retrieval to succeed: %v", err)
@@ -291,11 +291,11 @@ func TestAccessExportReturnsCSVThroughGuardedDBAccess(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Export(context.Background(), AccessExportRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
-		Format:     "csv",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Format:    "csv",
 	})
 	if err != nil {
 		t.Fatalf("expected CSV export to succeed: %v", err)
@@ -335,11 +335,11 @@ func TestAccessExportCapsCSVDataRowsAtMVPExportLimit(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Export(context.Background(), AccessExportRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
-		Format:     "csv",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Format:    "csv",
 	})
 	if err != nil {
 		t.Fatalf("expected capped CSV export to succeed: %v", err)
@@ -370,11 +370,11 @@ func TestAccessExportReturnsNDJSONThroughGuardedDBAccess(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Export(context.Background(), AccessExportRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
-		Format:     "ndjson",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Format:    "ndjson",
 	})
 	if err != nil {
 		t.Fatalf("expected NDJSON export to succeed: %v", err)
@@ -400,11 +400,11 @@ func TestAccessExportRejectsUnsupportedFormatsBeforeCallingWhoDB(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	_, err := svc.Export(context.Background(), AccessExportRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
-		Format:     "excel",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Format:    "excel",
 	})
 	if err == nil || !errors.Is(err, ErrAccessExportInvalidFormat) {
 		t.Fatalf("expected invalid export format error, got %v", err)
@@ -425,11 +425,11 @@ func TestAccessExportAuditIncludesFormatAndLimitButNotRowValues(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb, Audit: audit}
 
 	_, err := svc.Export(context.Background(), AccessExportRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
-		Format:     "csv",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+		Format:    "csv",
 	})
 	if err != nil {
 		t.Fatalf("expected export to succeed: %v", err)
@@ -463,7 +463,7 @@ func TestAccessRowsCapsLargePageSizesBeforeCallingWhoDB(t *testing.T) {
 	result, err := svc.Rows(context.Background(), AccessRowsRequest{
 		Name:       "pg-main",
 		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		ProjectID:  "project-1",
 		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
 		PageSize:   1000,
 		PageOffset: 25,
@@ -499,7 +499,7 @@ func TestAccessRowsRejectsInvalidPaginationBeforeCallingWhoDB(t *testing.T) {
 			_, err := svc.Rows(context.Background(), AccessRowsRequest{
 				Name:       "pg-main",
 				Namespace:  "ns-a",
-				ProjectUID: "project-1",
+				ProjectID:  "project-1",
 				Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
 				PageSize:   tt.pageSize,
 				PageOffset: tt.pageOffset,
@@ -531,11 +531,11 @@ func TestAccessRowsRejectsInvalidSortBeforeCallingWhoDB(t *testing.T) {
 			svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 			_, err := svc.Rows(context.Background(), AccessRowsRequest{
-				Name:       "pg-main",
-				Namespace:  "ns-a",
-				ProjectUID: "project-1",
-				Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
-				Sort:       tt.sort,
+				Name:      "pg-main",
+				Namespace: "ns-a",
+				ProjectID: "project-1",
+				Ref:       AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
+				Sort:      tt.sort,
 			})
 			if err == nil || !errors.Is(err, ErrAccessRowsInvalidSort) {
 				t.Fatalf("expected invalid sort error, got %v", err)
@@ -562,7 +562,7 @@ func TestAccessRowsAuditIncludesPaginationAndSortButNotRowValues(t *testing.T) {
 	_, err := svc.Rows(context.Background(), AccessRowsRequest{
 		Name:       "pg-main",
 		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		ProjectID:  "project-1",
 		Ref:        AccessObjectRef{Kind: "table", Path: []string{"postgres", "public", "users"}},
 		PageSize:   50,
 		PageOffset: 10,
@@ -598,10 +598,10 @@ func TestAccessColumnsRejectsRefsThatDoNotExposeFields(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: &recordingWhoDBObjectClient{}}
 
 	_, err := svc.Columns(context.Background(), AccessColumnsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Ref:        AccessObjectRef{Kind: "schema", Path: []string{"postgres", "public"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Ref:       AccessObjectRef{Kind: "schema", Path: []string{"postgres", "public"}},
 	})
 	if err == nil || !errors.Is(err, ErrAccessObjectsUnsupportedKind) {
 		t.Fatalf("expected unsupported ref kind, got %v", err)
@@ -624,10 +624,10 @@ func TestAccessObjectsListsChildrenUnderReturnedRef(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.List(context.Background(), AccessObjectsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Parent:     &AccessObjectRef{Kind: "database", Path: []string{"postgres"}},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Parent:    &AccessObjectRef{Kind: "database", Path: []string{"postgres"}},
 	})
 	if err != nil {
 		t.Fatalf("expected child object browsing to succeed: %v", err)
@@ -663,11 +663,11 @@ func TestAccessObjectsNarrowsResultsByKind(t *testing.T) {
 	svc := AccessObjectsService{Store: store, WhoDB: whodb}
 
 	result, err := svc.List(context.Background(), AccessObjectsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
-		Parent:     &AccessObjectRef{Kind: "schema", Path: []string{"postgres", "public"}},
-		Kinds:      []string{"table"},
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Parent:    &AccessObjectRef{Kind: "schema", Path: []string{"postgres", "public"}},
+		Kinds:     []string{"table"},
 	})
 	if err != nil {
 		t.Fatalf("expected kind filtering to succeed: %v", err)
@@ -690,40 +690,40 @@ func TestAccessObjectsRejectsInvalidRefsAndUnsupportedKinds(t *testing.T) {
 		{
 			name: "invalid schema ref path",
 			request: AccessObjectsRequest{
-				Name:       "pg-main",
-				Namespace:  "ns-a",
-				ProjectUID: "project-1",
-				Parent:     &AccessObjectRef{Kind: "schema"},
+				Name:      "pg-main",
+				Namespace: "ns-a",
+				ProjectID: "project-1",
+				Parent:    &AccessObjectRef{Kind: "schema"},
 			},
 			wantErr: ErrAccessObjectsInvalidRef,
 		},
 		{
 			name: "blank path segment",
 			request: AccessObjectsRequest{
-				Name:       "pg-main",
-				Namespace:  "ns-a",
-				ProjectUID: "project-1",
-				Parent:     &AccessObjectRef{Kind: "schema", Path: []string{"postgres", ""}},
+				Name:      "pg-main",
+				Namespace: "ns-a",
+				ProjectID: "project-1",
+				Parent:    &AccessObjectRef{Kind: "schema", Path: []string{"postgres", ""}},
 			},
 			wantErr: ErrAccessObjectsInvalidRef,
 		},
 		{
 			name: "unsupported requested kind",
 			request: AccessObjectsRequest{
-				Name:       "pg-main",
-				Namespace:  "ns-a",
-				ProjectUID: "project-1",
-				Kinds:      []string{"row"},
+				Name:      "pg-main",
+				Namespace: "ns-a",
+				ProjectID: "project-1",
+				Kinds:     []string{"row"},
 			},
 			wantErr: ErrAccessObjectsUnsupportedKind,
 		},
 		{
 			name: "unsupported parent kind",
 			request: AccessObjectsRequest{
-				Name:       "pg-main",
-				Namespace:  "ns-a",
-				ProjectUID: "project-1",
-				Parent:     &AccessObjectRef{Kind: "row", Path: []string{"postgres", "public", "users", "1"}},
+				Name:      "pg-main",
+				Namespace: "ns-a",
+				ProjectID: "project-1",
+				Parent:    &AccessObjectRef{Kind: "row", Path: []string{"postgres", "public", "users", "1"}},
 			},
 			wantErr: ErrAccessObjectsUnsupportedKind,
 		},
@@ -760,9 +760,9 @@ func TestAccessObjectsCapsLargeWhoDBListings(t *testing.T) {
 	}
 
 	result, err := svc.List(context.Background(), AccessObjectsRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
 	})
 	if err != nil {
 		t.Fatalf("expected capped object browsing to succeed: %v", err)

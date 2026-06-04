@@ -241,7 +241,7 @@ func TestAccessExportRejectsUnsupportedInputsAtHTTPBoundary(t *testing.T) {
 			Register(api)
 
 			body := []byte(fmt.Sprintf(`{
-				"projectUid": "project-1",
+				"projectId": "project-1",
 				"ref": {"kind": "table", "path": ["postgres", "public", "users"]},
 				%s
 			}`, tt.extraPayload))
@@ -279,7 +279,7 @@ func TestAccessRowsRejectsUnsupportedQueryInputsAtHTTPBoundary(t *testing.T) {
 			Register(api)
 
 			body := []byte(fmt.Sprintf(`{
-				"projectUid": "project-1",
+				"projectId": "project-1",
 				"ref": {"kind": "table", "path": ["postgres", "public", "users"]},
 				"%s": %s
 			}`, tt.field, tt.value))
@@ -307,7 +307,7 @@ func TestAccessHealthErrorStatusMapping(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "request validation", err: dbsvc.ErrAccessHealthProjectUID, want: http.StatusBadRequest},
+		{name: "request validation", err: dbsvc.ErrAccessHealthProjectID, want: http.StatusBadRequest},
 		{name: "ownership mismatch", err: dbsvc.ErrAccessHealthProjectForbidden, want: http.StatusForbidden},
 		{name: "missing ownership metadata", err: dbsvc.ErrAccessHealthProjectMissing, want: http.StatusConflict},
 		{name: "not ready", err: dbsvc.ErrAccessHealthDBNotReady, want: http.StatusConflict},
@@ -338,7 +338,7 @@ func TestAccessObjectsErrorStatusMapping(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "request validation", err: dbsvc.ErrAccessHealthProjectUID, want: http.StatusBadRequest},
+		{name: "request validation", err: dbsvc.ErrAccessHealthProjectID, want: http.StatusBadRequest},
 		{name: "invalid ref", err: dbsvc.ErrAccessObjectsInvalidRef, want: http.StatusUnprocessableEntity},
 		{name: "object not found", err: dbsvc.ErrAccessObjectsNotFound, want: http.StatusNotFound},
 		{name: "unsupported kind", err: dbsvc.ErrAccessObjectsUnsupportedKind, want: http.StatusUnprocessableEntity},

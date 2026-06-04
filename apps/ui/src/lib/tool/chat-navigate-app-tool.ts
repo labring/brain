@@ -19,7 +19,7 @@ const PATH_QUERY_HASH_SPLIT = /[?#]/;
 export function describeProjectNavigationUrls(): string {
   return [
     `Open the project list: \`${NAVIGATION_PROJECT_INDEX_PATH}\`.`,
-    `Open one project workspace (canvas): \`${NAVIGATION_PROJECT_INDEX_PATH}/<projectUid>\` where \`<projectUid>\` is the project’s stable id.`,
+    `Open one project workspace (canvas): \`${NAVIGATION_PROJECT_INDEX_PATH}/<projectId>\` where \`<projectId>\` is the project’s stable id.`,
     `If the uid contains spaces or reserved URL characters, percent-encode path segments (example: \`${NAVIGATION_PROJECT_INDEX_PATH}/my%20project\`).`,
   ].join(" ");
 }

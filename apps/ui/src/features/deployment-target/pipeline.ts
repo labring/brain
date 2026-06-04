@@ -19,7 +19,7 @@ export type DeploymentTarget =
   | {
       kind: "existingProject";
       projectName: string;
-      projectUid: string;
+      projectId: string;
     };
 
 export type DeploymentTargetPipelineRequest =
@@ -41,8 +41,8 @@ export type DeploymentTargetPipelineRequest =
 
 export interface GithubDeployTaskInput {
   namespace: string;
+  projectId?: string;
   projectName: string;
-  projectUid?: string;
   repo: {
     fullName: string;
     id: string | number;
@@ -65,7 +65,7 @@ export interface DeploymentTargetPipelineAdapters {
     displayName: string;
     namespace: string;
   }) => Promise<{ id: string }>;
-  fetchProjectUidByName: (name: string) => Promise<string | undefined>;
+  fetchProjectIdByName: (name: string) => Promise<string | undefined>;
   generateChildResourceName: (
     projectName: string,
     kind: ChildResourceKind
@@ -86,8 +86,8 @@ export interface DeploymentTargetPipelineOptions {
 interface ResolvedDeploymentTarget {
   createdProject: boolean;
   displayName?: string;
+  projectId?: string;
   projectName: string;
-  projectUid?: string;
 }
 
 export type DeploymentTargetPipelineOutcome =
@@ -97,7 +97,7 @@ export type DeploymentTargetPipelineOutcome =
       displayName?: string;
       kind: "docker";
       projectName: string;
-      projectUid?: string;
+      projectId?: string;
     }
   | {
       createdProject: boolean;
@@ -105,14 +105,14 @@ export type DeploymentTargetPipelineOutcome =
       displayName?: string;
       kind: "database";
       projectName: string;
-      projectUid?: string;
+      projectId?: string;
     }
   | {
       createdProject: boolean;
       displayName?: string;
       kind: "github";
       projectName: string;
-      projectUid?: string;
+      projectId?: string;
       repoFullName: string;
       taskMessage: string;
       taskId: string | null;
@@ -126,12 +126,12 @@ export function newProjectDeploymentTarget(
 
 export function existingProjectDeploymentTarget(input: {
   projectName: string | null | undefined;
-  projectUid: string | null | undefined;
+  projectId: string | null | undefined;
 }): DeploymentTarget {
   return {
     kind: "existingProject",
     projectName: input.projectName?.trim() ?? "",
-    projectUid: input.projectUid?.trim() ?? "",
+    projectId: input.projectId?.trim() ?? "",
   };
 }
 
@@ -203,8 +203,8 @@ async function resolveDeploymentTarget(
     return {
       createdProject: false,
       projectName,
-      ...(target.projectUid.trim()
-        ? { projectUid: target.projectUid.trim() }
+      ...(target.projectId.trim()
+        ? { projectId: target.projectId.trim() }
         : {}),
     };
   }
@@ -227,7 +227,7 @@ async function resolveDeploymentTarget(
     createdProject: true,
     displayName,
     projectName: project.id,
-    projectUid: project.id,
+    projectId: project.id,
   };
 }
 
@@ -269,9 +269,7 @@ async function runDockerPipeline(
       : { displayName: target.displayName }),
     kind: "docker",
     projectName: target.projectName,
-    ...(target.projectUid === undefined
-      ? {}
-      : { projectUid: target.projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
   };
 }
 
@@ -309,9 +307,7 @@ async function runDatabasePipeline(
       : { displayName: target.displayName }),
     kind: "database",
     projectName: target.projectName,
-    ...(target.projectUid === undefined
-      ? {}
-      : { projectUid: target.projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
   };
 }
 
@@ -326,9 +322,7 @@ async function runGithubPipeline(
   const task = await options.adapters.createGithubDeployTask({
     namespace: options.namespace,
     projectName: target.projectName,
-    ...(target.projectUid === undefined
-      ? {}
-      : { projectUid: target.projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
     repo: {
       fullName,
       id: options.request.repository.id,
@@ -344,9 +338,7 @@ async function runGithubPipeline(
       : { displayName: target.displayName }),
     kind: "github",
     projectName: target.projectName,
-    ...(target.projectUid === undefined
-      ? {}
-      : { projectUid: target.projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
     repoFullName: fullName,
     taskId: task.taskId,
     taskMessage: task.message,

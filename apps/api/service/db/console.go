@@ -102,9 +102,9 @@ type ConsoleExecTarget struct {
 
 // ConsoleExecRequest identifies the DB whose console is being opened.
 type ConsoleExecRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
+	Name      string
+	Namespace string
+	ProjectID string
 }
 
 // ResolveConsoleExecTarget reuses guardDBAccess (ownership + readiness + credentials),
@@ -113,15 +113,15 @@ type ConsoleExecRequest struct {
 func ResolveConsoleExecTarget(ctx context.Context, store ConsoleExecStore, req ConsoleExecRequest) (ConsoleExecTarget, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
-	if req.ProjectUID == "" {
-		return ConsoleExecTarget{}, ErrAccessHealthProjectUID
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
+	if req.ProjectID == "" {
+		return ConsoleExecTarget{}, ErrAccessHealthProjectID
 	}
 
 	engine, creds, err := guardDBAccess(ctx, store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return ConsoleExecTarget{}, err

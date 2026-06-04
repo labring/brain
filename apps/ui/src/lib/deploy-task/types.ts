@@ -46,7 +46,7 @@ export const createDeployTaskInputSchema = z.object({
   branch: z.string().trim().max(256).optional(),
   namespace: z.string().trim().min(1),
   projectName: z.string().trim().max(512).optional(),
-  projectUid: z.string().trim().max(256).optional(),
+  projectId: z.string().trim().max(256).optional(),
   prompt: z.string().trim().max(4000).optional(),
   repo: z.object({
     fullName: z.string().trim().min(1).max(512),
@@ -88,8 +88,8 @@ export interface DeployTaskDTO {
   namespace: string;
   phase: DeployTaskPhase;
   previewUrl: string | null;
+  projectId: string | null;
   projectName: string | null;
-  projectUid: string | null;
   repoFullName: string;
   repoName: string;
   repoUrl: string;

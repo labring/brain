@@ -50,9 +50,9 @@ export interface UseProjectCreatorOptions {
   namespace?: string;
   /**
    * Called after a Project + child product resource create succeeds.
-   * `projectUid` currently carries the Brain Project ID for compatibility with older prop names.
+   * `projectId` currently carries the Brain Project ID for compatibility with older prop names.
    */
-  onProjectCreated?: (projectUid: string | undefined) => void | Promise<void>;
+  onProjectCreated?: (projectId: string | undefined) => void | Promise<void>;
 }
 
 export function useProjectCreator(options?: UseProjectCreatorOptions): {
@@ -190,7 +190,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
             `docker:${settings.image}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectUid);
+          await onProjectCreated?.(outcome.projectId);
         });
       },
       onDatabaseConfirm: async (
@@ -214,7 +214,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
             `database:${settings.databaseId}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectUid);
+          await onProjectCreated?.(outcome.projectId);
         });
       },
     }),
@@ -252,7 +252,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           `github:${outcome.repoFullName}:${outcome.projectName}`
         );
         dispatchCreationPaneState({ type: "close" });
-        await onProjectCreated?.(outcome.projectUid);
+        await onProjectCreated?.(outcome.projectId);
       });
     },
     [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]

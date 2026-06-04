@@ -27,7 +27,7 @@ interface WorkloadShortcutCandidate {
   createdAt: string;
   iconKey: DeviconKey;
   name: string;
-  projectUid: string;
+  projectId: string;
 }
 
 const SIDEBAR_ICON_BUTTON_CLASS =
@@ -58,7 +58,7 @@ function metadataCreationTimestamp(value: unknown): string {
   return nonEmptyString(metadataRecord(value).creationTimestamp) ?? "";
 }
 
-function projectUidFromResource(value: unknown): string | undefined {
+function projectIdFromResource(value: unknown): string | undefined {
   const labels = asRecord(metadataRecord(value).labels);
   return nonEmptyString(labels?.[BRAIN_PROJECT_ID_LABEL]);
 }
@@ -96,8 +96,8 @@ function selectedApByProject(
   const result = new Map<string, WorkloadShortcutCandidate>();
 
   for (const item of apItemsFromList(data)) {
-    const projectUid = projectUidFromResource(item);
-    if (projectUid === undefined) {
+    const projectId = projectIdFromResource(item);
+    if (projectId === undefined) {
       continue;
     }
 
@@ -105,14 +105,14 @@ function selectedApByProject(
       createdAt: metadataCreationTimestamp(item),
       iconKey: "docker",
       name: metadataName(item),
-      projectUid,
+      projectId,
     };
-    const current = result.get(projectUid);
+    const current = result.get(projectId);
     if (
       current === undefined ||
       compareWorkloadCandidates(candidate, current) < 0
     ) {
-      result.set(projectUid, candidate);
+      result.set(projectId, candidate);
     }
   }
 
@@ -125,8 +125,8 @@ function selectedDbByProject(
   const result = new Map<string, WorkloadShortcutCandidate>();
 
   for (const item of apItemsFromList(data)) {
-    const projectUid = projectUidFromResource(item);
-    if (projectUid === undefined) {
+    const projectId = projectIdFromResource(item);
+    if (projectId === undefined) {
       continue;
     }
 
@@ -135,21 +135,21 @@ function selectedDbByProject(
       createdAt: metadataCreationTimestamp(item),
       iconKey: databaseIconKeyFromSpec(spec),
       name: metadataName(item),
-      projectUid,
+      projectId,
     };
-    const current = result.get(projectUid);
+    const current = result.get(projectId);
     if (
       current === undefined ||
       compareWorkloadCandidates(candidate, current) < 0
     ) {
-      result.set(projectUid, candidate);
+      result.set(projectId, candidate);
     }
   }
 
   return result;
 }
 
-function projectUidFromPathname(pathname: string): string | undefined {
+function projectIdFromPathname(pathname: string): string | undefined {
   const prefix = "/project/";
   if (!pathname.startsWith(prefix)) {
     return undefined;
@@ -266,7 +266,7 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom);
-  const currentProjectUid = projectUidFromPathname(pathname);
+  const currentProjectId = projectIdFromPathname(pathname);
   const projectsActive = pathname === "/project";
 
   const { states } = useProjectsExplorer({
@@ -274,15 +274,15 @@ export default function AppSidebar() {
     ns: namespace,
   });
 
-  const projectUidLabelExistence = BRAIN_PROJECT_ID_LABEL;
+  const projectIdLabelExistence = BRAIN_PROJECT_ID_LABEL;
   const { data: apsData } = useApsK8sList({
     kubeconfig,
-    labelSelector: projectUidLabelExistence,
+    labelSelector: projectIdLabelExistence,
     namespace,
   });
   const { data: dbsData } = useDbsK8sList({
     kubeconfig,
-    labelSelector: projectUidLabelExistence,
+    labelSelector: projectIdLabelExistence,
     namespace,
   });
   const apByProject = useMemo(() => selectedApByProject(apsData), [apsData]);
@@ -333,7 +333,7 @@ export default function AppSidebar() {
               ap === undefined ? dbByProject.get(project.id) : undefined;
             const shortcut = ap ?? db;
             const iconKey = shortcut?.iconKey ?? "docker";
-            const active = currentProjectUid === project.id;
+            const active = currentProjectId === project.id;
 
             return (
               <Tooltip key={project.id}>

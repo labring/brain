@@ -121,7 +121,7 @@ export interface MainActionSurfaceProps {
     | undefined;
   namespace: string;
   onClose: () => void;
-  projectUid: string;
+  projectId: string;
 }
 
 export function MainActionSurface({
@@ -130,7 +130,7 @@ export function MainActionSurface({
   model,
   namespace,
   onClose,
-  projectUid,
+  projectId,
 }: MainActionSurfaceProps) {
   const open = dbAccessEnabled && model != null;
 
@@ -152,7 +152,7 @@ export function MainActionSurface({
         <DataBrowserPane
           kubeconfig={kubeconfig}
           namespace={namespace}
-          projectUid={projectUid}
+          projectId={projectId}
           selectedDatabaseData={model.databaseData}
         />
       )}

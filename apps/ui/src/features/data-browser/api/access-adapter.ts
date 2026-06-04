@@ -85,7 +85,7 @@ function withAccessBaseBody(
   body: Record<string, unknown> = {}
 ) {
   return {
-    projectId: runtime.projectUid,
+    projectId: runtime.projectId,
     namespace: runtime.databaseWorkloadNamespace,
     ...body,
   };

@@ -31,11 +31,11 @@ test("Project Canvas translates assistant GitHub intent to deployment in the cur
   assert.deepEqual(
     projectCanvasEntryForAssistantIntent(
       { type: "github" },
-      { projectUid: "project-1" }
+      { projectId: "project-1" }
     ),
     {
       kind: "githubDeployment",
-      projectUid: "project-1",
+      projectId: "project-1",
     }
   );
 });
@@ -44,11 +44,11 @@ test("Project Canvas translates assistant database intent to deployment in the c
   assert.deepEqual(
     projectCanvasEntryForAssistantIntent(
       { type: "database" },
-      { projectUid: "project-1" }
+      { projectId: "project-1" }
     ),
     {
       kind: "databaseDeployment",
-      projectUid: "project-1",
+      projectId: "project-1",
     }
   );
 });
@@ -57,21 +57,18 @@ test("Project Canvas translates assistant Docker intent to deployment in the cur
   assert.deepEqual(
     projectCanvasEntryForAssistantIntent(
       { type: "docker" },
-      { projectUid: "project-1" }
+      { projectId: "project-1" }
     ),
     {
       kind: "dockerDeployment",
-      projectUid: "project-1",
+      projectId: "project-1",
     }
   );
 });
 
 test("Project Canvas ignores GitHub deployment without an existing Project context", () => {
   assert.equal(
-    projectCanvasEntryForAssistantIntent(
-      { type: "github" },
-      { projectUid: "" }
-    ),
+    projectCanvasEntryForAssistantIntent({ type: "github" }, { projectId: "" }),
     null
   );
 });

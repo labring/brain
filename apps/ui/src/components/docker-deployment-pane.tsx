@@ -21,19 +21,19 @@ export function DockerDeploymentPane({
   namespace,
   onClose,
   onDeployed,
-  projectUid,
+  projectId,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
   onDeployed?: () => Promise<unknown>;
-  projectUid: string;
+  projectId: string;
 }) {
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
-    projectUid,
+    projectId,
   });
   const deploymentAdapters = useMemo(
     () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
@@ -54,7 +54,7 @@ export function DockerDeploymentPane({
             settings,
             target: existingProjectDeploymentTarget({
               projectName,
-              projectUid,
+              projectId,
             }),
           },
           routingDomain: routingDomainFromKubeconfig(kubeconfig),
@@ -80,7 +80,7 @@ export function DockerDeploymentPane({
       onClose,
       onDeployed,
       projectName,
-      projectUid,
+      projectId,
     ]
   );
 

@@ -62,7 +62,7 @@ test("main action surface renders shared chrome and empty body slot", () => {
       model={dbAccessModel}
       namespace="default"
       onClose={noop}
-      projectUid="project-uid"
+      projectId="project-uid"
     />
   );
 
@@ -105,7 +105,7 @@ test("main action surface stays absent without supported entry data", () => {
       model={null}
       namespace="default"
       onClose={noop}
-      projectUid="project-uid"
+      projectId="project-uid"
     />
   );
 
@@ -120,7 +120,7 @@ test("main action surface disables database browser when requested", () => {
       model={dbAccessModel}
       namespace="default"
       onClose={noop}
-      projectUid="project-uid"
+      projectId="project-uid"
     />
   );
 
@@ -138,7 +138,7 @@ test("main action surface header leaves room for the assistant pane toggle", () 
         model={dbAccessModel}
         namespace="default"
         onClose={noop}
-        projectUid="project-uid"
+        projectId="project-uid"
       />
     </JotaiProvider>
   );

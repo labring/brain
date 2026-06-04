@@ -51,7 +51,7 @@ function projectWorkloadsFromList(
     const phaseRaw = status?.phase;
     const spec = item.spec as Record<string, unknown> | undefined;
     result.push({
-      projectUid: projectId,
+      projectId,
       phase: typeof phaseRaw === "string" ? phaseRaw : undefined,
       paused: spec?.paused === true,
     });
@@ -109,7 +109,7 @@ export function useProjectsExplorer(options: {
     namespace: ns,
   });
 
-  const statusByProjectUid = useMemo(() => {
+  const statusByProjectId = useMemo(() => {
     if (apsData === undefined && dbsData === undefined) {
       return undefined;
     }
@@ -120,8 +120,8 @@ export function useProjectsExplorer(options: {
   }, [apsData, dbsData]);
 
   const projects = useMemo<ProjectExplorerProject[]>(
-    () => brainProjectsToExplorerProjects(rawProjects, statusByProjectUid),
-    [rawProjects, statusByProjectUid]
+    () => brainProjectsToExplorerProjects(rawProjects, statusByProjectId),
+    [rawProjects, statusByProjectId]
   );
 
   const states = useMemo(

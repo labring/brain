@@ -58,7 +58,6 @@ export async function GET(request: NextRequest) {
     query = parseCanvasLayoutGetQuery({
       namespace: request.nextUrl.searchParams.get("namespace") ?? "",
       projectId: request.nextUrl.searchParams.get("projectId") ?? undefined,
-      projectUid: request.nextUrl.searchParams.get("projectUid") ?? undefined,
     });
   } catch (error) {
     return validationError(error) ?? jsonError("Invalid request.", 400);
@@ -70,12 +69,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const projectId = query.projectId ?? query.projectUid;
-    if (projectId === undefined) {
-      return jsonError("Invalid request.", 400);
-    }
     return NextResponse.json(
-      await loadProjectCanvasLayout({ namespace: query.namespace, projectId })
+      await loadProjectCanvasLayout({
+        namespace: query.namespace,
+        projectId: query.projectId,
+      })
     );
   } catch {
     return jsonError("Canvas layout persistence is unavailable.", 503);
@@ -99,10 +97,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const { namespace, projectId, projectUid: _projectUid, ...patch } = body;
-    if (projectId === undefined) {
-      return jsonError("Invalid canvas layout request.", 400);
-    }
+    const { namespace, projectId, ...patch } = body;
     return NextResponse.json(
       await patchProjectCanvasLayout({ namespace, projectId }, patch)
     );

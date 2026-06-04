@@ -229,9 +229,9 @@ export function useProjectServices(options: {
   // Sticky: once nodes have appeared, never show the bootstrap spinner again.
   // This avoids flicker from `isValidating` oscillating between poll cycles.
   const hasEverHadNodes = useRef(false);
-  const projectUidRef = useRef(uid);
-  if (projectUidRef.current !== uid) {
-    projectUidRef.current = uid;
+  const projectIdRef = useRef(uid);
+  if (projectIdRef.current !== uid) {
+    projectIdRef.current = uid;
     hasEverHadNodes.current = false;
   }
   if (!graphEmpty) {

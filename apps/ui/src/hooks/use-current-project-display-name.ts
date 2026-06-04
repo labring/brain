@@ -9,12 +9,12 @@ import type { BrainProjectsResponse } from "@/lib/brain-projects";
 export function useCurrentProjectDisplayName(options: {
   kubeconfig: string;
   namespace: string;
-  projectUid: string;
+  projectId: string;
 }) {
   const kubeconfig = options.kubeconfig.trim();
   const namespace = options.namespace.trim();
-  const projectUid = options.projectUid.trim();
-  const enabled = kubeconfig !== "" && projectUid !== "";
+  const projectId = options.projectId.trim();
+  const enabled = kubeconfig !== "" && projectId !== "";
 
   const projectsQuery = useMemo(() => ({ namespace }), [namespace]);
 
@@ -32,7 +32,7 @@ export function useCurrentProjectDisplayName(options: {
 
   const currentProject = useMemo(() => {
     const hit = (data?.projects ?? []).find(
-      (project) => project.id === projectUid
+      (project) => project.id === projectId
     );
     if (hit == null) {
       return {
@@ -44,7 +44,7 @@ export function useCurrentProjectDisplayName(options: {
       displayName: hit.displayName,
       resourceName: hit.id,
     };
-  }, [data, projectUid]);
+  }, [data, projectId]);
 
   return {
     displayName: currentProject.displayName,

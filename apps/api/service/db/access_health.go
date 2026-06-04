@@ -14,11 +14,11 @@ import (
 	"sealos/api/service/orchestration"
 )
 
-const ProjectUIDLabel = orchestration.BrainProjectIDLabel
+const ProjectIDLabel = orchestration.BrainProjectIDLabel
 
 var (
 	ErrAccessHealthDBNotFound       = errors.New("db not found")
-	ErrAccessHealthProjectUID       = errors.New("projectUid is required")
+	ErrAccessHealthProjectID        = errors.New("projectId is required")
 	ErrAccessHealthProjectMissing   = errors.New("db missing project ownership metadata")
 	ErrAccessHealthProjectForbidden = errors.New("db project ownership mismatch")
 	ErrAccessHealthDBNotReady       = errors.New("db is not ready")
@@ -30,9 +30,9 @@ var (
 )
 
 type AccessHealthRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
+	Name      string
+	Namespace string
+	ProjectID string
 }
 
 type AccessHealthResult struct {
@@ -55,7 +55,7 @@ type WhoDBSourceCredentials struct {
 
 type AccessHealthAuditEvent struct {
 	Operation    string           `json:"operation"`
-	ProjectUID   string           `json:"projectUid"`
+	ProjectID    string           `json:"projectId"`
 	DBName       string           `json:"db"`
 	Namespace    string           `json:"namespace"`
 	Engine       string           `json:"engine"`
@@ -93,14 +93,14 @@ type AccessHealthService struct {
 func (s AccessHealthService) Check(ctx context.Context, req AccessHealthRequest) (result *AccessHealthResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.health",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.health",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -111,14 +111,14 @@ func (s AccessHealthService) Check(ctx context.Context, req AccessHealthRequest)
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func (standardAccessHealthAuditLogger) LogAccessHealth(event AccessHealthAuditEv
 	log.Printf(
 		"db access health: operation=%s project=%s db=%s namespace=%s engine=%s duration=%s outcome=%s",
 		event.Operation,
-		event.ProjectUID,
+		event.ProjectID,
 		event.DBName,
 		event.Namespace,
 		event.Engine,
@@ -168,9 +168,9 @@ func (standardAccessHealthAuditLogger) LogAccessHealth(event AccessHealthAuditEv
 }
 
 type guardedAccessRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
+	Name      string
+	Namespace string
+	ProjectID string
 }
 
 func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAccessRequest) (string, WhoDBSourceCredentials, error) {
@@ -178,7 +178,7 @@ func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAcce
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
-	if err := verifyDBProject(db, req.ProjectUID); err != nil {
+	if err := verifyDBProject(db, req.ProjectID); err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
 	if !isDBAccessReady(db) {
@@ -203,15 +203,15 @@ func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAcce
 	return profile.Engine, credentials, nil
 }
 
-func verifyDBProject(db *unstructured.Unstructured, projectUID string) error {
+func verifyDBProject(db *unstructured.Unstructured, projectID string) error {
 	if db == nil {
 		return ErrAccessHealthDBNotFound
 	}
-	got := strings.TrimSpace(db.GetLabels()[ProjectUIDLabel])
+	got := strings.TrimSpace(db.GetLabels()[ProjectIDLabel])
 	if got == "" {
 		return ErrAccessHealthProjectMissing
 	}
-	if got != projectUID {
+	if got != projectID {
 		return ErrAccessHealthProjectForbidden
 	}
 	return nil

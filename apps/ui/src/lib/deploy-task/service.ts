@@ -62,7 +62,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     phase: row.phase,
     previewUrl: row.previewUrl,
     projectName: row.projectName,
-    projectUid: row.projectUid,
+    projectId: row.projectId,
     repoFullName: row.repoFullName,
     repoName: row.repoName,
     repoUrl: row.repoUrl,
@@ -157,7 +157,7 @@ export async function createDeployTask(
       namespace: input.namespace.trim(),
       phase: "queued",
       projectName: compactOptional(input.projectName),
-      projectUid: compactOptional(input.projectUid),
+      projectId: compactOptional(input.projectId),
       prompt: compactOptional(input.prompt) ?? taskTitle(input),
       repoFullName: input.repo.fullName.trim(),
       repoId: compactOptional(input.repo.id),
@@ -191,7 +191,7 @@ export async function createDeployTask(
     message: "Deploy task queued.",
     payload: {
       repoFullName: task.repoFullName,
-      projectUid: task.projectUid,
+      projectId: task.projectId,
     },
     phase: "queued",
   });
@@ -252,11 +252,11 @@ export async function getDeployTaskSnapshot(
 
 export async function listDeployTasks(input: {
   namespace: string;
-  projectUid?: string;
+  projectId?: string;
 }): Promise<DeployTaskDTO[]> {
   const filters = [eq(deployTasks.namespace, input.namespace.trim())];
-  if (input.projectUid?.trim()) {
-    filters.push(eq(deployTasks.projectUid, input.projectUid.trim()));
+  if (input.projectId?.trim()) {
+    filters.push(eq(deployTasks.projectId, input.projectId.trim()));
   }
   const rows = await getAssistantDb()
     .select()

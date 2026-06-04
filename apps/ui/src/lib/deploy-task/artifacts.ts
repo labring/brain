@@ -20,8 +20,8 @@ export interface DeployTaskPreparedArtifacts {
 
 export interface DeployTaskArtifactContext {
   namespace: string;
+  projectId: string | null;
   projectName: string | null;
-  projectUid: string | null;
 }
 
 function stringArrayValue(value: unknown): string[] {
@@ -68,7 +68,7 @@ function ensureDeploymentOutputSucceeded(output: Record<string, unknown>) {
 function ensureBrainProjectIdentity(input: {
   doc: Record<string, unknown>;
   projectName: string;
-  projectUid: string | null;
+  projectId: string | null;
 }) {
   const metadata = objectValue(input.doc.metadata) ?? {};
   const labels = objectValue(metadata.labels) ?? {};
@@ -76,7 +76,7 @@ function ensureBrainProjectIdentity(input: {
     ...metadata,
     labels: {
       ...labels,
-      [BRAIN_PROJECT_ID_LABEL]: input.projectUid ?? input.projectName,
+      [BRAIN_PROJECT_ID_LABEL]: input.projectId ?? input.projectName,
     },
   };
 }
@@ -85,7 +85,7 @@ function normalizeDirectProductDoc(input: {
   doc: Record<string, unknown>;
   namespace: string;
   projectName: string;
-  projectUid: string | null;
+  projectId: string | null;
 }): DeployTaskApplyResourceSummary {
   const apiVersion = stringValue(input.doc.apiVersion);
   const kind = stringValue(input.doc.kind);
@@ -125,7 +125,7 @@ function normalizeDirectProductDoc(input: {
       ...Object.fromEntries(
         Object.entries(spec).filter(([key]) => key !== "projectName")
       ),
-      projectId: input.projectUid ?? input.projectName,
+      projectId: input.projectId ?? input.projectName,
     };
   }
 
@@ -166,7 +166,7 @@ export function prepareDeployTaskArtifacts(input: {
         doc,
         namespace: input.task.namespace,
         projectName,
-        projectUid: input.task.projectUid,
+        projectId: input.task.projectId,
       })
     );
     return YAML.stringify(doc).trimEnd();

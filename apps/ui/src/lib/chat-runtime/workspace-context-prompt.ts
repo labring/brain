@@ -11,7 +11,7 @@ export function buildAssistantWorkspaceContextPrompt(opts: {
   const { kubernetesNamespace, assistantContext } = opts;
   const ns = kubernetesNamespace.trim();
   const projectName = assistantContext?.projectName?.trim() ?? "";
-  const uid = assistantContext?.projectUid?.trim() ?? "";
+  const uid = assistantContext?.projectId?.trim() ?? "";
 
   const lines: string[] = [
     "## Current workspace (Seal UI)",

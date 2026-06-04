@@ -24,7 +24,6 @@ function emptyLayoutDocument(
     namespace: key.namespace,
     nodes: [],
     projectId: key.projectId,
-    projectUid: key.projectId,
     version: 0,
   };
 }
@@ -40,8 +39,7 @@ function rowToDocument(
       ...(row.projectNameSnapshot == null
         ? {}
         : { projectNameSnapshot: row.projectNameSnapshot }),
-      projectId: row.projectUid,
-      projectUid: row.projectUid,
+      projectId: row.projectId,
       version: row.version,
     },
     options
@@ -51,7 +49,7 @@ function rowToDocument(
 function whereLayoutKey(key: ProjectCanvasLayoutKey) {
   return and(
     eq(projectCanvasLayouts.namespace, key.namespace),
-    eq(projectCanvasLayouts.projectUid, key.projectId)
+    eq(projectCanvasLayouts.projectId, key.projectId)
   );
 }
 
@@ -111,7 +109,7 @@ export function patchProjectCanvasLayout(
         namespace: key.namespace,
         nodes: [],
         projectNameSnapshot: patch.projectNameSnapshot,
-        projectUid: key.projectId,
+        projectId: key.projectId,
         updatedAt: now,
         createdAt: now,
         version: 0,
@@ -119,7 +117,7 @@ export function patchProjectCanvasLayout(
       .onConflictDoNothing({
         target: [
           projectCanvasLayouts.namespace,
-          projectCanvasLayouts.projectUid,
+          projectCanvasLayouts.projectId,
         ],
       });
 

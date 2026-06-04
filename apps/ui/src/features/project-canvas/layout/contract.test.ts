@@ -16,7 +16,7 @@ const validPatch = {
       stackOrder: 12,
     },
   ],
-  projectUid: "project-uid",
+  projectId: "project-uid",
 };
 
 test("canvas layout patch accepts optional finite integer stack order", () => {
@@ -26,14 +26,12 @@ test("canvas layout patch accepts optional finite integer stack order", () => {
   );
 });
 
-test("canvas layout patch normalizes projectId and legacy projectUid", () => {
-  assert.equal(
+test("canvas layout patch requires projectId", () => {
+  assert.throws(() =>
     parseCanvasLayoutPatchRequest({
       ...validPatch,
-      projectId: "project-id",
-      projectUid: undefined,
-    }).projectUid,
-    "project-id"
+      projectId: undefined,
+    })
   );
   assert.equal(
     parseCanvasLayoutPatchRequest(validPatch).projectId,
@@ -41,17 +39,17 @@ test("canvas layout patch normalizes projectId and legacy projectUid", () => {
   );
 });
 
-test("canvas layout get accepts projectId without legacy projectUid", () => {
+test("canvas layout get accepts projectId", () => {
   assert.equal(
     parseCanvasLayoutGetQuery({
       namespace: "default",
       projectId: "project-id",
-    }).projectUid,
+    }).projectId,
     "project-id"
   );
 });
 
-test("canvas layout document normalizes projectId from legacy projectUid", () => {
+test("canvas layout document accepts projectId", () => {
   assert.equal(
     parseCanvasLayoutDocument({
       ...validPatch,

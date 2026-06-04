@@ -133,7 +133,7 @@ test("aggregateProjectStatuses returns empty map for empty input", () => {
 
 test("aggregateProjectStatuses maps a single Running workload to positive", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Running" },
   ]);
   assert.equal(result.size, 1);
   assert.equal(result.get("p1"), "positive");
@@ -141,24 +141,24 @@ test("aggregateProjectStatuses maps a single Running workload to positive", () =
 
 test("aggregateProjectStatuses promotes positive + progress to progress", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p1", phase: "Creating" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Creating" },
   ]);
   assert.equal(result.get("p1"), "progress");
 });
 
 test("aggregateProjectStatuses promotes any + negative to negative", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p1", phase: "Creating" },
-    { projectUid: "p1", phase: "Failed" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Creating" },
+    { projectId: "p1", phase: "Failed" },
   ]);
   assert.equal(result.get("p1"), "negative");
 });
 
 test("aggregateProjectStatuses treats a paused-only project as neutral", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running", paused: true },
+    { projectId: "p1", phase: "Running", paused: true },
   ]);
   assert.equal(result.get("p1"), "neutral");
 });
@@ -166,8 +166,8 @@ test("aggregateProjectStatuses treats a paused-only project as neutral", () => {
 test("aggregateProjectStatuses: paused workload does not promote severity", () => {
   // A paused workload whose raw phase is "Failed" must not push the project to negative.
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p1", phase: "Failed", paused: true },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Failed", paused: true },
   ]);
   assert.equal(result.get("p1"), "positive");
 });
@@ -176,32 +176,32 @@ test("aggregateProjectStatuses: 'Paused' phase string also reads as neutral", ()
   // Direct product views may report `phase: "Paused"` directly; the phase-side
   // mapping already covers this (see phaseToVisualTone tests).
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Paused" },
-    { projectUid: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Paused" },
+    { projectId: "p1", phase: "Running" },
   ]);
   assert.equal(result.get("p1"), "positive");
 });
 
 test("aggregateProjectStatuses: unknown-phase-only project is neutral", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "CrashLoopBackOff" },
+    { projectId: "p1", phase: "CrashLoopBackOff" },
   ]);
   assert.equal(result.get("p1"), "neutral");
 });
 
 test("aggregateProjectStatuses: unknown phase contributes as neutral alongside positive", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p1", phase: "CrashLoopBackOff" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p1", phase: "CrashLoopBackOff" },
   ]);
   assert.equal(result.get("p1"), "positive");
 });
 
 test("aggregateProjectStatuses groups multiple projects independently", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p2", phase: "Failed" },
-    { projectUid: "p3", phase: "Creating" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p2", phase: "Failed" },
+    { projectId: "p3", phase: "Creating" },
   ]);
   assert.equal(result.size, 3);
   assert.equal(result.get("p1"), "positive");
@@ -209,18 +209,18 @@ test("aggregateProjectStatuses groups multiple projects independently", () => {
   assert.equal(result.get("p3"), "progress");
 });
 
-test("aggregateProjectStatuses groups same-projectUid entries regardless of input order", () => {
+test("aggregateProjectStatuses groups same-projectId entries regardless of input order", () => {
   const a = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p2", phase: "Running" },
-    { projectUid: "p1", phase: "Failed" },
-    { projectUid: "p2", phase: "Creating" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p2", phase: "Running" },
+    { projectId: "p1", phase: "Failed" },
+    { projectId: "p2", phase: "Creating" },
   ]);
   const b = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Failed" },
-    { projectUid: "p2", phase: "Creating" },
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p2", phase: "Running" },
+    { projectId: "p1", phase: "Failed" },
+    { projectId: "p2", phase: "Creating" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p2", phase: "Running" },
   ]);
   assert.equal(a.get("p1"), "negative");
   assert.equal(a.get("p2"), "progress");
@@ -231,16 +231,16 @@ test("aggregateProjectStatuses groups same-projectUid entries regardless of inpu
 test("aggregateProjectStatuses: severity tie-breaking is deterministic", () => {
   // Two positive workloads → still positive (tie produces same tone, not undefined).
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
-    { projectUid: "p1", phase: "Available" },
-    { projectUid: "p1", phase: "Bound" },
+    { projectId: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Available" },
+    { projectId: "p1", phase: "Bound" },
   ]);
   assert.equal(result.get("p1"), "positive");
 });
 
-test("aggregateProjectStatuses: only workloads listed contribute (no projectUid → no entry)", () => {
+test("aggregateProjectStatuses: only workloads listed contribute (no projectId → no entry)", () => {
   const result = aggregateProjectStatuses([
-    { projectUid: "p1", phase: "Running" },
+    { projectId: "p1", phase: "Running" },
   ]);
   assert.equal(result.has("p2"), false);
 });

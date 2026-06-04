@@ -23,7 +23,7 @@ const createDeployTaskToolInputSchema = z.object({
   branch: z.string().trim().max(256).optional(),
   intention: chatToolIntentionField,
   projectName: z.string().trim().max(512).optional(),
-  projectUid: z.string().trim().max(256).optional(),
+  projectId: z.string().trim().max(256).optional(),
   prompt: z.string().trim().max(4000).optional(),
   repo: repoSchema,
   selectedWorkloadUid: z.string().trim().max(256).optional(),
@@ -49,7 +49,7 @@ const cancelDeployTaskToolInputSchema = z.object({
 export function createDeployTaskTools(options: {
   assistantContext?: {
     projectName?: string;
-    projectUid?: string;
+    projectId?: string;
     selectedWorkload?: {
       kubernetesUid?: string;
       name?: string;
@@ -75,7 +75,7 @@ export function createDeployTaskTools(options: {
         branch: input.branch,
         namespace,
         projectName: input.projectName ?? options.assistantContext?.projectName,
-        projectUid: input.projectUid ?? options.assistantContext?.projectUid,
+        projectId: input.projectId ?? options.assistantContext?.projectId,
         prompt: input.prompt,
         repo: input.repo,
         selectedWorkloadUid:

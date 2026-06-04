@@ -35,15 +35,15 @@ function split(value: string | null | undefined): string[] | null {
   return parts?.every((part) => part !== "") ? parts : null;
 }
 
-function projectUidEntry(
+function projectIdEntry(
   kind: "databaseDeployment" | "dockerDeployment" | "githubDeployment",
   parts: readonly string[]
 ): ProjectSideSurfaceEntry | null {
   if (parts.length !== 2) {
     return null;
   }
-  const projectUid = decodePart(parts[1]);
-  return projectUid == null ? null : { kind, projectUid };
+  const projectId = decodePart(parts[1]);
+  return projectId == null ? null : { kind, projectId };
 }
 
 function targetFromParts(parts: readonly string[]) {
@@ -110,15 +110,15 @@ export function serializeProjectSideSurfaceEntry(
     case "apSettings":
       return serializeTargetEntry("ap-settings", entry.target);
     case "databaseDeployment":
-      return `database-deployment:${encodePart(entry.projectUid)}`;
+      return `database-deployment:${encodePart(entry.projectId)}`;
     case "dbMetrics":
       return serializeTargetEntry("db-metrics", entry.target);
     case "dbSettings":
       return serializeTargetEntry("db-settings", entry.target);
     case "dockerDeployment":
-      return `docker-deployment:${encodePart(entry.projectUid)}`;
+      return `docker-deployment:${encodePart(entry.projectId)}`;
     case "githubDeployment":
-      return `github-deployment:${encodePart(entry.projectUid)}`;
+      return `github-deployment:${encodePart(entry.projectId)}`;
     case "projectCreation":
       return `project-creation:${encodePart(entry.entryMode)}`;
     case "publicAddresses":
@@ -198,11 +198,11 @@ export function parseProjectSideSurfaceEntry(
 
   switch (parts[0]) {
     case "database-deployment":
-      return projectUidEntry("databaseDeployment", parts);
+      return projectIdEntry("databaseDeployment", parts);
     case "docker-deployment":
-      return projectUidEntry("dockerDeployment", parts);
+      return projectIdEntry("dockerDeployment", parts);
     case "github-deployment":
-      return projectUidEntry("githubDeployment", parts);
+      return projectIdEntry("githubDeployment", parts);
     case "project-creation":
       return parseProjectCreationSideEntry(parts);
     default:

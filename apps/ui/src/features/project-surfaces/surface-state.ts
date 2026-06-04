@@ -20,9 +20,9 @@ export type ProjectResourceSidePaneEntry =
   | { kind: "publicAddresses"; target: ProjectApBoundEntryPointTarget };
 
 export type ProjectGlobalSidePaneEntry =
-  | { kind: "databaseDeployment"; projectUid: string }
-  | { kind: "dockerDeployment"; projectUid: string }
-  | { kind: "githubDeployment"; projectUid: string }
+  | { kind: "databaseDeployment"; projectId: string }
+  | { kind: "dockerDeployment"; projectId: string }
+  | { kind: "githubDeployment"; projectId: string }
   | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode };
 
 export type ProjectSideSurfaceEntry =

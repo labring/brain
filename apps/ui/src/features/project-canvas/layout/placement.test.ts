@@ -81,7 +81,6 @@ test("skips saved layout rectangles when raster-scanning fallback slots", () => 
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 
@@ -114,7 +113,6 @@ test("keeps saved layout positions for detected nodes", () => {
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 
@@ -136,7 +134,6 @@ test("marks only in-memory generated positions as viewport follow targets", () =
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 
@@ -160,7 +157,6 @@ test("anchors an unplaced EntryPoint to the left side of a saved AP", () => {
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 
@@ -187,7 +183,6 @@ test("uses AABB rectangles from saved and same-run placed nodes during raster sc
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 
@@ -219,7 +214,6 @@ test("moves to the next raster row when the first row is fully occupied", () => 
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 
@@ -252,7 +246,6 @@ test("excludes anchored EntryPoints from raster-scan occupancy", () => {
       },
     ],
     projectId: "project-uid",
-    projectUid: "project-uid",
     version: 1,
   };
 

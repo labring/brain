@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -15,9 +16,8 @@ import (
 
 func registerAccessHealth(grp huma.API) {
 	type dbAccessHealthBody struct {
-		ProjectID  string `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		ProjectUID string `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
-		Namespace  string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		ProjectID string `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		Namespace string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 	}
 	type dbAccessHealthInput struct {
 		middleware.AuthInput
@@ -40,7 +40,7 @@ func registerAccessHealth(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error401Unauthorized("invalid kubeconfig", err)
 		}
-		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		projectID := strings.TrimSpace(input.Body.ProjectID)
 		if projectID == "" {
 			return nil, huma.Error400BadRequest("Brain Project ID is required", nil)
 		}
@@ -69,9 +69,9 @@ func registerAccessHealth(grp huma.API) {
 			),
 		}
 		result, err := service.Check(ctx, dbsvc.AccessHealthRequest{
-			Name:       input.Name,
-			Namespace:  resolved.Namespace,
-			ProjectUID: projectID,
+			Name:      input.Name,
+			Namespace: resolved.Namespace,
+			ProjectID: projectID,
 		})
 		if err != nil {
 			return nil, accessHealthError(err)
@@ -82,7 +82,7 @@ func registerAccessHealth(grp huma.API) {
 
 func accessHealthError(err error) error {
 	switch {
-	case errors.Is(err, dbsvc.ErrAccessHealthProjectUID):
+	case errors.Is(err, dbsvc.ErrAccessHealthProjectID):
 		return huma.Error400BadRequest("Brain Project ID is required", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthDBNotFound):
 		return huma.Error404NotFound("DB not found", err)

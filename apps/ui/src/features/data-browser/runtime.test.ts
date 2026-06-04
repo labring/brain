@@ -25,11 +25,11 @@ test("data browser runtime is derived from host project and selected database", 
   const runtime = createDataBrowserHostContext({
     kubeconfig: " kube ",
     namespace: "project-ns",
-    projectUid: "project-uid",
+    projectId: "project-uid",
     selectedDatabaseData: databaseData,
   });
 
-  assert.equal(runtime.projectUid, "project-uid");
+  assert.equal(runtime.projectId, "project-uid");
   assert.equal(runtime.kubeconfig, " kube ");
   assert.equal(runtime.namespace, "project-ns");
   assert.equal(runtime.databaseWorkloadName, "orders-db-claim");

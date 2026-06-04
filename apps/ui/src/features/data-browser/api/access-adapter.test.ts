@@ -24,7 +24,7 @@ const runtime = {
   engine: "POSTGRES",
   kubeconfig: " kube config\n",
   namespace: "project-ns",
-  projectUid: "project-uid",
+  projectId: "project-uid",
 } satisfies DataBrowserHostContext;
 
 const tableRef = {

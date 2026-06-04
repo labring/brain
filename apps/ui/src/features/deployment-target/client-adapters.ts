@@ -49,7 +49,7 @@ export async function createGithubDeployTaskFromApi({
       encodedKubeconfig,
       namespace: input.namespace,
       projectName: input.projectName,
-      projectUid: input.projectUid,
+      projectId: input.projectId,
       repo: input.repo,
     }),
     headers: { "Content-Type": "application/json" },
@@ -108,7 +108,7 @@ export function createDeploymentTargetClientAdapters({
         encodedKubeconfig: encodeURIComponent(kubeconfig),
         input,
       }),
-    fetchProjectUidByName: (name) => Promise.resolve(name.trim() || undefined),
+    fetchProjectIdByName: (name) => Promise.resolve(name.trim() || undefined),
     generateChildResourceName: childResourceName,
     generateProjectName: randomName,
   };

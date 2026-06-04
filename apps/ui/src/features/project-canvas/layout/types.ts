@@ -25,8 +25,6 @@ export interface CanvasLayoutDocument {
   nodes: CanvasLayoutNode[];
   projectId: string;
   projectNameSnapshot?: string;
-  /** Compatibility alias while existing canvas internals still use the old UID name. */
-  projectUid: string;
   version: number;
 }
 
