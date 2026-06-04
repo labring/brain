@@ -156,6 +156,96 @@ test("EntryPoint canvas nodes display AP-projected Custom Domain rows", () => {
   });
 });
 
+test("EntryPoint canvas nodes prefer observed EntryPoint target status for AP-projected Public Addresses", () => {
+  const state = entryPointsToCanvasState(
+    {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "entry-uid" },
+          spec: { apRef: "api" },
+          status: {
+            phase: "Running",
+            targets: [
+              {
+                id: "cd_def456",
+                platformDomain: "www.example.com",
+                port: 8080,
+                status: "accessible",
+              },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      apsData: {
+        items: [
+          {
+            metadata: { name: "api", namespace: "default", uid: "ap-uid" },
+            spec: {
+              input: {
+                network: {
+                  customDomains: [
+                    {
+                      domain: "www.example.com",
+                      id: "cd_def456",
+                      platformAddressId: "pa_abc123",
+                    },
+                  ],
+                  privatePort: 8080,
+                  platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+                },
+              },
+            },
+            status: {
+              network: {
+                privateAddress: "http://api-service.default.svc:8080",
+                privatePort: 8080,
+                publicAddresses: [
+                  {
+                    cnameTarget: "api.example.com",
+                    host: "www.example.com",
+                    id: "cd_def456",
+                    platformAddressId: "pa_abc123",
+                    port: 8080,
+                    status: "pending",
+                    type: "custom",
+                    url: "https://www.example.com/",
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      namespaceFallback: "default",
+    }
+  );
+
+  assert.deepEqual(state.nodes[0]?.data, {
+    accessDomain: {
+      label: "Access domain",
+      value: "www.example.com",
+    },
+    resource: {
+      apRef: "api",
+      name: "api",
+      namespace: "default",
+      selectionKey: "entry:default:api",
+      uid: "entry-uid",
+    },
+    states: { name: "api" },
+    targets: [
+      {
+        id: "cd_def456",
+        label: "Custom Domain",
+        status: { label: "Accessible", tone: "accessible" },
+        value: "https://www.example.com/",
+      },
+    ],
+  });
+});
+
 test("EntryPoint canvas nodes fall back to desired Platform Addresses while observed URLs are pending", () => {
   const state = entryPointsToCanvasState(undefined, {
     apsData: {

@@ -3,6 +3,7 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   ContainerNetworkCustomDomain,
   ContainerNetworkCustomDomainDetail,
+  ContainerNetworkPublicAddress,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 
 import {
@@ -67,6 +68,34 @@ function portNumber(value: unknown): number | undefined {
   }
   const parsed = Number(text);
   return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function entryPointTargetRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => {
+        const record = asRecord(item);
+        return record == null ? [] : [record];
+      })
+    : [];
+}
+
+function publicAddressIdFromValue(value: unknown): string | undefined {
+  return (
+    platformAddressIdFromValue(value) ?? customDomainBindingIdFromValue(value)
+  );
+}
+
+function publicAddressStatusFromTargetRecord(
+  record: Record<string, unknown>
+): Pick<ContainerNetworkPublicAddress, "status"> | undefined {
+  if (publicAddressIdFromValue(record.id) == null) {
+    return undefined;
+  }
+  const status = trimString(record.status);
+  if (status === "") {
+    return undefined;
+  }
+  return { status };
 }
 
 function lifecycleDetail(
@@ -181,6 +210,28 @@ export function entryPointCustomDomainStatusesForAp(
       const status = customDomainStatusFromRecord(record);
       if (status != null) {
         out.set(status.id, status);
+      }
+    }
+  }
+  return out;
+}
+
+export function entryPointPublicAddressStatusesForAp(
+  data: K8sGetResponse | undefined,
+  apMetadata: Record<string, unknown>
+): ReadonlyMap<string, Pick<ContainerNetworkPublicAddress, "status">> {
+  const out = new Map<string, Pick<ContainerNetworkPublicAddress, "status">>();
+  for (const entryPoint of apItemsFromList(data)) {
+    if (!entryPointMatchesAp(entryPoint, apMetadata)) {
+      continue;
+    }
+    for (const record of entryPointTargetRecords(
+      statusRecord(entryPoint)?.targets
+    )) {
+      const id = publicAddressIdFromValue(record.id);
+      const status = publicAddressStatusFromTargetRecord(record);
+      if (id != null && status != null) {
+        out.set(id, status);
       }
     }
   }

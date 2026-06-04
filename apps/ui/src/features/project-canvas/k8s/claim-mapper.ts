@@ -32,6 +32,7 @@ import {
 } from "./ap-spec-access";
 import {
   entryPointCustomDomainStatusesForAp,
+  entryPointPublicAddressStatusesForAp,
   normalizeCustomDomainName,
 } from "./entrypoint-custom-domains";
 
@@ -229,6 +230,10 @@ function apNetworkFromSpecAndStatus(
     options?.entryPointsData,
     metadata ?? {}
   );
+  const entryPointPublicAddresses = entryPointPublicAddressStatusesForAp(
+    options?.entryPointsData,
+    metadata ?? {}
+  );
   return {
     ...(privateAddress === "" ? {} : { privateAddress }),
     ...apNetworkCustomDomains(
@@ -240,7 +245,8 @@ function apNetworkFromSpecAndStatus(
     publicAddresses: apNetworkPublicAddresses(
       metadata,
       inputNetwork,
-      statusNetwork
+      statusNetwork,
+      entryPointPublicAddresses
     ),
   };
 }
@@ -261,16 +267,26 @@ function apNetworkCustomDomains(
 function apNetworkPublicAddresses(
   metadata: Record<string, unknown> | undefined,
   inputNetwork: Record<string, unknown> | undefined,
-  statusNetwork: Record<string, unknown> | undefined
+  statusNetwork: Record<string, unknown> | undefined,
+  entryPointPublicAddresses: ReadonlyMap<
+    string,
+    Pick<ContainerNetwork["publicAddresses"][number], "status">
+  >
 ): ContainerNetwork["publicAddresses"] {
   const observed = normalizeNetworkPublicAddresses(
     statusNetwork?.publicAddresses,
     true
-  ).filter(isPlatformPublicAddressRow);
+  )
+    .filter(isPlatformPublicAddressRow)
+    .map((address) =>
+      mergePublicAddressStatus(address, entryPointPublicAddresses)
+    );
   const desiredPending = normalizeDesiredPlatformAddresses(
     inputNetwork?.platformAddresses,
     metadata,
     apRoutingDomainFromMetadata(metadata)
+  ).map((address) =>
+    mergePublicAddressStatus(address, entryPointPublicAddresses)
   );
   if (observed.length > 0) {
     const observedIds = platformAddressIdsFromRows(observed);
@@ -282,6 +298,22 @@ function apNetworkPublicAddresses(
     ];
   }
   return desiredPending;
+}
+
+function mergePublicAddressStatus(
+  address: ContainerNetwork["publicAddresses"][number],
+  entryPointPublicAddresses: ReadonlyMap<
+    string,
+    Pick<ContainerNetwork["publicAddresses"][number], "status">
+  >
+): ContainerNetwork["publicAddresses"][number] {
+  if (address.id === undefined) {
+    return address;
+  }
+  return {
+    ...address,
+    ...entryPointPublicAddresses.get(address.id),
+  };
 }
 
 function isCustomPublicAddressRow(
