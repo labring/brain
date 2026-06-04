@@ -2,17 +2,29 @@ package db
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	dbsvc "sealos/api/service/db"
+	orchestration "sealos/api/service/orchestration"
 )
+
+func testingNow() time.Time {
+	return time.Date(2026, 6, 2, 1, 2, 3, 0, time.UTC)
+}
 
 func TestRegisterIncludesAccessHealthRoute(t *testing.T) {
 	router := chi.NewRouter()
@@ -111,6 +123,393 @@ func TestDBPatchDocsIncludeLifecycleFields(t *testing.T) {
 	}
 }
 
+func TestDBOpenAPIDocsDoNotExposeLegacyOwnershipTerms(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	raw, err := json.Marshal(api.OpenAPI())
+	if err != nil {
+		t.Fatalf("marshal openapi: %v", err)
+	}
+	text := string(raw)
+	legacyField := "composition" + "Ref"
+	legacyGroupVersion := "example." + "cross" + "plane.io/v1"
+	for _, forbidden := range []string{
+		"metadata.uid",
+		"DB claim",
+		legacyField,
+		legacyGroupVersion,
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("DB OpenAPI docs must not contain %q", forbidden)
+		}
+	}
+	if !strings.Contains(text, "projectId") {
+		t.Fatalf("DB OpenAPI docs should expose projectId for Brain Project ownership")
+	}
+}
+
+func TestExposeNodePortPatchValue(t *testing.T) {
+	enabled, found := exposeNodePortPatchValue([]byte(`{"spec":{"exposeNodePort":true}}`))
+	if !found || !enabled {
+		t.Fatalf("expected enabled exposeNodePort patch, got enabled=%v found=%v", enabled, found)
+	}
+	enabled, found = exposeNodePortPatchValue([]byte(`{"spec":{"exposeNodePort":false}}`))
+	if !found || enabled {
+		t.Fatalf("expected disabled exposeNodePort patch, got enabled=%v found=%v", enabled, found)
+	}
+	_, found = exposeNodePortPatchValue([]byte(`{"spec":{"replicas":2}}`))
+	if found {
+		t.Fatalf("expected exposeNodePort to be absent")
+	}
+}
+
+func TestDBUpdatePlanFromProductPatchTranslatesRuntimeFieldsToOpsRequests(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {
+			"name": "pg",
+			"namespace": "ns-a",
+			"labels": {"brain.io/db-engine": "postgresql"}
+		},
+		"spec": {
+			"componentSpecs": [{
+				"name": "postgresql",
+				"replicas": 1,
+				"volumeClaimTemplates": [{
+					"name": "data",
+					"spec": {
+						"resources": {"requests": {"storage": "10Gi"}}
+					}
+				}]
+			}],
+			"terminationPolicy": "Delete"
+		}
+	}`)
+	plan, err := dbUpdatePlanFromProductPatch([]byte(`{
+		"spec": {
+			"replicas": 3,
+			"storageSize": "20Gi",
+			"cpuRequest": "500m",
+			"memoryLimit": "2Gi",
+			"terminationPolicy": "WipeOut"
+		}
+	}`), cluster, "pg", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if len(plan.OpsRequests) != 3 {
+		t.Fatalf("ops request count = %d, want 3", len(plan.OpsRequests))
+	}
+	specs := map[string]map[string]interface{}{}
+	for _, ops := range plan.OpsRequests {
+		spec := ops.Object["spec"].(map[string]interface{})
+		specs[spec["type"].(string)] = spec
+		if got := spec["clusterRef"]; got != "pg" {
+			t.Fatalf("clusterRef = %v, want pg", got)
+		}
+	}
+	horizontal := specs["HorizontalScaling"]
+	if horizontal == nil {
+		t.Fatal("missing HorizontalScaling OpsRequest")
+	}
+	horizontalItems := horizontal["horizontalScaling"].([]interface{})
+	horizontalComponent := horizontalItems[0].(map[string]interface{})
+	if got := horizontalComponent["replicas"]; got != int64(3) {
+		t.Fatalf("horizontal replicas = %v, want 3", got)
+	}
+	volume := specs["VolumeExpansion"]
+	if volume == nil {
+		t.Fatal("missing VolumeExpansion OpsRequest")
+	}
+	volumeItems := volume["volumeExpansion"].([]interface{})
+	volumeComponent := volumeItems[0].(map[string]interface{})
+	templates := volumeComponent["volumeClaimTemplates"].([]interface{})
+	template := templates[0].(map[string]interface{})
+	if got := template["storage"]; got != "20Gi" {
+		t.Fatalf("volume expansion storage = %v, want 20Gi", got)
+	}
+	vertical := specs["VerticalScaling"]
+	if vertical == nil {
+		t.Fatal("missing VerticalScaling OpsRequest")
+	}
+	verticalItems := vertical["verticalScaling"].([]interface{})
+	verticalComponent := verticalItems[0].(map[string]interface{})
+	requests := verticalComponent["requests"].(map[string]interface{})
+	if got := requests["cpu"]; got != "500m" {
+		t.Fatalf("vertical cpu request = %v, want 500m", got)
+	}
+	limits := verticalComponent["limits"].(map[string]interface{})
+	if got := limits["memory"]; got != "2Gi" {
+		t.Fatalf("vertical memory limit = %v, want 2Gi", got)
+	}
+	if !plan.HasClusterPatch {
+		t.Fatal("expected Cluster patch for terminationPolicy")
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(plan.ClusterPatch, &out); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	spec := out["spec"].(map[string]interface{})
+	if got := spec["terminationPolicy"]; got != "WipeOut" {
+		t.Fatalf("terminationPolicy = %v, want WipeOut", got)
+	}
+}
+
+func TestDBUpdatePlanFromProductPatchKeepsPublicAccessOutOfClusterAndOpsRequests(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {"name": "pg", "labels": {"brain.io/db-engine": "postgresql"}},
+		"spec": {"componentSpecs": [{"name": "postgresql", "replicas": 1}]}
+	}`)
+	plan, err := dbUpdatePlanFromProductPatch([]byte(`{"spec":{"exposeNodePort":true}}`), cluster, "pg", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if plan.HasClusterPatch {
+		t.Fatalf("expected no Cluster patch for public access-only product patch, got %s", string(plan.ClusterPatch))
+	}
+	if len(plan.OpsRequests) != 0 {
+		t.Fatalf("expected no OpsRequest for public access-only product patch, got %d", len(plan.OpsRequests))
+	}
+}
+
+func TestDBUpdatePlanFromProductPatchRejectsUnsupportedProductFields(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {"name": "pg", "labels": {"brain.io/db-engine": "postgresql"}},
+		"spec": {"componentSpecs": [{"name": "postgresql", "replicas": 1}]}
+	}`)
+	_, err := dbUpdatePlanFromProductPatch([]byte(`{"spec":{"scheduledBackup":{"enabled":true}}}`), cluster, "pg", "ns-a", testingNow())
+	if err == nil {
+		t.Fatal("expected unsupported scheduledBackup patch to be rejected")
+	}
+	if !strings.Contains(err.Error(), "spec.scheduledBackup") {
+		t.Fatalf("expected error to name unsupported field, got %v", err)
+	}
+}
+
+func TestDBRenderInputFromObjectReadsQuotaAndResourceFields(t *testing.T) {
+	obj := unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"metadata": map[string]interface{}{"name": "pg"},
+			"spec": map[string]interface{}{
+				"cpuLimit":      "1500m",
+				"cpuRequest":    "500m",
+				"engine":        "postgresql",
+				"memoryLimit":   "2Gi",
+				"memoryRequest": "1Gi",
+				"projectId":     "project-a",
+				"quota":         "m",
+				"storageSize":   "20Gi",
+			},
+		},
+	}
+
+	got := dbRenderInputFromObject(obj, "ns-a")
+	if got.Quota != "m" {
+		t.Fatalf("quota = %q, want m", got.Quota)
+	}
+	if got.CPURequest != "500m" || got.CPULimit != "1500m" {
+		t.Fatalf("cpu request/limit = %q/%q, want 500m/1500m", got.CPURequest, got.CPULimit)
+	}
+	if got.MemoryRequest != "1Gi" || got.MemoryLimit != "2Gi" {
+		t.Fatalf("memory request/limit = %q/%q, want 1Gi/2Gi", got.MemoryRequest, got.MemoryLimit)
+	}
+}
+
+func TestDBOwnershipRequiresBrainLabels(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:    "project-a",
+		orchestration.BrainResourceKindLabel: orchestration.ResourceKindDB,
+	})
+	cluster.SetCreationTimestamp(metav1.Now())
+
+	if err := requireBrainDBCluster(cluster); err != nil {
+		t.Fatalf("expected Brain DB cluster to pass ownership check: %v", err)
+	}
+	labels := cluster.GetLabels()
+	delete(labels, orchestration.BrainManagedByLabel)
+	cluster.SetLabels(labels)
+	if err := requireBrainDBCluster(cluster); err == nil {
+		t.Fatal("expected missing brain.io/managed-by label to fail ownership check")
+	}
+}
+
+func TestDBOwnershipRejectsWrongResourceKind(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:    "project-a",
+		orchestration.BrainResourceKindLabel: orchestration.ResourceKindAP,
+	})
+
+	if err := requireBrainDBCluster(cluster); err == nil {
+		t.Fatal("expected wrong brain.io/resource-kind label to fail ownership check")
+	}
+}
+
+func TestKubeBlocksRestartConflictDetection(t *testing.T) {
+	err := errors.New(`admission webhook "vopsrequest.kb.io" denied the request: OpsRequest.spec.type=Restart is forbidden when Cluster.status.phase=Creating`)
+	if !isKubeBlocksOpsConflict(err) {
+		t.Fatal("expected KubeBlocks restart webhook denial to be treated as conflict")
+	}
+	if isKubeBlocksOpsConflict(errors.New("some other error")) {
+		t.Fatal("unexpected conflict detection for unrelated error")
+	}
+}
+
+func TestDBResponseFromClustersReturnsDBList(t *testing.T) {
+	raw := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "ClusterList",
+		"items": [
+			{
+				"apiVersion": "apps.kubeblocks.io/v1alpha1",
+				"kind": "Cluster",
+				"metadata": {
+					"labels": {
+						"brain.io/db-engine": "postgresql",
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "db",
+						"clusterdefinition.kubeblocks.io/name": "postgresql"
+					},
+					"name": "pg",
+					"namespace": "ns-a"
+				},
+				"spec": {"clusterDefinitionRef": "postgresql"},
+				"status": {"conditions": [{"type": "Ready", "status": "True"}]}
+			}
+		]
+	}`)
+	body, err := dbResponseFromClusters(raw, false)
+	if err != nil {
+		t.Fatalf("dbResponseFromClusters returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := out["items"].([]interface{})
+	item := items[0].(map[string]interface{})
+	if got := item["kind"]; got != "DB" {
+		t.Fatalf("item.kind = %v, want DB", got)
+	}
+	spec := item["spec"].(map[string]interface{})
+	if got := spec["engine"]; got != "postgresql" {
+		t.Fatalf("spec.engine = %v, want postgresql", got)
+	}
+}
+
+func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testing.T) {
+	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
+
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "mysql",
+		},
+	}
+
+	private := dbConnectionString(db, dbPrivateConnectionAddress(db, "db-main", "ns-a"))
+	if private != "mysql://db-main.ns-a.svc:3306/mysql" {
+		t.Fatalf("private connection string = %q, want MySQL service DSN", private)
+	}
+	public := dbConnectionString(db, dbPublicConnectionAddress(45211))
+	if public != "mysql://192.168.10.189.nip.io:45211/mysql" {
+		t.Fatalf("public connection string = %q, want MySQL public DSN", public)
+	}
+}
+
+func TestDBPublicConnectionAddressFallsBackToPortWhenPublicHostMissing(t *testing.T) {
+	_ = os.Unsetenv("DB_PUBLIC_HOST")
+
+	if got := dbPublicConnectionAddress(30432); got != ":30432" {
+		t.Fatalf("public address fallback = %q, want bare port", got)
+	}
+}
+
+func TestDBConnectionStringFallsBackToAddressForUnknownEngine(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "unknown",
+		},
+	}
+
+	if got := dbConnectionString(db, "db.ns-a.svc:1234"); got != "db.ns-a.svc:1234" {
+		t.Fatalf("connection string for unknown engine = %q, want address fallback", got)
+	}
+}
+
+func TestDBConnectionStringEscapesDatabasePathWithoutCredentials(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+
+	got := dbConnectionString(db, "pg.ns-a.svc:5432")
+	want := "postgresql://pg.ns-a.svc:5432/postgres"
+	if got != want {
+		t.Fatalf("connection string = %q, want %q", got, want)
+	}
+}
+
+func TestDBVariablesFromSecretReturnPrimitiveSecretRefs(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"name": "pg-main-conn-credential",
+		},
+		"data": map[string]interface{}{
+			"host":     "cGcubnMtYS5zdmM=",
+			"password": "czNjcjN0",
+			"port":     "NTQzMg==",
+			"username": "cG9zdGdyZXM=",
+		},
+	}}
+
+	variables := dbVariablesFromSecret(db, secret)
+	if len(variables) != 4 {
+		t.Fatalf("variables length = %d, want 4", len(variables))
+	}
+	for _, variable := range variables {
+		valueFrom := variable["valueFrom"].(map[string]interface{})
+		ref := valueFrom["secretKeyRef"].(map[string]interface{})
+		if ref["name"] != "pg-main-conn-credential" {
+			t.Fatalf("secret ref name = %v, want pg-main-conn-credential", ref["name"])
+		}
+		if _, ok := variable["value"]; ok {
+			t.Fatalf("variable %v exposed raw secret value", variable["name"])
+		}
+	}
+}
+
+func TestDBClusterLabelSelectorKeepsBrainOwnership(t *testing.T) {
+	got := dbClusterLabelSelector("brain.io/project-id=project-a")
+	for _, want := range []string{
+		"brain.io/managed-by=brain",
+		"brain.io/resource-kind=db",
+		"brain.io/project-id=project-a",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("selector %q missing %q", got, want)
+		}
+	}
+}
+
 func TestAccessExportRejectsUnsupportedInputsAtHTTPBoundary(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -130,7 +529,7 @@ func TestAccessExportRejectsUnsupportedInputsAtHTTPBoundary(t *testing.T) {
 			Register(api)
 
 			body := []byte(fmt.Sprintf(`{
-				"projectUid": "project-1",
+				"projectId": "project-1",
 				"ref": {"kind": "table", "path": ["postgres", "public", "users"]},
 				%s
 			}`, tt.extraPayload))
@@ -168,7 +567,7 @@ func TestAccessRowsRejectsUnsupportedQueryInputsAtHTTPBoundary(t *testing.T) {
 			Register(api)
 
 			body := []byte(fmt.Sprintf(`{
-				"projectUid": "project-1",
+				"projectId": "project-1",
 				"ref": {"kind": "table", "path": ["postgres", "public", "users"]},
 				"%s": %s
 			}`, tt.field, tt.value))
@@ -196,7 +595,7 @@ func TestAccessHealthErrorStatusMapping(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "request validation", err: dbsvc.ErrAccessHealthProjectUID, want: http.StatusBadRequest},
+		{name: "request validation", err: dbsvc.ErrAccessHealthProjectID, want: http.StatusBadRequest},
 		{name: "ownership mismatch", err: dbsvc.ErrAccessHealthProjectForbidden, want: http.StatusForbidden},
 		{name: "missing ownership metadata", err: dbsvc.ErrAccessHealthProjectMissing, want: http.StatusConflict},
 		{name: "not ready", err: dbsvc.ErrAccessHealthDBNotReady, want: http.StatusConflict},
@@ -227,7 +626,7 @@ func TestAccessObjectsErrorStatusMapping(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "request validation", err: dbsvc.ErrAccessHealthProjectUID, want: http.StatusBadRequest},
+		{name: "request validation", err: dbsvc.ErrAccessHealthProjectID, want: http.StatusBadRequest},
 		{name: "invalid ref", err: dbsvc.ErrAccessObjectsInvalidRef, want: http.StatusUnprocessableEntity},
 		{name: "object not found", err: dbsvc.ErrAccessObjectsNotFound, want: http.StatusNotFound},
 		{name: "unsupported kind", err: dbsvc.ErrAccessObjectsUnsupportedKind, want: http.StatusUnprocessableEntity},

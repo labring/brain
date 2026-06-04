@@ -29,15 +29,13 @@ const kubeconfig = decodeURIComponent(
   env.NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG || ""
 );
 const namespace = namespaceFromKubeconfig(kubeconfig);
-const sealosHost = (env.SEALOS_HOST || "")
-  .replace(/^https?:\/\//, "")
-  .replace(/\/+$/, "");
+const devboxApiBaseUrl = (env.DEVBOX_API_BASE_URL || "").replace(/\/+$/, "");
 
 if (!namespace) {
   throw new Error("namespace not found in kubeconfig current-context");
 }
-if (!sealosHost) {
-  throw new Error("SEALOS_HOST is missing");
+if (!devboxApiBaseUrl) {
+  throw new Error("DEVBOX_API_BASE_URL is missing");
 }
 if (!env.DEVBOX_JWT_SIGNING_KEY) {
   throw new Error("DEVBOX_JWT_SIGNING_KEY is missing");
@@ -51,7 +49,7 @@ const token = await new SignJWT({ namespace })
   .sign(new TextEncoder().encode(env.DEVBOX_JWT_SIGNING_KEY));
 
 const name = `sealai-curl-${Date.now()}`;
-const url = `https://devbox-server.${sealosHost}/api/v1/devbox`;
+const url = `${devboxApiBaseUrl}/api/v1/devbox`;
 const body = {
   archiveAfterPauseTime: env.DEVBOX_ARCHIVE_AFTER_PAUSE_TIME || "24h",
   env: { SEALAI_ASSISTANT_NAMESPACE: namespace },

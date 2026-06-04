@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,15 +26,6 @@ func SuppressK8sRESTWarnings(c *rest.Config) {
 		return
 	}
 	c.WarningHandlerWithContext = rest.NoWarnings{}
-}
-
-// SECURITY: Admin config for query-only. Must NEVER be used in mutation operations.
-const CrossplaneSystemNS = "crossplane-system"
-
-var crossplaneResources = map[string]bool{
-	"composition": true, "compositions": true,
-	"xrd": true, "xrds": true,
-	"compositionrevisions": true,
 }
 
 // ErrMissingAuth is returned when Authorization header is missing.
@@ -186,31 +176,4 @@ func RestConfigFromAuth(auth string) (*rest.Config, *clientcmdapi.Config, error)
 	}
 	SuppressK8sRESTWarnings(restConfig)
 	return restConfig, cfg, nil
-}
-
-// IsCrossplaneResource returns true if the resource type uses admin config (query-only).
-func IsCrossplaneResource(resource string) bool {
-	return crossplaneResources[strings.ToLower(resource)]
-}
-
-// AdminConfigForQuery returns admin config and namespace for crossplane resources.
-// For composition, xrd, compositionrevisions: uses ENCODED_ADMIN_KUBECONFIG and crossplane-system.
-// Otherwise returns nil, "". SECURITY: Query-only; never use for mutations.
-func AdminConfigForQuery(resource string) (cfg *clientcmdapi.Config, namespace string, err error) {
-	if !IsCrossplaneResource(resource) {
-		return nil, "", nil
-	}
-	encoded := os.Getenv("ENCODED_ADMIN_KUBECONFIG")
-	if encoded == "" {
-		return nil, "", nil
-	}
-	decoded, err := url.QueryUnescape(encoded)
-	if err != nil {
-		return nil, "", err
-	}
-	cfg, err = clientcmd.Load([]byte(decoded))
-	if err != nil {
-		return nil, "", err
-	}
-	return cfg, CrossplaneSystemNS, nil
 }

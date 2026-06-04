@@ -12,19 +12,13 @@ import (
 	"strings"
 	"time"
 
-	networkingv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-
-	"sealos/api/middleware"
 )
 
 const (
-	ingressNamespace = "sealos"
-	ingressName      = "sealos-desktop"
-	upstreamPath     = "/api/auth/regionToken"
-	httpTimeout      = 45 * time.Second
+	desktopURLEnv = "SEALOS_DESKTOP_URL"
+	upstreamPath  = "/api/auth/regionToken"
+	httpTimeout   = 45 * time.Second
 )
 
 // SEALOS_DESKTOP_SKIP_TLS_VERIFY=1 disables TLS certificate verification for the
@@ -62,7 +56,7 @@ func unescapeKubeconfigLiterals(s string) string {
 type UpstreamResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-	Data struct {
+	Data    struct {
 		Kubeconfig string `json:"kubeconfig"`
 	} `json:"data"`
 }
@@ -73,52 +67,29 @@ type ExchangeResult struct {
 	Namespace         string
 }
 
-func firstIngressHost(ing *networkingv1.Ingress) string {
-	for _, r := range ing.Spec.Rules {
-		if h := strings.TrimSpace(r.Host); h != "" {
-			return h
-		}
+// SealosDesktopBaseURL returns the configured Desktop base URL (no trailing slash).
+func SealosDesktopBaseURL() (string, error) {
+	raw := strings.TrimSpace(os.Getenv(desktopURLEnv))
+	if raw == "" {
+		return "", fmt.Errorf("%s is not set", desktopURLEnv)
 	}
-	for _, addr := range ing.Status.LoadBalancer.Ingress {
-		if h := strings.TrimSpace(addr.Hostname); h != "" {
-			return h
-		}
-		if h := strings.TrimSpace(addr.IP); h != "" {
-			return h
-		}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
 	}
-	return ""
-}
-
-// SealosDesktopBaseURL fetches the sealos-desktop Ingress in namespace sealos (admin kubeconfig) and
-// returns https://<host> (no trailing slash).
-func SealosDesktopBaseURL(ctx context.Context) (string, error) {
-	apiCfg, err := middleware.AdminKubeconfigFromEnv()
+	u, err := url.Parse(raw)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", desktopURLEnv, err)
 	}
-	restCfg, err := clientcmd.NewDefaultClientConfig(*apiCfg, &clientcmd.ConfigOverrides{}).ClientConfig()
-	if err != nil {
-		return "", fmt.Errorf("admin kubeconfig: %w", err)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%s must use http or https", desktopURLEnv)
 	}
-	middleware.SuppressK8sRESTWarnings(restCfg)
-	clientset, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		return "", err
+	if u.Host == "" {
+		return "", fmt.Errorf("%s must include a host", desktopURLEnv)
 	}
-	ing, err := clientset.NetworkingV1().Ingresses(ingressNamespace).Get(ctx, ingressName, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("get ingress %s/%s: %w", ingressNamespace, ingressName, err)
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("%s must not include query or fragment", desktopURLEnv)
 	}
-	host := firstIngressHost(ing)
-	if host == "" {
-		return "", fmt.Errorf("ingress %s/%s has no usable host in spec.rules or status.loadBalancer", ingressNamespace, ingressName)
-	}
-	// Do not use url.URL for host: may be IP; ensure single colon for port if ever present
-	if strings.Contains(host, "://") {
-		return strings.TrimRight(host, "/"), nil
-	}
-	return "https://" + strings.TrimRight(host, "/"), nil
+	return strings.TrimRight(u.String(), "/"), nil
 }
 
 // Exchange calls the upstream regionToken endpoint and returns URL-encoded kubeconfig and namespace.

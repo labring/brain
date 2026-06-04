@@ -179,12 +179,12 @@ test("AP claim settings falls back to desired Platform Addresses while observed 
 
   assert.deepEqual(settings.network?.publicAddresses, [
     {
-      host: "api-7c6ad52581.apps.example.com",
+      host: "ucflzg.apps.example.com",
       id: "pa_abc123",
       port: 8080,
       status: "progressing",
       type: "platform",
-      url: "https://api-7c6ad52581.apps.example.com/",
+      url: "https://ucflzg.apps.example.com/",
     },
   ]);
 });
@@ -219,7 +219,7 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
           privatePort: 8080,
           publicAddresses: [
             {
-              cnameTarget: "api-7c6ad52581.apps.example.com",
+              cnameTarget: "ucflzg.apps.example.com",
               host: "www.example.com",
               id: "cd_def456",
               platformAddressId: "pa_abc123",
@@ -237,7 +237,7 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
 
   assert.deepEqual(settings.network?.customDomains, [
     {
-      cnameTarget: "api-7c6ad52581.apps.example.com",
+      cnameTarget: "ucflzg.apps.example.com",
       domain: "www.example.com",
       id: "cd_def456",
       platformAddressId: "pa_abc123",
@@ -247,12 +247,12 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
   ]);
   assert.deepEqual(settings.network?.publicAddresses, [
     {
-      host: "api-7c6ad52581.apps.example.com",
+      host: "ucflzg.apps.example.com",
       id: "pa_abc123",
       port: 8080,
       status: "progressing",
       type: "platform",
-      url: "https://api-7c6ad52581.apps.example.com/",
+      url: "https://ucflzg.apps.example.com/",
     },
   ]);
 });
@@ -287,7 +287,7 @@ test("AP claim settings prefers EntryPoint Custom Domain Binding health over AP 
           privatePort: 8080,
           publicAddresses: [
             {
-              cnameTarget: "api-7c6ad52581.apps.example.com",
+              cnameTarget: "ucflzg.apps.example.com",
               host: "www.example.com",
               id: "cd_def456",
               platformAddressId: "pa_abc123",
@@ -316,7 +316,7 @@ test("AP claim settings prefers EntryPoint Custom Domain Binding health over AP 
                     reason: "IssuerNotReady",
                     status: "failed",
                   },
-                  cnameTarget: "api-7c6ad52581.apps.example.com",
+                  cnameTarget: "ucflzg.apps.example.com",
                   dns: {
                     message:
                       "CNAME for www.example.com was verified before save.",
@@ -348,7 +348,7 @@ test("AP claim settings prefers EntryPoint Custom Domain Binding health over AP 
         reason: "IssuerNotReady",
         status: "failed",
       },
-      cnameTarget: "api-7c6ad52581.apps.example.com",
+      cnameTarget: "ucflzg.apps.example.com",
       dns: {
         message: "CNAME for www.example.com was verified before save.",
         status: "verified",
@@ -392,12 +392,12 @@ test("AP claim settings Platform Address host ignores AP UID and target port", (
 
   assert.deepEqual(settings.network?.publicAddresses, [
     {
-      host: "api-7c6ad52581.apps.example.com",
+      host: "ucflzg.apps.example.com",
       id: "pa_abc123",
       port: 9000,
       status: "progressing",
       type: "platform",
-      url: "https://api-7c6ad52581.apps.example.com/",
+      url: "https://ucflzg.apps.example.com/",
     },
   ]);
 });

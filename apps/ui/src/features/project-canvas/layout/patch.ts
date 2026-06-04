@@ -134,7 +134,7 @@ export function applyCanvasLayoutPatch(
       })
     ),
     ...(projectNameSnapshot === undefined ? {} : { projectNameSnapshot }),
-    projectUid: assertNonEmpty(existing.projectUid, "project UID"),
+    projectId: assertNonEmpty(existing.projectId, "project ID"),
     version: existing.version + 1,
   };
 

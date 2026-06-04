@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"sealos/api/service/orchestration"
 )
 
 var errNoConsoleMembers = errors.New("no available db pod for console")
@@ -27,18 +29,11 @@ type InstanceSetMember struct {
 
 // consoleEngineComponent maps a DB spec.engine to the KubeBlocks component/container name.
 func consoleEngineComponent(engine string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(engine)) {
-	case "postgresql", "postgres", "pg":
-		return "postgresql", nil
-	case "mysql":
-		return "mysql", nil
-	case "mongodb", "mongo":
-		return "mongodb", nil
-	case "redis":
-		return "redis", nil
-	default:
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
 		return "", fmt.Errorf("%w: %s", ErrAccessHealthUnsupported, engine)
 	}
+	return profile.ComponentName, nil
 }
 
 // consoleCommandForEngine returns the exec command (wrapped in sh -lc) and the
@@ -107,9 +102,9 @@ type ConsoleExecTarget struct {
 
 // ConsoleExecRequest identifies the DB whose console is being opened.
 type ConsoleExecRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
+	Name      string
+	Namespace string
+	ProjectID string
 }
 
 // ResolveConsoleExecTarget reuses guardDBAccess (ownership + readiness + credentials),
@@ -118,15 +113,15 @@ type ConsoleExecRequest struct {
 func ResolveConsoleExecTarget(ctx context.Context, store ConsoleExecStore, req ConsoleExecRequest) (ConsoleExecTarget, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
-	if req.ProjectUID == "" {
-		return ConsoleExecTarget{}, ErrAccessHealthProjectUID
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
+	if req.ProjectID == "" {
+		return ConsoleExecTarget{}, ErrAccessHealthProjectID
 	}
 
 	engine, creds, err := guardDBAccess(ctx, store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return ConsoleExecTarget{}, err

@@ -9,7 +9,7 @@ import { DataBrowserRuntimeProvider, useDataBrowserRuntime } from "./runtime";
 export interface DataBrowserPaneProps {
   kubeconfig: string;
   namespace: string;
-  projectUid: string;
+  projectId: string;
   selectedDatabaseData: CanvasDatabaseNodeData;
 }
 
@@ -44,14 +44,14 @@ function DataBrowserPaneBody() {
 export function DataBrowserPane({
   kubeconfig,
   namespace,
-  projectUid,
+  projectId,
   selectedDatabaseData,
 }: DataBrowserPaneProps) {
   return (
     <DataBrowserRuntimeProvider
       kubeconfig={kubeconfig}
       namespace={namespace}
-      projectUid={projectUid}
+      projectId={projectId}
       selectedDatabaseData={selectedDatabaseData}
     >
       <div className="dark flex h-full min-h-0 w-full overflow-hidden text-foreground">

@@ -59,7 +59,7 @@ test("merge places unplaced nodes in memory without adding them to Canvas Layout
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -99,7 +99,7 @@ test("merge lets explicit Canvas Node Stack Order render above default layers", 
         stackOrder: 0,
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -129,7 +129,7 @@ test("merge restores stack order for brief orphan returns", () => {
         stackOrder: 4,
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -161,7 +161,7 @@ test("merge brings meaningful orphan returns to the front", () => {
         stackOrder: 1,
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -207,7 +207,7 @@ test("merge treats same-name different-UID returns as fresh for stack order", ()
         stackOrder: 2,
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 

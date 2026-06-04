@@ -32,9 +32,9 @@ func TestAccessHealthChecksReadyOwnedDBThroughWhoDBWithoutExposingSecrets(t *tes
 	svc := AccessHealthService{Store: store, WhoDB: whodb}
 
 	result, err := svc.Check(context.Background(), AccessHealthRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
 	})
 	if err != nil {
 		t.Fatalf("expected health check to succeed: %v", err)
@@ -69,6 +69,44 @@ func TestAccessHealthChecksReadyOwnedDBThroughWhoDBWithoutExposingSecrets(t *tes
 	}
 }
 
+func TestAccessHealthCanonicalizesKubeBlocksClusterDefinitionEngines(t *testing.T) {
+	store := &fakeAccessHealthStore{
+		db: readyAccessHealthDB("mysql-main", "ns-a", "apecloud-mysql", "project-1"),
+		secret: &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "mysql-main-conn-credential", Namespace: "ns-a"},
+			Data: map[string][]byte{
+				"host":     []byte("mysql-main-mysql"),
+				"port":     []byte("3306"),
+				"username": []byte("root"),
+				"password": []byte("s3cr3t"),
+			},
+		},
+	}
+	whodb := &recordingWhoDBHealthClient{
+		health: &WhoDBHealth{Server: "healthy", Database: "healthy"},
+	}
+	svc := AccessHealthService{Store: store, WhoDB: whodb}
+
+	result, err := svc.Check(context.Background(), AccessHealthRequest{
+		Name:      "mysql-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+	})
+	if err != nil {
+		t.Fatalf("expected health check to succeed: %v", err)
+	}
+
+	if result.Engine != "mysql" {
+		t.Fatalf("engine = %q, want mysql", result.Engine)
+	}
+	if whodb.credentials.SourceType != "MySQL" {
+		t.Fatalf("source type = %q, want MySQL", whodb.credentials.SourceType)
+	}
+	if got := whodb.credentials.Values["Database"]; got != "mysql" {
+		t.Fatalf("database = %q, want mysql", got)
+	}
+}
+
 func TestAccessHealthRejectsIncompleteConnectionSecret(t *testing.T) {
 	store := &fakeAccessHealthStore{
 		db: readyAccessHealthDB("pg-main", "ns-a", "postgresql", "project-1"),
@@ -87,9 +125,9 @@ func TestAccessHealthRejectsIncompleteConnectionSecret(t *testing.T) {
 	svc := AccessHealthService{Store: store, WhoDB: whodb}
 
 	_, err := svc.Check(context.Background(), AccessHealthRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
 	})
 	if err == nil || !errors.Is(err, ErrAccessHealthSecretMissing) {
 		t.Fatalf("expected missing secret state, got %v", err)
@@ -119,14 +157,14 @@ func TestAccessHealthRecordsSecretFreeAuditEvent(t *testing.T) {
 	svc := AccessHealthService{Store: store, WhoDB: whodb, Audit: audit}
 
 	if _, err := svc.Check(context.Background(), AccessHealthRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
 	}); err != nil {
 		t.Fatalf("expected health check to succeed: %v", err)
 	}
 
-	if audit.event.Operation != "db.access.health" || audit.event.ProjectUID != "project-1" ||
+	if audit.event.Operation != "db.access.health" || audit.event.ProjectID != "project-1" ||
 		audit.event.DBName != "pg-main" || audit.event.Engine != "postgresql" || audit.event.Outcome != "healthy" {
 		t.Fatalf("unexpected audit event: %+v", audit.event)
 	}
@@ -160,9 +198,9 @@ func TestAccessHealthTreatsWhoDBDatabaseErrorAsUnavailable(t *testing.T) {
 	svc := AccessHealthService{Store: store, WhoDB: whodb}
 
 	_, err := svc.Check(context.Background(), AccessHealthRequest{
-		Name:       "pg-main",
-		Namespace:  "ns-a",
-		ProjectUID: "project-1",
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
 	})
 	if err == nil || !errors.Is(err, ErrAccessHealthWhoDBUnavailable) {
 		t.Fatalf("expected WhoDB unavailable error, got %v", err)
@@ -177,27 +215,27 @@ func TestAccessHealthRejectsInvalidRequestAndOwnershipState(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name:    "missing project uid",
+			name:    "missing project id",
 			db:      readyAccessHealthDB("pg-main", "ns-a", "postgresql", "project-1"),
 			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a"},
-			wantErr: ErrAccessHealthProjectUID,
+			wantErr: ErrAccessHealthProjectID,
 		},
 		{
 			name:    "ownership mismatch",
 			db:      readyAccessHealthDB("pg-main", "ns-a", "postgresql", "project-2"),
-			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a", ProjectUID: "project-1"},
+			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a", ProjectID: "project-1"},
 			wantErr: ErrAccessHealthProjectForbidden,
 		},
 		{
 			name:    "missing ownership metadata",
 			db:      accessHealthDBWithoutProject("pg-main", "ns-a", "postgresql"),
-			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a", ProjectUID: "project-1"},
+			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a", ProjectID: "project-1"},
 			wantErr: ErrAccessHealthProjectMissing,
 		},
 		{
 			name:    "unsupported engine",
 			db:      readyAccessHealthDB("pg-main", "ns-a", "clickhouse", "project-1"),
-			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a", ProjectUID: "project-1"},
+			request: AccessHealthRequest{Name: "pg-main", Namespace: "ns-a", ProjectID: "project-1"},
 			wantErr: ErrAccessHealthUnsupported,
 		},
 	}
@@ -285,17 +323,17 @@ func (r *recordingWhoDBHealthClient) CheckHealth(_ context.Context, credentials 
 
 func readyAccessHealthDB(name, namespace, engine, projectUID string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "example.crossplane.io/v1",
-		"kind":       "DB",
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind":       "Cluster",
 		"metadata": map[string]interface{}{
 			"name":      name,
 			"namespace": namespace,
 			"labels": map[string]interface{}{
-				ProjectUIDLabel: projectUID,
+				ProjectIDLabel: projectUID,
 			},
 		},
 		"spec": map[string]interface{}{
-			"engine": engine,
+			"clusterDefinitionRef": engine,
 		},
 		"status": map[string]interface{}{
 			"phase":             "Running",

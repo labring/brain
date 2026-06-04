@@ -5,7 +5,6 @@ import type {
 } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { getToneForStatus } from "@workspace/crossplane/lib/status";
 import type { ContainerNodeStates } from "@workspace/ui/components/container-node/container-node";
 import type {
   DatabaseEngineKey,
@@ -59,6 +58,24 @@ const ENTRY_NODE_PROTOCOL_PATTERN = /^https?:\/\//;
 const ENTRY_NODE_STATUS_SEPARATOR_PATTERN = /[\s_]+/g;
 const ENTRY_NODE_TRAILING_SLASH_PATTERN = /\/$/;
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
+const STATUS_TONES = new Set([
+  "creating",
+  "deleting",
+  "failed",
+  "paused",
+  "pending",
+  "restarting",
+  "running",
+  "starting",
+  "stopped",
+  "stopping",
+  "updating",
+]);
+
+function getToneForStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  return normalized && STATUS_TONES.has(normalized) ? normalized : undefined;
+}
 
 export interface WorkloadMetricPercents {
   cpuPercent?: number;
@@ -297,28 +314,12 @@ function databaseMetadataFromResource(
   return { labels };
 }
 
-function databaseCompositionNameFromSpec(
-  spec: Record<string, unknown>
-): string | undefined {
-  const crossplane = asRecord(spec.crossplane);
-  const crossplaneCompositionRef = asRecord(crossplane?.compositionRef);
-  const crossplaneCompositionName = nonEmptyString(
-    crossplaneCompositionRef?.name
-  );
-  if (crossplaneCompositionName !== undefined) {
-    return crossplaneCompositionName;
-  }
-
-  const compositionRef = asRecord(spec.compositionRef);
-  return nonEmptyString(compositionRef?.name);
-}
-
 function entryPointApRefFromResource(input: unknown): string | undefined {
   return nonEmptyString(asRecord(asRecord(input)?.spec)?.apRef);
 }
 
 /**
- * Maps one AP list item (example.crossplane.io/v1 `AP`) into {@link ContainerNodeStates}.
+ * Maps one AP product view into {@link ContainerNodeStates}.
  * Sets **kind**, **image**, **name**, **replicas** (from AP replica strategy), **uid**
  * (from `metadata.uid` when present), and **status** from `status.phase`.
  * When paused or desired replicas are zero, status is shown as **Paused** regardless of `status.phase`.
@@ -366,8 +367,8 @@ export interface ApsToCanvasStateOptions {
 }
 
 export interface DbsToCanvasStateOptions {
-  /** Composition `metadata.name` -> icon URL/data URI from composition metadata annotations. */
-  compositionIconByName?: ReadonlyMap<string, string>;
+  /** DB engine key -> icon URL/data URI. */
+  engineIconByName?: ReadonlyMap<string, string>;
   /** Index offset for deterministic fallback placement when combining node lists. @default 0 */
   gridIndexOffset?: number;
   /** Key from {@link telemetryWorkloadKey} -> latest workload metric % from telemetry. */
@@ -428,13 +429,13 @@ export function apsToCanvasState(
 }
 
 /**
- * Maps one DB list item (example.crossplane.io/v1 `DB`) into `DatabaseNode` props.
+ * Maps one DB product view into `DatabaseNode` props.
  */
 export function dbToDatabaseNodeData(
   db: unknown,
   options?: Pick<
     DbsToCanvasStateOptions,
-    "compositionIconByName" | "metricsLookup" | "namespaceFallback"
+    "engineIconByName" | "metricsLookup" | "namespaceFallback"
   >
 ): CanvasDatabaseNodeData {
   const root = asRecord(db) ?? {};
@@ -459,11 +460,10 @@ export function dbToDatabaseNodeData(
     engineKey,
     status,
   });
-  const compositionName = databaseCompositionNameFromSpec(spec);
   const iconUrl =
-    compositionName === undefined
+    engineKey === undefined
       ? undefined
-      : options?.compositionIconByName?.get(compositionName);
+      : options?.engineIconByName?.get(engineKey);
   const metricCapacities = databaseMetricCapacitiesFromStatus(status);
   const mountPath = nonEmptyString(status.mountPath);
 
@@ -494,7 +494,7 @@ export function dbToDatabaseNodeData(
 }
 
 /**
- * Builds React Flow `nodes` / `edges` for project DB claims using `DatabaseNode`.
+ * Builds React Flow `nodes` / `edges` for project DB resources using `DatabaseNode`.
  */
 export function dbsToCanvasState(
   data: K8sGetResponse | undefined,
@@ -516,7 +516,7 @@ export function dbsToCanvasState(
 }
 
 /**
- * Builds React Flow `nodes` / `edges` for EntryPoint claims.
+ * Builds React Flow `nodes` / `edges` for derived EntryPoint views.
  */
 export function entryPointsToCanvasState(
   data: K8sGetResponse | undefined,

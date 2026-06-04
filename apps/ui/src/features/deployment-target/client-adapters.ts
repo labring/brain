@@ -1,8 +1,7 @@
 "use client";
 
 import { randomName } from "@workspace/ui/lib/random-name";
-import { k8sApplyYaml } from "@/features/project-canvas/k8s/http/apply-yaml";
-import { fetchProjectUidByName } from "@/lib/fetch-project-uid";
+import { applyBrainProductManifest } from "@/features/project-canvas/k8s/http/apply-yaml";
 import { childResourceName } from "@/lib/project-child-resource-name";
 import type {
   DeploymentTargetPipelineAdapters,
@@ -50,7 +49,7 @@ export async function createGithubDeployTaskFromApi({
       encodedKubeconfig,
       namespace: input.namespace,
       projectName: input.projectName,
-      projectUid: input.projectUid,
+      projectId: input.projectId,
       repo: input.repo,
     }),
     headers: { "Content-Type": "application/json" },
@@ -68,20 +67,48 @@ export async function createGithubDeployTaskFromApi({
 
 export function createDeploymentTargetClientAdapters({
   kubeconfig,
-  namespace,
 }: {
   kubeconfig: string;
   namespace: string;
 }): DeploymentTargetPipelineAdapters {
   return {
-    applyYaml: (yaml) => k8sApplyYaml(kubeconfig, yaml),
+    applyBrainProductManifest: (yaml) =>
+      applyBrainProductManifest(kubeconfig, yaml),
+    createProject: async (input) => {
+      const response = await fetch("/api/projects", {
+        body: JSON.stringify({
+          displayName: input.displayName,
+          namespace: input.namespace,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          body != null &&
+          typeof body === "object" &&
+          "error" in body &&
+          typeof body.error === "string"
+            ? body.error
+            : "Could not create project.";
+        throw new Error(message);
+      }
+      const project =
+        body != null && typeof body === "object" && "project" in body
+          ? (body.project as { id?: unknown })
+          : null;
+      if (typeof project?.id !== "string" || project.id.trim() === "") {
+        throw new Error("Project API did not return a project id.");
+      }
+      return { id: project.id.trim() };
+    },
     createGithubDeployTask: (input) =>
       createGithubDeployTaskFromApi({
         encodedKubeconfig: encodeURIComponent(kubeconfig),
         input,
       }),
-    fetchProjectUidByName: (name) =>
-      fetchProjectUidByName(kubeconfig, namespace, name),
+    fetchProjectIdByName: (name) => Promise.resolve(name.trim() || undefined),
     generateChildResourceName: childResourceName,
     generateProjectName: randomName,
   };

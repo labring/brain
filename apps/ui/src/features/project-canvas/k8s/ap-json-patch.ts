@@ -1,3 +1,6 @@
+import { API_ROUTES } from "@workspace/api/constants";
+import { fetcher } from "@workspace/api/fetch";
+import { ApiUrl } from "@workspace/api/utils";
 import type {
   ContainerEnvVar,
   ContainerNetwork,
@@ -21,7 +24,10 @@ import {
   isPlatformAddressId,
   normalizeCustomDomainBindingId,
   normalizePlatformAddressId,
+  PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN,
+  PLATFORM_ADDRESS_DOMAIN_PREFIX_RE,
   PLATFORM_ADDRESS_ID_PATTERN,
+  stablePlatformAddressDomainPrefix,
 } from "../platform-addresses";
 import {
   type ApReplicaStrategy,
@@ -43,9 +49,8 @@ import {
   type ExistingCustomDomainBinding,
   normalizeCustomDomainName,
 } from "./entrypoint-custom-domains";
-import { type K8sJsonPatchOp, k8sJsonPatchResource } from "./http/json-patch";
+import type { K8sJsonPatchOp } from "./http/json-patch";
 
-const AP_K8S_KIND = "aps";
 const LEGACY_AP_NETWORK_INPUT_FIELDS = ["endpoints", "port", "host"] as const;
 
 type ApNetworkSettingsPatch = Pick<ContainerNetwork, "privatePort"> &
@@ -90,40 +95,91 @@ function asRecord(v: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function assertApClaimForPatch(
+function assertApProductForPatch(
   kubeconfig: string,
-  claim: Record<string, unknown>
+  resource: Record<string, unknown>
 ): { name: string; namespace: string } {
   const trimmedKc = kubeconfig.trim();
   if (trimmedKc === "") {
     throw new Error("Kubeconfig is missing.");
   }
   const kind =
-    typeof claim.kind === "string" ? claim.kind.trim().toUpperCase() : "";
+    typeof resource.kind === "string" ? resource.kind.trim().toUpperCase() : "";
   if (kind !== "AP") {
-    throw new Error("Only AP claims can be patched from container settings.");
+    throw new Error(
+      "Only AP resources can be patched from container settings."
+    );
   }
-  const meta = asRecord(claim.metadata);
+  const meta = asRecord(resource.metadata);
   const name = typeof meta?.name === "string" ? meta.name.trim() : "";
   const namespace =
     typeof meta?.namespace === "string" ? meta.namespace.trim() : "";
   if (name === "" || namespace === "") {
-    throw new Error("AP claim must have metadata.name and metadata.namespace.");
+    throw new Error(
+      "AP resource must have metadata.name and metadata.namespace."
+    );
   }
   return { name, namespace };
 }
 
+function mergePatchSetPath(
+  target: Record<string, unknown>,
+  path: string,
+  value: unknown
+): void {
+  const parts = path.split("/").filter(Boolean);
+  if (!["metadata", "spec"].includes(parts[0] ?? "") || parts.length < 2) {
+    return;
+  }
+  let cursor = target;
+  for (const part of parts.slice(0, -1)) {
+    const existing = asRecord(cursor[part]);
+    if (existing == null) {
+      const next: Record<string, unknown> = {};
+      cursor[part] = next;
+      cursor = next;
+      continue;
+    }
+    cursor = existing;
+  }
+  const key = parts.at(-1);
+  if (key != null) {
+    cursor[key] = value;
+  }
+}
+
+export function apMergePatchFromJsonPatchOps(
+  ops: readonly K8sJsonPatchOp[]
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const op of ops) {
+    mergePatchSetPath(patch, op.path, op.op === "remove" ? null : op.value);
+  }
+  return patch;
+}
+
 async function patchAp(
   kubeconfig: string,
-  claim: Record<string, unknown>,
+  resource: Record<string, unknown>,
   ops: K8sJsonPatchOp[]
 ): Promise<void> {
-  const { name, namespace } = assertApClaimForPatch(kubeconfig, claim);
-  await k8sJsonPatchResource(kubeconfig, {
-    kind: AP_K8S_KIND,
-    name,
-    namespace,
-    patch: ops,
+  const kc = kubeconfig.trim();
+  const { name, namespace } = assertApProductForPatch(kc, resource);
+  if (ops.length === 0) {
+    return;
+  }
+  await fetcher({
+    base: ApiUrl(),
+    body: apMergePatchFromJsonPatchOps(ops),
+    header: {
+      Authorization: `Bearer ${encodeURIComponent(kc)}`,
+    },
+    method: "PATCH",
+    path: API_ROUTES.ap.root,
+    query: {
+      name,
+      namespace,
+    },
   });
 }
 
@@ -648,7 +704,21 @@ function validatedPlatformAddresses(
       throw new Error("Platform Address IDs must be unique.");
     }
     seenIds.add(id);
+    const rawDomainPrefix =
+      typeof address.domainPrefix === "string"
+        ? address.domainPrefix.trim().toLowerCase()
+        : "";
+    const domainPrefix =
+      rawDomainPrefix === ""
+        ? stablePlatformAddressDomainPrefix(id)
+        : rawDomainPrefix;
+    if (!PLATFORM_ADDRESS_DOMAIN_PREFIX_RE.test(domainPrefix)) {
+      throw new Error(
+        `Platform Address domainPrefix must match ${PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN}.`
+      );
+    }
     return {
+      domainPrefix,
       id,
       port: validatedNetworkPort(address.port, "Public Address target port"),
     };

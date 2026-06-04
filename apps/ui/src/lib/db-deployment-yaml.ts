@@ -1,9 +1,10 @@
 import type { DatabaseInstancePreset } from "@workspace/ui/components/database-deployer";
 import YAML from "yaml";
-import { renderCrossplaneCompositionTemplate } from "./render-crossplane-template";
+import { renderYamlTemplate } from "./render-yaml-template";
+
+const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
 interface RenderDbDeploymentYamlOptions {
-  compositionName: string;
   engine: string;
   name: string;
   namespace: string;
@@ -13,9 +14,9 @@ interface RenderDbDeploymentYamlOptions {
   template?: string;
 }
 
-function baseDbClaim(options: RenderDbDeploymentYamlOptions) {
+function baseDbManifest(options: RenderDbDeploymentYamlOptions) {
   return {
-    apiVersion: "example.crossplane.io/v1",
+    apiVersion: DIRECT_PRODUCT_API_VERSION,
     kind: "DB",
     metadata: {
       name: options.name,
@@ -65,12 +66,12 @@ export function renderDbDeploymentYaml(
   const template =
     options.template == null
       ? undefined
-      : renderCrossplaneCompositionTemplate(options.template, {
+      : renderYamlTemplate(options.template, {
           name: options.name,
           namespace: options.namespace,
         });
-  const doc = parseTemplate(template) ?? baseDbClaim(options);
-  doc.apiVersion = "example.crossplane.io/v1";
+  const doc = parseTemplate(template) ?? baseDbManifest(options);
+  doc.apiVersion = DIRECT_PRODUCT_API_VERSION;
   doc.kind = "DB";
 
   const metadata =
@@ -88,20 +89,16 @@ export function renderDbDeploymentYaml(
     doc.spec && typeof doc.spec === "object"
       ? { ...(doc.spec as Record<string, unknown>) }
       : {};
-  const crossplane =
-    spec.crossplane && typeof spec.crossplane === "object"
-      ? { ...(spec.crossplane as Record<string, unknown>) }
-      : {};
 
   doc.spec = {
-    ...spec,
-    crossplane: {
-      ...crossplane,
-      compositionRef: { name: options.compositionName },
-    },
+    ...Object.fromEntries(
+      Object.entries(spec).filter(
+        ([key]) => key !== "legacyRuntime" && key !== "projectName"
+      )
+    ),
     engine: options.engine,
     exposeNodePort: false,
-    projectName: options.projectName,
+    projectId: options.projectName,
     quota: options.quota,
     replicas: Math.min(10, Math.max(1, Math.round(options.replicas))),
   };

@@ -5,7 +5,7 @@ Guidance for AI coding agents working in this repo. Keep it short.
 ## Project
 
 - **Name:** `sealai` — monorepo for an internal platform combining a Next.js UI, a shadcn-style component registry, shared TS packages, and Go backend services.
-- **Shape:** Turbo monorepo with `apps/*` (ui, registry, api, whodb) and `packages/*` (ui, api, crossplane, eslint-config, typescript-config).
+- **Shape:** Turbo monorepo with `apps/*` (ui, registry, api, whodb) and `packages/*` (ui, api, eslint-config, typescript-config).
 - **Package manager:** **bun 1.3.5** (NOT npm/pnpm/yarn). Node ≥20. Lockfile: `bun.lock`.
 
 ## Workspace layout
@@ -19,7 +19,6 @@ apps/
 packages/
   ui/         @workspace/ui — shared shadcn/ui + Radix + Tailwind 4 components
   api/        @workspace/api — shared API fetchers, hooks, schemas, and constants
-  crossplane/ @workspace/crossplane — K8s status schemas & utilities
   eslint-config/     shared eslint configs (base, next-js, react-internal)
   typescript-config/ shared tsconfig bases
 ```
@@ -39,12 +38,13 @@ packages/
 
 ## Conventions
 
-- **Boundaries:** import through package exports (`@workspace/ui/*`, `@workspace/api/*`, `@workspace/crossplane/*`) or app-local `@/*`; never across apps or into another package's private `src`.
-- **UI components:** reuse `packages/ui/src/components/` first.
+- **Boundaries:** import through package exports (`@workspace/ui/*`, `@workspace/api/*`) or app-local `@/*`; never across apps or into another package's private `src`.
+- **UI components:** reuse `packages/ui/src/components/` first. Shared primitives live in `packages/ui`; app-specific compositions stay local until a second consumer needs them.
 - **Styling:** Tailwind v4 theme tokens live in `packages/ui/src/styles/globals.css`. Avoid inline color/spacing/radius/type/shadow literals; use tokens or Tailwind scale.
 - **Quality:** Biome/ultracite is source of truth (`bun check` / `bun fix`).
 - **Registry:** items live in `apps/registry/registry/<style>/<group>/<name>` with metadata in `preview-registry.ts`.
 - **Domain:** before AP, DB, EntryPoint, canvas, or settings behavior changes, check `CONTEXT.md` and relevant ADRs in `docs/adr/`.
+- **Crossplane:** do not preserve Crossplane-era behavior, fields, routes, docs, or naming for compatibility. Treat Crossplane compatibility as explicitly out of scope unless the user asks for it in the current task.
 
 ## When making changes
 

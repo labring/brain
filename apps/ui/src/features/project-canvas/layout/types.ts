@@ -23,8 +23,8 @@ export interface CanvasLayoutNode {
 export interface CanvasLayoutDocument {
   namespace: string;
   nodes: CanvasLayoutNode[];
+  projectId: string;
   projectNameSnapshot?: string;
-  projectUid: string;
   version: number;
 }
 

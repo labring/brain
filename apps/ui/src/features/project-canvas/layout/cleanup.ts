@@ -34,7 +34,7 @@ export function cloneCanvasLayoutDocument(
   const clone: CanvasLayoutDocument = {
     namespace: layout.namespace,
     nodes: layout.nodes.map(cloneCanvasLayoutNode),
-    projectUid: layout.projectUid,
+    projectId: layout.projectId,
     version: layout.version,
   };
   if (layout.projectNameSnapshot !== undefined) {

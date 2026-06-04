@@ -11,7 +11,7 @@ function createdAtSortKey(iso: string): number {
 
 /**
  * Newest `createdAt` first. Rows with empty `createdAt` sort to the bottom;
- * tie-breaker: `configMapName` (stable).
+ * tie-breaker: `versionHash` (stable).
  */
 export function sortSnapshotRowsByCreatedAtDesc(
   rows: ContainerHistorySnapshotRow[]
@@ -21,6 +21,6 @@ export function sortSnapshotRowsByCreatedAtDesc(
     if (diff !== 0) {
       return diff;
     }
-    return a.configMapName.localeCompare(b.configMapName);
+    return a.versionHash.localeCompare(b.versionHash);
   });
 }

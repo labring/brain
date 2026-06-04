@@ -413,12 +413,12 @@ function buildGatewayPrompt(task: DeployTaskRow): string {
     "",
     "When complete, ensure these output files exist:",
     "- /home/devbox/project/.sealos/deployment-output.json",
-    "- /home/devbox/project/.sealos/crossplane/ap.yaml",
+    "- /home/devbox/project/.sealos/brain/ap.yaml",
     "",
-    "The Crossplane AP YAML must use apiVersion example.crossplane.io/v1 and kind AP.",
+    "The Brain AP YAML must use apiVersion brain.io/direct and kind AP.",
     "For AP specs, use spec.input.image and spec.input.network; do not use retired top-level spec.image or spec.ports.",
     'If anything fails, write /home/devbox/project/.sealos/deployment-output.json with status "failed" and include an actionable error message in the error field.',
-    "Before ending, verify with: test -s /home/devbox/project/.sealos/deployment-output.json && test -s /home/devbox/project/.sealos/crossplane/ap.yaml",
+    "Before ending, verify with: test -s /home/devbox/project/.sealos/deployment-output.json && test -s /home/devbox/project/.sealos/brain/ap.yaml",
     "",
     `Repository: ${task.repoFullName}`,
     `Branch: ${task.branch ?? "default"}`,
@@ -437,14 +437,14 @@ function buildGatewayRepairPrompt(task: DeployTaskRow): string {
     "Do not ask a question and do not stop after a prose answer.",
     "Required files:",
     "- /home/devbox/project/.sealos/deployment-output.json",
-    "- /home/devbox/project/.sealos/crossplane/ap.yaml",
+    "- /home/devbox/project/.sealos/brain/ap.yaml",
     "The AP YAML must use spec.input.image and spec.input.network, not top-level spec.image/spec.ports.",
     'If deployment cannot succeed, write deployment-output.json with status "failed" and an actionable error field.',
     task.projectName
-      ? `Use this projectName in generated AP/DB specs: ${task.projectName}`
+      ? `Use this project id in generated AP/DB specs as spec.projectId: ${task.projectName}`
       : null,
     task.prompt ? `User request: ${task.prompt}` : null,
-    "Before ending, verify with: test -s /home/devbox/project/.sealos/deployment-output.json && test -s /home/devbox/project/.sealos/crossplane/ap.yaml",
+    "Before ending, verify with: test -s /home/devbox/project/.sealos/deployment-output.json && test -s /home/devbox/project/.sealos/brain/ap.yaml",
   ]
     .filter(Boolean)
     .join("\n");

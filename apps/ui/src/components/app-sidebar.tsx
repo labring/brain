@@ -3,7 +3,6 @@
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { PROJECT_UID_LABEL } from "@workspace/crossplane/constants";
 import { brainV2LogoSrc } from "@workspace/ui/assets/brand";
 import {
   type DeviconKey,
@@ -23,13 +22,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ComponentProps, type ReactNode, useMemo } from "react";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 interface WorkloadShortcutCandidate {
   createdAt: string;
   iconKey: DeviconKey;
   name: string;
-  projectUid: string;
+  projectId: string;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -56,38 +56,15 @@ function metadataCreationTimestamp(value: unknown): string {
   return nonEmptyString(metadataRecord(value).creationTimestamp) ?? "";
 }
 
-function projectUidFromResource(value: unknown): string | undefined {
+function projectIdFromResource(value: unknown): string | undefined {
   const labels = asRecord(metadataRecord(value).labels);
-  return nonEmptyString(labels?.[PROJECT_UID_LABEL]);
-}
-
-function compositionNameFromSpec(
-  spec: Record<string, unknown>
-): string | undefined {
-  const crossplane = asRecord(spec.crossplane);
-  const crossplaneCompositionRef = asRecord(crossplane?.compositionRef);
-  const crossplaneCompositionName = nonEmptyString(
-    crossplaneCompositionRef?.name
-  );
-  if (crossplaneCompositionName !== undefined) {
-    return crossplaneCompositionName;
-  }
-
-  const compositionRef = asRecord(spec.compositionRef);
-  return nonEmptyString(compositionRef?.name);
+  return nonEmptyString(labels?.[BRAIN_PROJECT_ID_LABEL]);
 }
 
 function databaseIconKeyFromSpec(spec: Record<string, unknown>): DeviconKey {
   const engine = nonEmptyString(spec.engine)?.toLowerCase();
   if (engine && engine in devicons && engine !== "docker") {
     return engine as DeviconKey;
-  }
-
-  const compositionName = compositionNameFromSpec(spec)?.toLowerCase() ?? "";
-  for (const key of ["mongodb", "mysql", "postgresql", "redis"] as const) {
-    if (compositionName.includes(key)) {
-      return key;
-    }
   }
 
   return "docker";
@@ -117,8 +94,8 @@ function selectedApByProject(
   const result = new Map<string, WorkloadShortcutCandidate>();
 
   for (const item of apItemsFromList(data)) {
-    const projectUid = projectUidFromResource(item);
-    if (projectUid === undefined) {
+    const projectId = projectIdFromResource(item);
+    if (projectId === undefined) {
       continue;
     }
 
@@ -126,14 +103,14 @@ function selectedApByProject(
       createdAt: metadataCreationTimestamp(item),
       iconKey: "docker",
       name: metadataName(item),
-      projectUid,
+      projectId,
     };
-    const current = result.get(projectUid);
+    const current = result.get(projectId);
     if (
       current === undefined ||
       compareWorkloadCandidates(candidate, current) < 0
     ) {
-      result.set(projectUid, candidate);
+      result.set(projectId, candidate);
     }
   }
 
@@ -146,8 +123,8 @@ function selectedDbByProject(
   const result = new Map<string, WorkloadShortcutCandidate>();
 
   for (const item of apItemsFromList(data)) {
-    const projectUid = projectUidFromResource(item);
-    if (projectUid === undefined) {
+    const projectId = projectIdFromResource(item);
+    if (projectId === undefined) {
       continue;
     }
 
@@ -156,21 +133,21 @@ function selectedDbByProject(
       createdAt: metadataCreationTimestamp(item),
       iconKey: databaseIconKeyFromSpec(spec),
       name: metadataName(item),
-      projectUid,
+      projectId,
     };
-    const current = result.get(projectUid);
+    const current = result.get(projectId);
     if (
       current === undefined ||
       compareWorkloadCandidates(candidate, current) < 0
     ) {
-      result.set(projectUid, candidate);
+      result.set(projectId, candidate);
     }
   }
 
   return result;
 }
 
-function projectUidFromPathname(pathname: string): string | undefined {
+function projectIdFromPathname(pathname: string): string | undefined {
   const prefix = "/project/";
   if (!pathname.startsWith(prefix)) {
     return undefined;
@@ -267,7 +244,7 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom);
-  const currentProjectUid = projectUidFromPathname(pathname);
+  const currentProjectId = projectIdFromPathname(pathname);
   const projectsActive = pathname === "/project";
 
   const { states } = useProjectsExplorer({
@@ -275,15 +252,15 @@ export default function AppSidebar() {
     ns: namespace,
   });
 
-  const projectUidLabelExistence = PROJECT_UID_LABEL;
+  const projectIdLabelExistence = BRAIN_PROJECT_ID_LABEL;
   const { data: apsData } = useApsK8sList({
     kubeconfig,
-    labelSelector: projectUidLabelExistence,
+    labelSelector: projectIdLabelExistence,
     namespace,
   });
   const { data: dbsData } = useDbsK8sList({
     kubeconfig,
-    labelSelector: projectUidLabelExistence,
+    labelSelector: projectIdLabelExistence,
     namespace,
   });
   const apByProject = useMemo(() => selectedApByProject(apsData), [apsData]);
@@ -322,7 +299,7 @@ export default function AppSidebar() {
               ap === undefined ? dbByProject.get(project.id) : undefined;
             const shortcut = ap ?? db;
             const iconKey = shortcut?.iconKey ?? "docker";
-            const active = currentProjectUid === project.id;
+            const active = currentProjectId === project.id;
 
             return (
               <AppSidebarLinkButton

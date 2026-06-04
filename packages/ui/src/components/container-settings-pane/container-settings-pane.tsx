@@ -1,10 +1,5 @@
 "use client";
 
-import {
-  generateCustomDomainBindingId,
-  generatePlatformAddressId,
-  platformAddressEndpoint,
-} from "@workspace/crossplane/lib/platform-address";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
@@ -50,6 +45,12 @@ import {
   updateContainerEnvRow,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
+import {
+  generateCustomDomainBindingId,
+  generatePlatformAddressDomainPrefix,
+  generatePlatformAddressId,
+  platformAddressEndpoint,
+} from "@workspace/ui/lib/platform-address";
 import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -110,6 +111,7 @@ export type ContainerSettingsQuotaSliderProps =
 export interface ContainerEnvVar extends ContainerEnvRow {}
 
 export interface ContainerNetworkPublicAddress {
+  domainPrefix?: string;
   host?: string;
   id?: string;
   platformAddressId?: string;
@@ -1361,14 +1363,17 @@ function platformAddressDraftFromPort(
   platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext
 ): PublicAddressDraft {
   const id = generatePlatformAddressId();
+  const domainPrefix = generatePlatformAddressDomainPrefix();
   const endpoint = platformAddressEndpoint({
     appName: platformAddressDraftContext?.appName ?? "",
+    domainPrefix,
     namespace: platformAddressDraftContext?.namespace ?? "",
     platformAddressId: id,
     routingDomain: platformAddressDraftContext?.routingDomain ?? "",
   });
   return {
     ...(endpoint ?? {}),
+    domainPrefix,
     id,
     port,
     status: "progressing",

@@ -1,6 +1,6 @@
 import {
   type CanvasLayoutPatchRequest,
-  canvasLayoutDocumentSchema,
+  parseCanvasLayoutDocument,
 } from "./contract";
 import type { CanvasLayoutDocument, CanvasLayoutNode } from "./types";
 
@@ -27,27 +27,27 @@ async function jsonOrError<T>(response: Response): Promise<T> {
 
 export async function fetchProjectCanvasLayout(input: {
   namespace: string;
-  projectUid: string;
+  projectId: string;
 }): Promise<CanvasLayoutDocument> {
   const url = new URL(PROJECT_CANVAS_LAYOUT_API_PATH, window.location.origin);
   url.searchParams.set("namespace", input.namespace);
-  url.searchParams.set("projectUid", input.projectUid);
+  url.searchParams.set("projectId", input.projectId);
 
   const raw = await jsonOrError<unknown>(
     await fetch(url, { method: "GET", cache: "no-store" })
   );
-  return canvasLayoutDocumentSchema.parse(raw);
+  return parseCanvasLayoutDocument(raw);
 }
 
 export async function patchProjectCanvasLayoutNodes(input: {
   namespace: string;
   nodes: CanvasLayoutNode[];
-  projectUid: string;
+  projectId: string;
 }): Promise<CanvasLayoutDocument> {
   const body: CanvasLayoutPatchRequest = {
     namespace: input.namespace,
     nodes: input.nodes,
-    projectUid: input.projectUid,
+    projectId: input.projectId,
   };
   const raw = await jsonOrError<unknown>(
     await fetch(PROJECT_CANVAS_LAYOUT_API_PATH, {
@@ -56,5 +56,5 @@ export async function patchProjectCanvasLayoutNodes(input: {
       method: "PATCH",
     })
   );
-  return canvasLayoutDocumentSchema.parse(raw);
+  return parseCanvasLayoutDocument(raw);
 }

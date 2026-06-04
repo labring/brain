@@ -11,7 +11,7 @@ export function buildAssistantWorkspaceContextPrompt(opts: {
   const { kubernetesNamespace, assistantContext } = opts;
   const ns = kubernetesNamespace.trim();
   const projectName = assistantContext?.projectName?.trim() ?? "";
-  const uid = assistantContext?.projectUid?.trim() ?? "";
+  const uid = assistantContext?.projectId?.trim() ?? "";
 
   const lines: string[] = [
     "## Current workspace (Seal UI)",
@@ -22,11 +22,9 @@ export function buildAssistantWorkspaceContextPrompt(opts: {
 
   if (uid !== "") {
     if (projectName !== "") {
-      lines.push(`- Project claim name: \`${escapeBackticks(projectName)}\``);
+      lines.push(`- Project display name: \`${escapeBackticks(projectName)}\``);
     }
-    lines.push(
-      `- Project UID (claims label scope): \`${escapeBackticks(uid)}\``
-    );
+    lines.push(`- Brain Project ID: \`${escapeBackticks(uid)}\``);
   }
 
   const wl = assistantContext?.selectedWorkload;

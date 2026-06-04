@@ -356,7 +356,7 @@ export function DatabaseNodeActionBar({ className }: { className?: string }) {
   } = useDatabaseNode();
 
   return (
-    <CanvasNode.ActionBar className={className}>
+    <CanvasNode.ActionBar className={cn("database-node-action-bar", className)}>
       {QUICK_ACTION_ITEMS.map((item) => {
         const action = quickActions?.[item.key];
         const Icon = item.icon;
@@ -365,6 +365,7 @@ export function DatabaseNodeActionBar({ className }: { className?: string }) {
           <CanvasNode.ActionButton
             action={action}
             aria-label={item.label}
+            className="database-node-action-button"
             key={item.key}
             title={item.tooltip}
           >

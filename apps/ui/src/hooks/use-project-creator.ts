@@ -22,14 +22,11 @@ import {
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
-import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
-import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
-import { useProjectCompositions } from "@/hooks/compositions/use-project-composition";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
-import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -48,15 +45,15 @@ type CreatorRootPropsForCreationPane = Pick<
 export interface UseProjectCreatorOptions {
   /** Existing Project rows in the namespace, used for display-name uniqueness checks. */
   existingProjects?: readonly ProjectExplorerProject[];
-  /** Loads composition options from the API when set (same kubeconfig as explorer). */
+  /** Kubeconfig used by product APIs when set (same kubeconfig as explorer). */
   kubeconfig?: string;
-  /** Target namespace for rendered claim `metadata.namespace`. */
+  /** Target namespace for rendered product manifests. */
   namespace?: string;
   /**
-   * Called after a Project + child claim apply succeeds.
-   * `projectUid` is `metadata.uid` when the API returns the Project in time; otherwise `undefined`.
+   * Called after a Project + child product resource create succeeds.
+   * `projectId` currently carries the Brain Project ID for compatibility with older prop names.
    */
-  onProjectCreated?: (projectUid: string | undefined) => void | Promise<void>;
+  onProjectCreated?: (projectId: string | undefined) => void | Promise<void>;
 }
 
 export function useProjectCreator(options?: UseProjectCreatorOptions): {
@@ -84,19 +81,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   const [lastConfirmedKind, setLastConfirmedKind] = useState<string | null>(
     null
   );
-
-  const { items: dbCompositionRows } = useDbCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-  const { items: projectCompositionRows } = useProjectCompositions({
-    kubeconfig,
-    toItems: true,
-  });
-  const { items: apCompositionRows } = useApCompositions({
-    kubeconfig,
-    toItems: true,
-  });
 
   const {
     initiateGithubAuth,
@@ -129,11 +113,8 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   }, []);
 
   const databaseOptions = useMemo((): ProjectCreatorDatabaseChoice[] => {
-    if (!hasKubeconfig) {
-      return [];
-    }
-    return dbDeploymentChoicesFromCompositionRows(dbCompositionRows);
-  }, [dbCompositionRows, hasKubeconfig]);
+    return [...DIRECT_DB_DEPLOYMENT_OPTIONS];
+  }, []);
 
   const githubDeployerLoading =
     confirmApplying ||
@@ -163,24 +144,20 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>
       runDeploymentTargetPipeline({
         adapters: deploymentAdapters,
-        apCompositionRows,
         credentialsReady: hasKubeconfig && namespace !== "",
         databaseOptions,
         existingProjects,
         namespace,
-        projectCompositionRows,
         request,
         routingDomain: routingDomainFromKubeconfig(kubeconfig),
       }),
     [
-      apCompositionRows,
       databaseOptions,
       deploymentAdapters,
       existingProjects,
       hasKubeconfig,
       kubeconfig,
       namespace,
-      projectCompositionRows,
     ]
   );
 
@@ -221,7 +198,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
             `docker:${settings.image}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectUid);
+          await onProjectCreated?.(outcome.projectId);
         });
       },
       onDatabaseConfirm: async (
@@ -245,7 +222,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
             `database:${settings.databaseId}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectUid);
+          await onProjectCreated?.(outcome.projectId);
         });
       },
     }),
@@ -283,7 +260,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           `github:${outcome.repoFullName}:${outcome.projectName}`
         );
         dispatchCreationPaneState({ type: "close" });
-        await onProjectCreated?.(outcome.projectUid);
+        await onProjectCreated?.(outcome.projectId);
       });
     },
     [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]

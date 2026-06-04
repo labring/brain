@@ -6,12 +6,7 @@ import {
   getDevboxAuthTokenFromEnv,
   getDevboxBaseUrlFromEnv,
   getDevboxDefaultImageFromEnv,
-  getSealosHostFromEnv,
 } from "./config-core";
-
-export function getSealosHost(): string {
-  return getSealosHostFromEnv(process.env);
-}
 
 export function getDevboxBaseUrl(): string {
   return getDevboxBaseUrlFromEnv(process.env);

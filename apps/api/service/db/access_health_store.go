@@ -13,12 +13,6 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-var accessHealthDBGVR = schema.GroupVersionResource{
-	Group:    "example.crossplane.io",
-	Version:  "v1",
-	Resource: "dbs",
-}
-
 type KubernetesAccessHealthStore struct {
 	dynamic dynamic.Interface
 	core    kubernetes.Interface
@@ -37,7 +31,7 @@ func NewKubernetesAccessHealthStore(restConfig *rest.Config) (*KubernetesAccessH
 }
 
 func (s *KubernetesAccessHealthStore) GetDB(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
-	obj, err := s.dynamic.Resource(accessHealthDBGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	obj, err := s.dynamic.Resource(kubeBlocksClusterGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, ErrAccessHealthDBNotFound

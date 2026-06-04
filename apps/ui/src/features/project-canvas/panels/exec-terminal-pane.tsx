@@ -42,7 +42,8 @@ export interface ExecTerminalDescriptor {
   name: string;
   namespace: string;
   /** Required for `kind: "db"`; the server enforces project ownership. */
-  projectUid?: string;
+  projectId?: string;
+  subtitle?: string;
   title: string;
 }
 
@@ -100,7 +101,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
     startY: number;
   } | null>(null);
 
-  const { kind, name, namespace, projectUid } = descriptor;
+  const { kind, name, namespace, projectId } = descriptor;
   const canConnect =
     kubeconfig.trim() !== "" && name !== "" && namespace !== "";
 
@@ -272,7 +273,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
             name,
             namespace,
             type: "init",
-            ...(projectUid ? { projectUid } : {}),
+            ...(projectId ? { projectId } : {}),
           })
         );
       });
@@ -329,7 +330,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
       socket?.close();
       term?.dispose();
     };
-  }, [canConnect, kind, kubeconfig, name, namespace, projectUid]);
+  }, [canConnect, kind, kubeconfig, name, namespace, projectId]);
 
   return (
     <section

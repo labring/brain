@@ -21,18 +21,11 @@ import (
 	"sealos/api/route/entrypoint"
 	"sealos/api/route/health"
 	"sealos/api/route/k8s"
-	"sealos/api/route/notif"
-	"sealos/api/route/task"
 	"sealos/api/route/telemetry"
 )
 
 func main() {
-	// Load .env from api directory (works when run from repo root or apps/api)
-	if _, err := os.Stat(".env"); err == nil {
-		_ = godotenv.Load(".env")
-	} else if _, err := os.Stat(filepath.Join("apps", "api", ".env")); err == nil {
-		_ = godotenv.Load(filepath.Join("apps", "api", ".env"))
-	}
+	loadLocalEnv()
 	router := chi.NewMux()
 	router.Use(appendSlashForGroupRoots)
 	router.Use(cors.Handler(cors.Options{
@@ -75,8 +68,6 @@ func main() {
 	auth.Register(api)
 	db.Register(api)
 	entrypoint.Register(api)
-	task.Register(api)
-	notif.Register(api)
 	telemetry.Register(api)
 
 	fmt.Println("Server listening on :9000")
@@ -86,17 +77,47 @@ func main() {
 	}
 }
 
+func loadLocalEnv() {
+	if uiEnvPath := firstExistingPath([]string{
+		filepath.Join("apps", "ui", ".env"),
+		filepath.Join("..", "ui", ".env"),
+	}); uiEnvPath != "" {
+		uiEnv, err := godotenv.Read(uiEnvPath)
+		if err == nil && os.Getenv("DATABASE_URL") == "" && uiEnv["DATABASE_URL"] != "" {
+			_ = os.Setenv("DATABASE_URL", uiEnv["DATABASE_URL"])
+		}
+		if err == nil && os.Getenv("DB_PUBLIC_HOST") == "" && uiEnv["DB_PUBLIC_HOST"] != "" {
+			_ = os.Setenv("DB_PUBLIC_HOST", uiEnv["DB_PUBLIC_HOST"])
+		}
+	}
+	for _, path := range []string{filepath.Join("apps", "api", ".env"), ".env"} {
+		if _, err := os.Stat(path); err == nil {
+			_ = godotenv.Load(path)
+		}
+	}
+}
+
+func firstExistingPath(paths []string) string {
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 // addAPCreateExample injects a copy-pasteable YAML example for the ap-create (PUT) operation.
 func addAPCreateExample(_ *huma.OpenAPI, op *huma.Operation) {
 	if op.OperationID != "ap-create" {
 		return
 	}
-	exampleYAML := `apiVersion: example.crossplane.io/v1
+	exampleYAML := `apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: my-app
 spec:
   name: my-app
+  projectId: project-id
   input:
     image: nginx:1.27
     network:
@@ -152,7 +173,7 @@ func addDBCreateExample(_ *huma.OpenAPI, op *huma.Operation) {
 	if op.OperationID != "db-create" {
 		return
 	}
-	exampleYAML := `apiVersion: example.crossplane.io/v1
+	exampleYAML := `apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: db-postgresql
@@ -160,9 +181,7 @@ metadata:
   labels:
     region: 192.168.12.53.nip.io
 spec:
-  crossplane:
-    compositionRef:
-      name: dbs-postgresql-kubeblocks-go-templating
+  projectId: project-id
   engine: postgresql
   quota: xs`
 	exampleValue := map[string]any{"yaml": exampleYAML}

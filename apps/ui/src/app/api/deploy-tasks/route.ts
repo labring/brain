@@ -36,10 +36,10 @@ export async function GET(request: Request) {
   if (namespaceResolved.namespace == null) {
     return jsonError("Invalid deploy task namespace", 400);
   }
-  const projectUid = url.searchParams.get("projectUid")?.trim();
+  const projectId = url.searchParams.get("projectId")?.trim();
   const tasks = await listDeployTasks({
     namespace: namespaceResolved.namespace,
-    ...(projectUid ? { projectUid } : {}),
+    ...(projectId ? { projectId } : {}),
   });
   return NextResponse.json({ tasks });
 }

@@ -6,21 +6,10 @@ import type { DockerDeploymentSettings } from "@workspace/ui/components/docker-d
 import type { GithubDeployerRepo } from "@workspace/ui/components/github-deployer/github-deployer.types";
 import type { ProjectExplorerProject } from "@workspace/ui/components/project-explorer/project-explorer";
 import { validateDockerDeploymentSettings } from "@workspace/ui/lib/docker-deployment-settings";
-import type { CompositionListItem } from "@/lib/crossplane-composition-list";
 import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
-import {
-  DEFAULT_DOCKER_AP_COMPOSITION_NAME,
-  renderDockerDeploymentYaml,
-} from "@/lib/docker-deployment-yaml";
-import { mergeProjectMetadataDisplayName } from "@/lib/project-yaml-metadata";
+import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
+import type { ChildResourceKind } from "@/lib/project-child-resource-name";
 import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
-import {
-  joinKubeYamlDocuments,
-  renderCrossplaneCompositionTemplate,
-} from "@/lib/render-crossplane-template";
-
-export const DEFAULT_PROJECT_COMPOSITION_NAME =
-  "project-instance-go-templating";
 
 export type DeploymentTarget =
   | {
@@ -30,7 +19,7 @@ export type DeploymentTarget =
   | {
       kind: "existingProject";
       projectName: string;
-      projectUid: string;
+      projectId: string;
     };
 
 export type DeploymentTargetPipelineRequest =
@@ -52,8 +41,8 @@ export type DeploymentTargetPipelineRequest =
 
 export interface GithubDeployTaskInput {
   namespace: string;
+  projectId?: string;
   projectName: string;
-  projectUid?: string;
   repo: {
     fullName: string;
     id: string | number;
@@ -68,23 +57,28 @@ export interface GithubDeployTaskResult {
 }
 
 export interface DeploymentTargetPipelineAdapters {
-  applyYaml: (yaml: string) => Promise<void>;
+  applyBrainProductManifest: (yaml: string) => Promise<void>;
   createGithubDeployTask: (
     input: GithubDeployTaskInput
   ) => Promise<GithubDeployTaskResult>;
-  fetchProjectUidByName: (name: string) => Promise<string | undefined>;
-  generateChildResourceName: (projectName: string) => string;
+  createProject: (input: {
+    displayName: string;
+    namespace: string;
+  }) => Promise<{ id: string }>;
+  fetchProjectIdByName: (name: string) => Promise<string | undefined>;
+  generateChildResourceName: (
+    projectName: string,
+    kind: ChildResourceKind
+  ) => string;
   generateProjectName: () => string;
 }
 
 export interface DeploymentTargetPipelineOptions {
   adapters: DeploymentTargetPipelineAdapters;
-  apCompositionRows?: readonly CompositionListItem[];
   credentialsReady: boolean;
   databaseOptions?: readonly DatabaseDeploymentChoice[];
   existingProjects?: readonly ProjectExplorerProject[];
   namespace: string;
-  projectCompositionRows?: readonly CompositionListItem[];
   request: DeploymentTargetPipelineRequest;
   routingDomain?: string;
 }
@@ -92,9 +86,8 @@ export interface DeploymentTargetPipelineOptions {
 interface ResolvedDeploymentTarget {
   createdProject: boolean;
   displayName?: string;
+  projectId?: string;
   projectName: string;
-  projectUid?: string;
-  projectYaml?: string;
 }
 
 export type DeploymentTargetPipelineOutcome =
@@ -104,7 +97,7 @@ export type DeploymentTargetPipelineOutcome =
       displayName?: string;
       kind: "docker";
       projectName: string;
-      projectUid?: string;
+      projectId?: string;
     }
   | {
       createdProject: boolean;
@@ -112,14 +105,14 @@ export type DeploymentTargetPipelineOutcome =
       displayName?: string;
       kind: "database";
       projectName: string;
-      projectUid?: string;
+      projectId?: string;
     }
   | {
       createdProject: boolean;
       displayName?: string;
       kind: "github";
       projectName: string;
-      projectUid?: string;
+      projectId?: string;
       repoFullName: string;
       taskMessage: string;
       taskId: string | null;
@@ -133,12 +126,12 @@ export function newProjectDeploymentTarget(
 
 export function existingProjectDeploymentTarget(input: {
   projectName: string | null | undefined;
-  projectUid: string | null | undefined;
+  projectId: string | null | undefined;
 }): DeploymentTarget {
   return {
     kind: "existingProject",
     projectName: input.projectName?.trim() ?? "",
-    projectUid: input.projectUid?.trim() ?? "",
+    projectId: input.projectId?.trim() ?? "",
   };
 }
 
@@ -156,55 +149,10 @@ export function projectDisplayNameValidationError(
   return null;
 }
 
-function pickProjectTemplate(
-  rows: readonly CompositionListItem[] | undefined
-): string | undefined {
-  return (
-    rows?.find(
-      (row) => row.metadata.compositionName === DEFAULT_PROJECT_COMPOSITION_NAME
-    )?.template ?? rows?.find((row) => row.kind === "Project")?.template
-  );
-}
-
-function pickApTemplate(
-  rows: readonly CompositionListItem[] | undefined
-): string | undefined {
-  return (
-    rows?.find(
-      (row) =>
-        row.metadata.compositionName === DEFAULT_DOCKER_AP_COMPOSITION_NAME
-    )?.template ?? rows?.find((row) => row.kind === "AP")?.template
-  );
-}
-
 function assertPipelineEnvironment(options: DeploymentTargetPipelineOptions) {
   if (!(options.credentialsReady && options.namespace.trim())) {
     throw new Error("Kubeconfig or namespace is missing.");
   }
-}
-
-function resolveProjectTemplate(
-  projectCompositionRows: readonly CompositionListItem[] | undefined
-): string {
-  const projectTemplate = pickProjectTemplate(projectCompositionRows);
-  if (!projectTemplate?.trim()) {
-    throw new Error(
-      "Could not load a Project composition template from the cluster."
-    );
-  }
-  return projectTemplate;
-}
-
-function resolveApTemplate(
-  apCompositionRows: readonly CompositionListItem[] | undefined
-): string {
-  const apTemplate = pickApTemplate(apCompositionRows);
-  if (!apTemplate?.trim()) {
-    throw new Error(
-      "Could not load an AP composition template from the cluster."
-    );
-  }
-  return apTemplate;
 }
 
 function resolveDatabaseChoice(
@@ -234,24 +182,9 @@ function githubRepoFields(repository: GithubDeployerRepo): {
   };
 }
 
-function projectYamlForNewTarget(options: {
-  displayName: string;
-  namespace: string;
-  projectName: string;
-  projectTemplate: string;
-}): string {
-  return mergeProjectMetadataDisplayName(
-    renderCrossplaneCompositionTemplate(options.projectTemplate, {
-      name: options.projectName,
-      namespace: options.namespace,
-    }),
-    options.displayName
-  );
-}
-
-function resolveDeploymentTarget(
+async function resolveDeploymentTarget(
   options: DeploymentTargetPipelineOptions
-): ResolvedDeploymentTarget {
+): Promise<ResolvedDeploymentTarget> {
   const {
     adapters,
     existingProjects = [],
@@ -270,8 +203,8 @@ function resolveDeploymentTarget(
     return {
       createdProject: false,
       projectName,
-      ...(target.projectUid.trim()
-        ? { projectUid: target.projectUid.trim() }
+      ...(target.projectId.trim()
+        ? { projectId: target.projectId.trim() }
         : {}),
     };
   }
@@ -285,32 +218,17 @@ function resolveDeploymentTarget(
     throw new Error(displayNameError);
   }
 
-  const projectTemplate = resolveProjectTemplate(
-    options.projectCompositionRows
-  );
-  const projectName = adapters.generateProjectName();
+  const project = await adapters.createProject({
+    displayName,
+    namespace,
+  });
 
   return {
     createdProject: true,
     displayName,
-    projectName,
-    projectYaml: projectYamlForNewTarget({
-      displayName,
-      namespace,
-      projectName,
-      projectTemplate,
-    }),
+    projectName: project.id,
+    projectId: project.id,
   };
-}
-
-function fetchCreatedProjectUid(
-  target: ResolvedDeploymentTarget,
-  adapters: DeploymentTargetPipelineAdapters
-): Promise<string | undefined> {
-  if (!target.createdProject) {
-    return Promise.resolve(target.projectUid);
-  }
-  return adapters.fetchProjectUidByName(target.projectName);
 }
 
 async function runDockerPipeline(
@@ -328,25 +246,21 @@ async function runDockerPipeline(
     );
   }
 
-  const apTemplate = resolveApTemplate(options.apCompositionRows);
-  const target = resolveDeploymentTarget(options);
-  const apName = options.adapters.generateChildResourceName(target.projectName);
+  const target = await resolveDeploymentTarget(options);
+  const apName = options.adapters.generateChildResourceName(
+    target.projectName,
+    "ap"
+  );
   const apYaml = renderDockerDeploymentYaml({
     name: apName,
     namespace: options.namespace,
     projectName: target.projectName,
     routingDomain: options.routingDomain?.trim() ?? "",
     settings: options.request.settings,
-    template: apTemplate,
   });
 
-  await options.adapters.applyYaml(
-    target.projectYaml === undefined
-      ? apYaml
-      : joinKubeYamlDocuments([target.projectYaml, apYaml])
-  );
+  await options.adapters.applyBrainProductManifest(apYaml);
 
-  const projectUid = await fetchCreatedProjectUid(target, options.adapters);
   return {
     apName,
     createdProject: target.createdProject,
@@ -355,7 +269,7 @@ async function runDockerPipeline(
       : { displayName: target.displayName }),
     kind: "docker",
     projectName: target.projectName,
-    ...(projectUid === undefined ? {} : { projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
   };
 }
 
@@ -368,10 +282,12 @@ async function runDatabasePipeline(
     options.databaseOptions,
     options.request.settings
   );
-  const target = resolveDeploymentTarget(options);
-  const dbName = options.adapters.generateChildResourceName(target.projectName);
+  const target = await resolveDeploymentTarget(options);
+  const dbName = options.adapters.generateChildResourceName(
+    target.projectName,
+    "db"
+  );
   const dbYaml = renderDbDeploymentYaml({
-    compositionName: choice.id,
     engine: choice.engine,
     name: dbName,
     namespace: options.namespace,
@@ -381,13 +297,8 @@ async function runDatabasePipeline(
     template: choice.template,
   });
 
-  await options.adapters.applyYaml(
-    target.projectYaml === undefined
-      ? dbYaml
-      : joinKubeYamlDocuments([target.projectYaml, dbYaml])
-  );
+  await options.adapters.applyBrainProductManifest(dbYaml);
 
-  const projectUid = await fetchCreatedProjectUid(target, options.adapters);
   return {
     createdProject: target.createdProject,
     dbName,
@@ -396,7 +307,7 @@ async function runDatabasePipeline(
       : { displayName: target.displayName }),
     kind: "database",
     projectName: target.projectName,
-    ...(projectUid === undefined ? {} : { projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
   };
 }
 
@@ -406,17 +317,12 @@ async function runGithubPipeline(
   }
 ): Promise<DeploymentTargetPipelineOutcome> {
   const { fullName, repoUrl } = githubRepoFields(options.request.repository);
-  const target = resolveDeploymentTarget(options);
+  const target = await resolveDeploymentTarget(options);
 
-  if (target.projectYaml !== undefined) {
-    await options.adapters.applyYaml(target.projectYaml);
-  }
-
-  const projectUid = await fetchCreatedProjectUid(target, options.adapters);
   const task = await options.adapters.createGithubDeployTask({
     namespace: options.namespace,
     projectName: target.projectName,
-    ...(projectUid === undefined ? {} : { projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
     repo: {
       fullName,
       id: options.request.repository.id,
@@ -432,7 +338,7 @@ async function runGithubPipeline(
       : { displayName: target.displayName }),
     kind: "github",
     projectName: target.projectName,
-    ...(projectUid === undefined ? {} : { projectUid }),
+    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
     repoFullName: fullName,
     taskId: task.taskId,
     taskMessage: task.message,

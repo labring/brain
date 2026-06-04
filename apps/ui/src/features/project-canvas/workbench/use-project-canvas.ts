@@ -91,7 +91,7 @@ export interface UseProjectCanvasOptions {
   onPendingApDbReferencesStart?: (
     references: readonly PendingApDbCanvasReference[]
   ) => (() => void) | undefined;
-  projectUid?: string;
+  projectId?: string;
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
   refreshWorkloadLists?: () => Promise<unknown>;
@@ -375,13 +375,13 @@ export function useProjectCanvas(
         (entry.kind === "databaseDeployment" ||
           entry.kind === "dockerDeployment" ||
           entry.kind === "githubDeployment") &&
-        options?.projectUid != null
+        options?.projectId != null
       ) {
-        return entry.projectUid === options.projectUid;
+        return entry.projectId === options.projectId;
       }
       return true;
     },
-    [options?.projectUid]
+    [options?.projectId]
   );
   const workbenchRoute = useProjectWorkbenchRouteState({
     canvasSelectionExists,

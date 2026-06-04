@@ -173,7 +173,9 @@ export const deployTasks = ns.table(
   {
     id: text("id").primaryKey(),
     namespace: text("namespace").notNull(),
-    projectUid: text("project_uid"),
+    // Storage migration boundary: the physical column remains `project_uid`;
+    // the app-level contract is the Brain Project ID.
+    projectId: text("project_uid"),
     projectName: text("project_name"),
     selectedWorkloadUid: text("selected_workload_uid"),
     repoId: text("repo_id"),
@@ -224,7 +226,7 @@ export const deployTasks = ns.table(
       table.updatedAt
     ),
     index("deploy_tasks_project_uid_updated_at_idx").on(
-      table.projectUid,
+      table.projectId,
       table.updatedAt
     ),
     index("deploy_tasks_status_updated_at_idx").on(

@@ -1,15 +1,15 @@
-/** One ConfigMap-derived row for AP config backup / orphaned snapshot UX. */
+/** One AP image version row for workload history UX. */
 export interface ContainerHistorySnapshotRow {
-  /** Kubernetes ConfigMap name (`{ap}-config-snapshot-{hash}` in the product list). */
-  configMapName: string;
-  /** Embedded `config.yaml` body when already available (preview / inlined data). */
-  configYaml?: string;
-  /** `metadata.creationTimestamp` (RFC3339) from the snapshot ConfigMap. */
+  /** RFC3339 creation timestamp. */
   createdAt: string;
-  /** Image from embedded `config.yaml` (API summary); may be empty. */
+  /** Image captured for this version. */
   image: string;
-  /** `active` when this orphan’s hash matches `status.configVersionHash`; otherwise `orphan`. */
+  /** Image pull policy captured for this version. */
+  imagePullPolicy?: string;
+  /** Source operation that recorded this version. */
+  source?: string;
+  /** `active` when this version matches the current AP image. */
   variant: "active" | "orphan";
-  /** Snapshot hash (ConfigMap name suffix; matches `status.configVersionHash` when active). */
-  versionHash?: string;
+  /** Stable version hash returned by the AP version API. */
+  versionHash: string;
 }

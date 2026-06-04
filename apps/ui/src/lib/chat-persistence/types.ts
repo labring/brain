@@ -38,7 +38,7 @@ export interface AssistantSessionPayload {
 /** Optional client-provided UI context for the model system prompt (project + selection). */
 export const assistantContextPayloadSchema = z.object({
   projectName: z.string().max(512).optional(),
-  projectUid: z.string().max(256).optional(),
+  projectId: z.string().max(256).optional(),
   selectedWorkload: z
     .object({
       kubernetesUid: z.string().max(256).optional(),

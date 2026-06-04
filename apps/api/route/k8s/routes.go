@@ -25,16 +25,15 @@ func Register(api huma.API) {
 	registerScale(grp)
 	registerAutoscale(grp)
 	registerRollout(grp)
-	registerNsconfig(grp)
 }
 
 func registerHealth(grp huma.API) {
 	huma.Register(grp, huma.Operation{
 		OperationID: "k8s-health",
-		Method:     http.MethodGet,
-		Path:       "/health",
-		Summary:    "Health check",
-		Tags:       []string{"K8s"},
+		Method:      http.MethodGet,
+		Path:        "/health",
+		Summary:     "Health check",
+		Tags:        []string{"K8s"},
 	}, func(ctx context.Context, input *struct{}) (*health.Output, error) {
 		resp := &health.Output{}
 		resp.Body.Status = "ok"

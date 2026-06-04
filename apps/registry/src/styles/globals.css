@@ -1,4 +1,3 @@
 @import "../../../../packages/ui/src/styles/globals.css";
 
 @source "../**/*.{ts,tsx}";
-@source "../../../../packages/crossplane/src/**/*.ts";

@@ -1,23 +1,23 @@
 "use client";
 
-import { useK8sGetResource } from "@workspace/api/hooks";
+import {
+  fetchAPImageVersionDetail,
+  rollbackAPImageVersion,
+  useAPImageVersions,
+} from "@workspace/api/hooks";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { ContainerHistoryPane } from "@workspace/ui/components/container-history-pane/container-history-pane";
+import type { ContainerHistorySnapshotRow } from "@workspace/ui/components/container-history-pane/container-history-pane.types";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { History } from "lucide-react";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import {
   containerStatesFromNode,
-  k8sPluralKindForWorkload,
   workloadClaimKindFromStates,
 } from "@/features/project-canvas/flow/container-node-workload";
-import { apConfigSnapshotRowsFromClaim } from "@/features/project-canvas/k8s/ap-config-snapshots";
-import { rollbackApFromEffectiveConfigYaml } from "@/features/project-canvas/k8s/ap-json-patch";
-import { k8sGetClaimBody } from "@/features/project-canvas/k8s/claim-mapper";
-import { fetchConfigMapConfigYaml } from "@/features/project-canvas/k8s/fetch-configmap-config-yaml";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import {
   CanvasResourcePane,
@@ -62,86 +62,96 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const name = states?.name ?? "";
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
-  const pluralKind = k8sPluralKindForWorkload(workloadKind);
   const title = name === "" ? "History" : `${name} History`;
 
-  const {
-    data: claimPayload,
-    error,
-    isLoading,
-    mutate: revalidateClaim,
-  } = useK8sGetResource({
-    kind: pluralKind,
+  const versions = useAPImageVersions({
     kubeconfig,
     name,
     namespace: ns,
   });
-  const claim = k8sGetClaimBody(claimPayload);
-
-  const rows = useMemo(
-    () => (workloadKind === "AP" ? apConfigSnapshotRowsFromClaim(claim) : []),
-    [claim, workloadKind]
-  );
 
   const onLoadConfigYaml = useCallback(
-    async (configMapName: string) =>
-      fetchConfigMapConfigYaml({
-        configMapName,
+    async (versionHash: string) => {
+      const version = await fetchAPImageVersionDetail({
         kubeconfig,
+        name,
         namespace: ns,
-      }),
-    [kubeconfig, ns]
+        versionHash,
+      });
+      return [
+        `image: ${version.image}`,
+        version.imagePullPolicy == null || version.imagePullPolicy === ""
+          ? null
+          : `imagePullPolicy: ${version.imagePullPolicy}`,
+        `versionHash: ${version.versionHash}`,
+        `source: ${version.source}`,
+        `createdAt: ${version.createdAt}`,
+      ]
+        .filter((line): line is string => line !== null)
+        .join("\n");
+    },
+    [kubeconfig, name, ns]
   );
 
-  const [rollbackConfirmCm, setRollbackConfirmCm] = useState<string | null>(
+  const [rollbackConfirmVersion, setRollbackConfirmVersion] = useState<
+    string | null
+  >(null);
+  const [rollbackBusyVersion, setRollbackBusyVersion] = useState<string | null>(
     null
   );
-  const [rollbackBusyCm, setRollbackBusyCm] = useState<string | null>(null);
 
   const runRollback = useCallback(
-    async (configMapName: string) => {
-      if (claim == null) {
-        throw new Error("Workload claim is not loaded yet.");
-      }
-      const yaml = await fetchConfigMapConfigYaml({
-        configMapName,
+    async (versionHash: string) => {
+      await rollbackAPImageVersion({
         kubeconfig,
+        name,
         namespace: ns,
+        versionHash,
       });
-      await rollbackApFromEffectiveConfigYaml(kubeconfig, claim, yaml);
-      await revalidateClaim();
+      await versions.mutate();
     },
-    [claim, kubeconfig, ns, revalidateClaim]
+    [kubeconfig, name, ns, versions]
   );
 
   const confirmRollbackSnapshot = () => {
-    const cm = rollbackConfirmCm;
-    if (cm == null) {
+    const versionHash = rollbackConfirmVersion;
+    if (versionHash == null) {
       return;
     }
-    setRollbackConfirmCm(null);
+    setRollbackConfirmVersion(null);
     toast.promise(
       (async () => {
-        setRollbackBusyCm(cm);
+        setRollbackBusyVersion(versionHash);
         try {
-          await runRollback(cm);
+          await runRollback(versionHash);
         } finally {
-          setRollbackBusyCm(null);
+          setRollbackBusyVersion(null);
         }
       })(),
       {
-        loading: `Rolling back to ${cm}…`,
-        success:
-          "AP spec updated from the snapshot. Composition will reconcile shortly.",
+        loading: "Rolling back image version...",
+        success: "AP image updated from the selected version.",
         error: (e) =>
           e instanceof Error ? e.message : "Rollback failed unexpectedly.",
       }
     );
   };
 
-  const requestRollbackConfirm = useCallback((configMapName: string) => {
-    setRollbackConfirmCm(configMapName);
+  const requestRollbackConfirm = useCallback((versionHash: string) => {
+    setRollbackConfirmVersion(versionHash);
   }, []);
+
+  const rows: ContainerHistorySnapshotRow[] =
+    workloadKind === "AP"
+      ? (versions.data?.items ?? []).map((item) => ({
+          createdAt: item.createdAt,
+          image: item.image,
+          imagePullPolicy: item.imagePullPolicy,
+          source: item.source,
+          variant: item.active ? "active" : "orphan",
+          versionHash: item.versionHash,
+        }))
+      : [];
 
   if (ns === "" || name === "") {
     return (
@@ -165,14 +175,14 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         title={title}
       >
         <p className="text-muted-foreground text-sm">
-          Config snapshot history applies to AP workloads. Database claims use a
-          different backup model.
+          Image version history applies to AP workloads. Databases use their own
+          lifecycle history.
         </p>
       </WorkloadHistoryShell>
     );
   }
 
-  if (error != null) {
+  if (versions.error != null) {
     return (
       <WorkloadHistoryShell
         onClose={onClose}
@@ -180,13 +190,13 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         title={title}
       >
         <p className="text-destructive text-sm" role="alert">
-          Could not load workload: {error.message}
+          Could not load image versions: {versions.error.message}
         </p>
       </WorkloadHistoryShell>
     );
   }
 
-  if (isLoading && claim == null) {
+  if (versions.isLoading && versions.data == null) {
     return (
       <WorkloadHistoryShell
         onClose={onClose}
@@ -209,7 +219,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
           className="min-h-0"
           onLoadConfigYaml={onLoadConfigYaml}
           onRollback={requestRollbackConfirm}
-          rollbackBusyConfigMapName={rollbackBusyCm}
+          rollbackBusyVersionHash={rollbackBusyVersion}
           rows={rows}
           workloadName={name}
         />
@@ -217,25 +227,24 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
       <AppDialog.Root
         onOpenChange={(next) => {
           if (!next) {
-            setRollbackConfirmCm(null);
+            setRollbackConfirmVersion(null);
           }
         }}
-        open={rollbackConfirmCm !== null}
+        open={rollbackConfirmVersion !== null}
       >
         <AppDialog.Content>
           <AppDialog.Header>
             <AppDialog.WarningIcon />
-            <AppDialog.Title>Rollback to this snapshot?</AppDialog.Title>
+            <AppDialog.Title>Rollback to this image?</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>
               The AP <span className="font-medium text-foreground">{name}</span>{" "}
-              spec will be patched to match the embedded effective spec from{" "}
+              image will be changed to the selected recorded version{" "}
               <span className="break-all font-mono text-foreground">
-                {rollbackConfirmCm ?? ""}
+                {rollbackConfirmVersion ?? ""}
               </span>
-              . This rolls configuration forward via the claim (Crossplane then
-              reconciles workloads).
+              . Other AP settings will stay unchanged.
             </AppDialog.Description>
           </AppDialog.Body>
           <AppDialog.Footer>

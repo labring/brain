@@ -6,7 +6,7 @@ import type { VisualTone } from "./project-aggregate-status";
 /** Key on `metadata.annotations` for the UI display name (merge-patched on rename). */
 export const PROJECT_DISPLAY_NAME_ANNOTATION_KEY = "displayName";
 
-/** One Project from `kubectl get projects -o json` / k8s get `kind=projects` (example.crossplane.io/v1). */
+/** Legacy project-list item shape kept for old parser tests and transition helpers. */
 export interface ProjectListItem {
   metadata?: {
     creationTimestamp?: string;
@@ -82,13 +82,13 @@ export function isProjectDisplayNameTaken(
  * Maps a Project list (or unknown k8s get / SWR `data` payload) into
  * {@link ProjectExplorerProject} rows for {@link ProjectExplorer}.
  *
- * When `statusByProjectUid` is provided, each row's `status` is set from the
- * map keyed by project UID (rows with no entry are left without a status,
+ * When `statusByProjectId` is provided, each row's `status` is set from the
+ * map keyed by project ID (rows with no entry are left without a status,
  * which the renderer treats as a static neutral dot).
  */
 export function projectsListToExplorerProjects(
   data: K8sGetResponse | undefined,
-  statusByProjectUid?: ReadonlyMap<string, VisualTone>
+  statusByProjectId?: ReadonlyMap<string, VisualTone>
 ): ProjectExplorerProject[] {
   const items = projectItemsFromK8sGetResponse(data);
   if (!items) {
@@ -109,7 +109,7 @@ export function projectsListToExplorerProjects(
     }
     const createdAt = meta.creationTimestamp ?? "";
     const specPublic = item.spec?.public;
-    const status = statusByProjectUid?.get(id);
+    const status = statusByProjectId?.get(id);
     const base: ProjectExplorerProject = {
       id,
       name,

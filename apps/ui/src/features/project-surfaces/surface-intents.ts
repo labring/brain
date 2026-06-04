@@ -35,22 +35,22 @@ export function projectListEntryForAssistantIntent(
 
 export function projectCanvasEntryForAssistantIntent(
   intent: ProjectSidePaneAssistantIntent,
-  { projectUid }: { projectUid: string }
+  { projectId }: { projectId: string }
 ): ProjectSidePaneEntry | null {
-  const uid = projectUid.trim();
+  const uid = projectId.trim();
   if (uid === "") {
     return null;
   }
   if (intent.type === "database") {
     return {
       kind: "databaseDeployment",
-      projectUid: uid,
+      projectId: uid,
     };
   }
   if (intent.type === "docker") {
     return {
       kind: "dockerDeployment",
-      projectUid: uid,
+      projectId: uid,
     };
   }
   if (intent.type !== "github") {
@@ -58,6 +58,6 @@ export function projectCanvasEntryForAssistantIntent(
   }
   return {
     kind: "githubDeployment",
-    projectUid: uid,
+    projectId: uid,
   };
 }

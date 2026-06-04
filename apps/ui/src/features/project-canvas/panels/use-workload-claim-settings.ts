@@ -1,6 +1,9 @@
 "use client";
 
-import { useEntryPointList, useK8sGetResource } from "@workspace/api/hooks";
+import {
+  useBrainProductResource,
+  useEntryPointList,
+} from "@workspace/api/hooks";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   ContainerEnvVar,
@@ -14,7 +17,6 @@ import { settingsDraftSaveFailureMessage } from "@workspace/ui/lib/settings-draf
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { k8sPluralKindForWorkload } from "@/features/project-canvas/flow/container-node-workload";
 import {
   applyApEnv,
   applyApImage,
@@ -95,7 +97,7 @@ function resourceQuotaPatchDraft(next: ResourceQuotaCommitDraft): {
 }
 
 /**
- * Fetches the AP/DB claim, maps it to {@link ContainerSettingsPane} props, and exposes
+ * Fetches the AP/DB product resource, maps it to {@link ContainerSettingsPane} props, and exposes
  * JSON Patch–backed mutators for AP workloads (DB stays read-only in the pane).
  */
 export function useWorkloadClaimSettings(
@@ -119,8 +121,8 @@ export function useWorkloadClaimSettings(
     error,
     isLoading,
     mutate: revalidateClaim,
-  } = useK8sGetResource({
-    kind: k8sPluralKindForWorkload(workloadKind),
+  } = useBrainProductResource({
+    kind: workloadKind,
     kubeconfig,
     name,
     namespace,
@@ -223,7 +225,7 @@ export function useWorkloadClaimSettings(
       const body = claimBodyRef.current;
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
-        toast.error("Claim or kubeconfig missing.");
+        toast.error("Workload resource or kubeconfig missing.");
         return;
       }
       setLocalOverride((prev) => ({ ...(prev ?? {}), image }));
@@ -250,7 +252,7 @@ export function useWorkloadClaimSettings(
       const body = claimBodyRef.current;
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
-        toast.error("Claim or kubeconfig missing.");
+        toast.error("Workload resource or kubeconfig missing.");
         return;
       }
       setLocalOverride((prev) => ({ ...(prev ?? {}), env }));
@@ -287,7 +289,7 @@ export function useWorkloadClaimSettings(
       const body = claimBodyRef.current;
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
-        toast.error("Claim or kubeconfig missing.");
+        toast.error("Workload resource or kubeconfig missing.");
         return;
       }
       setLocalOverride((prev) => ({ ...(prev ?? {}), network }));
@@ -317,7 +319,7 @@ export function useWorkloadClaimSettings(
       const body = claimBodyRef.current;
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
-        const error = new Error("Claim or kubeconfig missing.");
+        const error = new Error("Workload resource or kubeconfig missing.");
         toast.error(error.message);
         throw error;
       }
@@ -351,7 +353,7 @@ export function useWorkloadClaimSettings(
       const body = claimBodyRef.current;
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
-        toast.error("Claim or kubeconfig missing.");
+        toast.error("Workload resource or kubeconfig missing.");
         return;
       }
       const prevCpu = display.cpuCores;
@@ -416,7 +418,7 @@ export function useWorkloadClaimSettings(
       const body = claimBodyRef.current;
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
-        const error = new Error("Claim or kubeconfig missing.");
+        const error = new Error("Workload resource or kubeconfig missing.");
         toast.error(error.message);
         throw error;
       }

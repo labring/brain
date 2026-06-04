@@ -1,9 +1,10 @@
 import YAML from "yaml";
 
-import { joinKubeYamlDocuments } from "@/lib/render-crossplane-template";
+import { joinKubeYamlDocuments } from "@/lib/render-yaml-template";
 
-const SUPPORTED_API_VERSION = "example.crossplane.io/v1";
-const SUPPORTED_KINDS = new Set(["AP", "DB", "EntryPoint"]);
+const SUPPORTED_API_VERSION = "brain.io/direct";
+const SUPPORTED_KINDS = new Set(["AP", "DB"]);
+const BRAIN_PROJECT_ID_LABEL = "brain.io/project-id";
 
 export interface DeployTaskApplyResourceSummary {
   apiVersion: string;
@@ -19,8 +20,8 @@ export interface DeployTaskPreparedArtifacts {
 
 export interface DeployTaskArtifactContext {
   namespace: string;
+  projectId: string | null;
   projectName: string | null;
-  projectUid: string | null;
 }
 
 function stringArrayValue(value: unknown): string[] {
@@ -64,10 +65,10 @@ function ensureDeploymentOutputSucceeded(output: Record<string, unknown>) {
   }
 }
 
-function ensureProjectLabels(input: {
+function ensureBrainProjectIdentity(input: {
   doc: Record<string, unknown>;
   projectName: string;
-  projectUid: string | null;
+  projectId: string | null;
 }) {
   const metadata = objectValue(input.doc.metadata) ?? {};
   const labels = objectValue(metadata.labels) ?? {};
@@ -75,19 +76,16 @@ function ensureProjectLabels(input: {
     ...metadata,
     labels: {
       ...labels,
-      "crossplane.io/project-name": input.projectName,
-      ...(input.projectUid == null
-        ? {}
-        : { "crossplane.io/project-uid": input.projectUid }),
+      [BRAIN_PROJECT_ID_LABEL]: input.projectId ?? input.projectName,
     },
   };
 }
 
-function normalizeClaimDoc(input: {
+function normalizeDirectProductDoc(input: {
   doc: Record<string, unknown>;
   namespace: string;
   projectName: string;
-  projectUid: string | null;
+  projectId: string | null;
 }): DeployTaskApplyResourceSummary {
   const apiVersion = stringValue(input.doc.apiVersion);
   const kind = stringValue(input.doc.kind);
@@ -111,7 +109,7 @@ function normalizeClaimDoc(input: {
     name,
     namespace: input.namespace,
   };
-  ensureProjectLabels(input);
+  ensureBrainProjectIdentity(input);
 
   if (kind === "AP" || kind === "DB") {
     const spec = objectValue(input.doc.spec) ?? {};
@@ -124,8 +122,10 @@ function normalizeClaimDoc(input: {
       );
     }
     input.doc.spec = {
-      ...spec,
-      projectName: input.projectName,
+      ...Object.fromEntries(
+        Object.entries(spec).filter(([key]) => key !== "projectName")
+      ),
+      projectId: input.projectId ?? input.projectName,
     };
   }
 
@@ -162,11 +162,11 @@ export function prepareDeployTaskArtifacts(input: {
       throw new Error("Deploy artifact YAML must be an object document.");
     }
     resources.push(
-      normalizeClaimDoc({
+      normalizeDirectProductDoc({
         doc,
         namespace: input.task.namespace,
         projectName,
-        projectUid: input.task.projectUid,
+        projectId: input.task.projectId,
       })
     );
     return YAML.stringify(doc).trimEnd();

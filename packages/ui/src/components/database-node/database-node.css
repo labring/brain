@@ -14,3 +14,15 @@
 .database-node-connection-empty {
   min-height: calc(var(--spacing) * 11);
 }
+
+.database-node-action-bar {
+  position: relative;
+  z-index: 30;
+  pointer-events: auto;
+}
+
+.database-node-action-button {
+  position: relative;
+  z-index: 31;
+  pointer-events: auto;
+}

@@ -10,13 +10,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"sealos/api/service/orchestration"
 )
 
-const ProjectUIDLabel = "crossplane.io/project-uid"
+const ProjectIDLabel = orchestration.BrainProjectIDLabel
 
 var (
 	ErrAccessHealthDBNotFound       = errors.New("db not found")
-	ErrAccessHealthProjectUID       = errors.New("projectUid is required")
+	ErrAccessHealthProjectID        = errors.New("projectId is required")
 	ErrAccessHealthProjectMissing   = errors.New("db missing project ownership metadata")
 	ErrAccessHealthProjectForbidden = errors.New("db project ownership mismatch")
 	ErrAccessHealthDBNotReady       = errors.New("db is not ready")
@@ -28,9 +30,9 @@ var (
 )
 
 type AccessHealthRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
+	Name      string
+	Namespace string
+	ProjectID string
 }
 
 type AccessHealthResult struct {
@@ -53,7 +55,7 @@ type WhoDBSourceCredentials struct {
 
 type AccessHealthAuditEvent struct {
 	Operation    string           `json:"operation"`
-	ProjectUID   string           `json:"projectUid"`
+	ProjectID    string           `json:"projectId"`
 	DBName       string           `json:"db"`
 	Namespace    string           `json:"namespace"`
 	Engine       string           `json:"engine"`
@@ -91,14 +93,14 @@ type AccessHealthService struct {
 func (s AccessHealthService) Check(ctx context.Context, req AccessHealthRequest) (result *AccessHealthResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.health",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.health",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -109,14 +111,14 @@ func (s AccessHealthService) Check(ctx context.Context, req AccessHealthRequest)
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -156,7 +158,7 @@ func (standardAccessHealthAuditLogger) LogAccessHealth(event AccessHealthAuditEv
 	log.Printf(
 		"db access health: operation=%s project=%s db=%s namespace=%s engine=%s duration=%s outcome=%s",
 		event.Operation,
-		event.ProjectUID,
+		event.ProjectID,
 		event.DBName,
 		event.Namespace,
 		event.Engine,
@@ -166,9 +168,9 @@ func (standardAccessHealthAuditLogger) LogAccessHealth(event AccessHealthAuditEv
 }
 
 type guardedAccessRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
+	Name      string
+	Namespace string
+	ProjectID string
 }
 
 func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAccessRequest) (string, WhoDBSourceCredentials, error) {
@@ -176,41 +178,40 @@ func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAcce
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
-	if err := verifyDBProject(db, req.ProjectUID); err != nil {
+	if err := verifyDBProject(db, req.ProjectID); err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
 	if !isDBAccessReady(db) {
 		return "", WhoDBSourceCredentials{}, ErrAccessHealthDBNotReady
 	}
 
-	engine, _, _ := unstructured.NestedString(db.Object, "spec", "engine")
-	engine = strings.TrimSpace(engine)
-	sourceType, defaultDatabase, err := whodbSourceForEngine(engine)
-	if err != nil {
-		return "", WhoDBSourceCredentials{}, err
+	engine := engineFromCluster(db.Object)
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
+		return "", WhoDBSourceCredentials{}, fmt.Errorf("%w: %s", ErrAccessHealthUnsupported, engine)
 	}
 
-	secretName := accessHealthSecretName(req.Name, engine)
+	secretName := accessHealthSecretName(req.Name, profile.Engine)
 	secret, err := store.GetSecret(ctx, req.Namespace, secretName)
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
-	credentials, err := buildWhoDBSourceCredentials(sourceType, defaultDatabase, req.Name, req.Namespace, secret)
+	credentials, err := buildWhoDBSourceCredentials(profile.SourceType, profile.DefaultDatabase, req.Name, req.Namespace, secret)
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
-	return engine, credentials, nil
+	return profile.Engine, credentials, nil
 }
 
-func verifyDBProject(db *unstructured.Unstructured, projectUID string) error {
+func verifyDBProject(db *unstructured.Unstructured, projectID string) error {
 	if db == nil {
 		return ErrAccessHealthDBNotFound
 	}
-	got := strings.TrimSpace(db.GetLabels()[ProjectUIDLabel])
+	got := strings.TrimSpace(db.GetLabels()[ProjectIDLabel])
 	if got == "" {
 		return ErrAccessHealthProjectMissing
 	}
-	if got != projectUID {
+	if got != projectID {
 		return ErrAccessHealthProjectForbidden
 	}
 	return nil
@@ -223,21 +224,6 @@ func isDBAccessReady(db *unstructured.Unstructured) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func whodbSourceForEngine(engine string) (sourceType string, defaultDatabase string, err error) {
-	switch strings.ToLower(strings.TrimSpace(engine)) {
-	case "postgresql", "postgres", "pg":
-		return "Postgres", "postgres", nil
-	case "mysql":
-		return "MySQL", "mysql", nil
-	case "mongodb", "mongo":
-		return "MongoDB", "admin", nil
-	case "redis":
-		return "Redis", "", nil
-	default:
-		return "", "", fmt.Errorf("%w: %s", ErrAccessHealthUnsupported, engine)
 	}
 }
 

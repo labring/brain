@@ -1,5 +1,5 @@
 {{- if .Values.database.enabled }}
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: DB
 metadata:
   name: {{ .Values.database.name }}
@@ -12,9 +12,7 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 spec:
-  crossplane:
-    compositionRef:
-      name: {{ .Values.database.compositionRef }}
+  projectId: {{ .Values.projectId | default .Release.Namespace | quote }}
   engine: {{ .Values.database.engine }}
   exposeNodePort: {{ .Values.database.exposeNodePort }}
   quota: {{ .Values.database.quota }}

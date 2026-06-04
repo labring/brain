@@ -4,7 +4,10 @@ import YAML from "yaml";
 
 import { renderDockerDeploymentYaml } from "./docker-deployment-yaml";
 
-test("renderDockerDeploymentYaml writes Docker settings into an AP claim", () => {
+const PLATFORM_ADDRESS_ID_RE = /^pa_[a-z0-9]{6,32}$/;
+const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = /^[a-z]{6}$/;
+
+test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifest", () => {
   const out = YAML.parse(
     renderDockerDeploymentYaml({
       name: "project-a-api",
@@ -23,25 +26,27 @@ test("renderDockerDeploymentYaml writes Docker settings into an AP claim", () =>
     })
   );
 
+  assert.equal(out.apiVersion, "brain.io/direct");
   assert.equal(out.kind, "AP");
   assert.equal(out.metadata.name, "project-a-api");
   assert.equal(out.metadata.namespace, "ns-admin");
   assert.equal(out.metadata.labels.region, "apps.example.com");
-  assert.equal(
-    out.spec.crossplane.compositionRef.name,
-    "aps-deployment-ingress-go-templating"
-  );
   assert.equal(out.spec.name, "project-a-api");
-  assert.equal(out.spec.projectName, "project-a");
+  assert.equal(out.spec.projectId, "project-a");
+  assert.equal(out.spec.projectName, undefined);
+  assert.equal(out.spec.legacyRuntime, undefined);
   assert.equal(out.spec.input.image, "ghcr.io/acme/api:1.2");
   assert.deepEqual(out.spec.input.env, [
     { name: "DATABASE_URL", value: "postgres://db:5432/app" },
     { name: "FEATURE_FLAG", value: "true" },
   ]);
   assert.equal(out.spec.input.network.privatePort, 8080);
-  assert.deepEqual(out.spec.input.network.platformAddresses, [
-    { id: "pa_abc123", port: 8080 },
-  ]);
+  assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
+  assert.match(
+    out.spec.input.network.platformAddresses[0].domainPrefix,
+    PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
+  );
+  assert.equal(out.spec.input.network.platformAddresses[0].port, 8080);
   assert.equal(out.spec.resource, undefined);
 });
 
@@ -64,6 +69,46 @@ test("renderDockerDeploymentYaml omits empty environment variables", () => {
   assert.equal(out.spec.input.env, undefined);
 });
 
+test("renderDockerDeploymentYaml generates stable platform address ids", () => {
+  const first = YAML.parse(
+    renderDockerDeploymentYaml({
+      name: "project-a-web",
+      namespace: "ns-admin",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: {
+        appListeningPort: 80,
+        env: [],
+        image: "nginx:latest",
+      },
+    })
+  );
+  const second = YAML.parse(
+    renderDockerDeploymentYaml({
+      name: "project-a-web",
+      namespace: "ns-admin",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: {
+        appListeningPort: 80,
+        env: [],
+        image: "nginx:latest",
+      },
+    })
+  );
+
+  const id = first.spec.input.network.platformAddresses[0].id;
+  const domainPrefix =
+    first.spec.input.network.platformAddresses[0].domainPrefix;
+  assert.match(id, PLATFORM_ADDRESS_ID_RE);
+  assert.match(domainPrefix, PLATFORM_ADDRESS_DOMAIN_PREFIX_RE);
+  assert.equal(second.spec.input.network.platformAddresses[0].id, id);
+  assert.equal(
+    second.spec.input.network.platformAddresses[0].domainPrefix,
+    domainPrefix
+  );
+});
+
 test("renderDockerDeploymentYaml resolves AP template placeholders before applying Docker settings", () => {
   const out = YAML.parse(
     renderDockerDeploymentYaml({
@@ -78,7 +123,7 @@ test("renderDockerDeploymentYaml resolves AP template placeholders before applyi
         image: "ghcr.io/acme/api:1.2",
       },
       template: `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: {{ name }}
@@ -87,9 +132,8 @@ metadata:
     app.kubernetes.io/name: {{ name }}
     region: old.example.com
 spec:
-  crossplane:
-    compositionRef:
-      name: old
+  legacyRuntime:
+    composition: old
   input:
     image: old-image
     network:
@@ -107,10 +151,14 @@ spec:
   assert.equal(out.metadata.labels.region, "apps.example.com");
   assert.equal(out.spec.input.image, "ghcr.io/acme/api:1.2");
   assert.equal(out.spec.input.network.privatePort, 3000);
-  assert.deepEqual(out.spec.input.network.platformAddresses, [
-    { id: "pa_abc123", port: 3000 },
-  ]);
-  assert.equal(out.spec.resource, undefined);
+  assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
+  assert.match(
+    out.spec.input.network.platformAddresses[0].domainPrefix,
+    PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
+  );
+  assert.equal(out.spec.input.network.platformAddresses[0].port, 3000);
+  assert.deepEqual(out.spec.resource, { requests: { cpu: "100m" } });
+  assert.equal(out.spec.legacyRuntime, undefined);
 });
 
 test("renderDockerDeploymentYaml removes template routing domain when none is provided", () => {
@@ -127,7 +175,7 @@ test("renderDockerDeploymentYaml removes template routing domain when none is pr
         image: "ghcr.io/acme/api:1.2",
       },
       template: `
-apiVersion: example.crossplane.io/v1
+apiVersion: brain.io/direct
 kind: AP
 metadata:
   name: {{ name }}
@@ -144,7 +192,10 @@ spec:
 
   assert.equal(out.metadata.labels["app.kubernetes.io/name"], "project-a-api");
   assert.equal(out.metadata.labels.region, undefined);
-  assert.deepEqual(out.spec.input.network.platformAddresses, [
-    { id: "pa_abc123", port: 3000 },
-  ]);
+  assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
+  assert.match(
+    out.spec.input.network.platformAddresses[0].domainPrefix,
+    PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
+  );
+  assert.equal(out.spec.input.network.platformAddresses[0].port, 3000);
 });

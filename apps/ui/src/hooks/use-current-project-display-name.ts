@@ -1,58 +1,38 @@
 "use client";
 
-import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
-import {
-  type K8sGetResponse,
-  k8sGetQuerySchema,
-  k8sGetResponseSchema,
-} from "@workspace/api/schemas/k8s-get";
-import { ApiUrl } from "@workspace/api/utils";
 import { useMemo } from "react";
 import useSWR from "swr";
 
-import {
-  projectDisplayName,
-  projectItemsFromK8sGetResponse,
-} from "@/lib/projects-to-explorer-projects";
+import type { BrainProjectsResponse } from "@/lib/brain-projects";
 
 export function useCurrentProjectDisplayName(options: {
   kubeconfig: string;
   namespace: string;
-  projectUid: string;
+  projectId: string;
 }) {
   const kubeconfig = options.kubeconfig.trim();
   const namespace = options.namespace.trim();
-  const projectUid = options.projectUid.trim();
-  const enabled = kubeconfig !== "" && projectUid !== "";
+  const projectId = options.projectId.trim();
+  const enabled = kubeconfig !== "" && projectId !== "";
 
-  const getParams = useMemo(
-    () =>
-      k8sGetQuerySchema.parse({
-        kind: "projects",
-        ...(namespace === "" ? {} : { namespace }),
-      }),
-    [namespace]
-  );
+  const projectsQuery = useMemo(() => ({ namespace }), [namespace]);
 
   const { data, error, isLoading } = useSWR(
-    enabled ? ([API_ROUTES.k8s.get, getParams] as const) : null,
+    enabled && namespace !== ""
+      ? (["/api/projects", projectsQuery] as const)
+      : null,
     () =>
-      fetcher<K8sGetResponse>({
-        base: ApiUrl(),
-        path: API_ROUTES.k8s.get,
-        query: { ...getParams },
-        header: {
-          Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-        },
-        method: "GET",
-        select: (raw) => k8sGetResponseSchema.parse(raw),
+      fetcher<BrainProjectsResponse>({
+        base: window.location.origin,
+        path: "/api/projects",
+        query: projectsQuery,
       })
   );
 
   const currentProject = useMemo(() => {
-    const hit = (projectItemsFromK8sGetResponse(data) ?? []).find(
-      (item) => item.metadata?.uid === projectUid
+    const hit = (data?.projects ?? []).find(
+      (project) => project.id === projectId
     );
     if (hit == null) {
       return {
@@ -61,10 +41,10 @@ export function useCurrentProjectDisplayName(options: {
       };
     }
     return {
-      displayName: projectDisplayName(hit) ?? hit.metadata?.name,
-      resourceName: hit.metadata?.name,
+      displayName: hit.displayName,
+      resourceName: hit.id,
     };
-  }, [data, projectUid]);
+  }, [data, projectId]);
 
   return {
     displayName: currentProject.displayName,

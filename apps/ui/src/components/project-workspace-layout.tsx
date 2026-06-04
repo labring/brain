@@ -207,18 +207,18 @@ function logDeployTaskPollError(input: {
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
-  projectUid: string,
+  projectId: string,
   selected: ProjectCanvasSelection | null
 ): AssistantContextPayload | undefined {
   const pn = projectName?.trim() ?? "";
-  const pu = projectUid.trim();
+  const pu = projectId.trim();
   const target = selected?.kind === "edge" ? null : selected?.target;
   if (pn === "" && pu === "" && target == null) {
     return undefined;
   }
   return {
     ...(pn === "" ? {} : { projectName: pn }),
-    ...(pu === "" ? {} : { projectUid: pu }),
+    ...(pu === "" ? {} : { projectId: pu }),
     ...(target == null
       ? {}
       : {
@@ -271,11 +271,11 @@ function ProjectAssistantChatSession({
   >(null);
 
   const params = useParams<{ uid?: string }>();
-  const projectUid = decodeURIComponent(params.uid ?? "");
+  const projectId = decodeURIComponent(params.uid ?? "");
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
-    projectUid,
+    projectId,
   });
   const [selectedQuery] = useQueryState(
     PROJECT_SELECTED_QUERY_KEY,
@@ -289,12 +289,12 @@ function ProjectAssistantChatSession({
   // Keep a live ref so the transport memo stays stable across URL changes.
   const wireRef = useRef({
     namespace: assistantNamespaceRaw,
-    projectUid,
+    projectId,
     selected,
   });
   wireRef.current = {
     namespace: assistantNamespaceRaw,
-    projectUid,
+    projectId,
     selected,
   };
 
@@ -317,7 +317,7 @@ function ProjectAssistantChatSession({
           const wire = wireRef.current;
           const assistantContext = buildAssistantContextPayload(
             currentProject.resourceName,
-            wire.projectUid,
+            wire.projectId,
             wire.selected
           );
 
@@ -541,14 +541,14 @@ function ProjectAssistantChatSession({
 
   const composerContextToggles = useMemo(() => {
     const toggles: string[] = [];
-    if (projectUid.trim() !== "") {
+    if (projectId.trim() !== "") {
       toggles.push("Current Project");
     }
     if (selected != null && selected.kind !== "edge") {
       toggles.push("Current Service");
     }
     return toggles;
-  }, [projectUid, selected]);
+  }, [projectId, selected]);
 
   const onPrimaryAction = useCallback(() => {
     if (busy) {
@@ -769,15 +769,15 @@ function ProjectRouteTopBar({
   assistantPaneOpen: boolean;
 }) {
   const params = useParams<{ uid?: string }>();
-  const projectUid = decodeURIComponent(params.uid ?? "");
+  const projectId = decodeURIComponent(params.uid ?? "");
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
-    projectUid,
+    projectId,
   });
-  const showProjectName = projectUid.trim() !== "";
+  const showProjectName = projectId.trim() !== "";
 
   return (
     <header

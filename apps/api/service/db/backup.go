@@ -15,6 +15,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
+	"sealos/api/service/orchestration"
 	transformdb "sealos/api/service/transform/db"
 )
 
@@ -44,24 +45,20 @@ func CreateBackupForDB(cfg *clientcmdapi.Config, opts CreateBackupForDBOptions) 
 		return nil, err
 	}
 
-	// Get DB to determine engine
-	dbGVR := schema.GroupVersionResource{Group: "example.crossplane.io", Version: "v1", Resource: "dbs"}
-	db, err := client.Resource(dbGVR).Namespace(opts.Namespace).Get(context.Background(), opts.DBName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("DB not found: %w", err)
-	}
-	engine := getEngineFromDB(db.Object)
-	backupMethod := backupMethodForEngine(engine)
-	componentName := componentNameForEngine(engine)
-
-	backupPolicyName := opts.DBName + "-" + componentName + "-backup-policy"
-
-	// Get KubeBlocks Cluster UID for dataprotection.kubeblocks.io/cluster-uid label
-	clusterGVR := schema.GroupVersionResource{Group: "apps.kubeblocks.io", Version: "v1alpha1", Resource: "clusters"}
-	cluster, err := client.Resource(clusterGVR).Namespace(opts.Namespace).Get(context.Background(), opts.DBName, metav1.GetOptions{})
+	cluster, err := client.Resource(kubeBlocksClusterGVR).Namespace(opts.Namespace).Get(context.Background(), opts.DBName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("KubeBlocks Cluster not found for DB %s: %w", opts.DBName, err)
 	}
+	engine := engineFromCluster(cluster.Object)
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
+	backupMethod := profile.BackupMethod
+	componentName := profile.ComponentName
+
+	backupPolicyName := opts.DBName + "-" + componentName + "-backup-policy"
+
 	clusterMeta, _ := cluster.Object["metadata"].(map[string]interface{})
 	if clusterMeta == nil {
 		return nil, fmt.Errorf("Cluster has no metadata")
@@ -87,8 +84,8 @@ func CreateBackupForDB(cfg *clientcmdapi.Config, opts CreateBackupForDBOptions) 
 		},
 		"spec": map[string]interface{}{
 			"backupPolicyName": backupPolicyName,
-			"backupMethod":    backupMethod,
-			"deletionPolicy":  "Delete",
+			"backupMethod":     backupMethod,
+			"deletionPolicy":   "Delete",
 		},
 	}
 
@@ -102,10 +99,23 @@ func CreateBackupForDB(cfg *clientcmdapi.Config, opts CreateBackupForDBOptions) 
 	return json.Marshal(created.Object)
 }
 
-func getEngineFromDB(db map[string]interface{}) string {
-	spec, _ := db["spec"].(map[string]interface{})
+func engineFromCluster(cluster map[string]interface{}) string {
+	metadata, _ := cluster["metadata"].(map[string]interface{})
+	labels, _ := metadata["labels"].(map[string]interface{})
+	for _, key := range []string{
+		"brain.io/db-engine",
+		"clusterdefinition.kubeblocks.io/name",
+	} {
+		if value, ok := labels[key].(string); ok && value != "" {
+			return value
+		}
+	}
+	spec, _ := cluster["spec"].(map[string]interface{})
 	if spec == nil {
 		return ""
+	}
+	if e, ok := spec["clusterDefinitionRef"].(string); ok && e != "" {
+		return e
 	}
 	if e, ok := spec["engine"].(string); ok && e != "" {
 		return e
@@ -113,53 +123,11 @@ func getEngineFromDB(db map[string]interface{}) string {
 	return ""
 }
 
-// backupMethodForEngine maps DB engine to KubeBlocks backupMethod on the Backup CR / policy.
-// Values align with typical Cluster.spec.backup.method for each engine on current KubeBlocks builds.
-func backupMethodForEngine(engine string) string {
-	switch engine {
-	case "postgresql", "pg":
-		return "postgres-basebackup"
-	case "mysql":
-		// Must match Cluster.spec.backup.method / BackupPolicy for apecloud-mysql (often "xtrabackup", not "mysql-xtrabackup").
-		return "xtrabackup"
-	case "mongodb":
-		return "mongodb-dump"
-	case "redis":
-		// Must match Cluster.spec.backup.method for KubeBlocks redis (often "datafile").
-		return "datafile"
-	default:
-		return "postgres-basebackup"
-	}
-}
-
-func componentNameForEngine(engine string) string {
-	switch engine {
-	case "postgresql", "pg":
-		return "postgresql"
-	case "mysql":
-		return "mysql"
-	case "mongodb":
-		return "mongodb"
-	case "redis":
-		return "redis"
-	default:
-		return "postgresql"
-	}
-}
-
 func mapToUnstructured(obj map[string]interface{}) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: obj}
 }
 
 func restConfigAndNamespaceForDBBackup(cfg *clientcmdapi.Config, ns string) (*rest.Config, string, error) {
-	adminCfg, adminNS, err := middleware.AdminConfigForQuery("dbs")
-	if err != nil {
-		return nil, "", err
-	}
-	if adminCfg != nil {
-		cfg = adminCfg
-		ns = adminNS
-	}
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        ns,
 		AllNamespaces:    false,

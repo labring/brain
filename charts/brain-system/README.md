@@ -4,8 +4,8 @@ This chart is the preferred entrypoint for deploying the `brain-system` stack.
 
 It renders:
 
-- `DB` claim: `brain-pg`
-- `AP` claims: `sealai-api-staging`, `sealai-ui-staging`, `sealai-registry`
+- Brain direct `DB` manifest: `brain-pg`
+- Brain direct `AP` manifests: `sealai-api-staging`, `sealai-ui-staging`, `sealai-registry`
 - native Kubernetes `Deployment` and `Service`: `whodb`
 - optional app env `Secret` objects
 - optional image pull `Secret`
@@ -14,19 +14,10 @@ It renders:
 
 The cluster must already have these platform resources installed:
 
-- Crossplane `2.2.0`
-- `provider-kubernetes`
-- `function-go-templating`
 - KubeBlocks with PostgreSQL support
 - ingress-nginx `IngressClass/nginx`
+- cert-manager when custom domains or per-domain certificates are used
 - VictoriaMetrics and VictoriaLogs if API metrics/log endpoints are used
-- repo Crossplane XRDs and Compositions from `deploy/brain-system/platform/resources.txt`
-
-Apply the repo platform resources:
-
-```bash
-xargs -I{} kubectl apply -f {} < deploy/brain-system/platform/resources.txt
-```
 
 ## Install
 
@@ -39,19 +30,15 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 Edit `/tmp/brain-system.values.yaml`, especially:
 
 - `global.region`
-- `api.env.ENCODED_ADMIN_KUBECONFIG`
+- `api.env.SEALOS_DESKTOP_URL`
 - `ui.env.API_URL`
 - `ui.env.DATABASE_URL`
 - GitHub OAuth values
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
-- Devbox runtime values (`SEALOS_HOST`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
+- Devbox runtime values (`DEVBOX_API_BASE_URL`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` if `ghcr-cred` does not already exist
 
-Generate the URL-encoded kubeconfig value:
-
-```bash
-node -e 'console.log(encodeURIComponent(require("fs").readFileSync(process.env.KUBECONFIG, "utf8")))'
-```
+`api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
 
 Install or upgrade:
 
@@ -64,7 +51,7 @@ helm upgrade --install brain-system charts/brain-system \
 
 ## First Database Install
 
-The DB controller generates `brain-pg-conn-credential`. The UI still needs a complete `DATABASE_URL`.
+The DB renderer creates a KubeBlocks Cluster named `brain-pg`. KubeBlocks generates `brain-pg-conn-credential`. The UI still needs a complete `DATABASE_URL`.
 
 For a brand-new cluster, the practical sequence is:
 
@@ -83,15 +70,13 @@ Use that password to fill `ui.env.DATABASE_URL`, then run the normal install com
 ## Verify
 
 ```bash
-kubectl -n brain-system get ap,db
-kubectl -n brain-system get deploy,pod,svc,ingress,instanceset -o wide
+kubectl -n brain-system get deploy,pod,svc,ingress,hpa,cluster -o wide
 kubectl -n brain-system rollout status deploy/whodb --timeout=5m
 ```
 
-For AP-generated workloads:
+For Brain-managed resources:
 
 ```bash
-kubectl -n brain-system wait ap/sealai-api-staging --for=condition=Ready --timeout=10m
-kubectl -n brain-system wait ap/sealai-ui-staging --for=condition=Ready --timeout=10m
-kubectl -n brain-system wait ap/sealai-registry --for=condition=Ready --timeout=10m
+kubectl -n brain-system get deploy,svc,ingress,hpa -l brain.io/managed-by=brain
+kubectl -n brain-system get cluster -l brain.io/resource-kind=db
 ```

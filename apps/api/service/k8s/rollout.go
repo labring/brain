@@ -154,11 +154,11 @@ func rolloutStatusFromStatefulSet(s *appsv1.StatefulSet) map[string]interface{} 
 		replicas = *s.Spec.Replicas
 	}
 	return map[string]interface{}{
-		"replicas":         replicas,
-		"updatedReplicas":  s.Status.UpdatedReplicas,
-		"readyReplicas":    s.Status.ReadyReplicas,
-		"currentReplicas":  s.Status.CurrentReplicas,
-		"conditions":       s.Status.Conditions,
+		"replicas":        replicas,
+		"updatedReplicas": s.Status.UpdatedReplicas,
+		"readyReplicas":   s.Status.ReadyReplicas,
+		"currentReplicas": s.Status.CurrentReplicas,
+		"conditions":      s.Status.Conditions,
 	}
 }
 
@@ -166,8 +166,8 @@ func rolloutStatusFromDaemonSet(d *appsv1.DaemonSet) map[string]interface{} {
 	return map[string]interface{}{
 		"desiredNumberScheduled": d.Status.DesiredNumberScheduled,
 		"currentNumberScheduled": d.Status.CurrentNumberScheduled,
-		"numberReady":           d.Status.NumberReady,
-		"numberAvailable":       d.Status.NumberAvailable,
-		"conditions":            d.Status.Conditions,
+		"numberReady":            d.Status.NumberReady,
+		"numberAvailable":        d.Status.NumberAvailable,
+		"conditions":             d.Status.Conditions,
 	}
 }

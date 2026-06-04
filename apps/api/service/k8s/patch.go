@@ -21,8 +21,8 @@ type PatchType string
 
 const (
 	PatchTypeStrategic PatchType = "strategic" // default for native resources
-	PatchTypeMerge      PatchType = "merge"
-	PatchTypeJSON       PatchType = "json"
+	PatchTypeMerge     PatchType = "merge"
+	PatchTypeJSON      PatchType = "json"
 )
 
 // PatchOptions holds options for Patch, mimicking kubectl patch flags.

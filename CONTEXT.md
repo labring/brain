@@ -4,16 +4,16 @@
 
 ### EntryPoint
 
-A Crossplane XRD resource (`example.crossplane.io/v1`, kind `EntryPoint`) that represents the **allocated public routing layer** for an AP. Each EntryPoint is 1:1 associated with an AP via `spec.apRef`.
+An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource or CRD.
 
-EntryPoint is **automatically created by the AP Composition** (via provider-kubernetes Object) when the AP has allocated public routing targets, and automatically deleted when the AP is deleted. A Requested Platform Address may remain pending before an EntryPoint exists.
+EntryPoint is derived by the Brain Go API from an AP's desired public routing state and observed support resources such as Ingress, Certificate, and route health. A Requested Platform Address may remain pending before an EntryPoint view has allocated host data.
 
 EntryPoint manages:
 
 - **Public Addresses** — externally reachable URLs/domains for the AP, each targeting an App Listening Port.
 - **Custom Domain Bindings** — DNS verification, routing, and TLS certificate lifecycle for user-owned Public Addresses.
 
-Not to be confused with: App Listening Ports (container ports where the application accepts traffic), AP endpoints (the raw legacy `spec.endpoints` on the AP resource), or Ingress (which is the underlying K8s resource created by Compositions).
+Not to be confused with: App Listening Ports (container ports where the application accepts traffic), AP endpoints (retired legacy fields), or Ingress (an underlying Kubernetes resource rendered by the Go API).
 
 ### App Listening Port
 
@@ -53,7 +53,7 @@ The public routing boundary within which one Custom Domain can belong to only on
 
 ### AP (Application)
 
-Crossplane composite resource (`example.crossplane.io/v1`, kind `AP`) that composes Deployment + Service(s), and optionally public Ingress + EntryPoint resources when the AP has allocated Public Addresses. Owns compute, App Listening Ports, one Private Address, and Platform Address allocation requests.
+A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, one Private Address, and Platform Address allocation requests.
 
 ### AP Settings
 
@@ -75,11 +75,11 @@ The Project relationship selected for a GitHub repository deployment before the 
 
 A narrow UI surface opened from an EntryPoint selection that presents the associated AP's Public Addresses. It is scoped to public routing and is not the full AP Settings surface.
 
-The panel can open for an AP-derived pending EntryPoint selection before a real EntryPoint resource exists, because the user's public routing intent belongs to the associated AP's Public Addresses. It includes Platform Address rows and Custom Domain rows, and does not present the AP's Private Address.
+The panel can open for an AP-derived pending EntryPoint selection before allocated routing data exists, because the user's public routing intent belongs to the associated AP's Public Addresses. It includes Platform Address rows and Custom Domain rows, and does not present the AP's Private Address.
 
 Edits made from the panel use the same Settings Draft confirmation model as AP Settings.
 
-The panel title is anchored on the associated AP name, even when the EntryPoint resource has its own name or has not been created yet.
+The panel title is anchored on the associated AP name, even when the derived EntryPoint view has no allocated host data yet.
 
 After the last Public Address is removed, the panel may remain open as an AP-bound Public Addresses settings surface even though the EntryPoint node disappears from the canvas.
 
@@ -101,7 +101,7 @@ An AP Replica Strategy where the platform automatically adjusts AP replicas betw
 
 ### DB (Database)
 
-Crossplane composite resource (`example.crossplane.io/v1`, kind `DB`) that represents a managed database workload available to APs in the same Project.
+A Brain product resource and API view that represents a managed database workload available to APs in the same Project. `apiVersion: brain.io/direct`, `kind: DB` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders DB desired state into underlying KubeBlocks and Kubernetes resources such as Cluster, Service, credentials, backup resources, and lifecycle OpsRequests.
 
 ### DB Service
 
@@ -215,13 +215,13 @@ Pointer hover alone is not canvas navigation and does not reveal Canvas Navigati
 
 The product identity of a canvas node's backing AP, DB, or AP-bound EntryPoint surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.
 
-For AP and DB nodes, `name` is the Kubernetes resource name. For EntryPoint nodes, `name` is the associated AP name: the node represents that AP's Public Addresses surface, including the pending state before a real EntryPoint resource exists. Real EntryPoint `metadata.name`, `metadata.uid`, and status are observed resource facts attached to that surface, not the stable Canvas Resource Identity.
+For AP and DB nodes, `name` is the product resource name and also the primary underlying workload or Cluster name used by the Brain renderer. For EntryPoint nodes, `name` is the associated AP name: the node represents that AP's Public Addresses surface, including pending allocation state.
 
-Kubernetes UID is retained separately as the last-seen entity identity so the UI can detect when a same-named AP, DB, or observed EntryPoint resource is meaningfully new.
+Underlying Kubernetes UID is retained separately as the last-seen entity identity where available so the UI can detect when a same-named AP workload or DB Cluster is meaningfully new. EntryPoint surfaces use AP-bound identity and observed routing facts rather than their own Kubernetes UID.
 
 ### AP-bound Surface Key
 
-The EntryPoint selection identity used by URL state and the Canvas Resource Pane. An AP-bound Surface Key is stable for `{ namespace, apName }` and selects the AP's Public Addresses surface, whether the real EntryPoint resource already exists or is still pending.
+The EntryPoint selection identity used by URL state and the Canvas Resource Pane. An AP-bound Surface Key is stable for `{ namespace, apName }` and selects the AP's Public Addresses surface, whether allocated routing data already exists or is still pending.
 
 The AP-bound Surface Key is not the same thing as the Canvas Layout resource key. Canvas Layout uses Canvas Resource Identity. URL and pane selection may derive an AP-bound Surface Key from the same EntryPoint node facts, but the two keys are not interchangeable.
 
@@ -297,15 +297,15 @@ A read-only Main Action Surface for inspecting timestamped runtime output emitte
 
 ### Project Aggregate Status
 
-A derived health tone for one Project row in the project list, computed from the phases of the Project's APs and DBs. It is not a field on the Project resource; it is computed in the UI from sibling workload lists. It expresses "are the workloads inside this project healthy", which is what users look at on the list, and is distinct from the Project composite's own `status.conditions[Ready]` (which only reflects whether the Project composition itself reconciled).
+A derived health tone for one Project row in the project list, computed from the phases of the Project's APs and DBs. It is not a persisted field on the Project product record; it is computed from sibling workload lists. It expresses "are the workloads inside this project healthy", which is what users look at on the list, and is distinct from whether the Project record itself exists.
 
 ### Project Display Name
 
-The human-facing Project name shown in navigation, project chrome, and project creation forms, preferred from `metadata.annotations.displayName` and falling back to the Project's Kubernetes resource name. It is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name to mean the Project's Kubernetes resource name unless the resource identity is the topic.
+The human-facing Project name shown in navigation, project chrome, and project creation forms. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
 
 ### Project Creation Pane
 
-A non-modal right-side surface anchored in the project main pane for entering a new Project's initial user-facing identity and choosing how to create it before the Project resource exists. It is distinct from the Canvas Resource Pane and may coexist with the project assistant chat pane.
+A non-modal right-side surface anchored in the project main pane for entering a new Project's initial user-facing identity and choosing how to create it before the Project product record exists. It is distinct from the Canvas Resource Pane and may coexist with the project assistant chat pane.
 
 The Project Creation Pane may also open in a source-specific entry path. In a GitHub direct creation path, the user starts at GitHub repository selection rather than the general creation picker; the Project Display Name is derived from the selected repository and de-duplicated within the namespace. In a Docker direct creation path, the Project Display Name is derived from the Docker image repository name and de-duplicated within the namespace.
 

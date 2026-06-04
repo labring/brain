@@ -28,7 +28,6 @@ export const API_ROUTES = {
     scale: "/api/k8s/v1alpha1/scale",
     autoscale: "/api/k8s/v1alpha1/autoscale",
     rollout: "/api/k8s/v1alpha1/rollout",
-    nsconfig: "/api/k8s/v1alpha1/nsconfig",
   },
 
   ap: {
@@ -37,6 +36,8 @@ export const API_ROUTES = {
     root: "/api/ap/v1alpha1",
     /** Recent Kubernetes events for one AP workload. */
     events: "/api/ap/v1alpha1/events",
+    /** Image version history for one AP workload. */
+    versions: "/api/ap/v1alpha1/versions",
     /** Rollout-restart the composed Deployment (same name as the AP). */
     restart: "/api/ap/v1alpha1/restart",
   },
@@ -57,11 +58,6 @@ export const API_ROUTES = {
     root: "/api/entrypoint/v1alpha1",
   },
 
-  task: {
-    base: "/api/task/v1alpha1",
-    s2i: "/api/task/v1alpha1/s2i",
-  },
-
   telemetry: {
     base: "/api/telemetry/v1alpha1",
     logsHealth: "/api/telemetry/v1alpha1/logs/health",
@@ -72,7 +68,7 @@ export const API_ROUTES = {
   },
 
   /**
-   * Region JWT → encoded kubeconfig via cluster Ingress `sealos-desktop` (`/api/auth/v1alpha1` in `apps/api/route/auth`).
+   * Region JWT → encoded kubeconfig via configured Sealos Desktop URL (`/api/auth/v1alpha1` in `apps/api/route/auth`).
    */
   auth: {
     base: "/api/auth/v1alpha1",

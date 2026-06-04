@@ -3,6 +3,8 @@ global:
   labels: {}
   annotations: {}
 
+projectId: brain-system
+
 imagePullSecret:
   create: false
   useForWhodb: false
@@ -17,7 +19,6 @@ secrets:
 database:
   enabled: true
   name: brain-pg
-  compositionRef: dbs-postgresql-kubeblocks-go-templating
   engine: postgresql
   quota: xs
   replicas: 1
@@ -40,7 +41,6 @@ database:
 api:
   enabled: true
   name: sealai-api-staging
-  compositionRef: aps-deployment-ingress-go-templating
   image: aimerite/sealai-api:latest
   imagePullPolicy: Always
   port: 9000
@@ -54,7 +54,9 @@ api:
   env:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471"
-    ENCODED_ADMIN_KUBECONFIG: ""
+    DATABASE_URL: ""
+    DB_PUBLIC_HOST: ""
+    SEALOS_DESKTOP_URL: ""
     WHODB_URL: "http://whodb.brain-system.svc:11000"
   staticEnv:
     SEALOS_DESKTOP_SKIP_TLS_VERIFY: "1"
@@ -91,7 +93,6 @@ api:
 ui:
   enabled: true
   name: sealai-ui-staging
-  compositionRef: aps-deployment-ingress-go-templating
   image: aimerite/sealai-ui:latest
   imagePullPolicy: Always
   port: 3000
@@ -111,7 +112,7 @@ ui:
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
     AI_PROXY_TOKEN_NAME: "sealos-brain"
-    SEALOS_HOST: ""
+    DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""
     DEVBOX_JWT_SIGNING_KEY: ""
     DEVBOX_RUNTIME_IMAGE: ""
@@ -155,7 +156,6 @@ ui:
 registry:
   enabled: true
   name: sealai-registry
-  compositionRef: aps-deployment-ingress-go-templating
   image: puddlecat/sealai-registry:latest
   imagePullPolicy: Always
   port: 10000

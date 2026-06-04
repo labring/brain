@@ -5,57 +5,12 @@ function isoHoursAgo(hours: number): string {
   return new Date(Date.now() - hours * 3600 * 1000).toISOString();
 }
 
-/** Synthetic `data.config.yaml` for registry previews (effective AP spec shape). */
-export function mockEffectiveSpecYamlSnippet(
-  workloadName: string,
-  options: {
-    image: string;
-    namespace?: string;
-    replicas?: number;
-    restartRequest?: number;
-  }
-): string {
-  const ns = options.namespace ?? "demo-namespace";
-  const replicas = options.replicas ?? 1;
-  const restartRequest = options.restartRequest ?? 0;
-  const image =
-    options.image.trim() === ""
-      ? "registry.example.io/demo:latest"
-      : options.image;
-
-  return [
-    "# Effective AP spec snapshot (embedded in ConfigMap key config.yaml)",
-    `name: ${JSON.stringify(workloadName)}`,
-    `namespace: ${JSON.stringify(ns)}`,
-    "input:",
-    `  image: ${JSON.stringify(image)}`,
-    "  endpoints: []",
-    '  imagePullPolicy: "Always"',
-    "  env: []",
-    "  probes: {}",
-    "resource:",
-    `  replicas: ${replicas}`,
-    "  requests:",
-    '    cpu: "200m"',
-    '    memory: "204Mi"',
-    "  limits:",
-    '    cpu: "2000m"',
-    '    memory: "2048Mi"',
-    "paused: false",
-    'projectName: ""',
-    "ingressAnnotations: {}",
-    `restartRequest: ${restartRequest}`,
-  ].join("\n");
-}
-
 /**
- * Mock orphan snapshots for registry previews (`status.backups` shape).
- * The first hash acts as “live” (`variant: active`) like `status.configVersionHash`.
+ * Mock image versions for registry previews.
+ * The first hash acts as the active AP image version.
  */
-export function mockApConfigSnapshotRows(
-  workloadName: string
-): ContainerHistorySnapshotRow[] {
-  /** Ten retained snapshot ConfigMaps (matches cleanup CronJob `KEEP=10`). */
+export function mockApConfigSnapshotRows(): ContainerHistorySnapshotRow[] {
+  /** Ten retained AP image versions. */
   const snapshotHashes = [
     "deadbeefcafe",
     "9a8b7c6d5e4f",
@@ -72,24 +27,20 @@ export function mockApConfigSnapshotRows(
   const liveHash = snapshotHashes[0];
 
   const orphans: ContainerHistorySnapshotRow[] = snapshotHashes.map(
-    (hash, index) => ({
-      configMapName: `${workloadName}-config-snapshot-${hash}`,
-      variant: hash === liveHash ? ("active" as const) : ("orphan" as const),
-      versionHash: hash,
-      image:
-        index % 4 === 3
-          ? ""
-          : `registry.example.io/demo:v${Math.max(1, 10 - index)}`,
-      createdAt: isoHoursAgo(6 * (index + 1)),
-      configYaml: mockEffectiveSpecYamlSnippet(workloadName, {
+    (hash, index) => {
+      const source = index !== 0 && index % 3 === 0 ? "rollback" : "update";
+      return {
+        variant: hash === liveHash ? ("active" as const) : ("orphan" as const),
+        versionHash: hash,
         image:
           index % 4 === 3
             ? ""
             : `registry.example.io/demo:v${Math.max(1, 10 - index)}`,
-        replicas: Math.max(1, 5 - (index % 3)),
-        restartRequest: index,
-      }),
-    })
+        createdAt: isoHoursAgo(6 * (index + 1)),
+        imagePullPolicy: "Always",
+        source,
+      };
+    }
   );
 
   return sortSnapshotRowsByCreatedAtDesc(orphans);

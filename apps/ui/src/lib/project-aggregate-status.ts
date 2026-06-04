@@ -9,7 +9,7 @@ import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas
 export type VisualTone = CanvasNodeVisualStatusTone;
 
 /**
- * Maps a raw Crossplane phase string (e.g. `"Running"`, `"Creating"`, `"Failed"`,
+ * Maps a raw workload phase string (e.g. `"Running"`, `"Creating"`, `"Failed"`,
  * `"Paused"`, `""`) onto the 5-tone {@link VisualTone}. Case-insensitive; unknown
  * or empty input → `"neutral"`.
  */
@@ -58,11 +58,11 @@ export function phaseToVisualTone(phase: string | undefined): VisualTone {
 export interface ProjectWorkloadStatusInput {
   paused?: boolean;
   phase: string | undefined;
-  projectUid: string;
+  projectId: string;
 }
 
 /**
- * Groups workloads by `projectUid` and returns the worst tone per project,
+ * Groups workloads by `projectId` and returns the worst tone per project,
  * with severity ordered `negative > warning > progress > positive > neutral`.
  * Paused workloads contribute as `neutral` so they cannot promote a project
  * to a worse tone (PRD User Story 7).
@@ -73,7 +73,7 @@ export interface ProjectWorkloadStatusInput {
  *
  * The `warning` slot is included in the severity ordering for forward-
  * compatibility (e.g. future EntryPoint reachability source); no current
- * Crossplane phase maps to `warning` on this surface.
+ * workload phase maps to `warning` on this surface.
  */
 const TONE_SEVERITY: Readonly<Record<VisualTone, number>> = {
   neutral: 0,
@@ -96,9 +96,9 @@ export function aggregateProjectStatuses(
   const result = new Map<string, VisualTone>();
   for (const workload of workloads) {
     const tone = workloadTone(workload);
-    const current = result.get(workload.projectUid);
+    const current = result.get(workload.projectId);
     if (current === undefined || TONE_SEVERITY[tone] > TONE_SEVERITY[current]) {
-      result.set(workload.projectUid, tone);
+      result.set(workload.projectId, tone);
     }
   }
   return result;

@@ -40,7 +40,7 @@ test("DB Service root node uses db_service type", () => {
       engine: "POSTGRES",
       kubeconfig: "kube",
       namespace: "project-ns",
-      projectUid: "project-uid",
+      projectId: "project-uid",
     },
   });
 
@@ -138,7 +138,7 @@ test("expanded tree localStorage key is scoped by project and service", () => {
     dataBrowserExpandedStorageKey({
       databaseWorkloadName: "postgres-main",
       databaseWorkloadNamespace: "database-system",
-      projectUid: "project-uid",
+      projectId: "project-uid",
     }),
     "data-browser:expanded:project-uid:database-system:postgres-main"
   );

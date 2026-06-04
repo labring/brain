@@ -39,15 +39,7 @@ function mergePatchAp(
   });
 }
 
-/**
- * Imperative lifecycle for **example.crossplane.io/v1** `AP` workloads composed as a Deployment:
- * pause/start via `spec.paused`, restart via rollout on the Deployment, delete via DELETE.
- *
- * Mirrors:
- * - **Pause/start** → Crossplane merges `spec.paused`; composition `aps-deployment-ingress-go-templating`
- *   scales the Deployment with SealOS-style annotations (`packages/crossplane/public/service/ap/*.yaml`).
- * - **Restart** → `POST /api/ap/v1alpha1/restart` (kubectl-style `kubectl.kubernetes.io/restartedAt` patch).
- */
+/** Imperative lifecycle for Brain AP product views backed by direct Kubernetes Deployments. */
 export function useApLifecycleOperations(options: UseApLifecycleOptions) {
   const kubeconfig = options.kubeconfig ?? "";
 
@@ -86,10 +78,7 @@ export function useApLifecycleOperations(options: UseApLifecycleOptions) {
     [authReady, base, headers]
   );
 
-  /**
-   * Rolling restart of the composed Deployment (same name as the AP). Does not increment
-   * `spec.restartRequest`; use {@link bumpRestartRequest} if you need a GitOps-only signal on the AP.
-   */
+  /** Rolling restart of the backing Deployment with the same name as the AP. */
   const restartWorkload = useCallback(
     async (workload: ApLifecycleWorkloadRef) => {
       if (!authReady) {
@@ -116,10 +105,7 @@ export function useApLifecycleOperations(options: UseApLifecycleOptions) {
     [authReady, base, headers]
   );
 
-  /**
-   * Bumps **`spec.restartRequest`** so the Composition changes the Deployment pod template (`restartNonce` label).
-   * Requires reading the current value first unless you maintain a counter client-side.
-   */
+  /** Sends a restartRequest patch for callers that still keep a client-side restart nonce. */
   const bumpRestartRequest = useCallback(
     async (workload: ApLifecycleWorkloadRef, nextNonce: number) => {
       if (!authReady) {

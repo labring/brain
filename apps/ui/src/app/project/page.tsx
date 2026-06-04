@@ -41,11 +41,11 @@ export default function ProjectIndexPage() {
   const creationSideEntryMode = creationSideEntry?.entryMode ?? null;
 
   const onProjectCreated = useCallback(
-    async (projectUid: string | undefined) => {
+    async (projectId: string | undefined) => {
       closeProjectSideRoute("replace");
       await refreshProjects();
-      if (projectUid) {
-        router.push(`/project/${encodeURIComponent(projectUid)}`);
+      if (projectId) {
+        router.push(`/project/${encodeURIComponent(projectId)}`);
       }
     },
     [closeProjectSideRoute, refreshProjects, router]

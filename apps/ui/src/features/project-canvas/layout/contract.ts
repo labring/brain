@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CanvasLayoutDocument } from "./types";
 
 const boundedString = z.string().trim().min(1).max(256);
 const finiteNumber = z.number().refine((value) => Number.isFinite(value), {
@@ -36,7 +37,7 @@ export const canvasLayoutDocumentSchema = z.object({
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
   projectNameSnapshot: z.string().trim().max(256).optional(),
-  projectUid: boundedString,
+  projectId: boundedString,
   version: z.number().int().min(0),
 });
 
@@ -44,18 +45,24 @@ export const canvasLayoutPatchRequestSchema = z.object({
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
   projectNameSnapshot: z.string().trim().max(256).optional(),
-  projectUid: boundedString,
+  projectId: boundedString,
 });
 
 export const canvasLayoutGetQuerySchema = z.object({
   namespace: boundedString,
-  projectUid: boundedString,
+  projectId: boundedString,
 });
 
 export type CanvasLayoutPatchRequest = z.infer<
   typeof canvasLayoutPatchRequestSchema
 >;
 export type CanvasLayoutGetQuery = z.infer<typeof canvasLayoutGetQuerySchema>;
+
+export function parseCanvasLayoutDocument(
+  input: unknown
+): CanvasLayoutDocument {
+  return canvasLayoutDocumentSchema.parse(input);
+}
 
 export function parseCanvasLayoutPatchRequest(
   input: unknown

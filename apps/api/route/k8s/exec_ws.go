@@ -34,7 +34,7 @@ type execClientMessage struct {
 	Kind       string   `json:"kind,omitempty"`
 	Name       string   `json:"name,omitempty"`
 	Namespace  string   `json:"namespace,omitempty"`
-	ProjectUID string   `json:"projectUid,omitempty"`
+	ProjectID  string   `json:"projectId,omitempty"`
 	Type       string   `json:"type"`
 	Value      string   `json:"value,omitempty"`
 	Cols       uint16   `json:"cols,omitempty"`
@@ -114,9 +114,9 @@ func execWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ct, rerr := dbsvc.ResolveConsoleExecTarget(ctx, store, dbsvc.ConsoleExecRequest{
-			Name:       initMsg.Name,
-			Namespace:  resolved.Namespace,
-			ProjectUID: initMsg.ProjectUID,
+			Name:      initMsg.Name,
+			Namespace: resolved.Namespace,
+			ProjectID: initMsg.ProjectID,
 		})
 		if rerr != nil {
 			writeExecError(conn, execErrorMessage(rerr))

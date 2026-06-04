@@ -12,13 +12,14 @@ import {
 export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
   node,
   onClose,
-  projectUid,
+  projectId,
 }: {
   node: Node;
   onClose: () => void;
-  projectUid: string;
+  projectId: string;
 }) {
   const data = databaseNodeDataFromNode(node);
+  const displayEngine = data?.states.displayEngine?.trim() ?? "";
   const name = data?.workload.name?.trim() ?? "";
   const namespace = data?.workload.namespace?.trim() ?? "";
 
@@ -27,10 +28,13 @@ export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
       kind: "db",
       name,
       namespace,
-      projectUid,
-      title: name || "Terminal",
+      projectId,
+      subtitle: displayEngine
+        ? `${displayEngine} terminal`
+        : "Database terminal",
+      title: name || "Database terminal",
     }),
-    [name, namespace, projectUid]
+    [displayEngine, name, namespace, projectId]
   );
 
   return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;

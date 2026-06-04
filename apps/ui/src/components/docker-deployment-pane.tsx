@@ -13,7 +13,6 @@ import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
-import { useApCompositions } from "@/hooks/compositions/use-ap-composition";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
@@ -22,23 +21,19 @@ export function DockerDeploymentPane({
   namespace,
   onClose,
   onDeployed,
-  projectUid,
+  projectId,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
   onDeployed?: () => Promise<unknown>;
-  projectUid: string;
+  projectId: string;
 }) {
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
-    projectUid,
-  });
-  const { items: apCompositionRows } = useApCompositions({
-    kubeconfig,
-    toItems: true,
+    projectId,
   });
   const deploymentAdapters = useMemo(
     () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
@@ -52,7 +47,6 @@ export function DockerDeploymentPane({
       try {
         const outcome = await runDeploymentTargetPipeline({
           adapters: deploymentAdapters,
-          apCompositionRows,
           credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
           namespace,
           request: {
@@ -60,7 +54,7 @@ export function DockerDeploymentPane({
             settings,
             target: existingProjectDeploymentTarget({
               projectName,
-              projectUid,
+              projectId,
             }),
           },
           routingDomain: routingDomainFromKubeconfig(kubeconfig),
@@ -80,14 +74,13 @@ export function DockerDeploymentPane({
       }
     },
     [
-      apCompositionRows,
       deploymentAdapters,
       kubeconfig,
       namespace,
       onClose,
       onDeployed,
       projectName,
-      projectUid,
+      projectId,
     ]
   );
 

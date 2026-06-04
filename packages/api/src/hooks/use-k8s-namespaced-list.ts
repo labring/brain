@@ -33,21 +33,23 @@ function minPositiveInterval(a: number, b: number) {
   return a > 0 ? a : b;
 }
 
-/** Plural k8s resource short name as accepted by `GET /api/k8s/.../get` (e.g. `aps`, `dbs`). */
-export function useK8sNamespacedList(options: {
+export interface UseK8sNamespacedListOptions {
   kind: string;
   kubeconfig?: string;
   labelSelector: string;
   namespace?: string;
-  pollWhileEmpty?: boolean;
   /**
    * With `pollWhileEmpty`, used to coordinate two lists: fast poll only if this list is empty **and**
    * `peerEmpty()` is true (e.g. 1s interval only while both AP and DB lists are still empty).
    */
   peerEmpty?: () => boolean;
+  pollWhileEmpty?: boolean;
   /** Additional SWR refresh cadence. Combined with empty-list polling by choosing the faster active interval. */
   refreshInterval?: K8sNamespacedListRefreshInterval;
-}) {
+}
+
+/** Plural k8s resource short name as accepted by `GET /api/k8s/.../get` (e.g. `aps`, `dbs`). */
+export function useK8sNamespacedList(options: UseK8sNamespacedListOptions) {
   const { kind, labelSelector, namespace, refreshInterval } = options;
   const pollWhileEmpty = options.pollWhileEmpty === true;
   const peerEmpty = options.peerEmpty;

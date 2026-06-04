@@ -26,7 +26,7 @@ const runtime = {
   engine: "POSTGRES",
   kubeconfig: "kube",
   namespace: "project-ns",
-  projectUid: "project-uid",
+  projectId: "project-uid",
 } satisfies DataBrowserHostContext;
 
 test("layout provides tooltip context for tab controls", () => {

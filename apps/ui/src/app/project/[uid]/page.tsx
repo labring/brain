@@ -26,7 +26,7 @@ import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
-export default function ProjectUidPage() {
+export default function ProjectIdPage() {
   const params = useParams<{ uid: string }>();
   const uid = decodeURIComponent(params.uid ?? "");
   const kubeconfig = useAtomValue(kubeconfigAtom);
@@ -37,7 +37,7 @@ export default function ProjectUidPage() {
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     namespace,
-    projectUid: uid,
+    projectId: uid,
   });
 
   const {
@@ -92,7 +92,7 @@ export default function ProjectUidPage() {
     onNodePositionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onPendingApDbReferencesStart: beginPendingApDbReferences,
-    projectUid: uid,
+    projectId: uid,
     refreshWorkloadLists,
     selectionReady: !isEmptyGraphLoading,
   });
@@ -102,20 +102,20 @@ export default function ProjectUidPage() {
   );
   const { openSideSurface } = workbench;
   const openDatabaseDeploymentPane = useCallback(() => {
-    openSideSurface({ kind: "databaseDeployment", projectUid: uid });
+    openSideSurface({ kind: "databaseDeployment", projectId: uid });
   }, [openSideSurface, uid]);
   const openDockerDeploymentPane = useCallback(() => {
-    openSideSurface({ kind: "dockerDeployment", projectUid: uid });
+    openSideSurface({ kind: "dockerDeployment", projectId: uid });
   }, [openSideSurface, uid]);
   const openGithubDeploymentPane = useCallback(() => {
-    openSideSurface({ kind: "githubDeployment", projectUid: uid });
+    openSideSurface({ kind: "githubDeployment", projectId: uid });
   }, [openSideSurface, uid]);
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
       openAssistantIntent: (intent) => {
         const entry = projectCanvasEntryForAssistantIntent(intent, {
-          projectUid: uid,
+          projectId: uid,
         });
         if (entry?.kind === "databaseDeployment") {
           openDatabaseDeploymentPane();
@@ -203,7 +203,7 @@ export default function ProjectUidPage() {
                   <ProjectCanvasWorkbenchSurfaces
                     kubeconfig={kubeconfig}
                     namespace={namespace}
-                    projectUid={uid}
+                    projectId={uid}
                     refreshWorkloadLists={refreshWorkloadLists}
                     workbench={workbench}
                   />

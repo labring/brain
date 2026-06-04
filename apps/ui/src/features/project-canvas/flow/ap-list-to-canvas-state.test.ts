@@ -312,3 +312,33 @@ test("DB canvas nodes preserve desired replicas and effective resources for sett
     }
   );
 });
+
+test("DB canvas nodes preserve stopped status tone for lifecycle actions", () => {
+  const state = dbsToCanvasState(
+    {
+      items: [
+        {
+          metadata: {
+            name: "mysql",
+            namespace: "default",
+          },
+          spec: {
+            engine: "mysql",
+          },
+          status: {
+            phase: "Stopped",
+          },
+        },
+      ],
+    },
+    { namespaceFallback: "default" }
+  );
+
+  const data = state.nodes[0]?.data as {
+    states?: { status?: { label?: string; tone?: string } };
+  };
+  assert.deepEqual(data.states?.status, {
+    label: "Stopped",
+    tone: "stopped",
+  });
+});

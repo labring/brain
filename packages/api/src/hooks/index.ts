@@ -1,5 +1,13 @@
 // biome-ignore-all lint/performance/noBarrelFile: package public API export surface.
 export {
+  type APImageVersionItem,
+  type APImageVersionsResponse,
+  type APImageVersionTarget,
+  fetchAPImageVersionDetail,
+  rollbackAPImageVersion,
+  useAPImageVersions,
+} from "./use-ap-image-versions";
+export {
   type ApLifecycleWorkloadRef,
   type UseApLifecycleOptions,
   useApLifecycleOperations,
@@ -28,6 +36,11 @@ export {
   useK8sGetResource,
 } from "./use-k8s-get-resource";
 export { useK8sNamespacedList } from "./use-k8s-namespaced-list";
+export {
+  type BrainProductResourceKind,
+  type UseBrainProductResourceOptions,
+  useBrainProductResource,
+} from "./use-product-resource";
 export {
   buildWorkloadLogsRequest,
   useWorkloadLogs,

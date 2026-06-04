@@ -80,7 +80,7 @@ test("skips saved layout rectangles when raster-scanning fallback slots", () => 
         ref: { kind: "AP", name: "saved-api", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -112,7 +112,7 @@ test("keeps saved layout positions for detected nodes", () => {
         ref: { kind: "AP", name: "api", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -133,7 +133,7 @@ test("marks only in-memory generated positions as viewport follow targets", () =
         ref: { kind: "AP", name: "saved-api", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -156,7 +156,7 @@ test("anchors an unplaced EntryPoint to the left side of a saved AP", () => {
         ref: { kind: "AP", name: "api", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -182,7 +182,7 @@ test("uses AABB rectangles from saved and same-run placed nodes during raster sc
         ref: { kind: "DB", name: "saved-overlap", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -213,7 +213,7 @@ test("moves to the next raster row when the first row is fully occupied", () => 
         ref: { kind: "AP", name: "third", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 
@@ -245,7 +245,7 @@ test("excludes anchored EntryPoints from raster-scan occupancy", () => {
         ref: { kind: "AP", name: "api", namespace: "default" },
       },
     ],
-    projectUid: "project-uid",
+    projectId: "project-uid",
     version: 1,
   };
 

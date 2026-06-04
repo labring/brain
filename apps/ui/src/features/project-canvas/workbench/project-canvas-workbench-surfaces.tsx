@@ -21,7 +21,7 @@ type ProjectCanvasWorkbenchState = ReturnType<typeof useProjectCanvas>;
 export interface ProjectCanvasWorkbenchSurfacesProps {
   kubeconfig: string;
   namespace: string;
-  projectUid: string;
+  projectId: string;
   refreshWorkloadLists: () => Promise<unknown>;
   workbench: ProjectCanvasWorkbenchState;
 }
@@ -29,7 +29,7 @@ export interface ProjectCanvasWorkbenchSurfacesProps {
 export function ProjectCanvasWorkbenchSurfaces({
   kubeconfig,
   namespace,
-  projectUid,
+  projectId,
   refreshWorkloadLists,
   workbench,
 }: ProjectCanvasWorkbenchSurfacesProps) {
@@ -48,7 +48,7 @@ export function ProjectCanvasWorkbenchSurfaces({
             namespace={namespace}
             onClose={workbench.closeResourcePane}
             onDeployed={refreshWorkloadLists}
-            projectUid={projectUid}
+            projectId={projectId}
           />
         }
         dockerDeploymentPane={
@@ -57,7 +57,7 @@ export function ProjectCanvasWorkbenchSurfaces({
             namespace={namespace}
             onClose={workbench.closeResourcePane}
             onDeployed={refreshWorkloadLists}
-            projectUid={projectUid}
+            projectId={projectId}
           />
         }
         entry={canvasSidePaneEntry}
@@ -66,7 +66,7 @@ export function ProjectCanvasWorkbenchSurfaces({
             kubeconfig={kubeconfig}
             namespace={namespace}
             onClose={workbench.closeResourcePane}
-            projectUid={projectUid}
+            projectId={projectId}
           />
         }
         resourcePane={
@@ -84,7 +84,7 @@ export function ProjectCanvasWorkbenchSurfaces({
         model={dbAccessMain}
         namespace={namespace}
         onClose={workbench.closeMainSurface}
-        projectUid={projectUid}
+        projectId={projectId}
       />
       {main?.kind === "apLogs" ? (
         <WorkloadLogsPane
@@ -111,7 +111,7 @@ export function ProjectCanvasWorkbenchSurfaces({
         <DatabaseTerminalPane
           node={drawer.node}
           onClose={workbench.closeDrawerSurface}
-          projectUid={projectUid}
+          projectId={projectId}
         />
       ) : null}
     </>

@@ -40,31 +40,31 @@ const (
 )
 
 type AccessObjectsRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
-	Parent     *AccessObjectRef
-	Kinds      []string
+	Name      string
+	Namespace string
+	ProjectID string
+	Parent    *AccessObjectRef
+	Kinds     []string
 }
 
 type AccessObjectRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
-	Ref        AccessObjectRef
+	Name      string
+	Namespace string
+	ProjectID string
+	Ref       AccessObjectRef
 }
 
 type AccessColumnsRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
-	Ref        AccessObjectRef
+	Name      string
+	Namespace string
+	ProjectID string
+	Ref       AccessObjectRef
 }
 
 type AccessRowsRequest struct {
 	Name       string
 	Namespace  string
-	ProjectUID string
+	ProjectID  string
 	Ref        AccessObjectRef
 	PageSize   int
 	PageOffset int
@@ -72,11 +72,11 @@ type AccessRowsRequest struct {
 }
 
 type AccessExportRequest struct {
-	Name       string
-	Namespace  string
-	ProjectUID string
-	Ref        AccessObjectRef
-	Format     string
+	Name      string
+	Namespace string
+	ProjectID string
+	Ref       AccessObjectRef
+	Format    string
 }
 
 type AccessObjectRef struct {
@@ -206,14 +206,14 @@ type AccessObjectsService struct {
 func (s AccessObjectsService) List(ctx context.Context, req AccessObjectsRequest) (result *AccessObjectsResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.objects",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.objects",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -223,8 +223,8 @@ func (s AccessObjectsService) List(ctx context.Context, req AccessObjectsRequest
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 	kindFilter, err := newAccessObjectKindFilter(req.Kinds)
 	if err != nil {
@@ -232,9 +232,9 @@ func (s AccessObjectsService) List(ctx context.Context, req AccessObjectsRequest
 	}
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -261,14 +261,14 @@ func (s AccessObjectsService) List(ctx context.Context, req AccessObjectsRequest
 func (s AccessObjectsService) Get(ctx context.Context, req AccessObjectRequest) (result *AccessObjectResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.object",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.object",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -278,8 +278,8 @@ func (s AccessObjectsService) Get(ctx context.Context, req AccessObjectRequest) 
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 	ref, kind, err := accessObjectRefForWhoDB(req.Ref)
 	if err != nil {
@@ -287,9 +287,9 @@ func (s AccessObjectsService) Get(ctx context.Context, req AccessObjectRequest) 
 	}
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -324,14 +324,14 @@ func (s AccessObjectsService) Get(ctx context.Context, req AccessObjectRequest) 
 func (s AccessObjectsService) Columns(ctx context.Context, req AccessColumnsRequest) (result *AccessColumnsResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.columns",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.columns",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -341,8 +341,8 @@ func (s AccessObjectsService) Columns(ctx context.Context, req AccessColumnsRequ
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 	ref, kind, err := accessColumnRefForWhoDB(req.Ref)
 	if err != nil {
@@ -350,9 +350,9 @@ func (s AccessObjectsService) Columns(ctx context.Context, req AccessColumnsRequ
 	}
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -372,14 +372,14 @@ func (s AccessObjectsService) Columns(ctx context.Context, req AccessColumnsRequ
 func (s AccessObjectsService) Rows(ctx context.Context, req AccessRowsRequest) (result *AccessRowsResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.rows",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.rows",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -389,8 +389,8 @@ func (s AccessObjectsService) Rows(ctx context.Context, req AccessRowsRequest) (
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 	ref, kind, err := accessColumnRefForWhoDB(req.Ref)
 	if err != nil {
@@ -416,9 +416,9 @@ func (s AccessObjectsService) Rows(ctx context.Context, req AccessRowsRequest) (
 	audit.Sort = accessRowsSortFromWhoDB(sort)
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -445,14 +445,14 @@ func (s AccessObjectsService) Rows(ctx context.Context, req AccessRowsRequest) (
 func (s AccessObjectsService) Export(ctx context.Context, req AccessExportRequest) (result *AccessExportResult, err error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.ProjectUID = strings.TrimSpace(req.ProjectUID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 	start := time.Now()
 	audit := AccessHealthAuditEvent{
-		Operation:  "db.access.export",
-		ProjectUID: req.ProjectUID,
-		DBName:     req.Name,
-		Namespace:  req.Namespace,
-		Outcome:    "error",
+		Operation: "db.access.export",
+		ProjectID: req.ProjectID,
+		DBName:    req.Name,
+		Namespace: req.Namespace,
+		Outcome:   "error",
 	}
 	defer func() {
 		if result != nil {
@@ -462,8 +462,8 @@ func (s AccessObjectsService) Export(ctx context.Context, req AccessExportReques
 		s.auditLogger().LogAccessHealth(audit)
 	}()
 
-	if req.ProjectUID == "" {
-		return nil, ErrAccessHealthProjectUID
+	if req.ProjectID == "" {
+		return nil, ErrAccessHealthProjectID
 	}
 	ref, kind, err := accessColumnRefForWhoDB(req.Ref)
 	if err != nil {
@@ -477,9 +477,9 @@ func (s AccessObjectsService) Export(ctx context.Context, req AccessExportReques
 	audit.ExportFormat = format
 
 	engine, credentials, err := guardDBAccess(ctx, s.Store, guardedAccessRequest{
-		Name:       req.Name,
-		Namespace:  req.Namespace,
-		ProjectUID: req.ProjectUID,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		ProjectID: req.ProjectID,
 	})
 	if err != nil {
 		return nil, err
@@ -991,7 +991,7 @@ func (standardAccessObjectsAuditLogger) LogAccessHealth(event AccessHealthAuditE
 	log.Printf(
 		"db access objects: operation=%s project=%s db=%s namespace=%s engine=%s refKind=%s refPath=%s pageSize=%d pageOffset=%d sort=%s exportFormat=%s rowLimit=%d rowsExported=%d truncated=%t duration=%s outcome=%s",
 		event.Operation,
-		event.ProjectUID,
+		event.ProjectID,
 		event.DBName,
 		event.Namespace,
 		event.Engine,

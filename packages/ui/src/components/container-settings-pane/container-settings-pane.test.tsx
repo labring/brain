@@ -49,8 +49,7 @@ const COPY_PRIVATE_ADDRESS_RE = /aria-label="Copy Private Address"/;
 const PUBLIC_ADDRESSES_RE = /Public Addresses/;
 const NO_PUBLIC_ADDRESSES_RE = /No public addresses yet/;
 const PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api.example.com\//;
-const DRAFT_PUBLIC_ADDRESS_VALUE_RE =
-  /https:\/\/api-58b271f360.apps.example.com\//;
+const DRAFT_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/ffyrwq.apps.example.com\//;
 const PUBLIC_ADDRESS_STATUS_RE = /Public Address status: accessible/;
 const CUSTOM_DOMAIN_VALUE_RE = /www\.example\.com/;
 const CUSTOM_DOMAIN_STATUS_RE = /Custom Domain status: accessible/;
@@ -235,12 +234,12 @@ test("container settings pane renders draft-visible Platform Address hosts", () 
         privatePort: 8080,
         publicAddresses: [
           {
-            host: "api-58b271f360.apps.example.com",
+            host: "ffyrwq.apps.example.com",
             id: "pa_old123",
             port: 8080,
             status: "progressing",
             type: "platform",
-            url: "https://api-58b271f360.apps.example.com/",
+            url: "https://ffyrwq.apps.example.com/",
           },
         ],
       }}

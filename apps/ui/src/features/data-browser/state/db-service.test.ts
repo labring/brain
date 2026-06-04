@@ -18,10 +18,10 @@ const runtime = {
   engine: "POSTGRES",
   kubeconfig: "kube",
   namespace: "project-ns",
-  projectUid: "project-uid",
+  projectId: "project-uid",
 } satisfies DataBrowserHostContext;
 
-test("DB Service key is scoped by project UID and workload identity", () => {
+test("DB Service key is scoped by project ID and workload identity", () => {
   assert.equal(
     dbAccessSessionKeyFromRuntime(runtime),
     "project-uid:database-system:orders-db-claim"

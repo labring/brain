@@ -26,20 +26,20 @@ export function GitHubDeploymentPane({
   kubeconfig,
   namespace,
   onClose,
-  projectUid,
+  projectId,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
-  projectUid: string;
+  projectId: string;
 }) {
-  const projectUidTrimmed = projectUid.trim();
-  const hasCurrentProject = projectUidTrimmed !== "";
+  const projectIdTrimmed = projectId.trim();
+  const hasCurrentProject = projectIdTrimmed !== "";
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
-    projectUid: projectUidTrimmed,
+    projectId: projectIdTrimmed,
   });
 
   const {
@@ -93,7 +93,7 @@ export function GitHubDeploymentPane({
             repository: repo,
             target: existingProjectDeploymentTarget({
               projectName: currentProject.resourceName,
-              projectUid: projectUidTrimmed,
+              projectId: projectIdTrimmed,
             }),
           },
         });
@@ -125,7 +125,7 @@ export function GitHubDeploymentPane({
       kubeconfig,
       namespace,
       onClose,
-      projectUidTrimmed,
+      projectIdTrimmed,
     ]
   );
 

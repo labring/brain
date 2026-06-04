@@ -1,15 +1,29 @@
-import { randomNano } from "@workspace/ui/lib/generator";
+export type ChildResourceKind = "ap" | "db";
 
-/** Child claim name: `{projectName}-{randomNano}` (≤63 chars, DNS label). */
-export function childResourceName(projectName: string): string {
-  const nano = randomNano();
-  const max = 63;
-  const sep = "-";
-  const tail = `${sep}${nano}`;
-  const cap = max - tail.length;
-  const base =
-    projectName.length <= cap
-      ? projectName
-      : projectName.slice(0, cap).replace(/-+$/g, "");
-  return `${base}${tail}`;
+const LOWERCASE_LETTERS = "abcdefghijklmnopqrstuvwxyz";
+const RANDOM_LETTER_COUNT = 6;
+
+function randomLowercaseLetters(length = RANDOM_LETTER_COUNT): string {
+  const bytes = new Uint8Array(length);
+  if (globalThis.crypto == null) {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  } else {
+    globalThis.crypto.getRandomValues(bytes);
+  }
+
+  let out = "";
+  for (const byte of bytes) {
+    out += LOWERCASE_LETTERS[byte % LOWERCASE_LETTERS.length];
+  }
+  return out;
+}
+
+/** Child resource name: `{kind}-{6 random lowercase letters}` (DNS-1035 label). */
+export function childResourceName(
+  _projectName: string,
+  kind: ChildResourceKind = "ap"
+): string {
+  return `${kind}-${randomLowercaseLetters()}`;
 }

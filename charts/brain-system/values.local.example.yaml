@@ -9,9 +9,12 @@ api:
   env:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471"
-    # Generate from the target admin kubeconfig:
-    # node -e 'console.log(encodeURIComponent(require("fs").readFileSync(process.env.KUBECONFIG, "utf8")))'
-    ENCODED_ADMIN_KUBECONFIG: "REPLACE_ME_URL_ENCODED_ADMIN_KUBECONFIG"
+    # Same app Postgres URL used by the UI. Required for AP image version history.
+    DATABASE_URL: "postgresql://postgres:REPLACE_ME_PASSWORD@brain-pg-postgresql.brain-system.svc:5432/postgres"
+    # Public host used to render DB NodePort connection strings.
+    DB_PUBLIC_HOST: "192.168.10.189.nip.io"
+    # Sealos Desktop base URL used to exchange region token for user kubeconfig.
+    SEALOS_DESKTOP_URL: "https://192.168.10.189.nip.io"
     WHODB_URL: "http://whodb.brain-system.svc:11000"
 
 ui:
@@ -28,8 +31,8 @@ ui:
     FREE_CHAT_TURNS: "5"
     # User-billed turns use the Sealos AI proxy.
     AI_PROXY_TOKEN_NAME: "sealos-brain"
-    # Chat shell/file tools run in Sealos Devbox. Use DEVBOX_TOKEN, or leave it blank and set DEVBOX_JWT_SIGNING_KEY.
-    SEALOS_HOST: "192.168.10.189.nip.io"
+    # Devbox API base URL used by chat shell/file tools.
+    DEVBOX_API_BASE_URL: "https://devbox-server.192.168.10.189.nip.io"
     DEVBOX_TOKEN: ""
     DEVBOX_JWT_SIGNING_KEY: "REPLACE_ME_DEVBOX_JWT_SIGNING_KEY"
     DEVBOX_RUNTIME_IMAGE: ""
@@ -37,7 +40,7 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
 
 imagePullSecret:
-  # The AP composition references ghcr-cred. Keep this true unless the secret already exists.
+  # AP workload pods can reference ghcr-cred. Keep this true unless the secret already exists.
   create: true
   useForWhodb: false
   name: ghcr-cred
