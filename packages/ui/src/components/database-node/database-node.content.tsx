@@ -48,18 +48,18 @@ const METRIC_ITEMS = [
 const QUICK_ACTION_ITEMS = [
   { icon: Activity, key: "metrics", label: "Open metrics", tooltip: "Metrics" },
   {
-    icon: TableProperties,
-    key: "dbAccess",
-    label: "Open database access",
-    tooltip: "Database access",
-  },
-  {
     icon: SquareTerminal,
     key: "terminal",
     label: "Open terminal",
     tooltip: "Terminal",
   },
   { icon: FileText, key: "logs", label: "Open logs", tooltip: "Logs" },
+  {
+    icon: TableProperties,
+    key: "dbAccess",
+    label: "Open database access",
+    tooltip: "Database access",
+  },
 ] as const satisfies readonly {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   key: DatabaseNodeQuickActionKey;
