@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { cn } from "@workspace/ui/lib/utils";
-import { type ReactNode, useCallback, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
 
 export interface SingleSelectOption {
   disabled?: boolean;
@@ -30,6 +30,8 @@ export interface SingleSelectProps {
   triggerClassName?: string;
   value?: string;
 }
+
+const singleSelectOpenListeners = new Set<(openId: string) => void>();
 
 function SingleSelectOptionIcon({ children }: { children: ReactNode }) {
   return (
@@ -91,6 +93,8 @@ export function SingleSelect({
   triggerClassName,
   value,
 }: SingleSelectProps) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
   const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue);
   const isControlled = value !== undefined;
   const currentValue = isControlled ? value : uncontrolledValue;
@@ -106,6 +110,29 @@ export function SingleSelect({
     },
     [isControlled, onValueChange]
   );
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen);
+      if (nextOpen) {
+        for (const listener of singleSelectOpenListeners) {
+          listener(id);
+        }
+      }
+    },
+    [id]
+  );
+
+  useEffect(() => {
+    const listener = (openId: string) => {
+      if (openId !== id) {
+        setOpen(false);
+      }
+    };
+    singleSelectOpenListeners.add(listener);
+    return () => {
+      singleSelectOpenListeners.delete(listener);
+    };
+  }, [id]);
 
   if (options.length === 0) {
     return (
@@ -124,7 +151,9 @@ export function SingleSelect({
   return (
     <Select
       disabled={disabled}
+      onOpenChange={handleOpenChange}
       onValueChange={handleValueChange}
+      open={open}
       value={currentValue}
     >
       <SelectTrigger
