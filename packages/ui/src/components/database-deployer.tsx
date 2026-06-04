@@ -178,106 +178,105 @@ export function DatabaseDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-3", className)}
+      className={cn("dark flex min-w-0 flex-col gap-4", className)}
       data-slot="database-deployer"
     >
-      <DeploymentSettings.Section
-        description="Choose a managed database engine for this workspace."
-        icon={<Database aria-hidden className="size-4" />}
-        title="Type"
-      >
-        <DeploymentSettings.Control>
-          {databaseOptions.length === 0 ? (
-            <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
-              {emptyMessage}
-            </div>
-          ) : (
-            <Select
-              disabled={busy}
-              onValueChange={setDatabaseId}
-              value={effectiveDatabaseId}
-            >
-              <SelectTrigger
-                aria-label="Database engine"
-                className="h-9 border-input bg-transparent text-foreground"
+      <div className="flex min-w-0 flex-col gap-3">
+        <DeploymentSettings.Section
+          description="Choose a managed database engine for this workspace."
+          icon={<Database aria-hidden className="size-4" />}
+          title="Type"
+        >
+          <DeploymentSettings.Control>
+            {databaseOptions.length === 0 ? (
+              <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
+                {emptyMessage}
+              </div>
+            ) : (
+              <Select
+                disabled={busy}
+                onValueChange={setDatabaseId}
+                value={effectiveDatabaseId}
               >
-                <SelectValue placeholder="Choose a database" />
-              </SelectTrigger>
-              <SelectContent>
-                {databaseOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <DatabaseChoiceIcon choice={option} />
-                      <span className="min-w-0 truncate">{option.label}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </DeploymentSettings.Control>
-      </DeploymentSettings.Section>
+                <SelectTrigger
+                  aria-label="Database engine"
+                  className="h-9 border-input bg-transparent text-foreground"
+                >
+                  <SelectValue placeholder="Choose a database" />
+                </SelectTrigger>
+                <SelectContent>
+                  {databaseOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <DatabaseChoiceIcon choice={option} />
+                        <span className="min-w-0 truncate">{option.label}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
 
-      <DeploymentSettings.Section
-        description={`${choiceLabel(choice)} instance preset and replica count.`}
-        icon={<Upload aria-hidden className="size-4" />}
-        title="Instance"
-      >
-        <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <DeploymentSettings.Field label="Instance Preset">
-            <Select
-              disabled={busy || choice === null}
-              onValueChange={(value) =>
-                setInstancePreset(value as DatabaseInstancePreset)
-              }
-              value={instancePreset}
-            >
-              <SelectTrigger
-                aria-label="Database instance preset"
-                className="h-9 border-input bg-transparent text-foreground"
+        <DeploymentSettings.Section
+          description={`${choiceLabel(choice)} instance preset and replica count.`}
+          icon={<Upload aria-hidden className="size-4" />}
+          title="Instance"
+        >
+          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <DeploymentSettings.Field label="Instance Preset">
+              <Select
+                disabled={busy || choice === null}
+                onValueChange={(value) =>
+                  setInstancePreset(value as DatabaseInstancePreset)
+                }
+                value={instancePreset}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {INSTANCE_PRESETS.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="min-h-4 text-muted-foreground text-xs leading-4">
-              {choice == null
-                ? "Select a database engine first."
-                : presetSummary(choice.engine, instancePreset)}
-            </p>
-          </DeploymentSettings.Field>
-          <DeploymentSettings.Field label="Replicas">
-            <Select
-              disabled={busy || choice === null}
-              onValueChange={setReplicas}
-              value={replicas}
-            >
-              <SelectTrigger
-                aria-label="Database replica count"
-                className="h-9 border-input bg-transparent text-foreground"
+                <SelectTrigger
+                  aria-label="Database instance preset"
+                  className="h-9 border-input bg-transparent text-foreground"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INSTANCE_PRESETS.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="min-h-4 text-muted-foreground text-xs leading-4">
+                {choice == null
+                  ? "Select a database engine first."
+                  : presetSummary(choice.engine, instancePreset)}
+              </p>
+            </DeploymentSettings.Field>
+            <DeploymentSettings.Field label="Replicas">
+              <Select
+                disabled={busy || choice === null}
+                onValueChange={setReplicas}
+                value={replicas}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {REPLICA_OPTIONS.map((replica) => (
-                  <SelectItem key={replica} value={String(replica)}>
-                    {databaseReplicaOptionLabel(replica)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="min-h-4 text-muted-foreground text-xs leading-4">
-              Private access by default.
-            </p>
-          </DeploymentSettings.Field>
-        </div>
-      </DeploymentSettings.Section>
+                <SelectTrigger
+                  aria-label="Database replica count"
+                  className="h-9 border-input bg-transparent text-foreground"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REPLICA_OPTIONS.map((replica) => (
+                    <SelectItem key={replica} value={String(replica)}>
+                      {databaseReplicaOptionLabel(replica)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </DeploymentSettings.Field>
+          </div>
+        </DeploymentSettings.Section>
+      </div>
 
       <AppButton
         aria-busy={busy}

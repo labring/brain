@@ -14,7 +14,6 @@ import {
 } from "@workspace/ui/lib/docker-deployment-settings";
 import { cn } from "@workspace/ui/lib/utils";
 import {
-  Globe2,
   Network,
   Package,
   Plus,
@@ -121,197 +120,197 @@ export function DockerDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-3", className)}
+      className={cn("dark flex min-w-0 flex-col gap-4", className)}
       data-slot="docker-deployer"
     >
-      <DeploymentSettings.Section
-        description="Choose the container image to run."
-        icon={<Package aria-hidden className="size-4" />}
-        title="Image"
-      >
-        <DeploymentSettings.Control>
-          <AppInput
-            aria-describedby={
-              visibleImageError ? "docker-deployer-image-error" : undefined
-            }
-            aria-invalid={visibleImageError ? true : undefined}
-            aria-label="Docker image"
-            autoComplete="off"
-            disabled={busy}
-            id="docker-deployer-image"
-            onChange={(event) => {
-              setImageTouched(true);
-              setImage(event.currentTarget.value);
-            }}
-            placeholder="ghcr.io/org/image:tag"
-            value={image}
-          />
-          {visibleImageError ? (
-            <p
-              className="text-destructive text-xs leading-4"
-              id="docker-deployer-image-error"
-              role="alert"
-            >
-              {visibleImageError.message}
-            </p>
-          ) : null}
-        </DeploymentSettings.Control>
-      </DeploymentSettings.Section>
-
-      <DeploymentSettings.Section
-        description="Set direct environment variables for startup."
-        icon={<Settings2 aria-hidden className="size-4" />}
-        title="Runtime"
-      >
-        <div
-          className="flex min-w-0 flex-col gap-2"
-          data-slot="docker-env-rows"
+      <div className="flex min-w-0 flex-col gap-3">
+        <DeploymentSettings.Section
+          description="Choose the container image to run."
+          icon={<Package aria-hidden className="size-4" />}
+          title="Image"
         >
-          <DeploymentSettings.GroupHeader
-            action={
-              <AppIconButton
-                aria-label="Add environment variable"
-                disabled={busy}
-                onClick={() =>
-                  setEnvRows((rows) => [
-                    ...rows,
-                    {
-                      id: createEnvRowId(),
-                      name: nextEnvName(rows),
-                      value: "",
-                    },
-                  ])
-                }
-                size="md"
-                type="button"
-                variant="quiet"
-              >
-                <Plus aria-hidden className="size-4" />
-              </AppIconButton>
-            }
-            title="Environment Variables"
-          />
-          {envRows.length === 0 ? (
-            <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
-              No environment variables.
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-col gap-2">
-              {envRows.map((row, index) => {
-                const rowError = envErrorForIndex(validation, index);
-                return (
-                  <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2"
-                    key={row.id}
-                  >
-                    <AppInput
-                      aria-invalid={rowError ? true : undefined}
-                      aria-label={`Environment variable ${index + 1} name`}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const nextName = event.currentTarget.value;
-                        setEnvRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index
-                              ? { ...current, name: nextName }
-                              : current
-                          )
-                        );
-                      }}
-                      placeholder="NAME"
-                      value={row.name}
-                    />
-                    <AppInput
-                      aria-label={`Environment variable ${index + 1} value`}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const nextValue = event.currentTarget.value;
-                        setEnvRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index
-                              ? { ...current, value: nextValue }
-                              : current
-                          )
-                        );
-                      }}
-                      placeholder="value"
-                      value={row.value}
-                    />
-                    <AppIconButton
-                      aria-label="Remove environment variable"
-                      disabled={busy}
-                      onClick={() =>
-                        setEnvRows((rows) =>
-                          rows.filter((_, rowIndex) => rowIndex !== index)
-                        )
-                      }
-                      size="md"
-                      type="button"
-                      variant="danger"
-                    >
-                      <Trash2 aria-hidden className="size-4" />
-                    </AppIconButton>
-                    {rowError ? (
-                      <p className="col-span-3 text-destructive text-xs leading-4">
-                        {rowError.message}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </DeploymentSettings.Section>
-
-      <DeploymentSettings.Section
-        description="Request public routing to the port where the app listens."
-        icon={<Network aria-hidden className="size-4" />}
-        title="Network"
-      >
-        <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <DeploymentSettings.Field label="App Listening Port">
+          <DeploymentSettings.Control>
             <AppInput
               aria-describedby={
-                portError ? "docker-deployer-port-error" : undefined
+                visibleImageError ? "docker-deployer-image-error" : undefined
               }
-              aria-invalid={portError ? true : undefined}
+              aria-invalid={visibleImageError ? true : undefined}
+              aria-label="Docker image"
+              autoComplete="off"
               disabled={busy}
-              id="docker-deployer-port"
-              inputMode="numeric"
-              max={65_535}
-              min={1}
-              onChange={(event) =>
-                setAppListeningPort(event.currentTarget.value)
-              }
-              type="number"
-              value={appListeningPort}
+              id="docker-deployer-image"
+              onChange={(event) => {
+                setImageTouched(true);
+                setImage(event.currentTarget.value);
+              }}
+              placeholder="ghcr.io/org/image:tag"
+              value={image}
             />
-            {portError ? (
+            {visibleImageError ? (
               <p
                 className="text-destructive text-xs leading-4"
-                id="docker-deployer-port-error"
+                id="docker-deployer-image-error"
                 role="alert"
               >
-                {portError.message}
+                {visibleImageError.message}
               </p>
             ) : null}
-          </DeploymentSettings.Field>
-          <DeploymentSettings.Field label="Public Address">
-            <div className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-input px-3 text-foreground text-sm leading-5">
-              <Globe2
-                aria-hidden
-                className="size-4 shrink-0 text-muted-foreground"
-              />
-              <span className="min-w-0 truncate">
-                Auto-generated Public Address
-              </span>
-            </div>
-          </DeploymentSettings.Field>
-        </div>
-      </DeploymentSettings.Section>
+          </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
 
-      {childrenBeforeDeploy}
+        <DeploymentSettings.Section
+          action={
+            <AppIconButton
+              aria-label="Add environment variable"
+              disabled={busy}
+              onClick={() =>
+                setEnvRows((rows) => [
+                  ...rows,
+                  {
+                    id: createEnvRowId(),
+                    name: nextEnvName(rows),
+                    value: "",
+                  },
+                ])
+              }
+              size="md"
+              type="button"
+              variant="quiet"
+            >
+              <Plus aria-hidden className="size-4" />
+            </AppIconButton>
+          }
+          description="Set direct environment variables for startup."
+          icon={<Settings2 aria-hidden className="size-4" />}
+          title="Runtime"
+        >
+          <div
+            className="flex min-w-0 flex-col gap-2"
+            data-slot="docker-env-rows"
+          >
+            {envRows.length === 0 ? (
+              <AppInput
+                aria-label="Environment variables"
+                disabled
+                readOnly
+                value="No environment variables."
+              />
+            ) : (
+              <div className="flex min-w-0 flex-col gap-2">
+                {envRows.map((row, index) => {
+                  const rowError = envErrorForIndex(validation, index);
+                  return (
+                    <div
+                      className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2"
+                      key={row.id}
+                    >
+                      <AppInput
+                        aria-invalid={rowError ? true : undefined}
+                        aria-label={`Environment variable ${index + 1} name`}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const nextName = event.currentTarget.value;
+                          setEnvRows((rows) =>
+                            rows.map((current, rowIndex) =>
+                              rowIndex === index
+                                ? { ...current, name: nextName }
+                                : current
+                            )
+                          );
+                        }}
+                        placeholder="NAME"
+                        value={row.name}
+                      />
+                      <AppInput
+                        aria-label={`Environment variable ${index + 1} value`}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const nextValue = event.currentTarget.value;
+                          setEnvRows((rows) =>
+                            rows.map((current, rowIndex) =>
+                              rowIndex === index
+                                ? { ...current, value: nextValue }
+                                : current
+                            )
+                          );
+                        }}
+                        placeholder="value"
+                        value={row.value}
+                      />
+                      <AppIconButton
+                        aria-label="Remove environment variable"
+                        className="hover:text-red-500"
+                        disabled={busy}
+                        onClick={() =>
+                          setEnvRows((rows) =>
+                            rows.filter((_, rowIndex) => rowIndex !== index)
+                          )
+                        }
+                        size="lg"
+                        type="button"
+                        variant="quiet"
+                      >
+                        <Trash2 aria-hidden className="size-4" />
+                      </AppIconButton>
+                      {rowError ? (
+                        <p className="col-span-3 text-destructive text-xs leading-4">
+                          {rowError.message}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DeploymentSettings.Section>
+
+        <DeploymentSettings.Section
+          description="Request public routing to the port where the app listens."
+          icon={<Network aria-hidden className="size-4" />}
+          title="Network"
+        >
+          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <DeploymentSettings.Field label="App Listening Port">
+              <AppInput
+                aria-describedby={
+                  portError ? "docker-deployer-port-error" : undefined
+                }
+                aria-invalid={portError ? true : undefined}
+                disabled={busy}
+                id="docker-deployer-port"
+                inputMode="numeric"
+                max={65_535}
+                min={1}
+                onChange={(event) =>
+                  setAppListeningPort(event.currentTarget.value)
+                }
+                type="number"
+                value={appListeningPort}
+              />
+              {portError ? (
+                <p
+                  className="text-destructive text-xs leading-4"
+                  id="docker-deployer-port-error"
+                  role="alert"
+                >
+                  {portError.message}
+                </p>
+              ) : null}
+            </DeploymentSettings.Field>
+            <DeploymentSettings.Field label="Public Address">
+              <AppInput
+                aria-label="Public Address"
+                disabled
+                readOnly
+                value="Auto-generated Public Address"
+              />
+            </DeploymentSettings.Field>
+          </div>
+        </DeploymentSettings.Section>
+
+        {childrenBeforeDeploy}
+      </div>
 
       <AppButton
         aria-busy={busy}

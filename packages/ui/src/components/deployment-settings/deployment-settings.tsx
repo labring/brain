@@ -5,6 +5,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 function DeploymentSettingsSection({
+  action,
   children,
   className,
   description,
@@ -12,6 +13,7 @@ function DeploymentSettingsSection({
   title,
   ...props
 }: ComponentPropsWithoutRef<"section"> & {
+  action?: ReactNode;
   description: ReactNode;
   icon: ReactNode;
   title: ReactNode;
@@ -24,16 +26,23 @@ function DeploymentSettingsSection({
       )}
       {...props}
     >
-      <header className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
-            {icon}
-          </span>
-          <h3 className="truncate font-medium text-foreground text-sm leading-5">
-            {title}
-          </h3>
+      <header className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
+              {icon}
+            </span>
+            <h3 className="truncate font-medium text-foreground text-sm leading-5">
+              {title}
+            </h3>
+          </div>
+          <p className="text-muted-foreground text-sm leading-5">
+            {description}
+          </p>
         </div>
-        <p className="text-muted-foreground text-sm leading-5">{description}</p>
+        {action == null ? null : (
+          <div className="flex shrink-0 items-center gap-1">{action}</div>
+        )}
       </header>
       {children}
     </section>

@@ -10,6 +10,7 @@ const IMAGE_RE = /Image/;
 const DOCKER_IMAGE_RE = /Docker image/;
 const RUNTIME_RE = /Runtime/;
 const ENVIRONMENT_VARIABLES_RE = /Environment Variables/;
+const ADD_ENVIRONMENT_VARIABLE_RE = /Add environment variable/;
 const NETWORK_RE = /Network/;
 const APP_LISTENING_PORT_RE = /App Listening Port/;
 const VALUE_80_RE = /value="80"/;
@@ -30,7 +31,8 @@ test("DockerDeployer renders Docker Deployment Settings with default network cho
   assert.match(html, IMAGE_RE);
   assert.match(html, DOCKER_IMAGE_RE);
   assert.match(html, RUNTIME_RE);
-  assert.match(html, ENVIRONMENT_VARIABLES_RE);
+  assert.doesNotMatch(html, ENVIRONMENT_VARIABLES_RE);
+  assert.match(html, ADD_ENVIRONMENT_VARIABLE_RE);
   assert.match(html, NETWORK_RE);
   assert.match(html, APP_LISTENING_PORT_RE);
   assert.match(html, VALUE_80_RE);
