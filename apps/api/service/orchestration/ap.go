@@ -13,6 +13,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -25,11 +27,14 @@ type APResourcesInput struct {
 	PrivatePort     int32
 	ProjectID       string
 	Replicas        int32
+	LivenessProbe   *corev1.Probe
 	ResourceLimit   corev1.ResourceList
 	ResourceReq     corev1.ResourceList
 	RoutingDomain   string
 	NetworkJSON     string
+	ReadinessProbe  *corev1.Probe
 	ReplicaStrategy *APReplicaStrategy
+	StartupProbe    *corev1.Probe
 }
 
 type APResources struct {
@@ -144,14 +149,17 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 							Env:             input.Env,
 							Image:           image,
 							ImagePullPolicy: normalizeImagePullPolicy(input.ImagePullPolicy),
+							LivenessProbe:   input.LivenessProbe,
 							Name:            name,
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: port, Name: "http", Protocol: corev1.ProtocolTCP},
 							},
+							ReadinessProbe: input.ReadinessProbe,
 							Resources: corev1.ResourceRequirements{
 								Limits:   limits,
 								Requests: requests,
 							},
+							StartupProbe: input.StartupProbe,
 						},
 					},
 				},
@@ -380,8 +388,9 @@ type APNetworkIngressInput struct {
 }
 
 type APPlatformAddressRequest struct {
-	ID   string
-	Port int32
+	DomainPrefix string
+	ID           string
+	Port         int32
 }
 
 type APCustomDomainRequest struct {
@@ -391,9 +400,34 @@ type APCustomDomainRequest struct {
 }
 
 var apPublicAddressResourceNameUnsafeCharsPattern = regexp.MustCompile(`[^a-z0-9-]+`)
-var apPlatformAddressHostUnsafeCharsPattern = regexp.MustCompile(`[^a-z0-9-]+`)
+var apPlatformAddressDomainPrefixPattern = regexp.MustCompile(`^[a-z]{6}$`)
+
+const shortNameAlphabet = "abcdefghijklmnopqrstuvwxyz"
+const DefaultPlatformTLSSecretName = "wildcard-cert"
+const ingressClassAnnotation = "kubernetes.io/ingress.class"
+const ingressClassName = "nginx"
+const nginxProxyBodySizeAnnotation = "nginx.ingress.kubernetes.io/proxy-body-size"
+const nginxProxyBodySize = "32m"
+const acmeIssuerEmail = "admin@sealos.io"
+const acmeIssuerServer = "https://acme-v02.api.letsencrypt.org/directory"
+const acmePrivateKeySecretName = "letsencrypt-prod"
 
 func RenderAPPublicIngresses(input APNetworkIngressInput) ([]*networkingv1.Ingress, error) {
+	objects, err := RenderAPPublicRoutingResources(input)
+	if err != nil {
+		return nil, err
+	}
+	ingresses := make([]*networkingv1.Ingress, 0, len(objects))
+	for _, object := range objects {
+		ingress, ok := object.(*networkingv1.Ingress)
+		if ok {
+			ingresses = append(ingresses, ingress)
+		}
+	}
+	return ingresses, nil
+}
+
+func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Object, error) {
 	apName := strings.TrimSpace(input.APName)
 	namespace := strings.TrimSpace(input.Namespace)
 	projectID := strings.TrimSpace(input.ProjectID)
@@ -403,7 +437,7 @@ func RenderAPPublicIngresses(input APNetworkIngressInput) ([]*networkingv1.Ingre
 	}
 
 	platformsByID := make(map[string]APPlatformAddressRequest, len(input.PlatformAddresses))
-	ingresses := make([]*networkingv1.Ingress, 0, len(input.PlatformAddresses)+len(input.CustomDomains))
+	objects := make([]runtime.Object, 0, len(input.PlatformAddresses)+(len(input.CustomDomains)*3))
 	for _, address := range input.PlatformAddresses {
 		id := strings.TrimSpace(address.ID)
 		if id == "" {
@@ -413,25 +447,28 @@ func RenderAPPublicIngresses(input APNetworkIngressInput) ([]*networkingv1.Ingre
 		if port <= 0 {
 			port = 80
 		}
-		platformsByID[id] = APPlatformAddressRequest{ID: id, Port: port}
-		host := PlatformAddressHost(namespace, apName, id, routingDomain)
+		domainPrefix := APPlatformAddressDomainPrefix(namespace, apName, id, address.DomainPrefix)
+		platformsByID[id] = APPlatformAddressRequest{DomainPrefix: domainPrefix, ID: id, Port: port}
+		host := PlatformAddressHost(namespace, apName, id, domainPrefix, routingDomain)
 		if host == "" {
 			continue
 		}
 		ingress, err := RenderAPPublicIngress(APPublicIngressInput{
-			APName:       apName,
-			Host:         host,
-			Namespace:    namespace,
-			ProjectID:    projectID,
-			PublicID:     id,
-			PublicKind:   "platform",
-			ResourceName: APPublicAddressResourceName(apName, id),
-			ServicePort:  port,
+			APName:        apName,
+			DomainLabel:   domainPrefix,
+			Host:          host,
+			Namespace:     namespace,
+			ProjectID:     projectID,
+			PublicID:      id,
+			PublicKind:    "platform",
+			ResourceName:  APPublicAddressResourceName(apName, id),
+			ServicePort:   port,
+			TLSSecretName: DefaultPlatformTLSSecretName,
 		})
 		if err != nil {
 			return nil, err
 		}
-		ingresses = append(ingresses, ingress)
+		objects = append(objects, ingress)
 	}
 
 	for _, customDomain := range input.CustomDomains {
@@ -442,39 +479,132 @@ func RenderAPPublicIngresses(input APNetworkIngressInput) ([]*networkingv1.Ingre
 		if id == "" || host == "" || !ok {
 			continue
 		}
+		tlsSecretName := APCustomDomainTLSResourceName(apName, id)
 		ingress, err := RenderAPPublicIngress(APPublicIngressInput{
-			APName:       apName,
-			Host:         host,
-			Namespace:    namespace,
-			ProjectID:    projectID,
-			PublicID:     id,
-			PublicKind:   "custom-domain",
-			ResourceName: APPublicAddressResourceName(apName, id),
-			ServicePort:  platform.Port,
+			APName:        apName,
+			DomainLabel:   platform.DomainPrefix,
+			Host:          host,
+			Namespace:     namespace,
+			ProjectID:     projectID,
+			PublicID:      id,
+			PublicKind:    "custom-domain",
+			ResourceName:  APPublicAddressResourceName(apName, id),
+			ServicePort:   platform.Port,
+			TLSSecretName: tlsSecretName,
 		})
 		if err != nil {
 			return nil, err
 		}
-		ingresses = append(ingresses, ingress)
+		issuer := RenderAPCustomDomainIssuer(apName, namespace, projectID, tlsSecretName)
+		certificate := RenderAPCustomDomainCertificate(apName, namespace, projectID, tlsSecretName, host)
+		objects = append(objects, issuer, certificate, ingress)
 	}
 
-	return ingresses, nil
+	return objects, nil
+}
+
+func APPlatformAddressDomainPrefix(namespace string, name string, id string, domainPrefix string) string {
+	prefix := strings.TrimSpace(strings.ToLower(domainPrefix))
+	if apPlatformAddressDomainPrefixPattern.MatchString(prefix) {
+		return prefix
+	}
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+	id = strings.TrimSpace(id)
+	if namespace == "" || name == "" || id == "" {
+		return ""
+	}
+	return stableLowercaseLetters(fmt.Sprintf("%s/%s/%s", namespace, name, id), 6)
+}
+
+func APCustomDomainTLSResourceName(apName, customDomainID string) string {
+	source := strings.TrimSpace(apName) + "/" + strings.TrimSpace(customDomainID)
+	return "cd-" + stableLowercaseLetters(source, 6)
+}
+
+func RenderAPCustomDomainIssuer(apName, namespace, projectID, resourceName string) *unstructured.Unstructured {
+	resourceName = strings.TrimSpace(resourceName)
+	return &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "cert-manager.io/v1",
+		"kind":       "Issuer",
+		"metadata": map[string]interface{}{
+			"labels": mergeStringMap(
+				brainLabels(strings.TrimSpace(projectID), ResourceKindEntryPointSupport, resourceName),
+				map[string]string{
+					BrainAppNameLabel:              strings.TrimSpace(apName),
+					LaunchpadAppDeployManagerLabel: strings.TrimSpace(apName),
+				},
+			),
+			"name":      resourceName,
+			"namespace": strings.TrimSpace(namespace),
+		},
+		"spec": map[string]interface{}{
+			"acme": map[string]interface{}{
+				"email":  acmeIssuerEmail,
+				"server": acmeIssuerServer,
+				"privateKeySecretRef": map[string]interface{}{
+					"name": acmePrivateKeySecretName,
+				},
+				"solvers": []interface{}{
+					map[string]interface{}{
+						"http01": map[string]interface{}{
+							"ingress": map[string]interface{}{
+								"class":       ingressClassName,
+								"serviceType": "ClusterIP",
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+}
+
+func RenderAPCustomDomainCertificate(apName, namespace, projectID, resourceName, host string) *unstructured.Unstructured {
+	resourceName = strings.TrimSpace(resourceName)
+	return &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "cert-manager.io/v1",
+		"kind":       "Certificate",
+		"metadata": map[string]interface{}{
+			"labels": mergeStringMap(
+				brainLabels(strings.TrimSpace(projectID), ResourceKindEntryPointSupport, resourceName),
+				map[string]string{
+					BrainAppNameLabel:              strings.TrimSpace(apName),
+					LaunchpadAppDeployManagerLabel: strings.TrimSpace(apName),
+				},
+			),
+			"name":      resourceName,
+			"namespace": strings.TrimSpace(namespace),
+		},
+		"spec": map[string]interface{}{
+			"dnsNames": []interface{}{strings.TrimSpace(host)},
+			"issuerRef": map[string]interface{}{
+				"kind": "Issuer",
+				"name": resourceName,
+			},
+			"secretName": resourceName,
+		},
+	}}
 }
 
 func APPublicAddressResourceName(apName, publicID string) string {
-	name := strings.ToLower(strings.TrimSpace(apName)) + "-" + strings.ReplaceAll(strings.ToLower(strings.TrimSpace(publicID)), "_", "-")
-	name = apPublicAddressResourceNameUnsafeCharsPattern.ReplaceAllString(name, "-")
-	name = strings.Trim(name, "-")
-	if len(name) > 63 {
-		name = strings.TrimRight(name[:63], "-")
-	}
-	if name == "" {
-		return "ap-public-address"
-	}
-	return name
+	source := strings.TrimSpace(apName) + "/" + strings.TrimSpace(publicID)
+	return "ing-" + stableLowercaseLetters(source, 6)
 }
 
-func PlatformAddressHost(namespace string, name string, id string, domain string) string {
+func stableLowercaseLetters(source string, length int) string {
+	if length <= 0 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(source)))
+	out := make([]byte, 0, length)
+	for i := 0; len(out) < length; i++ {
+		out = append(out, shortNameAlphabet[sum[i%len(sum)]%byte(len(shortNameAlphabet))])
+	}
+	return string(out)
+}
+
+func PlatformAddressHost(namespace string, name string, id string, domainPrefix string, domain string) string {
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	id = strings.TrimSpace(id)
@@ -482,33 +612,24 @@ func PlatformAddressHost(namespace string, name string, id string, domain string
 	if namespace == "" || name == "" || id == "" || domain == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%s", namespace, name, id)))
-	return fmt.Sprintf("%s-%x.%s", platformAddressHostPrefix(name), sum[:5], domain)
-}
-
-func platformAddressHostPrefix(name string) string {
-	prefix := strings.ToLower(strings.TrimSpace(name))
-	prefix = apPlatformAddressHostUnsafeCharsPattern.ReplaceAllString(prefix, "-")
-	prefix = strings.Trim(prefix, "-")
-	if len(prefix) > 52 {
-		prefix = prefix[:52]
-		prefix = strings.TrimRight(prefix, "-")
+	label := APPlatformAddressDomainPrefix(namespace, name, id, domainPrefix)
+	if label == "" {
+		return ""
 	}
-	if prefix == "" {
-		return "ap"
-	}
-	return prefix
+	return fmt.Sprintf("%s.%s", label, domain)
 }
 
 type APPublicIngressInput struct {
-	APName       string
-	Host         string
-	Namespace    string
-	ProjectID    string
-	PublicID     string
-	PublicKind   string
-	ServicePort  int32
-	ResourceName string
+	APName        string
+	DomainLabel   string
+	Host          string
+	Namespace     string
+	ProjectID     string
+	PublicID      string
+	PublicKind    string
+	ServicePort   int32
+	ResourceName  string
+	TLSSecretName string
 }
 
 func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, error) {
@@ -527,6 +648,10 @@ func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, e
 	if port <= 0 {
 		port = 80
 	}
+	domainLabel := strings.TrimSpace(input.DomainLabel)
+	if domainLabel == "" {
+		domainLabel = hostLabelValue(host)
+	}
 	pathType := networkingv1.PathTypePrefix
 	labels := mergeStringMap(
 		brainLabels(projectID, ResourceKindEntryPointSupport, resourceName),
@@ -535,37 +660,23 @@ func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, e
 			"brain.io/public-address-id":         strings.TrimSpace(input.PublicID),
 			"brain.io/public-address-kind":       strings.TrimSpace(input.PublicKind),
 			LaunchpadAppDeployManagerLabel:       apName,
-			LaunchpadAppDeployManagerDomainLabel: hostLabelValue(host),
+			LaunchpadAppDeployManagerDomainLabel: domainLabel,
 		},
 	)
-	return &networkingv1.Ingress{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "networking.k8s.io/v1",
-			Kind:       "Ingress",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				LaunchpadAppDeployManagerDomainHostAnnotation: host,
-			},
-			Labels:    labels,
-			Name:      resourceName,
-			Namespace: namespace,
-		},
-		Spec: networkingv1.IngressSpec{
-			Rules: []networkingv1.IngressRule{
-				{
-					Host: host,
-					IngressRuleValue: networkingv1.IngressRuleValue{
-						HTTP: &networkingv1.HTTPIngressRuleValue{
-							Paths: []networkingv1.HTTPIngressPath{
-								{
-									Path:     "/",
-									PathType: &pathType,
-									Backend: networkingv1.IngressBackend{
-										Service: &networkingv1.IngressServiceBackend{
-											Name: APServiceName(apName),
-											Port: networkingv1.ServiceBackendPort{Number: port},
-										},
+	spec := networkingv1.IngressSpec{
+		Rules: []networkingv1.IngressRule{
+			{
+				Host: host,
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{
+							{
+								Path:     "/",
+								PathType: &pathType,
+								Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: APServiceName(apName),
+										Port: networkingv1.ServiceBackendPort{Number: port},
 									},
 								},
 							},
@@ -574,6 +685,32 @@ func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, e
 				},
 			},
 		},
+	}
+	tlsSecretName := strings.TrimSpace(input.TLSSecretName)
+	if tlsSecretName != "" {
+		spec.TLS = []networkingv1.IngressTLS{
+			{
+				Hosts:      []string{host},
+				SecretName: tlsSecretName,
+			},
+		}
+	}
+	return &networkingv1.Ingress{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "networking.k8s.io/v1",
+			Kind:       "Ingress",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				LaunchpadAppDeployManagerDomainHostAnnotation: host,
+				ingressClassAnnotation:                        ingressClassName,
+				nginxProxyBodySizeAnnotation:                  nginxProxyBodySize,
+			},
+			Labels:    labels,
+			Name:      resourceName,
+			Namespace: namespace,
+		},
+		Spec: spec,
 	}, nil
 }
 

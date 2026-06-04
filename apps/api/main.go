@@ -86,6 +86,9 @@ func loadLocalEnv() {
 		if err == nil && os.Getenv("DATABASE_URL") == "" && uiEnv["DATABASE_URL"] != "" {
 			_ = os.Setenv("DATABASE_URL", uiEnv["DATABASE_URL"])
 		}
+		if err == nil && os.Getenv("DB_PUBLIC_HOST") == "" && uiEnv["DB_PUBLIC_HOST"] != "" {
+			_ = os.Setenv("DB_PUBLIC_HOST", uiEnv["DB_PUBLIC_HOST"])
+		}
 	}
 	for _, path := range []string{filepath.Join("apps", "api", ".env"), ".env"} {
 		if _, err := os.Stat(path); err == nil {

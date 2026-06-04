@@ -26,11 +26,21 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 	privatePort := int32(0)
 	env := []interface{}{}
 	resources := corev1.ResourceRequirements{}
+	probes := map[string]interface{}{}
 	if len(deployment.Spec.Template.Spec.Containers) > 0 {
 		container := deployment.Spec.Template.Spec.Containers[0]
 		image = container.Image
 		imagePullPolicy = container.ImagePullPolicy
 		resources = container.Resources
+		if container.StartupProbe != nil {
+			probes["startup"] = container.StartupProbe
+		}
+		if container.LivenessProbe != nil {
+			probes["liveness"] = container.LivenessProbe
+		}
+		if container.ReadinessProbe != nil {
+			probes["readiness"] = container.ReadinessProbe
+		}
 		if len(container.Ports) > 0 {
 			privatePort = container.Ports[0].ContainerPort
 		}
@@ -72,6 +82,16 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 		status["network"] = networkStatus
 	}
 
+	input := map[string]interface{}{
+		"env":             env,
+		"image":           image,
+		"imagePullPolicy": string(imagePullPolicy),
+		"network":         network,
+	}
+	if len(probes) > 0 {
+		input["probes"] = probes
+	}
+
 	return map[string]interface{}{
 		"apiVersion": "brain.io/direct",
 		"kind":       "AP",
@@ -84,12 +104,7 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 			"uid":               string(deployment.UID),
 		},
 		"spec": map[string]interface{}{
-			"input": map[string]interface{}{
-				"env":             env,
-				"image":           image,
-				"imagePullPolicy": string(imagePullPolicy),
-				"network":         network,
-			},
+			"input":    input,
 			"name":     deployment.Name,
 			"resource": apResourceFromDeployment(resources, replicaStrategy, replicas),
 			"paused":   strings.EqualFold(deployment.Annotations[LaunchpadPauseAnnotation], "true"),
@@ -198,7 +213,8 @@ func apPublicAddressStatusRows(deployment *appsv1.Deployment, network map[string
 		if promotedPlatformIDs[id] {
 			continue
 		}
-		host := PlatformAddressHost(deployment.Namespace, deployment.Name, id, deployment.Labels[APRoutingDomainLabel])
+		domainPrefix, _ := row["domainPrefix"].(string)
+		host := PlatformAddressHost(deployment.Namespace, deployment.Name, id, domainPrefix, deployment.Labels[APRoutingDomainLabel])
 		if host != "" {
 			row["host"] = host
 			row["url"] = fmt.Sprintf("https://%s/", host)
@@ -226,10 +242,14 @@ func apPlatformAddressRows(value interface{}) []map[string]interface{} {
 		if id == "" {
 			continue
 		}
-		out = append(out, map[string]interface{}{
+		outRow := map[string]interface{}{
 			"id":   id,
 			"port": row["port"],
-		})
+		}
+		if domainPrefix, ok := row["domainPrefix"].(string); ok && strings.TrimSpace(domainPrefix) != "" {
+			outRow["domainPrefix"] = strings.TrimSpace(domainPrefix)
+		}
+		out = append(out, outRow)
 	}
 	return out
 }

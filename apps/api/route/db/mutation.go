@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
@@ -100,6 +102,9 @@ spec:
 		}
 
 		renderInput := dbRenderInputFromObject(obj, ns)
+		if err := ensureDBCreateTargetIsBrainManaged(cfg, name, ns); err != nil {
+			return nil, huma.Error409Conflict("DB name conflicts with a non-Brain KubeBlocks Cluster", err)
+		}
 		resources, err := orchestration.RenderDBResources(renderInput)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid DB direct resource request", err)
@@ -155,15 +160,49 @@ func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		version = stringFromMap(spec, "version")
 	}
 	return orchestration.DBResourcesInput{
+		CPULimit:       stringFromMap(spec, "cpuLimit"),
+		CPURequest:     stringFromMap(spec, "cpuRequest"),
 		ClusterVersion: version,
 		Engine:         engine,
 		ExposeNodePort: boolFromMap(spec, "exposeNodePort"),
+		MemoryLimit:    stringFromMap(spec, "memoryLimit"),
+		MemoryRequest:  stringFromMap(spec, "memoryRequest"),
 		Name:           obj.GetName(),
 		Namespace:      namespace,
 		ProjectID:      projectID,
+		Quota:          stringFromMap(spec, "quota"),
 		Replicas:       int64FromMap(spec, "replicas"),
 		StorageSize:    stringFromMap(spec, "storageSize"),
 	}
+}
+
+func requireBrainDBCluster(cluster unstructured.Unstructured) error {
+	labels := cluster.GetLabels()
+	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
+		labels[orchestration.BrainResourceKindLabel] != orchestration.ResourceKindDB ||
+		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
+		return errors.New("cluster is not a Brain-managed DB")
+	}
+	return nil
+}
+
+func ensureDBCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string) error {
+	clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Resource:  "clusters",
+		Name:      name,
+		Namespace: namespace,
+	})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var current unstructured.Unstructured
+	if err := json.Unmarshal(clusterJSON, &current); err != nil {
+		return err
+	}
+	return requireBrainDBCluster(current)
 }
 
 func stringFromMap(values map[string]interface{}, key string) string {
@@ -485,6 +524,13 @@ func registerUpdate(grp huma.API) {
 				return nil, huma.Error404NotFound("DB not found", err)
 			}
 			return nil, huma.Error500InternalServerError("failed to get DB for update", err)
+		}
+		var currentCluster unstructured.Unstructured
+		if err := json.Unmarshal(clusterJSON, &currentCluster); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode DB for update", err)
+		}
+		if err := requireBrainDBCluster(currentCluster); err != nil {
+			return nil, huma.Error404NotFound("DB not found", err)
 		}
 
 		plan, err := dbUpdatePlanFromProductPatch(input.Body, clusterJSON, input.Name, resolved.Namespace, time.Now())
@@ -872,6 +918,21 @@ func registerDelete(grp huma.API) {
 }
 
 func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace string) error {
+	clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Resource:  "clusters",
+		Name:      name,
+		Namespace: namespace,
+	})
+	if err != nil {
+		return err
+	}
+	var current unstructured.Unstructured
+	if err := json.Unmarshal(clusterJSON, &current); err != nil {
+		return err
+	}
+	if err := requireBrainDBCluster(current); err != nil {
+		return apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, name)
+	}
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDBNameLabel + "=" + name
 	for _, resource := range []string{"services", "opsrequests", "configmaps", "secrets"} {
 		_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
@@ -883,7 +944,7 @@ func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace st
 			return err
 		}
 	}
-	_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+	_, err = k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
 		Name:      name,
 		Namespace: namespace,
 		Resource:  "clusters",

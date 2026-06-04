@@ -58,7 +58,19 @@ const ENTRY_NODE_PROTOCOL_PATTERN = /^https?:\/\//;
 const ENTRY_NODE_STATUS_SEPARATOR_PATTERN = /[\s_]+/g;
 const ENTRY_NODE_TRAILING_SLASH_PATTERN = /\/$/;
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
-const STATUS_TONES = new Set(["running", "pending", "failed", "paused"]);
+const STATUS_TONES = new Set([
+  "creating",
+  "deleting",
+  "failed",
+  "paused",
+  "pending",
+  "restarting",
+  "running",
+  "starting",
+  "stopped",
+  "stopping",
+  "updating",
+]);
 
 function getToneForStatus(status: string | null | undefined) {
   const normalized = status?.trim().toLowerCase();

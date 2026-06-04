@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
@@ -126,8 +127,12 @@ spec:
 				ns = "default"
 			}
 			obj.SetNamespace(ns)
-			yamlBytes, _ := yaml.Marshal(obj.Object)
-			input.Body.YAML = string(yamlBytes)
+		}
+		normalizeAPPublicNetworkIntent(&obj, ns)
+		yamlBytes, _ := yaml.Marshal(obj.Object)
+		input.Body.YAML = string(yamlBytes)
+		if err := ensureAPCreateTargetIsBrainManaged(cfg, name, ns); err != nil {
+			return nil, huma.Error409Conflict("AP name conflicts with a non-Brain Deployment", err)
 		}
 
 		renderInput := apRenderInputFromObject(obj, ns)
@@ -175,7 +180,7 @@ spec:
 		if err := json.Unmarshal(body, &created); err != nil {
 			return nil, huma.Error500InternalServerError("failed to decode created AP warning", err)
 		}
-		yamlBytes, err := yaml.Marshal(created)
+		yamlBytes, err = yaml.Marshal(created)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to marshal created AP to YAML", err)
 		}
@@ -198,21 +203,53 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		Env:             envVarsFromValue(input["env"]),
 		Image:           stringFromMap(input, "image"),
 		ImagePullPolicy: corev1.PullPolicy(stringFromMap(input, "imagePullPolicy")),
+		LivenessProbe:   probeFromInput(input, "liveness"),
 		Name:            obj.GetName(),
 		NetworkJSON:     networkJSONFromMap(network),
 		Namespace:       namespace,
 		PrivatePort:     int32FromMap(network, "privatePort"),
 		ProjectID:       projectID,
+		ReadinessProbe:  probeFromInput(input, "readiness"),
 		Replicas:        apReplicasFromResourceSpec(resourceSpec),
 		ResourceLimit:   resourceListFromMap(resourceSpec, "limits"),
 		ResourceReq:     resourceListFromMap(resourceSpec, "requests"),
 		ReplicaStrategy: apReplicaStrategyFromResourceSpec(resourceSpec),
 		RoutingDomain:   routingDomainFromObject(obj),
+		StartupProbe:    probeFromInput(input, "startup"),
 	}
 }
 
 func routingDomainFromObject(obj unstructured.Unstructured) string {
 	return strings.TrimSpace(obj.GetLabels()[orchestration.APRoutingDomainLabel])
+}
+
+func requireBrainAPDeployment(deployment appsv1.Deployment) error {
+	labels := deployment.GetLabels()
+	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
+		labels[orchestration.BrainResourceKindLabel] != orchestration.ResourceKindAP ||
+		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
+		return errors.New("deployment is not a Brain-managed AP")
+	}
+	return nil
+}
+
+func ensureAPCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string) error {
+	currentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Resource:  "deployments",
+		Name:      name,
+		Namespace: namespace,
+	})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var current appsv1.Deployment
+	if err := json.Unmarshal(currentJSON, &current); err != nil {
+		return err
+	}
+	return requireBrainAPDeployment(current)
 }
 
 func networkJSONFromMap(network map[string]interface{}) string {
@@ -234,7 +271,7 @@ func apPublicIngressesFromObject(obj unstructured.Unstructured, namespace string
 	if projectID == "" {
 		projectID = stringFromMap(spec, "projectID")
 	}
-	ingresses, err := orchestration.RenderAPPublicIngresses(orchestration.APNetworkIngressInput{
+	return orchestration.RenderAPPublicRoutingResources(orchestration.APNetworkIngressInput{
 		APName:            obj.GetName(),
 		CustomDomains:     apCustomDomainsFromNetwork(network),
 		Namespace:         namespace,
@@ -242,14 +279,6 @@ func apPublicIngressesFromObject(obj unstructured.Unstructured, namespace string
 		ProjectID:         projectID,
 		RoutingDomain:     routingDomainFromObject(obj),
 	})
-	if err != nil {
-		return nil, err
-	}
-	objects := make([]runtime.Object, 0, len(ingresses))
-	for _, ingress := range ingresses {
-		objects = append(objects, ingress)
-	}
-	return objects, nil
 }
 
 func apPlatformAddressesFromNetwork(network map[string]interface{}) []orchestration.APPlatformAddressRequest {
@@ -268,9 +297,37 @@ func apPlatformAddressesFromNetwork(network map[string]interface{}) []orchestrat
 		if id == "" {
 			continue
 		}
-		out = append(out, orchestration.APPlatformAddressRequest{ID: id, Port: port})
+		out = append(out, orchestration.APPlatformAddressRequest{
+			DomainPrefix: stringFromMap(item, "domainPrefix"),
+			ID:           id,
+			Port:         port,
+		})
 	}
 	return out
+}
+
+func normalizeAPPublicNetworkIntent(obj *unstructured.Unstructured, namespace string) {
+	spec, _ := obj.Object["spec"].(map[string]interface{})
+	input, _ := spec["input"].(map[string]interface{})
+	network, _ := input["network"].(map[string]interface{})
+	rows, _ := network["platformAddresses"].([]interface{})
+	if len(rows) == 0 {
+		return
+	}
+	for _, row := range rows {
+		item, _ := row.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		id := stringFromMap(item, "id")
+		if id == "" {
+			continue
+		}
+		prefix := orchestration.APPlatformAddressDomainPrefix(namespace, obj.GetName(), id, stringFromMap(item, "domainPrefix"))
+		if prefix != "" {
+			item["domainPrefix"] = prefix
+		}
+	}
 }
 
 func apCustomDomainsFromNetwork(network map[string]interface{}) []orchestration.APCustomDomainRequest {
@@ -314,12 +371,33 @@ func envVarsFromValue(value interface{}) []corev1.EnvVar {
 		if name == "" {
 			continue
 		}
-		out = append(out, corev1.EnvVar{
-			Name:  name,
-			Value: stringFromMap(item, "value"),
-		})
+		env := corev1.EnvVar{Name: name, Value: stringFromMap(item, "value")}
+		if valueFrom, _ := item["valueFrom"].(map[string]interface{}); valueFrom != nil {
+			var source corev1.EnvVarSource
+			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(valueFrom, &source); err == nil {
+				env.ValueFrom = &source
+				env.Value = ""
+			}
+		}
+		out = append(out, env)
 	}
 	return out
+}
+
+func probeFromInput(input map[string]interface{}, key string) *corev1.Probe {
+	probes, _ := input["probes"].(map[string]interface{})
+	if probes == nil {
+		return nil
+	}
+	value, _ := probes[key].(map[string]interface{})
+	if value == nil {
+		return nil
+	}
+	var probe corev1.Probe
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(value, &probe); err != nil {
+		return nil
+	}
+	return &probe
 }
 
 func resourceListFromMap(values map[string]interface{}, key string) corev1.ResourceList {
@@ -456,6 +534,9 @@ func registerUpdate(grp huma.API) {
 		var current appsv1.Deployment
 		if err := json.Unmarshal(currentJSON, &current); err != nil {
 			return nil, huma.Error500InternalServerError("failed to decode AP for update", err)
+		}
+		if err := requireBrainAPDeployment(current); err != nil {
+			return nil, huma.Error404NotFound("AP not found", err)
 		}
 
 		renderInput, paused, err := apRenderInputFromDeploymentPatch(current, input.Body)
@@ -617,6 +698,9 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 	image := container.Image
 	imagePullPolicy := container.ImagePullPolicy
 	env := container.Env
+	startupProbe := container.StartupProbe
+	livenessProbe := container.LivenessProbe
+	readinessProbe := container.ReadinessProbe
 	limits := container.Resources.Limits
 	requests := container.Resources.Requests
 	routingDomain := strings.TrimSpace(current.Labels[orchestration.APRoutingDomainLabel])
@@ -656,6 +740,17 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 		if nextEnv, ok := input["env"].([]interface{}); ok {
 			env = envVarsFromValue(nextEnv)
 		}
+		if probes, _ := input["probes"].(map[string]interface{}); probes != nil {
+			if _, found := probes["startup"]; found {
+				startupProbe = probeFromInput(input, "startup")
+			}
+			if _, found := probes["liveness"]; found {
+				livenessProbe = probeFromInput(input, "liveness")
+			}
+			if _, found := probes["readiness"]; found {
+				readinessProbe = probeFromInput(input, "readiness")
+			}
+		}
 		if networkPatch, _ := input["network"].(map[string]interface{}); networkPatch != nil {
 			network = mergeAPNetwork(network, networkPatch)
 			if nextPort := int32FromMap(network, "privatePort"); nextPort > 0 {
@@ -681,16 +776,19 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 		Env:             env,
 		Image:           image,
 		ImagePullPolicy: imagePullPolicy,
+		LivenessProbe:   livenessProbe,
 		Name:            current.Name,
 		Namespace:       current.Namespace,
 		NetworkJSON:     networkJSONFromMap(network),
 		PrivatePort:     privatePort,
 		ProjectID:       projectID,
+		ReadinessProbe:  readinessProbe,
 		Replicas:        replicas,
 		ResourceLimit:   limits,
 		ResourceReq:     requests,
 		ReplicaStrategy: &replicaStrategy,
 		RoutingDomain:   routingDomain,
+		StartupProbe:    startupProbe,
 	}, paused, nil
 }
 
@@ -735,12 +833,14 @@ func deleteAPHPA(cfg *clientcmdapi.Config, name, namespace string) error {
 
 func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config, name, namespace string, input orchestration.APResourcesInput) error {
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindEntryPointSupport
-	if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-		LabelSelector: selector,
-		Namespace:     namespace,
-		Resource:      "ingresses",
-	}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, "ingresses") {
-		return err
+	for _, resource := range []string{"ingresses", "certificates", "issuers"} {
+		if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+			LabelSelector: selector,
+			Namespace:     namespace,
+			Resource:      resource,
+		}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+			return err
+		}
 	}
 	var network map[string]interface{}
 	if strings.TrimSpace(input.NetworkJSON) != "" {
@@ -761,6 +861,7 @@ func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config,
 			},
 		},
 	}}
+	normalizeAPPublicNetworkIntent(&obj, namespace)
 	objects, err := apPublicIngressesFromObject(obj, namespace)
 	if err != nil {
 		return err
@@ -893,17 +994,20 @@ func syncAPPublicIngressesFromPatch(restConfig *rest.Config, cfg *clientcmdapi.C
 			},
 		},
 	}}
+	normalizeAPPublicNetworkIntent(&obj, namespace)
 	objects, err := apPublicIngressesFromObject(obj, namespace)
 	if err != nil {
 		return err
 	}
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindEntryPointSupport
-	if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-		LabelSelector: selector,
-		Namespace:     namespace,
-		Resource:      "ingresses",
-	}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, "ingresses") {
-		return err
+	for _, resource := range []string{"ingresses", "certificates", "issuers"} {
+		if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+			LabelSelector: selector,
+			Namespace:     namespace,
+			Resource:      resource,
+		}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+			return err
+		}
 	}
 	if len(objects) == 0 {
 		return nil
@@ -1135,6 +1239,21 @@ func registerDelete(grp huma.API) {
 }
 
 func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namespace string) error {
+	currentJSON, err := k8ssvc.Get(clientCfg, k8ssvc.GetOptions{
+		Resource:  "deployments",
+		Name:      name,
+		Namespace: namespace,
+	})
+	if err != nil {
+		return err
+	}
+	var current appsv1.Deployment
+	if err := json.Unmarshal(currentJSON, &current); err != nil {
+		return err
+	}
+	if err := requireBrainAPDeployment(current); err != nil {
+		return apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, name)
+	}
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name
 	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets"} {
 		_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
@@ -1146,7 +1265,7 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 			return err
 		}
 	}
-	_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
+	_, err = k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
 		Name:      name,
 		Namespace: namespace,
 		Resource:  "deployments",
@@ -1198,6 +1317,25 @@ func registerRestart(grp huma.API) {
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
+		}
+
+		currentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+			Resource:  "deployments",
+			Name:      name,
+			Namespace: resolved.Namespace,
+		})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("deployment for AP not found in namespace (expected same name as the AP)", err)
+			}
+			return nil, huma.Error500InternalServerError("failed to get deployment for AP restart", err)
+		}
+		var current appsv1.Deployment
+		if err := json.Unmarshal(currentJSON, &current); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode AP for restart", err)
+		}
+		if err := requireBrainAPDeployment(current); err != nil {
+			return nil, huma.Error404NotFound("AP not found", err)
 		}
 
 		jsonBytes, err := k8ssvc.RolloutRestart(cfg, k8ssvc.RolloutOptions{

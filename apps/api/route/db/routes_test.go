@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,8 +15,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	dbsvc "sealos/api/service/db"
+	orchestration "sealos/api/service/orchestration"
 )
 
 func testingNow() time.Time {
@@ -290,6 +294,70 @@ func TestDBUpdatePlanFromProductPatchRejectsUnsupportedProductFields(t *testing.
 	}
 }
 
+func TestDBRenderInputFromObjectReadsQuotaAndResourceFields(t *testing.T) {
+	obj := unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"metadata": map[string]interface{}{"name": "pg"},
+			"spec": map[string]interface{}{
+				"cpuLimit":      "1500m",
+				"cpuRequest":    "500m",
+				"engine":        "postgresql",
+				"memoryLimit":   "2Gi",
+				"memoryRequest": "1Gi",
+				"projectId":     "project-a",
+				"quota":         "m",
+				"storageSize":   "20Gi",
+			},
+		},
+	}
+
+	got := dbRenderInputFromObject(obj, "ns-a")
+	if got.Quota != "m" {
+		t.Fatalf("quota = %q, want m", got.Quota)
+	}
+	if got.CPURequest != "500m" || got.CPULimit != "1500m" {
+		t.Fatalf("cpu request/limit = %q/%q, want 500m/1500m", got.CPURequest, got.CPULimit)
+	}
+	if got.MemoryRequest != "1Gi" || got.MemoryLimit != "2Gi" {
+		t.Fatalf("memory request/limit = %q/%q, want 1Gi/2Gi", got.MemoryRequest, got.MemoryLimit)
+	}
+}
+
+func TestDBOwnershipRequiresBrainLabels(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:    "project-a",
+		orchestration.BrainResourceKindLabel: orchestration.ResourceKindDB,
+	})
+	cluster.SetCreationTimestamp(metav1.Now())
+
+	if err := requireBrainDBCluster(cluster); err != nil {
+		t.Fatalf("expected Brain DB cluster to pass ownership check: %v", err)
+	}
+	labels := cluster.GetLabels()
+	delete(labels, orchestration.BrainManagedByLabel)
+	cluster.SetLabels(labels)
+	if err := requireBrainDBCluster(cluster); err == nil {
+		t.Fatal("expected missing brain.io/managed-by label to fail ownership check")
+	}
+}
+
+func TestDBOwnershipRejectsWrongResourceKind(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:    "project-a",
+		orchestration.BrainResourceKindLabel: orchestration.ResourceKindAP,
+	})
+
+	if err := requireBrainDBCluster(cluster); err == nil {
+		t.Fatal("expected wrong brain.io/resource-kind label to fail ownership check")
+	}
+}
+
 func TestKubeBlocksRestartConflictDetection(t *testing.T) {
 	err := errors.New(`admission webhook "vopsrequest.kb.io" denied the request: OpsRequest.spec.type=Restart is forbidden when Cluster.status.phase=Creating`)
 	if !isKubeBlocksOpsConflict(err) {
@@ -339,6 +407,93 @@ func TestDBResponseFromClustersReturnsDBList(t *testing.T) {
 	spec := item["spec"].(map[string]interface{})
 	if got := spec["engine"]; got != "postgresql" {
 		t.Fatalf("spec.engine = %v, want postgresql", got)
+	}
+}
+
+func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testing.T) {
+	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
+
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "mysql",
+		},
+	}
+
+	private := dbConnectionString(db, dbPrivateConnectionAddress(db, "db-main", "ns-a"))
+	if private != "mysql://db-main.ns-a.svc:3306/mysql" {
+		t.Fatalf("private connection string = %q, want MySQL service DSN", private)
+	}
+	public := dbConnectionString(db, dbPublicConnectionAddress(45211))
+	if public != "mysql://192.168.10.189.nip.io:45211/mysql" {
+		t.Fatalf("public connection string = %q, want MySQL public DSN", public)
+	}
+}
+
+func TestDBPublicConnectionAddressFallsBackToPortWhenPublicHostMissing(t *testing.T) {
+	_ = os.Unsetenv("DB_PUBLIC_HOST")
+
+	if got := dbPublicConnectionAddress(30432); got != ":30432" {
+		t.Fatalf("public address fallback = %q, want bare port", got)
+	}
+}
+
+func TestDBConnectionStringFallsBackToAddressForUnknownEngine(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "unknown",
+		},
+	}
+
+	if got := dbConnectionString(db, "db.ns-a.svc:1234"); got != "db.ns-a.svc:1234" {
+		t.Fatalf("connection string for unknown engine = %q, want address fallback", got)
+	}
+}
+
+func TestDBConnectionStringEscapesDatabasePathWithoutCredentials(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+
+	got := dbConnectionString(db, "pg.ns-a.svc:5432")
+	want := "postgresql://pg.ns-a.svc:5432/postgres"
+	if got != want {
+		t.Fatalf("connection string = %q, want %q", got, want)
+	}
+}
+
+func TestDBVariablesFromSecretReturnPrimitiveSecretRefs(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"name": "pg-main-conn-credential",
+		},
+		"data": map[string]interface{}{
+			"host":     "cGcubnMtYS5zdmM=",
+			"password": "czNjcjN0",
+			"port":     "NTQzMg==",
+			"username": "cG9zdGdyZXM=",
+		},
+	}}
+
+	variables := dbVariablesFromSecret(db, secret)
+	if len(variables) != 4 {
+		t.Fatalf("variables length = %d, want 4", len(variables))
+	}
+	for _, variable := range variables {
+		valueFrom := variable["valueFrom"].(map[string]interface{})
+		ref := valueFrom["secretKeyRef"].(map[string]interface{})
+		if ref["name"] != "pg-main-conn-credential" {
+			t.Fatalf("secret ref name = %v, want pg-main-conn-credential", ref["name"])
+		}
+		if _, ok := variable["value"]; ok {
+			t.Fatalf("variable %v exposed raw secret value", variable["name"])
+		}
 	}
 }
 

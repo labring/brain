@@ -47,6 +47,7 @@ import {
 } from "@workspace/ui/lib/container-env-rows";
 import {
   generateCustomDomainBindingId,
+  generatePlatformAddressDomainPrefix,
   generatePlatformAddressId,
   platformAddressEndpoint,
 } from "@workspace/ui/lib/platform-address";
@@ -110,6 +111,7 @@ export type ContainerSettingsQuotaSliderProps =
 export interface ContainerEnvVar extends ContainerEnvRow {}
 
 export interface ContainerNetworkPublicAddress {
+  domainPrefix?: string;
   host?: string;
   id?: string;
   platformAddressId?: string;
@@ -1387,14 +1389,17 @@ function platformAddressDraftFromPort(
   platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext
 ): PublicAddressDraft {
   const id = generatePlatformAddressId();
+  const domainPrefix = generatePlatformAddressDomainPrefix();
   const endpoint = platformAddressEndpoint({
     appName: platformAddressDraftContext?.appName ?? "",
+    domainPrefix,
     namespace: platformAddressDraftContext?.namespace ?? "",
     platformAddressId: id,
     routingDomain: platformAddressDraftContext?.routingDomain ?? "",
   });
   return {
     ...(endpoint ?? {}),
+    domainPrefix,
     id,
     port,
     status: "progressing",

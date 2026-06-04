@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -58,10 +59,16 @@ func registerGet(grp huma.API) {
 			Namespace:     resolved.Namespace,
 		})
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("AP not found", err)
+			}
 			return nil, huma.Error500InternalServerError("failed to get AP(s)", err)
 		}
 		body, err := apResponseFromDeployments(jsonBytes, input.Name != "")
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("AP not found", err)
+			}
 			return nil, huma.Error500InternalServerError("failed to adapt AP response", err)
 		}
 		return &getOutput{Body: body}, nil
@@ -82,6 +89,9 @@ func apResponseFromDeployments(jsonBytes []byte, single bool) (json.RawMessage, 
 		var deployment appsv1.Deployment
 		if err := json.Unmarshal(jsonBytes, &deployment); err != nil {
 			return nil, err
+		}
+		if err := requireBrainAPDeployment(deployment); err != nil {
+			return nil, apierrors.NewNotFound(appsv1.Resource("deployments"), deployment.Name)
 		}
 		return json.Marshal(orchestration.APObjectFromDeployment(&deployment))
 	}

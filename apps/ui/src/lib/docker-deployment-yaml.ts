@@ -97,6 +97,25 @@ function stablePlatformAddressId(input: {
   return `pa_${hash.toString(36).padStart(6, "0")}000000`.slice(0, 15);
 }
 
+function stablePlatformAddressDomainPrefix(input: {
+  name: string;
+  namespace: string;
+  port: number;
+}): string {
+  const source = `${input.namespace}/${input.name}/${input.port}/domain-prefix`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 33 + source.charCodeAt(index)) % 308_915_776;
+  }
+  const alphabet = "abcdefghijklmnopqrstuvwxyz";
+  let out = "";
+  for (let index = 0; index < 6; index += 1) {
+    out += alphabet[hash % alphabet.length];
+    hash = Math.floor(hash / alphabet.length);
+  }
+  return out;
+}
+
 export function renderDockerDeploymentYaml(
   options: RenderDockerDeploymentYamlOptions
 ): string {
@@ -138,6 +157,11 @@ export function renderDockerDeploymentYaml(
       ...network,
       platformAddresses: [
         {
+          domainPrefix: stablePlatformAddressDomainPrefix({
+            name: options.name,
+            namespace: options.namespace,
+            port: appListeningPort,
+          }),
           id:
             options.platformAddressId ??
             stablePlatformAddressId({

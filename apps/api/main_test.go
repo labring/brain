@@ -14,7 +14,7 @@ func TestLoadLocalEnvUsesUIEnvForSharedDatabaseAndAPIEnvForServiceDeps(t *testin
 	if err := os.MkdirAll(filepath.Join(dir, "apps", "api"), 0o755); err != nil {
 		t.Fatalf("create api env dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "apps", "ui", ".env"), []byte("DATABASE_URL=postgres://ui\nWHODB_URL=http://ui-whodb\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "apps", "ui", ".env"), []byte("DATABASE_URL=postgres://ui\nWHODB_URL=http://ui-whodb\nDB_PUBLIC_HOST=192.168.10.189.nip.io\n"), 0o644); err != nil {
 		t.Fatalf("write ui env: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "apps", "api", ".env"), []byte("WHODB_URL=http://api-whodb\n"), 0o644); err != nil {
@@ -27,9 +27,11 @@ func TestLoadLocalEnvUsesUIEnvForSharedDatabaseAndAPIEnvForServiceDeps(t *testin
 	t.Cleanup(func() {
 		_ = os.Chdir(previousCwd)
 		os.Unsetenv("DATABASE_URL")
+		os.Unsetenv("DB_PUBLIC_HOST")
 		os.Unsetenv("WHODB_URL")
 	})
 	os.Unsetenv("DATABASE_URL")
+	os.Unsetenv("DB_PUBLIC_HOST")
 	os.Unsetenv("WHODB_URL")
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir temp repo: %v", err)
@@ -39,6 +41,9 @@ func TestLoadLocalEnvUsesUIEnvForSharedDatabaseAndAPIEnvForServiceDeps(t *testin
 
 	if got := os.Getenv("DATABASE_URL"); got != "postgres://ui" {
 		t.Fatalf("DATABASE_URL = %q, want UI env value", got)
+	}
+	if got := os.Getenv("DB_PUBLIC_HOST"); got != "192.168.10.189.nip.io" {
+		t.Fatalf("DB_PUBLIC_HOST = %q, want UI env value", got)
 	}
 	if got := os.Getenv("WHODB_URL"); got != "http://api-whodb" {
 		t.Fatalf("WHODB_URL = %q, want API env value", got)
@@ -54,7 +59,7 @@ func TestLoadLocalEnvWorksFromAPIDirectory(t *testing.T) {
 	if err := os.MkdirAll(apiDir, 0o755); err != nil {
 		t.Fatalf("create api env dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "apps", "ui", ".env"), []byte("DATABASE_URL=postgres://ui\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "apps", "ui", ".env"), []byte("DATABASE_URL=postgres://ui\nDB_PUBLIC_HOST=192.168.10.189.nip.io\n"), 0o644); err != nil {
 		t.Fatalf("write ui env: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(apiDir, ".env"), []byte("WHODB_URL=http://api-whodb\n"), 0o644); err != nil {
@@ -67,9 +72,11 @@ func TestLoadLocalEnvWorksFromAPIDirectory(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.Chdir(previousCwd)
 		os.Unsetenv("DATABASE_URL")
+		os.Unsetenv("DB_PUBLIC_HOST")
 		os.Unsetenv("WHODB_URL")
 	})
 	os.Unsetenv("DATABASE_URL")
+	os.Unsetenv("DB_PUBLIC_HOST")
 	os.Unsetenv("WHODB_URL")
 	if err := os.Chdir(apiDir); err != nil {
 		t.Fatalf("chdir api dir: %v", err)
@@ -79,6 +86,9 @@ func TestLoadLocalEnvWorksFromAPIDirectory(t *testing.T) {
 
 	if got := os.Getenv("DATABASE_URL"); got != "postgres://ui" {
 		t.Fatalf("DATABASE_URL = %q, want UI env value", got)
+	}
+	if got := os.Getenv("DB_PUBLIC_HOST"); got != "192.168.10.189.nip.io" {
+		t.Fatalf("DB_PUBLIC_HOST = %q, want UI env value", got)
 	}
 	if got := os.Getenv("WHODB_URL"); got != "http://api-whodb" {
 		t.Fatalf("WHODB_URL = %q, want API env value", got)

@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
@@ -345,58 +344,4 @@ func registerRollout(grp huma.API) {
 		OperationID: "k8s-rollout-get", Method: http.MethodGet, Path: "/rollout",
 		Summary: "Rollout status (GET)", Tags: []string{"K8s"}, Hidden: true,
 	}, handler)
-}
-
-func registerNsconfig(grp huma.API) {
-	type nsconfigInput struct {
-		middleware.AuthInput
-		Namespace  string `query:"namespace" required:"true" doc:"Target namespace"`
-		Permission string `query:"permission" doc:"full or edit (default: full)"`
-	}
-	type nsconfigOutput struct {
-		Body string `contentType:"application/x-yaml"`
-	}
-	huma.Register(grp, huma.Operation{
-		OperationID: "k8s-nsconfig",
-		Method:      http.MethodGet,
-		Path:        "/nsconfig",
-		Summary:     "Namespace kubeconfig",
-		Description: "Create a namespace-scoped kubeconfig. Requires admin kubeconfig.",
-		Tags:        []string{"K8s"},
-	}, func(ctx context.Context, input *nsconfigInput) (*nsconfigOutput, error) {
-		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
-		}
-		gvr := middleware.PodsGVR()
-		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
-		}
-		if !resolved.IsAdmin {
-			return nil, huma.Error403Forbidden("admin kubeconfig required for namespace kubeconfig", nil)
-		}
-		ns := resolved.Namespace
-		if ns == "" {
-			return nil, huma.Error400BadRequest("namespace is required", nil)
-		}
-		perm := input.Permission
-		if perm == "" {
-			perm = k8ssvc.PermissionFull
-		}
-		outCfg, err := k8ssvc.AdminKubeconfigForNamespace(restConfig, ns, perm)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to create namespace kubeconfig", err)
-		}
-		yamlBytes, err := clientcmd.Write(*outCfg)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to serialize kubeconfig", err)
-		}
-		return &nsconfigOutput{Body: string(yamlBytes)}, nil
-	})
 }

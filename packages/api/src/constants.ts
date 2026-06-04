@@ -28,7 +28,6 @@ export const API_ROUTES = {
     scale: "/api/k8s/v1alpha1/scale",
     autoscale: "/api/k8s/v1alpha1/autoscale",
     rollout: "/api/k8s/v1alpha1/rollout",
-    nsconfig: "/api/k8s/v1alpha1/nsconfig",
   },
 
   ap: {
@@ -69,7 +68,7 @@ export const API_ROUTES = {
   },
 
   /**
-   * Region JWT → encoded kubeconfig via cluster Ingress `sealos-desktop` (`/api/auth/v1alpha1` in `apps/api/route/auth`).
+   * Region JWT → encoded kubeconfig via configured Sealos Desktop URL (`/api/auth/v1alpha1` in `apps/api/route/auth`).
    */
   auth: {
     base: "/api/auth/v1alpha1",

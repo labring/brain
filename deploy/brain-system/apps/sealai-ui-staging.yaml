@@ -52,10 +52,10 @@ spec:
           secretKeyRef:
             key: AI_PROXY_TOKEN_NAME
             name: sealai-ui-staging-env
-      - name: SEALOS_HOST
+      - name: DEVBOX_API_BASE_URL
         valueFrom:
           secretKeyRef:
-            key: SEALOS_HOST
+            key: DEVBOX_API_BASE_URL
             name: sealai-ui-staging-env
       - name: DEVBOX_TOKEN
         valueFrom:

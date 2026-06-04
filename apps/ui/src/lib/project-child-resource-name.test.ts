@@ -3,8 +3,8 @@ import { test } from "node:test";
 import { childResourceName } from "./project-child-resource-name";
 
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
-const AP_SHORT_NAME = /^ap-[0-9]{6}$/;
-const DB_SHORT_NAME = /^db-[0-9]{6}$/;
+const AP_SHORT_NAME = /^ap-[a-z]{6}$/;
+const DB_SHORT_NAME = /^db-[a-z]{6}$/;
 
 test("child resource names do not include the project UUID", () => {
   const projectId = "1751df70-4807-4eca-ae3b-2da562345d9f";

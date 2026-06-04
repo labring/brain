@@ -1,6 +1,7 @@
 // biome-ignore-all lint/suspicious/noBitwiseOperators: SHA-256 is intentionally implemented with 32-bit bitwise operations for browser-safe synchronous host allocation.
 export interface PlatformAddressHostInput {
   appName: string;
+  domainPrefix?: string;
   namespace: string;
   platformAddressId: string;
   routingDomain: string;
@@ -13,15 +14,18 @@ export interface PlatformAddressEndpoint {
 
 export const PLATFORM_ADDRESS_ID_PATTERN = "^pa_[a-z0-9]{6,32}$";
 export const PLATFORM_ADDRESS_ID_RE = new RegExp(PLATFORM_ADDRESS_ID_PATTERN);
+export const PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN = "^[a-z]{6}$";
+export const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = new RegExp(
+  PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN
+);
 export const CUSTOM_DOMAIN_BINDING_ID_PATTERN = "^cd_[a-z0-9]{6,32}$";
 export const CUSTOM_DOMAIN_BINDING_ID_RE = new RegExp(
   CUSTOM_DOMAIN_BINDING_ID_PATTERN
 );
 const PLATFORM_ADDRESS_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const PLATFORM_ADDRESS_ID_RANDOM_BYTES = 12;
-const PLATFORM_ADDRESS_DEFAULT_HOST_PREFIX = "ap";
-const PLATFORM_ADDRESS_HOST_HASH_LENGTH = 10;
-const PLATFORM_ADDRESS_HOST_PREFIX_MAX_LENGTH = 52;
+const PLATFORM_ADDRESS_HOST_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+const PLATFORM_ADDRESS_HOST_LABEL_LENGTH = 6;
 const SHA256_INITIAL_STATE = sha256Words(
   "6a09e667",
   "bb67ae85",
@@ -79,8 +83,43 @@ export function generatePlatformAddressId(): string {
   return generateOpaqueId("pa");
 }
 
+export function generatePlatformAddressDomainPrefix(): string {
+  return generateLowercaseLetters(PLATFORM_ADDRESS_HOST_LABEL_LENGTH);
+}
+
+export function stablePlatformAddressDomainPrefix(source: string): string {
+  const hash = sha256Hex(source.trim());
+  return Array.from(
+    { length: PLATFORM_ADDRESS_HOST_LABEL_LENGTH },
+    (_, index) =>
+      PLATFORM_ADDRESS_HOST_ALPHABET[
+        Number.parseInt(hash.slice(index * 2, index * 2 + 2), 16) %
+          PLATFORM_ADDRESS_HOST_ALPHABET.length
+      ]
+  ).join("");
+}
+
 export function generateCustomDomainBindingId(): string {
   return generateOpaqueId("cd");
+}
+
+function generateLowercaseLetters(length: number): string {
+  const bytes = new Uint8Array(length);
+  if (globalThis.crypto == null) {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  } else {
+    globalThis.crypto.getRandomValues(bytes);
+  }
+  let out = "";
+  for (const byte of bytes) {
+    out +=
+      PLATFORM_ADDRESS_HOST_ALPHABET[
+        byte % PLATFORM_ADDRESS_HOST_ALPHABET.length
+      ];
+  }
+  return out;
 }
 
 function generateOpaqueId(prefix: "cd" | "pa"): string {
@@ -261,18 +300,6 @@ function sha256Hex(input: string): string {
   return state.map((word) => word.toString(16).padStart(8, "0")).join("");
 }
 
-function platformAddressHostPrefix(appName: string): string {
-  const safeName = appName
-    .trim()
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9-]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "");
-  const prefix = safeName
-    .slice(0, PLATFORM_ADDRESS_HOST_PREFIX_MAX_LENGTH)
-    .replaceAll(/-+$/g, "");
-  return prefix || PLATFORM_ADDRESS_DEFAULT_HOST_PREFIX;
-}
-
 export function platformAddressHost(
   input: PlatformAddressHostInput
 ): string | undefined {
@@ -280,6 +307,7 @@ export function platformAddressHost(
   const appName = input.appName.trim();
   const platformAddressId = input.platformAddressId.trim();
   const routingDomain = input.routingDomain.trim();
+  const domainPrefix = input.domainPrefix?.trim().toLowerCase() ?? "";
 
   if (
     namespace === "" ||
@@ -290,11 +318,14 @@ export function platformAddressHost(
     return undefined;
   }
 
-  const slug = sha256Hex(`${namespace}/${appName}/${platformAddressId}`).slice(
-    0,
-    PLATFORM_ADDRESS_HOST_HASH_LENGTH
+  if (PLATFORM_ADDRESS_DOMAIN_PREFIX_RE.test(domainPrefix)) {
+    return `${domainPrefix}.${routingDomain}`;
+  }
+
+  const label = stablePlatformAddressDomainPrefix(
+    `${namespace}/${appName}/${platformAddressId}`
   );
-  return `${platformAddressHostPrefix(appName)}-${slug}.${routingDomain}`;
+  return `${label}.${routingDomain}`;
 }
 
 function platformAddressUrl(host: string): string {

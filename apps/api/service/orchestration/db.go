@@ -13,12 +13,17 @@ import (
 )
 
 type DBResourcesInput struct {
+	CPULimit       string
+	CPURequest     string
 	ClusterVersion string
 	Engine         string
 	ExposeNodePort bool
+	MemoryLimit    string
+	MemoryRequest  string
 	Name           string
 	Namespace      string
 	ProjectID      string
+	Quota          string
 	Replicas       int64
 	StorageSize    string
 }
@@ -208,7 +213,32 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 	}
 	storageSize := strings.TrimSpace(input.StorageSize)
 	if storageSize == "" {
-		storageSize = "10Gi"
+		storageSize = dbResourcePreset(profile.Engine, input.Quota).StorageSize
+	}
+	componentResources := dbComponentResources(profile.Engine, input)
+	if componentResources == nil {
+		componentResources = dbComponentResources(profile.Engine, DBResourcesInput{Quota: input.Quota})
+	}
+	componentSpec := map[string]interface{}{
+		"componentDefRef": profile.ComponentName,
+		"name":            profile.ComponentName,
+		"replicas":        replicas,
+		"volumeClaimTemplates": []interface{}{
+			map[string]interface{}{
+				"name": "data",
+				"spec": map[string]interface{}{
+					"accessModes": []interface{}{"ReadWriteOnce"},
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"storage": storageSize,
+						},
+					},
+				},
+			},
+		},
+	}
+	if componentResources != nil {
+		componentSpec["resources"] = componentResources
 	}
 	labels := mergeStringMap(
 		brainLabels(projectID, ResourceKindDB, name),
@@ -232,27 +262,8 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 			"spec": map[string]interface{}{
 				"clusterDefinitionRef": profile.ClusterDefinition,
 				"clusterVersionRef":    version,
-				"componentSpecs": []interface{}{
-					map[string]interface{}{
-						"componentDefRef": profile.ComponentName,
-						"name":            profile.ComponentName,
-						"replicas":        replicas,
-						"volumeClaimTemplates": []interface{}{
-							map[string]interface{}{
-								"name": "data",
-								"spec": map[string]interface{}{
-									"accessModes": []interface{}{"ReadWriteOnce"},
-									"resources": map[string]interface{}{
-										"requests": map[string]interface{}{
-											"storage": storageSize,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				"terminationPolicy": "Delete",
+				"componentSpecs":       []interface{}{componentSpec},
+				"terminationPolicy":    "Delete",
 			},
 		},
 	}
@@ -269,6 +280,97 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 	}
 
 	return &DBResources{Cluster: cluster, ExportService: exportService}, nil
+}
+
+type dbResourcePresetValues struct {
+	CPULimit      string
+	CPURequest    string
+	MemoryLimit   string
+	MemoryRequest string
+	StorageSize   string
+}
+
+func dbResourcePreset(engine string, quota string) dbResourcePresetValues {
+	normalizedEngine := strings.ToLower(strings.TrimSpace(engine))
+	normalizedQuota := strings.ToLower(strings.TrimSpace(quota))
+	if normalizedQuota == "" {
+		normalizedQuota = "xs"
+	}
+	presets := map[string]map[string]dbResourcePresetValues{
+		"mongodb": {
+			"xs": {CPULimit: "1", CPURequest: "500m", MemoryLimit: "1Gi", MemoryRequest: "512Mi", StorageSize: "3Gi"},
+			"s":  {CPULimit: "1", CPURequest: "500m", MemoryLimit: "2Gi", MemoryRequest: "1Gi", StorageSize: "20Gi"},
+			"m":  {CPULimit: "2", CPURequest: "1", MemoryLimit: "4Gi", MemoryRequest: "2Gi", StorageSize: "50Gi"},
+			"l":  {CPULimit: "4", CPURequest: "2", MemoryLimit: "8Gi", MemoryRequest: "4Gi", StorageSize: "100Gi"},
+		},
+		"mysql": {
+			"xs": {CPULimit: "500m", CPURequest: "250m", MemoryLimit: "512Mi", MemoryRequest: "256Mi", StorageSize: "3Gi"},
+			"s":  {CPULimit: "1", CPURequest: "500m", MemoryLimit: "1Gi", MemoryRequest: "512Mi", StorageSize: "10Gi"},
+			"m":  {CPULimit: "2", CPURequest: "1", MemoryLimit: "2Gi", MemoryRequest: "1Gi", StorageSize: "20Gi"},
+			"l":  {CPULimit: "4", CPURequest: "2", MemoryLimit: "4Gi", MemoryRequest: "2Gi", StorageSize: "50Gi"},
+		},
+		"postgresql": {
+			"xs": {CPULimit: "500m", CPURequest: "250m", MemoryLimit: "1Gi", MemoryRequest: "512Mi", StorageSize: "3Gi"},
+			"s":  {CPULimit: "1", CPURequest: "500m", MemoryLimit: "2Gi", MemoryRequest: "1Gi", StorageSize: "10Gi"},
+			"m":  {CPULimit: "2", CPURequest: "1", MemoryLimit: "4Gi", MemoryRequest: "2Gi", StorageSize: "20Gi"},
+			"l":  {CPULimit: "4", CPURequest: "2", MemoryLimit: "8Gi", MemoryRequest: "4Gi", StorageSize: "50Gi"},
+		},
+		"redis": {
+			"xs": {CPULimit: "500m", CPURequest: "250m", MemoryLimit: "768Mi", MemoryRequest: "384Mi", StorageSize: "3Gi"},
+			"s":  {CPULimit: "1", CPURequest: "500m", MemoryLimit: "1536Mi", MemoryRequest: "768Mi", StorageSize: "4Gi"},
+			"m":  {CPULimit: "2", CPURequest: "1", MemoryLimit: "3Gi", MemoryRequest: "1536Mi", StorageSize: "10Gi"},
+			"l":  {CPULimit: "4", CPURequest: "2", MemoryLimit: "6Gi", MemoryRequest: "3Gi", StorageSize: "20Gi"},
+		},
+	}
+	if enginePresets, ok := presets[normalizedEngine]; ok {
+		if preset, ok := enginePresets[normalizedQuota]; ok {
+			return preset
+		}
+		return enginePresets["xs"]
+	}
+	return presets["postgresql"]["xs"]
+}
+
+func dbComponentResources(engine string, input DBResourcesInput) map[string]interface{} {
+	preset := dbResourcePreset(engine, input.Quota)
+	cpuLimit := firstNonEmpty(input.CPULimit, preset.CPULimit)
+	cpuRequest := firstNonEmpty(input.CPURequest, preset.CPURequest)
+	memoryLimit := firstNonEmpty(input.MemoryLimit, preset.MemoryLimit)
+	memoryRequest := firstNonEmpty(input.MemoryRequest, preset.MemoryRequest)
+	requests := map[string]interface{}{}
+	if cpuRequest != "" {
+		requests["cpu"] = cpuRequest
+	}
+	if memoryRequest != "" {
+		requests["memory"] = memoryRequest
+	}
+	limits := map[string]interface{}{}
+	if cpuLimit != "" {
+		limits["cpu"] = cpuLimit
+	}
+	if memoryLimit != "" {
+		limits["memory"] = memoryLimit
+	}
+	if len(requests) == 0 && len(limits) == 0 {
+		return nil
+	}
+	out := map[string]interface{}{}
+	if len(requests) > 0 {
+		out["requests"] = requests
+	}
+	if len(limits) > 0 {
+		out["limits"] = limits
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func RenderDBExportService(name, namespace, engine string, labels map[string]string) *corev1.Service {

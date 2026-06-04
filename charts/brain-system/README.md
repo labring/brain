@@ -30,19 +30,15 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 Edit `/tmp/brain-system.values.yaml`, especially:
 
 - `global.region`
-- `api.env.ENCODED_ADMIN_KUBECONFIG`
+- `api.env.SEALOS_DESKTOP_URL`
 - `ui.env.API_URL`
 - `ui.env.DATABASE_URL`
 - GitHub OAuth values
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
-- Devbox runtime values (`SEALOS_HOST`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
+- Devbox runtime values (`DEVBOX_API_BASE_URL`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` if `ghcr-cred` does not already exist
 
-Generate the URL-encoded kubeconfig value:
-
-```bash
-node -e 'console.log(encodeURIComponent(require("fs").readFileSync(process.env.KUBECONFIG, "utf8")))'
-```
+`api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
 
 Install or upgrade:
 

@@ -10,9 +10,11 @@ import {
 const MISSING_SIGNING_KEY_ERROR =
   /Missing required environment variable: DEVBOX_JWT_SIGNING_KEY/;
 
-test("getDevboxBaseUrlFromEnv derives devbox-server URL from SEALOS_HOST", () => {
+test("getDevboxBaseUrlFromEnv reads DEVBOX_API_BASE_URL", () => {
   assert.equal(
-    getDevboxBaseUrlFromEnv({ SEALOS_HOST: "https://example.sealos.io/" }),
+    getDevboxBaseUrlFromEnv({
+      DEVBOX_API_BASE_URL: "https://devbox-server.example.sealos.io/",
+    }),
     "https://devbox-server.example.sealos.io"
   );
 });

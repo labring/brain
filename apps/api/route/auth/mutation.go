@@ -28,14 +28,14 @@ func registerRegionToken(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/regionToken",
 		Summary:     "Exchange region token for encoded kubeconfig",
-		Description: "Resolves the cluster desktop base URL from Ingress `sealos-desktop` in namespace `sealos` using ENCODED_ADMIN_KUBECONFIG, " +
+		Description: "Resolves the cluster desktop base URL from `SEALOS_DESKTOP_URL`, " +
 			"calls `GET /api/auth/regionToken` on that host with `Authorization: <regionToken>`, then returns URL-encoded kubeconfig and namespace " +
 			"derived from the returned kubeconfig.",
 		Tags: []string{"Auth"},
 	}, func(ctx context.Context, input *regionTokenInput) (*regionTokenOutput, error) {
-		base, err := regiontoken.SealosDesktopBaseURL(ctx)
+		base, err := regiontoken.SealosDesktopBaseURL()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("sealos desktop base URL (ingress or ENCODED_ADMIN_KUBECONFIG)", err)
+			return nil, huma.Error500InternalServerError("sealos desktop base URL (SEALOS_DESKTOP_URL)", err)
 		}
 		out, err := regiontoken.Exchange(ctx, base, input.Body.RegionToken)
 		if err != nil {

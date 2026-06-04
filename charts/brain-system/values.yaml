@@ -55,7 +55,8 @@ api:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471"
     DATABASE_URL: ""
-    ENCODED_ADMIN_KUBECONFIG: ""
+    DB_PUBLIC_HOST: ""
+    SEALOS_DESKTOP_URL: ""
     WHODB_URL: "http://whodb.brain-system.svc:11000"
   staticEnv:
     SEALOS_DESKTOP_SKIP_TLS_VERIFY: "1"
@@ -111,7 +112,7 @@ ui:
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
     AI_PROXY_TOKEN_NAME: "sealos-brain"
-    SEALOS_HOST: ""
+    DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""
     DEVBOX_JWT_SIGNING_KEY: ""
     DEVBOX_RUNTIME_IMAGE: ""

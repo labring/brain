@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -8,7 +9,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
+
+var dns1035LabelPattern = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
+var shortIngressNamePattern = regexp.MustCompile(`^ing-[a-z]{6}$`)
 
 func TestRenderAPResourcesLabelsAndNames(t *testing.T) {
 	resources, err := RenderAPResources(APResourcesInput{
@@ -89,6 +95,9 @@ func TestRenderAPPublicIngressLabelsAndBackend(t *testing.T) {
 	if got := ingress.Annotations[LaunchpadAppDeployManagerDomainHostAnnotation]; got != "web.example.com" {
 		t.Fatalf("%s = %q, want full host", LaunchpadAppDeployManagerDomainHostAnnotation, got)
 	}
+	if got := ingress.Annotations[ingressClassAnnotation]; got != ingressClassName {
+		t.Fatalf("%s = %q, want %s", ingressClassAnnotation, got, ingressClassName)
+	}
 	backend := ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service
 	if backend == nil || backend.Name != "web-service" || backend.Port.Number != 8080 {
 		t.Fatalf("unexpected ingress backend: %#v", backend)
@@ -130,7 +139,7 @@ func TestRenderAPPublicIngressesFromNetworkIntent(t *testing.T) {
 		APName:    "api",
 		Namespace: "default",
 		PlatformAddresses: []APPlatformAddressRequest{
-			{ID: "pa_abc123", Port: 8080},
+			{DomainPrefix: "cbwfiu", ID: "pa_abc123", Port: 8080},
 		},
 		CustomDomains: []APCustomDomainRequest{
 			{Domain: "WWW.Example.COM.", ID: "cd_def456", PlatformAddressID: "pa_abc123"},
@@ -144,20 +153,69 @@ func TestRenderAPPublicIngressesFromNetworkIntent(t *testing.T) {
 	if got := len(ingresses); got != 2 {
 		t.Fatalf("ingress count = %d, want 2", got)
 	}
-	if got := ingresses[0].Name; got != "api-pa-abc123" {
-		t.Fatalf("platform ingress name = %q, want api-pa-abc123", got)
+	if got := ingresses[0].Name; got != "ing-iromvs" {
+		t.Fatalf("platform ingress name = %q, want stable short lowercase name", got)
 	}
-	if got := ingresses[0].Spec.Rules[0].Host; got != "api-7c6ad52581.apps.example.com" {
+	if got := ingresses[0].Spec.Rules[0].Host; got != "cbwfiu.apps.example.com" {
 		t.Fatalf("platform host = %q, want stable AP host", got)
 	}
-	if got := ingresses[1].Name; got != "api-cd-def456" {
-		t.Fatalf("custom-domain ingress name = %q, want api-cd-def456", got)
+	if got := ingresses[0].Spec.TLS[0].SecretName; got != DefaultPlatformTLSSecretName {
+		t.Fatalf("platform TLS secret = %q, want %s", got, DefaultPlatformTLSSecretName)
+	}
+	if got := ingresses[1].Name; got != "ing-wmflms" {
+		t.Fatalf("custom-domain ingress name = %q, want stable short lowercase name", got)
 	}
 	if got := ingresses[1].Spec.Rules[0].Host; got != "www.example.com" {
 		t.Fatalf("custom-domain host = %q, want www.example.com", got)
 	}
 	if got := ingresses[1].Labels["brain.io/public-address-kind"]; got != "custom-domain" {
 		t.Fatalf("custom-domain kind label = %q, want custom-domain", got)
+	}
+}
+
+func TestRenderAPPublicRoutingResourcesIncludesCustomDomainCertificateResources(t *testing.T) {
+	objects, err := RenderAPPublicRoutingResources(APNetworkIngressInput{
+		APName:    "api",
+		Namespace: "default",
+		PlatformAddresses: []APPlatformAddressRequest{
+			{DomainPrefix: "cbwfiu", ID: "pa_abc123", Port: 8080},
+		},
+		CustomDomains: []APCustomDomainRequest{
+			{Domain: "WWW.Example.COM.", ID: "cd_def456", PlatformAddressID: "pa_abc123"},
+		},
+		ProjectID:     "project-a",
+		RoutingDomain: "apps.example.com",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPPublicRoutingResources returned error: %v", err)
+	}
+	if got := len(objects); got != 4 {
+		t.Fatalf("object count = %d, want platform ingress plus issuer, certificate, custom ingress", got)
+	}
+	issuer, ok := objects[1].(*unstructured.Unstructured)
+	if !ok || issuer.GetKind() != "Issuer" {
+		t.Fatalf("objects[1] = %#v, want Issuer", objects[1])
+	}
+	certificate, ok := objects[2].(*unstructured.Unstructured)
+	if !ok || certificate.GetKind() != "Certificate" {
+		t.Fatalf("objects[2] = %#v, want Certificate", objects[2])
+	}
+	secretName, _, _ := unstructured.NestedString(certificate.Object, "spec", "secretName")
+	if secretName == "" || secretName != issuer.GetName() {
+		t.Fatalf("certificate secretName = %q, issuer name = %q, want same custom resource name", secretName, issuer.GetName())
+	}
+}
+
+func TestAPPublicAddressResourceNameIsShortLowercaseMetadataName(t *testing.T) {
+	name := APPublicAddressResourceName("ap-571800", "pa_jrjjio000000")
+	if !shortIngressNamePattern.MatchString(name) {
+		t.Fatalf("public ingress name = %q, want ing- plus 6 lowercase letters", name)
+	}
+	if !dns1035LabelPattern.MatchString(name) {
+		t.Fatalf("public ingress name = %q, want DNS-1035 metadata.name", name)
+	}
+	if strings.Contains(name, "571800") || strings.Contains(name, "jrjjio") {
+		t.Fatalf("public ingress name = %q, should not include AP name or public address id", name)
 	}
 }
 
@@ -287,6 +345,64 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 	}
 }
 
+func TestRenderAPResourcesPreservesValueFromAndProbes(t *testing.T) {
+	startup := corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{Path: "/ready", Port: intstr.FromInt(8080)},
+		},
+		FailureThreshold: 30,
+	}
+	readiness := corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromInt(8080)},
+		},
+		InitialDelaySeconds: 5,
+		FailureThreshold:    3,
+	}
+	resources, err := RenderAPResources(APResourcesInput{
+		Env: []corev1.EnvVar{
+			{
+				Name: "DATABASE_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "pg-conn-credential"},
+						Key:                  "password",
+					},
+				},
+			},
+		},
+		Image:          "nginx:1.27",
+		Name:           "web",
+		Namespace:      "ns-a",
+		PrivatePort:    8080,
+		ProjectID:      "project-a",
+		StartupProbe:   &startup,
+		ReadinessProbe: &readiness,
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	container := resources.Deployment.Spec.Template.Spec.Containers[0]
+	if container.Env[0].ValueFrom == nil || container.Env[0].ValueFrom.SecretKeyRef == nil {
+		t.Fatalf("env valueFrom was not preserved: %#v", container.Env[0])
+	}
+	if got := container.Env[0].ValueFrom.SecretKeyRef.Name; got != "pg-conn-credential" {
+		t.Fatalf("secret name = %q, want pg-conn-credential", got)
+	}
+	if container.StartupProbe == nil || container.StartupProbe.HTTPGet == nil {
+		t.Fatalf("startup probe was not rendered: %#v", container.StartupProbe)
+	}
+	if got := container.StartupProbe.HTTPGet.Path; got != "/ready" {
+		t.Fatalf("startup path = %q, want /ready", got)
+	}
+	if container.ReadinessProbe == nil || container.ReadinessProbe.HTTPGet == nil {
+		t.Fatalf("readiness probe was not rendered: %#v", container.ReadinessProbe)
+	}
+	if got := container.ReadinessProbe.HTTPGet.Path; got != "/healthz" {
+		t.Fatalf("readiness path = %q, want /healthz", got)
+	}
+}
+
 func TestRenderAPResourcesElasticReplicaStrategyCreatesHPA(t *testing.T) {
 	resources, err := RenderAPResources(APResourcesInput{
 		Image:       "nginx:1.27",
@@ -361,7 +477,7 @@ func TestAPObjectFromDeploymentRestoresDesiredNetworkAnnotation(t *testing.T) {
 	statusNetwork := status["network"].(map[string]interface{})
 	statusAddresses := statusNetwork["publicAddresses"].([]interface{})
 	statusAddress := statusAddresses[0].(map[string]interface{})
-	if got := statusAddress["host"]; got != "web-c4d9789bef.apps.example.com" {
+	if got := statusAddress["host"]; got != "ojqzfl.apps.example.com" {
 		t.Fatalf("status public host = %v, want stable host", got)
 	}
 	if got := resources.Deployment.Labels[APRoutingDomainLabel]; got != "apps.example.com" {
@@ -440,6 +556,41 @@ func TestRenderDBResourcesDefaultsClusterVersion(t *testing.T) {
 	}
 	if got := resources.Cluster.GetLabels()[DBProviderClusterVersionLabel]; got != "postgresql-16.4.0" {
 		t.Fatalf("%s = %q, want postgresql-16.4.0", DBProviderClusterVersionLabel, got)
+	}
+}
+
+func TestRenderDBResourcesAppliesQuotaAndResourceOverrides(t *testing.T) {
+	resources, err := RenderDBResources(DBResourcesInput{
+		CPULimit:      "1500m",
+		CPURequest:    "500m",
+		Engine:        "postgresql",
+		MemoryLimit:   "2Gi",
+		MemoryRequest: "1Gi",
+		Name:          "pg",
+		Namespace:     "ns-a",
+		ProjectID:     "project-a",
+		Quota:         "m",
+		StorageSize:   "20Gi",
+	})
+	if err != nil {
+		t.Fatalf("RenderDBResources returned error: %v", err)
+	}
+	spec := resources.Cluster.Object["spec"].(map[string]interface{})
+	component := spec["componentSpecs"].([]interface{})[0].(map[string]interface{})
+	resourcesSpec := component["resources"].(map[string]interface{})
+	requests := resourcesSpec["requests"].(map[string]interface{})
+	if got := requests["cpu"]; got != "500m" {
+		t.Fatalf("cpu request = %v, want 500m", got)
+	}
+	if got := requests["memory"]; got != "1Gi" {
+		t.Fatalf("memory request = %v, want 1Gi", got)
+	}
+	limits := resourcesSpec["limits"].(map[string]interface{})
+	if got := limits["cpu"]; got != "1500m" {
+		t.Fatalf("cpu limit = %v, want 1500m", got)
+	}
+	if got := limits["memory"]; got != "2Gi" {
+		t.Fatalf("memory limit = %v, want 2Gi", got)
 	}
 }
 
@@ -530,9 +681,18 @@ func TestDBObjectFromClusterReturnsDBLikeShape(t *testing.T) {
 		Name:           "pg",
 		Namespace:      "ns-a",
 		ProjectID:      "project-a",
+		Replicas:       2,
+		StorageSize:    "20Gi",
 	})
 	if err != nil {
 		t.Fatalf("RenderDBResources returned error: %v", err)
+	}
+	component := resources.Cluster.Object["spec"].(map[string]interface{})["componentSpecs"].([]interface{})[0].(map[string]interface{})
+	component["resources"] = map[string]interface{}{
+		"limits": map[string]interface{}{
+			"cpu":    "500m",
+			"memory": "1Gi",
+		},
 	}
 	resources.Cluster.Object["status"] = map[string]interface{}{
 		"conditions": []interface{}{
@@ -546,6 +706,18 @@ func TestDBObjectFromClusterReturnsDBLikeShape(t *testing.T) {
 	spec := db["spec"].(map[string]interface{})
 	if got := spec["engine"]; got != "postgresql" {
 		t.Fatalf("spec.engine = %v, want postgresql", got)
+	}
+	if got := spec["replicas"]; got != int64(2) {
+		t.Fatalf("spec.replicas = %v, want 2", got)
+	}
+	if got := spec["cpuLimit"]; got != "500m" {
+		t.Fatalf("spec.cpuLimit = %v, want 500m", got)
+	}
+	if got := spec["memoryLimit"]; got != "1Gi" {
+		t.Fatalf("spec.memoryLimit = %v, want 1Gi", got)
+	}
+	if got := spec["storageSize"]; got != "20Gi" {
+		t.Fatalf("spec.storageSize = %v, want 20Gi", got)
 	}
 	status := db["status"].(map[string]interface{})
 	if got := status["phase"]; got != "Running" {

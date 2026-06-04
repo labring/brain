@@ -21,10 +21,20 @@ spec:
           secretKeyRef:
             key: VLSELECT_URL
             name: sealai-api-staging-env
-      - name: ENCODED_ADMIN_KUBECONFIG
+      - name: SEALOS_DESKTOP_URL
         valueFrom:
           secretKeyRef:
-            key: ENCODED_ADMIN_KUBECONFIG
+            key: SEALOS_DESKTOP_URL
+            name: sealai-api-staging-env
+      - name: DATABASE_URL
+        valueFrom:
+          secretKeyRef:
+            key: DATABASE_URL
+            name: sealai-api-staging-env
+      - name: DB_PUBLIC_HOST
+        valueFrom:
+          secretKeyRef:
+            key: DB_PUBLIC_HOST
             name: sealai-api-staging-env
       - name: WHODB_URL
         valueFrom:
@@ -70,4 +80,3 @@ spec:
     requests:
       cpu: 250m
       memory: 512Mi
-

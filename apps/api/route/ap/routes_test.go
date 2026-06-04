@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"sealos/api/service/apversion"
 	orchestration "sealos/api/service/orchestration"
@@ -166,6 +167,42 @@ func TestAPDeploymentLabelSelectorKeepsBrainOwnership(t *testing.T) {
 	}
 }
 
+func TestAPOwnershipRequiresBrainLabels(t *testing.T) {
+	deployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:    "project-a",
+				orchestration.BrainResourceKindLabel: orchestration.ResourceKindAP,
+			},
+			Name: "web",
+		},
+	}
+	if err := requireBrainAPDeployment(deployment); err != nil {
+		t.Fatalf("expected Brain AP deployment to pass ownership check: %v", err)
+	}
+	delete(deployment.Labels, orchestration.BrainManagedByLabel)
+	if err := requireBrainAPDeployment(deployment); err == nil {
+		t.Fatal("expected missing brain.io/managed-by label to fail ownership check")
+	}
+}
+
+func TestAPOwnershipRejectsWrongResourceKind(t *testing.T) {
+	deployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:    "project-a",
+				orchestration.BrainResourceKindLabel: orchestration.ResourceKindDB,
+			},
+			Name: "web",
+		},
+	}
+	if err := requireBrainAPDeployment(deployment); err == nil {
+		t.Fatal("expected wrong brain.io/resource-kind label to fail ownership check")
+	}
+}
+
 func TestAPDeploymentPatchFromProductPatch(t *testing.T) {
 	raw := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true,"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"network":{"privatePort":8080,"platformAddresses":[{"id":"pa_abc123","port":8080}]}},"resource":{"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":3}}}}}`)
 	patch := apDeploymentPatchFromProductPatch(raw, "web")
@@ -210,6 +247,69 @@ func TestAPDeploymentPatchFromProductPatch(t *testing.T) {
 	limits := resources["limits"].(map[string]interface{})
 	if got := limits["cpu"]; got != "500m" {
 		t.Fatalf("cpu limit = %v, want 500m", got)
+	}
+}
+
+func TestAPRenderInputFromDeploymentPatchPreservesValueFromAndProbes(t *testing.T) {
+	replicas := int32(1)
+	current := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainProjectIDLabel: "project-a",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Image: "nginx:1.27",
+							Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	patch := json.RawMessage(`{
+		"spec": {
+			"input": {
+				"env": [{
+					"name": "DATABASE_PASSWORD",
+					"valueFrom": {"secretKeyRef": {"name": "pg-conn-credential", "key": "password"}}
+				}],
+				"probes": {
+					"startup": {"httpGet": {"path": "/ready", "port": 8080}, "failureThreshold": 30},
+					"readiness": {"httpGet": {"path": "/healthz", "port": 8080}, "initialDelaySeconds": 5}
+				}
+			}
+		}
+	}`)
+	got, _, err := apRenderInputFromDeploymentPatch(current, patch)
+	if err != nil {
+		t.Fatalf("apRenderInputFromDeploymentPatch returned error: %v", err)
+	}
+	if got.Env[0].ValueFrom == nil || got.Env[0].ValueFrom.SecretKeyRef == nil {
+		t.Fatalf("env valueFrom was not preserved: %#v", got.Env[0])
+	}
+	if got.Env[0].ValueFrom.SecretKeyRef.Name != "pg-conn-credential" {
+		t.Fatalf("secret name = %q, want pg-conn-credential", got.Env[0].ValueFrom.SecretKeyRef.Name)
+	}
+	if got.StartupProbe == nil || got.StartupProbe.HTTPGet == nil {
+		t.Fatalf("startup probe was not parsed: %#v", got.StartupProbe)
+	}
+	if got.StartupProbe.HTTPGet.Port != intstr.FromInt(8080) {
+		t.Fatalf("startup probe port = %v, want 8080", got.StartupProbe.HTTPGet.Port)
+	}
+	if got.ReadinessProbe == nil || got.ReadinessProbe.HTTPGet == nil {
+		t.Fatalf("readiness probe was not parsed: %#v", got.ReadinessProbe)
+	}
+	if got.ReadinessProbe.HTTPGet.Path != "/healthz" {
+		t.Fatalf("readiness path = %q, want /healthz", got.ReadinessProbe.HTTPGet.Path)
 	}
 }
 

@@ -27,6 +27,9 @@ const PROVISIONING_CONNECTION_RE = /Provisioning connection string/;
 const REPLICA_COUNT_RE = /Number of Replicas/;
 const REPLICA_VALUE_RE = />2</;
 const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
+const PRIVATE_DSN_RE = /mysql:\/\/r\*\*\*\*\*\*\*:.*?@db.default.svc:3306/;
+const PUBLIC_DSN_RE =
+  /mysql:\/\/r\*\*\*\*\*\*\*:.*?@192.168.10.189.nip.io:45211/;
 
 const PRIVATE_CONNECTION = {
   id: "private",
@@ -150,6 +153,38 @@ test("database settings pane shows pending public connection text while public a
   assert.match(html, PUBLIC_CONNECTION_RE);
   assert.match(html, PROVISIONING_CONNECTION_RE);
   assert.doesNotMatch(html, COPY_PUBLIC_CONNECTION_RE);
+});
+
+test("database settings pane renders private and public DSNs", () => {
+  const html = renderPane(
+    <DatabaseSettingsPaneContent
+      data={{
+        ...BASE_DATA,
+        connections: [
+          {
+            id: "private",
+            kind: "private",
+            label: "Private connection",
+            value: "mysql://root:secret@db.default.svc:3306/mydb",
+          },
+          {
+            id: "public",
+            kind: "public",
+            label: "Public connection",
+            publicAccess: { enabled: true },
+            value: "mysql://root:secret@192.168.10.189.nip.io:45211/mydb",
+          },
+        ],
+      }}
+      onClose={noop}
+      onSubmitPatch={noop}
+    />
+  );
+
+  assert.match(html, PRIVATE_DSN_RE);
+  assert.match(html, PUBLIC_DSN_RE);
+  assert.match(html, COPY_PRIVATE_CONNECTION_RE);
+  assert.match(html, COPY_PUBLIC_CONNECTION_RE);
 });
 
 test("read-only database settings pane renders addresses without mutation controls", () => {

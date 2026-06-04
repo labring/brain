@@ -5,6 +5,7 @@ import YAML from "yaml";
 import { renderDockerDeploymentYaml } from "./docker-deployment-yaml";
 
 const PLATFORM_ADDRESS_ID_RE = /^pa_[a-z0-9]{6,32}$/;
+const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = /^[a-z]{6}$/;
 
 test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifest", () => {
   const out = YAML.parse(
@@ -40,9 +41,12 @@ test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifes
     { name: "FEATURE_FLAG", value: "true" },
   ]);
   assert.equal(out.spec.input.network.privatePort, 8080);
-  assert.deepEqual(out.spec.input.network.platformAddresses, [
-    { id: "pa_abc123", port: 8080 },
-  ]);
+  assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
+  assert.match(
+    out.spec.input.network.platformAddresses[0].domainPrefix,
+    PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
+  );
+  assert.equal(out.spec.input.network.platformAddresses[0].port, 8080);
   assert.equal(out.spec.resource, undefined);
 });
 
@@ -94,8 +98,15 @@ test("renderDockerDeploymentYaml generates stable platform address ids", () => {
   );
 
   const id = first.spec.input.network.platformAddresses[0].id;
+  const domainPrefix =
+    first.spec.input.network.platformAddresses[0].domainPrefix;
   assert.match(id, PLATFORM_ADDRESS_ID_RE);
+  assert.match(domainPrefix, PLATFORM_ADDRESS_DOMAIN_PREFIX_RE);
   assert.equal(second.spec.input.network.platformAddresses[0].id, id);
+  assert.equal(
+    second.spec.input.network.platformAddresses[0].domainPrefix,
+    domainPrefix
+  );
 });
 
 test("renderDockerDeploymentYaml resolves AP template placeholders before applying Docker settings", () => {
@@ -140,9 +151,12 @@ spec:
   assert.equal(out.metadata.labels.region, "apps.example.com");
   assert.equal(out.spec.input.image, "ghcr.io/acme/api:1.2");
   assert.equal(out.spec.input.network.privatePort, 3000);
-  assert.deepEqual(out.spec.input.network.platformAddresses, [
-    { id: "pa_abc123", port: 3000 },
-  ]);
+  assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
+  assert.match(
+    out.spec.input.network.platformAddresses[0].domainPrefix,
+    PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
+  );
+  assert.equal(out.spec.input.network.platformAddresses[0].port, 3000);
   assert.deepEqual(out.spec.resource, { requests: { cpu: "100m" } });
   assert.equal(out.spec.legacyRuntime, undefined);
 });
@@ -178,7 +192,10 @@ spec:
 
   assert.equal(out.metadata.labels["app.kubernetes.io/name"], "project-a-api");
   assert.equal(out.metadata.labels.region, undefined);
-  assert.deepEqual(out.spec.input.network.platformAddresses, [
-    { id: "pa_abc123", port: 3000 },
-  ]);
+  assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
+  assert.match(
+    out.spec.input.network.platformAddresses[0].domainPrefix,
+    PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
+  );
+  assert.equal(out.spec.input.network.platformAddresses[0].port, 3000);
 });

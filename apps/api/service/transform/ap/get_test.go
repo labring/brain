@@ -194,8 +194,8 @@ func TestAPTransformEnrichesPendingPublicAddressesFromDesiredPlatformAddresses(t
 	if got := len(addresses); got != 2 {
 		t.Fatalf("status.network.publicAddresses count = %d, want 2", got)
 	}
-	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_abc123", "api-7c6ad52581.apps.example.com", 8080)
-	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "api-21dd51436b.apps.example.com", 8080)
+	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_abc123", "ucflzg.apps.example.com", 8080)
+	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "hndpda.apps.example.com", 8080)
 }
 
 func TestAPTransformPendingPlatformAddressHostIgnoresUIDAndTargetPort(t *testing.T) {
@@ -225,7 +225,7 @@ func TestAPTransformPendingPlatformAddressHostIgnoresUIDAndTargetPort(t *testing
 	status := out["status"].(map[string]interface{})
 	network := status["network"].(map[string]interface{})
 	addresses := network["publicAddresses"].([]map[string]interface{})
-	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_abc123", "api-7c6ad52581.apps.example.com", 9000)
+	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_abc123", "ucflzg.apps.example.com", 9000)
 }
 
 func TestAPTransformPromotesDesiredCustomDomainRows(t *testing.T) {
@@ -265,8 +265,8 @@ func TestAPTransformPromotesDesiredCustomDomainRows(t *testing.T) {
 	if got := len(addresses); got != 2 {
 		t.Fatalf("status.network.publicAddresses count = %d, want 2", got)
 	}
-	assertCustomDomainPublicNetworkAddress(t, addresses, "cd_def456", "www.example.com", "pa_abc123", "api-7c6ad52581.apps.example.com", 8080)
-	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "api-21dd51436b.apps.example.com", 9000)
+	assertCustomDomainPublicNetworkAddress(t, addresses, "cd_def456", "www.example.com", "pa_abc123", "ucflzg.apps.example.com", 8080)
+	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "hndpda.apps.example.com", 9000)
 	assertPublicNetworkAddressIDMissing(t, addresses, "pa_abc123")
 }
 
@@ -300,15 +300,15 @@ func TestAPTransformObservedCustomDomainHidesPromotedPlatformAddress(t *testing.
 				"network": map[string]interface{}{
 					"publicAddresses": []interface{}{
 						map[string]interface{}{
-							"host":   "api-7c6ad52581.apps.example.com",
+							"host":   "ucflzg.apps.example.com",
 							"id":     "pa_abc123",
 							"port":   8080,
 							"status": "accessible",
 							"type":   "platform",
-							"url":    "https://api-7c6ad52581.apps.example.com/",
+							"url":    "https://ucflzg.apps.example.com/",
 						},
 						map[string]interface{}{
-							"cnameTarget":       "api-7c6ad52581.apps.example.com",
+							"cnameTarget":       "ucflzg.apps.example.com",
 							"host":              "www.example.com",
 							"id":                "cd_def456",
 							"platformAddressId": "pa_abc123",
@@ -331,8 +331,8 @@ func TestAPTransformObservedCustomDomainHidesPromotedPlatformAddress(t *testing.
 	if got := len(addresses); got != 2 {
 		t.Fatalf("status.network.publicAddresses count = %d, want 2", got)
 	}
-	assertCustomDomainPublicNetworkAddress(t, addresses, "cd_def456", "www.example.com", "pa_abc123", "api-7c6ad52581.apps.example.com", 8080)
-	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "api-21dd51436b.apps.example.com", 9000)
+	assertCustomDomainPublicNetworkAddress(t, addresses, "cd_def456", "www.example.com", "pa_abc123", "ucflzg.apps.example.com", 8080)
+	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "hndpda.apps.example.com", 9000)
 	assertPublicNetworkAddressIDMissing(t, addresses, "pa_abc123")
 }
 

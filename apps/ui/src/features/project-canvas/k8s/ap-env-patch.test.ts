@@ -215,8 +215,8 @@ test("AP network settings writes v1 Platform Addresses with stable IDs and no ho
       value: {
         privatePort: 8080,
         platformAddresses: [
-          { id: "pa_abc123", port: 8080 },
-          { id: "pa_def456", port: 8080 },
+          { domainPrefix: "tsbmom", id: "pa_abc123", port: 8080 },
+          { domainPrefix: "cafrvf", id: "pa_def456", port: 8080 },
         ],
       },
     },
@@ -268,7 +268,9 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
             platformAddressId: "pa_abc123",
           },
         ],
-        platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        platformAddresses: [
+          { domainPrefix: "tsbmom", id: "pa_abc123", port: 8080 },
+        ],
         privatePort: 8080,
       },
     },
@@ -300,7 +302,9 @@ test("AP network settings backfills routing domain label when adding Public Addr
       path: "/spec/input/network",
       value: {
         privatePort: 80,
-        platformAddresses: [{ id: "pa_abc123", port: 80 }],
+        platformAddresses: [
+          { domainPrefix: "tsbmom", id: "pa_abc123", port: 80 },
+        ],
       },
     },
     {
@@ -365,7 +369,7 @@ test("AP public address settings patch does not rewrite Private Address target p
     {
       op: "replace",
       path: "/spec/input/network/platformAddresses",
-      value: [{ id: "pa_new456", port: 8080 }],
+      value: [{ domainPrefix: "fxeigg", id: "pa_new456", port: 8080 }],
     },
     {
       op: "replace",
@@ -615,12 +619,12 @@ test("AP network settings keep bound Custom Domains following Platform Address p
       privatePort: 8080,
       publicAddresses: [
         {
-          host: "api-7c6ad52581.apps.example.com",
+          host: "ucflzg.apps.example.com",
           id: "pa_abc123",
           port: 9000,
           status: "accessible",
           type: "platform",
-          url: "https://api-7c6ad52581.apps.example.com/",
+          url: "https://ucflzg.apps.example.com/",
         },
       ],
     }
@@ -638,7 +642,9 @@ test("AP network settings keep bound Custom Domains following Platform Address p
             platformAddressId: "pa_abc123",
           },
         ],
-        platformAddresses: [{ id: "pa_abc123", port: 9000 }],
+        platformAddresses: [
+          { domainPrefix: "tsbmom", id: "pa_abc123", port: 9000 },
+        ],
         privatePort: 8080,
       },
     },
@@ -1110,8 +1116,8 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
       value: {
         privatePort: 8080,
         platformAddresses: [
-          { id: "pa_old123", port: 8080 },
-          { id: "pa_new456", port: 9000 },
+          { domainPrefix: "fffpnc", id: "pa_old123", port: 8080 },
+          { domainPrefix: "fxeigg", id: "pa_new456", port: 9000 },
         ],
       },
     },
@@ -1208,7 +1214,9 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
             platformAddressId: "pa_abc123",
           },
         ],
-        platformAddresses: [{ id: "pa_abc123", port: 80 }],
+        platformAddresses: [
+          { domainPrefix: "tsbmom", id: "pa_abc123", port: 80 },
+        ],
         privatePort: 80,
       },
     },

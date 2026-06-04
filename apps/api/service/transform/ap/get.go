@@ -15,11 +15,12 @@ const APCompositeLabel = "brain.io/app-name"
 // defaultIngressHostPlaceholder is a placeholder from older generated templates.
 // It must not surface as a real connection URL.
 const defaultIngressHostPlaceholder = "placeholder.example.com"
-const platformAddressHostPrefixMaxLength = 52
 
-var platformAddressHostUnsafeCharsPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 var platformAddressIDPattern = regexp.MustCompile(`^pa_[a-z0-9]{6,32}$`)
+var platformAddressDomainPrefixPattern = regexp.MustCompile(`^[a-z]{6}$`)
 var customDomainBindingIDPattern = regexp.MustCompile(`^cd_[a-z0-9]{6,32}$`)
+
+const platformAddressHostAlphabet = "abcdefghijklmnopqrstuvwxyz"
 
 func isPlaceholderIngressHost(host string) bool {
 	h := strings.TrimSpace(strings.ToLower(host))
@@ -148,8 +149,9 @@ func privateNetworkAddressForPort(services []map[string]interface{}, namespace s
 }
 
 type platformAddressRequest struct {
-	id   string
-	port int
+	domainPrefix string
+	id           string
+	port         int
 }
 
 type customDomainRequest struct {
@@ -292,6 +294,7 @@ func pendingPublicAddressRow(ap map[string]interface{}, address platformAddressR
 		getString(ap, "metadata", "namespace"),
 		getString(ap, "metadata", "name"),
 		address.id,
+		address.domainPrefix,
 		apRoutingDomain(ap),
 	)
 	if host == "" {
@@ -324,6 +327,7 @@ func pendingCustomDomainRow(
 		getString(ap, "metadata", "namespace"),
 		getString(ap, "metadata", "name"),
 		customDomain.platformAddressID,
+		target.domainPrefix,
 		apRoutingDomain(ap),
 	)
 	if cnameTarget != "" {
@@ -362,7 +366,12 @@ func apPlatformAddressRequests(ap map[string]interface{}) []platformAddressReque
 		if !platformAddressIDPattern.MatchString(id) || !ok {
 			continue
 		}
-		addresses = append(addresses, platformAddressRequest{id: id, port: port})
+		domainPrefix, _ := address["domainPrefix"].(string)
+		addresses = append(addresses, platformAddressRequest{
+			domainPrefix: strings.TrimSpace(strings.ToLower(domainPrefix)),
+			id:           id,
+			port:         port,
+		})
 	}
 	return addresses
 }
@@ -413,7 +422,7 @@ func apRoutingDomain(ap map[string]interface{}) string {
 	return strings.TrimSpace(getString(ap, "metadata", "labels", "region"))
 }
 
-func platformAddressHost(namespace string, name string, id string, domain string) string {
+func platformAddressHost(namespace string, name string, id string, domainPrefix string, domain string) string {
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	id = strings.TrimSpace(id)
@@ -421,22 +430,23 @@ func platformAddressHost(namespace string, name string, id string, domain string
 	if namespace == "" || name == "" || !platformAddressIDPattern.MatchString(id) || domain == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%s", namespace, name, id)))
-	return fmt.Sprintf("%s-%x.%s", platformAddressHostPrefix(name), sum[:5], domain)
+	label := strings.TrimSpace(strings.ToLower(domainPrefix))
+	if !platformAddressDomainPrefixPattern.MatchString(label) {
+		label = stablePlatformAddressHostLabel(fmt.Sprintf("%s/%s/%s", namespace, name, id), 6)
+	}
+	return fmt.Sprintf("%s.%s", label, domain)
 }
 
-func platformAddressHostPrefix(name string) string {
-	prefix := strings.ToLower(strings.TrimSpace(name))
-	prefix = platformAddressHostUnsafeCharsPattern.ReplaceAllString(prefix, "-")
-	prefix = strings.Trim(prefix, "-")
-	if len(prefix) > platformAddressHostPrefixMaxLength {
-		prefix = prefix[:platformAddressHostPrefixMaxLength]
-		prefix = strings.TrimRight(prefix, "-")
+func stablePlatformAddressHostLabel(source string, length int) string {
+	if length <= 0 {
+		return ""
 	}
-	if prefix == "" {
-		return "ap"
+	sum := sha256.Sum256([]byte(strings.TrimSpace(source)))
+	out := make([]byte, 0, length)
+	for i := 0; len(out) < length; i++ {
+		out = append(out, platformAddressHostAlphabet[sum[i%len(sum)]%byte(len(platformAddressHostAlphabet))])
 	}
-	return prefix
+	return string(out)
 }
 
 func privatePortFromValue(value interface{}) (int, bool) {

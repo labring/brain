@@ -4,7 +4,6 @@ export const DEVBOX_API_PREFIX = "/api/v1/devbox";
 
 const DEFAULT_DEVBOX_TOKEN_TTL_SECONDS = 4 * 60 * 60;
 const DNS_1123_LABEL_REGEX = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const HTTP_PROTOCOL_REGEX = /^https?:\/\//;
 const TRAILING_SLASHES_REGEX = /\/+$/;
 
 export type DevboxEnv = Record<string, string | undefined>;
@@ -17,19 +16,12 @@ function getRequiredEnv(env: DevboxEnv, name: keyof DevboxEnv): string {
   return value.trim();
 }
 
-function normalizeHost(host: string): string {
-  return host
-    .trim()
-    .replace(HTTP_PROTOCOL_REGEX, "")
-    .replace(TRAILING_SLASHES_REGEX, "");
-}
-
-export function getSealosHostFromEnv(env: DevboxEnv): string {
-  return normalizeHost(getRequiredEnv(env, "SEALOS_HOST"));
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(TRAILING_SLASHES_REGEX, "");
 }
 
 export function getDevboxBaseUrlFromEnv(env: DevboxEnv): string {
-  return `https://devbox-server.${getSealosHostFromEnv(env)}`;
+  return normalizeBaseUrl(getRequiredEnv(env, "DEVBOX_API_BASE_URL"));
 }
 
 export function getDevboxDefaultImageFromEnv(

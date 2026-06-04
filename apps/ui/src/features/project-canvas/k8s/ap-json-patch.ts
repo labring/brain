@@ -24,7 +24,10 @@ import {
   isPlatformAddressId,
   normalizeCustomDomainBindingId,
   normalizePlatformAddressId,
+  PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN,
+  PLATFORM_ADDRESS_DOMAIN_PREFIX_RE,
   PLATFORM_ADDRESS_ID_PATTERN,
+  stablePlatformAddressDomainPrefix,
 } from "../platform-addresses";
 import {
   type ApReplicaStrategy,
@@ -701,7 +704,21 @@ function validatedPlatformAddresses(
       throw new Error("Platform Address IDs must be unique.");
     }
     seenIds.add(id);
+    const rawDomainPrefix =
+      typeof address.domainPrefix === "string"
+        ? address.domainPrefix.trim().toLowerCase()
+        : "";
+    const domainPrefix =
+      rawDomainPrefix === ""
+        ? stablePlatformAddressDomainPrefix(id)
+        : rawDomainPrefix;
+    if (!PLATFORM_ADDRESS_DOMAIN_PREFIX_RE.test(domainPrefix)) {
+      throw new Error(
+        `Platform Address domainPrefix must match ${PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN}.`
+      );
+    }
     return {
+      domainPrefix,
       id,
       port: validatedNetworkPort(address.port, "Public Address target port"),
     };
