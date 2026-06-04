@@ -203,6 +203,14 @@ A Project Canvas control that changes the current user's canvas viewport, such a
 
 Canvas Viewport Controls are not persisted in Canvas Layout and do not affect other users' view of the Project Canvas.
 
+### Canvas Navigation Chrome
+
+The normally hidden, transient Project Canvas navigation UI around the graph, including Canvas MiniMap and Canvas Viewport Controls.
+
+Canvas Navigation Chrome appears during canvas navigation or node movement and briefly remains visible after the interaction ends. It is session-local and does not change Canvas Layout.
+
+Pointer hover alone is not canvas navigation and does not reveal Canvas Navigation Chrome. Resource selection, resource inspection, or Connecting Edge gestures do not reveal Canvas Navigation Chrome. Keyboard shortcuts for canvas interaction or viewport changes do reveal Canvas Navigation Chrome. Programmatic viewport movement does not reveal Canvas Navigation Chrome. Once revealed by canvas navigation or node movement, direct pointer or keyboard focus interaction with Canvas Navigation Chrome keeps it visible and visible to the user. When hidden, Canvas Navigation Chrome does not participate in canvas interaction, and no separate persistent mode indicator replaces it. Open project surfaces such as Side Pane, Main Action Surface, or Session Drawer do not suppress Canvas Navigation Chrome.
+
 ### Canvas Resource Identity
 
 The product identity of a canvas node's backing AP, DB, or AP-bound EntryPoint surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.

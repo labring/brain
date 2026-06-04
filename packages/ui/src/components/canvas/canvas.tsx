@@ -223,11 +223,13 @@ function userControlledViewportFocusState(
 function resolveCanvasReactFlowProps({
   handMode,
   onMove,
+  onMoveEnd,
   onMoveStart,
   userReactFlowProps,
 }: {
   handMode: boolean;
   onMove: NonNullable<CanvasReactFlowProps["onMove"]>;
+  onMoveEnd: NonNullable<CanvasReactFlowProps["onMoveEnd"]>;
   onMoveStart: NonNullable<CanvasReactFlowProps["onMoveStart"]>;
   userReactFlowProps: CanvasReactFlowProps;
 }): CanvasReactFlowProps {
@@ -272,6 +274,7 @@ function resolveCanvasReactFlowProps({
     ...interactionOverrides,
     fitView: false,
     onMove,
+    onMoveEnd,
     onMoveStart,
     connectionLineStyle: {
       ...CANVAS_DEFAULT_EDGE_STYLE,
@@ -288,7 +291,8 @@ function resolveCanvasReactFlowProps({
 }
 
 function CanvasFlow({ children }: CanvasFlowProps) {
-  const { interactionMode, meta, rootRef, state } = useCanvas();
+  const { interactionMode, meta, navigationChrome, rootRef, state } =
+    useCanvas();
   const [nodes, setNodes, onNodesChange] = useNodesState(state.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(state.edges);
   const {
@@ -307,6 +311,8 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const viewportFollowStateRef = useRef(initialCanvasViewportFollowState);
   const viewportFocusStateRef = useRef(initialCanvasViewportFocusState);
   const edgeAnchorPairsRef = useRef(new Map<string, CanvasEdgeAnchorPair>());
+  const nodeDragNavigationHoldActiveRef = useRef(false);
+  const viewportNavigationHoldActiveRef = useRef(false);
 
   useLayoutEffect(() => {
     if (initializedRef.current) {
@@ -385,6 +391,10 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       viewportFocusStateRef.current = userControlledViewportFocusState(
         viewportFocusStateRef.current
       );
+      navigationChrome.reveal();
+    } else if (event != null && !viewportNavigationHoldActiveRef.current) {
+      viewportNavigationHoldActiveRef.current = true;
+      navigationChrome.beginInteraction();
     }
     userReactFlowProps.onMoveStart?.(event, viewport);
   };
@@ -396,15 +406,54 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       viewportFocusStateRef.current = userControlledViewportFocusState(
         viewportFocusStateRef.current
       );
+      if (event.type === "wheel") {
+        navigationChrome.reveal();
+      }
     }
     userReactFlowProps.onMove?.(event, viewport);
+  };
+  const handleMoveEnd: NonNullable<CanvasReactFlowProps["onMoveEnd"]> = (
+    event,
+    viewport
+  ) => {
+    if (viewportNavigationHoldActiveRef.current) {
+      viewportNavigationHoldActiveRef.current = false;
+      navigationChrome.endInteraction();
+    }
+    userReactFlowProps.onMoveEnd?.(event, viewport);
+  };
+  const handleNodeDragStart: CanvasReactFlowProps["onNodeDragStart"] = (
+    ...args
+  ) => {
+    if (!nodeDragNavigationHoldActiveRef.current) {
+      nodeDragNavigationHoldActiveRef.current = true;
+      navigationChrome.beginInteraction();
+    }
+    userReactFlowProps.onNodeDragStart?.(...args);
+  };
+  const handleNodeDragStop: CanvasReactFlowProps["onNodeDragStop"] = (
+    ...args
+  ) => {
+    try {
+      userReactFlowProps.onNodeDragStop?.(...args);
+    } finally {
+      if (nodeDragNavigationHoldActiveRef.current) {
+        nodeDragNavigationHoldActiveRef.current = false;
+        navigationChrome.endInteraction();
+      }
+    }
   };
   const handMode = interactionMode === "hand";
   const passThrough = resolveCanvasReactFlowProps({
     handMode,
     onMove: handleMove,
+    onMoveEnd: handleMoveEnd,
     onMoveStart: handleMoveStart,
-    userReactFlowProps,
+    userReactFlowProps: {
+      ...userReactFlowProps,
+      onNodeDragStart: handleNodeDragStart,
+      onNodeDragStop: handleNodeDragStop,
+    },
   });
   const openingFitKey = meta.openingFitView?.key ?? DEFAULT_OPENING_FIT_KEY;
   const nodeCount = nodes.length;

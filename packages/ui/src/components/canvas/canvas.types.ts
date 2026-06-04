@@ -80,9 +80,17 @@ export interface CanvasMeta {
   };
 }
 
+export interface CanvasNavigationChromeState {
+  beginInteraction: () => void;
+  endInteraction: () => void;
+  reveal: () => void;
+  visible: boolean;
+}
+
 export interface CanvasContextValue {
   interactionMode: CanvasInteractionMode;
   meta: CanvasMeta;
+  navigationChrome: CanvasNavigationChromeState;
   rootRef: RefObject<HTMLDivElement | null>;
   setInteractionMode: (mode: CanvasInteractionMode) => void;
   state: CanvasState;

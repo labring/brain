@@ -9,8 +9,8 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import { MiniMap, useReactFlow } from "@xyflow/react";
 import { Fullscreen, Hand, Minus, MousePointer2, Plus } from "lucide-react";
-import type { ReactNode } from "react";
-import { useEffect } from "react";
+import type { FocusEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { CanvasInteractionMode } from "./canvas.types";
 import { useCanvas } from "./canvas.use";
 
@@ -34,6 +34,61 @@ interface CanvasControlButtonProps {
   children: ReactNode;
   label: string;
   onClick: () => void;
+}
+
+function useCanvasNavigationChromePresence() {
+  const {
+    navigationChrome: { beginInteraction, endInteraction, reveal, visible },
+  } = useCanvas();
+  const holdingRef = useRef(false);
+
+  const beginHold = useCallback(() => {
+    if (holdingRef.current) {
+      return;
+    }
+    holdingRef.current = true;
+    beginInteraction();
+  }, [beginInteraction]);
+
+  const endHold = useCallback(() => {
+    if (!holdingRef.current) {
+      return;
+    }
+    holdingRef.current = false;
+    endInteraction();
+  }, [endInteraction]);
+
+  useEffect(
+    () => () => {
+      endHold();
+    },
+    [endHold]
+  );
+
+  const interactionProps = useMemo(
+    () => ({
+      onBlurCapture: (event: FocusEvent<HTMLDivElement>) => {
+        const nextTarget = event.relatedTarget;
+        if (
+          nextTarget instanceof Node &&
+          event.currentTarget.contains(nextTarget)
+        ) {
+          return;
+        }
+        endHold();
+      },
+      onFocusCapture: beginHold,
+      onPointerEnter: beginHold,
+      onPointerLeave: endHold,
+    }),
+    [beginHold, endHold]
+  );
+
+  return {
+    hidden: !visible,
+    interactionProps,
+    reveal,
+  };
 }
 
 function runViewportAction(action: () => Promise<boolean>) {
@@ -152,6 +207,7 @@ export function CanvasControls({
 }: CanvasControlsProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { interactionMode, rootRef, setInteractionMode } = useCanvas();
+  const chrome = useCanvasNavigationChromePresence();
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -172,6 +228,7 @@ export function CanvasControls({
       }
 
       event.preventDefault();
+      chrome.reveal();
       if (shortcut === "pointer" || shortcut === "hand") {
         setInteractionMode(shortcut);
         return;
@@ -197,21 +254,29 @@ export function CanvasControls({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [fitView, rootRef, setInteractionMode, zoomIn, zoomOut]);
+  }, [chrome.reveal, fitView, rootRef, setInteractionMode, zoomIn, zoomOut]);
 
   const modeButton = (mode: CanvasInteractionMode, label: string) => ({
     active: interactionMode === mode,
     label,
-    onClick: () => setInteractionMode(mode),
+    onClick: () => {
+      chrome.reveal();
+      setInteractionMode(mode);
+    },
   });
 
   return (
     <div
       className={cn(
-        "pointer-events-auto absolute top-[52px] right-2 z-10 flex flex-col items-center rounded-lg transition-[right,transform,opacity] duration-200 ease-out",
+        "absolute top-[52px] right-2 z-10 flex flex-col items-center rounded-lg transition-[right,opacity] duration-200 ease-out",
+        chrome.hidden
+          ? "pointer-events-none opacity-0"
+          : "pointer-events-auto opacity-100",
         className
       )}
       data-slot="canvas-controls"
+      data-visible={chrome.hidden ? undefined : "true"}
+      {...chrome.interactionProps}
       style={{ right: `calc(0.5rem + ${Math.max(0, rightInset)}px)` }}
     >
       <CanvasControlButton {...modeButton("hand", "Hand tool")}>
@@ -223,6 +288,7 @@ export function CanvasControls({
       <CanvasControlButton
         label="Fit view"
         onClick={() => {
+          chrome.reveal();
           runViewportAction(() =>
             fitView({ duration: VIEWPORT_ACTION_DURATION_MS })
           );
@@ -233,6 +299,7 @@ export function CanvasControls({
       <CanvasControlButton
         label="Zoom in"
         onClick={() => {
+          chrome.reveal();
           runViewportAction(() =>
             zoomIn({ duration: VIEWPORT_ACTION_DURATION_MS })
           );
@@ -243,6 +310,7 @@ export function CanvasControls({
       <CanvasControlButton
         label="Zoom out"
         onClick={() => {
+          chrome.reveal();
           runViewportAction(() =>
             zoomOut({ duration: VIEWPORT_ACTION_DURATION_MS })
           );
@@ -258,13 +326,20 @@ export function CanvasMiniMap({
   className,
   rightInset = 0,
 }: CanvasMiniMapProps) {
+  const chrome = useCanvasNavigationChromePresence();
+
   return (
     <div
       className={cn(
-        "pointer-events-auto absolute top-[60px] left-3 z-10 transition-[right,transform,opacity] duration-200 ease-out",
+        "absolute top-[60px] left-3 z-10 transition-[right,opacity] duration-200 ease-out",
+        chrome.hidden
+          ? "pointer-events-none opacity-0"
+          : "pointer-events-auto opacity-100",
         className
       )}
       data-slot="canvas-minimap"
+      data-visible={chrome.hidden ? undefined : "true"}
+      {...chrome.interactionProps}
       style={{ right: rightInset > 0 ? `${rightInset}px` : undefined }}
     >
       <MiniMap
