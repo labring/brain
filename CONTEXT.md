@@ -59,6 +59,12 @@ A Brain product resource and API view that represents an application workload. `
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
 
+### AP Deployments Pane
+
+A Canvas Resource Pane surface for one existing AP that presents image update controls and retained AP image versions for rollback. It is distinct from Docker Deployment Settings, which are creation-time choices before an AP exists.
+
+_Avoid_: AP Deployment Pane, Image & Entrypoint.
+
 ### Docker Deployment Settings
 
 The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.

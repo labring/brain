@@ -4,20 +4,30 @@ import {
   fetchAPImageVersionDetail,
   rollbackAPImageVersion,
   useAPImageVersions,
+  useBrainProductResource,
 } from "@workspace/api/hooks";
+import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
+import { AppInput } from "@workspace/ui/components/app-input";
 import { ContainerHistoryPane } from "@workspace/ui/components/container-history-pane/container-history-pane";
 import type { ContainerHistorySnapshotRow } from "@workspace/ui/components/container-history-pane/container-history-pane.types";
+import { Label } from "@workspace/ui/components/label";
+import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
+import { Spinner } from "@workspace/ui/components/spinner";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
-import { History } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { SquarePen, Upload } from "lucide-react";
+import { memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import {
   containerStatesFromNode,
   workloadClaimKindFromStates,
 } from "@/features/project-canvas/flow/container-node-workload";
+import { applyApImage } from "@/features/project-canvas/k8s/ap-json-patch";
+import { readApImage } from "@/features/project-canvas/k8s/ap-spec-access";
+import { k8sGetClaimBody } from "@/features/project-canvas/k8s/claim-mapper";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import {
   CanvasResourcePane,
@@ -38,13 +48,135 @@ function WorkloadHistoryShell({
   return (
     <CanvasResourcePane
       closeAriaLabel="Close workload deployments"
-      icon={<History aria-hidden className="size-4 shrink-0 text-blue-400" />}
+      icon={
+        <ProjectSourceDockerIcon
+          aria-hidden
+          className="size-4 shrink-0 text-blue-400"
+        />
+      }
       onClose={onClose}
       subtitle={subtitle}
       title={title}
     >
       {children}
     </CanvasResourcePane>
+  );
+}
+
+function apImageFromClaimPayload(
+  claimPayload: ReturnType<typeof useBrainProductResource>["data"]
+): string {
+  const body = k8sGetClaimBody(claimPayload);
+  const spec = body?.spec;
+  if (spec == null || typeof spec !== "object" || Array.isArray(spec)) {
+    return "";
+  }
+  return readApImage(spec as Record<string, unknown>) ?? "";
+}
+
+function DeploymentImageSection({
+  claimPayload,
+  kubeconfig,
+  name,
+  namespace,
+  onApplied,
+}: {
+  claimPayload: ReturnType<typeof useBrainProductResource>["data"];
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  onApplied: () => Promise<unknown>;
+}) {
+  const imageInputId = useId();
+  const claimBody = useMemo(
+    () => k8sGetClaimBody(claimPayload),
+    [claimPayload]
+  );
+  const currentImage = useMemo(
+    () => apImageFromClaimPayload(claimPayload),
+    [claimPayload]
+  );
+  const [draftImage, setDraftImage] = useState(currentImage);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    setDraftImage(currentImage);
+  }, [currentImage]);
+
+  const trimmedDraft = draftImage.trim();
+  const canUpdate =
+    !isUpdating &&
+    claimBody != null &&
+    kubeconfig.trim() !== "" &&
+    name.trim() !== "" &&
+    namespace.trim() !== "" &&
+    trimmedDraft !== "" &&
+    trimmedDraft !== currentImage.trim();
+
+  const applyImageUpdate = useCallback(async () => {
+    if (!canUpdate || claimBody == null) {
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      await applyApImage(kubeconfig, claimBody, trimmedDraft);
+      toast.success("Image updated.");
+      await onApplied();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Image update failed."
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [canUpdate, claimBody, kubeconfig, onApplied, trimmedDraft]);
+
+  return (
+    <ResourceSettingsSection icon={SquarePen} title="Image">
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-2">
+          <Label
+            className="text-foreground text-sm leading-none"
+            htmlFor={imageInputId}
+          >
+            Image
+          </Label>
+          <AppInput
+            aria-label="AP image"
+            disabled={isUpdating}
+            id={imageInputId}
+            onChange={(event) => setDraftImage(event.target.value)}
+            onKeyDown={async (event) => {
+              if (event.key !== "Enter") {
+                return;
+              }
+              event.preventDefault();
+              await applyImageUpdate();
+            }}
+            placeholder="ghcr.io/org/app:1.0.0"
+            title={trimmedDraft === "" ? "No image configured" : trimmedDraft}
+            value={draftImage}
+          />
+        </div>
+        <div className="flex min-w-0 items-center justify-end">
+          <AppButton
+            disabled={!canUpdate}
+            onClick={async () => {
+              await applyImageUpdate();
+            }}
+            type="button"
+            variant="secondary"
+          >
+            {isUpdating ? (
+              <Spinner aria-hidden className="size-4 text-muted-foreground" />
+            ) : (
+              <Upload aria-hidden className="size-4" />
+            )}
+            {isUpdating ? "Updating..." : "Update"}
+          </AppButton>
+        </div>
+      </div>
+    </ResourceSettingsSection>
   );
 }
 
@@ -64,6 +196,12 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const workloadKind = workloadClaimKindFromStates(states);
   const title = name === "" ? "Deployments" : `${name} Deployments`;
 
+  const claim = useBrainProductResource({
+    kind: workloadKind,
+    kubeconfig,
+    name,
+    namespace: ns,
+  });
   const versions = useAPImageVersions({
     kubeconfig,
     name,
@@ -99,6 +237,10 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const [rollbackBusyVersion, setRollbackBusyVersion] = useState<string | null>(
     null
   );
+  const reloadDeployments = useCallback(
+    () => Promise.all([claim.mutate(), versions.mutate()]),
+    [claim, versions]
+  );
 
   const runRollback = useCallback(
     async (versionHash: string) => {
@@ -108,9 +250,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         namespace: ns,
         versionHash,
       });
-      await versions.mutate();
+      await reloadDeployments();
     },
-    [kubeconfig, name, ns, versions]
+    [kubeconfig, name, ns, reloadDeployments]
   );
 
   const confirmRollbackSnapshot = () => {
@@ -196,7 +338,24 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     );
   }
 
-  if (versions.isLoading && versions.data == null) {
+  if (claim.error != null) {
+    return (
+      <WorkloadHistoryShell
+        onClose={onClose}
+        subtitle={workloadKind}
+        title={title}
+      >
+        <p className="text-destructive text-sm" role="alert">
+          Could not load AP image: {claim.error.message}
+        </p>
+      </WorkloadHistoryShell>
+    );
+  }
+
+  if (
+    (versions.isLoading && versions.data == null) ||
+    (claim.isLoading && claim.data == null)
+  ) {
     return (
       <WorkloadHistoryShell
         onClose={onClose}
@@ -212,9 +371,16 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     <>
       <WorkloadHistoryShell
         onClose={onClose}
-        subtitle={workloadKind}
+        subtitle="This is a introduction placeholder."
         title={title}
       >
+        <DeploymentImageSection
+          claimPayload={claim.data}
+          kubeconfig={kubeconfig}
+          name={name}
+          namespace={ns}
+          onApplied={reloadDeployments}
+        />
         <ContainerHistoryPane
           className="min-h-0"
           onLoadConfigYaml={onLoadConfigYaml}

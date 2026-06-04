@@ -35,7 +35,7 @@ export function mockApConfigSnapshotRows(): ContainerHistorySnapshotRow[] {
         image:
           index % 4 === 3
             ? ""
-            : `registry.example.io/demo:v${Math.max(1, 10 - index)}`,
+            : `ghcr.io/sealai/orders-api:2026.03.${String(31 - index).padStart(2, "0")}`,
         createdAt: isoHoursAgo(6 * (index + 1)),
         imagePullPolicy: "Always",
         source,
