@@ -202,6 +202,60 @@ export const Index: RegistryIndex = {
       import("@registry/linear/components/app-input/app-input-preview"),
   },
 
+  "linear/components/app-input-field": {
+    style: "linear",
+    group: "components",
+    name: "app-input-field",
+    title: "App Input Field",
+    description:
+      "SealAI product text input field with label, description, error, and accessibility wiring.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-input-field", "app-input", "field"],
+    files: [
+      {
+        path: "registry/linear/components/app-input-field/app-input-field-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-input-field.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/field.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/label.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/separator.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import(
+        "@registry/linear/components/app-input-field/app-input-field-preview"
+      ),
+  },
+
   "linear/components/app-dialog": {
     style: "linear",
     group: "components",

@@ -1,7 +1,6 @@
 "use client";
 
-import { AppInput } from "@workspace/ui/components/app-input";
-import { Label } from "@workspace/ui/components/label";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
@@ -47,38 +46,18 @@ export function ProjectCreatorProjectNameField() {
   );
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
-      <Label
-        className="text-foreground leading-5"
-        htmlFor="project-creator-display-name"
-      >
-        Project Name
-      </Label>
-      <AppInput
-        aria-describedby={
-          states.projectDisplayNameError
-            ? "project-creator-display-name-error"
-            : undefined
-        }
-        aria-invalid={states.projectDisplayNameError ? true : undefined}
-        autoComplete="off"
-        className="border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
-        id="project-creator-display-name"
-        onChange={(event) =>
-          actions.setProjectDisplayName(event.currentTarget.value)
-        }
-        placeholder="Placeholder"
-        value={states.projectDisplayName}
-      />
-      {states.projectDisplayNameError ? (
-        <p
-          className="text-destructive text-xs leading-4"
-          id="project-creator-display-name-error"
-        >
-          {states.projectDisplayNameError}
-        </p>
-      ) : null}
-    </div>
+    <AppInputField
+      autoComplete="off"
+      error={states.projectDisplayNameError}
+      id="project-creator-display-name"
+      inputClassName="border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+      label="Project Name"
+      onChange={(event) =>
+        actions.setProjectDisplayName(event.currentTarget.value)
+      }
+      placeholder="Placeholder"
+      value={states.projectDisplayName}
+    />
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { CanvasNodeStatusDot } from "@workspace/ui/components/canvas-node/canvas-node.status";
 import {
   DropdownMenu,
@@ -208,41 +209,25 @@ export function ProjectExplorerListItem({
             <AppDialog.Description>
               Update the project display name
             </AppDialog.Description>
-            <AppDialog.Field>
-              <AppDialog.Label htmlFor={`project-rename-${project.id}`}>
-                Name
-              </AppDialog.Label>
-              <AppDialog.Input
-                aria-describedby={
-                  renameError ? `project-rename-${project.id}-error` : undefined
+            <AppInputField
+              autoComplete="off"
+              error={renameError}
+              id={`project-rename-${project.id}`}
+              label="Name"
+              onChange={(e) => {
+                setRenameDraft(e.target.value);
+                if (renameError) {
+                  setRenameError(null);
                 }
-                aria-invalid={renameError ? true : undefined}
-                autoComplete="off"
-                className="h-9"
-                id={`project-rename-${project.id}`}
-                onChange={(e) => {
-                  setRenameDraft(e.target.value);
-                  if (renameError) {
-                    setRenameError(null);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitRename().catch(() => undefined);
-                  }
-                }}
-                value={renameDraft}
-              />
-              {renameError ? (
-                <p
-                  className="text-red-400 text-xs leading-4"
-                  id={`project-rename-${project.id}-error`}
-                >
-                  {renameError}
-                </p>
-              ) : null}
-            </AppDialog.Field>
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitRename().catch(() => undefined);
+                }
+              }}
+              value={renameDraft}
+            />
           </AppDialog.Body>
           <AppDialog.Footer>
             <AppDialog.Cancel

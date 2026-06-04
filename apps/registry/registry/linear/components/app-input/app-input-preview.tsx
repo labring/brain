@@ -1,6 +1,7 @@
 "use client";
 
 import { AppInput } from "@workspace/ui/components/app-input";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Preview, PreviewWrapper } from "@workspace/ui/components/preview";
 import { Search } from "lucide-react";
 
@@ -31,93 +32,58 @@ export default function AppInputPreview() {
       <Preview title="Default">
         <div className="grid gap-4 md:grid-cols-3">
           {fields.map(({ id, label, placeholder, value }) => (
-            <label
-              className="flex min-w-0 flex-col gap-2"
-              htmlFor={id}
+            <AppInputField
+              autoComplete="off"
+              defaultValue={value}
+              id={id}
               key={id}
-            >
-              <span className="font-medium text-foreground text-sm">
-                {label}
-              </span>
-              <AppInput
-                autoComplete="off"
-                defaultValue={value}
-                id={id}
-                placeholder={placeholder}
-              />
-            </label>
+              label={label}
+              placeholder={placeholder}
+            />
           ))}
         </div>
       </Preview>
 
       <Preview title="Variants">
         <div className="grid gap-4 md:grid-cols-2">
-          <label
-            className="flex min-w-0 flex-col gap-2"
-            htmlFor="app-input-default"
-          >
-            <span className="font-medium text-foreground text-sm">Default</span>
-            <AppInput id="app-input-default" placeholder="www.example.com" />
-          </label>
+          <AppInputField
+            id="app-input-default"
+            label="Default"
+            placeholder="www.example.com"
+          />
 
-          <label
-            className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-background px-3 py-2"
-            htmlFor="app-input-bare"
-          >
-            <span className="font-medium text-foreground text-sm">
-              Bare in framed row
-            </span>
-            <AppInput
-              defaultValue="gateway.demo.sealos.run"
-              id="app-input-bare"
-              variant="bare"
-            />
-          </label>
+          <AppInputField
+            className="rounded-md border border-border bg-background px-3 py-2"
+            defaultValue="gateway.demo.sealos.run"
+            id="app-input-bare"
+            label="Bare in framed row"
+            variant="bare"
+          />
         </div>
       </Preview>
 
       <Preview title="States">
         <div className="grid gap-4 md:grid-cols-3">
-          <label
-            className="flex min-w-0 flex-col gap-2"
-            htmlFor="app-input-filled"
-          >
-            <span className="font-medium text-foreground text-sm">Filled</span>
-            <AppInput
-              defaultValue="postgres://main"
-              id="app-input-filled"
-              readOnly
-            />
-          </label>
+          <AppInputField
+            defaultValue="postgres://main"
+            id="app-input-filled"
+            label="Filled"
+            readOnly
+          />
 
-          <label
-            className="flex min-w-0 flex-col gap-2"
-            htmlFor="app-input-invalid"
-          >
-            <span className="font-medium text-foreground text-sm">Invalid</span>
-            <AppInput
-              aria-invalid="true"
-              defaultValue="https://"
-              id="app-input-invalid"
-            />
-            <span className="text-destructive text-xs">
-              Enter a complete public address.
-            </span>
-          </label>
+          <AppInputField
+            defaultValue="https://"
+            error="Enter a complete public address."
+            id="app-input-invalid"
+            label="Invalid"
+          />
 
-          <label
-            className="flex min-w-0 flex-col gap-2"
-            htmlFor="app-input-disabled"
-          >
-            <span className="font-medium text-foreground text-sm">
-              Disabled
-            </span>
-            <AppInput
-              defaultValue="Waiting for allocation"
-              disabled
-              id="app-input-disabled"
-            />
-          </label>
+          <AppInputField
+            defaultValue="Waiting for allocation"
+            disabled
+            id="app-input-disabled"
+            label="Disabled"
+          />
         </div>
       </Preview>
 
@@ -155,19 +121,11 @@ export default function AppInputPreview() {
                 The base input stays neutral when composed into dark surfaces.
               </p>
             </div>
-            <label
-              className="flex min-w-0 flex-col gap-2"
-              htmlFor="app-input-domain"
-            >
-              <span className="font-medium text-sm text-zinc-200">
-                Custom Domain
-              </span>
-              <AppInput
-                className="h-8 border-white/15 bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/25 focus-visible:ring-white/10 dark:bg-transparent"
-                id="app-input-domain"
-                placeholder="www.example.com"
-              />
-            </label>
+            <AppInputField
+              id="app-input-domain"
+              label="Custom Domain"
+              placeholder="www.example.com"
+            />
           </section>
         </div>
       </Preview>

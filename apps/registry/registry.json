@@ -48,6 +48,20 @@
       ]
     },
     {
+      "name": "app-input-field",
+      "type": "registry:ui",
+      "title": "App Input Field",
+      "description": "SealAI product text input field with label, description, error, and accessibility wiring",
+      "registryDependencies": ["app-input", "field"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-input-field.tsx",
+          "type": "registry:component",
+          "target": "components/app-input-field.tsx"
+        }
+      ]
+    },
+    {
       "name": "log-viewer",
       "type": "registry:ui",
       "title": "Log viewer (Linear)",

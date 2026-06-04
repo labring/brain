@@ -3,6 +3,7 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Label } from "@workspace/ui/components/label";
 import { Spinner } from "@workspace/ui/components/spinner";
 import {
@@ -158,32 +159,19 @@ export function DockerDeployer({
         icon={<Package aria-hidden className="size-4" />}
         title="Image"
       >
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <Label htmlFor="docker-deployer-image">Docker image</Label>
-          <AppInput
-            aria-describedby={
-              visibleImageError ? "docker-deployer-image-error" : undefined
-            }
-            aria-invalid={visibleImageError ? true : undefined}
-            autoComplete="off"
-            disabled={busy}
-            id="docker-deployer-image"
-            onChange={(event) => {
-              setImageTouched(true);
-              setImage(event.currentTarget.value);
-            }}
-            placeholder="ghcr.io/org/image:tag"
-            value={image}
-          />
-          {visibleImageError ? (
-            <p
-              className="text-destructive text-xs leading-4"
-              id="docker-deployer-image-error"
-            >
-              {visibleImageError.message}
-            </p>
-          ) : null}
-        </div>
+        <AppInputField
+          autoComplete="off"
+          disabled={busy}
+          error={visibleImageError?.message}
+          id="docker-deployer-image"
+          label="Docker image"
+          onChange={(event) => {
+            setImageTouched(true);
+            setImage(event.currentTarget.value);
+          }}
+          placeholder="ghcr.io/org/image:tag"
+          value={image}
+        />
       </DeploymentCard>
 
       <DeploymentCard
@@ -294,33 +282,18 @@ export function DockerDeployer({
         title="Network"
       >
         <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Label htmlFor="docker-deployer-port">App Listening Port</Label>
-            <AppInput
-              aria-describedby={
-                portError ? "docker-deployer-port-error" : undefined
-              }
-              aria-invalid={portError ? true : undefined}
-              disabled={busy}
-              id="docker-deployer-port"
-              inputMode="numeric"
-              max={65_535}
-              min={1}
-              onChange={(event) =>
-                setAppListeningPort(event.currentTarget.value)
-              }
-              type="number"
-              value={appListeningPort}
-            />
-            {portError ? (
-              <p
-                className="text-destructive text-xs leading-4"
-                id="docker-deployer-port-error"
-              >
-                {portError.message}
-              </p>
-            ) : null}
-          </div>
+          <AppInputField
+            disabled={busy}
+            error={portError?.message}
+            id="docker-deployer-port"
+            inputMode="numeric"
+            label="App Listening Port"
+            max={65_535}
+            min={1}
+            onChange={(event) => setAppListeningPort(event.currentTarget.value)}
+            type="number"
+            value={appListeningPort}
+          />
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label>Public Address</Label>
             <div className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-input px-3 text-foreground text-sm leading-5">

@@ -9,6 +9,7 @@ import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Badge } from "@workspace/ui/components/badge";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { Label } from "@workspace/ui/components/label";
@@ -1748,25 +1749,18 @@ function CnameBindingDialog({
               {target === "" ? "Pending domain" : target}
             </div>
           </AppDialog.Field>
-          <AppDialog.Field>
-            <AppDialog.Label htmlFor={inputId}>Custom Domain</AppDialog.Label>
-            <AppDialog.Input
-              aria-invalid={error != null}
-              disabled={pending}
-              id={inputId}
-              onChange={(event) => {
-                setDomainDraft(event.target.value);
-                setError(null);
-              }}
-              placeholder="www.example.com"
-              value={domainDraft}
-            />
-          </AppDialog.Field>
-          {error == null ? null : (
-            <p className="text-red-400 text-xs" role="alert">
-              {error}
-            </p>
-          )}
+          <AppInputField
+            disabled={pending}
+            error={error}
+            id={inputId}
+            label="Custom Domain"
+            onChange={(event) => {
+              setDomainDraft(event.target.value);
+              setError(null);
+            }}
+            placeholder="www.example.com"
+            value={domainDraft}
+          />
         </AppDialog.Body>
         <AppDialog.Footer>
           <AppDialog.Cancel disabled={pending}>Cancel</AppDialog.Cancel>
@@ -1962,27 +1956,20 @@ function AddPublicAddressForm({
 
   return (
     <div className="grid min-w-0 gap-3 rounded-md border border-border border-dashed bg-transparent p-3">
-      <div className="grid min-w-0 gap-1.5">
-        <Label htmlFor={portInputId}>Public Address target port</Label>
-        <AppInput
-          aria-describedby={error == null ? undefined : errorId}
-          aria-invalid={error != null}
-          className="max-w-32"
-          disabled={pending}
-          id={portInputId}
-          inputMode="numeric"
-          onChange={(event) => {
-            setDraftPort(event.target.value);
-            setError(null);
-          }}
-          value={draftPort}
-        />
-      </div>
-      {error == null ? null : (
-        <p className="text-destructive text-xs" id={errorId} role="alert">
-          {error}
-        </p>
-      )}
+      <AppInputField
+        disabled={pending}
+        error={error}
+        errorId={errorId}
+        id={portInputId}
+        inputClassName="max-w-32"
+        inputMode="numeric"
+        label="Public Address target port"
+        onChange={(event) => {
+          setDraftPort(event.target.value);
+          setError(null);
+        }}
+        value={draftPort}
+      />
       <div className="flex justify-end gap-1">
         <AppButton
           disabled={pending}
@@ -2300,42 +2287,23 @@ function NetworkSettingsSection({
           />
         </button>
 
-        <div className="grid min-w-0 gap-1.5">
-          <Label
-            className="text-muted-foreground text-sm leading-5"
-            htmlFor={networkInputId}
-          >
-            Private Address target port
-          </Label>
-          <AppInput
-            aria-describedby={
-              effectivePortError == null ? undefined : `${networkInputId}-error`
+        <AppInputField
+          disabled={readOnly}
+          error={effectivePortError}
+          id={networkInputId}
+          inputClassName="max-w-32"
+          inputMode="numeric"
+          label="Private Address target port"
+          onChange={(event) => {
+            if (onPrivatePortDraftChange == null) {
+              setDraftPort(event.target.value);
+            } else {
+              onPrivatePortDraftChange(event.target.value);
             }
-            aria-invalid={effectivePortError != null}
-            className="max-w-32"
-            disabled={readOnly}
-            id={networkInputId}
-            inputMode="numeric"
-            onChange={(event) => {
-              if (onPrivatePortDraftChange == null) {
-                setDraftPort(event.target.value);
-              } else {
-                onPrivatePortDraftChange(event.target.value);
-              }
-              setPortError(null);
-            }}
-            value={portDraft}
-          />
-          {effectivePortError == null ? null : (
-            <p
-              className="text-destructive text-xs"
-              id={`${networkInputId}-error`}
-              role="alert"
-            >
-              {effectivePortError}
-            </p>
-          )}
-        </div>
+            setPortError(null);
+          }}
+          value={portDraft}
+        />
       </NetworkCard>
 
       <DomainListSection
