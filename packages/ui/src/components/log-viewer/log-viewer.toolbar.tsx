@@ -66,11 +66,7 @@ export function LogViewerToolbar() {
           searchPlaceholder="Search"
           value={selectedContainers}
         />
-        <TimeRangeSelector
-          className="border-0 shadow-none"
-          onChange={setTimeRange}
-          value={timeRange}
-        />
+        <TimeRangeSelector onChange={setTimeRange} value={timeRange} />
       </div>
 
       {/* Search + Actions */}

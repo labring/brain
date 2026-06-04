@@ -92,7 +92,7 @@ export function TimeRangeSelector({
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger
         className={cn(
-          "flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm shadow-xs hover:bg-accent hover:text-accent-foreground",
+          "flex h-9 min-w-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-foreground text-sm outline-none transition-[color,box-shadow] hover:bg-input/30 focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50 aria-expanded:border-blue-400 aria-expanded:ring-[1px] aria-expanded:ring-blue-400/50 aria-expanded:ring-offset-0 dark:bg-transparent",
           className
         )}
       >
@@ -100,24 +100,43 @@ export function TimeRangeSelector({
         <span className="truncate">{triggerLabel}</span>
         <ChevronDown className="size-3.5 shrink-0 opacity-50" />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-0">
+      <PopoverContent
+        align="start"
+        className="w-auto border border-border bg-input/30 p-0 text-foreground shadow-md ring-0 backdrop-blur-xl"
+      >
         <div className="flex">
-          <div className="flex flex-col gap-3 border-r p-3">
+          <div className="flex flex-col gap-3 border-border border-r p-3">
             <Calendar
+              classNames={{
+                button_next:
+                  "border border-input bg-transparent text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground",
+                button_previous:
+                  "border border-input bg-transparent text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground",
+                day_button:
+                  "data-[range-end=true]:bg-blue-500 data-[range-middle=true]:bg-input data-[range-start=true]:bg-blue-500 data-[selected-single=true]:bg-blue-500 data-[range-end=true]:text-foreground data-[range-middle=true]:text-foreground data-[range-start=true]:text-foreground data-[selected-single=true]:text-foreground hover:bg-input/30 dark:hover:bg-input/30",
+                outside:
+                  "text-muted-foreground opacity-50 aria-selected:text-muted-foreground",
+                range_end:
+                  "relative isolate -z-0 rounded-r-(--cell-radius) bg-input after:absolute after:inset-y-0 after:left-0 after:w-4 after:bg-input",
+                range_middle: "rounded-none bg-input",
+                range_start:
+                  "relative isolate -z-0 rounded-l-(--cell-radius) bg-input after:absolute after:inset-y-0 after:right-0 after:w-4 after:bg-input",
+                today:
+                  "rounded-(--cell-radius) bg-input/30 text-foreground data-[selected=true]:rounded-none",
+                weekday:
+                  "flex-1 select-none rounded-(--cell-radius) font-normal text-[0.8rem] text-muted-foreground",
+              }}
               mode="range"
               numberOfMonths={1}
               onSelect={setDraftRange}
               selected={draftRange}
             />
             <div className="flex items-center gap-2 px-1 text-sm">
-              <label
-                className="text-muted-foreground"
-                htmlFor="time-range-start"
-              >
+              <label className="text-foreground" htmlFor="time-range-start">
                 Start
               </label>
               <input
-                className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                className="rounded-md border border-input bg-transparent px-2 py-1 text-foreground text-sm [color-scheme:dark]"
                 id="time-range-start"
                 onChange={(e) => setDraftStartTime(e.target.value)}
                 step="1"
@@ -126,11 +145,11 @@ export function TimeRangeSelector({
               />
             </div>
             <div className="flex items-center gap-2 px-1 text-sm">
-              <label className="text-muted-foreground" htmlFor="time-range-end">
+              <label className="text-foreground" htmlFor="time-range-end">
                 End&nbsp;&nbsp;
               </label>
               <input
-                className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                className="rounded-md border border-input bg-transparent px-2 py-1 text-foreground text-sm [color-scheme:dark]"
                 id="time-range-end"
                 onChange={(e) => setDraftEndTime(e.target.value)}
                 step="1"
@@ -147,6 +166,7 @@ export function TimeRangeSelector({
                 Cancel
               </Button>
               <Button
+                className="bg-blue-500 text-foreground hover:bg-blue-500/90"
                 disabled={!(draftRange?.from && draftRange?.to)}
                 onClick={handleConfirm}
                 size="sm"
@@ -162,10 +182,10 @@ export function TimeRangeSelector({
             {QUICK_RANGES.map((r) => (
               <button
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-left text-sm hover:bg-accent",
+                  "rounded-md px-3 py-1.5 text-left text-foreground text-sm hover:bg-input/30",
                   value.mode === "quick" &&
                     value.ms === r.ms &&
-                    "bg-accent font-medium"
+                    "bg-input font-medium"
                 )}
                 key={r.ms}
                 onClick={() => handleQuickRange(r.ms)}
