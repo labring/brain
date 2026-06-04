@@ -1,12 +1,8 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import { FacetedFilterAll } from "@workspace/ui/components/faceted";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@workspace/ui/components/input-group";
 import { LivePauseToggle } from "@workspace/ui/components/refresh-controls";
 import { TimeRangeSelector } from "@workspace/ui/components/time-range-selector";
 import { Box, Download, RefreshCw, Search, Server } from "lucide-react";
@@ -66,42 +62,46 @@ export function LogViewerToolbar() {
 
       {/* Search + Actions */}
       <div className="flex flex-1 items-center gap-2">
-        <InputGroup className="h-8 flex-1 dark:bg-muted/50">
-          <InputGroupAddon>
-            <Search className="size-4" />
-          </InputGroupAddon>
-          <InputGroupInput
+        <div className="relative min-w-0 flex-1">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <AppInput
+            aria-label="Search logs"
+            className="h-9 pl-8 shadow-xs"
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search logs..."
+            type="search"
             value={searchQuery}
           />
-        </InputGroup>
+        </div>
         {refreshMode === "live" ? (
           <LivePauseToggle
             isLive={isLive}
             onToggle={() => setIsLive(!isLive)}
           />
         ) : (
-          <Button
+          <AppIconButton
             aria-label="Refresh logs"
             disabled={onRefresh === undefined}
             onClick={onRefresh}
-            size="icon-sm"
+            size="lg"
             type="button"
-            variant="outline"
+            variant="secondary"
           >
             <RefreshCw className="size-4" />
-          </Button>
+          </AppIconButton>
         )}
-        <Button
+        <AppIconButton
           aria-label="Download logs"
           onClick={() => downloadLogs(filteredEntries)}
-          size="icon-sm"
+          size="lg"
           type="button"
-          variant="outline"
+          variant="secondary"
         >
           <Download className="size-4" />
-        </Button>
+        </AppIconButton>
       </div>
     </div>
   );
