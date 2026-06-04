@@ -18,14 +18,12 @@ import {
   ResourceSettingsInset,
   ResourceSettingsSection,
 } from "@workspace/ui/components/resource-settings/resource-settings";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@workspace/ui/components/select";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
+import {
+  SingleSelect,
+  type SingleSelectOption,
+} from "@workspace/ui/components/single-select";
 import {
   SlidingToggle,
   type SlidingToggleOption,
@@ -960,9 +958,6 @@ export function confirmedAddDbDsnReferencesFromEnvDraft(
   return Array.from(byIntentId.values());
 }
 
-const envReferenceSelectTriggerClassName =
-  "h-9 min-w-0 border-input bg-transparent text-foreground text-sm";
-
 function ReadOnlyEnvRows({ env }: { env: readonly ContainerEnvVar[] }) {
   return (
     <div
@@ -1042,11 +1037,17 @@ function EditableEnvValueControl({
   if (row.valueSource === "dbDsn" && row.dbDsn != null) {
     const selectedSource = sourceFromDbDsnRow(row, dbDsnReferenceSources);
     const selectedFields = containerEnvDbDsnFieldOptions(selectedSource);
-    const selectedSourceLabel =
-      selectedSource === undefined ? "" : dbDsnSourceLabel(selectedSource);
-    const selectedFieldLabel =
-      selectedFields.find((field) => field.field === row.dbDsn?.field)?.label ??
-      "No fields available";
+    const sourceOptions: SingleSelectOption[] = dbDsnReferenceSources.map(
+      (source) => ({
+        disabled: !dbDsnSourceHasFields(source),
+        label: dbDsnSourceLabel(source),
+        value: dbDsnSourceKey(source),
+      })
+    );
+    const fieldOptions: SingleSelectOption[] = selectedFields.map((field) => ({
+      label: field.label,
+      value: field.field,
+    }));
     const updateReference = (
       source: ContainerEnvDbDsnSource | undefined,
       field: ContainerEnvDbDsnFieldOption | undefined
@@ -1059,57 +1060,28 @@ function EditableEnvValueControl({
 
     return (
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] gap-2">
-        <Select
+        <SingleSelect
+          aria-label="Project DB"
           onValueChange={(value) => {
             const source = dbDsnReferenceSources.find(
               (item) => dbDsnSourceKey(item) === value
             );
             updateReference(source, containerEnvDbDsnFieldOptions(source)[0]);
           }}
+          options={sourceOptions}
           value={dbDsnRowKey(row)}
-        >
-          <SelectTrigger
-            aria-label="Project DB"
-            className={envReferenceSelectTriggerClassName}
-          >
-            <span className="min-w-0 truncate">{selectedSourceLabel}</span>
-          </SelectTrigger>
-          <SelectContent className="border-input bg-background text-foreground">
-            {dbDsnReferenceSources.map((source) => {
-              return (
-                <SelectItem
-                  disabled={!dbDsnSourceHasFields(source)}
-                  key={dbDsnSourceKey(source)}
-                  value={dbDsnSourceKey(source)}
-                >
-                  {dbDsnSourceLabel(source)}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-        <Select
+        />
+        <SingleSelect
+          aria-label="Project DB field"
           disabled={selectedFields.length === 0}
+          emptyMessage="No fields available"
           onValueChange={(value) => {
             const field = selectedFields.find((item) => item.field === value);
             updateReference(selectedSource, field);
           }}
+          options={fieldOptions}
           value={row.dbDsn.field}
-        >
-          <SelectTrigger
-            aria-label="Project DB field"
-            className={envReferenceSelectTriggerClassName}
-          >
-            <span className="min-w-0 truncate">{selectedFieldLabel}</span>
-          </SelectTrigger>
-          <SelectContent className="border-input bg-background text-foreground">
-            {selectedFields.map((field) => (
-              <SelectItem key={field.field} value={field.field}>
-                {field.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
     );
   }

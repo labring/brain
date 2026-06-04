@@ -3,13 +3,6 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { DeploymentSettings } from "@workspace/ui/components/deployment-settings/deployment-settings";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
-import {
   SingleSelect,
   type SingleSelectOption,
 } from "@workspace/ui/components/single-select";
@@ -45,6 +38,16 @@ const INSTANCE_PRESETS: readonly {
 ];
 
 const REPLICA_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
+const INSTANCE_PRESET_SELECT_OPTIONS: readonly SingleSelectOption[] =
+  INSTANCE_PRESETS.map((preset) => ({
+    label: preset.label,
+    value: preset.id,
+  }));
+const REPLICA_SELECT_OPTIONS: readonly SingleSelectOption[] =
+  REPLICA_OPTIONS.map((replica) => ({
+    label: databaseReplicaOptionLabel(replica),
+    value: String(replica),
+  }));
 
 const PRESET_SUMMARIES: Record<
   string,
@@ -220,27 +223,15 @@ export function DatabaseDeployer({
         >
           <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
             <DeploymentSettings.Field label="Instance Preset">
-              <Select
+              <SingleSelect
+                aria-label="Database instance preset"
                 disabled={busy || choice === null}
                 onValueChange={(value) =>
                   setInstancePreset(value as DatabaseInstancePreset)
                 }
+                options={INSTANCE_PRESET_SELECT_OPTIONS}
                 value={instancePreset}
-              >
-                <SelectTrigger
-                  aria-label="Database instance preset"
-                  className="h-9 border-input bg-transparent text-foreground"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INSTANCE_PRESETS.map((preset) => (
-                    <SelectItem key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
               <p className="min-h-4 text-muted-foreground text-xs leading-4">
                 {choice == null
                   ? "Select a database engine first."
@@ -248,25 +239,13 @@ export function DatabaseDeployer({
               </p>
             </DeploymentSettings.Field>
             <DeploymentSettings.Field label="Replicas">
-              <Select
+              <SingleSelect
+                aria-label="Database replica count"
                 disabled={busy || choice === null}
                 onValueChange={setReplicas}
+                options={REPLICA_SELECT_OPTIONS}
                 value={replicas}
-              >
-                <SelectTrigger
-                  aria-label="Database replica count"
-                  className="h-9 border-input bg-transparent text-foreground"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REPLICA_OPTIONS.map((replica) => (
-                    <SelectItem key={replica} value={String(replica)}>
-                      {databaseReplicaOptionLabel(replica)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </DeploymentSettings.Field>
           </div>
         </DeploymentSettings.Section>
