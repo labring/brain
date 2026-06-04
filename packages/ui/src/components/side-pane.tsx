@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { X } from "lucide-react";
 import {
@@ -76,10 +76,10 @@ export function SidePane({
           className
         )}
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+        <div className="relative flex min-h-0 flex-1 flex-col gap-2.5">
           <header
             className={cn(
-              "flex shrink-0 items-start justify-between gap-3 px-5 pt-5",
+              "flex shrink-0 items-start gap-3 px-5 pt-5 pr-18",
               headerClassName
             )}
           >
@@ -103,16 +103,16 @@ export function SidePane({
                 </p>
               )}
             </div>
-            <Button
+            <AppIconButton
               aria-label={closeAriaLabel}
-              className="-mt-1 size-7 shrink-0"
+              className="absolute top-3 right-5 shrink-0"
               onClick={onClose}
-              size="icon"
+              size="lg"
               type="button"
-              variant="ghost"
+              variant="quiet"
             >
-              <X aria-hidden className="size-3.5" />
-            </Button>
+              <X aria-hidden className="size-4" />
+            </AppIconButton>
           </header>
           <div className="scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto">
             <div

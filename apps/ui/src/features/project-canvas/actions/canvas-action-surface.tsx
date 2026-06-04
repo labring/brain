@@ -91,7 +91,7 @@ export function MainActionSurfaceFrame({
             aria-label={closeAriaLabel}
             className="shrink-0"
             onClick={onClose}
-            size="sm"
+            size="lg"
             type="button"
             variant="quiet"
           >

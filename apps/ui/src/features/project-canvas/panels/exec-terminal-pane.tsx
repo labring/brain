@@ -371,7 +371,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         <div className="shrink-0">
           <AppIconButton
             aria-label="Close terminal"
-            className="size-9 text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
+            className="text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
             onClick={onClose}
             size="lg"
             type="button"

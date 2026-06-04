@@ -14,11 +14,17 @@ SealAI combines a project canvas, deployment panes, resource settings, logs, met
 
 ## Brand Personality
 
-Technical, atmospheric, and spatial. The product should feel like a deep operational cockpit with controlled ambient light, layered depth, and a dark interface that supports long focused sessions. Blue breathing gradients, environmental glow, and restrained translucency may carry the mood when they clarify hierarchy or state.
+Technical, atmospheric, and spatial. The product should feel like a deep operational cockpit with controlled ambient light, layered depth, and a dark interface that supports long focused sessions. Blue breathing gradients, environmental glow, and restrained translucency may carry the mood when they clarify hierarchy or state. The visual north star is simplify, space, vivid: reduce the surface to the few controls that matter, give important work areas room to breathe, and reserve vivid blue energy for focus, state, and motion.
+
+## Visual References
+
+Apple Liquid Glass is a material reference, not a mandate to make every panel transparent. SealAI should borrow the idea of fluid, responsive depth: translucent chrome, adaptive glow, and glass-like overlays that reveal context without obscuring content. Use this language for top navigation, floating toolbars, assistant affordances, modal surfaces, and active resource overlays. Dense data, logs, tables, forms, code, and terminal content should stay optically stable and readable.
+
+OpenAI design is a restraint reference: simplified geometry, clear proportion, generous space, precise typography, and a balance of technical precision with human warmth. SealAI should feel intelligent through spacing, rhythm, and calm hierarchy rather than through decoration. The UI can be vivid, but vividness should appear as controlled ambient light, not as saturated chrome on every component.
 
 ## Anti-references
 
-Avoid light SaaS dashboards, generic shadcn gray-white card stacks, decorative marketing-page layouts, low-quality glassmorphism, overbright cyber-neon styling, excessive ornamental animation, and repeated template grids of icon plus heading plus body copy.
+Avoid light SaaS dashboards, generic shadcn gray-white card stacks, decorative marketing-page layouts, low-quality glassmorphism, overbright cyber-neon styling, excessive ornamental animation, and repeated template grids of icon plus heading plus body copy. Do not copy Apple or OpenAI branding, logos, exact component shapes, or public-site layouts; use them only as references for material behavior, simplification, spacing, and restraint.
 
 ## Design Principles
 
@@ -27,6 +33,7 @@ Avoid light SaaS dashboards, generic shadcn gray-white card stacks, decorative m
 3. Keep technical confidence: labels, states, and resource actions should be precise, domain-correct, and calm under failure.
 4. Use motion as operational feedback: animation should explain transitions, loading, selection, and state change.
 5. Preserve product density: repeated workflows should stay compact, scannable, and efficient.
+6. Simplify before styling: remove unclear structure before adding glass, glow, gradients, or motion.
 
 ## Accessibility & Inclusion
 
