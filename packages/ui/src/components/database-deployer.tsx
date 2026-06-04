@@ -1,6 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { DeploymentSettings } from "@workspace/ui/components/deployment-settings/deployment-settings";
 import {
   Select,
   SelectContent,
@@ -11,7 +12,6 @@ import {
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 export type DatabaseInstancePreset = "xs" | "s" | "m" | "l";
@@ -110,35 +110,6 @@ export function databaseReplicaOptionLabel(replica: number): string {
   return String(replica);
 }
 
-function DeploymentCard({
-  children,
-  description,
-  icon,
-  title,
-}: {
-  children: ReactNode;
-  description: string;
-  icon: ReactNode;
-  title: string;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-white/[2%] p-4">
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
-            {icon}
-          </span>
-          <h3 className="truncate font-medium text-foreground text-sm leading-5">
-            {title}
-          </h3>
-        </div>
-        <p className="text-muted-foreground text-sm leading-5">{description}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function DatabaseChoiceIcon({ choice }: { choice: DatabaseDeploymentChoice }) {
   const iconUrl = choice.iconUrl?.trim();
   if (!iconUrl) {
@@ -210,45 +181,50 @@ export function DatabaseDeployer({
       className={cn("dark flex min-w-0 flex-col gap-3", className)}
       data-slot="database-deployer"
     >
-      <DeploymentCard
+      <DeploymentSettings.Section
         description="Choose a managed database engine for this workspace."
         icon={<Database aria-hidden className="size-4" />}
         title="Type"
       >
-        {databaseOptions.length === 0 ? (
-          <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
-            {emptyMessage}
-          </div>
-        ) : (
-          <Select
-            disabled={busy}
-            onValueChange={setDatabaseId}
-            value={effectiveDatabaseId}
-          >
-            <SelectTrigger className="h-9 border-input bg-transparent text-foreground">
-              <SelectValue placeholder="Choose a database" />
-            </SelectTrigger>
-            <SelectContent>
-              {databaseOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <DatabaseChoiceIcon choice={option} />
-                    <span className="min-w-0 truncate">{option.label}</span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </DeploymentCard>
+        <DeploymentSettings.Control>
+          {databaseOptions.length === 0 ? (
+            <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
+              {emptyMessage}
+            </div>
+          ) : (
+            <Select
+              disabled={busy}
+              onValueChange={setDatabaseId}
+              value={effectiveDatabaseId}
+            >
+              <SelectTrigger
+                aria-label="Database engine"
+                className="h-9 border-input bg-transparent text-foreground"
+              >
+                <SelectValue placeholder="Choose a database" />
+              </SelectTrigger>
+              <SelectContent>
+                {databaseOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <DatabaseChoiceIcon choice={option} />
+                      <span className="min-w-0 truncate">{option.label}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </DeploymentSettings.Control>
+      </DeploymentSettings.Section>
 
-      <DeploymentCard
+      <DeploymentSettings.Section
         description={`${choiceLabel(choice)} instance preset and replica count.`}
         icon={<Upload aria-hidden className="size-4" />}
         title="Instance"
       >
         <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
+          <DeploymentSettings.Field label="Instance Preset">
             <Select
               disabled={busy || choice === null}
               onValueChange={(value) =>
@@ -275,8 +251,8 @@ export function DatabaseDeployer({
                 ? "Select a database engine first."
                 : presetSummary(choice.engine, instancePreset)}
             </p>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
+          </DeploymentSettings.Field>
+          <DeploymentSettings.Field label="Replicas">
             <Select
               disabled={busy || choice === null}
               onValueChange={setReplicas}
@@ -299,9 +275,9 @@ export function DatabaseDeployer({
             <p className="min-h-4 text-muted-foreground text-xs leading-4">
               Private access by default.
             </p>
-          </div>
+          </DeploymentSettings.Field>
         </div>
-      </DeploymentCard>
+      </DeploymentSettings.Section>
 
       <AppButton
         aria-busy={busy}

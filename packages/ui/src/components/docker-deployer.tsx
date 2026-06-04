@@ -3,8 +3,7 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { AppInputField } from "@workspace/ui/components/app-input-field";
-import { Label } from "@workspace/ui/components/label";
+import { DeploymentSettings } from "@workspace/ui/components/deployment-settings/deployment-settings";
 import { Spinner } from "@workspace/ui/components/spinner";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,
@@ -53,35 +52,6 @@ function nextEnvName(rows: readonly DockerDeploymentEnvRowState[]): string {
       return candidate;
     }
   }
-}
-
-function DeploymentCard({
-  children,
-  description,
-  icon,
-  title,
-}: {
-  children: ReactNode;
-  description: string;
-  icon: ReactNode;
-  title: string;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-white/[2%] p-4">
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
-            {icon}
-          </span>
-          <h3 className="truncate font-medium text-foreground text-sm leading-5">
-            {title}
-          </h3>
-        </div>
-        <p className="text-muted-foreground text-sm leading-5">{description}</p>
-      </div>
-      {children}
-    </section>
-  );
 }
 
 function envErrorForIndex(
@@ -154,27 +124,41 @@ export function DockerDeployer({
       className={cn("dark flex min-w-0 flex-col gap-3", className)}
       data-slot="docker-deployer"
     >
-      <DeploymentCard
+      <DeploymentSettings.Section
         description="Choose the container image to run."
         icon={<Package aria-hidden className="size-4" />}
         title="Image"
       >
-        <AppInputField
-          autoComplete="off"
-          disabled={busy}
-          error={visibleImageError?.message}
-          id="docker-deployer-image"
-          label="Docker image"
-          onChange={(event) => {
-            setImageTouched(true);
-            setImage(event.currentTarget.value);
-          }}
-          placeholder="ghcr.io/org/image:tag"
-          value={image}
-        />
-      </DeploymentCard>
+        <DeploymentSettings.Control>
+          <AppInput
+            aria-describedby={
+              visibleImageError ? "docker-deployer-image-error" : undefined
+            }
+            aria-invalid={visibleImageError ? true : undefined}
+            aria-label="Docker image"
+            autoComplete="off"
+            disabled={busy}
+            id="docker-deployer-image"
+            onChange={(event) => {
+              setImageTouched(true);
+              setImage(event.currentTarget.value);
+            }}
+            placeholder="ghcr.io/org/image:tag"
+            value={image}
+          />
+          {visibleImageError ? (
+            <p
+              className="text-destructive text-xs leading-4"
+              id="docker-deployer-image-error"
+              role="alert"
+            >
+              {visibleImageError.message}
+            </p>
+          ) : null}
+        </DeploymentSettings.Control>
+      </DeploymentSettings.Section>
 
-      <DeploymentCard
+      <DeploymentSettings.Section
         description="Set direct environment variables for startup."
         icon={<Settings2 aria-hidden className="size-4" />}
         title="Runtime"
@@ -183,26 +167,30 @@ export function DockerDeployer({
           className="flex min-w-0 flex-col gap-2"
           data-slot="docker-env-rows"
         >
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="font-medium text-foreground text-sm leading-5">
-              Environment Variables
-            </p>
-            <AppIconButton
-              aria-label="Add environment variable"
-              disabled={busy}
-              onClick={() =>
-                setEnvRows((rows) => [
-                  ...rows,
-                  { id: createEnvRowId(), name: nextEnvName(rows), value: "" },
-                ])
-              }
-              size="md"
-              type="button"
-              variant="quiet"
-            >
-              <Plus aria-hidden className="size-4" />
-            </AppIconButton>
-          </div>
+          <DeploymentSettings.GroupHeader
+            action={
+              <AppIconButton
+                aria-label="Add environment variable"
+                disabled={busy}
+                onClick={() =>
+                  setEnvRows((rows) => [
+                    ...rows,
+                    {
+                      id: createEnvRowId(),
+                      name: nextEnvName(rows),
+                      value: "",
+                    },
+                  ])
+                }
+                size="md"
+                type="button"
+                variant="quiet"
+              >
+                <Plus aria-hidden className="size-4" />
+              </AppIconButton>
+            }
+            title="Environment Variables"
+          />
           {envRows.length === 0 ? (
             <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
               No environment variables.
@@ -274,28 +262,42 @@ export function DockerDeployer({
             </div>
           )}
         </div>
-      </DeploymentCard>
+      </DeploymentSettings.Section>
 
-      <DeploymentCard
+      <DeploymentSettings.Section
         description="Request public routing to the port where the app listens."
         icon={<Network aria-hidden className="size-4" />}
         title="Network"
       >
         <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <AppInputField
-            disabled={busy}
-            error={portError?.message}
-            id="docker-deployer-port"
-            inputMode="numeric"
-            label="App Listening Port"
-            max={65_535}
-            min={1}
-            onChange={(event) => setAppListeningPort(event.currentTarget.value)}
-            type="number"
-            value={appListeningPort}
-          />
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Label>Public Address</Label>
+          <DeploymentSettings.Field label="App Listening Port">
+            <AppInput
+              aria-describedby={
+                portError ? "docker-deployer-port-error" : undefined
+              }
+              aria-invalid={portError ? true : undefined}
+              disabled={busy}
+              id="docker-deployer-port"
+              inputMode="numeric"
+              max={65_535}
+              min={1}
+              onChange={(event) =>
+                setAppListeningPort(event.currentTarget.value)
+              }
+              type="number"
+              value={appListeningPort}
+            />
+            {portError ? (
+              <p
+                className="text-destructive text-xs leading-4"
+                id="docker-deployer-port-error"
+                role="alert"
+              >
+                {portError.message}
+              </p>
+            ) : null}
+          </DeploymentSettings.Field>
+          <DeploymentSettings.Field label="Public Address">
             <div className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-input px-3 text-foreground text-sm leading-5">
               <Globe2
                 aria-hidden
@@ -305,9 +307,9 @@ export function DockerDeployer({
                 Auto-generated Public Address
               </span>
             </div>
-          </div>
+          </DeploymentSettings.Field>
         </div>
-      </DeploymentCard>
+      </DeploymentSettings.Section>
 
       {childrenBeforeDeploy}
 
