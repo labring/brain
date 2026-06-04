@@ -599,6 +599,11 @@
           "target": "components/project-explorer/project-explorer.variant1.tsx"
         },
         {
+          "path": "../../packages/ui/src/components/project-explorer/project-explorer.css",
+          "type": "registry:component",
+          "target": "components/project-explorer/project-explorer.css"
+        },
+        {
           "path": "../../packages/ui/src/components/project-explorer/project-explorer.tsx",
           "type": "registry:component",
           "target": "components/project-explorer/project-explorer.tsx"

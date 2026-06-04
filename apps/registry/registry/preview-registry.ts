@@ -611,6 +611,7 @@ export const Index: RegistryIndex = {
     type: "registry:preview",
     registryDependencies: [
       "preview",
+      "project-explorer",
       "button",
       "app-dialog",
       "dropdown-menu",

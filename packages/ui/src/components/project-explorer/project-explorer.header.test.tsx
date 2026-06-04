@@ -9,15 +9,17 @@ const states = {
 };
 const ARIA_LABEL_RE = /aria-label="New Project"/;
 const BUTTON_RE = /<button[^>]*>(.*?)<\/button>/;
-const COMPACT_WIDTH_RE = /w-9/;
 const NEW_PROJECT_TEXT_RE = />New Project</;
-const RELAXED_WIDTH_RE = /w-32[^"]*transition-\[width\]/;
+const RESPONSIVE_ACTION_RE = /project-explorer-new-project-action/;
+const RESPONSIVE_BUTTON_RE = /project-explorer-new-project-button/;
+const RESPONSIVE_LABEL_RE = /project-explorer-new-project-label/;
 const SVG_RE = /<svg/;
+const TOOLTIP_TEXT_RE = /<span[^>]*>New Project<\/span>/;
 
-function renderHeaderButton(iconOnly = false) {
+function renderHeaderButton() {
   const html = renderToStaticMarkup(
     <ProjectExplorer.Root states={states}>
-      <ProjectExplorer.Variant1 newProjectButtonIconOnly={iconOnly} />
+      <ProjectExplorer.Variant1 />
     </ProjectExplorer.Root>
   );
   const match = html.match(BUTTON_RE);
@@ -28,19 +30,14 @@ function renderHeaderButton(iconOnly = false) {
   };
 }
 
-test("project explorer new-project action renders text by default", () => {
-  const { buttonHtml } = renderHeaderButton();
+test("project explorer new-project action renders responsive default content", () => {
+  const { buttonHtml, html } = renderHeaderButton();
 
+  assert.match(html, RESPONSIVE_ACTION_RE);
   assert.match(buttonHtml, NEW_PROJECT_TEXT_RE);
-  assert.match(buttonHtml, RELAXED_WIDTH_RE);
-  assert.doesNotMatch(buttonHtml, ARIA_LABEL_RE);
-});
-
-test("project explorer can render compact icon-only new-project action", () => {
-  const { buttonHtml } = renderHeaderButton(true);
-
   assert.match(buttonHtml, ARIA_LABEL_RE);
-  assert.match(buttonHtml, COMPACT_WIDTH_RE);
+  assert.match(buttonHtml, RESPONSIVE_BUTTON_RE);
+  assert.match(buttonHtml, RESPONSIVE_LABEL_RE);
   assert.match(buttonHtml, SVG_RE);
-  assert.doesNotMatch(buttonHtml, NEW_PROJECT_TEXT_RE);
+  assert.match(html, TOOLTIP_TEXT_RE);
 });

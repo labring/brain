@@ -1,3 +1,35 @@
+.project-explorer-header-toolbar {
+  container-name: project-explorer-toolbar;
+  container-type: inline-size;
+}
+
+.project-explorer-new-project-action {
+  flex: 0 1 8rem;
+  container-name: project-explorer-new-project-action;
+  container-type: inline-size;
+}
+
+.project-explorer-new-project-button {
+  width: 100%;
+}
+
+@container project-explorer-toolbar (max-width: 38rem) {
+  .project-explorer-new-project-action {
+    flex-basis: 2.25rem;
+  }
+}
+
+@container project-explorer-new-project-action (max-width: 5.5rem) {
+  .project-explorer-new-project-button {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .project-explorer-new-project-label {
+    display: none;
+  }
+}
+
 .project-explorer-item-row:hover {
   background: color-mix(in oklab, var(--input) 30%, transparent);
 }

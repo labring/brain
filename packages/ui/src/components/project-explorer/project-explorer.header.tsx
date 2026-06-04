@@ -46,7 +46,10 @@ export function ProjectExplorerHeaderToolbar({
 }: ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex min-w-0 items-center gap-2", className)}
+      className={cn(
+        "project-explorer-header-toolbar flex min-w-0 flex-nowrap items-center gap-2",
+        className
+      )}
       data-slot="project-explorer-header-toolbar"
       {...props}
     />
@@ -89,24 +92,20 @@ export function ProjectExplorerSearchField({
 export function ProjectExplorerNewProjectButton({
   className,
   children,
-  iconOnly = false,
   ...props
-}: ComponentProps<typeof AppButton> & {
-  iconOnly?: boolean;
-}) {
+}: ComponentProps<typeof AppButton>) {
   const { actions } = useProjectExplorer();
   const { onClick, ...rest } = props;
-  const compactDefaultContent = iconOnly && children == null;
+  const defaultContent = children == null;
 
   const button = (
     <AppButton
-      aria-label={compactDefaultContent ? "New Project" : undefined}
+      aria-label={defaultContent ? "New Project" : undefined}
       className={cn(
         "h-9 bg-blue-500 text-sm text-white hover:bg-blue-500/90",
-        children == null
-          ? "w-32 justify-start gap-1.5 overflow-hidden px-2.5 transition-[width] duration-200 ease-out motion-reduce:transition-none"
+        defaultContent
+          ? "project-explorer-new-project-button justify-start gap-1.5 overflow-hidden px-3"
           : "gap-1.5 px-3",
-        compactDefaultContent && "w-9",
         className
       )}
       size="lg"
@@ -123,22 +122,27 @@ export function ProjectExplorerNewProjectButton({
       {children ?? (
         <>
           <Plus aria-hidden className="size-4" />
-          {compactDefaultContent ? null : (
-            <span className="shrink-0 whitespace-nowrap">New Project</span>
-          )}
+          <span className="project-explorer-new-project-label shrink-0 whitespace-nowrap">
+            New Project
+          </span>
         </>
       )}
     </AppButton>
   );
 
-  if (!compactDefaultContent) {
+  if (!defaultContent) {
     return button;
   }
 
   return (
-    <Tooltip>
-      <TooltipTrigger render={button} />
-      <TooltipContent>New Project</TooltipContent>
-    </Tooltip>
+    <div
+      className="project-explorer-new-project-action min-w-9"
+      data-slot="project-explorer-new-project-action"
+    >
+      <Tooltip>
+        <TooltipTrigger render={button} />
+        <TooltipContent>New Project</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

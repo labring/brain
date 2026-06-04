@@ -16,6 +16,7 @@ import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/
 import { useProjectCreator } from "@/hooks/use-project-creator";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import styles from "./project-index.module.css";
 
 export default function ProjectIndexPage() {
   const router = useRouter();
@@ -131,17 +132,29 @@ export default function ProjectIndexPage() {
       </div>
       <div
         className={cn(
-          "relative flex min-h-0 flex-1 flex-col items-center gap-4 px-[52px] pt-[52px] pb-6 transition-[padding] duration-200 ease-out motion-reduce:transition-none",
-          creationPaneOpen && "xl:pr-[40rem]"
+          styles.layout,
+          "relative z-10 flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden"
         )}
       >
-        <ProjectExplorer.Root actions={explorerActions} states={states}>
-          <ProjectExplorer.Variant1
-            className="w-full min-w-0 max-w-6xl flex-1"
-            headerDescription="View existing projects or create a new one."
-            newProjectButtonIconOnly={creationPaneOpen}
-          />
-        </ProjectExplorer.Root>
+        <section className="@container/project-index-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col items-center gap-4 px-[clamp(1rem,4cqw,3.25rem)] pt-13 pb-6 transition-[padding] duration-200 ease-out motion-reduce:transition-none">
+            <ProjectExplorer.Root actions={explorerActions} states={states}>
+              <ProjectExplorer.Variant1
+                className="w-full min-w-0 max-w-6xl flex-1"
+                headerDescription="View existing projects or create a new one."
+              />
+            </ProjectExplorer.Root>
+          </div>
+        </section>
+        <div
+          aria-hidden
+          className={cn(
+            styles.sidePaneReserve,
+            "min-h-0 shrink-0 transition-[width,max-width] duration-200 ease-out motion-reduce:transition-none"
+          )}
+          data-open={creationPaneOpen}
+          data-slot="project-index-side-pane-reserve"
+        />
       </div>
 
       <SidePanePresence>
