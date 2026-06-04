@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@data-browser/components/ui/select";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Plus, Trash2 } from "lucide-react";
 import {
   FilterCollectionProvider,
@@ -84,16 +85,17 @@ function FilterConditionList() {
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h3 className="font-medium text-foreground text-sm">{"Conditions"}</h3>
-        <Button
+        <AppButton
           className="h-9 gap-2"
           disabled={state.isSubmitting || !canAddCondition}
           onClick={addCondition}
           size="sm"
           type="button"
+          variant="secondary"
         >
           <Plus className="h-4 w-4" />
           {"Add condition"}
-        </Button>
+        </AppButton>
       </div>
 
       {conditions.length > 0 && (
@@ -192,14 +194,14 @@ function FilterCollectionFooter() {
   return (
     <ModalForm.Footer>
       <ModalForm.CancelButton />
-      <Button
-        className="bg-primary text-primary-foreground hover:bg-primary/90"
+      <AppButton
         disabled={state.isSubmitting}
         onClick={actions.submit}
         type="button"
+        variant="secondary"
       >
         {"Apply filter"}
-      </Button>
+      </AppButton>
     </ModalForm.Footer>
   );
 }

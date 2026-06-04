@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowLeft } from "lucide-react";
 
@@ -25,15 +25,15 @@ export function ProjectCreatorTrail({ className }: { className?: string }) {
       )}
       data-slot="project-creator-trail"
     >
-      <Button
+      <AppButton
         className="-ml-2 text-muted-foreground hover:text-foreground"
         onClick={reset}
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         <ArrowLeft aria-hidden className="size-3.5" />
         Back
-      </Button>
+      </AppButton>
       <p className="min-w-0 truncate font-medium text-muted-foreground text-xs">
         {PROJECT_CREATOR_SOURCE_LABEL[step]}
       </p>

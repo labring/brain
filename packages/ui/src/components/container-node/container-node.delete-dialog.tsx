@@ -1,7 +1,7 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 
 const DELETE_TITLE = "Delete workload?";
@@ -53,17 +53,16 @@ export function ContainerNodeDeleteDialogPanel({
         </p>
       </div>
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button onClick={onCancel} variant="outline">
+        <AppButton onClick={onCancel} variant="quiet">
           Cancel
-        </Button>
-        <Button
-          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        </AppButton>
+        <AppButton
           onClick={() => onConfirmDelete?.()}
           type="button"
-          variant="destructive"
+          variant="danger"
         >
           Delete
-        </Button>
+        </AppButton>
       </div>
     </div>
   );

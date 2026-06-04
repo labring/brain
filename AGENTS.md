@@ -40,7 +40,7 @@ packages/
 ## Conventions
 
 - **Boundaries:** import through package exports (`@workspace/ui/*`, `@workspace/api/*`, `@workspace/crossplane/*`) or app-local `@/*`; never across apps or into another package's private `src`.
-- **UI components:** reuse `packages/ui/src/components/` first. Shared primitives live in `packages/ui`; app-specific compositions stay local until a second consumer needs them.
+- **UI components:** reuse `packages/ui/src/components/` first.
 - **Styling:** Tailwind v4 theme tokens live in `packages/ui/src/styles/globals.css`. Avoid inline color/spacing/radius/type/shadow literals; use tokens or Tailwind scale.
 - **Quality:** Biome/ultracite is source of truth (`bun check` / `bun fix`).
 - **Registry:** items live in `apps/registry/registry/<style>/<group>/<name>` with metadata in `preview-registry.ts`.

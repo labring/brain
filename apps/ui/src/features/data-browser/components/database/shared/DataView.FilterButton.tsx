@@ -1,4 +1,4 @@
-import { Button } from "@data-browser/components/ui/Button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Filter } from "lucide-react";
 
 /** Filter button with optional active count badge. */
@@ -10,7 +10,7 @@ export function DataViewFilterButton({
   count?: number;
 }) {
   return (
-    <Button
+    <AppButton
       className="min-w-[86px] gap-2.5 rounded-lg"
       data-qa-action="open"
       data-qa-module="data-view"
@@ -18,6 +18,7 @@ export function DataViewFilterButton({
       data-qa-state={count ? "active" : "inactive"}
       data-testid="data-view.filter-button"
       onClick={onClick}
+      variant="secondary"
     >
       <Filter className="h-4 w-4" />
       {"Filter"}
@@ -26,6 +27,6 @@ export function DataViewFilterButton({
           {count}
         </span>
       ) : null}
-    </Button>
+    </AppButton>
   );
 }

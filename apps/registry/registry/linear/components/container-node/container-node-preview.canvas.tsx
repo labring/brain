@@ -25,7 +25,7 @@ const PREVIEW_LIFECYCLE_ACTIONS = {
 
 const PREVIEW_QUICK_ACTIONS = {
   calendar: { onClick: () => undefined },
-  console: { onClick: () => undefined },
+  terminal: { onClick: () => undefined },
   logs: { onClick: () => undefined },
   metrics: { onClick: () => undefined },
 } as const satisfies ContainerNodeQuickActions;

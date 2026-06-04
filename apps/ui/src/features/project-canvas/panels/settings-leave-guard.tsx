@@ -122,7 +122,7 @@ export function SettingsLeaveGuardDialogContent({
   return (
     <>
       <AppDialog.Header>
-        <h2 className="min-w-0 flex-1 truncate font-medium text-lg/7 text-zinc-50">
+        <h2 className="min-w-0 flex-1 truncate font-medium text-base/5 text-zinc-50">
           {settingsLeaveGuardTitle(guard?.scope ?? "ap")}
         </h2>
       </AppDialog.Header>

@@ -1,7 +1,9 @@
 import { Input, type InputProps } from "@workspace/ui/components/input";
 import { cn } from "@workspace/ui/lib/utils";
 
-function PaneInput({ className, ...props }: InputProps) {
+type AppInputProps = InputProps;
+
+function AppInput({ className, ...props }: AppInputProps) {
   return (
     <Input
       className={cn(
@@ -9,9 +11,11 @@ function PaneInput({ className, ...props }: InputProps) {
         "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
         className
       )}
+      data-slot="app-input"
       {...props}
     />
   );
 }
 
-export { PaneInput };
+export type { AppInputProps };
+export { AppInput };

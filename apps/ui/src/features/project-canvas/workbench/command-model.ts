@@ -8,7 +8,7 @@ import {
 import {
   defaultProjectSideSurfaceForNode,
   drawerSurfaceForApTerminal,
-  drawerSurfaceForDbConsole,
+  drawerSurfaceForDbTerminal,
   mainSurfaceForDbAccess,
   mainSurfaceForResourceLogs,
   projectApTargetFromNode,
@@ -126,7 +126,7 @@ function planContainerQuickAction({
         sideSurfacePlan(sideSurfaceForWorkloadPane(target, "history")),
         selection
       );
-    case "console":
+    case "terminal":
       return planWithSurface(
         drawerSurfacePlan(drawerSurfaceForApTerminal(target)),
         selection
@@ -165,9 +165,9 @@ function planDatabaseQuickAction({
   }
 
   switch (action) {
-    case "console":
+    case "terminal":
       return planWithSurface(
-        drawerSurfacePlan(drawerSurfaceForDbConsole(target)),
+        drawerSurfacePlan(drawerSurfaceForDbTerminal(target)),
         selection
       );
     case "dbAccess":

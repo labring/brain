@@ -1,0 +1,16 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "app-input",
+  "title": "App Input",
+  "description": "SealAI product input style layer for pane and settings forms",
+  "registryDependencies": ["input"],
+  "files": [
+    {
+      "path": "../../packages/ui/src/components/app-input.tsx",
+      "content": "import { Input, type InputProps } from \"@workspace/ui/components/input\";\nimport { cn } from \"@workspace/ui/lib/utils\";\n\ntype AppInputProps = InputProps;\n\nfunction AppInput({ className, ...props }: AppInputProps) {\n  return (\n    <Input\n      className={cn(\n        \"h-9 border-input bg-transparent text-foreground text-sm placeholder:text-muted-foreground dark:bg-transparent\",\n        \"focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50\",\n        className\n      )}\n      data-slot=\"app-input\"\n      {...props}\n    />\n  );\n}\n\nexport type { AppInputProps };\nexport { AppInput };\n",
+      "type": "registry:component",
+      "target": "components/app-input.tsx"
+    }
+  ],
+  "type": "registry:ui"
+}

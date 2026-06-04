@@ -1,4 +1,3 @@
-import { Button } from "@data-browser/components/ui/Button";
 import {
   DialogClose,
   DialogDescription,
@@ -7,6 +6,8 @@ import {
   DialogTitle,
 } from "@data-browser/components/ui/dialog";
 import { cn } from "@data-browser/lib/utils";
+import { AppButton } from "@workspace/ui/components/app-button";
+import { Button } from "@workspace/ui/components/button";
 import type { LucideIcon } from "lucide-react";
 import { AlertCircle, CheckCircle, Info, Loader2, X } from "lucide-react";
 import {
@@ -205,15 +206,15 @@ function ModalFormSubmitButton({
   const handleClick = onClick ?? actions.submit;
 
   return (
-    <Button
+    <AppButton
       disabled={disabled || state.isSubmitting}
       onClick={handleClick}
       type="button"
-      variant="default"
+      variant={meta.isDestructive ? "danger" : "secondary"}
     >
       {state.isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
       {label ?? (meta.isDestructive ? "Delete" : "Submit")}
-    </Button>
+    </AppButton>
   );
 }
 
@@ -221,9 +222,9 @@ function ModalFormSubmitButton({
 function ModalFormCancelButton() {
   return (
     <DialogClose asChild>
-      <Button type="button" variant="outline">
+      <AppButton type="button" variant="quiet">
         {"Cancel"}
-      </Button>
+      </AppButton>
     </DialogClose>
   );
 }

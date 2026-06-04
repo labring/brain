@@ -36,6 +36,20 @@
   cursor: default;
 }
 
+.canvas-interaction-hand .react-flow__pane {
+  cursor: grab;
+}
+
+.canvas-interaction-hand .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+.canvas-interaction-hand .react-flow__node,
+.canvas-interaction-hand .react-flow__edge,
+.canvas-interaction-hand .react-flow__handle {
+  pointer-events: none;
+}
+
 /* Unmarked handles are decorative; declare data-side to opt into visibility. */
 .canvas-surface .react-flow__handle:not([data-side]) {
   top: auto;

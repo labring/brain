@@ -1,4 +1,4 @@
-import { Button } from "@data-browser/components/ui/Button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { X } from "lucide-react";
 import type { FilterChip } from "./types";
 
@@ -34,14 +34,14 @@ export function DataViewFilterBar({
           </button>
         </div>
       ))}
-      <Button
+      <AppButton
         className="ml-auto h-6 text-muted-foreground text-xs hover:text-destructive"
         onClick={onClearAll}
         size="sm"
-        variant="ghost"
+        variant="quiet"
       >
         {"Clear all"}
-      </Button>
+      </AppButton>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   TaskContent,
   TaskTrigger,
 } from "@workspace/ui/components/ai-elements/task";
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -227,7 +227,7 @@ function ChatToolGroupItem({
           )}
           {pendingApprovalId !== undefined && (
             <div className="flex flex-wrap gap-2">
-              <Button
+              <AppButton
                 onClick={() =>
                   addToolApprovalResponse?.({
                     approved: true,
@@ -236,10 +236,11 @@ function ChatToolGroupItem({
                 }
                 size="sm"
                 type="button"
+                variant="secondary"
               >
                 Approve
-              </Button>
-              <Button
+              </AppButton>
+              <AppButton
                 onClick={() =>
                   addToolApprovalResponse?.({
                     approved: false,
@@ -249,10 +250,10 @@ function ChatToolGroupItem({
                 }
                 size="sm"
                 type="button"
-                variant="outline"
+                variant="quiet"
               >
                 Deny
-              </Button>
+              </AppButton>
             </div>
           )}
         </div>

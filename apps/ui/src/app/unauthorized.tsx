@@ -1,4 +1,4 @@
-import { buttonVariants } from "@workspace/ui/components/button";
+import { appButtonVariants } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
 import Link from "next/link";
 
@@ -13,7 +13,9 @@ export default function Unauthorized() {
         Log in with your workspace before you can use this app.
       </p>
       <Link
-        className={cn(buttonVariants({ size: "default", variant: "default" }))}
+        className={cn(
+          appButtonVariants({ size: "default", variant: "secondary" })
+        )}
         href="/"
       >
         Refresh

@@ -57,11 +57,11 @@ test("opening a second drawer entry replaces the first drawer entry only", () =>
   });
 
   const next = openProjectSurface(state, {
-    entry: { kind: "dbConsole", target: db },
+    entry: { kind: "dbTerminal", target: db },
     slot: "drawer",
   });
 
-  assert.deepEqual(next.drawer, { kind: "dbConsole", target: db });
+  assert.deepEqual(next.drawer, { kind: "dbTerminal", target: db });
   assert.deepEqual(next.side, state.side);
 });
 
@@ -100,7 +100,7 @@ test("main action surface can explicitly keep inspection visible", () => {
 
 test("closing one surface slot does not disturb selection or other slots", () => {
   const state = createProjectSurfaceState({
-    drawer: { kind: "dbConsole", target: db },
+    drawer: { kind: "dbTerminal", target: db },
     main: { kind: "dbAccess", target: db },
     side: { kind: "dbSettings", target: db },
   });

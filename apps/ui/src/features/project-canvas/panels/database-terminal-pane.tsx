@@ -9,7 +9,7 @@ import {
   ExecTerminalPane,
 } from "./exec-terminal-pane";
 
-export const DatabaseConsolePane = memo(function DatabaseConsolePane({
+export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
   node,
   onClose,
   projectUid,
@@ -21,7 +21,6 @@ export const DatabaseConsolePane = memo(function DatabaseConsolePane({
   const data = databaseNodeDataFromNode(node);
   const name = data?.workload.name?.trim() ?? "";
   const namespace = data?.workload.namespace?.trim() ?? "";
-  const displayEngine = data?.states.displayEngine?.trim() ?? "";
 
   const descriptor = useMemo<ExecTerminalDescriptor>(
     () => ({
@@ -29,13 +28,12 @@ export const DatabaseConsolePane = memo(function DatabaseConsolePane({
       name,
       namespace,
       projectUid,
-      subtitle: displayEngine ? `${displayEngine} console` : "Database console",
-      title: name || "Database console",
+      title: name || "Terminal",
     }),
-    [displayEngine, name, namespace, projectUid]
+    [name, namespace, projectUid]
   );
 
   return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;
 });
 
-DatabaseConsolePane.displayName = "DatabaseConsolePane";
+DatabaseTerminalPane.displayName = "DatabaseTerminalPane";

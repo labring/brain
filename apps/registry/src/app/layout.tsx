@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, JetBrains_Mono } from "next/font/google";
 import { Suspense } from "react";
 
 import "@/styles/globals.css";
@@ -12,7 +12,7 @@ import { AppShell } from "@/components/app-shell";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
-const fontMono = Geist_Mono({
+const fontMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 });

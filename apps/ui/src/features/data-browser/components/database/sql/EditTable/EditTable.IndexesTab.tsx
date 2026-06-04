@@ -3,6 +3,7 @@ import { Checkbox } from "@data-browser/components/ui/checkbox";
 import { Input } from "@data-browser/components/ui/Input";
 import { MultiSelect } from "@data-browser/components/ui/MultiSelect";
 import { cn } from "@data-browser/lib/utils";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Plus, X } from "lucide-react";
 import { useEditTable } from "./EditTableProvider";
 
@@ -19,15 +20,15 @@ export function EditTableIndexesTab() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-end">
-        <Button
+        <AppButton
           className="gap-1 text-primary"
           onClick={addIndex}
           size="sm"
-          variant="link"
+          variant="quiet"
         >
           <Plus className="h-3 w-3" />
           {"Add index"}
-        </Button>
+        </AppButton>
       </div>
       <div className="rounded-md border">
         <table className="w-full text-sm">

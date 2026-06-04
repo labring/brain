@@ -71,7 +71,7 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
   return (
     <CanvasResourcePane
       closeAriaLabel="Close EntryPoint settings"
-      icon={<Network aria-hidden className="size-4 shrink-0 text-blue-500" />}
+      icon={<Network aria-hidden className="size-4 shrink-0 text-blue-400" />}
       onClose={onClose}
       subtitle={subtitle}
       title={title}

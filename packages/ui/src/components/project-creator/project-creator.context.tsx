@@ -44,6 +44,8 @@ export interface ProjectCreatorRootProps {
   children: ReactNode;
   /** Disables Confirm on Docker/database steps during async apply. */
   confirmApplying?: boolean;
+  /** Direct Database entry derives the Project Display Name from the selected engine. */
+  databaseDirect?: boolean;
   /** Options for the database step combobox. */
   databaseOptions?: ProjectCreatorDatabaseChoice[];
   /** Direct Docker entry derives the Project Display Name from the image first. */
@@ -54,6 +56,8 @@ export interface ProjectCreatorRootProps {
   githubDeployer?: ProjectCreatorGithubDeployerSlot;
   /** Optional initial source step for direct assistant/tool entry paths. */
   initialStep?: ProjectCreatorSourceKind | null;
+  /** Reports active source changes to outer chrome such as pane headers. */
+  onStepChange?: (step: ProjectCreatorSourceKind | null) => void;
 }
 
 function normalizeProjectCreatorDisplayName(name: string): string {
@@ -65,10 +69,12 @@ export function ProjectCreatorRoot({
   confirmApplying = false,
   children,
   databaseOptions,
+  databaseDirect = false,
   dockerDirect = false,
   existingProjectDisplayNames = [],
   githubDeployer: githubDeployerProp,
   initialStep = null,
+  onStepChange,
 }: ProjectCreatorRootProps) {
   const [step, setStep] = useState<ProjectCreatorSourceKind | null>(
     initialStep
@@ -78,6 +84,10 @@ export function ProjectCreatorRoot({
     string | null
   >(null);
   const reset = useCallback(() => setStep(initialStep), [initialStep]);
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [onStepChange, step]);
 
   const existingDisplayNameSet = useMemo(
     () =>
@@ -164,6 +174,8 @@ export function ProjectCreatorRoot({
         reset,
         setProjectDisplayName,
         validateProjectDisplayName: validateAndSetProjectDisplayNameError,
+        deriveDatabaseProjectDisplayName:
+          actionsProp?.deriveDatabaseProjectDisplayName,
         deriveDockerProjectDisplayName:
           actionsProp?.deriveDockerProjectDisplayName,
         onGithubConfirm: actionsProp?.onGithubConfirm,
@@ -172,6 +184,7 @@ export function ProjectCreatorRoot({
       },
       meta: {
         databaseOptions: dbOptions,
+        databaseDirect,
         dockerDirect,
         githubDeployer: githubDeployerProp,
       },
@@ -182,6 +195,7 @@ export function ProjectCreatorRoot({
       reset,
       pick,
       actionsProp,
+      databaseDirect,
       dbOptions,
       dockerDirect,
       githubDeployerProp,

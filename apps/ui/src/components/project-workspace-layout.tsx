@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat as useAIChat } from "@ai-sdk/react";
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Chat,
   downloadChatMessagesJson,
@@ -569,7 +569,7 @@ function ProjectAssistantChatSession({
 
   return (
     <Chat.Root>
-      <Chat className="h-full min-h-0 flex-1 border-0 bg-[#101219] shadow-none">
+      <Chat className="h-full min-h-0 flex-1 border-0 shadow-none">
         <Chat.Header
           className="shrink-0 py-2 pr-12"
           threadHistory={threadHistory}
@@ -727,7 +727,7 @@ function ProjectAssistantChatPane() {
   if (sessionError) {
     return (
       <div
-        className="flex h-full min-h-0 flex-1 items-center justify-center bg-[#101219] p-4 text-center text-muted-foreground text-sm"
+        className="project-chrome-surface flex h-full min-h-0 flex-1 items-center justify-center p-4 text-center text-muted-foreground text-sm"
         data-slot="assistant-chat-error"
       >
         Could not load assistant chat. Check DATABASE_URL and database
@@ -740,7 +740,7 @@ function ProjectAssistantChatPane() {
     return (
       <div
         aria-busy
-        className="h-full min-h-0 flex-1 bg-[#101219]"
+        className="project-chrome-surface h-full min-h-0 flex-1"
         data-slot="assistant-chat-boot"
       />
     );
@@ -822,7 +822,7 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       <aside
         aria-hidden={!assistantPaneOpen}
         className={cn(
-          "box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l bg-[#101219] transition-[width,min-width,opacity,transform,border-color] duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,min-width,opacity,transform,border-color] duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
           assistantPaneOpen
             ? "w-104 min-w-104 translate-x-0 border-border opacity-100"
             : "pointer-events-none w-0 min-w-0 translate-x-4 border-transparent opacity-0"
@@ -832,24 +832,24 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       >
         <ProjectAssistantChatPane />
       </aside>
-      <Button
+      <AppIconButton
         aria-controls="project-assistant-pane"
         aria-expanded={assistantPaneOpen}
         aria-label={
           assistantPaneOpen ? "Close assistant pane" : "Open assistant pane"
         }
-        className="hoverable aria-expanded:!bg-transparent absolute top-2 right-2 z-40 size-9 rounded-xl"
+        className="absolute top-2 right-2 z-40"
         onClick={toggleAssistantPane}
-        size="icon-lg"
+        size="lg"
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         {assistantPaneOpen ? (
           <PanelRightClose aria-hidden className="size-4" strokeWidth={2} />
         ) : (
           <PanelRightOpen aria-hidden className="size-4" strokeWidth={2} />
         )}
-      </Button>
+      </AppIconButton>
     </div>
   );
 }

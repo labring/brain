@@ -17,7 +17,10 @@ import { useProjectServices } from "@/features/project-canvas/snapshot/use-proje
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import { ProjectCanvasWorkbenchSurfaces } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
-import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
+import {
+  PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET,
+  useProjectCanvas,
+} from "@/features/project-canvas/workbench/use-project-canvas";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
@@ -150,6 +153,10 @@ export default function ProjectUidPage() {
     }),
     [workbench.meta, namespace, uid]
   );
+  const canvasViewportInset =
+    workbench.surfaceRenderModel.side == null
+      ? 0
+      : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET;
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
@@ -191,6 +198,8 @@ export default function ProjectUidPage() {
                   </div>
                 ) : null}
                 <Canvas.Flow>
+                  <Canvas.MiniMap rightInset={canvasViewportInset} />
+                  <Canvas.Controls rightInset={canvasViewportInset} />
                   <ProjectCanvasWorkbenchSurfaces
                     kubeconfig={kubeconfig}
                     namespace={namespace}

@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@data-browser/components/ui/select";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Filter, Plus, Trash2 } from "lucide-react";
 import { createContext, type ReactNode, use, useState } from "react";
 import type { FilterCondition } from "./TableView/types";
@@ -156,16 +157,16 @@ function ColumnSelector() {
         <h3 className="font-medium text-foreground text-sm">
           {"Visible columns"}
         </h3>
-        <Button
+        <AppButton
           className="h-6 p-0 text-blue-500 text-sm"
           onClick={toggleAllColumns}
           size="sm"
-          variant="link"
+          variant="quiet"
         >
           {selectedColumns.size === columns.length
             ? "Deselect all"
             : "Select all"}
-        </Button>
+        </AppButton>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {columns.map((col) => (
@@ -202,10 +203,15 @@ function ConditionList() {
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h3 className="font-medium text-foreground text-sm">{"Conditions"}</h3>
-        <Button className="h-9 gap-2" onClick={addCondition} size="sm">
+        <AppButton
+          className="h-9 gap-2"
+          onClick={addCondition}
+          size="sm"
+          variant="secondary"
+        >
           <Plus className="h-4 w-4" />
           {"Add condition"}
-        </Button>
+        </AppButton>
       </div>
 
       {conditions.length > 0 && (
@@ -297,12 +303,9 @@ function ApplyButton({
   };
 
   return (
-    <Button
-      className="bg-primary text-primary-foreground hover:bg-primary/90"
-      onClick={handleApply}
-    >
+    <AppButton onClick={handleApply} variant="secondary">
       {"Apply filter"}
-    </Button>
+    </AppButton>
   );
 }
 

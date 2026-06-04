@@ -1,0 +1,16 @@
+.layout {
+  container-name: project-index-layout;
+  container-type: inline-size;
+}
+
+.sidePaneReserve {
+  width: 0;
+  max-width: 0;
+}
+
+@container project-index-layout (min-width: 60rem) {
+  .sidePaneReserve[data-open="true"] {
+    width: min(40rem, 100cqw);
+    max-width: min(40rem, 100cqw);
+  }
+}

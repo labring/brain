@@ -40,6 +40,13 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+
+  /** SealAI custom color utilities. */
+  --color-brand-primary-hover: var(--sealai-brand-primary-hover);
+  --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
+  --color-brand-primary: var(--sealai-brand-primary);
+  --color-project-chrome-surface: var(--project-chrome-surface);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -78,13 +85,36 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  /** Runtime tokens consumed directly by `packages/ui` canvas CSS. */
+
+  /** SealAI brand tokens. */
+  --sealai-brand-primary: color-mix(
+    in oklab,
+    var(--color-blue-500) 90%,
+    #09090b 10%
+  );
+  --sealai-brand-primary-hover: var(--color-blue-500);
+  --sealai-brand-primary-foreground: oklch(0.922 0 0);
+
+  /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
     in oklab,
     var(--color-zinc-400) 55%,
     transparent
+  );
+
+  /** Project chrome surface tokens. */
+  --project-chrome-surface-base: #080a11;
+  --project-chrome-surface: color-mix(
+    in oklab,
+    var(--input) 30%,
+    var(--project-chrome-surface-base)
+  );
+  --project-chrome-surface-overlay: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--input) 30%, transparent),
+    color-mix(in oklab, var(--input) 30%, transparent)
   );
 }
 
@@ -115,6 +145,15 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /** SealAI brand tokens. */
+  --sealai-brand-primary: color-mix(
+    in oklab,
+    var(--color-blue-500) 90%,
+    #09090b 10%
+  );
+  --sealai-brand-primary-hover: var(--color-blue-500);
+  --sealai-brand-primary-foreground: oklch(0.922 0 0);
 }
 
 @layer base {
@@ -129,21 +168,7 @@
   }
 }
 
-/**
- * Muted by default; transparent background; on hover, foreground text and input surface.
- * Use `className="hoverable"` alone (e.g. `SidebarMenuButton`, `AvatarSwitcher`, chat header icons).
- */
 @layer utilities {
-  .hoverable {
-    @apply cursor-pointer border-transparent bg-transparent text-muted-foreground transition-colors;
-  }
-  .hoverable:disabled {
-    @apply cursor-not-allowed;
-  }
-  .hoverable:hover:not(:disabled) {
-    @apply text-foreground !bg-input;
-  }
-
   /** Chat scroll surfaces (transcript, thread picker): thin track, themed thumb — Firefox + WebKit. */
   .scrollbar-chat-thin {
     scrollbar-color: var(--border) transparent;
@@ -160,13 +185,9 @@
     background-color: var(--border);
   }
 
-  .resource-pane-surface {
-    background-color: #080a11;
-    background-image: linear-gradient(
-      90deg,
-      color-mix(in oklab, var(--color-white) 4.5%, transparent) 0%,
-      color-mix(in oklab, var(--color-white) 4.5%, transparent) 100%
-    );
+  .project-chrome-surface {
+    background-color: var(--project-chrome-surface-base);
+    background-image: var(--project-chrome-surface-overlay);
   }
 
   .main-action-surface-body-background {

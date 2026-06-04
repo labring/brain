@@ -1,7 +1,12 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
-import { Input } from "@workspace/ui/components/input";
+import { AppButton } from "@workspace/ui/components/app-button";
+import { AppInput } from "@workspace/ui/components/app-input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { LayoutGrid, Plus, Search } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -41,7 +46,10 @@ export function ProjectExplorerHeaderToolbar({
 }: ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex min-w-0 items-center gap-2", className)}
+      className={cn(
+        "project-explorer-header-toolbar flex min-w-0 flex-nowrap items-center gap-2",
+        className
+      )}
       data-slot="project-explorer-header-toolbar"
       {...props}
     />
@@ -53,7 +61,7 @@ export function ProjectExplorerSearchField({
   className,
   placeholder = "Search projects…",
   ...props
-}: Omit<ComponentProps<typeof Input>, "onChange" | "type" | "value"> & {
+}: Omit<ComponentProps<typeof AppInput>, "onChange" | "type" | "value"> & {
   placeholder?: string;
 }) {
   const { searchQuery, setSearchQuery } = useProjectExplorer();
@@ -67,7 +75,7 @@ export function ProjectExplorerSearchField({
         aria-hidden
         className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
       />
-      <Input
+      <AppInput
         aria-label="Search projects"
         className="pl-9 shadow-xs"
         onChange={(e) => setSearchQuery(e.target.value)}
@@ -85,19 +93,24 @@ export function ProjectExplorerNewProjectButton({
   className,
   children,
   ...props
-}: ComponentProps<typeof Button>) {
+}: ComponentProps<typeof AppButton>) {
   const { actions } = useProjectExplorer();
   const { onClick, ...rest } = props;
+  const defaultContent = children == null;
 
-  return (
-    <Button
+  const button = (
+    <AppButton
+      aria-label={defaultContent ? "New Project" : undefined}
       className={cn(
-        "h-9 gap-1.5 bg-blue-500 px-3 text-sm text-white hover:bg-blue-500/90",
+        "h-9 bg-blue-500 text-sm text-white hover:bg-blue-500/90",
+        defaultContent
+          ? "project-explorer-new-project-button justify-start gap-1.5 overflow-hidden px-3"
+          : "gap-1.5 px-3",
         className
       )}
       size="lg"
       type="button"
-      variant="default"
+      variant="secondary"
       {...rest}
       onClick={(e) => {
         onClick?.(e);
@@ -109,9 +122,27 @@ export function ProjectExplorerNewProjectButton({
       {children ?? (
         <>
           <Plus aria-hidden className="size-4" />
-          New Project
+          <span className="project-explorer-new-project-label shrink-0 whitespace-nowrap">
+            New Project
+          </span>
         </>
       )}
-    </Button>
+    </AppButton>
+  );
+
+  if (!defaultContent) {
+    return button;
+  }
+
+  return (
+    <div
+      className="project-explorer-new-project-action min-w-9"
+      data-slot="project-explorer-new-project-action"
+    >
+      <Tooltip>
+        <TooltipTrigger render={button} />
+        <TooltipContent>New Project</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

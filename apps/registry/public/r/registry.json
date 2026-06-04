@@ -4,6 +4,50 @@
   "homepage": "https://github.com/sealai/brain",
   "items": [
     {
+      "name": "app-icon-button",
+      "type": "registry:ui",
+      "title": "App Icon Button",
+      "description": "SealAI product icon-only button style layer",
+      "dependencies": ["class-variance-authority"],
+      "registryDependencies": ["button"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-icon-button.tsx",
+          "type": "registry:component",
+          "target": "components/app-icon-button.tsx"
+        }
+      ]
+    },
+    {
+      "name": "app-button",
+      "type": "registry:ui",
+      "title": "App Button",
+      "description": "SealAI product button style layer for non-icon actions",
+      "dependencies": ["class-variance-authority"],
+      "registryDependencies": ["button"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-button.tsx",
+          "type": "registry:component",
+          "target": "components/app-button.tsx"
+        }
+      ]
+    },
+    {
+      "name": "app-input",
+      "type": "registry:ui",
+      "title": "App Input",
+      "description": "SealAI product input style layer for pane and settings forms",
+      "registryDependencies": ["input"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-input.tsx",
+          "type": "registry:component",
+          "target": "components/app-input.tsx"
+        }
+      ]
+    },
+    {
       "name": "log-viewer",
       "type": "registry:ui",
       "title": "Log viewer (Linear)",

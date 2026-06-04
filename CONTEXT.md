@@ -147,15 +147,21 @@ A read-only resource workflow for inspecting one DB Service's objects and data w
 
 One active DB Access browsing session for a single DB Service. A DB Access Session keeps object selection and open object tabs while browsing multiple Logical Databases within that DB Service, while closing DB Access or switching to a different DB Service starts a separate session.
 
-### DB Console
+### DB Terminal
 
-An interactive session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Console is distinct from DB Access: DB Access is a read-only browser over a DB Service's objects and data, while a DB Console is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
+An interactive terminal session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Terminal is distinct from DB Access: DB Access is a read-only browser over a DB Service's objects and data, while a DB Terminal is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
 
-_Avoid_: using "console" to mean the AP container shell. The AP node's terminal opens a generic pod shell on the AP workload, not a database engine client; the shared "console" label across AP and DB nodes does not denote the same kind of session.
+_Avoid_: DB Console, console.
+
+### AP Terminal
+
+An interactive terminal session that opens a generic pod shell on an AP workload. An AP Terminal is distinct from a DB Terminal: both are terminals in the UI, but an AP Terminal is a workload shell while a DB Terminal is a database engine-client session.
+
+_Avoid_: AP Console, console.
 
 ### Session Drawer
 
-A bottom temporary project surface for one interactive resource session, such as an AP terminal or DB Console. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
+A bottom temporary project surface for one interactive resource session, such as an AP Terminal or DB Terminal. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
 
 Within one project surface, Session Drawer is single-active. A Session Drawer may coexist with a Side Pane or Main Action Surface, and it remains pinned to its session target rather than following canvas selection.
 
@@ -172,6 +178,38 @@ A Project-scoped visual arrangement of the canvas, shared by everyone who opens 
 A temporary, per-view adjustment of the Project Canvas viewport that keeps a target canvas node visible within the currently available canvas area without changing Canvas Layout.
 
 _Avoid_: using Canvas Layout to describe temporary viewport movement.
+
+### Canvas Pointer Mode
+
+The Project Canvas interaction mode for selecting resources, opening resource-scoped surfaces, moving canvas nodes, and starting Connecting Edge gestures.
+
+Canvas Pointer Mode may change Canvas Layout when a canvas node is moved, depending on the Project Canvas read/write state. It is distinct from Canvas Viewport movement, which changes only the user's current view. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
+
+### Canvas Hand Mode
+
+The Project Canvas interaction mode for browsing the canvas by moving the viewport without selecting resources, using resource quick actions, opening resource-scoped surfaces, moving canvas nodes, or starting Connecting Edge gestures.
+
+Canvas Hand Mode preserves the current canvas selection and active project surfaces, and does not change Canvas Layout. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
+
+### Canvas MiniMap
+
+A Project Canvas navigation aid that shows the relationship between the current viewport and the overall Canvas Layout.
+
+Canvas MiniMap changes only the current viewport. It does not select resources, open project surfaces, move canvas nodes, or create Canvas Connections.
+
+### Canvas Viewport Control
+
+A Project Canvas control that changes the current user's canvas viewport, such as fitting the visible graph or adjusting zoom.
+
+Canvas Viewport Controls are not persisted in Canvas Layout and do not affect other users' view of the Project Canvas.
+
+### Canvas Navigation Chrome
+
+The normally hidden, transient Project Canvas navigation UI around the graph, including Canvas MiniMap and Canvas Viewport Controls.
+
+Canvas Navigation Chrome appears during canvas navigation or node movement and briefly remains visible after the interaction ends. It is session-local and does not change Canvas Layout.
+
+Pointer hover alone is not canvas navigation and does not reveal Canvas Navigation Chrome. Resource selection, resource inspection, or Connecting Edge gestures do not reveal Canvas Navigation Chrome. Keyboard shortcuts for canvas interaction or viewport changes do reveal Canvas Navigation Chrome. Programmatic viewport movement does not reveal Canvas Navigation Chrome. Once revealed by canvas navigation or node movement, direct pointer or keyboard focus interaction with Canvas Navigation Chrome keeps it visible and visible to the user. When hidden, Canvas Navigation Chrome does not participate in canvas interaction, and no separate persistent mode indicator replaces it. Open project surfaces such as Side Pane, Main Action Surface, or Session Drawer do not suppress Canvas Navigation Chrome.
 
 ### Canvas Resource Identity
 
@@ -255,7 +293,7 @@ A normalized time-series representation of workload resource usage for AP and DB
 
 ### Resource Logs
 
-A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP terminal or DB Console.
+A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP Terminal or DB Terminal.
 
 ### Project Aggregate Status
 

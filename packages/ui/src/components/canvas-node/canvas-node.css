@@ -473,7 +473,7 @@
   mask-composite: exclude;
 }
 
-.canvas-node-expand-button {
+.canvas-node-expand-button[data-variant="node"] {
   --canvas-node-expand-underlay: transparent;
   position: absolute;
   top: 0;
@@ -483,7 +483,7 @@
   );
   width: var(--canvas-node-control-size);
   height: var(--canvas-node-control-size);
-  color: var(--color-zinc-400);
+  color: var(--sealai-brand-primary-foreground);
   pointer-events: none;
   cursor: pointer;
   background:
@@ -505,12 +505,12 @@
 }
 
 .canvas-node-frame:not([data-dragging]):is([data-hover-intent], [data-selected])
-  .canvas-node-expand-button {
+  .canvas-node-expand-button[data-variant="node"] {
   pointer-events: auto;
   opacity: 1;
 }
 
-.canvas-node-expand-button:hover {
+.canvas-node-expand-button[data-variant="node"]:hover {
   --canvas-node-expand-underlay: var(--canvas-node-surface-active-bg);
   color: var(--color-blue-400);
 }

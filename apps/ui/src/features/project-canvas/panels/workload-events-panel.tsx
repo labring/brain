@@ -174,7 +174,7 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
       bodyClassName="gap-5"
       closeAriaLabel="Close workload events"
       icon={
-        <CalendarDays aria-hidden className="size-4 shrink-0 text-blue-500" />
+        <CalendarDays aria-hidden className="size-4 shrink-0 text-blue-400" />
       }
       onClose={onClose}
       subtitle={subtitle}
