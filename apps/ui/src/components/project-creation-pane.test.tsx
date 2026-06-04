@@ -27,7 +27,19 @@ const GITHUB_SEARCH_RE = /placeholder="Search"/;
 const SCENARIO_RE = /Scenario/;
 const TRAIL_BACK_RE = />Back</;
 const DATABASE_DEPLOYER_RE = /data-slot="database-deployer"/;
+const DATABASE_ICON_RE = /lucide-database/;
 const DOCKER_DEPLOYER_RE = /data-slot="docker-deployer"/;
+const DOCKER_TITLE_RE = /<title>Docker<\/title>/;
+const GITHUB_TITLE_RE = /<title>GitHub<\/title>/;
+const PLUS_ICON_RE = /lucide-plus/;
+
+function sidePaneHeader(html: string): string {
+  const start = html.indexOf("<header");
+  const end = html.indexOf("</header>");
+  assert.notEqual(start, -1, "side pane header start is present");
+  assert.notEqual(end, -1, "side pane header end is present");
+  return html.slice(start, end);
+}
 
 test("project creation pane is a non-modal side pane with the method picker", () => {
   const html = renderToStaticMarkup(
@@ -38,12 +50,16 @@ test("project creation pane is a non-modal side pane with the method picker", ()
       resetKey={1}
     />
   );
+  const header = sidePaneHeader(html);
 
   assert.match(html, ASIDE_RE);
   assert.match(html, PANE_LABEL_RE);
   assert.match(html, BUSY_RE);
   assert.match(html, PROJECT_TITLE_RE);
   assert.match(html, DESCRIPTION_RE);
+  assert.match(header, PLUS_ICON_RE);
+  assert.doesNotMatch(header, GITHUB_TITLE_RE);
+  assert.doesNotMatch(header, DOCKER_TITLE_RE);
   assert.match(html, PROJECT_NAME_RE);
   assert.match(html, CLOSE_LABEL_RE);
   assert.doesNotMatch(html, DIALOG_ROLE_RE);
@@ -86,8 +102,11 @@ test("project creation pane GitHub direct entry starts at repository selection",
       resetKey={1}
     />
   );
+  const header = sidePaneHeader(html);
 
   assert.match(html, PANE_LABEL_RE);
+  assert.match(header, GITHUB_TITLE_RE);
+  assert.doesNotMatch(header, PLUS_ICON_RE);
   assert.match(html, GITHUB_CONNECTED_RE);
   assert.match(html, GITHUB_SEARCH_RE);
   assert.match(html, GITHUB_REPO_CARD_RE);
@@ -96,7 +115,7 @@ test("project creation pane GitHub direct entry starts at repository selection",
   assert.doesNotMatch(html, TRAIL_BACK_RE);
 });
 
-test("project creation pane database direct entry keeps project naming and opens deployment settings", () => {
+test("project creation pane Database direct entry opens deployment settings without generic project naming first", () => {
   const html = renderToStaticMarkup(
     <ProjectCreationPane
       creatorRootProps={{ databaseOptions: [] }}
@@ -105,10 +124,13 @@ test("project creation pane database direct entry keeps project naming and opens
       resetKey={1}
     />
   );
+  const header = sidePaneHeader(html);
 
   assert.match(html, PANE_LABEL_RE);
-  assert.match(html, PROJECT_NAME_RE);
+  assert.match(header, DATABASE_ICON_RE);
+  assert.doesNotMatch(header, PLUS_ICON_RE);
   assert.match(html, DATABASE_DEPLOYER_RE);
+  assert.doesNotMatch(html, PROJECT_NAME_RE);
   assert.doesNotMatch(html, SCENARIO_RE);
   assert.doesNotMatch(html, TRAIL_BACK_RE);
 });
@@ -127,8 +149,11 @@ test("project creation pane Docker direct entry opens Docker deployment settings
       resetKey={1}
     />
   );
+  const header = sidePaneHeader(html);
 
   assert.match(html, PANE_LABEL_RE);
+  assert.match(header, DOCKER_TITLE_RE);
+  assert.doesNotMatch(header, PLUS_ICON_RE);
   assert.match(html, DOCKER_DEPLOYER_RE);
   assert.match(html, DOCKER_IMAGE_RE);
   assert.match(html, AUTO_GENERATED_PUBLIC_ADDRESS_RE);

@@ -106,10 +106,10 @@ export type DatabaseNodeTogglePublicConnectionHandler = (
 ) => Promise<void> | void;
 
 export type DatabaseNodeQuickActionKey =
-  | "console"
   | "dbAccess"
   | "logs"
-  | "metrics";
+  | "metrics"
+  | "terminal";
 
 export type DatabaseNodeLifecycleActionKey =
   | "delete"

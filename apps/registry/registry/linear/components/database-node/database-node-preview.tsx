@@ -141,7 +141,7 @@ const scrollConnections: DatabaseNodeConnection[] = [
 ];
 
 const loadingQuickActions = {
-  console: { onClick: () => undefined },
+  terminal: { onClick: () => undefined },
   logs: { onClick: () => undefined },
   metrics: { loading: true, onClick: () => undefined },
 } satisfies Record<string, DatabaseNodeAction>;
@@ -237,7 +237,7 @@ function PublicToggleSample() {
       defaultExpanded
       onTogglePublicConnection={togglePublicConnection}
       quickActions={{
-        console: { onClick: () => undefined },
+        terminal: { onClick: () => undefined },
         logs: { onClick: () => undefined },
         metrics: { onClick: () => undefined },
       }}
@@ -274,7 +274,7 @@ export default function DatabaseNodePreview() {
           <DatabaseNodeSample
             defaultExpanded
             quickActions={{
-              console: { onClick: () => undefined },
+              terminal: { onClick: () => undefined },
               logs: { onClick: () => undefined },
               metrics: { onClick: () => undefined },
             }}
@@ -286,7 +286,7 @@ export default function DatabaseNodePreview() {
           <DatabaseNodeSample
             defaultExpanded
             quickActions={{
-              console: { onClick: () => undefined },
+              terminal: { onClick: () => undefined },
               logs: { onClick: () => undefined },
               metrics: { onClick: () => undefined },
             }}

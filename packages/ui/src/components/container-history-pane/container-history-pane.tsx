@@ -5,9 +5,9 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
-import { Button } from "@workspace/ui/components/button";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
@@ -102,16 +102,16 @@ function SnapshotHistoryListItem({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-          <Button
+          <AppButton
             onClick={() => onReviewConfig(row)}
             size="sm"
             type="button"
-            variant="outline"
+            variant="quiet"
           >
-            Review
-          </Button>
+            Review config
+          </AppButton>
           {row.variant === "orphan" ? (
-            <Button
+            <AppButton
               aria-busy={rollbackInFlightHere}
               disabled={!canRollback || rollbackInFlightHere}
               onClick={() => onRollback?.(row.versionHash)}
@@ -130,7 +130,7 @@ function SnapshotHistoryListItem({
               ) : (
                 "Rollback"
               )}
-            </Button>
+            </AppButton>
           ) : null}
         </div>
       </div>

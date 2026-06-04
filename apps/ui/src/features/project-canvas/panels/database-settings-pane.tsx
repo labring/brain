@@ -151,7 +151,7 @@ function DatabaseSettingsHeaderIcon({ iconUrl }: { iconUrl?: string }) {
       />
     );
   }
-  return <Database aria-hidden className="size-4 shrink-0 text-blue-500" />;
+  return <Database aria-hidden className="size-4 shrink-0 text-blue-400" />;
 }
 
 function DatabaseSettingsConnectionAddressRow({

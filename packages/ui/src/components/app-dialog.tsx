@@ -1,5 +1,7 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import {
   Dialog,
   DialogClose,
@@ -8,7 +10,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@workspace/ui/components/dialog";
-import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { cn } from "@workspace/ui/lib/utils";
 import { Loader2, TriangleAlert } from "lucide-react";
@@ -36,7 +37,7 @@ function AppDialogContent({
   return (
     <DialogContent
       className={cn(
-        "dark gap-0 overflow-hidden rounded-lg border border-white/10 bg-[#18191f]/95 p-0 text-foreground shadow-2xl backdrop-blur-[20px]",
+        "dark gap-0 overflow-hidden rounded-lg border border-white/10 bg-project-chrome-surface p-0 text-foreground shadow-2xl backdrop-blur-[20px]",
         "max-w-[calc(100vw-2rem)] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
         className
       )}
@@ -69,7 +70,7 @@ function AppDialogIcon({
   return (
     <span
       className={cn(
-        "inline-flex size-4 shrink-0 items-center justify-center text-yellow-400 [&_svg]:size-4",
+        "inline-flex size-4 shrink-0 items-center justify-center text-zinc-50 [&_svg]:size-4",
         className
       )}
       data-slot="app-dialog-icon"
@@ -80,9 +81,12 @@ function AppDialogIcon({
   );
 }
 
-function AppDialogWarningIcon(props: ComponentProps<typeof AppDialogIcon>) {
+function AppDialogWarningIcon({
+  className,
+  ...props
+}: ComponentProps<typeof AppDialogIcon>) {
   return (
-    <AppDialogIcon {...props}>
+    <AppDialogIcon className={cn("text-yellow-400", className)} {...props}>
       <TriangleAlert aria-hidden />
     </AppDialogIcon>
   );
@@ -95,7 +99,7 @@ function AppDialogTitle({
   return (
     <DialogTitle
       className={cn(
-        "min-w-0 flex-1 truncate font-medium text-lg/7 text-zinc-50",
+        "min-w-0 flex-1 truncate font-medium text-base/5 text-zinc-50",
         className
       )}
       {...props}
@@ -138,19 +142,6 @@ function AppDialogFooter({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-const actionToneClass: Record<AppDialogActionTone, string> = {
-  default: "bg-white/[0.045] text-zinc-100 hover:bg-white/10",
-  destructive: "bg-red-500 text-white hover:bg-red-500/90",
-};
-
-function appDialogButtonClass(className?: string) {
-  return cn(
-    "inline-flex h-9 shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 font-medium text-sm/5 outline-none transition-colors",
-    "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-    className
-  );
-}
-
 function AppDialogCancel({
   className,
   children = "Cancel",
@@ -160,11 +151,10 @@ function AppDialogCancel({
   return (
     <DialogClose
       render={
-        <button
-          className={appDialogButtonClass(
-            cn(actionToneClass.default, className)
-          )}
+        <AppButton
+          className={className}
           type={type}
+          variant="secondary"
           {...props}
         />
       }
@@ -191,17 +181,18 @@ function AppDialogAction({
   const isDisabled = disabled || loading;
 
   return (
-    <button
-      className={appDialogButtonClass(cn(actionToneClass[tone], className))}
+    <AppButton
+      className={className}
       data-loading={loading ? "true" : undefined}
       data-tone={tone}
       disabled={isDisabled}
       type={type}
+      variant={tone === "destructive" ? "danger" : "secondary"}
       {...props}
     >
       {loading ? <Loader2 aria-hidden className="animate-spin" /> : null}
       {loading ? (loadingLabel ?? children) : children}
-    </button>
+    </AppButton>
   );
 }
 
@@ -230,16 +221,11 @@ function AppDialogLabel({ className, ...props }: ComponentProps<typeof Label>) {
   );
 }
 
-function AppDialogInput({ className, ...props }: ComponentProps<typeof Input>) {
-  return (
-    <Input
-      className={cn(
-        "h-8 border-white/15 bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:border-white/25 focus-visible:ring-white/10 dark:bg-transparent",
-        className
-      )}
-      {...props}
-    />
-  );
+function AppDialogInput({
+  className,
+  ...props
+}: ComponentProps<typeof AppInput>) {
+  return <AppInput className={className} {...props} />;
 }
 
 export const AppDialog = {

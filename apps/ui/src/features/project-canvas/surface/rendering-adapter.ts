@@ -105,7 +105,7 @@ export type ProjectCanvasDrawerRenderModel =
       target: ProjectApTarget;
     }
   | {
-      kind: "dbConsole";
+      kind: "dbTerminal";
       node: Node;
       target: ProjectDbTarget;
     }
@@ -275,8 +275,8 @@ function drawerRenderModel(
   switch (entry.kind) {
     case "apTerminal":
       return { kind: "apTerminal", node, target: entry.target };
-    case "dbConsole":
-      return { kind: "dbConsole", node, target: entry.target };
+    case "dbTerminal":
+      return { kind: "dbTerminal", node, target: entry.target };
     default:
       return entry satisfies never;
   }

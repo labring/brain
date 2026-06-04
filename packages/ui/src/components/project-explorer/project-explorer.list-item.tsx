@@ -1,7 +1,8 @@
 "use client";
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { CanvasNodeStatusDot } from "@workspace/ui/components/canvas-node/canvas-node.status";
 import {
   DropdownMenu,
@@ -17,10 +18,6 @@ import { useProjectExplorer } from "./project-explorer.context";
 import type { ProjectExplorerProject } from "./project-explorer.types";
 import { formatCreatedAt, toDate } from "./project-explorer.utils";
 
-function k8sName(project: ProjectExplorerProject): string {
-  return project.resourceName ?? project.name;
-}
-
 export function ProjectExplorerListItem({
   className,
   project,
@@ -33,6 +30,7 @@ export function ProjectExplorerListItem({
   const canRename = actions.onProjectRename != null;
   const canDelete = actions.onProjectDelete != null;
   const showRowMenu = canRename || canDelete;
+  const projectResourceName = project.resourceName ?? project.name;
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -108,7 +106,12 @@ export function ProjectExplorerListItem({
       className={cn("rounded-xl", className)}
       data-slot="project-explorer-item"
     >
-      <div className="hoverable flex min-w-0 items-center gap-2 rounded-xl p-2.5">
+      <div
+        className={cn(
+          "project-explorer-item-row flex min-w-0 items-center gap-2 rounded-xl bg-transparent p-2.5 transition-colors",
+          interactive && "cursor-pointer"
+        )}
+      >
         <CanvasNodeStatusDot
           size="small"
           status={{ label: "", visualTone: project.status }}
@@ -141,19 +144,18 @@ export function ProjectExplorerListItem({
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button
+                <AppIconButton
                   aria-label={`Actions for ${project.name}`}
-                  className="size-9 shrink-0 rounded-lg text-foreground hover:bg-input/50 hover:text-foreground aria-expanded:bg-input/50 data-popup-open:bg-input/50"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                  size={null}
+                  size="lg"
                   type="button"
-                  variant="ghost"
-                />
+                  variant="quiet"
+                >
+                  <EllipsisVertical aria-hidden className="size-4" />
+                </AppIconButton>
               }
-            >
-              <EllipsisVertical aria-hidden className="size-4" />
-            </DropdownMenuTrigger>
+            />
             <DropdownMenuContent
               align="start"
               className="w-38 min-w-38 rounded-md border border-border bg-input/30 p-1 text-foreground shadow-none ring-0! backdrop-blur-xl"
@@ -198,58 +200,44 @@ export function ProjectExplorerListItem({
           onClick={(e) => e.stopPropagation()}
         >
           <AppDialog.Header>
+            <AppDialog.Icon>
+              <SquarePen aria-hidden />
+            </AppDialog.Icon>
             <AppDialog.Title>Rename project</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>
-              Sets{" "}
-              <span className="font-mono text-foreground">
-                metadata.annotations.displayName
-              </span>{" "}
-              on project{" "}
-              <span className="font-mono text-foreground">
-                {k8sName(project)}
-              </span>
-              . The Kubernetes resource name does not change.
+              Update the project display name
             </AppDialog.Description>
-            <AppDialog.Field>
-              <AppDialog.Label htmlFor={`project-rename-${project.id}`}>
-                Name
-              </AppDialog.Label>
-              <AppDialog.Input
-                aria-describedby={
-                  renameError ? `project-rename-${project.id}-error` : undefined
+            <AppInputField
+              autoComplete="off"
+              error={renameError}
+              id={`project-rename-${project.id}`}
+              label="Name"
+              onChange={(e) => {
+                setRenameDraft(e.target.value);
+                if (renameError) {
+                  setRenameError(null);
                 }
-                aria-invalid={renameError ? true : undefined}
-                autoComplete="off"
-                id={`project-rename-${project.id}`}
-                onChange={(e) => {
-                  setRenameDraft(e.target.value);
-                  if (renameError) {
-                    setRenameError(null);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitRename().catch(() => undefined);
-                  }
-                }}
-                value={renameDraft}
-              />
-              {renameError ? (
-                <p
-                  className="text-red-400 text-xs leading-4"
-                  id={`project-rename-${project.id}-error`}
-                >
-                  {renameError}
-                </p>
-              ) : null}
-            </AppDialog.Field>
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitRename().catch(() => undefined);
+                }
+              }}
+              value={renameDraft}
+            />
           </AppDialog.Body>
           <AppDialog.Footer>
-            <AppDialog.Cancel disabled={renameBusy}>Cancel</AppDialog.Cancel>
+            <AppDialog.Cancel
+              className="bg-input/30 hover:bg-input"
+              disabled={renameBusy}
+            >
+              Cancel
+            </AppDialog.Cancel>
             <AppDialog.Action
+              className="bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
               disabled={
                 renameBusy ||
                 renameDraft.trim() === "" ||
@@ -289,8 +277,8 @@ export function ProjectExplorerListItem({
               <span className="font-medium text-foreground">
                 {project.name}
               </span>{" "}
-              (<span className="font-mono">{k8sName(project)}</span>) from the
-              cluster. This cannot be undone.
+              (<span className="font-mono">{projectResourceName}</span>) from
+              the cluster. This cannot be undone.
             </AppDialog.Description>
           </AppDialog.Body>
           <AppDialog.Footer>

@@ -260,7 +260,7 @@ export function serializeProjectDrawerSurfaceEntry(
   if (entry.kind === "apTerminal") {
     return `ap-terminal:${serializeProjectTarget(entry.target)}`;
   }
-  return `db-console:${serializeProjectTarget(entry.target)}`;
+  return `db-terminal:${serializeProjectTarget(entry.target)}`;
 }
 
 export function parseProjectDrawerSurfaceEntry(
@@ -275,9 +275,9 @@ export function parseProjectDrawerSurfaceEntry(
       const target = apTargetFromParts(parts.slice(1));
       return target == null ? null : { kind: "apTerminal", target };
     }
-    case "db-console": {
+    case "db-terminal": {
       const target = dbTargetFromParts(parts.slice(1));
-      return target == null ? null : { kind: "dbConsole", target };
+      return target == null ? null : { kind: "dbTerminal", target };
     }
     default:
       return null;

@@ -59,10 +59,10 @@ export interface ContainerNodeStates {
 
 export type ContainerNodeQuickActionKey =
   | "calendar"
-  | "console"
   | "events"
   | "logs"
-  | "metrics";
+  | "metrics"
+  | "terminal";
 
 export type ContainerNodeLifecycleActionKey =
   | "delete"

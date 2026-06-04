@@ -55,9 +55,9 @@ const QUICK_ACTION_ITEMS = [
   },
   {
     icon: SquareTerminal,
-    key: "console",
-    label: "Open database console",
-    tooltip: "Database console",
+    key: "terminal",
+    label: "Open terminal",
+    tooltip: "Terminal",
   },
   { icon: FileText, key: "logs", label: "Open logs", tooltip: "Logs" },
 ] as const satisfies readonly {

@@ -36,7 +36,7 @@ const demoLifecycleActions = {
 
 const demoQuickActions = {
   calendar: demoAction,
-  console: demoAction,
+  terminal: demoAction,
   logs: demoAction,
   metrics: demoAction,
 } satisfies ContainerNodeQuickActions;

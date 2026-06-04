@@ -6,7 +6,10 @@ import {
   Setting07Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Button } from "@workspace/ui/components/button";
+import {
+  AppIconButton,
+  type AppIconButtonProps,
+} from "@workspace/ui/components/app-icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,8 +28,6 @@ import { ChevronDown, PanelRightClose } from "lucide-react";
 import { type ComponentProps, useMemo } from "react";
 
 import type { ChatHeaderThreadHistory } from "./chat.types";
-
-const headerControlClass = "hoverable rounded-xl";
 
 /** Safe filename stem for downloads (falls back when empty after sanitizing). */
 function chatExportFileStem(raw: string | undefined, fallback: string): string {
@@ -105,38 +106,41 @@ function formatThreadDropdownTimestamp(source: string | number | Date): string {
 }
 
 export type ChatHeaderExportProps = Omit<
-  ComponentProps<typeof Button>,
-  "children" | "onClick" | "size" | "type" | "variant"
+  AppIconButtonProps,
+  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
 > & {
+  "aria-label"?: string;
   onExport?: () => void;
 };
 
 /** Export control; pass `onExport` from the host. */
 export function ChatHeaderExport({
+  "aria-label": ariaLabel = "Export",
   className,
   onExport,
   ...props
 }: ChatHeaderExportProps) {
   return (
-    <Button
-      aria-label="Export"
-      className={cn(headerControlClass, className)}
+    <AppIconButton
+      aria-label={ariaLabel}
+      className={className}
       disabled={onExport === undefined}
       onClick={() => onExport?.()}
-      size="icon-lg"
+      size="lg"
       type="button"
-      variant="ghost"
+      variant="quiet"
       {...props}
     >
       <HugeiconsIcon icon={FileExportIcon} size={16} strokeWidth={2} />
-    </Button>
+    </AppIconButton>
   );
 }
 
 export type ChatHeaderNewThreadProps = Omit<
-  ComponentProps<typeof Button>,
-  "children" | "onClick" | "size" | "type" | "variant"
+  AppIconButtonProps,
+  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
 > & {
+  "aria-label"?: string;
   /** When true, shows `Spinner` in place of the add icon while the handler runs. */
   creating?: boolean;
   onNewThread?: () => void;
@@ -154,35 +158,37 @@ export function ChatHeaderNewThread({
   const busy = Boolean(creating);
 
   return (
-    <Button
+    <AppIconButton
       {...props}
       aria-busy={busy}
       aria-label={busy ? "Creating thread" : ariaLabel}
-      className={cn(headerControlClass, className)}
+      className={className}
       disabled={busy || disabled || onNewThread === undefined}
       onClick={() => onNewThread?.()}
-      size="icon-lg"
+      size="lg"
       type="button"
-      variant="ghost"
+      variant="quiet"
     >
       {busy ? (
         <Spinner aria-hidden />
       ) : (
         <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2} />
       )}
-    </Button>
+    </AppIconButton>
   );
 }
 
 export type ChatHeaderSettingProps = Omit<
-  ComponentProps<typeof Button>,
-  "children" | "onClick" | "size" | "type" | "variant"
+  AppIconButtonProps,
+  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
 > & {
+  "aria-label"?: string;
   onSettings?: () => void;
 };
 
 /** Settings control; omitted `onSettings` renders nothing. */
 export function ChatHeaderSetting({
+  "aria-label": ariaLabel = "Settings",
   className,
   onSettings,
   ...props
@@ -192,24 +198,25 @@ export function ChatHeaderSetting({
   }
 
   return (
-    <Button
-      aria-label="Settings"
-      className={cn(headerControlClass, className)}
+    <AppIconButton
+      aria-label={ariaLabel}
+      className={className}
       onClick={onSettings}
-      size="icon-lg"
+      size="lg"
       type="button"
-      variant="ghost"
+      variant="quiet"
       {...props}
     >
       <HugeiconsIcon icon={Setting07Icon} size={16} strokeWidth={2} />
-    </Button>
+    </AppIconButton>
   );
 }
 
 export type ChatHeaderClosePaneProps = Omit<
-  ComponentProps<typeof Button>,
-  "children" | "onClick" | "size" | "type" | "variant"
+  AppIconButtonProps,
+  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
 > & {
+  "aria-label"?: string;
   onClosePane: () => void;
 };
 
@@ -221,17 +228,17 @@ export function ChatHeaderClosePane({
   ...props
 }: ChatHeaderClosePaneProps) {
   return (
-    <Button
+    <AppIconButton
       aria-label={ariaLabel}
-      className={cn(headerControlClass, className)}
+      className={className}
       onClick={onClosePane}
-      size="icon-lg"
+      size="lg"
       type="button"
-      variant="ghost"
+      variant="quiet"
       {...props}
     >
       <PanelRightClose aria-hidden className="size-4" strokeWidth={2} />
-    </Button>
+    </AppIconButton>
   );
 }
 
@@ -278,7 +285,7 @@ export function ChatThreadSelect({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Select thread"
-          className="hoverable flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground text-sm outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-100"
+          className="flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground text-sm outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-100"
           disabled={!canPickHistory}
           type="button"
         >

@@ -1,24 +1,24 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInput } from "@workspace/ui/components/app-input";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Badge } from "@workspace/ui/components/badge";
-import { Button } from "@workspace/ui/components/button";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { Label } from "@workspace/ui/components/label";
-import { PaneInput } from "@workspace/ui/components/pane-input";
 import {
   ResourceSettingsDraftFooter,
   ResourceSettingsInset,
   ResourceSettingsSection,
 } from "@workspace/ui/components/resource-settings/resource-settings";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@workspace/ui/components/select";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
+import {
+  SingleSelect,
+  type SingleSelectOption,
+} from "@workspace/ui/components/single-select";
 import {
   SlidingToggle,
   type SlidingToggleOption,
@@ -960,9 +960,6 @@ export function confirmedAddDbDsnReferencesFromEnvDraft(
   return Array.from(byIntentId.values());
 }
 
-const envReferenceSelectTriggerClassName =
-  "h-9 min-w-0 border-input bg-transparent text-foreground text-sm";
-
 function ReadOnlyEnvRows({ env }: { env: readonly ContainerEnvVar[] }) {
   return (
     <div
@@ -1042,11 +1039,17 @@ function EditableEnvValueControl({
   if (row.valueSource === "dbDsn" && row.dbDsn != null) {
     const selectedSource = sourceFromDbDsnRow(row, dbDsnReferenceSources);
     const selectedFields = containerEnvDbDsnFieldOptions(selectedSource);
-    const selectedSourceLabel =
-      selectedSource === undefined ? "" : dbDsnSourceLabel(selectedSource);
-    const selectedFieldLabel =
-      selectedFields.find((field) => field.field === row.dbDsn?.field)?.label ??
-      "No fields available";
+    const sourceOptions: SingleSelectOption[] = dbDsnReferenceSources.map(
+      (source) => ({
+        disabled: !dbDsnSourceHasFields(source),
+        label: dbDsnSourceLabel(source),
+        value: dbDsnSourceKey(source),
+      })
+    );
+    const fieldOptions: SingleSelectOption[] = selectedFields.map((field) => ({
+      label: field.label,
+      value: field.field,
+    }));
     const updateReference = (
       source: ContainerEnvDbDsnSource | undefined,
       field: ContainerEnvDbDsnFieldOption | undefined
@@ -1059,63 +1062,34 @@ function EditableEnvValueControl({
 
     return (
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] gap-2">
-        <Select
+        <SingleSelect
+          aria-label="Project DB"
           onValueChange={(value) => {
             const source = dbDsnReferenceSources.find(
               (item) => dbDsnSourceKey(item) === value
             );
             updateReference(source, containerEnvDbDsnFieldOptions(source)[0]);
           }}
+          options={sourceOptions}
           value={dbDsnRowKey(row)}
-        >
-          <SelectTrigger
-            aria-label="Project DB"
-            className={envReferenceSelectTriggerClassName}
-          >
-            <span className="min-w-0 truncate">{selectedSourceLabel}</span>
-          </SelectTrigger>
-          <SelectContent className="border-input bg-background text-foreground">
-            {dbDsnReferenceSources.map((source) => {
-              return (
-                <SelectItem
-                  disabled={!dbDsnSourceHasFields(source)}
-                  key={dbDsnSourceKey(source)}
-                  value={dbDsnSourceKey(source)}
-                >
-                  {dbDsnSourceLabel(source)}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-        <Select
+        />
+        <SingleSelect
+          aria-label="Project DB field"
           disabled={selectedFields.length === 0}
+          emptyMessage="No fields available"
           onValueChange={(value) => {
             const field = selectedFields.find((item) => item.field === value);
             updateReference(selectedSource, field);
           }}
+          options={fieldOptions}
           value={row.dbDsn.field}
-        >
-          <SelectTrigger
-            aria-label="Project DB field"
-            className={envReferenceSelectTriggerClassName}
-          >
-            <span className="min-w-0 truncate">{selectedFieldLabel}</span>
-          </SelectTrigger>
-          <SelectContent className="border-input bg-background text-foreground">
-            {selectedFields.map((field) => (
-              <SelectItem key={field.field} value={field.field}>
-                {field.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
     );
   }
 
   return (
-    <PaneInput
+    <AppInput
       aria-label="Environment variable value"
       onChange={(event) =>
         onUpdateRow(index, {
@@ -1155,7 +1129,7 @@ function EditableEnvRows({
           return (
             <div className="grid min-w-0 gap-1.5" key={rowKey}>
               <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <PaneInput
+                <AppInput
                   aria-invalid={error != null}
                   aria-label="Environment variable name"
                   onChange={(event) =>
@@ -1172,17 +1146,17 @@ function EditableEnvRows({
                   onUpdateRow={onUpdateRow}
                   row={row}
                 />
-                <Button
+                <AppButton
                   aria-label="Remove environment variable"
                   className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                   onClick={() => onDeleteRow(index)}
                   size="lg"
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                 >
                   <Trash2 aria-hidden data-icon="inline-start" />
                   Delete
-                </Button>
+                </AppButton>
               </div>
               {error == null ? null : (
                 <p className="text-destructive text-xs" role="status">
@@ -1495,30 +1469,29 @@ function PublicAddressRow({
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
             {readOnly || onBindCustomDomain == null ? null : (
-              <Button
+              <AppButton
                 aria-label="Bind Custom Domain"
                 className="h-9 min-w-20 rounded-lg bg-white/5 px-4 text-foreground text-sm hover:bg-input"
                 disabled={value === ""}
                 onClick={onBindCustomDomain}
                 size="lg"
                 type="button"
-                variant="ghost"
+                variant="quiet"
               >
                 CNAME
-              </Button>
+              </AppButton>
             )}
             {readOnly || onDelete == null ? null : (
-              <Button
+              <AppIconButton
                 aria-label="Delete Public Address"
-                className="size-9 rounded-lg bg-white/5 text-foreground hover:bg-input hover:text-destructive"
                 disabled={pending}
                 onClick={handleDelete}
-                size="icon-lg"
+                size="lg"
                 type="button"
-                variant="ghost"
+                variant="danger"
               >
                 <Trash2 aria-hidden />
-              </Button>
+              </AppIconButton>
             )}
           </CanvasNode.CopyableRowControl>
         </>
@@ -1635,18 +1608,17 @@ function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
         </div>
       </div>
       {readOnly || onUnbind == null ? null : (
-        <Button
+        <AppIconButton
           aria-label="Unbind Custom Domain"
-          className="size-9 rounded-lg bg-white/5 text-foreground hover:bg-input hover:text-destructive"
           disabled={pending}
           onClick={handleUnbind}
-          size="icon-lg"
+          size="lg"
           title="Unbind Custom Domain"
           type="button"
-          variant="ghost"
+          variant="danger"
         >
           <Trash2 aria-hidden />
-        </Button>
+        </AppIconButton>
       )}
     </div>
   );
@@ -1754,25 +1726,18 @@ function CnameBindingDialog({
               {target === "" ? "Pending domain" : target}
             </div>
           </AppDialog.Field>
-          <AppDialog.Field>
-            <AppDialog.Label htmlFor={inputId}>Custom Domain</AppDialog.Label>
-            <AppDialog.Input
-              aria-invalid={error != null}
-              disabled={pending}
-              id={inputId}
-              onChange={(event) => {
-                setDomainDraft(event.target.value);
-                setError(null);
-              }}
-              placeholder="www.example.com"
-              value={domainDraft}
-            />
-          </AppDialog.Field>
-          {error == null ? null : (
-            <p className="text-red-400 text-xs" role="alert">
-              {error}
-            </p>
-          )}
+          <AppInputField
+            disabled={pending}
+            error={error}
+            id={inputId}
+            label="Custom Domain"
+            onChange={(event) => {
+              setDomainDraft(event.target.value);
+              setError(null);
+            }}
+            placeholder="www.example.com"
+            value={domainDraft}
+          />
         </AppDialog.Body>
         <AppDialog.Footer>
           <AppDialog.Cancel disabled={pending}>Cancel</AppDialog.Cancel>
@@ -1847,16 +1812,16 @@ function NetworkSectionActions({
 }: NetworkSectionActionsProps) {
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Button
+      <AppButton
         className="h-7 px-2 text-xs"
         disabled={pending}
         onClick={onCancel}
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         Cancel
-      </Button>
-      <Button
+      </AppButton>
+      <AppButton
         className="h-7 px-2 text-xs"
         disabled={!canSave}
         onClick={async () => {
@@ -1866,7 +1831,7 @@ function NetworkSectionActions({
         variant="secondary"
       >
         Save
-      </Button>
+      </AppButton>
     </div>
   );
 }
@@ -1968,38 +1933,31 @@ function AddPublicAddressForm({
 
   return (
     <div className="grid min-w-0 gap-3 rounded-md border border-border border-dashed bg-transparent p-3">
-      <div className="grid min-w-0 gap-1.5">
-        <Label htmlFor={portInputId}>Public Address target port</Label>
-        <PaneInput
-          aria-describedby={error == null ? undefined : errorId}
-          aria-invalid={error != null}
-          className="max-w-32"
-          disabled={pending}
-          id={portInputId}
-          inputMode="numeric"
-          onChange={(event) => {
-            setDraftPort(event.target.value);
-            setError(null);
-          }}
-          value={draftPort}
-        />
-      </div>
-      {error == null ? null : (
-        <p className="text-destructive text-xs" id={errorId} role="alert">
-          {error}
-        </p>
-      )}
+      <AppInputField
+        disabled={pending}
+        error={error}
+        errorId={errorId}
+        id={portInputId}
+        inputClassName="max-w-32"
+        inputMode="numeric"
+        label="Public Address target port"
+        onChange={(event) => {
+          setDraftPort(event.target.value);
+          setError(null);
+        }}
+        value={draftPort}
+      />
       <div className="flex justify-end gap-1">
-        <Button
+        <AppButton
           disabled={pending}
           onClick={onCancel}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           Cancel
-        </Button>
-        <Button
+        </AppButton>
+        <AppButton
           disabled={pending || onSubmit == null}
           onClick={handleSubmit}
           size="sm"
@@ -2007,7 +1965,7 @@ function AddPublicAddressForm({
           variant="secondary"
         >
           Add
-        </Button>
+        </AppButton>
       </div>
     </div>
   );
@@ -2057,7 +2015,7 @@ function DomainListSection({
   return (
     <NetworkCard title="Public Addresses">
       {readOnly ? null : (
-        <Button
+        <AppButton
           aria-label="Add Public Address"
           className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
           disabled={addOpen || !canMutateNetwork}
@@ -2067,7 +2025,7 @@ function DomainListSection({
         >
           <Plus aria-hidden />
           Add Public Address
-        </Button>
+        </AppButton>
       )}
       {addOpen ? (
         <AddPublicAddressForm
@@ -2119,15 +2077,14 @@ function DomainListSection({
         </CanvasNode.CopyFeedbackScope>
       )}
       {hiddenPublicAddressCount > 0 ? (
-        <Button
+        <AppButton
           className="h-4 justify-self-center px-2 text-muted-foreground text-xs hover:text-foreground"
           onClick={onShowAllPublicAddresses}
-          size="xs"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           View All
-        </Button>
+        </AppButton>
       ) : null}
     </NetworkCard>
   );
@@ -2307,42 +2264,23 @@ function NetworkSettingsSection({
           />
         </button>
 
-        <div className="grid min-w-0 gap-1.5">
-          <Label
-            className="text-muted-foreground text-sm leading-5"
-            htmlFor={networkInputId}
-          >
-            Private Address target port
-          </Label>
-          <PaneInput
-            aria-describedby={
-              effectivePortError == null ? undefined : `${networkInputId}-error`
+        <AppInputField
+          disabled={readOnly}
+          error={effectivePortError}
+          id={networkInputId}
+          inputClassName="max-w-32"
+          inputMode="numeric"
+          label="Private Address target port"
+          onChange={(event) => {
+            if (onPrivatePortDraftChange == null) {
+              setDraftPort(event.target.value);
+            } else {
+              onPrivatePortDraftChange(event.target.value);
             }
-            aria-invalid={effectivePortError != null}
-            className="max-w-32"
-            disabled={readOnly}
-            id={networkInputId}
-            inputMode="numeric"
-            onChange={(event) => {
-              if (onPrivatePortDraftChange == null) {
-                setDraftPort(event.target.value);
-              } else {
-                onPrivatePortDraftChange(event.target.value);
-              }
-              setPortError(null);
-            }}
-            value={portDraft}
-          />
-          {effectivePortError == null ? null : (
-            <p
-              className="text-destructive text-xs"
-              id={`${networkInputId}-error`}
-              role="alert"
-            >
-              {effectivePortError}
-            </p>
-          )}
-        </div>
+            setPortError(null);
+          }}
+          value={portDraft}
+        />
       </NetworkCard>
 
       <DomainListSection
@@ -3031,7 +2969,7 @@ function ImageSettingsSection({
             <span className="min-w-0 truncate">{shownImage}</span>
           </div>
         ) : (
-          <PaneInput
+          <AppInput
             aria-label="Container image"
             id={imageInputId}
             onBlur={onBlur}
@@ -3656,16 +3594,16 @@ export function ContainerSettingsPane({
   const quotaActions =
     quotaCommitMode && !settingsCommitMode && quotasDirty ? (
       <>
-        <Button
+        <AppButton
           className="h-7 px-2 text-xs"
           disabled={quotaSavePending}
           onClick={handleQuotaCancel}
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           Cancel
-        </Button>
-        <Button
+        </AppButton>
+        <AppButton
           className="h-7 px-2 text-xs"
           disabled={quotaSavePending}
           onClick={async () => {
@@ -3675,7 +3613,7 @@ export function ContainerSettingsPane({
           variant="secondary"
         >
           Save
-        </Button>
+        </AppButton>
       </>
     ) : null;
 
@@ -3979,53 +3917,53 @@ export function ContainerSettingsPane({
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {!settingsCommitMode && envDirty ? (
               <>
-                <Button
+                <AppButton
                   aria-label="Cancel environment changes"
                   className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                   onClick={handleCancelEnvRows}
                   size="lg"
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                 >
                   <X aria-hidden data-icon="inline-start" />
                   Cancel
-                </Button>
-                <Button
+                </AppButton>
+                <AppButton
                   className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                   disabled={!canSaveEnv}
                   onClick={handleSaveEnvRows}
                   size="lg"
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                 >
                   <Save aria-hidden data-icon="inline-start" />
                   Save environment
-                </Button>
+                </AppButton>
               </>
             ) : null}
-            <Button
+            <AppButton
               aria-label="Add environment variable"
               className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
               onClick={handleAddEnvRow}
               size="lg"
               type="button"
-              variant="ghost"
+              variant="quiet"
             >
               <Plus aria-hidden data-icon="inline-start" />
               Add
-            </Button>
+            </AppButton>
             {canAddDbDsnReference ? (
-              <Button
+              <AppButton
                 aria-label="Add Project DB reference"
                 className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
                 onClick={handleAddDbDsnReferenceRow}
                 size="lg"
                 type="button"
-                variant="ghost"
+                variant="quiet"
               >
                 <Plus aria-hidden data-icon="inline-start" />
                 Add Reference
-              </Button>
+              </AppButton>
             ) : null}
           </div>
         )}

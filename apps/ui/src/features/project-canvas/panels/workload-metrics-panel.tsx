@@ -108,7 +108,7 @@ export const WorkloadMetricsPane = memo(function WorkloadMetricsPane({
     <CanvasResourcePane
       bodyClassName="gap-3.5"
       closeAriaLabel="Close workload metrics"
-      icon={<Activity aria-hidden className="size-4 shrink-0 text-blue-500" />}
+      icon={<Activity aria-hidden className="size-4 shrink-0 text-blue-400" />}
       onClose={onClose}
       subtitle={`${states?.kind ?? "Workload"} · Last 60 minutes`}
       title={`${name} Metrics`}

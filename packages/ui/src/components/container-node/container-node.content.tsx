@@ -46,7 +46,7 @@ const QUICK_ACTION_ITEMS = [
   },
   {
     icon: SquareTerminal,
-    key: "console",
+    key: "terminal",
     label: "Open terminal",
     tooltip: "Terminal",
   },

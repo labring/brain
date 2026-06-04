@@ -26,7 +26,7 @@ const PREVIEW_LIFECYCLE_ACTIONS = {
 } as const satisfies DatabaseNodeLifecycleActions;
 
 const PREVIEW_QUICK_ACTIONS = {
-  console: { onClick: () => undefined },
+  terminal: { onClick: () => undefined },
   logs: { onClick: () => undefined },
   metrics: { onClick: () => undefined },
 } as const satisfies DatabaseNodeQuickActions;

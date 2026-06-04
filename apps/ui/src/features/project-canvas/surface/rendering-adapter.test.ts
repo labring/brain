@@ -80,12 +80,12 @@ test("canvas surface adapter resolves AP side panes from surface targets", () =>
   assert.equal(model.side.content.node, apNode);
 });
 
-test("canvas surface adapter resolves DB access and DB console independently", () => {
+test("canvas surface adapter resolves DB access and DB terminal independently", () => {
   const model = createProjectCanvasSurfaceRenderModel({
     nodes: [dbNode],
     surfaceState: {
       drawer: {
-        kind: "dbConsole",
+        kind: "dbTerminal",
         target: { kind: "DB", name: "pg", namespace: "data" },
       },
       main: {
@@ -99,8 +99,8 @@ test("canvas surface adapter resolves DB access and DB console independently", (
   if (model.main?.kind !== "dbAccess") {
     assert.fail("expected DB access main render model");
   }
-  if (model.drawer?.kind !== "dbConsole") {
-    assert.fail("expected DB console drawer render model");
+  if (model.drawer?.kind !== "dbTerminal") {
+    assert.fail("expected DB terminal drawer render model");
   }
   assert.equal(model.main.node, dbNode);
   assert.equal(model.main.databaseData.workload.name, "pg");

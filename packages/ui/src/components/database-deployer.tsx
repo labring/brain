@@ -1,17 +1,14 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
+import { DeploymentSettings } from "@workspace/ui/components/deployment-settings/deployment-settings";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
+  SingleSelect,
+  type SingleSelectOption,
+} from "@workspace/ui/components/single-select";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 export type DatabaseInstancePreset = "xs" | "s" | "m" | "l";
@@ -41,6 +38,16 @@ const INSTANCE_PRESETS: readonly {
 ];
 
 const REPLICA_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
+const INSTANCE_PRESET_SELECT_OPTIONS: readonly SingleSelectOption[] =
+  INSTANCE_PRESETS.map((preset) => ({
+    label: preset.label,
+    value: preset.id,
+  }));
+const REPLICA_SELECT_OPTIONS: readonly SingleSelectOption[] =
+  REPLICA_OPTIONS.map((replica) => ({
+    label: databaseReplicaOptionLabel(replica),
+    value: String(replica),
+  }));
 
 const PRESET_SUMMARIES: Record<
   string,
@@ -110,35 +117,6 @@ export function databaseReplicaOptionLabel(replica: number): string {
   return String(replica);
 }
 
-function DeploymentCard({
-  children,
-  description,
-  icon,
-  title,
-}: {
-  children: ReactNode;
-  description: string;
-  icon: ReactNode;
-  title: string;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-white/[2%] p-4">
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
-            {icon}
-          </span>
-          <h3 className="truncate font-medium text-foreground text-sm leading-5">
-            {title}
-          </h3>
-        </div>
-        <p className="text-muted-foreground text-sm leading-5">{description}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function DatabaseChoiceIcon({ choice }: { choice: DatabaseDeploymentChoice }) {
   const iconUrl = choice.iconUrl?.trim();
   if (!iconUrl) {
@@ -172,7 +150,10 @@ export function DatabaseDeployer({
   databaseOptions: readonly DatabaseDeploymentChoice[];
   deployLabel?: string;
   emptyMessage?: string;
-  onDeploy?: (settings: DatabaseDeploymentSettings) => void | Promise<void>;
+  onDeploy?: (
+    settings: DatabaseDeploymentSettings,
+    choice: DatabaseDeploymentChoice
+  ) => void | Promise<void>;
 }) {
   const initialDatabaseId = useMemo(
     () => defaultDatabaseId(databaseOptions),
@@ -193,6 +174,15 @@ export function DatabaseDeployer({
 
   const choice = selectedChoice(databaseOptions, databaseId);
   const effectiveDatabaseId = choice?.id ?? "";
+  const databaseSelectOptions = useMemo(
+    (): SingleSelectOption[] =>
+      databaseOptions.map((option) => ({
+        icon: <DatabaseChoiceIcon choice={option} />,
+        label: option.label,
+        value: option.id,
+      })),
+    [databaseOptions]
+  );
   const replicaCount = Number(replicas);
   const canDeploy =
     !busy &&
@@ -204,103 +194,64 @@ export function DatabaseDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-3", className)}
+      className={cn("dark flex min-w-0 flex-col gap-4", className)}
       data-slot="database-deployer"
     >
-      <DeploymentCard
-        description="Choose a managed database engine for this workspace."
-        icon={<Database aria-hidden className="size-4" />}
-        title="Type"
-      >
-        {databaseOptions.length === 0 ? (
-          <div className="flex h-10 items-center rounded-md border border-input px-3 text-muted-foreground text-sm leading-5">
-            {emptyMessage}
-          </div>
-        ) : (
-          <Select
-            disabled={busy}
-            onValueChange={setDatabaseId}
-            value={effectiveDatabaseId}
-          >
-            <SelectTrigger className="h-9 border-input bg-transparent text-foreground">
-              <SelectValue placeholder="Choose a database" />
-            </SelectTrigger>
-            <SelectContent>
-              {databaseOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <DatabaseChoiceIcon choice={option} />
-                    <span className="min-w-0 truncate">{option.label}</span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </DeploymentCard>
+      <div className="flex min-w-0 flex-col gap-3">
+        <DeploymentSettings.Section
+          description="Choose a managed database engine for this workspace."
+          icon={<Database aria-hidden className="size-4" />}
+          title="Type"
+        >
+          <DeploymentSettings.Control>
+            <SingleSelect
+              aria-label="Database engine"
+              disabled={busy}
+              emptyMessage={emptyMessage}
+              onValueChange={setDatabaseId}
+              options={databaseSelectOptions}
+              placeholder="Choose a database"
+              value={effectiveDatabaseId}
+            />
+          </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
 
-      <DeploymentCard
-        description={`${choiceLabel(choice)} instance preset and replica count.`}
-        icon={<Upload aria-hidden className="size-4" />}
-        title="Instance"
-      >
-        <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Select
-              disabled={busy || choice === null}
-              onValueChange={(value) =>
-                setInstancePreset(value as DatabaseInstancePreset)
-              }
-              value={instancePreset}
-            >
-              <SelectTrigger
+        <DeploymentSettings.Section
+          description={`${choiceLabel(choice)} instance preset and replica count.`}
+          icon={<Upload aria-hidden className="size-4" />}
+          title="Instance"
+        >
+          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <DeploymentSettings.Field label="Instance Preset">
+              <SingleSelect
                 aria-label="Database instance preset"
-                className="h-9 border-input bg-transparent text-foreground"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {INSTANCE_PRESETS.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="min-h-4 text-muted-foreground text-xs leading-4">
-              {choice == null
-                ? "Select a database engine first."
-                : presetSummary(choice.engine, instancePreset)}
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Select
-              disabled={busy || choice === null}
-              onValueChange={setReplicas}
-              value={replicas}
-            >
-              <SelectTrigger
+                disabled={busy || choice === null}
+                onValueChange={(value) =>
+                  setInstancePreset(value as DatabaseInstancePreset)
+                }
+                options={INSTANCE_PRESET_SELECT_OPTIONS}
+                value={instancePreset}
+              />
+              <p className="min-h-4 text-muted-foreground text-xs leading-4">
+                {choice == null
+                  ? "Select a database engine first."
+                  : presetSummary(choice.engine, instancePreset)}
+              </p>
+            </DeploymentSettings.Field>
+            <DeploymentSettings.Field label="Replicas">
+              <SingleSelect
                 aria-label="Database replica count"
-                className="h-9 border-input bg-transparent text-foreground"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {REPLICA_OPTIONS.map((replica) => (
-                  <SelectItem key={replica} value={String(replica)}>
-                    {databaseReplicaOptionLabel(replica)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="min-h-4 text-muted-foreground text-xs leading-4">
-              Private access by default.
-            </p>
+                disabled={busy || choice === null}
+                onValueChange={setReplicas}
+                options={REPLICA_SELECT_OPTIONS}
+                value={replicas}
+              />
+            </DeploymentSettings.Field>
           </div>
-        </div>
-      </DeploymentCard>
+        </DeploymentSettings.Section>
+      </div>
 
-      <Button
+      <AppButton
         aria-busy={busy}
         aria-label="Deploy database"
         className="h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input"
@@ -309,14 +260,17 @@ export function DatabaseDeployer({
           if (!(choice && canDeploy)) {
             return;
           }
-          await onDeploy?.({
-            databaseId: choice.id,
-            instancePreset,
-            replicas: replicaCount,
-          });
+          await onDeploy?.(
+            {
+              databaseId: choice.id,
+              instancePreset,
+              replicas: replicaCount,
+            },
+            choice
+          );
         }}
         type="button"
-        variant="ghost"
+        variant="quiet"
       >
         {busy ? (
           <Spinner aria-hidden className="size-4 shrink-0" />
@@ -324,7 +278,7 @@ export function DatabaseDeployer({
           <Rocket aria-hidden className="size-4 shrink-0" />
         )}
         {busy ? "Deploying" : deployLabel}
-      </Button>
+      </AppButton>
     </div>
   );
 }

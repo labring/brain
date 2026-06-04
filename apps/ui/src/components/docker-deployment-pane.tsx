@@ -1,11 +1,11 @@
 "use client";
 
+import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
 import {
   DockerDeployer,
   type DockerDeploymentSettings,
 } from "@workspace/ui/components/docker-deployer";
 import { SidePane } from "@workspace/ui/components/side-pane";
-import { Package } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
@@ -88,7 +88,9 @@ export function DockerDeploymentPane({
     <SidePane
       busy={deploying || currentProject.isLoading}
       closeAriaLabel="Close Docker deployment pane"
-      icon={<Package aria-hidden className="size-4 text-blue-500" />}
+      icon={
+        <ProjectSourceDockerIcon aria-hidden className="size-4 text-blue-400" />
+      }
       label="Docker deployment pane"
       onClose={onClose}
       subtitle={

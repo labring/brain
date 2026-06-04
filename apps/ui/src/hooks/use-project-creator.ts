@@ -24,6 +24,7 @@ import {
 } from "@/features/deployment-target/pipeline";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
+import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
@@ -162,6 +163,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 
   const actions = useMemo<ProjectCreatorActions>(
     () => ({
+      deriveDatabaseProjectDisplayName: (choice) =>
+        deriveDatabaseProjectDisplayName({
+          choice,
+          existingProjectDisplayNames: existingProjects.map(
+            (project) => project.name
+          ),
+        }),
       deriveDockerProjectDisplayName: (imageRef: string) =>
         deriveDockerProjectDisplayName({
           existingProjectDisplayNames: existingProjects.map(

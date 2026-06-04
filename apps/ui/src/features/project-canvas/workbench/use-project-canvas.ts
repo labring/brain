@@ -115,7 +115,7 @@ const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
   "right",
   "top",
 ]);
-const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
+export const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
 
 function viewportFocusNodeIdFromSideRenderModel(
   side: ProjectCanvasSideRenderModel
@@ -701,7 +701,7 @@ export function useProjectCanvas(
               },
               metrics: databaseQuickAction("metrics"),
               logs: databaseQuickAction("logs"),
-              console: databaseQuickAction("console"),
+              terminal: databaseQuickAction("terminal"),
             },
           },
           connections,
@@ -819,10 +819,10 @@ export function useProjectCanvas(
       const quickActions = {
         ...(data.actions?.quickActions ?? {}),
         calendar: containerQuickAction("calendar"),
-        console: containerQuickAction("console"),
         logs: containerQuickAction("logs"),
         events: containerQuickAction("events"),
         metrics: containerQuickAction("metrics"),
+        terminal: containerQuickAction("terminal"),
       };
 
       return {

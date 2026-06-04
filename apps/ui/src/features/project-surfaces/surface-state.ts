@@ -43,7 +43,7 @@ export type ProjectMainSurfaceEntry =
 
 export type ProjectDrawerSurfaceEntry =
   | { kind: "apTerminal"; target: ProjectApTarget }
-  | { kind: "dbConsole"; target: ProjectDbTarget };
+  | { kind: "dbTerminal"; target: ProjectDbTarget };
 
 export interface ProjectSurfaceState {
   drawer: ProjectDrawerSurfaceEntry | null;

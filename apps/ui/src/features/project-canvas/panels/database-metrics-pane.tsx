@@ -193,7 +193,7 @@ export function DatabaseMetricsPane({
     <CanvasResourcePane
       bodyClassName="gap-3.5"
       closeAriaLabel="Close database metrics"
-      icon={<Activity aria-hidden className="size-4 shrink-0 text-blue-500" />}
+      icon={<Activity aria-hidden className="size-4 shrink-0 text-blue-400" />}
       onClose={onClose}
       subtitle={subtitle}
       title={title}

@@ -37,7 +37,7 @@ test("opening side updates side and canvas selection while clearing main", () =>
   const state: ProjectWorkbenchRouteState = {
     canvasSelection: { kind: "resource", target: db },
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: { kind: "resourceLogs", target: db },
       side: null,
     },
@@ -52,7 +52,7 @@ test("opening side updates side and canvas selection while clearing main", () =>
   assert.deepEqual(result.next, {
     canvasSelection: { kind: "resource", target: ap },
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: null,
       side: { kind: "apSettings", target: ap },
     },
@@ -95,7 +95,7 @@ test("clear canvas focus clears selection, side and main while keeping drawer", 
   const state: ProjectWorkbenchRouteState = {
     canvasSelection: { kind: "resource", target: db },
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: { kind: "dbAccess", target: db },
       side: { kind: "dbSettings", target: db },
     },
@@ -106,7 +106,7 @@ test("clear canvas focus clears selection, side and main while keeping drawer", 
   assert.deepEqual(result.next, {
     canvasSelection: null,
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: null,
       side: null,
     },
@@ -121,7 +121,7 @@ test("focus canvas selection replaces side and main while keeping drawer", () =>
   const state: ProjectWorkbenchRouteState = {
     canvasSelection: { kind: "resource", target: db },
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: { kind: "dbAccess", target: db },
       side: { kind: "dbSettings", target: db },
     },
@@ -135,7 +135,7 @@ test("focus canvas selection replaces side and main while keeping drawer", () =>
   assert.deepEqual(result.next, {
     canvasSelection: { edgeId: "edge-1", kind: "edge" },
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: null,
       side: null,
     },
@@ -150,7 +150,7 @@ test("stale cleanup clears invalid targets without leave guard", () => {
   const state: ProjectWorkbenchRouteState = {
     canvasSelection: { kind: "resource", target: db },
     surfaces: {
-      drawer: { kind: "dbConsole", target: db },
+      drawer: { kind: "dbTerminal", target: db },
       main: { kind: "resourceLogs", target: ap },
       side: { kind: "dbSettings", target: db },
     },

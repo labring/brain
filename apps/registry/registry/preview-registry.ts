@@ -104,6 +104,158 @@ export function getRegistryPreviewLoaderByKey(
 }
 
 export const Index: RegistryIndex = {
+  "linear/components/app-icon-button": {
+    style: "linear",
+    group: "components",
+    name: "app-icon-button",
+    title: "App Icon Button",
+    description:
+      "SealAI product icon-only button style layer with shared size and variant semantics.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-icon-button", "button"],
+    files: [
+      {
+        path: "registry/linear/components/app-icon-button/app-icon-button-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-icon-button.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/button.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import(
+        "@registry/linear/components/app-icon-button/app-icon-button-preview"
+      ),
+  },
+
+  "linear/components/app-button": {
+    style: "linear",
+    group: "components",
+    name: "app-button",
+    title: "App Button",
+    description:
+      "SealAI product button style layer for non-icon actions, built on the shared primitive Button.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-button", "button"],
+    files: [
+      {
+        path: "registry/linear/components/app-button/app-button-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-button.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/button.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/app-button/app-button-preview"),
+  },
+
+  "linear/components/app-input": {
+    style: "linear",
+    group: "components",
+    name: "app-input",
+    title: "App Input",
+    description:
+      "SealAI product input style layer for pane and settings forms, built on the shared primitive Input.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-input", "input"],
+    files: [
+      {
+        path: "registry/linear/components/app-input/app-input-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/app-input/app-input-preview"),
+  },
+
+  "linear/components/app-input-field": {
+    style: "linear",
+    group: "components",
+    name: "app-input-field",
+    title: "App Input Field",
+    description:
+      "SealAI product text input field with label, description, error, and accessibility wiring.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-input-field", "app-input", "field"],
+    files: [
+      {
+        path: "registry/linear/components/app-input-field/app-input-field-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-input-field.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/field.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/input.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/label.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/separator.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import(
+        "@registry/linear/components/app-input-field/app-input-field-preview"
+      ),
+  },
+
   "linear/components/app-dialog": {
     style: "linear",
     group: "components",
@@ -459,6 +611,7 @@ export const Index: RegistryIndex = {
     type: "registry:preview",
     registryDependencies: [
       "preview",
+      "project-explorer",
       "button",
       "app-dialog",
       "dropdown-menu",

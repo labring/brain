@@ -133,10 +133,10 @@ export function drawerSurfaceForApTerminal(
   return { kind: "apTerminal", target };
 }
 
-export function drawerSurfaceForDbConsole(
+export function drawerSurfaceForDbTerminal(
   target: ProjectDbTarget
 ): ProjectDrawerSurfaceEntry {
-  return { kind: "dbConsole", target };
+  return { kind: "dbTerminal", target };
 }
 
 export function mainSurfaceForDbAccess(

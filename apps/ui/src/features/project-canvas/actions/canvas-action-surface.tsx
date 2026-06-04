@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { Database, X } from "lucide-react";
@@ -87,16 +87,16 @@ export function MainActionSurfaceFrame({
           {subtitle}
         </p>
         <div className="flex min-w-0 justify-end">
-          <Button
+          <AppIconButton
             aria-label={closeAriaLabel}
-            className="hoverable size-7 shrink-0 text-muted-foreground hover:text-foreground"
+            className="shrink-0"
             onClick={onClose}
-            size="icon"
+            size="lg"
             type="button"
-            variant="ghost"
+            variant="quiet"
           >
             <X aria-hidden className="size-4" />
-          </Button>
+          </AppIconButton>
         </div>
       </header>
       <div

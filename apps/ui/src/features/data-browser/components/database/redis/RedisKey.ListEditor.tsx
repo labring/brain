@@ -5,6 +5,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@data-browser/components/ui/tooltip";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Plus, Trash2 } from "lucide-react";
 import { useRedisKeyCtx } from "./RedisKeyProvider";
 
@@ -17,17 +18,17 @@ export function RedisKeyListEditor() {
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <label className="font-medium text-foreground text-sm">{"Value"}</label>
-        <Button
+        <AppButton
           className="h-7 gap-1 px-2 text-primary text-xs hover:text-primary"
           disabled={state.isSubmitting}
           onClick={() => setListItems([...draft.listItems, { value: "" }])}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="quiet"
         >
           <Plus className="h-3 w-3" />
           {"Add item"}
-        </Button>
+        </AppButton>
       </div>
       <div className="rounded-md border">
         <table className="w-full text-sm">

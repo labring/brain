@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { type LucideIcon, Settings2, Upload } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
@@ -103,22 +103,22 @@ export function ResourceSettingsDraftFooter({
         >
           <span className="min-w-0 truncate">Backing resource changed.</span>
           <div className="flex shrink-0 items-center gap-1">
-            <Button
+            <AppButton
               className="h-7 px-2 text-xs"
               onClick={onReload}
               type="button"
-              variant="ghost"
+              variant="quiet"
             >
               Reload
-            </Button>
-            <Button
+            </AppButton>
+            <AppButton
               className="h-7 px-2 text-xs"
               onClick={onKeepEditing}
               type="button"
-              variant="ghost"
+              variant="quiet"
             >
               Keep editing
-            </Button>
+            </AppButton>
           </div>
         </div>
       ) : null}
@@ -137,17 +137,17 @@ export function ResourceSettingsDraftFooter({
           {unsavedMessage}
         </p>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Button
+          <AppButton
             aria-label={cancelAriaLabel}
             className="h-9 rounded-lg px-4 text-muted-foreground hover:bg-input hover:text-foreground"
             disabled={!dirty || pending}
             onClick={onCancel}
             type="button"
-            variant="ghost"
+            variant="quiet"
           >
             Cancel
-          </Button>
-          <Button
+          </AppButton>
+          <AppButton
             aria-label={submitAriaLabel}
             className="h-9 rounded-lg bg-white/5 px-4 text-primary hover:bg-input"
             disabled={!canSubmit}
@@ -155,13 +155,13 @@ export function ResourceSettingsDraftFooter({
               await onSubmit();
             }}
             type="button"
-            variant="ghost"
+            variant="quiet"
           >
             {SubmitIcon == null ? null : (
               <SubmitIcon aria-hidden className="size-4" />
             )}
             {pending ? pendingSubmitLabel : submitLabel}
-          </Button>
+          </AppButton>
         </div>
       </div>
     </footer>

@@ -154,7 +154,7 @@ export default function AppSidebar({
       <SidebarMenuItem key={href}>
         <SidebarMenuButton
           className={cn(
-            "hoverable h-8 max-h-8 min-h-8 shrink-0 cursor-pointer gap-2 rounded-xl px-2 py-0 text-xs leading-none"
+            "h-8 max-h-8 min-h-8 shrink-0 cursor-pointer gap-2 rounded-xl px-2 py-0 text-xs leading-none"
           )}
           isActive={active}
           render={

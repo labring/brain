@@ -1,7 +1,6 @@
 "use client";
 
-import { Input } from "@workspace/ui/components/input";
-import { Label } from "@workspace/ui/components/label";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
@@ -37,7 +36,7 @@ const ICON: Record<
 
 const ICON_CLASS: Record<ProjectCreatorSourceKind, string> = {
   github: "text-foreground",
-  "docker-image": "text-blue-500",
+  "docker-image": "text-blue-400",
   database: "text-muted-foreground",
 };
 
@@ -47,38 +46,18 @@ export function ProjectCreatorProjectNameField() {
   );
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
-      <Label
-        className="text-foreground leading-5"
-        htmlFor="project-creator-display-name"
-      >
-        Project Name
-      </Label>
-      <Input
-        aria-describedby={
-          states.projectDisplayNameError
-            ? "project-creator-display-name-error"
-            : undefined
-        }
-        aria-invalid={states.projectDisplayNameError ? true : undefined}
-        autoComplete="off"
-        className="border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
-        id="project-creator-display-name"
-        onChange={(event) =>
-          actions.setProjectDisplayName(event.currentTarget.value)
-        }
-        placeholder="Placeholder"
-        value={states.projectDisplayName}
-      />
-      {states.projectDisplayNameError ? (
-        <p
-          className="text-destructive text-xs leading-4"
-          id="project-creator-display-name-error"
-        >
-          {states.projectDisplayNameError}
-        </p>
-      ) : null}
-    </div>
+    <AppInputField
+      autoComplete="off"
+      error={states.projectDisplayNameError}
+      id="project-creator-display-name"
+      inputClassName="border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+      label="Project Name"
+      onChange={(event) =>
+        actions.setProjectDisplayName(event.currentTarget.value)
+      }
+      placeholder="Placeholder"
+      value={states.projectDisplayName}
+    />
   );
 }
 
@@ -99,12 +78,12 @@ export function ProjectCreatorOptionPicker({
         <p className="font-medium text-foreground text-sm leading-5">
           Scenario
         </p>
-        <div className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
           {ORDER.map((id) => {
             const Icon = ICON[id];
             return (
               <button
-                className="flex min-h-[76px] min-w-0 flex-col items-start gap-2 rounded-md border border-transparent p-2.5 text-left outline-none transition-colors hover:bg-white/5 focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 active:bg-white/5"
+                className="flex min-h-[76px] min-w-0 flex-col items-start gap-1.5 rounded-md border border-transparent p-2.5 text-left outline-none transition-colors hover:bg-input/30 focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 active:bg-input/30"
                 data-slot="project-creator-option"
                 key={id}
                 onClick={() => actions.pick(id)}

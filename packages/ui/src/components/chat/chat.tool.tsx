@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Spinner } from "@workspace/ui/components/spinner";
 import type { EmitGenUISpecToolOutput } from "@workspace/ui/lib/agui/gen-ui-tool";
 import type { ChatAddToolApproveResponseFunction, UIMessage } from "ai";
@@ -51,7 +51,7 @@ export function ChatTool({
             {specPreview}
           </pre>
           <div className="flex flex-wrap gap-2">
-            <Button
+            <AppButton
               onClick={() =>
                 addToolApprovalResponse?.({
                   approved: true,
@@ -60,10 +60,11 @@ export function ChatTool({
               }
               size="sm"
               type="button"
+              variant="secondary"
             >
               Approve
-            </Button>
-            <Button
+            </AppButton>
+            <AppButton
               onClick={() =>
                 addToolApprovalResponse?.({
                   approved: false,
@@ -73,10 +74,10 @@ export function ChatTool({
               }
               size="sm"
               type="button"
-              variant="outline"
+              variant="quiet"
             >
               Deny
-            </Button>
+            </AppButton>
           </div>
         </div>
       );
