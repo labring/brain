@@ -4,7 +4,7 @@ This runbook describes the current `brain-system` deployment model after AP/DB/E
 
 ## Architecture
 
-`brain-system` is deployed through the Helm chart in `charts/brain-system` or the raw fallback manifests in `deploy/brain-system`.
+`brain-system` is deployed through the Helm chart in `charts/brain-system`.
 
 The chart renders:
 
@@ -24,7 +24,7 @@ Install or verify these platform components before deploying the stack:
 - cert-manager when custom domains or per-domain certificates are used.
 - VictoriaMetrics and VictoriaLogs when API metrics/log endpoints are used.
 
-No repo-level platform manifest list is required for AP/DB product resources. The chart output is applied through the Brain Go API or, for raw fallback inspection, as `brain.io/direct` manifests.
+No repo-level platform manifest list is required for AP/DB product resources. The chart output is the deployment source of truth for this stack.
 
 ## Install
 
@@ -74,18 +74,6 @@ kubectl -n brain-system get secret brain-pg-conn-credential -o yaml
 ```
 
 Fill `ui.env.DATABASE_URL`, then run the normal install command again without `--set ui.enabled=false`.
-
-## Raw Manifest Fallback
-
-If Helm is unavailable, create real secrets from local values. The files under `deploy/brain-system/secrets/*.example.yaml` are examples only and are not referenced by `kustomization.yaml`.
-
-Apply the raw manifests:
-
-```bash
-kubectl apply -k deploy/brain-system
-```
-
-These raw AP/DB files use `apiVersion: brain.io/direct`. They are product manifests for the Brain API renderer, not custom resource definitions installed by a cluster controller.
 
 ## Verify
 
