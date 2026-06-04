@@ -18,10 +18,13 @@ import { ProjectExplorerList } from "./project-explorer.list";
 export function ProjectExplorerVariant1({
   className,
   headerDescription,
+  newProjectButtonIconOnly = false,
   ...props
 }: ComponentProps<typeof ProjectExplorerShell> & {
   /** Subtitle below the brand label; omit to hide. */
   headerDescription?: string;
+  /** Render the new-project action as an icon-only button. */
+  newProjectButtonIconOnly?: boolean;
 }) {
   return (
     <ProjectExplorerShell className={className} {...props}>
@@ -30,7 +33,9 @@ export function ProjectExplorerVariant1({
           <ProjectExplorerHeaderBrand description={headerDescription} />
           <ProjectExplorerHeaderToolbar>
             <ProjectExplorerSearchField />
-            <ProjectExplorerNewProjectButton />
+            <ProjectExplorerNewProjectButton
+              iconOnly={newProjectButtonIconOnly}
+            />
           </ProjectExplorerHeaderToolbar>
         </div>
       </ProjectExplorerHeader>

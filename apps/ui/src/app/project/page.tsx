@@ -139,6 +139,7 @@ export default function ProjectIndexPage() {
           <ProjectExplorer.Variant1
             className="w-full min-w-0 max-w-6xl flex-1"
             headerDescription="View existing projects or create a new one."
+            newProjectButtonIconOnly={creationPaneOpen}
           />
         </ProjectExplorer.Root>
       </div>

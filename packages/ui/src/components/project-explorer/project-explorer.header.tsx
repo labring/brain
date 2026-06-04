@@ -2,6 +2,11 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { LayoutGrid, Plus, Search } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -84,15 +89,24 @@ export function ProjectExplorerSearchField({
 export function ProjectExplorerNewProjectButton({
   className,
   children,
+  iconOnly = false,
   ...props
-}: ComponentProps<typeof AppButton>) {
+}: ComponentProps<typeof AppButton> & {
+  iconOnly?: boolean;
+}) {
   const { actions } = useProjectExplorer();
   const { onClick, ...rest } = props;
+  const compactDefaultContent = iconOnly && children == null;
 
-  return (
+  const button = (
     <AppButton
+      aria-label={compactDefaultContent ? "New Project" : undefined}
       className={cn(
-        "h-9 gap-1.5 bg-blue-500 px-3 text-sm text-white hover:bg-blue-500/90",
+        "h-9 bg-blue-500 text-sm text-white hover:bg-blue-500/90",
+        children == null
+          ? "w-32 justify-start gap-1.5 overflow-hidden px-2.5 transition-[width] duration-200 ease-out motion-reduce:transition-none"
+          : "gap-1.5 px-3",
+        compactDefaultContent && "w-9",
         className
       )}
       size="lg"
@@ -109,9 +123,22 @@ export function ProjectExplorerNewProjectButton({
       {children ?? (
         <>
           <Plus aria-hidden className="size-4" />
-          New Project
+          {compactDefaultContent ? null : (
+            <span className="shrink-0 whitespace-nowrap">New Project</span>
+          )}
         </>
       )}
     </AppButton>
+  );
+
+  if (!compactDefaultContent) {
+    return button;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={button} />
+      <TooltipContent>New Project</TooltipContent>
+    </Tooltip>
   );
 }
