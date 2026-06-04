@@ -54,6 +54,8 @@ export interface ProjectCreatorRootProps {
   githubDeployer?: ProjectCreatorGithubDeployerSlot;
   /** Optional initial source step for direct assistant/tool entry paths. */
   initialStep?: ProjectCreatorSourceKind | null;
+  /** Reports active source changes to outer chrome such as pane headers. */
+  onStepChange?: (step: ProjectCreatorSourceKind | null) => void;
 }
 
 function normalizeProjectCreatorDisplayName(name: string): string {
@@ -69,6 +71,7 @@ export function ProjectCreatorRoot({
   existingProjectDisplayNames = [],
   githubDeployer: githubDeployerProp,
   initialStep = null,
+  onStepChange,
 }: ProjectCreatorRootProps) {
   const [step, setStep] = useState<ProjectCreatorSourceKind | null>(
     initialStep
@@ -78,6 +81,10 @@ export function ProjectCreatorRoot({
     string | null
   >(null);
   const reset = useCallback(() => setStep(initialStep), [initialStep]);
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [onStepChange, step]);
 
   const existingDisplayNameSet = useMemo(
     () =>
