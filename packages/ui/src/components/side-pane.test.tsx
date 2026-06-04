@@ -26,6 +26,7 @@ const SCROLL_BODY_RE = /scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto/;
 const SCROLL_CONTENT_RE =
   /flex min-h-full min-w-0 flex-col gap-5 px-5 pt-2.5 pb-5/;
 const TITLE_RE = /Details/;
+const TITLE_ROW_GAP_RE = /flex min-w-0 items-center gap-2"/;
 const TRANSLATE_CLOSED_RE = /translate-x-full/;
 
 function indexOfOrThrow(source: string, needle: string) {
@@ -59,6 +60,7 @@ test("side pane renders shared chrome, accessibility labels, and motion-safe cla
   assert.match(html, PROJECT_CHROME_SURFACE_RE);
   assert.match(html, MOTION_REDUCE_TRANSITION_RE);
   assert.match(html, SCROLL_BEFORE_CONTENT_GAP_RE);
+  assert.match(html, TITLE_ROW_GAP_RE);
 });
 
 test("side pane keeps shared header outside the edge-aligned scroll body", () => {

@@ -84,7 +84,7 @@ export function SidePane({
             )}
           >
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex min-w-0 items-center gap-2">
                 {icon == null ? null : (
                   <span className="flex size-4 shrink-0 items-center justify-center">
                     {icon}
