@@ -65,6 +65,12 @@ A Canvas Resource Pane surface for one existing AP that presents image update co
 
 _Avoid_: AP Deployment Pane, Image & Entrypoint.
 
+### AP Workload Events
+
+A read-only Canvas Resource Pane opened from a Container Node to inspect recent workload lifecycle events for one AP, such as scheduling, startup, image pull, and health check events.
+
+_Avoid_: AP node events.
+
 ### Docker Deployment Settings
 
 The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
