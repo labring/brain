@@ -54,8 +54,8 @@ const QUICK_ACTION_ITEMS = [
   {
     icon: CalendarDays,
     key: "calendar",
-    label: "Open calendar",
-    tooltip: "Calendar",
+    label: "Open deployments",
+    tooltip: "Deployments",
   },
   {
     icon: ListTree,

@@ -37,7 +37,7 @@ function WorkloadHistoryShell({
 }: WorkloadHistoryShellProps) {
   return (
     <CanvasResourcePane
-      closeAriaLabel="Close workload history"
+      closeAriaLabel="Close workload deployments"
       icon={<History aria-hidden className="size-4 shrink-0 text-blue-400" />}
       onClose={onClose}
       subtitle={subtitle}
@@ -62,7 +62,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const name = states?.name ?? "";
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
-  const title = name === "" ? "History" : `${name} History`;
+  const title = name === "" ? "Deployments" : `${name} Deployments`;
 
   const versions = useAPImageVersions({
     kubeconfig,
@@ -175,8 +175,8 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         title={title}
       >
         <p className="text-muted-foreground text-sm">
-          Image version history applies to AP workloads. Databases use their own
-          lifecycle history.
+          Deployments apply to AP workloads. Databases use their own lifecycle
+          history.
         </p>
       </WorkloadHistoryShell>
     );
@@ -203,7 +203,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         subtitle={workloadKind}
         title={title}
       >
-        <p className="text-muted-foreground text-sm">Loading history…</p>
+        <p className="text-muted-foreground text-sm">Loading deployments…</p>
       </WorkloadHistoryShell>
     );
   }
