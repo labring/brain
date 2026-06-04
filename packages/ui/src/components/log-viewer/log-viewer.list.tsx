@@ -17,7 +17,7 @@ export function LogViewerListHeader() {
       data-slot="log-viewer-header"
     >
       <div
-        className="grid h-full items-center font-medium text-muted-foreground text-xs"
+        className="grid h-full items-center bg-input/30 font-medium text-muted-foreground text-xs"
         style={{ gridTemplateColumns: LOG_GRID_TEMPLATE }}
       >
         <span className="truncate px-4">Time</span>
@@ -45,7 +45,7 @@ function LogViewerRow({
   return (
     <div
       {...ariaAttributes}
-      className="grid items-center border-border border-b font-medium text-foreground text-xs"
+      className="grid items-center border-border border-b bg-transparent font-medium text-foreground text-xs"
       style={{ ...style, gridTemplateColumns: LOG_GRID_TEMPLATE }}
     >
       <span className="truncate px-4">{formatLogTime(entry.time)}</span>
@@ -100,7 +100,7 @@ export function LogViewerListContent() {
   if (entries.length === 0) {
     return (
       <div
-        className="flex h-full min-h-0 flex-1 items-center justify-center bg-background p-6 text-muted-foreground text-sm"
+        className="flex h-full min-h-0 flex-1 items-center justify-center p-6 text-muted-foreground text-sm"
         data-slot="log-viewer-empty"
       >
         No logs available.
@@ -111,7 +111,7 @@ export function LogViewerListContent() {
   if (filteredEntries.length === 0) {
     return (
       <div
-        className="flex h-full min-h-0 flex-1 items-center justify-center bg-background p-6 text-muted-foreground text-sm"
+        className="flex h-full min-h-0 flex-1 items-center justify-center p-6 text-muted-foreground text-sm"
         data-slot="log-viewer-empty"
       >
         No matching logs.
@@ -121,7 +121,7 @@ export function LogViewerListContent() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-background"
+      className="flex min-h-0 flex-1 overflow-hidden"
       data-slot="log-viewer-content"
     >
       <VirtualizedList entries={filteredEntries} searchQuery={searchQuery} />

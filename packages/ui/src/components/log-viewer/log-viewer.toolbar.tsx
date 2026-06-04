@@ -2,10 +2,11 @@
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { FacetedFilterAll } from "@workspace/ui/components/faceted";
+import { MultiSelect } from "@workspace/ui/components/multi-select";
 import { LivePauseToggle } from "@workspace/ui/components/refresh-controls";
 import { TimeRangeSelector } from "@workspace/ui/components/time-range-selector";
 import { Box, Download, RefreshCw, Search, Server } from "lucide-react";
+import { useMemo } from "react";
 import { type LogEntry, useLogViewerContext } from "./log-viewer.context";
 
 export function LogViewerToolbar() {
@@ -26,31 +27,43 @@ export function LogViewerToolbar() {
     onRefresh,
     refreshMode,
   } = useLogViewerContext();
+  const podOptions = useMemo(
+    () => uniquePods.map((pod) => ({ label: pod, value: pod })),
+    [uniquePods]
+  );
+  const containerOptions = useMemo(
+    () =>
+      uniqueContainers.map((container) => ({
+        label: container,
+        value: container,
+      })),
+    [uniqueContainers]
+  );
 
   return (
     <div className="flex items-center gap-2" data-slot="log-viewer-toolbar">
       {/* Filters */}
       <div className="flex items-center gap-1">
-        <FacetedFilterAll
-          className="w-28 border-0 shadow-none"
-          emptyText="No pods found."
+        <MultiSelect
+          aria-label="Filter pods"
+          className="w-36"
+          emptyMessage="No pods found."
           icon={<Server />}
-          label="Pod"
           onValueChange={setSelectedPods}
-          options={uniquePods}
-          searchPlaceholder="Search pods..."
-          showLabel={false}
+          options={podOptions}
+          placeholder="Pod"
+          searchPlaceholder="Search"
           value={selectedPods}
         />
-        <FacetedFilterAll
-          className="w-28 border-0 shadow-none"
-          emptyText="No containers found."
+        <MultiSelect
+          aria-label="Filter containers"
+          className="w-40"
+          emptyMessage="No containers found."
           icon={<Box />}
-          label="Container"
           onValueChange={setSelectedContainers}
-          options={uniqueContainers}
-          searchPlaceholder="Search containers..."
-          showLabel={false}
+          options={containerOptions}
+          placeholder="Container"
+          searchPlaceholder="Search"
           value={selectedContainers}
         />
         <TimeRangeSelector

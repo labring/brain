@@ -19,7 +19,8 @@ const CLOSE_LABEL_RE = /Close Main Action Surface/;
 const LABEL_RE = /aria-label="Main Action Surface"/;
 const CENTERED_NAME_RE =
   /<p class="[^"]*text-center[^"]*" title="orders-db">orders-db<\/p>/;
-const DATA_BROWSER_TITLE_RE = /<h2 class="[^"]*" title="Data Browser">Data Browser<\/h2>/;
+const DATA_BROWSER_TITLE_RE =
+  /<h2 class="[^"]*" title="Data Browser">Data Browser<\/h2>/;
 const ACTION_SURFACE_BACKGROUND_RE = /bg-neutral-950/;
 const MAIN_ACTION_SURFACE_BACKGROUND_RE = /main-action-surface-background/;
 const MAIN_ACTION_BODY_BACKGROUND_RE = /main-action-surface-body-background/;
