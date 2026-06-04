@@ -78,7 +78,7 @@ export function LogViewerProvider({
     mode: "quick",
     ms: 5 * 60_000,
   });
-  const [isLive, setIsLive] = useState(true);
+  const [isLive, setIsLive] = useState(false);
 
   // Controlled-or-uncontrolled pattern
   const searchQuery =
@@ -95,6 +95,7 @@ export function LogViewerProvider({
     if (!(refreshMode === "live" && isLive && onRefreshRef.current)) {
       return;
     }
+    onRefreshRef.current();
     const id = setInterval(() => {
       onRefreshRef.current?.();
     }, 3000);

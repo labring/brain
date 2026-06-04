@@ -1,13 +1,27 @@
 import type { ReactNode } from "react";
+import {
+  parseLeadingLogLevel,
+  type StandardLogLevel,
+} from "./log-viewer.utils";
 
-const LOG_LEVEL_RE = /^(?:ERROR|WARN|INFO|DEBUG):?\s/;
-
-const LEVEL_CLASS: Record<string, string> = {
-  ERROR: "text-red-500 font-semibold",
-  WARN: "text-amber-500 font-semibold",
-  INFO: "text-blue-500 font-semibold",
+const LEVEL_CLASS: Record<StandardLogLevel, string> = {
   DEBUG: "text-zinc-400",
+  ERROR: "text-red-500 font-semibold",
+  FATAL: "text-red-600 font-semibold",
+  WARN: "text-amber-500 font-semibold",
+  INFO: "text-blue-400 font-semibold",
+  TRACE: "text-zinc-500",
 };
+
+export function logLevelClassName(level: StandardLogLevel): string {
+  return LEVEL_CLASS[level];
+}
+
+export function highlightLogText(msg: string, searchQuery?: string): ReactNode {
+  const q =
+    searchQuery && searchQuery.length >= 2 ? searchQuery.toLowerCase() : "";
+  return q ? wrapSearch(msg, q, "s") : msg;
+}
 
 function wrapSearch(text: string, q: string, key: string): ReactNode {
   const lower = text.toLowerCase();
@@ -63,17 +77,16 @@ export function highlightLogMessage(
 
   const q =
     searchQuery && searchQuery.length >= 2 ? searchQuery.toLowerCase() : "";
-  const levelMatch = msg.match(LOG_LEVEL_RE);
+  const levelMatch = parseLeadingLogLevel(msg);
 
   if (!(levelMatch || q)) {
     return msg;
   }
 
   if (levelMatch) {
-    const prefix = levelMatch[0];
-    const lvl = prefix.replace(/[:\s]/g, "");
-    const cls = LEVEL_CLASS[lvl];
-    const rest = msg.slice(prefix.length);
+    const prefix = msg.slice(0, levelMatch.endIndex);
+    const cls = logLevelClassName(levelMatch.level);
+    const rest = msg.slice(levelMatch.endIndex);
     return (
       <>
         {renderPrefix(cls, prefix, q)}
@@ -82,5 +95,5 @@ export function highlightLogMessage(
     );
   }
 
-  return wrapSearch(msg, q, "s");
+  return highlightLogText(msg, searchQuery);
 }

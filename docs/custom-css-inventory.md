@@ -53,7 +53,7 @@ Source: `packages/ui/src/styles/globals.css`
 | 132-144 | `.hoverable` | Project utility for muted hoverable controls. Uses `!bg-input`, so it can override component styles. |
 | 147-161 | `.scrollbar-chat-thin` | Custom scrollbar utility. Uses raw scrollbar CSS and `--scrollbar-chat-width`. |
 | 163-170 | `.resource-pane-surface` | SidePane background/overlay utility. Uses literal `#080a11` plus white 4.5% overlay instead of exposing a global resource-pane token. |
-| 172-201 | `.main-action-surface-background` and `::after`, `.main-action-surface-body-background` | Custom canvas action background with fixed `124vw` glow and `1929 / 1255` ratio. The glow is shared by the header and body while the body class remains the content-area hook. Strongly opinionated visual layer. |
+| 172-201 | `.main-action-surface-background` and `::after`, `.main-action-surface-body-background` | Custom canvas action background with fixed `132vw` top-biased glow and `1929 / 1255` ratio. The glow is shared by the header and body while the body class remains the content-area hook. Strongly opinionated visual layer. |
 
 ## Component CSS Files
 

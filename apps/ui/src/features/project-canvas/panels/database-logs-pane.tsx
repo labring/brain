@@ -97,7 +97,7 @@ export function DatabaseLogsPane({
         }}
         onSearchQueryChange={setSearchQuery}
         onTimeRangeChange={setTimeRange}
-        refreshMode="manual"
+        refreshMode="live"
         searchQuery={searchQuery}
         timeRange={timeRange}
       />

@@ -7,12 +7,18 @@ import {
   useDynamicRowHeight,
 } from "react-window";
 import { type LogEntry, useLogViewerContext } from "./log-viewer.context";
-import { highlightLogMessage } from "./log-viewer.highlight";
-import { formatLogMessage, formatLogTime } from "./log-viewer.utils";
+import { highlightLogText, logLevelClassName } from "./log-viewer.highlight";
+import {
+  formatLogMessage,
+  formatLogTime,
+  parseLeadingLogLevel,
+} from "./log-viewer.utils";
 
 const LOG_GRID_TEMPLATE =
   "minmax(12rem,20%) minmax(0,1fr) minmax(6.25rem,10%) minmax(7rem,12%)";
+const LOG_TABLE_MIN_WIDTH = 900;
 const LOG_ROW_MIN_HEIGHT = 52;
+const LOG_LEVEL_SLOT_WIDTH = "3.5rem";
 
 export function LogViewerListHeader() {
   return (
@@ -22,7 +28,10 @@ export function LogViewerListHeader() {
     >
       <div
         className="grid h-full items-center bg-input/30 font-medium text-muted-foreground text-xs"
-        style={{ gridTemplateColumns: LOG_GRID_TEMPLATE }}
+        style={{
+          gridTemplateColumns: LOG_GRID_TEMPLATE,
+          minWidth: LOG_TABLE_MIN_WIDTH,
+        }}
       >
         <span className="truncate px-4">Time</span>
         <span className="truncate px-4">Message</span>
@@ -45,18 +54,44 @@ function LogViewerRow({
     return null;
   }
   const message = formatLogMessage(entry.message);
+  const level = parseLeadingLogLevel(message);
+  const levelText = level ? `${level.level}:` : "";
+  const bodyText = level ? message.slice(level.endIndex) : message;
 
   return (
     <div
       {...ariaAttributes}
       className="grid min-h-[52px] items-start border-border border-b bg-transparent py-3 font-medium text-foreground text-xs"
-      style={{ ...style, gridTemplateColumns: LOG_GRID_TEMPLATE }}
+      style={{
+        ...style,
+        gridTemplateColumns: LOG_GRID_TEMPLATE,
+        minWidth: LOG_TABLE_MIN_WIDTH,
+      }}
     >
       <span className="truncate px-4 leading-5">
         {formatLogTime(entry.time)}
       </span>
-      <span className="block min-w-0 whitespace-pre-wrap break-words px-4 leading-5">
-        {highlightLogMessage(message, searchQuery)}
+      <span className="grid min-w-0 px-4 leading-5">
+        <span
+          className="grid min-w-0 items-start"
+          style={{
+            gridTemplateColumns: `${LOG_LEVEL_SLOT_WIDTH} minmax(0, 1fr)`,
+          }}
+        >
+          <span
+            className="block truncate pr-2"
+            style={{ width: LOG_LEVEL_SLOT_WIDTH }}
+          >
+            {level ? (
+              <span className={logLevelClassName(level.level)}>
+                {levelText}
+              </span>
+            ) : null}
+          </span>
+          <span className="block min-w-0 whitespace-pre-wrap break-words font-medium">
+            {highlightLogText(bodyText, searchQuery)}
+          </span>
+        </span>
       </span>
       <span className="truncate px-4 leading-5">{entry.pod}</span>
       <span className="truncate px-4 leading-5">{entry.container}</span>
@@ -83,10 +118,12 @@ function VirtualizedListClient({
 
   return (
     <List
+      className="min-w-full"
       rowComponent={LogViewerRow}
       rowCount={entries.length}
       rowHeight={rowHeight}
       rowProps={{ entries, searchQuery }}
+      style={{ minWidth: LOG_TABLE_MIN_WIDTH }}
     />
   );
 }
@@ -137,7 +174,7 @@ export function LogViewerListContent() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden"
+      className="flex min-h-0 flex-1 overflow-auto"
       data-slot="log-viewer-content"
     >
       <VirtualizedList entries={filteredEntries} searchQuery={searchQuery} />

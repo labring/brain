@@ -5,25 +5,39 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import { Pause, Play } from "lucide-react";
 
 interface LivePauseToggleProps {
+  disabled?: boolean;
   isLive: boolean;
   onToggle: () => void;
 }
 
-export function LivePauseToggle({ isLive, onToggle }: LivePauseToggleProps) {
+export function LivePauseToggle({
+  disabled = false,
+  isLive,
+  onToggle,
+}: LivePauseToggleProps) {
   return (
     <Tooltip>
       <TooltipTrigger
-        className={`flex h-8 w-8 items-center justify-center rounded-md border shadow-xs ${isLive ? "border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400" : "border-input bg-background hover:bg-accent hover:text-accent-foreground"}`}
+        aria-label={isLive ? "Pause live logs" : "Start live logs"}
+        aria-pressed={isLive}
+        className={cn(
+          "flex size-9 cursor-pointer items-center justify-center rounded-lg border border-transparent shadow-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50",
+          isLive
+            ? "bg-input text-blue-400 hover:bg-input/80"
+            : "bg-input/30 text-brand-primary-foreground hover:bg-input"
+        )}
+        disabled={disabled}
         onClick={onToggle}
         type="button"
       >
         {isLive ? <Pause className="size-4" /> : <Play className="size-4" />}
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        {isLive ? "Pause" : "Resume"}
+        {isLive ? "Pause live logs" : "Start live logs"}
       </TooltipContent>
     </Tooltip>
   );

@@ -87,6 +87,7 @@ export function LogViewerToolbar() {
         </div>
         {refreshMode === "live" ? (
           <LivePauseToggle
+            disabled={onRefresh === undefined}
             isLive={isLive}
             onToggle={() => setIsLive(!isLive)}
           />
