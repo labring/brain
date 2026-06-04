@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
@@ -58,7 +59,7 @@ func registerGet(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get DB(s)", err)
 		}
-		body, err := dbResponseFromClusters(jsonBytes, input.Name != "")
+		body, err := dbResponseFromClustersWithSupport(cfg, jsonBytes, input.Name != "")
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
 		}
@@ -97,4 +98,85 @@ func dbResponseFromClusters(jsonBytes []byte, single bool) (json.RawMessage, err
 		"kind":       "DBList",
 	}
 	return json.Marshal(out)
+}
+
+func dbResponseFromClustersWithSupport(cfg *clientcmdapi.Config, jsonBytes []byte, single bool) (json.RawMessage, error) {
+	if cfg == nil {
+		return dbResponseFromClusters(jsonBytes, single)
+	}
+	if single {
+		var cluster unstructured.Unstructured
+		if err := json.Unmarshal(jsonBytes, &cluster); err != nil {
+			return nil, err
+		}
+		db := orchestration.DBObjectFromCluster(&cluster)
+		applyDBExportServiceState(cfg, db, cluster.GetName(), cluster.GetNamespace())
+		return json.Marshal(db)
+	}
+	var list unstructured.UnstructuredList
+	if err := json.Unmarshal(jsonBytes, &list); err != nil {
+		return nil, err
+	}
+	items := make([]interface{}, 0, len(list.Items))
+	for i := range list.Items {
+		db := orchestration.DBObjectFromCluster(&list.Items[i])
+		applyDBExportServiceState(cfg, db, list.Items[i].GetName(), list.Items[i].GetNamespace())
+		items = append(items, db)
+	}
+	out := map[string]interface{}{
+		"apiVersion": "brain.io/direct",
+		"items":      items,
+		"kind":       "DBList",
+	}
+	return json.Marshal(out)
+}
+
+func applyDBExportServiceState(cfg *clientcmdapi.Config, db map[string]interface{}, name string, namespace string) {
+	if db == nil || name == "" || namespace == "" {
+		return
+	}
+	export, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Name:      name + "-export",
+		Namespace: namespace,
+		Resource:  "services",
+	})
+	enabled := err == nil
+	spec, _ := db["spec"].(map[string]interface{})
+	if spec == nil {
+		spec = map[string]interface{}{}
+		db["spec"] = spec
+	}
+	spec["exposeNodePort"] = enabled
+	if !enabled {
+		return
+	}
+	var service map[string]interface{}
+	if err := json.Unmarshal(export, &service); err != nil {
+		return
+	}
+	status, _ := db["status"].(map[string]interface{})
+	if status == nil {
+		status = map[string]interface{}{}
+		db["status"] = status
+	}
+	if nodePort := firstServiceNodePort(service); nodePort > 0 {
+		status["nodePort"] = nodePort
+	}
+}
+
+func firstServiceNodePort(service map[string]interface{}) int64 {
+	spec, _ := service["spec"].(map[string]interface{})
+	ports, _ := spec["ports"].([]interface{})
+	for _, item := range ports {
+		port, _ := item.(map[string]interface{})
+		switch value := port["nodePort"].(type) {
+		case int64:
+			return value
+		case int:
+			return int64(value)
+		case float64:
+			return int64(value)
+		}
+	}
+	return 0
 }

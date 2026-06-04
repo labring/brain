@@ -15,6 +15,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
+	"sealos/api/service/orchestration"
 	transformdb "sealos/api/service/transform/db"
 )
 
@@ -44,14 +45,17 @@ func CreateBackupForDB(cfg *clientcmdapi.Config, opts CreateBackupForDBOptions) 
 		return nil, err
 	}
 
-	clusterGVR := schema.GroupVersionResource{Group: "apps.kubeblocks.io", Version: "v1", Resource: "clusters"}
-	cluster, err := client.Resource(clusterGVR).Namespace(opts.Namespace).Get(context.Background(), opts.DBName, metav1.GetOptions{})
+	cluster, err := client.Resource(kubeBlocksClusterGVR).Namespace(opts.Namespace).Get(context.Background(), opts.DBName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("KubeBlocks Cluster not found for DB %s: %w", opts.DBName, err)
 	}
 	engine := engineFromCluster(cluster.Object)
-	backupMethod := backupMethodForEngine(engine)
-	componentName := componentNameForEngine(engine)
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
+	backupMethod := profile.BackupMethod
+	componentName := profile.ComponentName
 
 	backupPolicyName := opts.DBName + "-" + componentName + "-backup-policy"
 
@@ -117,40 +121,6 @@ func engineFromCluster(cluster map[string]interface{}) string {
 		return e
 	}
 	return ""
-}
-
-// backupMethodForEngine maps DB engine to KubeBlocks backupMethod on the Backup CR / policy.
-// Values align with typical Cluster.spec.backup.method for each engine on current KubeBlocks builds.
-func backupMethodForEngine(engine string) string {
-	switch engine {
-	case "postgresql", "pg":
-		return "postgres-basebackup"
-	case "mysql":
-		// Must match Cluster.spec.backup.method / BackupPolicy for apecloud-mysql (often "xtrabackup", not "mysql-xtrabackup").
-		return "xtrabackup"
-	case "mongodb":
-		return "mongodb-dump"
-	case "redis":
-		// Must match Cluster.spec.backup.method for KubeBlocks redis (often "datafile").
-		return "datafile"
-	default:
-		return "postgres-basebackup"
-	}
-}
-
-func componentNameForEngine(engine string) string {
-	switch engine {
-	case "postgresql", "pg":
-		return "postgresql"
-	case "mysql":
-		return "mysql"
-	case "mongodb":
-		return "mongodb"
-	case "redis":
-		return "redis"
-	default:
-		return "postgresql"
-	}
 }
 
 func mapToUnstructured(obj map[string]interface{}) *unstructured.Unstructured {

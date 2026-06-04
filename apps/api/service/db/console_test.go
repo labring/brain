@@ -20,6 +20,7 @@ func TestConsoleCommandForEngine(t *testing.T) {
 	}{
 		{"postgresql", "postgresql", `psql "postgresql://u:p%40s%2Fs@demo.ns.svc:5432/appdb"`},
 		{"mysql", "mysql", `mysql -h demo.ns.svc -P 5432 -u u -p'p@s/s'`},
+		{"apecloud-mysql", "mysql", `mysql -h demo.ns.svc -P 5432 -u u -p'p@s/s'`},
 		{"mongodb", "mongodb", `mongosh "mongodb://u:p%40s%2Fs@demo.ns.svc:5432/appdb?authSource=admin"`},
 		{"redis", "redis", `redis-cli -u "redis://u:p%40s%2Fs@demo.ns.svc:5432"`},
 	}

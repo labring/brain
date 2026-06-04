@@ -39,15 +39,15 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function draftRoutingDomainFromClaim(
-  claim: Record<string, unknown> | undefined,
+function draftRoutingDomainFromResource(
+  resource: Record<string, unknown> | undefined,
   kubeconfig: string
 ): string {
-  const metadata = asRecord(claim?.metadata);
+  const metadata = asRecord(resource?.metadata);
   const labels = asRecord(metadata?.labels);
-  const claimRoutingDomain =
+  const resourceRoutingDomain =
     typeof labels?.region === "string" ? labels.region.trim() : "";
-  return claimRoutingDomain || routingDomainFromKubeconfig(kubeconfig);
+  return resourceRoutingDomain || routingDomainFromKubeconfig(kubeconfig);
 }
 
 type WorkloadSettingsShellProps = Pick<
@@ -128,8 +128,11 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
     readOnly: settingsReadOnly,
     workloadKind,
   });
-  const claim = k8sGetClaimBody(claimPayload);
-  const draftRoutingDomain = draftRoutingDomainFromClaim(claim, kubeconfig);
+  const resource = k8sGetClaimBody(claimPayload);
+  const draftRoutingDomain = draftRoutingDomainFromResource(
+    resource,
+    kubeconfig
+  );
 
   if (ns === "" || name === "") {
     return (
@@ -153,13 +156,13 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         title={title}
       >
         <p className="text-destructive text-sm" role="alert">
-          Could not load claim: {error.message}
+          Could not load workload: {error.message}
         </p>
       </WorkloadSettingsShell>
     );
   }
 
-  if (isLoading && claim == null) {
+  if (isLoading && resource == null) {
     return (
       <WorkloadSettingsShell
         onClose={onClose}

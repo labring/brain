@@ -527,7 +527,6 @@ function mapDbSpec(spec: Record<string, unknown>): ClaimContainerSettings {
     env: [],
     image: engine,
     memoryMib: clampScale(memRaw ?? 512, MEM_MIN, MEM_MAX),
-    ports: [],
     replicaStrategy: defaultFixedReplicaStrategy(),
     replicas: 1,
   };
@@ -544,7 +543,6 @@ export function claimToContainerSettings(
       env: [],
       image: "",
       memoryMib: 512,
-      ports: [],
       replicaStrategy: defaultFixedReplicaStrategy(),
       replicas: 1,
     };

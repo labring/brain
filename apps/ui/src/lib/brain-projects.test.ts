@@ -27,7 +27,9 @@ describe("Brain projects", () => {
   });
 
   test("detects duplicate display names case-insensitively", () => {
-    const projects = [{ id: "p1", name: "Demo" }];
+    const projects = [
+      { createdAt: "2026-01-01T00:00:00.000Z", id: "p1", name: "Demo" },
+    ];
     assert.equal(isProjectDisplayNameTaken(projects, "demo"), true);
     assert.equal(isProjectDisplayNameTaken(projects, "demo", "p1"), false);
   });

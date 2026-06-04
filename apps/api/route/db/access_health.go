@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -16,12 +15,13 @@ import (
 
 func registerAccessHealth(grp huma.API) {
 	type dbAccessHealthBody struct {
-		ProjectUID string `json:"projectUid" required:"true" doc:"Project metadata.uid that must match the DB ownership label."`
+		ProjectID  string `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		ProjectUID string `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
 		Namespace  string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 	}
 	type dbAccessHealthInput struct {
 		middleware.AuthInput
-		Name string `path:"name" doc:"DB claim metadata.name."`
+		Name string `path:"name" doc:"DB metadata.name."`
 		Body dbAccessHealthBody
 	}
 	type dbAccessHealthOutput struct {
@@ -33,15 +33,16 @@ func registerAccessHealth(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/{name}/access/health",
 		Summary:     "Check DB access health",
-		Description: "Checks server-side read-only DB access wiring for one managed DB claim. Requires kubeconfig authorization and projectUid ownership. The response never includes raw database credentials.",
+		Description: "Checks server-side read-only DB access wiring for one managed DB. Requires kubeconfig authorization and Brain Project ID ownership. The response never includes raw database credentials.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbAccessHealthInput) (*dbAccessHealthOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
 			return nil, huma.Error401Unauthorized("invalid kubeconfig", err)
 		}
-		if strings.TrimSpace(input.Body.ProjectUID) == "" {
-			return nil, huma.Error400BadRequest("projectUid is required", nil)
+		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		if projectID == "" {
+			return nil, huma.Error400BadRequest("Brain Project ID is required", nil)
 		}
 
 		gvr := middleware.PodsGVR()
@@ -70,7 +71,7 @@ func registerAccessHealth(grp huma.API) {
 		result, err := service.Check(ctx, dbsvc.AccessHealthRequest{
 			Name:       input.Name,
 			Namespace:  resolved.Namespace,
-			ProjectUID: input.Body.ProjectUID,
+			ProjectUID: projectID,
 		})
 		if err != nil {
 			return nil, accessHealthError(err)
@@ -82,7 +83,7 @@ func registerAccessHealth(grp huma.API) {
 func accessHealthError(err error) error {
 	switch {
 	case errors.Is(err, dbsvc.ErrAccessHealthProjectUID):
-		return huma.Error400BadRequest("projectUid is required", err)
+		return huma.Error400BadRequest("Brain Project ID is required", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthDBNotFound):
 		return huma.Error404NotFound("DB not found", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthProjectForbidden):

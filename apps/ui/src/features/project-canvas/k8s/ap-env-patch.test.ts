@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { PLATFORM_ADDRESS_ID_RE } from "../platform-addresses";
 import {
+  apMergePatchFromJsonPatchOps,
   patchOpsForApEnvSettings,
   patchOpsForApNetworkSettings,
   patchOpsForApPrivatePortSettings,
@@ -62,6 +63,50 @@ test("AP env settings patch direct rows as standard Kubernetes value entries", (
       ],
     },
   ]);
+});
+
+test("AP settings JSON patch ops convert to product merge patch", () => {
+  const ops = [
+    {
+      op: "replace" as const,
+      path: "/spec/input/image",
+      value: "nginx:1.28",
+    },
+    {
+      op: "replace" as const,
+      path: "/spec/input/env",
+      value: [{ name: "FEATURE_FLAG", value: "true" }],
+    },
+    {
+      op: "add" as const,
+      path: "/spec/resource/limits",
+      value: { cpu: "500m", memory: "512Mi" },
+    },
+    {
+      op: "add" as const,
+      path: "/metadata/labels/region",
+      value: "apps.example.com",
+    },
+    { op: "remove" as const, path: "/spec/input/host" },
+  ];
+
+  assert.deepEqual(apMergePatchFromJsonPatchOps(ops), {
+    metadata: {
+      labels: {
+        region: "apps.example.com",
+      },
+    },
+    spec: {
+      input: {
+        env: [{ name: "FEATURE_FLAG", value: "true" }],
+        host: null,
+        image: "nginx:1.28",
+      },
+      resource: {
+        limits: { cpu: "500m", memory: "512Mi" },
+      },
+    },
+  });
 });
 
 test("AP network settings patch privatePort without writing retired endpoint fields", () => {

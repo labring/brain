@@ -355,8 +355,8 @@ export interface ApsToCanvasStateOptions {
 }
 
 export interface DbsToCanvasStateOptions {
-  /** Composition `metadata.name` -> icon URL/data URI from composition metadata annotations. */
-  compositionIconByName?: ReadonlyMap<string, string>;
+  /** DB engine key -> icon URL/data URI. */
+  engineIconByName?: ReadonlyMap<string, string>;
   /** Index offset for deterministic fallback placement when combining node lists. @default 0 */
   gridIndexOffset?: number;
   /** Key from {@link telemetryWorkloadKey} -> latest workload metric % from telemetry. */
@@ -423,7 +423,7 @@ export function dbToDatabaseNodeData(
   db: unknown,
   options?: Pick<
     DbsToCanvasStateOptions,
-    "compositionIconByName" | "metricsLookup" | "namespaceFallback"
+    "engineIconByName" | "metricsLookup" | "namespaceFallback"
   >
 ): CanvasDatabaseNodeData {
   const root = asRecord(db) ?? {};
@@ -451,7 +451,7 @@ export function dbToDatabaseNodeData(
   const iconUrl =
     engineKey === undefined
       ? undefined
-      : options?.compositionIconByName?.get(engineKey);
+      : options?.engineIconByName?.get(engineKey);
   const metricCapacities = databaseMetricCapacitiesFromStatus(status);
   const mountPath = nonEmptyString(status.mountPath);
 
@@ -482,7 +482,7 @@ export function dbToDatabaseNodeData(
 }
 
 /**
- * Builds React Flow `nodes` / `edges` for project DB claims using `DatabaseNode`.
+ * Builds React Flow `nodes` / `edges` for project DB resources using `DatabaseNode`.
  */
 export function dbsToCanvasState(
   data: K8sGetResponse | undefined,
@@ -504,7 +504,7 @@ export function dbsToCanvasState(
 }
 
 /**
- * Builds React Flow `nodes` / `edges` for EntryPoint claims.
+ * Builds React Flow `nodes` / `edges` for derived EntryPoint views.
  */
 export function entryPointsToCanvasState(
   data: K8sGetResponse | undefined,

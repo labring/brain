@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"sealos/api/service/orchestration"
 )
 
 var errNoConsoleMembers = errors.New("no available db pod for console")
@@ -27,18 +29,11 @@ type InstanceSetMember struct {
 
 // consoleEngineComponent maps a DB spec.engine to the KubeBlocks component/container name.
 func consoleEngineComponent(engine string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(engine)) {
-	case "postgresql", "postgres", "pg":
-		return "postgresql", nil
-	case "mysql":
-		return "mysql", nil
-	case "mongodb", "mongo":
-		return "mongodb", nil
-	case "redis":
-		return "redis", nil
-	default:
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
 		return "", fmt.Errorf("%w: %s", ErrAccessHealthUnsupported, engine)
 	}
+	return profile.ComponentName, nil
 }
 
 // consoleCommandForEngine returns the exec command (wrapped in sh -lc) and the

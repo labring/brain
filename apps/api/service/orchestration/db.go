@@ -15,6 +15,7 @@ import (
 type DBResourcesInput struct {
 	ClusterVersion string
 	Engine         string
+	ExposeNodePort bool
 	Name           string
 	Namespace      string
 	ProjectID      string
@@ -22,16 +23,20 @@ type DBResourcesInput struct {
 	StorageSize    string
 }
 
-func RenderDBRestartOpsRequest(name, namespace string, now time.Time) (*unstructured.Unstructured, error) {
+func RenderDBRestartOpsRequest(name, namespace, engine string, now time.Time) (*unstructured.Unstructured, error) {
 	name = strings.TrimSpace(name)
 	namespace = strings.TrimSpace(namespace)
 	if name == "" || namespace == "" {
 		return nil, fmt.Errorf("name and namespace are required")
 	}
+	profile, ok := DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
 	suffix := now.UTC().Format("20060102150405")
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "apps.kubeblocks.io/v1",
+			"apiVersion": "apps.kubeblocks.io/v1alpha1",
 			"kind":       "OpsRequest",
 			"metadata": map[string]interface{}{
 				"labels": map[string]interface{}{
@@ -43,7 +48,10 @@ func RenderDBRestartOpsRequest(name, namespace string, now time.Time) (*unstruct
 			},
 			"spec": map[string]interface{}{
 				"clusterName": name,
-				"type":        "Restart",
+				"restart": []interface{}{
+					map[string]interface{}{"componentName": profile.ComponentName},
+				},
+				"type": "Restart",
 			},
 		},
 	}, nil
@@ -59,9 +67,13 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 	namespace := strings.TrimSpace(input.Namespace)
 	projectID := strings.TrimSpace(input.ProjectID)
 	engine := strings.TrimSpace(input.Engine)
+	profile, ok := DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
 	version := strings.TrimSpace(input.ClusterVersion)
 	if version == "" {
-		version = engine
+		version = profile.ClusterVersion
 	}
 	if name == "" || namespace == "" || projectID == "" || engine == "" {
 		return nil, fmt.Errorf("name, namespace, projectID, and engine are required")
@@ -79,7 +91,7 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 		map[string]string{
 			BrainDBEngineLabel:               engine,
 			BrainDBNameLabel:                 name,
-			DBProviderClusterDefinitionLabel: engine,
+			DBProviderClusterDefinitionLabel: profile.ClusterDefinition,
 			DBProviderClusterVersionLabel:    version,
 			DBProviderCRLabel:                name,
 			DBProviderInstanceLabel:          name,
@@ -87,19 +99,19 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 	)
 	cluster := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "apps.kubeblocks.io/v1",
+			"apiVersion": "apps.kubeblocks.io/v1alpha1",
 			"kind":       "Cluster",
 			"metadata": map[string]interface{}{
 				"name":      name,
 				"namespace": namespace,
 			},
 			"spec": map[string]interface{}{
-				"clusterDefinitionRef": engine,
+				"clusterDefinitionRef": profile.ClusterDefinition,
 				"clusterVersionRef":    version,
 				"componentSpecs": []interface{}{
 					map[string]interface{}{
-						"componentDefRef": engine,
-						"name":            engine,
+						"componentDefRef": profile.ComponentName,
+						"name":            profile.ComponentName,
 						"replicas":        replicas,
 						"volumeClaimTemplates": []interface{}{
 							map[string]interface{}{
@@ -122,12 +134,25 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 	}
 	cluster.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "apps.kubeblocks.io",
-		Version: "v1",
+		Version: "v1alpha1",
 		Kind:    "Cluster",
 	})
 	cluster.SetLabels(labels)
 
-	exportService := &corev1.Service{
+	var exportService *corev1.Service
+	if input.ExposeNodePort {
+		exportService = RenderDBExportService(name, namespace, engine, labels)
+	}
+
+	return &DBResources{Cluster: cluster, ExportService: exportService}, nil
+}
+
+func RenderDBExportService(name, namespace, engine string, labels map[string]string) *corev1.Service {
+	profile, ok := DBEngineProfileFor(engine)
+	if !ok {
+		profile = DBEngineProfile{ComponentName: engine, ServicePort: 5432, TargetPortName: engine}
+	}
+	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "Service",
@@ -139,15 +164,13 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
-				{Name: "tcp", Port: 5432, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromString(engine)},
+				{Name: "tcp", Port: profile.ServicePort, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromString(profile.TargetPortName)},
 			},
 			Selector: map[string]string{
 				DBProviderInstanceLabel:             name,
-				"apps.kubeblocks.io/component-name": engine,
+				"apps.kubeblocks.io/component-name": profile.ComponentName,
 			},
 			Type: corev1.ServiceTypeNodePort,
 		},
 	}
-
-	return &DBResources{Cluster: cluster, ExportService: exportService}, nil
 }

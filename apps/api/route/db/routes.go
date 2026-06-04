@@ -10,13 +10,13 @@ import (
 // and related Kubernetes support resources.
 // The DB spec is the API contract for the KubeBlocks Cluster (PostgreSQL, MySQL, Redis, MongoDB, etc.):
 // - engine: database engine (postgresql, mysql, redis, mongodb).
-// - replicas: optional replica count (XRD default 1).
+// - replicas: optional replica count (default 1).
 // - paused: optional lifecycle flag; true stops DB compute without rewriting replicas.
 // - restartRequest: optional non-negative restart counter for declarative KubeBlocks restart requests.
-// - quota: resource preset xs|s|m|l (default xs); compositions map to CPU/memory/storage.
+// - quota: resource preset xs|s|m|l (default xs); renderer maps it to CPU/memory/storage.
 // - storageSize / cpu* / memory*: optional overrides for quota preset defaults.
 // - storageClassName: StorageClass for PVCs; omit to use cluster default.
-// - terminationPolicy: optional Delete or WipeOut (XRD default Delete).
+// - terminationPolicy: optional Delete or WipeOut (default Delete).
 // - exposeNodePort: optional; when true, NodePort Service {name}-export with apiserver-assigned nodePort (default false).
 // - projectId: Brain Project product id used for brain.io/project-id ownership labels.
 func Register(api huma.API) {

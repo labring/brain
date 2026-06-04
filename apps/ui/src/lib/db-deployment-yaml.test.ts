@@ -7,7 +7,6 @@ import { renderDbDeploymentYaml } from "./db-deployment-yaml";
 test("renderDbDeploymentYaml writes deployment settings into a direct DB manifest", () => {
   const out = YAML.parse(
     renderDbDeploymentYaml({
-      compositionName: "dbs-mysql-kubeblocks-go-templating",
       engine: "mysql",
       name: "project-a-db",
       namespace: "ns-admin",
@@ -33,7 +32,6 @@ test("renderDbDeploymentYaml writes deployment settings into a direct DB manifes
 test("renderDbDeploymentYaml strips public-only region labels from templates", () => {
   const out = YAML.parse(
     renderDbDeploymentYaml({
-      compositionName: "dbs-postgresql-kubeblocks-go-templating",
       engine: "postgresql",
       name: "project-a-pg",
       namespace: "ns-admin",
@@ -71,7 +69,6 @@ spec:
 test("renderDbDeploymentYaml resolves DB template placeholders before parsing", () => {
   const out = YAML.parse(
     renderDbDeploymentYaml({
-      compositionName: "dbs-mysql-kubeblocks-go-templating",
       engine: "mysql",
       name: "project-a-mysql",
       namespace: "ns-admin",

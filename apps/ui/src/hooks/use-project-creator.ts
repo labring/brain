@@ -44,13 +44,13 @@ type CreatorRootPropsForCreationPane = Pick<
 export interface UseProjectCreatorOptions {
   /** Existing Project rows in the namespace, used for display-name uniqueness checks. */
   existingProjects?: readonly ProjectExplorerProject[];
-  /** Loads composition options from the API when set (same kubeconfig as explorer). */
+  /** Kubeconfig used by product APIs when set (same kubeconfig as explorer). */
   kubeconfig?: string;
-  /** Target namespace for rendered claim `metadata.namespace`. */
+  /** Target namespace for rendered product manifests. */
   namespace?: string;
   /**
-   * Called after a Project + child claim apply succeeds.
-   * `projectUid` is `metadata.uid` when the API returns the Project in time; otherwise `undefined`.
+   * Called after a Project + child product resource create succeeds.
+   * `projectUid` currently carries the Brain Project ID for compatibility with older prop names.
    */
   onProjectCreated?: (projectUid: string | undefined) => void | Promise<void>;
 }

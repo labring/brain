@@ -3,6 +3,7 @@ package db
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -113,13 +114,66 @@ func TestDBPatchDocsIncludeLifecycleFields(t *testing.T) {
 	}
 }
 
+func TestDBOpenAPIDocsDoNotExposeLegacyOwnershipTerms(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	raw, err := json.Marshal(api.OpenAPI())
+	if err != nil {
+		t.Fatalf("marshal openapi: %v", err)
+	}
+	text := string(raw)
+	legacyField := "composition" + "Ref"
+	legacyGroupVersion := "example." + "cross" + "plane.io/v1"
+	for _, forbidden := range []string{
+		"metadata.uid",
+		"DB claim",
+		legacyField,
+		legacyGroupVersion,
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("DB OpenAPI docs must not contain %q", forbidden)
+		}
+	}
+	if !strings.Contains(text, "projectId") {
+		t.Fatalf("DB OpenAPI docs should expose projectId for Brain Project ownership")
+	}
+}
+
+func TestExposeNodePortPatchValue(t *testing.T) {
+	enabled, found := exposeNodePortPatchValue([]byte(`{"spec":{"exposeNodePort":true}}`))
+	if !found || !enabled {
+		t.Fatalf("expected enabled exposeNodePort patch, got enabled=%v found=%v", enabled, found)
+	}
+	enabled, found = exposeNodePortPatchValue([]byte(`{"spec":{"exposeNodePort":false}}`))
+	if !found || enabled {
+		t.Fatalf("expected disabled exposeNodePort patch, got enabled=%v found=%v", enabled, found)
+	}
+	_, found = exposeNodePortPatchValue([]byte(`{"spec":{"replicas":2}}`))
+	if found {
+		t.Fatalf("expected exposeNodePort to be absent")
+	}
+}
+
+func TestKubeBlocksRestartConflictDetection(t *testing.T) {
+	err := errors.New(`admission webhook "vopsrequest.kb.io" denied the request: OpsRequest.spec.type=Restart is forbidden when Cluster.status.phase=Creating`)
+	if !isKubeBlocksRestartConflict(err) {
+		t.Fatal("expected KubeBlocks restart webhook denial to be treated as conflict")
+	}
+	if isKubeBlocksRestartConflict(errors.New("some other error")) {
+		t.Fatal("unexpected conflict detection for unrelated error")
+	}
+}
+
 func TestDBResponseFromClustersReturnsDBList(t *testing.T) {
 	raw := []byte(`{
-		"apiVersion": "apps.kubeblocks.io/v1",
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
 		"kind": "ClusterList",
 		"items": [
 			{
-				"apiVersion": "apps.kubeblocks.io/v1",
+				"apiVersion": "apps.kubeblocks.io/v1alpha1",
 				"kind": "Cluster",
 				"metadata": {
 					"labels": {

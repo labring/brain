@@ -83,7 +83,7 @@ test("access rows request encodes kubeconfig bearer and workload namespace", asy
   }
 
   assert.deepEqual(capturedBody, {
-    projectUid: "project-uid",
+    projectId: "project-uid",
     namespace: "database-system",
     ref: tableRef,
     pageSize: 50,
@@ -146,7 +146,7 @@ test("visible export helper does not send selected rows or query-backed payload"
   }
 
   assert.deepEqual(capturedBody, {
-    projectUid: "project-uid",
+    projectId: "project-uid",
     namespace: "database-system",
     format: "csv",
     ref: tableRef,

@@ -186,21 +186,21 @@ func guardDBAccess(ctx context.Context, store AccessHealthStore, req guardedAcce
 	}
 
 	engine := engineFromCluster(db.Object)
-	sourceType, defaultDatabase, err := whodbSourceForEngine(engine)
-	if err != nil {
-		return "", WhoDBSourceCredentials{}, err
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
+		return "", WhoDBSourceCredentials{}, fmt.Errorf("%w: %s", ErrAccessHealthUnsupported, engine)
 	}
 
-	secretName := accessHealthSecretName(req.Name, engine)
+	secretName := accessHealthSecretName(req.Name, profile.Engine)
 	secret, err := store.GetSecret(ctx, req.Namespace, secretName)
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
-	credentials, err := buildWhoDBSourceCredentials(sourceType, defaultDatabase, req.Name, req.Namespace, secret)
+	credentials, err := buildWhoDBSourceCredentials(profile.SourceType, profile.DefaultDatabase, req.Name, req.Namespace, secret)
 	if err != nil {
 		return "", WhoDBSourceCredentials{}, err
 	}
-	return engine, credentials, nil
+	return profile.Engine, credentials, nil
 }
 
 func verifyDBProject(db *unstructured.Unstructured, projectUID string) error {
@@ -224,21 +224,6 @@ func isDBAccessReady(db *unstructured.Unstructured) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func whodbSourceForEngine(engine string) (sourceType string, defaultDatabase string, err error) {
-	switch strings.ToLower(strings.TrimSpace(engine)) {
-	case "postgresql", "postgres", "pg":
-		return "Postgres", "postgres", nil
-	case "mysql":
-		return "MySQL", "mysql", nil
-	case "mongodb", "mongo":
-		return "MongoDB", "admin", nil
-	case "redis":
-		return "Redis", "", nil
-	default:
-		return "", "", fmt.Errorf("%w: %s", ErrAccessHealthUnsupported, engine)
 	}
 }
 

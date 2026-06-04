@@ -10,12 +10,17 @@ const (
 	BrainDBNameLabel       = "brain.io/db-name"
 	BrainDBEngineLabel     = "brain.io/db-engine"
 
+	APDesiredNetworkAnnotation = "brain.io/ap-desired-network"
+	APReplicaStrategyAnnotation = "brain.io/ap-replica-strategy"
+	APRoutingDomainLabel       = "region"
+
 	ResourceKindAP                = "ap"
 	ResourceKindDB                = "db"
 	ResourceKindEntryPointSupport = "entrypoint-support"
 
 	LaunchpadAppDeployManagerLabel       = "cloud.sealos.io/app-deploy-manager"
 	LaunchpadAppDeployManagerDomainLabel = "cloud.sealos.io/app-deploy-manager-domain"
+	LaunchpadAppDeployManagerDomainHostAnnotation = "cloud.sealos.io/app-deploy-manager-domain-host"
 	LaunchpadAppLabel                    = "app"
 	LaunchpadPauseAnnotation             = "deploy.cloud.sealos.io/pause"
 	LaunchpadMinReplicasAnnotation       = "deploy.cloud.sealos.io/minReplicas"

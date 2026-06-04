@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
 
@@ -42,7 +43,7 @@ metadata:
 spec:
   projectId: project-id
   engine: postgresql
-  clusterVersion: postgresql
+  clusterVersion: postgresql-16.4.0
   replicas: 1
   storageSize: 10Gi`
 
@@ -101,11 +102,15 @@ spec:
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid DB direct resource request", err)
 		}
-		if err := k8ssvc.ApplyObjects(restConfig, []runtime.Object{resources.ExportService}, ns); err != nil {
-			return nil, huma.Error500InternalServerError("failed to create DB support resources", err)
-		}
 		if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{resources.Cluster}, ns); err != nil {
 			return nil, huma.Error500InternalServerError("failed to create DB", err)
+		}
+		if resources.ExportService != nil {
+			if err := k8ssvc.ApplyObjects(restConfig, []runtime.Object{resources.ExportService}, ns); err != nil {
+				return nil, huma.Error500InternalServerError("failed to create DB support resources", err)
+			}
+		} else if err := deleteDBExportServiceIfExists(cfg, name, ns); err != nil {
+			return nil, huma.Error500InternalServerError("failed to create DB support resources", err)
 		}
 
 		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
@@ -118,7 +123,7 @@ spec:
 			return nil, huma.Error500InternalServerError("failed to get created DB", err)
 		}
 
-		body, err := dbResponseFromClusters(jsonBytes, true)
+		body, err := dbResponseFromClustersWithSupport(cfg, jsonBytes, true)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt created DB", err)
 		}
@@ -150,6 +155,7 @@ func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 	return orchestration.DBResourcesInput{
 		ClusterVersion: version,
 		Engine:         engine,
+		ExposeNodePort: boolFromMap(spec, "exposeNodePort"),
 		Name:           obj.GetName(),
 		Namespace:      namespace,
 		ProjectID:      projectID,
@@ -164,6 +170,14 @@ func stringFromMap(values map[string]interface{}, key string) string {
 	}
 	value, _ := values[key].(string)
 	return strings.TrimSpace(value)
+}
+
+func boolFromMap(values map[string]interface{}, key string) bool {
+	if values == nil {
+		return false
+	}
+	value, _ := values[key].(bool)
+	return value
 }
 
 func int64FromMap(values map[string]interface{}, key string) int64 {
@@ -240,7 +254,7 @@ func registerBackup(grp huma.API) {
 }
 
 type dbLifecycleBody struct {
-	Name      string `json:"name" required:"true" doc:"DB claim metadata.name."`
+	Name      string `json:"name" required:"true" doc:"DB metadata.name."`
 	Namespace string `json:"namespace" doc:"Namespace of the DB (default from kubeconfig; admin can override)."`
 }
 
@@ -288,12 +302,21 @@ func registerRestart(grp huma.API) {
 		Description: "Requests a DB restart by creating a KubeBlocks Restart OpsRequest for the Cluster.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		_, name, namespace, err := lifecycleDBContext(input)
+		cfg, name, namespace, err := lifecycleDBContext(input)
 		if err != nil {
 			return nil, err
 		}
 
-		ops, err := orchestration.RenderDBRestartOpsRequest(name, namespace, time.Now())
+		clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+			Resource:  "clusters",
+			Name:      name,
+			Namespace: namespace,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to get DB for restart", err)
+		}
+		engine := dbEngineFromClusterJSON(clusterJSON)
+		ops, err := orchestration.RenderDBRestartOpsRequest(name, namespace, engine, time.Now())
 		if err != nil {
 			return nil, huma.Error422UnprocessableEntity("invalid DB restart request", err)
 		}
@@ -302,11 +325,41 @@ func registerRestart(grp huma.API) {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
 		if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{ops}, namespace); err != nil {
+			if isKubeBlocksRestartConflict(err) {
+				return nil, huma.Error409Conflict("DB is not ready to restart", err)
+			}
 			return nil, huma.Error500InternalServerError("failed to restart DB", err)
 		}
 		body, _ := json.Marshal(ops.Object)
 		return &dbLifecycleOutput{Body: body}, nil
 	})
+}
+
+func dbEngineFromClusterJSON(clusterJSON []byte) string {
+	var cluster unstructured.Unstructured
+	if err := json.Unmarshal(clusterJSON, &cluster); err != nil {
+		return ""
+	}
+	engine := strings.TrimSpace(cluster.GetLabels()[orchestration.BrainDBEngineLabel])
+	if engine != "" {
+		return engine
+	}
+	if definition := strings.TrimSpace(cluster.GetLabels()[orchestration.DBProviderClusterDefinitionLabel]); definition != "" {
+		return definition
+	}
+	if value, _, _ := unstructured.NestedString(cluster.Object, "spec", "clusterDefinitionRef"); value != "" {
+		return value
+	}
+	return ""
+}
+
+func isKubeBlocksRestartConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "OpsRequest.spec.type=Restart is forbidden") ||
+		strings.Contains(message, "Cluster.status.phase")
 }
 
 func patchLifecycleDB(input *dbLifecycleInput, patch []byte, action string) (*dbLifecycleOutput, error) {
@@ -328,7 +381,7 @@ func patchLifecycleDB(input *dbLifecycleInput, patch []byte, action string) (*db
 		}
 		return nil, huma.Error500InternalServerError("failed to "+action+" DB", err)
 	}
-	body, err := dbResponseFromClusters(jsonBytes, true)
+	body, err := dbResponseFromClustersWithSupport(cfg, jsonBytes, true)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
 	}
@@ -392,7 +445,7 @@ func registerUpdate(grp huma.API) {
 		Description: "Patch a DB instance by name.\n\nRequest parameter usage:\n- `name` is required and selects the DB to patch.\n- `namespace` is optional; admins can use it to target a different namespace.\n- The request body must be a JSON merge patch fragment for the DB resource.\n\nPatch semantics:\n- Only the fields present in the patch body are changed.\n- Nested objects are merged at the subtree you provide.\n\nCommon patch targets:\n- `spec.quota`: resource preset xs|s|m|l.\n- `spec.replicas`: desired database replica count when running; preserved while `spec.paused` is true.\n- `spec.paused`: lifecycle flag; true stops DB compute, false resumes using `spec.replicas`.\n- `spec.restartRequest`: non-negative restart counter; prefer `POST /api/db/v1alpha1/restart` so the server increments it.\n- `spec.storageSize`: change PVC storage.\n- `spec.cpuRequest` / `spec.memoryRequest`: resource requests.\n- `spec.cpuLimit` / `spec.memoryLimit`: resource limits.\n- `spec.storageClassName`: StorageClass for PVCs.\n- `spec.terminationPolicy`: Delete or WipeOut.\n- `spec.exposeNodePort`: toggle NodePort Service `{metadata.name}-export`.\n- `spec.scheduledBackup`: automated backup cron/retention/repo (KubeBlocks).",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbUpdateInput) (*dbUpdateOutput, error) {
-		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
+		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
@@ -427,12 +480,61 @@ func registerUpdate(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to update DB", err)
 		}
-		body, err := dbResponseFromClusters(jsonBytes, true)
+		if err := reconcileDBPublicAccess(restConfig, cfg, input.Body, jsonBytes, input.Name, resolved.Namespace); err != nil {
+			return nil, huma.Error500InternalServerError("failed to update DB support resources", err)
+		}
+		body, err := dbResponseFromClustersWithSupport(cfg, jsonBytes, true)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
 		}
 		return &dbUpdateOutput{Body: body}, nil
 	})
+}
+
+func reconcileDBPublicAccess(restConfig *rest.Config, cfg *clientcmdapi.Config, patch []byte, clusterJSON []byte, name string, namespace string) error {
+	desired, found := exposeNodePortPatchValue(patch)
+	if !found {
+		return nil
+	}
+	if !desired {
+		return deleteDBExportServiceIfExists(cfg, name, namespace)
+	}
+
+	var cluster unstructured.Unstructured
+	if err := json.Unmarshal(clusterJSON, &cluster); err != nil {
+		return err
+	}
+	engine := strings.TrimSpace(cluster.GetLabels()[orchestration.BrainDBEngineLabel])
+	if engine == "" {
+		engine = strings.TrimSpace(cluster.GetLabels()[orchestration.DBProviderClusterDefinitionLabel])
+	}
+	if engine == "" {
+		engine = "postgresql"
+	}
+	service := orchestration.RenderDBExportService(name, namespace, engine, cluster.GetLabels())
+	return k8ssvc.ApplyObjects(restConfig, []runtime.Object{service}, namespace)
+}
+
+func exposeNodePortPatchValue(patch []byte) (bool, bool) {
+	var body map[string]interface{}
+	if err := json.Unmarshal(patch, &body); err != nil {
+		return false, false
+	}
+	spec, _ := body["spec"].(map[string]interface{})
+	value, ok := spec["exposeNodePort"].(bool)
+	return value, ok
+}
+
+func deleteDBExportServiceIfExists(cfg *clientcmdapi.Config, name string, namespace string) error {
+	_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+		Name:      name + "-export",
+		Namespace: namespace,
+		Resource:  "services",
+	})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 func registerDelete(grp huma.API) {

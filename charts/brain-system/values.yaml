@@ -54,6 +54,7 @@ api:
   env:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471"
+    DATABASE_URL: ""
     ENCODED_ADMIN_KUBECONFIG: ""
     WHODB_URL: "http://whodb.brain-system.svc:11000"
   staticEnv:

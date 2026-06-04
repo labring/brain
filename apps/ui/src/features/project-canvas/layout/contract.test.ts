@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   parseCanvasLayoutDocument,
+  parseCanvasLayoutGetQuery,
   parseCanvasLayoutPatchRequest,
 } from "./contract";
 
@@ -37,6 +38,16 @@ test("canvas layout patch normalizes projectId and legacy projectUid", () => {
   assert.equal(
     parseCanvasLayoutPatchRequest(validPatch).projectId,
     "project-uid"
+  );
+});
+
+test("canvas layout get accepts projectId without legacy projectUid", () => {
+  assert.equal(
+    parseCanvasLayoutGetQuery({
+      namespace: "default",
+      projectId: "project-id",
+    }).projectUid,
+    "project-id"
   );
 });
 

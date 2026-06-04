@@ -5,7 +5,6 @@ import { renderYamlTemplate } from "./render-yaml-template";
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
 interface RenderDbDeploymentYamlOptions {
-  compositionName: string;
   engine: string;
   name: string;
   namespace: string;
@@ -15,7 +14,7 @@ interface RenderDbDeploymentYamlOptions {
   template?: string;
 }
 
-function baseDbClaim(options: RenderDbDeploymentYamlOptions) {
+function baseDbManifest(options: RenderDbDeploymentYamlOptions) {
   return {
     apiVersion: DIRECT_PRODUCT_API_VERSION,
     kind: "DB",
@@ -71,7 +70,7 @@ export function renderDbDeploymentYaml(
           name: options.name,
           namespace: options.namespace,
         });
-  const doc = parseTemplate(template) ?? baseDbClaim(options);
+  const doc = parseTemplate(template) ?? baseDbManifest(options);
   doc.apiVersion = DIRECT_PRODUCT_API_VERSION;
   doc.kind = "DB";
 

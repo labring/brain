@@ -68,5 +68,34 @@ export const projectCanvasLayouts = ns.table(
   ]
 );
 
+/** AP image version history, used by the workload History panel. */
+export const apImageVersions = ns.table(
+  "ap_image_versions",
+  {
+    namespace: text("namespace").notNull(),
+    apName: text("ap_name").notNull(),
+    versionHash: text("version_hash").notNull(),
+    image: text("image").notNull(),
+    imagePullPolicy: text("image_pull_policy"),
+    source: text("source").notNull().default("update"),
+    specSnapshot: jsonb("spec_snapshot"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.namespace, table.apName, table.versionHash],
+      name: "ap_image_versions_pk",
+    }),
+    index("ap_image_versions_lookup_idx").on(
+      table.namespace,
+      table.apName,
+      table.createdAt
+    ),
+  ]
+);
+
 export type ProjectRow = typeof projects.$inferSelect;
 export type ProjectCanvasLayoutRow = typeof projectCanvasLayouts.$inferSelect;
+export type APImageVersionRow = typeof apImageVersions.$inferSelect;

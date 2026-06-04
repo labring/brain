@@ -69,6 +69,44 @@ func TestAccessHealthChecksReadyOwnedDBThroughWhoDBWithoutExposingSecrets(t *tes
 	}
 }
 
+func TestAccessHealthCanonicalizesKubeBlocksClusterDefinitionEngines(t *testing.T) {
+	store := &fakeAccessHealthStore{
+		db: readyAccessHealthDB("mysql-main", "ns-a", "apecloud-mysql", "project-1"),
+		secret: &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "mysql-main-conn-credential", Namespace: "ns-a"},
+			Data: map[string][]byte{
+				"host":     []byte("mysql-main-mysql"),
+				"port":     []byte("3306"),
+				"username": []byte("root"),
+				"password": []byte("s3cr3t"),
+			},
+		},
+	}
+	whodb := &recordingWhoDBHealthClient{
+		health: &WhoDBHealth{Server: "healthy", Database: "healthy"},
+	}
+	svc := AccessHealthService{Store: store, WhoDB: whodb}
+
+	result, err := svc.Check(context.Background(), AccessHealthRequest{
+		Name:       "mysql-main",
+		Namespace:  "ns-a",
+		ProjectUID: "project-1",
+	})
+	if err != nil {
+		t.Fatalf("expected health check to succeed: %v", err)
+	}
+
+	if result.Engine != "mysql" {
+		t.Fatalf("engine = %q, want mysql", result.Engine)
+	}
+	if whodb.credentials.SourceType != "MySQL" {
+		t.Fatalf("source type = %q, want MySQL", whodb.credentials.SourceType)
+	}
+	if got := whodb.credentials.Values["Database"]; got != "mysql" {
+		t.Fatalf("database = %q, want mysql", got)
+	}
+}
+
 func TestAccessHealthRejectsIncompleteConnectionSecret(t *testing.T) {
 	store := &fakeAccessHealthStore{
 		db: readyAccessHealthDB("pg-main", "ns-a", "postgresql", "project-1"),
@@ -285,7 +323,7 @@ func (r *recordingWhoDBHealthClient) CheckHealth(_ context.Context, credentials 
 
 func readyAccessHealthDB(name, namespace, engine, projectUID string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "apps.kubeblocks.io/v1",
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
 		"kind":       "Cluster",
 		"metadata": map[string]interface{}{
 			"name":      name,

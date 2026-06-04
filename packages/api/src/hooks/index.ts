@@ -1,5 +1,13 @@
 // biome-ignore-all lint/performance/noBarrelFile: package public API export surface.
 export {
+  type APImageVersionItem,
+  type APImageVersionsResponse,
+  type APImageVersionTarget,
+  fetchAPImageVersionDetail,
+  rollbackAPImageVersion,
+  useAPImageVersions,
+} from "./use-ap-image-versions";
+export {
   type ApLifecycleWorkloadRef,
   type UseApLifecycleOptions,
   useApLifecycleOperations,

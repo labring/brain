@@ -92,7 +92,7 @@ func TestEntryPointResponseFromIngressesReturnsEntryPointList(t *testing.T) {
 			}
 		]
 	}`)
-	body, err := entryPointResponseFromIngresses(raw, false)
+	body, err := entryPointResponseFromIngresses(raw, "")
 	if err != nil {
 		t.Fatalf("entryPointResponseFromIngresses returned error: %v", err)
 	}
@@ -105,6 +105,138 @@ func TestEntryPointResponseFromIngressesReturnsEntryPointList(t *testing.T) {
 	spec := item["spec"].(map[string]interface{})
 	if got := spec["apRef"]; got != "web" {
 		t.Fatalf("spec.apRef = %v, want web", got)
+	}
+	metadata := item["metadata"].(map[string]interface{})
+	if got := metadata["name"]; got != "web" {
+		t.Fatalf("metadata.name = %v, want AP-bound name web", got)
+	}
+}
+
+func TestEntryPointResponseFromIngressesAggregatesByAPName(t *testing.T) {
+	raw := []byte(`{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind": "IngressList",
+		"items": [
+			{
+				"apiVersion": "networking.k8s.io/v1",
+				"kind": "Ingress",
+				"metadata": {
+					"labels": {
+						"brain.io/app-name": "web",
+						"brain.io/project-id": "project-a",
+						"brain.io/public-address-id": "pa_abc",
+						"brain.io/public-address-kind": "platform",
+						"brain.io/resource-kind": "entrypoint-support"
+					},
+					"name": "web-pa-abc",
+					"namespace": "ns-a"
+				},
+				"spec": {
+					"rules": [{
+						"host": "web.example.com",
+						"http": {"paths": [{
+							"path": "/",
+							"pathType": "Prefix",
+							"backend": {"service": {"name": "web-service", "port": {"number": 8080}}}
+						}]}
+					}]
+				}
+			},
+			{
+				"apiVersion": "networking.k8s.io/v1",
+				"kind": "Ingress",
+				"metadata": {
+					"labels": {
+						"brain.io/app-name": "web",
+						"brain.io/project-id": "project-a",
+						"brain.io/public-address-id": "cd_def",
+						"brain.io/public-address-kind": "custom-domain",
+						"brain.io/resource-kind": "entrypoint-support"
+					},
+					"name": "web-cd-def",
+					"namespace": "ns-a"
+				},
+				"spec": {
+					"rules": [{
+						"host": "www.example.com",
+						"http": {"paths": [{
+							"path": "/",
+							"pathType": "Prefix",
+							"backend": {"service": {"name": "web-service", "port": {"number": 8080}}}
+						}]}
+					}]
+				}
+			}
+		]
+	}`)
+	body, err := entryPointResponseFromIngresses(raw, "")
+	if err != nil {
+		t.Fatalf("entryPointResponseFromIngresses returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := out["items"].([]interface{})
+	if got := len(items); got != 1 {
+		t.Fatalf("items length = %d, want one AP-bound EntryPoint", got)
+	}
+	item := items[0].(map[string]interface{})
+	metadata := item["metadata"].(map[string]interface{})
+	if got := metadata["name"]; got != "web" {
+		t.Fatalf("metadata.name = %v, want web", got)
+	}
+	status := item["status"].(map[string]interface{})
+	targets := status["targets"].([]interface{})
+	if got := len(targets); got != 2 {
+		t.Fatalf("targets length = %d, want 2", got)
+	}
+}
+
+func TestEntryPointResponseFromIngressesReturnsSingleEntryPointByName(t *testing.T) {
+	raw := []byte(`{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind": "IngressList",
+		"items": [
+			{
+				"apiVersion": "networking.k8s.io/v1",
+				"kind": "Ingress",
+				"metadata": {
+					"labels": {
+						"brain.io/app-name": "web",
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "entrypoint-support"
+					},
+					"name": "web-pa-abc",
+					"namespace": "ns-a"
+				},
+				"spec": {
+					"rules": [{
+						"host": "web.example.com",
+						"http": {"paths": [{
+							"path": "/",
+							"pathType": "Prefix",
+							"backend": {"service": {"name": "web-service", "port": {"number": 8080}}}
+						}]}
+					}]
+				}
+			}
+		]
+	}`)
+	body, err := entryPointResponseFromIngresses(raw, "web")
+	if err != nil {
+		t.Fatalf("entryPointResponseFromIngresses returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if got := out["kind"]; got != "EntryPoint" {
+		t.Fatalf("kind = %v, want EntryPoint", got)
+	}
+	metadata := out["metadata"].(map[string]interface{})
+	if got := metadata["name"]; got != "web" {
+		t.Fatalf("metadata.name = %v, want web", got)
 	}
 }
 

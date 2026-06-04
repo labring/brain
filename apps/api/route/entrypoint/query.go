@@ -54,13 +54,12 @@ func registerGet(grp huma.API) {
 		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
 			LabelSelector: entryPointIngressLabelSelector(input.LabelSelector),
 			Resource:      "ingresses",
-			Name:          input.Name,
 			Namespace:     resolved.Namespace,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get EntryPoint(s)", err)
 		}
-		body, err := entryPointResponseFromIngresses(jsonBytes, input.Name != "")
+		body, err := entryPointResponseFromIngresses(jsonBytes, input.Name)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt EntryPoint response", err)
 		}
@@ -84,29 +83,43 @@ func entryPointIngressLabelSelector(extra string) string {
 	return base + "," + extra
 }
 
-func entryPointResponseFromIngresses(jsonBytes []byte, single bool) (json.RawMessage, error) {
-	if single {
-		var ingress networkingv1.Ingress
-		if err := json.Unmarshal(jsonBytes, &ingress); err != nil {
-			return nil, err
-		}
-		return json.Marshal(orchestration.EntryPointObjectFromIngress(&ingress))
-	}
+func entryPointResponseFromIngresses(jsonBytes []byte, name string) (json.RawMessage, error) {
 	var list unstructured.UnstructuredList
 	if err := json.Unmarshal(jsonBytes, &list); err != nil {
 		return nil, err
 	}
-	items := make([]interface{}, 0, len(list.Items))
+	ingresses := make([]networkingv1.Ingress, 0, len(list.Items))
 	for i := range list.Items {
 		var ingress networkingv1.Ingress
 		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(list.Items[i].Object, &ingress); err != nil {
 			return nil, err
 		}
-		items = append(items, orchestration.EntryPointObjectFromIngress(&ingress))
+		ingresses = append(ingresses, ingress)
+	}
+	entryPoints := orchestration.EntryPointObjectsFromIngresses(ingresses)
+	name = strings.TrimSpace(name)
+	if name != "" {
+		for _, entryPoint := range entryPoints {
+			metadata, _ := entryPoint["metadata"].(map[string]interface{})
+			if metadata["name"] == name {
+				return json.Marshal(entryPoint)
+			}
+		}
+		return json.Marshal(map[string]interface{}{
+			"apiVersion": "brain.io/direct",
+			"kind":       "EntryPoint",
+			"metadata": map[string]interface{}{
+				"name": name,
+			},
+			"status": map[string]interface{}{
+				"phase":   "Pending",
+				"targets": []interface{}{},
+			},
+		})
 	}
 	out := map[string]interface{}{
 		"apiVersion": "brain.io/direct",
-		"items":      items,
+		"items":      entryPoints,
 		"kind":       "EntryPointList",
 	}
 	return json.Marshal(out)

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError, z } from "zod";
 
+import { deleteProjectManagedResources } from "@/lib/project-persistence/delete-guard";
 import {
   createProject,
   deleteProject,
@@ -132,6 +133,15 @@ export async function DELETE(request: NextRequest) {
     if (denied !== null) {
       return denied;
     }
+    const credentials = await fetchServerCredentials();
+    if (credentials.serverEncodedKubeconfig.trim() === "") {
+      return jsonError("Authentication is required.", 401);
+    }
+    await deleteProjectManagedResources({
+      encodedKubeconfig: credentials.serverEncodedKubeconfig,
+      id: body.id,
+      namespace: body.namespace,
+    });
     await deleteProject(body);
     return NextResponse.json({ ok: true });
   } catch (error) {

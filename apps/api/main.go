@@ -25,12 +25,7 @@ import (
 )
 
 func main() {
-	// Load .env from api directory (works when run from repo root or apps/api)
-	if _, err := os.Stat(".env"); err == nil {
-		_ = godotenv.Load(".env")
-	} else if _, err := os.Stat(filepath.Join("apps", "api", ".env")); err == nil {
-		_ = godotenv.Load(filepath.Join("apps", "api", ".env"))
-	}
+	loadLocalEnv()
 	router := chi.NewMux()
 	router.Use(appendSlashForGroupRoots)
 	router.Use(cors.Handler(cors.Options{
@@ -80,6 +75,32 @@ func main() {
 	if err := http.ListenAndServe(":9000", router); err != nil {
 		fmt.Println("Server error:", err)
 	}
+}
+
+func loadLocalEnv() {
+	if uiEnvPath := firstExistingPath([]string{
+		filepath.Join("apps", "ui", ".env"),
+		filepath.Join("..", "ui", ".env"),
+	}); uiEnvPath != "" {
+		uiEnv, err := godotenv.Read(uiEnvPath)
+		if err == nil && os.Getenv("DATABASE_URL") == "" && uiEnv["DATABASE_URL"] != "" {
+			_ = os.Setenv("DATABASE_URL", uiEnv["DATABASE_URL"])
+		}
+	}
+	for _, path := range []string{filepath.Join("apps", "api", ".env"), ".env"} {
+		if _, err := os.Stat(path); err == nil {
+			_ = godotenv.Load(path)
+		}
+	}
+}
+
+func firstExistingPath(paths []string) string {
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }
 
 // addAPCreateExample injects a copy-pasteable YAML example for the ap-create (PUT) operation.

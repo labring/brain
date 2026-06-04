@@ -9,6 +9,8 @@ api:
   env:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471"
+    # Same app Postgres URL used by the UI. Required for AP image version history.
+    DATABASE_URL: "postgresql://postgres:REPLACE_ME_PASSWORD@brain-pg-postgresql.brain-system.svc:5432/postgres"
     # Generate from the target admin kubeconfig:
     # node -e 'console.log(encodeURIComponent(require("fs").readFileSync(process.env.KUBECONFIG, "utf8")))'
     ENCODED_ADMIN_KUBECONFIG: "REPLACE_ME_URL_ENCODED_ADMIN_KUBECONFIG"
@@ -37,7 +39,7 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
 
 imagePullSecret:
-  # The AP composition references ghcr-cred. Keep this true unless the secret already exists.
+  # AP workload pods can reference ghcr-cred. Keep this true unless the secret already exists.
   create: true
   useForWhodb: false
   name: ghcr-cred

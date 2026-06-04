@@ -18,15 +18,6 @@ import type { ContainerHistorySnapshotRow } from "./container-history-pane.types
 
 export type { ContainerHistorySnapshotRow } from "./container-history-pane.types";
 
-function hashFromSnapshotName(configMapName: string): string | undefined {
-  const marker = "-config-snapshot-";
-  const i = configMapName.lastIndexOf(marker);
-  if (i === -1) {
-    return undefined;
-  }
-  return configMapName.slice(i + marker.length).trim() || undefined;
-}
-
 function formatSnapshotTime(iso: string): string {
   const t = iso.trim();
   if (t === "") {
@@ -42,24 +33,36 @@ function formatSnapshotTime(iso: string): string {
   });
 }
 
+function versionReviewText(row: ContainerHistorySnapshotRow): string {
+  return [
+    `image: ${row.image.trim() === "" ? "-" : row.image}`,
+    row.imagePullPolicy == null || row.imagePullPolicy === ""
+      ? null
+      : `imagePullPolicy: ${row.imagePullPolicy}`,
+    `versionHash: ${row.versionHash}`,
+    row.source == null || row.source === "" ? null : `source: ${row.source}`,
+    `createdAt: ${row.createdAt}`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
 function SnapshotHistoryListItem({
   onReviewConfig,
   onRollback,
-  rollbackBusyConfigMapName,
+  rollbackBusyVersionHash,
   row,
 }: {
   onReviewConfig: (row: ContainerHistorySnapshotRow) => void;
-  onRollback?: (configMapName: string) => void;
-  rollbackBusyConfigMapName: string | null;
+  onRollback?: (versionHash: string) => void;
+  rollbackBusyVersionHash: string | null;
   row: ContainerHistorySnapshotRow;
 }) {
-  const hash = row.versionHash ?? hashFromSnapshotName(row.configMapName);
-
-  const rollbackBusyAnywhere = rollbackBusyConfigMapName !== null;
+  const rollbackBusyAnywhere = rollbackBusyVersionHash !== null;
   const canRollback =
     row.variant === "orphan" && onRollback != null && !rollbackBusyAnywhere;
 
-  const rollbackInFlightHere = rollbackBusyConfigMapName === row.configMapName;
+  const rollbackInFlightHere = rollbackBusyVersionHash === row.versionHash;
 
   return (
     <li className="py-3">
@@ -67,24 +70,29 @@ function SnapshotHistoryListItem({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="break-all font-mono text-foreground text-xs">
-              {row.configMapName}
+              {row.versionHash}
             </span>
             {row.variant === "active" ? (
               <Badge variant="default">Active</Badge>
             ) : null}
-            {hash != null && hash !== "" ? (
-              <Badge className="font-mono" variant="secondary">
-                {hash}
-              </Badge>
-            ) : null}
+            {row.source == null || row.source === "" ? null : (
+              <Badge variant="secondary">{row.source}</Badge>
+            )}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
             <span>
               Image:{" "}
               <span className="text-foreground">
-                {row.image.trim() === "" ? "—" : row.image}
+                {row.image.trim() === "" ? "-" : row.image}
               </span>
             </span>
+            {row.imagePullPolicy == null ||
+            row.imagePullPolicy === "" ? null : (
+              <span>
+                Pull:{" "}
+                <span className="text-foreground">{row.imagePullPolicy}</span>
+              </span>
+            )}
             <span>
               Saved:{" "}
               <span className="text-foreground">
@@ -100,13 +108,13 @@ function SnapshotHistoryListItem({
             type="button"
             variant="outline"
           >
-            Review config
+            Review
           </Button>
           {row.variant === "orphan" ? (
             <Button
               aria-busy={rollbackInFlightHere}
               disabled={!canRollback || rollbackInFlightHere}
-              onClick={() => onRollback?.(row.configMapName)}
+              onClick={() => onRollback?.(row.versionHash)}
               size="sm"
               type="button"
               variant="secondary"
@@ -130,7 +138,7 @@ function SnapshotHistoryListItem({
   );
 }
 
-function ReviewConfigYamlBody({
+function ReviewVersionBody({
   yamlBody,
   yamlError,
   yamlLoading,
@@ -153,7 +161,7 @@ function ReviewConfigYamlBody({
         <div className="flex flex-col items-center gap-3">
           <Spinner aria-hidden className="size-6 text-muted-foreground" />
           <span className="text-center text-muted-foreground text-sm">
-            Loading config.yaml…
+            Loading version…
           </span>
         </div>
       </div>
@@ -177,10 +185,7 @@ function ReviewConfigYamlBody({
     return (
       <div className={cn(frame, "flex items-center px-4 py-6")}>
         <p className="text-muted-foreground text-sm">
-          No backup body is available. Add{" "}
-          <span className="font-mono">configYaml</span> to rows or pass{" "}
-          <span className="font-mono">onLoadConfigYaml</span> to load{" "}
-          <span className="font-mono">config.yaml</span> from the cluster.
+          No version details are available.
         </p>
       </div>
     );
@@ -197,16 +202,16 @@ function ReviewConfigYamlBody({
 
 export interface ContainerHistoryPaneProps {
   className?: string;
-  /** When `configYaml` is absent from a row, load body from this callback (cluster fetch). */
-  onLoadConfigYaml?: (configMapName: string) => Promise<string>;
+  /** Loads detail text for a version, such as the captured image metadata. */
+  onLoadConfigYaml?: (versionHash: string) => Promise<string>;
   /** Invoked after the user chooses Review — optional side channel (analytics, etc.). */
-  onReview?: (configMapName: string) => void;
-  /** Applies this snapshot (`config.yaml`) as the AP spec (cluster integration). */
-  onRollback?: (configMapName: string) => void;
-  rollbackBusyConfigMapName?: string | null;
+  onReview?: (versionHash: string) => void;
+  /** Applies this image version through the AP product API. */
+  onRollback?: (versionHash: string) => void;
+  rollbackBusyVersionHash?: string | null;
   rows: ContainerHistorySnapshotRow[];
   /**
-   * Registry / docs: show an explainer for how AP backup ConfigMaps are named and retained.
+   * Registry / docs: show an explainer for how AP image versions are retained.
    * Omit in product UI where this is noise.
    */
   showSnapshotExplainerAlert?: boolean;
@@ -218,7 +223,7 @@ export function ContainerHistoryPane({
   onLoadConfigYaml,
   onReview,
   onRollback,
-  rollbackBusyConfigMapName = null,
+  rollbackBusyVersionHash = null,
   rows,
   showSnapshotExplainerAlert = false,
   workloadName,
@@ -242,12 +247,13 @@ export function ContainerHistoryPane({
 
   const handleReviewClick = useCallback(
     (row: ContainerHistorySnapshotRow) => {
-      onReview?.(row.configMapName);
-      const hasInline = (row.configYaml?.trim() ?? "") !== "";
+      onReview?.(row.versionHash);
+      const inline = versionReviewText(row).trim();
+      const hasInline = inline !== "";
       setReviewRow(row);
       setYamlError(null);
       if (hasInline) {
-        setYamlBody((row.configYaml ?? "").trim());
+        setYamlBody(inline);
         setYamlLoading(false);
       } else if (onLoadConfigYaml === undefined) {
         setYamlBody("");
@@ -261,12 +267,7 @@ export function ContainerHistoryPane({
     [onLoadConfigYaml, onReview]
   );
 
-  const reviewHashPreview =
-    reviewRow === null
-      ? ""
-      : (reviewRow.versionHash ??
-        hashFromSnapshotName(reviewRow.configMapName) ??
-        "");
+  const reviewHashPreview = reviewRow === null ? "" : reviewRow.versionHash;
 
   useEffect(() => {
     if (!(reviewOpen && reviewRow !== null)) {
@@ -275,9 +276,9 @@ export function ContainerHistoryPane({
 
     let cancelled = false;
 
-    const inlineYaml = reviewRow.configYaml?.trim() ?? "";
-    if (inlineYaml !== "") {
-      setYamlBody((reviewRow.configYaml ?? "").trim());
+    const inlineText = versionReviewText(reviewRow).trim();
+    if (inlineText !== "") {
+      setYamlBody(inlineText);
       setYamlError(null);
       setYamlLoading(false);
       return;
@@ -291,14 +292,14 @@ export function ContainerHistoryPane({
     }
 
     setYamlLoading(true);
-    onLoadConfigYaml(reviewRow.configMapName)
+    onLoadConfigYaml(reviewRow.versionHash)
       .then((text) => {
         if (cancelled) {
           return;
         }
         const t = text.trim();
         if (t === "") {
-          throw new Error("Empty config.yaml response.");
+          throw new Error("Empty version response.");
         }
         setYamlBody(t);
         setYamlError(null);
@@ -307,7 +308,7 @@ export function ContainerHistoryPane({
         if (!cancelled) {
           setYamlBody("");
           setYamlError(
-            e instanceof Error ? e.message : "Could not load config.yaml."
+            e instanceof Error ? e.message : "Could not load version details."
           );
         }
       })
@@ -332,22 +333,16 @@ export function ContainerHistoryPane({
       {showSnapshotExplainerAlert ? (
         <Alert className="shrink-0 border-border">
           <Info className="text-muted-foreground" />
-          <AlertTitle>AP config snapshots</AlertTitle>
+          <AlertTitle>AP image versions</AlertTitle>
           <AlertDescription className="text-muted-foreground">
-            The pipeline also maintains{" "}
-            <span className="font-mono text-foreground">
-              {workloadName}-config-backup
-            </span>{" "}
-            internally; this list shows only orphaned snapshots{" "}
-            <span className="font-mono text-foreground">
-              {workloadName}-config-snapshot-{"<hash>"}
-            </span>{" "}
-            (labels <span className="font-mono">app.sealos.io/backup=true</span>
-            , <span className="font-mono">app.sealos.io/ap-uid</span>
-            ). <span className="font-medium text-foreground">Active</span> is
-            the orphan whose hash matches{" "}
-            <span className="font-mono">status.configVersionHash</span>. Retains
-            the newest 10 orphans per AP per namespace.
+            The AP product API records image versions for{" "}
+            <span className="font-mono text-foreground">{workloadName}</span> in
+            the app database. This list shows retained versions for rollback.{" "}
+            <span className="font-mono text-foreground">versionHash</span>{" "}
+            identifies each image version.{" "}
+            <span className="font-medium text-foreground">Active</span> is the
+            current AP image. Retains the newest 10 versions per AP per
+            namespace.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -356,7 +351,7 @@ export function ContainerHistoryPane({
         <div className="flex shrink-0 items-center gap-2 border-border border-b bg-muted/30 px-3 py-2">
           <History aria-hidden className="size-4 text-muted-foreground" />
           <span className="font-medium text-foreground text-sm">
-            Backups & snapshots
+            Image versions
           </span>
           <Badge className="ml-auto" variant="secondary">
             {rows.length}
@@ -366,17 +361,16 @@ export function ContainerHistoryPane({
           <ul className="divide-y divide-border px-3">
             {rows.length === 0 ? (
               <li className="py-8 text-center text-muted-foreground text-sm">
-                No orphaned snapshots yet. They appear after the workload spec
-                changes and the composition creates{" "}
-                <span className="font-mono">-config-snapshot-</span> ConfigMaps.
+                No image versions yet. They appear after AP image changes are
+                applied.
               </li>
             ) : (
               rows.map((row) => (
                 <SnapshotHistoryListItem
-                  key={row.configMapName}
+                  key={row.versionHash}
                   onReviewConfig={handleReviewClick}
                   onRollback={onRollback}
-                  rollbackBusyConfigMapName={rollbackBusyConfigMapName}
+                  rollbackBusyVersionHash={rollbackBusyVersionHash}
                   row={row}
                 />
               ))
@@ -388,26 +382,24 @@ export function ContainerHistoryPane({
       <AppDialog.Root onOpenChange={handleReviewClose} open={reviewOpen}>
         <AppDialog.Content size="lg">
           <AppDialog.Header>
-            <AppDialog.Title>
-              Backup <span className="font-mono">config.yaml</span>
-            </AppDialog.Title>
+            <AppDialog.Title>Image version</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>
               {reviewRow == null
-                ? "Embedded effective spec snapshot for the selected backup ConfigMap."
-                : `ConfigMap ${reviewRow.configMapName}, image ${reviewRow.image.trim() === "" ? "—" : reviewRow.image}, saved ${formatSnapshotTime(reviewRow.createdAt)}.`}
+                ? "Captured AP image version metadata."
+                : `Image ${reviewRow.image.trim() === "" ? "-" : reviewRow.image}, saved ${formatSnapshotTime(reviewRow.createdAt)}.`}
             </AppDialog.Description>
 
             {reviewRow == null ? null : (
               <div className="flex flex-col gap-1 text-sm text-zinc-400">
                 <p className="break-all font-mono text-xs text-zinc-100 leading-relaxed">
-                  {reviewRow.configMapName}
+                  {reviewRow.versionHash}
                 </p>
                 <p>
                   Image:{" "}
                   <span className="text-zinc-100">
-                    {reviewRow.image.trim() === "" ? "—" : reviewRow.image}
+                    {reviewRow.image.trim() === "" ? "-" : reviewRow.image}
                   </span>
                   {" · "}
                   Saved:{" "}
@@ -428,7 +420,7 @@ export function ContainerHistoryPane({
             )}
 
             <div className="min-h-0">
-              <ReviewConfigYamlBody
+              <ReviewVersionBody
                 yamlBody={yamlBody}
                 yamlError={yamlError}
                 yamlLoading={yamlLoading}

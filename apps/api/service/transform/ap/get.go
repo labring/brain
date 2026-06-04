@@ -12,9 +12,9 @@ import (
 // APCompositeLabel is the label key used to find direct support resources for an AP instance.
 const APCompositeLabel = "brain.io/app-name"
 
-// defaultIngressHostFromComposition is a placeholder from older generated templates.
+// defaultIngressHostPlaceholder is a placeholder from older generated templates.
 // It must not surface as a real connection URL.
-const defaultIngressHostFromComposition = "placeholder.example.com"
+const defaultIngressHostPlaceholder = "placeholder.example.com"
 const platformAddressHostPrefixMaxLength = 52
 
 var platformAddressHostUnsafeCharsPattern = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -23,10 +23,10 @@ var customDomainBindingIDPattern = regexp.MustCompile(`^cd_[a-z0-9]{6,32}$`)
 
 func isPlaceholderIngressHost(host string) bool {
 	h := strings.TrimSpace(strings.ToLower(host))
-	if h == defaultIngressHostFromComposition {
+	if h == defaultIngressHostPlaceholder {
 		return true
 	}
-	suffix := "." + defaultIngressHostFromComposition
+	suffix := "." + defaultIngressHostPlaceholder
 	return strings.HasSuffix(h, suffix)
 }
 

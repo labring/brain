@@ -22,11 +22,9 @@ export function buildAssistantWorkspaceContextPrompt(opts: {
 
   if (uid !== "") {
     if (projectName !== "") {
-      lines.push(`- Project claim name: \`${escapeBackticks(projectName)}\``);
+      lines.push(`- Project display name: \`${escapeBackticks(projectName)}\``);
     }
-    lines.push(
-      `- Project UID (claims label scope): \`${escapeBackticks(uid)}\``
-    );
+    lines.push(`- Brain Project ID: \`${escapeBackticks(uid)}\``);
   }
 
   const wl = assistantContext?.selectedWorkload;

@@ -20,15 +20,15 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function draftRoutingDomainFromClaim(
-  claim: Record<string, unknown> | undefined,
+function draftRoutingDomainFromResource(
+  resource: Record<string, unknown> | undefined,
   kubeconfig: string
 ): string {
-  const metadata = asRecord(claim?.metadata);
+  const metadata = asRecord(resource?.metadata);
   const labels = asRecord(metadata?.labels);
-  const claimRoutingDomain =
+  const resourceRoutingDomain =
     typeof labels?.region === "string" ? labels.region.trim() : "";
-  return claimRoutingDomain || routingDomainFromKubeconfig(kubeconfig);
+  return resourceRoutingDomain || routingDomainFromKubeconfig(kubeconfig);
 }
 
 function publicAddressNetworkOrNull(
@@ -63,8 +63,11 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
     });
   const title = `${selection.apName} Public Addresses`;
   const subtitle = `EntryPoint · ${selection.namespace}`;
-  const claim = k8sGetClaimBody(claimPayload);
-  const draftRoutingDomain = draftRoutingDomainFromClaim(claim, kubeconfig);
+  const resource = k8sGetClaimBody(claimPayload);
+  const draftRoutingDomain = draftRoutingDomainFromResource(
+    resource,
+    kubeconfig
+  );
   const network = publicAddressNetworkOrNull(display.network);
   const canEdit = !readOnly;
 

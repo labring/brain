@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     query = parseCanvasLayoutGetQuery({
       namespace: request.nextUrl.searchParams.get("namespace") ?? "",
       projectId: request.nextUrl.searchParams.get("projectId") ?? undefined,
-      projectUid: request.nextUrl.searchParams.get("projectUid") ?? "",
+      projectUid: request.nextUrl.searchParams.get("projectUid") ?? undefined,
     });
   } catch (error) {
     return validationError(error) ?? jsonError("Invalid request.", 400);

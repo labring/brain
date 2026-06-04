@@ -5,6 +5,9 @@ import (
 	"context"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -16,6 +19,8 @@ import (
 	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/yaml"
 )
+
+const applyFieldManager = "k8s-apply"
 
 // ApplyYAML applies YAML manifests to the cluster using the given config.
 // Supports multi-document YAML (documents separated by "---").
@@ -43,6 +48,104 @@ func ApplyYAML(config *rest.Config, yamlBytes []byte, implicitNamespace string) 
 }
 
 func ApplyObjects(config *rest.Config, objects []runtime.Object, implicitNamespace string) error {
+	if err := applyTypedObjects(config, objects, implicitNamespace); err != nil {
+		return err
+	}
+	unstructuredObjects, err := runtimeObjectsToUnstructured(filterUntypedObjects(objects))
+	if err != nil {
+		return err
+	}
+	return ApplyUnstructured(config, unstructuredObjects, implicitNamespace)
+}
+
+func applyTypedObjects(config *rest.Config, objects []runtime.Object, implicitNamespace string) error {
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	for _, object := range objects {
+		switch typed := object.(type) {
+		case *appsv1.Deployment:
+			deployment := typed.DeepCopy()
+			ns := resolvedNamespace(deployment.Namespace, implicitNamespace)
+			deployment.Namespace = ns
+			deployment.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"}
+			existing, err := clientset.AppsV1().Deployments(ns).Get(ctx, deployment.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				if _, err := clientset.AppsV1().Deployments(ns).Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			deployment.ResourceVersion = existing.ResourceVersion
+			if _, err := clientset.AppsV1().Deployments(ns).Update(ctx, deployment, metav1.UpdateOptions{}); err != nil {
+				return err
+			}
+		case *corev1.Service:
+			service := typed.DeepCopy()
+			ns := resolvedNamespace(service.Namespace, implicitNamespace)
+			service.Namespace = ns
+			service.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "Service"}
+			existing, err := clientset.CoreV1().Services(ns).Get(ctx, service.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				if _, err := clientset.CoreV1().Services(ns).Create(ctx, service, metav1.CreateOptions{}); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			service.ResourceVersion = existing.ResourceVersion
+			if service.Spec.ClusterIP == "" {
+				service.Spec.ClusterIP = existing.Spec.ClusterIP
+			}
+			if len(service.Spec.ClusterIPs) == 0 {
+				service.Spec.ClusterIPs = existing.Spec.ClusterIPs
+			}
+			if service.Spec.IPFamilies == nil {
+				service.Spec.IPFamilies = existing.Spec.IPFamilies
+			}
+			if service.Spec.IPFamilyPolicy == nil {
+				service.Spec.IPFamilyPolicy = existing.Spec.IPFamilyPolicy
+			}
+			if _, err := clientset.CoreV1().Services(ns).Update(ctx, service, metav1.UpdateOptions{}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func resolvedNamespace(namespace, implicitNamespace string) string {
+	ns := strings.TrimSpace(namespace)
+	if ns == "" {
+		ns = strings.TrimSpace(implicitNamespace)
+	}
+	if ns == "" {
+		ns = "default"
+	}
+	return ns
+}
+
+func filterUntypedObjects(objects []runtime.Object) []runtime.Object {
+	filtered := make([]runtime.Object, 0, len(objects))
+	for _, object := range objects {
+		switch object.(type) {
+		case *appsv1.Deployment, *corev1.Service:
+			continue
+		default:
+			filtered = append(filtered, object)
+		}
+	}
+	return filtered
+}
+
+func runtimeObjectsToUnstructured(objects []runtime.Object) ([]*unstructured.Unstructured, error) {
 	unstructuredObjects := make([]*unstructured.Unstructured, 0, len(objects))
 	for _, object := range objects {
 		if object == nil {
@@ -50,11 +153,15 @@ func ApplyObjects(config *rest.Config, objects []runtime.Object, implicitNamespa
 		}
 		m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		unstructuredObjects = append(unstructuredObjects, &unstructured.Unstructured{Object: m})
+		unstructuredObject := &unstructured.Unstructured{Object: m}
+		if gvk := object.GetObjectKind().GroupVersionKind(); !gvk.Empty() {
+			unstructuredObject.SetGroupVersionKind(gvk)
+		}
+		unstructuredObjects = append(unstructuredObjects, unstructuredObject)
 	}
-	return ApplyUnstructured(config, unstructuredObjects, implicitNamespace)
+	return unstructuredObjects, nil
 }
 
 func ApplyUnstructured(config *rest.Config, objects []*unstructured.Unstructured, implicitNamespace string) error {

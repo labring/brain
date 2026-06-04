@@ -22,14 +22,15 @@ const (
 
 func registerAccessObjects(grp huma.API) {
 	type dbAccessObjectsBody struct {
-		ProjectUID string                 `json:"projectUid" required:"true" doc:"Project metadata.uid that must match the DB ownership label."`
+		ProjectID  string                 `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		ProjectUID string                 `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
 		Namespace  string                 `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 		Parent     *dbsvc.AccessObjectRef `json:"parent,omitempty" doc:"Returned object ref to browse children under. Omit or set null to list root objects."`
 		Kinds      []string               `json:"kinds,omitempty" doc:"Optional object kinds to include. Supported values include database, schema, table, view, collection, key, and index."`
 	}
 	type dbAccessObjectsInput struct {
 		middleware.AuthInput
-		Name string `path:"name" doc:"DB claim metadata.name."`
+		Name string `path:"name" doc:"DB metadata.name."`
 		Body dbAccessObjectsBody
 	}
 	type dbAccessObjectsOutput struct {
@@ -41,17 +42,18 @@ func registerAccessObjects(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/{name}/access/objects",
 		Summary:     "Browse DB objects",
-		Description: "Lists read-only database objects for one managed DB claim. Requires kubeconfig authorization and projectUid ownership. Credentials and WhoDB operation details stay server-side.",
+		Description: "Lists read-only database objects for one managed DB. Requires kubeconfig authorization and Brain Project ID ownership. Credentials and WhoDB operation details stay server-side.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbAccessObjectsInput) (*dbAccessObjectsOutput, error) {
-		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, input.Body.ProjectUID)
+		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, projectID)
 		if err != nil {
 			return nil, err
 		}
 		result, err := service.List(ctx, dbsvc.AccessObjectsRequest{
 			Name:       input.Name,
 			Namespace:  namespace,
-			ProjectUID: input.Body.ProjectUID,
+			ProjectUID: projectID,
 			Parent:     input.Body.Parent,
 			Kinds:      input.Body.Kinds,
 		})
@@ -64,13 +66,14 @@ func registerAccessObjects(grp huma.API) {
 
 func registerAccessObject(grp huma.API) {
 	type dbAccessObjectBody struct {
-		ProjectUID string                `json:"projectUid" required:"true" doc:"Project metadata.uid that must match the DB ownership label."`
+		ProjectID  string                `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		ProjectUID string                `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
 		Namespace  string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 		Ref        dbsvc.AccessObjectRef `json:"ref" required:"true" doc:"Returned object ref to inspect."`
 	}
 	type dbAccessObjectInput struct {
 		middleware.AuthInput
-		Name string `path:"name" doc:"DB claim metadata.name."`
+		Name string `path:"name" doc:"DB metadata.name."`
 		Body dbAccessObjectBody
 	}
 	type dbAccessObjectOutput struct {
@@ -82,17 +85,18 @@ func registerAccessObject(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/{name}/access/object",
 		Summary:     "Inspect DB object",
-		Description: "Returns safe read-only metadata for one returned database object ref. Requires kubeconfig authorization and projectUid ownership. Credentials and WhoDB operation details stay server-side.",
+		Description: "Returns safe read-only metadata for one returned database object ref. Requires kubeconfig authorization and Brain Project ID ownership. Credentials and WhoDB operation details stay server-side.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbAccessObjectInput) (*dbAccessObjectOutput, error) {
-		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, input.Body.ProjectUID)
+		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, projectID)
 		if err != nil {
 			return nil, err
 		}
 		result, err := service.Get(ctx, dbsvc.AccessObjectRequest{
 			Name:       input.Name,
 			Namespace:  namespace,
-			ProjectUID: input.Body.ProjectUID,
+			ProjectUID: projectID,
 			Ref:        input.Body.Ref,
 		})
 		if err != nil {
@@ -104,13 +108,14 @@ func registerAccessObject(grp huma.API) {
 
 func registerAccessColumns(grp huma.API) {
 	type dbAccessColumnsBody struct {
-		ProjectUID string                `json:"projectUid" required:"true" doc:"Project metadata.uid that must match the DB ownership label."`
+		ProjectID  string                `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		ProjectUID string                `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
 		Namespace  string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 		Ref        dbsvc.AccessObjectRef `json:"ref" required:"true" doc:"Returned table, view, collection, key, item, or index ref to inspect."`
 	}
 	type dbAccessColumnsInput struct {
 		middleware.AuthInput
-		Name string `path:"name" doc:"DB claim metadata.name."`
+		Name string `path:"name" doc:"DB metadata.name."`
 		Body dbAccessColumnsBody
 	}
 	type dbAccessColumnsOutput struct {
@@ -122,17 +127,18 @@ func registerAccessColumns(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/{name}/access/columns",
 		Summary:     "Inspect DB object columns",
-		Description: "Returns read-only column or field metadata for one supported database object ref. Requires kubeconfig authorization and projectUid ownership. The response never includes row values or raw database credentials.",
+		Description: "Returns read-only column or field metadata for one supported database object ref. Requires kubeconfig authorization and Brain Project ID ownership. The response never includes row values or raw database credentials.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbAccessColumnsInput) (*dbAccessColumnsOutput, error) {
-		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, input.Body.ProjectUID)
+		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, projectID)
 		if err != nil {
 			return nil, err
 		}
 		result, err := service.Columns(ctx, dbsvc.AccessColumnsRequest{
 			Name:       input.Name,
 			Namespace:  namespace,
-			ProjectUID: input.Body.ProjectUID,
+			ProjectUID: projectID,
 			Ref:        input.Body.Ref,
 		})
 		if err != nil {
@@ -144,7 +150,8 @@ func registerAccessColumns(grp huma.API) {
 
 func registerAccessRows(grp huma.API) {
 	type dbAccessRowsBody struct {
-		ProjectUID string                 `json:"projectUid" required:"true" doc:"Project metadata.uid that must match the DB ownership label."`
+		ProjectID  string                 `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		ProjectUID string                 `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
 		Namespace  string                 `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 		Ref        dbsvc.AccessObjectRef  `json:"ref" required:"true" doc:"Returned table, view, collection, key, item, or index ref to read."`
 		PageSize   int                    `json:"pageSize,omitempty" doc:"Rows per page. Defaults to 100 and is capped at 500."`
@@ -153,7 +160,7 @@ func registerAccessRows(grp huma.API) {
 	}
 	type dbAccessRowsInput struct {
 		middleware.AuthInput
-		Name string `path:"name" doc:"DB claim metadata.name."`
+		Name string `path:"name" doc:"DB metadata.name."`
 		Body dbAccessRowsBody
 	}
 	type dbAccessRowsOutput struct {
@@ -165,17 +172,18 @@ func registerAccessRows(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/{name}/access/rows",
 		Summary:     "Read DB object rows",
-		Description: "Returns one bounded read-only page of rows for a supported database object ref. Requires kubeconfig authorization and projectUid ownership. Arbitrary SQL, filters, writes, imports, and mutation-like behavior are not available through this endpoint.",
+		Description: "Returns one bounded read-only page of rows for a supported database object ref. Requires kubeconfig authorization and Brain Project ID ownership. Arbitrary SQL, filters, writes, imports, and mutation-like behavior are not available through this endpoint.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbAccessRowsInput) (*dbAccessRowsOutput, error) {
-		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, input.Body.ProjectUID)
+		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		namespace, service, err := accessObjectsServiceFromAuth(input.Authorization, input.Body.Namespace, projectID)
 		if err != nil {
 			return nil, err
 		}
 		result, err := service.Rows(ctx, dbsvc.AccessRowsRequest{
 			Name:       input.Name,
 			Namespace:  namespace,
-			ProjectUID: input.Body.ProjectUID,
+			ProjectUID: projectID,
 			Ref:        input.Body.Ref,
 			PageSize:   input.Body.PageSize,
 			PageOffset: input.Body.PageOffset,
@@ -190,14 +198,15 @@ func registerAccessRows(grp huma.API) {
 
 func registerAccessExport(grp huma.API) {
 	type dbAccessExportBody struct {
-		ProjectUID string                `json:"projectUid" required:"true" doc:"Project metadata.uid that must match the DB ownership label."`
+		ProjectID  string                `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
+		ProjectUID string                `json:"projectUid,omitempty" doc:"Deprecated compatibility alias for projectId."`
 		Namespace  string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
 		Ref        dbsvc.AccessObjectRef `json:"ref" required:"true" doc:"Returned table, view, collection, key, item, or index ref to export."`
 		Format     string                `json:"format,omitempty" enum:"csv,ndjson" doc:"Export format. Defaults to csv. Only csv and ndjson are supported."`
 	}
 	type dbAccessExportInput struct {
 		middleware.AuthInput
-		Name string `path:"name" doc:"DB claim metadata.name."`
+		Name string `path:"name" doc:"DB metadata.name."`
 		Body dbAccessExportBody
 	}
 	type dbAccessExportOutput struct {
@@ -212,7 +221,7 @@ func registerAccessExport(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/{name}/access/export",
 		Summary:     "Export DB object data",
-		Description: "Exports CSV or NDJSON data for a supported database object ref. Requires kubeconfig authorization and projectUid ownership. Arbitrary SQL, selected client rows, writes, imports, and mutation-like behavior are not available through this endpoint.",
+		Description: "Exports CSV or NDJSON data for a supported database object ref. Requires kubeconfig authorization and Brain Project ID ownership. Arbitrary SQL, selected client rows, writes, imports, and mutation-like behavior are not available through this endpoint.",
 		Tags:        []string{"DB"},
 		Responses: map[string]*huma.Response{
 			"200": {
@@ -228,14 +237,15 @@ func registerAccessExport(grp huma.API) {
 			},
 		},
 	}, func(ctx context.Context, input *dbAccessExportInput) (*dbAccessExportOutput, error) {
-		namespace, service, err := accessObjectsServiceFromAuthWithTimeout(input.Authorization, input.Body.Namespace, input.Body.ProjectUID, accessExportWhoDBTimeout)
+		projectID := accessProjectID(input.Body.ProjectID, input.Body.ProjectUID)
+		namespace, service, err := accessObjectsServiceFromAuthWithTimeout(input.Authorization, input.Body.Namespace, projectID, accessExportWhoDBTimeout)
 		if err != nil {
 			return nil, err
 		}
 		result, err := service.Export(ctx, dbsvc.AccessExportRequest{
 			Name:       input.Name,
 			Namespace:  namespace,
-			ProjectUID: input.Body.ProjectUID,
+			ProjectUID: projectID,
 			Ref:        input.Body.Ref,
 			Format:     input.Body.Format,
 		})
@@ -255,13 +265,20 @@ func accessObjectsServiceFromAuth(authorization, namespace, projectUID string) (
 	return accessObjectsServiceFromAuthWithTimeout(authorization, namespace, projectUID, accessWhoDBTimeout)
 }
 
+func accessProjectID(projectID, projectUID string) string {
+	if trimmed := strings.TrimSpace(projectID); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(projectUID)
+}
+
 func accessObjectsServiceFromAuthWithTimeout(authorization, namespace, projectUID string, whodbTimeout time.Duration) (string, dbsvc.AccessObjectsService, error) {
 	_, cfg, err := middleware.RestConfigFromAuth(authorization)
 	if err != nil {
 		return "", dbsvc.AccessObjectsService{}, huma.Error401Unauthorized("invalid kubeconfig", err)
 	}
 	if strings.TrimSpace(projectUID) == "" {
-		return "", dbsvc.AccessObjectsService{}, huma.Error400BadRequest("projectUid is required", nil)
+		return "", dbsvc.AccessObjectsService{}, huma.Error400BadRequest("Brain Project ID is required", nil)
 	}
 
 	gvr := middleware.PodsGVR()
@@ -305,7 +322,7 @@ func accessObjectsError(err error) error {
 	case errors.Is(err, dbsvc.ErrAccessExportInvalidFormat):
 		return huma.Error400BadRequest("invalid export format", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthProjectUID):
-		return huma.Error400BadRequest("projectUid is required", err)
+		return huma.Error400BadRequest("Brain Project ID is required", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthDBNotFound):
 		return huma.Error404NotFound("DB not found", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthProjectForbidden):

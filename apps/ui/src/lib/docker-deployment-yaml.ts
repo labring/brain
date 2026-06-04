@@ -7,11 +7,7 @@ import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
-export const DEFAULT_DOCKER_AP_COMPOSITION_NAME =
-  "aps-deployment-ingress-go-templating";
-
 interface RenderDockerDeploymentYamlOptions {
-  compositionName?: string;
   name: string;
   namespace: string;
   platformAddressId?: string;
@@ -21,7 +17,7 @@ interface RenderDockerDeploymentYamlOptions {
   template?: string;
 }
 
-function baseApClaim(options: RenderDockerDeploymentYamlOptions) {
+function baseApManifest(options: RenderDockerDeploymentYamlOptions) {
   return {
     apiVersion: DIRECT_PRODUCT_API_VERSION,
     kind: "AP",
@@ -113,7 +109,7 @@ export function renderDockerDeploymentYaml(
           namespace: options.namespace,
           region: options.routingDomain,
         });
-  const doc = parseTemplate(template) ?? baseApClaim(options);
+  const doc = parseTemplate(template) ?? baseApManifest(options);
   doc.apiVersion = DIRECT_PRODUCT_API_VERSION;
   doc.kind = "AP";
   doc.metadata = metadataWithRoutingDomain(doc, options);

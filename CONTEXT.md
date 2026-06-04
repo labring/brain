@@ -4,7 +4,7 @@
 
 ### EntryPoint
 
-An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource, CRD, or Crossplane claim.
+An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource or CRD.
 
 EntryPoint is derived by the Brain Go API from an AP's desired public routing state and observed support resources such as Ingress, Certificate, and route health. A Requested Platform Address may remain pending before an EntryPoint view has allocated host data.
 
@@ -53,7 +53,7 @@ The public routing boundary within which one Custom Domain can belong to only on
 
 ### AP (Application)
 
-A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource, CRD, or Crossplane claim. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, one Private Address, and Platform Address allocation requests.
+A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, one Private Address, and Platform Address allocation requests.
 
 ### AP Settings
 
@@ -101,7 +101,7 @@ An AP Replica Strategy where the platform automatically adjusts AP replicas betw
 
 ### DB (Database)
 
-A Brain product resource and API view that represents a managed database workload available to APs in the same Project. `apiVersion: brain.io/direct`, `kind: DB` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource, CRD, or Crossplane claim. The Go API renders DB desired state into underlying KubeBlocks and Kubernetes resources such as Cluster, Service, credentials, backup resources, and lifecycle OpsRequests.
+A Brain product resource and API view that represents a managed database workload available to APs in the same Project. `apiVersion: brain.io/direct`, `kind: DB` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders DB desired state into underlying KubeBlocks and Kubernetes resources such as Cluster, Service, credentials, backup resources, and lifecycle OpsRequests.
 
 ### DB Service
 

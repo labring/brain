@@ -11,9 +11,6 @@ import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
 import type { ChildResourceKind } from "@/lib/project-child-resource-name";
 import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
 
-export const DEFAULT_PROJECT_COMPOSITION_NAME =
-  "project-instance-go-templating";
-
 export type DeploymentTarget =
   | {
       displayName: string;
@@ -293,7 +290,6 @@ async function runDatabasePipeline(
     "db"
   );
   const dbYaml = renderDbDeploymentYaml({
-    compositionName: choice.id,
     engine: choice.engine,
     name: dbName,
     namespace: options.namespace,
