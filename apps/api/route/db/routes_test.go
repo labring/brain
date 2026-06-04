@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -16,6 +17,10 @@ import (
 
 	dbsvc "sealos/api/service/db"
 )
+
+func testingNow() time.Time {
+	return time.Date(2026, 6, 2, 1, 2, 3, 0, time.UTC)
+}
 
 func TestRegisterIncludesAccessHealthRoute(t *testing.T) {
 	router := chi.NewRouter()
@@ -157,12 +162,140 @@ func TestExposeNodePortPatchValue(t *testing.T) {
 	}
 }
 
+func TestDBUpdatePlanFromProductPatchTranslatesRuntimeFieldsToOpsRequests(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {
+			"name": "pg",
+			"namespace": "ns-a",
+			"labels": {"brain.io/db-engine": "postgresql"}
+		},
+		"spec": {
+			"componentSpecs": [{
+				"name": "postgresql",
+				"replicas": 1,
+				"volumeClaimTemplates": [{
+					"name": "data",
+					"spec": {
+						"resources": {"requests": {"storage": "10Gi"}}
+					}
+				}]
+			}],
+			"terminationPolicy": "Delete"
+		}
+	}`)
+	plan, err := dbUpdatePlanFromProductPatch([]byte(`{
+		"spec": {
+			"replicas": 3,
+			"storageSize": "20Gi",
+			"cpuRequest": "500m",
+			"memoryLimit": "2Gi",
+			"terminationPolicy": "WipeOut"
+		}
+	}`), cluster, "pg", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if len(plan.OpsRequests) != 3 {
+		t.Fatalf("ops request count = %d, want 3", len(plan.OpsRequests))
+	}
+	specs := map[string]map[string]interface{}{}
+	for _, ops := range plan.OpsRequests {
+		spec := ops.Object["spec"].(map[string]interface{})
+		specs[spec["type"].(string)] = spec
+		if got := spec["clusterRef"]; got != "pg" {
+			t.Fatalf("clusterRef = %v, want pg", got)
+		}
+	}
+	horizontal := specs["HorizontalScaling"]
+	if horizontal == nil {
+		t.Fatal("missing HorizontalScaling OpsRequest")
+	}
+	horizontalItems := horizontal["horizontalScaling"].([]interface{})
+	horizontalComponent := horizontalItems[0].(map[string]interface{})
+	if got := horizontalComponent["replicas"]; got != int64(3) {
+		t.Fatalf("horizontal replicas = %v, want 3", got)
+	}
+	volume := specs["VolumeExpansion"]
+	if volume == nil {
+		t.Fatal("missing VolumeExpansion OpsRequest")
+	}
+	volumeItems := volume["volumeExpansion"].([]interface{})
+	volumeComponent := volumeItems[0].(map[string]interface{})
+	templates := volumeComponent["volumeClaimTemplates"].([]interface{})
+	template := templates[0].(map[string]interface{})
+	if got := template["storage"]; got != "20Gi" {
+		t.Fatalf("volume expansion storage = %v, want 20Gi", got)
+	}
+	vertical := specs["VerticalScaling"]
+	if vertical == nil {
+		t.Fatal("missing VerticalScaling OpsRequest")
+	}
+	verticalItems := vertical["verticalScaling"].([]interface{})
+	verticalComponent := verticalItems[0].(map[string]interface{})
+	requests := verticalComponent["requests"].(map[string]interface{})
+	if got := requests["cpu"]; got != "500m" {
+		t.Fatalf("vertical cpu request = %v, want 500m", got)
+	}
+	limits := verticalComponent["limits"].(map[string]interface{})
+	if got := limits["memory"]; got != "2Gi" {
+		t.Fatalf("vertical memory limit = %v, want 2Gi", got)
+	}
+	if !plan.HasClusterPatch {
+		t.Fatal("expected Cluster patch for terminationPolicy")
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(plan.ClusterPatch, &out); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	spec := out["spec"].(map[string]interface{})
+	if got := spec["terminationPolicy"]; got != "WipeOut" {
+		t.Fatalf("terminationPolicy = %v, want WipeOut", got)
+	}
+}
+
+func TestDBUpdatePlanFromProductPatchKeepsPublicAccessOutOfClusterAndOpsRequests(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {"name": "pg", "labels": {"brain.io/db-engine": "postgresql"}},
+		"spec": {"componentSpecs": [{"name": "postgresql", "replicas": 1}]}
+	}`)
+	plan, err := dbUpdatePlanFromProductPatch([]byte(`{"spec":{"exposeNodePort":true}}`), cluster, "pg", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if plan.HasClusterPatch {
+		t.Fatalf("expected no Cluster patch for public access-only product patch, got %s", string(plan.ClusterPatch))
+	}
+	if len(plan.OpsRequests) != 0 {
+		t.Fatalf("expected no OpsRequest for public access-only product patch, got %d", len(plan.OpsRequests))
+	}
+}
+
+func TestDBUpdatePlanFromProductPatchRejectsUnsupportedProductFields(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {"name": "pg", "labels": {"brain.io/db-engine": "postgresql"}},
+		"spec": {"componentSpecs": [{"name": "postgresql", "replicas": 1}]}
+	}`)
+	_, err := dbUpdatePlanFromProductPatch([]byte(`{"spec":{"scheduledBackup":{"enabled":true}}}`), cluster, "pg", "ns-a", testingNow())
+	if err == nil {
+		t.Fatal("expected unsupported scheduledBackup patch to be rejected")
+	}
+	if !strings.Contains(err.Error(), "spec.scheduledBackup") {
+		t.Fatalf("expected error to name unsupported field, got %v", err)
+	}
+}
+
 func TestKubeBlocksRestartConflictDetection(t *testing.T) {
 	err := errors.New(`admission webhook "vopsrequest.kb.io" denied the request: OpsRequest.spec.type=Restart is forbidden when Cluster.status.phase=Creating`)
-	if !isKubeBlocksRestartConflict(err) {
+	if !isKubeBlocksOpsConflict(err) {
 		t.Fatal("expected KubeBlocks restart webhook denial to be treated as conflict")
 	}
-	if isKubeBlocksRestartConflict(errors.New("some other error")) {
+	if isKubeBlocksOpsConflict(errors.New("some other error")) {
 		t.Fatal("unexpected conflict detection for unrelated error")
 	}
 }

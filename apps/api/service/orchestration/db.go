@@ -23,7 +23,45 @@ type DBResourcesInput struct {
 	StorageSize    string
 }
 
+type DBVerticalScalingInput struct {
+	CPULimit      string
+	CPURequest    string
+	MemoryLimit   string
+	MemoryRequest string
+}
+
 func RenderDBRestartOpsRequest(name, namespace, engine string, now time.Time) (*unstructured.Unstructured, error) {
+	return RenderDBBasicOpsRequest(name, namespace, engine, "Restart", now)
+}
+
+func RenderDBBasicOpsRequest(name, namespace, engine, opsType string, now time.Time) (*unstructured.Unstructured, error) {
+	name = strings.TrimSpace(name)
+	namespace = strings.TrimSpace(namespace)
+	opsType = strings.TrimSpace(opsType)
+	if name == "" || namespace == "" {
+		return nil, fmt.Errorf("name and namespace are required")
+	}
+	profile, ok := DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
+	if opsType == "" {
+		return nil, fmt.Errorf("ops type is required")
+	}
+	suffix := now.UTC().Format("20060102150405")
+	spec := map[string]interface{}{
+		"clusterRef": name,
+		"type":       opsType,
+	}
+	if opsType == "Restart" {
+		spec["restart"] = []interface{}{
+			map[string]interface{}{"componentName": profile.ComponentName},
+		}
+	}
+	return dbOpsRequest(name, namespace, strings.ToLower(opsType), suffix, spec), nil
+}
+
+func RenderDBHorizontalScalingOpsRequest(name, namespace, engine string, replicas int64, now time.Time) (*unstructured.Unstructured, error) {
 	name = strings.TrimSpace(name)
 	namespace = strings.TrimSpace(namespace)
 	if name == "" || namespace == "" {
@@ -33,28 +71,114 @@ func RenderDBRestartOpsRequest(name, namespace, engine string, now time.Time) (*
 	if !ok {
 		return nil, fmt.Errorf("unsupported DB engine %q", engine)
 	}
-	suffix := now.UTC().Format("20060102150405")
+	if replicas < 1 {
+		return nil, fmt.Errorf("replicas must be a positive integer")
+	}
+	spec := map[string]interface{}{
+		"clusterRef": name,
+		"horizontalScaling": []interface{}{
+			map[string]interface{}{
+				"componentName": profile.ComponentName,
+				"replicas":      replicas,
+			},
+		},
+		"type": "HorizontalScaling",
+	}
+	return dbOpsRequest(name, namespace, "horizontalscaling", now.UTC().Format("20060102150405"), spec), nil
+}
+
+func RenderDBVolumeExpansionOpsRequest(name, namespace, engine, storageSize string, now time.Time) (*unstructured.Unstructured, error) {
+	name = strings.TrimSpace(name)
+	namespace = strings.TrimSpace(namespace)
+	storageSize = strings.TrimSpace(storageSize)
+	if name == "" || namespace == "" {
+		return nil, fmt.Errorf("name and namespace are required")
+	}
+	profile, ok := DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
+	if storageSize == "" {
+		return nil, fmt.Errorf("storage size is required")
+	}
+	spec := map[string]interface{}{
+		"clusterRef": name,
+		"type":       "VolumeExpansion",
+		"volumeExpansion": []interface{}{
+			map[string]interface{}{
+				"componentName": profile.ComponentName,
+				"volumeClaimTemplates": []interface{}{
+					map[string]interface{}{
+						"name":    "data",
+						"storage": storageSize,
+					},
+				},
+			},
+		},
+	}
+	return dbOpsRequest(name, namespace, "volumeexpansion", now.UTC().Format("20060102150405"), spec), nil
+}
+
+func RenderDBVerticalScalingOpsRequest(name, namespace, engine string, input DBVerticalScalingInput, now time.Time) (*unstructured.Unstructured, error) {
+	name = strings.TrimSpace(name)
+	namespace = strings.TrimSpace(namespace)
+	if name == "" || namespace == "" {
+		return nil, fmt.Errorf("name and namespace are required")
+	}
+	profile, ok := DBEngineProfileFor(engine)
+	if !ok {
+		return nil, fmt.Errorf("unsupported DB engine %q", engine)
+	}
+	requests := map[string]interface{}{}
+	limits := map[string]interface{}{}
+	if value := strings.TrimSpace(input.CPURequest); value != "" {
+		requests["cpu"] = value
+	}
+	if value := strings.TrimSpace(input.MemoryRequest); value != "" {
+		requests["memory"] = value
+	}
+	if value := strings.TrimSpace(input.CPULimit); value != "" {
+		limits["cpu"] = value
+	}
+	if value := strings.TrimSpace(input.MemoryLimit); value != "" {
+		limits["memory"] = value
+	}
+	if len(requests) == 0 && len(limits) == 0 {
+		return nil, fmt.Errorf("at least one resource request or limit is required")
+	}
+	component := map[string]interface{}{
+		"componentName": profile.ComponentName,
+	}
+	if len(requests) > 0 {
+		component["requests"] = requests
+	}
+	if len(limits) > 0 {
+		component["limits"] = limits
+	}
+	spec := map[string]interface{}{
+		"clusterRef":      name,
+		"type":            "VerticalScaling",
+		"verticalScaling": []interface{}{component},
+	}
+	return dbOpsRequest(name, namespace, "verticalscaling", now.UTC().Format("20060102150405"), spec), nil
+}
+
+func dbOpsRequest(clusterName, namespace, operation, suffix string, spec map[string]interface{}) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "apps.kubeblocks.io/v1alpha1",
 			"kind":       "OpsRequest",
 			"metadata": map[string]interface{}{
 				"labels": map[string]interface{}{
-					DBProviderCRLabel:       name,
-					DBProviderInstanceLabel: name,
+					DBProviderCRLabel:       clusterName,
+					DBProviderInstanceLabel: clusterName,
 				},
-				"name":      name + "-restart-" + suffix,
+				"name":      clusterName + "-" + operation + "-" + suffix,
 				"namespace": namespace,
 			},
-			"spec": map[string]interface{}{
-				"clusterName": name,
-				"restart": []interface{}{
-					map[string]interface{}{"componentName": profile.ComponentName},
-				},
-				"type": "Restart",
-			},
+			"spec": spec,
 		},
-	}, nil
+	}
 }
 
 type DBResources struct {

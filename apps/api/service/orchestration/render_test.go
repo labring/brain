@@ -562,8 +562,8 @@ func TestRenderDBRestartOpsRequest(t *testing.T) {
 		t.Fatalf("ops name = %q, want stable timestamp suffix", got)
 	}
 	spec := ops.Object["spec"].(map[string]interface{})
-	if got := spec["clusterName"]; got != "pg" {
-		t.Fatalf("clusterName = %v, want pg", got)
+	if got := spec["clusterRef"]; got != "pg" {
+		t.Fatalf("clusterRef = %v, want pg", got)
 	}
 	if got := spec["type"]; got != "Restart" {
 		t.Fatalf("type = %v, want Restart", got)
@@ -572,5 +572,39 @@ func TestRenderDBRestartOpsRequest(t *testing.T) {
 	component := restart[0].(map[string]interface{})
 	if got := component["componentName"]; got != "mysql" {
 		t.Fatalf("restart componentName = %v, want mysql", got)
+	}
+}
+
+func TestRenderDBScalingOpsRequestsUseClusterRef(t *testing.T) {
+	now := time.Date(2026, 6, 2, 1, 2, 3, 0, time.UTC)
+	horizontal, err := RenderDBHorizontalScalingOpsRequest("pg", "ns-a", "postgresql", 3, now)
+	if err != nil {
+		t.Fatalf("RenderDBHorizontalScalingOpsRequest returned error: %v", err)
+	}
+	horizontalSpec := horizontal.Object["spec"].(map[string]interface{})
+	if got := horizontalSpec["clusterRef"]; got != "pg" {
+		t.Fatalf("horizontal clusterRef = %v, want pg", got)
+	}
+	items := horizontalSpec["horizontalScaling"].([]interface{})
+	item := items[0].(map[string]interface{})
+	if got := item["replicas"]; got != int64(3) {
+		t.Fatalf("horizontal replicas = %v, want 3", got)
+	}
+
+	vertical, err := RenderDBVerticalScalingOpsRequest("pg", "ns-a", "postgresql", DBVerticalScalingInput{
+		CPULimit:      "2000m",
+		MemoryRequest: "1Gi",
+	}, now)
+	if err != nil {
+		t.Fatalf("RenderDBVerticalScalingOpsRequest returned error: %v", err)
+	}
+	verticalSpec := vertical.Object["spec"].(map[string]interface{})
+	if got := verticalSpec["clusterRef"]; got != "pg" {
+		t.Fatalf("vertical clusterRef = %v, want pg", got)
+	}
+	verticalItems := verticalSpec["verticalScaling"].([]interface{})
+	verticalItem := verticalItems[0].(map[string]interface{})
+	if got := verticalItem["componentName"]; got != "postgresql" {
+		t.Fatalf("vertical componentName = %v, want postgresql", got)
 	}
 }

@@ -3,12 +3,14 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -273,10 +275,10 @@ func registerStart(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/start",
 		Summary:     "Start DB workload",
-		Description: "Starts a DB by clearing the Brain pause annotation on the KubeBlocks Cluster.",
+		Description: "Starts a DB by creating a KubeBlocks Start OpsRequest. If the Cluster has spec.backup.enabled=false, the API restores it to true like Sealos dbprovider.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		return patchLifecycleDB(input, dbClusterPausedPatch(false), "start")
+		return applyLifecycleDBOps(input, "Start")
 	})
 }
 
@@ -286,10 +288,10 @@ func registerStop(grp huma.API) {
 		Method:      http.MethodPost,
 		Path:        "/stop",
 		Summary:     "Stop DB workload",
-		Description: "Stops a DB by setting the Brain pause annotation on the KubeBlocks Cluster. Data and configuration are preserved.",
+		Description: "Stops a DB by deleting the export Service when present, disabling Cluster backup when present, and creating a KubeBlocks Stop OpsRequest. Data and configuration are preserved.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		return patchLifecycleDB(input, dbClusterPausedPatch(true), "stop")
+		return applyLifecycleDBOps(input, "Stop")
 	})
 }
 
@@ -302,36 +304,7 @@ func registerRestart(grp huma.API) {
 		Description: "Requests a DB restart by creating a KubeBlocks Restart OpsRequest for the Cluster.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbLifecycleInput) (*dbLifecycleOutput, error) {
-		cfg, name, namespace, err := lifecycleDBContext(input)
-		if err != nil {
-			return nil, err
-		}
-
-		clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "clusters",
-			Name:      name,
-			Namespace: namespace,
-		})
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to get DB for restart", err)
-		}
-		engine := dbEngineFromClusterJSON(clusterJSON)
-		ops, err := orchestration.RenderDBRestartOpsRequest(name, namespace, engine, time.Now())
-		if err != nil {
-			return nil, huma.Error422UnprocessableEntity("invalid DB restart request", err)
-		}
-		restConfig, _, err := middleware.RestConfigFromAuth(input.Authorization)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
-		}
-		if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{ops}, namespace); err != nil {
-			if isKubeBlocksRestartConflict(err) {
-				return nil, huma.Error409Conflict("DB is not ready to restart", err)
-			}
-			return nil, huma.Error500InternalServerError("failed to restart DB", err)
-		}
-		body, _ := json.Marshal(ops.Object)
-		return &dbLifecycleOutput{Body: body}, nil
+		return applyLifecycleDBOps(input, "Restart")
 	})
 }
 
@@ -340,6 +313,10 @@ func dbEngineFromClusterJSON(clusterJSON []byte) string {
 	if err := json.Unmarshal(clusterJSON, &cluster); err != nil {
 		return ""
 	}
+	return dbEngineFromCluster(cluster)
+}
+
+func dbEngineFromCluster(cluster unstructured.Unstructured) string {
 	engine := strings.TrimSpace(cluster.GetLabels()[orchestration.BrainDBEngineLabel])
 	if engine != "" {
 		return engine
@@ -353,64 +330,95 @@ func dbEngineFromClusterJSON(clusterJSON []byte) string {
 	return ""
 }
 
-func isKubeBlocksRestartConflict(err error) bool {
+func isKubeBlocksOpsConflict(err error) bool {
 	if err == nil {
 		return false
 	}
 	message := err.Error()
-	return strings.Contains(message, "OpsRequest.spec.type=Restart is forbidden") ||
+	return strings.Contains(message, "OpsRequest.spec.type=") ||
 		strings.Contains(message, "Cluster.status.phase")
 }
 
-func patchLifecycleDB(input *dbLifecycleInput, patch []byte, action string) (*dbLifecycleOutput, error) {
-	cfg, name, namespace, err := lifecycleDBContext(input)
+func applyLifecycleDBOps(input *dbLifecycleInput, opsType string) (*dbLifecycleOutput, error) {
+	restConfig, cfg, name, namespace, err := lifecycleDBContext(input)
 	if err != nil {
 		return nil, err
 	}
 
-	jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+	clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Resource:  "clusters",
+		Name:      name,
+		Namespace: namespace,
+	})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, huma.Error404NotFound("DB not found", err)
+		}
+		return nil, huma.Error500InternalServerError("failed to get DB for "+strings.ToLower(opsType), err)
+	}
+
+	if opsType == "Stop" {
+		if err := deleteDBExportServiceIfExists(cfg, name, namespace); err != nil {
+			return nil, huma.Error500InternalServerError("failed to stop DB support resources", err)
+		}
+		if err := patchDBBackupEnabledIfPresent(cfg, clusterJSON, name, namespace, false); err != nil {
+			return nil, huma.Error500InternalServerError("failed to stop DB backup policy", err)
+		}
+	} else if opsType == "Start" {
+		if err := patchDBBackupEnabledIfPresent(cfg, clusterJSON, name, namespace, true); err != nil {
+			return nil, huma.Error500InternalServerError("failed to start DB backup policy", err)
+		}
+	}
+
+	engine := dbEngineFromClusterJSON(clusterJSON)
+	ops, err := orchestration.RenderDBBasicOpsRequest(name, namespace, engine, opsType, time.Now())
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid DB "+strings.ToLower(opsType)+" request", err)
+	}
+	if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{ops}, namespace); err != nil {
+		if isKubeBlocksOpsConflict(err) {
+			return nil, huma.Error409Conflict("DB is not ready to "+strings.ToLower(opsType), err)
+		}
+		return nil, huma.Error500InternalServerError("failed to "+strings.ToLower(opsType)+" DB", err)
+	}
+	body, _ := json.Marshal(ops.Object)
+	return &dbLifecycleOutput{Body: body}, nil
+}
+
+func patchDBBackupEnabledIfPresent(cfg *clientcmdapi.Config, clusterJSON []byte, name, namespace string, enabled bool) error {
+	var cluster unstructured.Unstructured
+	if err := json.Unmarshal(clusterJSON, &cluster); err != nil {
+		return err
+	}
+	current, found, err := unstructured.NestedBool(cluster.Object, "spec", "backup", "enabled")
+	if err != nil || !found || current == enabled {
+		return err
+	}
+	patch, _ := json.Marshal(map[string]interface{}{
+		"spec": map[string]interface{}{
+			"backup": map[string]interface{}{
+				"enabled": enabled,
+			},
+		},
+	})
+	_, err = k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
 		Resource:  "clusters",
 		Name:      name,
 		Namespace: namespace,
 		PatchType: k8ssvc.PatchTypeMerge,
 		Patch:     patch,
 	})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, huma.Error404NotFound("DB not found", err)
-		}
-		return nil, huma.Error500InternalServerError("failed to "+action+" DB", err)
-	}
-	body, err := dbResponseFromClustersWithSupport(cfg, jsonBytes, true)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
-	}
-	return &dbLifecycleOutput{Body: body}, nil
+	return err
 }
 
-func dbClusterPausedPatch(paused bool) []byte {
-	value := "false"
-	if paused {
-		value = "true"
-	}
-	bytes, _ := json.Marshal(map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"annotations": map[string]interface{}{
-				"brain.io/paused": value,
-			},
-		},
-	})
-	return bytes
-}
-
-func lifecycleDBContext(input *dbLifecycleInput) (*clientcmdapi.Config, string, string, error) {
-	_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
+func lifecycleDBContext(input *dbLifecycleInput) (*rest.Config, *clientcmdapi.Config, string, string, error) {
+	restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 	if err != nil {
-		return nil, "", "", huma.Error400BadRequest("invalid kubeconfig", err)
+		return nil, nil, "", "", huma.Error400BadRequest("invalid kubeconfig", err)
 	}
 	name := strings.TrimSpace(input.Body.Name)
 	if name == "" {
-		return nil, "", "", huma.Error400BadRequest("name is required", nil)
+		return nil, nil, "", "", huma.Error400BadRequest("name is required", nil)
 	}
 
 	gvr := middleware.PodsGVR()
@@ -421,9 +429,9 @@ func lifecycleDBContext(input *dbLifecycleInput) (*clientcmdapi.Config, string, 
 		AdminCheckGVR:    &gvr,
 	})
 	if err != nil {
-		return nil, "", "", huma.Error500InternalServerError("failed to resolve request context", err)
+		return nil, nil, "", "", huma.Error500InternalServerError("failed to resolve request context", err)
 	}
-	return cfg, name, resolved.Namespace, nil
+	return restConfig, cfg, name, resolved.Namespace, nil
 }
 
 func registerUpdate(grp huma.API) {
@@ -431,7 +439,7 @@ func registerUpdate(grp huma.API) {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"DB instance name to patch"`
 		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
-		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB resource.\n\nWhat to patch:\n- spec.quota: switch preset xs|s|m|l (recomputes quota preset defaults unless overridden fields remain).\n- spec.replicas: desired database replica count when running; preserved while spec.paused is true.\n- spec.paused: lifecycle flag; true stops DB compute, false resumes using spec.replicas.\n- spec.restartRequest: non-negative lifecycle counter; prefer POST /restart so the server increments it.\n- spec.storageSize: change PVC storage (may require expansion support).\n- spec.cpuRequest / spec.memoryRequest: resource requests.\n- spec.cpuLimit / spec.memoryLimit: resource limits.\n- spec.storageClassName: StorageClass for PVCs.\n- spec.terminationPolicy: Delete or WipeOut.\n- spec.exposeNodePort: enable or disable NodePort Service {name}-export (boolean).\n- spec.scheduledBackup: cron, enabled, retentionPeriod, repoName (MongoDB) for KubeBlocks automated backups.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Larger quota: {\"spec\":{\"quota\":\"m\"}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Change storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n- Backup schedule: {\"spec\":{\"scheduledBackup\":{\"cronExpression\":\"0 2 * * *\",\"retentionPeriod\":\"7d\"}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- For nested objects like spec, send the subtree you want to modify."`
+		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB product surface.\n\nSupported patch targets:\n- spec.replicas: creates a KubeBlocks HorizontalScaling OpsRequest.\n- spec.paused: creates a KubeBlocks Stop or Start OpsRequest.\n- spec.restartRequest: creates a KubeBlocks Restart OpsRequest; prefer POST /restart.\n- spec.storageSize: creates a KubeBlocks VolumeExpansion OpsRequest when the desired size increases.\n- spec.cpuRequest / spec.memoryRequest: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.cpuLimit / spec.memoryLimit: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.terminationPolicy: patches the KubeBlocks Cluster management policy.\n- spec.exposeNodePort: applies or deletes Service {name}-export.\n\nUnsupported for now and rejected with 422: spec.quota, spec.storageClassName, spec.clusterVersion, spec.version, spec.scheduledBackup, spec.parameterConfig, spec.restoreFromBackup.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Expand storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Runtime operations are expressed as KubeBlocks OpsRequest CRs, not direct Cluster componentSpec rewrites."`
 	}
 	type dbUpdateOutput struct {
 		Body json.RawMessage
@@ -442,7 +450,7 @@ func registerUpdate(grp huma.API) {
 		Method:      http.MethodPatch,
 		Path:        "/",
 		Summary:     "Update DB",
-		Description: "Patch a DB instance by name.\n\nRequest parameter usage:\n- `name` is required and selects the DB to patch.\n- `namespace` is optional; admins can use it to target a different namespace.\n- The request body must be a JSON merge patch fragment for the DB resource.\n\nPatch semantics:\n- Only the fields present in the patch body are changed.\n- Nested objects are merged at the subtree you provide.\n\nCommon patch targets:\n- `spec.quota`: resource preset xs|s|m|l.\n- `spec.replicas`: desired database replica count when running; preserved while `spec.paused` is true.\n- `spec.paused`: lifecycle flag; true stops DB compute, false resumes using `spec.replicas`.\n- `spec.restartRequest`: non-negative restart counter; prefer `POST /api/db/v1alpha1/restart` so the server increments it.\n- `spec.storageSize`: change PVC storage.\n- `spec.cpuRequest` / `spec.memoryRequest`: resource requests.\n- `spec.cpuLimit` / `spec.memoryLimit`: resource limits.\n- `spec.storageClassName`: StorageClass for PVCs.\n- `spec.terminationPolicy`: Delete or WipeOut.\n- `spec.exposeNodePort`: toggle NodePort Service `{metadata.name}-export`.\n- `spec.scheduledBackup`: automated backup cron/retention/repo (KubeBlocks).",
+		Description: "Patch a DB instance by name.\n\nRequest parameter usage:\n- `name` is required and selects the DB to patch.\n- `namespace` is optional; admins can use it to target a different namespace.\n- The request body must be a JSON merge patch fragment for the DB product surface.\n\nPatch semantics:\n- Runtime changes create KubeBlocks OpsRequest CRs, following the Sealos dbprovider model.\n- `spec.replicas` creates HorizontalScaling.\n- `spec.storageSize` creates VolumeExpansion when increasing size.\n- `spec.cpuRequest`, `spec.memoryRequest`, `spec.cpuLimit`, and `spec.memoryLimit` create VerticalScaling.\n- `spec.paused` creates Stop or Start.\n- `spec.restartRequest` creates Restart; prefer `POST /api/db/v1alpha1/restart`.\n- `spec.exposeNodePort` toggles Service `{metadata.name}-export`.\n- `spec.terminationPolicy` is patched directly on the Cluster management policy.\n\nUnsupported fields are rejected with 422 so callers do not silently get a partial update.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbUpdateInput) (*dbUpdateOutput, error) {
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -467,18 +475,57 @@ func registerUpdate(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
-		jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+		clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
 			Resource:  "clusters",
 			Name:      input.Name,
 			Namespace: resolved.Namespace,
-			PatchType: k8ssvc.PatchTypeMerge,
-			Patch:     input.Body,
 		})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("DB not found", err)
 			}
-			return nil, huma.Error500InternalServerError("failed to update DB", err)
+			return nil, huma.Error500InternalServerError("failed to get DB for update", err)
+		}
+
+		plan, err := dbUpdatePlanFromProductPatch(input.Body, clusterJSON, input.Name, resolved.Namespace, time.Now())
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("invalid DB product patch", err)
+		}
+		jsonBytes := clusterJSON
+		if lifecycle, found := pausedPatchValue(input.Body); found {
+			if lifecycle == "Stop" {
+				if err := deleteDBExportServiceIfExists(cfg, input.Name, resolved.Namespace); err != nil {
+					return nil, huma.Error500InternalServerError("failed to update DB support resources", err)
+				}
+				if err := patchDBBackupEnabledIfPresent(cfg, clusterJSON, input.Name, resolved.Namespace, false); err != nil {
+					return nil, huma.Error500InternalServerError("failed to update DB backup policy", err)
+				}
+			} else if err := patchDBBackupEnabledIfPresent(cfg, clusterJSON, input.Name, resolved.Namespace, true); err != nil {
+				return nil, huma.Error500InternalServerError("failed to update DB backup policy", err)
+			}
+		}
+		if plan.HasClusterPatch {
+			jsonBytes, err = k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+				Resource:  "clusters",
+				Name:      input.Name,
+				Namespace: resolved.Namespace,
+				PatchType: k8ssvc.PatchTypeMerge,
+				Patch:     plan.ClusterPatch,
+			})
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					return nil, huma.Error404NotFound("DB not found", err)
+				}
+				return nil, huma.Error500InternalServerError("failed to update DB", err)
+			}
+		}
+		if len(plan.OpsRequests) > 0 {
+			if err := k8ssvc.ApplyUnstructured(restConfig, plan.OpsRequests, resolved.Namespace); err != nil {
+				if isKubeBlocksOpsConflict(err) {
+					return nil, huma.Error409Conflict("DB is not ready for DB operation", err)
+				}
+				return nil, huma.Error500InternalServerError("failed to update DB", err)
+			}
 		}
 		if err := reconcileDBPublicAccess(restConfig, cfg, input.Body, jsonBytes, input.Name, resolved.Namespace); err != nil {
 			return nil, huma.Error500InternalServerError("failed to update DB support resources", err)
@@ -489,6 +536,222 @@ func registerUpdate(grp huma.API) {
 		}
 		return &dbUpdateOutput{Body: body}, nil
 	})
+}
+
+type dbUpdatePlan struct {
+	ClusterPatch    []byte
+	HasClusterPatch bool
+	OpsRequests     []*unstructured.Unstructured
+}
+
+func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string, namespace string, now time.Time) (dbUpdatePlan, error) {
+	var body map[string]interface{}
+	if err := json.Unmarshal(patch, &body); err != nil {
+		return dbUpdatePlan{}, err
+	}
+	specPatch, _ := body["spec"].(map[string]interface{})
+	if len(specPatch) == 0 {
+		return dbUpdatePlan{}, nil
+	}
+
+	var cluster unstructured.Unstructured
+	if err := json.Unmarshal(clusterJSON, &cluster); err != nil {
+		return dbUpdatePlan{}, err
+	}
+	engine := dbEngineFromCluster(cluster)
+
+	mergeSpec := map[string]interface{}{}
+	vertical := orchestration.DBVerticalScalingInput{}
+	needsVertical := false
+	plan := dbUpdatePlan{}
+
+	for key, raw := range specPatch {
+		switch key {
+		case "exposeNodePort":
+			if _, ok := raw.(bool); !ok {
+				return dbUpdatePlan{}, fmt.Errorf("spec.exposeNodePort must be boolean")
+			}
+		case "paused":
+			value, ok := raw.(bool)
+			if !ok {
+				return dbUpdatePlan{}, fmt.Errorf("spec.paused must be boolean")
+			}
+			opsType := "Start"
+			if value {
+				opsType = "Stop"
+			}
+			ops, err := orchestration.RenderDBBasicOpsRequest(name, namespace, engine, opsType, now)
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			plan.OpsRequests = append(plan.OpsRequests, ops)
+		case "restartRequest":
+			value, ok := int64Value(raw)
+			if !ok || value < 0 {
+				return dbUpdatePlan{}, fmt.Errorf("spec.restartRequest must be a non-negative integer")
+			}
+			ops, err := orchestration.RenderDBBasicOpsRequest(name, namespace, engine, "Restart", now)
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			plan.OpsRequests = append(plan.OpsRequests, ops)
+		case "terminationPolicy":
+			value, ok := stringValue(raw)
+			if !ok {
+				return dbUpdatePlan{}, fmt.Errorf("spec.terminationPolicy must be string")
+			}
+			mergeSpec["terminationPolicy"] = value
+		case "replicas":
+			value, ok := int64Value(raw)
+			if !ok || value < 1 {
+				return dbUpdatePlan{}, fmt.Errorf("spec.replicas must be a positive integer")
+			}
+			ops, err := orchestration.RenderDBHorizontalScalingOpsRequest(name, namespace, engine, value, now)
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			plan.OpsRequests = append(plan.OpsRequests, ops)
+		case "storageSize":
+			value, ok := stringValue(raw)
+			if !ok {
+				return dbUpdatePlan{}, fmt.Errorf("spec.storageSize must be string")
+			}
+			shouldExpand, err := shouldRenderDBVolumeExpansion(cluster, value)
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			if shouldExpand {
+				ops, err := orchestration.RenderDBVolumeExpansionOpsRequest(name, namespace, engine, value, now)
+				if err != nil {
+					return dbUpdatePlan{}, err
+				}
+				plan.OpsRequests = append(plan.OpsRequests, ops)
+			}
+		case "cpuRequest":
+			value, err := quantityString(raw, "spec.cpuRequest")
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			vertical.CPURequest = value
+			needsVertical = true
+		case "memoryRequest":
+			value, err := quantityString(raw, "spec.memoryRequest")
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			vertical.MemoryRequest = value
+			needsVertical = true
+		case "cpuLimit":
+			value, err := quantityString(raw, "spec.cpuLimit")
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			vertical.CPULimit = value
+			needsVertical = true
+		case "memoryLimit":
+			value, err := quantityString(raw, "spec.memoryLimit")
+			if err != nil {
+				return dbUpdatePlan{}, err
+			}
+			vertical.MemoryLimit = value
+			needsVertical = true
+		case "clusterVersion", "version", "quota", "storageClassName", "scheduledBackup", "parameterConfig", "restoreFromBackup":
+			return dbUpdatePlan{}, fmt.Errorf("unsupported DB product patch field spec.%s", key)
+		default:
+			return dbUpdatePlan{}, fmt.Errorf("unsupported DB product patch field spec.%s", key)
+		}
+	}
+
+	if needsVertical {
+		ops, err := orchestration.RenderDBVerticalScalingOpsRequest(name, namespace, engine, vertical, now)
+		if err != nil {
+			return dbUpdatePlan{}, err
+		}
+		plan.OpsRequests = append(plan.OpsRequests, ops)
+	}
+	if len(mergeSpec) > 0 {
+		bytes, err := json.Marshal(map[string]interface{}{"spec": mergeSpec})
+		if err != nil {
+			return dbUpdatePlan{}, err
+		}
+		plan.ClusterPatch = bytes
+		plan.HasClusterPatch = true
+	}
+	return plan, nil
+}
+
+func quantityString(value interface{}, field string) (string, error) {
+	str, ok := stringValue(value)
+	if !ok {
+		return "", fmt.Errorf("%s must be string", field)
+	}
+	if _, err := resource.ParseQuantity(str); err != nil {
+		return "", fmt.Errorf("%s must be a Kubernetes quantity: %w", field, err)
+	}
+	return str, nil
+}
+
+func shouldRenderDBVolumeExpansion(cluster unstructured.Unstructured, desiredStorage string) (bool, error) {
+	desired, err := resource.ParseQuantity(desiredStorage)
+	if err != nil {
+		return false, fmt.Errorf("spec.storageSize must be a Kubernetes quantity: %w", err)
+	}
+	currentStorage, found := clusterStorageSize(cluster)
+	if !found {
+		return true, nil
+	}
+	current, err := resource.ParseQuantity(currentStorage)
+	if err != nil {
+		return false, fmt.Errorf("current DB storage is invalid: %w", err)
+	}
+	cmp := desired.Cmp(current)
+	if cmp < 0 {
+		return false, fmt.Errorf("spec.storageSize cannot be decreased")
+	}
+	return cmp > 0, nil
+}
+
+func clusterStorageSize(cluster unstructured.Unstructured) (string, bool) {
+	components, found, _ := unstructured.NestedSlice(cluster.Object, "spec", "componentSpecs")
+	if !found || len(components) == 0 {
+		return "", false
+	}
+	component, ok := components[0].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	templates, found, _ := unstructured.NestedSlice(component, "volumeClaimTemplates")
+	if !found || len(templates) == 0 {
+		return "", false
+	}
+	template, ok := templates[0].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	value, found, _ := unstructured.NestedString(template, "spec", "resources", "requests", "storage")
+	return value, found
+}
+
+func stringValue(value interface{}) (string, bool) {
+	str, ok := value.(string)
+	str = strings.TrimSpace(str)
+	return str, ok && str != ""
+}
+
+func int64Value(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float64:
+		i := int64(v)
+		return i, v == float64(i)
+	default:
+		return 0, false
+	}
 }
 
 func reconcileDBPublicAccess(restConfig *rest.Config, cfg *clientcmdapi.Config, patch []byte, clusterJSON []byte, name string, namespace string) error {
@@ -523,6 +786,22 @@ func exposeNodePortPatchValue(patch []byte) (bool, bool) {
 	spec, _ := body["spec"].(map[string]interface{})
 	value, ok := spec["exposeNodePort"].(bool)
 	return value, ok
+}
+
+func pausedPatchValue(patch []byte) (string, bool) {
+	var body map[string]interface{}
+	if err := json.Unmarshal(patch, &body); err != nil {
+		return "", false
+	}
+	spec, _ := body["spec"].(map[string]interface{})
+	value, ok := spec["paused"].(bool)
+	if !ok {
+		return "", false
+	}
+	if value {
+		return "Stop", true
+	}
+	return "Start", true
 }
 
 func deleteDBExportServiceIfExists(cfg *clientcmdapi.Config, name string, namespace string) error {

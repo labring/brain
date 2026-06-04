@@ -44,6 +44,7 @@ packages/
 - **Quality:** Biome/ultracite is source of truth (`bun check` / `bun fix`).
 - **Registry:** items live in `apps/registry/registry/<style>/<group>/<name>` with metadata in `preview-registry.ts`.
 - **Domain:** before AP, DB, EntryPoint, canvas, or settings behavior changes, check `CONTEXT.md` and relevant ADRs in `docs/adr/`.
+- **Crossplane:** do not preserve Crossplane-era behavior, fields, routes, docs, or naming for compatibility. Treat Crossplane compatibility as explicitly out of scope unless the user asks for it in the current task.
 
 ## When making changes
 
