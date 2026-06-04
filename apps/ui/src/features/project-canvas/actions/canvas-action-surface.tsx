@@ -135,18 +135,14 @@ export function MainActionSurface({
   const open = dbAccessEnabled && model != null;
 
   const { states } = model?.databaseData ?? { states: null };
-  const subtitle =
-    states == null
-      ? undefined
-      : `Database ${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""}`;
 
   return (
     <MainActionSurfaceFrame
       icon={<Database aria-hidden className="size-4" strokeWidth={2} />}
       onClose={onClose}
       open={open}
-      subtitle={subtitle}
-      title={states?.name ?? ""}
+      subtitle={states?.name}
+      title="Data Browser"
     >
       {model == null ? null : (
         <DataBrowserPane
