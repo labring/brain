@@ -58,30 +58,30 @@ export function MainActionSurfaceFrame({
   return (
     <section
       aria-label={label}
-      className="dark absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-neutral-950 text-foreground"
+      className="dark main-action-surface-background absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-neutral-950 text-foreground"
       data-slot="main-action-surface"
     >
       <header
         className={cn(
-          "grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center border-border border-b py-0 pr-4 pl-4",
+          "relative z-10 grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-center border-border border-b py-0 pr-4 pl-4",
           !assistantPaneOpen && "pr-12"
         )}
       >
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2">
           {icon == null ? null : (
             <span className="flex size-4 shrink-0 items-center justify-center text-blue-400">
               {icon}
             </span>
           )}
           <h2
-            className="min-w-0 truncate font-medium text-base text-foreground leading-none"
+            className="min-w-0 truncate font-semibold text-foreground text-lg leading-none"
             title={title}
           >
             {title}
           </h2>
         </div>
         <p
-          className="min-w-0 truncate px-4 text-center text-primary text-sm leading-5"
+          className="min-w-0 truncate px-4 text-center font-medium text-primary text-sm leading-5"
           title={subtitle}
         >
           {subtitle}
@@ -101,7 +101,7 @@ export function MainActionSurfaceFrame({
       </header>
       <div
         className={cn(
-          "main-action-surface-body-background min-h-0 flex-1",
+          "main-action-surface-body-background relative z-10 min-h-0 flex-1",
           bodyClassName
         )}
         data-slot="main-action-surface-body"
@@ -135,18 +135,14 @@ export function MainActionSurface({
   const open = dbAccessEnabled && model != null;
 
   const { states } = model?.databaseData ?? { states: null };
-  const subtitle =
-    states == null
-      ? undefined
-      : `Database ${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""}`;
 
   return (
     <MainActionSurfaceFrame
       icon={<Database aria-hidden className="size-4" strokeWidth={2} />}
       onClose={onClose}
       open={open}
-      subtitle={subtitle}
-      title={states?.name ?? ""}
+      subtitle={states?.name}
+      title="Data Browser"
     >
       {model == null ? null : (
         <DataBrowserPane

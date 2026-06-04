@@ -1,7 +1,6 @@
 "use client";
 
-import { cn } from "@workspace/ui/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   List,
   type RowComponentProps,
@@ -9,24 +8,26 @@ import {
 } from "react-window";
 import { type LogEntry, useLogViewerContext } from "./log-viewer.context";
 import { highlightLogMessage } from "./log-viewer.highlight";
-import { formatLogTime } from "./log-viewer.utils";
+import { formatLogMessage, formatLogTime } from "./log-viewer.utils";
 
-const LOG_GRID_TEMPLATE = "150px 1fr 80px 80px";
+const LOG_GRID_TEMPLATE =
+  "minmax(12rem,20%) minmax(0,1fr) minmax(6.25rem,10%) minmax(7rem,12%)";
+const LOG_ROW_MIN_HEIGHT = 52;
 
 export function LogViewerListHeader() {
   return (
     <div
-      className="flex flex-col border-b bg-muted-foreground/5"
+      className="flex h-12 shrink-0 flex-col border-border border-b bg-input/30"
       data-slot="log-viewer-header"
     >
       <div
-        className="grid h-10 items-center gap-2 px-4 font-medium font-mono text-foreground text-xs"
+        className="grid h-full items-center bg-input/30 font-medium text-muted-foreground text-xs"
         style={{ gridTemplateColumns: LOG_GRID_TEMPLATE }}
       >
-        <span>Time</span>
-        <span>Message</span>
-        <span>Pod</span>
-        <span>Container</span>
+        <span className="truncate px-4">Time</span>
+        <span className="truncate px-4">Message</span>
+        <span className="truncate px-4">Pod</span>
+        <span className="truncate px-4">Container</span>
       </div>
     </div>
   );
@@ -35,6 +36,7 @@ export function LogViewerListHeader() {
 function LogViewerRow({
   index,
   style,
+  ariaAttributes,
   entries,
   searchQuery,
 }: RowComponentProps<{ entries: LogEntry[]; searchQuery: string }>) {
@@ -42,28 +44,26 @@ function LogViewerRow({
   if (!entry) {
     return null;
   }
+  const message = formatLogMessage(entry.message);
 
   return (
     <div
-      className={cn(
-        "grid items-start gap-2 px-4 py-2 font-mono text-foreground text-xs",
-        entry.stream === "stderr" && "border-red-500/40 border-l-2"
-      )}
+      {...ariaAttributes}
+      className="grid min-h-[52px] items-start border-border border-b bg-transparent py-3 font-medium text-foreground text-xs"
       style={{ ...style, gridTemplateColumns: LOG_GRID_TEMPLATE }}
     >
-      <span className="truncate text-muted-foreground">
+      <span className="truncate px-4 leading-5">
         {formatLogTime(entry.time)}
       </span>
-      <span className="line-clamp-3 whitespace-pre-wrap break-all">
-        {highlightLogMessage(entry.message, searchQuery)}
+      <span className="block min-w-0 whitespace-pre-wrap break-words px-4 leading-5">
+        {highlightLogMessage(message, searchQuery)}
       </span>
-      <span className="truncate text-muted-foreground">{entry.pod}</span>
-      <span className="truncate text-muted-foreground">{entry.container}</span>
+      <span className="truncate px-4 leading-5">{entry.pod}</span>
+      <span className="truncate px-4 leading-5">{entry.container}</span>
     </div>
   );
 }
 
-/** `useDynamicRowHeight` uses ResizeObserver — only mount after hydration (SSR-safe). */
 function VirtualizedListClient({
   entries,
   searchQuery,
@@ -71,7 +71,15 @@ function VirtualizedListClient({
   entries: LogEntry[];
   searchQuery: string;
 }) {
-  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 28 });
+  const rowHeightKey = useMemo(
+    () =>
+      entries.map((entry) => `${entry.time}:${entry.message.length}`).join("|"),
+    [entries]
+  );
+  const rowHeight = useDynamicRowHeight({
+    defaultRowHeight: LOG_ROW_MIN_HEIGHT,
+    key: rowHeightKey,
+  });
 
   return (
     <List
@@ -108,7 +116,7 @@ export function LogViewerListContent() {
   if (entries.length === 0) {
     return (
       <div
-        className="flex h-full min-h-0 flex-1 items-center justify-center bg-muted/50 p-6 text-muted-foreground"
+        className="flex h-full min-h-0 flex-1 items-center justify-center p-6 text-muted-foreground text-sm"
         data-slot="log-viewer-empty"
       >
         No logs available.
@@ -119,7 +127,7 @@ export function LogViewerListContent() {
   if (filteredEntries.length === 0) {
     return (
       <div
-        className="flex h-full min-h-0 flex-1 items-center justify-center bg-muted/50 p-6 text-muted-foreground"
+        className="flex h-full min-h-0 flex-1 items-center justify-center p-6 text-muted-foreground text-sm"
         data-slot="log-viewer-empty"
       >
         No matching logs.
@@ -129,7 +137,7 @@ export function LogViewerListContent() {
 
   return (
     <div
-      className="flex min-h-0 flex-1 overflow-hidden bg-muted/50 py-2"
+      className="flex min-h-0 flex-1 overflow-hidden"
       data-slot="log-viewer-content"
     >
       <VirtualizedList entries={filteredEntries} searchQuery={searchQuery} />

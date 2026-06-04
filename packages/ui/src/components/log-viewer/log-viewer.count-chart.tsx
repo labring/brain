@@ -14,7 +14,7 @@ import { formatLogTime } from "./log-viewer.utils";
 const chartConfig = {
   count: {
     label: "Count",
-    color: "var(--color-blue-500)",
+    color: "color-mix(in oklab, var(--color-blue-500) 70%, transparent)",
   },
 } satisfies ChartConfig;
 

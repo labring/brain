@@ -5,7 +5,7 @@ import { LogViewer } from "@workspace/ui/components/log-viewer/log-viewer";
 import type { TimeRange } from "@workspace/ui/components/time-range-selector";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
-import { ScrollText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 
 import { MainActionSurfaceFrame } from "@/features/project-canvas/actions/canvas-action-surface";
@@ -33,7 +33,7 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
-  const title =
+  const name =
     states?.name === "" || states?.name == null ? "Logs" : states.name;
   const [timeRange, setTimeRange] = useState<TimeRange>(
     RESOURCE_LOGS_DEFAULT_TIME_RANGE
@@ -71,11 +71,11 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
     <MainActionSurfaceFrame
       bodyClassName="flex min-h-0 flex-col gap-3.5 p-4"
       closeAriaLabel="Close workload logs"
-      icon={<ScrollText aria-hidden className="size-4 shrink-0" />}
+      icon={<FileText aria-hidden className="size-4 shrink-0" />}
       onClose={onClose}
       open
-      subtitle={`${states?.kind ?? "Workload"} · Resource logs`}
-      title={`${title} Logs`}
+      subtitle={name}
+      title="Logs"
     >
       {error === undefined ? null : (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-500 text-sm">
