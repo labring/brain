@@ -19,6 +19,7 @@ const CLOSE_LABEL_RE = /Close Main Action Surface/;
 const LABEL_RE = /aria-label="Main Action Surface"/;
 const NAME_RE = /orders-db/;
 const ACTION_SURFACE_BACKGROUND_RE = /bg-neutral-950/;
+const MAIN_ACTION_SURFACE_BACKGROUND_RE = /main-action-surface-background/;
 const MAIN_ACTION_BODY_BACKGROUND_RE = /main-action-surface-body-background/;
 const DATA_BROWSER_RE = /text-foreground/;
 const SUBTITLE_RE = /Database PostgreSQL 16.4/;
@@ -71,6 +72,7 @@ test("main action surface renders shared chrome and empty body slot", () => {
   assert.match(html, SUBTITLE_RE);
   assert.match(html, CLOSE_LABEL_RE);
   assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
+  assert.match(html, MAIN_ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
   assert.match(html, DATA_BROWSER_RE);
 });
@@ -95,6 +97,7 @@ test("main action surface frame renders custom surface content", () => {
   assert.match(html, CUSTOM_SUBTITLE_RE);
   assert.match(html, CUSTOM_BODY_RE);
   assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
+  assert.match(html, MAIN_ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
 });
 

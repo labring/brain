@@ -190,18 +190,17 @@
     background-image: var(--project-chrome-surface-overlay);
   }
 
-  .main-action-surface-body-background {
-    position: relative;
+  .main-action-surface-background {
     overflow: hidden;
     background-color: var(--color-canvas-surface);
     isolation: isolate;
   }
 
-  .main-action-surface-body-background::after {
+  .main-action-surface-background::after {
     position: absolute;
     top: 46%;
     left: 50%;
-    z-index: 60;
+    z-index: 0;
     width: 124vw;
     aspect-ratio: 1929 / 1255;
     pointer-events: none;
@@ -214,5 +213,9 @@
     mix-blend-mode: screen;
     opacity: 0.175;
     transform: translate(-50%, -50%);
+  }
+
+  .main-action-surface-body-background {
+    background-color: transparent;
   }
 }
