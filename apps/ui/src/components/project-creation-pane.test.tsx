@@ -115,7 +115,7 @@ test("project creation pane GitHub direct entry starts at repository selection",
   assert.doesNotMatch(html, TRAIL_BACK_RE);
 });
 
-test("project creation pane database direct entry keeps project naming and opens deployment settings", () => {
+test("project creation pane Database direct entry opens deployment settings without generic project naming first", () => {
   const html = renderToStaticMarkup(
     <ProjectCreationPane
       creatorRootProps={{ databaseOptions: [] }}
@@ -129,8 +129,8 @@ test("project creation pane database direct entry keeps project naming and opens
   assert.match(html, PANE_LABEL_RE);
   assert.match(header, DATABASE_ICON_RE);
   assert.doesNotMatch(header, PLUS_ICON_RE);
-  assert.match(html, PROJECT_NAME_RE);
   assert.match(html, DATABASE_DEPLOYER_RE);
+  assert.doesNotMatch(html, PROJECT_NAME_RE);
   assert.doesNotMatch(html, SCENARIO_RE);
   assert.doesNotMatch(html, TRAIL_BACK_RE);
 });

@@ -111,7 +111,7 @@ export function ProjectCreationPane({
   } else if (directDockerEntry) {
     subtitle = "Provide Docker deployment settings.";
   } else if (directDatabaseEntry) {
-    subtitle = "Provide a project name and database deployment settings.";
+    subtitle = "Provide database deployment settings.";
   }
 
   let content = (
@@ -150,12 +150,12 @@ export function ProjectCreationPane({
   } else if (directDatabaseEntry) {
     content = (
       <ProjectCreator.Root
+        databaseDirect
         initialStep="database"
         key={resetKey}
         {...rootPropsWithStepChange}
       >
         <ProjectCreator.Shell className="min-w-0">
-          <ProjectCreator.ProjectNameField />
           <ProjectCreator.Stage />
         </ProjectCreator.Shell>
       </ProjectCreator.Root>

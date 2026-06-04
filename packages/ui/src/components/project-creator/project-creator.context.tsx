@@ -44,6 +44,8 @@ export interface ProjectCreatorRootProps {
   children: ReactNode;
   /** Disables Confirm on Docker/database steps during async apply. */
   confirmApplying?: boolean;
+  /** Direct Database entry derives the Project Display Name from the selected engine. */
+  databaseDirect?: boolean;
   /** Options for the database step combobox. */
   databaseOptions?: ProjectCreatorDatabaseChoice[];
   /** Direct Docker entry derives the Project Display Name from the image first. */
@@ -67,6 +69,7 @@ export function ProjectCreatorRoot({
   confirmApplying = false,
   children,
   databaseOptions,
+  databaseDirect = false,
   dockerDirect = false,
   existingProjectDisplayNames = [],
   githubDeployer: githubDeployerProp,
@@ -171,6 +174,8 @@ export function ProjectCreatorRoot({
         reset,
         setProjectDisplayName,
         validateProjectDisplayName: validateAndSetProjectDisplayNameError,
+        deriveDatabaseProjectDisplayName:
+          actionsProp?.deriveDatabaseProjectDisplayName,
         deriveDockerProjectDisplayName:
           actionsProp?.deriveDockerProjectDisplayName,
         onGithubConfirm: actionsProp?.onGithubConfirm,
@@ -179,6 +184,7 @@ export function ProjectCreatorRoot({
       },
       meta: {
         databaseOptions: dbOptions,
+        databaseDirect,
         dockerDirect,
         githubDeployer: githubDeployerProp,
       },
@@ -189,6 +195,7 @@ export function ProjectCreatorRoot({
       reset,
       pick,
       actionsProp,
+      databaseDirect,
       dbOptions,
       dockerDirect,
       githubDeployerProp,

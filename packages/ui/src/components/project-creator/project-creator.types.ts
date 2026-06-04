@@ -23,6 +23,9 @@ export const PROJECT_CREATOR_SOURCE_LABEL: Record<
 };
 
 export interface ProjectCreatorActions {
+  deriveDatabaseProjectDisplayName?: (
+    choice: ProjectCreatorDatabaseChoice
+  ) => string;
   deriveDockerProjectDisplayName?: (imageRef: string) => string;
   onDatabaseConfirm?: (
     settings: DatabaseDeploymentSettings,
@@ -63,6 +66,8 @@ export interface ProjectCreatorValue {
   } & ProjectCreatorActions;
   meta: {
     databaseOptions: ProjectCreatorDatabaseChoice[];
+    /** Direct Database entry derives the Project Display Name from the selected engine. */
+    databaseDirect: boolean;
     dockerDirect: boolean;
     /** Enables `GithubDeployer` in the GitHub step (`ProjectCreatorStage`). Omit for an empty/disabled-looking deploy shell. */
     githubDeployer?: ProjectCreatorGithubDeployerSlot;

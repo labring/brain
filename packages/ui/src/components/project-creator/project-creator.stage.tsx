@@ -102,9 +102,8 @@ function DatabasePanel({
 }: {
   databaseOptions: ProjectCreatorDatabaseChoice[];
 }) {
-  const { actions, states } = useProjectCreator();
+  const { actions, meta, states } = useProjectCreator();
   const busy = states.confirmApplying;
-  const projectDisplayName = states.projectDisplayName.trim();
 
   return (
     <div
@@ -114,7 +113,16 @@ function DatabasePanel({
       <DatabaseDeployer
         busy={busy}
         databaseOptions={databaseOptions}
-        onDeploy={(settings) => {
+        onDeploy={(settings, choice) => {
+          const derivedProjectDisplayName = actions
+            .deriveDatabaseProjectDisplayName?.(choice)
+            .trim();
+          const projectDisplayName = meta.databaseDirect
+            ? derivedProjectDisplayName ||
+              choice.label.trim() ||
+              choice.engine.trim() ||
+              "Database Project"
+            : states.projectDisplayName.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
           if (error != null) {
             return;

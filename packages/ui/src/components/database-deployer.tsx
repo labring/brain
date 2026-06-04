@@ -172,7 +172,10 @@ export function DatabaseDeployer({
   databaseOptions: readonly DatabaseDeploymentChoice[];
   deployLabel?: string;
   emptyMessage?: string;
-  onDeploy?: (settings: DatabaseDeploymentSettings) => void | Promise<void>;
+  onDeploy?: (
+    settings: DatabaseDeploymentSettings,
+    choice: DatabaseDeploymentChoice
+  ) => void | Promise<void>;
 }) {
   const initialDatabaseId = useMemo(
     () => defaultDatabaseId(databaseOptions),
@@ -309,11 +312,14 @@ export function DatabaseDeployer({
           if (!(choice && canDeploy)) {
             return;
           }
-          await onDeploy?.({
-            databaseId: choice.id,
-            instancePreset,
-            replicas: replicaCount,
-          });
+          await onDeploy?.(
+            {
+              databaseId: choice.id,
+              instancePreset,
+              replicas: replicaCount,
+            },
+            choice
+          );
         }}
         type="button"
         variant="quiet"

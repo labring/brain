@@ -27,6 +27,7 @@ import { useDbCompositions } from "@/hooks/compositions/use-db-compositions";
 import { useProjectCompositions } from "@/hooks/compositions/use-project-composition";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
+import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
 import { dbDeploymentChoicesFromCompositionRows } from "@/lib/db-composition-options";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
@@ -185,6 +186,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 
   const actions = useMemo<ProjectCreatorActions>(
     () => ({
+      deriveDatabaseProjectDisplayName: (choice) =>
+        deriveDatabaseProjectDisplayName({
+          choice,
+          existingProjectDisplayNames: existingProjects.map(
+            (project) => project.name
+          ),
+        }),
       deriveDockerProjectDisplayName: (imageRef: string) =>
         deriveDockerProjectDisplayName({
           existingProjectDisplayNames: existingProjects.map(
