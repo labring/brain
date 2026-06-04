@@ -67,21 +67,21 @@ export function MainActionSurfaceFrame({
           !assistantPaneOpen && "pr-12"
         )}
       >
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2">
           {icon == null ? null : (
             <span className="flex size-4 shrink-0 items-center justify-center text-blue-400">
               {icon}
             </span>
           )}
           <h2
-            className="min-w-0 truncate font-medium text-base text-foreground leading-none"
+            className="min-w-0 truncate font-semibold text-foreground text-lg leading-none"
             title={title}
           >
             {title}
           </h2>
         </div>
         <p
-          className="min-w-0 truncate px-4 text-center text-primary text-sm leading-5"
+          className="min-w-0 truncate px-4 text-center font-medium text-primary text-sm leading-5"
           title={subtitle}
         >
           {subtitle}

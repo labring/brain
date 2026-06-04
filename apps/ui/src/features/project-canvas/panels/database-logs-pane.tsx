@@ -4,7 +4,7 @@ import { useWorkloadLogs } from "@workspace/api/hooks";
 import { LogViewer } from "@workspace/ui/components/log-viewer/log-viewer";
 import type { TimeRange } from "@workspace/ui/components/time-range-selector";
 import type { Node } from "@xyflow/react";
-import { ScrollText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { MainActionSurfaceFrame } from "@/features/project-canvas/actions/canvas-action-surface";
@@ -74,17 +74,15 @@ export function DatabaseLogsPane({
   }
 
   const { states } = databaseData;
-  const subtitle = `${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""} · Resource logs`;
-
   return (
     <MainActionSurfaceFrame
       bodyClassName="flex min-h-0 flex-col gap-3.5 p-4"
       closeAriaLabel="Close database logs"
-      icon={<ScrollText aria-hidden className="size-4 shrink-0" />}
+      icon={<FileText aria-hidden className="size-4 shrink-0" />}
       onClose={onClose}
       open={open}
-      subtitle={subtitle}
-      title={`${states.name} Logs`}
+      subtitle={states.name}
+      title="Logs"
     >
       {error === undefined ? null : (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-500 text-sm">
