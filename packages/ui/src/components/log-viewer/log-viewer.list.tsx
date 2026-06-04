@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { List, type RowComponentProps } from "react-window";
+import { useEffect, useMemo, useState } from "react";
+import {
+  List,
+  type RowComponentProps,
+  useDynamicRowHeight,
+} from "react-window";
 import { type LogEntry, useLogViewerContext } from "./log-viewer.context";
 import { highlightLogMessage } from "./log-viewer.highlight";
 import { formatLogMessage, formatLogTime } from "./log-viewer.utils";
 
 const LOG_GRID_TEMPLATE =
   "minmax(12rem,20%) minmax(0,1fr) minmax(6.25rem,10%) minmax(7rem,12%)";
-const LOG_ROW_HEIGHT = 52;
+const LOG_ROW_MIN_HEIGHT = 52;
 
 export function LogViewerListHeader() {
   return (
@@ -45,15 +49,17 @@ function LogViewerRow({
   return (
     <div
       {...ariaAttributes}
-      className="grid items-center border-border border-b bg-transparent font-medium text-foreground text-xs"
+      className="grid min-h-[52px] items-start border-border border-b bg-transparent py-3 font-medium text-foreground text-xs"
       style={{ ...style, gridTemplateColumns: LOG_GRID_TEMPLATE }}
     >
-      <span className="truncate px-4">{formatLogTime(entry.time)}</span>
-      <span className="block min-w-0 truncate px-4">
+      <span className="truncate px-4 leading-5">
+        {formatLogTime(entry.time)}
+      </span>
+      <span className="block min-w-0 whitespace-pre-wrap break-words px-4 leading-5">
         {highlightLogMessage(message, searchQuery)}
       </span>
-      <span className="truncate px-4">{entry.pod}</span>
-      <span className="truncate px-4">{entry.container}</span>
+      <span className="truncate px-4 leading-5">{entry.pod}</span>
+      <span className="truncate px-4 leading-5">{entry.container}</span>
     </div>
   );
 }
@@ -65,11 +71,21 @@ function VirtualizedListClient({
   entries: LogEntry[];
   searchQuery: string;
 }) {
+  const rowHeightKey = useMemo(
+    () =>
+      entries.map((entry) => `${entry.time}:${entry.message.length}`).join("|"),
+    [entries]
+  );
+  const rowHeight = useDynamicRowHeight({
+    defaultRowHeight: LOG_ROW_MIN_HEIGHT,
+    key: rowHeightKey,
+  });
+
   return (
     <List
       rowComponent={LogViewerRow}
       rowCount={entries.length}
-      rowHeight={LOG_ROW_HEIGHT}
+      rowHeight={rowHeight}
       rowProps={{ entries, searchQuery }}
     />
   );
