@@ -1,3 +1,10 @@
+const LEADING_LOG_TIMESTAMP_RE =
+  /^\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\s+(?=(?:ERROR|WARN|INFO|DEBUG):?\s)/;
+
+export function formatLogMessage(message: string): string {
+  return message.replace(LEADING_LOG_TIMESTAMP_RE, "");
+}
+
 export function formatLogTime(iso: string): string {
   try {
     const d = new Date(iso);
