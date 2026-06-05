@@ -163,7 +163,7 @@ export function TableViewDataGrid() {
         <thead className="border-border border-b bg-transparent">
           <tr>
             <th
-              className="sticky top-0 z-40 overflow-hidden border-border border-r border-b bg-transparent px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
+              className="sticky top-0 left-0 z-50 overflow-hidden border-border border-r border-b bg-transparent px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
               style={{ width: 48, minWidth: 48, maxWidth: 48 }}
             >
               <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
