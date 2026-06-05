@@ -943,17 +943,21 @@ export function SQLEditorView({
                               }
                               data-testid="sql.editor.result-table"
                             >
-                              <thead className="sticky top-0 z-10 bg-muted">
+                              <thead className="sticky top-0 z-10 bg-transparent">
                                 <tr>
-                                  <th className="w-16 border-r border-b bg-muted px-4 py-2 text-center font-medium text-muted-foreground">
-                                    #
+                                  <th className="relative w-12 overflow-hidden border-r border-b bg-transparent px-3 py-2 text-center font-medium text-muted-foreground">
+                                    <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
+                                    <span className="relative z-10">#</span>
                                   </th>
                                   {result.columns.map((col, i) => (
                                     <th
-                                      className="whitespace-nowrap border-r border-b bg-muted px-4 py-2 font-medium text-muted-foreground"
+                                      className="relative overflow-hidden whitespace-nowrap border-r border-b bg-transparent px-4 py-2 font-medium text-muted-foreground"
                                       key={i}
                                     >
-                                      {col}
+                                      <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
+                                      <span className="relative z-10">
+                                        {col}
+                                      </span>
                                     </th>
                                   ))}
                                 </tr>
@@ -970,7 +974,7 @@ export function SQLEditorView({
                                       data-testid="sql.editor.result-row"
                                       key={i}
                                     >
-                                      <td className="border-r border-b bg-muted/5 px-4 py-1.5 text-center font-mono text-muted-foreground text-xs">
+                                      <td className="border-r border-b bg-[#0C1120] px-3 py-1.5 text-center font-mono text-muted-foreground text-xs">
                                         {i + 1}
                                       </td>
                                       {result.columns.map((col, j) => (
