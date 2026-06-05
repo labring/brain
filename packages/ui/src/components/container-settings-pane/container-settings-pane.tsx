@@ -2568,32 +2568,27 @@ function AddPublicAddressForm({
         label="CNAME Target"
         value={cnameTarget === "" ? "Pending domain" : cnameTarget}
       />
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 text-foreground text-xs leading-4">
-          Auto-generated subdomain. Set port and CNAME.
-        </p>
-        <div className="flex shrink-0 gap-2">
-          <AppButton
-            className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-            disabled={pending}
-            onClick={onCancel}
-            type="button"
-            variant="quiet"
-          >
-            <X aria-hidden data-icon="inline-start" />
-            Cancel
-          </AppButton>
-          <AppButton
-            className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-            disabled={pending || onSubmit == null}
-            onClick={handleSubmit}
-            type="button"
-            variant="quiet"
-          >
-            <Plus aria-hidden data-icon="inline-start" />
-            Add
-          </AppButton>
-        </div>
+      <div className="flex min-w-0 justify-end gap-2">
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          disabled={pending}
+          onClick={onCancel}
+          type="button"
+          variant="quiet"
+        >
+          <X aria-hidden data-icon="inline-start" />
+          Cancel
+        </AppButton>
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          disabled={pending || onSubmit == null}
+          onClick={handleSubmit}
+          type="button"
+          variant="quiet"
+        >
+          <Plus aria-hidden data-icon="inline-start" />
+          Add
+        </AppButton>
       </div>
     </div>
   );
