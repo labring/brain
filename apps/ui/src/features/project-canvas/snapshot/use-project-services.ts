@@ -23,10 +23,10 @@ import type {
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import {
   entryPointRefreshIntervalForLifecycle,
-  hasTransientWorkloadPhase,
+  workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
 
-const WORKLOAD_RECONCILE_POLL_MS = 1000;
+const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
 
 export function useProjectServices(options: {
@@ -70,21 +70,10 @@ export function useProjectServices(options: {
 
   const apsListRef = useRef<K8sGetResponse | undefined>(undefined);
   const dbsListRef = useRef<K8sGetResponse | undefined>(undefined);
+  const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
+    useState(0);
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
     useState(0);
-  const workloadReconcileRefreshInterval = useCallback(
-    (latestData: K8sGetResponse | undefined) => {
-      if (
-        workloadReconcilePollUntil > Date.now() ||
-        hasTransientWorkloadPhase(latestData)
-      ) {
-        return WORKLOAD_RECONCILE_POLL_MS;
-      }
-      return 0;
-    },
-    [workloadReconcilePollUntil]
-  );
-
   const peerDbsEmpty = useCallback(
     () => apItemsFromList(dbsListRef.current).length === 0,
     []
@@ -93,6 +82,37 @@ export function useProjectServices(options: {
     () => apItemsFromList(apsListRef.current).length === 0,
     []
   );
+  const resetWorkloadDiscoveryPollWindow = useCallback(() => {
+    setWorkloadDiscoveryPollUntil(
+      Date.now() + WORKLOAD_DISCOVERY_POLL_WINDOW_MS
+    );
+  }, []);
+  const workloadListRefreshInterval = useCallback(
+    (latestData: K8sGetResponse | undefined, peerEmpty: () => boolean) =>
+      workloadListRefreshIntervalForCanvas({
+        discoveryPollUntil: workloadDiscoveryPollUntil,
+        latestData,
+        peerEmpty: peerEmpty(),
+        workloadReconcilePollUntil,
+      }),
+    [workloadDiscoveryPollUntil, workloadReconcilePollUntil]
+  );
+  const apListRefreshInterval = useCallback(
+    (latestData: K8sGetResponse | undefined) =>
+      workloadListRefreshInterval(latestData, peerDbsEmpty),
+    [peerDbsEmpty, workloadListRefreshInterval]
+  );
+  const dbListRefreshInterval = useCallback(
+    (latestData: K8sGetResponse | undefined) =>
+      workloadListRefreshInterval(latestData, peerApsEmpty),
+    [peerApsEmpty, workloadListRefreshInterval]
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset discovery polling when project changes
+  useEffect(() => {
+    resetWorkloadDiscoveryPollWindow();
+    setWorkloadReconcilePollUntil(0);
+  }, [labelSelector]);
 
   const {
     data: apsData,
@@ -103,9 +123,8 @@ export function useProjectServices(options: {
     kubeconfig,
     labelSelector,
     namespace,
-    peerEmpty: peerDbsEmpty,
-    pollWhileEmpty: true,
-    refreshInterval: workloadReconcileRefreshInterval,
+    pollWhileEmpty: false,
+    refreshInterval: apListRefreshInterval,
   });
 
   const {
@@ -117,9 +136,8 @@ export function useProjectServices(options: {
     kubeconfig,
     labelSelector,
     namespace,
-    peerEmpty: peerApsEmpty,
-    pollWhileEmpty: true,
-    refreshInterval: workloadReconcileRefreshInterval,
+    pollWhileEmpty: false,
+    refreshInterval: dbListRefreshInterval,
   });
   const entryPointRefreshInterval = useCallback(
     (latestData: K8sGetResponse | undefined) =>
@@ -148,8 +166,14 @@ export function useProjectServices(options: {
     setWorkloadReconcilePollUntil(
       Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
     );
+    resetWorkloadDiscoveryPollWindow();
     return Promise.all([mutateAps(), mutateDbs(), mutateEntryPoints()]);
-  }, [mutateAps, mutateDbs, mutateEntryPoints]);
+  }, [
+    mutateAps,
+    mutateDbs,
+    mutateEntryPoints,
+    resetWorkloadDiscoveryPollWindow,
+  ]);
 
   const data = useMemo(
     () => ({ aps: apsData, dbs: dbsData, entryPoints: entryPointsData }),

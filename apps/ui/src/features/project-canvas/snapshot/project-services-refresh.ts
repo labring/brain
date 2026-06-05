@@ -5,6 +5,7 @@ import { isPlatformAddressId } from "@/features/project-canvas/platform-addresse
 
 export const ENTRYPOINT_FAST_REFRESH_MS = 1000;
 export const ENTRYPOINT_STEADY_REFRESH_MS = 5000;
+export const WORKLOAD_LIST_FAST_REFRESH_MS = 1000;
 
 const WORKLOAD_TRANSIENT_PHASES = new Set([
   "binding",
@@ -95,6 +96,37 @@ export function hasPublicApEndpoint(data: K8sGetResponse | undefined) {
   });
 }
 
+export function workloadListRefreshIntervalForCanvas({
+  discoveryPollUntil,
+  latestData,
+  now = Date.now(),
+  peerEmpty,
+  workloadReconcilePollUntil,
+}: {
+  discoveryPollUntil: number;
+  latestData: K8sGetResponse | undefined;
+  now?: number;
+  peerEmpty: boolean;
+  workloadReconcilePollUntil: number;
+}) {
+  if (
+    workloadReconcilePollUntil > now ||
+    hasTransientWorkloadPhase(latestData)
+  ) {
+    return WORKLOAD_LIST_FAST_REFRESH_MS;
+  }
+
+  if (
+    discoveryPollUntil > now &&
+    apItemsFromList(latestData).length === 0 &&
+    peerEmpty
+  ) {
+    return WORKLOAD_LIST_FAST_REFRESH_MS;
+  }
+
+  return 0;
+}
+
 export function entryPointRefreshIntervalForLifecycle({
   apsData,
   entryPointsData,
@@ -115,7 +147,10 @@ export function entryPointRefreshIntervalForLifecycle({
     return ENTRYPOINT_FAST_REFRESH_MS;
   }
 
-  if (apItemsFromList(entryPointsData).length > 0) {
+  if (
+    hasPublicApEndpoint(apsData) &&
+    apItemsFromList(entryPointsData).length > 0
+  ) {
     return ENTRYPOINT_STEADY_REFRESH_MS;
   }
 

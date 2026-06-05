@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { hasPublicApEndpoint } from "./project-services-refresh";
+import {
+  entryPointRefreshIntervalForLifecycle,
+  hasPublicApEndpoint,
+  workloadListRefreshIntervalForCanvas,
+} from "./project-services-refresh";
 
 test("public AP endpoint detection includes Network public addresses", () => {
   assert.equal(
@@ -85,5 +89,58 @@ test("public AP detection ignores retired endpoint fields", () => {
       ],
     }),
     false
+  );
+});
+
+test("workload list refresh polls empty discovery only inside the startup window", () => {
+  const emptyList = { items: [] };
+
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      discoveryPollUntil: 10_000,
+      latestData: emptyList,
+      now: 9000,
+      peerEmpty: true,
+      workloadReconcilePollUntil: 0,
+    }),
+    1000
+  );
+
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      discoveryPollUntil: 10_000,
+      latestData: emptyList,
+      now: 10_001,
+      peerEmpty: true,
+      workloadReconcilePollUntil: 0,
+    }),
+    0
+  );
+});
+
+test("workload list refresh keeps fast polling during reconcile windows", () => {
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      discoveryPollUntil: 0,
+      latestData: { items: [] },
+      now: 9000,
+      peerEmpty: true,
+      workloadReconcilePollUntil: 10_000,
+    }),
+    1000
+  );
+});
+
+test("entrypoint steady refresh only runs for public AP endpoints", () => {
+  assert.equal(
+    entryPointRefreshIntervalForLifecycle({
+      apsData: { items: [] },
+      entryPointsData: {
+        items: [{ metadata: { name: "old-entrypoint", namespace: "default" } }],
+      },
+      now: 9000,
+      workloadReconcilePollUntil: 0,
+    }),
+    0
   );
 });
