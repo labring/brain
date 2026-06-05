@@ -28,7 +28,7 @@ import (
 
 func registerCreate(grp huma.API) {
 	type createBody struct {
-		YAML string `json:"yaml" required:"true" doc:"AP product manifest (YAML or JSON). The Go API renders it directly into Kubernetes Deployment and Service resources. Required fields: metadata.name, spec.projectId, spec.input.image, and spec.input.network.privatePort."`
+		YAML string `json:"yaml" required:"true" doc:"AP product manifest (YAML or JSON). The Go API renders it directly into Kubernetes Deployment and Service resources. Required fields: metadata.name, spec.projectId, spec.input.image, and spec.input.network.appListeningPorts."`
 	}
 	type createInput struct {
 		middleware.AuthInput
@@ -50,7 +50,8 @@ spec:
   input:
     image: nginx:1.27
     network:
-      privatePort: 80
+      appListeningPorts:
+        - port: 80
     probes:
       startup:
         httpGet:
@@ -89,7 +90,7 @@ spec:
 		Description: "Create an AP instance from one Brain AP product manifest (PUT). The Go API renders direct Kubernetes Deployment and Service resources and returns the AP product view as YAML.\n\n" +
 			"**Request body usage:**\n" +
 			"- Send exactly one AP manifest in the `yaml` field.\n" +
-			"- Required fields are `metadata.name`, `spec.projectId`, `spec.input.image`, and `spec.input.network.privatePort`.\n\n" +
+			"- Required fields are `metadata.name`, `spec.projectId`, `spec.input.image`, and `spec.input.network.appListeningPorts`.\n\n" +
 			"**Response:** Returns the created AP product view in YAML format.\n\n" +
 			"**Copy-pasteable example (use in `yaml` field):**\n```yaml\n" + exampleYAML + "\n```",
 		Tags: []string{"AP"},
@@ -199,6 +200,11 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 	if projectID == "" {
 		projectID = stringFromMap(spec, "projectID")
 	}
+	appListeningPorts := apAppListeningPortsFromNetwork(network)
+	privatePort := int32FromMap(network, "privatePort")
+	if privatePort <= 0 && len(appListeningPorts) > 0 {
+		privatePort = appListeningPorts[0].Port
+	}
 	return orchestration.APResourcesInput{
 		Env:             envVarsFromValue(input["env"]),
 		Image:           stringFromMap(input, "image"),
@@ -207,7 +213,7 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		Name:            obj.GetName(),
 		NetworkJSON:     networkJSONFromMap(network),
 		Namespace:       namespace,
-		PrivatePort:     int32FromMap(network, "privatePort"),
+		PrivatePort:     privatePort,
 		ProjectID:       projectID,
 		ReadinessProbe:  probeFromInput(input, "readiness"),
 		Replicas:        apReplicasFromResourceSpec(resourceSpec),
@@ -273,12 +279,21 @@ func apPublicIngressesFromObject(obj unstructured.Unstructured, namespace string
 	}
 	return orchestration.RenderAPPublicRoutingResources(orchestration.APNetworkIngressInput{
 		APName:            obj.GetName(),
+		AppListeningPorts: apAppListeningPortsFromNetwork(network),
 		CustomDomains:     apCustomDomainsFromNetwork(network),
 		Namespace:         namespace,
 		PlatformAddresses: apPlatformAddressesFromNetwork(network),
 		ProjectID:         projectID,
 		RoutingDomain:     routingDomainFromObject(obj),
 	})
+}
+
+func apAppListeningPortsFromNetwork(network map[string]interface{}) []orchestration.APAppListeningPort {
+	ports, err := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, 0)
+	if err != nil {
+		return nil
+	}
+	return ports
 }
 
 func apPlatformAddressesFromNetwork(network map[string]interface{}) []orchestration.APPlatformAddressRequest {
@@ -484,7 +499,7 @@ func registerUpdate(grp huma.API) {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"AP instance name to patch"`
 		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
-		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the AP resource.\n\nWhat to patch:\n- spec.input.image: update the application image.\n- spec.input.network.privatePort: update the App Listening Port targeted by the Private Address.\n- spec.input.network.platformAddresses: replace Public Address requests as one coherent Network object.\n- spec.input.network.customDomains: replace Custom Domain Binding requests as part of the coherent Network object.\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.paused: when true, scale the Deployment to 0 with SealOS pause annotations; false resumes using the active Fixed Replicas value.\n- spec.restartRequest: bump this integer to request a rollout (alternative: POST .../restart on the Deployment).\n- spec.input.env: replace the full environment variable list.\n- spec.input.probes: replace health probes (startup, liveness, readiness).\n- spec.resource.requests / spec.resource.limits: container resources.\n- spec.ingressAnnotations: add or replace Ingress annotations.\n\nPatch examples:\n- Pause: {\"spec\":{\"paused\":true}}\n- Resume: {\"spec\":{\"paused\":false}}\n- Update image: {\"spec\":{\"input\":{\"image\":\"nginx:1.27\"}}}\n- Change Private Address target port: {\"spec\":{\"input\":{\"network\":{\"privatePort\":8080}}}}\n- Replace Network with one Public Address: {\"spec\":{\"input\":{\"network\":{\"privatePort\":8080,\"platformAddresses\":[{\"id\":\"pa_abc123\",\"port\":8080}]}}}}\n- Change Fixed Replicas: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"fixed\",\"fixed\":{\"replicas\":2}}}}}\n- Change CPU Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"cpu\",\"type\":\"utilization\",\"utilizationPercent\":75}}}}}}\n- Change Memory Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"memory\",\"type\":\"averageValue\",\"averageValue\":\"512Mi\"}}}}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Nested objects merge at the subtree you provide.\n- Arrays such as spec.input.network.platformAddresses, spec.input.network.customDomains, and spec.input.env are replaced as whole lists."`
+		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the AP resource.\n\nWhat to patch:\n- spec.input.image: update the application image.\n- spec.input.network.appListeningPorts: replace App Listening Ports as one coherent Network object.\n- spec.input.network.platformAddresses: replace Public Address requests as one coherent Network object.\n- spec.input.network.customDomains: replace Custom Domain Binding requests as part of the coherent Network object.\n- Legacy spec.input.network.privatePort remains readable as a one-port fallback.\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.paused: when true, scale the Deployment to 0 with SealOS pause annotations; false resumes using the active Fixed Replicas value.\n- spec.restartRequest: bump this integer to request a rollout (alternative: POST .../restart on the Deployment).\n- spec.input.env: replace the full environment variable list.\n- spec.input.probes: replace health probes (startup, liveness, readiness).\n- spec.resource.requests / spec.resource.limits: container resources.\n- spec.ingressAnnotations: add or replace Ingress annotations.\n\nPatch examples:\n- Pause: {\"spec\":{\"paused\":true}}\n- Resume: {\"spec\":{\"paused\":false}}\n- Update image: {\"spec\":{\"input\":{\"image\":\"nginx:1.27\"}}}\n- Replace App Listening Ports: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":80},{\"port\":3000}]}}}}\n- Replace Network with one Public Address: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":8080}],\"platformAddresses\":[{\"id\":\"pa_abc123\",\"port\":8080}]}}}}\n- Change Fixed Replicas: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"fixed\",\"fixed\":{\"replicas\":2}}}}}\n- Change CPU Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"cpu\",\"type\":\"utilization\",\"utilizationPercent\":75}}}}}}\n- Change Memory Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"memory\",\"type\":\"averageValue\",\"averageValue\":\"512Mi\"}}}}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Nested objects merge at the subtree you provide.\n- Arrays such as spec.input.network.appListeningPorts, spec.input.network.platformAddresses, spec.input.network.customDomains, and spec.input.env are replaced as whole lists."`
 	}
 	type updateOutput struct {
 		Body json.RawMessage
@@ -691,6 +706,9 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 	if network == nil {
 		network = map[string]interface{}{"privatePort": privatePort}
 	}
+	if normalizedPorts, err := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, privatePort); err == nil && len(normalizedPorts) > 0 {
+		privatePort = normalizedPorts[0].Port
+	}
 	replicas := int32(1)
 	if current.Spec.Replicas != nil {
 		replicas = *current.Spec.Replicas
@@ -753,8 +771,8 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 		}
 		if networkPatch, _ := input["network"].(map[string]interface{}); networkPatch != nil {
 			network = mergeAPNetwork(network, networkPatch)
-			if nextPort := int32FromMap(network, "privatePort"); nextPort > 0 {
-				privatePort = nextPort
+			if normalizedPorts, err := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, privatePort); err == nil && len(normalizedPorts) > 0 {
+				privatePort = normalizedPorts[0].Port
 			}
 		}
 	}
@@ -909,12 +927,16 @@ func apDeploymentPatchFromProductPatch(raw json.RawMessage, name string) []byte 
 		}
 		if network, _ := input["network"].(map[string]interface{}); network != nil {
 			annotationsPatch[orchestration.APDesiredNetworkAnnotation] = networkJSONFromMap(network)
-			if privatePort := int32FromMap(network, "privatePort"); privatePort > 0 {
-				containerPatch["ports"] = []interface{}{map[string]interface{}{
-					"containerPort": privatePort,
-					"name":          "http",
-					"protocol":      "TCP",
-				}}
+			if appListeningPorts := apAppListeningPortsFromNetwork(network); len(appListeningPorts) > 0 {
+				ports := make([]interface{}, 0, len(appListeningPorts))
+				for _, port := range appListeningPorts {
+					ports = append(ports, map[string]interface{}{
+						"containerPort": port.Port,
+						"name":          orchestration.APPortName(port.Port),
+						"protocol":      "TCP",
+					})
+				}
+				containerPatch["ports"] = ports
 			}
 		}
 	}
@@ -1061,18 +1083,22 @@ func apServicePatchFromProductPatch(raw json.RawMessage) []byte {
 	spec, _ := patch["spec"].(map[string]interface{})
 	input, _ := spec["input"].(map[string]interface{})
 	network, _ := input["network"].(map[string]interface{})
-	privatePort := int32FromMap(network, "privatePort")
-	if privatePort <= 0 {
+	appListeningPorts := apAppListeningPortsFromNetwork(network)
+	if len(appListeningPorts) == 0 {
 		return nil
+	}
+	ports := make([]interface{}, 0, len(appListeningPorts))
+	for _, port := range appListeningPorts {
+		ports = append(ports, map[string]interface{}{
+			"name":       orchestration.APPortName(port.Port),
+			"port":       port.Port,
+			"protocol":   "TCP",
+			"targetPort": port.Port,
+		})
 	}
 	bytes, err := json.Marshal(map[string]interface{}{
 		"spec": map[string]interface{}{
-			"ports": []interface{}{map[string]interface{}{
-				"name":       "http",
-				"port":       privatePort,
-				"protocol":   "TCP",
-				"targetPort": privatePort,
-			}},
+			"ports": ports,
 		},
 	})
 	if err != nil {

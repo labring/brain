@@ -80,10 +80,11 @@ func APWithIngressesAndServicesFromList(ap map[string]interface{}, ingresses, se
 }
 
 func mergePrivateNetworkStatus(ap map[string]interface{}, status map[string]interface{}, services []map[string]interface{}) {
-	privatePort, ok := apPrivatePort(ap)
-	if !ok {
+	appListeningPorts := apAppListeningPorts(ap)
+	if len(appListeningPorts) == 0 {
 		return
 	}
+	privatePort := appListeningPorts[0]
 
 	networkCopy := networkStatusCopy(status)
 	if _, exists := networkCopy["privatePort"]; !exists {
@@ -94,6 +95,18 @@ func mergePrivateNetworkStatus(ap map[string]interface{}, status map[string]inte
 		if addr := privateNetworkAddressForPort(services, apNamespace, privatePort); addr != "" {
 			networkCopy["privateAddress"] = addr
 		}
+	}
+	if _, exists := networkCopy["appListeningPorts"]; !exists {
+		apNamespace := getString(ap, "metadata", "namespace")
+		rows := make([]interface{}, 0, len(appListeningPorts))
+		for _, port := range appListeningPorts {
+			row := map[string]interface{}{"port": port}
+			if addr := privateNetworkAddressForPort(services, apNamespace, port); addr != "" {
+				row["privateAddress"] = addr
+			}
+			rows = append(rows, row)
+		}
+		networkCopy["appListeningPorts"] = rows
 	}
 	status["network"] = networkCopy
 }
@@ -115,11 +128,46 @@ func apInputNetwork(ap map[string]interface{}) map[string]interface{} {
 }
 
 func apPrivatePort(ap map[string]interface{}) (int, bool) {
+	appListeningPorts := apAppListeningPorts(ap)
+	if len(appListeningPorts) > 0 {
+		return appListeningPorts[0], true
+	}
 	network := apInputNetwork(ap)
 	if network == nil {
 		return 0, false
 	}
 	return privatePortFromValue(network["privatePort"])
+}
+
+func apAppListeningPorts(ap map[string]interface{}) []int {
+	network := apInputNetwork(ap)
+	if network == nil {
+		return nil
+	}
+	if raw, ok := network["appListeningPorts"].([]interface{}); ok {
+		out := make([]int, 0, len(raw))
+		seen := make(map[int]bool, len(raw))
+		for _, item := range raw {
+			row, _ := item.(map[string]interface{})
+			if row == nil {
+				return nil
+			}
+			port, ok := privatePortFromValue(row["port"])
+			if !ok || seen[port] {
+				return nil
+			}
+			seen[port] = true
+			out = append(out, port)
+		}
+		if len(out) > 0 {
+			return out
+		}
+		return nil
+	}
+	if port, ok := privatePortFromValue(network["privatePort"]); ok {
+		return []int{port}
+	}
+	return nil
 }
 
 func privateNetworkAddressForPort(services []map[string]interface{}, namespace string, privatePort int) string {
@@ -166,6 +214,7 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 		return
 	}
 	customDomains := apCustomDomainRequests(ap, platformAddresses)
+	appListeningPortSet := apAppListeningPortSet(ap)
 	networkCopy := networkStatusCopy(status)
 	if _, exists := networkCopy["publicAddresses"]; exists {
 		publicAddresses := publicAddressRowsFromValue(networkCopy["publicAddresses"])
@@ -175,7 +224,7 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 				promotedPlatformAddressIDs[customDomain.platformAddressID] = true
 				continue
 			}
-			row := pendingCustomDomainRow(ap, platformAddresses, customDomain)
+			row := pendingCustomDomainRow(ap, platformAddresses, customDomain, appListeningPortSet)
 			if row == nil {
 				continue
 			}
@@ -188,7 +237,7 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 			if seenIDs[address.id] || promotedPlatformAddressIDs[address.id] {
 				continue
 			}
-			publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, address))
+			publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, address, appListeningPortSet))
 		}
 		networkCopy["publicAddresses"] = publicAddresses
 		status["network"] = networkCopy
@@ -198,7 +247,7 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 	promotedPlatformAddressIDs := make(map[string]bool)
 	publicAddresses := make([]map[string]interface{}, 0, len(platformAddresses)+len(customDomains))
 	for _, customDomain := range customDomains {
-		row := pendingCustomDomainRow(ap, platformAddresses, customDomain)
+		row := pendingCustomDomainRow(ap, platformAddresses, customDomain, appListeningPortSet)
 		if row == nil {
 			continue
 		}
@@ -209,7 +258,7 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 		if promotedPlatformAddressIDs[address.id] {
 			continue
 		}
-		publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, address))
+		publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, address, appListeningPortSet))
 	}
 	networkCopy["publicAddresses"] = publicAddresses
 	status["network"] = networkCopy
@@ -236,6 +285,15 @@ func publicAddressRowsFromValue(value interface{}) []map[string]interface{} {
 	default:
 		return nil
 	}
+}
+
+func apAppListeningPortSet(ap map[string]interface{}) map[int]bool {
+	ports := apAppListeningPorts(ap)
+	out := make(map[int]bool, len(ports))
+	for _, port := range ports {
+		out[port] = true
+	}
+	return out
 }
 
 func copyPublicAddressRow(row map[string]interface{}) map[string]interface{} {
@@ -283,12 +341,11 @@ func isCustomPublicAddressRow(row map[string]interface{}) bool {
 	return strings.ToLower(strings.TrimSpace(rowType)) == "custom"
 }
 
-func pendingPublicAddressRow(ap map[string]interface{}, address platformAddressRequest) map[string]interface{} {
+func pendingPublicAddressRow(ap map[string]interface{}, address platformAddressRequest, appListeningPortSet map[int]bool) map[string]interface{} {
 	row := map[string]interface{}{
-		"id":     address.id,
-		"port":   address.port,
-		"status": "progressing",
-		"type":   "platform",
+		"id":   address.id,
+		"port": address.port,
+		"type": "platform",
 	}
 	host := platformAddressHost(
 		getString(ap, "metadata", "namespace"),
@@ -298,10 +355,22 @@ func pendingPublicAddressRow(ap map[string]interface{}, address platformAddressR
 		apRoutingDomain(ap),
 	)
 	if host == "" {
+		if publicAddressTargetPortMissing(address.port, appListeningPortSet) {
+			row["reason"] = "target-port-missing"
+			row["status"] = "blocked"
+		} else {
+			row["status"] = "progressing"
+		}
 		return row
 	}
 	row["host"] = host
 	row["url"] = fmt.Sprintf("https://%s/", host)
+	if publicAddressTargetPortMissing(address.port, appListeningPortSet) {
+		row["reason"] = "target-port-missing"
+		row["status"] = "blocked"
+	} else {
+		row["status"] = "progressing"
+	}
 	return row
 }
 
@@ -309,6 +378,7 @@ func pendingCustomDomainRow(
 	ap map[string]interface{},
 	platformAddresses []platformAddressRequest,
 	customDomain customDomainRequest,
+	appListeningPortSet map[int]bool,
 ) map[string]interface{} {
 	target, ok := platformAddressRequestByID(platformAddresses, customDomain.platformAddressID)
 	if !ok {
@@ -319,7 +389,6 @@ func pendingCustomDomainRow(
 		"id":                customDomain.id,
 		"platformAddressId": customDomain.platformAddressID,
 		"port":              target.port,
-		"status":            "pending",
 		"type":              "custom",
 		"url":               fmt.Sprintf("https://%s/", customDomain.domain),
 	}
@@ -333,7 +402,20 @@ func pendingCustomDomainRow(
 	if cnameTarget != "" {
 		row["cnameTarget"] = cnameTarget
 	}
+	if publicAddressTargetPortMissing(target.port, appListeningPortSet) {
+		row["reason"] = "target-port-missing"
+		row["status"] = "blocked"
+	} else {
+		row["status"] = "pending"
+	}
 	return row
+}
+
+func publicAddressTargetPortMissing(port int, appListeningPortSet map[int]bool) bool {
+	if len(appListeningPortSet) == 0 {
+		return false
+	}
+	return !appListeningPortSet[port]
 }
 
 func platformAddressRequestByID(addresses []platformAddressRequest, id string) (platformAddressRequest, bool) {

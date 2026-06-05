@@ -64,7 +64,66 @@ func TestAPTransformEnrichesPrivateNetworkFromService(t *testing.T) {
 			if got := network["privateAddress"]; got != tt.wantAddress {
 				t.Fatalf("status.network.privateAddress = %v, want %s", got, tt.wantAddress)
 			}
+			rows := network["appListeningPorts"].([]interface{})
+			row := rows[0].(map[string]interface{})
+			if got := row["port"]; got != tt.privatePort {
+				t.Fatalf("status.network.appListeningPorts[0].port = %v, want %d", got, tt.privatePort)
+			}
+			if got := row["privateAddress"]; got != tt.wantAddress {
+				t.Fatalf("status.network.appListeningPorts[0].privateAddress = %v, want %s", got, tt.wantAddress)
+			}
 		})
+	}
+}
+
+func TestAPTransformEnrichesMultipleAppListeningPortsFromService(t *testing.T) {
+	out := APWithIngressesAndServicesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 80},
+							map[string]interface{}{"port": 3000},
+						},
+					},
+				},
+			},
+		},
+		nil,
+		[]map[string]interface{}{
+			{
+				"metadata": map[string]interface{}{
+					"name":      "api-service",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"port": 80},
+						map[string]interface{}{"port": 3000},
+					},
+				},
+			},
+		},
+	)
+
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	rows := network["appListeningPorts"].([]interface{})
+	if got := len(rows); got != 2 {
+		t.Fatalf("status.network.appListeningPorts count = %d, want 2", got)
+	}
+	first := rows[0].(map[string]interface{})
+	second := rows[1].(map[string]interface{})
+	if got := first["privateAddress"]; got != "http://api-service.default.svc.cluster.local" {
+		t.Fatalf("port 80 privateAddress = %v, want service URL without :80", got)
+	}
+	if got := second["privateAddress"]; got != "http://api-service.default.svc.cluster.local:3000" {
+		t.Fatalf("port 3000 privateAddress = %v, want service URL with port", got)
 	}
 }
 
@@ -225,7 +284,7 @@ func TestAPTransformPendingPlatformAddressHostIgnoresUIDAndTargetPort(t *testing
 	status := out["status"].(map[string]interface{})
 	network := status["network"].(map[string]interface{})
 	addresses := network["publicAddresses"].([]map[string]interface{})
-	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_abc123", "ucflzg.apps.example.com", 9000)
+	assertBlockedPublicNetworkAddressWithHost(t, addresses, "pa_abc123", "ucflzg.apps.example.com", 9000)
 }
 
 func TestAPTransformPromotesDesiredCustomDomainRows(t *testing.T) {
@@ -239,6 +298,10 @@ func TestAPTransformPromotesDesiredCustomDomainRows(t *testing.T) {
 			"spec": map[string]interface{}{
 				"input": map[string]interface{}{
 					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+							map[string]interface{}{"port": 9000},
+						},
 						"privatePort": 8080,
 						"platformAddresses": []interface{}{
 							map[string]interface{}{"id": "pa_abc123", "port": 8080},
@@ -281,6 +344,10 @@ func TestAPTransformObservedCustomDomainHidesPromotedPlatformAddress(t *testing.
 			"spec": map[string]interface{}{
 				"input": map[string]interface{}{
 					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+							map[string]interface{}{"port": 9000},
+						},
 						"privatePort": 8080,
 						"platformAddresses": []interface{}{
 							map[string]interface{}{"id": "pa_abc123", "port": 8080},
@@ -333,6 +400,48 @@ func TestAPTransformObservedCustomDomainHidesPromotedPlatformAddress(t *testing.
 	}
 	assertCustomDomainPublicNetworkAddress(t, addresses, "cd_def456", "www.example.com", "pa_abc123", "ucflzg.apps.example.com", 8080)
 	assertPendingPublicNetworkAddressWithHost(t, addresses, "pa_def456", "hndpda.apps.example.com", 9000)
+	assertPublicNetworkAddressIDMissing(t, addresses, "pa_abc123")
+}
+
+func TestAPTransformBlocksCustomDomainWhenTargetPortMissing(t *testing.T) {
+	out := APWithIngressesAndServicesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"labels":    map[string]interface{}{"region": "apps.example.com"},
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+						},
+						"platformAddresses": []interface{}{
+							map[string]interface{}{"id": "pa_abc123", "port": 9000},
+						},
+						"customDomains": []interface{}{
+							map[string]interface{}{
+								"domain":            "www.example.com",
+								"id":                "cd_def456",
+								"platformAddressId": "pa_abc123",
+							},
+						},
+					},
+				},
+			},
+		},
+		nil,
+		nil,
+	)
+
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	addresses := network["publicAddresses"].([]map[string]interface{})
+	if got := len(addresses); got != 1 {
+		t.Fatalf("status.network.publicAddresses count = %d, want blocked custom row only", got)
+	}
+	assertBlockedCustomDomainPublicNetworkAddress(t, addresses, "cd_def456", "www.example.com", "pa_abc123", "ucflzg.apps.example.com", 9000)
 	assertPublicNetworkAddressIDMissing(t, addresses, "pa_abc123")
 }
 
@@ -580,4 +689,68 @@ func assertPendingPublicNetworkAddressWithHost(t *testing.T, addresses []map[str
 		return
 	}
 	t.Fatalf("missing pending public address for id %s", id)
+}
+
+func assertBlockedPublicNetworkAddressWithHost(t *testing.T, addresses []map[string]interface{}, id string, host string, port int) {
+	t.Helper()
+	for _, address := range addresses {
+		if address["id"] != id {
+			continue
+		}
+		if got := address["host"]; got != host {
+			t.Fatalf("blocked public address %s host = %v, want %s", id, got, host)
+		}
+		if got := address["url"]; got != fmt.Sprintf("https://%s/", host) {
+			t.Fatalf("blocked public address %s url = %v, want host URL", id, got)
+		}
+		if got := address["port"]; got != port {
+			t.Fatalf("blocked public address %s port = %v, want %d", id, got, port)
+		}
+		if got := address["type"]; got != "platform" {
+			t.Fatalf("blocked public address %s type = %v, want platform", id, got)
+		}
+		if got := address["status"]; got != "blocked" {
+			t.Fatalf("blocked public address %s status = %v, want blocked", id, got)
+		}
+		if got := address["reason"]; got != "target-port-missing" {
+			t.Fatalf("blocked public address %s reason = %v, want target-port-missing", id, got)
+		}
+		return
+	}
+	t.Fatalf("missing blocked public address for id %s", id)
+}
+
+func assertBlockedCustomDomainPublicNetworkAddress(t *testing.T, addresses []map[string]interface{}, id string, domain string, platformAddressID string, cnameTarget string, port int) {
+	t.Helper()
+	for _, address := range addresses {
+		if address["id"] != id {
+			continue
+		}
+		if got := address["host"]; got != domain {
+			t.Fatalf("blocked custom domain address %s host = %v, want %s", id, got, domain)
+		}
+		if got := address["url"]; got != fmt.Sprintf("https://%s/", domain) {
+			t.Fatalf("blocked custom domain address %s url = %v, want host URL", id, got)
+		}
+		if got := address["platformAddressId"]; got != platformAddressID {
+			t.Fatalf("blocked custom domain address %s platformAddressId = %v, want %s", id, got, platformAddressID)
+		}
+		if got := address["cnameTarget"]; got != cnameTarget {
+			t.Fatalf("blocked custom domain address %s cnameTarget = %v, want %s", id, got, cnameTarget)
+		}
+		if got := address["port"]; got != port {
+			t.Fatalf("blocked custom domain address %s port = %v, want %d", id, got, port)
+		}
+		if got := address["type"]; got != "custom" {
+			t.Fatalf("blocked custom domain address %s type = %v, want custom", id, got)
+		}
+		if got := address["status"]; got != "blocked" {
+			t.Fatalf("blocked custom domain address %s status = %v, want blocked", id, got)
+		}
+		if got := address["reason"]; got != "target-port-missing" {
+			t.Fatalf("blocked custom domain address %s reason = %v, want target-port-missing", id, got)
+		}
+		return
+	}
+	t.Fatalf("missing blocked custom domain address for id %s", id)
 }

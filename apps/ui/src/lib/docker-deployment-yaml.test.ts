@@ -40,7 +40,8 @@ test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifes
     { name: "DATABASE_URL", value: "postgres://db:5432/app" },
     { name: "FEATURE_FLAG", value: "true" },
   ]);
-  assert.equal(out.spec.input.network.privatePort, 8080);
+  assert.deepEqual(out.spec.input.network.appListeningPorts, [{ port: 8080 }]);
+  assert.equal(out.spec.input.network.privatePort, undefined);
   assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
   assert.match(
     out.spec.input.network.platformAddresses[0].domainPrefix,
@@ -150,7 +151,8 @@ spec:
   assert.equal(out.metadata.labels["app.kubernetes.io/name"], "project-a-api");
   assert.equal(out.metadata.labels.region, "apps.example.com");
   assert.equal(out.spec.input.image, "ghcr.io/acme/api:1.2");
-  assert.equal(out.spec.input.network.privatePort, 3000);
+  assert.deepEqual(out.spec.input.network.appListeningPorts, [{ port: 3000 }]);
+  assert.equal(out.spec.input.network.privatePort, undefined);
   assert.equal(out.spec.input.network.platformAddresses[0].id, "pa_abc123");
   assert.match(
     out.spec.input.network.platformAddresses[0].domainPrefix,

@@ -24,6 +24,7 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 	image := ""
 	imagePullPolicy := corev1.PullAlways
 	privatePort := int32(0)
+	appListeningPorts := []APAppListeningPort{}
 	env := []interface{}{}
 	resources := corev1.ResourceRequirements{}
 	probes := map[string]interface{}{}
@@ -43,6 +44,7 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 		}
 		if len(container.Ports) > 0 {
 			privatePort = container.Ports[0].ContainerPort
+			appListeningPorts = apAppListeningPortsFromContainerPorts(container.Ports)
 		}
 		for _, item := range container.Env {
 			row := map[string]interface{}{"name": item.Name}
@@ -64,12 +66,20 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 	network := map[string]interface{}{
 		"privatePort": privatePort,
 	}
+	if len(appListeningPorts) > 0 {
+		network["appListeningPorts"] = APAppListeningPortRows(appListeningPorts)
+	}
 	if desiredNetwork := desiredAPNetworkFromDeployment(deployment); len(desiredNetwork) > 0 {
 		for key, value := range desiredNetwork {
 			network[key] = value
 		}
 		if _, ok := network["privatePort"]; !ok {
 			network["privatePort"] = privatePort
+		}
+		if _, ok := network["appListeningPorts"]; !ok {
+			if normalizedPorts, err := NormalizeAPAppListeningPortsFromNetwork(network, privatePort); err == nil {
+				network["appListeningPorts"] = APAppListeningPortRows(normalizedPorts)
+			}
 		}
 	}
 	status := map[string]interface{}{
@@ -175,14 +185,33 @@ func apNetworkStatusFromDesiredNetwork(deployment *appsv1.Deployment, network ma
 	if len(network) == 0 {
 		return nil
 	}
-	status := map[string]interface{}{}
-	if privatePort, ok := network["privatePort"]; ok {
-		status["privatePort"] = privatePort
-		if address := apPrivateAddress(deployment, privatePort); address != "" {
-			status["privateAddress"] = address
+	fallbackPort := int32(0)
+	if len(deployment.Spec.Template.Spec.Containers) > 0 {
+		container := deployment.Spec.Template.Spec.Containers[0]
+		if len(container.Ports) > 0 {
+			fallbackPort = container.Ports[0].ContainerPort
 		}
 	}
-	publicAddresses := apPublicAddressStatusRows(deployment, network)
+	appListeningPorts, err := NormalizeAPAppListeningPortsFromNetwork(network, fallbackPort)
+	if err != nil || len(appListeningPorts) == 0 {
+		return nil
+	}
+	status := map[string]interface{}{}
+	privatePort := appListeningPorts[0].Port
+	status["privatePort"] = privatePort
+	if address := apPrivateAddress(deployment, privatePort); address != "" {
+		status["privateAddress"] = address
+	}
+	privateRows := make([]interface{}, 0, len(appListeningPorts))
+	for _, port := range appListeningPorts {
+		row := map[string]interface{}{"port": port.Port}
+		if address := apPrivateAddress(deployment, port.Port); address != "" {
+			row["privateAddress"] = address
+		}
+		privateRows = append(privateRows, row)
+	}
+	status["appListeningPorts"] = privateRows
+	publicAddresses := apPublicAddressStatusRows(deployment, network, APAppListeningPortSet(appListeningPorts))
 	if len(publicAddresses) > 0 {
 		status["publicAddresses"] = publicAddresses
 	}
@@ -202,22 +231,23 @@ func apPrivateAddress(deployment *appsv1.Deployment, value interface{}) string {
 }
 
 func int32FromInterface(value interface{}) (int32, bool) {
-	switch typed := value.(type) {
-	case int:
-		return int32(typed), int64(typed) == int64(int32(typed))
-	case int32:
-		return typed, true
-	case int64:
-		return int32(typed), typed == int64(int32(typed))
-	case float64:
-		rounded := int32(typed)
-		return rounded, typed == float64(rounded)
-	default:
-		return 0, false
-	}
+	return APPortFromInterface(value)
 }
 
-func apPublicAddressStatusRows(deployment *appsv1.Deployment, network map[string]interface{}) []interface{} {
+func apAppListeningPortsFromContainerPorts(ports []corev1.ContainerPort) []APAppListeningPort {
+	out := make([]APAppListeningPort, 0, len(ports))
+	seen := make(map[int32]bool, len(ports))
+	for _, port := range ports {
+		if !IsValidAPPort(port.ContainerPort) || seen[port.ContainerPort] {
+			continue
+		}
+		seen[port.ContainerPort] = true
+		out = append(out, APAppListeningPort{Port: port.ContainerPort})
+	}
+	return out
+}
+
+func apPublicAddressStatusRows(deployment *appsv1.Deployment, network map[string]interface{}, appListeningPortSet map[int32]bool) []interface{} {
 	platformRows := apPlatformAddressRows(network["platformAddresses"])
 	if len(platformRows) == 0 {
 		return nil
@@ -232,7 +262,7 @@ func apPublicAddressStatusRows(deployment *appsv1.Deployment, network map[string
 
 	promotedPlatformIDs := map[string]bool{}
 	out := []interface{}{}
-	for _, row := range apCustomDomainRows(network["customDomains"], platformsByID) {
+	for _, row := range apCustomDomainRows(network["customDomains"], platformsByID, appListeningPortSet) {
 		platformID, _ := row["platformAddressId"].(string)
 		if platformID != "" {
 			promotedPlatformIDs[platformID] = true
@@ -250,7 +280,12 @@ func apPublicAddressStatusRows(deployment *appsv1.Deployment, network map[string
 			row["host"] = host
 			row["url"] = fmt.Sprintf("https://%s/", host)
 		}
-		row["status"] = "progressing"
+		if apPublicAddressTargetPortMissing(row, appListeningPortSet) {
+			row["reason"] = "target-port-missing"
+			row["status"] = "blocked"
+		} else {
+			row["status"] = "progressing"
+		}
 		row["type"] = "platform"
 		out = append(out, row)
 	}
@@ -285,7 +320,7 @@ func apPlatformAddressRows(value interface{}) []map[string]interface{} {
 	return out
 }
 
-func apCustomDomainRows(value interface{}, platformsByID map[string]map[string]interface{}) []map[string]interface{} {
+func apCustomDomainRows(value interface{}, platformsByID map[string]map[string]interface{}, appListeningPortSet map[int32]bool) []map[string]interface{} {
 	rows, ok := value.([]interface{})
 	if !ok || len(rows) == 0 {
 		return nil
@@ -306,17 +341,31 @@ func apCustomDomainRows(value interface{}, platformsByID map[string]map[string]i
 		if id == "" || domain == "" || platform == nil {
 			continue
 		}
-		out = append(out, map[string]interface{}{
+		outRow := map[string]interface{}{
 			"host":              domain,
 			"id":                id,
 			"platformAddressId": platformID,
 			"port":              platform["port"],
-			"status":            "pending",
 			"type":              "custom",
 			"url":               fmt.Sprintf("https://%s/", domain),
-		})
+		}
+		if apPublicAddressTargetPortMissing(outRow, appListeningPortSet) {
+			outRow["reason"] = "target-port-missing"
+			outRow["status"] = "blocked"
+		} else {
+			outRow["status"] = "pending"
+		}
+		out = append(out, outRow)
 	}
 	return out
+}
+
+func apPublicAddressTargetPortMissing(row map[string]interface{}, appListeningPortSet map[int32]bool) bool {
+	if len(appListeningPortSet) == 0 {
+		return false
+	}
+	port, ok := APPortFromInterface(row["port"])
+	return !ok || !appListeningPortSet[port]
 }
 
 func deploymentPhase(deployment *appsv1.Deployment) string {

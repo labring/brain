@@ -10,7 +10,7 @@ import (
 // Service, optional HPA, and public routing support resources:
 // - name: logical instance name used for composed resource naming; defaults to metadata.name if omitted.
 // - projectId: Brain Project product id used for brain.io/project-id ownership labels.
-// - input: image, network.privatePort, network.platformAddresses, env, probes, imagePullPolicy.
+// - input: image, network.appListeningPorts, network.platformAddresses, env, probes, imagePullPolicy.
 // - resource: replicas, requests, limits (Kubernetes-shaped).
 // - paused, restartRequest, ingressAnnotations: lifecycle and Ingress metadata.
 func Register(api huma.API) {

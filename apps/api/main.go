@@ -121,7 +121,8 @@ spec:
   input:
     image: nginx:1.27
     network:
-      privatePort: 80
+      appListeningPorts:
+        - port: 80
     probes:
       startup:
         httpGet:
