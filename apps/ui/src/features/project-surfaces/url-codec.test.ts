@@ -65,6 +65,20 @@ test("project surface URL codec uses DB terminal drawer entries", () => {
   });
 });
 
+test("project surface URL codec preserves AP Environment Settings focus", () => {
+  const parsed = parseProjectSurfaceUrlState({
+    side: "ap-environment-settings:ap:default:api",
+  });
+
+  assert.deepEqual(parsed.side, {
+    kind: "apEnvironmentSettings",
+    target: { kind: "AP", name: "api", namespace: "default" },
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    side: "ap-environment-settings:ap:default:api",
+  });
+});
+
 test("project surface URL codec clears invalid and old query entries safely", () => {
   assert.deepEqual(
     parseProjectSurfaceUrlState({

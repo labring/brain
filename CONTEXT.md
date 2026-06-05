@@ -59,6 +59,12 @@ A Brain product resource and API view that represents an application workload. `
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
 
+### AP Environment Settings Focus
+
+A focused AP Settings entry point that presents only the Environment Variables section for one AP. It is used for AP environment-specific work, including authoring Database Bindings, and is not a separate Database Binding surface.
+
+_Avoid_: Database Binding Pane, AP-DB Binding Pane.
+
 ### AP Deployments Pane
 
 A Canvas Resource Pane surface for one existing AP that presents image update controls and retained AP image versions for rollback. It is distinct from Docker Deployment Settings, which are creation-time choices before an AP exists.
@@ -153,13 +159,17 @@ _Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 
 A runtime dependency where an AP is configured to consume one DB's connection credentials.
 
-### Reference DB
+### Reference
 
-A DB Service selected in the AP Environment editor as the source for resolving AP Environment Reference Tokens in one environment row. A Reference DB is editing context, not saved product state by itself.
+A DB Service selected in the AP Environment editor as the source for resolving AP Environment Reference Tokens in one environment row. A Reference is editing context, not saved product state by itself.
 
 ### AP Environment Reference Token
 
 An editor-only placeholder inside an AP environment value that names another AP environment variable so the user can compose values from runtime environment variables while keeping the value text editable.
+
+### AP Environment Helper Variable
+
+A real AP environment variable materialized from an AP Environment Reference Token so the AP can receive the referenced runtime value. A Helper Variable is visible in the AP Environment editor but is managed by the token that requires it, not edited or deleted as an independent Reference row.
 
 ### DB Access
 

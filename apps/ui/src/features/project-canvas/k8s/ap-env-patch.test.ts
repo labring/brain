@@ -30,7 +30,7 @@ const CUSTOM_DOMAIN_PLATFORM_ADDRESS_UNIQUE_RE =
   /Platform Address can only be bound to one Custom Domain/;
 const CUSTOM_DOMAIN_DUPLICATE_RE =
   /Custom Domain is already bound in this namespace/;
-const UNRESOLVED_PGPASSWORD_RE = /Choose a Reference DB or create PGPASSWORD/;
+const UNRESOLVED_PGPASSWORD_RE = /Choose a Reference or create PGPASSWORD/;
 
 function patchOpValue(op: K8sJsonPatchOp | undefined): unknown {
   if (op === undefined || op.op === "remove") {

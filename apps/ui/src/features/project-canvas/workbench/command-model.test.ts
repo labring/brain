@@ -209,7 +209,7 @@ test("DB quick actions plan DB Access, logs, terminal, and metrics surfaces", ()
   );
 });
 
-test("AP-to-DB Connecting Edge plans AP Settings with pending Database Binding intent", () => {
+test("AP-to-DB Connecting Edge plans AP Environment Settings with pending Database Binding intent", () => {
   const connection = {
     source: apNode.id,
     sourceHandle: "right",
@@ -241,7 +241,7 @@ test("AP-to-DB Connecting Edge plans AP Settings with pending Database Binding i
       },
       surface: {
         entry: {
-          kind: "apSettings",
+          kind: "apEnvironmentSettings",
           target: {
             kind: "AP",
             name: "api",

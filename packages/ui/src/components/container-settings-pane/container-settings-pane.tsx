@@ -38,8 +38,10 @@ import {
   type ContainerEnvDbReferenceField,
   type ContainerEnvRow,
   containerEnvDbDsnFieldOptions,
+  containerEnvDbReferenceRowPatch,
   containerEnvRowsEqual,
   containerEnvRowsModelEqual,
+  defaultContainerEnvDbReferenceRowName,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
 import {
@@ -521,6 +523,11 @@ export interface ContainerSettingsPaneEnvChangeMeta {
   confirmedAddDbDsnReferences: ContainerSettingsPaneConfirmedAddDbDsnReference[];
 }
 
+export interface ContainerSettingsPaneAddDbDsnReferenceIntentChange {
+  id: string;
+  references: ContainerSettingsPaneConfirmedAddDbDsnReference[];
+}
+
 export interface ContainerSettingsDraft {
   cpuCores: number;
   env: readonly ContainerEnvVar[];
@@ -543,7 +550,7 @@ export interface ContainerPublicAddressesSettingsDraftCommitMeta {
 export interface ContainerSettingsPaneProps {
   /**
    * One-shot request from a Canvas Connecting Edge to append an environment row
-   * with the dragged DB selected as transient Reference DB context.
+   * with the dragged DB selected as transient Reference context.
    */
   addDbDsnReferenceIntent?: ContainerSettingsPaneAddDbDsnReferenceIntent | null;
   className?: string;
@@ -559,6 +566,9 @@ export interface ContainerSettingsPaneProps {
   network?: ContainerNetwork;
   networkPlatformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext;
   onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
+  onAddDbDsnReferenceIntentDraftChange?: (
+    change: ContainerSettingsPaneAddDbDsnReferenceIntentChange
+  ) => void;
   onCustomDomainCnameVerify?: ContainerCustomDomainCnameVerifier;
   onEnvChange: (
     env: ContainerEnvVar[],
@@ -594,6 +604,8 @@ export interface ContainerSettingsPaneProps {
    * Fixed AP replica count. Omit to hide the control (e.g. DB workloads).
    */
   replicasQuota?: ContainerSettingsControlledQuotaProps;
+  /** Restrict the pane to one AP Settings section for focused entry points. */
+  sectionFocus?: "all" | "environment";
   /** Hide the Image section when image updates belong in a separate deployment surface. */
   showImageSection?: boolean;
 }
@@ -994,10 +1006,6 @@ function dbDsnSourceKey(source: ContainerEnvDbDsnSource): string {
   return containerEnvDbSourceKey(source);
 }
 
-function dbDsnSourceHasFields(source: ContainerEnvDbDsnSource): boolean {
-  return containerEnvDbDsnFieldOptions(source).length > 0;
-}
-
 function dbDsnSourceMatchesTarget(
   source: ContainerEnvDbDsnSource,
   target: ContainerEnvDbDsnReferenceTarget
@@ -1019,10 +1027,7 @@ function dbDsnSourceFromAddReferenceIntent(
     return undefined;
   }
   const target = addDbDsnReferenceIntentTarget(intent);
-  return sources.find(
-    (source) =>
-      dbDsnSourceMatchesTarget(source, target) && dbDsnSourceHasFields(source)
-  );
+  return sources.find((source) => dbDsnSourceMatchesTarget(source, target));
 }
 
 function appendDbDsnReferenceIntentRow(
@@ -1030,19 +1035,18 @@ function appendDbDsnReferenceIntentRow(
   source: ContainerEnvDbDsnSource,
   intent: ContainerSettingsPaneAddDbDsnReferenceIntent
 ): EnvDraftRow[] {
-  const nextRows = addContainerEnvRow(rows);
-  if (nextRows.length <= rows.length) {
-    return [...nextRows];
-  }
-  return nextRows.map((row, index) =>
-    index === nextRows.length - 1
-      ? {
-          ...row,
-          canvasAddDbDsnReferenceIntentId: intent.id,
-          referenceDbKey: dbDsnSourceKey(source),
-        }
-      : row
-  );
+  const field = containerEnvDbDsnFieldOptions(source)[0];
+  return [
+    ...rows,
+    {
+      ...(field == null
+        ? { value: "" }
+        : containerEnvDbReferenceRowPatch(source, field)),
+      canvasAddDbDsnReferenceIntentId: intent.id,
+      name: defaultContainerEnvDbReferenceRowName(rows, field?.field),
+      referenceDbKey: dbDsnSourceKey(source),
+    },
+  ];
 }
 
 function envDraftWithAddReferenceIntent({
@@ -1177,6 +1181,7 @@ interface EditableEnvNameControlProps {
   dbDsnReferenceSources: ContainerEnvDbDsnSource[];
   error?: string;
   index: number;
+  managed?: boolean;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   row: ContainerEnvVar;
 }
@@ -1184,19 +1189,37 @@ interface EditableEnvNameControlProps {
 interface EditableEnvValueControlProps {
   dbDsnReferenceSources: ContainerEnvDbDsnSource[];
   index: number;
+  managed?: boolean;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   row: ContainerEnvVar;
   rows: ContainerEnvVar[];
+}
+
+function envRowIsManagedHelper(row: ContainerEnvVar): boolean {
+  return row.helper?.automatic === true;
+}
+
+function envRowUsesExternalValue(row: ContainerEnvVar): boolean {
+  return row.valueFrom != null || row.valueSource === "valueFrom";
 }
 
 function EditableEnvNameControl({
   dbDsnReferenceSources,
   error,
   index,
+  managed = false,
   onUpdateRow,
   row,
 }: EditableEnvNameControlProps) {
-  const referenceSources = dbDsnReferenceSources.filter(dbDsnSourceHasFields);
+  if (managed) {
+    return (
+      <div className="flex h-9 min-w-0 items-center rounded-md border border-input bg-white/5 px-3 text-foreground text-sm leading-5">
+        <span className="min-w-0 truncate">{row.name}</span>
+      </div>
+    );
+  }
+
+  const referenceSources = dbDsnReferenceSources;
   const canAddReference = referenceSources.length > 0;
   const input = (
     <AppInput
@@ -1232,14 +1255,14 @@ function EditableEnvNameControl({
         value={row.referenceDbKey}
       >
         <SelectTrigger
-          aria-label="Reference DB"
+          aria-label="Reference"
           className="mr-1 h-7 w-auto shrink-0 gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
           data-slot="container-env-reference-trigger"
           indicator={false}
           variant="ghost"
         >
+          <SelectValue placeholder="Reference" />
           <ChevronDown aria-hidden className="size-4" />
-          <SelectValue placeholder="Reference DB" />
         </SelectTrigger>
         <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
           {referenceSources.map((source) => (
@@ -1261,12 +1284,25 @@ function EditableEnvNameControl({
 function EditableEnvValueControl({
   dbDsnReferenceSources,
   index,
+  managed = false,
   onUpdateRow,
   row,
   rows,
 }: EditableEnvValueControlProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  if (row.valueSource === "valueFrom") {
+  const externalValue = envRowUsesExternalValue(row);
+  if (managed) {
+    return (
+      <div className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-input bg-white/5 px-3 text-foreground text-sm leading-5">
+        <span className="min-w-0 truncate">
+          {externalValue ? "External reference" : row.value}
+        </span>
+        {externalValue ? <ExternalEnvBadge className="shrink-0" /> : null}
+      </div>
+    );
+  }
+
+  if (externalValue) {
     return (
       <div className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-input bg-transparent px-3 text-foreground text-sm leading-5">
         <span className="min-w-0 truncate">External reference</span>
@@ -1314,7 +1350,7 @@ function EditableEnvValueControl({
       >
         <SelectTrigger
           aria-label="Insert environment reference token"
-          className="mr-1 size-7 shrink-0 rounded-md bg-white/5 p-0 text-muted-foreground hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
+          className="mr-1 size-7 shrink-0 justify-center rounded-md bg-white/5 p-0 text-muted-foreground hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
           data-slot="container-env-token-trigger"
           indicator={false}
           title="Insert reference token"
@@ -1370,6 +1406,7 @@ function EditableEnvRows({
       ) : (
         envDraft.map((row, index) => {
           const error = envErrorsByIndex.get(index);
+          const managed = envRowIsManagedHelper(row);
           const rowKey = envRowKeys[index] ?? envRowKey(row, index);
           return (
             <div className="grid min-w-0 gap-1.5" key={rowKey}>
@@ -1378,26 +1415,32 @@ function EditableEnvRows({
                   dbDsnReferenceSources={dbDsnReferenceSources}
                   error={error}
                   index={index}
+                  managed={managed}
                   onUpdateRow={onUpdateRow}
                   row={row}
                 />
                 <EditableEnvValueControl
                   dbDsnReferenceSources={dbDsnReferenceSources}
                   index={index}
+                  managed={managed}
                   onUpdateRow={onUpdateRow}
                   row={row}
                   rows={rows}
                 />
-                <AppIconButton
-                  aria-label="Remove environment variable"
-                  className="hover:text-red-500"
-                  onClick={() => onDeleteRow(index)}
-                  size="lg"
-                  type="button"
-                  variant="quiet"
-                >
-                  <Trash2 aria-hidden className="size-4" />
-                </AppIconButton>
+                {managed ? (
+                  <div aria-hidden className="size-9" />
+                ) : (
+                  <AppIconButton
+                    aria-label="Remove environment variable"
+                    className="hover:text-red-500"
+                    onClick={() => onDeleteRow(index)}
+                    size="lg"
+                    type="button"
+                    variant="quiet"
+                  >
+                    <Trash2 aria-hidden className="size-4" />
+                  </AppIconButton>
+                )}
               </div>
               {error == null ? null : (
                 <p className="text-destructive text-xs" role="status">
@@ -3680,6 +3723,7 @@ function ContainerSettingsDraftFooter({
   pending,
   saveFailureMessage,
   submitAriaLabel = "Update settings",
+  submitLabel,
   unsavedMessage,
 }: {
   backingResourceChanged: boolean;
@@ -3693,6 +3737,7 @@ function ContainerSettingsDraftFooter({
   pending: boolean;
   saveFailureMessage: string | null;
   submitAriaLabel?: string;
+  submitLabel?: string;
   unsavedMessage?: string;
 }) {
   return (
@@ -3710,6 +3755,7 @@ function ContainerSettingsDraftFooter({
       pending={pending}
       saveFailureMessage={saveFailureMessage}
       submitAriaLabel={submitAriaLabel}
+      submitLabel={submitLabel}
       unsavedMessage={unsavedMessage}
     />
   );
@@ -3729,6 +3775,7 @@ export function ContainerSettingsPane({
   onNetworkChange,
   onEnvChange,
   onAddDbDsnReferenceIntentConsumed,
+  onAddDbDsnReferenceIntentDraftChange,
   cpuQuota,
   memoryQuota,
   env,
@@ -3742,6 +3789,7 @@ export function ContainerSettingsPane({
   onSettingsDraftLeaveGuardChange,
   readOnly = false,
   dbDsnReferenceSources = [],
+  sectionFocus = "all",
   showImageSection = true,
 }: ContainerSettingsPaneProps) {
   const [draftImage, setDraftImage] = useState(image);
@@ -3777,6 +3825,7 @@ export function ContainerSettingsPane({
       envDraftKeyCounter
     )
   );
+  const previousAddDbDsnReferenceIntentIds = useRef<Set<string>>(new Set());
 
   const settingsCommitMode = onSettingsDraftCommit != null && readOnly !== true;
   const quotaCommitMode = onResourceQuotasCommit != null && readOnly !== true;
@@ -3924,6 +3973,37 @@ export function ContainerSettingsPane({
     () => validateContainerEnvRows(envDraft),
     [envDraft]
   );
+  useEffect(() => {
+    if (onAddDbDsnReferenceIntentDraftChange == null) {
+      return;
+    }
+
+    const currentIds = new Set<string>();
+    for (const row of envDraft) {
+      const intentId = row.canvasAddDbDsnReferenceIntentId;
+      if (intentId != null && intentId !== "") {
+        currentIds.add(intentId);
+      }
+    }
+
+    const confirmedReferences =
+      confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
+    for (const id of currentIds) {
+      onAddDbDsnReferenceIntentDraftChange({
+        id,
+        references: confirmedReferences.filter(
+          (reference) => reference.id === id
+        ),
+      });
+    }
+
+    for (const id of previousAddDbDsnReferenceIntentIds.current) {
+      if (!currentIds.has(id)) {
+        onAddDbDsnReferenceIntentDraftChange({ id, references: [] });
+      }
+    }
+    previousAddDbDsnReferenceIntentIds.current = currentIds;
+  }, [envDraft, onAddDbDsnReferenceIntentDraftChange]);
   const envTokenDiagnostics = useMemo(
     () =>
       refreshContainerEnvTokenDraft(envDraft, dbDsnReferenceSources)
@@ -4532,6 +4612,7 @@ export function ContainerSettingsPane({
 
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
+  const environmentFocus = sectionFocus === "environment";
 
   return (
     <div
@@ -4541,75 +4622,77 @@ export function ContainerSettingsPane({
       )}
       data-slot="container-settings-pane"
     >
-      <div className="grid gap-5">
-        {replicasSliderParts == null ? null : (
-          <ReplicaStrategySection
-            actions={quotaActions}
-            elastic={normalizeElasticReplicaSettings(
-              elasticSettingsFromStrategy(draftReplicaStrategy)
-            )}
-            fixedReplicasSliderParts={replicasSliderParts}
-            onElasticCpuTargetChange={handleElasticCpuTargetChange}
-            onElasticMaxReplicasChange={handleElasticMaxReplicasChange}
-            onElasticMemoryTargetChange={handleElasticMemoryTargetChange}
-            onElasticMinReplicasChange={handleElasticMinReplicasChange}
-            onElasticTargetMetricChange={handleElasticTargetMetricChange}
-            onStrategyTypeChange={handleReplicaStrategyTypeChange}
-            readOnly={readOnly}
-            strategyType={replicaStrategyType}
-          />
-        )}
-
-        <ResourceSettingsSection
-          actions={replicasSliderParts == null ? quotaActions : undefined}
-          title="CPU / Memory"
-        >
-          <ResourceSettingsInset>
-            <SettingsSlider
-              ariaLabel="CPU quota (cores)"
-              disabled={cpuSliderRest.disabled}
-              formatBound={(next) => formatPlainNumber(next, 2)}
-              icon={Cpu}
-              label="CPU"
-              max={cpuSlider.max}
-              maxDecimals={cpuDecimals}
-              min={cpuSlider.min}
-              onValueChange={onCpuQuotaChange}
-              step={cpuSliderRest.step}
-              value={cpuValue}
-              valueSuffix={cpuCoresValueSuffix}
+      {environmentFocus ? null : (
+        <div className="grid gap-5">
+          {replicasSliderParts == null ? null : (
+            <ReplicaStrategySection
+              actions={quotaActions}
+              elastic={normalizeElasticReplicaSettings(
+                elasticSettingsFromStrategy(draftReplicaStrategy)
+              )}
+              fixedReplicasSliderParts={replicasSliderParts}
+              onElasticCpuTargetChange={handleElasticCpuTargetChange}
+              onElasticMaxReplicasChange={handleElasticMaxReplicasChange}
+              onElasticMemoryTargetChange={handleElasticMemoryTargetChange}
+              onElasticMinReplicasChange={handleElasticMinReplicasChange}
+              onElasticTargetMetricChange={handleElasticTargetMetricChange}
+              onStrategyTypeChange={handleReplicaStrategyTypeChange}
+              readOnly={readOnly}
+              strategyType={replicaStrategyType}
             />
-          </ResourceSettingsInset>
+          )}
 
-          <ResourceSettingsInset>
-            <SettingsSlider
-              ariaLabel="Memory quota (MiB)"
-              disabled={memorySliderRest.disabled}
-              displayValue={memoryMibDisplayValue(memoryValue)}
-              formatBound={formatMemoryMibValue}
-              icon={MemoryStick}
-              label="Memory"
-              max={memorySlider.max}
-              maxDecimals={2}
-              min={memorySlider.min}
-              onValueChange={onMemoryQuotaChange}
-              step={memorySliderRest.step}
-              value={memoryValue}
-              valueSuffix={memoryMibValueSuffix(memoryValue)}
+          <ResourceSettingsSection
+            actions={replicasSliderParts == null ? quotaActions : undefined}
+            title="CPU / Memory"
+          >
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="CPU quota (cores)"
+                disabled={cpuSliderRest.disabled}
+                formatBound={(next) => formatPlainNumber(next, 2)}
+                icon={Cpu}
+                label="CPU"
+                max={cpuSlider.max}
+                maxDecimals={cpuDecimals}
+                min={cpuSlider.min}
+                onValueChange={onCpuQuotaChange}
+                step={cpuSliderRest.step}
+                value={cpuValue}
+                valueSuffix={cpuCoresValueSuffix}
+              />
+            </ResourceSettingsInset>
+
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="Memory quota (MiB)"
+                disabled={memorySliderRest.disabled}
+                displayValue={memoryMibDisplayValue(memoryValue)}
+                formatBound={formatMemoryMibValue}
+                icon={MemoryStick}
+                label="Memory"
+                max={memorySlider.max}
+                maxDecimals={2}
+                min={memorySlider.min}
+                onValueChange={onMemoryQuotaChange}
+                step={memorySliderRest.step}
+                value={memoryValue}
+                valueSuffix={memoryMibValueSuffix(memoryValue)}
+              />
+            </ResourceSettingsInset>
+          </ResourceSettingsSection>
+
+          {showImageSection ? (
+            <ImageSettingsSection
+              imageInputId={imageInputId}
+              onBlur={handleImageBlur}
+              onChange={handleImageChange}
+              readOnly={readOnly}
+              value={displayImage}
             />
-          </ResourceSettingsInset>
-        </ResourceSettingsSection>
-
-        {showImageSection ? (
-          <ImageSettingsSection
-            imageInputId={imageInputId}
-            onBlur={handleImageBlur}
-            onChange={handleImageChange}
-            readOnly={readOnly}
-            value={displayImage}
-          />
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      )}
 
       <ResourceSettingsSection icon={SquarePen} title="Environment Variables">
         <div className="flex min-w-0 flex-col gap-2">
@@ -4673,7 +4756,7 @@ export function ContainerSettingsPane({
         )}
       </ResourceSettingsSection>
 
-      {networkForRender == null ? null : (
+      {environmentFocus || networkForRender == null ? null : (
         <NetworkSettingsSection
           network={networkForRender}
           onCustomDomainCnameVerify={onCustomDomainCnameVerify}
@@ -4698,7 +4781,12 @@ export function ContainerSettingsPane({
           onSave={handleSaveSettingsDraft}
           pending={settingsSavePending}
           saveFailureMessage={settingsBackingState.saveFailureMessage}
-          submitAriaLabel="Update AP Settings"
+          submitAriaLabel={
+            environmentFocus
+              ? "Update Environment Variables"
+              : "Update AP Settings"
+          }
+          submitLabel="Update"
         />
       ) : null}
     </div>

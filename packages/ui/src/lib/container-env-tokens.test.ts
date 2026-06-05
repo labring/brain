@@ -321,6 +321,36 @@ test("container env tokens downgrade edited helpers to normal env rows", () => {
   );
 });
 
+test("container env tokens downgrade edited DB reference rows to normal env rows", () => {
+  const next = updateContainerEnvTokenRow(
+    [
+      {
+        dbDsn: {
+          dbName: "postgres",
+          dbNamespace: "default",
+          field: "private",
+        },
+        name: "DATABASE_URL",
+        value: "postgres://private",
+        valueSource: "dbDsn",
+      },
+    ],
+    0,
+    {
+      value: "manual",
+      valueSource: "direct",
+    }
+  );
+
+  assert.deepEqual(next, [
+    {
+      name: "DATABASE_URL",
+      value: "manual",
+      valueSource: "direct",
+    },
+  ]);
+});
+
 test("container env tokens report unresolved tokens before save", () => {
   const result = normalizeContainerEnvTokenRowsForSave(
     [
@@ -335,7 +365,7 @@ test("container env tokens report unresolved tokens before save", () => {
   assert.equal(result.valid, false);
   assert.deepEqual(result.diagnostics, [
     {
-      message: "Choose a Reference DB or create PGPASSWORD.",
+      message: "Choose a Reference or create PGPASSWORD.",
       rowIndex: 0,
       token: "PGPASSWORD",
       type: "unresolved-token",

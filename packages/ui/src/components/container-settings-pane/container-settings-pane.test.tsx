@@ -28,23 +28,33 @@ function editorToken(name: string): string {
 const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
 const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
 const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
+const EXTERNAL_REFERENCE_RE = /External reference/;
 const RAW_ENV_EDITOR_RE = /Edit environment variables/;
 const DATABASE_URL_RE = /DATABASE_URL/;
 const ADD_ENV_RE = /aria-label="Add environment variable"/;
-const REFERENCE_DB_RE = /aria-label="Reference DB"/;
+const REFERENCE_RE = /aria-label="Reference"/;
+const REFERENCE_LABEL_RE = />Reference</;
 const REFERENCE_DB_LABEL_RE = /Reference DB/;
 const INLINE_REFERENCE_TRIGGER_RE =
   /data-slot="container-env-reference-trigger"/;
+const INLINE_REFERENCE_TRIGGER_RE_GLOBAL =
+  /data-slot="container-env-reference-trigger"/g;
 const TOKEN_TRIGGER_RE = /data-slot="container-env-token-trigger"/;
+const TOKEN_TRIGGER_RE_GLOBAL = /data-slot="container-env-token-trigger"/g;
 const DB_FIELD_SELECT_RE = /aria-label="Project DB field"/;
 const REMOVE_ENV_RE = /aria-label="Remove environment variable"/;
+const REMOVE_ENV_RE_GLOBAL = /aria-label="Remove environment variable"/g;
 const SAVE_ENV_RE = /Save environment/;
 const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
+const UPDATE_ENVIRONMENT_VARIABLES_RE =
+  /aria-label="Update Environment Variables"/;
+const VALUE_FROM_PLACEHOLDER_RE = /\(valueFrom\)/;
 const CANCEL_ENV_RE = /Cancel environment changes/;
 const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="Container image"/;
-const NEW_VARIABLE_RE = /value="NEW_VARIABLE"/;
+const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
+const PGPASSWORD_RE = /PGPASSWORD/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
 const ADD_PORT_RE = /Add Port/;
 const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
@@ -888,16 +898,17 @@ test("container settings pane offers DB references from editable environment row
 
   assert.match(html, INLINE_REFERENCE_TRIGGER_RE);
   assert.match(html, TOKEN_TRIGGER_RE);
-  assert.match(html, REFERENCE_DB_RE);
-  assert.match(html, REFERENCE_DB_LABEL_RE);
+  assert.match(html, REFERENCE_RE);
+  assert.match(html, REFERENCE_LABEL_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
 
   const readOnlyHtml = renderPane(true);
 
   assert.doesNotMatch(readOnlyHtml, INLINE_REFERENCE_TRIGGER_RE);
-  assert.doesNotMatch(readOnlyHtml, REFERENCE_DB_RE);
+  assert.doesNotMatch(readOnlyHtml, REFERENCE_RE);
 });
 
-test("container settings pane renders DB helper rows without old DB field selects", () => {
+test("container settings pane renders DB reference rows without old DB field selects", () => {
   const html = renderPane(false, [
     {
       dbDsn: {
@@ -918,9 +929,49 @@ test("container settings pane renders DB helper rows without old DB field select
   ]);
 
   assert.match(html, INLINE_REFERENCE_TRIGGER_RE);
-  assert.match(html, TOKEN_TRIGGER_RE);
-  assert.match(html, REFERENCE_DB_RE);
+  assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
+  assert.match(html, REFERENCE_RE);
+  assert.match(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
+});
+
+test("container settings pane renders automatic helper rows as managed rows", () => {
+  const html = renderPane(false, [
+    {
+      name: "DATABASE_URL",
+      referenceDbKey: "default/postgres",
+      value: editorToken("PGPASSWORD"),
+    },
+    {
+      dbDsn: {
+        dbName: "postgres",
+        dbNamespace: "default",
+        field: "password",
+      },
+      helper: {
+        automatic: true,
+        sourceDbKey: "default/postgres",
+        sourceField: "password",
+      },
+      name: "PGPASSWORD",
+      value: "(valueFrom)",
+      valueFrom: {
+        secretKeyRef: {
+          key: "passwd",
+          name: "postgres-conn-credential",
+        },
+      },
+      valueSource: "dbDsn",
+    },
+  ]);
+
+  assert.equal(html.match(INLINE_REFERENCE_TRIGGER_RE_GLOBAL)?.length, 1);
+  assert.equal(html.match(TOKEN_TRIGGER_RE_GLOBAL)?.length, 1);
+  assert.equal(html.match(REMOVE_ENV_RE_GLOBAL)?.length, 1);
+  assert.match(html, PGPASSWORD_RE);
+  assert.match(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, VALUE_FROM_PLACEHOLDER_RE);
 });
 
 test("container settings pane opens dragged DB Add Reference intent preselected", () => {
@@ -952,8 +1003,10 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
     />
   );
 
-  assert.match(html, NEW_VARIABLE_RE);
-  assert.match(html, REFERENCE_DB_RE);
+  assert.match(html, DATABASE_URL_RE);
+  assert.match(html, MYSQL_PRIVATE_DSN_RE);
+  assert.match(html, REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
   assert.match(html, TOKEN_TRIGGER_RE);
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
   assert.match(html, SAVE_ENV_RE);
@@ -1060,4 +1113,29 @@ test("container settings pane exposes panel-level draft actions without environm
   assert.match(html, DISCARD_AP_SETTINGS_RE);
   assert.doesNotMatch(html, SAVE_ENV_RE);
   assert.doesNotMatch(html, CANCEL_ENV_RE);
+});
+
+test("container settings pane can focus only Environment Variables", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privatePort: 8080,
+        publicAddresses: [],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onSettingsDraftCommit={noop}
+      sectionFocus="environment"
+    />
+  );
+
+  assert.match(html, ENV_ROWS_SLOT_RE);
+  assert.match(html, UPDATE_ENVIRONMENT_VARIABLES_RE);
+  assert.doesNotMatch(html, CPU_MEMORY_SECTION_RE);
+  assert.doesNotMatch(html, IMAGE_INPUT_RE);
+  assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
 });

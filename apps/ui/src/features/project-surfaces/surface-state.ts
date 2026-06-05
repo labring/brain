@@ -11,6 +11,7 @@ export type ProjectSurfaceSlot = "drawer" | "main" | "side";
 export type ProjectMainSurfaceFocusPolicy = "focusMain" | "keepSideVisible";
 
 export type ProjectResourceSidePaneEntry =
+  | { kind: "apEnvironmentSettings"; target: ProjectApTarget }
   | { kind: "apEvents"; target: ProjectApTarget }
   | { kind: "apHistory"; target: ProjectApTarget }
   | { kind: "apMetrics"; target: ProjectApTarget }

@@ -281,8 +281,8 @@ function resolveTokenName({
       diagnostic: {
         message:
           row.referenceDbKey == null || row.referenceDbKey === ""
-            ? `Choose a Reference DB or create ${tokenName}.`
-            : `${tokenName} is not available from the selected Reference DB.`,
+            ? `Choose a Reference or create ${tokenName}.`
+            : `${tokenName} is not available from the selected Reference.`,
         rowIndex,
         token: tokenName,
         type: "unresolved-token",
@@ -459,6 +459,22 @@ function helperEquivalent(row: ContainerEnvRow, spec: HelperSpec): boolean {
   return rowDbKey(row) === spec.dbKey && row.dbDsn?.field === spec.field;
 }
 
+function helperMetadataFromSavedRow(
+  row: ContainerEnvRow
+): ContainerEnvRow["helper"] | undefined {
+  if (row.helper != null) {
+    return row.helper;
+  }
+  if (row.valueSource !== "dbDsn" || row.dbDsn == null) {
+    return undefined;
+  }
+  return {
+    automatic: false,
+    sourceDbKey: rowDbKey(row),
+    sourceField: row.dbDsn.field,
+  };
+}
+
 export function refreshContainerEnvTokenDraft(
   rows: readonly ContainerEnvRow[],
   dbSources: readonly ContainerEnvDbDsnSource[] = []
@@ -561,26 +577,17 @@ export function containerEnvRowsFromSavedEnv(
   dbSources: readonly ContainerEnvDbDsnSource[] = []
 ): ContainerEnvRow[] {
   const withEditorValues = rowsWithInferredReferenceDbKeys(
-    rows.map((row) => ({
-      ...row,
-      ...((row.valueSource === "dbDsn" && row.dbDsn != null) ||
-      row.helper != null
-        ? {
-            helper:
-              row.valueSource === "dbDsn" && row.dbDsn != null
-                ? {
-                    automatic: false,
-                    sourceDbKey: rowDbKey(row),
-                    sourceField: row.dbDsn.field,
-                  }
-                : row.helper,
-          }
-        : {}),
-      value:
-        row.valueSource === "valueFrom"
-          ? row.value
-          : containerEnvValueToEditorTokens(row.value),
-    }))
+    rows.map((row) => {
+      const helper = helperMetadataFromSavedRow(row);
+      return {
+        ...row,
+        ...(helper == null ? {} : { helper }),
+        value:
+          row.valueSource === "valueFrom"
+            ? row.value
+            : containerEnvValueToEditorTokens(row.value),
+      };
+    })
   );
   return refreshContainerEnvTokenDraft(withEditorValues, dbSources).rows;
 }
@@ -633,7 +640,19 @@ export function markContainerEnvTokenRowManual(
   row: ContainerEnvRow
 ): ContainerEnvRow {
   if (!rowIsAutomaticHelper(row)) {
-    return row;
+    if (row.dbDsn == null && row.valueSource !== "dbDsn") {
+      return row;
+    }
+    const {
+      dbDsn: _dbDsn,
+      helper: _helper,
+      referenceDbKey: _referenceDbKey,
+      ...next
+    } = row;
+    return {
+      ...next,
+      valueSource: next.valueFrom == null ? "direct" : "valueFrom",
+    };
   }
   const {
     dbDsn: _dbDsn,
