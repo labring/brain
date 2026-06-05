@@ -603,7 +603,13 @@ test("container settings pane edits Public Address ports without binding Custom 
     },
   ]);
   assert.equal(next.customDomains, undefined);
-  assert.deepEqual(next.appListeningPorts, [{ port: 8080 }, { port: 9000 }]);
+  assert.deepEqual(next.appListeningPorts, [
+    {
+      port: 8080,
+      privateAddress: "http://api-service.default.svc:8080",
+    },
+    { port: 9000 },
+  ]);
 });
 
 test("container settings pane renders fixed replica strategy controls", () => {

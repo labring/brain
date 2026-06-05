@@ -2156,6 +2156,7 @@ function AddAppListeningPortForm({
   onCancel,
   onSubmit,
 }: AddAppListeningPortFormProps) {
+  const addressInputId = useId();
   const inputId = useId();
   const errorId = `${inputId}-error`;
   const [draft, setDraft] = useState("");
@@ -2176,14 +2177,19 @@ function AddAppListeningPortForm({
   };
 
   return (
-    <div className="grid min-w-0 gap-3 rounded-lg border border-border border-dashed bg-transparent p-2.5">
+    <div className="grid min-w-0 gap-4 rounded-lg border border-border border-dashed bg-transparent p-2.5">
+      <AppInputField
+        disabled
+        id={addressInputId}
+        label="Address"
+        value="Pending address"
+      />
       <AppInputField
         error={error}
         errorId={errorId}
         id={inputId}
-        inputClassName="max-w-32"
         inputMode="numeric"
-        label="App Listening Port"
+        label="Port"
         onChange={(event) => {
           setDraft(event.target.value);
           setError(null);
