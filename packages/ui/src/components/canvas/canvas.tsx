@@ -314,14 +314,19 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const nodeDragNavigationHoldActiveRef = useRef(false);
   const viewportNavigationHoldActiveRef = useRef(false);
 
+  const nodeDragging = nodes.some((node) => node.dragging === true);
+
   useLayoutEffect(() => {
+    if (nodeDragging) {
+      return;
+    }
     if (initializedRef.current) {
       setNodes((prev) => mergeNodes(prev, state.nodes));
     } else {
       initializedRef.current = true;
       setNodes(state.nodes);
     }
-  }, [setNodes, state.nodes]);
+  }, [nodeDragging, setNodes, state.nodes]);
 
   useLayoutEffect(() => {
     setEdges(state.edges);
@@ -349,7 +354,6 @@ function CanvasFlow({ children }: CanvasFlowProps) {
     });
   }, [edges, state.selectedEdge]);
   const edgeAnchorResolver = meta.edgeAnchorResolver;
-  const nodeDragging = nodes.some((node) => node.dragging === true);
   const edgeAnchorResolution = useMemo(() => {
     if (edgeAnchorResolver == null) {
       return {

@@ -100,44 +100,30 @@ export default function ProjectIdPage() {
     () => telemetryTargetFromCanvasNode(workbench.selectedNode),
     [workbench.selectedNode]
   );
-  const { openSideSurface } = workbench;
-  const openDatabaseDeploymentPane = useCallback(() => {
-    openSideSurface({ kind: "databaseDeployment", projectId: uid });
-  }, [openSideSurface, uid]);
-  const openDockerDeploymentPane = useCallback(() => {
-    openSideSurface({ kind: "dockerDeployment", projectId: uid });
-  }, [openSideSurface, uid]);
-  const openGithubDeploymentPane = useCallback(() => {
-    openSideSurface({ kind: "githubDeployment", projectId: uid });
-  }, [openSideSurface, uid]);
+  const { openDrawerSurface, openMainSurface, openSideSurface } = workbench;
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
       openAssistantIntent: (intent) => {
-        const entry = projectCanvasEntryForAssistantIntent(intent, {
+        const surfaceIntent = projectCanvasEntryForAssistantIntent(intent, {
           projectId: uid,
         });
-        if (entry?.kind === "databaseDeployment") {
-          openDatabaseDeploymentPane();
-          return { status: "handled" as const };
-        }
-        if (entry?.kind === "dockerDeployment") {
-          openDockerDeploymentPane();
-          return { status: "handled" as const };
-        }
-        if (entry?.kind !== "githubDeployment") {
+        if (surfaceIntent == null) {
           return { status: "ignored" as const };
         }
-        openGithubDeploymentPane();
+        if (surfaceIntent.slot === "drawer") {
+          openDrawerSurface(surfaceIntent.entry);
+          return { status: "handled" as const };
+        }
+        if (surfaceIntent.slot === "main") {
+          openMainSurface(surfaceIntent.entry);
+          return { status: "handled" as const };
+        }
+        openSideSurface(surfaceIntent.entry);
         return { status: "handled" as const };
       },
     }),
-    [
-      openDatabaseDeploymentPane,
-      openDockerDeploymentPane,
-      openGithubDeploymentPane,
-      uid,
-    ]
+    [openDrawerSurface, openMainSurface, openSideSurface, uid]
   );
   useProjectSidePaneSurface(projectCanvasSidePaneSurface);
   const meta = useMemo(

@@ -184,6 +184,10 @@ export function createWorkloadTelemetryStore(
       );
     },
 
+    hasActiveTargets() {
+      return consumers.size > 0;
+    },
+
     refresh,
 
     setSelectedTarget(target: WorkloadTelemetryTarget | null) {

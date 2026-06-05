@@ -21,6 +21,14 @@ type SnapshotMetrics = NonNullable<
   WorkloadTelemetrySnapshotState["item"]
 >["metrics"];
 
+export function shouldSubscribeWorkloadTelemetry(options: {
+  expanded: boolean;
+  selected: boolean;
+  sidePaneOpen: boolean;
+}) {
+  return options.expanded || options.selected || options.sidePaneOpen;
+}
+
 function nonEmpty(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed === "" ? undefined : trimmed;

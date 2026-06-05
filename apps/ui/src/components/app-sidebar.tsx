@@ -1,6 +1,5 @@
 "use client";
 
-import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { brainV2LogoSrc } from "@workspace/ui/assets/brand";
@@ -247,24 +246,13 @@ export default function AppSidebar() {
   const currentProjectId = projectIdFromPathname(pathname);
   const projectsActive = pathname === "/project";
 
-  const { states } = useProjectsExplorer({
+  const { data, states } = useProjectsExplorer({
     kubeconfig,
     ns: namespace,
   });
 
-  const projectIdLabelExistence = BRAIN_PROJECT_ID_LABEL;
-  const { data: apsData } = useApsK8sList({
-    kubeconfig,
-    labelSelector: projectIdLabelExistence,
-    namespace,
-  });
-  const { data: dbsData } = useDbsK8sList({
-    kubeconfig,
-    labelSelector: projectIdLabelExistence,
-    namespace,
-  });
-  const apByProject = useMemo(() => selectedApByProject(apsData), [apsData]);
-  const dbByProject = useMemo(() => selectedDbByProject(dbsData), [dbsData]);
+  const apByProject = useMemo(() => selectedApByProject(data.aps), [data.aps]);
+  const dbByProject = useMemo(() => selectedDbByProject(data.dbs), [data.dbs]);
 
   return (
     <aside

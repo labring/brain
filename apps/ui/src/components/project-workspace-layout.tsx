@@ -61,6 +61,11 @@ import {
   runNavigateAppTool,
 } from "@/lib/tool/chat-navigate-app-tool";
 import {
+  OPEN_PROJECT_SURFACE_TOOL_NAME,
+  type OpenProjectSurfaceToolOutput,
+  runOpenProjectSurfaceTool,
+} from "@/lib/tool/chat-open-project-surface-tool";
+import {
   REFRESH_FRONTEND_SWR_TOOL_NAME,
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
@@ -98,6 +103,11 @@ type AssistantClientToolSubmission =
       tool: typeof REFRESH_FRONTEND_SWR_TOOL_NAME;
       toolCallId: string;
       output: RefreshFrontendSwrCachesToolOutput;
+    }
+  | {
+      tool: typeof OPEN_PROJECT_SURFACE_TOOL_NAME;
+      toolCallId: string;
+      output: OpenProjectSurfaceToolOutput;
     };
 
 function deployTaskChatMessage(input: {
@@ -262,6 +272,7 @@ function ProjectAssistantChatSession({
   onSelectThread: (threadId: string) => Promise<void>;
 }) {
   const router = useRouter();
+  const projectSurfaceRouter = useProjectSidePaneAssistantRouter();
   const { mutate: revalidateScopeSwr } = useSWRConfig();
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
@@ -364,6 +375,32 @@ function ProjectAssistantChatSession({
           ).catch((err: unknown) => {
             console.error("[navigateApp] addToolOutput failed:", err);
           });
+          return;
+        }
+
+        if (toolCall.toolName === OPEN_PROJECT_SURFACE_TOOL_NAME) {
+          const submit = addToolOutputRef.current;
+          runOpenProjectSurfaceTool(toolCall.input, projectSurfaceRouter)
+            .then((output) => {
+              if (submit == null) {
+                return;
+              }
+              Promise.resolve(
+                submit({
+                  tool: OPEN_PROJECT_SURFACE_TOOL_NAME,
+                  toolCallId: toolCall.toolCallId,
+                  output,
+                })
+              ).catch((err: unknown) => {
+                console.error(
+                  "[openProjectSurface] addToolOutput failed:",
+                  err
+                );
+              });
+            })
+            .catch((err: unknown) => {
+              console.error("[openProjectSurface] routing failed:", err);
+            });
           return;
         }
 

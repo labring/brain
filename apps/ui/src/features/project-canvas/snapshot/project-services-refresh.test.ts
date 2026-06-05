@@ -144,3 +144,28 @@ test("entrypoint steady refresh only runs for public AP endpoints", () => {
     0
   );
 });
+
+test("entrypoint refresh stops after public AP entrypoints are discovered", () => {
+  assert.equal(
+    entryPointRefreshIntervalForLifecycle({
+      apsData: {
+        items: [
+          {
+            metadata: { name: "api", namespace: "default" },
+            status: {
+              network: {
+                publicAddresses: [{ host: "api.example.com", port: 8080 }],
+              },
+            },
+          },
+        ],
+      },
+      entryPointsData: {
+        items: [{ metadata: { name: "api-entrypoint", namespace: "default" } }],
+      },
+      now: 9000,
+      workloadReconcilePollUntil: 0,
+    }),
+    0
+  );
+});

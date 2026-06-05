@@ -8,6 +8,7 @@ import { memo, useMemo } from "react";
 import {
   databaseStatesWithTelemetry,
   databaseTelemetryTargetFromWorkload,
+  shouldSubscribeWorkloadTelemetry,
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { CanvasDatabaseRfNode } from "./types";
@@ -26,8 +27,6 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     () => databaseTelemetryTargetFromWorkload(data.workload),
     [data.workload]
   );
-  const telemetry = useWorkloadTelemetrySnapshot(telemetryTarget);
-  const statesWithTelemetry = databaseStatesWithTelemetry(states, telemetry);
   const { state } = useCanvas();
   const edge = state.selectedEdge;
   const isEndpointOfSelectedEdge =
@@ -46,6 +45,15 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     positionAbsoluteY,
     type,
   });
+  const activeTelemetryTarget = shouldSubscribeWorkloadTelemetry({
+    expanded: expansion.expanded,
+    selected,
+    sidePaneOpen: false,
+  })
+    ? telemetryTarget
+    : null;
+  const telemetry = useWorkloadTelemetrySnapshot(activeTelemetryTarget);
+  const statesWithTelemetry = databaseStatesWithTelemetry(states, telemetry);
 
   return (
     <DatabaseNode.Root

@@ -179,6 +179,8 @@ export function useProjectServices(options: {
     () => ({ aps: apsData, dbs: dbsData, entryPoints: entryPointsData }),
     [apsData, dbsData, entryPointsData]
   );
+  const error = apsError ?? dbsError ?? entryPointsError;
+  const isLoading = apsLoading || dbsLoading || entryPointsLoading;
 
   const layoutMerge = useMemo(() => {
     const apBlock = apsToCanvasState(apsData, {
@@ -230,11 +232,11 @@ export function useProjectServices(options: {
   ]);
 
   useEffect(() => {
-    if (!layoutMerge.changed || layoutMerge.layout === undefined) {
+    if (isLoading || !layoutMerge.changed || layoutMerge.layout === undefined) {
       return;
     }
     onCanvasLayoutMerge?.(layoutMerge.layout.nodes);
-  }, [layoutMerge.changed, layoutMerge.layout, onCanvasLayoutMerge]);
+  }, [isLoading, layoutMerge.changed, layoutMerge.layout, onCanvasLayoutMerge]);
 
   const canvasState = useMemo((): CanvasState => {
     return {
@@ -245,8 +247,6 @@ export function useProjectServices(options: {
     };
   }, [layoutMerge.edges, layoutMerge.nodes]);
 
-  const error = apsError ?? dbsError ?? entryPointsError;
-  const isLoading = apsLoading || dbsLoading || entryPointsLoading;
   const graphEmpty =
     canvasState.nodes.length === 0 && canvasState.edges.length === 0;
 

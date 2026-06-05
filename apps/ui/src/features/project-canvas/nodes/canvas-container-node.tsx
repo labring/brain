@@ -8,6 +8,7 @@ import { memo, useMemo } from "react";
 import {
   containerStatesWithTelemetry,
   containerTelemetryTargetFromStates,
+  shouldSubscribeWorkloadTelemetry,
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { CanvasContainerRfNode } from "./types";
@@ -27,8 +28,6 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
     () => containerTelemetryTargetFromStates({ name, namespace }),
     [name, namespace]
   );
-  const telemetry = useWorkloadTelemetrySnapshot(telemetryTarget);
-  const statesWithTelemetry = containerStatesWithTelemetry(states, telemetry);
   const { state } = useCanvas();
   const edge = state.selectedEdge;
   const isEndpointOfSelectedEdge =
@@ -47,6 +46,15 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
     positionAbsoluteY,
     type,
   });
+  const activeTelemetryTarget = shouldSubscribeWorkloadTelemetry({
+    expanded: expansion.expanded,
+    selected,
+    sidePaneOpen: false,
+  })
+    ? telemetryTarget
+    : null;
+  const telemetry = useWorkloadTelemetrySnapshot(activeTelemetryTarget);
+  const statesWithTelemetry = containerStatesWithTelemetry(states, telemetry);
 
   return (
     <ContainerNode.Root

@@ -504,7 +504,7 @@ export function useProjectCanvas(
   }, [localStackOrderByRef, rawNodes]);
 
   const frontCanvasNode = useCallback(
-    (node: Node) => {
+    (node: Node, options?: { persist?: boolean }) => {
       const sourceNodes = stackOrderedRawNodes.map((candidate) =>
         candidate.id === node.id
           ? { ...candidate, position: { ...node.position } }
@@ -529,9 +529,10 @@ export function useProjectCanvas(
         });
       }
 
-      if (!readOnly) {
+      if (!readOnly && options?.persist !== false) {
         onNodeStackOrderChange?.(nextNode);
       }
+      return nextNode;
     },
     [onNodeStackOrderChange, readOnly, stackOrderedRawNodes]
   );
@@ -1090,7 +1091,7 @@ export function useProjectCanvas(
           );
         },
         onNodeDragStart: (_, node: Node) => {
-          frontCanvasNode(node);
+          frontCanvasNode(node, { persist: false });
         },
         onEdgeClick: (_, edge: Edge) => {
           focusCanvasSelection({
@@ -1100,7 +1101,9 @@ export function useProjectCanvas(
         },
         onNodeDragStop: (_, node: Node) => {
           if (!readOnly) {
-            onNodePositionChange?.(node);
+            onNodePositionChange?.(
+              frontCanvasNode(node, { persist: false }) ?? node
+            );
           }
         },
         onPaneClick: () => clearSelection(),

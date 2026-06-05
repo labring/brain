@@ -1,6 +1,21 @@
-export interface ProjectSidePaneAssistantIntent {
-  type: "database" | "docker" | "github";
-}
+import type {
+  ProjectApBoundEntryPointTarget,
+  ProjectApTarget,
+  ProjectDbTarget,
+  ProjectResourceTarget,
+} from "./target-identity";
+
+export type ProjectSidePaneAssistantIntent =
+  | { type: "database" | "docker" | "github" }
+  | { target: ProjectApTarget; type: "apEvents" | "apHistory" | "apMetrics" }
+  | { target: ProjectApTarget; type: "apSettings" | "apTerminal" }
+  | { target: ProjectDbTarget; type: "dbAccess" | "dbMetrics" | "dbSettings" }
+  | { target: ProjectDbTarget; type: "dbTerminal" }
+  | { target: ProjectResourceTarget; type: "logs" | "metrics" }
+  | {
+      target: ProjectApBoundEntryPointTarget;
+      type: "entrypointPublicAddresses";
+    };
 
 export type ProjectSidePaneIntentResult =
   | { status: "handled" }

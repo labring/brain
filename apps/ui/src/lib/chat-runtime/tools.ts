@@ -10,6 +10,8 @@ import type { AssistantContextPayload } from "@/lib/chat-persistence/types";
 import { createChatBashTool } from "@/lib/tool/chat-bash-tool";
 import { createDeployTaskTools } from "@/lib/tool/chat-deploy-task-tool";
 import { navigateAppTool } from "@/lib/tool/chat-navigate-app-tool";
+import { openProjectSurfaceTool } from "@/lib/tool/chat-open-project-surface-tool";
+import { createChatProductTools } from "@/lib/tool/chat-product-tools";
 import { refreshFrontendSwrCachesTool } from "@/lib/tool/chat-refresh-frontend-swr-tool";
 import {
   buildChatSkillsDiscoveryPrompt,
@@ -68,11 +70,17 @@ export async function buildChatToolset({
     assistantContext,
     kubernetesNamespace,
   });
+  const productTools = createChatProductTools({
+    kubeconfig,
+    kubernetesNamespace,
+  });
 
   const tools = {
     ...deployTaskTools,
+    ...productTools,
     emitGenUISpec,
     navigateApp: navigateAppTool,
+    openProjectSurface: openProjectSurfaceTool,
     refreshFrontendSwrCaches: refreshFrontendSwrCachesTool,
     readApiOpenApiDocs: readApiOpenApiDocsTool,
     sliceOpenApiDocs: sliceOpenApiDocsTool,

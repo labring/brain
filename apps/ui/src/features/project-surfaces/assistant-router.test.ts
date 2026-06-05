@@ -54,3 +54,25 @@ test("assistant intents are routed only to the current registered project surfac
   });
   assert.deepEqual(events, ["list:github", "canvas:github", "canvas:github"]);
 });
+
+test("assistant router carries typed resource intents to the active project surface", async () => {
+  const router = createProjectSidePaneAssistantRouter();
+  const received: ProjectSidePaneAssistantIntent[] = [];
+  const intent: ProjectSidePaneAssistantIntent = {
+    target: { kind: "AP", name: "web", namespace: "ns" },
+    type: "apTerminal",
+  };
+
+  router.registerSurface({
+    id: "project-canvas:project-1",
+    openAssistantIntent: (nextIntent) => {
+      received.push(nextIntent);
+      return { status: "handled" };
+    },
+  });
+
+  assert.deepEqual(await router.openAssistantIntent(intent), {
+    status: "handled",
+  });
+  assert.deepEqual(received, [intent]);
+});

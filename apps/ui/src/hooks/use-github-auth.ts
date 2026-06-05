@@ -47,7 +47,11 @@ export function useGithubAuth(): UseGithubAuthResult {
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
     () => fetchConnection(namespace),
-    { shouldRetryOnError: false }
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
+    }
   );
 
   let err: Error | undefined;

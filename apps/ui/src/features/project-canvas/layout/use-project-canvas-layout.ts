@@ -15,6 +15,67 @@ import { createCanvasLayoutNodeSaveScheduler } from "@/features/project-canvas/l
 
 const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
 
+function layoutNodeSignature(
+  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number]
+) {
+  return layoutNodeSignatureWithOptions(node, { normalizeOrphanedAt: false });
+}
+
+function layoutNodeCanonicalSignature(
+  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number]
+) {
+  return layoutNodeSignatureWithOptions(node, { normalizeOrphanedAt: true });
+}
+
+function layoutNodeSignatureWithOptions(
+  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number],
+  options: { normalizeOrphanedAt: boolean }
+) {
+  return JSON.stringify({
+    expanded: node.expanded ?? null,
+    lastSeenUid: node.lastSeenUid ?? null,
+    orphanedAt: layoutNodeOrphanedAtSignature(node, options),
+    position: node.position,
+    ref: node.ref,
+    stackOrder: node.stackOrder ?? null,
+  });
+}
+
+function layoutNodeOrphanedAtSignature(
+  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number],
+  options: { normalizeOrphanedAt: boolean }
+) {
+  if (!options.normalizeOrphanedAt) {
+    return node.orphanedAt ?? null;
+  }
+  return node.orphanedAt === undefined ? null : "present";
+}
+
+function layoutNodesSignature(
+  nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
+) {
+  return layoutNodesSignatureWithOptions(nodes, { normalizeOrphanedAt: false });
+}
+
+function layoutNodesCanonicalSignature(
+  nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
+) {
+  return layoutNodesSignatureWithOptions(nodes, { normalizeOrphanedAt: true });
+}
+
+function layoutNodesSignatureWithOptions(
+  nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"],
+  options: { normalizeOrphanedAt: boolean }
+) {
+  return nodes
+    .map(
+      (node) =>
+        `${node.ref.kind}:${node.ref.namespace}:${node.ref.name}:${options.normalizeOrphanedAt ? layoutNodeCanonicalSignature(node) : layoutNodeSignature(node)}`
+    )
+    .sort()
+    .join("|");
+}
+
 export function useProjectCanvasLayout(options: {
   enabled?: boolean;
   namespace: string;
@@ -28,11 +89,14 @@ export function useProjectCanvasLayout(options: {
   const swrKey = enabled
     ? ([PROJECT_CANVAS_LAYOUT_API_PATH, namespace, projectId] as const)
     : null;
-  const { data, error, isLoading, mutate } = useSWR(swrKey, () =>
-    fetchProjectCanvasLayout({
-      namespace,
-      projectId,
-    })
+  const { data, error, isLoading, mutate } = useSWR(
+    swrKey,
+    () =>
+      fetchProjectCanvasLayout({
+        namespace,
+        projectId,
+      }),
+    { revalidateOnFocus: false, revalidateOnReconnect: false }
   );
 
   const loadToastKey = enabled ? `${namespace}:${projectId}` : "";
@@ -48,6 +112,10 @@ export function useProjectCanvasLayout(options: {
     toast.error("Could not load saved canvas layout. Showing detected graph.");
   }, [error, loadToastKey]);
 
+  const inFlightNodesSignatureRef = useRef("");
+  const inFlightNodesCanonicalSignatureRef = useRef("");
+  const lastSavedNodesCanonicalSignatureRef = useRef("");
+  const lastSavedNodesSignatureRef = useRef("");
   const saveNodes = useCallback(
     async (
       nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
@@ -55,17 +123,42 @@ export function useProjectCanvasLayout(options: {
       if (!enabled) {
         return;
       }
+      const nextSignature = layoutNodesSignature(nodes);
+      const nextCanonicalSignature = layoutNodesCanonicalSignature(nodes);
+      if (
+        nextSignature === lastSavedNodesSignatureRef.current ||
+        nextSignature === inFlightNodesSignatureRef.current ||
+        nextCanonicalSignature ===
+          lastSavedNodesCanonicalSignatureRef.current ||
+        nextCanonicalSignature === inFlightNodesCanonicalSignatureRef.current
+      ) {
+        return;
+      }
+      inFlightNodesSignatureRef.current = nextSignature;
+      inFlightNodesCanonicalSignatureRef.current = nextCanonicalSignature;
       try {
         const next = await patchProjectCanvasLayoutNodes({
           namespace,
           nodes,
           projectId,
         });
+        lastSavedNodesSignatureRef.current = layoutNodesSignature(next.nodes);
+        lastSavedNodesCanonicalSignatureRef.current =
+          layoutNodesCanonicalSignature(next.nodes);
         await mutate(next, { revalidate: false });
       } catch {
         toast.error(
           "Could not save canvas layout. Your local position is still visible."
         );
+      } finally {
+        if (inFlightNodesSignatureRef.current === nextSignature) {
+          inFlightNodesSignatureRef.current = "";
+        }
+        if (
+          inFlightNodesCanonicalSignatureRef.current === nextCanonicalSignature
+        ) {
+          inFlightNodesCanonicalSignatureRef.current = "";
+        }
       }
     },
     [enabled, mutate, namespace, projectId]

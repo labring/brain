@@ -73,7 +73,7 @@ export function WorkloadTelemetryProvider({
             namespace: selectedNamespace,
           };
     store.setSelectedTarget(nextSelectedTarget);
-    if (nextSelectedTarget !== null) {
+    if (nextSelectedTarget !== null && store.hasActiveTargets()) {
       store.refresh().catch(() => undefined);
     }
   }, [selectedKind, selectedName, selectedNamespace, store]);
@@ -83,6 +83,9 @@ export function WorkloadTelemetryProvider({
       return;
     }
     const id = window.setInterval(() => {
+      if (!store.hasActiveTargets()) {
+        return;
+      }
       store.refresh().catch(() => undefined);
     }, refreshIntervalMs);
     return () => window.clearInterval(id);

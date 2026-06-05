@@ -1,7 +1,7 @@
 "use client";
 
 import { type Node, useReactFlow } from "@xyflow/react";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { CanvasNodeLayoutState } from "./types";
 
@@ -54,9 +54,14 @@ export function useCanvasNodeExpansion({
 }: UseCanvasNodeExpansionOptions) {
   const { getNode, updateNodeData } = useReactFlow<Node>();
   const defaultExpanded = data.layout?.expanded ?? false;
+  const [expandedState, setExpandedState] = useState(defaultExpanded);
+  useEffect(() => {
+    setExpandedState(defaultExpanded);
+  }, [defaultExpanded]);
 
   const onExpandedChange = useCallback(
     (expanded: boolean) => {
+      setExpandedState(expanded);
       updateNodeData(id, (node) => {
         const nodeData = node.data as Record<string, unknown>;
         return {
@@ -92,5 +97,5 @@ export function useCanvasNodeExpansion({
     ]
   );
 
-  return { defaultExpanded, onExpandedChange };
+  return { defaultExpanded, expanded: expandedState, onExpandedChange };
 }

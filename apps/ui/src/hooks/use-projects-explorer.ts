@@ -68,6 +68,10 @@ export function useProjectsExplorer(options: {
   onNewProject?: () => void;
 }): {
   actions: ProjectExplorerActions;
+  data: {
+    aps: K8sGetResponse | undefined;
+    dbs: K8sGetResponse | undefined;
+  };
   states: ProjectExplorerStates;
   /** Revalidate the projects list (e.g. after creating a project). */
   refreshProjects: () => Promise<unknown>;
@@ -90,7 +94,8 @@ export function useProjectsExplorer(options: {
         base: window.location.origin,
         path: "/api/projects",
         query: projectsQuery,
-      })
+      }),
+    { revalidateOnFocus: false, revalidateOnReconnect: false }
   );
 
   // Project Aggregate Status fan-out. We list every AP/DB in the namespace
@@ -222,5 +227,13 @@ export function useProjectsExplorer(options: {
     [onNewProject, onProjectClick, onProjectDelete, onProjectRename]
   );
 
-  return { actions, states, refreshProjects: mutate };
+  const data = useMemo(
+    () => ({
+      aps: apsData,
+      dbs: dbsData,
+    }),
+    [apsData, dbsData]
+  );
+
+  return { actions, data, states, refreshProjects: mutate };
 }

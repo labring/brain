@@ -34,8 +34,11 @@ test("Project Canvas translates assistant GitHub intent to deployment in the cur
       { projectId: "project-1" }
     ),
     {
-      kind: "githubDeployment",
-      projectId: "project-1",
+      entry: {
+        kind: "githubDeployment",
+        projectId: "project-1",
+      },
+      slot: "side",
     }
   );
 });
@@ -47,8 +50,11 @@ test("Project Canvas translates assistant database intent to deployment in the c
       { projectId: "project-1" }
     ),
     {
-      kind: "databaseDeployment",
-      projectId: "project-1",
+      entry: {
+        kind: "databaseDeployment",
+        projectId: "project-1",
+      },
+      slot: "side",
     }
   );
 });
@@ -60,8 +66,93 @@ test("Project Canvas translates assistant Docker intent to deployment in the cur
       { projectId: "project-1" }
     ),
     {
-      kind: "dockerDeployment",
-      projectId: "project-1",
+      entry: {
+        kind: "dockerDeployment",
+        projectId: "project-1",
+      },
+      slot: "side",
+    }
+  );
+});
+
+test("Project Canvas translates assistant AP settings intent to an AP side surface", () => {
+  assert.deepEqual(
+    projectCanvasEntryForAssistantIntent({
+      target: { kind: "AP", name: "web", namespace: "ns" },
+      type: "apSettings",
+    }),
+    {
+      entry: {
+        kind: "apSettings",
+        target: { kind: "AP", name: "web", namespace: "ns" },
+      },
+      slot: "side",
+    }
+  );
+});
+
+test("Project Canvas translates assistant public address intent to an EntryPoint side surface", () => {
+  assert.deepEqual(
+    projectCanvasEntryForAssistantIntent({
+      target: { apName: "web", kind: "EntryPoint", namespace: "ns" },
+      type: "entrypointPublicAddresses",
+    }),
+    {
+      entry: {
+        kind: "publicAddresses",
+        target: { apName: "web", kind: "EntryPoint", namespace: "ns" },
+      },
+      slot: "side",
+    }
+  );
+});
+
+test("Project Canvas translates assistant AP terminal intent to a drawer surface", () => {
+  assert.deepEqual(
+    projectCanvasEntryForAssistantIntent({
+      target: { kind: "AP", name: "web", namespace: "ns" },
+      type: "apTerminal",
+    }),
+    {
+      entry: {
+        kind: "apTerminal",
+        target: { kind: "AP", name: "web", namespace: "ns" },
+      },
+      slot: "drawer",
+    }
+  );
+});
+
+test("Project Canvas translates assistant DB access intent to a main surface that keeps side visible", () => {
+  assert.deepEqual(
+    projectCanvasEntryForAssistantIntent({
+      target: { kind: "DB", name: "postgres", namespace: "ns" },
+      type: "dbAccess",
+    }),
+    {
+      entry: {
+        focusPolicy: "keepSideVisible",
+        kind: "dbAccess",
+        target: { kind: "DB", name: "postgres", namespace: "ns" },
+      },
+      slot: "main",
+    }
+  );
+});
+
+test("Project Canvas translates assistant logs intent to resource logs", () => {
+  assert.deepEqual(
+    projectCanvasEntryForAssistantIntent({
+      target: { kind: "AP", name: "web", namespace: "ns" },
+      type: "logs",
+    }),
+    {
+      entry: {
+        focusPolicy: "keepSideVisible",
+        kind: "resourceLogs",
+        target: { kind: "AP", name: "web", namespace: "ns" },
+      },
+      slot: "main",
     }
   );
 });

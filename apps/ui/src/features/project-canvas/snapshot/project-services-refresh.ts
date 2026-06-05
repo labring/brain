@@ -4,7 +4,6 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { isPlatformAddressId } from "@/features/project-canvas/platform-addresses";
 
 export const ENTRYPOINT_FAST_REFRESH_MS = 1000;
-export const ENTRYPOINT_STEADY_REFRESH_MS = 5000;
 export const WORKLOAD_LIST_FAST_REFRESH_MS = 1000;
 
 const WORKLOAD_TRANSIENT_PHASES = new Set([
@@ -145,13 +144,6 @@ export function entryPointRefreshIntervalForLifecycle({
       apItemsFromList(entryPointsData).length === 0)
   ) {
     return ENTRYPOINT_FAST_REFRESH_MS;
-  }
-
-  if (
-    hasPublicApEndpoint(apsData) &&
-    apItemsFromList(entryPointsData).length > 0
-  ) {
-    return ENTRYPOINT_STEADY_REFRESH_MS;
   }
 
   return 0;
