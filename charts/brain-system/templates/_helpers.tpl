@@ -103,7 +103,7 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{- end -}}
 
 {{- define "brain-system.publicIngressName" -}}
-{{- printf "ing-%s" (substr 0 6 (sha256sum (printf "%s/%s" .name .id) | lower)) -}}
+{{- printf "%s-platform-%s" .name .id | lower | replace "_" "-" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "brain-system.networkAnnotation" -}}

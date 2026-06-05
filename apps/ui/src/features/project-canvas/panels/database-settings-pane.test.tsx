@@ -30,6 +30,8 @@ const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
 const PRIVATE_DSN_RE = /mysql:\/\/r\*\*\*\*\*\*\*:.*?@db.default.svc:3306/;
 const PUBLIC_DSN_RE =
   /mysql:\/\/r\*\*\*\*\*\*\*:.*?@192.168.10.189.nip.io:45211/;
+const INVISIBLE_UNSAVED_CHANGES_RE =
+  /<p class="[^"]*\binvisible\b[^"]*">Unsaved configuration changes\.<\/p>/;
 
 const PRIVATE_CONNECTION = {
   id: "private",
@@ -92,6 +94,22 @@ test("database settings pane renders shared draft actions", () => {
 
   assert.match(html, UPDATE_BUTTON_RE);
   assert.match(html, CANCEL_BUTTON_RE);
+});
+
+test("database settings pane does not show unsaved changes for region repair only", () => {
+  const html = renderPane(
+    <DatabaseSettingsPaneContent
+      data={{
+        ...BASE_DATA,
+        metadata: { labels: { "brain.io/project-id": "project" } },
+      }}
+      onClose={noop}
+      onSubmitPatch={noop}
+      routingDomain="192.168.12.53.nip.io"
+    />
+  );
+
+  assert.match(html, INVISIBLE_UNSAVED_CHANGES_RE);
 });
 
 test("database settings pane renders replica counts without unit suffix", () => {

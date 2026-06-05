@@ -479,8 +479,7 @@ export function DatabaseSettingsPaneContent({
       }),
     [data.metadata, draft, original, routingDomain]
   );
-  const dirty =
-    pendingPatch !== null || dbSettingsDraftIsDirty(original, draft);
+  const dirty = dbSettingsDraftIsDirty(original, draft);
   const canUpdate =
     canEdit && pendingPatch !== null && !updating && onSubmitPatch != null;
   const subtitle = databaseHeaderSubtitle(data.states);
