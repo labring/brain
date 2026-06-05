@@ -145,7 +145,9 @@ A DB-specific Settings Draft retained as legacy wording.
 
 ### Settings Draft
 
-A local set of pending AP or DB settings changes that is submitted only when the user confirms the panel-level update.
+A local set of pending AP or DB settings changes that is submitted only when the user confirms a settings update. Discarding a Settings Draft abandons the pending changes and keeps the settings surface open.
+
+_Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 
 ### Database Binding
 

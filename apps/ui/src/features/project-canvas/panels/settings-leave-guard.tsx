@@ -8,7 +8,7 @@ import type {
   SettingsLeaveGuardRegistration,
   SettingsLeaveGuardScope,
 } from "@workspace/ui/lib/settings-leave-guard";
-import { Save } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   continueSidePaneLeave,
@@ -65,8 +65,8 @@ function settingsLeaveGuardTitle(scope: SettingsLeaveGuardScope) {
 
 function settingsLeaveGuardDescription(action: SettingsLeaveGuardAction) {
   return action === "close"
-    ? "Save the current draft, discard it, or stay on this settings panel."
-    : "Save the current draft, discard it, or stay on this settings panel before switching resources.";
+    ? "Update these settings, discard the pending changes, or stay on this settings panel."
+    : "Update these settings, discard the pending changes, or stay on this settings panel before switching resources.";
 }
 
 export function SettingsLeaveGuardDialog({
@@ -149,12 +149,12 @@ export function SettingsLeaveGuardDialogContent({
         <AppDialog.Action
           disabled={saveDisabled}
           loading={pending}
-          loadingLabel="Saving"
+          loadingLabel="Updating"
           onClick={() => onDecision("save")}
           type="button"
         >
-          <Save aria-hidden data-icon="inline-start" />
-          Save
+          <Upload aria-hidden data-icon="inline-start" />
+          Update
         </AppDialog.Action>
       </AppDialog.Footer>
     </>

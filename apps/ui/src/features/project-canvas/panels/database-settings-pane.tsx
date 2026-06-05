@@ -335,6 +335,7 @@ function DatabaseSettingsFooter({
   return (
     <ResourceSettingsDraftFooter
       backingResourceChanged={backingResourceChanged}
+      cancelAriaLabel="Discard database configuration changes"
       canSubmit={canUpdate}
       className="p-2.5"
       dirty={dirty}

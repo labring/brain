@@ -33,9 +33,9 @@ const POSTGRES_SELECTED_RE = />postgres</;
 const PASSWORD_FIELD_RE = /Password/;
 const REMOVE_ENV_RE = /aria-label="Remove environment variable"/;
 const SAVE_ENV_RE = /Save environment/;
-const SAVE_SETTINGS_RE = /aria-label="Save settings"/;
+const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
 const CANCEL_ENV_RE = /Cancel environment changes/;
-const CANCEL_SETTINGS_RE = /aria-label="Cancel settings changes"/;
+const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="Container image"/;
 const NEW_VARIABLE_RE = /value="NEW_VARIABLE"/;
@@ -989,8 +989,8 @@ test("container settings pane exposes panel-level draft actions without environm
     />
   );
 
-  assert.match(html, SAVE_SETTINGS_RE);
-  assert.match(html, CANCEL_SETTINGS_RE);
+  assert.match(html, UPDATE_AP_SETTINGS_RE);
+  assert.match(html, DISCARD_AP_SETTINGS_RE);
   assert.doesNotMatch(html, SAVE_ENV_RE);
   assert.doesNotMatch(html, CANCEL_ENV_RE);
 });

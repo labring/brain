@@ -548,9 +548,9 @@ export interface ContainerSettingsPaneProps {
   onImageChange: (image: string) => void;
   onNetworkChange?: (network: ContainerNetwork) => void | Promise<void>;
   /**
-   * When set (and not `readOnly`), CPU/memory/replicas sliders keep local drafts until Save; Cancel reverts.
+   * When set (and not `readOnly`), CPU/memory/replicas sliders keep local drafts until Update; Discard reverts.
    * Omit for live slider updates via `cpuQuota` / `memoryQuota` / `replicasQuota` `onValueChange`.
-   * When `replicasQuota` is set, the draft `replicaStrategy` is included on Save.
+   * When `replicasQuota` is set, the draft `replicaStrategy` is included on Update.
    */
   onResourceQuotasCommit?: (next: {
     cpu: number;
@@ -2814,14 +2814,15 @@ export function ContainerPublicAddressesSettingsPane({
           backingResourceChanged={networkBackingState.resourceChanged}
           canSave={canSave}
           dirty={networkDirty}
+          discardAriaLabel="Discard Public Address changes"
           onCancel={resetNetworkDraft}
           onKeepEditing={keepEditingNetworkDraft}
           onReload={reloadNetworkDraft}
           onSave={handleSaveNetworkDraft}
           pending={savePending}
           saveFailureMessage={networkBackingState.saveFailureMessage}
-          submitAriaLabel="Save public addresses"
-          unsavedMessage="Unsaved Public Address changes."
+          submitAriaLabel="Update Public Address settings"
+          unsavedMessage="Pending Public Address changes. Update to apply."
         />
       ) : null}
     </div>
@@ -3230,18 +3231,20 @@ function ContainerSettingsDraftFooter({
   backingResourceChanged,
   canSave,
   dirty,
+  discardAriaLabel = "Discard settings changes",
   onCancel,
   onKeepEditing,
   onReload,
   onSave,
   pending,
   saveFailureMessage,
-  submitAriaLabel = "Save settings",
+  submitAriaLabel = "Update settings",
   unsavedMessage,
 }: {
   backingResourceChanged: boolean;
   canSave: boolean;
   dirty: boolean;
+  discardAriaLabel?: string;
   onCancel: () => void;
   onKeepEditing: () => void;
   onReload: () => void;
@@ -3254,6 +3257,7 @@ function ContainerSettingsDraftFooter({
   return (
     <ResourceSettingsDraftFooter
       backingResourceChanged={backingResourceChanged}
+      cancelAriaLabel={discardAriaLabel}
       canSubmit={canSave}
       className="p-2.5"
       data-slot="container-settings-draft-actions"
@@ -4235,12 +4239,14 @@ export function ContainerSettingsPane({
           backingResourceChanged={settingsBackingState.resourceChanged}
           canSave={canSaveSettings}
           dirty={panelDraftDirty}
+          discardAriaLabel="Discard AP Settings changes"
           onCancel={resetSettingsDraft}
           onKeepEditing={keepEditingSettingsDraft}
           onReload={reloadSettingsDraft}
           onSave={handleSaveSettingsDraft}
           pending={settingsSavePending}
           saveFailureMessage={settingsBackingState.saveFailureMessage}
+          submitAriaLabel="Update AP Settings"
         />
       ) : null}
     </div>

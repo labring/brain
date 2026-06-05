@@ -59,7 +59,7 @@ export function ResourceSettingsInset({
 export function ResourceSettingsDraftFooter({
   backingResourceChanged,
   canSubmit,
-  cancelAriaLabel = "Cancel settings changes",
+  cancelAriaLabel = "Discard settings changes",
   className,
   dirty,
   onCancel,
@@ -72,7 +72,7 @@ export function ResourceSettingsDraftFooter({
   submitAriaLabel = "Update settings",
   SubmitIcon = Upload,
   submitLabel = "Update",
-  unsavedMessage = "Unsaved configuration changes.",
+  unsavedMessage = "Pending changes. Update to apply.",
   ...props
 }: ComponentPropsWithoutRef<"footer"> & {
   backingResourceChanged: boolean;
@@ -145,7 +145,7 @@ export function ResourceSettingsDraftFooter({
             type="button"
             variant="quiet"
           >
-            Cancel
+            Discard
           </AppButton>
           <AppButton
             aria-label={submitAriaLabel}
