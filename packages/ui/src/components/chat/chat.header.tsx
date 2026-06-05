@@ -17,9 +17,11 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import { chatScrollbarThinClass } from "@workspace/ui/lib/chat-scrollbar";
 import { cn } from "@workspace/ui/lib/utils";
 import { ChevronDown, PanelRightClose } from "lucide-react";
-import { type ComponentProps, useMemo } from "react";
+import { type ComponentProps, useMemo, useState } from "react";
 
 import type { ChatHeaderThreadHistory } from "./chat.types";
+
+const COLLAPSED_THREAD_HISTORY_LIMIT = 5;
 
 function formatThreadDropdownTimestamp(source: string | number | Date): string {
   const d = new Date(source);
@@ -50,6 +52,32 @@ function formatThreadDropdownTimestamp(source: string | number | Date): string {
   return new Intl.DateTimeFormat(undefined, { ...datePart, ...clock }).format(
     d
   );
+}
+
+function collapsedThreadHistoryItems(
+  items: ChatHeaderThreadHistory["items"],
+  activeThreadId: string
+) {
+  if (items.length <= COLLAPSED_THREAD_HISTORY_LIMIT) {
+    return items;
+  }
+
+  const firstItems = items.slice(0, COLLAPSED_THREAD_HISTORY_LIMIT);
+  if (firstItems.some((item) => item.id === activeThreadId)) {
+    return firstItems;
+  }
+
+  const activeItem = items.find((item) => item.id === activeThreadId);
+  if (!activeItem) {
+    return firstItems;
+  }
+
+  return [
+    activeItem,
+    ...items
+      .filter((item) => item.id !== activeThreadId)
+      .slice(0, COLLAPSED_THREAD_HISTORY_LIMIT - 1),
+  ];
 }
 
 export type ChatHeaderNewThreadProps = Omit<
@@ -170,11 +198,22 @@ export function ChatThreadSelect({
   threadName,
   ...props
 }: ChatThreadSelectProps) {
-  const historyItems = threadHistory?.items ?? [];
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyItems = threadHistory?.items;
+  const activeThreadId = threadHistory?.activeThreadId;
   const visibleHistoryItems = useMemo(
-    () => historyItems.filter((item) => !item.referential),
+    () => (historyItems ?? []).filter((item) => !item.referential),
     [historyItems]
   );
+  const hasOverflowingHistory =
+    visibleHistoryItems.length > COLLAPSED_THREAD_HISTORY_LIMIT;
+  const renderedHistoryItems = useMemo(() => {
+    if (!activeThreadId || historyExpanded) {
+      return visibleHistoryItems;
+    }
+
+    return collapsedThreadHistoryItems(visibleHistoryItems, activeThreadId);
+  }, [activeThreadId, historyExpanded, visibleHistoryItems]);
   const canPickHistory = threadHistory && visibleHistoryItems.length > 0;
 
   if (!threadHistory) {
@@ -219,43 +258,60 @@ export function ChatThreadSelect({
           className="min-w-72 max-w-96 border border-border bg-input/30 p-1 text-foreground shadow-none ring-0 backdrop-blur-xl"
         >
           {canPickHistory ? (
-            <DropdownMenuRadioGroup
-              className={cn(
-                "max-h-[300px] overflow-y-auto",
-                chatScrollbarThinClass
-              )}
-              defaultValue={threadHistory.activeThreadId}
-              key={threadHistory.activeThreadId}
-              onValueChange={(v) => {
-                if (v) {
-                  threadHistory.onSelect(v);
-                }
-              }}
-            >
-              {visibleHistoryItems.map((item) => (
-                <DropdownMenuRadioItem
-                  className="min-w-0 cursor-pointer gap-2 rounded-sm py-1.5 pr-2 pl-2 text-popover-foreground text-sm leading-5 focus:bg-input/30 focus:text-popover-foreground focus:**:text-popover-foreground data-[checked]:bg-input data-highlighted:bg-input/30 data-[checked]:text-popover-foreground [&_[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
-                  closeOnClick
-                  key={item.id}
-                  value={item.id}
+            <>
+              <DropdownMenuRadioGroup
+                className={cn(
+                  "max-h-[300px] overflow-y-auto",
+                  chatScrollbarThinClass
+                )}
+                defaultValue={threadHistory.activeThreadId}
+                key={threadHistory.activeThreadId}
+                onValueChange={(v) => {
+                  if (v) {
+                    threadHistory.onSelect(v);
+                  }
+                }}
+              >
+                {renderedHistoryItems.map((item) => (
+                  <DropdownMenuRadioItem
+                    className="min-w-0 cursor-pointer gap-2 rounded-sm py-1.5 pr-2 pl-2 text-popover-foreground text-sm leading-5 focus:bg-input/30 focus:text-popover-foreground focus:**:text-popover-foreground data-[checked]:bg-input data-highlighted:bg-input/30 data-[checked]:text-popover-foreground [&_[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
+                    closeOnClick
+                    key={item.id}
+                    value={item.id}
+                  >
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <span
+                        className="min-w-px flex-1 truncate text-left"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </span>
+                      <span className="shrink-0 text-popover-foreground/60 text-xs tabular-nums leading-4">
+                        {item.updatedAtSource == null
+                          ? item.updatedAt
+                          : formatThreadDropdownTimestamp(
+                              item.updatedAtSource
+                            ) || item.updatedAt}
+                      </span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {hasOverflowingHistory ? (
+                <button
+                  aria-expanded={historyExpanded}
+                  className="mt-1 flex h-4 w-full cursor-pointer items-center justify-center rounded-sm px-2 text-popover-foreground/70 text-xs leading-none outline-none hover:bg-input/30 hover:text-popover-foreground focus-visible:bg-input/30 focus-visible:text-popover-foreground"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setHistoryExpanded((current) => !current);
+                  }}
+                  type="button"
                 >
-                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                    <span
-                      className="min-w-px flex-1 truncate text-left"
-                      title={item.title}
-                    >
-                      {item.title}
-                    </span>
-                    <span className="shrink-0 text-popover-foreground/60 text-xs tabular-nums leading-4">
-                      {item.updatedAtSource == null
-                        ? item.updatedAt
-                        : formatThreadDropdownTimestamp(item.updatedAtSource) ||
-                          item.updatedAt}
-                    </span>
-                  </span>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+                  {historyExpanded ? "Show less" : "Show all"}
+                </button>
+              ) : null}
+            </>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
