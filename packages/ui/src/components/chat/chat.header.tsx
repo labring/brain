@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  Add01Icon,
-  FileExportIcon,
-  Setting07Icon,
-} from "@hugeicons/core-free-icons";
+import { Add01Icon, Setting07Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AppIconButton,
@@ -23,56 +19,10 @@ import {
 import { Spinner } from "@workspace/ui/components/spinner";
 import { chatScrollbarThinClass } from "@workspace/ui/lib/chat-scrollbar";
 import { cn } from "@workspace/ui/lib/utils";
-import type { UIMessage } from "ai";
 import { ChevronDown, PanelRightClose } from "lucide-react";
 import { type ComponentProps, useMemo } from "react";
 
 import type { ChatHeaderThreadHistory } from "./chat.types";
-
-/** Safe filename stem for downloads (falls back when empty after sanitizing). */
-function chatExportFileStem(raw: string | undefined, fallback: string): string {
-  const trimmed = raw?.trim() ?? "";
-  const stem =
-    trimmed.length === 0
-      ? fallback
-      : trimmed
-          .slice(0, 120)
-          .replace(/[^\p{L}\p{N}\-_]+/gu, "-")
-          .replace(/^-+|-+$/g, "");
-  return stem.length > 0 ? stem : fallback;
-}
-
-/**
- * Downloads the transcript as formatted JSON (`exportedAt`, `messageCount`, `messages`).
- * Host typically wires this to `ChatHeaderExport` (`Chat.Export`) `onExport`.
- */
-export function downloadChatMessagesJson(
-  messages: readonly UIMessage[],
-  options?: { fileNameStem?: string }
-): void {
-  const fileNameStem = chatExportFileStem(
-    options?.fileNameStem,
-    "chat-transcript"
-  );
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    messageCount: messages.length,
-    messages: [...messages],
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${fileNameStem}.json`;
-    a.rel = "noopener";
-    a.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 function formatThreadDropdownTimestamp(source: string | number | Date): string {
   const d = new Date(source);
@@ -102,37 +52,6 @@ function formatThreadDropdownTimestamp(source: string | number | Date): string {
 
   return new Intl.DateTimeFormat(undefined, { ...datePart, ...clock }).format(
     d
-  );
-}
-
-export type ChatHeaderExportProps = Omit<
-  AppIconButtonProps,
-  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
-> & {
-  "aria-label"?: string;
-  onExport?: () => void;
-};
-
-/** Export control; pass `onExport` from the host. */
-export function ChatHeaderExport({
-  "aria-label": ariaLabel = "Export",
-  className,
-  onExport,
-  ...props
-}: ChatHeaderExportProps) {
-  return (
-    <AppIconButton
-      aria-label={ariaLabel}
-      className={className}
-      disabled={onExport === undefined}
-      onClick={() => onExport?.()}
-      size="lg"
-      type="button"
-      variant="quiet"
-      {...props}
-    >
-      <HugeiconsIcon icon={FileExportIcon} size={16} strokeWidth={2} />
-    </AppIconButton>
   );
 }
 
@@ -354,7 +273,7 @@ export type ChatHeaderProps = ComponentProps<"header"> & {
   threadName: string;
 };
 
-/** Single-line header: thread title + host-composed controls (`Chat.Export`, `Chat.NewThread`, …). */
+/** Single-line header: thread title + host-composed controls (`Chat.NewThread`, …). */
 export function ChatHeader({
   className,
   children,
@@ -383,7 +302,6 @@ export function ChatHeader({
 }
 
 ChatThreadSelect.displayName = "Chat.ThreadSelect";
-ChatHeaderExport.displayName = "Chat.Export";
 ChatHeaderNewThread.displayName = "Chat.NewThread";
 ChatHeaderSetting.displayName = "Chat.Setting";
 ChatHeaderClosePane.displayName = "Chat.ClosePane";

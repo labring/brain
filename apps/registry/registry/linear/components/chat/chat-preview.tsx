@@ -170,7 +170,6 @@ function ChatWorkspacePreview({
             }}
             threadName={title}
           >
-            <Chat.Export onExport={() => undefined} />
             <Chat.NewThread onNewThread={goNewThread} />
           </Chat.Header>
           <Chat.Transcript

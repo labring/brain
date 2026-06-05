@@ -2,10 +2,7 @@
 
 import { useChat as useAIChat } from "@ai-sdk/react";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
-import {
-  Chat,
-  downloadChatMessagesJson,
-} from "@workspace/ui/components/chat/chat";
+import { Chat } from "@workspace/ui/components/chat/chat";
 import type { ChatHeaderThreadHistory } from "@workspace/ui/components/chat/chat.types";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
@@ -563,10 +560,6 @@ function ProjectAssistantChatSession({
     setInput("");
   }, [busy, input, sendMessage, stop]);
 
-  const exportTranscript = useCallback(() => {
-    downloadChatMessagesJson(messages, { fileNameStem: threadLabel });
-  }, [messages, threadLabel]);
-
   return (
     <Chat.Root>
       <Chat className="h-full min-h-0 flex-1 border-0 shadow-none">
@@ -575,11 +568,6 @@ function ProjectAssistantChatSession({
           threadHistory={threadHistory}
           threadName={threadLabel}
         >
-          <Chat.Export
-            className="size-9"
-            disabled={messages.length === 0}
-            onExport={exportTranscript}
-          />
           <Chat.NewThread
             aria-label="Create thread"
             className="size-9"
