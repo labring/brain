@@ -325,4 +325,6 @@ The Project Creation Pane may also open in a source-specific entry path. In a Gi
 
 The relationship that attaches a Custom Domain to an AP by promoting one Platform Address as the CNAME target. The AP owns the user's binding intent, while EntryPoint owns DNS verification, routing, certificate lifecycle, and binding health.
 
+A Custom Domain Binding targets the App Listening Port selected on the promoted Platform Address. Binding a Custom Domain may also retarget that promoted Platform Address to a different App Listening Port.
+
 Unbinding a Custom Domain removes that relationship and returns the promoted Platform Address to ordinary display; it does not delete the Platform Address or close public access.

@@ -10,6 +10,7 @@ import type {
 import {
   ContainerSettingsPane,
   confirmedAddDbDsnReferencesFromEnvDraft,
+  containerNetworkAfterBindCustomDomain,
   containerNetworkAfterUnbindCustomDomain,
   containerSettingsDraftIsDirty,
   resourceQuotaReplicaPatchFromDraft,
@@ -52,6 +53,7 @@ const PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api.example.com\//;
 const FIRST_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-a.example.com\//;
 const SECOND_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-b.example.com\//;
 const THIRD_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-c.example.com\//;
+const FOURTH_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-d.example.com\//;
 const DRAFT_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/ffyrwq.apps.example.com\//;
 const PUBLIC_ADDRESS_STATUS_RE = /Public Address status: accessible/;
 const CUSTOM_DOMAIN_VALUE_RE = /www\.example\.com/;
@@ -279,6 +281,13 @@ test("container settings pane collapses overflowing public address rows by defau
             type: "platform",
             url: "https://api-c.example.com/",
           },
+          {
+            host: "api-d.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-d.example.com/",
+          },
         ],
       }}
       onEnvChange={noop}
@@ -289,7 +298,8 @@ test("container settings pane collapses overflowing public address rows by defau
 
   assert.match(html, FIRST_PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, SECOND_PUBLIC_ADDRESS_VALUE_RE);
-  assert.doesNotMatch(html, THIRD_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, THIRD_PUBLIC_ADDRESS_VALUE_RE);
+  assert.doesNotMatch(html, FOURTH_PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, VIEW_ALL_PUBLIC_ADDRESSES_RE);
   assert.match(html, PUBLIC_ADDRESSES_COLLAPSED_RE);
   assert.match(html, CURSOR_POINTER_RE);
@@ -484,6 +494,66 @@ test("container settings pane unbinds Custom Domains without deleting Platform A
     ),
     PUBLIC_ADDRESS_VALUE_RE
   );
+});
+
+test("container settings pane binds Custom Domains and retargets the Platform Address port", () => {
+  const next = containerNetworkAfterBindCustomDomain(
+    {
+      privateAddress: "http://api-service.default.svc:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+    {
+      customDomain: {
+        cnameTarget: "api.example.com",
+        domain: "www.example.com",
+        id: "cd_def456",
+        platformAddressId: "pa_abc123",
+        status: "verified",
+        targetPort: 8080,
+      },
+      platformAddress: {
+        host: "api.example.com",
+        id: "pa_abc123",
+        port: 8080,
+        status: "accessible",
+        type: "platform",
+        url: "https://api.example.com/",
+      },
+      platformAddressIndex: 0,
+      port: 9000,
+    }
+  );
+
+  assert.deepEqual(next.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 9000,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+  assert.deepEqual(next.customDomains, [
+    {
+      cnameTarget: "api.example.com",
+      domain: "www.example.com",
+      id: "cd_def456",
+      platformAddressId: "pa_abc123",
+      status: "verified",
+      targetPort: 9000,
+    },
+  ]);
 });
 
 test("container settings pane renders fixed replica strategy controls", () => {

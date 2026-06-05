@@ -1,7 +1,6 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
-import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
@@ -1130,7 +1129,7 @@ function EditableEnvRows({
           const rowKey = envRowKeys[index] ?? envRowKey(row, index);
           return (
             <div className="grid min-w-0 gap-1.5" key={rowKey}>
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
                 <AppInput
                   aria-invalid={error != null}
                   aria-label="Environment variable name"
@@ -1148,17 +1147,16 @@ function EditableEnvRows({
                   onUpdateRow={onUpdateRow}
                   row={row}
                 />
-                <AppButton
+                <AppIconButton
                   aria-label="Remove environment variable"
-                  className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+                  className="hover:text-red-500"
                   onClick={() => onDeleteRow(index)}
                   size="lg"
                   type="button"
                   variant="quiet"
                 >
-                  <Trash2 aria-hidden data-icon="inline-start" />
-                  Delete
-                </AppButton>
+                  <Trash2 aria-hidden className="size-4" />
+                </AppIconButton>
               </div>
               {error == null ? null : (
                 <p className="text-destructive text-xs" role="status">
@@ -1189,7 +1187,7 @@ interface NetworkSettingsSectionProps {
   readOnly: boolean;
 }
 
-const PUBLIC_ADDRESS_VISIBLE_COUNT = 2;
+const PUBLIC_ADDRESS_VISIBLE_COUNT = 3;
 
 function hasNetworkPanelDraftControls({
   onNetworkDraftChange,
@@ -1439,7 +1437,7 @@ function PublicAddressRow({
       rowKey={rowKey}
       title={copyable ? value : undefined}
     >
-      {({ copied, copyable: rowCopyable }) => (
+      {({ copyable: rowCopyable }) => (
         <>
           <div
             aria-hidden={rowCopyable ? true : undefined}
@@ -1456,12 +1454,7 @@ function PublicAddressRow({
               <span className="min-w-0 truncate">
                 {value === "" ? "Pending domain" : value}
               </span>
-              <CanvasNode.CopyableRowIndicator
-                className={cn(
-                  "text-muted-foreground",
-                  copied && "text-green-500"
-                )}
-              />
+              <CanvasNode.CopyableRowIndicator className="text-muted-foreground" />
             </div>
             <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
               {address.port}
@@ -1631,130 +1624,6 @@ interface VisibleDomainRows {
   publicAddresses: ContainerNetworkPublicAddress[];
 }
 
-interface CnameBindingDialogProps {
-  address: ContainerNetworkPublicAddress | undefined;
-  onBind: (domain: ContainerNetworkCustomDomain) => void;
-  onOpenChange: (open: boolean) => void;
-  open: boolean;
-  verify?: ContainerCustomDomainCnameVerifier;
-}
-
-function CnameBindingDialog({
-  address,
-  onBind,
-  onOpenChange,
-  open,
-  verify,
-}: CnameBindingDialogProps) {
-  const inputId = useId();
-  const target = publicAddressHostValue(address);
-  const platformAddressId = address?.id?.trim() ?? "";
-  const [domainDraft, setDomainDraft] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setDomainDraft("");
-      setError(null);
-      setPending(false);
-    }
-  }, [open]);
-
-  const handleVerify = async () => {
-    const domain = normalizeCustomDomainDraft(domainDraft);
-    if (domain === "") {
-      setError("Custom Domain is required.");
-      return;
-    }
-    if (target === "" || platformAddressId === "") {
-      setError("Platform Address host is not ready.");
-      return;
-    }
-    if (verify == null) {
-      setError("CNAME verification is unavailable.");
-      return;
-    }
-
-    setPending(true);
-    setError(null);
-    try {
-      const result = await verify({ domain, target });
-      if (!result.ok) {
-        setError(result.message ?? "CNAME verification failed.");
-        return;
-      }
-      onBind({
-        cnameTarget: target,
-        domain,
-        id: generateCustomDomainBindingId(),
-        platformAddressId,
-        status: "verified",
-        targetPort: address?.port,
-      });
-      onOpenChange(false);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "CNAME verification failed."
-      );
-    } finally {
-      setPending(false);
-    }
-  };
-
-  return (
-    <AppDialog.Root
-      onOpenChange={(nextOpen) => {
-        if (pending && !nextOpen) {
-          return;
-        }
-        onOpenChange(nextOpen);
-      }}
-      open={open}
-    >
-      <AppDialog.Content>
-        <AppDialog.Header>
-          <AppDialog.Title>Bind Custom Domain</AppDialog.Title>
-        </AppDialog.Header>
-        <AppDialog.Body>
-          <AppDialog.Description>
-            Configure a CNAME record pointing to this Platform Address.
-          </AppDialog.Description>
-          <AppDialog.Field>
-            <AppDialog.Label>CNAME target</AppDialog.Label>
-            <div className="min-w-0 truncate rounded-md border border-white/10 bg-white/5 px-2.5 py-2 font-mono text-sm text-zinc-100">
-              {target === "" ? "Pending domain" : target}
-            </div>
-          </AppDialog.Field>
-          <AppInputField
-            disabled={pending}
-            error={error}
-            id={inputId}
-            label="Custom Domain"
-            onChange={(event) => {
-              setDomainDraft(event.target.value);
-              setError(null);
-            }}
-            placeholder="www.example.com"
-            value={domainDraft}
-          />
-        </AppDialog.Body>
-        <AppDialog.Footer>
-          <AppDialog.Cancel disabled={pending}>Cancel</AppDialog.Cancel>
-          <AppDialog.Action
-            loading={pending}
-            loadingLabel="Verifying"
-            onClick={handleVerify}
-            type="button"
-          >
-            Verify
-          </AppDialog.Action>
-        </AppDialog.Footer>
-      </AppDialog.Content>
-    </AppDialog.Root>
-  );
-}
-
 function visibleDomainRows(network: ContainerNetwork): VisibleDomainRows {
   const customDomains = network.customDomains ?? [];
   const boundPlatformAddressIds = new Set(
@@ -1777,6 +1646,51 @@ export function containerNetworkAfterUnbindCustomDomain(
     ...network,
     customDomains: (network.customDomains ?? []).filter(
       (domain) => domain.id.trim() !== targetId
+    ),
+  };
+}
+
+function publicAddressIdValue(address: ContainerNetworkPublicAddress): string {
+  return address.id?.trim() || address.platformAddressId?.trim() || "";
+}
+
+function isPublicAddressMutationTarget(
+  address: ContainerNetworkPublicAddress,
+  index: number,
+  target: ContainerNetworkPublicAddress,
+  targetIndex: number
+): boolean {
+  const targetId = publicAddressIdValue(target);
+  if (targetId !== "") {
+    return publicAddressIdValue(address) === targetId;
+  }
+  return address === target || index === targetIndex;
+}
+
+export function containerNetworkAfterBindCustomDomain(
+  network: ContainerNetwork,
+  draft: {
+    customDomain: ContainerNetworkCustomDomain;
+    platformAddress: ContainerNetworkPublicAddress;
+    platformAddressIndex: number;
+    port: number;
+  }
+): ContainerNetwork {
+  return {
+    ...network,
+    customDomains: [
+      ...(network.customDomains ?? []),
+      { ...draft.customDomain, targetPort: draft.port },
+    ],
+    publicAddresses: network.publicAddresses.map((address, index) =>
+      isPublicAddressMutationTarget(
+        address,
+        index,
+        draft.platformAddress,
+        draft.platformAddressIndex
+      )
+        ? { ...address, port: draft.port }
+        : address
     ),
   };
 }
@@ -1912,6 +1826,145 @@ async function verifiedCustomDomainDraft({
     status: "verified",
     targetPort: port,
   };
+}
+
+interface CnameBindingFormProps {
+  address: ContainerNetworkPublicAddress;
+  onCancel: () => void;
+  onSubmit?: (
+    address: ContainerNetworkPublicAddress,
+    port: number,
+    customDomain: ContainerNetworkCustomDomain
+  ) => void | Promise<void>;
+  verify?: ContainerCustomDomainCnameVerifier;
+}
+
+function CnameBindingForm({
+  address,
+  onCancel,
+  onSubmit,
+  verify,
+}: CnameBindingFormProps) {
+  const domainInputId = useId();
+  const portInputId = useId();
+  const cnameHostInputId = useId();
+  const cnameTargetInputId = useId();
+  const portErrorId = `${portInputId}-error`;
+  const cnameErrorId = `${cnameHostInputId}-error`;
+  const domainValue = publicAddressValue(address) || "Pending domain";
+  const cnameTarget = publicAddressHostValue(address);
+  const platformAddressId = publicAddressIdValue(address);
+  const [draftPort, setDraftPort] = useState(() => String(address.port));
+  const [cnameHostDraft, setCnameHostDraft] = useState("");
+  const [portError, setPortError] = useState<string | null>(null);
+  const [cnameError, setCnameError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const normalizedCnameHost = normalizeCustomDomainDraft(cnameHostDraft);
+
+  const handleSubmit = async () => {
+    if (onSubmit == null) {
+      return;
+    }
+    const parsedPort = parsePortNumberDigits(draftPort.trim());
+    if (!parsedPort.ok) {
+      setPortError(parsedPort.message);
+      return;
+    }
+    if (normalizedCnameHost === "") {
+      setCnameError("Custom Domain is required.");
+      return;
+    }
+    if (cnameTarget === "" || platformAddressId === "") {
+      setCnameError("Platform Address host is not ready.");
+      return;
+    }
+    if (verify == null) {
+      setCnameError("CNAME verification is unavailable.");
+      return;
+    }
+
+    setPending(true);
+    try {
+      const verified = await verifiedCustomDomainDraft({
+        cnameTarget,
+        domain: normalizedCnameHost,
+        platformAddressId,
+        port: parsedPort.n,
+        verify,
+      });
+      if ("error" in verified) {
+        setCnameError(verified.error);
+        return;
+      }
+      await onSubmit(address, parsedPort.n, verified);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="grid min-w-0 gap-4 rounded-lg border border-border border-dashed bg-transparent p-2.5">
+      <AppInputField
+        disabled
+        id={domainInputId}
+        label="Domain"
+        value={domainValue}
+      />
+      <AppInputField
+        disabled={pending}
+        error={portError}
+        errorId={portErrorId}
+        id={portInputId}
+        inputMode="numeric"
+        label="Port"
+        onChange={(event) => {
+          setDraftPort(event.target.value);
+          setPortError(null);
+        }}
+        value={draftPort}
+      />
+      <AppInputField
+        disabled={pending}
+        error={cnameError}
+        errorId={cnameErrorId}
+        id={cnameHostInputId}
+        label="CNAME Host"
+        onChange={(event) => {
+          setCnameHostDraft(event.target.value);
+          setCnameError(null);
+        }}
+        placeholder="www.example.com"
+        value={cnameHostDraft}
+      />
+      <AppInputField
+        disabled
+        id={cnameTargetInputId}
+        label="CNAME Target"
+        value={cnameTarget === "" ? "Pending domain" : cnameTarget}
+      />
+      <div className="flex min-w-0 justify-end gap-2">
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          disabled={pending}
+          onClick={onCancel}
+          type="button"
+          variant="quiet"
+        >
+          <X aria-hidden data-icon="inline-start" />
+          Cancel
+        </AppButton>
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          disabled={pending || onSubmit == null}
+          onClick={handleSubmit}
+          type="button"
+          variant="quiet"
+        >
+          {pending ? "Verifying" : "Bind"}
+        </AppButton>
+      </div>
+    </div>
+  );
 }
 
 function AddPublicAddressForm({
@@ -2080,15 +2133,24 @@ interface DomainListSectionProps {
   addOpen: boolean;
   canMutateNetwork: boolean;
   defaultPort: number;
+  expandedCnameRowKeys: ReadonlySet<string>;
   onAddPublicAddress: (
     address: PublicAddressDraft,
     customDomain?: ContainerNetworkCustomDomain
   ) => void | Promise<void>;
-  onBindAddress: (address: ContainerNetworkPublicAddress) => void;
+  onBindAddress: (
+    rowKey: string,
+    address: ContainerNetworkPublicAddress,
+    index: number,
+    port: number,
+    customDomain: ContainerNetworkCustomDomain
+  ) => void | Promise<void>;
   onCancelAddPublicAddress: () => void;
+  onCancelBindAddress: (rowKey: string) => void;
   onCollapsePublicAddresses: () => void;
   onDeletePublicAddress: (index: number) => void | Promise<void>;
   onOpenAddPublicAddress: () => void;
+  onOpenBindAddress: (rowKey: string) => void;
   onShowAllPublicAddresses: () => void;
   onUnbindCustomDomain: (
     domain: ContainerNetworkCustomDomain
@@ -2105,11 +2167,14 @@ function DomainListSection({
   addOpen,
   canMutateNetwork,
   defaultPort,
+  expandedCnameRowKeys,
   onAddPublicAddress,
   onBindAddress,
+  onCancelBindAddress,
   onCancelAddPublicAddress,
   onCollapsePublicAddresses,
   onDeletePublicAddress,
+  onOpenBindAddress,
   onOpenAddPublicAddress,
   onShowAllPublicAddresses,
   onUnbindCustomDomain,
@@ -2171,12 +2236,31 @@ function DomainListSection({
             ))}
             {visiblePublicAddresses.map((address, index) => {
               const key = publicAddressKey(address, index);
-              return (
+              return expandedCnameRowKeys.has(key) ? (
+                <CnameBindingForm
+                  address={address}
+                  key={key}
+                  onCancel={() => onCancelBindAddress(key)}
+                  onSubmit={
+                    canMutateNetwork
+                      ? (submittedAddress, port, customDomain) =>
+                          onBindAddress(
+                            key,
+                            submittedAddress,
+                            index,
+                            port,
+                            customDomain
+                          )
+                      : undefined
+                  }
+                  verify={verify}
+                />
+              ) : (
                 <PublicAddressRow
                   address={address}
                   key={key}
                   onBindCustomDomain={
-                    canMutateNetwork ? () => onBindAddress(address) : undefined
+                    canMutateNetwork ? () => onOpenBindAddress(key) : undefined
                   }
                   onDelete={
                     canMutateNetwork
@@ -2230,9 +2314,9 @@ function NetworkSettingsSection({
   const [portError, setPortError] = useState<string | null>(null);
   const [savePending, setSavePending] = useState(false);
   const [showAllPublicAddresses, setShowAllPublicAddresses] = useState(false);
-  const [cnameAddress, setCnameAddress] = useState<
-    ContainerNetworkPublicAddress | undefined
-  >(undefined);
+  const [expandedCnameRowKeys, setExpandedCnameRowKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const portDraft = privatePortDraft ?? draftPort;
   const privateAddress = network.privateAddress ?? "";
   const hasPrivateAddress = privateAddress !== "";
@@ -2336,16 +2420,35 @@ function NetworkSettingsSection({
     );
   };
 
+  const handleOpenBindAddress = (rowKey: string) => {
+    setExpandedCnameRowKeys((current) => new Set(current).add(rowKey));
+  };
+
+  const handleCancelBindAddress = (rowKey: string) => {
+    setExpandedCnameRowKeys((current) => {
+      const next = new Set(current);
+      next.delete(rowKey);
+      return next;
+    });
+  };
+
   const handleBindCustomDomain = async (
+    rowKey: string,
+    address: ContainerNetworkPublicAddress,
+    index: number,
+    port: number,
     domain: ContainerNetworkCustomDomain
   ) => {
     await commitNetworkChange(
-      {
-        ...network,
-        customDomains: [...(network.customDomains ?? []), domain],
-      },
+      containerNetworkAfterBindCustomDomain(network, {
+        customDomain: domain,
+        platformAddress: address,
+        platformAddressIndex: index,
+        port,
+      }),
       { onNetworkChange, onNetworkDraftChange }
     );
+    handleCancelBindAddress(rowKey);
   };
 
   const handleUnbindCustomDomain = async (
@@ -2412,12 +2515,15 @@ function NetworkSettingsSection({
         addOpen={addOpen}
         canMutateNetwork={canMutateNetwork}
         defaultPort={parsedPort.ok ? parsedPort.n : network.privatePort}
+        expandedCnameRowKeys={expandedCnameRowKeys}
         onAddPublicAddress={handleAddPublicAddress}
-        onBindAddress={setCnameAddress}
+        onBindAddress={handleBindCustomDomain}
         onCancelAddPublicAddress={handleCancelAddPublicAddress}
+        onCancelBindAddress={handleCancelBindAddress}
         onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
         onDeletePublicAddress={handleDeletePublicAddress}
         onOpenAddPublicAddress={() => setAddOpen(true)}
+        onOpenBindAddress={handleOpenBindAddress}
         onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={platformAddressDraftContext}
@@ -2426,17 +2532,6 @@ function NetworkSettingsSection({
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
-      />
-      <CnameBindingDialog
-        address={cnameAddress}
-        onBind={handleBindCustomDomain}
-        onOpenChange={(open) => {
-          if (!open) {
-            setCnameAddress(undefined);
-          }
-        }}
-        open={cnameAddress != null}
-        verify={onCustomDomainCnameVerify}
       />
     </>
   );
@@ -2464,9 +2559,9 @@ export function ContainerPublicAddressesSettingsPane({
   const [savePending, setSavePending] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [showAllPublicAddresses, setShowAllPublicAddresses] = useState(false);
-  const [cnameAddress, setCnameAddress] = useState<
-    ContainerNetworkPublicAddress | undefined
-  >(undefined);
+  const [expandedCnameRowKeys, setExpandedCnameRowKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
 
   useEffect(() => {
     if (commitMode) {
@@ -2648,11 +2743,34 @@ export function ContainerPublicAddressesSettingsPane({
     setDraftNetwork({ ...networkForRender, publicAddresses });
   };
 
-  const handleBindCustomDomain = (domain: ContainerNetworkCustomDomain) => {
-    setDraftNetwork({
-      ...networkForRender,
-      customDomains: [...(networkForRender.customDomains ?? []), domain],
+  const handleOpenBindAddress = (rowKey: string) => {
+    setExpandedCnameRowKeys((current) => new Set(current).add(rowKey));
+  };
+
+  const handleCancelBindAddress = (rowKey: string) => {
+    setExpandedCnameRowKeys((current) => {
+      const next = new Set(current);
+      next.delete(rowKey);
+      return next;
     });
+  };
+
+  const handleBindCustomDomain = (
+    rowKey: string,
+    address: ContainerNetworkPublicAddress,
+    index: number,
+    port: number,
+    domain: ContainerNetworkCustomDomain
+  ) => {
+    setDraftNetwork(
+      containerNetworkAfterBindCustomDomain(networkForRender, {
+        customDomain: domain,
+        platformAddress: address,
+        platformAddressIndex: index,
+        port,
+      })
+    );
+    handleCancelBindAddress(rowKey);
   };
 
   const handleUnbindCustomDomain = (domain: ContainerNetworkCustomDomain) => {
@@ -2673,12 +2791,15 @@ export function ContainerPublicAddressesSettingsPane({
         addOpen={addOpen}
         canMutateNetwork={canMutateNetwork}
         defaultPort={networkForRender.privatePort}
+        expandedCnameRowKeys={expandedCnameRowKeys}
         onAddPublicAddress={handleAddPublicAddress}
-        onBindAddress={setCnameAddress}
+        onBindAddress={handleBindCustomDomain}
         onCancelAddPublicAddress={() => setAddOpen(false)}
+        onCancelBindAddress={handleCancelBindAddress}
         onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
         onDeletePublicAddress={handleDeletePublicAddress}
         onOpenAddPublicAddress={() => setAddOpen(true)}
+        onOpenBindAddress={handleOpenBindAddress}
         onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={networkPlatformAddressDraftContext}
@@ -2687,17 +2808,6 @@ export function ContainerPublicAddressesSettingsPane({
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
-      />
-      <CnameBindingDialog
-        address={cnameAddress}
-        onBind={handleBindCustomDomain}
-        onOpenChange={(open) => {
-          if (!open) {
-            setCnameAddress(undefined);
-          }
-        }}
-        open={cnameAddress != null}
-        verify={onCustomDomainCnameVerify}
       />
       {commitMode ? (
         <ContainerSettingsDraftFooter
@@ -4030,9 +4140,6 @@ export function ContainerSettingsPane({
 
       <ResourceSettingsSection icon={SquarePen} title="Environment Variables">
         <div className="flex min-w-0 flex-col gap-2">
-          <Label className="text-foreground text-sm leading-none">
-            Variables
-          </Label>
           {readOnly ? (
             <ReadOnlyEnvRows env={env} />
           ) : (
