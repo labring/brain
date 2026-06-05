@@ -6,7 +6,7 @@ import type {
 } from "./target-identity";
 
 export type ProjectSidePaneAssistantIntent =
-  | { type: "database" | "docker" | "github" }
+  | { type: "database" | "docker" | "github" | "skills" }
   | { target: ProjectApTarget; type: "apEvents" | "apHistory" | "apMetrics" }
   | { target: ProjectApTarget; type: "apSettings" | "apTerminal" }
   | { target: ProjectDbTarget; type: "dbAccess" | "dbMetrics" | "dbSettings" }
