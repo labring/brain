@@ -1,0 +1,132 @@
+{{- $root := . -}}
+{{- range $component, $cfg := dict "api" .Values.api "ui" .Values.ui "registry" .Values.registry }}
+{{- if $cfg.enabled }}
+{{- $projectId := include "brain-system.projectId" $root -}}
+{{- $serviceName := include "brain-system.apServiceName" (dict "name" $cfg.name) -}}
+{{- $probes := default (dict) $cfg.probes -}}
+{{- $env := default (dict) $cfg.env -}}
+{{- $staticEnv := default (dict) $cfg.staticEnv -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $cfg.name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "brain-system.labels" $root | nindent 4 }}
+    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $root.Values.global.region) | nindent 4 }}
+  annotations:
+    brain.io/ap-desired-network: {{ include "brain-system.networkAnnotation" (dict "namespace" $root.Release.Namespace "name" $cfg.name "port" $cfg.port "platformAddresses" $cfg.platformAddresses) | quote }}
+    brain.io/ap-replica-strategy: {{ include "brain-system.replicaStrategyAnnotation" (dict "replicas" $cfg.resources.replicas) | quote }}
+    deploy.cloud.sealos.io/pause: {{ ternary "true" "false" $cfg.paused | quote }}
+    brain.io/restart-request: {{ default 0 $cfg.restartRequest | quote }}
+    {{- with (include "brain-system.annotations" $root) }}
+    {{- . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ ternary 0 $cfg.resources.replicas $cfg.paused }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: {{ $cfg.name | quote }}
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "brain-system.apPodLabels" (dict "projectId" $projectId "name" $cfg.name "region" $root.Values.global.region) | nindent 8 }}
+    spec:
+      {{- if and $root.Values.imagePullSecret.create $root.Values.imagePullSecret.name }}
+      imagePullSecrets:
+        - name: {{ $root.Values.imagePullSecret.name }}
+      {{- end }}
+      containers:
+        - name: {{ $cfg.name }}
+          image: {{ $cfg.image | quote }}
+          imagePullPolicy: {{ $cfg.imagePullPolicy }}
+          {{- if or $env $staticEnv }}
+          env:
+            {{- include "brain-system.appEnv" (dict "env" $env "staticEnv" $staticEnv) | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: {{ $cfg.port }}
+              name: http
+              protocol: TCP
+          {{- with get $probes "startup" }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with get $probes "readiness" }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with get $probes "liveness" }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            limits:
+              {{- toYaml $cfg.resources.limits | nindent 14 }}
+            requests:
+              {{- toYaml $cfg.resources.requests | nindent 14 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $serviceName }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "brain-system.labels" $root | nindent 4 }}
+    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $root.Values.global.region) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $cfg.name | quote }}
+  ports:
+    - name: http
+      port: {{ $cfg.port }}
+      protocol: TCP
+      targetPort: {{ $cfg.port }}
+{{- range $address := $cfg.platformAddresses }}
+{{- $addressContext := dict "namespace" $root.Release.Namespace "name" $cfg.name "id" $address.id "region" $root.Values.global.region "domainPrefix" $address.domainPrefix }}
+{{- $host := include "brain-system.platformAddressHost" $addressContext }}
+{{- $domainPrefix := include "brain-system.platformAddressPrefix" $addressContext }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "brain-system.publicIngressName" (dict "name" $cfg.name "id" $address.id) }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "brain-system.labels" $root | nindent 4 }}
+    {{- include "brain-system.brainLabels" (dict "projectId" $projectId "kind" "entrypoint-support" "name" (include "brain-system.publicIngressName" (dict "name" $cfg.name "id" $address.id))) | nindent 4 }}
+    brain.io/app-name: {{ $cfg.name | quote }}
+    brain.io/public-address-id: {{ $address.id | quote }}
+    brain.io/public-address-kind: "platform"
+    cloud.sealos.io/app-deploy-manager: {{ $cfg.name | quote }}
+    cloud.sealos.io/app-deploy-manager-domain: {{ $domainPrefix | quote }}
+  annotations:
+    cloud.sealos.io/app-deploy-manager-domain-host: {{ $host | quote }}
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: 32m
+spec:
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: wildcard-cert
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $serviceName }}
+                port:
+                  number: {{ default $cfg.port $address.port }}
+{{- end }}
+{{ end }}
+{{ end }}

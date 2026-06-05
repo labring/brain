@@ -4,10 +4,9 @@ This chart is the preferred entrypoint for deploying the `brain-system` stack.
 
 It renders:
 
-- Brain direct `DB` manifest: `brain-pg`
-- Brain direct `AP` manifests: `sealai-api-staging`, `sealai-ui-staging`, `sealai-registry`
+- native Kubernetes `Deployment`, `Service`, and `Ingress` resources for `sealai-api-staging`, `sealai-ui-staging`, and `sealai-registry`
+- native KubeBlocks `Cluster` resources for the app database
 - native Kubernetes `Deployment` and `Service`: `whodb`
-- optional app env `Secret` objects
 - optional image pull `Secret`
 
 ## Prerequisites
@@ -31,14 +30,19 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 
 - `global.region`
 - `api.env.SEALOS_DESKTOP_URL`
+- `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
 - `ui.env.API_URL`
+- `ui.env.NEXT_PUBLIC_APP_URL`
+- `ui.env.NEXT_PUBLIC_API_URL`
 - `ui.env.DATABASE_URL`
-- GitHub OAuth values
+- GitHub OAuth values (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_CREDENTIAL_ENCRYPTION_KEY`)
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
 - Devbox runtime values (`DEVBOX_API_BASE_URL`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
-- `imagePullSecret.create`: keep `true` if `ghcr-cred` does not already exist
+- `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`
 
 `api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
+
+`ui.env.NEXT_PUBLIC_APP_URL` and `ui.env.NEXT_PUBLIC_API_URL` are client-visible values. Keep them aligned with the Docker build args for the UI image, because browser bundles inline `NEXT_PUBLIC_*` values during `next build`.
 
 Install or upgrade:
 
@@ -51,7 +55,7 @@ helm upgrade --install brain-system charts/brain-system \
 
 ## First Database Install
 
-The DB renderer creates a KubeBlocks Cluster named `brain-pg`. KubeBlocks generates `brain-pg-conn-credential`. The UI still needs a complete `DATABASE_URL`.
+The chart creates a KubeBlocks Cluster named `brain-pg`. KubeBlocks generates `brain-pg-conn-credential`. The UI still needs a complete `DATABASE_URL`.
 
 For a brand-new cluster, the practical sequence is:
 
@@ -66,6 +70,8 @@ kubectl -n brain-system get secret brain-pg-conn-credential -o yaml
 ```
 
 Use that password to fill `ui.env.DATABASE_URL`, then run the normal install command again without `--set ui.enabled=false`.
+
+Application environment variables are rendered directly into the app Deployments. The chart only creates a Kubernetes Secret for image pull credentials, because app env Secrets do not provide encryption by themselves and add little value here.
 
 ## Verify
 

@@ -1,9 +1,6 @@
 brain-system has been rendered for namespace {{ .Release.Namespace }}.
 
-Check desired resources:
-  kubectl -n {{ .Release.Namespace }} get ap,db
-
 Check runtime resources:
-  kubectl -n {{ .Release.Namespace }} get deploy,pod,svc,ingress,instanceset -o wide
+  kubectl -n {{ .Release.Namespace }} get deploy,pod,svc,ingress,hpa,cluster,instanceset -o wide
 
-If this is the first install, DB and AP controllers may need several minutes to reconcile.
+If this is the first install, KubeBlocks may need several minutes to reconcile the database Cluster.

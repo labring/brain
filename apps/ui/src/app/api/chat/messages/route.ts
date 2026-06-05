@@ -5,6 +5,7 @@ import {
 } from "@/lib/chat-persistence/service";
 import {
   appendMessageBodySchema,
+  isAppendableAssistantEventMessage,
   isPersistedUIMessage,
 } from "@/lib/chat-persistence/types";
 import { jsonError } from "@/lib/chat-runtime/errors";
@@ -46,6 +47,15 @@ export async function POST(req: Request) {
 
   if (!isPersistedUIMessage(parsed.data.message)) {
     return jsonError("Invalid message", 400);
+  }
+  if (
+    parsed.data.message.role !== "user" &&
+    !isAppendableAssistantEventMessage(parsed.data.message)
+  ) {
+    return jsonError(
+      "Only user messages or assistant event messages accepted.",
+      400
+    );
   }
 
   try {

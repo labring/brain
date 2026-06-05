@@ -66,6 +66,10 @@ export type ProductWriteOutput =
 
 export type ProductFetcher = (options: FetcherOptions) => Promise<unknown>;
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
 function productRoute(kind: BrainProductToolResourceKind): string {
   if (kind === "AP") {
     return API_ROUTES.ap.root;
@@ -111,6 +115,41 @@ function productCreateBody(manifest: unknown): { yaml: string } | undefined {
   return { yaml: YAML.stringify(manifest).trimEnd() };
 }
 
+export function normalizeProductPatch(
+  kind: Exclude<BrainProductToolResourceKind, "EntryPoint">,
+  patch: unknown
+): unknown {
+  if (kind !== "AP" || !isPlainRecord(patch) || isPlainRecord(patch.spec)) {
+    return patch;
+  }
+
+  const productSpecKeys = new Set([
+    "input",
+    "ingressAnnotations",
+    "paused",
+    "resource",
+    "restartRequest",
+  ]);
+  const specPatch: Record<string, unknown> = {};
+  const topLevelPatch: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (productSpecKeys.has(key)) {
+      specPatch[key] = value;
+    } else {
+      topLevelPatch[key] = value;
+    }
+  }
+
+  if (Object.keys(specPatch).length === 0) {
+    return patch;
+  }
+  return {
+    ...topLevelPatch,
+    spec: specPatch,
+  };
+}
+
 export function buildProductResourceRequest(
   input: ProductResourceRequestInput
 ): FetcherOptions {
@@ -152,7 +191,7 @@ export function buildProductResourceDraft(
   }
   return {
     action: "patch",
-    body: input.patch ?? {},
+    body: normalizeProductPatch(input.kind, input.patch ?? {}),
     kind: input.kind,
     name: input.name.trim(),
     namespace: input.namespace.trim(),
@@ -163,6 +202,14 @@ export async function executeConfirmedProductWrite(
   input: ConfirmedProductWriteInput,
   productFetcher: ProductFetcher = fetcher
 ): Promise<ProductWriteOutput> {
+  const invalid = validateWriteBody(input);
+  if (invalid != null) {
+    return {
+      error: invalid.error,
+      ok: false,
+    };
+  }
+
   if (!input.confirmed) {
     return {
       error: `Refused to write ${productTargetLabel(input)}: confirmed must be true.`,
@@ -174,7 +221,7 @@ export async function executeConfirmedProductWrite(
   if (input.operation === "create") {
     body = productCreateBody(input.manifest);
   } else if (input.operation === "patch") {
-    body = input.patch;
+    body = normalizeProductPatch(input.kind, input.patch);
   }
   if (input.operation !== "delete" && body === undefined) {
     return {
@@ -220,7 +267,6 @@ export const draftProductResourceChangeInput = z.object({
 });
 
 const productWriteInputSchema = z.object({
-  confirmed: z.boolean(),
   intention: chatToolIntentionField,
   kind: z.enum(["AP", "DB"]),
   manifest: z.unknown().optional(),
@@ -240,6 +286,20 @@ function validateDraftBody(input: {
     return { error: "Draft requires either manifest or patch." };
   }
   return null;
+}
+
+function validateWriteBody(input: {
+  manifest?: unknown;
+  operation: BrainProductToolWriteOperation;
+  patch?: unknown;
+}): { error: string } | null {
+  if (input.operation === "delete") {
+    if (input.manifest !== undefined || input.patch !== undefined) {
+      return { error: "Delete does not accept manifest or patch body." };
+    }
+    return null;
+  }
+  return validateDraftBody(input);
 }
 
 export function createChatProductTools(options: {
@@ -306,15 +366,16 @@ export function createChatProductTools(options: {
   const writeProductResource = tool({
     description: [
       "Apply a confirmed Brain AP/DB product write through the direct product API.",
-      "Only call after the user has explicitly approved the exact intended change in the current conversation.",
-      "Set confirmed=true only for that explicit approval. If approval is missing, call draftProductResourceChange or ask for confirmation instead.",
+      "This tool always requests browser UI approval before execution; call it only when the user has asked to apply the exact intended change.",
+      "If approval is missing, call draftProductResourceChange or ask for confirmation instead.",
       "Never use this for EntryPoint writes; public address/domain changes belong in the AP network intent.",
     ].join(" "),
     inputSchema: productWriteInputSchema,
+    needsApproval: true,
     execute: (input) => {
       logChatToolIntention("writeProductResource", input.intention);
       return executeConfirmedProductWrite({
-        confirmed: input.confirmed,
+        confirmed: true,
         base: ApiUrl(),
         kind: input.kind,
         kubeconfig,

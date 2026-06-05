@@ -1,48 +1,124 @@
 {{- if .Values.database.enabled }}
-apiVersion: brain.io/direct
-kind: DB
+{{- $profile := fromYaml (include "brain-system.dbProfile" .Values.database) -}}
+{{- $preset := fromYaml (include "brain-system.dbPreset" .Values.database) -}}
+{{- $projectId := include "brain-system.projectId" . -}}
+{{- $engine := lower (default "postgresql" .Values.database.engine) -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.database.name }}-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.database.name }}-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+rules:
+  - apiGroups:
+      - "*"
+    resources:
+      - "*"
+    verbs:
+      - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.database.name }}-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.database.name }}-sa
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.database.name }}-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps.kubeblocks.io/v1alpha1
+kind: Cluster
 metadata:
   name: {{ .Values.database.name }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "brain-system.labels" . | nindent 4 }}
-    {{- include "brain-system.regionLabel" . | nindent 4 }}
-  {{- with (include "brain-system.annotations" .) }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
+    {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
 spec:
-  projectId: {{ .Values.projectId | default .Release.Namespace | quote }}
-  engine: {{ .Values.database.engine }}
-  exposeNodePort: {{ .Values.database.exposeNodePort }}
-  quota: {{ .Values.database.quota }}
-  replicas: {{ .Values.database.replicas }}
-  terminationPolicy: {{ .Values.database.terminationPolicy }}
-  paused: {{ .Values.database.paused }}
-  restartRequest: {{ .Values.database.restartRequest }}
-  {{- with .Values.database.storageSize }}
-  storageSize: {{ . | quote }}
-  {{- end }}
-  {{- with .Values.database.storageClassName }}
-  storageClassName: {{ . | quote }}
-  {{- end }}
-  {{- with .Values.database.cpuRequest }}
-  cpuRequest: {{ . | quote }}
-  {{- end }}
-  {{- with .Values.database.memoryRequest }}
-  memoryRequest: {{ . | quote }}
-  {{- end }}
-  {{- with .Values.database.cpuLimit }}
-  cpuLimit: {{ . | quote }}
-  {{- end }}
-  {{- with .Values.database.memoryLimit }}
-  memoryLimit: {{ . | quote }}
-  {{- end }}
+  clusterDefinitionRef: {{ $profile.clusterDefinition | quote }}
+  clusterVersionRef: {{ $profile.clusterVersion | quote }}
+  terminationPolicy: {{ .Values.database.terminationPolicy | quote }}
+  componentSpecs:
+    - componentDefRef: {{ $profile.componentName | quote }}
+      name: {{ $profile.componentName | quote }}
+      replicas: {{ .Values.database.replicas }}
+      monitor: true
+      serviceAccountName: {{ .Values.database.name }}-sa
+      switchPolicy:
+        type: Noop
+      resources:
+        limits:
+          cpu: {{ default $preset.cpuLimit .Values.database.cpuLimit | quote }}
+          memory: {{ default $preset.memoryLimit .Values.database.memoryLimit | quote }}
+        requests:
+          cpu: {{ default $preset.cpuRequest .Values.database.cpuRequest | quote }}
+          memory: {{ default $preset.memoryRequest .Values.database.memoryRequest | quote }}
+      volumeClaimTemplates:
+        - name: data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            {{- with .Values.database.storageClassName }}
+            storageClassName: {{ . | quote }}
+            {{- end }}
+            resources:
+              requests:
+                storage: {{ default $preset.storageSize .Values.database.storageSize | quote }}
   {{- with .Values.database.scheduledBackup }}
-  scheduledBackup:
+  backup:
     enabled: {{ .enabled }}
     cronExpression: {{ .cronExpression | quote }}
-    retentionPeriod: {{ .retentionPeriod | quote }}
+    incrementalBackupEnabled: false
+    method: {{ $profile.backupMethod | quote }}
+    pitrEnabled: false
     repoName: {{ .repoName | quote }}
+    retentionPeriod: {{ .retentionPeriod | quote }}
   {{- end }}
+  affinity:
+    nodeLabels: {}
+    podAntiAffinity: Preferred
+    tenancy: SharedNode
+    topologyKeys:
+      - kubernetes.io/hostname
+  tolerations: []
+{{- if .Values.database.exposeNodePort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.database.name }}-export
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/instance: {{ .Values.database.name | quote }}
+    apps.kubeblocks.io/component-name: {{ $profile.componentName | quote }}
+  ports:
+    - name: tcp
+      port: {{ $profile.servicePort }}
+      protocol: TCP
+      targetPort: {{ $profile.targetPortName | quote }}
+{{- end }}
 {{- end }}

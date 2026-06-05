@@ -1,4 +1,9 @@
-import { convertToModelMessages, stepCountIs, streamText } from "ai";
+import {
+  convertToModelMessages,
+  generateId,
+  stepCountIs,
+  streamText,
+} from "ai";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
@@ -15,7 +20,10 @@ import {
   threadBelongsToNamespace,
 } from "@/lib/chat-persistence/service";
 import {
+  buildAssistantApprovalResponseFromPending,
   chatStreamRequestSchema,
+  findPendingApprovalMessageForResponse,
+  isAssistantApprovalResponseMessage,
   isPersistedUIMessage,
 } from "@/lib/chat-persistence/types";
 import { attachToolDurationMetrics } from "@/lib/chat-runtime/attach-tool-duration-metrics";
@@ -32,6 +40,58 @@ import { buildChatToolset } from "@/lib/chat-runtime/tools";
 
 export const maxDuration = 120;
 
+async function appendIncomingChatMessage(
+  chatId: string,
+  history: Awaited<ReturnType<typeof loadThreadMessages>>,
+  message: unknown
+): Promise<Response | null> {
+  if (!isPersistedUIMessage(message)) {
+    return jsonError("Malformed UI message payload", 400);
+  }
+
+  if (message.role === "user") {
+    await appendMessage(chatId, message);
+    return null;
+  }
+
+  if (!isAssistantApprovalResponseMessage(message)) {
+    return jsonError(
+      "Only user messages or valid tool approvals accepted.",
+      400
+    );
+  }
+
+  const pending = history.find((item) => item.id === message.id);
+  let messageToAppend = buildAssistantApprovalResponseFromPending(
+    pending,
+    message
+  );
+  if (messageToAppend == null) {
+    const recoverablePending = findPendingApprovalMessageForResponse(
+      history,
+      message
+    );
+    if (recoverablePending == null) {
+      return jsonError(
+        "Invalid or stale tool approval response for this assistant thread.",
+        400
+      );
+    }
+    messageToAppend = buildAssistantApprovalResponseFromPending(
+      recoverablePending,
+      { ...message, id: recoverablePending.id }
+    );
+  }
+  if (messageToAppend == null) {
+    return jsonError(
+      "Invalid or stale tool approval response for this assistant thread.",
+      400
+    );
+  }
+  await appendMessage(chatId, messageToAppend);
+  return null;
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (body == null) {
@@ -45,10 +105,6 @@ export async function POST(req: Request) {
 
   const { assistantContext, chatId, encodedKubeconfig, message, namespace } =
     parsed.data;
-
-  if (!isPersistedUIMessage(message)) {
-    return jsonError("Malformed UI message payload", 400);
-  }
 
   const kubeconfig = decodeKubeconfig(encodedKubeconfig);
   if (kubeconfig == null) {
@@ -76,7 +132,16 @@ export async function POST(req: Request) {
     const billing: ChatBillingMode =
       freeTier.remaining > 0 && isSystemOpenAiConfigured() ? "free" : "user";
 
-    await appendMessage(chatId, message);
+    const storedHistory = await loadThreadMessages(chatId);
+    const appendError = await appendIncomingChatMessage(
+      chatId,
+      storedHistory,
+      message
+    );
+    if (appendError != null) {
+      return appendError;
+    }
+
     const history = await loadThreadMessages(chatId);
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
@@ -123,6 +188,7 @@ export async function POST(req: Request) {
 
     return result.toUIMessageStreamResponse({
       originalMessages: history,
+      generateMessageId: generateId,
       headers: responseHeaders,
       onFinish: async ({ responseMessage }) => {
         try {

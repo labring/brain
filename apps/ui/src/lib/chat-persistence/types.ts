@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai";
+import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
 /** Postgres schema name. Shared between drizzle tables and `instrumentation.ts` bootstrap. */
@@ -85,4 +85,333 @@ export function isPersistedUIMessage(value: unknown): value is UIMessage {
     (m.role === "user" || m.role === "assistant" || m.role === "system") &&
     Array.isArray(m.parts)
   );
+}
+
+export function isAssistantApprovalResponseMessage(
+  message: UIMessage
+): boolean {
+  return (
+    message.role === "assistant" &&
+    message.parts.some(
+      (part) => isToolUIPart(part) && part.state === "approval-responded"
+    )
+  );
+}
+
+export function isAppendableAssistantEventMessage(message: UIMessage): boolean {
+  return (
+    message.role === "assistant" &&
+    message.parts.every(
+      (part) => part.type === "text" || part.type.startsWith("data-")
+    )
+  );
+}
+
+export function pendingApprovalIds(message: UIMessage): Set<string> {
+  const ids = new Set<string>();
+  if (message.role !== "assistant") {
+    return ids;
+  }
+  for (const part of message.parts) {
+    if (
+      isToolUIPart(part) &&
+      part.state === "approval-requested" &&
+      typeof part.approval?.id === "string"
+    ) {
+      ids.add(part.approval.id);
+    }
+  }
+  return ids;
+}
+
+export function respondedApprovalIds(message: UIMessage): Set<string> {
+  const ids = new Set<string>();
+  if (message.role !== "assistant") {
+    return ids;
+  }
+  for (const part of message.parts) {
+    if (
+      isToolUIPart(part) &&
+      part.state === "approval-responded" &&
+      typeof part.approval?.id === "string"
+    ) {
+      ids.add(part.approval.id);
+    }
+  }
+  return ids;
+}
+
+interface ComparableApprovalToolPart {
+  approvalId: string;
+  input: unknown;
+  toolCallId: string;
+  type: string;
+}
+
+interface ApprovalResponseDecision {
+  approved: boolean;
+  id: string;
+  reason?: string;
+}
+
+function approvalObject(part: unknown): Record<string, unknown> | undefined {
+  if (part == null || typeof part !== "object" || Array.isArray(part)) {
+    return undefined;
+  }
+  const approval = (part as Record<string, unknown>).approval;
+  if (
+    approval == null ||
+    typeof approval !== "object" ||
+    Array.isArray(approval)
+  ) {
+    return undefined;
+  }
+  return approval as Record<string, unknown>;
+}
+
+function comparableApprovalToolParts(
+  message: UIMessage,
+  state: "approval-requested" | "approval-responded"
+): Map<string, ComparableApprovalToolPart> {
+  const parts = new Map<string, ComparableApprovalToolPart>();
+  if (message.role !== "assistant") {
+    return parts;
+  }
+
+  for (const part of message.parts) {
+    if (!isToolUIPart(part) || part.state !== state) {
+      continue;
+    }
+    const approvalId = approvalObject(part)?.id;
+    if (typeof approvalId !== "string" || typeof part.toolCallId !== "string") {
+      continue;
+    }
+    parts.set(approvalId, {
+      approvalId,
+      input: part.input,
+      toolCallId: part.toolCallId,
+      type: part.type,
+    });
+  }
+
+  return parts;
+}
+
+function unknownRecordsEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+  if (typeof left !== typeof right) {
+    return false;
+  }
+  if (
+    left == null ||
+    right == null ||
+    typeof left !== "object" ||
+    typeof right !== "object"
+  ) {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!(Array.isArray(left) && Array.isArray(right))) {
+      return false;
+    }
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((item, index) => unknownRecordsEqual(item, right[index]));
+  }
+
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every(
+    (key, index) =>
+      key === rightKeys[index] &&
+      unknownRecordsEqual(leftRecord[key], rightRecord[key])
+  );
+}
+
+function approvalsMatchPendingToolParts(
+  pending: UIMessage,
+  candidate: UIMessage
+): boolean {
+  const pendingParts = comparableApprovalToolParts(
+    pending,
+    "approval-requested"
+  );
+  const responseParts = comparableApprovalToolParts(
+    candidate,
+    "approval-responded"
+  );
+  if (pendingParts.size === 0 || responseParts.size === 0) {
+    return false;
+  }
+
+  for (const [approvalId, responsePart] of responseParts) {
+    const pendingPart = pendingParts.get(approvalId);
+    if (pendingPart == null) {
+      return false;
+    }
+    if (
+      responsePart.type !== pendingPart.type ||
+      responsePart.toolCallId !== pendingPart.toolCallId ||
+      !unknownRecordsEqual(responsePart.input, pendingPart.input)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function approvalResponseDecisions(
+  candidate: UIMessage
+): Map<string, ApprovalResponseDecision> {
+  const decisions = new Map<string, ApprovalResponseDecision>();
+  if (candidate.role !== "assistant") {
+    return decisions;
+  }
+
+  for (const part of candidate.parts) {
+    if (!isToolUIPart(part) || part.state !== "approval-responded") {
+      continue;
+    }
+    const approval = approvalObject(part);
+    const approvalId = approval?.id;
+    if (
+      typeof approvalId === "string" &&
+      typeof approval?.approved === "boolean" &&
+      (approval.reason === undefined || typeof approval.reason === "string")
+    ) {
+      const decision: ApprovalResponseDecision = {
+        approved: approval.approved,
+        id: approvalId,
+      };
+      if (typeof approval.reason === "string") {
+        decision.reason = approval.reason;
+      }
+      decisions.set(approvalId, decision);
+    }
+  }
+
+  return decisions;
+}
+
+export function isApprovedContinuationOfPendingAssistantMessage(
+  pending: UIMessage | undefined,
+  candidate: UIMessage
+): boolean {
+  if (
+    pending == null ||
+    pending.id !== candidate.id ||
+    pending.role !== "assistant" ||
+    candidate.role !== "assistant"
+  ) {
+    return false;
+  }
+
+  const pendingIds = pendingApprovalIds(pending);
+  if (pendingIds.size === 0) {
+    return false;
+  }
+
+  const responseIds = respondedApprovalIds(candidate);
+  if (responseIds.size === 0) {
+    return false;
+  }
+
+  if (!approvalsMatchPendingToolParts(pending, candidate)) {
+    return false;
+  }
+
+  for (const part of candidate.parts) {
+    if (
+      isToolUIPart(part) &&
+      part.state === "approval-requested" &&
+      part.approval?.id != null &&
+      pendingIds.has(part.approval.id)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function buildAssistantApprovalResponseFromPending(
+  pending: UIMessage | undefined,
+  candidate: UIMessage
+): UIMessage | undefined {
+  if (!isApprovedContinuationOfPendingAssistantMessage(pending, candidate)) {
+    return undefined;
+  }
+  if (pending == null) {
+    return undefined;
+  }
+  const decisions = approvalResponseDecisions(candidate);
+  return {
+    ...pending,
+    parts: pending.parts.map((part) => {
+      if (
+        !isToolUIPart(part) ||
+        part.state !== "approval-requested" ||
+        typeof part.approval?.id !== "string"
+      ) {
+        return part;
+      }
+      const decision = decisions.get(part.approval.id);
+      if (decision == null) {
+        return part;
+      }
+      return {
+        ...part,
+        approval: decision,
+        state: "approval-responded",
+      };
+    }),
+  };
+}
+
+function matchesPendingApprovalMessage(
+  pending: UIMessage,
+  candidate: UIMessage
+): boolean {
+  if (pending.role !== "assistant" || candidate.role !== "assistant") {
+    return false;
+  }
+
+  const pendingIds = pendingApprovalIds(pending);
+  if (pendingIds.size === 0) {
+    return false;
+  }
+
+  const responseIds = respondedApprovalIds(candidate);
+  if (responseIds.size === 0) {
+    return false;
+  }
+
+  return approvalsMatchPendingToolParts(pending, candidate);
+}
+
+export function findPendingApprovalMessageForResponse(
+  history: UIMessage[],
+  candidate: UIMessage
+): UIMessage | undefined {
+  const sameMessage = history.find((item) =>
+    isApprovedContinuationOfPendingAssistantMessage(item, candidate)
+  );
+  if (sameMessage != null) {
+    return sameMessage;
+  }
+
+  const matches = history.filter((item) =>
+    matchesPendingApprovalMessage(item, candidate)
+  );
+  return matches.length === 1 ? matches[0] : undefined;
 }

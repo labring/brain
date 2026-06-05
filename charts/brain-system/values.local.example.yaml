@@ -9,6 +9,10 @@ api:
   env:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471"
+    VLSELECT_USERNAME: ""
+    VLSELECT_PASSWORD: ""
+    VMAUTH_SECRET_NAMESPACE: ""
+    VMAUTH_SECRET_NAME: ""
     # Same app Postgres URL used by the UI. Required for AP image version history.
     DATABASE_URL: "postgresql://postgres:REPLACE_ME_PASSWORD@brain-pg-postgresql.brain-system.svc:5432/postgres"
     # Public host used to render DB NodePort connection strings.
@@ -21,10 +25,16 @@ ui:
   env:
     # Server-side UI calls should use the in-cluster API service, not the public Ingress host.
     API_URL: "http://sealai-api-staging-service.brain-system.svc:9000"
+    # Client-visible URLs are also build-time values for browser bundles; pass matching Docker build args.
+    NEXT_PUBLIC_API_URL: "https://REPLACE_ME_API_PUBLIC_HOST"
+    NEXT_PUBLIC_APP_URL: "https://REPLACE_ME_UI_PUBLIC_HOST"
     # For the chart-created brain-pg DB, compose this from the generated brain-pg-conn-credential secret.
     DATABASE_URL: "postgresql://postgres:REPLACE_ME_PASSWORD@brain-pg-postgresql.brain-system.svc:5432/postgres"
     GITHUB_OAUTH_CLIENT_ID: "REPLACE_ME"
     GITHUB_OAUTH_CLIENT_SECRET: "REPLACE_ME"
+    GITHUB_CREDENTIAL_ENCRYPTION_KEY: "REPLACE_ME_STABLE_SECRET"
+    GITHUB_OAUTH_NEXT_PATH: "/"
+    GITHUB_OAUTH_NEXT_SEARCH: ""
     # Platform-paid free turns. Set FREE_CHAT_TURNS to "0" to disable.
     SYSTEM_OPENAI_API_KEY: "REPLACE_ME_OPENAI_COMPATIBLE_KEY"
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
@@ -40,7 +50,7 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
 
 imagePullSecret:
-  # AP workload pods can reference ghcr-cred. Keep this true unless the secret already exists.
+  # App workload pods reference ghcr-cred when this chart creates it.
   create: true
   useForWhodb: false
   name: ghcr-cred

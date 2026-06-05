@@ -11,6 +11,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
   lastAssistantMessageIsCompleteWithToolCalls,
   type UIMessage,
 } from "ai";
@@ -350,87 +351,97 @@ function ProjectAssistantChatSession({
     [currentProject.resourceName, kubeconfig]
   );
 
-  const { messages, sendMessage, setMessages, status, stop, addToolOutput } =
-    useAIChat({
-      id: chatId,
-      messages: bootstrap.messages,
-      transport,
-      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-      async onFinish() {
-        await onAssistantStreamFinished?.();
-      },
-      onToolCall({ toolCall }) {
-        if (toolCall.toolName === NAVIGATE_APP_TOOL_NAME) {
-          const result = runNavigateAppTool(toolCall.input, router.push);
-          const submit = addToolOutputRef.current;
-          if (submit == null) {
-            return;
-          }
-          Promise.resolve(
-            submit({
-              tool: NAVIGATE_APP_TOOL_NAME,
-              toolCallId: toolCall.toolCallId,
-              output: result,
-            })
-          ).catch((err: unknown) => {
-            console.error("[navigateApp] addToolOutput failed:", err);
-          });
+  const {
+    addToolApprovalResponse,
+    messages,
+    sendMessage,
+    setMessages,
+    status,
+    stop,
+    addToolOutput,
+  } = useAIChat({
+    id: chatId,
+    messages: bootstrap.messages,
+    transport,
+    sendAutomaticallyWhen: ({ messages: nextMessages }) =>
+      lastAssistantMessageIsCompleteWithToolCalls({
+        messages: nextMessages,
+      }) ||
+      lastAssistantMessageIsCompleteWithApprovalResponses({
+        messages: nextMessages,
+      }),
+    async onFinish() {
+      await onAssistantStreamFinished?.();
+    },
+    onToolCall({ toolCall }) {
+      if (toolCall.toolName === NAVIGATE_APP_TOOL_NAME) {
+        const result = runNavigateAppTool(toolCall.input, router.push);
+        const submit = addToolOutputRef.current;
+        if (submit == null) {
           return;
         }
+        Promise.resolve(
+          submit({
+            tool: NAVIGATE_APP_TOOL_NAME,
+            toolCallId: toolCall.toolCallId,
+            output: result,
+          })
+        ).catch((err: unknown) => {
+          console.error("[navigateApp] addToolOutput failed:", err);
+        });
+        return;
+      }
 
-        if (toolCall.toolName === OPEN_PROJECT_SURFACE_TOOL_NAME) {
-          const submit = addToolOutputRef.current;
-          runOpenProjectSurfaceTool(toolCall.input, projectSurfaceRouter)
-            .then((output) => {
-              if (submit == null) {
-                return;
-              }
-              Promise.resolve(
-                submit({
-                  tool: OPEN_PROJECT_SURFACE_TOOL_NAME,
-                  toolCallId: toolCall.toolCallId,
-                  output,
-                })
-              ).catch((err: unknown) => {
-                console.error(
-                  "[openProjectSurface] addToolOutput failed:",
-                  err
-                );
-              });
-            })
-            .catch((err: unknown) => {
-              console.error("[openProjectSurface] routing failed:", err);
-            });
-          return;
-        }
-
-        if (toolCall.toolName !== REFRESH_FRONTEND_SWR_TOOL_NAME) {
-          return;
-        }
-        const submitRefresh = addToolOutputRef.current;
-        runRefreshFrontendSwrCachesTool(revalidateScopeSwr, toolCall.input)
+      if (toolCall.toolName === OPEN_PROJECT_SURFACE_TOOL_NAME) {
+        const submit = addToolOutputRef.current;
+        runOpenProjectSurfaceTool(toolCall.input, projectSurfaceRouter)
           .then((output) => {
-            if (submitRefresh == null) {
+            if (submit == null) {
               return;
             }
             Promise.resolve(
-              submitRefresh({
-                tool: REFRESH_FRONTEND_SWR_TOOL_NAME,
+              submit({
+                tool: OPEN_PROJECT_SURFACE_TOOL_NAME,
                 toolCallId: toolCall.toolCallId,
                 output,
               })
             ).catch((err: unknown) => {
-              console.error(
-                "[refreshFrontendSwrCaches] addToolOutput failed:",
-                err
-              );
+              console.error("[openProjectSurface] addToolOutput failed:", err);
             });
           })
           .catch((err: unknown) => {
-            console.error("[refreshFrontendSwrCaches] mutation failed:", err);
+            console.error("[openProjectSurface] routing failed:", err);
           });
-      },
-    });
+        return;
+      }
+
+      if (toolCall.toolName !== REFRESH_FRONTEND_SWR_TOOL_NAME) {
+        return;
+      }
+      const submitRefresh = addToolOutputRef.current;
+      runRefreshFrontendSwrCachesTool(revalidateScopeSwr, toolCall.input)
+        .then((output) => {
+          if (submitRefresh == null) {
+            return;
+          }
+          Promise.resolve(
+            submitRefresh({
+              tool: REFRESH_FRONTEND_SWR_TOOL_NAME,
+              toolCallId: toolCall.toolCallId,
+              output,
+            })
+          ).catch((err: unknown) => {
+            console.error(
+              "[refreshFrontendSwrCaches] addToolOutput failed:",
+              err
+            );
+          });
+        })
+        .catch((err: unknown) => {
+          console.error("[refreshFrontendSwrCaches] mutation failed:", err);
+        });
+    },
+  });
 
   // console.log("messages", messages);
 
@@ -625,6 +636,7 @@ function ProjectAssistantChatSession({
           />
         </Chat.Header>
         <Chat.Transcript
+          addToolApprovalResponse={addToolApprovalResponse}
           className="min-h-0 flex-1"
           messages={messages}
           status={status}
