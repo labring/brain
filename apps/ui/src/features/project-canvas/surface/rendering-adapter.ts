@@ -207,6 +207,7 @@ function sideRenderModel({
     case "dockerDeployment":
     case "githubDeployment":
     case "projectCreation":
+    case "skillsWorkflow":
       return { entry, kind: "global" };
     default:
       return entry satisfies never;

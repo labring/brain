@@ -5,10 +5,11 @@ import { SidePanePresence } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
 import { ProjectCreationPane } from "@/components/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/components/project-creation-pane-state";
+import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { useProjectSideRouteState } from "@/features/project-route-state/use-project-side-route-state";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
@@ -32,7 +33,8 @@ export default function ProjectIndexPage() {
     openSide: openProjectSideRoute,
     side: projectSideRouteEntry,
   } = useProjectSideRouteState({
-    isSideEntrySupported: (entry) => entry.kind === "projectCreation",
+    isSideEntrySupported: (entry) =>
+      entry.kind === "projectCreation" || entry.kind === "skillsWorkflow",
   });
   const creationSideEntry =
     projectSideRouteEntry?.kind === "projectCreation"
@@ -87,7 +89,7 @@ export default function ProjectIndexPage() {
       id: "project-list",
       openAssistantIntent: (intent) => {
         const entry = projectListEntryForAssistantIntent(intent);
-        if (entry?.kind !== "projectCreation") {
+        if (entry == null) {
           return { status: "ignored" as const };
         }
         openProjectSideRoute(entry);
@@ -103,6 +105,36 @@ export default function ProjectIndexPage() {
     [actions, openProjectCreationPane]
   );
   const creationPaneOpen = creationSideEntry != null;
+  const skillsPaneOpen = projectSideRouteEntry?.kind === "skillsWorkflow";
+  const sidePaneOpen = creationPaneOpen || skillsPaneOpen;
+
+  const sidePaneContent = useMemo((): ReactNode => {
+    if (creationPaneOpen) {
+      return (
+        <ProjectCreationPane
+          busy={githubDeployerLoading}
+          creatorRootProps={creatorRootProps}
+          entryMode={creationPaneEntryMode}
+          onClose={() => closeProjectSideRoute()}
+          resetKey={creatorResetKey}
+        />
+      );
+    }
+    if (skillsPaneOpen) {
+      return (
+        <SealosSkillsWorkflowPane onClose={() => closeProjectSideRoute()} />
+      );
+    }
+    return null;
+  }, [
+    closeProjectSideRoute,
+    creationPaneEntryMode,
+    creationPaneOpen,
+    creatorResetKey,
+    creatorRootProps,
+    githubDeployerLoading,
+    skillsPaneOpen,
+  ]);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -152,22 +184,12 @@ export default function ProjectIndexPage() {
             styles.sidePaneReserve,
             "min-h-0 shrink-0 transition-[width,max-width] duration-200 ease-out motion-reduce:transition-none"
           )}
-          data-open={creationPaneOpen}
+          data-open={sidePaneOpen}
           data-slot="project-index-side-pane-reserve"
         />
       </div>
 
-      <SidePanePresence>
-        {creationPaneOpen ? (
-          <ProjectCreationPane
-            busy={githubDeployerLoading}
-            creatorRootProps={creatorRootProps}
-            entryMode={creationPaneEntryMode}
-            onClose={() => closeProjectSideRoute()}
-            resetKey={creatorResetKey}
-          />
-        ) : null}
-      </SidePanePresence>
+      <SidePanePresence>{sidePaneContent}</SidePanePresence>
     </div>
   );
 }

@@ -15,7 +15,7 @@ import {
 } from "@workspace/ui/components/popover";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
-import { Database, Square } from "lucide-react";
+import { Database, Square, Wrench } from "lucide-react";
 import { type ComponentProps, useEffect, useLayoutEffect, useRef } from "react";
 
 import { ProjectSourceDockerIcon } from "../../assets/project-source-icons";
@@ -46,6 +46,14 @@ export type ChatDatabaseDeployButtonProps = Omit<
 };
 
 export type ChatDockerDeployButtonProps = Omit<
+  AppIconButtonProps,
+  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
+> & {
+  "aria-label"?: string;
+  onComposerAction?: () => void;
+};
+
+export type ChatSkillsWorkflowButtonProps = Omit<
   AppIconButtonProps,
   "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
 > & {
@@ -415,6 +423,34 @@ export function ChatDockerDeployButton({
   );
 }
 
+/** Icon-only control for Sealos Skills workflow; omitted `onComposerAction` renders nothing. */
+export function ChatSkillsWorkflowButton({
+  className,
+  "aria-label": ariaLabel = "Sealos Skills workflow",
+  onComposerAction,
+  ...props
+}: ChatSkillsWorkflowButtonProps) {
+  if (!onComposerAction) {
+    return null;
+  }
+
+  return (
+    <AppIconButton
+      aria-label={ariaLabel}
+      className={cn("shrink-0 cursor-pointer", className)}
+      data-slot="chat-skills-workflow-button"
+      onClick={onComposerAction}
+      size="lg"
+      title="Sealos Skills workflow"
+      type="button"
+      variant="quiet"
+      {...props}
+    >
+      <Wrench aria-hidden className="size-4 text-foreground opacity-90" />
+    </AppIconButton>
+  );
+}
+
 export interface ChatComposerSendProps {
   className?: string;
   onPrimaryAction: () => void;
@@ -494,6 +530,7 @@ export function ChatComposer({
             <ChatGithubDeployButton onComposerAction={onComposerAction} />
             <ChatDockerDeployButton onComposerAction={onComposerAction} />
             <ChatDatabaseDeployButton onComposerAction={onComposerAction} />
+            <ChatSkillsWorkflowButton onComposerAction={onComposerAction} />
           </div>
           <ChatComposerSend
             onPrimaryAction={onPrimaryAction}
@@ -517,4 +554,5 @@ ChatGithubDeployPopover.displayName = "Chat.GithubDeployPopover";
 ChatDatabaseDeployButton.displayName = "Chat.DatabaseDeployButton";
 ChatDockerDeployButton.displayName = "Chat.DockerDeployButton";
 ChatGithubDeployButton.displayName = "Chat.GithubDeployButton";
+ChatSkillsWorkflowButton.displayName = "Chat.SkillsWorkflowButton";
 ChatComposer.displayName = "Chat.Composer";

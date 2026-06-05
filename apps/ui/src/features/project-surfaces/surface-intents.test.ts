@@ -27,6 +27,12 @@ test("Project List translates assistant Docker intent to Docker direct project c
   });
 });
 
+test("Project List translates assistant skills intent to skills workflow side pane", () => {
+  assert.deepEqual(projectListEntryForAssistantIntent({ type: "skills" }), {
+    kind: "skillsWorkflow",
+  });
+});
+
 test("Project Canvas translates assistant GitHub intent to deployment in the current Project", () => {
   assert.deepEqual(
     projectCanvasEntryForAssistantIntent(
@@ -69,6 +75,21 @@ test("Project Canvas translates assistant Docker intent to deployment in the cur
       entry: {
         kind: "dockerDeployment",
         projectId: "project-1",
+      },
+      slot: "side",
+    }
+  );
+});
+
+test("Project Canvas translates assistant skills intent to skills workflow side pane", () => {
+  assert.deepEqual(
+    projectCanvasEntryForAssistantIntent(
+      { type: "skills" },
+      { projectId: "project-1" }
+    ),
+    {
+      entry: {
+        kind: "skillsWorkflow",
       },
       slot: "side",
     }

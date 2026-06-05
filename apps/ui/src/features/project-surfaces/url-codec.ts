@@ -121,6 +121,8 @@ export function serializeProjectSideSurfaceEntry(
       return `github-deployment:${encodePart(entry.projectId)}`;
     case "projectCreation":
       return `project-creation:${encodePart(entry.entryMode)}`;
+    case "skillsWorkflow":
+      return "skills-workflow";
     case "publicAddresses":
       return `public-addresses:${serializeProjectTarget(entry.target)}`;
     default:
@@ -205,6 +207,8 @@ export function parseProjectSideSurfaceEntry(
       return projectIdEntry("githubDeployment", parts);
     case "project-creation":
       return parseProjectCreationSideEntry(parts);
+    case "skills-workflow":
+      return parts.length === 1 ? { kind: "skillsWorkflow" } : null;
     default:
       return null;
   }

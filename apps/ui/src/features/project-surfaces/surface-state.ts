@@ -23,7 +23,8 @@ export type ProjectGlobalSidePaneEntry =
   | { kind: "databaseDeployment"; projectId: string }
   | { kind: "dockerDeployment"; projectId: string }
   | { kind: "githubDeployment"; projectId: string }
-  | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode };
+  | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode }
+  | { kind: "skillsWorkflow" };
 
 export type ProjectSideSurfaceEntry =
   | ProjectGlobalSidePaneEntry

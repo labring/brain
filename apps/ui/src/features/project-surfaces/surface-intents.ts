@@ -10,6 +10,7 @@ export type ProjectSidePaneEntry = Extract<
   | { kind: "dockerDeployment" }
   | { kind: "githubDeployment" }
   | { kind: "projectCreation" }
+  | { kind: "skillsWorkflow" }
 >;
 
 export function projectListEntryForAssistantIntent(
@@ -32,6 +33,9 @@ export function projectListEntryForAssistantIntent(
       entryMode: "dockerDirect",
       kind: "projectCreation",
     };
+  }
+  if (intent.type === "skills") {
+    return { kind: "skillsWorkflow" };
   }
   return null;
 }
@@ -123,6 +127,12 @@ export function projectCanvasEntryForAssistantIntent(
   const uid = options?.projectId?.trim() ?? "";
   if (uid === "") {
     return null;
+  }
+  if (intent.type === "skills") {
+    return {
+      entry: { kind: "skillsWorkflow" },
+      slot: "side",
+    };
   }
   if (intent.type === "database") {
     return {
