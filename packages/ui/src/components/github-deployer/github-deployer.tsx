@@ -3,14 +3,14 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { Button } from "@workspace/ui/components/button";
+import { DeploymentSettings } from "@workspace/ui/components/deployment-settings/deployment-settings";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Link2,
   Lock,
+  RefreshCw,
   Rocket,
   Search,
   ShieldCheck,
@@ -111,45 +111,6 @@ function GithubDeployerSubtitle({ className, ...props }: ComponentProps<"p">) {
   );
 }
 
-function MethodSection({
-  children,
-  className,
-  defaultOpen,
-  title,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  defaultOpen: boolean;
-  title: string;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <section
-      className={cn(
-        "overflow-hidden rounded-md border border-border bg-card/60",
-        !open && "border-transparent bg-muted/40",
-        className
-      )}
-      data-slot={`github-deployer-${title.toLowerCase().replace(" ", "-")}`}
-    >
-      <button
-        className="flex h-12 w-full items-center justify-between px-4 text-left"
-        onClick={() => setOpen((value) => !value)}
-        type="button"
-      >
-        <span className="font-medium text-base text-foreground">{title}</span>
-        {open ? (
-          <ChevronUp aria-hidden className="size-4 text-foreground" />
-        ) : (
-          <ChevronDown aria-hidden className="size-4 text-foreground" />
-        )}
-      </button>
-      {open ? <div className="px-4 pb-4">{children}</div> : null}
-    </section>
-  );
-}
-
 function GithubDeployerAuthButton({ className }: { className?: string }) {
   const {
     actions: { onAuthorize },
@@ -166,13 +127,13 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
         aria-busy="true"
         aria-live="polite"
         className={cn(
-          "flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-muted/30 font-medium text-foreground text-sm",
+          "flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-white/5 font-medium text-primary text-sm",
           className
         )}
         data-slot="github-deployer-auth-loading"
         role="status"
       >
-        <Spinner aria-hidden className="size-5 shrink-0" />
+        <Spinner aria-hidden className="size-4 shrink-0" />
         <span>Authorizing...</span>
       </div>
     );
@@ -182,7 +143,7 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
     <AppButton
       aria-label="Authorize GitHub"
       className={cn(
-        "h-10 w-full gap-2 rounded-md border-border bg-muted/30 text-sm hover:bg-muted/50",
+        "h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input",
         className
       )}
       data-slot="github-deployer-auth-connect"
@@ -224,7 +185,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
           />
           <AppInput
             aria-invalid={showInvalid || undefined}
-            className="h-10 rounded-md border-border bg-transparent pl-10 text-sm"
+            className="pl-10"
             disabled={isLoading}
             onChange={(event) => setRepoUrl(event.currentTarget.value)}
             placeholder="https://github.com/owner/repo"
@@ -233,7 +194,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
           />
         </div>
         <AppButton
-          className="h-10 min-w-24 rounded-md bg-muted text-foreground text-sm hover:bg-muted/80"
+          className="min-w-24 rounded-lg bg-white/5 text-primary hover:bg-input"
           data-slot="github-deployer-url-deploy"
           disabled={!(parsedRepo && onDeploy) || isLoading}
           onClick={() => {
@@ -265,7 +226,7 @@ function repoLabel(repo: GithubDeployerRepo): string {
 }
 
 function repoDescription(repo: GithubDeployerRepo): string {
-  return repo.description?.trim() || "This is a placeholder.";
+  return repo.description?.trim() || "No description provided.";
 }
 
 function GithubRepoCard({
@@ -280,27 +241,30 @@ function GithubRepoCard({
   return (
     <article
       className={cn(
-        "flex min-h-20 w-full min-w-0 items-center gap-3 rounded-md bg-muted/50 px-4 py-3",
-        featured && "border border-border bg-muted/40"
+        "flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-input/30 px-3 py-2.5",
+        featured && "border-primary/35 bg-primary/5"
       )}
       data-slot="github-deployer-repo-card"
     >
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-3">
-          <h3 className="truncate font-medium text-base text-foreground">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate font-medium text-foreground text-sm leading-5">
             {repoLabel(repo)}
           </h3>
           {repo.isPrivate ? (
-            <Lock aria-label="Private repository" className="size-4 shrink-0" />
+            <Lock
+              aria-label="Private repository"
+              className="size-3.5 shrink-0 text-muted-foreground"
+            />
           ) : null}
         </div>
-        <p className="mt-2 truncate text-muted-foreground text-sm">
+        <p className="mt-1 truncate text-muted-foreground text-xs leading-4">
           {repoDescription(repo)}
         </p>
       </div>
       <AppButton
         className={cn(
-          "h-10 min-w-28 gap-2 rounded-md bg-muted text-foreground text-sm shadow-sm hover:bg-muted/80",
+          "h-8 min-w-24 rounded-lg bg-white/5 text-primary hover:bg-input",
           featured && "text-primary"
         )}
         data-slot="github-deployer-repo-deploy"
@@ -360,13 +324,18 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       className={cn("flex w-full min-w-0 flex-col gap-3", className)}
       data-slot="github-deployer-repo-select"
     >
-      <p
-        className="font-medium text-emerald-400 text-sm"
+      <div
+        className="flex min-h-9 w-full min-w-0 items-center gap-2 rounded-md bg-input/30 px-3 text-muted-foreground text-sm"
         data-slot="github-deployer-authorized"
         role="status"
       >
-        GitHub Connected
-      </p>
+        <CheckCircle2
+          aria-hidden
+          className="size-4 shrink-0 text-primary"
+          strokeWidth={2}
+        />
+        <span className="truncate">GitHub connected</span>
+      </div>
       <div className="relative min-w-0">
         <Search
           aria-hidden
@@ -374,7 +343,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
           strokeWidth={2}
         />
         <AppInput
-          className="h-10 rounded-md border-border bg-transparent pl-10 text-sm"
+          className="pl-10"
           disabled={isLoading}
           onChange={(event) => {
             setQuery(event.currentTarget.value);
@@ -387,7 +356,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       </div>
       {errorMessage ? (
         <div
-          className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3"
+          className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5"
           data-slot="github-deployer-repo-error"
         >
           <p className="min-w-0 flex-1 text-destructive text-sm">
@@ -402,7 +371,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
             type="button"
             variant="outline"
           >
-            <Rocket aria-hidden className="size-4" strokeWidth={2} />
+            <RefreshCw aria-hidden className="size-4" strokeWidth={2} />
           </Button>
         </div>
       ) : null}
@@ -410,24 +379,24 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
         <div
           aria-busy="true"
           aria-live="polite"
-          className="flex h-16 w-full min-w-0 items-center gap-3 rounded-md bg-muted/40 px-4 text-muted-foreground text-sm"
+          className="flex h-12 w-full min-w-0 items-center gap-3 rounded-md bg-input/30 px-3 text-muted-foreground text-sm"
           data-slot="github-deployer-repos-loading"
           role="status"
         >
-          <Spinner aria-hidden className="size-5 shrink-0" />
+          <Spinner aria-hidden className="size-4 shrink-0" />
           <span>Loading repositories...</span>
         </div>
       ) : null}
       {!(errorMessage || isLoading) && filteredRepos.length === 0 ? (
         <p
-          className="w-full min-w-0 rounded-md bg-muted/40 px-4 py-3 text-muted-foreground text-sm"
+          className="w-full min-w-0 rounded-md bg-input/30 px-3 py-2.5 text-muted-foreground text-sm"
           data-slot="github-deployer-repo-empty"
         >
           No repositories found for this GitHub account.
         </p>
       ) : null}
       {!(errorMessage || isLoading) && visibleRepos.length > 0 ? (
-        <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-2">
           {visibleRepos.map((repo, index) => (
             <GithubRepoCard
               featured={index === 0}
@@ -440,7 +409,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       ) : null}
       {canViewMore ? (
         <button
-          className="mx-auto mt-1 h-7 px-3 text-foreground text-sm hover:text-primary"
+          className="mx-auto mt-1 h-7 rounded-md px-3 text-muted-foreground text-sm hover:bg-input/30 hover:text-foreground"
           data-slot="github-deployer-view-more"
           onClick={() =>
             setVisibleCount((count) =>
@@ -470,7 +439,7 @@ function GithubDeployerComplete({ className }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 items-center gap-2 rounded-md border border-border bg-muted/40 p-3",
+        "flex w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-input/30 p-3",
         className
       )}
       data-slot="github-deployer-complete"
@@ -492,17 +461,29 @@ function GithubDeployerComplete({ className }: ComponentProps<"div">) {
 function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex w-full min-w-0 flex-col gap-5", className)}
+      className={cn("dark flex w-full min-w-0 flex-col gap-4", className)}
       data-slot="github-deployer-shell"
       {...props}
     >
-      <MethodSection defaultOpen title="Method 1">
-        <GithubDeployerUrlInput />
-      </MethodSection>
-      <MethodSection defaultOpen title="Method 2">
-        <GithubDeployerAuthButton />
-        <GithubDeployerRepoSelect />
-      </MethodSection>
+      <DeploymentSettings.Section
+        description="Deploy directly from a GitHub repository URL."
+        icon={<Link2 aria-hidden className="size-4" />}
+        title="Repository URL"
+      >
+        <DeploymentSettings.Control>
+          <GithubDeployerUrlInput />
+        </DeploymentSettings.Control>
+      </DeploymentSettings.Section>
+      <DeploymentSettings.Section
+        description="Authorize GitHub to search and deploy repositories."
+        icon={<ShieldCheck aria-hidden className="size-4" />}
+        title="GitHub Account"
+      >
+        <DeploymentSettings.Control>
+          <GithubDeployerAuthButton />
+          <GithubDeployerRepoSelect />
+        </DeploymentSettings.Control>
+      </DeploymentSettings.Section>
       <GithubDeployerComplete />
     </div>
   );

@@ -7,13 +7,13 @@ import { GithubDeployer } from "./github-deployer";
 const noop = () => undefined;
 const URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
 const URL_PLACEHOLDER_RE = /https:\/\/github.com\/owner\/repo/;
-const AUTH_BUTTON_RE = /Authorize GitHub/;
+const AUTH_BUTTON_RE = /aria-label="Authorize GitHub"/;
 const AUTHORIZED_RE = /data-slot="github-deployer-authorized"/;
 const HEADER_TITLE_RE = /GitHub Import/;
 const HEADER_SUBTITLE_RE =
   /Import repository from URL or GitHub authorization\./;
-const METHOD_1_RE = /Method 1/;
-const METHOD_2_RE = /Method 2/;
+const REPOSITORY_URL_RE = /Repository URL/;
+const GITHUB_ACCOUNT_RE = /GitHub Account/;
 const EXAMPLE_REPO_RE = /sealai\/example/;
 const REPO_SELECT_RE = /data-slot="github-deployer-repo-select"/;
 const REPO_CARD_RE = /data-slot="github-deployer-repo-card"/;
@@ -32,8 +32,8 @@ test("GithubDeployer shows URL input and authorization when unauthenticated", ()
     </GithubDeployer.Root>
   );
 
-  assert.match(html, METHOD_1_RE);
-  assert.match(html, METHOD_2_RE);
+  assert.match(html, REPOSITORY_URL_RE);
+  assert.match(html, GITHUB_ACCOUNT_RE);
   assert.doesNotMatch(html, HEADER_TITLE_RE);
   assert.doesNotMatch(html, HEADER_SUBTITLE_RE);
   assert.match(html, URL_INPUT_RE);
