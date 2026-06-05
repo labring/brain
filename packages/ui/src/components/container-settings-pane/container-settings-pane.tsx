@@ -54,8 +54,6 @@ import {
 import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {
-  ChevronsDown,
-  ChevronsUp,
   Copy,
   Cpu,
   MemoryStick,
@@ -2125,7 +2123,6 @@ function DomainListSection({
     visibleDomainRows.customDomains.length === 0;
   const hasPublicAddressOverflow =
     visibleDomainRows.publicAddresses.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
-  const VisibilityIcon = showAllPublicAddresses ? ChevronsUp : ChevronsDown;
 
   return (
     <NetworkCard title="Domain List">
@@ -2197,10 +2194,10 @@ function DomainListSection({
           aria-expanded={showAllPublicAddresses}
           aria-label={
             showAllPublicAddresses
-              ? "Collapse Public Addresses"
+              ? "Show Less Public Addresses"
               : "View All Public Addresses"
           }
-          className="group inline-flex h-5 shrink-0 select-none items-center justify-center gap-1.5 justify-self-center whitespace-nowrap rounded-lg border border-transparent bg-transparent bg-clip-padding px-2 font-medium text-muted-foreground text-xs leading-5 outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:border-ring focus-visible:bg-input/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
+          className="inline-flex h-5 shrink-0 cursor-pointer select-none items-center justify-center justify-self-center whitespace-nowrap rounded-lg border border-transparent bg-transparent bg-clip-padding px-2 font-medium text-muted-foreground text-xs leading-5 outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:border-ring focus-visible:bg-input/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
           onClick={
             showAllPublicAddresses
               ? onCollapsePublicAddresses
@@ -2208,18 +2205,7 @@ function DomainListSection({
           }
           type="button"
         >
-          {showAllPublicAddresses ? "Collapse" : "View All"}
-          <VisibilityIcon
-            aria-hidden
-            className={cn(
-              "size-3.5 transition-opacity",
-              showAllPublicAddresses
-                ? "opacity-100"
-                : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-            )}
-            data-icon="inline-end"
-            strokeWidth={2}
-          />
+          {showAllPublicAddresses ? "Show Less" : "View All"}
         </button>
       ) : null}
     </NetworkCard>

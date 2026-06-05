@@ -71,7 +71,9 @@ const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
 const ADD_DOMAIN_LABEL_RE = /Add Domain/;
 const VIEW_ALL_PUBLIC_ADDRESSES_RE = /aria-label="View All Public Addresses"/;
 const PUBLIC_ADDRESSES_COLLAPSED_RE = /aria-expanded="false"/;
-const COLLAPSE_PUBLIC_ADDRESSES_RE = /aria-label="Collapse Public Addresses"/;
+const SHOW_LESS_PUBLIC_ADDRESSES_RE = /aria-label="Show Less Public Addresses"/;
+const INLINE_END_ICON_RE = /data-icon="inline-end"/;
+const CURSOR_POINTER_RE = /cursor-pointer/;
 const PRIVATE_PORT_VALUE_RE = /value="8080"/;
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
@@ -273,7 +275,9 @@ test("container settings pane collapses overflowing public address rows by defau
   assert.doesNotMatch(html, THIRD_PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, VIEW_ALL_PUBLIC_ADDRESSES_RE);
   assert.match(html, PUBLIC_ADDRESSES_COLLAPSED_RE);
-  assert.doesNotMatch(html, COLLAPSE_PUBLIC_ADDRESSES_RE);
+  assert.match(html, CURSOR_POINTER_RE);
+  assert.doesNotMatch(html, SHOW_LESS_PUBLIC_ADDRESSES_RE);
+  assert.doesNotMatch(html, INLINE_END_ICON_RE);
 });
 
 test("container settings pane renders draft-visible Platform Address hosts", () => {
