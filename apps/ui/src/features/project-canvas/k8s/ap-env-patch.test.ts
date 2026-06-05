@@ -15,8 +15,8 @@ import {
 import type { K8sJsonPatchOp } from "./http/json-patch";
 
 const DUPLICATE_ENV_NAME_RE = /Environment variable names must be unique/;
-const PRIVATE_PORT_RANGE_RE =
-  /Private Address target port must be an integer from 1 through 65535/;
+const APP_LISTENING_PORT_RANGE_RE =
+  /App Listening Port must be an integer from 1 through 65535/;
 const PUBLIC_PORT_RANGE_RE =
   /Public Address target port must be an integer from 1 through 65535/;
 const PLATFORM_ADDRESS_ID_INVALID_RE =
@@ -30,12 +30,17 @@ const CUSTOM_DOMAIN_PLATFORM_ADDRESS_UNIQUE_RE =
   /Platform Address can only be bound to one Custom Domain/;
 const CUSTOM_DOMAIN_DUPLICATE_RE =
   /Custom Domain is already bound in this namespace/;
+const UNRESOLVED_PGPASSWORD_RE = /Choose a Reference DB or create PGPASSWORD/;
 
 function patchOpValue(op: K8sJsonPatchOp | undefined): unknown {
   if (op === undefined || op.op === "remove") {
     assert.fail("Expected patch operation with a value.");
   }
   return op.value;
+}
+
+function editorToken(name: string): string {
+  return ["$", "{{", name, "}}"].join("");
 }
 
 test("AP env settings patch direct rows as standard Kubernetes value entries", () => {
@@ -126,7 +131,7 @@ test("AP network settings patch privatePort without writing retired endpoint fie
     {
       op: "add",
       path: "/spec/input/network",
-      value: { privatePort: 8080 },
+      value: { appListeningPorts: [{ port: 8080 }] },
     },
     { op: "remove", path: "/spec/input/endpoints" },
     { op: "remove", path: "/spec/input/port" },
@@ -141,14 +146,14 @@ test("AP network settings patch generated Platform Address IDs as one coherent n
         endpoints: [{ host: "old.example.com", port: 80 }],
         host: "old.example.com",
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
           publicAddresses: [{ host: "old.example.com", port: 80 }],
         },
         port: 80,
       },
     },
     {
-      privatePort: 8080,
+      appListeningPorts: [{ port: 8080 }],
       publicAddresses: [
         {
           host: "api.example.com",
@@ -171,10 +176,10 @@ test("AP network settings patch generated Platform Address IDs as one coherent n
   assert.equal(ops[0]?.op, "replace");
   assert.equal(ops[0]?.path, "/spec/input/network");
   const network = ops[0]?.value as {
+    appListeningPorts: { port: number }[];
     platformAddresses: { id: string; port: number }[];
-    privatePort: number;
   };
-  assert.equal(network.privatePort, 8080);
+  assert.deepEqual(network.appListeningPorts, [{ port: 8080 }]);
   assert.equal(network.platformAddresses.length, 2);
   assert.match(network.platformAddresses[0]?.id ?? "", PLATFORM_ADDRESS_ID_RE);
   assert.equal(network.platformAddresses[0]?.port, 8080);
@@ -187,13 +192,13 @@ test("AP network settings writes v1 Platform Addresses with stable IDs and no ho
     {
       input: {
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
           publicAddresses: [{ host: "old.example.com", port: 80 }],
         },
       },
     },
     {
-      privatePort: 8080,
+      appListeningPorts: [{ port: 8080 }],
       publicAddresses: [
         {
           host: "api.example.com",
@@ -213,7 +218,7 @@ test("AP network settings writes v1 Platform Addresses with stable IDs and no ho
       op: "replace",
       path: "/spec/input/network",
       value: {
-        privatePort: 8080,
+        appListeningPorts: [{ port: 8080 }],
         platformAddresses: [
           { domainPrefix: "tsbmom", id: "pa_abc123", port: 8080 },
           { domainPrefix: "cafrvf", id: "pa_def456", port: 8080 },
@@ -228,7 +233,7 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
     {
       input: {
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
           platformAddresses: [{ id: "pa_abc123", port: 80 }],
         },
       },
@@ -242,7 +247,7 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
           status: "verified",
         },
       ],
-      privatePort: 8080,
+      appListeningPorts: [{ port: 8080 }],
       publicAddresses: [
         {
           host: "api.example.com",
@@ -271,7 +276,7 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
         platformAddresses: [
           { domainPrefix: "tsbmom", id: "pa_abc123", port: 8080 },
         ],
-        privatePort: 8080,
+        appListeningPorts: [{ port: 8080 }],
       },
     },
   ]);
@@ -282,12 +287,12 @@ test("AP network settings backfills routing domain label when adding Public Addr
     {
       input: {
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
         },
       },
     },
     {
-      privatePort: 80,
+      appListeningPorts: [{ port: 80 }],
       publicAddresses: [{ id: "pa_abc123", port: 80 }],
     },
     {
@@ -301,7 +306,7 @@ test("AP network settings backfills routing domain label when adding Public Addr
       op: "replace",
       path: "/spec/input/network",
       value: {
-        privatePort: 80,
+        appListeningPorts: [{ port: 80 }],
         platformAddresses: [
           { domainPrefix: "tsbmom", id: "pa_abc123", port: 80 },
         ],
@@ -319,7 +324,7 @@ test("AP network settings preserves existing routing domain label", () => {
   const ops = patchOpsForApNetworkSettings(
     { input: { network: { privatePort: 80 } } },
     {
-      privatePort: 80,
+      appListeningPorts: [{ port: 80 }],
       publicAddresses: [{ id: "pa_abc123", port: 80 }],
     },
     {
@@ -332,7 +337,7 @@ test("AP network settings preserves existing routing domain label", () => {
   assert.equal(ops[0]?.path, "/spec/input/network");
 });
 
-test("AP public address settings patch does not rewrite Private Address target port", () => {
+test("AP public address settings patch does not rewrite unchanged App Listening Ports", () => {
   const ops = patchOpsForApPublicAddressesSettings(
     {
       input: {
@@ -345,7 +350,7 @@ test("AP public address settings patch does not rewrite Private Address target p
             },
           ],
           platformAddresses: [{ id: "pa_old123", port: 80 }],
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
         },
       },
     },
@@ -385,6 +390,35 @@ test("AP public address settings patch does not rewrite Private Address target p
   ]);
 });
 
+test("AP public address settings patch persists auto-added App Listening Port", () => {
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 80 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ port: 80 }, { port: 8080 }],
+      publicAddresses: [{ id: "pa_new456", port: 8080 }],
+    }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/network/appListeningPorts",
+      value: [{ port: 80 }, { port: 8080 }],
+    },
+    {
+      op: "add",
+      path: "/spec/input/network/platformAddresses",
+      value: [{ domainPrefix: "fxeigg", id: "pa_new456", port: 8080 }],
+    },
+  ]);
+});
+
 test("AP private port settings patch does not rewrite Public Addresses", () => {
   const ops = patchOpsForApPrivatePortSettings(
     {
@@ -398,7 +432,7 @@ test("AP private port settings patch does not rewrite Public Addresses", () => {
             },
           ],
           platformAddresses: [{ id: "pa_abc123", port: 80 }],
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
         },
       },
     },
@@ -408,8 +442,8 @@ test("AP private port settings patch does not rewrite Public Addresses", () => {
   assert.deepEqual(ops, [
     {
       op: "replace",
-      path: "/spec/input/network/privatePort",
-      value: 8080,
+      path: "/spec/input/network/appListeningPorts",
+      value: [{ port: 8080 }],
     },
   ]);
 });
@@ -418,16 +452,23 @@ test("AP network settings validate App Listening Ports", () => {
   for (const privatePort of [1, 65_535]) {
     assert.deepEqual(
       patchOpValue(
-        patchOpsForApNetworkSettings({ input: {} }, { privatePort })[0]
+        patchOpsForApNetworkSettings(
+          { input: {} },
+          { appListeningPorts: [{ port: privatePort }] }
+        )[0]
       ),
-      { privatePort }
+      { appListeningPorts: [{ port: privatePort }] }
     );
   }
 
   for (const privatePort of [0, 65_536, 8080.5]) {
     assert.throws(
-      () => patchOpsForApNetworkSettings({ input: {} }, { privatePort }),
-      PRIVATE_PORT_RANGE_RE
+      () =>
+        patchOpsForApNetworkSettings(
+          { input: {} },
+          { appListeningPorts: [{ port: privatePort }] }
+        ),
+      APP_LISTENING_PORT_RANGE_RE
     );
   }
 });
@@ -446,7 +487,7 @@ test("AP network settings validate Platform Address IDs and Public Address ports
       patchOpsForApNetworkSettings(
         { input: {} },
         {
-          privatePort: 8080,
+          appListeningPorts: [{ port: 8080 }],
           publicAddresses: [
             { id: "pa_abc123", port: 8080 },
             { id: "pa_abc123", port: 9000 },
@@ -460,7 +501,7 @@ test("AP network settings validate Platform Address IDs and Public Address ports
       patchOpsForApNetworkSettings(
         { input: {} },
         {
-          privatePort: 8080,
+          appListeningPorts: [{ port: 8080 }],
           publicAddresses: [{ id: "pa_abc123", port: 65_536 }],
         }
       ),
@@ -481,7 +522,7 @@ test("AP network settings validate Custom Domain Binding references", () => {
               platformAddressId: "pa_abc123",
             },
           ],
-          privatePort: 8080,
+          appListeningPorts: [{ port: 8080 }],
           publicAddresses: [{ id: "pa_abc123", port: 8080 }],
         }
       ),
@@ -500,7 +541,7 @@ test("AP network settings validate Custom Domain Binding references", () => {
               platformAddressId: "pa_missing",
             },
           ],
-          privatePort: 8080,
+          appListeningPorts: [{ port: 8080 }],
           publicAddresses: [{ id: "pa_abc123", port: 8080 }],
         }
       ),
@@ -524,7 +565,7 @@ test("AP network settings validate Custom Domain Binding references", () => {
               platformAddressId: "pa_abc123",
             },
           ],
-          privatePort: 8080,
+          appListeningPorts: [{ port: 8080 }],
           publicAddresses: [{ id: "pa_abc123", port: 8080 }],
         }
       ),
@@ -541,7 +582,7 @@ test("AP network settings reject duplicate Custom Domains in the namespace routi
         platformAddressId: "pa_abc123",
       },
     ],
-    privatePort: 8080,
+    appListeningPorts: [{ port: 8080 }],
     publicAddresses: [{ id: "pa_abc123", port: 8080 }],
   };
 
@@ -603,7 +644,7 @@ test("AP network settings keep bound Custom Domains following Platform Address p
             },
           ],
           platformAddresses: [{ id: "pa_abc123", port: 8080 }],
-          privatePort: 8080,
+          appListeningPorts: [{ port: 8080 }],
         },
       },
     },
@@ -616,7 +657,7 @@ test("AP network settings keep bound Custom Domains following Platform Address p
           status: "accessible",
         },
       ],
-      privatePort: 8080,
+      appListeningPorts: [{ port: 8080 }],
       publicAddresses: [
         {
           host: "ucflzg.apps.example.com",
@@ -645,7 +686,7 @@ test("AP network settings keep bound Custom Domains following Platform Address p
         platformAddresses: [
           { domainPrefix: "tsbmom", id: "pa_abc123", port: 9000 },
         ],
-        privatePort: 8080,
+        appListeningPorts: [{ port: 8080 }],
       },
     },
   ]);
@@ -966,6 +1007,55 @@ test("AP env settings patch DB primitive references as Secret key refs", () => {
   ]);
 });
 
+test("AP env settings patch editor tokens as Kubernetes env expansion with DB helpers", () => {
+  const secretKeyRef = { key: "passwd", name: "postgres-conn-credential" };
+  const ops = patchOpsForApEnvSettings(
+    { input: { env: [] } },
+    [
+      {
+        name: "DATABASE_URL",
+        referenceDbKey: "default/postgres",
+        value: `postgres://${editorToken("PGPASSWORD")}@db/app`,
+      },
+    ],
+    {
+      dbDsnReferenceSources: [
+        {
+          name: "postgres",
+          namespace: "default",
+          primitiveSecretRefs: {
+            password: secretKeyRef,
+          },
+        },
+      ],
+    }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/env",
+      value: [
+        { name: "DATABASE_URL", value: "postgres://$(PGPASSWORD)@db/app" },
+        { name: "PGPASSWORD", valueFrom: { secretKeyRef } },
+      ],
+    },
+  ]);
+});
+
+test("AP env settings reject unresolved editor tokens before patching", () => {
+  assert.throws(
+    () =>
+      patchOpsForApEnvSettings({ input: { env: [] } }, [
+        {
+          name: "DATABASE_URL",
+          value: `postgres://${editorToken("PGPASSWORD")}@db/app`,
+        },
+      ]),
+    UNRESOLVED_PGPASSWORD_RE
+  );
+});
+
 test("AP env settings reject duplicate names across direct and DB DSN reference rows", () => {
   assert.throws(
     () =>
@@ -1032,7 +1122,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
     image: "ghcr.io/acme/api:old",
     memoryMib: 1024,
     network: {
-      privatePort: 80,
+      appListeningPorts: [{ port: 80 }],
       publicAddresses: [{ id: "pa_old123", port: 80 }],
     },
     replicaStrategy: {
@@ -1047,7 +1137,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
         env: [{ name: "DATABASE_URL", value: "postgres://old" }],
         image: "ghcr.io/acme/api:old",
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
           platformAddresses: [{ id: "pa_old123", port: 80 }],
         },
       },
@@ -1069,7 +1159,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
       image: "ghcr.io/acme/api:new",
       memoryMib: 2048,
       network: {
-        privatePort: 8080,
+        appListeningPorts: [{ port: 8080 }],
         publicAddresses: [
           { id: "pa_old123", port: 8080 },
           { id: "pa_new456", port: 9000 },
@@ -1114,7 +1204,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
       op: "replace",
       path: "/spec/input/network",
       value: {
-        privatePort: 8080,
+        appListeningPorts: [{ port: 8080 }],
         platformAddresses: [
           { domainPrefix: "fffpnc", id: "pa_old123", port: 8080 },
           { domainPrefix: "fxeigg", id: "pa_new456", port: 9000 },
@@ -1157,7 +1247,7 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
     image: "ghcr.io/acme/api:old",
     memoryMib: 1024,
     network: {
-      privatePort: 80,
+      appListeningPorts: [{ port: 80 }],
       publicAddresses: [{ id: "pa_abc123", port: 80 }],
     },
     replicaStrategy: {
@@ -1172,7 +1262,7 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
         env: [],
         image: "ghcr.io/acme/api:old",
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
           platformAddresses: [{ id: "pa_abc123", port: 80 }],
         },
       },
@@ -1195,7 +1285,7 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
             status: "verified",
           },
         ],
-        privatePort: 80,
+        appListeningPorts: [{ port: 80 }],
         publicAddresses: [{ id: "pa_abc123", port: 80 }],
       },
     },
@@ -1217,7 +1307,7 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
         platformAddresses: [
           { domainPrefix: "tsbmom", id: "pa_abc123", port: 80 },
         ],
-        privatePort: 80,
+        appListeningPorts: [{ port: 80 }],
       },
     },
   ]);
@@ -1230,7 +1320,7 @@ test("AP settings draft omits unchanged settings from the patch", () => {
     image: "ghcr.io/acme/api:old",
     memoryMib: 1024,
     network: {
-      privatePort: 80,
+      appListeningPorts: [{ port: 80 }],
       publicAddresses: [{ id: "pa_old123", port: 80 }],
     },
     replicaStrategy: {
@@ -1245,7 +1335,7 @@ test("AP settings draft omits unchanged settings from the patch", () => {
         env: [{ name: "DATABASE_URL", value: "postgres://old" }],
         image: "ghcr.io/acme/api:old",
         network: {
-          privatePort: 80,
+          appListeningPorts: [{ port: 80 }],
           platformAddresses: [{ id: "pa_old123", port: 80 }],
         },
       },

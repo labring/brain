@@ -12,6 +12,10 @@ const noop = () => {
   /* test noop */
 };
 
+function editorToken(name: string): string {
+  return ["$", "{{", name, "}}"].join("");
+}
+
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
 const ELASTIC_SCALING_RE = /Elastic Scaling/;
@@ -78,6 +82,12 @@ test("AP claim settings maps private-only network from desired and observed AP s
   );
 
   assert.deepEqual(settings.network, {
+    appListeningPorts: [
+      {
+        port: 8080,
+        privateAddress: "http://api-service-port-8080.default.svc:8080",
+      },
+    ],
     privateAddress: "http://api-service-port-8080.default.svc:8080",
     privatePort: 8080,
     publicAddresses: [],
@@ -809,6 +819,11 @@ test("AP claim settings reconstruct DB DSN references only from exact current DB
         dbNamespace: "default",
         field: "private",
       },
+      helper: {
+        automatic: false,
+        sourceDbKey: "default/postgres",
+        sourceField: "private",
+      },
       name: "DATABASE_URL",
       value: "postgres://private",
       valueSource: "dbDsn",
@@ -818,6 +833,11 @@ test("AP claim settings reconstruct DB DSN references only from exact current DB
         dbName: "postgres",
         dbNamespace: "default",
         field: "public",
+      },
+      helper: {
+        automatic: false,
+        sourceDbKey: "default/postgres",
+        sourceField: "public",
       },
       name: "DATABASE_PUBLIC_URL",
       value: "postgres://public",
@@ -885,7 +905,82 @@ test("AP claim settings reconstruct DB primitive references from exact Secret ev
         dbNamespace: "default",
         field: "username",
       },
+      helper: {
+        automatic: false,
+        sourceDbKey: "default/postgres",
+        sourceField: "username",
+      },
       name: "DATABASE_USER",
+      value: "(valueFrom)",
+      valueFrom: { secretKeyRef },
+      valueSource: "dbDsn",
+    },
+  ]);
+});
+
+test("AP claim settings reconstruct editor tokens from saved env expansion and helper evidence", () => {
+  const secretKeyRef = { key: "passwd", name: "postgres-conn-credential" };
+  const dbDsnReferenceSources = dbDsnReferenceSourcesFromDbsData(
+    {
+      items: [
+        {
+          metadata: { name: "postgres", namespace: "default" },
+          status: {
+            variables: [
+              {
+                name: "PG_PASSWORD",
+                valueFrom: { secretKeyRef },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    "default"
+  );
+
+  const settings = claimToContainerSettings(
+    {
+      kind: "AP",
+      metadata: { name: "api", namespace: "default" },
+      spec: {
+        input: {
+          env: [
+            {
+              name: "DATABASE_URL",
+              value: "postgres://$(PGPASSWORD)@db/app",
+            },
+            {
+              name: "PGPASSWORD",
+              valueFrom: { secretKeyRef },
+            },
+          ],
+          image: "ghcr.io/acme/api:latest",
+        },
+      },
+    },
+    "AP",
+    { dbDsnReferenceSources }
+  );
+
+  assert.deepEqual(settings.env, [
+    {
+      name: "DATABASE_URL",
+      referenceDbKey: "default/postgres",
+      value: `postgres://${editorToken("PGPASSWORD")}@db/app`,
+    },
+    {
+      dbDsn: {
+        dbName: "postgres",
+        dbNamespace: "default",
+        field: "password",
+      },
+      helper: {
+        automatic: false,
+        sourceDbKey: "default/postgres",
+        sourceField: "password",
+      },
+      name: "PGPASSWORD",
       value: "(valueFrom)",
       valueFrom: { secretKeyRef },
       valueSource: "dbDsn",

@@ -262,7 +262,7 @@ export function useWorkloadClaimSettings(
           ? undefined
           : onAddDbDsnReferenceMutationStart?.(confirmedReferences);
       try {
-        await applyApEnv(kc, body, env);
+        await applyApEnv(kc, body, env, { dbDsnReferenceSources });
         toast.success("Environment applied.");
         await revalidateAfterApMutation();
       } catch (e) {
@@ -274,6 +274,7 @@ export function useWorkloadClaimSettings(
     },
     [
       isApWorkload,
+      dbDsnReferenceSources,
       kubeconfig,
       onAddDbDsnReferenceMutationStart,
       readOnly,
@@ -440,6 +441,7 @@ export function useWorkloadClaimSettings(
 
       try {
         await applyApSettingsDraft(kc, body, draft, previous, {
+          dbDsnReferenceSources,
           existingCustomDomains,
         });
         toast.success("Settings applied.");
@@ -459,6 +461,7 @@ export function useWorkloadClaimSettings(
       display.network,
       display.replicaStrategy,
       display.replicas,
+      dbDsnReferenceSources,
       existingCustomDomains,
       isApWorkload,
       kubeconfig,

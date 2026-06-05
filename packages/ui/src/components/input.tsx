@@ -1,6 +1,7 @@
 import { Input as InputPrimitive } from "@base-ui/react/input";
 import { cn } from "@workspace/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
+import { forwardRef } from "react";
 
 const inputVariants = cva(
   "h-9 w-full min-w-0 border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-[color,box-shadow] file:inline-flex file:h-7 file:border-0 file:bg-transparent file:font-medium file:text-foreground file:text-sm placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30",
@@ -23,15 +24,19 @@ export type InputProps = InputPrimitive.Props &
     className?: string;
   };
 
-function Input({ className, type, variant, ...props }: InputProps) {
+const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  { className, type, variant, ...props },
+  ref
+) {
   return (
     <InputPrimitive
       className={cn(inputVariants({ variant }), className)}
       data-slot="input"
+      ref={ref}
       type={type}
       {...props}
     />
   );
-}
+});
 
 export { Input, inputVariants };

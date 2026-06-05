@@ -7,10 +7,10 @@ import type {
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+  type ContainerEnvDbDsnSource,
   containerEnvRowsEqual,
-  normalizeContainerEnvRowsForSave,
-  validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
+import { normalizeContainerEnvTokenRowsForSave } from "@workspace/ui/lib/container-env-tokens";
 import { parse as parseYaml } from "yaml";
 
 import {
@@ -51,9 +51,17 @@ import {
 } from "./entrypoint-custom-domains";
 import type { K8sJsonPatchOp } from "./http/json-patch";
 
-const LEGACY_AP_NETWORK_INPUT_FIELDS = ["endpoints", "port", "host"] as const;
+const LEGACY_AP_NETWORK_INPUT_FIELDS = [
+  "endpoints",
+  "port",
+  "host",
+  "privatePort",
+] as const;
 
-type ApNetworkSettingsPatch = Pick<ContainerNetwork, "privatePort"> &
+type ApNetworkSettingsPatch = Pick<
+  ContainerNetwork,
+  "appListeningPorts" | "privatePort"
+> &
   Partial<{
     customDomains: readonly NonNullable<
       ContainerNetwork["customDomains"]
@@ -65,7 +73,7 @@ type ApPrivatePortSettingsPatch = Pick<ContainerNetwork, "privatePort">;
 
 type ApPublicAddressesSettingsPatch = Pick<
   ContainerNetwork,
-  "publicAddresses"
+  "appListeningPorts" | "privatePort" | "publicAddresses"
 > & {
   customDomains?: readonly NonNullable<
     ContainerNetwork["customDomains"]
@@ -74,6 +82,7 @@ type ApPublicAddressesSettingsPatch = Pick<
 };
 
 interface ApNetworkSettingsPatchOptions {
+  dbDsnReferenceSources?: readonly ContainerEnvDbDsnSource[];
   existingCustomDomains?: readonly ExistingCustomDomainBinding[];
   metadata?: Record<string, unknown>;
   routingDomain?: string;
@@ -410,10 +419,29 @@ function apNetworksEqual(
     return a == null && b == null;
   }
   return (
-    Math.round(a.privatePort) === Math.round(b.privatePort) &&
+    appListeningPortsEqual(
+      normalizedAppListeningPortsForSave(a),
+      normalizedAppListeningPortsForSave(b)
+    ) &&
     publicAddressesEqual(a.publicAddresses, b.publicAddresses) &&
     customDomainsEqual(a.customDomains, b.customDomains)
   );
+}
+
+function appListeningPortsEqual(
+  a: readonly Record<string, unknown>[],
+  b: readonly Record<string, unknown>[]
+): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((row, index) => {
+    const other = b[index];
+    return (
+      other != null &&
+      Math.round(Number(row.port)) === Math.round(Number(other.port))
+    );
+  });
 }
 
 function apSettingsImageChanged(
@@ -430,17 +458,14 @@ function buildApNetworkInput(
   hasPublicAddresses: boolean;
   networkInput: Record<string, unknown>;
 } {
-  const privatePort = validatedNetworkPort(
-    network.privatePort,
-    "Private Address target port"
-  );
+  const appListeningPorts = normalizedAppListeningPortsForSave(network);
   const platformAddresses = validatedPlatformAddresses(network.publicAddresses);
   const customDomains = validatedCustomDomains(
     network.customDomains,
     platformAddresses,
     options
   );
-  const networkInput: Record<string, unknown> = { privatePort };
+  const networkInput: Record<string, unknown> = { appListeningPorts };
   if (platformAddresses != null && platformAddresses.length > 0) {
     networkInput.platformAddresses = platformAddresses;
   }
@@ -453,24 +478,93 @@ function buildApNetworkInput(
   };
 }
 
+function normalizedAppListeningPortsForSave(
+  network: Pick<ContainerNetwork, "appListeningPorts" | "privatePort">
+): Record<string, unknown>[] {
+  const source =
+    network.appListeningPorts == null || network.appListeningPorts.length === 0
+      ? [{ port: network.privatePort }]
+      : network.appListeningPorts;
+  const seen = new Set<number>();
+  return source.map((row) => {
+    const port = validatedNetworkPort(row.port, "App Listening Port");
+    if (seen.has(port)) {
+      throw new Error("App Listening Ports must be unique.");
+    }
+    seen.add(port);
+    return { port };
+  });
+}
+
+function portFromUnknown(value: unknown): number | undefined {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 65_535) {
+    return undefined;
+  }
+  return n;
+}
+
+function normalizedAppListeningPortsFromInputNetwork(
+  inputNetwork: Record<string, unknown>
+): Record<string, unknown>[] {
+  const rawPorts = inputNetwork.appListeningPorts;
+  if (Array.isArray(rawPorts) && rawPorts.length > 0) {
+    return rawPorts.map((row) => {
+      const port = validatedNetworkPort(
+        portFromUnknown(asRecord(row)?.port) ?? Number.NaN,
+        "App Listening Port"
+      );
+      return { port };
+    });
+  }
+
+  const legacyPort = portFromUnknown(inputNetwork.privatePort);
+  return legacyPort == null ? [] : [{ port: legacyPort }];
+}
+
+function appListeningPortsForPublicAddressPatch(
+  inputNetwork: Record<string, unknown>,
+  network: ApPublicAddressesSettingsPatch
+): Record<string, unknown>[] | null {
+  if (
+    network.appListeningPorts != null &&
+    network.appListeningPorts.length > 0
+  ) {
+    const nextPorts = normalizedAppListeningPortsForSave({
+      appListeningPorts: network.appListeningPorts,
+      privatePort:
+        network.appListeningPorts[0]?.port ??
+        portFromUnknown(network.privatePort) ??
+        80,
+    });
+    const currentPorts =
+      normalizedAppListeningPortsFromInputNetwork(inputNetwork);
+    return appListeningPortsEqual(currentPorts, nextPorts) ? null : nextPorts;
+  }
+
+  return null;
+}
+
 export function patchOpsForApPrivatePortSettings(
   spec: Record<string, unknown> | undefined,
   network: ApPrivatePortSettingsPatch
 ): K8sJsonPatchOp[] {
-  const privatePort = validatedNetworkPort(
-    network.privatePort,
-    "Private Address target port"
-  );
+  const appListeningPorts = normalizedAppListeningPortsForSave({
+    appListeningPorts: [{ port: network.privatePort }],
+    privatePort: network.privatePort,
+  });
   const input = asRecord(spec?.input);
   const inputNetwork = asRecord(readApInput(spec ?? {}).network);
   const ops =
     inputNetwork == null
-      ? patchOpsForApInput(spec, { network: { privatePort } })
+      ? patchOpsForApInput(spec, { network: { appListeningPorts } })
       : [
           {
-            op: Object.hasOwn(inputNetwork, "privatePort") ? "replace" : "add",
-            path: "/spec/input/network/privatePort",
-            value: privatePort,
+            op: Object.hasOwn(inputNetwork, "appListeningPorts")
+              ? "replace"
+              : "add",
+            path: "/spec/input/network/appListeningPorts",
+            value: appListeningPorts,
           } satisfies K8sJsonPatchOp,
         ];
   removeExistingApInputFields(ops, input, LEGACY_AP_NETWORK_INPUT_FIELDS);
@@ -479,7 +573,7 @@ export function patchOpsForApPrivatePortSettings(
 
 function networkInputFieldPatch(
   network: Record<string, unknown>,
-  field: "customDomains" | "platformAddresses",
+  field: "appListeningPorts" | "customDomains" | "platformAddresses",
   value: Record<string, unknown>[]
 ): K8sJsonPatchOp | null {
   if (value.length === 0) {
@@ -506,10 +600,21 @@ export function patchOpsForApPublicAddressesSettings(
 
   const platformAddresses =
     validatedPlatformAddresses(network.publicAddresses) ?? [];
+  const appListeningPorts = appListeningPortsForPublicAddressPatch(
+    inputNetwork,
+    network
+  );
   const customDomains =
     validatedCustomDomains(network.customDomains, platformAddresses, options) ??
     [];
   const ops = [
+    appListeningPorts == null
+      ? null
+      : networkInputFieldPatch(
+          inputNetwork,
+          "appListeningPorts",
+          appListeningPorts
+        ),
     networkInputFieldPatch(
       inputNetwork,
       "platformAddresses",
@@ -661,14 +766,17 @@ export async function applyApResourceQuotas(
 
 export function patchOpsForApEnvSettings(
   spec: Record<string, unknown> | undefined,
-  env: ContainerEnvVar[]
+  env: ContainerEnvVar[],
+  options: Pick<ApNetworkSettingsPatchOptions, "dbDsnReferenceSources"> = {}
 ): K8sJsonPatchOp[] {
-  const normalized = normalizeContainerEnvRowsForSave(env);
-  const validation = validateContainerEnvRows(normalized);
-  if (!validation.valid) {
-    throw new Error(validation.errors[0]?.message ?? "Invalid environment.");
+  const result = normalizeContainerEnvTokenRowsForSave(
+    env,
+    options.dbDsnReferenceSources
+  );
+  if (!result.valid) {
+    throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
   }
-  const list = buildEnvArray(readApInput(spec ?? {}).env, normalized);
+  const list = buildEnvArray(readApInput(spec ?? {}).env, result.env);
   return patchOpsForApInput(spec, { env: list });
 }
 
@@ -859,12 +967,14 @@ function patchOpsForApSettingsDraftInput(
     next.env !== undefined &&
     !containerEnvRowsEqual([...next.env], [...(previous.env ?? [])])
   ) {
-    const normalized = normalizeContainerEnvRowsForSave([...next.env]);
-    const validation = validateContainerEnvRows(normalized);
-    if (!validation.valid) {
-      throw new Error(validation.errors[0]?.message ?? "Invalid environment.");
+    const result = normalizeContainerEnvTokenRowsForSave(
+      [...next.env],
+      options.dbDsnReferenceSources
+    );
+    if (!result.valid) {
+      throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
-    inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, normalized);
+    inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
   }
 
   if (
@@ -962,10 +1072,15 @@ export function patchOpsForApSettingsDraft(
 export async function applyApEnv(
   kubeconfig: string,
   claim: Record<string, unknown>,
-  env: ContainerEnvVar[]
+  env: ContainerEnvVar[],
+  options: Pick<ApNetworkSettingsPatchOptions, "dbDsnReferenceSources"> = {}
 ): Promise<void> {
   const spec = asRecord(claim.spec);
-  await patchAp(kubeconfig, claim, patchOpsForApEnvSettings(spec, env));
+  await patchAp(
+    kubeconfig,
+    claim,
+    patchOpsForApEnvSettings(spec, env, options)
+  );
 }
 
 export async function applyApNetwork(
@@ -1022,10 +1137,14 @@ export async function applyApSettingsDraft(
   claim: Record<string, unknown>,
   next: ApSettingsDraftPatch,
   previous: ApSettingsDraftPatch,
-  options: Pick<ApNetworkSettingsPatchOptions, "existingCustomDomains"> = {}
+  options: Pick<
+    ApNetworkSettingsPatchOptions,
+    "dbDsnReferenceSources" | "existingCustomDomains"
+  > = {}
 ): Promise<void> {
   const spec = asRecord(claim.spec);
   const patch = patchOpsForApSettingsDraft(spec, next, previous, {
+    dbDsnReferenceSources: options.dbDsnReferenceSources,
     existingCustomDomains: options.existingCustomDomains,
     metadata: asRecord(claim.metadata),
     routingDomain: routingDomainFromKubeconfig(kubeconfig),

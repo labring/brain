@@ -1,6 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
@@ -12,12 +13,15 @@ import {
   ResourceSettingsInset,
   ResourceSettingsSection,
 } from "@workspace/ui/components/resource-settings/resource-settings";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
-import {
-  SingleSelect,
-  type SingleSelectOption,
-} from "@workspace/ui/components/single-select";
 import {
   SlidingToggle,
   type SlidingToggleOption,
@@ -28,22 +32,27 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import {
-  addContainerEnvDbDsnReferenceRow,
   addContainerEnvRow,
-  type ContainerEnvDbDsnFieldOption,
   type ContainerEnvDbDsnReferenceTarget,
   type ContainerEnvDbDsnSource,
   type ContainerEnvDbReferenceField,
   type ContainerEnvRow,
   containerEnvDbDsnFieldOptions,
-  containerEnvDbReferenceRowPatch,
   containerEnvRowsEqual,
   containerEnvRowsModelEqual,
-  deleteContainerEnvRow,
-  normalizeContainerEnvRowsForSave,
-  updateContainerEnvRow,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
+import {
+  buildContainerEnvTokenMenuItems,
+  containerEnvDbSourceKey,
+  containerEnvRowsFromSavedEnv,
+  deleteContainerEnvTokenRow,
+  type EnvTokenDiagnostic,
+  insertContainerEnvTokenText,
+  normalizeContainerEnvTokenRowsForSave,
+  refreshContainerEnvTokenDraft,
+  updateContainerEnvTokenRow,
+} from "@workspace/ui/lib/container-env-tokens";
 import {
   generateCustomDomainBindingId,
   generatePlatformAddressDomainPrefix,
@@ -53,12 +62,14 @@ import {
 import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {
-  Copy,
+  Braces,
+  ChevronDown,
   Cpu,
   MemoryStick,
   Network,
   Plus,
   Save,
+  Settings,
   SquarePen,
   Trash2,
   X,
@@ -115,6 +126,7 @@ export interface ContainerNetworkPublicAddress {
   id?: string;
   platformAddressId?: string;
   port: number;
+  reason?: string;
   status?: string;
   type?: string;
   url?: string;
@@ -133,12 +145,19 @@ export interface ContainerNetworkCustomDomain {
   domain: string;
   id: string;
   platformAddressId: string;
+  reason?: string;
   routing?: ContainerNetworkCustomDomainDetail;
   status?: string;
   targetPort?: number;
 }
 
+export interface ContainerNetworkAppListeningPort {
+  port: number;
+  privateAddress?: string;
+}
+
 export interface ContainerNetwork {
+  appListeningPorts?: ContainerNetworkAppListeningPort[];
   customDomains?: ContainerNetworkCustomDomain[];
   privateAddress?: string;
   privatePort: number;
@@ -523,8 +542,8 @@ export interface ContainerPublicAddressesSettingsDraftCommitMeta {
 
 export interface ContainerSettingsPaneProps {
   /**
-   * One-shot request from a Canvas Connecting Edge to append an Add Reference row
-   * with the dragged DB preselected.
+   * One-shot request from a Canvas Connecting Edge to append an environment row
+   * with the dragged DB selected as transient Reference DB context.
    */
   addDbDsnReferenceIntent?: ContainerSettingsPaneAddDbDsnReferenceIntent | null;
   className?: string;
@@ -646,6 +665,10 @@ function containerNetworksEqual(
   }
   return (
     Math.round(a.privatePort) === Math.round(b.privatePort) &&
+    appListeningPortDraftsEqual(
+      appListeningPortsFromNetwork(a),
+      appListeningPortsFromNetwork(b)
+    ) &&
     publicAddressDraftsEqual(a.publicAddresses, b.publicAddresses) &&
     customDomainDraftsEqual(a.customDomains, b.customDomains)
   );
@@ -722,21 +745,6 @@ function containerSettingsDraftFromValues({
   };
 }
 
-function networkWithDraftPrivatePort(
-  network: ContainerNetwork | undefined,
-  parsedPrivatePort: ReturnType<typeof parsePortNumberDigits> | null
-): ContainerNetwork | undefined {
-  if (network == null) {
-    return undefined;
-  }
-  return {
-    ...network,
-    privatePort: parsedPrivatePort?.ok
-      ? parsedPrivatePort.n
-      : network.privatePort,
-  };
-}
-
 function formatPlainNumber(value: number, maximumFractionDigits: number) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits,
@@ -783,6 +791,139 @@ const DB_REFERENCE_FIELD_LABELS: Record<ContainerEnvDbReferenceField, string> =
     username: "Username",
   };
 
+function validContainerNetworkPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65_535;
+}
+
+function appListeningPortsFromNetwork(
+  network: Pick<
+    ContainerNetwork,
+    "appListeningPorts" | "privateAddress" | "privatePort"
+  >
+): ContainerNetworkAppListeningPort[] {
+  const rows = network.appListeningPorts ?? [];
+  const normalized = rows.flatMap((row) =>
+    validContainerNetworkPort(Math.round(row.port))
+      ? [
+          {
+            ...(row.privateAddress == null || row.privateAddress.trim() === ""
+              ? {}
+              : { privateAddress: row.privateAddress }),
+            port: Math.round(row.port),
+          },
+        ]
+      : []
+  );
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return [
+    {
+      ...(network.privateAddress == null || network.privateAddress.trim() === ""
+        ? {}
+        : { privateAddress: network.privateAddress }),
+      port: Math.round(network.privatePort),
+    },
+  ];
+}
+
+function networkWithAppListeningPorts(
+  network: ContainerNetwork,
+  appListeningPorts: readonly ContainerNetworkAppListeningPort[]
+): ContainerNetwork {
+  const normalized =
+    appListeningPorts.length === 0
+      ? appListeningPortsFromNetwork(network).slice(0, 1)
+      : appListeningPorts.map((row) => ({
+          ...(row.privateAddress == null || row.privateAddress.trim() === ""
+            ? {}
+            : { privateAddress: row.privateAddress }),
+          port: Math.round(row.port),
+        }));
+  const first = normalized[0];
+  return {
+    ...network,
+    ...(first?.privateAddress == null
+      ? {}
+      : { privateAddress: first.privateAddress }),
+    appListeningPorts: [...normalized],
+    privatePort: first?.port ?? network.privatePort,
+  };
+}
+
+function networkWithAppListeningPort(
+  network: ContainerNetwork,
+  port: number
+): ContainerNetwork {
+  const rounded = Math.round(port);
+  const ports = appListeningPortsFromNetwork(network);
+  if (ports.some((row) => Math.round(row.port) === rounded)) {
+    return networkWithAppListeningPorts(network, ports);
+  }
+  return networkWithAppListeningPorts(network, [...ports, { port: rounded }]);
+}
+
+function networkWithoutAppListeningPort(
+  network: ContainerNetwork,
+  port: number
+): ContainerNetwork {
+  const rounded = Math.round(port);
+  const next = appListeningPortsFromNetwork(network).filter(
+    (row) => Math.round(row.port) !== rounded
+  );
+  return networkWithAppListeningPorts(network, next);
+}
+
+function addedAppListeningPorts(
+  previous: ContainerNetwork,
+  next: ContainerNetwork
+): number[] {
+  const previousPorts = new Set(
+    appListeningPortsFromNetwork(previous).map((row) => Math.round(row.port))
+  );
+  return appListeningPortsFromNetwork(next)
+    .map((row) => Math.round(row.port))
+    .filter((port) => !previousPorts.has(port));
+}
+
+function appListeningPortDraftsEqual(
+  a: readonly ContainerNetworkAppListeningPort[] | undefined,
+  b: readonly ContainerNetworkAppListeningPort[] | undefined
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((row, index) => {
+    const other = right[index];
+    return other != null && Math.round(row.port) === Math.round(other.port);
+  });
+}
+
+function publicAddressDefaultPort(network: ContainerNetwork): number {
+  return appListeningPortsFromNetwork(network)[0]?.port ?? 80;
+}
+
+function publicAddressesTargetingPort(
+  network: ContainerNetwork,
+  port: number
+): ContainerNetworkPublicAddress[] {
+  const rounded = Math.round(port);
+  return network.publicAddresses.filter(
+    (address) => Math.round(address.port) === rounded
+  );
+}
+
+function publicAddressDisplayName(address: ContainerNetworkPublicAddress) {
+  return (
+    publicAddressValue(address) ||
+    address.host?.trim() ||
+    address.id?.trim() ||
+    `Port ${address.port}`
+  );
+}
+
 function envDbDsnFieldLabel(field: ContainerEnvDbReferenceField): string {
   return DB_REFERENCE_FIELD_LABELS[field];
 }
@@ -818,6 +959,21 @@ function createEnvDraftKeys(
   return Array.from({ length: count }, () => nextEnvDraftKey(prefix, counter));
 }
 
+function resizeEnvDraftKeys(
+  keys: readonly string[],
+  count: number,
+  prefix: string,
+  counter: { current: number }
+): string[] {
+  if (keys.length === count) {
+    return [...keys];
+  }
+  if (keys.length > count) {
+    return keys.slice(0, count);
+  }
+  return [...keys, ...createEnvDraftKeys(count - keys.length, prefix, counter)];
+}
+
 function ExternalEnvBadge({ className }: { className?: string }) {
   return (
     <Badge className={className} variant="outline">
@@ -835,33 +991,11 @@ function ReferenceEnvBadge({ className }: { className?: string }) {
 }
 
 function dbDsnSourceKey(source: ContainerEnvDbDsnSource): string {
-  return `${source.namespace}/${source.name}`;
-}
-
-function dbDsnRowKey(row: ContainerEnvRow): string {
-  if (row.dbDsn == null) {
-    return "";
-  }
-  return `${row.dbDsn.dbNamespace}/${row.dbDsn.dbName}`;
-}
-
-function sourceFromDbDsnRow(
-  row: ContainerEnvRow,
-  sources: readonly ContainerEnvDbDsnSource[]
-): ContainerEnvDbDsnSource | undefined {
-  const key = dbDsnRowKey(row);
-  return sources.find((source) => dbDsnSourceKey(source) === key);
+  return containerEnvDbSourceKey(source);
 }
 
 function dbDsnSourceHasFields(source: ContainerEnvDbDsnSource): boolean {
   return containerEnvDbDsnFieldOptions(source).length > 0;
-}
-
-function dbDsnSourceLabel(source: ContainerEnvDbDsnSource): string {
-  if (dbDsnSourceHasFields(source)) {
-    return source.name;
-  }
-  return `${source.name} (unavailable)`;
 }
 
 function dbDsnSourceMatchesTarget(
@@ -896,14 +1030,17 @@ function appendDbDsnReferenceIntentRow(
   source: ContainerEnvDbDsnSource,
   intent: ContainerSettingsPaneAddDbDsnReferenceIntent
 ): EnvDraftRow[] {
-  const target = addDbDsnReferenceIntentTarget(intent);
-  const nextRows = addContainerEnvDbDsnReferenceRow(rows, [source], target);
+  const nextRows = addContainerEnvRow(rows);
   if (nextRows.length <= rows.length) {
     return [...nextRows];
   }
   return nextRows.map((row, index) =>
     index === nextRows.length - 1
-      ? { ...row, canvasAddDbDsnReferenceIntentId: intent.id }
+      ? {
+          ...row,
+          canvasAddDbDsnReferenceIntentId: intent.id,
+          referenceDbKey: dbDsnSourceKey(source),
+        }
       : row
   );
 }
@@ -948,12 +1085,31 @@ export function confirmedAddDbDsnReferencesFromEnvDraft(
 
   for (const row of rows) {
     const intentId = (row as EnvDraftRow).canvasAddDbDsnReferenceIntentId;
-    if (intentId == null || intentId === "" || row.dbDsn == null) {
+    if (intentId == null || intentId === "") {
+      continue;
+    }
+    if (row.dbDsn != null) {
+      byIntentId.set(intentId, {
+        dbName: row.dbDsn.dbName,
+        dbNamespace: row.dbDsn.dbNamespace,
+        id: intentId,
+      });
+      continue;
+    }
+    const sourceKey = row.referenceDbKey;
+    const hasMaterializedHelper = rows.some(
+      (candidate) => candidate.helper?.sourceDbKey === sourceKey
+    );
+    if (sourceKey == null || !hasMaterializedHelper) {
+      continue;
+    }
+    const slashIndex = sourceKey.indexOf("/");
+    if (slashIndex <= 0 || slashIndex >= sourceKey.length - 1) {
       continue;
     }
     byIntentId.set(intentId, {
-      dbName: row.dbDsn.dbName,
-      dbNamespace: row.dbDsn.dbNamespace,
+      dbName: sourceKey.slice(slashIndex + 1),
+      dbNamespace: sourceKey.slice(0, slashIndex),
       id: intentId,
     });
   }
@@ -1010,9 +1166,19 @@ interface EditableEnvRowsProps {
   envDraft: ContainerEnvVar[];
   envErrorsByIndex: ReadonlyMap<number, string>;
   envRowKeys: readonly string[];
+  envTokenDiagnostics: readonly EnvTokenDiagnostic[];
   envValidation: ReturnType<typeof validateContainerEnvRows>;
   onDeleteRow: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
+  rows: ContainerEnvVar[];
+}
+
+interface EditableEnvNameControlProps {
+  dbDsnReferenceSources: ContainerEnvDbDsnSource[];
+  error?: string;
+  index: number;
+  onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
+  row: ContainerEnvVar;
 }
 
 interface EditableEnvValueControlProps {
@@ -1020,6 +1186,76 @@ interface EditableEnvValueControlProps {
   index: number;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   row: ContainerEnvVar;
+  rows: ContainerEnvVar[];
+}
+
+function EditableEnvNameControl({
+  dbDsnReferenceSources,
+  error,
+  index,
+  onUpdateRow,
+  row,
+}: EditableEnvNameControlProps) {
+  const referenceSources = dbDsnReferenceSources.filter(dbDsnSourceHasFields);
+  const canAddReference = referenceSources.length > 0;
+  const input = (
+    <AppInput
+      aria-invalid={error != null}
+      aria-label="Environment variable name"
+      className={
+        canAddReference
+          ? "border-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+          : undefined
+      }
+      onChange={(event) =>
+        onUpdateRow(index, {
+          name: event.target.value,
+        })
+      }
+      placeholder="Name"
+      value={row.name}
+      variant={canAddReference ? "bare" : undefined}
+    />
+  );
+
+  if (!canAddReference) {
+    return input;
+  }
+
+  return (
+    <div className="flex h-9 min-w-0 items-center rounded-md border border-input bg-transparent focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50">
+      <div className="min-w-0 flex-1">{input}</div>
+      <Select
+        onValueChange={(value) => {
+          onUpdateRow(index, { referenceDbKey: value });
+        }}
+        value={row.referenceDbKey}
+      >
+        <SelectTrigger
+          aria-label="Reference DB"
+          className="mr-1 h-7 w-auto shrink-0 gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
+          data-slot="container-env-reference-trigger"
+          indicator={false}
+          variant="ghost"
+        >
+          <ChevronDown aria-hidden className="size-4" />
+          <SelectValue placeholder="Reference DB" />
+        </SelectTrigger>
+        <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
+          {referenceSources.map((source) => (
+            <SelectItem
+              className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
+              indicator={false}
+              key={dbDsnSourceKey(source)}
+              value={dbDsnSourceKey(source)}
+            >
+              {source.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }
 
 function EditableEnvValueControl({
@@ -1027,7 +1263,9 @@ function EditableEnvValueControl({
   index,
   onUpdateRow,
   row,
+  rows,
 }: EditableEnvValueControlProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   if (row.valueSource === "valueFrom") {
     return (
       <div className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-input bg-transparent px-3 text-foreground text-sm leading-5">
@@ -1037,70 +1275,74 @@ function EditableEnvValueControl({
     );
   }
 
-  if (row.valueSource === "dbDsn" && row.dbDsn != null) {
-    const selectedSource = sourceFromDbDsnRow(row, dbDsnReferenceSources);
-    const selectedFields = containerEnvDbDsnFieldOptions(selectedSource);
-    const sourceOptions: SingleSelectOption[] = dbDsnReferenceSources.map(
-      (source) => ({
-        disabled: !dbDsnSourceHasFields(source),
-        label: dbDsnSourceLabel(source),
-        value: dbDsnSourceKey(source),
-      })
-    );
-    const fieldOptions: SingleSelectOption[] = selectedFields.map((field) => ({
-      label: field.label,
-      value: field.field,
-    }));
-    const updateReference = (
-      source: ContainerEnvDbDsnSource | undefined,
-      field: ContainerEnvDbDsnFieldOption | undefined
-    ) => {
-      if (source === undefined || field === undefined) {
-        return;
-      }
-      onUpdateRow(index, containerEnvDbReferenceRowPatch(source, field));
-    };
-
-    return (
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] gap-2">
-        <SingleSelect
-          aria-label="Project DB"
-          onValueChange={(value) => {
-            const source = dbDsnReferenceSources.find(
-              (item) => dbDsnSourceKey(item) === value
-            );
-            updateReference(source, containerEnvDbDsnFieldOptions(source)[0]);
-          }}
-          options={sourceOptions}
-          value={dbDsnRowKey(row)}
-        />
-        <SingleSelect
-          aria-label="Project DB field"
-          disabled={selectedFields.length === 0}
-          emptyMessage="No fields available"
-          onValueChange={(value) => {
-            const field = selectedFields.find((item) => item.field === value);
-            updateReference(selectedSource, field);
-          }}
-          options={fieldOptions}
-          value={row.dbDsn.field}
-        />
-      </div>
-    );
-  }
+  const menuItems = buildContainerEnvTokenMenuItems({
+    dbSources: dbDsnReferenceSources,
+    row,
+    rows,
+  });
 
   return (
-    <AppInput
-      aria-label="Environment variable value"
-      onChange={(event) =>
-        onUpdateRow(index, {
-          value: event.target.value,
-          valueSource: "direct",
-        })
-      }
-      placeholder="Value"
-      value={row.value}
-    />
+    <div className="flex h-9 min-w-0 items-center rounded-md border border-input bg-transparent focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50">
+      <AppInput
+        aria-label="Environment variable value"
+        className="border-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+        onChange={(event) =>
+          onUpdateRow(index, {
+            value: event.target.value,
+            valueSource: "direct",
+          })
+        }
+        placeholder="Value"
+        ref={inputRef}
+        value={row.value}
+        variant="bare"
+      />
+      <Select
+        disabled={menuItems.length === 0}
+        onValueChange={(token) => {
+          const nextValue = insertContainerEnvTokenText(
+            row.value,
+            token,
+            inputRef.current?.selectionStart,
+            inputRef.current?.selectionEnd
+          );
+          onUpdateRow(index, {
+            value: nextValue,
+            valueSource: "direct",
+          });
+        }}
+      >
+        <SelectTrigger
+          aria-label="Insert environment reference token"
+          className="mr-1 size-7 shrink-0 rounded-md bg-white/5 p-0 text-muted-foreground hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
+          data-slot="container-env-token-trigger"
+          indicator={false}
+          title="Insert reference token"
+          variant="ghost"
+        >
+          <Braces aria-hidden className="size-4" />
+        </SelectTrigger>
+        <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
+          {menuItems.map((item) => (
+            <SelectItem
+              className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
+              indicator={false}
+              key={`${item.source ?? "env"}-${item.token}`}
+              value={item.token}
+            >
+              <span className="grid min-w-0">
+                <span className="min-w-0 truncate">{item.label}</span>
+                {item.description == null ? null : (
+                  <span className="min-w-0 truncate text-muted-foreground text-xs">
+                    {item.description}
+                  </span>
+                )}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -1110,9 +1352,11 @@ function EditableEnvRows({
   envDraft,
   envErrorsByIndex,
   envRowKeys,
+  envTokenDiagnostics = [],
   envValidation,
   onDeleteRow,
   onUpdateRow,
+  rows,
 }: EditableEnvRowsProps) {
   return (
     <div
@@ -1130,22 +1374,19 @@ function EditableEnvRows({
           return (
             <div className="grid min-w-0 gap-1.5" key={rowKey}>
               <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
-                <AppInput
-                  aria-invalid={error != null}
-                  aria-label="Environment variable name"
-                  onChange={(event) =>
-                    onUpdateRow(index, {
-                      name: event.target.value,
-                    })
-                  }
-                  placeholder="Name"
-                  value={row.name}
+                <EditableEnvNameControl
+                  dbDsnReferenceSources={dbDsnReferenceSources}
+                  error={error}
+                  index={index}
+                  onUpdateRow={onUpdateRow}
+                  row={row}
                 />
                 <EditableEnvValueControl
                   dbDsnReferenceSources={dbDsnReferenceSources}
                   index={index}
                   onUpdateRow={onUpdateRow}
                   row={row}
+                  rows={rows}
                 />
                 <AppIconButton
                   aria-label="Remove environment variable"
@@ -1172,6 +1413,11 @@ function EditableEnvRows({
           Fix environment variable names before saving.
         </p>
       ) : null}
+      {envTokenDiagnostics.length === 0 ? null : (
+        <p className="text-destructive text-xs" role="status">
+          {envTokenDiagnostics[0]?.message}
+        </p>
+      )}
     </div>
   );
 }
@@ -1181,23 +1427,11 @@ interface NetworkSettingsSectionProps {
   onCustomDomainCnameVerify?: ContainerCustomDomainCnameVerifier;
   onNetworkChange?: (network: ContainerNetwork) => void | Promise<void>;
   onNetworkDraftChange?: (network: ContainerNetwork) => void;
-  onPrivatePortDraftChange?: (value: string) => void;
   platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext;
-  privatePortDraft?: string;
   readOnly: boolean;
 }
 
 const PUBLIC_ADDRESS_VISIBLE_COUNT = 3;
-
-function hasNetworkPanelDraftControls({
-  onNetworkDraftChange,
-  onPrivatePortDraftChange,
-}: Pick<
-  NetworkSettingsSectionProps,
-  "onNetworkDraftChange" | "onPrivatePortDraftChange"
->): boolean {
-  return onNetworkDraftChange != null || onPrivatePortDraftChange != null;
-}
 
 function canMutateNetworkDraft({
   onNetworkChange,
@@ -1235,7 +1469,9 @@ function publicAddressHostValue(
 function publicAddressStatusLabel(
   address: ContainerNetworkPublicAddress
 ): string {
-  return address.status?.trim() || "Pending";
+  const status = address.status?.trim() || "Pending";
+  const reason = address.reason?.trim();
+  return reason == null || reason === "" ? status : `${status}: ${reason}`;
 }
 
 function publicAddressStatusDotClasses(
@@ -1275,7 +1511,9 @@ function publicAddressStatusDotClasses(
 }
 
 function customDomainStatusLabel(domain: ContainerNetworkCustomDomain): string {
-  return domain.status?.trim() || "Pending";
+  const status = domain.status?.trim() || "Pending";
+  const reason = domain.reason?.trim();
+  return reason == null || reason === "" ? status : `${status}: ${reason}`;
 }
 
 interface PublicAddressStatusDotProps {
@@ -1462,17 +1700,16 @@ function PublicAddressRow({
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
             {readOnly || onBindCustomDomain == null ? null : (
-              <AppButton
-                aria-label="Bind Custom Domain"
-                className="h-9 min-w-20 rounded-lg bg-white/5 px-4 text-foreground text-sm hover:bg-input"
+              <AppIconButton
+                aria-label="Edit Public Address"
                 disabled={value === ""}
                 onClick={onBindCustomDomain}
                 size="lg"
                 type="button"
-                variant="quiet"
+                variant="secondary"
               >
-                CNAME
-              </AppButton>
+                <Settings aria-hidden />
+              </AppIconButton>
             )}
             {readOnly || onDelete == null ? null : (
               <AppIconButton
@@ -1676,12 +1913,27 @@ export function containerNetworkAfterBindCustomDomain(
     port: number;
   }
 ): ContainerNetwork {
-  return {
+  return containerNetworkAfterEditPublicAddress(network, draft);
+}
+
+export function containerNetworkAfterEditPublicAddress(
+  network: ContainerNetwork,
+  draft: {
+    customDomain?: ContainerNetworkCustomDomain;
+    platformAddress: ContainerNetworkPublicAddress;
+    platformAddressIndex: number;
+    port: number;
+  }
+): ContainerNetwork {
+  const next = {
     ...network,
-    customDomains: [
-      ...(network.customDomains ?? []),
-      { ...draft.customDomain, targetPort: draft.port },
-    ],
+    customDomains:
+      draft.customDomain == null
+        ? network.customDomains
+        : [
+            ...(network.customDomains ?? []),
+            { ...draft.customDomain, targetPort: draft.port },
+          ],
     publicAddresses: network.publicAddresses.map((address, index) =>
       isPublicAddressMutationTarget(
         address,
@@ -1693,6 +1945,7 @@ export function containerNetworkAfterBindCustomDomain(
         : address
     ),
   };
+  return networkWithAppListeningPort(next, draft.port);
 }
 
 async function commitNetworkChange(
@@ -1709,45 +1962,6 @@ async function commitNetworkChange(
   if (options.onNetworkChange != null) {
     await options.onNetworkChange(network);
   }
-}
-
-interface NetworkSectionActionsProps {
-  canSave: boolean;
-  onCancel: () => void;
-  onSave: () => void | Promise<void>;
-  pending: boolean;
-}
-
-function NetworkSectionActions({
-  canSave,
-  onCancel,
-  onSave,
-  pending,
-}: NetworkSectionActionsProps) {
-  return (
-    <div className="flex shrink-0 items-center gap-1">
-      <AppButton
-        className="h-7 px-2 text-xs"
-        disabled={pending}
-        onClick={onCancel}
-        type="button"
-        variant="quiet"
-      >
-        Cancel
-      </AppButton>
-      <AppButton
-        className="h-7 px-2 text-xs"
-        disabled={!canSave}
-        onClick={async () => {
-          await onSave();
-        }}
-        type="button"
-        variant="secondary"
-      >
-        Save
-      </AppButton>
-    </div>
-  );
 }
 
 interface NetworkCardProps {
@@ -1774,6 +1988,230 @@ function NetworkCard({ actions, children, title }: NetworkCardProps) {
       </div>
       <div className="flex min-w-0 flex-col gap-2 px-2.5 pb-3">{children}</div>
     </section>
+  );
+}
+
+interface PrivateAddressRowProps {
+  address: string;
+  affectedPublicAddressCount: number;
+  canDelete: boolean;
+  onDelete?: () => void;
+  port: number;
+  readOnly: boolean;
+  rowKey: string;
+}
+
+function PrivateAddressRow({
+  affectedPublicAddressCount,
+  address,
+  canDelete,
+  onDelete,
+  port,
+  readOnly,
+  rowKey,
+}: PrivateAddressRowProps) {
+  const copyable = address.trim() !== "";
+  const countLabel =
+    affectedPublicAddressCount === 1
+      ? "1 Public Address"
+      : `${affectedPublicAddressCount} Public Addresses`;
+
+  return (
+    <CanvasNode.CopyableRow
+      className={cn(
+        "relative flex min-h-17 min-w-0 items-center justify-between gap-2 rounded-lg bg-white/5 px-2.5 py-2 transition-colors",
+        copyable && "hover:bg-input"
+      )}
+      copyAriaLabel="Copy Private Address"
+      copyable={copyable}
+      copyValue={address}
+      rowKey={rowKey}
+      title={copyable ? address : undefined}
+    >
+      {({ copyable: rowCopyable }) => (
+        <>
+          <div
+            aria-hidden={rowCopyable ? true : undefined}
+            className={cn(
+              "relative z-10 grid min-w-0 flex-1 gap-2",
+              rowCopyable ? "pointer-events-none" : "pointer-events-auto"
+            )}
+          >
+            <div className="flex min-w-0 items-center gap-1.5 text-foreground text-sm leading-5">
+              <span className="min-w-0 truncate">
+                {copyable ? address : "Pending"}
+              </span>
+              <CanvasNode.CopyableRowIndicator className="text-muted-foreground" />
+            </div>
+            <div className="flex min-w-0 items-center gap-2 text-muted-foreground text-sm leading-5">
+              <span className="shrink-0 tabular-nums">{port}</span>
+              <span className="min-w-0 truncate">{countLabel}</span>
+            </div>
+          </div>
+          <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
+            {readOnly || onDelete == null ? null : (
+              <AppIconButton
+                aria-label={`Delete App Listening Port ${port}`}
+                disabled={!canDelete}
+                onClick={onDelete}
+                size="lg"
+                title={
+                  canDelete
+                    ? `Delete App Listening Port ${port}`
+                    : "At least one App Listening Port is required"
+                }
+                type="button"
+                variant="danger"
+              >
+                <Trash2 aria-hidden />
+              </AppIconButton>
+            )}
+          </CanvasNode.CopyableRowControl>
+        </>
+      )}
+    </CanvasNode.CopyableRow>
+  );
+}
+
+interface DeletePortDialogTarget {
+  affectedPublicAddresses: ContainerNetworkPublicAddress[];
+  port: number;
+}
+
+interface DeletePortDialogProps {
+  onConfirm: (port: number) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  target: DeletePortDialogTarget | null;
+}
+
+function DeletePortDialog({
+  onConfirm,
+  onOpenChange,
+  open,
+  target,
+}: DeletePortDialogProps) {
+  if (target == null) {
+    return null;
+  }
+  const visible = target.affectedPublicAddresses.slice(0, 3);
+  const remaining = Math.max(0, target.affectedPublicAddresses.length - 3);
+
+  return (
+    <AppDialog.Root onOpenChange={onOpenChange} open={open}>
+      <AppDialog.Content data-slot="delete-app-listening-port-dialog">
+        <AppDialog.Header>
+          <AppDialog.WarningIcon />
+          <AppDialog.Title>Delete App Listening Port?</AppDialog.Title>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <AppDialog.Description>
+            Public Addresses targeting port {target.port} will be blocked until
+            the port is added back or their target port changes.
+          </AppDialog.Description>
+          {visible.length === 0 ? null : (
+            <div className="grid gap-1 text-muted-foreground text-sm">
+              {visible.map((address) => (
+                <div
+                  className="min-w-0 truncate rounded-md bg-white/5 px-2 py-1"
+                  key={
+                    publicAddressIdValue(address) ||
+                    publicAddressDisplayName(address)
+                  }
+                >
+                  {publicAddressDisplayName(address)}
+                </div>
+              ))}
+              {remaining === 0 ? null : (
+                <div className="px-2 py-1">
+                  +{remaining} more Public{" "}
+                  {remaining === 1 ? "Address" : "Addresses"}
+                </div>
+              )}
+            </div>
+          )}
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel>Cancel</AppDialog.Cancel>
+          <AppDialog.DestructiveAction
+            onClick={() => onConfirm(target.port)}
+            type="button"
+          >
+            Delete Port
+          </AppDialog.DestructiveAction>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
+  );
+}
+
+interface AddAppListeningPortFormProps {
+  existingPorts: readonly ContainerNetworkAppListeningPort[];
+  onCancel: () => void;
+  onSubmit: (port: number) => void;
+}
+
+function AddAppListeningPortForm({
+  existingPorts,
+  onCancel,
+  onSubmit,
+}: AddAppListeningPortFormProps) {
+  const inputId = useId();
+  const errorId = `${inputId}-error`;
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = () => {
+    const parsed = parsePortNumberDigits(draft.trim());
+    if (!parsed.ok) {
+      setError(parsed.message);
+      return;
+    }
+    if (existingPorts.some((row) => Math.round(row.port) === parsed.n)) {
+      setError("App Listening Port already exists.");
+      return;
+    }
+    onSubmit(parsed.n);
+    onCancel();
+  };
+
+  return (
+    <div className="grid min-w-0 gap-3 rounded-lg border border-border border-dashed bg-transparent p-2.5">
+      <AppInputField
+        error={error}
+        errorId={errorId}
+        id={inputId}
+        inputClassName="max-w-32"
+        inputMode="numeric"
+        label="App Listening Port"
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        placeholder="3000"
+        value={draft}
+      />
+      <div className="flex min-w-0 justify-end gap-2">
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          onClick={onCancel}
+          type="button"
+          variant="quiet"
+        >
+          <X aria-hidden data-icon="inline-start" />
+          Cancel
+        </AppButton>
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          onClick={handleSubmit}
+          type="button"
+          variant="quiet"
+        >
+          <Plus aria-hidden data-icon="inline-start" />
+          Add
+        </AppButton>
+      </div>
+    </div>
   );
 }
 
@@ -1828,23 +2266,23 @@ async function verifiedCustomDomainDraft({
   };
 }
 
-interface CnameBindingFormProps {
+interface PublicAddressEditFormProps {
   address: ContainerNetworkPublicAddress;
   onCancel: () => void;
   onSubmit?: (
     address: ContainerNetworkPublicAddress,
     port: number,
-    customDomain: ContainerNetworkCustomDomain
+    customDomain?: ContainerNetworkCustomDomain
   ) => void | Promise<void>;
   verify?: ContainerCustomDomainCnameVerifier;
 }
 
-function CnameBindingForm({
+function PublicAddressEditForm({
   address,
   onCancel,
   onSubmit,
   verify,
-}: CnameBindingFormProps) {
+}: PublicAddressEditFormProps) {
   const domainInputId = useId();
   const portInputId = useId();
   const cnameHostInputId = useId();
@@ -1871,7 +2309,8 @@ function CnameBindingForm({
       return;
     }
     if (normalizedCnameHost === "") {
-      setCnameError("Custom Domain is required.");
+      await onSubmit(address, parsedPort.n);
+      onCancel();
       return;
     }
     if (cnameTarget === "" || platformAddressId === "") {
@@ -1897,6 +2336,7 @@ function CnameBindingForm({
         return;
       }
       await onSubmit(address, parsedPort.n, verified);
+      onCancel();
     } finally {
       setPending(false);
     }
@@ -1928,7 +2368,7 @@ function CnameBindingForm({
         error={cnameError}
         errorId={cnameErrorId}
         id={cnameHostInputId}
-        label="CNAME Host"
+        label="Custom Domain"
         onChange={(event) => {
           setCnameHostDraft(event.target.value);
           setCnameError(null);
@@ -1960,7 +2400,7 @@ function CnameBindingForm({
           type="button"
           variant="quiet"
         >
-          {pending ? "Verifying" : "Bind"}
+          {pending ? "Verifying" : "Save"}
         </AppButton>
       </div>
     </div>
@@ -2119,7 +2559,7 @@ function networkWithAddedPublicAddressDraft(
   network: ContainerNetwork,
   draft: AddPublicAddressDraft
 ): ContainerNetwork {
-  return {
+  const next = {
     ...network,
     customDomains:
       draft.customDomain == null
@@ -2127,6 +2567,7 @@ function networkWithAddedPublicAddressDraft(
         : [...(network.customDomains ?? []), draft.customDomain],
     publicAddresses: [...network.publicAddresses, draft.publicAddress],
   };
+  return networkWithAppListeningPort(next, draft.publicAddress.port);
 }
 
 interface DomainListSectionProps {
@@ -2143,7 +2584,7 @@ interface DomainListSectionProps {
     address: ContainerNetworkPublicAddress,
     index: number,
     port: number,
-    customDomain: ContainerNetworkCustomDomain
+    customDomain?: ContainerNetworkCustomDomain
   ) => void | Promise<void>;
   onCancelAddPublicAddress: () => void;
   onCancelBindAddress: (rowKey: string) => void;
@@ -2237,7 +2678,7 @@ function DomainListSection({
             {visiblePublicAddresses.map((address, index) => {
               const key = publicAddressKey(address, index);
               return expandedCnameRowKeys.has(key) ? (
-                <CnameBindingForm
+                <PublicAddressEditForm
                   address={address}
                   key={key}
                   onCancel={() => onCancelBindAddress(key)}
@@ -2304,27 +2745,18 @@ function NetworkSettingsSection({
   platformAddressDraftContext,
   onNetworkDraftChange,
   onNetworkChange,
-  onPrivatePortDraftChange,
-  privatePortDraft,
   readOnly,
 }: NetworkSettingsSectionProps) {
-  const networkInputId = useId();
-  const [draftPort, setDraftPort] = useState(() => String(network.privatePort));
-  const [addOpen, setAddOpen] = useState(false);
-  const [portError, setPortError] = useState<string | null>(null);
-  const [savePending, setSavePending] = useState(false);
+  const appListeningPorts = appListeningPortsFromNetwork(network);
+  const [addPortOpen, setAddPortOpen] = useState(false);
+  const [addPublicAddressOpen, setAddPublicAddressOpen] = useState(false);
   const [showAllPublicAddresses, setShowAllPublicAddresses] = useState(false);
   const [expandedCnameRowKeys, setExpandedCnameRowKeys] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  const portDraft = privatePortDraft ?? draftPort;
-  const privateAddress = network.privateAddress ?? "";
-  const hasPrivateAddress = privateAddress !== "";
+  const [deletePortTarget, setDeletePortTarget] =
+    useState<DeletePortDialogTarget | null>(null);
   const visibleDomains = visibleDomainRows(network);
-  const usesPanelDraft = hasNetworkPanelDraftControls({
-    onNetworkDraftChange,
-    onPrivatePortDraftChange,
-  });
   const canMutateNetwork = canMutateNetworkDraft({
     onNetworkChange,
     onNetworkDraftChange,
@@ -2335,64 +2767,44 @@ function NetworkSettingsSection({
     : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
 
   useEffect(() => {
-    if (privatePortDraft == null) {
-      setDraftPort(String(network.privatePort));
-    }
-    setPortError(null);
-  }, [network.privatePort, privatePortDraft]);
-
-  useEffect(() => {
     if (visibleDomains.publicAddresses.length <= PUBLIC_ADDRESS_VISIBLE_COUNT) {
       setShowAllPublicAddresses(false);
     }
   }, [visibleDomains.publicAddresses.length]);
 
-  const parsedPort = parsePortNumberDigits(portDraft.trim());
-  const effectivePortError =
-    usesPanelDraft && !parsedPort.ok ? parsedPort.message : portError;
-  const portDirty = portDraft.trim() !== String(network.privatePort);
-  const canSave =
-    !usesPanelDraft &&
-    onNetworkChange != null &&
-    portDirty &&
-    parsedPort.ok &&
-    !savePending;
-
-  const handleCancel = () => {
-    if (onPrivatePortDraftChange == null) {
-      setDraftPort(String(network.privatePort));
-    } else {
-      onPrivatePortDraftChange(String(network.privatePort));
-    }
-    setPortError(null);
-  };
-
-  const handleSave = async () => {
-    if (onNetworkChange == null) {
-      return;
-    }
-    const parsed = parsePortNumberDigits(portDraft.trim());
-    if (!parsed.ok) {
-      setPortError(parsed.message);
-      return;
-    }
-    setSavePending(true);
-    try {
-      await onNetworkChange({ ...network, privatePort: parsed.n });
-    } finally {
-      setSavePending(false);
-    }
-  };
-
-  const handleCopyPrivateAddress = async () => {
-    if (!hasPrivateAddress) {
-      return;
-    }
-    await navigator.clipboard?.writeText(privateAddress);
-  };
-
   const handleCancelAddPublicAddress = () => {
-    setAddOpen(false);
+    setAddPublicAddressOpen(false);
+  };
+
+  const handleAddAppListeningPort = async (port: number) => {
+    await commitNetworkChange(networkWithAppListeningPort(network, port), {
+      onNetworkChange,
+      onNetworkDraftChange,
+    });
+  };
+
+  const commitDeleteAppListeningPort = async (port: number) => {
+    await commitNetworkChange(networkWithoutAppListeningPort(network, port), {
+      onNetworkChange,
+      onNetworkDraftChange,
+    });
+  };
+
+  const handleDeleteAppListeningPort = async (port: number) => {
+    if (appListeningPorts.length <= 1) {
+      return;
+    }
+    const affected = publicAddressesTargetingPort(network, port);
+    if (affected.length > 0) {
+      setDeletePortTarget({ affectedPublicAddresses: affected, port });
+      return;
+    }
+    await commitDeleteAppListeningPort(port);
+  };
+
+  const handleConfirmDeleteAppListeningPort = async (port: number) => {
+    setDeletePortTarget(null);
+    await commitDeleteAppListeningPort(port);
   };
 
   const handleAddPublicAddress = async (
@@ -2437,10 +2849,10 @@ function NetworkSettingsSection({
     address: ContainerNetworkPublicAddress,
     index: number,
     port: number,
-    domain: ContainerNetworkCustomDomain
+    domain?: ContainerNetworkCustomDomain
   ) => {
     await commitNetworkChange(
-      containerNetworkAfterBindCustomDomain(network, {
+      containerNetworkAfterEditPublicAddress(network, {
         customDomain: domain,
         platformAddress: address,
         platformAddressIndex: index,
@@ -2462,59 +2874,55 @@ function NetworkSettingsSection({
 
   return (
     <>
-      <NetworkCard
-        actions={
-          readOnly || usesPanelDraft || !portDirty ? null : (
-            <NetworkSectionActions
-              canSave={canSave}
-              onCancel={handleCancel}
-              onSave={handleSave}
-              pending={savePending}
-            />
-          )
-        }
-        title="Private Address"
-      >
-        <button
-          aria-label="Copy Private Address"
-          className="group flex min-h-11 w-full min-w-0 items-center gap-3 rounded-md bg-white/5 px-2.5 py-2 text-left transition-colors hover:bg-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-default disabled:hover:bg-white/5"
-          disabled={!hasPrivateAddress}
-          onClick={handleCopyPrivateAddress}
-          title="Copy Private Address"
-          type="button"
-        >
-          <div className="min-w-0 flex-1 truncate font-mono text-foreground text-sm leading-5">
-            {hasPrivateAddress ? privateAddress : "Pending"}
-          </div>
-          <Copy
-            aria-hidden
-            className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      <NetworkCard title="Private Addresses">
+        {readOnly ? null : (
+          <AppButton
+            aria-label="Add App Listening Port"
+            className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+            disabled={addPortOpen || !canMutateNetwork}
+            onClick={() => setAddPortOpen(true)}
+            type="button"
+            variant="secondary"
+          >
+            <Plus aria-hidden />
+            Add Port
+          </AppButton>
+        )}
+        {addPortOpen ? (
+          <AddAppListeningPortForm
+            existingPorts={appListeningPorts}
+            onCancel={() => setAddPortOpen(false)}
+            onSubmit={handleAddAppListeningPort}
           />
-        </button>
-
-        <AppInputField
-          disabled={readOnly}
-          error={effectivePortError}
-          id={networkInputId}
-          inputClassName="max-w-32"
-          inputMode="numeric"
-          label="Private Address target port"
-          onChange={(event) => {
-            if (onPrivatePortDraftChange == null) {
-              setDraftPort(event.target.value);
-            } else {
-              onPrivatePortDraftChange(event.target.value);
-            }
-            setPortError(null);
-          }}
-          value={portDraft}
-        />
+        ) : null}
+        <CanvasNode.CopyFeedbackScope>
+          <div className="grid gap-2">
+            {appListeningPorts.map((row) => (
+              <PrivateAddressRow
+                address={row.privateAddress ?? ""}
+                affectedPublicAddressCount={
+                  publicAddressesTargetingPort(network, row.port).length
+                }
+                canDelete={appListeningPorts.length > 1}
+                key={`private-${row.port}`}
+                onDelete={
+                  canMutateNetwork
+                    ? () => handleDeleteAppListeningPort(row.port)
+                    : undefined
+                }
+                port={row.port}
+                readOnly={readOnly}
+                rowKey={`private-${row.port}`}
+              />
+            ))}
+          </div>
+        </CanvasNode.CopyFeedbackScope>
       </NetworkCard>
 
       <DomainListSection
-        addOpen={addOpen}
+        addOpen={addPublicAddressOpen}
         canMutateNetwork={canMutateNetwork}
-        defaultPort={parsedPort.ok ? parsedPort.n : network.privatePort}
+        defaultPort={publicAddressDefaultPort(network)}
         expandedCnameRowKeys={expandedCnameRowKeys}
         onAddPublicAddress={handleAddPublicAddress}
         onBindAddress={handleBindCustomDomain}
@@ -2522,7 +2930,7 @@ function NetworkSettingsSection({
         onCancelBindAddress={handleCancelBindAddress}
         onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
         onDeletePublicAddress={handleDeletePublicAddress}
-        onOpenAddPublicAddress={() => setAddOpen(true)}
+        onOpenAddPublicAddress={() => setAddPublicAddressOpen(true)}
         onOpenBindAddress={handleOpenBindAddress}
         onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
         onUnbindCustomDomain={handleUnbindCustomDomain}
@@ -2532,6 +2940,16 @@ function NetworkSettingsSection({
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
+      />
+      <DeletePortDialog
+        onConfirm={handleConfirmDeleteAppListeningPort}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeletePortTarget(null);
+          }
+        }}
+        open={deletePortTarget != null}
+        target={deletePortTarget}
       />
     </>
   );
@@ -2558,6 +2976,7 @@ export function ContainerPublicAddressesSettingsPane({
   const [draftNetwork, setDraftNetwork] = useState(network);
   const [savePending, setSavePending] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [portNotice, setPortNotice] = useState<string | null>(null);
   const [showAllPublicAddresses, setShowAllPublicAddresses] = useState(false);
   const [expandedCnameRowKeys, setExpandedCnameRowKeys] = useState<
     ReadonlySet<string>
@@ -2693,6 +3112,17 @@ export function ContainerPublicAddressesSettingsPane({
     }
   }, [saveNetworkDraft]);
 
+  const applyPublicAddressDraftNetwork = useCallback(
+    (next: ContainerNetwork) => {
+      const addedPorts = addedAppListeningPorts(networkForRender, next);
+      if (addedPorts.length > 0) {
+        setPortNotice(`Port ${addedPorts[0]} added to Private Addresses.`);
+      }
+      setDraftNetwork(next);
+    },
+    [networkForRender]
+  );
+
   useEffect(() => {
     if (!commitMode || onSettingsDraftLeaveGuardChange == null) {
       return;
@@ -2726,7 +3156,7 @@ export function ContainerPublicAddressesSettingsPane({
     address: PublicAddressDraft,
     customDomain?: ContainerNetworkCustomDomain
   ) => {
-    setDraftNetwork(
+    applyPublicAddressDraftNetwork(
       networkWithAddedPublicAddressDraft(networkForRender, {
         customDomain,
         publicAddress: address,
@@ -2760,10 +3190,10 @@ export function ContainerPublicAddressesSettingsPane({
     address: ContainerNetworkPublicAddress,
     index: number,
     port: number,
-    domain: ContainerNetworkCustomDomain
+    domain?: ContainerNetworkCustomDomain
   ) => {
-    setDraftNetwork(
-      containerNetworkAfterBindCustomDomain(networkForRender, {
+    applyPublicAddressDraftNetwork(
+      containerNetworkAfterEditPublicAddress(networkForRender, {
         customDomain: domain,
         platformAddress: address,
         platformAddressIndex: index,
@@ -2809,6 +3239,11 @@ export function ContainerPublicAddressesSettingsPane({
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
       />
+      {portNotice == null ? null : (
+        <p className="text-muted-foreground text-sm" role="status">
+          {portNotice}
+        </p>
+      )}
       {commitMode ? (
         <ContainerSettingsDraftFooter
           backingResourceChanged={networkBackingState.resourceChanged}
@@ -3309,9 +3744,6 @@ export function ContainerSettingsPane({
   const [draftNetwork, setDraftNetwork] = useState<
     ContainerNetwork | undefined
   >(network);
-  const [networkPrivatePortDraft, setNetworkPrivatePortDraft] = useState(() =>
-    network == null ? "" : String(network.privatePort)
-  );
   const imageInputId = useId();
   const envDraftKeyPrefix = useId();
   const envDraftKeyCounter = useRef(0);
@@ -3320,7 +3752,7 @@ export function ContainerSettingsPane({
       envDraftWithAddReferenceIntent({
         intent: addDbDsnReferenceIntent,
         readOnly,
-        rows: env,
+        rows: containerEnvRowsFromSavedEnv(env, dbDsnReferenceSources),
         sources: dbDsnReferenceSources,
       }),
     [addDbDsnReferenceIntent, dbDsnReferenceSources, env, readOnly]
@@ -3365,9 +3797,6 @@ export function ContainerSettingsPane({
       return;
     }
     setDraftNetwork(network);
-    setNetworkPrivatePortDraft(
-      network == null ? "" : String(network.privatePort)
-    );
   }, [network, settingsCommitMode]);
 
   useEffect(() => {
@@ -3398,11 +3827,12 @@ export function ContainerSettingsPane({
       return;
     }
     syncedEnvRef.current = env;
-    setEnvDraft(env);
+    const nextEnv = containerEnvRowsFromSavedEnv(env, dbDsnReferenceSources);
+    setEnvDraft(nextEnv);
     setEnvDraftKeys(
-      createEnvDraftKeys(env.length, envDraftKeyPrefix, envDraftKeyCounter)
+      createEnvDraftKeys(nextEnv.length, envDraftKeyPrefix, envDraftKeyCounter)
     );
-  }, [env, envDraftKeyPrefix, settingsCommitMode]);
+  }, [dbDsnReferenceSources, env, envDraftKeyPrefix, settingsCommitMode]);
 
   useEffect(() => {
     const intent = addDbDsnReferenceIntent;
@@ -3488,6 +3918,12 @@ export function ContainerSettingsPane({
     () => validateContainerEnvRows(envDraft),
     [envDraft]
   );
+  const envTokenDiagnostics = useMemo(
+    () =>
+      refreshContainerEnvTokenDraft(envDraft, dbDsnReferenceSources)
+        .diagnostics,
+    [dbDsnReferenceSources, envDraft]
+  );
   const envErrorsByIndex = useMemo(() => {
     const byIndex = new Map<number, string>();
     for (const error of envValidation.errors) {
@@ -3498,21 +3934,12 @@ export function ContainerSettingsPane({
     return byIndex;
   }, [envValidation]);
   const envDirty = !containerEnvRowsEqual(envDraft, env);
-  const canSaveEnv = envDirty && envValidation.valid;
-  const parsedNetworkPrivatePort =
-    network == null
-      ? null
-      : parsePortNumberDigits(networkPrivatePortDraft.trim());
-  const networkPrivatePortValid =
-    parsedNetworkPrivatePort == null || parsedNetworkPrivatePort.ok;
+  const canSaveEnv =
+    envDirty && envValidation.valid && envTokenDiagnostics.length === 0;
   const activeDraftNetwork = settingsCommitMode
     ? draftNetwork
     : (draftNetwork ?? network);
-  const settingsDraftNetwork = useMemo(
-    () =>
-      networkWithDraftPrivatePort(activeDraftNetwork, parsedNetworkPrivatePort),
-    [activeDraftNetwork, parsedNetworkPrivatePort]
-  );
+  const settingsDraftNetwork = activeDraftNetwork;
   const committedReplicaStrategy = useMemo(
     () =>
       replicasQuota == null
@@ -3581,21 +4008,22 @@ export function ContainerSettingsPane({
           next.replicas ?? replicasQuota?.value ?? DEFAULT_FIXED_REPLICAS
         )
       );
-      setEnvDraft(next.env.map((row) => ({ ...row })));
+      const nextEnv = containerEnvRowsFromSavedEnv(
+        next.env.map((row) => ({ ...row })),
+        dbDsnReferenceSources
+      );
+      setEnvDraft(nextEnv);
       setEnvDraftKeys(
         createEnvDraftKeys(
-          next.env.length,
+          nextEnv.length,
           envDraftKeyPrefix,
           envDraftKeyCounter
         )
       );
-      syncedEnvRef.current = next.env;
+      syncedEnvRef.current = nextEnv;
       setDraftNetwork(next.network);
-      setNetworkPrivatePortDraft(
-        next.network == null ? "" : String(next.network.privatePort)
-      );
     },
-    [envDraftKeyPrefix, replicasQuota?.value]
+    [dbDsnReferenceSources, envDraftKeyPrefix, replicasQuota?.value]
   );
   useEffect(() => {
     if (!settingsCommitMode) {
@@ -3627,16 +4055,12 @@ export function ContainerSettingsPane({
     settingsBaseDraft,
     settingsDraft
   );
-  const baseNetworkPrivatePort = settingsBaseDraft.network?.privatePort;
-  const networkPrivatePortDirty =
-    baseNetworkPrivatePort != null &&
-    networkPrivatePortDraft.trim() !== String(baseNetworkPrivatePort);
-  const panelDraftDirty = settingsDirty || networkPrivatePortDirty;
+  const panelDraftDirty = settingsDirty;
   const canSaveSettings =
     settingsCommitMode &&
     panelDraftDirty &&
     envValidation.valid &&
-    networkPrivatePortValid &&
+    envTokenDiagnostics.length === 0 &&
     !settingsSavePending;
 
   const cpuSlider = useMemo(() => {
@@ -3890,7 +4314,14 @@ export function ContainerSettingsPane({
     if (!canSaveEnv) {
       return;
     }
-    const normalized = normalizeContainerEnvRowsForSave(envDraft);
+    const result = normalizeContainerEnvTokenRowsForSave(
+      envDraft,
+      dbDsnReferenceSources
+    );
+    if (!result.valid) {
+      return;
+    }
+    const normalized = result.env;
     const confirmedAddDbDsnReferences =
       confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
     onEnvChange(
@@ -3900,19 +4331,22 @@ export function ContainerSettingsPane({
         : { confirmedAddDbDsnReferences }
     );
     setEnvDraft(
-      normalized.map((row, index) => {
-        const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
-        return intentId == null
-          ? row
-          : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
-      })
+      containerEnvRowsFromSavedEnv(normalized, dbDsnReferenceSources).map(
+        (row, index) => {
+          const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
+          return intentId == null
+            ? row
+            : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
+        }
+      )
     );
   };
 
   const handleCancelEnvRows = () => {
-    setEnvDraft(env);
+    const nextEnv = containerEnvRowsFromSavedEnv(env, dbDsnReferenceSources);
+    setEnvDraft(nextEnv);
     setEnvDraftKeys(
-      createEnvDraftKeys(env.length, envDraftKeyPrefix, envDraftKeyCounter)
+      createEnvDraftKeys(nextEnv.length, envDraftKeyPrefix, envDraftKeyCounter)
     );
   };
 
@@ -3924,28 +4358,48 @@ export function ContainerSettingsPane({
     ]);
   };
 
-  const canAddDbDsnReference = dbDsnReferenceSources.some(dbDsnSourceHasFields);
-
-  const handleAddDbDsnReferenceRow = () => {
-    setEnvDraft((rows) =>
-      addContainerEnvDbDsnReferenceRow(rows, dbDsnReferenceSources)
-    );
-    setEnvDraftKeys((keys) => [
-      ...keys,
-      nextEnvDraftKey(envDraftKeyPrefix, envDraftKeyCounter),
-    ]);
-  };
-
   const handleDeleteEnvRow = (index: number) => {
-    setEnvDraft((rows) => deleteContainerEnvRow(rows, index));
-    setEnvDraftKeys((keys) => keys.filter((_, keyIndex) => keyIndex !== index));
+    setEnvDraft((rows) => {
+      const result = deleteContainerEnvTokenRow(rows, index);
+      if (result.diagnostic != null) {
+        return [...rows];
+      }
+      const refreshed = refreshContainerEnvTokenDraft(
+        result.rows,
+        dbDsnReferenceSources
+      ).rows;
+      setEnvDraftKeys((keys) =>
+        resizeEnvDraftKeys(
+          keys.filter((_, keyIndex) => keyIndex !== index),
+          refreshed.length,
+          envDraftKeyPrefix,
+          envDraftKeyCounter
+        )
+      );
+      return refreshed;
+    });
   };
 
   const handleUpdateEnvRow = (
     index: number,
     patch: Partial<ContainerEnvRow>
   ) => {
-    setEnvDraft((rows) => updateContainerEnvRow(rows, index, patch));
+    setEnvDraft((rows) => {
+      const nextRows = updateContainerEnvTokenRow(rows, index, patch);
+      const refreshed = refreshContainerEnvTokenDraft(
+        nextRows,
+        dbDsnReferenceSources
+      ).rows;
+      setEnvDraftKeys((keys) =>
+        resizeEnvDraftKeys(
+          keys,
+          refreshed.length,
+          envDraftKeyPrefix,
+          envDraftKeyCounter
+        )
+      );
+      return refreshed;
+    });
   };
 
   const resetSettingsDraft = useCallback(() => {
@@ -3955,7 +4409,6 @@ export function ContainerSettingsPane({
       saveFailureMessage: null,
     }));
   }, [applySettingsDraftToLocalState, settingsBaseDraft]);
-
   const reloadSettingsDraft = useCallback(() => {
     applySettingsDraftBackingResult(
       reloadSettingsDraftBackingState(settingsBackingState),
@@ -3976,7 +4429,14 @@ export function ContainerSettingsPane({
     if (!canSaveSettings || onSettingsDraftCommit == null) {
       throw new Error("Settings draft cannot be saved yet.");
     }
-    const normalizedEnv = normalizeContainerEnvRowsForSave(envDraft);
+    const result = normalizeContainerEnvTokenRowsForSave(
+      envDraft,
+      dbDsnReferenceSources
+    );
+    if (!result.valid) {
+      throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
+    }
+    const normalizedEnv = result.env;
     const confirmedAddDbDsnReferences =
       confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
     const draft: ContainerSettingsDraft = {
@@ -4001,12 +4461,14 @@ export function ContainerSettingsPane({
         commitSettingsDraftBackingState(current, draft)
       );
       setEnvDraft(
-        normalizedEnv.map((row, index) => {
-          const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
-          return intentId == null
-            ? row
-            : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
-        })
+        containerEnvRowsFromSavedEnv(normalizedEnv, dbDsnReferenceSources).map(
+          (row, index) => {
+            const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
+            return intentId == null
+              ? row
+              : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
+          }
+        )
       );
     } catch (error) {
       setSettingsBackingState((current) =>
@@ -4018,6 +4480,7 @@ export function ContainerSettingsPane({
     }
   }, [
     canSaveSettings,
+    dbDsnReferenceSources,
     envDraft,
     onSettingsDraftCommit,
     settingsBaseDraft,
@@ -4153,9 +4616,11 @@ export function ContainerSettingsPane({
               envDraft={envDraft}
               envErrorsByIndex={envErrorsByIndex}
               envRowKeys={envDraftKeys}
+              envTokenDiagnostics={envTokenDiagnostics}
               envValidation={envValidation}
               onDeleteRow={handleDeleteEnvRow}
               onUpdateRow={handleUpdateEnvRow}
+              rows={envDraft}
             />
           )}
         </div>
@@ -4198,19 +4663,6 @@ export function ContainerSettingsPane({
               <Plus aria-hidden data-icon="inline-start" />
               Add
             </AppButton>
-            {canAddDbDsnReference ? (
-              <AppButton
-                aria-label="Add Project DB reference"
-                className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-                onClick={handleAddDbDsnReferenceRow}
-                size="lg"
-                type="button"
-                variant="quiet"
-              >
-                <Plus aria-hidden data-icon="inline-start" />
-                Add Reference
-              </AppButton>
-            ) : null}
           </div>
         )}
       </ResourceSettingsSection>
@@ -4223,13 +4675,7 @@ export function ContainerSettingsPane({
           onNetworkDraftChange={
             settingsCommitMode ? setDraftNetwork : undefined
           }
-          onPrivatePortDraftChange={
-            settingsCommitMode ? setNetworkPrivatePortDraft : undefined
-          }
           platformAddressDraftContext={networkPlatformAddressDraftContext}
-          privatePortDraft={
-            settingsCommitMode ? networkPrivatePortDraft : undefined
-          }
           readOnly={readOnly}
         />
       )}

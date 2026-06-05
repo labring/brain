@@ -1,6 +1,8 @@
 export interface ContainerEnvRow {
   dbDsn?: ContainerEnvDbDsnReference;
+  helper?: ContainerEnvHelperMetadata;
   name: string;
+  referenceDbKey?: string;
   value: string;
   valueFrom?: unknown;
   valueSource?: "direct" | "valueFrom" | "dbDsn";
@@ -40,6 +42,12 @@ export interface ContainerEnvDbDsnSource {
 export interface ContainerEnvDbDsnReferenceTarget {
   name: string;
   namespace: string;
+}
+
+export interface ContainerEnvHelperMetadata {
+  automatic: boolean;
+  sourceDbKey?: string;
+  sourceField?: ContainerEnvDbReferenceField;
 }
 
 export interface ContainerEnvDbDsnFieldOption {
@@ -270,6 +278,20 @@ function dbDsnReferencesEqual(
   );
 }
 
+function helperMetadataEqual(
+  a: ContainerEnvHelperMetadata | undefined,
+  b: ContainerEnvHelperMetadata | undefined
+): boolean {
+  if (a == null || b == null) {
+    return a == null && b == null;
+  }
+  return (
+    a.automatic === b.automatic &&
+    (a.sourceDbKey ?? "") === (b.sourceDbKey ?? "") &&
+    (a.sourceField ?? "") === (b.sourceField ?? "")
+  );
+}
+
 function rowValueSource(
   row: ContainerEnvRow
 ): NonNullable<ContainerEnvRow["valueSource"]> {
@@ -433,6 +455,8 @@ export function containerEnvRowsModelEqual(
       row.name === other.name &&
       row.value === other.value &&
       rowValueSource(row) === rowValueSource(other) &&
+      (row.referenceDbKey ?? "") === (other.referenceDbKey ?? "") &&
+      helperMetadataEqual(row.helper, other.helper) &&
       valueFromKey(row.valueFrom) === valueFromKey(other.valueFrom) &&
       dbDsnReferencesEqual(row.dbDsn, other.dbDsn)
     );

@@ -17,15 +17,15 @@ Not to be confused with: App Listening Ports (container ports where the applicat
 
 ### App Listening Port
 
-An AP container port where the application accepts traffic for a Private Address or Public Address.
+An AP container port where the application accepts traffic. Each AP has one or more App Listening Ports, identified by their unique port number within the AP. Each App Listening Port has one Private Address and may be targeted by zero or more Public Addresses. Creating a Public Address for a new target port initially adds an App Listening Port for that port, but the App Listening Port may later be removed without deleting the Public Address as long as at least one App Listening Port remains.
 
 ### Private Address
 
-The single cluster-internal URL shown for an AP, targeting one App Listening Port. Once an AP has a private App Listening Port, its Private Address is known and should not be modeled as pending.
+A cluster-internal URL for an AP, derived from one App Listening Port. An AP may have multiple Private Addresses when it exposes multiple App Listening Ports; once an App Listening Port exists, its Private Address is known and should not be modeled as pending.
 
 ### Public Address
 
-An externally reachable URL/domain alias for an AP that targets one App Listening Port.
+An externally reachable URL/domain alias for an AP that declares a target port. It reaches the App Listening Port for that port when one exists, and editing that target port is Public Address editing rather than Custom Domain Binding.
 
 ### Platform Address
 
@@ -41,7 +41,7 @@ A Platform Address whose host and URL have been assigned by the platform and pub
 
 ### Reachable Public Address
 
-A Public Address whose allocated host resolves and successfully routes external traffic to the target App Listening Port. Business-level HTTP errors from the workload do not make the Public Address unreachable; DNS failure, TLS/connectivity failure, or routing to the wrong backend does.
+A Public Address whose allocated host resolves and successfully routes external traffic to the target App Listening Port. Business-level HTTP errors from the workload do not make the Public Address unreachable; a missing target App Listening Port, DNS failure, TLS/connectivity failure, or routing to the wrong backend does.
 
 ### Custom Domain
 
@@ -53,7 +53,7 @@ The public routing boundary within which one Custom Domain can belong to only on
 
 ### AP (Application)
 
-A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, one Private Address, and Platform Address allocation requests.
+A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, Private Addresses, and Platform Address allocation requests.
 
 ### AP Settings
 
@@ -152,6 +152,14 @@ _Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 ### Database Binding
 
 A runtime dependency where an AP is configured to consume one DB's connection credentials.
+
+### Reference DB
+
+A DB Service selected in the AP Environment editor as the source for resolving AP Environment Reference Tokens in one environment row. A Reference DB is editing context, not saved product state by itself.
+
+### AP Environment Reference Token
+
+An editor-only placeholder inside an AP environment value that names another AP environment variable so the user can compose values from runtime environment variables while keeping the value text editable.
 
 ### DB Access
 

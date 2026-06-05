@@ -1,9 +1,13 @@
 import { Input, type InputProps } from "@workspace/ui/components/input";
 import { cn } from "@workspace/ui/lib/utils";
+import { forwardRef } from "react";
 
 type AppInputProps = InputProps;
 
-function AppInput({ className, ...props }: AppInputProps) {
+const AppInput = forwardRef<HTMLInputElement, AppInputProps>(function AppInput(
+  { className, ...props },
+  ref
+) {
   return (
     <Input
       className={cn(
@@ -12,10 +16,11 @@ function AppInput({ className, ...props }: AppInputProps) {
         className
       )}
       data-slot="app-input"
+      ref={ref}
       {...props}
     />
   );
-}
+});
 
 export type { AppInputProps };
 export { AppInput };

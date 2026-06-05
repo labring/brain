@@ -12,3 +12,9 @@ Project DB references are authored through the AP Environment editor and persist
 ## Consequences
 
 The Environment editor must be structured enough to represent direct values and Project DB references. DSN references write selected private or public connection strings as ordinary env values; primitive fields write `valueFrom.secretKeyRef`. Environment variable names are the user's final API and must be unique within the AP.
+
+The editor may offer editor-only value tokens, such as `${{PGPASSWORD}}`, to help users compose environment values from other environment variables. These tokens are not a new AP runtime template language and are not persisted verbatim. Before saving, the editor resolves them into standard AP environment entries: composed values use Kubernetes env expansion syntax such as `$(PGPASSWORD)`, and any DB-backed helper variables required by those tokens are materialized as normal AP env rows.
+
+Token-driven helper variables remain part of the AP environment list because they are real runtime environment variables. They should use DB-provided variable names when possible, such as `PGUSER`, `PGPASSWORD`, `PGHOST`, and `PGPORT`, with conflict handling when those names are already owned by other user-authored rows. Helper variables must not be hidden metadata or a separate binding record.
+
+The editor may keep transient per-row DB context to resolve tokens while the user is editing, but that context is not persisted unless it produces standard AP env values. Canvas AP-DB connections continue to derive from exact env evidence, especially `valueFrom.secretKeyRef` entries that point at DB credential Secrets; token editing does not introduce a separate connection model.
