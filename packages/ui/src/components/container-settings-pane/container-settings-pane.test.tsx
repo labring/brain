@@ -49,6 +49,9 @@ const COPY_PRIVATE_ADDRESS_RE = /aria-label="Copy Private Address"/;
 const DOMAIN_LIST_RE = /Domain List/;
 const NO_PUBLIC_ADDRESSES_RE = /No public addresses yet/;
 const PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api.example.com\//;
+const FIRST_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-a.example.com\//;
+const SECOND_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-b.example.com\//;
+const THIRD_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-c.example.com\//;
 const DRAFT_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/ffyrwq.apps.example.com\//;
 const PUBLIC_ADDRESS_STATUS_RE = /Public Address status: accessible/;
 const CUSTOM_DOMAIN_VALUE_RE = /www\.example\.com/;
@@ -66,6 +69,9 @@ const BIND_CUSTOM_DOMAIN_RE = /aria-label="Bind Custom Domain"/;
 const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
 const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
 const ADD_DOMAIN_LABEL_RE = /Add Domain/;
+const VIEW_ALL_PUBLIC_ADDRESSES_RE = /aria-label="View All Public Addresses"/;
+const PUBLIC_ADDRESSES_COLLAPSED_RE = /aria-expanded="false"/;
+const COLLAPSE_PUBLIC_ADDRESSES_RE = /aria-label="Collapse Public Addresses"/;
 const PRIVATE_PORT_VALUE_RE = /value="8080"/;
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
@@ -220,6 +226,54 @@ test("container settings pane renders editable public address rows", () => {
   assert.match(html, ADD_PUBLIC_ADDRESS_RE);
   assert.match(html, ADD_DOMAIN_LABEL_RE);
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
+});
+
+test("container settings pane collapses overflowing public address rows by default", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api-a.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-a.example.com/",
+          },
+          {
+            host: "api-b.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-b.example.com/",
+          },
+          {
+            host: "api-c.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-c.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, FIRST_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, SECOND_PUBLIC_ADDRESS_VALUE_RE);
+  assert.doesNotMatch(html, THIRD_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, VIEW_ALL_PUBLIC_ADDRESSES_RE);
+  assert.match(html, PUBLIC_ADDRESSES_COLLAPSED_RE);
+  assert.doesNotMatch(html, COLLAPSE_PUBLIC_ADDRESSES_RE);
 });
 
 test("container settings pane renders draft-visible Platform Address hosts", () => {

@@ -54,6 +54,8 @@ import {
 import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {
+  ChevronsDown,
+  ChevronsUp,
   Copy,
   Cpu,
   MemoryStick,
@@ -2078,13 +2080,13 @@ interface DomainListSectionProps {
   addOpen: boolean;
   canMutateNetwork: boolean;
   defaultPort: number;
-  hiddenPublicAddressCount: number;
   onAddPublicAddress: (
     address: PublicAddressDraft,
     customDomain?: ContainerNetworkCustomDomain
   ) => void | Promise<void>;
   onBindAddress: (address: ContainerNetworkPublicAddress) => void;
   onCancelAddPublicAddress: () => void;
+  onCollapsePublicAddresses: () => void;
   onDeletePublicAddress: (index: number) => void | Promise<void>;
   onOpenAddPublicAddress: () => void;
   onShowAllPublicAddresses: () => void;
@@ -2093,6 +2095,7 @@ interface DomainListSectionProps {
   ) => void | Promise<void>;
   platformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext;
   readOnly: boolean;
+  showAllPublicAddresses: boolean;
   verify?: ContainerCustomDomainCnameVerifier;
   visibleDomainRows: VisibleDomainRows;
   visiblePublicAddresses: ContainerNetworkPublicAddress[];
@@ -2102,16 +2105,17 @@ function DomainListSection({
   addOpen,
   canMutateNetwork,
   defaultPort,
-  hiddenPublicAddressCount,
   onAddPublicAddress,
   onBindAddress,
   onCancelAddPublicAddress,
+  onCollapsePublicAddresses,
   onDeletePublicAddress,
   onOpenAddPublicAddress,
   onShowAllPublicAddresses,
   onUnbindCustomDomain,
   platformAddressDraftContext,
   readOnly,
+  showAllPublicAddresses,
   verify,
   visibleDomainRows,
   visiblePublicAddresses,
@@ -2119,6 +2123,9 @@ function DomainListSection({
   const noDomains =
     visibleDomainRows.publicAddresses.length === 0 &&
     visibleDomainRows.customDomains.length === 0;
+  const hasPublicAddressOverflow =
+    visibleDomainRows.publicAddresses.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
+  const VisibilityIcon = showAllPublicAddresses ? ChevronsUp : ChevronsDown;
 
   return (
     <NetworkCard title="Domain List">
@@ -2185,15 +2192,35 @@ function DomainListSection({
           </div>
         </CanvasNode.CopyFeedbackScope>
       )}
-      {hiddenPublicAddressCount > 0 ? (
-        <AppButton
-          className="h-4 justify-self-center px-2 text-muted-foreground text-xs hover:text-foreground"
-          onClick={onShowAllPublicAddresses}
+      {hasPublicAddressOverflow ? (
+        <button
+          aria-expanded={showAllPublicAddresses}
+          aria-label={
+            showAllPublicAddresses
+              ? "Collapse Public Addresses"
+              : "View All Public Addresses"
+          }
+          className="group inline-flex h-5 shrink-0 select-none items-center justify-center gap-1.5 justify-self-center whitespace-nowrap rounded-lg border border-transparent bg-transparent bg-clip-padding px-2 font-medium text-muted-foreground text-xs leading-5 outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:border-ring focus-visible:bg-input/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
+          onClick={
+            showAllPublicAddresses
+              ? onCollapsePublicAddresses
+              : onShowAllPublicAddresses
+          }
           type="button"
-          variant="quiet"
         >
-          View All
-        </AppButton>
+          {showAllPublicAddresses ? "Collapse" : "View All"}
+          <VisibilityIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 transition-opacity",
+              showAllPublicAddresses
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+            )}
+            data-icon="inline-end"
+            strokeWidth={2}
+          />
+        </button>
       ) : null}
     </NetworkCard>
   );
@@ -2234,8 +2261,6 @@ function NetworkSettingsSection({
   const visiblePublicAddresses = showAllPublicAddresses
     ? visibleDomains.publicAddresses
     : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
-  const hiddenPublicAddressCount =
-    visibleDomains.publicAddresses.length - visiblePublicAddresses.length;
 
   useEffect(() => {
     if (privatePortDraft == null) {
@@ -2399,16 +2424,17 @@ function NetworkSettingsSection({
         addOpen={addOpen}
         canMutateNetwork={canMutateNetwork}
         defaultPort={parsedPort.ok ? parsedPort.n : network.privatePort}
-        hiddenPublicAddressCount={hiddenPublicAddressCount}
         onAddPublicAddress={handleAddPublicAddress}
         onBindAddress={setCnameAddress}
         onCancelAddPublicAddress={handleCancelAddPublicAddress}
+        onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
         onDeletePublicAddress={handleDeletePublicAddress}
         onOpenAddPublicAddress={() => setAddOpen(true)}
         onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={platformAddressDraftContext}
         readOnly={readOnly}
+        showAllPublicAddresses={showAllPublicAddresses}
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
@@ -2508,8 +2534,6 @@ export function ContainerPublicAddressesSettingsPane({
   const visiblePublicAddresses = showAllPublicAddresses
     ? visibleDomains.publicAddresses
     : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
-  const hiddenPublicAddressCount =
-    visibleDomains.publicAddresses.length - visiblePublicAddresses.length;
   const networkDirty = publicAddressNetworkDirty(
     networkBackingState.base,
     draftNetwork
@@ -2661,16 +2685,17 @@ export function ContainerPublicAddressesSettingsPane({
         addOpen={addOpen}
         canMutateNetwork={canMutateNetwork}
         defaultPort={networkForRender.privatePort}
-        hiddenPublicAddressCount={hiddenPublicAddressCount}
         onAddPublicAddress={handleAddPublicAddress}
         onBindAddress={setCnameAddress}
         onCancelAddPublicAddress={() => setAddOpen(false)}
+        onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
         onDeletePublicAddress={handleDeletePublicAddress}
         onOpenAddPublicAddress={() => setAddOpen(true)}
         onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={networkPlatformAddressDraftContext}
         readOnly={readOnly}
+        showAllPublicAddresses={showAllPublicAddresses}
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
         visiblePublicAddresses={visiblePublicAddresses}
