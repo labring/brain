@@ -225,6 +225,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
               }
             : undefined
         }
+        showImageSection={false}
       />
     </WorkloadSettingsShell>
   );

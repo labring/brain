@@ -576,6 +576,8 @@ export interface ContainerSettingsPaneProps {
    * Fixed AP replica count. Omit to hide the control (e.g. DB workloads).
    */
   replicasQuota?: ContainerSettingsControlledQuotaProps;
+  /** Hide the Image section when image updates belong in a separate deployment surface. */
+  showImageSection?: boolean;
 }
 
 export interface ContainerPublicAddressesSettingsPaneProps {
@@ -3185,6 +3187,7 @@ export function ContainerSettingsPane({
   onSettingsDraftLeaveGuardChange,
   readOnly = false,
   dbDsnReferenceSources = [],
+  showImageSection = true,
 }: ContainerSettingsPaneProps) {
   const [draftImage, setDraftImage] = useState(image);
   const [quotaSavePending, setQuotaSavePending] = useState(false);
@@ -4014,13 +4017,15 @@ export function ContainerSettingsPane({
           </ResourceSettingsInset>
         </ResourceSettingsSection>
 
-        <ImageSettingsSection
-          imageInputId={imageInputId}
-          onBlur={handleImageBlur}
-          onChange={handleImageChange}
-          readOnly={readOnly}
-          value={displayImage}
-        />
+        {showImageSection ? (
+          <ImageSettingsSection
+            imageInputId={imageInputId}
+            onBlur={handleImageBlur}
+            onChange={handleImageChange}
+            readOnly={readOnly}
+            value={displayImage}
+          />
+        ) : null}
       </div>
 
       <ResourceSettingsSection icon={SquarePen} title="Environment Variables">

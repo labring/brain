@@ -149,6 +149,23 @@ test("container settings pane renders Image below CPU / Memory", () => {
   assert.ok(cpuMemoryIndex < imageIndex);
 });
 
+test("container settings pane can hide Image section", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      showImageSection={false}
+    />
+  );
+
+  assert.match(html, CPU_MEMORY_SECTION_RE);
+  assert.doesNotMatch(html, IMAGE_INPUT_RE);
+});
+
 test("container settings pane shows no AP networking surface without Network data", () => {
   const html = renderToStaticMarkup(
     <ContainerSettingsPane
