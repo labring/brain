@@ -21,7 +21,7 @@ An AP container port where the application accepts traffic for a Private Address
 
 ### Private Address
 
-The single cluster-internal URL shown for an AP, targeting one App Listening Port.
+The single cluster-internal URL shown for an AP, targeting one App Listening Port. Once an AP has a private App Listening Port, its Private Address is known and should not be modeled as pending.
 
 ### Public Address
 

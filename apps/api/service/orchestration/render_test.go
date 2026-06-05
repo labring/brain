@@ -331,6 +331,11 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 	if got := network["privatePort"]; got != int32(8080) {
 		t.Fatalf("privatePort = %v, want 8080", got)
 	}
+	status := ap["status"].(map[string]interface{})
+	statusNetwork := status["network"].(map[string]interface{})
+	if got := statusNetwork["privateAddress"]; got != "http://web-service.ns-a.svc.cluster.local:8080" {
+		t.Fatalf("status.network.privateAddress = %v, want generated private address", got)
+	}
 	resourceSpec := spec["resource"].(map[string]interface{})
 	limits := resourceSpec["limits"].(map[string]interface{})
 	if got := limits["cpu"]; got != "500m" {
@@ -339,9 +344,28 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 	if got := limits["memory"]; got != "512Mi" {
 		t.Fatalf("memory limit = %v, want 512Mi", got)
 	}
-	status := ap["status"].(map[string]interface{})
 	if got := status["phase"]; got != "Running" {
 		t.Fatalf("status.phase = %v, want Running", got)
+	}
+}
+
+func TestAPObjectFromDeploymentGeneratesPrivateAddressForDefaultPortAndDNSSafeService(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Image:       "nginx:1.27",
+		Name:        "4ebacadd-d705-493f-9302-c4c54e51fb61-nfxk",
+		Namespace:   "ns-a",
+		PrivatePort: 80,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+
+	ap := APObjectFromDeployment(resources.Deployment)
+	status := ap["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	if got := network["privateAddress"]; got != "http://ap-4ebacadd-d705-493f-9302-c4c54e51fb61-nfxk-service.ns-a.svc.cluster.local" {
+		t.Fatalf("status.network.privateAddress = %v, want generated DNS-safe private address", got)
 	}
 }
 

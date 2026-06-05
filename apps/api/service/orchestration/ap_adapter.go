@@ -178,12 +178,43 @@ func apNetworkStatusFromDesiredNetwork(deployment *appsv1.Deployment, network ma
 	status := map[string]interface{}{}
 	if privatePort, ok := network["privatePort"]; ok {
 		status["privatePort"] = privatePort
+		if address := apPrivateAddress(deployment, privatePort); address != "" {
+			status["privateAddress"] = address
+		}
 	}
 	publicAddresses := apPublicAddressStatusRows(deployment, network)
 	if len(publicAddresses) > 0 {
 		status["publicAddresses"] = publicAddresses
 	}
 	return status
+}
+
+func apPrivateAddress(deployment *appsv1.Deployment, value interface{}) string {
+	privatePort, ok := int32FromInterface(value)
+	if deployment == nil || !ok || privatePort <= 0 || deployment.Namespace == "" || deployment.Name == "" {
+		return ""
+	}
+	serviceName := APServiceName(deployment.Name)
+	if privatePort == 80 {
+		return fmt.Sprintf("http://%s.%s.svc.cluster.local", serviceName, deployment.Namespace)
+	}
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", serviceName, deployment.Namespace, privatePort)
+}
+
+func int32FromInterface(value interface{}) (int32, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int32(typed), int64(typed) == int64(int32(typed))
+	case int32:
+		return typed, true
+	case int64:
+		return int32(typed), typed == int64(int32(typed))
+	case float64:
+		rounded := int32(typed)
+		return rounded, typed == float64(rounded)
+	default:
+		return 0, false
+	}
 }
 
 func apPublicAddressStatusRows(deployment *appsv1.Deployment, network map[string]interface{}) []interface{} {
