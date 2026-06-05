@@ -1,6 +1,8 @@
 export interface ContainerEnvRow {
   dbDsn?: ContainerEnvDbDsnReference;
+  helper?: ContainerEnvHelperMetadata;
   name: string;
+  referenceDbKey?: string;
   value: string;
   valueFrom?: unknown;
   valueSource?: "direct" | "valueFrom" | "dbDsn";
@@ -42,6 +44,12 @@ export interface ContainerEnvDbDsnReferenceTarget {
   namespace: string;
 }
 
+export interface ContainerEnvHelperMetadata {
+  automatic: boolean;
+  sourceDbKey?: string;
+  sourceField?: ContainerEnvDbReferenceField;
+}
+
 export interface ContainerEnvDbDsnFieldOption {
   field: ContainerEnvDbReferenceField;
   label: string;
@@ -74,6 +82,14 @@ export const CONTAINER_ENV_VALUE_FROM_PLACEHOLDER = "(valueFrom)";
 
 const K8S_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const DEFAULT_ROW_NAME = "NEW_VARIABLE";
+const DB_REFERENCE_ROW_NAMES: Record<ContainerEnvDbReferenceField, string> = {
+  host: "DATABASE_HOST",
+  password: "DATABASE_PASSWORD",
+  port: "DATABASE_PORT",
+  private: "DATABASE_URL",
+  public: "DATABASE_PUBLIC_URL",
+  username: "DATABASE_USER",
+};
 const PRIMITIVE_FIELD_LABELS: Record<ContainerEnvDbPrimitiveField, string> = {
   host: "Host",
   password: "Password",
@@ -93,15 +109,32 @@ export const CONTAINER_ENV_DB_PRIMITIVE_FIELD_ORDER: readonly ContainerEnvDbPrim
   ["username", "password", "host", "port"];
 
 function nextDefaultRowName(rows: readonly ContainerEnvRow[]): string {
+  return nextAvailableEnvRowName(rows, DEFAULT_ROW_NAME);
+}
+
+function nextAvailableEnvRowName(
+  rows: readonly ContainerEnvRow[],
+  baseName: string
+): string {
   const used = new Set(rows.map((row) => row.name.trim()).filter(Boolean));
-  if (!used.has(DEFAULT_ROW_NAME)) {
-    return DEFAULT_ROW_NAME;
+  if (!used.has(baseName)) {
+    return baseName;
   }
   let suffix = 2;
-  while (used.has(`${DEFAULT_ROW_NAME}_${suffix}`)) {
+  while (used.has(`${baseName}_${suffix}`)) {
     suffix += 1;
   }
-  return `${DEFAULT_ROW_NAME}_${suffix}`;
+  return `${baseName}_${suffix}`;
+}
+
+export function defaultContainerEnvDbReferenceRowName(
+  rows: readonly ContainerEnvRow[],
+  field: ContainerEnvDbReferenceField | undefined
+): string {
+  return nextAvailableEnvRowName(
+    rows,
+    field == null ? "DATABASE_REFERENCE" : DB_REFERENCE_ROW_NAMES[field]
+  );
 }
 
 function nonEmptyValue(value: string | undefined): string | undefined {
@@ -226,7 +259,7 @@ export function addContainerEnvDbDsnReferenceRow(
     return [
       ...rows,
       {
-        name: nextDefaultRowName(rows),
+        name: defaultContainerEnvDbReferenceRowName(rows, field.field),
         ...containerEnvDbReferenceRowPatch(source, field),
       },
     ];
@@ -267,6 +300,20 @@ function dbDsnReferencesEqual(
     a.dbName === b.dbName &&
     a.dbNamespace === b.dbNamespace &&
     a.field === b.field
+  );
+}
+
+function helperMetadataEqual(
+  a: ContainerEnvHelperMetadata | undefined,
+  b: ContainerEnvHelperMetadata | undefined
+): boolean {
+  if (a == null || b == null) {
+    return a == null && b == null;
+  }
+  return (
+    a.automatic === b.automatic &&
+    (a.sourceDbKey ?? "") === (b.sourceDbKey ?? "") &&
+    (a.sourceField ?? "") === (b.sourceField ?? "")
   );
 }
 
@@ -433,6 +480,8 @@ export function containerEnvRowsModelEqual(
       row.name === other.name &&
       row.value === other.value &&
       rowValueSource(row) === rowValueSource(other) &&
+      (row.referenceDbKey ?? "") === (other.referenceDbKey ?? "") &&
+      helperMetadataEqual(row.helper, other.helper) &&
       valueFromKey(row.valueFrom) === valueFromKey(other.valueFrom) &&
       dbDsnReferencesEqual(row.dbDsn, other.dbDsn)
     );

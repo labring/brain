@@ -6,7 +6,6 @@ import { ChatRoot } from "./chat.context";
 import {
   ChatHeader,
   ChatHeaderClosePane,
-  ChatHeaderExport,
   ChatHeaderNewThread,
   ChatHeaderSetting,
   ChatThreadSelect,
@@ -32,13 +31,11 @@ import { ChatTranscript } from "./chat.transcript";
 export { ChatRoot } from "./chat.context";
 export type {
   ChatHeaderClosePaneProps,
-  ChatHeaderExportProps,
   ChatHeaderNewThreadProps,
   ChatHeaderProps,
   ChatHeaderSettingProps,
   ChatThreadSelectProps,
 } from "./chat.header";
-export { downloadChatMessagesJson } from "./chat.header";
 export type {
   ChatComposerContextIndicatorProps,
   ChatComposerProps,
@@ -97,7 +94,6 @@ export const Chat = Object.assign(ChatShell, {
   ContextIndicator: ChatComposerContextIndicator,
   DatabaseDeployButton: ChatDatabaseDeployButton,
   DockerDeployButton: ChatDockerDeployButton,
-  Export: ChatHeaderExport,
   GithubDeployButton: ChatGithubDeployButton,
   GithubDeployPopover: ChatGithubDeployPopover,
   GithubMark: ChatGithubMark,

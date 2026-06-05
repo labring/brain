@@ -74,9 +74,9 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	if name == "" || namespace == "" || projectID == "" || image == "" {
 		return nil, fmt.Errorf("name, namespace, projectID, and image are required")
 	}
-	port := input.PrivatePort
-	if port <= 0 {
-		port = 80
+	appListeningPorts, err := NormalizeAPAppListeningPortsFromNetworkJSON(input.NetworkJSON, input.PrivatePort)
+	if err != nil {
+		return nil, err
 	}
 	replicaStrategy := normalizeAPReplicaStrategy(input.ReplicaStrategy, input.Replicas)
 	replicas := replicaStrategy.Fixed.Replicas
@@ -151,10 +151,8 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 							ImagePullPolicy: normalizeImagePullPolicy(input.ImagePullPolicy),
 							LivenessProbe:   input.LivenessProbe,
 							Name:            name,
-							Ports: []corev1.ContainerPort{
-								{ContainerPort: port, Name: "http", Protocol: corev1.ProtocolTCP},
-							},
-							ReadinessProbe: input.ReadinessProbe,
+							Ports:           apContainerPorts(appListeningPorts),
+							ReadinessProbe:  input.ReadinessProbe,
 							Resources: corev1.ResourceRequirements{
 								Limits:   limits,
 								Requests: requests,
@@ -178,9 +176,7 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 			Namespace: namespace,
 		},
 		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{Name: "http", Port: port, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt32(port)},
-			},
+			Ports:    apServicePorts(appListeningPorts),
 			Selector: map[string]string{LaunchpadAppLabel: name},
 			Type:     corev1.ServiceTypeClusterIP,
 		},
@@ -194,6 +190,31 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 		resources.HPA = renderAPHPA(name, namespace, projectID, replicaStrategy.Elastic)
 	}
 	return resources, nil
+}
+
+func apContainerPorts(ports []APAppListeningPort) []corev1.ContainerPort {
+	out := make([]corev1.ContainerPort, 0, len(ports))
+	for _, port := range ports {
+		out = append(out, corev1.ContainerPort{
+			ContainerPort: port.Port,
+			Name:          APPortName(port.Port),
+			Protocol:      corev1.ProtocolTCP,
+		})
+	}
+	return out
+}
+
+func apServicePorts(ports []APAppListeningPort) []corev1.ServicePort {
+	out := make([]corev1.ServicePort, 0, len(ports))
+	for _, port := range ports {
+		out = append(out, corev1.ServicePort{
+			Name:       APPortName(port.Port),
+			Port:       port.Port,
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt32(port.Port),
+		})
+	}
+	return out
 }
 
 func APServiceName(apName string) string {
@@ -380,6 +401,7 @@ func renderAPHPA(name string, namespace string, projectID string, elastic *APEla
 
 type APNetworkIngressInput struct {
 	APName            string
+	AppListeningPorts []APAppListeningPort
 	CustomDomains     []APCustomDomainRequest
 	Namespace         string
 	PlatformAddresses []APPlatformAddressRequest
@@ -437,6 +459,7 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 	}
 
 	platformsByID := make(map[string]APPlatformAddressRequest, len(input.PlatformAddresses))
+	targetPorts := APAppListeningPortSet(input.AppListeningPorts)
 	objects := make([]runtime.Object, 0, len(input.PlatformAddresses)+(len(input.CustomDomains)*3))
 	for _, address := range input.PlatformAddresses {
 		id := strings.TrimSpace(address.ID)
@@ -449,6 +472,9 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 		}
 		domainPrefix := APPlatformAddressDomainPrefix(namespace, apName, id, address.DomainPrefix)
 		platformsByID[id] = APPlatformAddressRequest{DomainPrefix: domainPrefix, ID: id, Port: port}
+		if len(targetPorts) > 0 && !targetPorts[port] {
+			continue
+		}
 		host := PlatformAddressHost(namespace, apName, id, domainPrefix, routingDomain)
 		if host == "" {
 			continue
@@ -477,6 +503,9 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 		platformID := strings.TrimSpace(customDomain.PlatformAddressID)
 		platform, ok := platformsByID[platformID]
 		if id == "" || host == "" || !ok {
+			continue
+		}
+		if len(targetPorts) > 0 && !targetPorts[platform.Port] {
 			continue
 		}
 		tlsSecretName := APCustomDomainTLSResourceName(apName, id)

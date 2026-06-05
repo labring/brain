@@ -101,6 +101,8 @@ export function serializeProjectSideSurfaceEntry(
     return null;
   }
   switch (entry.kind) {
+    case "apEnvironmentSettings":
+      return serializeTargetEntry("ap-environment-settings", entry.target);
     case "apEvents":
       return serializeTargetEntry("ap-events", entry.target);
     case "apHistory":
@@ -134,6 +136,10 @@ function parseResourceSideSurfaceEntry(
   parts: readonly string[]
 ): ProjectSideSurfaceEntry | null | undefined {
   switch (parts[0]) {
+    case "ap-environment-settings": {
+      const target = apTargetFromParts(parts.slice(1));
+      return target == null ? null : { kind: "apEnvironmentSettings", target };
+    }
     case "ap-events": {
       const target = apTargetFromParts(parts.slice(1));
       return target == null ? null : { kind: "apEvents", target };

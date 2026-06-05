@@ -12,7 +12,8 @@ import {
 const UNSAVED_DATABASE_CONFIGURATION_RE =
   /Unsaved database configuration changes/;
 const UNSAVED_PUBLIC_ADDRESS_RE = /Unsaved Public Address changes/;
-const SAVE_BUTTON_RE = />Save</;
+const UPDATE_BUTTON_RE = />Update</;
+const UPDATE_DESCRIPTION_RE = /Update these settings/;
 const DISCARD_BUTTON_RE = />Discard</;
 const STAY_BUTTON_RE = />Stay</;
 
@@ -139,7 +140,7 @@ test("dirty database configuration resource switch can stay with draft intact", 
   assert.deepEqual(events, []);
 });
 
-test("settings leave guard dialog offers Save, Discard, and Stay", () => {
+test("settings leave guard dialog offers Update, Discard, and Stay", () => {
   const html = renderToStaticMarkup(
     <SettingsLeaveGuardDialogContent
       action="switch"
@@ -152,7 +153,8 @@ test("settings leave guard dialog offers Save, Discard, and Stay", () => {
   );
 
   assert.match(html, UNSAVED_DATABASE_CONFIGURATION_RE);
-  assert.match(html, SAVE_BUTTON_RE);
+  assert.match(html, UPDATE_DESCRIPTION_RE);
+  assert.match(html, UPDATE_BUTTON_RE);
   assert.match(html, DISCARD_BUTTON_RE);
   assert.match(html, STAY_BUTTON_RE);
 });

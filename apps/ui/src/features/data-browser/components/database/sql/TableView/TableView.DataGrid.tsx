@@ -163,26 +163,29 @@ export function TableViewDataGrid() {
         <thead className="border-border border-b bg-transparent">
           <tr>
             <th
-              className="sticky top-0 left-0 z-50 border-border border-r border-b bg-muted px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
-              style={{ width: 64, minWidth: 64, maxWidth: 64 }}
+              className="sticky top-0 left-0 z-50 overflow-hidden border-border border-r border-b bg-transparent px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
+              style={{ width: 48, minWidth: 48, maxWidth: 48 }}
             >
-              {" "}
+              <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
             </th>
             {visibleColumns.map((col, idx) => (
               <TableViewColumnHeader column={col} index={idx} key={col} />
             ))}
             {hiddenColumnCount > 0 && (
               <th
-                className="sticky top-0 z-40 border-border border-b bg-muted px-4 py-2 text-center font-medium text-muted-foreground text-xs"
+                className="sticky top-0 z-40 overflow-hidden border-border border-b bg-transparent px-4 py-2 text-center font-medium text-muted-foreground text-xs"
                 title={`${hiddenColumnCount} hidden column(s)`}
               >
-                <div className="flex items-center justify-center gap-1">
+                <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
+                <div className="relative z-10 flex items-center justify-center gap-1">
                   <EyeOff className="h-3.5 w-3.5" />
                   <span>{hiddenColumnCount}</span>
                 </div>
               </th>
             )}
-            <th className="sticky top-0 z-40 w-full border-border border-b bg-muted" />
+            <th className="sticky top-0 z-40 w-full overflow-hidden border-border border-b bg-transparent">
+              <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
+            </th>
           </tr>
         </thead>
         <tbody className="bg-transparent">
@@ -215,7 +218,7 @@ export function TableViewDataGrid() {
               >
                 <td
                   className={cn(
-                    "sticky left-0 z-30 border-border border-r border-b bg-neutral-950 px-2 py-2 text-center font-normal text-sm",
+                    "sticky left-0 z-30 border-border border-r border-b bg-[#0C1120] px-2 py-2 text-center font-normal text-sm",
                     row.isInserted && "bg-blue-100/60",
                     row.isDeleted &&
                       "bg-red-100/60 text-muted-foreground line-through",
@@ -236,7 +239,7 @@ export function TableViewDataGrid() {
                       actions.toggleRowSelection(row.rowKey);
                     }
                   }}
-                  style={{ width: 64, minWidth: 64, maxWidth: 64 }}
+                  style={{ width: 48, minWidth: 48, maxWidth: 48 }}
                 >
                   {row.rowNumber ?? ""}
                 </td>

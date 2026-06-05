@@ -35,6 +35,15 @@ export function WorkloadResourcePane({
           onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
         />
       );
+    case WORKLOAD_PANE.environmentSettings:
+      return (
+        <WorkloadSettingsPane
+          focus="environment"
+          node={node}
+          onClose={onClose}
+          onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
+        />
+      );
     case WORKLOAD_PANE.metrics:
       return <WorkloadMetricsPane node={node} onClose={onClose} />;
     case WORKLOAD_PANE.history:

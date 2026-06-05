@@ -75,10 +75,12 @@ function WorkloadSettingsShell({
 }
 
 export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
+  focus = "all",
   node,
   onClose,
   onSettingsLeaveGuardChange,
 }: {
+  focus?: "all" | "environment";
   node: Node;
   onClose: () => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
@@ -205,6 +207,9 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         onAddDbDsnReferenceIntentConsumed={
           data?.onAddDbDsnReferenceIntentConsumed
         }
+        onAddDbDsnReferenceIntentDraftChange={
+          data?.onAddDbDsnReferenceIntentDraftChange
+        }
         onCustomDomainCnameVerify={verifyCustomDomainCnameFromApi}
         onEnvChange={canEditAp ? onEnvChange : ignoreEnv}
         onImageChange={canEditAp ? onImageChange : ignoreImage}
@@ -225,6 +230,8 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
               }
             : undefined
         }
+        sectionFocus={focus}
+        showImageSection={false}
       />
     </WorkloadSettingsShell>
   );

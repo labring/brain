@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  Add01Icon,
-  FileExportIcon,
-  Setting07Icon,
-} from "@hugeicons/core-free-icons";
+import { Add01Icon, Setting07Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AppIconButton,
@@ -13,66 +9,19 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { chatScrollbarThinClass } from "@workspace/ui/lib/chat-scrollbar";
 import { cn } from "@workspace/ui/lib/utils";
-import type { UIMessage } from "ai";
 import { ChevronDown, PanelRightClose } from "lucide-react";
-import { type ComponentProps, useMemo } from "react";
+import { type ComponentProps, useMemo, useState } from "react";
 
 import type { ChatHeaderThreadHistory } from "./chat.types";
 
-/** Safe filename stem for downloads (falls back when empty after sanitizing). */
-function chatExportFileStem(raw: string | undefined, fallback: string): string {
-  const trimmed = raw?.trim() ?? "";
-  const stem =
-    trimmed.length === 0
-      ? fallback
-      : trimmed
-          .slice(0, 120)
-          .replace(/[^\p{L}\p{N}\-_]+/gu, "-")
-          .replace(/^-+|-+$/g, "");
-  return stem.length > 0 ? stem : fallback;
-}
-
-/**
- * Downloads the transcript as formatted JSON (`exportedAt`, `messageCount`, `messages`).
- * Host typically wires this to `ChatHeaderExport` (`Chat.Export`) `onExport`.
- */
-export function downloadChatMessagesJson(
-  messages: readonly UIMessage[],
-  options?: { fileNameStem?: string }
-): void {
-  const fileNameStem = chatExportFileStem(
-    options?.fileNameStem,
-    "chat-transcript"
-  );
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    messageCount: messages.length,
-    messages: [...messages],
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${fileNameStem}.json`;
-    a.rel = "noopener";
-    a.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+const COLLAPSED_THREAD_HISTORY_LIMIT = 5;
 
 function formatThreadDropdownTimestamp(source: string | number | Date): string {
   const d = new Date(source);
@@ -105,35 +54,30 @@ function formatThreadDropdownTimestamp(source: string | number | Date): string {
   );
 }
 
-export type ChatHeaderExportProps = Omit<
-  AppIconButtonProps,
-  "aria-label" | "children" | "onClick" | "size" | "type" | "variant"
-> & {
-  "aria-label"?: string;
-  onExport?: () => void;
-};
+function collapsedThreadHistoryItems(
+  items: ChatHeaderThreadHistory["items"],
+  activeThreadId: string
+) {
+  if (items.length <= COLLAPSED_THREAD_HISTORY_LIMIT) {
+    return items;
+  }
 
-/** Export control; pass `onExport` from the host. */
-export function ChatHeaderExport({
-  "aria-label": ariaLabel = "Export",
-  className,
-  onExport,
-  ...props
-}: ChatHeaderExportProps) {
-  return (
-    <AppIconButton
-      aria-label={ariaLabel}
-      className={className}
-      disabled={onExport === undefined}
-      onClick={() => onExport?.()}
-      size="lg"
-      type="button"
-      variant="quiet"
-      {...props}
-    >
-      <HugeiconsIcon icon={FileExportIcon} size={16} strokeWidth={2} />
-    </AppIconButton>
-  );
+  const firstItems = items.slice(0, COLLAPSED_THREAD_HISTORY_LIMIT);
+  if (firstItems.some((item) => item.id === activeThreadId)) {
+    return firstItems;
+  }
+
+  const activeItem = items.find((item) => item.id === activeThreadId);
+  if (!activeItem) {
+    return firstItems;
+  }
+
+  return [
+    activeItem,
+    ...items
+      .filter((item) => item.id !== activeThreadId)
+      .slice(0, COLLAPSED_THREAD_HISTORY_LIMIT - 1),
+  ];
 }
 
 export type ChatHeaderNewThreadProps = Omit<
@@ -254,11 +198,22 @@ export function ChatThreadSelect({
   threadName,
   ...props
 }: ChatThreadSelectProps) {
-  const historyItems = threadHistory?.items ?? [];
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyItems = threadHistory?.items;
+  const activeThreadId = threadHistory?.activeThreadId;
   const visibleHistoryItems = useMemo(
-    () => historyItems.filter((item) => !item.referential),
+    () => (historyItems ?? []).filter((item) => !item.referential),
     [historyItems]
   );
+  const hasOverflowingHistory =
+    visibleHistoryItems.length > COLLAPSED_THREAD_HISTORY_LIMIT;
+  const renderedHistoryItems = useMemo(() => {
+    if (!activeThreadId || historyExpanded) {
+      return visibleHistoryItems;
+    }
+
+    return collapsedThreadHistoryItems(visibleHistoryItems, activeThreadId);
+  }, [activeThreadId, historyExpanded, visibleHistoryItems]);
   const canPickHistory = threadHistory && visibleHistoryItems.length > 0;
 
   if (!threadHistory) {
@@ -298,11 +253,12 @@ export function ChatThreadSelect({
             />
           ) : null}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-wlg min-w-xs">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Threads</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {canPickHistory ? (
+        <DropdownMenuContent
+          align="start"
+          className="min-w-72 max-w-96 border border-border bg-input/30 p-1 text-foreground shadow-none ring-0 backdrop-blur-xl"
+        >
+          {canPickHistory ? (
+            <>
               <DropdownMenuRadioGroup
                 className={cn(
                   "max-h-[300px] overflow-y-auto",
@@ -316,21 +272,21 @@ export function ChatThreadSelect({
                   }
                 }}
               >
-                {visibleHistoryItems.map((item) => (
+                {renderedHistoryItems.map((item) => (
                   <DropdownMenuRadioItem
-                    className="min-w-0 text-xs/relaxed"
+                    className="min-w-0 cursor-pointer gap-2 rounded-sm py-1.5 pr-2 pl-2 text-popover-foreground text-sm leading-5 focus:bg-input/30 focus:text-popover-foreground focus:**:text-popover-foreground data-[checked]:bg-input data-highlighted:bg-input/30 data-[checked]:text-popover-foreground [&_[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
                     closeOnClick
                     key={item.id}
                     value={item.id}
                   >
-                    <span className="flex min-w-0 flex-1 items-center justify-between gap-3 pr-1">
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
                       <span
-                        className="min-w-0 shrink truncate"
+                        className="min-w-px flex-1 truncate text-left"
                         title={item.title}
                       >
                         {item.title}
                       </span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums">
+                      <span className="shrink-0 text-popover-foreground/60 text-xs tabular-nums leading-4">
                         {item.updatedAtSource == null
                           ? item.updatedAt
                           : formatThreadDropdownTimestamp(
@@ -341,8 +297,22 @@ export function ChatThreadSelect({
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
-            ) : null}
-          </DropdownMenuGroup>
+              {hasOverflowingHistory ? (
+                <button
+                  aria-expanded={historyExpanded}
+                  className="mt-1 flex h-4 w-full cursor-pointer items-center justify-center rounded-sm px-2 text-popover-foreground/70 text-xs leading-none outline-none hover:bg-input/30 hover:text-popover-foreground focus-visible:bg-input/30 focus-visible:text-popover-foreground"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setHistoryExpanded((current) => !current);
+                  }}
+                  type="button"
+                >
+                  {historyExpanded ? "Show less" : "Show all"}
+                </button>
+              ) : null}
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -354,7 +324,7 @@ export type ChatHeaderProps = ComponentProps<"header"> & {
   threadName: string;
 };
 
-/** Single-line header: thread title + host-composed controls (`Chat.Export`, `Chat.NewThread`, …). */
+/** Single-line header: thread title + host-composed controls (`Chat.NewThread`, …). */
 export function ChatHeader({
   className,
   children,
@@ -383,7 +353,6 @@ export function ChatHeader({
 }
 
 ChatThreadSelect.displayName = "Chat.ThreadSelect";
-ChatHeaderExport.displayName = "Chat.Export";
 ChatHeaderNewThread.displayName = "Chat.NewThread";
 ChatHeaderSetting.displayName = "Chat.Setting";
 ChatHeaderClosePane.displayName = "Chat.ClosePane";

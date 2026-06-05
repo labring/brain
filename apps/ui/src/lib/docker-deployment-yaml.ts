@@ -149,12 +149,14 @@ export function renderDockerDeploymentYaml(
       ? { ...(input.network as Record<string, unknown>) }
       : {};
   const appListeningPort = options.settings.appListeningPort;
+  network.privatePort = undefined;
 
   const nextInput: Record<string, unknown> = {
     ...inputWithoutEnv,
     image: options.settings.image.trim(),
     network: {
       ...network,
+      appListeningPorts: [{ port: appListeningPort }],
       platformAddresses: [
         {
           domainPrefix: stablePlatformAddressDomainPrefix({
@@ -172,7 +174,6 @@ export function renderDockerDeploymentYaml(
           port: appListeningPort,
         },
       ],
-      privatePort: appListeningPort,
     },
   };
   const env = directEnvRows(options.settings.env);

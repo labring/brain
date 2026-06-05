@@ -97,6 +97,22 @@ test("project workbench route codec uses DB terminal drawer entries", () => {
   );
 });
 
+test("project workbench route codec preserves AP Environment Settings focus", () => {
+  const parsed = parseProjectWorkbenchRouteState({
+    selected: "ap:default:api",
+    side: "ap-environment-settings:ap:default:api",
+  });
+
+  assert.deepEqual(parsed.surfaces.side, {
+    kind: "apEnvironmentSettings",
+    target: { kind: "AP", name: "api", namespace: "default" },
+  });
+  assert.equal(
+    serializeProjectWorkbenchRouteState(parsed).side,
+    "ap-environment-settings:ap:default:api"
+  );
+});
+
 test("project workbench route codec clears invalid and old query entries safely", () => {
   assert.deepEqual(
     parseProjectWorkbenchRouteState({

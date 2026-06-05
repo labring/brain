@@ -72,6 +72,59 @@ func TestRenderAPResourcesUsesDNSSafeSupportResourceNames(t *testing.T) {
 	}
 }
 
+func TestRenderAPResourcesRendersMultipleAppListeningPorts(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Image:       "nginx:1.27",
+		Name:        "web",
+		Namespace:   "ns-a",
+		NetworkJSON: `{"appListeningPorts":[{"port":80},{"port":3000}]}`,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+
+	containerPorts := resources.Deployment.Spec.Template.Spec.Containers[0].Ports
+	if got := len(containerPorts); got != 2 {
+		t.Fatalf("container port count = %d, want 2", got)
+	}
+	if got := containerPorts[0].Name; got != "port-80" {
+		t.Fatalf("container port[0].name = %q, want port-80", got)
+	}
+	if got := containerPorts[0].ContainerPort; got != 80 {
+		t.Fatalf("container port[0] = %d, want 80", got)
+	}
+	if got := containerPorts[1].Name; got != "port-3000" {
+		t.Fatalf("container port[1].name = %q, want port-3000", got)
+	}
+	if got := containerPorts[1].ContainerPort; got != 3000 {
+		t.Fatalf("container port[1] = %d, want 3000", got)
+	}
+
+	servicePorts := resources.Service.Spec.Ports
+	if got := len(servicePorts); got != 2 {
+		t.Fatalf("service port count = %d, want 2", got)
+	}
+	if got := servicePorts[0].Name; got != "port-80" {
+		t.Fatalf("service port[0].name = %q, want port-80", got)
+	}
+	if got := servicePorts[0].Port; got != 80 {
+		t.Fatalf("service port[0] = %d, want 80", got)
+	}
+	if got := servicePorts[0].TargetPort.IntVal; got != 80 {
+		t.Fatalf("service targetPort[0] = %d, want 80", got)
+	}
+	if got := servicePorts[1].Name; got != "port-3000" {
+		t.Fatalf("service port[1].name = %q, want port-3000", got)
+	}
+	if got := servicePorts[1].Port; got != 3000 {
+		t.Fatalf("service port[1] = %d, want 3000", got)
+	}
+	if got := servicePorts[1].TargetPort.IntVal; got != 3000 {
+		t.Fatalf("service targetPort[1] = %d, want 3000", got)
+	}
+}
+
 func TestRenderAPPublicIngressLabelsAndBackend(t *testing.T) {
 	ingress, err := RenderAPPublicIngress(APPublicIngressInput{
 		APName:       "web",
@@ -206,6 +259,41 @@ func TestRenderAPPublicRoutingResourcesIncludesCustomDomainCertificateResources(
 	}
 }
 
+func TestRenderAPPublicRoutingResourcesSkipsMissingTargetPorts(t *testing.T) {
+	objects, err := RenderAPPublicRoutingResources(APNetworkIngressInput{
+		APName: "api",
+		AppListeningPorts: []APAppListeningPort{
+			{Port: 8080},
+		},
+		CustomDomains: []APCustomDomainRequest{
+			{Domain: "www.example.com", ID: "cd_def456", PlatformAddressID: "pa_def456"},
+		},
+		Namespace: "default",
+		PlatformAddresses: []APPlatformAddressRequest{
+			{DomainPrefix: "cbwfiu", ID: "pa_abc123", Port: 8080},
+			{DomainPrefix: "hndpda", ID: "pa_def456", Port: 9000},
+		},
+		ProjectID:     "project-a",
+		RoutingDomain: "apps.example.com",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPPublicRoutingResources returned error: %v", err)
+	}
+	if got := len(objects); got != 1 {
+		t.Fatalf("object count = %d, want only routable platform ingress", got)
+	}
+	ingress, ok := objects[0].(*networkingv1.Ingress)
+	if !ok {
+		t.Fatalf("objects[0] = %#v, want Ingress", objects[0])
+	}
+	if got := ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number; got != 8080 {
+		t.Fatalf("ingress service port = %d, want 8080", got)
+	}
+	if got := ingress.Spec.Rules[0].Host; got != "cbwfiu.apps.example.com" {
+		t.Fatalf("ingress host = %q, want routable platform host", got)
+	}
+}
+
 func TestAPPublicAddressResourceNameIsShortLowercaseMetadataName(t *testing.T) {
 	name := APPublicAddressResourceName("ap-571800", "pa_jrjjio000000")
 	if !shortIngressNamePattern.MatchString(name) {
@@ -331,10 +419,20 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 	if got := network["privatePort"]; got != int32(8080) {
 		t.Fatalf("privatePort = %v, want 8080", got)
 	}
+	appListeningPorts := network["appListeningPorts"].([]interface{})
+	appListeningPort := appListeningPorts[0].(map[string]interface{})
+	if got := appListeningPort["port"]; got != int32(8080) {
+		t.Fatalf("spec.input.network.appListeningPorts[0].port = %v, want 8080", got)
+	}
 	status := ap["status"].(map[string]interface{})
 	statusNetwork := status["network"].(map[string]interface{})
 	if got := statusNetwork["privateAddress"]; got != "http://web-service.ns-a.svc.cluster.local:8080" {
 		t.Fatalf("status.network.privateAddress = %v, want generated private address", got)
+	}
+	statusPorts := statusNetwork["appListeningPorts"].([]interface{})
+	statusPort := statusPorts[0].(map[string]interface{})
+	if got := statusPort["privateAddress"]; got != "http://web-service.ns-a.svc.cluster.local:8080" {
+		t.Fatalf("status.network.appListeningPorts[0].privateAddress = %v, want generated private address", got)
 	}
 	resourceSpec := spec["resource"].(map[string]interface{})
 	limits := resourceSpec["limits"].(map[string]interface{})

@@ -31,6 +31,7 @@ type ProjectCanvasPendingTargetEntry =
   | ProjectMainSurfaceEntry;
 
 export type ProjectCanvasApResourcePaneKind =
+  | "apEnvironmentSettings"
   | "apEvents"
   | "apHistory"
   | "apMetrics"
@@ -193,6 +194,7 @@ function sideRenderModel({
   }
 
   switch (entry.kind) {
+    case "apEnvironmentSettings":
     case "apEvents":
     case "apHistory":
     case "apMetrics":

@@ -191,14 +191,47 @@ test("container env rows add DB DSN references with private DSN as the default f
         dbNamespace: "default",
         field: "private",
       },
-      name: "NEW_VARIABLE",
+      name: "DATABASE_URL",
       value: "postgres://private",
       valueSource: "dbDsn",
     },
   ]);
   assert.deepEqual(normalizeContainerEnvRowsForSave(rows), [
-    { name: "NEW_VARIABLE", value: "postgres://private" },
+    { name: "DATABASE_URL", value: "postgres://private" },
   ]);
+});
+
+test("container env rows name DB reference rows by selected field", () => {
+  const secretKeyRef = { key: "user", name: "postgres-conn-credential" };
+
+  assert.deepEqual(
+    addContainerEnvDbDsnReferenceRow(
+      [{ name: "DATABASE_USER", value: "manual" }],
+      [
+        {
+          name: "postgres",
+          namespace: "default",
+          primitiveSecretRefs: {
+            username: secretKeyRef,
+          },
+        },
+      ]
+    ),
+    [
+      { name: "DATABASE_USER", value: "manual" },
+      {
+        dbDsn: {
+          dbName: "postgres",
+          dbNamespace: "default",
+          field: "username",
+        },
+        name: "DATABASE_USER_2",
+        value: "(valueFrom)",
+        valueFrom: { secretKeyRef },
+        valueSource: "dbDsn",
+      },
+    ]
+  );
 });
 
 test("container env rows omit unavailable public DSNs and cannot add DBs without DSNs", () => {

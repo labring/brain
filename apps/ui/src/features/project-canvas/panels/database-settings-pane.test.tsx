@@ -22,7 +22,7 @@ const COPY_PUBLIC_CONNECTION_RE = /aria-label="Copy Public Connection"/;
 const PUBLIC_CONNECTION_SWITCH_RE = /aria-label="Public connection"/;
 const DISABLED_RE = /disabled=""/;
 const UPDATE_BUTTON_RE = />Update</;
-const CANCEL_BUTTON_RE = />Cancel</;
+const DISCARD_BUTTON_RE = />Discard</;
 const PROVISIONING_CONNECTION_RE = /Provisioning connection string/;
 const REPLICA_COUNT_RE = /Number of Replicas/;
 const REPLICA_VALUE_RE = />2</;
@@ -93,7 +93,7 @@ test("database settings pane renders shared draft actions", () => {
   const html = renderPane();
 
   assert.match(html, UPDATE_BUTTON_RE);
-  assert.match(html, CANCEL_BUTTON_RE);
+  assert.match(html, DISCARD_BUTTON_RE);
 });
 
 test("database settings pane does not show unsaved changes for region repair only", () => {
@@ -223,5 +223,5 @@ test("read-only database settings pane renders addresses without mutation contro
   assert.match(html, PUBLIC_CONNECTION_SWITCH_RE);
   assert.match(html, DISABLED_RE);
   assert.doesNotMatch(html, UPDATE_BUTTON_RE);
-  assert.doesNotMatch(html, CANCEL_BUTTON_RE);
+  assert.doesNotMatch(html, DISCARD_BUTTON_RE);
 });

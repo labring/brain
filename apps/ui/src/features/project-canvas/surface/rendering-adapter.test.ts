@@ -80,6 +80,25 @@ test("canvas surface adapter resolves AP side panes from surface targets", () =>
   assert.equal(model.side.content.node, apNode);
 });
 
+test("canvas surface adapter resolves AP Environment Settings focus", () => {
+  const model = createProjectCanvasSurfaceRenderModel({
+    nodes: [apNode],
+    surfaceState: {
+      ...emptyState,
+      side: {
+        kind: "apEnvironmentSettings",
+        target: { kind: "AP", name: "api", namespace: "default" },
+      },
+    },
+  });
+
+  if (model.side?.kind !== "resource") {
+    assert.fail("expected resource side render model");
+  }
+  assert.equal(model.side.content.kind, "apEnvironmentSettings");
+  assert.equal(model.side.content.node, apNode);
+});
+
 test("canvas surface adapter resolves DB access and DB terminal independently", () => {
   const model = createProjectCanvasSurfaceRenderModel({
     nodes: [dbNode],

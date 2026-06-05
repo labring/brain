@@ -10,6 +10,8 @@ import type {
 import {
   ContainerSettingsPane,
   confirmedAddDbDsnReferencesFromEnvDraft,
+  containerNetworkAfterBindCustomDomain,
+  containerNetworkAfterEditPublicAddress,
   containerNetworkAfterUnbindCustomDomain,
   containerSettingsDraftIsDirty,
   resourceQuotaReplicaPatchFromDraft,
@@ -19,28 +21,42 @@ const noop = () => {
   /* test noop */
 };
 
+function editorToken(name: string): string {
+  return ["$", "{{", name, "}}"].join("");
+}
+
 const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
 const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
 const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
+const EXTERNAL_REFERENCE_RE = /External reference/;
 const RAW_ENV_EDITOR_RE = /Edit environment variables/;
 const DATABASE_URL_RE = /DATABASE_URL/;
 const ADD_ENV_RE = /aria-label="Add environment variable"/;
-const ADD_REFERENCE_RE = /aria-label="Add Project DB reference"/;
-const ADD_REFERENCE_LABEL_RE = /Add Reference/;
+const REFERENCE_RE = /aria-label="Reference"/;
+const REFERENCE_LABEL_RE = />Reference</;
+const REFERENCE_DB_LABEL_RE = /Reference DB/;
+const INLINE_REFERENCE_TRIGGER_RE =
+  /data-slot="container-env-reference-trigger"/;
+const INLINE_REFERENCE_TRIGGER_RE_GLOBAL =
+  /data-slot="container-env-reference-trigger"/g;
+const TOKEN_TRIGGER_RE = /data-slot="container-env-token-trigger"/;
+const TOKEN_TRIGGER_RE_GLOBAL = /data-slot="container-env-token-trigger"/g;
 const DB_FIELD_SELECT_RE = /aria-label="Project DB field"/;
-const POSTGRES_SELECTED_RE = />postgres</;
-const PASSWORD_FIELD_RE = /Password/;
 const REMOVE_ENV_RE = /aria-label="Remove environment variable"/;
+const REMOVE_ENV_RE_GLOBAL = /aria-label="Remove environment variable"/g;
 const SAVE_ENV_RE = /Save environment/;
-const SAVE_SETTINGS_RE = /aria-label="Save settings"/;
+const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
+const UPDATE_ENVIRONMENT_VARIABLES_RE =
+  /aria-label="Update Environment Variables"/;
+const VALUE_FROM_PLACEHOLDER_RE = /\(valueFrom\)/;
 const CANCEL_ENV_RE = /Cancel environment changes/;
-const CANCEL_SETTINGS_RE = /aria-label="Cancel settings changes"/;
+const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="Container image"/;
-const NEW_VARIABLE_RE = /value="NEW_VARIABLE"/;
-const MYSQL_SELECTED_RE = />mysql</;
+const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
+const PGPASSWORD_RE = /PGPASSWORD/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
-const PRIVATE_ADDRESS_TARGET_RE = /Private Address target port/;
+const ADD_PORT_RE = /Add Port/;
 const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
   /http:\/\/api-service.default.svc:8080/;
 const PRIVATE_ADDRESS_VALUE_RE =
@@ -49,6 +65,10 @@ const COPY_PRIVATE_ADDRESS_RE = /aria-label="Copy Private Address"/;
 const DOMAIN_LIST_RE = /Domain List/;
 const NO_PUBLIC_ADDRESSES_RE = /No public addresses yet/;
 const PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api.example.com\//;
+const FIRST_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-a.example.com\//;
+const SECOND_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-b.example.com\//;
+const THIRD_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-c.example.com\//;
+const FOURTH_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-d.example.com\//;
 const DRAFT_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/ffyrwq.apps.example.com\//;
 const PUBLIC_ADDRESS_STATUS_RE = /Public Address status: accessible/;
 const CUSTOM_DOMAIN_VALUE_RE = /www\.example\.com/;
@@ -62,11 +82,16 @@ const CUSTOM_DOMAIN_DETAIL_MESSAGE_RE = /Certificate request failed/;
 const UNBIND_CUSTOM_DOMAIN_RE = /aria-label="Unbind Custom Domain"/;
 const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
 const CNAME_RE = /CNAME/;
-const BIND_CUSTOM_DOMAIN_RE = /aria-label="Bind Custom Domain"/;
+const EDIT_PUBLIC_ADDRESS_RE = /aria-label="Edit Public Address"/;
 const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
 const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
 const ADD_DOMAIN_LABEL_RE = /Add Domain/;
-const PRIVATE_PORT_VALUE_RE = /value="8080"/;
+const VIEW_ALL_PUBLIC_ADDRESSES_RE = /aria-label="View All Public Addresses"/;
+const PUBLIC_ADDRESSES_COLLAPSED_RE = /aria-expanded="false"/;
+const SHOW_LESS_PUBLIC_ADDRESSES_RE = /aria-label="Show Less Public Addresses"/;
+const INLINE_END_ICON_RE = /data-icon="inline-end"/;
+const CURSOR_POINTER_RE = /cursor-pointer/;
+const PRIVATE_PORT_VALUE_RE = />8080</;
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
 const ELASTIC_SCALING_RE = /Elastic Scaling/;
@@ -141,6 +166,23 @@ test("container settings pane renders Image below CPU / Memory", () => {
   assert.ok(cpuMemoryIndex < imageIndex);
 });
 
+test("container settings pane can hide Image section", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      showImageSection={false}
+    />
+  );
+
+  assert.match(html, CPU_MEMORY_SECTION_RE);
+  assert.doesNotMatch(html, IMAGE_INPUT_RE);
+});
+
 test("container settings pane shows no AP networking surface without Network data", () => {
   const html = renderToStaticMarkup(
     <ContainerSettingsPane
@@ -177,7 +219,7 @@ test("container settings pane renders address settings instead of Ports for priv
 
   assert.match(html, PRIVATE_ADDRESS_RE);
   assert.match(html, PRIVATE_ADDRESS_VALUE_RE);
-  assert.match(html, PRIVATE_ADDRESS_TARGET_RE);
+  assert.match(html, ADD_PORT_RE);
   assert.match(html, PRIVATE_PORT_VALUE_RE);
   assert.match(html, COPY_PRIVATE_ADDRESS_RE);
   assert.match(html, DOMAIN_LIST_RE);
@@ -214,12 +256,70 @@ test("container settings pane renders editable public address rows", () => {
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, PUBLIC_ADDRESS_STATUS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
-  assert.match(html, CNAME_RE);
-  assert.match(html, BIND_CUSTOM_DOMAIN_RE);
+  assert.doesNotMatch(html, CNAME_RE);
+  assert.match(html, EDIT_PUBLIC_ADDRESS_RE);
   assert.match(html, DELETE_PUBLIC_ADDRESS_RE);
   assert.match(html, ADD_PUBLIC_ADDRESS_RE);
   assert.match(html, ADD_DOMAIN_LABEL_RE);
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
+});
+
+test("container settings pane collapses overflowing public address rows by default", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api-a.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-a.example.com/",
+          },
+          {
+            host: "api-b.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-b.example.com/",
+          },
+          {
+            host: "api-c.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-c.example.com/",
+          },
+          {
+            host: "api-d.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-d.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, FIRST_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, SECOND_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, THIRD_PUBLIC_ADDRESS_VALUE_RE);
+  assert.doesNotMatch(html, FOURTH_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, VIEW_ALL_PUBLIC_ADDRESSES_RE);
+  assert.match(html, PUBLIC_ADDRESSES_COLLAPSED_RE);
+  assert.match(html, CURSOR_POINTER_RE);
+  assert.doesNotMatch(html, SHOW_LESS_PUBLIC_ADDRESSES_RE);
+  assert.doesNotMatch(html, INLINE_END_ICON_RE);
 });
 
 test("container settings pane renders draft-visible Platform Address hosts", () => {
@@ -256,7 +356,8 @@ test("container settings pane renders draft-visible Platform Address hosts", () 
 
   assert.match(html, DRAFT_PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
-  assert.match(html, CNAME_RE);
+  assert.doesNotMatch(html, CNAME_RE);
+  assert.match(html, EDIT_PUBLIC_ADDRESS_RE);
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
@@ -298,7 +399,7 @@ test("container settings pane shows Custom Domain rows instead of bound Platform
   assert.match(html, CUSTOM_DOMAIN_VALUE_RE);
   assert.match(html, CUSTOM_DOMAIN_STATUS_RE);
   assert.doesNotMatch(html, PUBLIC_ADDRESS_VALUE_RE);
-  assert.doesNotMatch(html, BIND_CUSTOM_DOMAIN_RE);
+  assert.doesNotMatch(html, EDIT_PUBLIC_ADDRESS_RE);
 });
 
 test("container settings pane renders Custom Domain Binding lifecycle detail states", () => {
@@ -409,6 +510,116 @@ test("container settings pane unbinds Custom Domains without deleting Platform A
     ),
     PUBLIC_ADDRESS_VALUE_RE
   );
+});
+
+test("container settings pane binds Custom Domains and retargets the Platform Address port", () => {
+  const next = containerNetworkAfterBindCustomDomain(
+    {
+      privateAddress: "http://api-service.default.svc:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+    {
+      customDomain: {
+        cnameTarget: "api.example.com",
+        domain: "www.example.com",
+        id: "cd_def456",
+        platformAddressId: "pa_abc123",
+        status: "verified",
+        targetPort: 8080,
+      },
+      platformAddress: {
+        host: "api.example.com",
+        id: "pa_abc123",
+        port: 8080,
+        status: "accessible",
+        type: "platform",
+        url: "https://api.example.com/",
+      },
+      platformAddressIndex: 0,
+      port: 9000,
+    }
+  );
+
+  assert.deepEqual(next.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 9000,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+  assert.deepEqual(next.customDomains, [
+    {
+      cnameTarget: "api.example.com",
+      domain: "www.example.com",
+      id: "cd_def456",
+      platformAddressId: "pa_abc123",
+      status: "verified",
+      targetPort: 9000,
+    },
+  ]);
+});
+
+test("container settings pane edits Public Address ports without binding Custom Domains", () => {
+  const next = containerNetworkAfterEditPublicAddress(
+    {
+      privateAddress: "http://api-service.default.svc:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+    {
+      platformAddress: {
+        host: "api.example.com",
+        id: "pa_abc123",
+        port: 8080,
+        status: "accessible",
+        type: "platform",
+        url: "https://api.example.com/",
+      },
+      platformAddressIndex: 0,
+      port: 9000,
+    }
+  );
+
+  assert.deepEqual(next.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 9000,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+  assert.equal(next.customDomains, undefined);
+  assert.deepEqual(next.appListeningPorts, [
+    {
+      port: 8080,
+      privateAddress: "http://api-service.default.svc:8080",
+    },
+    { port: 9000 },
+  ]);
 });
 
 test("container settings pane renders fixed replica strategy controls", () => {
@@ -682,18 +893,22 @@ test("read-only container settings view cannot mutate environment rows", () => {
   assert.doesNotMatch(html, SAVE_ENV_RE);
 });
 
-test("container settings pane offers DB DSN reference rows only in editable mode", () => {
+test("container settings pane offers DB references from editable environment rows", () => {
   const html = renderPane();
 
-  assert.match(html, ADD_REFERENCE_RE);
-  assert.match(html, ADD_REFERENCE_LABEL_RE);
+  assert.match(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.match(html, TOKEN_TRIGGER_RE);
+  assert.match(html, REFERENCE_RE);
+  assert.match(html, REFERENCE_LABEL_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
 
   const readOnlyHtml = renderPane(true);
 
-  assert.doesNotMatch(readOnlyHtml, ADD_REFERENCE_RE);
+  assert.doesNotMatch(readOnlyHtml, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(readOnlyHtml, REFERENCE_RE);
 });
 
-test("container settings pane renders primitive DB fields and unavailable DB options", () => {
+test("container settings pane renders DB reference rows without old DB field selects", () => {
   const html = renderPane(false, [
     {
       dbDsn: {
@@ -713,9 +928,50 @@ test("container settings pane renders primitive DB fields and unavailable DB opt
     },
   ]);
 
-  assert.match(html, DB_FIELD_SELECT_RE);
-  assert.match(html, POSTGRES_SELECTED_RE);
-  assert.match(html, PASSWORD_FIELD_RE);
+  assert.match(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
+  assert.match(html, REFERENCE_RE);
+  assert.match(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
+  assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
+});
+
+test("container settings pane renders automatic helper rows as managed rows", () => {
+  const html = renderPane(false, [
+    {
+      name: "DATABASE_URL",
+      referenceDbKey: "default/postgres",
+      value: editorToken("PGPASSWORD"),
+    },
+    {
+      dbDsn: {
+        dbName: "postgres",
+        dbNamespace: "default",
+        field: "password",
+      },
+      helper: {
+        automatic: true,
+        sourceDbKey: "default/postgres",
+        sourceField: "password",
+      },
+      name: "PGPASSWORD",
+      value: "(valueFrom)",
+      valueFrom: {
+        secretKeyRef: {
+          key: "passwd",
+          name: "postgres-conn-credential",
+        },
+      },
+      valueSource: "dbDsn",
+    },
+  ]);
+
+  assert.equal(html.match(INLINE_REFERENCE_TRIGGER_RE_GLOBAL)?.length, 1);
+  assert.equal(html.match(TOKEN_TRIGGER_RE_GLOBAL)?.length, 1);
+  assert.equal(html.match(REMOVE_ENV_RE_GLOBAL)?.length, 1);
+  assert.match(html, PGPASSWORD_RE);
+  assert.match(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, VALUE_FROM_PLACEHOLDER_RE);
 });
 
 test("container settings pane opens dragged DB Add Reference intent preselected", () => {
@@ -747,28 +1003,37 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
     />
   );
 
-  assert.match(html, NEW_VARIABLE_RE);
-  assert.match(html, MYSQL_SELECTED_RE);
-  assert.match(html, DB_FIELD_SELECT_RE);
+  assert.match(html, DATABASE_URL_RE);
+  assert.match(html, MYSQL_PRIVATE_DSN_RE);
+  assert.match(html, REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
+  assert.match(html, TOKEN_TRIGGER_RE);
+  assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
   assert.match(html, SAVE_ENV_RE);
 });
 
 test("container settings pane reports confirmed dragged DB reference rows from the saved draft", () => {
-  const draftRow = {
+  const sourceRow = {
     canvasAddDbDsnReferenceIntentId: "drag-1",
-    dbDsn: {
-      dbName: "mysql",
-      dbNamespace: "default",
-      field: "private",
-    },
     name: "DATABASE_URL",
+    referenceDbKey: "default/mysql",
+    value: `mysql://${editorToken("MYSQL_PRIVATE_DSN")}`,
+  } satisfies ContainerEnvVar & { canvasAddDbDsnReferenceIntentId: string };
+  const helperRow = {
+    helper: {
+      automatic: true,
+      sourceDbKey: "default/mysql",
+      sourceField: "private",
+    },
+    name: "MYSQL_PRIVATE_DSN",
     value: "mysql://private",
     valueSource: "dbDsn",
-  } satisfies ContainerEnvVar & { canvasAddDbDsnReferenceIntentId: string };
+  } satisfies ContainerEnvVar;
 
-  assert.deepEqual(confirmedAddDbDsnReferencesFromEnvDraft([draftRow]), [
-    { dbName: "mysql", dbNamespace: "default", id: "drag-1" },
-  ]);
+  assert.deepEqual(
+    confirmedAddDbDsnReferencesFromEnvDraft([sourceRow, helperRow]),
+    [{ dbName: "mysql", dbNamespace: "default", id: "drag-1" }]
+  );
 });
 
 test("container settings draft detects dirty AP settings and restored state", () => {
@@ -844,8 +1109,33 @@ test("container settings pane exposes panel-level draft actions without environm
     />
   );
 
-  assert.match(html, SAVE_SETTINGS_RE);
-  assert.match(html, CANCEL_SETTINGS_RE);
+  assert.match(html, UPDATE_AP_SETTINGS_RE);
+  assert.match(html, DISCARD_AP_SETTINGS_RE);
   assert.doesNotMatch(html, SAVE_ENV_RE);
   assert.doesNotMatch(html, CANCEL_ENV_RE);
+});
+
+test("container settings pane can focus only Environment Variables", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privatePort: 8080,
+        publicAddresses: [],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onSettingsDraftCommit={noop}
+      sectionFocus="environment"
+    />
+  );
+
+  assert.match(html, ENV_ROWS_SLOT_RE);
+  assert.match(html, UPDATE_ENVIRONMENT_VARIABLES_RE);
+  assert.doesNotMatch(html, CPU_MEMORY_SECTION_RE);
+  assert.doesNotMatch(html, IMAGE_INPUT_RE);
+  assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
 });

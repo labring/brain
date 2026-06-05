@@ -17,15 +17,15 @@ Not to be confused with: App Listening Ports (container ports where the applicat
 
 ### App Listening Port
 
-An AP container port where the application accepts traffic for a Private Address or Public Address.
+An AP container port where the application accepts traffic. Each AP has one or more App Listening Ports, identified by their unique port number within the AP. Each App Listening Port has one Private Address and may be targeted by zero or more Public Addresses. Creating a Public Address for a new target port initially adds an App Listening Port for that port, but the App Listening Port may later be removed without deleting the Public Address as long as at least one App Listening Port remains.
 
 ### Private Address
 
-The single cluster-internal URL shown for an AP, targeting one App Listening Port. Once an AP has a private App Listening Port, its Private Address is known and should not be modeled as pending.
+A cluster-internal URL for an AP, derived from one App Listening Port. An AP may have multiple Private Addresses when it exposes multiple App Listening Ports; once an App Listening Port exists, its Private Address is known and should not be modeled as pending.
 
 ### Public Address
 
-An externally reachable URL/domain alias for an AP that targets one App Listening Port.
+An externally reachable URL/domain alias for an AP that declares a target port. It reaches the App Listening Port for that port when one exists, and editing that target port is Public Address editing rather than Custom Domain Binding.
 
 ### Platform Address
 
@@ -41,7 +41,7 @@ A Platform Address whose host and URL have been assigned by the platform and pub
 
 ### Reachable Public Address
 
-A Public Address whose allocated host resolves and successfully routes external traffic to the target App Listening Port. Business-level HTTP errors from the workload do not make the Public Address unreachable; DNS failure, TLS/connectivity failure, or routing to the wrong backend does.
+A Public Address whose allocated host resolves and successfully routes external traffic to the target App Listening Port. Business-level HTTP errors from the workload do not make the Public Address unreachable; a missing target App Listening Port, DNS failure, TLS/connectivity failure, or routing to the wrong backend does.
 
 ### Custom Domain
 
@@ -53,11 +53,17 @@ The public routing boundary within which one Custom Domain can belong to only on
 
 ### AP (Application)
 
-A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, one Private Address, and Platform Address allocation requests.
+A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, Private Addresses, and Platform Address allocation requests.
 
 ### AP Settings
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
+
+### AP Environment Settings Focus
+
+A focused AP Settings entry point that presents only the Environment Variables section for one AP. It is used for AP environment-specific work, including authoring Database Bindings, and is not a separate Database Binding surface.
+
+_Avoid_: Database Binding Pane, AP-DB Binding Pane.
 
 ### AP Deployments Pane
 
@@ -145,11 +151,25 @@ A DB-specific Settings Draft retained as legacy wording.
 
 ### Settings Draft
 
-A local set of pending AP or DB settings changes that is submitted only when the user confirms the panel-level update.
+A local set of pending AP or DB settings changes that is submitted only when the user confirms a settings update. Discarding a Settings Draft abandons the pending changes and keeps the settings surface open.
+
+_Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 
 ### Database Binding
 
 A runtime dependency where an AP is configured to consume one DB's connection credentials.
+
+### Reference
+
+A DB Service selected in the AP Environment editor as the source for resolving AP Environment Reference Tokens in one environment row. A Reference is editing context, not saved product state by itself.
+
+### AP Environment Reference Token
+
+An editor-only placeholder inside an AP environment value that names another AP environment variable so the user can compose values from runtime environment variables while keeping the value text editable.
+
+### AP Environment Helper Variable
+
+A real AP environment variable materialized from an AP Environment Reference Token so the AP can receive the referenced runtime value. A Helper Variable is visible in the AP Environment editor but is managed by the token that requires it, not edited or deleted as an independent Reference row.
 
 ### DB Access
 
@@ -324,5 +344,7 @@ The Project Creation Pane may also open in a source-specific entry path. In a Gi
 ### Custom Domain Binding
 
 The relationship that attaches a Custom Domain to an AP by promoting one Platform Address as the CNAME target. The AP owns the user's binding intent, while EntryPoint owns DNS verification, routing, certificate lifecycle, and binding health.
+
+A Custom Domain Binding targets the App Listening Port selected on the promoted Platform Address. Binding a Custom Domain may also retarget that promoted Platform Address to a different App Listening Port.
 
 Unbinding a Custom Domain removes that relationship and returns the promoted Platform Address to ordinary display; it does not delete the Platform Address or close public access.

@@ -28,6 +28,8 @@ import type { ContainerHistorySnapshotRow } from "./container-history-pane.types
 
 export type { ContainerHistorySnapshotRow } from "./container-history-pane.types";
 
+const HISTORY_VISIBLE_COUNT = 3;
+
 function formatSnapshotTime(iso: string): string {
   const t = iso.trim();
   if (t === "") {
@@ -241,6 +243,11 @@ export function ContainerHistoryPane({
   const [yamlBody, setYamlBody] = useState("");
   const [yamlError, setYamlError] = useState<string | null>(null);
   const [yamlLoading, setYamlLoading] = useState(false);
+  const [showAllVersions, setShowAllVersions] = useState(false);
+  const hasVersionOverflow = rows.length > HISTORY_VISIBLE_COUNT;
+  const visibleRows = showAllVersions
+    ? rows
+    : rows.slice(0, HISTORY_VISIBLE_COUNT);
 
   const handleReviewClose = useCallback((open: boolean) => {
     setReviewOpen(open);
@@ -275,6 +282,12 @@ export function ContainerHistoryPane({
   );
 
   const reviewHashPreview = reviewRow === null ? "" : reviewRow.versionHash;
+
+  useEffect(() => {
+    if (rows.length <= HISTORY_VISIBLE_COUNT) {
+      setShowAllVersions(false);
+    }
+  }, [rows.length]);
 
   useEffect(() => {
     if (!(reviewOpen && reviewRow !== null)) {
@@ -332,10 +345,7 @@ export function ContainerHistoryPane({
 
   return (
     <div
-      className={cn(
-        "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden",
-        className
-      )}
+      className={cn("flex min-h-0 flex-col gap-3 overflow-hidden", className)}
     >
       {showSnapshotExplainerAlert ? (
         <Alert className="shrink-0 border-border">
@@ -354,7 +364,7 @@ export function ContainerHistoryPane({
         </Alert>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border">
+      <div className="flex min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-border">
         <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-border border-b px-2.5">
           <div className="flex min-w-0 items-center gap-1.5">
             <History aria-hidden className="size-4 shrink-0 text-foreground" />
@@ -366,7 +376,9 @@ export function ContainerHistoryPane({
             {formatSnapshotCount(rows.length)}
           </span>
         </div>
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea
+          className={cn("min-h-0", showAllVersions && "max-h-[34rem]")}
+        >
           <ul className="flex min-w-0 flex-col gap-2 p-2.5">
             {rows.length === 0 ? (
               <li className="rounded-lg bg-white/5 px-4 py-8 text-center text-muted-foreground text-sm leading-5">
@@ -374,7 +386,7 @@ export function ContainerHistoryPane({
                 applied.
               </li>
             ) : (
-              rows.map((row) => (
+              visibleRows.map((row) => (
                 <SnapshotHistoryListItem
                   key={row.versionHash}
                   onReviewConfig={handleReviewClick}
@@ -386,6 +398,21 @@ export function ContainerHistoryPane({
             )}
           </ul>
         </ScrollArea>
+        {hasVersionOverflow ? (
+          <button
+            aria-expanded={showAllVersions}
+            aria-label={
+              showAllVersions
+                ? "Show Less Image Versions"
+                : "View All Image Versions"
+            }
+            className="mb-2 inline-flex h-5 shrink-0 cursor-pointer select-none items-center justify-center self-center whitespace-nowrap rounded-lg border border-transparent bg-transparent bg-clip-padding px-2 font-medium text-muted-foreground text-xs leading-5 outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:border-ring focus-visible:bg-input/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
+            onClick={() => setShowAllVersions((current) => !current)}
+            type="button"
+          >
+            {showAllVersions ? "Show Less" : "View All"}
+          </button>
+        ) : null}
       </div>
 
       <AppDialog.Root onOpenChange={handleReviewClose} open={reviewOpen}>

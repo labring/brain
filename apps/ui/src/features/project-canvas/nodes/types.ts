@@ -4,6 +4,7 @@ import type {
 } from "@workspace/ui/components/container-node/container-node";
 import type {
   ContainerSettingsPaneAddDbDsnReferenceIntent,
+  ContainerSettingsPaneAddDbDsnReferenceIntentChange,
   ContainerSettingsPaneConfirmedAddDbDsnReference,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import type {
@@ -45,6 +46,9 @@ export interface CanvasContainerNodeData extends Record<string, unknown> {
   dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
   layout?: CanvasNodeLayoutState;
   onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
+  onAddDbDsnReferenceIntentDraftChange?: (
+    change: ContainerSettingsPaneAddDbDsnReferenceIntentChange
+  ) => void;
   onAddDbDsnReferenceMutationStart?: (
     references: readonly ContainerSettingsPaneConfirmedAddDbDsnReference[]
   ) => (() => void) | undefined;

@@ -12,7 +12,10 @@ import type {
 } from "@workspace/ui/components/canvas/canvas.types";
 import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-node/canvas-node";
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
-import type { ContainerSettingsPaneAddDbDsnReferenceIntent } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
+import type {
+  ContainerSettingsPaneAddDbDsnReferenceIntent,
+  ContainerSettingsPaneAddDbDsnReferenceIntentChange,
+} from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import type {
   DatabaseNodeCopyConnectionHandler,
   DatabaseNodeLifecycleActionKey,
@@ -183,10 +186,12 @@ function dbReferenceIntentDataForContainerNode({
 function createPendingApDbReferenceMutationStartHandler({
   apName,
   apNamespace,
+  onBeforeStart,
   onPendingApDbReferencesStart,
 }: {
   apName: string;
   apNamespace: string;
+  onBeforeStart?: (ids: readonly string[]) => void;
   onPendingApDbReferencesStart:
     | UseProjectCanvasOptions["onPendingApDbReferencesStart"]
     | undefined;
@@ -199,8 +204,9 @@ function createPendingApDbReferenceMutationStartHandler({
     return undefined;
   }
 
-  return (references) =>
-    onPendingApDbReferencesStart(
+  return (references) => {
+    onBeforeStart?.(references.map((reference) => reference.id));
+    return onPendingApDbReferencesStart(
       references.map((reference) => ({
         id: reference.id,
         source: {
@@ -215,6 +221,34 @@ function createPendingApDbReferenceMutationStartHandler({
         },
       }))
     );
+  };
+}
+
+function pendingApDbCanvasReferencesFromIntentChange({
+  apName,
+  apNamespace,
+  change,
+}: {
+  apName: string;
+  apNamespace: string;
+  change: ContainerSettingsPaneAddDbDsnReferenceIntentChange;
+}): PendingApDbCanvasReference[] {
+  if (apName === "" || apNamespace === "") {
+    return [];
+  }
+  return change.references.map((reference) => ({
+    id: reference.id,
+    source: {
+      kind: "AP",
+      name: apName,
+      namespace: apNamespace,
+    },
+    target: {
+      kind: "DB",
+      name: reference.dbName,
+      namespace: reference.dbNamespace,
+    },
+  }));
 }
 
 function canvasNodeSettingsAccess({
@@ -330,6 +364,9 @@ export function useProjectCanvas(
     [options?.kubeconfig, readOnly]
   );
   const addDbDsnReferenceIntentCounter = useRef(0);
+  const pendingApDbReferenceDraftCleanupById = useRef<Map<string, () => void>>(
+    new Map()
+  );
   const connectHandledInGestureRef = useRef(false);
   const connectingFromHandleRef = useRef<ProjectCanvasConnectionHandle | null>(
     null
@@ -448,6 +485,43 @@ export function useProjectCanvas(
       current?.id === id ? null : current
     );
   }, []);
+  const handleAddDbDsnReferenceIntentDraftChange = useCallback(
+    (
+      change: ContainerSettingsPaneAddDbDsnReferenceIntentChange & {
+        apName: string;
+        apNamespace: string;
+      }
+    ) => {
+      const cleanupById = pendingApDbReferenceDraftCleanupById.current;
+      cleanupById.get(change.id)?.();
+      cleanupById.delete(change.id);
+
+      const references = pendingApDbCanvasReferencesFromIntentChange({
+        apName: change.apName,
+        apNamespace: change.apNamespace,
+        change,
+      });
+      if (references.length === 0 || onPendingApDbReferencesStart == null) {
+        return;
+      }
+
+      const cleanup = onPendingApDbReferencesStart(references);
+      if (cleanup !== undefined) {
+        cleanupById.set(change.id, cleanup);
+      }
+    },
+    [onPendingApDbReferencesStart]
+  );
+  useEffect(
+    () => () => {
+      const cleanupById = pendingApDbReferenceDraftCleanupById.current;
+      for (const cleanup of cleanupById.values()) {
+        cleanup();
+      }
+      cleanupById.clear();
+    },
+    []
+  );
 
   const runMutationThenRefresh = useCallback(
     (
@@ -748,6 +822,15 @@ export function useProjectCanvas(
         nodeId: node.id,
         onConsumed: handleAddDbDsnReferenceIntentConsumed,
       });
+      const onAddDbDsnReferenceIntentDraftChange = (
+        change: ContainerSettingsPaneAddDbDsnReferenceIntentChange
+      ) => {
+        handleAddDbDsnReferenceIntentDraftChange({
+          ...change,
+          apName: name,
+          apNamespace: ns,
+        });
+      };
       const settingsAccess = canvasNodeSettingsAccess({
         readOnly,
       });
@@ -755,6 +838,13 @@ export function useProjectCanvas(
         createPendingApDbReferenceMutationStartHandler({
           apName: name,
           apNamespace: ns,
+          onBeforeStart: (ids) => {
+            const cleanupById = pendingApDbReferenceDraftCleanupById.current;
+            for (const id of ids) {
+              cleanupById.get(id)?.();
+              cleanupById.delete(id);
+            }
+          },
           onPendingApDbReferencesStart,
         });
 
@@ -766,6 +856,7 @@ export function useProjectCanvas(
             dbDsnReferenceSources,
             ...dbReferenceIntentData,
             onAddDbDsnReferenceMutationStart,
+            onAddDbDsnReferenceIntentDraftChange,
             settingsAccess,
           },
         };
@@ -832,6 +923,7 @@ export function useProjectCanvas(
           ...data,
           ...dbReferenceIntentData,
           dbDsnReferenceSources,
+          onAddDbDsnReferenceIntentDraftChange,
           onAddDbDsnReferenceMutationStart,
           onWorkloadMutation: afterLifecycle,
           settingsAccess,
@@ -849,6 +941,7 @@ export function useProjectCanvas(
       dbDsnReferenceSources,
       deleteWorkload,
       executeCommandPlan,
+      handleAddDbDsnReferenceIntentDraftChange,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,
       pendingAddDbDsnReferenceIntent,

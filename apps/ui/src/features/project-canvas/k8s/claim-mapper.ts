@@ -10,6 +10,7 @@ import {
   containerEnvDbDsnReferenceFromValue,
   containerEnvDbSecretReferenceFromValueFrom,
 } from "@workspace/ui/lib/container-env-rows";
+import { containerEnvRowsFromSavedEnv } from "@workspace/ui/lib/container-env-tokens";
 
 import {
   customDomainBindingIdFromValue,
@@ -178,7 +179,7 @@ function envFromSpecEnvList(
       });
     }
   }
-  return out;
+  return containerEnvRowsFromSavedEnv(out, dbDsnReferenceSources);
 }
 
 function portNum(v: unknown): number | undefined {
@@ -219,13 +220,17 @@ function apNetworkFromSpecAndStatus(
 ): ContainerNetwork | undefined {
   const inputNetwork = asRecord(readApInput(spec).network);
   const statusNetwork = asRecord(status.network);
-  const privatePort =
-    privatePortNum(statusNetwork?.privatePort) ??
-    privatePortNum(inputNetwork?.privatePort);
-  if (privatePort == null) {
+  const appListeningPorts = normalizeNetworkAppListeningPorts(
+    statusNetwork,
+    inputNetwork
+  );
+  const primaryPort = appListeningPorts[0]?.port;
+  if (primaryPort == null) {
     return undefined;
   }
-  const privateAddress = trimStr(statusNetwork?.privateAddress);
+  const privateAddress =
+    appListeningPorts[0]?.privateAddress ??
+    trimStr(statusNetwork?.privateAddress);
   const entryPointCustomDomains = entryPointCustomDomainStatusesForAp(
     options?.entryPointsData,
     metadata ?? {}
@@ -235,13 +240,14 @@ function apNetworkFromSpecAndStatus(
     metadata ?? {}
   );
   return {
+    appListeningPorts,
     ...(privateAddress === "" ? {} : { privateAddress }),
     ...apNetworkCustomDomains(
       inputNetwork,
       statusNetwork,
       entryPointCustomDomains
     ),
-    privatePort,
+    privatePort: primaryPort,
     publicAddresses: apNetworkPublicAddresses(
       metadata,
       inputNetwork,
@@ -249,6 +255,68 @@ function apNetworkFromSpecAndStatus(
       entryPointPublicAddresses
     ),
   };
+}
+
+function normalizeNetworkAppListeningPorts(
+  statusNetwork: Record<string, unknown> | undefined,
+  inputNetwork: Record<string, unknown> | undefined
+): NonNullable<ContainerNetwork["appListeningPorts"]> {
+  const fromStatus = normalizeAppListeningPortRows(
+    statusNetwork?.appListeningPorts,
+    true
+  );
+  if (fromStatus.length > 0) {
+    return fromStatus;
+  }
+  const fromInput = normalizeAppListeningPortRows(
+    inputNetwork?.appListeningPorts,
+    false
+  );
+  if (fromInput.length > 0) {
+    return fromInput;
+  }
+  const legacyPort =
+    privatePortNum(statusNetwork?.privatePort) ??
+    privatePortNum(inputNetwork?.privatePort);
+  if (legacyPort == null) {
+    return [];
+  }
+  const legacyPrivateAddress = trimStr(statusNetwork?.privateAddress);
+  return [
+    {
+      ...(legacyPrivateAddress === ""
+        ? {}
+        : { privateAddress: legacyPrivateAddress }),
+      port: legacyPort,
+    },
+  ];
+}
+
+function normalizeAppListeningPortRows(
+  raw: unknown,
+  includeObservedFields: boolean
+): NonNullable<ContainerNetwork["appListeningPorts"]> {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: NonNullable<ContainerNetwork["appListeningPorts"]> = [];
+  const seen = new Set<number>();
+  for (const item of raw) {
+    const row = asRecord(item);
+    const port = privatePortNum(row?.port);
+    if (row == null || port == null || seen.has(port)) {
+      continue;
+    }
+    seen.add(port);
+    const privateAddress = trimStr(row.privateAddress);
+    out.push({
+      ...(includeObservedFields && privateAddress !== ""
+        ? { privateAddress }
+        : {}),
+      port,
+    });
+  }
+  return out;
 }
 
 function apNetworkCustomDomains(
@@ -402,12 +470,14 @@ function projectedCustomDomainsById(raw: unknown): CustomDomainReadModelById {
       continue;
     }
     const cnameTarget = trimStr(row.cnameTarget);
+    const reason = trimStr(row.reason);
     const status = trimStr(row.status);
     const targetPort = privatePortNum(row.port);
     out.set(id, {
       ...(cnameTarget === "" ? {} : { cnameTarget }),
       ...(domain === "" ? {} : { domain }),
       ...(platformAddressId === undefined ? {} : { platformAddressId }),
+      ...(reason === "" ? {} : { reason }),
       ...(status === "" ? {} : { status }),
       ...(targetPort == null ? {} : { targetPort }),
     });
@@ -493,10 +563,12 @@ function normalizeNetworkPublicAddress(
     return normalized;
   }
   const status = trimStr(address.status);
+  const reason = trimStr(address.reason);
   const type = trimStr(address.type);
   const url = trimStr(address.url);
   return {
     ...normalized,
+    ...(reason === "" ? {} : { reason }),
     ...(status === "" ? {} : { status }),
     ...(type === "" ? {} : { type }),
     ...(url === "" ? {} : { url }),

@@ -12,6 +12,7 @@ import {
 } from "@/features/project-canvas/nodes/constants";
 
 export const WORKLOAD_PANE = {
+  environmentSettings: "environment-settings",
   events: "events",
   history: "history",
   logs: "logs",

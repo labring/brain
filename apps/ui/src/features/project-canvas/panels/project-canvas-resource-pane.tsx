@@ -14,6 +14,8 @@ import { WorkloadResourcePane } from "./workload-resource-pane";
 
 function workloadPaneMode(kind: ProjectCanvasApResourcePaneKind): string {
   switch (kind) {
+    case "apEnvironmentSettings":
+      return WORKLOAD_PANE.environmentSettings;
     case "apEvents":
       return WORKLOAD_PANE.events;
     case "apHistory":
@@ -45,6 +47,7 @@ export function renderProjectCanvasResourcePaneContent({
   readOnly = false,
 }: ProjectCanvasResourcePaneContentProps): ReactNode {
   if (
+    content?.kind === "apEnvironmentSettings" ||
     content?.kind === "apEvents" ||
     content?.kind === "apHistory" ||
     content?.kind === "apMetrics" ||
