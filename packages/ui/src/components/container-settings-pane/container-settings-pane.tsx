@@ -1442,29 +1442,27 @@ function PublicAddressRow({
           <div
             aria-hidden={rowCopyable ? true : undefined}
             className={cn(
-              "relative z-10 flex min-w-0 flex-1 items-center gap-1.5",
+              "relative z-10 grid min-w-0 flex-1 gap-2",
               rowCopyable ? "pointer-events-none" : "pointer-events-auto"
             )}
           >
-            <PublicAddressStatusDot
-              address={address}
-              ariaLabel={`Public Address status: ${publicAddressStatusLabel(address)}`}
-            />
-            <div className="grid min-w-0 flex-1 gap-1">
-              <div className="flex min-w-0 items-center gap-1.5 text-foreground text-sm leading-5">
-                <span className="min-w-0 truncate">
-                  {value === "" ? "Pending domain" : value}
-                </span>
-                <CanvasNode.CopyableRowIndicator
-                  className={cn(
-                    "text-muted-foreground",
-                    copied && "text-green-500"
-                  )}
-                />
-              </div>
-              <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
-                {address.port}
-              </div>
+            <div className="flex min-w-0 items-center gap-1.5 text-foreground text-sm leading-5">
+              <PublicAddressStatusDot
+                address={address}
+                ariaLabel={`Public Address status: ${publicAddressStatusLabel(address)}`}
+              />
+              <span className="min-w-0 truncate">
+                {value === "" ? "Pending domain" : value}
+              </span>
+              <CanvasNode.CopyableRowIndicator
+                className={cn(
+                  "text-muted-foreground",
+                  copied && "text-green-500"
+                )}
+              />
+            </div>
+            <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
+              {address.port}
             </div>
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
@@ -1592,19 +1590,17 @@ function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
 
   return (
     <div className="flex min-h-17 min-w-0 items-center justify-between gap-2 rounded-lg bg-white/5 px-2.5 py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <PublicAddressStatusDot
-          address={{ status: domain.status }}
-          ariaLabel={statusAriaLabel}
-          tooltip={<CustomDomainStatusTooltip domain={domain} />}
-        />
-        <div className="grid min-w-0 flex-1 gap-1">
-          <div className="min-w-0 truncate text-foreground text-sm leading-5">
-            {domain.domain}
-          </div>
-          <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
-            {detailText}
-          </div>
+      <div className="grid min-w-0 flex-1 gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-foreground text-sm leading-5">
+          <PublicAddressStatusDot
+            address={{ status: domain.status }}
+            ariaLabel={statusAriaLabel}
+            tooltip={<CustomDomainStatusTooltip domain={domain} />}
+          />
+          <span className="min-w-0 truncate">{domain.domain}</span>
+        </div>
+        <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
+          {detailText}
         </div>
       </div>
       {readOnly || onUnbind == null ? null : (
