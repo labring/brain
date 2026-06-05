@@ -7,13 +7,23 @@ import {
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { Badge } from "@workspace/ui/components/badge";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Spinner } from "@workspace/ui/components/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { History, Info } from "lucide-react";
+import { Eye, History, Info, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  formatSnapshotAge,
+  formatSnapshotCount,
+  imageVersionLabel,
+} from "./container-history-format";
 import type { ContainerHistorySnapshotRow } from "./container-history-pane.types";
 
 export type { ContainerHistorySnapshotRow } from "./container-history-pane.types";
@@ -59,81 +69,78 @@ function SnapshotHistoryListItem({
   row: ContainerHistorySnapshotRow;
 }) {
   const rollbackBusyAnywhere = rollbackBusyVersionHash !== null;
-  const canRollback =
-    row.variant === "orphan" && onRollback != null && !rollbackBusyAnywhere;
+  const canRollback = onRollback != null && !rollbackBusyAnywhere;
 
   const rollbackInFlightHere = rollbackBusyVersionHash === row.versionHash;
+  const title = imageVersionLabel(row);
+  const age = formatSnapshotAge(row.createdAt);
+  const image = row.image.trim() === "" ? "No image recorded" : row.image;
 
   return (
-    <li className="py-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="break-all font-mono text-foreground text-xs">
-              {row.versionHash}
-            </span>
-            {row.variant === "active" ? (
-              <Badge variant="default">Active</Badge>
-            ) : null}
-            {row.source == null || row.source === "" ? null : (
-              <Badge variant="secondary">{row.source}</Badge>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
-            <span>
-              Image:{" "}
-              <span className="text-foreground">
-                {row.image.trim() === "" ? "-" : row.image}
-              </span>
-            </span>
-            {row.imagePullPolicy == null ||
-            row.imagePullPolicy === "" ? null : (
-              <span>
-                Pull:{" "}
-                <span className="text-foreground">{row.imagePullPolicy}</span>
-              </span>
-            )}
-            <span>
-              Saved:{" "}
-              <span className="text-foreground">
-                {formatSnapshotTime(row.createdAt)}
-              </span>
-            </span>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-          <AppButton
-            onClick={() => onReviewConfig(row)}
-            size="sm"
-            type="button"
-            variant="quiet"
-          >
-            Review config
-          </AppButton>
-          {row.variant === "orphan" ? (
-            <AppButton
-              aria-busy={rollbackInFlightHere}
-              disabled={!canRollback || rollbackInFlightHere}
-              onClick={() => onRollback?.(row.versionHash)}
-              size="sm"
-              type="button"
-              variant="secondary"
-            >
-              {rollbackInFlightHere ? (
-                <span className="inline-flex items-center gap-2">
-                  <Spinner
-                    aria-hidden
-                    className="size-4 text-muted-foreground"
-                  />
-                  Rolling back…
-                </span>
-              ) : (
-                "Rollback"
+    <li>
+      <article className="flex min-w-0 items-center gap-2 overflow-hidden rounded-lg bg-white/5 pr-2 shadow-sm backdrop-blur-sm">
+        <div className="min-w-0 flex-1 px-4 py-4 text-left">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <h4
+                className="truncate font-medium text-foreground text-sm leading-5"
+                title={title}
+              >
+                {title}
+              </h4>
+              {age === "" ? null : (
+                <p className="shrink-0 text-muted-foreground text-xs leading-4">
+                  {age}
+                </p>
               )}
-            </AppButton>
-          ) : null}
+            </div>
+            <p
+              className="truncate text-muted-foreground text-xs leading-4"
+              title={image}
+            >
+              {image}
+            </p>
+          </div>
         </div>
-      </div>
+        <div className="flex shrink-0 items-center justify-end gap-2 py-3">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <AppIconButton
+                  aria-label={`Review image version ${title}`}
+                  onClick={() => onReviewConfig(row)}
+                  size="lg"
+                  type="button"
+                  variant="secondary"
+                >
+                  <Eye aria-hidden className="size-4" />
+                </AppIconButton>
+              }
+            />
+            <TooltipContent side="top">Review settings</TooltipContent>
+          </Tooltip>
+          <AppButton
+            aria-busy={rollbackInFlightHere}
+            disabled={!canRollback || rollbackInFlightHere}
+            onClick={() => onRollback?.(row.versionHash)}
+            size="default"
+            type="button"
+            variant="secondary"
+          >
+            {rollbackInFlightHere ? (
+              <>
+                <Spinner aria-hidden className="size-4 text-muted-foreground" />
+                Rolling back...
+              </>
+            ) : (
+              <>
+                <RotateCcw aria-hidden className="size-4" />
+                Rollback
+              </>
+            )}
+          </AppButton>
+        </div>
+      </article>
     </li>
   );
 }
@@ -348,19 +355,21 @@ export function ContainerHistoryPane({
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border">
-        <div className="flex shrink-0 items-center gap-2 border-border border-b bg-muted/30 px-3 py-2">
-          <History aria-hidden className="size-4 text-muted-foreground" />
-          <span className="font-medium text-foreground text-sm">
-            Image versions
+        <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-border border-b px-2.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <History aria-hidden className="size-4 shrink-0 text-foreground" />
+            <span className="truncate font-medium text-foreground text-sm leading-5">
+              Version History
+            </span>
+          </div>
+          <span className="shrink-0 text-muted-foreground text-sm leading-5">
+            {formatSnapshotCount(rows.length)}
           </span>
-          <Badge className="ml-auto" variant="secondary">
-            {rows.length}
-          </Badge>
         </div>
         <ScrollArea className="min-h-0 flex-1">
-          <ul className="divide-y divide-border px-3">
+          <ul className="flex min-w-0 flex-col gap-2 p-2.5">
             {rows.length === 0 ? (
-              <li className="py-8 text-center text-muted-foreground text-sm">
+              <li className="rounded-lg bg-white/5 px-4 py-8 text-center text-muted-foreground text-sm leading-5">
                 No image versions yet. They appear after AP image changes are
                 applied.
               </li>

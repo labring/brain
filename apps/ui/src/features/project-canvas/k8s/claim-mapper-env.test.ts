@@ -149,6 +149,73 @@ test("AP claim settings maps public addresses from observed AP network state", (
   ]);
 });
 
+test("AP claim settings prefers EntryPoint target health over AP-projected Public Address status", () => {
+  const settings = claimToContainerSettings(
+    {
+      kind: "AP",
+      metadata: { name: "api", namespace: "default" },
+      spec: {
+        input: {
+          image: "ghcr.io/acme/api:latest",
+          network: {
+            privatePort: 8080,
+            platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+          },
+        },
+      },
+      status: {
+        network: {
+          privateAddress: "http://api-service-port-8080.default.svc:8080",
+          privatePort: 8080,
+          publicAddresses: [
+            {
+              host: "api.example.com",
+              id: "pa_abc123",
+              port: 8080,
+              status: "progressing",
+              type: "platform",
+              url: "https://api.example.com/",
+            },
+          ],
+        },
+      },
+    },
+    "AP",
+    {
+      entryPointsData: {
+        items: [
+          {
+            kind: "EntryPoint",
+            metadata: { name: "api", namespace: "default" },
+            spec: { apRef: "api" },
+            status: {
+              targets: [
+                {
+                  id: "pa_abc123",
+                  platformDomain: "api.example.com",
+                  port: 8080,
+                  status: "accessible",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }
+  );
+
+  assert.deepEqual(settings.network?.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 8080,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+});
+
 test("AP claim settings falls back to desired Platform Addresses while observed URLs are pending", () => {
   const settings = claimToContainerSettings(
     {

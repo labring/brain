@@ -4,6 +4,7 @@ import {
   type APWorkloadEventItem,
   useAPWorkloadEvents,
 } from "@workspace/api/hooks";
+import { cn } from "@workspace/ui/lib/utils";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { CalendarDays } from "lucide-react";
@@ -13,16 +14,38 @@ import { containerStatesFromNode } from "@/features/project-canvas/flow/containe
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import { CanvasResourcePane } from "./canvas-resource-pane";
 
-const EVENT_LIMIT = 50;
+export const EVENT_LIMIT = 50;
 const RELATIVE_TIME_FORMAT = new Intl.RelativeTimeFormat("en", {
   numeric: "auto",
 });
+const EVENT_ABSOLUTE_TIME_THRESHOLD_DAYS = 7;
+const EVENT_ABSOLUTE_TIME_THRESHOLD_SECONDS =
+  EVENT_ABSOLUTE_TIME_THRESHOLD_DAYS * 24 * 60 * 60;
+const EVENT_ABSOLUTE_DATE_FORMAT = new Intl.DateTimeFormat("en", {
+  day: "numeric",
+  month: "short",
+});
+const EVENT_ABSOLUTE_TIME_FORMAT = new Intl.DateTimeFormat("en", {
+  hour: "numeric",
+  minute: "2-digit",
+});
 
-function eventTimestamp(event: APWorkloadEventItem): string {
+function formatAbsoluteEventTime(eventDate: Date, nowDate: Date): string {
+  const date = EVENT_ABSOLUTE_DATE_FORMAT.format(eventDate);
+  const time = EVENT_ABSOLUTE_TIME_FORMAT.format(eventDate);
+  if (eventDate.getFullYear() === nowDate.getFullYear()) {
+    return `${date}, ${time}`;
+  }
+  return `${date}, ${eventDate.getFullYear()}, ${time}`;
+}
+
+export type WorkloadEventsSubtitleState = "error" | "loading" | "ready";
+
+export function eventTimestamp(event: APWorkloadEventItem): string {
   return event.lastTimestamp ?? event.firstTimestamp ?? "";
 }
 
-function formatEventAge(timestamp: string): string {
+export function formatEventAge(timestamp: string, now = Date.now()): string {
   if (timestamp.trim() === "") {
     return "";
   }
@@ -30,8 +53,13 @@ function formatEventAge(timestamp: string): string {
   if (!Number.isFinite(time)) {
     return "";
   }
-  const seconds = Math.round((time - Date.now()) / 1000);
+  const seconds = Math.round((time - now) / 1000);
   const absSeconds = Math.abs(seconds);
+  if (seconds < 0 && absSeconds >= EVENT_ABSOLUTE_TIME_THRESHOLD_SECONDS) {
+    const eventDate = new Date(time);
+    const nowDate = new Date(now);
+    return formatAbsoluteEventTime(eventDate, nowDate);
+  }
   if (absSeconds < 60) {
     return RELATIVE_TIME_FORMAT.format(seconds, "second");
   }
@@ -45,6 +73,38 @@ function formatEventAge(timestamp: string): string {
   }
   const days = Math.round(hours / 24);
   return RELATIVE_TIME_FORMAT.format(days, "day");
+}
+
+export function formatLoadedEventCount(
+  count: number,
+  limit = EVENT_LIMIT
+): string {
+  if (count === 1) {
+    return "1 Item";
+  }
+  if (count >= limit) {
+    return `Latest ${limit}`;
+  }
+  return `${count} Items`;
+}
+
+export function formatWorkloadEventsSubtitle({
+  count,
+  limit = EVENT_LIMIT,
+  state,
+}: {
+  count: number;
+  limit?: number;
+  state: WorkloadEventsSubtitleState;
+}): string {
+  let status = formatLoadedEventCount(count, limit);
+  if (state === "loading") {
+    status = "Loading";
+  }
+  if (state === "error") {
+    status = "Unavailable";
+  }
+  return `Instance scheduling, startup, and health check events. ${status}`;
 }
 
 function eventResourceLabel(event: APWorkloadEventItem): string {
@@ -61,15 +121,31 @@ function eventResourceLabel(event: APWorkloadEventItem): string {
   return `${kind} ${name}`;
 }
 
-function WorkloadEventCard({ event }: { event: APWorkloadEventItem }) {
+export function workloadEventTypeClassName(type: string | undefined): string {
+  switch (type?.trim().toLowerCase()) {
+    case "normal":
+      return "text-green-500";
+    case "warning":
+      return "text-yellow-500";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function formatEventStatus(event: APWorkloadEventItem): string {
   const age = formatEventAge(eventTimestamp(event));
+  return [event.type, age].filter((part) => part && part !== "").join(" ");
+}
+
+export function WorkloadEventCard({ event }: { event: APWorkloadEventItem }) {
+  const status = formatEventStatus(event);
   const resource = eventResourceLabel(event);
 
   return (
-    <article className="flex min-w-0 flex-col gap-3 rounded-lg bg-white/5 p-4 shadow-sm">
-      <div className="flex min-w-0 items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="truncate font-medium text-base text-foreground leading-6">
+    <article className="flex min-w-0 flex-col gap-4 overflow-hidden rounded-lg bg-white/5 p-4 shadow-sm backdrop-blur-sm">
+      <header className="flex min-w-0 items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h3 className="truncate font-medium text-foreground text-sm leading-5">
             {event.reason || "Event"}
           </h3>
           {resource === "" ? null : (
@@ -78,16 +154,23 @@ function WorkloadEventCard({ event }: { event: APWorkloadEventItem }) {
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-muted-foreground text-sm leading-5">
-          {event.type ? <span>{event.type}</span> : null}
-          {age ? <span>{age}</span> : null}
-        </div>
-      </div>
+        {status === "" ? null : (
+          <p
+            className={cn(
+              "max-w-60 shrink-0 text-right text-xs leading-4",
+              workloadEventTypeClassName(event.type)
+            )}
+          >
+            {status}
+          </p>
+        )}
+      </header>
+      <div className="h-px w-full shrink-0 bg-border" />
       <p className="text-muted-foreground text-sm leading-5">
         {event.message || "No event message."}
       </p>
       {event.count && event.count > 1 ? (
-        <p className="text-muted-foreground text-xs leading-4">
+        <p className="text-right text-muted-foreground text-xs leading-4">
           Repeated {event.count} times
         </p>
       ) : null}
@@ -118,21 +201,21 @@ function WorkloadEventsBody({
 }) {
   if (error) {
     return (
-      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5">
+      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
         Failed to load events.
       </div>
     );
   }
   if (isLoading) {
     return (
-      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5">
+      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
         Loading events...
       </div>
     );
   }
   if (items.length === 0) {
     return (
-      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5">
+      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
         No recent events.
       </div>
     );
@@ -164,10 +247,16 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
     target,
   });
   const items = data?.items ?? [];
-  const subtitle =
-    items.length === 1
-      ? "Instance scheduling, startup, and health check events. 1 Item"
-      : `Instance scheduling, startup, and health check events. ${items.length} Items`;
+  let subtitleState: WorkloadEventsSubtitleState = "ready";
+  if (error) {
+    subtitleState = "error";
+  } else if (isLoading && data == null) {
+    subtitleState = "loading";
+  }
+  const subtitle = formatWorkloadEventsSubtitle({
+    count: items.length,
+    state: subtitleState,
+  });
 
   return (
     <CanvasResourcePane
@@ -180,7 +269,7 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
       subtitle={subtitle}
       title={`${name} Events`}
     >
-      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-input p-2.5">
+      <section className="flex min-w-0 flex-col gap-2 rounded-lg border border-input p-2.5">
         <WorkloadEventsBody error={error} isLoading={isLoading} items={items} />
       </section>
     </CanvasResourcePane>

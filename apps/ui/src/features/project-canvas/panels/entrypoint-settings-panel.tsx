@@ -4,7 +4,7 @@ import {
   type ContainerNetwork,
   ContainerPublicAddressesSettingsPane,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
-import { Network } from "lucide-react";
+import { Router } from "lucide-react";
 import { memo } from "react";
 import { verifyCustomDomainCnameFromApi } from "@/features/project-canvas/custom-domain-cname-client";
 import { k8sGetClaimBody } from "@/features/project-canvas/k8s/claim-mapper";
@@ -74,7 +74,7 @@ export const EntryPointSettingsPane = memo(function EntryPointSettingsPane({
   return (
     <CanvasResourcePane
       closeAriaLabel="Close EntryPoint settings"
-      icon={<Network aria-hidden className="size-4 shrink-0 text-blue-400" />}
+      icon={<Router aria-hidden className="size-4 shrink-0 text-blue-400" />}
       onClose={onClose}
       subtitle={subtitle}
       title={title}

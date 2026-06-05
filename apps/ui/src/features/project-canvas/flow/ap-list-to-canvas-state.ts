@@ -613,12 +613,16 @@ function entryPointCanvasResources(
     const entryPointName = metadataName(entryPoint);
     const entryPointUid = metadataUid(entryPoint);
     const name = entryPointName ?? apName;
+    const observedStatuses = entryNodeTargetStatusesByID(entryPoint);
     resources.push({
       apRef: apName,
       name,
       namespace,
       stableName: entryPointName ?? apName,
-      targets: entryNodeTargetsFromPublicAddresses(publicAddresses),
+      targets: entryNodeTargetsFromPublicAddresses(
+        publicAddresses,
+        observedStatuses
+      ),
       ...(entryPointUid === undefined ? {} : { uid: entryPointUid }),
     });
   }
@@ -812,14 +816,17 @@ function networkPublicAddressFromRecord(
 }
 
 function entryNodeTargetsFromPublicAddresses(
-  addresses: readonly NetworkPublicAddress[]
+  addresses: readonly NetworkPublicAddress[],
+  observedStatuses?: ReadonlyMap<string, EntryNodeTargetStatus>
 ): EntryNodeTarget[] {
   return addresses.map((address, index) => {
     const host = address.host;
+    const id = address.id ?? `${address.port}-${host ?? `pending-${index}`}`;
     return {
-      id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
+      id,
       label: publicAddressTargetLabel(address.type),
-      status: entryPointTargetStatus(address.status),
+      status:
+        observedStatuses?.get(id) ?? entryPointTargetStatus(address.status),
       value:
         address.url ?? (host === undefined ? "Pending" : `https://${host}/`),
     };
@@ -868,6 +875,18 @@ function entryNodeTargetsFromResource(input: unknown): EntryNodeTarget[] {
       };
     })
     .filter((target): target is EntryNodeTarget => target !== undefined);
+}
+
+function entryNodeTargetStatusesByID(
+  input: unknown
+): Map<string, EntryNodeTargetStatus> | undefined {
+  const out = new Map<string, EntryNodeTargetStatus>();
+  for (const target of entryNodeTargetsFromResource(input)) {
+    if (target.id !== undefined && target.status !== undefined) {
+      out.set(target.id, target.status);
+    }
+  }
+  return out.size === 0 ? undefined : out;
 }
 
 function entryNodeAccessDomainFromTargets(
