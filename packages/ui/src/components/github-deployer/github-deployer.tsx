@@ -496,10 +496,6 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
       data-slot="github-deployer-shell"
       {...props}
     >
-      <header className="flex min-w-0 flex-col gap-2">
-        <GithubDeployerTitle />
-        <GithubDeployerSubtitle />
-      </header>
       <MethodSection defaultOpen title="Method 1">
         <GithubDeployerUrlInput />
       </MethodSection>

@@ -7,8 +7,11 @@ import { GithubDeployer } from "./github-deployer";
 const noop = () => undefined;
 const URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
 const URL_PLACEHOLDER_RE = /https:\/\/github.com\/owner\/repo/;
-const AUTH_BUTTON_RE = /data-slot="github-deployer-auth-connect"/;
+const AUTH_BUTTON_RE = /Authorize GitHub/;
 const AUTHORIZED_RE = /data-slot="github-deployer-authorized"/;
+const HEADER_TITLE_RE = /GitHub Import/;
+const HEADER_SUBTITLE_RE =
+  /Import repository from URL or GitHub authorization\./;
 const METHOD_1_RE = /Method 1/;
 const METHOD_2_RE = /Method 2/;
 const EXAMPLE_REPO_RE = /sealai\/example/;
@@ -31,6 +34,8 @@ test("GithubDeployer shows URL input and authorization when unauthenticated", ()
 
   assert.match(html, METHOD_1_RE);
   assert.match(html, METHOD_2_RE);
+  assert.doesNotMatch(html, HEADER_TITLE_RE);
+  assert.doesNotMatch(html, HEADER_SUBTITLE_RE);
   assert.match(html, URL_INPUT_RE);
   assert.match(html, URL_PLACEHOLDER_RE);
   assert.match(html, AUTH_BUTTON_RE);
