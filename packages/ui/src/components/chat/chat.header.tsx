@@ -9,11 +9,8 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Spinner } from "@workspace/ui/components/spinner";
@@ -217,51 +214,49 @@ export function ChatThreadSelect({
             />
           ) : null}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-wlg min-w-xs">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Threads</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {canPickHistory ? (
-              <DropdownMenuRadioGroup
-                className={cn(
-                  "max-h-[300px] overflow-y-auto",
-                  chatScrollbarThinClass
-                )}
-                defaultValue={threadHistory.activeThreadId}
-                key={threadHistory.activeThreadId}
-                onValueChange={(v) => {
-                  if (v) {
-                    threadHistory.onSelect(v);
-                  }
-                }}
-              >
-                {visibleHistoryItems.map((item) => (
-                  <DropdownMenuRadioItem
-                    className="min-w-0 text-xs/relaxed"
-                    closeOnClick
-                    key={item.id}
-                    value={item.id}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center justify-between gap-3 pr-1">
-                      <span
-                        className="min-w-0 shrink truncate"
-                        title={item.title}
-                      >
-                        {item.title}
-                      </span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums">
-                        {item.updatedAtSource == null
-                          ? item.updatedAt
-                          : formatThreadDropdownTimestamp(
-                              item.updatedAtSource
-                            ) || item.updatedAt}
-                      </span>
+        <DropdownMenuContent
+          align="start"
+          className="min-w-72 max-w-96 border border-border bg-input/30 p-1 text-foreground shadow-none ring-0 backdrop-blur-xl"
+        >
+          {canPickHistory ? (
+            <DropdownMenuRadioGroup
+              className={cn(
+                "max-h-[300px] overflow-y-auto",
+                chatScrollbarThinClass
+              )}
+              defaultValue={threadHistory.activeThreadId}
+              key={threadHistory.activeThreadId}
+              onValueChange={(v) => {
+                if (v) {
+                  threadHistory.onSelect(v);
+                }
+              }}
+            >
+              {visibleHistoryItems.map((item) => (
+                <DropdownMenuRadioItem
+                  className="min-w-0 cursor-pointer gap-2 rounded-sm py-1.5 pr-2 pl-2 text-popover-foreground text-sm leading-5 focus:bg-input/30 focus:text-popover-foreground focus:**:text-popover-foreground data-[checked]:bg-input data-highlighted:bg-input/30 data-[checked]:text-popover-foreground [&_[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
+                  closeOnClick
+                  key={item.id}
+                  value={item.id}
+                >
+                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                    <span
+                      className="min-w-px flex-1 truncate text-left"
+                      title={item.title}
+                    >
+                      {item.title}
                     </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            ) : null}
-          </DropdownMenuGroup>
+                    <span className="shrink-0 text-popover-foreground/60 text-xs tabular-nums leading-4">
+                      {item.updatedAtSource == null
+                        ? item.updatedAt
+                        : formatThreadDropdownTimestamp(item.updatedAtSource) ||
+                          item.updatedAt}
+                    </span>
+                  </span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
