@@ -13,8 +13,7 @@
     "fix": "ultracite fix",
     "whodb:dev": "bun --filter @sealai/whodb dev",
     "whodb:build": "bun --filter @sealai/whodb build",
-    "whodb:test": "bun --filter @sealai/whodb test",
-    "cd": "./cd.sh"
+    "whodb:test": "bun --filter @sealai/whodb test"
   },
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.5.11",

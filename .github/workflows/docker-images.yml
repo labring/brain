@@ -1,0 +1,83 @@
+name: Docker Images
+
+on:
+  push:
+    branches:
+      - main
+      - zjy365
+    tags:
+      - "api-*"
+      - "ui-*"
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      next_public_app_url:
+        description: "Build-time NEXT_PUBLIC_APP_URL for the UI image"
+        required: false
+        type: string
+      next_public_api_url:
+        description: "Build-time NEXT_PUBLIC_API_URL for the UI image"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: Build ${{ matrix.component }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: api
+            image: sealai-api
+            dockerfile: apps/api/Dockerfile
+          - component: ui
+            image: sealai-ui
+            dockerfile: apps/ui/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}/${{ matrix.image }}" >> "$GITHUB_ENV"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ inputs.next_public_app_url || 'http://localhost:3000' }}
+            NEXT_PUBLIC_API_URL=${{ inputs.next_public_api_url || 'http://localhost:9000' }}

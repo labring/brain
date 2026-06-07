@@ -20,6 +20,7 @@ const DATABASE_OPTIONS = [
 const REPLICA_COUNT_SELECT_RE = /aria-label="Database replica count"/;
 const NUMERIC_REPLICA_UNIT_OPTION_RE = />\d+ replicas?</;
 const PRIVATE_ACCESS_DESCRIPTION_RE = /Private access by default/;
+const POSTGRESQL_ORIGINAL_ICON_RE = /postgresql-original\.svg/;
 
 const noop = () => {
   /* test noop */
@@ -35,4 +36,12 @@ test("database deployer renders replica options without unit suffix", () => {
   assert.doesNotMatch(html, PRIVATE_ACCESS_DESCRIPTION_RE);
   assert.equal(databaseReplicaOptionLabel(1), "1");
   assert.equal(databaseReplicaOptionLabel(10), "10");
+});
+
+test("database deployer resolves known database engine icons", () => {
+  const html = renderToStaticMarkup(
+    <DatabaseDeployer databaseOptions={DATABASE_OPTIONS} onDeploy={noop} />
+  );
+
+  assert.match(html, POSTGRESQL_ORIGINAL_ICON_RE);
 });

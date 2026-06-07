@@ -10,6 +10,7 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { type DeviconKey, deviconSrc, devicons } from "../assets/devicons";
 
 export type DatabaseInstancePreset = "xs" | "s" | "m" | "l";
 
@@ -113,12 +114,23 @@ function choiceLabel(choice: DatabaseDeploymentChoice | null): string {
   return choice?.label.trim() || "Database";
 }
 
+function deviconKeyFromEngine(engine: string): DeviconKey | null {
+  const normalized = normalizedEngine(engine);
+  if (normalized in devicons && normalized !== "docker") {
+    return normalized as DeviconKey;
+  }
+  return null;
+}
+
 export function databaseReplicaOptionLabel(replica: number): string {
   return String(replica);
 }
 
 function DatabaseChoiceIcon({ choice }: { choice: DatabaseDeploymentChoice }) {
-  const iconUrl = choice.iconUrl?.trim();
+  const deviconKey = deviconKeyFromEngine(choice.engine);
+  const iconUrl =
+    choice.iconUrl?.trim() ||
+    (deviconKey ? deviconSrc(devicons[deviconKey].original) : "");
   if (!iconUrl) {
     return <Database aria-hidden className="size-4 text-blue-500" />;
   }

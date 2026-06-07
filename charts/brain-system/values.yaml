@@ -34,7 +34,7 @@ database:
 api:
   enabled: true
   name: sealai-api-staging
-  image: aimerite/sealai-api:latest
+  image: ghcr.io/labring/brain/sealai-api:latest
   imagePullPolicy: Always
   port: 9000
   paused: false
@@ -90,7 +90,7 @@ api:
 ui:
   enabled: true
   name: sealai-ui-staging
-  image: aimerite/sealai-ui:latest
+  image: ghcr.io/labring/brain/sealai-ui:latest
   imagePullPolicy: Always
   port: 3000
   paused: false

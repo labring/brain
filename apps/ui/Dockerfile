@@ -29,9 +29,12 @@ RUN rm -f bun.lock && bun install && bun pm cache rm
 
 COPY --from=pruner /app/out/full/ .
 
-# Client-inlined public env; override at build: docker build --build-arg NEXT_PUBLIC_APP_URL=https://your.app ...
+# Client-inlined public env; override at build:
+# docker build --build-arg NEXT_PUBLIC_APP_URL=https://your.app --build-arg NEXT_PUBLIC_API_URL=https://your.api ...
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_API_URL=http://localhost:9000
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN cd apps/ui && bun run build && \
     rm -rf node_modules/.cache && \
@@ -58,8 +61,10 @@ EXPOSE 3000
 
 # Same name as builder; server code reads this at runtime (see getCallbackBaseUrl).
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_API_URL=http://localhost:9000
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 CMD ["node", "apps/ui/server.js"]

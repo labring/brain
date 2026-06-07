@@ -34,18 +34,17 @@ function orphanSnapshotFromBackupEntry(
     return undefined;
   }
   const orphanHash = hashFromOrphanSnapshotName(name);
+  if (orphanHash == null) {
+    return undefined;
+  }
   const img = typeof row.image === "string" ? row.image : "";
   const createdAt = typeof row.createdAt === "string" ? row.createdAt : "";
   const matchesLive =
-    activeHash != null &&
-    orphanHash != null &&
-    orphanHash === activeHash &&
-    !activeConsumed.value;
+    activeHash != null && orphanHash === activeHash && !activeConsumed.value;
   if (matchesLive) {
     activeConsumed.value = true;
   }
   return {
-    configMapName: name,
     image: img,
     createdAt,
     variant: matchesLive ? "active" : "orphan",
