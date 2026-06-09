@@ -1,10 +1,18 @@
-import type { ContainerEnvRow } from "./container-env-rows";
+import {
+  CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+  type ContainerEnvDbDsnSource,
+  type ContainerEnvDbPrimitiveField,
+  type ContainerEnvRow,
+  type ContainerEnvSecretKeyRef,
+} from "./container-env-rows";
 
 export type ApEnvRawSourceDiagnosticType =
   | "duplicate-name"
   | "invalid-name"
   | "missing-name"
-  | "syntax";
+  | "runtime-compile"
+  | "syntax"
+  | "unresolved-reference";
 
 export interface ApEnvRawSourceDiagnostic {
   key?: string;
@@ -67,9 +75,99 @@ interface ParsedApEnvRawAssignmentLine {
   parsed?: ApEnvRawSourceAssignmentLine;
 }
 
+interface ApEnvReferenceToken {
+  dbName: string;
+  end: number;
+  raw: string;
+  start: number;
+  variableName: string;
+}
+
+export interface ApEnvResolvedReferenceToken extends ApEnvReferenceToken {
+  canonicalDbName: string;
+  canonicalRaw: string;
+  canonicalVariableName: ApEnvReferenceVariableName;
+  line: number;
+  source: ContainerEnvDbDsnSource;
+}
+
+export type ApEnvReferenceVariableName =
+  | "DATABASE_URL"
+  | "PG_HOST"
+  | "PG_PASSWORD"
+  | "PG_PORT"
+  | "PG_USER";
+
+interface ApEnvReferenceVariableOption {
+  field: ContainerEnvDbPrimitiveField | "databaseUrl";
+  name: ApEnvReferenceVariableName;
+  type: "alias" | "secret" | "value";
+  value?: string;
+  valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+}
+
+interface ApEnvRuntimeCompileContext {
+  diagnostics: ApEnvRawSourceDiagnostic[];
+  explicitNames: ReadonlySet<string>;
+  helperByDbField: Map<string, ContainerEnvRow>;
+  helperNameByDbField: Map<string, string>;
+  helperNames: Set<string>;
+}
+
+interface ApEnvReferenceCompileResult {
+  helpers: ContainerEnvRow[];
+  helpersUsed: NonNullable<ContainerEnvRow["compiledReference"]>["helpers"];
+  value: string;
+}
+
+export interface ApEnvRawSourceReferenceResolutionResult {
+  diagnostics: ApEnvRawSourceDiagnostic[];
+  references: ApEnvResolvedReferenceToken[];
+  source: string;
+  valid: boolean;
+}
+
+export interface ApEnvRawSourceRuntimeCompileResult {
+  diagnostics: ApEnvRawSourceDiagnostic[];
+  env: ContainerEnvRow[];
+  envRawSource: string;
+  valid: boolean;
+}
+
+export interface ApEnvReferenceMenuItem {
+  available: boolean;
+  dbName: string;
+  description: string;
+  expression: string;
+  label: string;
+  type: "Alias" | "Secret" | "Value";
+  variableName: ApEnvReferenceVariableName;
+}
+
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+const DB_REFERENCE_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/i;
+const AP_ENV_REFERENCE_RE =
+  /\$\{\{([A-Za-z0-9](?:[-A-Za-z0-9]*[A-Za-z0-9])?)\.([A-Za-z_][A-Za-z0-9_.-]*)\}\}/g;
 const EDGE_WHITESPACE_RE = /^\s|\s$/;
 const WHITESPACE_RE = /\s/;
+const AP_ENV_REFERENCE_VARIABLES = [
+  "DATABASE_URL",
+  "PG_USER",
+  "PG_PASSWORD",
+  "PG_HOST",
+  "PG_PORT",
+] as const satisfies readonly ApEnvReferenceVariableName[];
+const AP_ENV_REFERENCE_PRIMITIVE_VARIABLES: Record<
+  Exclude<ApEnvReferenceVariableName, "DATABASE_URL">,
+  ContainerEnvDbPrimitiveField
+> = {
+  PG_HOST: "host",
+  PG_PASSWORD: "password",
+  PG_PORT: "port",
+  PG_USER: "username",
+};
+const AP_ENV_REFERENCE_DSN_FIELD_ORDER: readonly ContainerEnvDbPrimitiveField[] =
+  ["username", "password", "host", "port"];
 
 function splitSourceLines(source: string): string[] {
   const lines = source.split("\n");
@@ -271,6 +369,648 @@ export function parseApEnvRawSource(source: string): ApEnvRawSourceParseResult {
     lines,
     rows,
     source,
+    valid: diagnostics.length === 0,
+  };
+}
+
+function normalizeReferenceVariableName(
+  name: string
+): ApEnvReferenceVariableName | undefined {
+  const normalized = name
+    .trim()
+    .toUpperCase()
+    .replaceAll(/[^A-Z0-9]+/g, "_");
+  if (normalized === "DATABASE_URL") {
+    return "DATABASE_URL";
+  }
+  if (
+    normalized === "PGUSER" ||
+    normalized === "POSTGRES_USER" ||
+    normalized === "POSTGRES_USERNAME" ||
+    normalized === "DATABASE_USER" ||
+    normalized === "DATABASE_USERNAME"
+  ) {
+    return "PG_USER";
+  }
+  if (
+    normalized === "PGPASSWORD" ||
+    normalized === "POSTGRES_PASSWORD" ||
+    normalized === "DATABASE_PASSWORD"
+  ) {
+    return "PG_PASSWORD";
+  }
+  if (
+    normalized === "PGHOST" ||
+    normalized === "POSTGRES_HOST" ||
+    normalized === "DATABASE_HOST"
+  ) {
+    return "PG_HOST";
+  }
+  if (
+    normalized === "PGPORT" ||
+    normalized === "POSTGRES_PORT" ||
+    normalized === "DATABASE_PORT"
+  ) {
+    return "PG_PORT";
+  }
+  return AP_ENV_REFERENCE_VARIABLES.find(
+    (variableName) => variableName === normalized
+  );
+}
+
+function sourceMatchesDbReferenceName(
+  source: ContainerEnvDbDsnSource,
+  name: string
+): boolean {
+  return source.name.toLowerCase() === name.toLowerCase();
+}
+
+function dbSourceByReferenceName(
+  sources: readonly ContainerEnvDbDsnSource[],
+  name: string
+): ContainerEnvDbDsnSource | undefined {
+  if (!DB_REFERENCE_NAME_RE.test(name)) {
+    return undefined;
+  }
+  return sources.find((source) => sourceMatchesDbReferenceName(source, name));
+}
+
+function dbReferenceSourceKey(source: ContainerEnvDbDsnSource): string {
+  return `${source.namespace}/${source.name}`;
+}
+
+function dbIdentityForHelper(source: ContainerEnvDbDsnSource): string {
+  const identity = source.name
+    .trim()
+    .toUpperCase()
+    .replaceAll(/[^A-Z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "");
+  return identity === "" ? "DB" : identity;
+}
+
+function helperFieldSuffix(
+  field: ContainerEnvDbPrimitiveField | "databaseUrl"
+): string {
+  switch (field) {
+    case "databaseUrl":
+      return "DATABASE_URL";
+    case "username":
+      return "USERNAME";
+    default:
+      return field.toUpperCase();
+  }
+}
+
+function referenceVariableOptions(
+  source: ContainerEnvDbDsnSource
+): ApEnvReferenceVariableOption[] {
+  const options: ApEnvReferenceVariableOption[] = [
+    { field: "databaseUrl", name: "DATABASE_URL", type: "alias" },
+  ];
+  for (const [name, field] of Object.entries(
+    AP_ENV_REFERENCE_PRIMITIVE_VARIABLES
+  ) as [
+    Exclude<ApEnvReferenceVariableName, "DATABASE_URL">,
+    ContainerEnvDbPrimitiveField,
+  ][]) {
+    const valueFrom = source.primitiveSecretRefs?.[field];
+    if (valueFrom === undefined) {
+      continue;
+    }
+    options.push({
+      field,
+      name,
+      type: "secret",
+      valueFrom: { secretKeyRef: valueFrom },
+    });
+  }
+  for (const variable of source.variables ?? []) {
+    const canonicalName = normalizeReferenceVariableName(variable.name);
+    if (canonicalName === undefined) {
+      continue;
+    }
+    const field =
+      variable.field ??
+      (canonicalName === "DATABASE_URL"
+        ? "databaseUrl"
+        : AP_ENV_REFERENCE_PRIMITIVE_VARIABLES[canonicalName]);
+    const valueFrom = variable.valueFrom;
+    options.push({
+      field,
+      name: canonicalName,
+      type: variable.type,
+      ...(variable.value === undefined ? {} : { value: variable.value }),
+      ...(valueFrom === undefined ? {} : { valueFrom }),
+    });
+  }
+  return options;
+}
+
+function referenceVariableOption(
+  source: ContainerEnvDbDsnSource,
+  variableName: ApEnvReferenceVariableName
+): ApEnvReferenceVariableOption | undefined {
+  return referenceVariableOptions(source).find(
+    (option) => option.name === variableName
+  );
+}
+
+function referenceMenuItemType(
+  option: ApEnvReferenceVariableOption | undefined
+): ApEnvReferenceMenuItem["type"] {
+  if (option?.type === "secret") {
+    return "Secret";
+  }
+  if (option?.type === "value") {
+    return "Value";
+  }
+  return "Alias";
+}
+
+export function buildApEnvReferenceMenuItems(
+  sources: readonly ContainerEnvDbDsnSource[]
+): ApEnvReferenceMenuItem[] {
+  const items: ApEnvReferenceMenuItem[] = [];
+  for (const source of sources) {
+    for (const variableName of AP_ENV_REFERENCE_VARIABLES) {
+      const option = referenceVariableOption(source, variableName);
+      const available =
+        variableName === "DATABASE_URL"
+          ? AP_ENV_REFERENCE_DSN_FIELD_ORDER.every(
+              (field) => source.primitiveSecretRefs?.[field] !== undefined
+            )
+          : option !== undefined;
+      items.push({
+        available,
+        dbName: source.name,
+        description: available ? "Available" : "Unavailable",
+        expression: `\${{${source.name}.${variableName}}}`,
+        label: variableName,
+        type: referenceMenuItemType(option),
+        variableName,
+      });
+    }
+  }
+  return items;
+}
+
+function incompleteReferenceStart(value: string, cursor: number): number {
+  const beforeCursor = value.slice(0, cursor);
+  const start = beforeCursor.lastIndexOf("${{");
+  if (start === -1) {
+    return -1;
+  }
+  const closed = beforeCursor.lastIndexOf("}}");
+  return closed > start ? -1 : start;
+}
+
+function incompleteReferenceEnd(value: string, _start: number, cursor: number) {
+  const close = value.indexOf("}}", cursor);
+  return close === -1 ? cursor : close + 2;
+}
+
+export function insertApEnvReferenceText(
+  value: string,
+  expression: string,
+  selectionStart: number | null | undefined,
+  selectionEnd: number | null | undefined
+): string {
+  const start = Math.max(
+    0,
+    Math.min(value.length, selectionStart ?? value.length)
+  );
+  const end = Math.max(start, Math.min(value.length, selectionEnd ?? start));
+  const incompleteStart = incompleteReferenceStart(value, start);
+  if (incompleteStart !== -1) {
+    const incompleteEnd = incompleteReferenceEnd(value, incompleteStart, end);
+    return `${value.slice(0, incompleteStart)}${expression}${value.slice(
+      incompleteEnd
+    )}`;
+  }
+  return `${value.slice(0, start)}${expression}${value.slice(end)}`;
+}
+
+function parseApEnvReferenceTokens(value: string): ApEnvReferenceToken[] {
+  const tokens: ApEnvReferenceToken[] = [];
+  for (const match of value.matchAll(AP_ENV_REFERENCE_RE)) {
+    if (match.index === undefined) {
+      continue;
+    }
+    const dbName = match[1];
+    const variableName = match[2];
+    if (dbName === undefined || variableName === undefined) {
+      continue;
+    }
+    tokens.push({
+      dbName,
+      end: match.index + match[0].length,
+      raw: match[0],
+      start: match.index,
+      variableName,
+    });
+  }
+  return tokens;
+}
+
+function resolveApEnvReferenceToken(
+  token: ApEnvReferenceToken,
+  line: number,
+  sources: readonly ContainerEnvDbDsnSource[]
+): {
+  diagnostic?: ApEnvRawSourceDiagnostic;
+  reference?: ApEnvResolvedReferenceToken;
+} {
+  const source = dbSourceByReferenceName(sources, token.dbName);
+  if (source === undefined) {
+    return {
+      diagnostic: {
+        line,
+        message: `DB Reference "${token.dbName}" was not found.`,
+        type: "unresolved-reference",
+      },
+    };
+  }
+
+  const canonicalVariableName = normalizeReferenceVariableName(
+    token.variableName
+  );
+  if (
+    canonicalVariableName === undefined ||
+    referenceVariableOption(source, canonicalVariableName) === undefined
+  ) {
+    return {
+      diagnostic: {
+        line,
+        message: `DB Reference variable "${token.variableName}" is not available on ${source.name}.`,
+        type: "unresolved-reference",
+      },
+    };
+  }
+
+  const canonicalRaw = `\${{${source.name}.${canonicalVariableName}}}`;
+  return {
+    reference: {
+      ...token,
+      canonicalDbName: source.name,
+      canonicalRaw,
+      canonicalVariableName,
+      line,
+      source,
+    },
+  };
+}
+
+function resolvedReferencesForValue(
+  value: string,
+  line: number,
+  sources: readonly ContainerEnvDbDsnSource[]
+): {
+  diagnostics: ApEnvRawSourceDiagnostic[];
+  references: ApEnvResolvedReferenceToken[];
+} {
+  const diagnostics: ApEnvRawSourceDiagnostic[] = [];
+  const references: ApEnvResolvedReferenceToken[] = [];
+  for (const token of parseApEnvReferenceTokens(value)) {
+    const resolved = resolveApEnvReferenceToken(token, line, sources);
+    if (resolved.diagnostic !== undefined) {
+      diagnostics.push(resolved.diagnostic);
+    }
+    if (resolved.reference !== undefined) {
+      references.push(resolved.reference);
+    }
+  }
+  return { diagnostics, references };
+}
+
+function sourceWithCanonicalReferences(
+  source: string,
+  parsed: ApEnvRawSourceParseResult,
+  references: readonly ApEnvResolvedReferenceToken[]
+): string {
+  if (references.length === 0) {
+    return source;
+  }
+  const referencesByLine = new Map<number, ApEnvResolvedReferenceToken[]>();
+  for (const reference of references) {
+    const row = parsed.rows.find(
+      (candidate) => candidate.line === reference.line
+    );
+    if (row === undefined) {
+      continue;
+    }
+    const lineReferences = referencesByLine.get(row.line) ?? [];
+    lineReferences.push(reference);
+    referencesByLine.set(row.line, lineReferences);
+  }
+
+  const lines = splitSourceLines(source);
+  for (const [line, lineReferences] of referencesByLine) {
+    const raw = lines[line - 1];
+    const row = parsed.rows.find((candidate) => candidate.line === line);
+    if (raw === undefined || row === undefined) {
+      continue;
+    }
+    let nextValue = row.rawValue;
+    for (const reference of lineReferences) {
+      nextValue = nextValue.replaceAll(reference.raw, reference.canonicalRaw);
+    }
+    lines[line - 1] =
+      raw.slice(0, row.valueStart) + nextValue + raw.slice(row.valueEnd);
+  }
+  return lines.join("\n");
+}
+
+export function resolveApEnvRawSourceReferences(
+  source: string,
+  sources: readonly ContainerEnvDbDsnSource[] = []
+): ApEnvRawSourceReferenceResolutionResult {
+  const parsed = parseApEnvRawSource(source);
+  const diagnostics = [...parsed.diagnostics];
+  const references: ApEnvResolvedReferenceToken[] = [];
+  if (!parsed.valid) {
+    return { diagnostics, references, source, valid: false };
+  }
+
+  for (const row of parsed.rows) {
+    const resolved = resolvedReferencesForValue(row.value, row.line, sources);
+    diagnostics.push(...resolved.diagnostics);
+    references.push(...resolved.references);
+  }
+
+  return {
+    diagnostics,
+    references,
+    source: sourceWithCanonicalReferences(source, parsed, references),
+    valid: diagnostics.length === 0,
+  };
+}
+
+function helperNameForDbField(
+  source: ContainerEnvDbDsnSource,
+  field: ContainerEnvDbPrimitiveField,
+  context: ApEnvRuntimeCompileContext
+): string {
+  const sourceKey = dbReferenceSourceKey(source);
+  const helperKey = `${sourceKey}:${field}`;
+  const existing = context.helperNameByDbField.get(helperKey);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const base = `${dbIdentityForHelper(source)}_${helperFieldSuffix(field)}`;
+  let candidate = base;
+  let suffix = 2;
+  while (
+    context.explicitNames.has(candidate) ||
+    context.helperNames.has(candidate)
+  ) {
+    candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  context.helperNameByDbField.set(helperKey, candidate);
+  context.helperNames.add(candidate);
+  return candidate;
+}
+
+function helperRowForDbField(
+  source: ContainerEnvDbDsnSource,
+  field: ContainerEnvDbPrimitiveField,
+  line: number,
+  context: ApEnvRuntimeCompileContext
+): ContainerEnvRow | undefined {
+  const sourceKey = dbReferenceSourceKey(source);
+  const helperKey = `${sourceKey}:${field}`;
+  const existing = context.helperByDbField.get(helperKey);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const secretKeyRef = source.primitiveSecretRefs?.[field];
+  if (secretKeyRef === undefined) {
+    context.diagnostics.push({
+      line,
+      message: `DB Reference variable "${helperFieldSuffix(field)}" is not available on ${source.name}.`,
+      type: "runtime-compile",
+    });
+    return undefined;
+  }
+
+  const row: ContainerEnvRow = {
+    dbDsn: {
+      dbName: source.name,
+      dbNamespace: source.namespace,
+      field,
+    },
+    helper: {
+      automatic: true,
+      sourceDbKey: sourceKey,
+      sourceField: field,
+    },
+    name: helperNameForDbField(source, field, context),
+    value: CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+    valueFrom: { secretKeyRef },
+    valueSource: "valueFrom",
+  };
+  context.helperByDbField.set(helperKey, row);
+  return row;
+}
+
+function dbDsnScheme(source: ContainerEnvDbDsnSource): string {
+  const engine = source.engine?.trim().toLowerCase() ?? "";
+  if (engine.includes("mysql")) {
+    return "mysql";
+  }
+  if (engine.includes("mongo")) {
+    return "mongodb";
+  }
+  if (engine.includes("redis")) {
+    return "redis";
+  }
+  return "postgresql";
+}
+
+function compileDatabaseUrlReference(
+  reference: ApEnvResolvedReferenceToken,
+  line: number,
+  context: ApEnvRuntimeCompileContext
+): ApEnvReferenceCompileResult {
+  const helpers: ContainerEnvRow[] = [];
+  const helpersUsed: NonNullable<
+    ContainerEnvRow["compiledReference"]
+  >["helpers"] = [];
+  const helperNames: Partial<Record<ContainerEnvDbPrimitiveField, string>> = {};
+
+  for (const field of AP_ENV_REFERENCE_DSN_FIELD_ORDER) {
+    const helper = helperRowForDbField(reference.source, field, line, context);
+    if (helper === undefined) {
+      continue;
+    }
+    helpers.push(helper);
+    helperNames[field] = helper.name;
+    helpersUsed.push({
+      field,
+      name: helper.name,
+      valueFrom:
+        helper.valueFrom == null
+          ? undefined
+          : (helper.valueFrom as { secretKeyRef: ContainerEnvSecretKeyRef }),
+    });
+  }
+
+  if (
+    helperNames.username === undefined ||
+    helperNames.password === undefined ||
+    helperNames.host === undefined ||
+    helperNames.port === undefined
+  ) {
+    return { helpers, helpersUsed, value: reference.canonicalRaw };
+  }
+
+  return {
+    helpers,
+    helpersUsed,
+    value: `${dbDsnScheme(reference.source)}://$(${helperNames.username}):$(${helperNames.password})@$(${helperNames.host}):$(${helperNames.port})`,
+  };
+}
+
+function compilePrimitiveReference(
+  reference: ApEnvResolvedReferenceToken,
+  line: number,
+  context: ApEnvRuntimeCompileContext
+): ApEnvReferenceCompileResult {
+  if (reference.canonicalVariableName === "DATABASE_URL") {
+    return compileDatabaseUrlReference(reference, line, context);
+  }
+  const field =
+    AP_ENV_REFERENCE_PRIMITIVE_VARIABLES[reference.canonicalVariableName];
+  const helper = helperRowForDbField(reference.source, field, line, context);
+  return {
+    helpers: helper === undefined ? [] : [helper],
+    helpersUsed:
+      helper === undefined
+        ? []
+        : [
+            {
+              field,
+              name: helper.name,
+              valueFrom:
+                helper.valueFrom == null
+                  ? undefined
+                  : (helper.valueFrom as {
+                      secretKeyRef: ContainerEnvSecretKeyRef;
+                    }),
+            },
+          ],
+    value: helper === undefined ? reference.canonicalRaw : `$(${helper.name})`,
+  };
+}
+
+function compileRowReferences(
+  row: ApEnvRawSourceAssignment,
+  references: readonly ApEnvResolvedReferenceToken[],
+  context: ApEnvRuntimeCompileContext
+): {
+  helpers: ContainerEnvRow[];
+  row: ContainerEnvRow;
+} {
+  if (references.length === 0) {
+    return { helpers: [], row: { name: row.key, value: row.value } };
+  }
+
+  let value = row.value;
+  const helperByName = new Map<string, ContainerEnvRow>();
+  const helpersUsedByName = new Map<
+    string,
+    NonNullable<ContainerEnvRow["compiledReference"]>["helpers"][number]
+  >();
+  for (const reference of references) {
+    const compiled = compilePrimitiveReference(reference, row.line, context);
+    value = value
+      .replaceAll(reference.raw, compiled.value)
+      .replaceAll(reference.canonicalRaw, compiled.value);
+    for (const helper of compiled.helpers) {
+      helperByName.set(helper.name, helper);
+    }
+    for (const helper of compiled.helpersUsed) {
+      helpersUsedByName.set(helper.name, helper);
+    }
+  }
+
+  return {
+    helpers: Array.from(helperByName.values()),
+    row: {
+      compiledReference: {
+        expression: references
+          .map((reference) => reference.canonicalRaw)
+          .join(", "),
+        helpers: Array.from(helpersUsedByName.values()),
+      },
+      name: row.key,
+      value,
+    },
+  };
+}
+
+function referencesByRow(
+  parsed: ApEnvRawSourceParseResult,
+  references: readonly ApEnvResolvedReferenceToken[]
+): Map<number, ApEnvResolvedReferenceToken[]> {
+  const out = new Map<number, ApEnvResolvedReferenceToken[]>();
+  for (const row of parsed.rows) {
+    const rowReferences = references.filter(
+      (reference) => reference.line === row.line
+    );
+    if (rowReferences.length > 0) {
+      out.set(row.line, rowReferences);
+    }
+  }
+  return out;
+}
+
+export function compileApEnvRawSourceForRuntime(
+  source: string,
+  sources: readonly ContainerEnvDbDsnSource[] = []
+): ApEnvRawSourceRuntimeCompileResult {
+  const resolution = resolveApEnvRawSourceReferences(source, sources);
+  const parsed = parseApEnvRawSource(resolution.source);
+  const diagnostics = [...resolution.diagnostics];
+  if (!(resolution.valid && parsed.valid)) {
+    return {
+      diagnostics,
+      env: [],
+      envRawSource: resolution.source,
+      valid: false,
+    };
+  }
+
+  const explicitNames = new Set(parsed.rows.map((row) => row.key));
+  const context: ApEnvRuntimeCompileContext = {
+    diagnostics,
+    explicitNames,
+    helperByDbField: new Map(),
+    helperNameByDbField: new Map(),
+    helperNames: new Set(),
+  };
+  const references = referencesByRow(parsed, resolution.references);
+  const env: ContainerEnvRow[] = [];
+  const helperByName = new Map<string, ContainerEnvRow>();
+  for (const row of parsed.rows) {
+    const compiled = compileRowReferences(
+      row,
+      references.get(row.line) ?? [],
+      context
+    );
+    env.push(compiled.row);
+    for (const helper of compiled.helpers) {
+      helperByName.set(helper.name, helper);
+    }
+  }
+  env.push(...helperByName.values());
+
+  return {
+    diagnostics,
+    env,
+    envRawSource: resolution.source,
     valid: diagnostics.length === 0,
   };
 }

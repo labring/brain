@@ -1,5 +1,6 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
+import { resolveApEnvRawSourceReferences } from "@workspace/ui/lib/ap-env-raw-source";
 import {
   type ContainerEnvDbDsnSource,
   containerEnvDbDsnReferenceFromValue,
@@ -200,6 +201,14 @@ function envValuesFromAp(ap: unknown): string[] {
   return values;
 }
 
+function envRawSourceFromAp(ap: unknown): string | undefined {
+  const spec = specRecord(ap);
+  const input = asRecord(spec?.input);
+  return typeof input?.envRawSource === "string"
+    ? input.envRawSource
+    : undefined;
+}
+
 function addUniqueConnection(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
@@ -352,6 +361,34 @@ function addDsnBackedApDbConnections(
   }
 }
 
+function addRawSourceApDbConnections(
+  connections: CanvasDetectedConnection[],
+  seenConnectionKeys: Set<string>,
+  source: CanvasConnectionResourceRef,
+  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  ap: unknown
+): void {
+  const rawSource = envRawSourceFromAp(ap);
+  if (rawSource === undefined) {
+    return;
+  }
+  const resolved = resolveApEnvRawSourceReferences(rawSource, dbDsnSources);
+  for (const reference of resolved.references) {
+    const target = resourceRef(
+      "DB",
+      reference.canonicalDbName,
+      reference.source.namespace
+    );
+    if (target !== undefined) {
+      addUniqueConnection(connections, seenConnectionKeys, {
+        kind: "APToDB",
+        source,
+        target,
+      });
+    }
+  }
+}
+
 function addApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
@@ -364,6 +401,13 @@ function addApDbConnections(
     if (source === undefined) {
       continue;
     }
+    addRawSourceApDbConnections(
+      connections,
+      seenConnectionKeys,
+      source,
+      dbDsnSources,
+      ap
+    );
     addSecretBackedApDbConnections(
       connections,
       seenConnectionKeys,

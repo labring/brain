@@ -7,7 +7,7 @@ import type {
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import {
   canonicalApEnvRawSource,
-  normalizeApEnvRawSourceForSave,
+  compileApEnvRawSourceForRuntime,
 } from "@workspace/ui/lib/ap-env-raw-source";
 import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
@@ -779,7 +779,10 @@ export function patchOpsForApEnvSettings(
 ): K8sJsonPatchOp[] {
   const input = readApInput(spec ?? {});
   if (options.envRawSource !== undefined) {
-    const result = normalizeApEnvRawSourceForSave(options.envRawSource);
+    const result = compileApEnvRawSourceForRuntime(
+      options.envRawSource,
+      options.dbDsnReferenceSources
+    );
     if (!result.valid) {
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
@@ -996,7 +999,10 @@ function patchOpsForApSettingsDraftInput(
       envRawSource: previous.envRawSource,
     });
     if (nextRawSource !== previousRawSource) {
-      const result = normalizeApEnvRawSourceForSave(nextRawSource);
+      const result = compileApEnvRawSourceForRuntime(
+        nextRawSource,
+        options.dbDsnReferenceSources
+      );
       if (!result.valid) {
         throw new Error(
           result.diagnostics[0]?.message ?? "Invalid environment."

@@ -6,6 +6,10 @@ import {
   detectedCanvasConnectionEdges,
 } from "./detected-connections";
 
+function referenceExpression(db: string, variable: string): string {
+  return ["$", "{{", db, ".", variable, "}}"].join("");
+}
+
 test("canvas connections detect AP to DB edges from exact DB DSN env values and de-duplicate each pair", () => {
   const apsData = {
     items: [
@@ -229,6 +233,60 @@ test("canvas connections detect primitive Secret-backed AP to DB edges and de-du
                 },
               },
             },
+            {
+              name: "PG_PASSWORD",
+              valueFrom: {
+                secretKeyRef: {
+                  key: "passwd",
+                  name: "postgres-conn-credential",
+                },
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    detectCanvasConnections({
+      apsData,
+      dbsData,
+      entryPointsData: undefined,
+    }),
+    [
+      {
+        kind: "APToDB",
+        source: { kind: "AP", name: "api", namespace: "default" },
+        target: { kind: "DB", name: "postgres", namespace: "default" },
+      },
+    ]
+  );
+});
+
+test("canvas connections prefer raw source DB references for AP to DB edges", () => {
+  const apsData = {
+    items: [
+      {
+        metadata: { name: "api", namespace: "default" },
+        spec: {
+          input: {
+            env: [{ name: "DATABASE_URL", value: "https://unrelated" }],
+            envRawSource: `DATABASE_URL=${referenceExpression(
+              "postgres",
+              "DATABASE_URL"
+            )}`,
+          },
+        },
+      },
+    ],
+  };
+  const dbsData = {
+    items: [
+      {
+        metadata: { name: "postgres", namespace: "default" },
+        status: {
+          variables: [
             {
               name: "PG_PASSWORD",
               valueFrom: {
