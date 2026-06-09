@@ -116,19 +116,23 @@ func RestoreDBFromBackup(cfg *clientcmdapi.Config, opts RestoreDBOptions) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	source, err := client.Resource(kubeBlocksClusterGVR).Namespace(namespace).Get(context.Background(), sourceName, metav1.GetOptions{})
+	ctx := context.Background()
+	clusters := client.Resource(kubeBlocksClusterGVR).Namespace(namespace)
+	backups := client.Resource(kubeBlocksBackupGVR).Namespace(backupNamespace)
+
+	source, err := clusters.Get(ctx, sourceName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("source DB Service %s not found: %w", sourceName, err)
 	}
 	if err := requireBrainManagedRestoreSource(source); err != nil {
 		return nil, err
 	}
-	if _, err := client.Resource(kubeBlocksClusterGVR).Namespace(namespace).Get(context.Background(), restoredName, metav1.GetOptions{}); err == nil {
+	if _, err := clusters.Get(ctx, restoredName, metav1.GetOptions{}); err == nil {
 		return nil, apierrors.NewAlreadyExists(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, restoredName)
 	} else if !apierrors.IsNotFound(err) {
 		return nil, err
 	}
-	backup, err := client.Resource(kubeBlocksBackupGVR).Namespace(backupNamespace).Get(context.Background(), backupName, metav1.GetOptions{})
+	backup, err := backups.Get(ctx, backupName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("DB Service Backup %s not found: %w", backupName, err)
 	}
@@ -140,7 +144,7 @@ func RestoreDBFromBackup(cfg *clientcmdapi.Config, opts RestoreDBOptions) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	created, err := client.Resource(kubeBlocksClusterGVR).Namespace(namespace).Create(context.Background(), plan.Resources.Cluster, metav1.CreateOptions{})
+	created, err := clusters.Create(ctx, plan.Resources.Cluster, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +235,8 @@ func backupBelongsToSourceCluster(backup *unstructured.Unstructured, source *uns
 	if sourceUID == "" {
 		return fmt.Errorf("source DB Service UID is required")
 	}
-	if got := strings.TrimSpace(backup.GetLabels()[transformdb.KubeBlocksBackupClusterUIDLabel]); got != sourceUID {
+	backupClusterUID := strings.TrimSpace(backup.GetLabels()[transformdb.KubeBlocksBackupClusterUIDLabel])
+	if backupClusterUID != sourceUID {
 		return fmt.Errorf("DB Service Backup does not belong to the source DB Service")
 	}
 	return nil

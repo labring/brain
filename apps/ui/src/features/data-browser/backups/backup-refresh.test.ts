@@ -22,7 +22,7 @@ test("manual backup refresh fetches the DB product resource with kubeconfig auth
   let capturedUrl = "";
   let capturedAuth: string | null = null;
 
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     capturedUrl = String(input);
     capturedAuth = new Headers(init?.headers).get("Authorization");
     return Response.json({
@@ -53,7 +53,7 @@ test("restore submit posts the completed backup and restored DB Service name", a
   let capturedAuth: string | null = null;
   let capturedBody: unknown;
 
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     capturedUrl = String(input);
     capturedAuth = new Headers(init?.headers).get("Authorization");
     capturedBody = JSON.parse(String(init?.body));
@@ -86,7 +86,7 @@ test("restore submit posts the completed backup and restored DB Service name", a
 });
 
 test("restore submit reports API conflict detail", async () => {
-  globalThis.fetch = (() =>
+  globalThis.fetch = (async () =>
     Response.json(
       {
         detail: "DB Service name already exists",

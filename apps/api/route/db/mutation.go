@@ -25,6 +25,16 @@ import (
 	orchestration "sealos/api/service/orchestration"
 )
 
+var dbRestoreValidationErrorFragments = []string{
+	"completed DB Service Backup",
+	"does not belong",
+	"different from the source",
+	"same namespace",
+	"unsupported DB engine",
+	"projectId",
+	"DB Service name",
+}
+
 func registerCreate(grp huma.API) {
 	type dbCreateBody struct {
 		YAML string `json:"yaml" required:"true" doc:"DB product manifest (YAML or JSON). The Go API renders it directly into a KubeBlocks Cluster and support resources. Required fields: metadata.name, spec.projectId, and spec.engine. Optional fields include spec.clusterVersion, spec.replicas, and spec.storageSize."`
@@ -374,15 +384,7 @@ func isDBRestoreValidationError(err error) bool {
 		return false
 	}
 	message := err.Error()
-	for _, fragment := range []string{
-		"completed DB Service Backup",
-		"does not belong",
-		"different from the source",
-		"same namespace",
-		"unsupported DB engine",
-		"projectId",
-		"DB Service name",
-	} {
+	for _, fragment := range dbRestoreValidationErrorFragments {
 		if strings.Contains(message, fragment) {
 			return true
 		}

@@ -394,8 +394,6 @@ function BackupRowsTable({
 }
 
 interface RestoreModalContextValue {
-  backup: DbServiceBackupSummary;
-  existingNames: readonly string[];
   restoredName: string;
   setRestoredName: (name: string) => void;
   validationError: string | null;
@@ -459,8 +457,6 @@ function RestoreModalProvider({
   return (
     <RestoreModalContext
       value={{
-        backup,
-        existingNames,
         restoredName,
         setRestoredName,
         validationError,
@@ -535,12 +531,7 @@ function RestoreBackupModal({
   onSuccess: () => void;
 }) {
   return (
-    <Dialog
-      onOpenChange={(open) => {
-        onOpenChange(open);
-      }}
-      open={backup !== null}
-    >
+    <Dialog onOpenChange={onOpenChange} open={backup !== null}>
       <DialogContent>
         {backup !== null && (
           <RestoreModalProvider
