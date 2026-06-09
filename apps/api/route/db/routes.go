@@ -30,6 +30,7 @@ func Register(api huma.API) {
 	registerAccessExport(grp)
 	registerCreate(grp)
 	registerBackup(grp)
+	registerBackupPolicy(grp)
 	registerStart(grp)
 	registerStop(grp)
 	registerRestart(grp)

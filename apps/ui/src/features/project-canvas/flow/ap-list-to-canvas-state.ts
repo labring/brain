@@ -386,6 +386,45 @@ export interface EntryPointsToCanvasStateOptions {
   namespaceFallback?: string;
 }
 
+function databaseBackupPolicyFromSpec(
+  spec: Record<string, unknown>
+): CanvasDatabaseNodeData["backupPolicy"] {
+  const raw = asRecord(spec.backupPolicy);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const cronExpression = nonEmptyString(raw.cronExpression);
+  const retentionPeriod = nonEmptyString(raw.retentionPeriod);
+  const enabled = typeof raw.enabled === "boolean" ? raw.enabled : undefined;
+  if (
+    cronExpression === undefined &&
+    enabled === undefined &&
+    retentionPeriod === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(cronExpression === undefined ? {} : { cronExpression }),
+    ...(enabled === undefined ? {} : { enabled }),
+    ...(retentionPeriod === undefined ? {} : { retentionPeriod }),
+  };
+}
+
+function databaseTelemetryForResource({
+  metricsLookup,
+  name,
+  namespace,
+}: {
+  metricsLookup?: Map<string, WorkloadMetricPercents>;
+  name: string;
+  namespace: string;
+}): WorkloadMetricPercents | undefined {
+  if (namespace === "" || name === "") {
+    return undefined;
+  }
+  return metricsLookup?.get(telemetryWorkloadKey("db", namespace, name));
+}
+
 /**
  * Builds React Flow `nodes` / `edges` for the project AP list (canvas state).
  */
@@ -447,14 +486,11 @@ export function dbToDatabaseNodeData(
   const namespace = metadataNamespace(db) ?? options?.namespaceFallback ?? "";
   const uid = metadataUid(db);
   const engineKey = nonEmptyString(spec.engine);
-  const lookupKey =
-    namespace === "" || name === ""
-      ? undefined
-      : telemetryWorkloadKey("db", namespace, name);
-  const telemetry =
-    lookupKey === undefined
-      ? undefined
-      : options?.metricsLookup?.get(lookupKey);
+  const telemetry = databaseTelemetryForResource({
+    metricsLookup: options?.metricsLookup,
+    name,
+    namespace,
+  });
 
   const formattedVersion = databaseVersionFromResource({
     engineKey,
@@ -467,6 +503,7 @@ export function dbToDatabaseNodeData(
   const metricCapacities = databaseMetricCapacitiesFromStatus(status);
   const mountPath = nonEmptyString(status.mountPath);
   const backups = Array.isArray(status.backups) ? status.backups : undefined;
+  const backupPolicy = databaseBackupPolicyFromSpec(spec);
 
   const states: DatabaseNodeStates = {
     displayEngine: displayEngineFromKey(engineKey),
@@ -485,6 +522,7 @@ export function dbToDatabaseNodeData(
   const resourceMetadata = databaseMetadataFromResource(metadata);
 
   return {
+    ...(backupPolicy === undefined ? {} : { backupPolicy }),
     ...(backups === undefined ? {} : { backups }),
     connections: databaseConnectionsFromResource(spec, status),
     desired: databaseDesiredFromSpec(spec, status),

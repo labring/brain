@@ -3,7 +3,10 @@
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import type { DataBrowserHostContext } from "./api/access-types";
+import type {
+  DataBrowserDBServiceBackupPolicy,
+  DataBrowserHostContext,
+} from "./api/access-types";
 import { normalizeDataBrowserEngine } from "./api/engine";
 
 const DataBrowserRuntimeContext = createContext<DataBrowserHostContext | null>(
@@ -28,6 +31,14 @@ function dbServiceBackupsFromNode(
   return dbServiceBackupsFromValue(selectedDatabaseData.backups);
 }
 
+function dbServiceBackupPolicyFromValue(
+  backupPolicy: unknown
+): DataBrowserDBServiceBackupPolicy | undefined {
+  return backupPolicy != null && typeof backupPolicy === "object"
+    ? (backupPolicy as DataBrowserDBServiceBackupPolicy)
+    : undefined;
+}
+
 function dbServiceUidFromNode(
   selectedDatabaseData: CanvasDatabaseNodeData
 ): string | undefined {
@@ -43,6 +54,9 @@ export function dataBrowserRuntimeParts(
   const { states, workload } = selectedDatabaseData;
 
   return {
+    backupPolicy: dbServiceBackupPolicyFromValue(
+      selectedDatabaseData.backupPolicy
+    ),
     backups: dbServiceBackupsFromNode(selectedDatabaseData),
     databaseDisplayEngine: states.displayEngine,
     databaseEngineKey: states.engineKey,
@@ -58,6 +72,7 @@ export function dataBrowserRuntimeParts(
 type DataBrowserRuntimeParts = ReturnType<typeof dataBrowserRuntimeParts>;
 
 function dataBrowserHostContextFromParts({
+  backupPolicy,
   backups,
   databaseDisplayEngine,
   databaseEngineKey,
@@ -76,6 +91,7 @@ function dataBrowserHostContextFromParts({
     "kubeconfig" | "namespace" | "projectId"
   >): DataBrowserHostContext {
   return {
+    ...(backupPolicy === undefined ? {} : { backupPolicy }),
     backups,
     database: {
       displayEngine: databaseDisplayEngine,
@@ -123,6 +139,7 @@ export function DataBrowserRuntimeProvider({
   selectedDatabaseData,
 }: DataBrowserRuntimeProviderProps) {
   const {
+    backupPolicy,
     databaseDisplayEngine,
     databaseEngineKey,
     databaseFormattedVersion,
@@ -137,6 +154,7 @@ export function DataBrowserRuntimeProvider({
     () =>
       dataBrowserHostContextFromParts({
         backups: dbServiceBackupsFromValue(rawBackups),
+        backupPolicy,
         databaseDisplayEngine,
         databaseEngineKey,
         databaseFormattedVersion,
@@ -162,6 +180,7 @@ export function DataBrowserRuntimeProvider({
       namespace,
       projectId,
       rawBackups,
+      backupPolicy,
     ]
   );
 

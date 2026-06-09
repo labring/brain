@@ -294,6 +294,150 @@ func registerBackup(grp huma.API) {
 	})
 }
 
+type dbBackupPolicyRequest struct {
+	CronExpression string `json:"cronExpression,omitempty" doc:"UTC cron expression for the automatic DB Service Backup Policy."`
+	Enabled        bool   `json:"enabled" doc:"Whether future automatic DB Service Backups should run."`
+	Name           string `json:"name" required:"true" doc:"DB metadata.name."`
+	Namespace      string `json:"namespace,omitempty" doc:"Namespace of the DB (default from kubeconfig; admin can override)."`
+	RetentionDays  int64  `json:"retentionDays,omitempty" doc:"Automatic backup retention in days. Allowed values: 1, 3, 7, 14, or 30."`
+}
+
+func registerBackupPolicy(grp huma.API) {
+	type dbBackupPolicyInput struct {
+		middleware.AuthInput
+		Body dbBackupPolicyRequest
+	}
+	type dbBackupPolicyOutput struct {
+		Body json.RawMessage
+	}
+
+	huma.Register(grp, huma.Operation{
+		OperationID: "db-backup-policy-update",
+		Method:      http.MethodPost,
+		Path:        "/backup/policy",
+		Summary:     "Update DB backup policy",
+		Description: "Updates the single current automatic DB Service Backup Policy for a DB Service by patching the backing KubeBlocks Cluster `spec.backup` fields. Disabling the policy stops future automatic backups and preserves existing DB Service Backup resources.",
+		Tags:        []string{"DB"},
+	}, func(ctx context.Context, input *dbBackupPolicyInput) (*dbBackupPolicyOutput, error) {
+		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
+		}
+		name := strings.TrimSpace(input.Body.Name)
+		if name == "" {
+			return nil, huma.Error400BadRequest("name is required", nil)
+		}
+
+		gvr := middleware.PodsGVR()
+		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
+			Namespace:        input.Body.Namespace,
+			AllNamespaces:    false,
+			DefaultNamespace: "",
+			AdminCheckGVR:    &gvr,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
+		}
+
+		clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+			Resource:  "clusters",
+			Name:      name,
+			Namespace: resolved.Namespace,
+		})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("DB not found", err)
+			}
+			return nil, huma.Error500InternalServerError("failed to get DB for backup policy update", err)
+		}
+		var currentCluster unstructured.Unstructured
+		if err := json.Unmarshal(clusterJSON, &currentCluster); err != nil {
+			return nil, huma.Error500InternalServerError("failed to decode DB for backup policy update", err)
+		}
+		if err := requireBrainDBCluster(currentCluster); err != nil {
+			return nil, huma.Error404NotFound("DB not found", err)
+		}
+
+		patch, err := dbBackupPolicyPatchFromRequest(input.Body, dbEngineFromCluster(currentCluster), dbBackupRepoName(currentCluster))
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("invalid DB backup policy request", err)
+		}
+		patchedJSON, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+			Resource:  "clusters",
+			Name:      name,
+			Namespace: resolved.Namespace,
+			PatchType: k8ssvc.PatchTypeMerge,
+			Patch:     patch,
+		})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("DB not found", err)
+			}
+			return nil, huma.Error500InternalServerError("failed to update DB backup policy", err)
+		}
+		body, err := dbResponseFromClustersWithSupport(cfg, patchedJSON, true)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to adapt DB response", err)
+		}
+		return &dbBackupPolicyOutput{Body: body}, nil
+	})
+}
+
+func dbBackupPolicyPatchFromRequest(request dbBackupPolicyRequest, engine string, repoName string) ([]byte, error) {
+	backup := map[string]interface{}{
+		"enabled": request.Enabled,
+	}
+	if request.Enabled {
+		cronExpression := strings.TrimSpace(request.CronExpression)
+		if cronExpression == "" {
+			return nil, fmt.Errorf("cronExpression is required when enabled is true")
+		}
+		if len(strings.Fields(cronExpression)) != 5 {
+			return nil, fmt.Errorf("cronExpression must have five cron fields")
+		}
+		if !isAllowedRetentionDays(request.RetentionDays) {
+			return nil, fmt.Errorf("retentionDays must be one of 1, 3, 7, 14, or 30")
+		}
+		profile, ok := orchestration.DBEngineProfileFor(engine)
+		if !ok {
+			return nil, fmt.Errorf("unsupported DB engine %q", engine)
+		}
+		backup["cronExpression"] = cronExpression
+		backup["incrementalBackupEnabled"] = false
+		backup["method"] = profile.BackupMethod
+		backup["pitrEnabled"] = false
+		backup["repoName"] = dbBackupPolicyRepoName(repoName)
+		backup["retentionPeriod"] = fmt.Sprintf("%dd", request.RetentionDays)
+	}
+	return json.Marshal(map[string]interface{}{
+		"spec": map[string]interface{}{
+			"backup": backup,
+		},
+	})
+}
+
+func dbBackupRepoName(cluster unstructured.Unstructured) string {
+	repoName, _, _ := unstructured.NestedString(cluster.Object, "spec", "backup", "repoName")
+	return strings.TrimSpace(repoName)
+}
+
+func dbBackupPolicyRepoName(repoName string) string {
+	repoName = strings.TrimSpace(repoName)
+	if repoName == "" {
+		return "backuprepo-s3"
+	}
+	return repoName
+}
+
+func isAllowedRetentionDays(days int64) bool {
+	switch days {
+	case 1, 3, 7, 14, 30:
+		return true
+	default:
+		return false
+	}
+}
+
 type dbLifecycleBody struct {
 	Name      string `json:"name" required:"true" doc:"DB metadata.name."`
 	Namespace string `json:"namespace" doc:"Namespace of the DB (default from kubeconfig; admin can override)."`

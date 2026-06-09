@@ -78,7 +78,14 @@ export interface DataBrowserDBServiceBackupSource {
   uid?: string;
 }
 
+export interface DataBrowserDBServiceBackupPolicy {
+  cronExpression?: string;
+  enabled?: boolean;
+  retentionPeriod?: string;
+}
+
 export interface DataBrowserHostContext {
+  backupPolicy?: DataBrowserDBServiceBackupPolicy;
   backups?: unknown[];
   database: DataBrowserDatabaseMetadata;
   databaseWorkloadName: string;

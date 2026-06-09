@@ -436,6 +436,96 @@ func TestApplyDBBackupStateSetsRawBackups(t *testing.T) {
 	}
 }
 
+func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpec(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * 1,3,5",
+		RetentionDays:  7,
+	}, "postgresql", "")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got := backup["enabled"]; got != true {
+		t.Fatalf("backup.enabled = %v, want true", got)
+	}
+	if got := backup["cronExpression"]; got != "15 8 * * 1,3,5" {
+		t.Fatalf("backup.cronExpression = %v, want 15 8 * * 1,3,5", got)
+	}
+	if got := backup["retentionPeriod"]; got != "7d" {
+		t.Fatalf("backup.retentionPeriod = %v, want 7d", got)
+	}
+	if got := backup["method"]; got != "postgres-basebackup" {
+		t.Fatalf("backup.method = %v, want postgres-basebackup", got)
+	}
+	if got := backup["repoName"]; got != "backuprepo-s3" {
+		t.Fatalf("backup.repoName = %v, want backuprepo-s3", got)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestPreservesExistingRepo(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * *",
+		RetentionDays:  7,
+	}, "postgresql", "custom-repo")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got := backup["repoName"]; got != "custom-repo" {
+		t.Fatalf("backup.repoName = %v, want custom-repo", got)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestDisablesPolicyWithoutClearingSchedule(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled: false,
+	}, "postgresql", "")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got := backup["enabled"]; got != false {
+		t.Fatalf("backup.enabled = %v, want false", got)
+	}
+	if _, ok := backup["cronExpression"]; ok {
+		t.Fatalf("disable patch should not clear cronExpression: %#v", backup)
+	}
+	if _, ok := backup["retentionPeriod"]; ok {
+		t.Fatalf("disable patch should not clear retentionPeriod: %#v", backup)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestValidatesRetention(t *testing.T) {
+	_, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * *",
+		RetentionDays:  2,
+	}, "postgresql", "")
+	if err == nil {
+		t.Fatal("expected invalid retention to be rejected")
+	}
+	if !strings.Contains(err.Error(), "retentionDays") {
+		t.Fatalf("expected error to name retentionDays, got %v", err)
+	}
+}
+
 func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testing.T) {
 	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
 
