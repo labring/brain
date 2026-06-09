@@ -88,4 +88,5 @@ export interface DataBrowserHostContext {
   kubeconfig: string;
   namespace: string;
   projectId: string;
+  refreshProjectCanvas?: () => Promise<unknown>;
 }

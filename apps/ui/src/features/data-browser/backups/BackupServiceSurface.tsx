@@ -7,13 +7,26 @@ import {
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
 import { Button } from "@data-browser/components/ui/Button";
+import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
+import { Input } from "@data-browser/components/ui/Input";
+import { ModalForm, useModalForm } from "@data-browser/components/ui/ModalForm";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
-import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { DatabaseBackup, RefreshCw } from "lucide-react";
+import {
+  createContext,
+  type ReactNode,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
 const DB_PRODUCT_ROUTE = "/api/db/v1alpha1";
+const DB_RESTORE_ROUTE = `${DB_PRODUCT_ROUTE}/restore`;
+const DB_SERVICE_NAME_PATTERN = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object"
@@ -46,6 +59,36 @@ function statusBackupsFromProductResource(
   return undefined;
 }
 
+function stringField(
+  data: Record<string, unknown> | undefined,
+  key: string
+): string {
+  const value = data?.[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function responseErrorMessage(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  const text = await response.text();
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return fallback;
+  }
+  try {
+    const body = asRecord(JSON.parse(trimmed));
+    return (
+      stringField(body, "detail") ||
+      stringField(body, "message") ||
+      stringField(body, "title") ||
+      fallback
+    );
+  } catch {
+    return trimmed;
+  }
+}
+
 export async function fetchDbServiceBackupProductResource({
   kubeconfig,
   name,
@@ -66,10 +109,68 @@ export async function fetchDbServiceBackupProductResource({
     method: "GET",
   });
   if (!response.ok) {
-    const text = await response.text();
     throw new Error(
-      text.trim() ||
+      await responseErrorMessage(
+        response,
         `DB Service backup refresh failed with status ${response.status}`
+      )
+    );
+  }
+  return response.json();
+}
+
+export function validateRestoredDbServiceName(
+  name: string,
+  existingNames: readonly string[] = []
+): string | null {
+  const trimmed = name.trim();
+  if (trimmed === "") {
+    return "DB Service name is required.";
+  }
+  if (trimmed.length > 63 || !DB_SERVICE_NAME_PATTERN.test(trimmed)) {
+    return "Use lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.";
+  }
+  if (existingNames.some((existing) => existing.trim() === trimmed)) {
+    return "A DB Service with this name already exists.";
+  }
+  return null;
+}
+
+export async function submitDbServiceBackupRestore({
+  backupName,
+  backupNamespace,
+  kubeconfig,
+  name,
+  namespace,
+  restoredName,
+}: {
+  backupName: string;
+  backupNamespace: string;
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  restoredName: string;
+}): Promise<unknown> {
+  const response = await fetch(DB_RESTORE_ROUTE, {
+    body: JSON.stringify({
+      backupName,
+      backupNamespace,
+      name,
+      namespace,
+      restoredName: restoredName.trim(),
+    }),
+    headers: {
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(
+      await responseErrorMessage(
+        response,
+        `DB Service restore failed with status ${response.status}`
+      )
     );
   }
   return response.json();
@@ -181,7 +282,13 @@ function UnsupportedBackupSurface() {
   );
 }
 
-function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
+function BackupRowsTable({
+  backups,
+  onRestore,
+}: {
+  backups: DbServiceBackupSummary[];
+  onRestore: (backup: DbServiceBackupSummary) => void;
+}) {
   if (backups.length === 0) {
     return <EmptyBackupRows />;
   }
@@ -208,6 +315,7 @@ function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
             <th className="px-3 py-2 font-medium">{"Restorable"}</th>
             <th className="px-3 py-2 font-medium">{"Deletable"}</th>
             <th className="px-3 py-2 font-medium">{"Source DB Service"}</th>
+            <th className="px-3 py-2 font-medium">{"Actions"}</th>
           </tr>
         </thead>
         <tbody>
@@ -259,6 +367,24 @@ function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
                   {`${backup.source.namespace}/${backup.source.name}`}
                 </span>
               </td>
+              <td className="px-3 py-2 align-top">
+                <Button
+                  data-qa-action="restore"
+                  data-qa-module="database"
+                  data-qa-object="backup-row"
+                  data-qa-resource-id={backup.name}
+                  data-qa-state={backup.restorable ? "enabled" : "disabled"}
+                  data-testid="database.backup.restore-button"
+                  disabled={!backup.restorable}
+                  onClick={() => onRestore(backup)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <DatabaseBackup className="h-4 w-4" />
+                  {"Restore"}
+                </Button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -267,11 +393,183 @@ function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
   );
 }
 
+interface RestoreModalContextValue {
+  backup: DbServiceBackupSummary;
+  existingNames: readonly string[];
+  restoredName: string;
+  setRestoredName: (name: string) => void;
+  validationError: string | null;
+}
+
+const RestoreModalContext = createContext<RestoreModalContextValue | null>(
+  null
+);
+
+function useRestoreModalContext(): RestoreModalContextValue {
+  const context = use(RestoreModalContext);
+  if (context === null) {
+    throw new Error(
+      "useRestoreModalContext must be used within RestoreModalProvider"
+    );
+  }
+  return context;
+}
+
+function RestoreModalProvider({
+  backup,
+  children,
+  existingNames,
+  onSuccess,
+}: {
+  backup: DbServiceBackupSummary;
+  children: ReactNode;
+  existingNames: readonly string[];
+  onSuccess: () => void;
+}) {
+  const runtime = useDbAccessRuntime();
+  const [restoredName, setRestoredName] = useState("");
+  const validationError = validateRestoredDbServiceName(
+    restoredName,
+    existingNames
+  );
+  const handleSubmit = useCallback(async () => {
+    if (validationError !== null) {
+      throw new Error(validationError);
+    }
+    await submitDbServiceBackupRestore({
+      backupName: backup.name,
+      backupNamespace: backup.namespace,
+      kubeconfig: runtime.kubeconfig,
+      name: runtime.databaseWorkloadName,
+      namespace: runtime.databaseWorkloadNamespace,
+      restoredName,
+    });
+    onSuccess();
+  }, [
+    backup.name,
+    backup.namespace,
+    onSuccess,
+    restoredName,
+    runtime.databaseWorkloadName,
+    runtime.databaseWorkloadNamespace,
+    runtime.kubeconfig,
+    validationError,
+  ]);
+
+  return (
+    <RestoreModalContext
+      value={{
+        backup,
+        existingNames,
+        restoredName,
+        setRestoredName,
+        validationError,
+      }}
+    >
+      <ModalForm.Provider
+        meta={{
+          description: `${backup.namespace}/${backup.name}`,
+          icon: DatabaseBackup,
+          title: "Restore DB Service Backup",
+        }}
+        onSubmit={handleSubmit}
+      >
+        {children}
+      </ModalForm.Provider>
+    </RestoreModalContext>
+  );
+}
+
+function RestoreModalFields() {
+  const { restoredName, setRestoredName, validationError } =
+    useRestoreModalContext();
+  const { state } = useModalForm();
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="font-medium text-foreground text-sm">
+        {"New DB Service name"}
+      </label>
+      <Input
+        aria-invalid={validationError !== null}
+        data-qa-module="database"
+        data-qa-object="restore-name"
+        data-qa-state={validationError === null ? "valid" : "invalid"}
+        data-testid="database.backup.restore-name-input"
+        disabled={state.isSubmitting}
+        onChange={(event) => setRestoredName(event.target.value)}
+        placeholder={"orders-restore"}
+        value={restoredName}
+      />
+      {validationError !== null && (
+        <p
+          className="m-0 text-[13px] text-destructive leading-5"
+          data-testid="database.backup.restore-name-error"
+        >
+          {validationError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RestoreSubmitButton() {
+  const { validationError } = useRestoreModalContext();
+  return (
+    <ModalForm.SubmitButton
+      disabled={validationError !== null}
+      label={"Restore"}
+    />
+  );
+}
+
+function RestoreBackupModal({
+  backup,
+  existingNames,
+  onOpenChange,
+  onSuccess,
+}: {
+  backup: DbServiceBackupSummary | null;
+  existingNames: readonly string[];
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}) {
+  return (
+    <Dialog
+      onOpenChange={(open) => {
+        onOpenChange(open);
+      }}
+      open={backup !== null}
+    >
+      <DialogContent>
+        {backup !== null && (
+          <RestoreModalProvider
+            backup={backup}
+            existingNames={existingNames}
+            onSuccess={onSuccess}
+          >
+            <ModalForm.Header />
+            <RestoreModalFields />
+            <ModalForm.Alert />
+            <ModalForm.Footer>
+              <ModalForm.CancelButton />
+              <RestoreSubmitButton />
+            </ModalForm.Footer>
+          </RestoreModalProvider>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function BackupServiceSurface() {
   const runtime = useDbAccessRuntime();
   const [refreshData, setRefreshData] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
+  const [restoreBackup, setRestoreBackup] =
+    useState<DbServiceBackupSummary | null>(null);
   const summaries = useMemo(() => {
     const refreshedBackups = statusBackupsFromProductResource(refreshData);
     return adaptDbServiceBackups({
@@ -307,6 +605,16 @@ export function BackupServiceSurface() {
     runtime.engine,
     runtime.kubeconfig,
   ]);
+  const existingDbServiceNames = useMemo(
+    () => [runtime.databaseWorkloadName],
+    [runtime.databaseWorkloadName]
+  );
+  const handleRestoreSuccess = useCallback(() => {
+    setRestoreSuccess("Restore request accepted.");
+    setRestoreBackup(null);
+    runtime.refreshProjectCanvas?.().catch(() => undefined);
+    refresh().catch(() => undefined);
+  }, [refresh, runtime.refreshProjectCanvas]);
 
   useEffect(() => {
     if (!needsRefresh) {
@@ -371,7 +679,29 @@ export function BackupServiceSurface() {
         </div>
       )}
 
-      <BackupRowsTable backups={summaries} />
+      {restoreSuccess !== null && (
+        <div
+          className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-300"
+          data-qa-module="database"
+          data-qa-object="backup-restore-feedback"
+          data-qa-state="accepted"
+          data-testid="database.backup.restore-feedback"
+        >
+          {restoreSuccess}
+        </div>
+      )}
+
+      <BackupRowsTable backups={summaries} onRestore={setRestoreBackup} />
+      <RestoreBackupModal
+        backup={restoreBackup}
+        existingNames={existingDbServiceNames}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRestoreBackup(null);
+          }
+        }}
+        onSuccess={handleRestoreSuccess}
+      />
     </section>
   );
 }

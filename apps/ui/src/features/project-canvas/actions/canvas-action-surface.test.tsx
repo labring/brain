@@ -60,6 +60,7 @@ const dbAccessModel = {
 };
 
 test("main action surface renders shared chrome and empty body slot", () => {
+  const refreshProjectCanvas = async () => undefined;
   const html = renderToStaticMarkup(
     <MainActionSurface
       kubeconfig="kubeconfig"
@@ -67,6 +68,7 @@ test("main action surface renders shared chrome and empty body slot", () => {
       namespace="default"
       onClose={noop}
       projectId="project-uid"
+      refreshProjectCanvas={refreshProjectCanvas}
     />
   );
 

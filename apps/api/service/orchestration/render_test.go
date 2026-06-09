@@ -716,6 +716,69 @@ func TestRenderDBResourcesAppliesQuotaAndResourceOverrides(t *testing.T) {
 	}
 }
 
+func TestRenderDBResourcesAddsRestoreSourceWithoutChangingInheritedSettings(t *testing.T) {
+	resources, err := RenderDBResources(DBResourcesInput{
+		BackupPolicy: map[string]interface{}{
+			"enabled": true,
+			"method":  "postgres-basebackup",
+		},
+		CPULimit:       "1500m",
+		CPURequest:     "500m",
+		ClusterVersion: "postgresql-16",
+		Engine:         "postgresql",
+		MemoryLimit:    "2Gi",
+		MemoryRequest:  "1Gi",
+		Name:           "orders-restore",
+		Namespace:      "database-system",
+		ProjectID:      "project-a",
+		Replicas:       2,
+		RestoreFromBackup: &DBRestoreFromBackupInput{
+			BackupName:      "orders-manual-20260609",
+			BackupNamespace: "database-system",
+		},
+		StorageSize: "20Gi",
+	})
+	if err != nil {
+		t.Fatalf("RenderDBResources returned error: %v", err)
+	}
+
+	spec := resources.Cluster.Object["spec"].(map[string]interface{})
+	annotations := resources.Cluster.GetAnnotations()
+	restore := annotations["kubeblocks.io/restore-from-backup"]
+	if restore == "" {
+		t.Fatal("missing kubeblocks restore-from-backup annotation")
+	}
+	if !strings.Contains(restore, `"postgresql"`) {
+		t.Fatalf("restore annotation = %q, want postgresql component key", restore)
+	}
+	if !strings.Contains(restore, `"name":"orders-manual-20260609"`) {
+		t.Fatalf("restore annotation = %q, want orders-manual-20260609 backup", restore)
+	}
+	if !strings.Contains(restore, `"namespace":"database-system"`) {
+		t.Fatalf("restore annotation = %q, want database-system namespace", restore)
+	}
+	if !strings.Contains(restore, `"volumeRestorePolicy":"Parallel"`) {
+		t.Fatalf("restore annotation = %q, want Parallel volume restore policy", restore)
+	}
+	component := spec["componentSpecs"].([]interface{})[0].(map[string]interface{})
+	backupPolicy := spec["backup"].(map[string]interface{})
+	if got := backupPolicy["method"]; got != "postgres-basebackup" {
+		t.Fatalf("backup method = %v, want inherited postgres-basebackup", got)
+	}
+	if got := component["replicas"]; got != int64(2) {
+		t.Fatalf("restored component replicas = %v, want inherited replicas 2", got)
+	}
+	resourcesSpec := component["resources"].(map[string]interface{})
+	requests := resourcesSpec["requests"].(map[string]interface{})
+	limits := resourcesSpec["limits"].(map[string]interface{})
+	if got := requests["cpu"]; got != "500m" {
+		t.Fatalf("restored cpu request = %v, want inherited 500m", got)
+	}
+	if got := limits["memory"]; got != "2Gi" {
+		t.Fatalf("restored memory limit = %v, want inherited 2Gi", got)
+	}
+}
+
 func TestRenderDBResourcesUsesEngineProfiles(t *testing.T) {
 	tests := []struct {
 		name              string
