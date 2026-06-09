@@ -7,11 +7,20 @@ import type {
   GithubDeployerActions,
   GithubDeployerStates,
 } from "../github-deployer/github-deployer.types";
+import type {
+  TemplateDeploymentChoice,
+  TemplateDeploymentSettings,
+} from "../template-deployer";
 
 /** First step for project creation (breadcrumb + body). */
-export type ProjectCreatorSourceKind = "github" | "docker-image" | "database";
+export type ProjectCreatorSourceKind =
+  | "github"
+  | "docker-image"
+  | "database"
+  | "template";
 
 export type ProjectCreatorDatabaseChoice = DatabaseDeploymentChoice;
+export type ProjectCreatorTemplateChoice = TemplateDeploymentChoice;
 
 export const PROJECT_CREATOR_SOURCE_LABEL: Record<
   ProjectCreatorSourceKind,
@@ -20,7 +29,11 @@ export const PROJECT_CREATOR_SOURCE_LABEL: Record<
   github: "GitHub",
   "docker-image": "Docker Image",
   database: "Database",
+  template: "Template",
 };
+
+export const DEFAULT_PROJECT_CREATOR_SOURCES: readonly ProjectCreatorSourceKind[] =
+  ["github", "docker-image", "database"];
 
 export interface ProjectCreatorActions {
   deriveDatabaseProjectDisplayName?: (
@@ -37,6 +50,11 @@ export interface ProjectCreatorActions {
   ) => void | Promise<void>;
   onGithubConfirm?: (
     url: string,
+    projectDisplayName: string
+  ) => void | Promise<void>;
+  onTemplateConfirm?: (
+    settings: TemplateDeploymentSettings,
+    choice: ProjectCreatorTemplateChoice,
     projectDisplayName: string
   ) => void | Promise<void>;
 }
@@ -66,9 +84,12 @@ export interface ProjectCreatorValue {
   } & ProjectCreatorActions;
   meta: {
     databaseOptions: ProjectCreatorDatabaseChoice[];
+    enabledSources: readonly ProjectCreatorSourceKind[];
+    templateOptions: ProjectCreatorTemplateChoice[];
     /** Direct Database entry derives the Project Display Name from the selected engine. */
     databaseDirect: boolean;
     dockerDirect: boolean;
+    templateDirect: boolean;
     /** Enables `GithubDeployer` in the GitHub step (`ProjectCreatorStage`). Omit for an empty/disabled-looking deploy shell. */
     githubDeployer?: ProjectCreatorGithubDeployerSlot;
   };

@@ -4,6 +4,7 @@ import { DatabaseDeploymentPane } from "@/components/database-deployment-pane";
 import { DockerDeploymentPane } from "@/components/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/components/github-deployment-pane";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
+import { TemplateDeploymentPane } from "@/components/template-deployment-pane";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";
@@ -82,6 +83,15 @@ export function ProjectCanvasWorkbenchSurfaces({
         skillsWorkflowPane={
           <SealosSkillsWorkflowPane onClose={workbench.closeResourcePane} />
         }
+        templateDeploymentPane={
+          <TemplateDeploymentPane
+            kubeconfig={kubeconfig}
+            namespace={namespace}
+            onClose={workbench.closeResourcePane}
+            onDeployed={refreshWorkloadLists}
+            projectId={projectId}
+          />
+        }
       />
       <MainActionSurface
         kubeconfig={kubeconfig}
@@ -142,6 +152,8 @@ function canvasSidePaneEntryFromRenderModel(
       return { kind: "projectCreation" };
     case "skillsWorkflow":
       return { kind: "skillsWorkflow" };
+    case "templateDeployment":
+      return { kind: "templateDeployment" };
     default:
       return side.entry satisfies never;
   }

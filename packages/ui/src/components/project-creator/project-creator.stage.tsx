@@ -6,6 +6,10 @@ import {
   type DockerDeploymentSettings,
 } from "@workspace/ui/components/docker-deployer";
 import { GithubDeployer } from "@workspace/ui/components/github-deployer/github-deployer";
+import {
+  TemplateDeployer,
+  type TemplateDeploymentSettings,
+} from "@workspace/ui/components/template-deployer";
 import { useCallback, useEffect, useState } from "react";
 
 import { useProjectCreator } from "./project-creator.context";
@@ -134,6 +138,45 @@ function DatabasePanel({
   );
 }
 
+function TemplatePanel() {
+  const { actions, meta, states } = useProjectCreator();
+  const [templateTitle, setTemplateTitle] = useState("");
+  const { setProjectDisplayName } = actions;
+  const busy = states.confirmApplying;
+
+  useEffect(() => {
+    if (!meta.templateDirect || templateTitle.trim() === "") {
+      return;
+    }
+    setProjectDisplayName(templateTitle.trim());
+  }, [meta.templateDirect, setProjectDisplayName, templateTitle]);
+
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      data-slot="project-creator-template"
+    >
+      <TemplateDeployer
+        busy={busy}
+        onDeploy={(settings: TemplateDeploymentSettings, choice) => {
+          const projectDisplayName = meta.templateDirect
+            ? choice.title.trim() || choice.name.trim() || "Template Project"
+            : states.projectDisplayName.trim();
+          const error = actions.validateProjectDisplayName(projectDisplayName);
+          if (error != null) {
+            return;
+          }
+          actions.onTemplateConfirm?.(settings, choice, projectDisplayName);
+        }}
+        onSettingsChange={(_settings, choice) => {
+          setTemplateTitle(choice?.title ?? "");
+        }}
+        templateOptions={meta.templateOptions}
+      />
+    </div>
+  );
+}
+
 function renderActivePanel(
   step: ProjectCreatorSourceKind,
   databaseOptions: ProjectCreatorDatabaseChoice[]
@@ -145,6 +188,8 @@ function renderActivePanel(
       return <DockerPanel />;
     case "database":
       return <DatabasePanel databaseOptions={databaseOptions} />;
+    case "template":
+      return <TemplatePanel />;
     default:
       return null;
   }

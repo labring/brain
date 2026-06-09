@@ -40,6 +40,27 @@ test("Canvas Resource Identity uses AP kind namespace and name", () => {
   assert.equal(canvasNodeSelectionKey(node), "ap-uid");
 });
 
+test("Canvas Resource Identity does not treat template native workloads as AP", () => {
+  const node = {
+    data: {
+      resourceKind: "template",
+      states: {
+        kind: "StatefulSet",
+        name: "memos",
+        namespace: "default",
+        uid: "template-uid",
+      },
+    },
+    id: "template-memos",
+    position: { x: 0, y: 0 },
+    type: CANVAS_CONTAINER_NODE_TYPE,
+  } as Node;
+
+  assert.equal(canvasResourceIdentityFromNode(node), undefined);
+  assert.equal(canvasResourceLastSeenUidFromNode(node), undefined);
+  assert.equal(canvasNodeSelectionKey(node), "template-uid");
+});
+
 test("Canvas Resource Identity uses DB workload namespace and name", () => {
   const node = {
     data: {

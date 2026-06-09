@@ -11,6 +11,7 @@ export type ProjectSidePaneEntry = Extract<
   | { kind: "githubDeployment" }
   | { kind: "projectCreation" }
   | { kind: "skillsWorkflow" }
+  | { kind: "templateDeployment" }
 >;
 
 export function projectListEntryForAssistantIntent(
@@ -34,8 +35,63 @@ export function projectListEntryForAssistantIntent(
       kind: "projectCreation",
     };
   }
+  if (intent.type === "template") {
+    return {
+      entryMode: "templateDirect",
+      kind: "projectCreation",
+    };
+  }
   if (intent.type === "skills") {
     return { kind: "skillsWorkflow" };
+  }
+  return null;
+}
+
+function projectDeployEntryForAssistantIntent(
+  intent: ProjectSidePaneAssistantIntent,
+  projectId: string
+): ProjectSurfaceIntent | null {
+  if (intent.type === "skills") {
+    return {
+      entry: { kind: "skillsWorkflow" },
+      slot: "side",
+    };
+  }
+  if (intent.type === "database") {
+    return {
+      entry: {
+        kind: "databaseDeployment",
+        projectId,
+      },
+      slot: "side",
+    };
+  }
+  if (intent.type === "docker") {
+    return {
+      entry: {
+        kind: "dockerDeployment",
+        projectId,
+      },
+      slot: "side",
+    };
+  }
+  if (intent.type === "template") {
+    return {
+      entry: {
+        kind: "templateDeployment",
+        projectId,
+      },
+      slot: "side",
+    };
+  }
+  if (intent.type === "github") {
+    return {
+      entry: {
+        kind: "githubDeployment",
+        projectId,
+      },
+      slot: "side",
+    };
   }
   return null;
 }
@@ -128,38 +184,5 @@ export function projectCanvasEntryForAssistantIntent(
   if (uid === "") {
     return null;
   }
-  if (intent.type === "skills") {
-    return {
-      entry: { kind: "skillsWorkflow" },
-      slot: "side",
-    };
-  }
-  if (intent.type === "database") {
-    return {
-      entry: {
-        kind: "databaseDeployment",
-        projectId: uid,
-      },
-      slot: "side",
-    };
-  }
-  if (intent.type === "docker") {
-    return {
-      entry: {
-        kind: "dockerDeployment",
-        projectId: uid,
-      },
-      slot: "side",
-    };
-  }
-  if (intent.type !== "github") {
-    return null;
-  }
-  return {
-    entry: {
-      kind: "githubDeployment",
-      projectId: uid,
-    },
-    slot: "side",
-  };
+  return projectDeployEntryForAssistantIntent(intent, uid);
 }

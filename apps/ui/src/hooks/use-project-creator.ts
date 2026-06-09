@@ -7,8 +7,10 @@ import type { ProjectCreatorRootProps } from "@workspace/ui/components/project-c
 import type {
   ProjectCreatorActions,
   ProjectCreatorDatabaseChoice,
+  ProjectCreatorSourceKind,
 } from "@workspace/ui/components/project-creator/project-creator.types";
 import type { ProjectExplorerProject } from "@workspace/ui/components/project-explorer/project-explorer";
+import type { TemplateDeploymentSettings } from "@workspace/ui/components/template-deployer";
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +26,7 @@ import {
 } from "@/features/deployment-target/pipeline";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
+import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
@@ -32,14 +35,22 @@ import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-nam
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
+const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
+  "github",
+  "docker-image",
+  "database",
+  "template",
+];
 
 type CreatorRootPropsForCreationPane = Pick<
   ProjectCreatorRootProps,
   | "actions"
   | "confirmApplying"
   | "databaseOptions"
+  | "enabledSources"
   | "existingProjectDisplayNames"
   | "githubDeployer"
+  | "templateOptions"
 >;
 
 export interface UseProjectCreatorOptions {
@@ -94,6 +105,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     mutate: mutateGithubRepos,
     repos: githubRepos,
   } = useGithubRepos({ isAuthorized: githubAuthorized, namespace });
+  const templateCatalog = useTemplateCatalog();
 
   const openCreationPane = useCallback(
     (entryMode: ProjectCreationPaneEntryMode = "general") => {
@@ -225,6 +237,32 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           await onProjectCreated?.(outcome.projectId);
         });
       },
+      onTemplateConfirm: async (
+        settings: TemplateDeploymentSettings,
+        choice,
+        projectDisplayName
+      ) => {
+        const displayName = projectDisplayName.trim();
+        await applyWithBusyState(async () => {
+          const outcome = await runDeployment({
+            args: settings.args,
+            kind: "template",
+            target: newProjectDeploymentTarget(displayName),
+            templateName: settings.templateName,
+          });
+          if (outcome.kind !== "template") {
+            return;
+          }
+          toast.success(
+            `Applied project "${displayName}" and template "${outcome.instanceName}".`
+          );
+          setLastConfirmedKind(
+            `template:${choice.name}:${outcome.projectName}`
+          );
+          dispatchCreationPaneState({ type: "close" });
+          await onProjectCreated?.(outcome.projectId);
+        });
+      },
     }),
     [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]
   );
@@ -302,7 +340,9 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       existingProjectDisplayNames: existingProjects.map(
         (project) => project.name
       ),
+      enabledSources: CREATION_PANE_SOURCES,
       githubDeployer,
+      templateOptions: templateCatalog.templates,
     }),
     [
       actions,
@@ -310,6 +350,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       databaseOptions,
       existingProjects,
       githubDeployer,
+      templateCatalog.templates,
     ]
   );
 

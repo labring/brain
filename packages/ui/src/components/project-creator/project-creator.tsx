@@ -22,6 +22,7 @@ export type {
   ProjectCreatorGithubDeployerSlot,
   ProjectCreatorSourceKind,
   ProjectCreatorStates,
+  ProjectCreatorTemplateChoice,
   ProjectCreatorValue,
 } from "./project-creator.types";
 export { PROJECT_CREATOR_SOURCE_LABEL } from "./project-creator.types";

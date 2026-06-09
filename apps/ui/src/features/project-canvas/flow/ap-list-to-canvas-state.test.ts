@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import {
   dbsToCanvasState,
   entryPointsToCanvasState,
+  templateNativeWorkloadsToCanvasState,
 } from "./ap-list-to-canvas-state";
 
 test("EntryPoint canvas nodes are derived from AP Network public addresses", () => {
@@ -431,4 +433,98 @@ test("DB canvas nodes preserve stopped status tone for lifecycle actions", () =>
     label: "Stopped",
     tone: "stopped",
   });
+});
+
+test("Template native workloads render as container canvas nodes", () => {
+  const state = templateNativeWorkloadsToCanvasState(
+    {
+      statefulSets: {
+        items: [
+          {
+            apiVersion: "apps/v1",
+            kind: "StatefulSet",
+            metadata: {
+              labels: {
+                "brain.io/resource-kind": "template",
+              },
+              name: "memos",
+              namespace: "ns-admin",
+              uid: "sts-uid",
+            },
+            spec: {
+              replicas: 1,
+              template: {
+                spec: {
+                  containers: [
+                    {
+                      image: "ghcr.io/usememos/memos:latest",
+                      name: "main",
+                    },
+                  ],
+                },
+              },
+            },
+            status: {
+              readyReplicas: 1,
+              replicas: 1,
+            },
+          },
+        ],
+      },
+    },
+    { namespaceFallback: "ns-admin" }
+  );
+
+  assert.equal(state.nodes[0]?.id, "template-memos");
+  assert.equal(state.nodes[0]?.type, CANVAS_CONTAINER_NODE_TYPE);
+  assert.deepEqual(state.nodes[0]?.data, {
+    resourceKind: "template",
+    states: {
+      image: "ghcr.io/usememos/memos:latest",
+      kind: "StatefulSet",
+      name: "memos",
+      namespace: "ns-admin",
+      replicas: 1,
+      status: { label: "Running", tone: "running" },
+      uid: "sts-uid",
+    },
+  });
+});
+
+test("Template native workloads ignore direct AP controller Deployments", () => {
+  const state = templateNativeWorkloadsToCanvasState(
+    {
+      deployments: {
+        items: [
+          {
+            apiVersion: "apps/v1",
+            kind: "Deployment",
+            metadata: {
+              labels: {
+                "brain.io/project-id": "project-uid",
+              },
+              name: "ap-xaqwfd",
+              namespace: "ns-admin",
+              uid: "deploy-uid",
+            },
+            spec: {
+              replicas: 1,
+              template: {
+                spec: {
+                  containers: [{ image: "nginx", name: "main" }],
+                },
+              },
+            },
+            status: {
+              readyReplicas: 1,
+              replicas: 1,
+            },
+          },
+        ],
+      },
+    },
+    { namespaceFallback: "ns-admin" }
+  );
+
+  assert.deepEqual(state.nodes, []);
 });

@@ -12,16 +12,35 @@ import {
 
 function testAdapters(overrides?: {
   createProject?: DeploymentTargetPipelineAdapters["createProject"];
+  deleteProject?: DeploymentTargetPipelineAdapters["deleteProject"];
   createGithubDeployTask?: DeploymentTargetPipelineAdapters["createGithubDeployTask"];
   fetchProjectIdByName?: DeploymentTargetPipelineAdapters["fetchProjectIdByName"];
   generateChildResourceName?: DeploymentTargetPipelineAdapters["generateChildResourceName"];
   generateProjectName?: DeploymentTargetPipelineAdapters["generateProjectName"];
   onApplyBrainProductManifest?: (yaml: string) => void;
+  onApplyTemplateDeployment?: (
+    input: Parameters<
+      DeploymentTargetPipelineAdapters["applyTemplateDeployment"]
+    >[0]
+  ) => void;
 }): DeploymentTargetPipelineAdapters {
   return {
     applyBrainProductManifest: (yaml) => {
       overrides?.onApplyBrainProductManifest?.(yaml);
       return Promise.resolve();
+    },
+    applyTemplateDeployment: (input) => {
+      overrides?.onApplyTemplateDeployment?.(input);
+      return Promise.resolve({
+        instanceName: input.instanceName,
+        resources: [
+          {
+            name: input.instanceName,
+            resourceType: "instance",
+            uid: "instance-uid",
+          },
+        ],
+      });
     },
     createProject:
       overrides?.createProject ??
@@ -29,6 +48,7 @@ function testAdapters(overrides?: {
         Promise.resolve({
           id: input.displayName.toLowerCase().replace(/\s+/g, "-"),
         })),
+    deleteProject: overrides?.deleteProject ?? (() => Promise.resolve()),
     createGithubDeployTask:
       overrides?.createGithubDeployTask ??
       (() =>
@@ -64,6 +84,8 @@ const existingProjects = [
 
 const DUPLICATE_PROJECT_NAME_ERROR =
   /A project named "existing" already exists/;
+const FAILED_TEMPLATE_APPLY_ERROR = /Failed to apply template YAML/;
+const MISSING_PROJECT_ID_ERROR = /Could not resolve the current project/;
 
 test("Deployment Target pipeline creates a new Project with Docker AP", async () => {
   let applied = "";
@@ -178,6 +200,163 @@ test("Deployment Target pipeline creates a new Project before GitHub task", asyn
   assert.equal(outcome.projectName, "project-uid-9");
   assert.equal(outcome.projectId, "project-uid-9");
   assert.equal(outcome.taskId, "task-9");
+});
+
+test("Deployment Target pipeline deploys a template into an existing Project", async () => {
+  let applied:
+    | Parameters<DeploymentTargetPipelineAdapters["applyTemplateDeployment"]>[0]
+    | null = null;
+  const outcome = await runDeploymentTargetPipeline({
+    adapters: testAdapters({
+      onApplyTemplateDeployment: (input) => {
+        applied = input;
+      },
+    }),
+    credentialsReady: true,
+    existingProjects,
+    namespace: "ns-admin",
+    request: {
+      args: { storage: "10" },
+      kind: "template",
+      target: existingProjectDeploymentTarget({
+        projectName: "existing-project",
+        projectId: "existing-uid",
+      }),
+      templateName: "memos",
+    },
+  });
+
+  assert.deepEqual(applied, {
+    args: { storage: "10" },
+    instanceName: "template-existing-project-child",
+    namespace: "ns-admin",
+    projectId: "existing-uid",
+    projectName: "existing-project",
+    templateName: "memos",
+  });
+  assert.equal(outcome.kind, "template");
+  assert.equal(outcome.instanceName, "template-existing-project-child");
+  assert.equal(outcome.projectId, "existing-uid");
+  assert.equal(outcome.createdProject, false);
+});
+
+test("Deployment Target pipeline deletes a newly created Project when template deploy fails", async () => {
+  const events: string[] = [];
+  await assert.rejects(
+    runDeploymentTargetPipeline({
+      adapters: testAdapters({
+        createProject: (input) => {
+          events.push(`create:${input.displayName}:${input.namespace}`);
+          return Promise.resolve({ id: "new-project-uid" });
+        },
+        deleteProject: (input) => {
+          events.push(`delete:${input.id}:${input.namespace}`);
+          return Promise.resolve();
+        },
+        onApplyTemplateDeployment: (input) => {
+          events.push(`apply:${input.projectId}:${input.templateName}`);
+          throw new Error("Failed to apply template YAML.");
+        },
+      }),
+      credentialsReady: true,
+      existingProjects,
+      namespace: "ns-admin",
+      request: {
+        args: { init_password: "password123" },
+        kind: "template",
+        target: newProjectDeploymentTarget("dify"),
+        templateName: "dify",
+      },
+    }),
+    FAILED_TEMPLATE_APPLY_ERROR
+  );
+
+  assert.deepEqual(events, [
+    "create:dify:ns-admin",
+    "apply:new-project-uid:dify",
+    "delete:new-project-uid:ns-admin",
+  ]);
+});
+
+test("Deployment Target pipeline does not delete existing Projects when template deploy fails", async () => {
+  const deleted: string[] = [];
+  await assert.rejects(
+    runDeploymentTargetPipeline({
+      adapters: testAdapters({
+        deleteProject: (input) => {
+          deleted.push(input.id);
+          return Promise.resolve();
+        },
+        onApplyTemplateDeployment: () => {
+          throw new Error("Failed to apply template YAML.");
+        },
+      }),
+      credentialsReady: true,
+      existingProjects,
+      namespace: "ns-admin",
+      request: {
+        kind: "template",
+        target: existingProjectDeploymentTarget({
+          projectName: "existing-project",
+          projectId: "existing-uid",
+        }),
+        templateName: "dify",
+      },
+    }),
+    FAILED_TEMPLATE_APPLY_ERROR
+  );
+
+  assert.deepEqual(deleted, []);
+});
+
+test("Deployment Target pipeline preserves the template error when cleanup fails", async () => {
+  const events: string[] = [];
+  await assert.rejects(
+    runDeploymentTargetPipeline({
+      adapters: testAdapters({
+        createProject: () => Promise.resolve({ id: "new-project-uid" }),
+        deleteProject: () => {
+          events.push("cleanup");
+          return Promise.reject(new Error("Cleanup failed."));
+        },
+        onApplyTemplateDeployment: () => {
+          events.push("apply");
+          throw new Error("Failed to apply template YAML.");
+        },
+      }),
+      credentialsReady: true,
+      existingProjects,
+      namespace: "ns-admin",
+      request: {
+        kind: "template",
+        target: newProjectDeploymentTarget("dify"),
+        templateName: "dify",
+      },
+    }),
+    FAILED_TEMPLATE_APPLY_ERROR
+  );
+
+  assert.deepEqual(events, ["apply", "cleanup"]);
+});
+
+test("Deployment Target pipeline rejects template deploys without a Project id", async () => {
+  await assert.rejects(
+    runDeploymentTargetPipeline({
+      adapters: testAdapters(),
+      credentialsReady: true,
+      existingProjects,
+      namespace: "ns-admin",
+      request: {
+        kind: "template",
+        target: existingProjectDeploymentTarget({
+          projectName: "existing-project",
+          projectId: "",
+        }),
+        templateName: "memos",
+      },
+    }),
+    MISSING_PROJECT_ID_ERROR
+  );
 });
 
 test("Deployment Target pipeline rejects duplicate new Project display names", async () => {

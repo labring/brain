@@ -2,7 +2,7 @@
 
 import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { cn } from "@workspace/ui/lib/utils";
-import { Database } from "lucide-react";
+import { Blocks, Database } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 import {
@@ -10,19 +10,22 @@ import {
   ProjectSourceGithubIcon,
 } from "../../assets/project-source-icons";
 import { useProjectCreator } from "./project-creator.context";
-import type { ProjectCreatorSourceKind } from "./project-creator.types";
-import { PROJECT_CREATOR_SOURCE_LABEL } from "./project-creator.types";
+import {
+  DEFAULT_PROJECT_CREATOR_SOURCES,
+  PROJECT_CREATOR_SOURCE_LABEL,
+  type ProjectCreatorSourceKind,
+} from "./project-creator.types";
 
-const ORDER: ProjectCreatorSourceKind[] = [
-  "github",
-  "docker-image",
-  "database",
+const ORDER: readonly ProjectCreatorSourceKind[] = [
+  ...DEFAULT_PROJECT_CREATOR_SOURCES,
+  "template",
 ];
 
 const DESCRIPTION: Record<ProjectCreatorSourceKind, string> = {
   github: "Import repository from URL or GitHub authorization.",
   "docker-image": "Create and run a project directly using an existing image.",
   database: "Set up a database project or data service first.",
+  template: "Deploy a preconfigured application template.",
 };
 
 const ICON: Record<
@@ -32,12 +35,14 @@ const ICON: Record<
   github: ProjectSourceGithubIcon,
   "docker-image": ProjectSourceDockerIcon,
   database: Database,
+  template: Blocks,
 };
 
 const ICON_CLASS: Record<ProjectCreatorSourceKind, string> = {
   github: "text-foreground",
   "docker-image": "text-blue-400",
   database: "text-muted-foreground",
+  template: "text-blue-400",
 };
 
 export function ProjectCreatorProjectNameField() {
@@ -66,7 +71,7 @@ export function ProjectCreatorOptionPicker({
 }: {
   className?: string;
 }) {
-  const { actions } = useProjectCreator("ProjectCreator.OptionPicker");
+  const { actions, meta } = useProjectCreator("ProjectCreator.OptionPicker");
 
   return (
     <div
@@ -79,7 +84,7 @@ export function ProjectCreatorOptionPicker({
           Scenario
         </p>
         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-          {ORDER.map((id) => {
+          {ORDER.filter((id) => meta.enabledSources.includes(id)).map((id) => {
             const Icon = ICON[id];
             return (
               <button

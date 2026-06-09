@@ -56,6 +56,7 @@ const openProjectSurfaceInputSchema = z.object({
     "github",
     "logs",
     "metrics",
+    "template",
   ]),
 });
 
@@ -71,7 +72,12 @@ function toAssistantIntent(
   input: OpenProjectSurfaceInput
 ): ProjectSidePaneAssistantIntent | { error: string } {
   const type = input.type;
-  if (type === "database" || type === "docker" || type === "github") {
+  if (
+    type === "database" ||
+    type === "docker" ||
+    type === "github" ||
+    type === "template"
+  ) {
     return { type };
   }
   const target = input.target;
@@ -147,7 +153,7 @@ export async function runOpenProjectSurfaceTool(
 function buildOpenProjectSurfaceToolDescription(): string {
   return [
     "Open a concrete Sealos Brain project surface in the user's browser tab.",
-    "Use after selecting the relevant project/AP/DB/EntryPoint target, or when the user asks to open settings, logs, metrics, terminal, database access, public addresses, GitHub deploy, Docker deploy, or database deploy.",
+    "Use after selecting the relevant project/AP/DB/EntryPoint target, or when the user asks to open settings, logs, metrics, terminal, database access, public addresses, GitHub deploy, Docker deploy, database deploy, or template deploy.",
     "For deploy task status, use the server-side getDeployTaskStatus tool instead of this browser surface tool.",
     "For AP settings, terminal, logs, events, history, and metrics, pass an AP target. For DB settings, access, terminal, logs, and metrics, pass a DB target. For public addresses, pass an EntryPoint target bound to the AP name.",
     "This is a UI navigation/orchestration tool only; it does not mutate product resources.",

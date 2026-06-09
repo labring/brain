@@ -10,6 +10,7 @@ export type ProjectCanvasSidePaneEntry =
   | { kind: "projectCreation" }
   | { kind: "resource" }
   | { kind: "skillsWorkflow" }
+  | { kind: "templateDeployment" }
   | null;
 
 export function ProjectCanvasSidePaneSlot({
@@ -20,6 +21,7 @@ export function ProjectCanvasSidePaneSlot({
   projectCreationPane,
   resourcePane,
   skillsWorkflowPane,
+  templateDeploymentPane,
 }: {
   databaseDeploymentPane?: ReactNode;
   dockerDeploymentPane?: ReactNode;
@@ -28,6 +30,7 @@ export function ProjectCanvasSidePaneSlot({
   projectCreationPane?: ReactNode;
   resourcePane: ReactNode;
   skillsWorkflowPane?: ReactNode;
+  templateDeploymentPane?: ReactNode;
 }) {
   let pane: ReactNode = null;
 
@@ -41,6 +44,8 @@ export function ProjectCanvasSidePaneSlot({
     pane = projectCreationPane;
   } else if (entry?.kind === "skillsWorkflow") {
     pane = skillsWorkflowPane;
+  } else if (entry?.kind === "templateDeployment") {
+    pane = templateDeploymentPane;
   } else if (entry?.kind === "resource") {
     pane = resourcePane;
   }

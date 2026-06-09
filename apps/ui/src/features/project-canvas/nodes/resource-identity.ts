@@ -69,6 +69,9 @@ export function canvasResourceIdentityFromNode(
 
   switch (node.type) {
     case CANVAS_CONTAINER_NODE_TYPE:
+      if (data?.resourceKind === "template") {
+        return undefined;
+      }
       return resourceIdentityFromRecord("AP", asRecord(data?.states));
     case CANVAS_DATABASE_NODE_TYPE:
       return resourceIdentityFromRecord("DB", asRecord(data?.workload));
@@ -105,6 +108,9 @@ export function canvasResourceLastSeenUidFromNode(
 
   switch (node.type) {
     case CANVAS_CONTAINER_NODE_TYPE:
+      if (data?.resourceKind === "template") {
+        return undefined;
+      }
       return nonEmptyString(asRecord(data?.states)?.uid);
     case CANVAS_DATABASE_NODE_TYPE:
       return nonEmptyString(data?.uid);

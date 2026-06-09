@@ -1,4 +1,4 @@
-export type ChildResourceKind = "ap" | "db";
+export type ChildResourceKind = "ap" | "db" | "template";
 
 const LOWERCASE_LETTERS = "abcdefghijklmnopqrstuvwxyz";
 const RANDOM_LETTER_COUNT = 6;

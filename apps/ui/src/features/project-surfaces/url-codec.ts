@@ -36,7 +36,11 @@ function split(value: string | null | undefined): string[] | null {
 }
 
 function projectIdEntry(
-  kind: "databaseDeployment" | "dockerDeployment" | "githubDeployment",
+  kind:
+    | "databaseDeployment"
+    | "dockerDeployment"
+    | "githubDeployment"
+    | "templateDeployment",
   parts: readonly string[]
 ): ProjectSideSurfaceEntry | null {
   if (parts.length !== 2) {
@@ -125,6 +129,8 @@ export function serializeProjectSideSurfaceEntry(
       return `project-creation:${encodePart(entry.entryMode)}`;
     case "skillsWorkflow":
       return "skills-workflow";
+    case "templateDeployment":
+      return `template-deployment:${encodePart(entry.projectId)}`;
     case "publicAddresses":
       return `public-addresses:${serializeProjectTarget(entry.target)}`;
     default:
@@ -184,7 +190,8 @@ function parseProjectCreationSideEntry(
     entryMode !== "general" &&
     entryMode !== "databaseDirect" &&
     entryMode !== "dockerDirect" &&
-    entryMode !== "githubDirect"
+    entryMode !== "githubDirect" &&
+    entryMode !== "templateDirect"
   ) {
     return null;
   }
@@ -211,6 +218,8 @@ export function parseProjectSideSurfaceEntry(
       return projectIdEntry("dockerDeployment", parts);
     case "github-deployment":
       return projectIdEntry("githubDeployment", parts);
+    case "template-deployment":
+      return projectIdEntry("templateDeployment", parts);
     case "project-creation":
       return parseProjectCreationSideEntry(parts);
     case "skills-workflow":

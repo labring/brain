@@ -10,7 +10,7 @@ import { ProjectCreator } from "@workspace/ui/components/project-creator/project
 import type { ProjectCreatorRootProps } from "@workspace/ui/components/project-creator/project-creator.context";
 import type { ProjectCreatorSourceKind } from "@workspace/ui/components/project-creator/project-creator.types";
 import { SidePane } from "@workspace/ui/components/side-pane";
-import { Database, Plus } from "lucide-react";
+import { Blocks, Database, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProjectCreationPaneEntryMode } from "./project-creation-pane-state";
 
@@ -33,6 +33,8 @@ function sourceKindFromEntryMode(
       return "docker-image";
     case "databaseDirect":
       return "database";
+    case "templateDirect":
+      return "template";
     default:
       return null;
   }
@@ -53,6 +55,8 @@ function projectCreationHeaderIcon(source: ProjectCreatorSourceKind | null) {
       );
     case "database":
       return <Database aria-hidden className="size-4 text-blue-400" />;
+    case "template":
+      return <Blocks aria-hidden className="size-4 text-blue-400" />;
     default:
       return <Plus aria-hidden className="size-4 text-blue-400" />;
   }
@@ -71,8 +75,10 @@ export function ProjectCreationPane({
     | "actions"
     | "confirmApplying"
     | "databaseOptions"
+    | "enabledSources"
     | "existingProjectDisplayNames"
     | "githubDeployer"
+    | "templateOptions"
   >;
   entryMode?: ProjectCreationPaneEntryMode;
   onClose: () => void;
@@ -86,6 +92,7 @@ export function ProjectCreationPane({
   const directGithubEntry = entryMode === "githubDirect";
   const directDockerEntry = entryMode === "dockerDirect";
   const directDatabaseEntry = entryMode === "databaseDirect";
+  const directTemplateEntry = entryMode === "templateDirect";
   const initialStep = sourceKindFromEntryMode(entryMode);
   useEffect(() => {
     setActiveSource(initialStep);
@@ -112,6 +119,8 @@ export function ProjectCreationPane({
     subtitle = "Provide Docker deployment settings.";
   } else if (directDatabaseEntry) {
     subtitle = "Provide database deployment settings.";
+  } else if (directTemplateEntry) {
+    subtitle = "Choose a template to create a project.";
   }
 
   let content = (
@@ -153,6 +162,19 @@ export function ProjectCreationPane({
         databaseDirect
         initialStep="database"
         key={resetKey}
+        {...rootPropsWithStepChange}
+      >
+        <ProjectCreator.Shell className="min-w-0">
+          <ProjectCreator.Stage />
+        </ProjectCreator.Shell>
+      </ProjectCreator.Root>
+    );
+  } else if (directTemplateEntry) {
+    content = (
+      <ProjectCreator.Root
+        initialStep="template"
+        key={resetKey}
+        templateDirect
         {...rootPropsWithStepChange}
       >
         <ProjectCreator.Shell className="min-w-0">
