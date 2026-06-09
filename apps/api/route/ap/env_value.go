@@ -36,6 +36,7 @@ type resolveAPEnvSavedRowValueInput struct {
 }
 
 var apEnvExpansionRE = regexp.MustCompile(`\$\(([A-Za-z_][A-Za-z0-9_.-]*)\)`)
+const apEnvResolvedValueCacheControl = "no-cache, no-store, must-revalidate"
 
 func registerEnvValue(grp huma.API) {
 	type envValueInput struct {
@@ -120,7 +121,7 @@ func registerEnvValue(grp huma.API) {
 }
 
 func apEnvResolvedValueNoCacheHeader() string {
-	return "no-cache, no-store, must-revalidate"
+	return apEnvResolvedValueCacheControl
 }
 
 func apDeploymentEnv(deployment appsv1.Deployment) []corev1.EnvVar {
@@ -135,17 +136,22 @@ func resolveAPEnvSavedRowValue(ctx context.Context, input resolveAPEnvSavedRowVa
 	if name == "" {
 		return "", huma.Error400BadRequest("envName is required", nil)
 	}
-	envByName := make(map[string]corev1.EnvVar, len(input.Env))
-	for _, row := range input.Env {
-		if row.Name != "" {
-			envByName[row.Name] = row
-		}
-	}
+	envByName := apEnvVarsByName(input.Env)
 	row, ok := envByName[name]
 	if !ok {
 		return "", apierrors.NewNotFound(schema.GroupResource{Resource: "environmentvariables"}, name)
 	}
 	return resolveAPEnvVarValue(ctx, row, input.Namespace, envByName, input.SecretResolver, map[string]bool{})
+}
+
+func apEnvVarsByName(env []corev1.EnvVar) map[string]corev1.EnvVar {
+	byName := make(map[string]corev1.EnvVar, len(env))
+	for _, row := range env {
+		if row.Name != "" {
+			byName[row.Name] = row
+		}
+	}
+	return byName
 }
 
 func resolveAPEnvVarValue(
@@ -162,12 +168,13 @@ func resolveAPEnvVarValue(
 	seen[row.Name] = true
 	defer delete(seen, row.Name)
 
-	value, err := directAPEnvVarValue(ctx, row, namespace, secretResolver)
+	directValue, err := directAPEnvVarValue(ctx, row, namespace, secretResolver)
 	if err != nil {
 		return "", err
 	}
-	var expansionErr error
-	resolvedValue := apEnvExpansionRE.ReplaceAllStringFunc(value, func(token string) string {
+
+	var resolveErr error
+	resolvedValue := apEnvExpansionRE.ReplaceAllStringFunc(directValue, func(token string) string {
 		matches := apEnvExpansionRE.FindStringSubmatch(token)
 		if len(matches) != 2 {
 			return token
@@ -178,15 +185,15 @@ func resolveAPEnvVarValue(
 		}
 		resolved, err := resolveAPEnvVarValue(ctx, referenced, namespace, envByName, secretResolver, seen)
 		if err != nil {
-			if expansionErr == nil {
-				expansionErr = err
+			if resolveErr == nil {
+				resolveErr = err
 			}
 			return token
 		}
 		return resolved
 	})
-	if expansionErr != nil {
-		return "", expansionErr
+	if resolveErr != nil {
+		return "", resolveErr
 	}
 	return resolvedValue, nil
 }

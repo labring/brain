@@ -833,6 +833,17 @@ const DB_REFERENCE_FIELD_LABELS: Record<ContainerEnvDbReferenceField, string> =
 const MASKED_ENV_VALUE = "*******";
 const ENV_REVEAL_DURATION_MS = 30_000;
 
+async function writeTextToClipboard(value: string): Promise<void> {
+  if (typeof navigator === "undefined" || !navigator.clipboard) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    // Clipboard permissions are best-effort UI affordances.
+  }
+}
+
 function validContainerNetworkPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65_535;
 }
@@ -1280,8 +1291,7 @@ interface EditableEnvRowsProps {
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   resolvedValuesAvailable: boolean;
   revealedValues: ReadonlyMap<number, string>;
-  rows: ContainerEnvVar[];
-  savedRawSource: string;
+  savedRows: readonly ContainerEnvVar[];
 }
 
 interface EnvRawSourceEditorProps {
@@ -1564,14 +1574,7 @@ function EnvRawSourceEditor({
   const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
   const menuItems = buildApEnvReferenceMenuItems(dbDsnReferenceSources);
   const copyRawSource = useCallback(async () => {
-    if (typeof navigator === "undefined" || !navigator.clipboard) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Clipboard permission failures should not affect raw-source editing.
-    }
+    await writeTextToClipboard(value);
   }, [value]);
 
   return (
@@ -1678,13 +1681,9 @@ function EditableEnvRows({
   onUpdateRow,
   revealedValues,
   resolvedValuesAvailable,
-  savedRawSource,
+  savedRows,
 }: EditableEnvRowsProps) {
   const firstRawSourceDiagnostic = envRawSourceDiagnostics[0];
-  const savedRows = useMemo(
-    () => envDraftRowsFromRawSource(savedRawSource),
-    [savedRawSource]
-  );
   let editorContent: ReactNode;
   if (mode === "raw") {
     editorContent = (
@@ -1710,7 +1709,6 @@ function EditableEnvRows({
       const cleanSavedRow =
         resolvedValuesAvailable &&
         !editingSavedRows.has(index) &&
-        !revealedValues.has(index) &&
         savedRow != null &&
         containerEnvRowsModelEqual([row], [savedRow]);
       return (
@@ -4279,26 +4277,33 @@ export function ContainerSettingsPane({
     );
   }, [env, envDraftKeyPrefix, envRawSource, settingsCommitMode]);
 
-  const clearRevealedEnvValues = useCallback(() => {
+  const clearRevealTimeouts = useCallback(() => {
     for (const timeout of revealTimeouts.current.values()) {
       clearTimeout(timeout);
     }
     revealTimeouts.current.clear();
-    setRevealedEnvValues(new Map());
   }, []);
 
-  useEffect(() => clearRevealedEnvValues, [clearRevealedEnvValues]);
+  const clearRevealedEnvValues = useCallback(() => {
+    clearRevealTimeouts();
+    setRevealedEnvValues(new Map());
+  }, [clearRevealTimeouts]);
 
+  useEffect(() => clearRevealTimeouts, [clearRevealTimeouts]);
+
+  const resolvedEnvValuesAvailable = onEnvResolvedValue != null;
   const revealResetKey = JSON.stringify([
     envResolvedValueScope ?? "",
     envEditorMode,
     initialEnvRawSource,
-    onEnvResolvedValue == null,
+    resolvedEnvValuesAvailable,
   ]);
+  const previousRevealResetKey = useRef<string | null>(null);
   useEffect(() => {
-    if (revealResetKey === "") {
+    if (previousRevealResetKey.current === revealResetKey) {
       return;
     }
+    previousRevealResetKey.current = revealResetKey;
     clearRevealedEnvValues();
     setEditingSavedEnvRows(new Set());
   }, [clearRevealedEnvValues, revealResetKey]);
@@ -4585,6 +4590,10 @@ export function ContainerSettingsPane({
         envRawSource: settingsBaseDraft.envRawSource,
       })
     : canonicalApEnvRawSource({ env, envRawSource });
+  const committedEnvRows = useMemo(
+    () => envDraftRowsFromRawSource(committedEnvRawSource),
+    [committedEnvRawSource]
+  );
   const envDirty = envRawSourceDraft !== committedEnvRawSource;
   const resolveSavedEnvValue = useCallback(
     (index: number) => {
@@ -4592,7 +4601,7 @@ export function ContainerSettingsPane({
         return undefined;
       }
       const row = envDraft[index];
-      const savedRow = envDraftRowsFromRawSource(committedEnvRawSource)[index];
+      const savedRow = committedEnvRows[index];
       if (
         row == null ||
         savedRow == null ||
@@ -4602,7 +4611,7 @@ export function ContainerSettingsPane({
       }
       return onEnvResolvedValue(row.name);
     },
-    [committedEnvRawSource, envDraft, onEnvResolvedValue]
+    [committedEnvRows, envDraft, onEnvResolvedValue]
   );
   const revealResolvedEnvValue = useCallback(
     async (index: number) => {
@@ -4646,18 +4655,10 @@ export function ContainerSettingsPane({
       } catch {
         return;
       }
-      if (
-        value === undefined ||
-        typeof navigator === "undefined" ||
-        !navigator.clipboard
-      ) {
+      if (value === undefined) {
         return;
       }
-      try {
-        await navigator.clipboard.writeText(value);
-      } catch {
-        // Clipboard permission failures should not affect the settings draft.
-      }
+      await writeTextToClipboard(value);
     },
     [resolveSavedEnvValue]
   );
@@ -5293,10 +5294,9 @@ export function ContainerSettingsPane({
               onRawSourceChange={handleRawSourceChange}
               onRevealResolvedValue={revealResolvedEnvValue}
               onUpdateRow={handleUpdateEnvRow}
-              resolvedValuesAvailable={onEnvResolvedValue != null}
+              resolvedValuesAvailable={resolvedEnvValuesAvailable}
               revealedValues={revealedEnvValues}
-              rows={envDraft}
-              savedRawSource={committedEnvRawSource}
+              savedRows={committedEnvRows}
             />
           )}
         </div>
