@@ -5,7 +5,24 @@ export const DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES = [
 export type DbServiceBackupRetentionDays =
   (typeof DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES)[number];
 
-export type DbServiceBackupPolicyFrequency = "daily" | "hourly" | "weekly";
+export const DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES = [
+  "hourly",
+  "daily",
+  "weekly",
+] as const;
+
+export type DbServiceBackupPolicyFrequency =
+  (typeof DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES)[number];
+
+export const DB_SERVICE_BACKUP_WEEKDAY_LABELS: readonly string[] = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+];
 
 export interface DbServiceBackupPolicyBackend {
   cronExpression?: string;
@@ -58,8 +75,6 @@ interface ZonedParts {
 const DEFAULT_REFERENCE_INSTANT = "2026-01-01T12:00:00Z";
 const RETENTION_MESSAGE = "Retention must be one of 1, 3, 7, 14, or 30 days.";
 
-const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 function defaultTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
@@ -98,7 +113,10 @@ function zonedParts(date: Date, timeZone: string): ZonedParts {
     year: "numeric",
   }).formatToParts(date);
   const weekdayLabel = parts.find((part) => part.type === "weekday")?.value;
-  const weekday = Math.max(0, weekdayNames.indexOf(weekdayLabel ?? "Sun"));
+  const weekday = Math.max(
+    0,
+    DB_SERVICE_BACKUP_WEEKDAY_LABELS.indexOf(weekdayLabel ?? "Sun")
+  );
   return {
     day: numberPart(parts, "day"),
     hour: numberPart(parts, "hour"),

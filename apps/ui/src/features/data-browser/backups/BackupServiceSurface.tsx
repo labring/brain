@@ -4,7 +4,9 @@ import {
   backupPolicyFormFromBackend,
   backupPolicyFormToBackend,
   backupPolicyFormWithFrequency,
+  DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES,
   DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES,
+  DB_SERVICE_BACKUP_WEEKDAY_LABELS,
   type DbServiceBackupPolicyBackend,
   type DbServiceBackupPolicyForm,
   type DbServiceBackupPolicyFrequency,
@@ -26,6 +28,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
 const DB_PRODUCT_ROUTE = "/api/db/v1alpha1";
+const TIME_FIELD_BOUNDS = {
+  hour: { max: 23, min: 0 },
+  minute: { max: 59, min: 0 },
+} as const;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object"
@@ -355,9 +361,7 @@ function policySummary(form: DbServiceBackupPolicyForm): string {
     ).padStart(2, "0")}`;
   }
   const days = form.weekdays
-    .map(
-      (weekday) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekday]
-    )
+    .map((weekday) => DB_SERVICE_BACKUP_WEEKDAY_LABELS[weekday])
     .join(", ");
   return `Weekly on ${days} at ${String(form.hour).padStart(2, "0")}:${String(
     form.minute
@@ -379,6 +383,27 @@ function parseBoundedInteger(
     return fallback;
   }
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function uniqueSortedWeekdays(weekdays: number[]): number[] {
+  return weekdays
+    .filter((day, index, values) => values.indexOf(day) === index)
+    .sort((left, right) => left - right);
+}
+
+function applyWeeklyDaySelection(
+  currentWeekdays: number[],
+  weekday: number,
+  checked: boolean
+): number[] {
+  if (checked) {
+    return uniqueSortedWeekdays([...currentWeekdays, weekday]);
+  }
+
+  const nextWeekdays = currentWeekdays.filter((day) => day !== weekday);
+  return nextWeekdays.length === 0
+    ? currentWeekdays
+    : uniqueSortedWeekdays(nextWeekdays);
 }
 
 function BackupPolicyForm({
@@ -439,6 +464,61 @@ function BackupPolicyForm({
       runtime.kubeconfig,
     ]
   );
+  const disablePolicy = useCallback(() => {
+    const disabledForm = { ...form, enabled: false };
+    setForm(disabledForm);
+    savePolicy(disabledForm).catch(() => undefined);
+  }, [form, savePolicy]);
+  const saveEnabledPolicy = useCallback(() => {
+    savePolicy({ ...form, enabled: true }).catch(() => undefined);
+  }, [form, savePolicy]);
+  const setFrequency = useCallback(
+    (frequency: DbServiceBackupPolicyFrequency) => {
+      setForm((current) => backupPolicyFormWithFrequency(current, frequency));
+    },
+    []
+  );
+  const setHour = useCallback((value: string) => {
+    setForm((current) => {
+      if (!("hour" in current)) {
+        return current;
+      }
+      return {
+        ...current,
+        hour: parseBoundedInteger(
+          value,
+          current.hour,
+          TIME_FIELD_BOUNDS.hour.min,
+          TIME_FIELD_BOUNDS.hour.max
+        ),
+      };
+    });
+  }, []);
+  const setMinute = useCallback((value: string) => {
+    setForm((current) => ({
+      ...current,
+      minute: parseBoundedInteger(
+        value,
+        current.minute,
+        TIME_FIELD_BOUNDS.minute.min,
+        TIME_FIELD_BOUNDS.minute.max
+      ),
+    }));
+  }, []);
+  const setRetentionDays = useCallback((retentionDays: number) => {
+    setForm((current) => ({ ...current, retentionDays }));
+  }, []);
+  const setWeeklyDay = useCallback((weekday: number, checked: boolean) => {
+    setForm((current) => {
+      if (current.frequency !== "weekly") {
+        return current;
+      }
+      return {
+        ...current,
+        weekdays: applyWeeklyDaySelection(current.weekdays, weekday, checked),
+      };
+    });
+  }, []);
 
   return (
     <section
@@ -463,11 +543,7 @@ function BackupPolicyForm({
             data-qa-module="database"
             data-qa-object="backup-policy"
             disabled={isSaving || !form.enabled}
-            onClick={() => {
-              const disabledForm = { ...form, enabled: false };
-              setForm(disabledForm);
-              savePolicy(disabledForm).catch(() => undefined);
-            }}
+            onClick={disablePolicy}
             size="sm"
             type="button"
             variant="outline"
@@ -480,9 +556,7 @@ function BackupPolicyForm({
             data-qa-module="database"
             data-qa-object="backup-policy"
             disabled={isSaving || !retention.ok}
-            onClick={() => {
-              savePolicy({ ...form, enabled: true }).catch(() => undefined);
-            }}
+            onClick={saveEnabledPolicy}
             size="sm"
             type="button"
           >
@@ -496,7 +570,7 @@ function BackupPolicyForm({
         <label className="flex min-w-0 flex-col gap-1 text-[13px]">
           <span className="text-muted-foreground">{"Frequency"}</span>
           <div className="grid grid-cols-3 rounded-md border border-border bg-background/40 p-0.5">
-            {(["hourly", "daily", "weekly"] as const).map((frequency) => (
+            {DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES.map((frequency) => (
               <button
                 className={cn(
                   "h-8 rounded-[5px] px-2 font-medium text-xs",
@@ -506,11 +580,7 @@ function BackupPolicyForm({
                 )}
                 data-qa-policy-frequency={frequency}
                 key={frequency}
-                onClick={() => {
-                  setForm((current) =>
-                    backupPolicyFormWithFrequency(current, frequency)
-                  );
-                }}
+                onClick={() => setFrequency(frequency)}
                 type="button"
               >
                 {policyFrequencyLabel(frequency)}
@@ -523,23 +593,9 @@ function BackupPolicyForm({
           <label className="flex min-w-0 flex-col gap-1 text-[13px]">
             <span className="text-muted-foreground">{"Hour"}</span>
             <Input
-              max={23}
-              min={0}
-              onChange={(event) => {
-                setForm((current) =>
-                  "hour" in current
-                    ? {
-                        ...current,
-                        hour: parseBoundedInteger(
-                          event.currentTarget.value,
-                          current.hour,
-                          0,
-                          23
-                        ),
-                      }
-                    : current
-                );
-              }}
+              max={TIME_FIELD_BOUNDS.hour.max}
+              min={TIME_FIELD_BOUNDS.hour.min}
+              onChange={(event) => setHour(event.currentTarget.value)}
               type="number"
               value={numberInputValue(form.hour)}
             />
@@ -549,19 +605,9 @@ function BackupPolicyForm({
         <label className="flex min-w-0 flex-col gap-1 text-[13px]">
           <span className="text-muted-foreground">{"Minute"}</span>
           <Input
-            max={59}
-            min={0}
-            onChange={(event) => {
-              setForm((current) => ({
-                ...current,
-                minute: parseBoundedInteger(
-                  event.currentTarget.value,
-                  current.minute,
-                  0,
-                  59
-                ),
-              }));
-            }}
+            max={TIME_FIELD_BOUNDS.minute.max}
+            min={TIME_FIELD_BOUNDS.minute.min}
+            onChange={(event) => setMinute(event.currentTarget.value)}
             type="number"
             value={numberInputValue(form.minute)}
           />
@@ -571,12 +617,9 @@ function BackupPolicyForm({
           <span className="text-muted-foreground">{"Retention"}</span>
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            onChange={(event) => {
-              setForm((current) => ({
-                ...current,
-                retentionDays: Number(event.currentTarget.value),
-              }));
-            }}
+            onChange={(event) =>
+              setRetentionDays(Number(event.currentTarget.value))
+            }
             value={form.retentionDays}
           >
             {DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES.map((days) => (
@@ -590,45 +633,23 @@ function BackupPolicyForm({
 
       {form.frequency === "weekly" && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-            (label, weekday) => {
-              const checked = form.weekdays.includes(weekday);
-              return (
-                <label
-                  className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-[13px]"
-                  key={label}
-                >
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(nextChecked) => {
-                      setForm((current) => {
-                        if (current.frequency !== "weekly") {
-                          return current;
-                        }
-                        const weekdays =
-                          nextChecked === true
-                            ? [...current.weekdays, weekday]
-                            : current.weekdays.filter((day) => day !== weekday);
-                        return {
-                          ...current,
-                          weekdays:
-                            weekdays.length === 0
-                              ? current.weekdays
-                              : weekdays
-                                  .filter(
-                                    (day, index, values) =>
-                                      values.indexOf(day) === index
-                                  )
-                                  .sort((left, right) => left - right),
-                        };
-                      });
-                    }}
-                  />
-                  {label}
-                </label>
-              );
-            }
-          )}
+          {DB_SERVICE_BACKUP_WEEKDAY_LABELS.map((label, weekday) => {
+            const checked = form.weekdays.includes(weekday);
+            return (
+              <label
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-[13px]"
+                key={label}
+              >
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(nextChecked) => {
+                    setWeeklyDay(weekday, nextChecked === true);
+                  }}
+                />
+                {label}
+              </label>
+            );
+          })}
         </div>
       )}
 

@@ -35,6 +35,10 @@ test("DB Service root node uses db_service type", () => {
     engineType: "POSTGRES",
     runtime: {
       database: { displayEngine: "PostgreSQL", name: "app" },
+      dbService: {
+        name: "postgres-main",
+        namespace: "database-system",
+      },
       databaseWorkloadName: "postgres-main",
       databaseWorkloadNamespace: "database-system",
       engine: "POSTGRES",
