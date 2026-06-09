@@ -466,6 +466,7 @@ export function dbToDatabaseNodeData(
       : options?.engineIconByName?.get(engineKey);
   const metricCapacities = databaseMetricCapacitiesFromStatus(status);
   const mountPath = nonEmptyString(status.mountPath);
+  const backups = Array.isArray(status.backups) ? status.backups : undefined;
 
   const states: DatabaseNodeStates = {
     displayEngine: displayEngineFromKey(engineKey),
@@ -484,6 +485,7 @@ export function dbToDatabaseNodeData(
   const resourceMetadata = databaseMetadataFromResource(metadata);
 
   return {
+    ...(backups === undefined ? {} : { backups }),
     connections: databaseConnectionsFromResource(spec, status),
     desired: databaseDesiredFromSpec(spec, status),
     ...(resourceMetadata === undefined ? {} : { metadata: resourceMetadata }),

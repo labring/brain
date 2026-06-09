@@ -24,12 +24,20 @@ export function dataBrowserRuntimeParts(
   const { states, workload } = selectedDatabaseData;
 
   return {
+    backups: Array.isArray(selectedDatabaseData.backups)
+      ? selectedDatabaseData.backups
+      : [],
     databaseDisplayEngine: states.displayEngine,
     databaseEngineKey: states.engineKey,
     databaseFormattedVersion: states.formattedVersion,
     databaseName: states.name,
     databaseWorkloadName: workload.name,
     databaseWorkloadNamespace: workload.namespace,
+    dbServiceUid:
+      typeof selectedDatabaseData.uid === "string" &&
+      selectedDatabaseData.uid.trim() !== ""
+        ? selectedDatabaseData.uid
+        : undefined,
     engine: normalizeDataBrowserEngine(states.engineKey),
   };
 }
@@ -43,6 +51,7 @@ export function createDataBrowserHostContext({
   const parts = dataBrowserRuntimeParts(selectedDatabaseData);
 
   return {
+    backups: parts.backups,
     database: {
       displayEngine: parts.databaseDisplayEngine,
       ...(parts.databaseEngineKey === undefined
@@ -52,6 +61,11 @@ export function createDataBrowserHostContext({
         ? {}
         : { formattedVersion: parts.databaseFormattedVersion }),
       name: parts.databaseName,
+    },
+    dbService: {
+      name: parts.databaseWorkloadName,
+      namespace: parts.databaseWorkloadNamespace,
+      ...(parts.dbServiceUid === undefined ? {} : { uid: parts.dbServiceUid }),
     },
     databaseWorkloadName: parts.databaseWorkloadName,
     databaseWorkloadNamespace: parts.databaseWorkloadNamespace,
@@ -76,10 +90,14 @@ export function DataBrowserRuntimeProvider({
     databaseName,
     databaseWorkloadName,
     databaseWorkloadNamespace,
+    dbServiceUid,
     engine,
   } = dataBrowserRuntimeParts(selectedDatabaseData);
   const value = useMemo<DataBrowserHostContext>(
     () => ({
+      backups: Array.isArray(selectedDatabaseData.backups)
+        ? selectedDatabaseData.backups
+        : [],
       database: {
         displayEngine: databaseDisplayEngine,
         ...(databaseEngineKey === undefined
@@ -89,6 +107,11 @@ export function DataBrowserRuntimeProvider({
           ? {}
           : { formattedVersion: databaseFormattedVersion }),
         name: databaseName,
+      },
+      dbService: {
+        name: databaseWorkloadName,
+        namespace: databaseWorkloadNamespace,
+        ...(dbServiceUid === undefined ? {} : { uid: dbServiceUid }),
       },
       databaseWorkloadName,
       databaseWorkloadNamespace,
@@ -104,10 +127,12 @@ export function DataBrowserRuntimeProvider({
       databaseName,
       databaseWorkloadName,
       databaseWorkloadNamespace,
+      dbServiceUid,
       engine,
       kubeconfig,
       namespace,
       projectId,
+      selectedDatabaseData.backups,
     ]
   );
 

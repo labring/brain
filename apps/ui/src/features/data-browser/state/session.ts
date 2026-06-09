@@ -7,6 +7,18 @@ export type DbAccessTabType =
   | "collection"
   | "redis_key_detail";
 
+export type DbAccessServiceTab = "backup";
+
+export type DbAccessActiveSurface =
+  | {
+      kind: "service";
+      tab: DbAccessServiceTab;
+    }
+  | {
+      kind: "object";
+      tabId: string;
+    };
+
 export interface DbAccessTab {
   collectionName?: string;
   databaseName?: string;
@@ -22,6 +34,7 @@ export interface DbAccessTab {
 }
 
 export interface DbAccessSessionState {
+  activeSurface: DbAccessActiveSurface;
   activeTabId: string | null;
   dbServiceKey: string;
   tabs: DbAccessTab[];
@@ -33,6 +46,7 @@ export function createDbAccessSession(
   dbServiceKey: string
 ): DbAccessSessionState {
   return {
+    activeSurface: { kind: "service", tab: "backup" },
     activeTabId: null,
     dbServiceKey,
     tabs: [],
@@ -110,6 +124,7 @@ export function openDbAccessTab(
     return {
       session: {
         ...session,
+        activeSurface: { kind: "object", tabId: existingTab.id },
         activeTabId: existingTab.id,
       },
       tabId: existingTab.id,
@@ -126,6 +141,7 @@ export function openDbAccessTab(
   return {
     session: {
       ...session,
+      activeSurface: { kind: "object", tabId: newTab.id },
       activeTabId: newTab.id,
       tabs: [...session.tabs, newTab],
     },
@@ -145,7 +161,15 @@ export function closeDbAccessTab(
     activeTabId = tabs[Math.min(index, tabs.length - 1)]?.id ?? null;
   }
 
-  return { ...session, activeTabId, tabs };
+  return {
+    ...session,
+    activeSurface:
+      activeTabId === null
+        ? { kind: "service", tab: "backup" }
+        : { kind: "object", tabId: activeTabId },
+    activeTabId,
+    tabs,
+  };
 }
 
 export function closeOtherDbAccessTabs(
@@ -157,20 +181,52 @@ export function closeOtherDbAccessTabs(
     return session;
   }
 
-  return { ...session, activeTabId: tabId, tabs: [tab] };
+  return {
+    ...session,
+    activeSurface: { kind: "object", tabId },
+    activeTabId: tabId,
+    tabs: [tab],
+  };
 }
 
 export function closeAllDbAccessTabs(
   session: DbAccessSessionState
 ): DbAccessSessionState {
-  return { ...session, activeTabId: null, tabs: [] };
+  return {
+    ...session,
+    activeSurface: { kind: "service", tab: "backup" },
+    activeTabId: null,
+    tabs: [],
+  };
 }
 
 export function setActiveDbAccessTab(
   session: DbAccessSessionState,
   tabId: string
 ): DbAccessSessionState {
-  return { ...session, activeTabId: tabId };
+  return {
+    ...session,
+    activeSurface: { kind: "object", tabId },
+    activeTabId: tabId,
+  };
+}
+
+export function setActiveDbAccessServiceTab(
+  session: DbAccessSessionState,
+  tab: DbAccessServiceTab
+): DbAccessSessionState {
+  return {
+    ...session,
+    activeSurface: { kind: "service", tab },
+    activeTabId: null,
+  };
+}
+
+export function openDbAccessServiceTab(
+  session: DbAccessSessionState,
+  tab: DbAccessServiceTab
+): DbAccessSessionState {
+  return setActiveDbAccessServiceTab(session, tab);
 }
 
 export function updateDbAccessTab(

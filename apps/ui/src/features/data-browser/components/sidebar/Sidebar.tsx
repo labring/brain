@@ -78,7 +78,7 @@ function SidebarInner() {
   const { selectedItem, selectItem } = useDbAccessSelection();
   const { triggerCollectionRefresh, triggerTableRefresh } =
     useDbAccessRefresh();
-  const { openTab } = useDbAccessTabs();
+  const { openTab, setActiveServiceTab } = useDbAccessTabs();
 
   const {
     expandedItems,
@@ -130,7 +130,9 @@ function SidebarInner() {
         }
       }
 
-      if (
+      if (node.type === "db_service") {
+        setActiveServiceTab("backup");
+      } else if (
         (node.type === "table" || node.type === "view") &&
         node.metadata.objectRef
       ) {
@@ -171,7 +173,14 @@ function SidebarInner() {
         });
       }
     },
-    [openTab, selectItem, showAlert, toggleItem, triggerCollectionRefresh]
+    [
+      openTab,
+      selectItem,
+      setActiveServiceTab,
+      showAlert,
+      toggleItem,
+      triggerCollectionRefresh,
+    ]
   );
 
   const handleContextMenu = useCallback(

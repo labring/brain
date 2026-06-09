@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -407,6 +408,31 @@ func TestDBResponseFromClustersReturnsDBList(t *testing.T) {
 	spec := item["spec"].(map[string]interface{})
 	if got := spec["engine"]; got != "postgresql" {
 		t.Fatalf("spec.engine = %v, want postgresql", got)
+	}
+}
+
+func TestApplyDBBackupStateSetsRawBackups(t *testing.T) {
+	db := map[string]interface{}{
+		"status": map[string]interface{}{
+			"phase": "Running",
+		},
+	}
+	backups := []map[string]interface{}{
+		{
+			"metadata": map[string]interface{}{
+				"name": "pg-manual-20260609",
+			},
+			"status": map[string]interface{}{
+				"phase": "Completed",
+			},
+		},
+	}
+
+	applyDBBackupState(db, backups)
+
+	status := db["status"].(map[string]interface{})
+	if got := status["backups"]; !reflect.DeepEqual(got, backups) {
+		t.Fatalf("status.backups = %#v, want %#v", got, backups)
 	}
 }
 

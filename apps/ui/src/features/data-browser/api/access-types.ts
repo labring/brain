@@ -72,10 +72,18 @@ export interface DataBrowserDatabaseMetadata {
   name: string;
 }
 
+export interface DataBrowserDBServiceBackupSource {
+  name: string;
+  namespace: string;
+  uid?: string;
+}
+
 export interface DataBrowserHostContext {
+  backups?: unknown[];
   database: DataBrowserDatabaseMetadata;
   databaseWorkloadName: string;
   databaseWorkloadNamespace: string;
+  dbService: DataBrowserDBServiceBackupSource;
   engine: DataBrowserEngine;
   kubeconfig: string;
   namespace: string;

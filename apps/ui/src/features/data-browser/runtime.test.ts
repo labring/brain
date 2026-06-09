@@ -15,6 +15,7 @@ const databaseData = {
     formattedVersion: "16.4",
     name: "orders-db",
   },
+  uid: "cluster-uid-1",
   workload: {
     name: "orders-db-claim",
     namespace: "database-system",
@@ -34,6 +35,11 @@ test("data browser runtime is derived from host project and selected database", 
   assert.equal(runtime.namespace, "project-ns");
   assert.equal(runtime.databaseWorkloadName, "orders-db-claim");
   assert.equal(runtime.databaseWorkloadNamespace, "database-system");
+  assert.deepEqual(runtime.dbService, {
+    name: "orders-db-claim",
+    namespace: "database-system",
+    uid: "cluster-uid-1",
+  });
   assert.equal(runtime.database.name, "orders-db");
   assert.equal(runtime.database.displayEngine, "PostgreSQL");
   assert.equal(runtime.database.formattedVersion, "16.4");
@@ -42,8 +48,10 @@ test("data browser runtime is derived from host project and selected database", 
 
 test("data browser runtime parts are stable across equivalent database node snapshots", () => {
   const nextDatabaseData = {
+    backups: [],
     connections: [],
     states: { ...databaseData.states },
+    uid: databaseData.uid,
     workload: { ...databaseData.workload },
   } satisfies CanvasDatabaseNodeData;
 

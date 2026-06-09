@@ -1,6 +1,8 @@
 import { Sidebar } from "@data-browser/components/sidebar/Sidebar";
 import { TooltipProvider } from "@data-browser/components/ui/tooltip";
+import { useDbAccessTabs } from "@data-browser/state/db-access-session";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ServiceTabBar } from "./ServiceTabBar";
 import { TabBar } from "./TabBar";
 import { TabContent } from "./TabContent";
 
@@ -10,6 +12,7 @@ const SIDEBAR_DEFAULT_WIDTH = 256;
 
 export function MainLayout() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const { activeSurface } = useDbAccessTabs();
   const isResizing = useRef(false);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -82,7 +85,7 @@ export function MainLayout() {
           data-qa-state="db-access-session"
           data-testid="layout.main-region"
         >
-          <TabBar />
+          {activeSurface.kind === "service" ? <ServiceTabBar /> : <TabBar />}
           <TabContent />
         </main>
       </div>

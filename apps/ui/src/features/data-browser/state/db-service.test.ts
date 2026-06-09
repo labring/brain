@@ -13,6 +13,10 @@ const runtime = {
     formattedVersion: "16.4",
     name: "orders-db",
   },
+  dbService: {
+    name: "orders-db-claim",
+    namespace: "database-system",
+  },
   databaseWorkloadName: "orders-db-claim",
   databaseWorkloadNamespace: "database-system",
   engine: "POSTGRES",

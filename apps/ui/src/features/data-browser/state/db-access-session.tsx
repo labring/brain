@@ -18,10 +18,12 @@ import {
   closeDbAccessTab,
   closeOtherDbAccessTabs,
   createDbAccessSession,
+  type DbAccessServiceTab,
   type DbAccessSessionState,
   type DbAccessTab,
   type DbAccessTabInput,
   openDbAccessTab,
+  setActiveDbAccessServiceTab,
   setActiveDbAccessTab,
   switchDbAccessSession,
   updateDbAccessTab,
@@ -219,6 +221,12 @@ export function useDbAccessTabs() {
     [setSession]
   );
 
+  const setActiveServiceTab = useCallback(
+    (tab: DbAccessServiceTab) =>
+      setSession((current) => setActiveDbAccessServiceTab(current, tab)),
+    [setSession]
+  );
+
   const updateTab = useCallback(
     (tabId: string, updates: Partial<DbAccessTab>) =>
       setSession((current) => updateDbAccessTab(current, tabId, updates)),
@@ -227,11 +235,13 @@ export function useDbAccessTabs() {
 
   return {
     activeTabId: session.activeTabId,
+    activeSurface: session.activeSurface,
     closeAllTabs,
     closeOtherTabs,
     closeTab,
     openTab,
     setActiveTab,
+    setActiveServiceTab,
     tabs: session.tabs,
     updateTab,
   };

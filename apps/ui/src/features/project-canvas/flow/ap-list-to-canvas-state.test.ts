@@ -7,8 +7,32 @@ import {
 } from "../nodes/constants";
 import {
   dbsToCanvasState,
+  dbToDatabaseNodeData,
   entryPointsToCanvasState,
 } from "./ap-list-to-canvas-state";
+
+test("DB canvas node data preserves raw status backups for Data Browser", () => {
+  const rawBackups = [
+    {
+      metadata: {
+        creationTimestamp: "2026-06-09T05:00:00Z",
+        name: "orders-manual-20260609",
+      },
+      status: { phase: "Completed" },
+    },
+  ];
+
+  const data = dbToDatabaseNodeData({
+    metadata: { name: "orders-db", namespace: "database-system" },
+    spec: { engine: "postgresql" },
+    status: {
+      backups: rawBackups,
+      phase: "Running",
+    },
+  });
+
+  assert.equal(data.backups, rawBackups);
+});
 
 test("EntryPoint canvas nodes are derived from AP Network public addresses", () => {
   const state = entryPointsToCanvasState(undefined, {

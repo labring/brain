@@ -1,3 +1,4 @@
+import { BackupServiceSurface } from "@data-browser/backups/BackupServiceSurface";
 import { CollectionDetailView } from "@data-browser/components/database/mongodb/CollectionDetailView";
 import { RedisKeyDetailView } from "@data-browser/components/database/redis/RedisKeyDetailView";
 import { TableDetailView } from "@data-browser/components/database/sql/TableDetailView";
@@ -10,11 +11,14 @@ import { Database } from "lucide-react";
 import { useMemo } from "react";
 
 export function TabContent() {
-  const { tabs, activeTabId, updateTab } = useDbAccessTabs();
-
+  const { tabs, activeTabId, activeSurface, updateTab } = useDbAccessTabs();
   const activeTab = useMemo(() => {
     return tabs.find((t) => t.id === activeTabId);
   }, [tabs, activeTabId]);
+
+  if (activeSurface.kind === "service") {
+    return <BackupServiceSurface />;
+  }
 
   // When no tabs are open, show empty state
   if (!activeTab) {
