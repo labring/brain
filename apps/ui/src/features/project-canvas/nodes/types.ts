@@ -69,6 +69,11 @@ export interface CanvasDatabaseWorkloadRef {
 
 export interface CanvasDatabaseNodeData extends Record<string, unknown> {
   actions?: DatabaseNodeActions;
+  backupPolicy?: {
+    cronExpression?: string;
+    enabled?: boolean;
+    retentionPeriod?: string;
+  };
   connections: DatabaseNodeConnection[];
   desired?: {
     cpuLimit?: string;

@@ -34,6 +34,25 @@ test("DB canvas node data preserves raw status backups for Data Browser", () => 
   assert.equal(data.backups, rawBackups);
 });
 
+test("DB canvas node data preserves backup policy for Data Browser", () => {
+  const backupPolicy = {
+    cronExpression: "15 8 * * *",
+    enabled: true,
+    retentionPeriod: "7d",
+  };
+
+  const data = dbToDatabaseNodeData({
+    metadata: { name: "orders-db", namespace: "database-system" },
+    spec: {
+      backupPolicy,
+      engine: "postgresql",
+    },
+    status: { phase: "Running" },
+  });
+
+  assert.deepEqual(data.backupPolicy, backupPolicy);
+});
+
 test("EntryPoint canvas nodes are derived from AP Network public addresses", () => {
   const state = entryPointsToCanvasState(undefined, {
     apsData: {

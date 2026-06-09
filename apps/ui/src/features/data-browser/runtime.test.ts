@@ -8,6 +8,11 @@ import {
 } from "./runtime";
 
 const databaseData = {
+  backupPolicy: {
+    cronExpression: "15 8 * * *",
+    enabled: true,
+    retentionPeriod: "7d",
+  },
   connections: [],
   states: {
     displayEngine: "PostgreSQL",
@@ -43,6 +48,11 @@ test("data browser runtime is derived from host project and selected database", 
     namespace: "database-system",
     uid: "cluster-uid-1",
   });
+  assert.deepEqual(runtime.backupPolicy, {
+    cronExpression: "15 8 * * *",
+    enabled: true,
+    retentionPeriod: "7d",
+  });
   assert.equal(runtime.database.name, "orders-db");
   assert.equal(runtime.database.displayEngine, "PostgreSQL");
   assert.equal(runtime.database.formattedVersion, "16.4");
@@ -51,6 +61,7 @@ test("data browser runtime is derived from host project and selected database", 
 
 test("data browser runtime parts are stable across equivalent database node snapshots", () => {
   const nextDatabaseData = {
+    backupPolicy: { ...databaseData.backupPolicy },
     backups: [],
     connections: [],
     states: { ...databaseData.states },

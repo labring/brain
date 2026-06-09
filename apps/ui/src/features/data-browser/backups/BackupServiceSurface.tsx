@@ -1,18 +1,31 @@
 "use client";
 
 import {
+  backupPolicyFormFromBackend,
+  backupPolicyFormToBackend,
+  backupPolicyFormWithFrequency,
+  DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES,
+  DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES,
+  DB_SERVICE_BACKUP_WEEKDAY_LABELS,
+  type DbServiceBackupPolicyBackend,
+  type DbServiceBackupPolicyForm,
+  type DbServiceBackupPolicyFrequency,
+  validateDbServiceBackupPolicyRetentionDays,
+} from "@data-browser/backups/backup-policy-schedule";
+import {
   adaptDbServiceBackups,
   type DbServiceBackupSummary,
   dbServiceBackupNeedsRefresh,
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
 import { Button } from "@data-browser/components/ui/Button";
+import { Checkbox } from "@data-browser/components/ui/checkbox";
 import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
 import { Input } from "@data-browser/components/ui/Input";
 import { ModalForm, useModalForm } from "@data-browser/components/ui/ModalForm";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
-import { DatabaseBackup, RefreshCw } from "lucide-react";
+import { DatabaseBackup, RefreshCw, Save, XCircle } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -27,6 +40,10 @@ export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
 const DB_PRODUCT_ROUTE = "/api/db/v1alpha1";
 const DB_RESTORE_ROUTE = `${DB_PRODUCT_ROUTE}/restore`;
 const DB_SERVICE_NAME_PATTERN = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
+const TIME_FIELD_BOUNDS = {
+  hour: { max: 23, min: 0 },
+  minute: { max: 59, min: 0 },
+} as const;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object"
@@ -57,6 +74,17 @@ function statusBackupsFromProductResource(
     return singleStatus.backups;
   }
   return undefined;
+}
+
+function specBackupPolicyFromProductResource(
+  data: unknown
+): DbServiceBackupPolicyBackend | undefined {
+  const root = productResourceBody(data);
+  const spec = asRecord(root?.spec);
+  const backupPolicy = asRecord(spec?.backupPolicy);
+  return backupPolicy === undefined
+    ? undefined
+    : (backupPolicy as DbServiceBackupPolicyBackend);
 }
 
 function stringField(
@@ -170,6 +198,46 @@ export async function submitDbServiceBackupRestore({
       await responseErrorMessage(
         response,
         `DB Service restore failed with status ${response.status}`
+      )
+    );
+  }
+  return response.json();
+}
+
+export async function updateDbServiceBackupPolicy({
+  cronExpression,
+  enabled,
+  kubeconfig,
+  name,
+  namespace,
+  retentionDays,
+}: {
+  cronExpression?: string;
+  enabled: boolean;
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  retentionDays?: number;
+}): Promise<unknown> {
+  const response = await fetch(`${DB_PRODUCT_ROUTE}/backup/policy`, {
+    body: JSON.stringify({
+      ...(cronExpression === undefined ? {} : { cronExpression }),
+      enabled,
+      name,
+      namespace,
+      ...(retentionDays === undefined ? {} : { retentionDays }),
+    }),
+    headers: {
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(
+      await responseErrorMessage(
+        response,
+        `DB Service backup policy update failed with status ${response.status}`
       )
     );
   }
@@ -553,6 +621,338 @@ function RestoreBackupModal({
   );
 }
 
+function policyFrequencyLabel(
+  frequency: DbServiceBackupPolicyFrequency
+): string {
+  switch (frequency) {
+    case "hourly":
+      return "Hourly";
+    case "daily":
+      return "Daily";
+    case "weekly":
+      return "Weekly";
+  }
+}
+
+function policySummary(form: DbServiceBackupPolicyForm): string {
+  if (!form.enabled) {
+    return "Automatic backups disabled";
+  }
+  if (form.frequency === "hourly") {
+    return `Hourly at minute ${form.minute}`;
+  }
+  if (form.frequency === "daily") {
+    return `Daily at ${String(form.hour).padStart(2, "0")}:${String(
+      form.minute
+    ).padStart(2, "0")}`;
+  }
+  const days = form.weekdays
+    .map((weekday) => DB_SERVICE_BACKUP_WEEKDAY_LABELS[weekday])
+    .join(", ");
+  return `Weekly on ${days} at ${String(form.hour).padStart(2, "0")}:${String(
+    form.minute
+  ).padStart(2, "0")}`;
+}
+
+function numberInputValue(value: number): string {
+  return Number.isFinite(value) ? String(value) : "";
+}
+
+function parseBoundedInteger(
+  value: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function uniqueSortedWeekdays(weekdays: number[]): number[] {
+  return weekdays
+    .filter((day, index, values) => values.indexOf(day) === index)
+    .sort((left, right) => left - right);
+}
+
+function applyWeeklyDaySelection(
+  currentWeekdays: number[],
+  weekday: number,
+  checked: boolean
+): number[] {
+  if (checked) {
+    return uniqueSortedWeekdays([...currentWeekdays, weekday]);
+  }
+
+  const nextWeekdays = currentWeekdays.filter((day) => day !== weekday);
+  return nextWeekdays.length === 0
+    ? currentWeekdays
+    : uniqueSortedWeekdays(nextWeekdays);
+}
+
+function BackupPolicyForm({
+  initialPolicy,
+  onPolicySaved,
+}: {
+  initialPolicy: DbServiceBackupPolicyBackend | undefined;
+  onPolicySaved: (data: unknown) => void;
+}) {
+  const runtime = useDbAccessRuntime();
+  const [form, setForm] = useState<DbServiceBackupPolicyForm>(() =>
+    backupPolicyFormFromBackend(initialPolicy)
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const retention = validateDbServiceBackupPolicyRetentionDays(
+    form.retentionDays
+  );
+
+  useEffect(() => {
+    setForm(backupPolicyFormFromBackend(initialPolicy));
+  }, [initialPolicy]);
+
+  const savePolicy = useCallback(
+    async (nextForm: DbServiceBackupPolicyForm) => {
+      setIsSaving(true);
+      setError(null);
+      try {
+        const backend = backupPolicyFormToBackend(nextForm);
+        const updated = await updateDbServiceBackupPolicy({
+          cronExpression: backend.cronExpression,
+          enabled: nextForm.enabled,
+          kubeconfig: runtime.kubeconfig,
+          name: runtime.databaseWorkloadName,
+          namespace: runtime.databaseWorkloadNamespace,
+          retentionDays: nextForm.enabled ? nextForm.retentionDays : undefined,
+        });
+        onPolicySaved(updated);
+        setForm(
+          backupPolicyFormFromBackend(
+            specBackupPolicyFromProductResource(updated)
+          )
+        );
+      } catch (saveError) {
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Failed to update backup policy."
+        );
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [
+      onPolicySaved,
+      runtime.databaseWorkloadName,
+      runtime.databaseWorkloadNamespace,
+      runtime.kubeconfig,
+    ]
+  );
+  const disablePolicy = useCallback(() => {
+    const disabledForm = { ...form, enabled: false };
+    setForm(disabledForm);
+    savePolicy(disabledForm).catch(() => undefined);
+  }, [form, savePolicy]);
+  const saveEnabledPolicy = useCallback(() => {
+    savePolicy({ ...form, enabled: true }).catch(() => undefined);
+  }, [form, savePolicy]);
+  const setFrequency = useCallback(
+    (frequency: DbServiceBackupPolicyFrequency) => {
+      setForm((current) => backupPolicyFormWithFrequency(current, frequency));
+    },
+    []
+  );
+  const setHour = useCallback((value: string) => {
+    setForm((current) => {
+      if (!("hour" in current)) {
+        return current;
+      }
+      return {
+        ...current,
+        hour: parseBoundedInteger(
+          value,
+          current.hour,
+          TIME_FIELD_BOUNDS.hour.min,
+          TIME_FIELD_BOUNDS.hour.max
+        ),
+      };
+    });
+  }, []);
+  const setMinute = useCallback((value: string) => {
+    setForm((current) => ({
+      ...current,
+      minute: parseBoundedInteger(
+        value,
+        current.minute,
+        TIME_FIELD_BOUNDS.minute.min,
+        TIME_FIELD_BOUNDS.minute.max
+      ),
+    }));
+  }, []);
+  const setRetentionDays = useCallback((retentionDays: number) => {
+    setForm((current) => ({ ...current, retentionDays }));
+  }, []);
+  const setWeeklyDay = useCallback((weekday: number, checked: boolean) => {
+    setForm((current) => {
+      if (current.frequency !== "weekly") {
+        return current;
+      }
+      return {
+        ...current,
+        weekdays: applyWeeklyDaySelection(current.weekdays, weekday, checked),
+      };
+    });
+  }, []);
+
+  return (
+    <section
+      className="rounded-md border border-border bg-card/40 p-3"
+      data-qa-module="database"
+      data-qa-object="backup-policy"
+      data-qa-state={form.enabled ? "enabled" : "disabled"}
+      data-testid="database.backup.policy"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="m-0 font-medium text-sm leading-5">
+            {"Backup Policy"}
+          </h3>
+          <p className="mt-0.5 mb-0 text-[13px] text-muted-foreground leading-5">
+            {`${policySummary(form)} • Retention ${form.retentionDays} days`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            data-qa-action="disable"
+            data-qa-module="database"
+            data-qa-object="backup-policy"
+            disabled={isSaving || !form.enabled}
+            onClick={disablePolicy}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <XCircle className="h-4 w-4" />
+            {"Disable"}
+          </Button>
+          <Button
+            data-qa-action="save"
+            data-qa-module="database"
+            data-qa-object="backup-policy"
+            disabled={isSaving || !retention.ok}
+            onClick={saveEnabledPolicy}
+            size="sm"
+            type="button"
+          >
+            <Save className="h-4 w-4" />
+            {isSaving ? "Saving" : "Save"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+          <span className="text-muted-foreground">{"Frequency"}</span>
+          <div className="grid grid-cols-3 rounded-md border border-border bg-background/40 p-0.5">
+            {DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES.map((frequency) => (
+              <button
+                className={cn(
+                  "h-8 rounded-[5px] px-2 font-medium text-xs",
+                  form.frequency === frequency
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent"
+                )}
+                data-qa-policy-frequency={frequency}
+                key={frequency}
+                onClick={() => setFrequency(frequency)}
+                type="button"
+              >
+                {policyFrequencyLabel(frequency)}
+              </button>
+            ))}
+          </div>
+        </label>
+
+        {form.frequency !== "hourly" && (
+          <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+            <span className="text-muted-foreground">{"Hour"}</span>
+            <Input
+              max={TIME_FIELD_BOUNDS.hour.max}
+              min={TIME_FIELD_BOUNDS.hour.min}
+              onChange={(event) => setHour(event.currentTarget.value)}
+              type="number"
+              value={numberInputValue(form.hour)}
+            />
+          </label>
+        )}
+
+        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+          <span className="text-muted-foreground">{"Minute"}</span>
+          <Input
+            max={TIME_FIELD_BOUNDS.minute.max}
+            min={TIME_FIELD_BOUNDS.minute.min}
+            onChange={(event) => setMinute(event.currentTarget.value)}
+            type="number"
+            value={numberInputValue(form.minute)}
+          />
+        </label>
+
+        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+          <span className="text-muted-foreground">{"Retention"}</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            onChange={(event) =>
+              setRetentionDays(Number(event.currentTarget.value))
+            }
+            value={form.retentionDays}
+          >
+            {DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES.map((days) => (
+              <option key={days} value={days}>
+                {`${days} days`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {form.frequency === "weekly" && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {DB_SERVICE_BACKUP_WEEKDAY_LABELS.map((label, weekday) => {
+            const checked = form.weekdays.includes(weekday);
+            return (
+              <label
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-[13px]"
+                key={label}
+              >
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(nextChecked) => {
+                    setWeeklyDay(weekday, nextChecked === true);
+                  }}
+                />
+                {label}
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {(!retention.ok || error !== null) && (
+        <div
+          className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          data-qa-module="database"
+          data-qa-object="backup-policy-error"
+          data-testid="database.backup.policy-error"
+        >
+          {retention.message ?? error}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function BackupServiceSurface() {
   const runtime = useDbAccessRuntime();
   const [refreshData, setRefreshData] = useState<unknown>(null);
@@ -561,6 +961,8 @@ export function BackupServiceSurface() {
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
   const [restoreBackup, setRestoreBackup] =
     useState<DbServiceBackupSummary | null>(null);
+  const currentPolicy =
+    specBackupPolicyFromProductResource(refreshData) ?? runtime.backupPolicy;
   const summaries = useMemo(() => {
     const refreshedBackups = statusBackupsFromProductResource(refreshData);
     return adaptDbServiceBackups({
@@ -657,6 +1059,11 @@ export function BackupServiceSurface() {
           {"Refresh"}
         </Button>
       </div>
+
+      <BackupPolicyForm
+        initialPolicy={currentPolicy}
+        onPolicySaved={setRefreshData}
+      />
 
       {refreshError !== null && (
         <div
