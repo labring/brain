@@ -106,6 +106,32 @@ func TestRegisterIncludesDBLifecycleRoutes(t *testing.T) {
 	}
 }
 
+func TestRegisterIncludesDBRestoreRoute(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/restore"]
+	if path == nil || path.Post == nil {
+		t.Fatalf("expected POST /api/db/v1alpha1/restore to be registered")
+	}
+	if path.Post.OperationID != "db-restore" {
+		t.Fatalf("unexpected operation ID: %q", path.Post.OperationID)
+	}
+	description := path.Post.Description
+	for _, want := range []string{
+		"completed DB Service Backup",
+		"new DB Service",
+		"same namespace",
+		"projectId",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("expected restore docs to mention %q, got: %s", want, description)
+		}
+	}
+}
+
 func TestDBPatchDocsIncludeLifecycleFields(t *testing.T) {
 	router := chi.NewRouter()
 	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))

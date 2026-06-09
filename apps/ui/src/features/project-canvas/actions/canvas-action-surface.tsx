@@ -122,6 +122,7 @@ export interface MainActionSurfaceProps {
   namespace: string;
   onClose: () => void;
   projectId: string;
+  refreshProjectCanvas?: () => Promise<unknown>;
 }
 
 export function MainActionSurface({
@@ -130,6 +131,7 @@ export function MainActionSurface({
   model,
   namespace,
   onClose,
+  refreshProjectCanvas,
   projectId,
 }: MainActionSurfaceProps) {
   const open = dbAccessEnabled && model != null;
@@ -149,6 +151,7 @@ export function MainActionSurface({
           kubeconfig={kubeconfig}
           namespace={namespace}
           projectId={projectId}
+          refreshProjectCanvas={refreshProjectCanvas}
           selectedDatabaseData={model.databaseData}
         />
       )}

@@ -7,3 +7,9 @@ var kubeBlocksClusterGVR = schema.GroupVersionResource{
 	Version:  "v1alpha1",
 	Resource: "clusters",
 }
+
+var kubeBlocksBackupGVR = schema.GroupVersionResource{
+	Group:    "dataprotection.kubeblocks.io",
+	Version:  "v1alpha1",
+	Resource: "backups",
+}

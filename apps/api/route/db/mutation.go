@@ -25,6 +25,16 @@ import (
 	orchestration "sealos/api/service/orchestration"
 )
 
+var dbRestoreValidationErrorFragments = []string{
+	"completed DB Service Backup",
+	"does not belong",
+	"different from the source",
+	"same namespace",
+	"unsupported DB engine",
+	"projectId",
+	"DB Service name",
+}
+
 func registerCreate(grp huma.API) {
 	type dbCreateBody struct {
 		YAML string `json:"yaml" required:"true" doc:"DB product manifest (YAML or JSON). The Go API renders it directly into a KubeBlocks Cluster and support resources. Required fields: metadata.name, spec.projectId, and spec.engine. Optional fields include spec.clusterVersion, spec.replicas, and spec.storageSize."`
@@ -292,6 +302,94 @@ func registerBackup(grp huma.API) {
 		}
 		return &dbBackupOutput{Body: json.RawMessage(jsonBytes)}, nil
 	})
+}
+
+func registerRestore(grp huma.API) {
+	type dbRestoreBody struct {
+		BackupName      string `json:"backupName" required:"true" doc:"Completed DB Service Backup metadata.name to restore from"`
+		BackupNamespace string `json:"backupNamespace,omitempty" doc:"Backup namespace; defaults to the source DB Service namespace"`
+		Name            string `json:"name" required:"true" doc:"Source DB Service metadata.name. The source remains intact."`
+		Namespace       string `json:"namespace,omitempty" doc:"Source DB Service namespace; default from kubeconfig; admin can override"`
+		RestoredName    string `json:"restoredName" required:"true" doc:"New DB Service metadata.name. Must be lowercase DNS-style and unique in the namespace."`
+	}
+	type dbRestoreInput struct {
+		middleware.AuthInput
+		Body dbRestoreBody
+	}
+	type dbRestoreOutput struct {
+		Body json.RawMessage
+	}
+
+	huma.Register(grp, huma.Operation{
+		OperationID: "db-restore",
+		Method:      http.MethodPost,
+		Path:        "/restore",
+		Summary:     "Restore DB Service Backup to a new DB Service",
+		Description: "Restore from a completed DB Service Backup into a new DB Service in the same namespace and projectId as the source DB Service.\n\n" +
+			"Restore never overwrites, rolls back, or modifies the source DB Service. The restored DB Service inherits the source DB Service database settings; restore-time CPU, memory, storage, replica, engine, version, and backup policy overrides are not accepted.",
+		Tags: []string{"DB"},
+	}, func(ctx context.Context, input *dbRestoreInput) (*dbRestoreOutput, error) {
+		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
+		}
+		sourceName := strings.TrimSpace(input.Body.Name)
+		backupName := strings.TrimSpace(input.Body.BackupName)
+		restoredName := strings.TrimSpace(input.Body.RestoredName)
+		if sourceName == "" {
+			return nil, huma.Error400BadRequest("name is required", nil)
+		}
+		if backupName == "" {
+			return nil, huma.Error400BadRequest("backupName is required", nil)
+		}
+		if err := dbsvc.ValidateDBServiceName(restoredName); err != nil {
+			return nil, huma.Error400BadRequest(err.Error(), err)
+		}
+
+		gvr := middleware.PodsGVR()
+		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
+			Namespace:        input.Body.Namespace,
+			AllNamespaces:    false,
+			DefaultNamespace: "",
+			AdminCheckGVR:    &gvr,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to resolve namespace", err)
+		}
+		jsonBytes, err := dbsvc.RestoreDBFromBackup(cfg, dbsvc.RestoreDBOptions{
+			BackupName:      backupName,
+			BackupNamespace: strings.TrimSpace(input.Body.BackupNamespace),
+			Namespace:       resolved.Namespace,
+			RestoredName:    restoredName,
+			SourceName:      sourceName,
+		})
+		if err != nil {
+			if apierrors.IsAlreadyExists(err) {
+				return nil, huma.Error409Conflict("DB Service name already exists", err)
+			}
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("DB Service or Backup not found", err)
+			}
+			if isDBRestoreValidationError(err) {
+				return nil, huma.Error422UnprocessableEntity("invalid DB Service restore request", err)
+			}
+			return nil, huma.Error500InternalServerError("failed to restore DB Service", err)
+		}
+		return &dbRestoreOutput{Body: json.RawMessage(jsonBytes)}, nil
+	})
+}
+
+func isDBRestoreValidationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	for _, fragment := range dbRestoreValidationErrorFragments {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 type dbLifecycleBody struct {

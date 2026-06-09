@@ -89,6 +89,7 @@ export function ProjectCanvasWorkbenchSurfaces({
         namespace={namespace}
         onClose={workbench.closeMainSurface}
         projectId={projectId}
+        refreshProjectCanvas={refreshWorkloadLists}
       />
       {main?.kind === "apLogs" ? (
         <WorkloadLogsPane

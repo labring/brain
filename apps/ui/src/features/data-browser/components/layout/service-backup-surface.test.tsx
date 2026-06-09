@@ -50,7 +50,37 @@ test("DB Service root renders a service-level Backup tab without close controls"
   assert.match(html, /data-qa-tab-type="backup"/);
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /orders-db/);
+  assert.match(html, /data-qa-action="restore"/);
+  assert.match(html, /data-qa-state="enabled"/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
+});
+
+test("restore action is disabled for incomplete DB Service Backups", () => {
+  const html = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      runtime={{
+        ...runtime,
+        backups: [
+          {
+            metadata: {
+              creationTimestamp: "2026-06-09T05:00:00Z",
+              name: "orders-manual-running",
+              namespace: "database-system",
+            },
+            status: {
+              phase: "Running",
+              startTimestamp: "2026-06-09T05:00:00Z",
+            },
+          },
+        ],
+      }}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+
+  assert.match(html, /data-qa-action="restore"/);
+  assert.match(html, /data-qa-state="disabled"/);
 });
 
 test("unsupported DB Service backup engines render unavailable state", () => {

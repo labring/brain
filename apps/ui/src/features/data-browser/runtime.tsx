@@ -15,6 +15,7 @@ export interface DataBrowserRuntimeProviderProps {
   kubeconfig: string;
   namespace: string;
   projectId: string;
+  refreshProjectCanvas?: () => Promise<unknown>;
   selectedDatabaseData: CanvasDatabaseNodeData;
 }
 
@@ -70,10 +71,11 @@ function dataBrowserHostContextFromParts({
   kubeconfig,
   namespace,
   projectId,
+  refreshProjectCanvas,
 }: DataBrowserRuntimeParts &
   Pick<
     DataBrowserRuntimeProviderProps,
-    "kubeconfig" | "namespace" | "projectId"
+    "kubeconfig" | "namespace" | "projectId" | "refreshProjectCanvas"
   >): DataBrowserHostContext {
   return {
     backups,
@@ -98,6 +100,7 @@ function dataBrowserHostContextFromParts({
     kubeconfig,
     namespace,
     projectId,
+    ...(refreshProjectCanvas === undefined ? {} : { refreshProjectCanvas }),
   };
 }
 
@@ -105,12 +108,14 @@ export function createDataBrowserHostContext({
   kubeconfig,
   namespace,
   projectId,
+  refreshProjectCanvas,
   selectedDatabaseData,
 }: Omit<DataBrowserRuntimeProviderProps, "children">): DataBrowserHostContext {
   return dataBrowserHostContextFromParts({
     kubeconfig,
     namespace,
     projectId,
+    refreshProjectCanvas,
     ...dataBrowserRuntimeParts(selectedDatabaseData),
   });
 }
@@ -120,6 +125,7 @@ export function DataBrowserRuntimeProvider({
   kubeconfig,
   namespace,
   projectId,
+  refreshProjectCanvas,
   selectedDatabaseData,
 }: DataBrowserRuntimeProviderProps) {
   const {
@@ -148,6 +154,7 @@ export function DataBrowserRuntimeProvider({
         kubeconfig,
         namespace,
         projectId,
+        refreshProjectCanvas,
       }),
     [
       databaseDisplayEngine,
@@ -161,6 +168,7 @@ export function DataBrowserRuntimeProvider({
       kubeconfig,
       namespace,
       projectId,
+      refreshProjectCanvas,
       rawBackups,
     ]
   );

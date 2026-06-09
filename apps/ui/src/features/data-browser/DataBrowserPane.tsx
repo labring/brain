@@ -9,6 +9,7 @@ export interface DataBrowserPaneProps {
   kubeconfig: string;
   namespace: string;
   projectId: string;
+  refreshProjectCanvas?: () => Promise<unknown>;
   selectedDatabaseData: CanvasDatabaseNodeData;
 }
 
@@ -25,6 +26,7 @@ function DataBrowserPaneBody() {
 export function DataBrowserPane({
   kubeconfig,
   namespace,
+  refreshProjectCanvas,
   projectId,
   selectedDatabaseData,
 }: DataBrowserPaneProps) {
@@ -33,6 +35,7 @@ export function DataBrowserPane({
       kubeconfig={kubeconfig}
       namespace={namespace}
       projectId={projectId}
+      refreshProjectCanvas={refreshProjectCanvas}
       selectedDatabaseData={selectedDatabaseData}
     >
       <div className="dark flex h-full min-h-0 w-full overflow-hidden text-foreground">

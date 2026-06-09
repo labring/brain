@@ -23,9 +23,11 @@ const databaseData = {
 } satisfies CanvasDatabaseNodeData;
 
 test("data browser runtime is derived from host project and selected database", () => {
+  const refreshProjectCanvas = async () => undefined;
   const runtime = createDataBrowserHostContext({
     kubeconfig: " kube ",
     namespace: "project-ns",
+    refreshProjectCanvas,
     projectId: "project-uid",
     selectedDatabaseData: databaseData,
   });
@@ -33,6 +35,7 @@ test("data browser runtime is derived from host project and selected database", 
   assert.equal(runtime.projectId, "project-uid");
   assert.equal(runtime.kubeconfig, " kube ");
   assert.equal(runtime.namespace, "project-ns");
+  assert.equal(runtime.refreshProjectCanvas, refreshProjectCanvas);
   assert.equal(runtime.databaseWorkloadName, "orders-db-claim");
   assert.equal(runtime.databaseWorkloadNamespace, "database-system");
   assert.deepEqual(runtime.dbService, {
