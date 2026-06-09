@@ -26,11 +26,22 @@ import {
   SlidingToggle,
   type SlidingToggleOption,
 } from "@workspace/ui/components/sliding-toggle";
+import { Textarea } from "@workspace/ui/components/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import {
+  type ApEnvRawSourceDiagnostic,
+  apEnvRawSourceRows,
+  appendApEnvRawSourceRow,
+  applyApEnvRawSourceRowPatch,
+  canonicalApEnvRawSource,
+  deleteApEnvRawSourceRow,
+  normalizeApEnvRawSourceForSave,
+  parseApEnvRawSource,
+} from "@workspace/ui/lib/ap-env-raw-source";
 import {
   addContainerEnvRow,
   type ContainerEnvDbDsnReferenceTarget,
@@ -39,7 +50,6 @@ import {
   type ContainerEnvRow,
   containerEnvDbDsnFieldOptions,
   containerEnvDbReferenceRowPatch,
-  containerEnvRowsEqual,
   containerEnvRowsModelEqual,
   defaultContainerEnvDbReferenceRowName,
   validateContainerEnvRows,
@@ -47,13 +57,8 @@ import {
 import {
   buildContainerEnvTokenMenuItems,
   containerEnvDbSourceKey,
-  containerEnvRowsFromSavedEnv,
-  deleteContainerEnvTokenRow,
   type EnvTokenDiagnostic,
   insertContainerEnvTokenText,
-  normalizeContainerEnvTokenRowsForSave,
-  refreshContainerEnvTokenDraft,
-  updateContainerEnvTokenRow,
 } from "@workspace/ui/lib/container-env-tokens";
 import {
   generateCustomDomainBindingId,
@@ -520,7 +525,8 @@ export interface ContainerSettingsPaneConfirmedAddDbDsnReference {
 }
 
 export interface ContainerSettingsPaneEnvChangeMeta {
-  confirmedAddDbDsnReferences: ContainerSettingsPaneConfirmedAddDbDsnReference[];
+  confirmedAddDbDsnReferences?: ContainerSettingsPaneConfirmedAddDbDsnReference[];
+  envRawSource?: string;
 }
 
 export interface ContainerSettingsPaneAddDbDsnReferenceIntentChange {
@@ -531,6 +537,7 @@ export interface ContainerSettingsPaneAddDbDsnReferenceIntentChange {
 export interface ContainerSettingsDraft {
   cpuCores: number;
   env: readonly ContainerEnvVar[];
+  envRawSource?: string;
   image: string;
   memoryMib: number;
   network?: ContainerNetwork;
@@ -559,6 +566,8 @@ export interface ContainerSettingsPaneProps {
   dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
   /** Environment variables shown and edited as structured rows. */
   env: ContainerEnvVar[];
+  /** Canonical AP Environment Raw Source. When omitted, direct saved env rows are projected into `.env` source. */
+  envRawSource?: string;
   /** Full image reference (repository + tag/digest). */
   image: string;
   memoryQuota: ContainerSettingsControlledQuotaProps;
@@ -709,9 +718,17 @@ export function containerSettingsDraftIsDirty(
   original: ContainerSettingsDraft,
   draft: ContainerSettingsDraft
 ): boolean {
+  const originalEnvRawSource = canonicalApEnvRawSource({
+    env: original.env,
+    envRawSource: original.envRawSource,
+  });
+  const draftEnvRawSource = canonicalApEnvRawSource({
+    env: draft.env,
+    envRawSource: draft.envRawSource,
+  });
   return (
     draft.image.trim() !== original.image.trim() ||
-    !containerEnvRowsEqual([...draft.env], [...original.env]) ||
+    draftEnvRawSource !== originalEnvRawSource ||
     containerDraftResourcesDirty(original, draft) ||
     !containerNetworksEqual(original.network, draft.network)
   );
@@ -728,6 +745,7 @@ function containerNetworkDraftBackingKey(network: ContainerNetwork) {
 interface ContainerSettingsDraftValues {
   cpuCores: number;
   env: readonly ContainerEnvVar[];
+  envRawSource?: string;
   image: string;
   memoryMib: number;
   network?: ContainerNetwork;
@@ -737,6 +755,7 @@ interface ContainerSettingsDraftValues {
 function containerSettingsDraftFromValues({
   cpuCores,
   env,
+  envRawSource,
   image,
   memoryMib,
   network,
@@ -745,6 +764,7 @@ function containerSettingsDraftFromValues({
   return {
     cpuCores,
     env,
+    envRawSource: canonicalApEnvRawSource({ env, envRawSource }),
     image,
     memoryMib,
     ...(network == null ? {} : { network }),
@@ -1049,33 +1069,58 @@ function appendDbDsnReferenceIntentRow(
   ];
 }
 
-function envDraftWithAddReferenceIntent({
+export function envRawSourceDraftWithAddReferenceIntent({
   intent,
+  rawSource,
   readOnly,
-  rows,
   sources,
 }: {
   intent: ContainerSettingsPaneAddDbDsnReferenceIntent | null | undefined;
+  rawSource: string;
   readOnly: boolean;
-  rows: readonly ContainerEnvVar[];
   sources: readonly ContainerEnvDbDsnSource[];
 }): {
   consumedIntentId?: string;
+  rawSource: string;
   rows: EnvDraftRow[];
 } {
-  if (intent == null) {
-    return { rows: [...rows] };
-  }
-  if (readOnly) {
-    return { rows: [...rows] };
+  const rows = apEnvRawSourceRows(rawSource);
+  if (intent == null || readOnly) {
+    return { rawSource, rows };
   }
   const source = dbDsnSourceFromAddReferenceIntent(sources, intent);
   if (source === undefined) {
-    return { consumedIntentId: intent.id, rows: [...rows] };
+    return { consumedIntentId: intent.id, rawSource, rows };
   }
+
+  const referenceRow = appendDbDsnReferenceIntentRow(rows, source, intent).at(
+    -1
+  );
+  if (referenceRow === undefined) {
+    return { consumedIntentId: intent.id, rawSource, rows };
+  }
+
+  const parsed = appendApEnvRawSourceRow(rawSource, {
+    name: referenceRow.name,
+    value: referenceRow.value,
+  });
+  const parsedRows: EnvDraftRow[] = parsed.rows.map((row) => ({
+    name: row.key,
+    value: row.value,
+  }));
+  const lastParsedRow = parsedRows.at(-1);
+  if (lastParsedRow === undefined) {
+    return { consumedIntentId: intent.id, rawSource, rows };
+  }
+  parsedRows[parsedRows.length - 1] = {
+    ...lastParsedRow,
+    canvasAddDbDsnReferenceIntentId: intent.id,
+    referenceDbKey: dbDsnSourceKey(source),
+  };
   return {
     consumedIntentId: intent.id,
-    rows: appendDbDsnReferenceIntentRow(rows, source, intent),
+    rawSource: parsed.source,
+    rows: parsedRows,
   };
 }
 
@@ -1101,10 +1146,7 @@ export function confirmedAddDbDsnReferencesFromEnvDraft(
       continue;
     }
     const sourceKey = row.referenceDbKey;
-    const hasMaterializedHelper = rows.some(
-      (candidate) => candidate.helper?.sourceDbKey === sourceKey
-    );
-    if (sourceKey == null || !hasMaterializedHelper) {
+    if (sourceKey == null) {
       continue;
     }
     const slashIndex = sourceKey.indexOf("/");
@@ -1169,10 +1211,15 @@ interface EditableEnvRowsProps {
   envDirty: boolean;
   envDraft: ContainerEnvVar[];
   envErrorsByIndex: ReadonlyMap<number, string>;
+  envRawSourceDiagnostics: readonly ApEnvRawSourceDiagnostic[];
+  envRawSourceDraft: string;
   envRowKeys: readonly string[];
   envTokenDiagnostics: readonly EnvTokenDiagnostic[];
   envValidation: ReturnType<typeof validateContainerEnvRows>;
+  mode: "raw" | "structured";
   onDeleteRow: (index: number) => void;
+  onModeChange: (mode: "raw" | "structured") => void;
+  onRawSourceChange: (source: string) => void;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   rows: ContainerEnvVar[];
 }
@@ -1387,76 +1434,146 @@ function EditableEnvRows({
   envDirty,
   envDraft,
   envErrorsByIndex,
+  envRawSourceDraft,
+  envRawSourceDiagnostics,
   envRowKeys,
   envTokenDiagnostics = [],
   envValidation,
+  mode,
   onDeleteRow,
+  onModeChange,
+  onRawSourceChange,
   onUpdateRow,
   rows,
 }: EditableEnvRowsProps) {
+  const firstRawSourceDiagnostic = envRawSourceDiagnostics[0];
+  let editorContent: ReactNode;
+  if (mode === "raw") {
+    editorContent = (
+      <>
+        <Textarea
+          aria-invalid={firstRawSourceDiagnostic != null}
+          aria-label="Environment raw source"
+          className="min-h-48 resize-y font-mono text-sm"
+          onChange={(event) => onRawSourceChange(event.target.value)}
+          spellCheck={false}
+          value={envRawSourceDraft}
+        />
+        {firstRawSourceDiagnostic == null ? null : (
+          <p className="text-destructive text-xs" role="status">
+            Line {firstRawSourceDiagnostic.line}:{" "}
+            {firstRawSourceDiagnostic.message}
+          </p>
+        )}
+      </>
+    );
+  } else if (envDraft.length === 0) {
+    editorContent = (
+      <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
+        No variables
+      </div>
+    );
+  } else {
+    editorContent = envDraft.map((row, index) => {
+      const error = envErrorsByIndex.get(index);
+      const managed = envRowIsManagedHelper(row);
+      const rowKey = envRowKeys[index] ?? envRowKey(row, index);
+      return (
+        <div className="grid min-w-0 gap-1.5" key={rowKey}>
+          <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
+            <EditableEnvNameControl
+              dbDsnReferenceSources={dbDsnReferenceSources}
+              error={error}
+              index={index}
+              managed={managed}
+              onUpdateRow={onUpdateRow}
+              row={row}
+            />
+            <EditableEnvValueControl
+              dbDsnReferenceSources={dbDsnReferenceSources}
+              index={index}
+              managed={managed}
+              onUpdateRow={onUpdateRow}
+              row={row}
+              rows={rows}
+            />
+            {managed ? (
+              <div aria-hidden className="size-9" />
+            ) : (
+              <AppIconButton
+                aria-label="Remove environment variable"
+                className="hover:text-red-500"
+                onClick={() => onDeleteRow(index)}
+                size="lg"
+                type="button"
+                variant="quiet"
+              >
+                <Trash2 aria-hidden className="size-4" />
+              </AppIconButton>
+            )}
+          </div>
+          {error == null ? null : (
+            <p className="text-destructive text-xs" role="status">
+              {error}
+            </p>
+          )}
+        </div>
+      );
+    });
+  }
+
   return (
     <div
       className="flex max-h-72 w-full flex-col gap-2 overflow-y-auto"
       data-slot="container-env-rows"
     >
-      {envDraft.length === 0 ? (
-        <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
-          No variables
-        </div>
-      ) : (
-        envDraft.map((row, index) => {
-          const error = envErrorsByIndex.get(index);
-          const managed = envRowIsManagedHelper(row);
-          const rowKey = envRowKeys[index] ?? envRowKey(row, index);
-          return (
-            <div className="grid min-w-0 gap-1.5" key={rowKey}>
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
-                <EditableEnvNameControl
-                  dbDsnReferenceSources={dbDsnReferenceSources}
-                  error={error}
-                  index={index}
-                  managed={managed}
-                  onUpdateRow={onUpdateRow}
-                  row={row}
-                />
-                <EditableEnvValueControl
-                  dbDsnReferenceSources={dbDsnReferenceSources}
-                  index={index}
-                  managed={managed}
-                  onUpdateRow={onUpdateRow}
-                  row={row}
-                  rows={rows}
-                />
-                {managed ? (
-                  <div aria-hidden className="size-9" />
-                ) : (
-                  <AppIconButton
-                    aria-label="Remove environment variable"
-                    className="hover:text-red-500"
-                    onClick={() => onDeleteRow(index)}
-                    size="lg"
-                    type="button"
-                    variant="quiet"
-                  >
-                    <Trash2 aria-hidden className="size-4" />
-                  </AppIconButton>
-                )}
-              </div>
-              {error == null ? null : (
-                <p className="text-destructive text-xs" role="status">
-                  {error}
-                </p>
-              )}
-            </div>
-          );
-        })
-      )}
-      {!envValidation.valid && envDirty ? (
+      <fieldset
+        aria-label="Environment editor mode"
+        className="inline-flex w-fit items-center rounded-lg bg-white/5 p-1"
+      >
+        <AppButton
+          aria-pressed={mode === "structured"}
+          className={cn(
+            "h-7 rounded-md px-3 text-xs",
+            mode === "structured"
+              ? "bg-input text-foreground"
+              : "bg-transparent"
+          )}
+          onClick={() => {
+            if (envRawSourceDiagnostics.length === 0) {
+              onModeChange("structured");
+            }
+          }}
+          type="button"
+          variant="quiet"
+        >
+          Structured
+        </AppButton>
+        <AppButton
+          aria-pressed={mode === "raw"}
+          className={cn(
+            "h-7 rounded-md px-3 text-xs",
+            mode === "raw" ? "bg-input text-foreground" : "bg-transparent"
+          )}
+          onClick={() => onModeChange("raw")}
+          type="button"
+          variant="quiet"
+        >
+          Raw
+        </AppButton>
+      </fieldset>
+      {editorContent}
+      {mode === "structured" && !envValidation.valid && envDirty ? (
         <p className="text-destructive text-xs" role="status">
           Fix environment variable names before saving.
         </p>
       ) : null}
-      {envTokenDiagnostics.length === 0 ? null : (
+      {mode === "structured" && envRawSourceDiagnostics.length > 0 ? (
+        <p className="text-destructive text-xs" role="status">
+          Raw source has errors. Open Raw to fix it.
+        </p>
+      ) : null}
+      {mode === "structured" && envTokenDiagnostics.length === 0 ? null : (
         <p className="text-destructive text-xs" role="status">
           {envTokenDiagnostics[0]?.message}
         </p>
@@ -3764,6 +3881,7 @@ function ContainerSettingsDraftFooter({
 export function ContainerSettingsPane({
   addDbDsnReferenceIntent,
   className,
+  envRawSource,
   image,
   onImageChange,
   onNetworkChange,
@@ -3795,20 +3913,36 @@ export function ContainerSettingsPane({
   const imageInputId = useId();
   const envDraftKeyPrefix = useId();
   const envDraftKeyCounter = useRef(0);
+  const initialEnvRawSource = useMemo(
+    () => canonicalApEnvRawSource({ env, envRawSource }),
+    [env, envRawSource]
+  );
   const initialEnvDraft = useMemo(
     () =>
-      envDraftWithAddReferenceIntent({
+      envRawSourceDraftWithAddReferenceIntent({
         intent: addDbDsnReferenceIntent,
+        rawSource: initialEnvRawSource,
         readOnly,
-        rows: containerEnvRowsFromSavedEnv(env, dbDsnReferenceSources),
         sources: dbDsnReferenceSources,
       }),
-    [addDbDsnReferenceIntent, dbDsnReferenceSources, env, readOnly]
+    [
+      addDbDsnReferenceIntent,
+      dbDsnReferenceSources,
+      initialEnvRawSource,
+      readOnly,
+    ]
+  );
+  const [envEditorMode, setEnvEditorMode] = useState<"raw" | "structured">(
+    "structured"
   );
   const processedAddDbDsnReferenceIntentId = useRef<string | null>(
     initialEnvDraft.consumedIntentId ?? null
   );
-  const syncedEnvRef = useRef<readonly ContainerEnvVar[]>(env);
+  const syncedEnvRef = useRef<readonly ContainerEnvVar[]>(initialEnvDraft.rows);
+  const syncedEnvRawSourceRef = useRef<string>(initialEnvDraft.rawSource);
+  const [envRawSourceDraft, setEnvRawSourceDraft] = useState(
+    initialEnvDraft.rawSource
+  );
   const [envDraft, setEnvDraft] = useState<EnvDraftRow[]>(
     () => initialEnvDraft.rows
   );
@@ -3872,16 +4006,22 @@ export function ContainerSettingsPane({
     if (settingsCommitMode) {
       return;
     }
-    if (containerEnvRowsModelEqual(env, syncedEnvRef.current)) {
+    const nextRawSource = canonicalApEnvRawSource({ env, envRawSource });
+    if (
+      containerEnvRowsModelEqual(env, syncedEnvRef.current) &&
+      nextRawSource === syncedEnvRawSourceRef.current
+    ) {
       return;
     }
     syncedEnvRef.current = env;
-    const nextEnv = containerEnvRowsFromSavedEnv(env, dbDsnReferenceSources);
+    syncedEnvRawSourceRef.current = nextRawSource;
+    const nextEnv = apEnvRawSourceRows(nextRawSource);
+    setEnvRawSourceDraft(nextRawSource);
     setEnvDraft(nextEnv);
     setEnvDraftKeys(
       createEnvDraftKeys(nextEnv.length, envDraftKeyPrefix, envDraftKeyCounter)
     );
-  }, [dbDsnReferenceSources, env, envDraftKeyPrefix, settingsCommitMode]);
+  }, [env, envDraftKeyPrefix, envRawSource, settingsCommitMode]);
 
   useEffect(() => {
     const intent = addDbDsnReferenceIntent;
@@ -3903,11 +4043,24 @@ export function ContainerSettingsPane({
       return;
     }
 
-    setEnvDraft((rows) => appendDbDsnReferenceIntentRow(rows, source, intent));
-    setEnvDraftKeys((keys) => [
-      ...keys,
-      nextEnvDraftKey(envDraftKeyPrefix, envDraftKeyCounter),
-    ]);
+    setEnvRawSourceDraft((rawSource) => {
+      const result = envRawSourceDraftWithAddReferenceIntent({
+        intent,
+        rawSource,
+        readOnly,
+        sources: dbDsnReferenceSources,
+      });
+      setEnvDraft(result.rows);
+      setEnvDraftKeys((keys) =>
+        resizeEnvDraftKeys(
+          keys,
+          result.rows.length,
+          envDraftKeyPrefix,
+          envDraftKeyCounter
+        )
+      );
+      return result.rawSource;
+    });
   }, [
     addDbDsnReferenceIntent,
     dbDsnReferenceSources,
@@ -3967,6 +4120,10 @@ export function ContainerSettingsPane({
     () => validateContainerEnvRows(envDraft),
     [envDraft]
   );
+  const envRawSourceParse = useMemo(
+    () => parseApEnvRawSource(envRawSourceDraft),
+    [envRawSourceDraft]
+  );
   useEffect(() => {
     if (onAddDbDsnReferenceIntentDraftChange == null) {
       return;
@@ -3998,12 +4155,7 @@ export function ContainerSettingsPane({
     }
     previousAddDbDsnReferenceIntentIds.current = currentIds;
   }, [envDraft, onAddDbDsnReferenceIntentDraftChange]);
-  const envTokenDiagnostics = useMemo(
-    () =>
-      refreshContainerEnvTokenDraft(envDraft, dbDsnReferenceSources)
-        .diagnostics,
-    [dbDsnReferenceSources, envDraft]
-  );
+  const envTokenDiagnostics = useMemo(() => [] as EnvTokenDiagnostic[], []);
   const envErrorsByIndex = useMemo(() => {
     const byIndex = new Map<number, string>();
     for (const error of envValidation.errors) {
@@ -4013,9 +4165,9 @@ export function ContainerSettingsPane({
     }
     return byIndex;
   }, [envValidation]);
-  const envDirty = !containerEnvRowsEqual(envDraft, env);
-  const canSaveEnv =
-    envDirty && envValidation.valid && envTokenDiagnostics.length === 0;
+  const committedEnvRawSource = canonicalApEnvRawSource({ env, envRawSource });
+  const envDirty = envRawSourceDraft !== committedEnvRawSource;
+  const canSaveEnv = envDirty && envRawSourceParse.valid && envValidation.valid;
   const activeDraftNetwork = settingsCommitMode
     ? draftNetwork
     : (draftNetwork ?? network);
@@ -4032,6 +4184,7 @@ export function ContainerSettingsPane({
       containerSettingsDraftFromValues({
         cpuCores: cpuQuota.value,
         env,
+        envRawSource,
         image,
         memoryMib: memoryQuota.value,
         network,
@@ -4041,6 +4194,7 @@ export function ContainerSettingsPane({
       committedReplicaStrategy,
       cpuQuota.value,
       env,
+      envRawSource,
       image,
       memoryQuota.value,
       network,
@@ -4055,6 +4209,7 @@ export function ContainerSettingsPane({
       containerSettingsDraftFromValues({
         cpuCores: draftCpu,
         env: envDraft,
+        envRawSource: envRawSourceDraft,
         image: draftImage,
         memoryMib: draftMem,
         network: settingsDraftNetwork,
@@ -4067,6 +4222,7 @@ export function ContainerSettingsPane({
       draftMem,
       draftReplicaStrategy,
       envDraft,
+      envRawSourceDraft,
       replicasQuota,
       settingsDraftNetwork,
     ]
@@ -4088,10 +4244,12 @@ export function ContainerSettingsPane({
           next.replicas ?? replicasQuota?.value ?? DEFAULT_FIXED_REPLICAS
         )
       );
-      const nextEnv = containerEnvRowsFromSavedEnv(
-        next.env.map((row) => ({ ...row })),
-        dbDsnReferenceSources
-      );
+      const nextRawSource = canonicalApEnvRawSource({
+        env: next.env,
+        envRawSource: next.envRawSource,
+      });
+      const nextEnv = apEnvRawSourceRows(nextRawSource);
+      setEnvRawSourceDraft(nextRawSource);
       setEnvDraft(nextEnv);
       setEnvDraftKeys(
         createEnvDraftKeys(
@@ -4101,9 +4259,10 @@ export function ContainerSettingsPane({
         )
       );
       syncedEnvRef.current = nextEnv;
+      syncedEnvRawSourceRef.current = nextRawSource;
       setDraftNetwork(next.network);
     },
-    [dbDsnReferenceSources, envDraftKeyPrefix, replicasQuota?.value]
+    [envDraftKeyPrefix, replicasQuota?.value]
   );
   useEffect(() => {
     if (!settingsCommitMode) {
@@ -4139,6 +4298,7 @@ export function ContainerSettingsPane({
   const canSaveSettings =
     settingsCommitMode &&
     panelDraftDirty &&
+    envRawSourceParse.valid &&
     envValidation.valid &&
     envTokenDiagnostics.length === 0 &&
     !settingsSavePending;
@@ -4394,10 +4554,7 @@ export function ContainerSettingsPane({
     if (!canSaveEnv) {
       return;
     }
-    const result = normalizeContainerEnvTokenRowsForSave(
-      envDraft,
-      dbDsnReferenceSources
-    );
+    const result = normalizeApEnvRawSourceForSave(envRawSourceDraft);
     if (!result.valid) {
       return;
     }
@@ -4407,23 +4564,19 @@ export function ContainerSettingsPane({
     onEnvChange(
       normalized,
       confirmedAddDbDsnReferences.length === 0
-        ? undefined
-        : { confirmedAddDbDsnReferences }
+        ? { envRawSource: result.envRawSource }
+        : {
+            confirmedAddDbDsnReferences,
+            envRawSource: result.envRawSource,
+          }
     );
-    setEnvDraft(
-      containerEnvRowsFromSavedEnv(normalized, dbDsnReferenceSources).map(
-        (row, index) => {
-          const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
-          return intentId == null
-            ? row
-            : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
-        }
-      )
-    );
+    setEnvDraft(apEnvRawSourceRows(result.envRawSource));
   };
 
   const handleCancelEnvRows = () => {
-    const nextEnv = containerEnvRowsFromSavedEnv(env, dbDsnReferenceSources);
+    const nextRawSource = canonicalApEnvRawSource({ env, envRawSource });
+    const nextEnv = apEnvRawSourceRows(nextRawSource);
+    setEnvRawSourceDraft(nextRawSource);
     setEnvDraft(nextEnv);
     setEnvDraftKeys(
       createEnvDraftKeys(nextEnv.length, envDraftKeyPrefix, envDraftKeyCounter)
@@ -4431,7 +4584,17 @@ export function ContainerSettingsPane({
   };
 
   const handleAddEnvRow = () => {
-    setEnvDraft((rows) => addContainerEnvRow(rows));
+    setEnvRawSourceDraft((source) => {
+      const nextRow = addContainerEnvRow(apEnvRawSourceRows(source)).at(-1);
+      if (nextRow === undefined) {
+        return source;
+      }
+      const parsed = appendApEnvRawSourceRow(source, nextRow);
+      setEnvDraft(
+        parsed.rows.map((row) => ({ name: row.key, value: row.value }))
+      );
+      return parsed.source;
+    });
     setEnvDraftKeys((keys) => [
       ...keys,
       nextEnvDraftKey(envDraftKeyPrefix, envDraftKeyCounter),
@@ -4439,15 +4602,12 @@ export function ContainerSettingsPane({
   };
 
   const handleDeleteEnvRow = (index: number) => {
-    setEnvDraft((rows) => {
-      const result = deleteContainerEnvTokenRow(rows, index);
-      if (result.diagnostic != null) {
-        return [...rows];
-      }
-      const refreshed = refreshContainerEnvTokenDraft(
-        result.rows,
-        dbDsnReferenceSources
-      ).rows;
+    setEnvRawSourceDraft((source) => {
+      const result = deleteApEnvRawSourceRow(source, index);
+      const refreshed = result.rows.map((row) => ({
+        name: row.key,
+        value: row.value,
+      }));
       setEnvDraftKeys((keys) =>
         resizeEnvDraftKeys(
           keys.filter((_, keyIndex) => keyIndex !== index),
@@ -4456,7 +4616,8 @@ export function ContainerSettingsPane({
           envDraftKeyCounter
         )
       );
-      return refreshed;
+      setEnvDraft(refreshed);
+      return result.source;
     });
   };
 
@@ -4464,12 +4625,12 @@ export function ContainerSettingsPane({
     index: number,
     patch: Partial<ContainerEnvRow>
   ) => {
-    setEnvDraft((rows) => {
-      const nextRows = updateContainerEnvTokenRow(rows, index, patch);
-      const refreshed = refreshContainerEnvTokenDraft(
-        nextRows,
-        dbDsnReferenceSources
-      ).rows;
+    setEnvRawSourceDraft((source) => {
+      const result = applyApEnvRawSourceRowPatch(source, index, patch);
+      const refreshed = result.rows.map((row) => ({
+        name: row.key,
+        value: row.value,
+      }));
       setEnvDraftKeys((keys) =>
         resizeEnvDraftKeys(
           keys,
@@ -4478,8 +4639,31 @@ export function ContainerSettingsPane({
           envDraftKeyCounter
         )
       );
-      return refreshed;
+      setEnvDraft(refreshed);
+      return result.source;
     });
+  };
+
+  const handleRawSourceChange = (source: string) => {
+    setEnvRawSourceDraft(source);
+    const parsed = parseApEnvRawSource(source);
+    if (!parsed.valid) {
+      setEnvEditorMode("raw");
+      return;
+    }
+    const nextRows = parsed.rows.map((row) => ({
+      name: row.key,
+      value: row.value,
+    }));
+    setEnvDraft(nextRows);
+    setEnvDraftKeys((keys) =>
+      resizeEnvDraftKeys(
+        keys,
+        nextRows.length,
+        envDraftKeyPrefix,
+        envDraftKeyCounter
+      )
+    );
   };
 
   const resetSettingsDraft = useCallback(() => {
@@ -4509,10 +4693,7 @@ export function ContainerSettingsPane({
     if (!canSaveSettings || onSettingsDraftCommit == null) {
       throw new Error("Settings draft cannot be saved yet.");
     }
-    const result = normalizeContainerEnvTokenRowsForSave(
-      envDraft,
-      dbDsnReferenceSources
-    );
+    const result = normalizeApEnvRawSourceForSave(envRawSourceDraft);
     if (!result.valid) {
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
@@ -4522,6 +4703,7 @@ export function ContainerSettingsPane({
     const draft: ContainerSettingsDraft = {
       ...settingsDraft,
       env: normalizedEnv,
+      envRawSource: result.envRawSource,
       image: settingsDraft.image.trim(),
     };
     const meta: ContainerSettingsPaneSettingsDraftCommitMeta = {
@@ -4541,15 +4723,14 @@ export function ContainerSettingsPane({
         commitSettingsDraftBackingState(current, draft)
       );
       setEnvDraft(
-        containerEnvRowsFromSavedEnv(normalizedEnv, dbDsnReferenceSources).map(
-          (row, index) => {
-            const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
-            return intentId == null
-              ? row
-              : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
-          }
-        )
+        apEnvRawSourceRows(result.envRawSource).map((row, index) => {
+          const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
+          return intentId == null
+            ? row
+            : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
+        })
       );
+      setEnvRawSourceDraft(result.envRawSource);
     } catch (error) {
       setSettingsBackingState((current) =>
         failSettingsDraftSave(current, error, "Could not save settings.")
@@ -4560,8 +4741,8 @@ export function ContainerSettingsPane({
     }
   }, [
     canSaveSettings,
-    dbDsnReferenceSources,
     envDraft,
+    envRawSourceDraft,
     onSettingsDraftCommit,
     settingsBaseDraft,
     settingsDraft,
@@ -4575,6 +4756,8 @@ export function ContainerSettingsPane({
     }
   }, [saveSettingsDraft]);
 
+  const environmentFocus = sectionFocus === "environment";
+
   useEffect(() => {
     if (!settingsCommitMode || onSettingsDraftLeaveGuardChange == null) {
       return;
@@ -4587,7 +4770,7 @@ export function ContainerSettingsPane({
             dirty: true,
             discard: resetSettingsDraft,
             save: saveSettingsDraft,
-            scope: "ap",
+            scope: environmentFocus ? "environmentVariables" : "ap",
           }
         : null
     );
@@ -4597,6 +4780,7 @@ export function ContainerSettingsPane({
     };
   }, [
     canSaveSettings,
+    environmentFocus,
     onSettingsDraftLeaveGuardChange,
     panelDraftDirty,
     resetSettingsDraft,
@@ -4606,7 +4790,6 @@ export function ContainerSettingsPane({
 
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
-  const environmentFocus = sectionFocus === "environment";
   const envSectionActions = readOnly ? null : (
     <AppButton
       aria-label="Add environment variable"
@@ -4714,10 +4897,15 @@ export function ContainerSettingsPane({
               envDirty={envDirty}
               envDraft={envDraft}
               envErrorsByIndex={envErrorsByIndex}
+              envRawSourceDiagnostics={envRawSourceParse.diagnostics}
+              envRawSourceDraft={envRawSourceDraft}
               envRowKeys={envDraftKeys}
               envTokenDiagnostics={envTokenDiagnostics}
               envValidation={envValidation}
+              mode={envEditorMode}
               onDeleteRow={handleDeleteEnvRow}
+              onModeChange={setEnvEditorMode}
+              onRawSourceChange={handleRawSourceChange}
               onUpdateRow={handleUpdateEnvRow}
               rows={envDraft}
             />

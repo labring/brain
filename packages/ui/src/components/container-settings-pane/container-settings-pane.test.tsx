@@ -14,6 +14,7 @@ import {
   containerNetworkAfterEditPublicAddress,
   containerNetworkAfterUnbindCustomDomain,
   containerSettingsDraftIsDirty,
+  envRawSourceDraftWithAddReferenceIntent,
   resourceQuotaReplicaPatchFromDraft,
 } from "./container-settings-pane";
 
@@ -31,6 +32,9 @@ const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
 const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
 const EXTERNAL_REFERENCE_RE = /External reference/;
 const RAW_ENV_EDITOR_RE = /Edit environment variables/;
+const ENV_RAW_SOURCE_RE = /aria-label="Environment raw source"/;
+const RAW_MODE_RE = />Raw</;
+const STRUCTURED_MODE_RE = />Structured</;
 const DATABASE_URL_RE = /DATABASE_URL/;
 const ADD_ENV_RE = /aria-label="Add environment variable"/;
 const REFERENCE_RE = /aria-label="Reference"/;
@@ -55,7 +59,6 @@ const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="Container image"/;
 const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
-const PGPASSWORD_RE = /PGPASSWORD/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
 const ADD_PORT_RE = /Add Port/;
 const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
@@ -155,6 +158,9 @@ test("container settings pane renders editable structured environment rows", () 
   assert.match(html, ENV_NAME_INPUT_RE);
   assert.match(html, ENV_VALUE_INPUT_RE);
   assert.doesNotMatch(html, RAW_ENV_EDITOR_RE);
+  assert.match(html, STRUCTURED_MODE_RE);
+  assert.match(html, RAW_MODE_RE);
+  assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
 });
 
 test("container settings pane renders add environment action in section header", () => {
@@ -922,7 +928,7 @@ test("container settings pane offers DB references from editable environment row
   assert.doesNotMatch(readOnlyHtml, REFERENCE_RE);
 });
 
-test("container settings pane renders DB reference rows without old DB field selects", () => {
+test("container settings pane projects valueFrom-only environment rows out of raw direct source", () => {
   const html = renderPane(false, [
     {
       dbDsn: {
@@ -942,15 +948,15 @@ test("container settings pane renders DB reference rows without old DB field sel
     },
   ]);
 
-  assert.match(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
   assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
-  assert.match(html, REFERENCE_RE);
-  assert.match(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_RE);
+  assert.doesNotMatch(html, EXTERNAL_REFERENCE_RE);
   assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
 });
 
-test("container settings pane renders automatic helper rows as managed rows", () => {
+test("container settings pane renders raw direct rows instead of automatic helper rows", () => {
   const html = renderPane(false, [
     {
       name: "DATABASE_URL",
@@ -983,8 +989,7 @@ test("container settings pane renders automatic helper rows as managed rows", ()
   assert.equal(html.match(INLINE_REFERENCE_TRIGGER_RE_GLOBAL)?.length, 1);
   assert.equal(html.match(TOKEN_TRIGGER_RE_GLOBAL)?.length, 1);
   assert.equal(html.match(REMOVE_ENV_RE_GLOBAL)?.length, 1);
-  assert.match(html, PGPASSWORD_RE);
-  assert.match(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, EXTERNAL_REFERENCE_RE);
   assert.doesNotMatch(html, VALUE_FROM_PLACEHOLDER_RE);
 });
 
@@ -1024,6 +1029,39 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
   assert.match(html, TOKEN_TRIGGER_RE);
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
   assert.match(html, SAVE_ENV_RE);
+});
+
+test("container settings pane appends dragged DB Add Reference intent to raw source", () => {
+  const draft = envRawSourceDraftWithAddReferenceIntent({
+    intent: {
+      dbName: "mysql",
+      dbNamespace: "default",
+      id: "drag-1",
+    },
+    rawSource: "# app\nFEATURE_FLAG=true",
+    readOnly: false,
+    sources: [
+      {
+        name: "mysql",
+        namespace: "default",
+        privateDsn: "mysql://private",
+      },
+    ],
+  });
+
+  assert.equal(
+    draft.rawSource,
+    "# app\nFEATURE_FLAG=true\nDATABASE_URL=mysql://private"
+  );
+  assert.deepEqual(draft.rows, [
+    { name: "FEATURE_FLAG", value: "true" },
+    {
+      canvasAddDbDsnReferenceIntentId: "drag-1",
+      name: "DATABASE_URL",
+      referenceDbKey: "default/mysql",
+      value: "mysql://private",
+    },
+  ]);
 });
 
 test("container settings pane reports confirmed dragged DB reference rows from the saved draft", () => {

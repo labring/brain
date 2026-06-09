@@ -67,6 +67,50 @@ test("AP env settings patch direct rows as standard Kubernetes value entries", (
         { name: "FEATURE_FLAG", value: "true" },
       ],
     },
+    {
+      op: "add",
+      path: "/spec/input/envRawSource",
+      value: "DATABASE_URL=postgres://db:5432/app\nFEATURE_FLAG=true",
+    },
+  ]);
+});
+
+test("AP env settings patch carries canonical raw source plus compiled runtime env", () => {
+  const source = [
+    "# database",
+    "DATABASE_URL='postgres://db:5432/app' # private dsn",
+    "",
+    "FEATURE_FLAG=true",
+  ].join("\n");
+
+  const ops = patchOpsForApEnvSettings(
+    {
+      input: {
+        env: [{ name: "DATABASE_URL", value: "postgres://old" }],
+        envRawSource: "DATABASE_URL=postgres://old",
+      },
+    },
+    [
+      { name: "DATABASE_URL", value: "postgres://db:5432/app" },
+      { name: "FEATURE_FLAG", value: "true" },
+    ],
+    { envRawSource: source }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/env",
+      value: [
+        { name: "DATABASE_URL", value: "postgres://db:5432/app" },
+        { name: "FEATURE_FLAG", value: "true" },
+      ],
+    },
+    {
+      op: "replace",
+      path: "/spec/input/envRawSource",
+      value: source,
+    },
   ]);
 });
 
@@ -974,6 +1018,11 @@ test("AP env settings patch DB DSN references as plain value entries", () => {
       path: "/spec/input/env",
       value: [{ name: "DATABASE_URL", value: "postgres://private" }],
     },
+    {
+      op: "add",
+      path: "/spec/input/envRawSource",
+      value: "DATABASE_URL=postgres://private",
+    },
   ]);
 });
 
@@ -1003,6 +1052,11 @@ test("AP env settings patch DB primitive references as Secret key refs", () => {
           valueFrom: { secretKeyRef },
         },
       ],
+    },
+    {
+      op: "add",
+      path: "/spec/input/envRawSource",
+      value: "",
     },
   ]);
 });
@@ -1039,6 +1093,11 @@ test("AP env settings patch editor tokens as Kubernetes env expansion with DB he
         { name: "DATABASE_URL", value: "postgres://$(PGPASSWORD)@db/app" },
         { name: "PGPASSWORD", valueFrom: { secretKeyRef } },
       ],
+    },
+    {
+      op: "add",
+      path: "/spec/input/envRawSource",
+      value: "DATABASE_URL=postgres://$(PGPASSWORD)@db/app",
     },
   ]);
 });
@@ -1119,6 +1178,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
   const previous = {
     cpuCores: 1,
     env: [{ name: "DATABASE_URL", value: "postgres://old" }],
+    envRawSource: "DATABASE_URL=postgres://old",
     image: "ghcr.io/acme/api:old",
     memoryMib: 1024,
     network: {
@@ -1135,6 +1195,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
     {
       input: {
         env: [{ name: "DATABASE_URL", value: "postgres://old" }],
+        envRawSource: "DATABASE_URL=postgres://old",
         image: "ghcr.io/acme/api:old",
         network: {
           appListeningPorts: [{ port: 80 }],
@@ -1156,6 +1217,7 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
         { name: "DATABASE_URL", value: "postgres://new" },
         { name: "FEATURE_FLAG", value: "true" },
       ],
+      envRawSource: "DATABASE_URL=postgres://new\nFEATURE_FLAG=true",
       image: "ghcr.io/acme/api:new",
       memoryMib: 2048,
       network: {
@@ -1199,6 +1261,11 @@ test("AP settings draft builds one patch for combined dirty settings", () => {
         { name: "DATABASE_URL", value: "postgres://new" },
         { name: "FEATURE_FLAG", value: "true" },
       ],
+    },
+    {
+      op: "replace",
+      path: "/spec/input/envRawSource",
+      value: "DATABASE_URL=postgres://new\nFEATURE_FLAG=true",
     },
     {
       op: "replace",
@@ -1359,6 +1426,11 @@ test("AP settings draft omits unchanged settings from the patch", () => {
       op: "replace",
       path: "/spec/input/env",
       value: [{ name: "DATABASE_URL", value: "postgres://new" }],
+    },
+    {
+      op: "add",
+      path: "/spec/input/envRawSource",
+      value: "DATABASE_URL=postgres://new",
     },
   ]);
 });

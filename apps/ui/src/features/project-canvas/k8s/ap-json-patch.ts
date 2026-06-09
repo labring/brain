@@ -6,9 +6,12 @@ import type {
   ContainerNetwork,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import {
+  canonicalApEnvRawSource,
+  normalizeApEnvRawSourceForSave,
+} from "@workspace/ui/lib/ap-env-raw-source";
+import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
   type ContainerEnvDbDsnSource,
-  containerEnvRowsEqual,
 } from "@workspace/ui/lib/container-env-rows";
 import { normalizeContainerEnvTokenRowsForSave } from "@workspace/ui/lib/container-env-tokens";
 import { parse as parseYaml } from "yaml";
@@ -83,6 +86,7 @@ type ApPublicAddressesSettingsPatch = Pick<
 
 interface ApNetworkSettingsPatchOptions {
   dbDsnReferenceSources?: readonly ContainerEnvDbDsnSource[];
+  envRawSource?: string;
   existingCustomDomains?: readonly ExistingCustomDomainBinding[];
   metadata?: Record<string, unknown>;
   routingDomain?: string;
@@ -91,6 +95,7 @@ interface ApNetworkSettingsPatchOptions {
 export interface ApSettingsDraftPatch {
   cpuCores?: number;
   env?: readonly ContainerEnvVar[];
+  envRawSource?: string;
   image?: string;
   memoryMib?: number;
   network?: ApNetworkSettingsPatch;
@@ -767,8 +772,23 @@ export async function applyApResourceQuotas(
 export function patchOpsForApEnvSettings(
   spec: Record<string, unknown> | undefined,
   env: ContainerEnvVar[],
-  options: Pick<ApNetworkSettingsPatchOptions, "dbDsnReferenceSources"> = {}
+  options: Pick<
+    ApNetworkSettingsPatchOptions,
+    "dbDsnReferenceSources" | "envRawSource"
+  > = {}
 ): K8sJsonPatchOp[] {
+  const input = readApInput(spec ?? {});
+  if (options.envRawSource !== undefined) {
+    const result = normalizeApEnvRawSourceForSave(options.envRawSource);
+    if (!result.valid) {
+      throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
+    }
+    return patchOpsForApInput(spec, {
+      env: buildEnvArray(input.env, result.env),
+      envRawSource: result.envRawSource,
+    });
+  }
+
   const result = normalizeContainerEnvTokenRowsForSave(
     env,
     options.dbDsnReferenceSources
@@ -776,8 +796,11 @@ export function patchOpsForApEnvSettings(
   if (!result.valid) {
     throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
   }
-  const list = buildEnvArray(readApInput(spec ?? {}).env, result.env);
-  return patchOpsForApInput(spec, { env: list });
+  const envRawSource = canonicalApEnvRawSource({ env: result.env });
+  return patchOpsForApInput(spec, {
+    env: buildEnvArray(input.env, result.env),
+    envRawSource,
+  });
 }
 
 function validatedNetworkPort(port: number, label: string): number {
@@ -963,18 +986,25 @@ function patchOpsForApSettingsDraftInput(
     inputPatch.image = image;
   }
 
-  if (
-    next.env !== undefined &&
-    !containerEnvRowsEqual([...next.env], [...(previous.env ?? [])])
-  ) {
-    const result = normalizeContainerEnvTokenRowsForSave(
-      [...next.env],
-      options.dbDsnReferenceSources
-    );
-    if (!result.valid) {
-      throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
+  if (next.env !== undefined) {
+    const nextRawSource = canonicalApEnvRawSource({
+      env: next.env,
+      envRawSource: next.envRawSource,
+    });
+    const previousRawSource = canonicalApEnvRawSource({
+      env: previous.env ?? [],
+      envRawSource: previous.envRawSource,
+    });
+    if (nextRawSource !== previousRawSource) {
+      const result = normalizeApEnvRawSourceForSave(nextRawSource);
+      if (!result.valid) {
+        throw new Error(
+          result.diagnostics[0]?.message ?? "Invalid environment."
+        );
+      }
+      inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
+      inputPatch.envRawSource = result.envRawSource;
     }
-    inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
   }
 
   if (
@@ -1073,7 +1103,10 @@ export async function applyApEnv(
   kubeconfig: string,
   claim: Record<string, unknown>,
   env: ContainerEnvVar[],
-  options: Pick<ApNetworkSettingsPatchOptions, "dbDsnReferenceSources"> = {}
+  options: Pick<
+    ApNetworkSettingsPatchOptions,
+    "dbDsnReferenceSources" | "envRawSource"
+  > = {}
 ): Promise<void> {
   const spec = asRecord(claim.spec);
   await patchAp(

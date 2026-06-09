@@ -204,7 +204,7 @@ func TestAPOwnershipRejectsWrongResourceKind(t *testing.T) {
 }
 
 func TestAPDeploymentPatchFromProductPatch(t *testing.T) {
-	raw := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true,"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"network":{"privatePort":8080,"platformAddresses":[{"id":"pa_abc123","port":8080}]}},"resource":{"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":3}}}}}`)
+	raw := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true,"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"envRawSource":"\n# app\nFEATURE_FLAG=true\n","network":{"privatePort":8080,"platformAddresses":[{"id":"pa_abc123","port":8080}]}},"resource":{"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":3}}}}}`)
 	patch := apDeploymentPatchFromProductPatch(raw, "web")
 	var out map[string]interface{}
 	if err := json.Unmarshal(patch, &out); err != nil {
@@ -214,6 +214,9 @@ func TestAPDeploymentPatchFromProductPatch(t *testing.T) {
 	annotations := metadata["annotations"].(map[string]interface{})
 	if got := annotations["brain.io/ap-desired-network"]; got == "" {
 		t.Fatalf("desired network annotation should be patched")
+	}
+	if got := annotations["brain.io/ap-env-raw-source"]; got != "\n# app\nFEATURE_FLAG=true\n" {
+		t.Fatalf("env raw source annotation = %v, want raw source", got)
 	}
 	labels := metadata["labels"].(map[string]interface{})
 	if got := labels["region"]; got != "apps.example.com" {
@@ -409,6 +412,7 @@ func TestAPRenderInputFromDeploymentPatchMergesProductPatchIntoCurrentState(t *t
 		ObjectMeta: metav1.ObjectMeta{
 			Annotations: map[string]string{
 				orchestration.APDesiredNetworkAnnotation: `{"privatePort":80,"platformAddresses":[{"id":"pa_old123","port":80}]}`,
+				orchestration.APEnvRawSourceAnnotation:   "\n# old\nOLD=1\n",
 			},
 			Labels: map[string]string{
 				orchestration.APRoutingDomainLabel: "old.example.com",
@@ -443,7 +447,7 @@ func TestAPRenderInputFromDeploymentPatchMergesProductPatchIntoCurrentState(t *t
 		},
 	}
 
-	patch := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"network":{"privatePort":8080,"platformAddresses":[{"id":"pa_new123","port":8080}]}},"resource":{"requests":{"cpu":"250m","memory":"256Mi"},"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":2}}}}}`)
+	patch := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"envRawSource":"\n# app\nFEATURE_FLAG=true\n","network":{"privatePort":8080,"platformAddresses":[{"id":"pa_new123","port":8080}]}},"resource":{"requests":{"cpu":"250m","memory":"256Mi"},"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":2}}}}}`)
 	got, paused, err := apRenderInputFromDeploymentPatch(current, patch)
 	if err != nil {
 		t.Fatalf("apRenderInputFromDeploymentPatch returned error: %v", err)
@@ -468,6 +472,9 @@ func TestAPRenderInputFromDeploymentPatchMergesProductPatchIntoCurrentState(t *t
 	}
 	if len(got.Env) != 1 || got.Env[0].Name != "FEATURE_FLAG" || got.Env[0].Value != "true" {
 		t.Fatalf("env = %#v, want FEATURE_FLAG=true", got.Env)
+	}
+	if got.EnvRawSource != "\n# app\nFEATURE_FLAG=true\n" {
+		t.Fatalf("envRawSource = %q, want raw source", got.EnvRawSource)
 	}
 	if got.ResourceReq.Cpu().String() != "250m" || got.ResourceLimit.Memory().String() != "512Mi" {
 		t.Fatalf("resources = requests %#v limits %#v, want cpu request 250m and memory limit 512Mi", got.ResourceReq, got.ResourceLimit)
