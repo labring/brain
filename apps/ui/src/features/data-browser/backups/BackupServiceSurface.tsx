@@ -97,6 +97,7 @@ type DbServiceBackupBodyInput = Pick<
   DbServiceBackupRequest,
   "backupName" | "description" | "name" | "namespace"
 >;
+type BackupSurfaceState = "loading" | "ready" | "refreshing";
 
 export function validateDbServiceBackupForm({
   backupName,
@@ -194,6 +195,22 @@ function stringField(
 ): string {
   const value = data?.[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function backupSurfaceState({
+  isLoading,
+  needsRefresh,
+}: {
+  isLoading: boolean;
+  needsRefresh: boolean;
+}): BackupSurfaceState {
+  if (isLoading) {
+    return "loading";
+  }
+  if (needsRefresh) {
+    return "refreshing";
+  }
+  return "ready";
 }
 
 async function responseErrorMessage(
@@ -1481,6 +1498,7 @@ export function BackupServiceSurface() {
     }).filter((backup) => !deletedBackupNames.has(backup.name));
   }, [deletedBackupNames, refreshData, runtime.backups, runtime.dbService]);
   const needsRefresh = dbServiceBackupNeedsRefresh(summaries);
+  const surfaceState = backupSurfaceState({ isLoading, needsRefresh });
   const deleteVerificationLabel =
     selectedDeleteBackup === null
       ? undefined
@@ -1620,9 +1638,7 @@ export function BackupServiceSurface() {
       data-qa-db-service-key={`${runtime.projectId}:${runtime.databaseWorkloadNamespace}:${runtime.databaseWorkloadName}`}
       data-qa-module="database"
       data-qa-object="backup-surface"
-      data-qa-state={
-        isLoading ? "loading" : needsRefresh ? "refreshing" : "ready"
-      }
+      data-qa-state={surfaceState}
       data-testid="database.backup.surface"
     >
       <p className="m-0 text-muted-foreground text-sm leading-5">

@@ -120,6 +120,10 @@ interface ApEnvReferenceCompileResult {
   value: string;
 }
 
+type ApEnvCompiledReferenceHelper = NonNullable<
+  ContainerEnvRow["compiledReference"]
+>["helpers"][number];
+
 export interface ApEnvRawSourceReferenceResolutionResult {
   diagnostics: ApEnvRawSourceDiagnostic[];
   references: ApEnvResolvedReferenceToken[];
@@ -489,11 +493,7 @@ function referenceVariableOptions(
     if (canonicalName === undefined) {
       continue;
     }
-    const field =
-      variable.field ??
-      (canonicalName === "DATABASE_URL"
-        ? "databaseUrl"
-        : AP_ENV_REFERENCE_PRIMITIVE_VARIABLES[canonicalName]);
+    const field = variable.field ?? referenceFieldForVariable(canonicalName);
     const valueFrom = variable.valueFrom;
     options.push({
       field,
@@ -504,6 +504,15 @@ function referenceVariableOptions(
     });
   }
   return options;
+}
+
+function referenceFieldForVariable(
+  variableName: ApEnvReferenceVariableName
+): ContainerEnvDbPrimitiveField | "databaseUrl" {
+  if (variableName === "DATABASE_URL") {
+    return "databaseUrl";
+  }
+  return AP_ENV_REFERENCE_PRIMITIVE_VARIABLES[variableName];
 }
 
 function referenceVariableOption(
@@ -527,6 +536,14 @@ function referenceMenuItemType(
   return "Alias";
 }
 
+function databaseUrlReferenceAvailable(
+  source: ContainerEnvDbDsnSource
+): boolean {
+  return AP_ENV_REFERENCE_DSN_FIELD_ORDER.every(
+    (field) => source.primitiveSecretRefs?.[field] !== undefined
+  );
+}
+
 export function buildApEnvReferenceMenuItems(
   sources: readonly ContainerEnvDbDsnSource[]
 ): ApEnvReferenceMenuItem[] {
@@ -536,9 +553,7 @@ export function buildApEnvReferenceMenuItems(
       const option = referenceVariableOption(source, variableName);
       const available =
         variableName === "DATABASE_URL"
-          ? AP_ENV_REFERENCE_DSN_FIELD_ORDER.every(
-              (field) => source.primitiveSecretRefs?.[field] !== undefined
-            )
+          ? databaseUrlReferenceAvailable(source)
           : option !== undefined;
       items.push({
         available,
@@ -690,11 +705,10 @@ function sourceWithCanonicalReferences(
   if (references.length === 0) {
     return source;
   }
+  const rowsByLine = new Map(parsed.rows.map((row) => [row.line, row]));
   const referencesByLine = new Map<number, ApEnvResolvedReferenceToken[]>();
   for (const reference of references) {
-    const row = parsed.rows.find(
-      (candidate) => candidate.line === reference.line
-    );
+    const row = rowsByLine.get(reference.line);
     if (row === undefined) {
       continue;
     }
@@ -706,7 +720,7 @@ function sourceWithCanonicalReferences(
   const lines = splitSourceLines(source);
   for (const [line, lineReferences] of referencesByLine) {
     const raw = lines[line - 1];
-    const row = parsed.rows.find((candidate) => candidate.line === line);
+    const row = rowsByLine.get(line);
     if (raw === undefined || row === undefined) {
       continue;
     }
@@ -815,6 +829,20 @@ function helperRowForDbField(
   return row;
 }
 
+function compiledReferenceHelperForDbField(
+  field: ContainerEnvDbPrimitiveField,
+  helper: ContainerEnvRow
+): ApEnvCompiledReferenceHelper {
+  return {
+    field,
+    name: helper.name,
+    valueFrom:
+      helper.valueFrom == null
+        ? undefined
+        : (helper.valueFrom as { secretKeyRef: ContainerEnvSecretKeyRef }),
+  };
+}
+
 function dbDsnScheme(source: ContainerEnvDbDsnSource): string {
   const engine = source.engine?.trim().toLowerCase() ?? "";
   if (engine.includes("mysql")) {
@@ -847,14 +875,7 @@ function compileDatabaseUrlReference(
     }
     helpers.push(helper);
     helperNames[field] = helper.name;
-    helpersUsed.push({
-      field,
-      name: helper.name,
-      valueFrom:
-        helper.valueFrom == null
-          ? undefined
-          : (helper.valueFrom as { secretKeyRef: ContainerEnvSecretKeyRef }),
-    });
+    helpersUsed.push(compiledReferenceHelperForDbField(field, helper));
   }
 
   if (
@@ -881,26 +902,17 @@ function compilePrimitiveReference(
   if (reference.canonicalVariableName === "DATABASE_URL") {
     return compileDatabaseUrlReference(reference, line, context);
   }
-  const field =
-    AP_ENV_REFERENCE_PRIMITIVE_VARIABLES[reference.canonicalVariableName];
+  const field = referenceFieldForVariable(reference.canonicalVariableName);
+  if (field === "databaseUrl") {
+    return compileDatabaseUrlReference(reference, line, context);
+  }
   const helper = helperRowForDbField(reference.source, field, line, context);
   return {
     helpers: helper === undefined ? [] : [helper],
     helpersUsed:
       helper === undefined
         ? []
-        : [
-            {
-              field,
-              name: helper.name,
-              valueFrom:
-                helper.valueFrom == null
-                  ? undefined
-                  : (helper.valueFrom as {
-                      secretKeyRef: ContainerEnvSecretKeyRef;
-                    }),
-            },
-          ],
+        : [compiledReferenceHelperForDbField(field, helper)],
     value: helper === undefined ? reference.canonicalRaw : `$(${helper.name})`,
   };
 }
@@ -956,13 +968,14 @@ function referencesByRow(
   references: readonly ApEnvResolvedReferenceToken[]
 ): Map<number, ApEnvResolvedReferenceToken[]> {
   const out = new Map<number, ApEnvResolvedReferenceToken[]>();
-  for (const row of parsed.rows) {
-    const rowReferences = references.filter(
-      (reference) => reference.line === row.line
-    );
-    if (rowReferences.length > 0) {
-      out.set(row.line, rowReferences);
+  const rowLines = new Set(parsed.rows.map((row) => row.line));
+  for (const reference of references) {
+    if (!rowLines.has(reference.line)) {
+      continue;
     }
+    const rowReferences = out.get(reference.line) ?? [];
+    rowReferences.push(reference);
+    out.set(reference.line, rowReferences);
   }
   return out;
 }
