@@ -38,9 +38,11 @@ import {
   apEnvRawSourceRows,
   appendApEnvRawSourceRow,
   applyApEnvRawSourceRowPatch,
+  buildApEnvReferenceMenuItems,
   canonicalApEnvRawSource,
+  compileApEnvRawSourceForRuntime,
   deleteApEnvRawSourceRow,
-  normalizeApEnvRawSourceForSave,
+  insertApEnvReferenceText,
   parseApEnvRawSource,
 } from "@workspace/ui/lib/ap-env-raw-source";
 import {
@@ -49,17 +51,12 @@ import {
   type ContainerEnvDbDsnSource,
   type ContainerEnvDbReferenceField,
   type ContainerEnvRow,
-  containerEnvDbDsnFieldOptions,
-  containerEnvDbReferenceRowPatch,
   containerEnvRowsModelEqual,
-  defaultContainerEnvDbReferenceRowName,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
 import {
-  buildContainerEnvTokenMenuItems,
   containerEnvDbSourceKey,
   type EnvTokenDiagnostic,
-  insertContainerEnvTokenText,
 } from "@workspace/ui/lib/container-env-tokens";
 import {
   generateCustomDomainBindingId,
@@ -1038,6 +1035,45 @@ function dbDsnSourceKey(source: ContainerEnvDbDsnSource): string {
   return containerEnvDbSourceKey(source);
 }
 
+function dbIdentityForEnvName(source: ContainerEnvDbDsnSource): string {
+  const identity = source.name
+    .trim()
+    .toUpperCase()
+    .replaceAll(/[^A-Z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "");
+  return identity === "" ? "DB" : identity;
+}
+
+function nextAvailableEnvName(
+  rows: readonly Pick<ContainerEnvVar, "name">[],
+  baseName: string
+): string {
+  const used = new Set(rows.map((row) => row.name.trim()).filter(Boolean));
+  if (!used.has(baseName)) {
+    return baseName;
+  }
+  let suffix = 2;
+  while (used.has(`${baseName}_${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseName}_${suffix}`;
+}
+
+function defaultDatabaseUrlReferenceRowName(
+  rows: readonly ContainerEnvVar[],
+  source: ContainerEnvDbDsnSource
+): string {
+  const primary = "DATABASE_URL";
+  const used = new Set(rows.map((row) => row.name.trim()).filter(Boolean));
+  if (!used.has(primary)) {
+    return primary;
+  }
+  return nextAvailableEnvName(
+    rows,
+    `${dbIdentityForEnvName(source)}_${primary}`
+  );
+}
+
 function dbDsnSourceMatchesTarget(
   source: ContainerEnvDbDsnSource,
   target: ContainerEnvDbDsnReferenceTarget
@@ -1067,16 +1103,13 @@ function appendDbDsnReferenceIntentRow(
   source: ContainerEnvDbDsnSource,
   intent: ContainerSettingsPaneAddDbDsnReferenceIntent
 ): EnvDraftRow[] {
-  const field = containerEnvDbDsnFieldOptions(source)[0];
   return [
     ...rows,
     {
-      ...(field == null
-        ? { value: "" }
-        : containerEnvDbReferenceRowPatch(source, field)),
       canvasAddDbDsnReferenceIntentId: intent.id,
-      name: defaultContainerEnvDbReferenceRowName(rows, field?.field),
+      name: defaultDatabaseUrlReferenceRowName(rows, source),
       referenceDbKey: dbDsnSourceKey(source),
+      value: `\${{${source.name}.DATABASE_URL}}`,
     },
   ];
 }
@@ -1233,6 +1266,13 @@ interface EditableEnvRowsProps {
   rows: ContainerEnvVar[];
 }
 
+interface EnvRawSourceEditorProps {
+  dbDsnReferenceSources: ContainerEnvDbDsnSource[];
+  diagnostic?: ApEnvRawSourceDiagnostic;
+  onChange: (source: string) => void;
+  value: string;
+}
+
 interface EditableEnvNameControlProps {
   dbDsnReferenceSources: ContainerEnvDbDsnSource[];
   error?: string;
@@ -1248,7 +1288,6 @@ interface EditableEnvValueControlProps {
   managed?: boolean;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   row: ContainerEnvVar;
-  rows: ContainerEnvVar[];
 }
 
 function envRowIsManagedHelper(row: ContainerEnvVar): boolean {
@@ -1343,9 +1382,9 @@ function EditableEnvValueControl({
   managed = false,
   onUpdateRow,
   row,
-  rows,
 }: EditableEnvValueControlProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
   const externalValue = envRowUsesExternalValue(row);
   if (managed) {
     return (
@@ -1367,23 +1406,23 @@ function EditableEnvValueControl({
     );
   }
 
-  const menuItems = buildContainerEnvTokenMenuItems({
-    dbSources: dbDsnReferenceSources,
-    row,
-    rows,
-  });
+  const menuItems = buildApEnvReferenceMenuItems(dbDsnReferenceSources);
 
   return (
     <div className="flex h-9 min-w-0 items-center rounded-md border border-input bg-transparent focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50">
       <AppInput
         aria-label="Environment variable value"
         className="border-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-        onChange={(event) =>
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          if (nextValue.includes("${{")) {
+            setReferenceMenuOpen(true);
+          }
           onUpdateRow(index, {
-            value: event.target.value,
+            value: nextValue,
             valueSource: "direct",
-          })
-        }
+          });
+        }}
         placeholder="Value"
         ref={inputRef}
         value={row.value}
@@ -1391,10 +1430,11 @@ function EditableEnvValueControl({
       />
       <Select
         disabled={menuItems.length === 0}
-        onValueChange={(token) => {
-          const nextValue = insertContainerEnvTokenText(
+        onOpenChange={setReferenceMenuOpen}
+        onValueChange={(expression) => {
+          const nextValue = insertApEnvReferenceText(
             row.value,
-            token,
+            expression,
             inputRef.current?.selectionStart,
             inputRef.current?.selectionEnd
           );
@@ -1402,7 +1442,9 @@ function EditableEnvValueControl({
             value: nextValue,
             valueSource: "direct",
           });
+          setReferenceMenuOpen(false);
         }}
+        open={referenceMenuOpen}
       >
         <SelectTrigger
           aria-label="Insert environment reference token"
@@ -1418,23 +1460,105 @@ function EditableEnvValueControl({
           {menuItems.map((item) => (
             <SelectItem
               className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
+              disabled={!item.available}
               indicator={false}
-              key={`${item.source ?? "env"}-${item.token}`}
-              value={item.token}
+              key={`${item.dbName}-${item.variableName}`}
+              value={item.expression}
             >
               <span className="grid min-w-0">
                 <span className="min-w-0 truncate">{item.label}</span>
-                {item.description == null ? null : (
-                  <span className="min-w-0 truncate text-muted-foreground text-xs">
-                    {item.description}
-                  </span>
-                )}
+                <span className="min-w-0 truncate text-muted-foreground text-xs">
+                  {item.type} · {item.description}
+                </span>
               </span>
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
     </div>
+  );
+}
+
+function EnvRawSourceEditor({
+  dbDsnReferenceSources,
+  diagnostic,
+  onChange,
+  value,
+}: EnvRawSourceEditorProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
+  const menuItems = buildApEnvReferenceMenuItems(dbDsnReferenceSources);
+
+  return (
+    <>
+      <div className="grid min-w-0 gap-2">
+        <Textarea
+          aria-invalid={diagnostic != null}
+          aria-label="Environment raw source"
+          className="min-h-48 resize-y font-mono text-sm"
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            if (nextValue.includes("${{")) {
+              setReferenceMenuOpen(true);
+            }
+            onChange(nextValue);
+          }}
+          ref={textareaRef}
+          spellCheck={false}
+          value={value}
+        />
+        <Select
+          disabled={menuItems.length === 0}
+          onOpenChange={setReferenceMenuOpen}
+          onValueChange={(expression) => {
+            onChange(
+              insertApEnvReferenceText(
+                value,
+                expression,
+                textareaRef.current?.selectionStart,
+                textareaRef.current?.selectionEnd
+              )
+            );
+            setReferenceMenuOpen(false);
+          }}
+          open={referenceMenuOpen}
+        >
+          <SelectTrigger
+            aria-label="Insert environment reference token"
+            className="h-8 w-fit gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
+            data-slot="container-env-token-trigger"
+            indicator={false}
+            title="Insert reference token"
+            variant="ghost"
+          >
+            <Braces aria-hidden className="size-4" />
+          </SelectTrigger>
+          <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
+            {menuItems.map((item) => (
+              <SelectItem
+                className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
+                disabled={!item.available}
+                indicator={false}
+                key={`${item.dbName}-${item.variableName}`}
+                value={item.expression}
+              >
+                <span className="grid min-w-0">
+                  <span className="min-w-0 truncate">{item.label}</span>
+                  <span className="min-w-0 truncate text-muted-foreground text-xs">
+                    {item.type} · {item.description}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {diagnostic == null ? null : (
+        <p className="text-destructive text-xs" role="status">
+          Line {diagnostic.line}: {diagnostic.message}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -1453,28 +1577,17 @@ function EditableEnvRows({
   onModeChange,
   onRawSourceChange,
   onUpdateRow,
-  rows,
 }: EditableEnvRowsProps) {
   const firstRawSourceDiagnostic = envRawSourceDiagnostics[0];
   let editorContent: ReactNode;
   if (mode === "raw") {
     editorContent = (
-      <>
-        <Textarea
-          aria-invalid={firstRawSourceDiagnostic != null}
-          aria-label="Environment raw source"
-          className="min-h-48 resize-y font-mono text-sm"
-          onChange={(event) => onRawSourceChange(event.target.value)}
-          spellCheck={false}
-          value={envRawSourceDraft}
-        />
-        {firstRawSourceDiagnostic == null ? null : (
-          <p className="text-destructive text-xs" role="status">
-            Line {firstRawSourceDiagnostic.line}:{" "}
-            {firstRawSourceDiagnostic.message}
-          </p>
-        )}
-      </>
+      <EnvRawSourceEditor
+        dbDsnReferenceSources={dbDsnReferenceSources}
+        diagnostic={firstRawSourceDiagnostic}
+        onChange={onRawSourceChange}
+        value={envRawSourceDraft}
+      />
     );
   } else if (envDraft.length === 0) {
     editorContent = (
@@ -1504,7 +1617,6 @@ function EditableEnvRows({
               managed={managed}
               onUpdateRow={onUpdateRow}
               row={row}
-              rows={rows}
             />
             {managed ? (
               <div aria-hidden className="size-9" />
@@ -4132,6 +4244,11 @@ export function ContainerSettingsPane({
     () => parseApEnvRawSource(envRawSourceDraft),
     [envRawSourceDraft]
   );
+  const envRuntimeCompile = useMemo(
+    () =>
+      compileApEnvRawSourceForRuntime(envRawSourceDraft, dbDsnReferenceSources),
+    [dbDsnReferenceSources, envRawSourceDraft]
+  );
   useEffect(() => {
     if (onAddDbDsnReferenceIntentDraftChange == null) {
       return;
@@ -4163,7 +4280,14 @@ export function ContainerSettingsPane({
     }
     previousAddDbDsnReferenceIntentIds.current = currentIds;
   }, [envDraft, onAddDbDsnReferenceIntentDraftChange]);
-  const envTokenDiagnostics = useMemo(() => [] as EnvTokenDiagnostic[], []);
+  const envTokenDiagnostics = useMemo(
+    () =>
+      envRuntimeCompile.diagnostics.map((diagnostic) => ({
+        message: diagnostic.message,
+        type: "unresolved-token" as const,
+      })),
+    [envRuntimeCompile.diagnostics]
+  );
   const envErrorsByIndex = useMemo(() => {
     const byIndex = new Map<number, string>();
     for (const error of envValidation.errors) {
@@ -4175,7 +4299,11 @@ export function ContainerSettingsPane({
   }, [envValidation]);
   const committedEnvRawSource = canonicalApEnvRawSource({ env, envRawSource });
   const envDirty = envRawSourceDraft !== committedEnvRawSource;
-  const canSaveEnv = envDirty && envRawSourceParse.valid && envValidation.valid;
+  const canSaveEnv =
+    envDirty &&
+    envRawSourceParse.valid &&
+    envRuntimeCompile.valid &&
+    envValidation.valid;
   const activeDraftNetwork = settingsCommitMode
     ? draftNetwork
     : (draftNetwork ?? network);
@@ -4307,6 +4435,7 @@ export function ContainerSettingsPane({
     settingsCommitMode &&
     panelDraftDirty &&
     envRawSourceParse.valid &&
+    envRuntimeCompile.valid &&
     envValidation.valid &&
     envTokenDiagnostics.length === 0 &&
     !settingsSavePending;
@@ -4562,7 +4691,10 @@ export function ContainerSettingsPane({
     if (!canSaveEnv) {
       return;
     }
-    const result = normalizeApEnvRawSourceForSave(envRawSourceDraft);
+    const result = compileApEnvRawSourceForRuntime(
+      envRawSourceDraft,
+      dbDsnReferenceSources
+    );
     if (!result.valid) {
       return;
     }
@@ -4692,7 +4824,10 @@ export function ContainerSettingsPane({
     if (!canSaveSettings || onSettingsDraftCommit == null) {
       throw new Error("Settings draft cannot be saved yet.");
     }
-    const result = normalizeApEnvRawSourceForSave(envRawSourceDraft);
+    const result = compileApEnvRawSourceForRuntime(
+      envRawSourceDraft,
+      dbDsnReferenceSources
+    );
     if (!result.valid) {
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
@@ -4740,6 +4875,7 @@ export function ContainerSettingsPane({
     }
   }, [
     canSaveSettings,
+    dbDsnReferenceSources,
     envDraft,
     envRawSourceDraft,
     onSettingsDraftCommit,

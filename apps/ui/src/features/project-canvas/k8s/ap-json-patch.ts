@@ -7,7 +7,7 @@ import type {
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import {
   canonicalApEnvRawSource,
-  normalizeApEnvRawSourceForSave,
+  compileApEnvRawSourceForRuntime,
 } from "@workspace/ui/lib/ap-env-raw-source";
 import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
@@ -61,10 +61,14 @@ const LEGACY_AP_NETWORK_INPUT_FIELDS = [
   "privatePort",
 ] as const;
 
-type ApNetworkSettingsPatch = Pick<
-  ContainerNetwork,
-  "appListeningPorts" | "privatePort"
-> &
+interface ApNetworkAppListeningPortsPatch {
+  appListeningPorts?: readonly NonNullable<
+    ContainerNetwork["appListeningPorts"]
+  >[number][];
+  privatePort?: ContainerNetwork["privatePort"];
+}
+
+type ApNetworkSettingsPatch = ApNetworkAppListeningPortsPatch &
   Partial<{
     customDomains: readonly NonNullable<
       ContainerNetwork["customDomains"]
@@ -74,10 +78,7 @@ type ApNetworkSettingsPatch = Pick<
 
 type ApPrivatePortSettingsPatch = Pick<ContainerNetwork, "privatePort">;
 
-type ApPublicAddressesSettingsPatch = Pick<
-  ContainerNetwork,
-  "appListeningPorts" | "privatePort" | "publicAddresses"
-> & {
+type ApPublicAddressesSettingsPatch = ApNetworkAppListeningPortsPatch & {
   customDomains?: readonly NonNullable<
     ContainerNetwork["customDomains"]
   >[number][];
@@ -483,16 +484,27 @@ function buildApNetworkInput(
   };
 }
 
+function sourcePortRowsForSave(
+  network: ApNetworkAppListeningPortsPatch
+): readonly { port: number | undefined }[] {
+  if (
+    network.appListeningPorts != null &&
+    network.appListeningPorts.length > 0
+  ) {
+    return network.appListeningPorts;
+  }
+  return [{ port: network.privatePort }];
+}
+
 function normalizedAppListeningPortsForSave(
-  network: Pick<ContainerNetwork, "appListeningPorts" | "privatePort">
+  network: ApNetworkAppListeningPortsPatch
 ): Record<string, unknown>[] {
-  const source =
-    network.appListeningPorts == null || network.appListeningPorts.length === 0
-      ? [{ port: network.privatePort }]
-      : network.appListeningPorts;
   const seen = new Set<number>();
-  return source.map((row) => {
-    const port = validatedNetworkPort(row.port, "App Listening Port");
+  return sourcePortRowsForSave(network).map((row) => {
+    const port = validatedNetworkPort(
+      row.port ?? Number.NaN,
+      "App Listening Port"
+    );
     if (seen.has(port)) {
       throw new Error("App Listening Ports must be unique.");
     }
@@ -779,7 +791,10 @@ export function patchOpsForApEnvSettings(
 ): K8sJsonPatchOp[] {
   const input = readApInput(spec ?? {});
   if (options.envRawSource !== undefined) {
-    const result = normalizeApEnvRawSourceForSave(options.envRawSource);
+    const result = compileApEnvRawSourceForRuntime(
+      options.envRawSource,
+      options.dbDsnReferenceSources
+    );
     if (!result.valid) {
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
@@ -996,7 +1011,10 @@ function patchOpsForApSettingsDraftInput(
       envRawSource: previous.envRawSource,
     });
     if (nextRawSource !== previousRawSource) {
-      const result = normalizeApEnvRawSourceForSave(nextRawSource);
+      const result = compileApEnvRawSourceForRuntime(
+        nextRawSource,
+        options.dbDsnReferenceSources
+      );
       if (!result.valid) {
         throw new Error(
           result.diagnostics[0]?.message ?? "Invalid environment."

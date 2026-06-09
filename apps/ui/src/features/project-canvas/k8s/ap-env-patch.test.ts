@@ -43,6 +43,10 @@ function editorToken(name: string): string {
   return ["$", "{{", name, "}}"].join("");
 }
 
+function referenceExpression(db: string, variable: string): string {
+  return ["$", "{{", db, ".", variable, "}}"].join("");
+}
+
 test("AP env settings patch direct rows as standard Kubernetes value entries", () => {
   const ops = patchOpsForApEnvSettings(
     {
@@ -110,6 +114,69 @@ test("AP env settings patch carries canonical raw source plus compiled runtime e
       op: "replace",
       path: "/spec/input/envRawSource",
       value: source,
+    },
+  ]);
+});
+
+test("AP env settings patch compiles raw DB references into runtime env helpers", () => {
+  const secretRefs = {
+    host: { key: "endpoint", name: "postgres-conn-credential" },
+    password: { key: "passwd", name: "postgres-conn-credential" },
+    port: { key: "port", name: "postgres-conn-credential" },
+    username: { key: "user", name: "postgres-conn-credential" },
+  };
+  const source = [
+    "PGUSER=manual",
+    `DATABASE_URL=${referenceExpression("Postgres", "database_url")}`,
+  ].join("\n");
+
+  const ops = patchOpsForApEnvSettings({ input: { env: [] } }, [], {
+    dbDsnReferenceSources: [
+      {
+        name: "postgres",
+        namespace: "default",
+        primitiveSecretRefs: secretRefs,
+      },
+    ],
+    envRawSource: source,
+  });
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/env",
+      value: [
+        { name: "PGUSER", value: "manual" },
+        {
+          name: "DATABASE_URL",
+          value:
+            "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)",
+        },
+        {
+          name: "POSTGRES_USERNAME",
+          valueFrom: { secretKeyRef: secretRefs.username },
+        },
+        {
+          name: "POSTGRES_PASSWORD",
+          valueFrom: { secretKeyRef: secretRefs.password },
+        },
+        {
+          name: "POSTGRES_HOST",
+          valueFrom: { secretKeyRef: secretRefs.host },
+        },
+        {
+          name: "POSTGRES_PORT",
+          valueFrom: { secretKeyRef: secretRefs.port },
+        },
+      ],
+    },
+    {
+      op: "add",
+      path: "/spec/input/envRawSource",
+      value: [
+        "PGUSER=manual",
+        `DATABASE_URL=${referenceExpression("postgres", "DATABASE_URL")}`,
+      ].join("\n"),
     },
   ]);
 });

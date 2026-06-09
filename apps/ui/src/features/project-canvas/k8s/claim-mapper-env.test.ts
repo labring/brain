@@ -908,6 +908,13 @@ test("AP claim settings reconstruct DB primitive references from exact Secret ev
       primitiveSecretRefs: {
         username: secretKeyRef,
       },
+      variables: [
+        {
+          name: "PG_USER",
+          type: "secret",
+          valueFrom: { secretKeyRef },
+        },
+      ],
     },
   ]);
 

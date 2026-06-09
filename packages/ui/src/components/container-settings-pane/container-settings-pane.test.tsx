@@ -26,6 +26,10 @@ function editorToken(name: string): string {
   return ["$", "{{", name, "}}"].join("");
 }
 
+function referenceExpression(db: string, variable: string): string {
+  return ["$", "{{", db, ".", variable, "}}"].join("");
+}
+
 const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
 const ENVIRONMENT_VARIABLES_TITLE_RE = /Environment Variables/;
 const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
@@ -59,6 +63,7 @@ const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="Container image"/;
 const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
+const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
 const ADD_PORT_RE = /Add Port/;
 const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
@@ -1012,6 +1017,12 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
           name: "mysql",
           namespace: "default",
           privateDsn: "mysql://private",
+          primitiveSecretRefs: {
+            host: { key: "endpoint", name: "mysql-conn-credential" },
+            password: { key: "passwd", name: "mysql-conn-credential" },
+            port: { key: "port", name: "mysql-conn-credential" },
+            username: { key: "user", name: "mysql-conn-credential" },
+          },
         },
       ]}
       env={[]}
@@ -1023,7 +1034,8 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
   );
 
   assert.match(html, DATABASE_URL_RE);
-  assert.match(html, MYSQL_PRIVATE_DSN_RE);
+  assert.match(html, MYSQL_DATABASE_URL_REFERENCE_RE);
+  assert.doesNotMatch(html, MYSQL_PRIVATE_DSN_RE);
   assert.match(html, REFERENCE_RE);
   assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
   assert.match(html, TOKEN_TRIGGER_RE);
@@ -1051,7 +1063,11 @@ test("container settings pane appends dragged DB Add Reference intent to raw sou
 
   assert.equal(
     draft.rawSource,
-    "# app\nFEATURE_FLAG=true\nDATABASE_URL=mysql://private"
+    [
+      "# app",
+      "FEATURE_FLAG=true",
+      `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+    ].join("\n")
   );
   assert.deepEqual(draft.rows, [
     { name: "FEATURE_FLAG", value: "true" },
@@ -1059,9 +1075,39 @@ test("container settings pane appends dragged DB Add Reference intent to raw sou
       canvasAddDbDsnReferenceIntentId: "drag-1",
       name: "DATABASE_URL",
       referenceDbKey: "default/mysql",
-      value: "mysql://private",
+      value: referenceExpression("mysql", "DATABASE_URL"),
     },
   ]);
+});
+
+test("container settings pane uses DB identity and numeric suffixes for dragged DB reference name conflicts", () => {
+  const draft = envRawSourceDraftWithAddReferenceIntent({
+    intent: {
+      dbName: "mysql",
+      dbNamespace: "default",
+      id: "drag-1",
+    },
+    rawSource: [
+      "DATABASE_URL=postgres://manual",
+      "MYSQL_DATABASE_URL=mysql://manual",
+    ].join("\n"),
+    readOnly: false,
+    sources: [
+      {
+        name: "mysql",
+        namespace: "default",
+      },
+    ],
+  });
+
+  assert.equal(
+    draft.rawSource,
+    [
+      "DATABASE_URL=postgres://manual",
+      "MYSQL_DATABASE_URL=mysql://manual",
+      `MYSQL_DATABASE_URL_2=${referenceExpression("mysql", "DATABASE_URL")}`,
+    ].join("\n")
+  );
 });
 
 test("container settings pane reports confirmed dragged DB reference rows from the saved draft", () => {
