@@ -31,6 +31,7 @@ const runtime = {
     namespace: "database-system",
     uid: "cluster-uid-1",
   },
+  dbServicePhase: "Running",
   databaseWorkloadName: "orders-db",
   databaseWorkloadNamespace: "database-system",
   engine: "POSTGRES",
@@ -50,6 +51,7 @@ test("DB Service root renders a service-level Backup tab without close controls"
   assert.match(html, /data-qa-tab-type="backup"/);
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /orders-db/);
+  assert.match(html, /Create backup/);
   assert.match(html, /data-qa-action="restore"/);
   assert.match(html, /data-qa-state="enabled"/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);

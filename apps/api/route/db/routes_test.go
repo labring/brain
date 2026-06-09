@@ -552,6 +552,33 @@ func TestDBBackupPolicyPatchFromRequestValidatesRetention(t *testing.T) {
 	}
 }
 
+func TestBackupCreateErrorStatusMapping(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "request validation", err: dbsvc.ErrBackupValidation, want: http.StatusBadRequest},
+		{name: "source not found", err: dbsvc.ErrBackupSourceNotFound, want: http.StatusNotFound},
+		{name: "not running", err: dbsvc.ErrBackupSourceNotRunning, want: http.StatusConflict},
+		{name: "duplicate name", err: dbsvc.ErrBackupConflict, want: http.StatusConflict},
+		{name: "unsupported engine", err: dbsvc.ErrBackupUnsupportedEngine, want: http.StatusUnprocessableEntity},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := backupCreateError(tt.err)
+			statusErr, ok := err.(huma.StatusError)
+			if !ok {
+				t.Fatalf("expected Huma status error, got %T", err)
+			}
+			if statusErr.GetStatus() != tt.want {
+				t.Fatalf("expected status %d, got %d", tt.want, statusErr.GetStatus())
+			}
+		})
+	}
+}
+
 func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testing.T) {
 	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
 

@@ -48,6 +48,7 @@ test("data browser runtime is derived from host project and selected database", 
     namespace: "database-system",
     uid: "cluster-uid-1",
   });
+  assert.equal(runtime.dbServicePhase, "Running");
   assert.deepEqual(runtime.backupPolicy, {
     cronExpression: "15 8 * * *",
     enabled: true,

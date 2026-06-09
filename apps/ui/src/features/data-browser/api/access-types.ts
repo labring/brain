@@ -91,6 +91,7 @@ export interface DataBrowserHostContext {
   databaseWorkloadName: string;
   databaseWorkloadNamespace: string;
   dbService: DataBrowserDBServiceBackupSource;
+  dbServicePhase?: string;
   engine: DataBrowserEngine;
   kubeconfig: string;
   namespace: string;

@@ -49,6 +49,15 @@ function dbServiceUidFromNode(
     : undefined;
 }
 
+function dbServicePhaseFromNode(
+  selectedDatabaseData: CanvasDatabaseNodeData
+): string | undefined {
+  const phase = selectedDatabaseData.states.status?.label;
+  return typeof phase === "string" && phase.trim() !== ""
+    ? phase.trim()
+    : undefined;
+}
+
 export function dataBrowserRuntimeParts(
   selectedDatabaseData: CanvasDatabaseNodeData
 ) {
@@ -65,6 +74,7 @@ export function dataBrowserRuntimeParts(
     databaseName: states.name,
     databaseWorkloadName: workload.name,
     databaseWorkloadNamespace: workload.namespace,
+    dbServicePhase: dbServicePhaseFromNode(selectedDatabaseData),
     dbServiceUid: dbServiceUidFromNode(selectedDatabaseData),
     engine: normalizeDataBrowserEngine(states.engineKey),
   };
@@ -81,6 +91,7 @@ function dataBrowserHostContextFromParts({
   databaseName,
   databaseWorkloadName,
   databaseWorkloadNamespace,
+  dbServicePhase,
   dbServiceUid,
   engine,
   kubeconfig,
@@ -112,6 +123,7 @@ function dataBrowserHostContextFromParts({
     },
     databaseWorkloadName,
     databaseWorkloadNamespace,
+    ...(dbServicePhase === undefined ? {} : { dbServicePhase }),
     engine,
     kubeconfig,
     namespace,
@@ -152,6 +164,7 @@ export function DataBrowserRuntimeProvider({
     databaseName,
     databaseWorkloadName,
     databaseWorkloadNamespace,
+    dbServicePhase,
     dbServiceUid,
     engine,
   } = dataBrowserRuntimeParts(selectedDatabaseData);
@@ -167,6 +180,7 @@ export function DataBrowserRuntimeProvider({
         databaseName,
         databaseWorkloadName,
         databaseWorkloadNamespace,
+        dbServicePhase,
         dbServiceUid,
         engine,
         kubeconfig,
@@ -181,6 +195,7 @@ export function DataBrowserRuntimeProvider({
       databaseName,
       databaseWorkloadName,
       databaseWorkloadNamespace,
+      dbServicePhase,
       dbServiceUid,
       engine,
       kubeconfig,

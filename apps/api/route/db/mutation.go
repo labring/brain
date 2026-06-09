@@ -251,9 +251,10 @@ func int64FromMap(values map[string]interface{}, key string) int64 {
 
 func registerBackup(grp huma.API) {
 	type dbBackupBody struct {
-		Name       string `json:"name" required:"true" doc:"DB instance name to create backup for"`
-		BackupName string `json:"backupName,omitempty" doc:"Name for the Backup CR (defaults to {name}-manual-{timestamp})"`
-		Namespace  string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Name        string `json:"name" required:"true" doc:"DB instance name to create backup for"`
+		BackupName  string `json:"backupName" required:"true" doc:"Backup Name for the Backup CR. Must be unique in the namespace and follow lowercase DNS-style Kubernetes naming rules."`
+		Description string `json:"description,omitempty" maxLength:"120" doc:"Optional short description stored as backup metadata."`
+		Namespace   string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)"`
 	}
 	type dbBackupInput struct {
 		middleware.AuthInput
@@ -293,15 +294,33 @@ func registerBackup(grp huma.API) {
 		ns := resolved.Namespace
 
 		jsonBytes, err := dbsvc.CreateBackupForDB(cfg, dbsvc.CreateBackupForDBOptions{
-			DBName:     input.Body.Name,
-			Namespace:  ns,
-			BackupName: input.Body.BackupName,
+			DBName:      input.Body.Name,
+			Namespace:   ns,
+			BackupName:  input.Body.BackupName,
+			Description: input.Body.Description,
 		})
 		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to create backup", err)
+			return nil, backupCreateError(err)
 		}
 		return &dbBackupOutput{Body: json.RawMessage(jsonBytes)}, nil
 	})
+}
+
+func backupCreateError(err error) error {
+	switch {
+	case errors.Is(err, dbsvc.ErrBackupValidation):
+		return huma.Error400BadRequest("invalid backup request", err)
+	case errors.Is(err, dbsvc.ErrBackupSourceNotFound):
+		return huma.Error404NotFound("DB not found", err)
+	case errors.Is(err, dbsvc.ErrBackupSourceNotRunning):
+		return huma.Error409Conflict("DB Service must be Running before creating a backup", err)
+	case errors.Is(err, dbsvc.ErrBackupConflict):
+		return huma.Error409Conflict("Backup Name already exists", err)
+	case errors.Is(err, dbsvc.ErrBackupUnsupportedEngine):
+		return huma.Error422UnprocessableEntity("unsupported DB engine for backup", err)
+	default:
+		return huma.Error500InternalServerError("failed to create backup", err)
+	}
 }
 
 func registerRestore(grp huma.API) {
