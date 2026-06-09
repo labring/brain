@@ -190,6 +190,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         }}
         dbDsnReferenceSources={data?.dbDsnReferenceSources}
         env={display.env}
+        envRawSource={display.envRawSource}
         image={display.image}
         memoryQuota={{
           max: 16_384,

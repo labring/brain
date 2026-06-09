@@ -255,14 +255,23 @@ export function useWorkloadClaimSettings(
         toast.error("Workload resource or kubeconfig missing.");
         return;
       }
-      setLocalOverride((prev) => ({ ...(prev ?? {}), env }));
+      setLocalOverride((prev) => ({
+        ...(prev ?? {}),
+        env,
+        ...(meta?.envRawSource == null
+          ? {}
+          : { envRawSource: meta.envRawSource }),
+      }));
       const confirmedReferences = meta?.confirmedAddDbDsnReferences ?? [];
       const clearPendingReferences =
         confirmedReferences.length === 0
           ? undefined
           : onAddDbDsnReferenceMutationStart?.(confirmedReferences);
       try {
-        await applyApEnv(kc, body, env, { dbDsnReferenceSources });
+        await applyApEnv(kc, body, env, {
+          dbDsnReferenceSources,
+          envRawSource: meta?.envRawSource,
+        });
         toast.success("Environment applied.");
         await revalidateAfterApMutation();
       } catch (e) {
@@ -427,6 +436,7 @@ export function useWorkloadClaimSettings(
       const previous: ContainerSettingsDraft = meta?.baseDraft ?? {
         cpuCores: display.cpuCores,
         env: display.env,
+        envRawSource: display.envRawSource,
         image: display.image,
         memoryMib: display.memoryMib,
         ...(display.network == null ? {} : { network: display.network }),
@@ -456,6 +466,7 @@ export function useWorkloadClaimSettings(
     [
       display.cpuCores,
       display.env,
+      display.envRawSource,
       display.image,
       display.memoryMib,
       display.network,

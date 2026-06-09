@@ -574,7 +574,9 @@ func TestRenderAPResourcesElasticReplicaStrategyCreatesHPA(t *testing.T) {
 }
 
 func TestAPObjectFromDeploymentRestoresDesiredNetworkAnnotation(t *testing.T) {
+	envRawSource := "\n# database\nDATABASE_URL=postgres://db\n"
 	resources, err := RenderAPResources(APResourcesInput{
+		EnvRawSource:  envRawSource,
 		Image:         "nginx:1.27",
 		Name:          "web",
 		Namespace:     "ns-a",
@@ -589,6 +591,9 @@ func TestAPObjectFromDeploymentRestoresDesiredNetworkAnnotation(t *testing.T) {
 	ap := APObjectFromDeployment(resources.Deployment)
 	spec := ap["spec"].(map[string]interface{})
 	input := spec["input"].(map[string]interface{})
+	if got := input["envRawSource"]; got != envRawSource {
+		t.Fatalf("envRawSource = %v, want raw source", got)
+	}
 	network := input["network"].(map[string]interface{})
 	addresses := network["platformAddresses"].([]interface{})
 	address := addresses[0].(map[string]interface{})
@@ -607,6 +612,9 @@ func TestAPObjectFromDeploymentRestoresDesiredNetworkAnnotation(t *testing.T) {
 	}
 	if got := resources.Deployment.Annotations[APDesiredNetworkAnnotation]; got == "" {
 		t.Fatalf("desired network annotation should be set")
+	}
+	if got := resources.Deployment.Annotations[APEnvRawSourceAnnotation]; got != envRawSource {
+		t.Fatalf("env raw source annotation = %q, want raw source", got)
 	}
 }
 
