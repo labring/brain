@@ -1568,9 +1568,6 @@ function BackupMethodPanel({
             {"Backup Method"}
           </h3>
         </div>
-        <p className="m-0 hidden text-muted-foreground text-sm leading-5 md:block">
-          {"Choose between manual backup and backup policy"}
-        </p>
       </div>
 
       <BackupMethodToggle
@@ -1773,12 +1770,6 @@ export function BackupServiceSurface() {
       }
       data-testid="database.backup.surface"
     >
-      <p className="m-0 text-muted-foreground text-sm leading-5">
-        {
-          "Manage backup records, restore actions, and automated backup policies."
-        }
-      </p>
-
       <BackupMethodPanel
         createDisabled={!running}
         createDisabledReason={createDisabledReason}
