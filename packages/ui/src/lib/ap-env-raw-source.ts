@@ -57,6 +57,16 @@ export interface ApEnvRawSourceParseResult {
   valid: boolean;
 }
 
+interface ParsedApEnvRawValue {
+  quote: "'" | '"' | null;
+  value: string;
+}
+
+interface ParsedApEnvRawAssignmentLine {
+  diagnostic?: ApEnvRawSourceDiagnostic;
+  parsed?: ApEnvRawSourceAssignmentLine;
+}
+
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const EDGE_WHITESPACE_RE = /^\s|\s$/;
 const WHITESPACE_RE = /\s/;
@@ -128,10 +138,7 @@ function unescapeDoubleQuotedValue(value: string): string {
   });
 }
 
-function parseRawValue(rawValue: string): {
-  quote: "'" | '"' | null;
-  value: string;
-} {
+function parseRawValue(rawValue: string): ParsedApEnvRawValue {
   if (rawValue.length >= 2) {
     const quote = rawValue[0];
     if ((quote === "'" || quote === '"') && rawValue.at(-1) === quote) {
@@ -148,10 +155,7 @@ function parseRawValue(rawValue: string): {
 function parseAssignmentLine(
   raw: string,
   line: number
-): {
-  diagnostic?: ApEnvRawSourceDiagnostic;
-  parsed?: ApEnvRawSourceAssignmentLine;
-} {
+): ParsedApEnvRawAssignmentLine {
   const equalsIndex = raw.indexOf("=");
   if (equalsIndex === -1) {
     return {
@@ -225,7 +229,7 @@ export function parseApEnvRawSource(source: string): ApEnvRawSourceParseResult {
   const diagnostics: ApEnvRawSourceDiagnostic[] = [];
   const rows: ApEnvRawSourceAssignment[] = [];
   const lines: ApEnvRawSourceLine[] = [];
-  const firstLineByKey = new Map<string, number>();
+  const seenKeys = new Set<string>();
 
   splitSourceLines(source).forEach((raw, index) => {
     const line = index + 1;
@@ -248,16 +252,15 @@ export function parseApEnvRawSource(source: string): ApEnvRawSourceParseResult {
       return;
     }
 
-    const firstLine = firstLineByKey.get(parsed.parsed.key);
-    if (firstLine === undefined) {
-      firstLineByKey.set(parsed.parsed.key, line);
-    } else {
+    if (seenKeys.has(parsed.parsed.key)) {
       diagnostics.push({
         key: parsed.parsed.key,
         line,
         message: "Environment variable names must be unique.",
         type: "duplicate-name",
       });
+    } else {
+      seenKeys.add(parsed.parsed.key);
     }
     lines.push(parsed.parsed);
     rows.push(parsed.parsed);
@@ -313,11 +316,17 @@ function rawValueForNewAssignment(value: string): string {
   return value;
 }
 
-export function apEnvRawSourceRows(source: string): ContainerEnvRow[] {
-  return parseApEnvRawSource(source).rows.map((row) => ({
+export function apEnvRawAssignmentsToRows(
+  rows: readonly ApEnvRawSourceAssignment[]
+): ContainerEnvRow[] {
+  return rows.map((row) => ({
     name: row.key,
     value: row.value,
   }));
+}
+
+export function apEnvRawSourceRows(source: string): ContainerEnvRow[] {
+  return apEnvRawAssignmentsToRows(parseApEnvRawSource(source).rows);
 }
 
 export function apEnvRawSourceFromRows(
@@ -410,7 +419,7 @@ export function normalizeApEnvRawSourceForSave(source: string): {
   }
   return {
     diagnostics: [],
-    env: apEnvRawSourceRows(source),
+    env: apEnvRawAssignmentsToRows(parsed.rows),
     envRawSource: source,
     valid: true,
   };

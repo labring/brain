@@ -34,6 +34,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import {
   type ApEnvRawSourceDiagnostic,
+  apEnvRawAssignmentsToRows,
   apEnvRawSourceRows,
   appendApEnvRawSourceRow,
   applyApEnvRawSourceRowPatch,
@@ -637,6 +638,7 @@ interface AddDbDsnReferenceIntentDraftMetadata {
   canvasAddDbDsnReferenceIntentId?: string;
 }
 
+type EnvEditorMode = "raw" | "structured";
 type EnvDraftRow = ContainerEnvVar & AddDbDsnReferenceIntentDraftMetadata;
 
 function publicAddressDraftsEqual(
@@ -1006,6 +1008,16 @@ function resizeEnvDraftKeys(
   return [...keys, ...createEnvDraftKeys(count - keys.length, prefix, counter)];
 }
 
+function envDraftRowsFromRawSource(source: string): EnvDraftRow[] {
+  return apEnvRawSourceRows(source);
+}
+
+function envDraftRowsFromRawParse(
+  result: ReturnType<typeof parseApEnvRawSource>
+): EnvDraftRow[] {
+  return apEnvRawAssignmentsToRows(result.rows);
+}
+
 function ExternalEnvBadge({ className }: { className?: string }) {
   return (
     <Badge className={className} variant="outline">
@@ -1084,7 +1096,7 @@ export function envRawSourceDraftWithAddReferenceIntent({
   rawSource: string;
   rows: EnvDraftRow[];
 } {
-  const rows = apEnvRawSourceRows(rawSource);
+  const rows = envDraftRowsFromRawSource(rawSource);
   if (intent == null || readOnly) {
     return { rawSource, rows };
   }
@@ -1104,10 +1116,7 @@ export function envRawSourceDraftWithAddReferenceIntent({
     name: referenceRow.name,
     value: referenceRow.value,
   });
-  const parsedRows: EnvDraftRow[] = parsed.rows.map((row) => ({
-    name: row.key,
-    value: row.value,
-  }));
+  const parsedRows = envDraftRowsFromRawParse(parsed);
   const lastParsedRow = parsedRows.at(-1);
   if (lastParsedRow === undefined) {
     return { consumedIntentId: intent.id, rawSource, rows };
@@ -1216,9 +1225,9 @@ interface EditableEnvRowsProps {
   envRowKeys: readonly string[];
   envTokenDiagnostics: readonly EnvTokenDiagnostic[];
   envValidation: ReturnType<typeof validateContainerEnvRows>;
-  mode: "raw" | "structured";
+  mode: EnvEditorMode;
   onDeleteRow: (index: number) => void;
-  onModeChange: (mode: "raw" | "structured") => void;
+  onModeChange: (mode: EnvEditorMode) => void;
   onRawSourceChange: (source: string) => void;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
   rows: ContainerEnvVar[];
@@ -3932,9 +3941,8 @@ export function ContainerSettingsPane({
       readOnly,
     ]
   );
-  const [envEditorMode, setEnvEditorMode] = useState<"raw" | "structured">(
-    "structured"
-  );
+  const [envEditorMode, setEnvEditorMode] =
+    useState<EnvEditorMode>("structured");
   const processedAddDbDsnReferenceIntentId = useRef<string | null>(
     initialEnvDraft.consumedIntentId ?? null
   );
@@ -4015,7 +4023,7 @@ export function ContainerSettingsPane({
     }
     syncedEnvRef.current = env;
     syncedEnvRawSourceRef.current = nextRawSource;
-    const nextEnv = apEnvRawSourceRows(nextRawSource);
+    const nextEnv = envDraftRowsFromRawSource(nextRawSource);
     setEnvRawSourceDraft(nextRawSource);
     setEnvDraft(nextEnv);
     setEnvDraftKeys(
@@ -4248,7 +4256,7 @@ export function ContainerSettingsPane({
         env: next.env,
         envRawSource: next.envRawSource,
       });
-      const nextEnv = apEnvRawSourceRows(nextRawSource);
+      const nextEnv = envDraftRowsFromRawSource(nextRawSource);
       setEnvRawSourceDraft(nextRawSource);
       setEnvDraft(nextEnv);
       setEnvDraftKeys(
@@ -4570,12 +4578,12 @@ export function ContainerSettingsPane({
             envRawSource: result.envRawSource,
           }
     );
-    setEnvDraft(apEnvRawSourceRows(result.envRawSource));
+    setEnvDraft(envDraftRowsFromRawSource(result.envRawSource));
   };
 
   const handleCancelEnvRows = () => {
     const nextRawSource = canonicalApEnvRawSource({ env, envRawSource });
-    const nextEnv = apEnvRawSourceRows(nextRawSource);
+    const nextEnv = envDraftRowsFromRawSource(nextRawSource);
     setEnvRawSourceDraft(nextRawSource);
     setEnvDraft(nextEnv);
     setEnvDraftKeys(
@@ -4585,14 +4593,14 @@ export function ContainerSettingsPane({
 
   const handleAddEnvRow = () => {
     setEnvRawSourceDraft((source) => {
-      const nextRow = addContainerEnvRow(apEnvRawSourceRows(source)).at(-1);
+      const nextRow = addContainerEnvRow(envDraftRowsFromRawSource(source)).at(
+        -1
+      );
       if (nextRow === undefined) {
         return source;
       }
       const parsed = appendApEnvRawSourceRow(source, nextRow);
-      setEnvDraft(
-        parsed.rows.map((row) => ({ name: row.key, value: row.value }))
-      );
+      setEnvDraft(envDraftRowsFromRawParse(parsed));
       return parsed.source;
     });
     setEnvDraftKeys((keys) => [
@@ -4604,10 +4612,7 @@ export function ContainerSettingsPane({
   const handleDeleteEnvRow = (index: number) => {
     setEnvRawSourceDraft((source) => {
       const result = deleteApEnvRawSourceRow(source, index);
-      const refreshed = result.rows.map((row) => ({
-        name: row.key,
-        value: row.value,
-      }));
+      const refreshed = envDraftRowsFromRawParse(result);
       setEnvDraftKeys((keys) =>
         resizeEnvDraftKeys(
           keys.filter((_, keyIndex) => keyIndex !== index),
@@ -4627,10 +4632,7 @@ export function ContainerSettingsPane({
   ) => {
     setEnvRawSourceDraft((source) => {
       const result = applyApEnvRawSourceRowPatch(source, index, patch);
-      const refreshed = result.rows.map((row) => ({
-        name: row.key,
-        value: row.value,
-      }));
+      const refreshed = envDraftRowsFromRawParse(result);
       setEnvDraftKeys((keys) =>
         resizeEnvDraftKeys(
           keys,
@@ -4651,10 +4653,7 @@ export function ContainerSettingsPane({
       setEnvEditorMode("raw");
       return;
     }
-    const nextRows = parsed.rows.map((row) => ({
-      name: row.key,
-      value: row.value,
-    }));
+    const nextRows = envDraftRowsFromRawParse(parsed);
     setEnvDraft(nextRows);
     setEnvDraftKeys((keys) =>
       resizeEnvDraftKeys(
@@ -4723,7 +4722,7 @@ export function ContainerSettingsPane({
         commitSettingsDraftBackingState(current, draft)
       );
       setEnvDraft(
-        apEnvRawSourceRows(result.envRawSource).map((row, index) => {
+        envDraftRowsFromRawSource(result.envRawSource).map((row, index) => {
           const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
           return intentId == null
             ? row
