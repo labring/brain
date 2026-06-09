@@ -7,9 +7,10 @@ import {
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
 import { Button } from "@data-browser/components/ui/Button";
+import { ConfirmationModal } from "@data-browser/components/ui/ConfirmationModal";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
@@ -70,6 +71,39 @@ export async function fetchDbServiceBackupProductResource({
     throw new Error(
       text.trim() ||
         `DB Service backup refresh failed with status ${response.status}`
+    );
+  }
+  return response.json();
+}
+
+export async function deleteDbServiceBackup({
+  backupName,
+  kubeconfig,
+  name,
+  namespace,
+}: {
+  backupName: string;
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+}): Promise<unknown> {
+  const response = await fetch(`${DB_PRODUCT_ROUTE}/backup`, {
+    body: JSON.stringify({
+      backupName,
+      name,
+      namespace,
+    }),
+    headers: {
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
+      "Content-Type": "application/json",
+    },
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      text.trim() ||
+        `DB Service backup deletion failed with status ${response.status}`
     );
   }
   return response.json();
@@ -181,7 +215,15 @@ function UnsupportedBackupSurface() {
   );
 }
 
-function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
+function BackupRowsTable({
+  backups,
+  isDeleting,
+  onRequestDelete,
+}: {
+  backups: DbServiceBackupSummary[];
+  isDeleting: boolean;
+  onRequestDelete: (backup: DbServiceBackupSummary) => void;
+}) {
   if (backups.length === 0) {
     return <EmptyBackupRows />;
   }
@@ -189,7 +231,7 @@ function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
   return (
     <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border">
       <table
-        className="w-full min-w-[1120px] border-collapse text-left text-sm"
+        className="w-full min-w-[1200px] border-collapse text-left text-sm"
         data-qa-module="database"
         data-qa-object="backup-table"
         data-qa-state="ready"
@@ -208,59 +250,82 @@ function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
             <th className="px-3 py-2 font-medium">{"Restorable"}</th>
             <th className="px-3 py-2 font-medium">{"Deletable"}</th>
             <th className="px-3 py-2 font-medium">{"Source DB Service"}</th>
+            <th className="px-3 py-2 text-right font-medium">{"Actions"}</th>
           </tr>
         </thead>
         <tbody>
-          {backups.map((backup) => (
-            <tr
-              className="border-border border-b last:border-b-0"
-              data-qa-module="database"
-              data-qa-object="backup-row"
-              data-qa-resource-id={backup.name}
-              data-qa-resource-type="db-service-backup"
-              data-qa-state={backup.status.toLowerCase()}
-              data-testid="database.backup.row"
-              key={`${backup.namespace}/${backup.name}`}
-            >
-              <td className="max-w-64 px-3 py-2 align-top font-medium">
-                <span className="block truncate">{backup.name}</span>
-              </td>
-              <td className="max-w-64 px-3 py-2 align-top text-muted-foreground">
-                <span className="block truncate">
-                  {valueOrDash(backup.description)}
-                </span>
-              </td>
-              <td className="px-3 py-2 align-top">{backup.type}</td>
-              <td className="px-3 py-2 align-top">
-                <BackupStatusBadge status={backup.status} />
-              </td>
-              <td className="px-3 py-2 align-top text-muted-foreground">
-                {formatDateTime(backup.startedAt ?? backup.createdAt)}
-              </td>
-              <td className="px-3 py-2 align-top text-muted-foreground">
-                {valueOrDash(backup.duration)}
-              </td>
-              <td className="px-3 py-2 align-top text-muted-foreground">
-                {valueOrDash(backup.size)}
-              </td>
-              <td className="max-w-64 px-3 py-2 align-top text-muted-foreground">
-                <span className="block truncate">
-                  {valueOrDash(backup.failureReason)}
-                </span>
-              </td>
-              <td className="px-3 py-2 align-top">
-                <ActionState enabled={backup.restorable} />
-              </td>
-              <td className="px-3 py-2 align-top">
-                <ActionState enabled={backup.deletable} />
-              </td>
-              <td className="px-3 py-2 align-top text-muted-foreground">
-                <span className="block max-w-64 truncate">
-                  {`${backup.source.namespace}/${backup.source.name}`}
-                </span>
-              </td>
-            </tr>
-          ))}
+          {backups.map((backup) => {
+            const canDelete = backup.deletable && !isDeleting;
+            return (
+              <tr
+                className="border-border border-b last:border-b-0"
+                data-qa-module="database"
+                data-qa-object="backup-row"
+                data-qa-resource-id={backup.name}
+                data-qa-resource-type="db-service-backup"
+                data-qa-state={backup.status.toLowerCase()}
+                data-testid="database.backup.row"
+                key={`${backup.namespace}/${backup.name}`}
+              >
+                <td className="max-w-64 px-3 py-2 align-top font-medium">
+                  <span className="block truncate">{backup.name}</span>
+                </td>
+                <td className="max-w-64 px-3 py-2 align-top text-muted-foreground">
+                  <span className="block truncate">
+                    {valueOrDash(backup.description)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 align-top">{backup.type}</td>
+                <td className="px-3 py-2 align-top">
+                  <BackupStatusBadge status={backup.status} />
+                </td>
+                <td className="px-3 py-2 align-top text-muted-foreground">
+                  {formatDateTime(backup.startedAt ?? backup.createdAt)}
+                </td>
+                <td className="px-3 py-2 align-top text-muted-foreground">
+                  {valueOrDash(backup.duration)}
+                </td>
+                <td className="px-3 py-2 align-top text-muted-foreground">
+                  {valueOrDash(backup.size)}
+                </td>
+                <td className="max-w-64 px-3 py-2 align-top text-muted-foreground">
+                  <span className="block truncate">
+                    {valueOrDash(backup.failureReason)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <ActionState enabled={backup.restorable} />
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <ActionState enabled={backup.deletable} />
+                </td>
+                <td className="px-3 py-2 align-top text-muted-foreground">
+                  <span className="block max-w-64 truncate">
+                    {`${backup.source.namespace}/${backup.source.name}`}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right align-top">
+                  <Button
+                    aria-label={`Delete backup ${backup.name}`}
+                    data-qa-action="delete-backup"
+                    data-qa-module="database"
+                    data-qa-object="backup-row-action"
+                    data-qa-resource-id={backup.name}
+                    data-qa-state={canDelete ? "available" : "disabled"}
+                    data-testid="database.backup.delete-button"
+                    disabled={!canDelete}
+                    onClick={() => onRequestDelete(backup)}
+                    size="xs"
+                    type="button"
+                    variant="destructive"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {"Delete"}
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -272,13 +337,20 @@ export function BackupServiceSurface() {
   const [refreshData, setRefreshData] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedDeleteBackup, setSelectedDeleteBackup] =
+    useState<DbServiceBackupSummary | null>(null);
+  const [deletedBackupNames, setDeletedBackupNames] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const summaries = useMemo(() => {
     const refreshedBackups = statusBackupsFromProductResource(refreshData);
     return adaptDbServiceBackups({
       backups: refreshedBackups ?? runtime.backups,
       source: runtime.dbService,
-    });
-  }, [refreshData, runtime.backups, runtime.dbService]);
+    }).filter((backup) => !deletedBackupNames.has(backup.name));
+  }, [deletedBackupNames, refreshData, runtime.backups, runtime.dbService]);
   const needsRefresh = dbServiceBackupNeedsRefresh(summaries);
   const refresh = useCallback(async () => {
     if (!isDbServiceBackupSupportedEngine(runtime.engine)) {
@@ -294,6 +366,7 @@ export function BackupServiceSurface() {
           namespace: runtime.databaseWorkloadNamespace,
         })
       );
+      setDeletedBackupNames(new Set());
     } catch (error) {
       setRefreshError(
         error instanceof Error ? error.message : "Failed to refresh backups."
@@ -306,6 +379,50 @@ export function BackupServiceSurface() {
     runtime.databaseWorkloadNamespace,
     runtime.engine,
     runtime.kubeconfig,
+  ]);
+  const requestDeleteBackup = useCallback((backup: DbServiceBackupSummary) => {
+    if (!backup.deletable) {
+      return;
+    }
+    setDeleteError(null);
+    setSelectedDeleteBackup(backup);
+  }, []);
+  const confirmDeleteBackup = useCallback(async () => {
+    if (selectedDeleteBackup === null) {
+      return;
+    }
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteDbServiceBackup({
+        backupName: selectedDeleteBackup.name,
+        kubeconfig: runtime.kubeconfig,
+        name: runtime.databaseWorkloadName,
+        namespace: runtime.databaseWorkloadNamespace,
+      });
+      setDeletedBackupNames((previous) => {
+        const next = new Set(previous);
+        next.add(selectedDeleteBackup.name);
+        return next;
+      });
+      await refresh().catch((error) => {
+        setRefreshError(
+          error instanceof Error ? error.message : "Failed to refresh backups."
+        );
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to delete backup.";
+      setDeleteError(message);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [
+    refresh,
+    runtime.databaseWorkloadName,
+    runtime.databaseWorkloadNamespace,
+    runtime.kubeconfig,
+    selectedDeleteBackup,
   ]);
 
   useEffect(() => {
@@ -371,7 +488,47 @@ export function BackupServiceSurface() {
         </div>
       )}
 
-      <BackupRowsTable backups={summaries} />
+      {deleteError !== null && (
+        <div
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          data-qa-module="database"
+          data-qa-object="backup-delete-error"
+          data-qa-state="error"
+          data-testid="database.backup.delete-error"
+        >
+          {deleteError}
+        </div>
+      )}
+
+      <BackupRowsTable
+        backups={summaries}
+        isDeleting={isDeleting}
+        onRequestDelete={requestDeleteBackup}
+      />
+      <ConfirmationModal
+        cancelText="Cancel"
+        confirmText="Delete"
+        isDestructive
+        isOpen={selectedDeleteBackup !== null}
+        message={
+          selectedDeleteBackup === null
+            ? ""
+            : `Delete Backup Name ${selectedDeleteBackup.name}. Only this recovery point will be removed; the source DB Service ${runtime.databaseWorkloadNamespace}/${runtime.databaseWorkloadName} and any restored DB Services remain unchanged.`
+        }
+        onClose={() => {
+          if (!isDeleting) {
+            setSelectedDeleteBackup(null);
+          }
+        }}
+        onConfirm={confirmDeleteBackup}
+        title="Delete DB Service Backup"
+        verificationLabel={
+          selectedDeleteBackup === null
+            ? undefined
+            : `Type ${selectedDeleteBackup.name} to confirm.`
+        }
+        verificationText={selectedDeleteBackup?.name}
+      />
     </section>
   );
 }

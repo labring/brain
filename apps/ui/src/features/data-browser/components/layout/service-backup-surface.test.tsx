@@ -20,6 +20,17 @@ const runtime = {
         startTimestamp: "2026-06-09T05:00:00Z",
       },
     },
+    {
+      metadata: {
+        creationTimestamp: "2026-06-09T05:05:00Z",
+        name: "orders-running-20260609",
+        namespace: "database-system",
+      },
+      status: {
+        phase: "Running",
+        startTimestamp: "2026-06-09T05:05:00Z",
+      },
+    },
   ],
   database: {
     displayEngine: "PostgreSQL",
@@ -50,6 +61,10 @@ test("DB Service root renders a service-level Backup tab without close controls"
   assert.match(html, /data-qa-tab-type="backup"/);
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /orders-db/);
+  assert.match(html, /data-qa-action="delete-backup"/);
+  assert.match(html, /data-qa-state="available"/);
+  assert.match(html, /data-qa-state="disabled"/);
+  assert.match(html, /Delete/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
 });
 

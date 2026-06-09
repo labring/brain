@@ -106,6 +106,27 @@ func TestRegisterIncludesDBLifecycleRoutes(t *testing.T) {
 	}
 }
 
+func TestRegisterIncludesDBBackupDeletionRoute(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/backup"]
+	if path == nil || path.Delete == nil {
+		t.Fatalf("expected DELETE /api/db/v1alpha1/backup to be registered")
+	}
+	if path.Delete.OperationID != "db-backup-delete" {
+		t.Fatalf("unexpected operation ID: %q", path.Delete.OperationID)
+	}
+	description := path.Delete.Description
+	for _, want := range []string{"selected Backup resource", "not deleted or modified", "pending, running"} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("expected backup deletion docs to mention %q, got: %s", want, description)
+		}
+	}
+}
+
 func TestDBPatchDocsIncludeLifecycleFields(t *testing.T) {
 	router := chi.NewRouter()
 	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))

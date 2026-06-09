@@ -3,13 +3,15 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -25,6 +27,23 @@ type CreateBackupForDBOptions struct {
 	Namespace  string // Namespace
 	BackupName string // Name for the Backup CR (defaults to {dbName}-manual-{timestamp})
 }
+
+// DeleteBackupForDBOptions holds options for deleting one DB Service Backup.
+type DeleteBackupForDBOptions struct {
+	DBName     string // Source DB Service name (cluster has same name)
+	Namespace  string // Namespace
+	BackupName string // Backup CR metadata.name
+}
+
+// DeleteBackupForDBResult is the stable API result for a backup delete request.
+type DeleteBackupForDBResult struct {
+	BackupName   string `json:"backupName"`
+	Namespace    string `json:"namespace"`
+	SourceDBName string `json:"sourceDbName"`
+	Status       string `json:"status"`
+}
+
+var ErrDBBackupNotDeletable = errors.New("DB Service Backup is not deletable")
 
 // CreateBackupForDB creates an on-demand KubeBlocks Backup for the given DB.
 // The DB must have a running KubeBlocks Cluster with backup enabled.
@@ -89,14 +108,104 @@ func CreateBackupForDB(cfg *clientcmdapi.Config, opts CreateBackupForDBOptions) 
 		},
 	}
 
-	backupGVR := schema.GroupVersionResource{Group: "dataprotection.kubeblocks.io", Version: "v1alpha1", Resource: "backups"}
 	backupUnstructured := mapToUnstructured(backupObj)
-	created, err := client.Resource(backupGVR).Namespace(opts.Namespace).Create(context.Background(), backupUnstructured, metav1.CreateOptions{})
+	created, err := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace).Create(context.Background(), backupUnstructured, metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Backup: %w", err)
 	}
 
 	return json.Marshal(created.Object)
+}
+
+// DeleteBackupForDB deletes one completed or failed DB Service Backup for the source DB Service.
+func DeleteBackupForDB(cfg *clientcmdapi.Config, opts DeleteBackupForDBOptions) (DeleteBackupForDBResult, error) {
+	if strings.TrimSpace(opts.DBName) == "" || strings.TrimSpace(opts.Namespace) == "" || strings.TrimSpace(opts.BackupName) == "" {
+		return DeleteBackupForDBResult{}, fmt.Errorf("DBName, Namespace, and BackupName are required")
+	}
+
+	restConfig, ns, err := restConfigAndNamespaceForDBBackup(cfg, opts.Namespace)
+	if err != nil {
+		return DeleteBackupForDBResult{}, err
+	}
+	opts.Namespace = ns
+
+	client, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		return DeleteBackupForDBResult{}, err
+	}
+
+	return deleteBackupForDBWithClient(context.Background(), client, opts)
+}
+
+func deleteBackupForDBWithClient(ctx context.Context, client dynamic.Interface, opts DeleteBackupForDBOptions) (DeleteBackupForDBResult, error) {
+	opts.DBName = strings.TrimSpace(opts.DBName)
+	opts.Namespace = strings.TrimSpace(opts.Namespace)
+	opts.BackupName = strings.TrimSpace(opts.BackupName)
+	if opts.DBName == "" || opts.Namespace == "" || opts.BackupName == "" {
+		return DeleteBackupForDBResult{}, fmt.Errorf("DBName, Namespace, and BackupName are required")
+	}
+
+	cluster, err := client.Resource(kubeBlocksClusterGVR).Namespace(opts.Namespace).Get(ctx, opts.DBName, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return DeleteBackupForDBResult{}, apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), opts.BackupName)
+		}
+		return DeleteBackupForDBResult{}, err
+	}
+	clusterUID := string(cluster.GetUID())
+	if clusterUID == "" {
+		return DeleteBackupForDBResult{}, fmt.Errorf("source DB Service has no UID")
+	}
+
+	backup, err := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace).Get(ctx, opts.BackupName, metav1.GetOptions{})
+	if err != nil {
+		return DeleteBackupForDBResult{}, err
+	}
+	if backup.GetLabels()[transformdb.KubeBlocksBackupClusterUIDLabel] != clusterUID {
+		return DeleteBackupForDBResult{}, apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), opts.BackupName)
+	}
+
+	if !isDBBackupDeletable(backup) {
+		return DeleteBackupForDBResult{}, fmt.Errorf("%w: %s is %s", ErrDBBackupNotDeletable, opts.BackupName, dbBackupDeleteStatus(backup))
+	}
+
+	if err := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace).Delete(ctx, opts.BackupName, metav1.DeleteOptions{}); err != nil {
+		return DeleteBackupForDBResult{}, err
+	}
+
+	return DeleteBackupForDBResult{
+		BackupName:   opts.BackupName,
+		Namespace:    opts.Namespace,
+		SourceDBName: opts.DBName,
+		Status:       "deleted",
+	}, nil
+}
+
+func dbBackupDeleteStatus(backup *unstructured.Unstructured) string {
+	if backup == nil {
+		return "unknown"
+	}
+	deletionTimestamp := backup.GetDeletionTimestamp()
+	if deletionTimestamp != nil && !deletionTimestamp.IsZero() {
+		return "deleting"
+	}
+	phase, _, _ := unstructured.NestedString(backup.Object, "status", "phase")
+	if strings.TrimSpace(phase) == "" {
+		phase, _, _ = unstructured.NestedString(backup.Object, "status", "status")
+	}
+	if strings.TrimSpace(phase) == "" {
+		phase, _, _ = unstructured.NestedString(backup.Object, "status", "state")
+	}
+	return strings.ToLower(strings.TrimSpace(phase))
+}
+
+func isDBBackupDeletable(backup *unstructured.Unstructured) bool {
+	switch dbBackupDeleteStatus(backup) {
+	case "available", "completed", "complete", "succeeded", "success", "failed", "error":
+		return true
+	default:
+		return false
+	}
 }
 
 func engineFromCluster(cluster map[string]interface{}) string {
