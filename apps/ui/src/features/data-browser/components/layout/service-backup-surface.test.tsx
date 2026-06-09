@@ -53,6 +53,7 @@ test("DB Service root renders a service-level Backup tab without close controls"
   assert.match(html, /orders-db/);
   assert.match(html, /Create backup/);
   assert.match(html, /data-qa-action="restore"/);
+  assert.match(html, /data-qa-action="delete-backup"/);
   assert.match(html, /data-qa-state="enabled"/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
 });

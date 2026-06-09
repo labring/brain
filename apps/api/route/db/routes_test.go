@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -128,6 +129,32 @@ func TestRegisterIncludesDBRestoreRoute(t *testing.T) {
 	} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("expected restore docs to mention %q, got: %s", want, description)
+		}
+	}
+}
+
+func TestRegisterIncludesDBBackupDeleteRoute(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/backup"]
+	if path == nil || path.Delete == nil {
+		t.Fatalf("expected DELETE /api/db/v1alpha1/backup to be registered")
+	}
+	if path.Delete.OperationID != "db-backup-delete" {
+		t.Fatalf("unexpected operation ID: %q", path.Delete.OperationID)
+	}
+	description := path.Delete.Description
+	for _, want := range []string{
+		"completed or failed DB Service Backup",
+		"source DB Service",
+		"pending",
+		"running",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("expected backup delete docs to mention %q, got: %s", want, description)
 		}
 	}
 }
@@ -571,6 +598,35 @@ func TestBackupCreateErrorStatusMapping(t *testing.T) {
 			statusErr, ok := err.(huma.StatusError)
 			if !ok {
 				t.Fatalf("expected Huma status error, got %T", err)
+			}
+			if statusErr.GetStatus() != tt.want {
+				t.Fatalf("expected status %d, got %d", tt.want, statusErr.GetStatus())
+			}
+		})
+	}
+}
+
+func TestBackupDeleteErrorStatusMapping(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "not found", err: apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), "orders-backup"), want: http.StatusNotFound},
+		{name: "not deletable", err: dbsvc.ErrDBBackupNotDeletable, want: http.StatusConflict},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got error
+			if apierrors.IsNotFound(tt.err) {
+				got = huma.Error404NotFound("DB Service Backup not found", tt.err)
+			} else if errors.Is(tt.err, dbsvc.ErrDBBackupNotDeletable) {
+				got = huma.Error409Conflict("DB Service Backup is not deletable", tt.err)
+			}
+			statusErr, ok := got.(huma.StatusError)
+			if !ok {
+				t.Fatalf("expected Huma status error, got %T", got)
 			}
 			if statusErr.GetStatus() != tt.want {
 				t.Fatalf("expected status %d, got %d", tt.want, statusErr.GetStatus())

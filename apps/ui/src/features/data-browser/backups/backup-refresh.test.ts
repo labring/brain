@@ -3,6 +3,7 @@ import { afterEach, test } from "node:test";
 
 import {
   DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS,
+  deleteDbServiceBackup,
   fetchDbServiceBackupProductResource,
   submitDbServiceBackupRestore,
   updateDbServiceBackupPolicy,
@@ -125,6 +126,72 @@ test("restored DB Service name validation matches lowercase DNS-style names", ()
   assert.equal(
     validateRestoredDbServiceName("orders-db", ["orders-db"]),
     "A DB Service with this name already exists."
+  );
+});
+
+test("DB Service backup delete posts selected backup and kubeconfig auth", async () => {
+  let capturedBody: unknown;
+  let capturedAuth: string | null = null;
+  let capturedMethod: string | undefined;
+  let capturedUrl = "";
+
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    capturedUrl = String(input);
+    capturedAuth = new Headers(init?.headers).get("Authorization");
+    capturedBody = JSON.parse(String(init?.body));
+    capturedMethod = init?.method;
+    return Promise.resolve(
+      Response.json({
+        backupName: "orders-manual-20260609",
+        namespace: "database-system",
+        sourceDbName: "orders-db",
+        status: "deleted",
+      })
+    );
+  }) as typeof fetch;
+
+  const response = await deleteDbServiceBackup({
+    backupName: "orders-manual-20260609",
+    kubeconfig: " kube config\n",
+    name: "orders-db",
+    namespace: "database-system",
+  });
+
+  assert.equal(capturedUrl, "/api/db/v1alpha1/backup");
+  assert.equal(capturedMethod, "DELETE");
+  assert.equal(capturedAuth, "Bearer kube%20config");
+  assert.deepEqual(capturedBody, {
+    backupName: "orders-manual-20260609",
+    name: "orders-db",
+    namespace: "database-system",
+  });
+  assert.deepEqual(response, {
+    backupName: "orders-manual-20260609",
+    namespace: "database-system",
+    sourceDbName: "orders-db",
+    status: "deleted",
+  });
+});
+
+test("DB Service backup delete reports API conflict detail", async () => {
+  globalThis.fetch = (async () =>
+    Response.json(
+      {
+        detail: "DB Service Backup is not deletable",
+        status: 409,
+        title: "DB Service Backup is not deletable",
+      },
+      { status: 409 }
+    )) as typeof fetch;
+
+  await assert.rejects(
+    deleteDbServiceBackup({
+      backupName: "orders-running",
+      kubeconfig: "kubeconfig",
+      name: "orders-db",
+      namespace: "database-system",
+    }),
+    /DB Service Backup is not deletable/
   );
 });
 

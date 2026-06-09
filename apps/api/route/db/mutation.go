@@ -256,12 +256,24 @@ func registerBackup(grp huma.API) {
 		Description string `json:"description,omitempty" maxLength:"120" doc:"Optional short description stored as backup metadata."`
 		Namespace   string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)"`
 	}
+	type dbBackupDeleteBody struct {
+		Name       string `json:"name" required:"true" doc:"Source DB Service name"`
+		BackupName string `json:"backupName" required:"true" doc:"Backup Name to delete"`
+		Namespace  string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)"`
+	}
 	type dbBackupInput struct {
 		middleware.AuthInput
 		Body dbBackupBody
 	}
+	type dbBackupDeleteInput struct {
+		middleware.AuthInput
+		Body dbBackupDeleteBody
+	}
 	type dbBackupOutput struct {
 		Body json.RawMessage
+	}
+	type dbBackupDeleteOutput struct {
+		Body dbsvc.DeleteBackupForDBResult
 	}
 
 	huma.Register(grp, huma.Operation{
@@ -303,6 +315,53 @@ func registerBackup(grp huma.API) {
 			return nil, backupCreateError(err)
 		}
 		return &dbBackupOutput{Body: json.RawMessage(jsonBytes)}, nil
+	})
+
+	huma.Register(grp, huma.Operation{
+		OperationID: "db-backup-delete",
+		Method:      http.MethodDelete,
+		Path:        "/backup",
+		Summary:     "Delete DB Service Backup",
+		Description: "Delete one completed or failed DB Service Backup for a source DB Service.\n\n" +
+			"Deletion is scoped to the selected Backup resource in the resolved namespace. The source DB Service and any DB Services restored from the backup are not deleted or modified. Backups that are pending, running, or already deleting are rejected.",
+		Tags: []string{"DB"},
+	}, func(ctx context.Context, input *dbBackupDeleteInput) (*dbBackupDeleteOutput, error) {
+		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
+		}
+		if strings.TrimSpace(input.Body.Name) == "" {
+			return nil, huma.Error400BadRequest("name is required", nil)
+		}
+		if strings.TrimSpace(input.Body.BackupName) == "" {
+			return nil, huma.Error400BadRequest("backupName is required", nil)
+		}
+		gvr := middleware.PodsGVR()
+		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
+			Namespace:        input.Body.Namespace,
+			AllNamespaces:    false,
+			DefaultNamespace: "",
+			AdminCheckGVR:    &gvr,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to resolve namespace", err)
+		}
+
+		result, err := dbsvc.DeleteBackupForDB(cfg, dbsvc.DeleteBackupForDBOptions{
+			DBName:     input.Body.Name,
+			Namespace:  resolved.Namespace,
+			BackupName: input.Body.BackupName,
+		})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, huma.Error404NotFound("DB Service Backup not found", err)
+			}
+			if errors.Is(err, dbsvc.ErrDBBackupNotDeletable) {
+				return nil, huma.Error409Conflict("DB Service Backup is not deletable", err)
+			}
+			return nil, huma.Error500InternalServerError("failed to delete backup", err)
+		}
+		return &dbBackupDeleteOutput{Body: result}, nil
 	})
 }
 
