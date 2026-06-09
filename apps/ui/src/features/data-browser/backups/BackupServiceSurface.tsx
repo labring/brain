@@ -35,6 +35,17 @@ export type DbServiceBackupFormErrors = Partial<
   Record<keyof DbServiceBackupFormValues, string>
 >;
 
+type DbServiceBackupRequest = DbServiceBackupFormValues & {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  onAccepted?: () => void | Promise<void>;
+};
+type DbServiceBackupBodyInput = Pick<
+  DbServiceBackupRequest,
+  "backupName" | "description" | "name" | "namespace"
+>;
+
 export function validateDbServiceBackupForm({
   backupName,
   description = "",
@@ -56,27 +67,40 @@ export function validateDbServiceBackupForm({
   return errors;
 }
 
-export async function createDbServiceBackup({
+function removeFormError(
+  errors: DbServiceBackupFormErrors,
+  key: keyof DbServiceBackupFormErrors
+): DbServiceBackupFormErrors {
+  if (errors[key] === undefined) {
+    return errors;
+  }
+  const next = { ...errors };
+  delete next[key];
+  return next;
+}
+
+function buildCreateBackupBody({
   backupName,
   description = "",
-  kubeconfig,
   name,
   namespace,
-  onAccepted,
-}: DbServiceBackupFormValues & {
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-  onAccepted?: () => void | Promise<void>;
-}): Promise<unknown> {
+}: DbServiceBackupBodyInput): Record<string, string> {
   const trimmedDescription = description.trim();
+  return {
+    backupName: backupName.trim(),
+    ...(trimmedDescription === "" ? {} : { description: trimmedDescription }),
+    name,
+    namespace,
+  };
+}
+
+export async function createDbServiceBackup({
+  kubeconfig,
+  onAccepted,
+  ...request
+}: DbServiceBackupRequest): Promise<unknown> {
   const response = await fetch(DB_BACKUP_ROUTE, {
-    body: JSON.stringify({
-      backupName: backupName.trim(),
-      ...(trimmedDescription === "" ? {} : { description: trimmedDescription }),
-      name,
-      namespace,
-    }),
+    body: JSON.stringify(buildCreateBackupBody(request)),
     headers: {
       Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
       "Content-Type": "application/json",
@@ -282,17 +306,6 @@ function BackupCreationForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [acceptedName, setAcceptedName] = useState<string | null>(null);
   const descriptionLength = [...description].length;
-  const clearError = (
-    key: keyof DbServiceBackupFormErrors,
-    current: DbServiceBackupFormErrors
-  ): DbServiceBackupFormErrors => {
-    if (current[key] === undefined) {
-      return current;
-    }
-    const next = { ...current };
-    delete next[key];
-    return next;
-  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -346,7 +359,7 @@ function BackupCreationForm({
             maxLength={63}
             onChange={(event) => {
               setBackupName(event.target.value);
-              setErrors((current) => clearError("backupName", current));
+              setErrors((current) => removeFormError(current, "backupName"));
             }}
             placeholder="orders-before-migration"
             value={backupName}
@@ -382,7 +395,7 @@ function BackupCreationForm({
             maxLength={BACKUP_DESCRIPTION_MAX_LENGTH + 1}
             onChange={(event) => {
               setDescription(event.target.value);
-              setErrors((current) => clearError("description", current));
+              setErrors((current) => removeFormError(current, "description"));
             }}
             placeholder="Optional reason for this recovery point"
             rows={1}

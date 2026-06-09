@@ -102,11 +102,7 @@ func createBackupForDBWithClient(ctx context.Context, client dynamic.Interface, 
 		return nil, fmt.Errorf("failed to get source DB Service %q: %w", opts.DBName, err)
 	}
 	if !clusterIsRunning(cluster) {
-		phase, _, _ := unstructured.NestedString(cluster.Object, "status", "phase")
-		if phase == "" {
-			phase = "Unknown"
-		}
-		return nil, fmt.Errorf("%w: DB Service %q must be Running before creating a backup (current phase: %s)", ErrBackupSourceNotRunning, opts.DBName, phase)
+		return nil, fmt.Errorf("%w: DB Service %q must be Running before creating a backup (current phase: %s)", ErrBackupSourceNotRunning, opts.DBName, clusterPhase(cluster))
 	}
 	engine := engineFromCluster(cluster.Object)
 	profile, ok := orchestration.DBEngineProfileFor(engine)
@@ -118,41 +114,12 @@ func createBackupForDBWithClient(ctx context.Context, client dynamic.Interface, 
 
 	backupPolicyName := opts.DBName + "-" + componentName + "-backup-policy"
 
-	clusterMeta, _ := cluster.Object["metadata"].(map[string]interface{})
-	if clusterMeta == nil {
-		return nil, fmt.Errorf("Cluster has no metadata")
-	}
-	clusterUID, _ := clusterMeta["uid"].(string)
-	if clusterUID == "" {
-		return nil, fmt.Errorf("Cluster has no UID")
+	clusterUID, err := uidFromCluster(cluster)
+	if err != nil {
+		return nil, err
 	}
 
-	annotations := map[string]interface{}{
-		backupTypeAnnotation: manualBackupType,
-	}
-	if opts.Description != "" {
-		annotations[backupDescriptionAnnotation] = opts.Description
-	}
-
-	backupObj := map[string]interface{}{
-		"apiVersion": "dataprotection.kubeblocks.io/v1alpha1",
-		"kind":       "Backup",
-		"metadata": map[string]interface{}{
-			"name":      opts.BackupName,
-			"namespace": opts.Namespace,
-			"annotations": annotations,
-			"labels": map[string]interface{}{
-				transformdb.KubeBlocksBackupClusterUIDLabel: clusterUID,
-			},
-		},
-		"spec": map[string]interface{}{
-			"backupPolicyName": backupPolicyName,
-			"backupMethod":     backupMethod,
-			"deletionPolicy":   "Delete",
-		},
-	}
-
-	backupUnstructured := mapToUnstructured(backupObj)
+	backupUnstructured := newManualBackupObject(opts, backupPolicyName, backupMethod, clusterUID)
 	created, err := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace).Create(ctx, backupUnstructured, metav1.CreateOptions{})
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
@@ -193,17 +160,74 @@ func clusterIsRunning(cluster *unstructured.Unstructured) bool {
 	}
 	conditions, _, _ := unstructured.NestedSlice(cluster.Object, "status", "conditions")
 	for _, condition := range conditions {
-		item, ok := condition.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		conditionType, _ := item["type"].(string)
-		conditionStatus, _ := item["status"].(string)
-		if conditionType == "Ready" && conditionStatus == "True" {
+		if readyConditionIsTrue(condition) {
 			return true
 		}
 	}
 	return false
+}
+
+func clusterPhase(cluster *unstructured.Unstructured) string {
+	if cluster == nil {
+		return "Unknown"
+	}
+	phase, _, _ := unstructured.NestedString(cluster.Object, "status", "phase")
+	if phase == "" {
+		return "Unknown"
+	}
+	return phase
+}
+
+func readyConditionIsTrue(condition interface{}) bool {
+	item, ok := condition.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	conditionType, _ := item["type"].(string)
+	conditionStatus, _ := item["status"].(string)
+	return conditionType == "Ready" && conditionStatus == "True"
+}
+
+func uidFromCluster(cluster *unstructured.Unstructured) (string, error) {
+	clusterMeta, _ := cluster.Object["metadata"].(map[string]interface{})
+	if clusterMeta == nil {
+		return "", fmt.Errorf("Cluster has no metadata")
+	}
+	clusterUID, _ := clusterMeta["uid"].(string)
+	if clusterUID == "" {
+		return "", fmt.Errorf("Cluster has no UID")
+	}
+	return clusterUID, nil
+}
+
+func newManualBackupObject(opts CreateBackupForDBOptions, backupPolicyName, backupMethod, clusterUID string) *unstructured.Unstructured {
+	return mapToUnstructured(map[string]interface{}{
+		"apiVersion": "dataprotection.kubeblocks.io/v1alpha1",
+		"kind":       "Backup",
+		"metadata": map[string]interface{}{
+			"name":        opts.BackupName,
+			"namespace":   opts.Namespace,
+			"annotations": manualBackupAnnotations(opts.Description),
+			"labels": map[string]interface{}{
+				transformdb.KubeBlocksBackupClusterUIDLabel: clusterUID,
+			},
+		},
+		"spec": map[string]interface{}{
+			"backupPolicyName": backupPolicyName,
+			"backupMethod":     backupMethod,
+			"deletionPolicy":   "Delete",
+		},
+	})
+}
+
+func manualBackupAnnotations(description string) map[string]interface{} {
+	annotations := map[string]interface{}{
+		backupTypeAnnotation: manualBackupType,
+	}
+	if description != "" {
+		annotations[backupDescriptionAnnotation] = description
+	}
+	return annotations
 }
 
 func engineFromCluster(cluster map[string]interface{}) string {
