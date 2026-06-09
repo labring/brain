@@ -18,24 +18,34 @@ import {
   dbServiceBackupNeedsRefresh,
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
-import { Button } from "@data-browser/components/ui/Button";
 import { ConfirmationModal } from "@data-browser/components/ui/ConfirmationModal";
 import { Checkbox } from "@data-browser/components/ui/checkbox";
 import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
 import { Input } from "@data-browser/components/ui/Input";
 import { ModalForm, useModalForm } from "@data-browser/components/ui/ModalForm";
 import { Textarea } from "@data-browser/components/ui/Textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@data-browser/components/ui/tooltip";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
+import { AppButton } from "@workspace/ui/components/app-button";
+import { AppInput } from "@workspace/ui/components/app-input";
+import { SingleSelect } from "@workspace/ui/components/single-select";
+import { Switch } from "@workspace/ui/components/switch";
 import {
+  ArchiveRestore,
   CheckCircle2,
-  DatabaseBackup,
+  CloudUpload,
+  Info,
+  List,
   Loader2,
   Plus,
-  RefreshCw,
+  RotateCcw,
   Save,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import {
   createContext,
@@ -59,6 +69,14 @@ const TIME_FIELD_BOUNDS = {
   hour: { max: 23, min: 0 },
   minute: { max: 59, min: 0 },
 } as const;
+const HOUR_OPTIONS = Array.from(
+  { length: TIME_FIELD_BOUNDS.hour.max + 1 },
+  (_, index) => index
+);
+const MINUTE_OPTIONS = Array.from(
+  { length: TIME_FIELD_BOUNDS.minute.max + 1 },
+  (_, index) => index
+);
 
 export interface DbServiceBackupFormValues {
   backupName: string;
@@ -421,15 +439,18 @@ function statusTone(status: DbServiceBackupSummary["status"]): string {
 }
 
 function BackupStatusBadge({
+  className,
   status,
 }: {
+  className?: string;
   status: DbServiceBackupSummary["status"];
 }) {
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center rounded-md border px-2 font-medium text-xs",
-        statusTone(status)
+        "inline-flex h-5 items-center rounded-full border px-2 font-medium text-[11px] leading-4",
+        statusTone(status),
+        className
       )}
     >
       {status}
@@ -437,18 +458,59 @@ function BackupStatusBadge({
   );
 }
 
-function ActionState({ enabled }: { enabled: boolean }) {
+function backupDiagnosticItems(backup: DbServiceBackupSummary) {
+  return [
+    { label: "Backup", value: backup.name },
+    {
+      label: "Source",
+      value: `${backup.source.namespace}/${backup.source.name}`,
+    },
+    {
+      label: "Started",
+      value: formatDateTime(backup.startedAt ?? backup.createdAt),
+    },
+    { label: "Duration", value: valueOrDash(backup.duration) },
+    { label: "Size", value: valueOrDash(backup.size) },
+    { label: "Failure", value: valueOrDash(backup.failureReason) },
+    {
+      label: "Restorable",
+      value: backup.restorable ? "Available" : "Unavailable",
+    },
+    {
+      label: "Deletable",
+      value: backup.deletable ? "Available" : "Unavailable",
+    },
+  ];
+}
+
+function BackupStatusTooltip({ backup }: { backup: DbServiceBackupSummary }) {
   return (
-    <span
-      className={cn(
-        "inline-flex h-6 items-center rounded-md border px-2 font-medium text-xs",
-        enabled
-          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-          : "border-border bg-muted/20 text-muted-foreground"
-      )}
-    >
-      {enabled ? "Available" : "Unavailable"}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex cursor-help items-center">
+          <BackupStatusBadge status={backup.status} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-80 bg-zinc-950 text-zinc-100">
+        <div className="grid gap-1 text-left">
+          <div className="mb-1 flex items-center gap-1.5 font-medium">
+            <Info className="size-3.5" />
+            {"Backup status"}
+          </div>
+          {backupDiagnosticItems(backup).map((item) => (
+            <div
+              className="grid grid-cols-[72px_minmax(0,1fr)] gap-2 text-[11px] leading-4"
+              key={item.label}
+            >
+              <span className="text-zinc-400">{item.label}</span>
+              <span className="min-w-0 truncate text-zinc-100">
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -469,6 +531,20 @@ function EmptyBackupRows() {
       </p>
     </div>
   );
+}
+
+function backupTypeLabel(type: DbServiceBackupSummary["type"]): string {
+  return type === "Manual" ? "Manual Backup" : "Auto Backup";
+}
+
+function backupRowMeta(backup: DbServiceBackupSummary): string {
+  return [
+    backup.source.name,
+    backup.name,
+    formatDateTime(backup.startedAt ?? backup.createdAt),
+    valueOrDash(backup.duration),
+    valueOrDash(backup.size),
+  ].join(" / ");
 }
 
 function UnsupportedBackupSurface() {
@@ -493,7 +569,7 @@ function UnsupportedBackupSurface() {
   );
 }
 
-function BackupRowsTable({
+function BackupRowsList({
   backups,
   isDeleting,
   onRequestDelete,
@@ -504,89 +580,61 @@ function BackupRowsTable({
   onRequestDelete: (backup: DbServiceBackupSummary) => void;
   onRestore: (backup: DbServiceBackupSummary) => void;
 }) {
-  if (backups.length === 0) {
-    return <EmptyBackupRows />;
-  }
-
   return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border">
-      <table
-        className="w-full min-w-[1120px] border-collapse text-left text-sm"
-        data-qa-module="database"
-        data-qa-object="backup-table"
-        data-qa-state="ready"
-        data-testid="database.backup.table"
-      >
-        <thead className="sticky top-0 z-10 bg-card text-muted-foreground text-xs">
-          <tr className="border-border border-b">
-            <th className="px-3 py-2 font-medium">{"Backup Name"}</th>
-            <th className="px-3 py-2 font-medium">{"Description"}</th>
-            <th className="px-3 py-2 font-medium">{"Type"}</th>
-            <th className="px-3 py-2 font-medium">{"Status"}</th>
-            <th className="px-3 py-2 font-medium">{"Created / Started"}</th>
-            <th className="px-3 py-2 font-medium">{"Duration"}</th>
-            <th className="px-3 py-2 font-medium">{"Size"}</th>
-            <th className="px-3 py-2 font-medium">{"Failure Reason"}</th>
-            <th className="px-3 py-2 font-medium">{"Restorable"}</th>
-            <th className="px-3 py-2 font-medium">{"Deletable"}</th>
-            <th className="px-3 py-2 font-medium">{"Source DB Service"}</th>
-            <th className="px-3 py-2 font-medium">{"Actions"}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {backups.map((backup) => {
-            const canDelete = backup.deletable && !isDeleting;
-            return (
-              <tr
-                className="border-border border-b last:border-b-0"
-                data-qa-module="database"
-                data-qa-object="backup-row"
-                data-qa-resource-id={backup.name}
-                data-qa-resource-type="db-service-backup"
-                data-qa-state={backup.status.toLowerCase()}
-                data-testid="database.backup.row"
-                key={`${backup.namespace}/${backup.name}`}
-              >
-                <td className="max-w-64 px-3 py-2 align-top font-medium">
-                  <span className="block truncate">{backup.name}</span>
-                </td>
-                <td className="max-w-64 px-3 py-2 align-top text-muted-foreground">
-                  <span className="block truncate">
-                    {valueOrDash(backup.description)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 align-top">{backup.type}</td>
-                <td className="px-3 py-2 align-top">
-                  <BackupStatusBadge status={backup.status} />
-                </td>
-                <td className="px-3 py-2 align-top text-muted-foreground">
-                  {formatDateTime(backup.startedAt ?? backup.createdAt)}
-                </td>
-                <td className="px-3 py-2 align-top text-muted-foreground">
-                  {valueOrDash(backup.duration)}
-                </td>
-                <td className="px-3 py-2 align-top text-muted-foreground">
-                  {valueOrDash(backup.size)}
-                </td>
-                <td className="max-w-64 px-3 py-2 align-top text-muted-foreground">
-                  <span className="block truncate">
-                    {valueOrDash(backup.failureReason)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <ActionState enabled={backup.restorable} />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <ActionState enabled={backup.deletable} />
-                </td>
-                <td className="px-3 py-2 align-top text-muted-foreground">
-                  <span className="block max-w-64 truncate">
-                    {`${backup.source.namespace}/${backup.source.name}`}
-                  </span>
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <div className="flex justify-end gap-2">
-                    <Button
+    <section className="flex min-h-0 flex-1 flex-col rounded-lg bg-white/[0.03]">
+      <div className="flex h-13 shrink-0 items-center justify-between gap-3 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <List className="size-3.5 shrink-0 text-muted-foreground" />
+          <h3 className="m-0 truncate font-medium text-sm leading-5">
+            {"Backup List"}
+          </h3>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-muted-foreground text-sm leading-5">
+          <span>{"Recent execution records"}</span>
+        </div>
+      </div>
+
+      {backups.length === 0 ? (
+        <div className="flex min-h-0 flex-1 p-4 pt-2">
+          <EmptyBackupRows />
+        </div>
+      ) : (
+        <div
+          className="min-h-0 flex-1 overflow-auto px-4 pb-4"
+          data-qa-module="database"
+          data-qa-object="backup-list"
+          data-qa-state="ready"
+          data-testid="database.backup.list"
+        >
+          <div className="flex flex-col gap-2">
+            {backups.map((backup) => {
+              const canDelete = backup.deletable && !isDeleting;
+              return (
+                <article
+                  className="flex min-h-[74px] items-center justify-between gap-3 rounded-md bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.06]"
+                  data-qa-module="database"
+                  data-qa-object="backup-row"
+                  data-qa-resource-id={backup.name}
+                  data-qa-resource-type="db-service-backup"
+                  data-qa-state={backup.status.toLowerCase()}
+                  data-testid="database.backup.row"
+                  key={`${backup.namespace}/${backup.name}`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium text-sm leading-5">
+                        {backupTypeLabel(backup.type)}
+                      </span>
+                      <BackupStatusTooltip backup={backup} />
+                    </div>
+                    <p className="mt-1 mb-0 truncate text-[12px] text-muted-foreground leading-4">
+                      {backupRowMeta(backup)}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <AppButton
+                      className="h-9 rounded-md px-3"
                       data-qa-action="restore"
                       data-qa-module="database"
                       data-qa-object="backup-row"
@@ -597,13 +645,14 @@ function BackupRowsTable({
                       onClick={() => onRestore(backup)}
                       size="sm"
                       type="button"
-                      variant="outline"
+                      variant="secondary"
                     >
-                      <DatabaseBackup className="h-4 w-4" />
+                      <ArchiveRestore className="size-3.5" />
                       {"Restore"}
-                    </Button>
-                    <Button
+                    </AppButton>
+                    <AppButton
                       aria-label={`Delete backup ${backup.name}`}
+                      className="h-9 rounded-md px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       data-qa-action="delete-backup"
                       data-qa-module="database"
                       data-qa-object="backup-row-action"
@@ -614,19 +663,19 @@ function BackupRowsTable({
                       onClick={() => onRequestDelete(backup)}
                       size="sm"
                       type="button"
-                      variant="destructive"
+                      variant="quiet"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="size-3.5" />
                       {"Delete"}
-                    </Button>
+                    </AppButton>
                   </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -680,22 +729,22 @@ function BackupCreationForm({
 
   return (
     <form
-      className="rounded-md border border-border bg-card/40 p-3"
+      className="flex min-h-0 flex-1 flex-col"
       data-qa-module="database"
       data-qa-object="backup-create-form"
       data-qa-state={disabled ? "disabled" : "ready"}
       data-testid="database.backup.create-form"
       onSubmit={handleSubmit}
     >
-      <div className="grid gap-3 lg:grid-cols-[minmax(220px,280px)_minmax(260px,1fr)_auto] lg:items-start">
+      <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_minmax(260px,1fr)]">
         <div className="min-w-0">
           <label
-            className="mb-1.5 block font-medium text-[13px] leading-5"
+            className="mb-2 block font-medium text-[13px] text-muted-foreground leading-5"
             htmlFor="db-service-backup-name"
           >
             {"Backup Name"}
           </label>
-          <Input
+          <AppInput
             aria-invalid={errors.backupName === undefined ? undefined : true}
             autoComplete="off"
             data-testid="database.backup.name-input"
@@ -720,20 +769,20 @@ function BackupCreationForm({
         </div>
 
         <div className="min-w-0">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <label
-              className="block font-medium text-[13px] leading-5"
+              className="block font-medium text-[13px] text-muted-foreground leading-5"
               htmlFor="db-service-backup-description"
             >
               {"Description"}
             </label>
-            <span className="text-[12px] text-muted-foreground leading-4">
+            <span className="text-[11px] text-muted-foreground leading-4">
               {`${descriptionLength}/${BACKUP_DESCRIPTION_MAX_LENGTH}`}
             </span>
           </div>
           <Textarea
             aria-invalid={errors.description === undefined ? undefined : true}
-            className="min-h-9 resize-none"
+            className="min-h-9 resize-none border-input bg-transparent text-sm"
             data-testid="database.backup.description-input"
             disabled={disabled || isSubmitting}
             id="db-service-backup-description"
@@ -755,9 +804,22 @@ function BackupCreationForm({
             </p>
           )}
         </div>
+      </div>
 
-        <Button
-          className="mt-0 lg:mt-[26px]"
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
+        <div className="min-w-0">
+          {disabled && disabledReason !== undefined ? (
+            <p
+              className="m-0 text-[12px] text-muted-foreground leading-4"
+              data-testid="database.backup.create-disabled-reason"
+            >
+              {disabledReason}
+            </p>
+          ) : null}
+        </div>
+
+        <AppButton
+          className="h-9 rounded-md px-3"
           data-qa-action="create"
           data-qa-module="database"
           data-qa-object="backup"
@@ -766,28 +828,20 @@ function BackupCreationForm({
           disabled={disabled || isSubmitting}
           size="sm"
           type="submit"
+          variant="secondary"
         >
           {isSubmitting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="size-3.5 animate-spin" />
           ) : (
-            <Plus className="h-4 w-4" />
+            <Plus className="size-3.5" />
           )}
-          {"Create backup"}
-        </Button>
+          {"Backup"}
+        </AppButton>
       </div>
-
-      {disabled && disabledReason !== undefined && (
-        <p
-          className="mt-2 mb-0 text-[13px] text-muted-foreground leading-5"
-          data-testid="database.backup.create-disabled-reason"
-        >
-          {disabledReason}
-        </p>
-      )}
 
       {submitError !== null && (
         <div
-          className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
           data-qa-module="database"
           data-qa-object="backup-create-error"
           data-qa-state="error"
@@ -799,13 +853,13 @@ function BackupCreationForm({
 
       {acceptedName !== null && (
         <div
-          className="mt-2 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-300"
+          className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-300"
           data-qa-module="database"
           data-qa-object="backup-create-accepted"
           data-qa-state="accepted"
           data-testid="database.backup.create-accepted"
         >
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <CheckCircle2 className="size-4 shrink-0" />
           <span>{`Backup request accepted for ${acceptedName}.`}</span>
         </div>
       )}
@@ -885,7 +939,7 @@ function RestoreModalProvider({
       <ModalForm.Provider
         meta={{
           description: `${backup.namespace}/${backup.name}`,
-          icon: DatabaseBackup,
+          icon: ArchiveRestore,
           title: "Restore DB Service Backup",
         }}
         onSubmit={handleSubmit}
@@ -986,24 +1040,8 @@ function policyFrequencyLabel(
   }
 }
 
-function policySummary(form: DbServiceBackupPolicyForm): string {
-  if (!form.enabled) {
-    return "Automatic backups disabled";
-  }
-  if (form.frequency === "hourly") {
-    return `Hourly at minute ${form.minute}`;
-  }
-  if (form.frequency === "daily") {
-    return `Daily at ${String(form.hour).padStart(2, "0")}:${String(
-      form.minute
-    ).padStart(2, "0")}`;
-  }
-  const days = form.weekdays
-    .map((weekday) => DB_SERVICE_BACKUP_WEEKDAY_LABELS[weekday])
-    .join(", ");
-  return `Weekly on ${days} at ${String(form.hour).padStart(2, "0")}:${String(
-    form.minute
-  ).padStart(2, "0")}`;
+function timeOptionLabel(value: number, unit: "hour" | "min"): string {
+  return `${String(value).padStart(2, "0")} ${unit}`;
 }
 
 function numberInputValue(value: number): string {
@@ -1063,53 +1101,49 @@ function BackupPolicyForm({
 
   useEffect(() => {
     setForm(backupPolicyFormFromBackend(initialPolicy));
+    setError(null);
   }, [initialPolicy]);
 
-  const savePolicy = useCallback(
-    async (nextForm: DbServiceBackupPolicyForm) => {
-      setIsSaving(true);
-      setError(null);
-      try {
-        const backend = backupPolicyFormToBackend(nextForm);
-        const updated = await updateDbServiceBackupPolicy({
-          cronExpression: backend.cronExpression,
-          enabled: nextForm.enabled,
-          kubeconfig: runtime.kubeconfig,
-          name: runtime.databaseWorkloadName,
-          namespace: runtime.databaseWorkloadNamespace,
-          retentionDays: nextForm.enabled ? nextForm.retentionDays : undefined,
-        });
-        onPolicySaved(updated);
-        setForm(
-          backupPolicyFormFromBackend(
-            specBackupPolicyFromProductResource(updated)
-          )
-        );
-      } catch (saveError) {
-        setError(
-          saveError instanceof Error
-            ? saveError.message
-            : "Failed to update backup policy."
-        );
-      } finally {
-        setIsSaving(false);
-      }
-    },
-    [
-      onPolicySaved,
-      runtime.databaseWorkloadName,
-      runtime.databaseWorkloadNamespace,
-      runtime.kubeconfig,
-    ]
-  );
-  const disablePolicy = useCallback(() => {
-    const disabledForm = { ...form, enabled: false };
-    setForm(disabledForm);
-    savePolicy(disabledForm).catch(() => undefined);
-  }, [form, savePolicy]);
-  const saveEnabledPolicy = useCallback(() => {
-    savePolicy({ ...form, enabled: true }).catch(() => undefined);
-  }, [form, savePolicy]);
+  const resetPolicy = useCallback(() => {
+    setForm(backupPolicyFormFromBackend(initialPolicy));
+    setError(null);
+  }, [initialPolicy]);
+
+  const savePolicy = useCallback(async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      const backend = backupPolicyFormToBackend(form);
+      const updated = await updateDbServiceBackupPolicy({
+        cronExpression: backend.cronExpression,
+        enabled: form.enabled,
+        kubeconfig: runtime.kubeconfig,
+        name: runtime.databaseWorkloadName,
+        namespace: runtime.databaseWorkloadNamespace,
+        retentionDays: form.enabled ? form.retentionDays : undefined,
+      });
+      onPolicySaved(updated);
+      setForm(
+        backupPolicyFormFromBackend(
+          specBackupPolicyFromProductResource(updated)
+        )
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to update backup policy."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+    form,
+    onPolicySaved,
+    runtime.databaseWorkloadName,
+    runtime.databaseWorkloadNamespace,
+    runtime.kubeconfig,
+  ]);
   const setFrequency = useCallback(
     (frequency: DbServiceBackupPolicyFrequency) => {
       setForm((current) => backupPolicyFormWithFrequency(current, frequency));
@@ -1157,129 +1191,121 @@ function BackupPolicyForm({
       };
     });
   }, []);
+  const setEnabled = useCallback((enabled: boolean) => {
+    setForm((current) => ({ ...current, enabled }));
+  }, []);
 
   return (
-    <section
-      className="rounded-md border border-border bg-card/40 p-3"
+    <div
+      className="flex min-h-0 flex-1 flex-col"
       data-qa-module="database"
       data-qa-object="backup-policy"
       data-qa-state={form.enabled ? "enabled" : "disabled"}
       data-testid="database.backup.policy"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="m-0 font-medium text-sm leading-5">
-            {"Backup Policy"}
-          </h3>
-          <p className="mt-0.5 mb-0 text-[13px] text-muted-foreground leading-5">
-            {`${policySummary(form)} • Retention ${form.retentionDays} days`}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            data-qa-action="disable"
-            data-qa-module="database"
-            data-qa-object="backup-policy"
-            disabled={isSaving || !form.enabled}
-            onClick={disablePolicy}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <XCircle className="h-4 w-4" />
-            {"Disable"}
-          </Button>
-          <Button
-            data-qa-action="save"
-            data-qa-module="database"
-            data-qa-object="backup-policy"
-            disabled={isSaving || !retention.ok}
-            onClick={saveEnabledPolicy}
-            size="sm"
-            type="button"
-          >
-            <Save className="h-4 w-4" />
-            {isSaving ? "Saving" : "Save"}
-          </Button>
-        </div>
+      <div className="mb-4 flex items-center justify-end">
+        <label className="flex shrink-0 items-center gap-2 text-[13px] text-foreground leading-5">
+          <span>{"Auto Backup"}</span>
+          <Switch
+            aria-label="Auto Backup"
+            checked={form.enabled}
+            disabled={isSaving}
+            onCheckedChange={setEnabled}
+            size="default"
+            variant="brand"
+          />
+        </label>
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid gap-4 md:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-1 text-[13px]">
-          <span className="text-muted-foreground">{"Frequency"}</span>
-          <div className="grid grid-cols-3 rounded-md border border-border bg-background/40 p-0.5">
-            {DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES.map((frequency) => (
-              <button
-                className={cn(
-                  "h-8 rounded-[5px] px-2 font-medium text-xs",
-                  form.frequency === frequency
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent"
-                )}
-                data-qa-policy-frequency={frequency}
-                key={frequency}
-                onClick={() => setFrequency(frequency)}
-                type="button"
-              >
-                {policyFrequencyLabel(frequency)}
-              </button>
-            ))}
-          </div>
+          <span className="font-medium text-muted-foreground leading-5">
+            {"Backup Frequency"}
+          </span>
+          <SingleSelect
+            className="w-full"
+            disabled={!form.enabled || isSaving}
+            onValueChange={(value) =>
+              setFrequency(value as DbServiceBackupPolicyFrequency)
+            }
+            options={DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES.map(
+              (frequency) => ({
+                label: policyFrequencyLabel(frequency),
+                value: frequency,
+              })
+            )}
+            value={form.frequency}
+          />
+        </label>
+
+        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+          <span className="font-medium text-muted-foreground leading-5">
+            {"Retention Period"}
+          </span>
+          <SingleSelect
+            className="w-full"
+            disabled={!form.enabled || isSaving}
+            onValueChange={(value) => setRetentionDays(Number(value))}
+            options={DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES.map((days) => ({
+              label: `${days} Days`,
+              value: String(days),
+            }))}
+            value={String(form.retentionDays)}
+          />
         </label>
 
         {form.frequency !== "hourly" && (
           <label className="flex min-w-0 flex-col gap-1 text-[13px]">
-            <span className="text-muted-foreground">{"Hour"}</span>
-            <Input
-              max={TIME_FIELD_BOUNDS.hour.max}
-              min={TIME_FIELD_BOUNDS.hour.min}
-              onChange={(event) => setHour(event.currentTarget.value)}
-              type="number"
+            <span className="font-medium text-muted-foreground leading-5">
+              {"Start Hour"}
+            </span>
+            <SingleSelect
+              className="w-full"
+              disabled={!form.enabled || isSaving}
+              onValueChange={setHour}
+              options={HOUR_OPTIONS.map((hour) => ({
+                label: timeOptionLabel(hour, "hour"),
+                value: String(hour),
+              }))}
               value={numberInputValue(form.hour)}
             />
           </label>
         )}
 
-        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
-          <span className="text-muted-foreground">{"Minute"}</span>
-          <Input
-            max={TIME_FIELD_BOUNDS.minute.max}
-            min={TIME_FIELD_BOUNDS.minute.min}
-            onChange={(event) => setMinute(event.currentTarget.value)}
-            type="number"
+        <label
+          className={cn(
+            "flex min-w-0 flex-col gap-1 text-[13px]",
+            form.frequency === "hourly" && "md:col-span-2"
+          )}
+        >
+          <span className="font-medium text-muted-foreground leading-5">
+            {"Start Minute"}
+          </span>
+          <SingleSelect
+            className="w-full"
+            disabled={!form.enabled || isSaving}
+            onValueChange={setMinute}
+            options={MINUTE_OPTIONS.map((minute) => ({
+              label: timeOptionLabel(minute, "min"),
+              value: String(minute),
+            }))}
             value={numberInputValue(form.minute)}
           />
-        </label>
-
-        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
-          <span className="text-muted-foreground">{"Retention"}</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            onChange={(event) =>
-              setRetentionDays(Number(event.currentTarget.value))
-            }
-            value={form.retentionDays}
-          >
-            {DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES.map((days) => (
-              <option key={days} value={days}>
-                {`${days} days`}
-              </option>
-            ))}
-          </select>
         </label>
       </div>
 
       {form.frequency === "weekly" && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           {DB_SERVICE_BACKUP_WEEKDAY_LABELS.map((label, weekday) => {
             const checked = form.weekdays.includes(weekday);
             return (
               <label
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-[13px]"
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-[13px] text-muted-foreground"
                 key={label}
               >
                 <Checkbox
                   checked={checked}
+                  disabled={!form.enabled || isSaving}
                   onCheckedChange={(nextChecked) => {
                     setWeeklyDay(weekday, nextChecked === true);
                   }}
@@ -1293,7 +1319,7 @@ function BackupPolicyForm({
 
       {(!retention.ok || error !== null) && (
         <div
-          className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
           data-qa-module="database"
           data-qa-object="backup-policy-error"
           data-testid="database.backup.policy-error"
@@ -1301,6 +1327,130 @@ function BackupPolicyForm({
           {retention.message ?? error}
         </div>
       )}
+
+      <div className="mt-auto flex justify-end gap-2 pt-4">
+        <AppButton
+          className="h-9 rounded-md px-3 text-muted-foreground hover:bg-input hover:text-foreground"
+          data-qa-action="reset"
+          data-qa-module="database"
+          data-qa-object="backup-policy"
+          disabled={isSaving}
+          onClick={resetPolicy}
+          size="sm"
+          type="button"
+          variant="quiet"
+        >
+          <RotateCcw className="size-3.5" />
+          {"Reset"}
+        </AppButton>
+        <AppButton
+          className="h-9 rounded-md px-3"
+          data-qa-action="save"
+          data-qa-module="database"
+          data-qa-object="backup-policy"
+          disabled={isSaving || (form.enabled && !retention.ok)}
+          onClick={() => {
+            savePolicy().catch(() => undefined);
+          }}
+          size="sm"
+          type="button"
+          variant="secondary"
+        >
+          {isSaving ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Save className="size-3.5" />
+          )}
+          {isSaving ? "Saving" : "Save"}
+        </AppButton>
+      </div>
+    </div>
+  );
+}
+
+type BackupMethodMode = "manual" | "policy";
+
+const BACKUP_METHOD_CHOICES: readonly {
+  label: string;
+  mode: BackupMethodMode;
+}[] = [
+  { label: "Manual Backup", mode: "manual" },
+  { label: "Backup Policy", mode: "policy" },
+];
+
+function BackupMethodPanel({
+  createDisabled,
+  createDisabledReason,
+  currentPolicy,
+  isCreating,
+  onCreateBackup,
+  onPolicySaved,
+}: {
+  createDisabled: boolean;
+  createDisabledReason?: string;
+  currentPolicy: DbServiceBackupPolicyBackend | undefined;
+  isCreating: boolean;
+  onCreateBackup: (values: DbServiceBackupFormValues) => Promise<void>;
+  onPolicySaved: (data: unknown) => void;
+}) {
+  const [mode, setMode] = useState<BackupMethodMode>(() =>
+    currentPolicy?.enabled === true ? "policy" : "manual"
+  );
+
+  return (
+    <section
+      className="flex min-h-[276px] flex-col rounded-lg bg-white/[0.03] p-4"
+      data-qa-module="database"
+      data-qa-object="backup-method"
+      data-qa-state={mode}
+      data-testid="database.backup.method"
+    >
+      <div className="flex h-5 shrink-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <CloudUpload className="size-4 shrink-0 text-foreground" />
+          <h3 className="m-0 truncate font-medium text-sm leading-5">
+            {"Backup Method"}
+          </h3>
+        </div>
+        <p className="m-0 hidden text-muted-foreground text-sm leading-5 md:block">
+          {"Choose between manual backup and backup policy"}
+        </p>
+      </div>
+
+      <div className="mt-5 inline-flex h-9 w-fit items-center overflow-hidden rounded-md border border-input bg-transparent">
+        {BACKUP_METHOD_CHOICES.map((choice) => (
+          <button
+            className={cn(
+              "h-9 px-4 font-medium text-sm transition-colors",
+              mode === choice.mode
+                ? "bg-input text-foreground"
+                : "text-foreground hover:bg-input/40"
+            )}
+            data-qa-backup-method={choice.mode}
+            key={choice.mode}
+            onClick={() => setMode(choice.mode)}
+            type="button"
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5 flex min-h-0 flex-1">
+        {mode === "manual" ? (
+          <BackupCreationForm
+            disabled={createDisabled}
+            disabledReason={createDisabledReason}
+            isSubmitting={isCreating}
+            onSubmit={onCreateBackup}
+          />
+        ) : (
+          <BackupPolicyForm
+            initialPolicy={currentPolicy}
+            onPolicySaved={onPolicySaved}
+          />
+        )}
+      </div>
     </section>
   );
 }
@@ -1465,51 +1615,29 @@ export function BackupServiceSurface() {
 
   return (
     <section
-      className="flex min-h-0 flex-1 flex-col gap-3 p-3 pt-0"
+      aria-busy={isLoading || undefined}
+      className="flex min-h-0 flex-1 flex-col gap-2.5 px-3 pb-3"
       data-qa-db-service-key={`${runtime.projectId}:${runtime.databaseWorkloadNamespace}:${runtime.databaseWorkloadName}`}
       data-qa-module="database"
       data-qa-object="backup-surface"
-      data-qa-state={needsRefresh ? "refreshing" : "ready"}
+      data-qa-state={
+        isLoading ? "loading" : needsRefresh ? "refreshing" : "ready"
+      }
       data-testid="database.backup.surface"
     >
-      <div className="flex min-h-9 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="m-0 truncate font-medium text-sm leading-5">
-            {"DB Service Backups"}
-          </h2>
-          <p className="mt-0.5 mb-0 truncate text-[13px] text-muted-foreground leading-5">
-            {`${runtime.databaseWorkloadNamespace}/${runtime.databaseWorkloadName}`}
-          </p>
-        </div>
-        <Button
-          className="shrink-0"
-          data-qa-action="refresh"
-          data-qa-module="database"
-          data-qa-object="backup-list"
-          data-qa-state={isLoading ? "loading" : "idle"}
-          data-testid="database.backup.refresh-button"
-          onClick={() => {
-            refresh().catch(() => undefined);
-          }}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-          {"Refresh"}
-        </Button>
-      </div>
+      <p className="m-0 text-muted-foreground text-sm leading-5">
+        {
+          "Manage backup records, restore actions, and automated backup policies."
+        }
+      </p>
 
-      <BackupPolicyForm
-        initialPolicy={currentPolicy}
+      <BackupMethodPanel
+        createDisabled={!running}
+        createDisabledReason={createDisabledReason}
+        currentPolicy={currentPolicy}
+        isCreating={isCreating}
+        onCreateBackup={createBackup}
         onPolicySaved={setRefreshData}
-      />
-
-      <BackupCreationForm
-        disabled={!running}
-        disabledReason={createDisabledReason}
-        isSubmitting={isCreating}
-        onSubmit={createBackup}
       />
 
       {refreshError !== null && (
@@ -1548,7 +1676,7 @@ export function BackupServiceSurface() {
         </div>
       )}
 
-      <BackupRowsTable
+      <BackupRowsList
         backups={summaries}
         isDeleting={isDeleting}
         onRequestDelete={requestDeleteBackup}

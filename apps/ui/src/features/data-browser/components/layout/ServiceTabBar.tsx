@@ -1,6 +1,6 @@
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessTabs } from "@data-browser/state/db-access-session";
-import { Archive } from "lucide-react";
+import { CloudUpload } from "lucide-react";
 
 export function ServiceTabBar() {
   const { activeSurface, setActiveServiceTab } = useDbAccessTabs();
@@ -9,19 +9,19 @@ export function ServiceTabBar() {
 
   return (
     <div
-      className="mb-2 border-sidebar-border border-b"
+      className="px-3 pt-3 pb-2"
       data-qa-module="layout"
       data-qa-object="service-tab-bar"
       data-qa-state="ready"
       data-testid="layout.service-tab-bar"
     >
-      <div className="flex items-center pr-2">
+      <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-border bg-transparent">
         <button
           className={cn(
-            "flex h-9 cursor-pointer select-none items-center gap-2 border-sidebar-border border-r px-3 text-sm transition-colors duration-150",
+            "inline-flex h-9 cursor-pointer select-none items-center gap-2 px-4 font-medium text-sm transition-colors duration-150",
             isActive
               ? "bg-input text-foreground"
-              : "text-foreground hover:bg-input"
+              : "text-foreground hover:bg-input/40"
           )}
           data-qa-action="activate"
           data-qa-module="layout"
@@ -32,8 +32,8 @@ export function ServiceTabBar() {
           onClick={() => setActiveServiceTab("backup")}
           type="button"
         >
-          <Archive className={cn("h-4 w-4", isActive && "text-blue-400")} />
-          <span className="whitespace-nowrap font-normal">{"Backup"}</span>
+          <CloudUpload className={cn("size-4", isActive && "text-blue-400")} />
+          <span className="whitespace-nowrap">{"Backup"}</span>
         </button>
       </div>
     </div>

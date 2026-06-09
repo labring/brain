@@ -125,6 +125,20 @@ A Brain product resource and API view that represents a managed database workloa
 
 The user-facing database service represented by one DB resource and one database node on the Project Canvas. A DB Service may expose multiple engine-level Logical Databases through DB Access.
 
+### DB Service Backup
+
+A named recovery point for an entire DB Service, optionally annotated with a short description. The backup name is the backup's user-visible identity, while the description is non-identifying context. A DB Service Backup is either manual or automatic; automatic DB Service Backups are created by the DB Service Backup Policy. A DB Service Backup belongs to the DB Service rather than to one Logical Database, schema, table, collection, or key inside it. Deleting a DB Service Backup removes that recovery point, not the source DB Service or any DB Service already restored from it.
+
+Manual DB Service Backup creation requires the source DB Service to be running. DB Service Restore requires the selected DB Service Backup to be completed, and backup deletion is unavailable while the backup is still in progress.
+
+### DB Service Backup Policy
+
+The automatic backup rule for one DB Service. A DB Service has at most one current DB Service Backup Policy; the policy is distinct from the DB Service Backups it creates, may run hourly, daily, or weekly using the user's local time, and retains backups for a selected number of days. Disabling the policy stops future automatic backups but does not delete existing DB Service Backups.
+
+### DB Service Restore
+
+The act of creating a new DB Service from a DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project Canvas and namespace as the source DB Service. The restored DB Service inherits the source DB Service's database settings unless the product explicitly offers restore-time overrides.
+
 ### Logical Database
 
 An engine-level database namespace exposed inside one DB Service, such as a PostgreSQL database, MySQL database, MongoDB database, or Redis database index. A Logical Database is an object browsed inside DB Access, not a Project Canvas DB resource.
