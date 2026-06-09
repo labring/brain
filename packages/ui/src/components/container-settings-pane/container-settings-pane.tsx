@@ -3301,7 +3301,6 @@ export function ContainerPublicAddressesSettingsPane({
           pending={savePending}
           saveFailureMessage={networkBackingState.saveFailureMessage}
           submitAriaLabel="Update Public Address settings"
-          unsavedMessage="Pending Public Address changes. Update to apply."
         />
       ) : null}
     </div>

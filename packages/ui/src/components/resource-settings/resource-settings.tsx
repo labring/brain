@@ -72,7 +72,7 @@ export function ResourceSettingsDraftFooter({
   submitAriaLabel = "Update settings",
   SubmitIcon = Upload,
   submitLabel = "Update",
-  unsavedMessage = "Pending changes. Update to apply.",
+  unsavedMessage = "Unsaved changes",
   ...props
 }: ComponentPropsWithoutRef<"footer"> & {
   backingResourceChanged: boolean;
@@ -130,11 +130,16 @@ export function ResourceSettingsDraftFooter({
       <div className="flex items-center justify-between gap-3">
         <p
           className={cn(
-            "min-w-0 truncate text-xs text-yellow-500 leading-4",
+            "flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs leading-4",
             !dirty && "invisible"
           )}
+          role="status"
         >
-          {unsavedMessage}
+          <span
+            aria-hidden
+            className="size-1.5 shrink-0 rounded-full bg-muted-foreground/70"
+          />
+          <span className="min-w-0 truncate">{unsavedMessage}</span>
         </p>
         <div className="flex shrink-0 items-center gap-1.5">
           <AppButton

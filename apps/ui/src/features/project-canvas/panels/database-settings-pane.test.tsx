@@ -31,7 +31,7 @@ const PRIVATE_DSN_RE = /mysql:\/\/r\*\*\*\*\*\*\*:.*?@db.default.svc:3306/;
 const PUBLIC_DSN_RE =
   /mysql:\/\/r\*\*\*\*\*\*\*:.*?@192.168.10.189.nip.io:45211/;
 const INVISIBLE_UNSAVED_CHANGES_RE =
-  /<p class="[^"]*\binvisible\b[^"]*">Unsaved configuration changes\.<\/p>/;
+  /<p class="[^"]*\binvisible\b[^"]*" role="status">.*Unsaved changes.*<\/p>/;
 
 const PRIVATE_CONNECTION = {
   id: "private",
