@@ -69,7 +69,9 @@ import { cn } from "@workspace/ui/lib/utils";
 import {
   Braces,
   ChevronDown,
+  Copy,
   Cpu,
+  Eye,
   MemoryStick,
   Network,
   Plus,
@@ -566,6 +568,8 @@ export interface ContainerSettingsPaneProps {
   env: ContainerEnvVar[];
   /** Canonical AP Environment Raw Source. When omitted, direct saved env rows are projected into `.env` source. */
   envRawSource?: string;
+  /** Identity boundary used to clear transient resolved values when switching AP resources. */
+  envResolvedValueScope?: string;
   /** Full image reference (repository + tag/digest). */
   image: string;
   memoryQuota: ContainerSettingsControlledQuotaProps;
@@ -581,6 +585,8 @@ export interface ContainerSettingsPaneProps {
     env: ContainerEnvVar[],
     meta?: ContainerSettingsPaneEnvChangeMeta
   ) => void;
+  /** Fetches one clean saved row's fully resolved runtime value for explicit reveal/copy actions. */
+  onEnvResolvedValue?: ContainerEnvResolvedValueResolver;
   onImageChange: (image: string) => void;
   onNetworkChange?: (network: ContainerNetwork) => void | Promise<void>;
   /**
@@ -637,6 +643,9 @@ interface AddDbDsnReferenceIntentDraftMetadata {
 
 type EnvEditorMode = "raw" | "structured";
 type EnvDraftRow = ContainerEnvVar & AddDbDsnReferenceIntentDraftMetadata;
+export type ContainerEnvResolvedValueResolver = (
+  name: string
+) => Promise<string>;
 
 function publicAddressDraftsEqual(
   a: readonly ContainerNetworkPublicAddress[],
@@ -821,6 +830,8 @@ const DB_REFERENCE_FIELD_LABELS: Record<ContainerEnvDbReferenceField, string> =
     public: "Public DSN",
     username: "Username",
   };
+const MASKED_ENV_VALUE = "*******";
+const ENV_REVEAL_DURATION_MS = 30_000;
 
 function validContainerNetworkPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65_535;
@@ -1250,6 +1261,7 @@ function ReadOnlyEnvRows({ env }: { env: readonly ContainerEnvVar[] }) {
 
 interface EditableEnvRowsProps {
   dbDsnReferenceSources: ContainerEnvDbDsnSource[];
+  editingSavedRows: ReadonlySet<number>;
   envDirty: boolean;
   envDraft: ContainerEnvVar[];
   envErrorsByIndex: ReadonlyMap<number, string>;
@@ -1259,11 +1271,17 @@ interface EditableEnvRowsProps {
   envTokenDiagnostics: readonly EnvTokenDiagnostic[];
   envValidation: ReturnType<typeof validateContainerEnvRows>;
   mode: EnvEditorMode;
+  onCopyResolvedValue: (index: number) => void;
   onDeleteRow: (index: number) => void;
+  onEditSavedRow: (index: number) => void;
   onModeChange: (mode: EnvEditorMode) => void;
   onRawSourceChange: (source: string) => void;
+  onRevealResolvedValue: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
+  resolvedValuesAvailable: boolean;
+  revealedValues: ReadonlyMap<number, string>;
   rows: ContainerEnvVar[];
+  savedRawSource: string;
 }
 
 interface EnvRawSourceEditorProps {
@@ -1287,6 +1305,15 @@ interface EditableEnvValueControlProps {
   index: number;
   managed?: boolean;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
+  row: ContainerEnvVar;
+}
+
+interface SavedEnvValueControlProps {
+  index: number;
+  onCopyResolvedValue: (index: number) => void;
+  onEditSavedRow: (index: number) => void;
+  onRevealResolvedValue: (index: number) => void;
+  revealedValue?: string;
   row: ContainerEnvVar;
 }
 
@@ -1479,6 +1506,54 @@ function EditableEnvValueControl({
   );
 }
 
+function SavedEnvValueControl({
+  index,
+  onCopyResolvedValue,
+  onEditSavedRow,
+  onRevealResolvedValue,
+  revealedValue,
+  row,
+}: SavedEnvValueControlProps) {
+  const displayValue = revealedValue ?? MASKED_ENV_VALUE;
+  return (
+    <div className="flex h-9 min-w-0 items-center gap-1 rounded-md border border-input bg-transparent px-3 text-foreground text-sm leading-5">
+      <span className="min-w-0 flex-1 truncate" title={displayValue}>
+        {displayValue}
+      </span>
+      <AppIconButton
+        aria-label={`Edit environment variable ${row.name}`}
+        className="text-muted-foreground hover:text-foreground"
+        onClick={() => onEditSavedRow(index)}
+        size="sm"
+        type="button"
+        variant="quiet"
+      >
+        <SquarePen aria-hidden className="size-4" />
+      </AppIconButton>
+      <AppIconButton
+        aria-label={`Reveal environment variable ${row.name}`}
+        className="text-muted-foreground hover:text-foreground"
+        onClick={() => onRevealResolvedValue(index)}
+        size="sm"
+        type="button"
+        variant="quiet"
+      >
+        <Eye aria-hidden className="size-4" />
+      </AppIconButton>
+      <AppIconButton
+        aria-label={`Copy environment variable ${row.name}`}
+        className="text-muted-foreground hover:text-foreground"
+        onClick={() => onCopyResolvedValue(index)}
+        size="sm"
+        type="button"
+        variant="quiet"
+      >
+        <Copy aria-hidden className="size-4" />
+      </AppIconButton>
+    </div>
+  );
+}
+
 function EnvRawSourceEditor({
   dbDsnReferenceSources,
   diagnostic,
@@ -1488,6 +1563,16 @@ function EnvRawSourceEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
   const menuItems = buildApEnvReferenceMenuItems(dbDsnReferenceSources);
+  const copyRawSource = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // Clipboard permission failures should not affect raw-source editing.
+    }
+  }, [value]);
 
   return (
     <>
@@ -1552,6 +1637,16 @@ function EnvRawSourceEditor({
             ))}
           </SelectContent>
         </Select>
+        <AppButton
+          aria-label="Copy environment raw source"
+          className="h-8 w-fit gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground"
+          onClick={copyRawSource}
+          type="button"
+          variant="quiet"
+        >
+          <Copy aria-hidden className="size-4" />
+          Copy
+        </AppButton>
       </div>
       {diagnostic == null ? null : (
         <p className="text-destructive text-xs" role="status">
@@ -1572,13 +1667,24 @@ function EditableEnvRows({
   envRowKeys,
   envTokenDiagnostics = [],
   envValidation,
+  editingSavedRows,
   mode,
+  onCopyResolvedValue,
+  onEditSavedRow,
   onDeleteRow,
   onModeChange,
   onRawSourceChange,
+  onRevealResolvedValue,
   onUpdateRow,
+  revealedValues,
+  resolvedValuesAvailable,
+  savedRawSource,
 }: EditableEnvRowsProps) {
   const firstRawSourceDiagnostic = envRawSourceDiagnostics[0];
+  const savedRows = useMemo(
+    () => envDraftRowsFromRawSource(savedRawSource),
+    [savedRawSource]
+  );
   let editorContent: ReactNode;
   if (mode === "raw") {
     editorContent = (
@@ -1600,6 +1706,13 @@ function EditableEnvRows({
       const error = envErrorsByIndex.get(index);
       const managed = envRowIsManagedHelper(row);
       const rowKey = envRowKeys[index] ?? envRowKey(row, index);
+      const savedRow = savedRows[index];
+      const cleanSavedRow =
+        resolvedValuesAvailable &&
+        !editingSavedRows.has(index) &&
+        !revealedValues.has(index) &&
+        savedRow != null &&
+        containerEnvRowsModelEqual([row], [savedRow]);
       return (
         <div className="grid min-w-0 gap-1.5" key={rowKey}>
           <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
@@ -1611,13 +1724,24 @@ function EditableEnvRows({
               onUpdateRow={onUpdateRow}
               row={row}
             />
-            <EditableEnvValueControl
-              dbDsnReferenceSources={dbDsnReferenceSources}
-              index={index}
-              managed={managed}
-              onUpdateRow={onUpdateRow}
-              row={row}
-            />
+            {cleanSavedRow ? (
+              <SavedEnvValueControl
+                index={index}
+                onCopyResolvedValue={onCopyResolvedValue}
+                onEditSavedRow={onEditSavedRow}
+                onRevealResolvedValue={onRevealResolvedValue}
+                revealedValue={revealedValues.get(index)}
+                row={row}
+              />
+            ) : (
+              <EditableEnvValueControl
+                dbDsnReferenceSources={dbDsnReferenceSources}
+                index={index}
+                managed={managed}
+                onUpdateRow={onUpdateRow}
+                row={row}
+              />
+            )}
             {managed ? (
               <div aria-hidden className="size-9" />
             ) : (
@@ -4017,7 +4141,9 @@ export function ContainerSettingsPane({
   onCustomDomainCnameVerify,
   replicasQuota,
   replicaStrategy,
+  envResolvedValueScope,
   onResourceQuotasCommit,
+  onEnvResolvedValue,
   onSettingsDraftCommit,
   onSettingsDraftLeaveGuardChange,
   readOnly = false,
@@ -4053,8 +4179,9 @@ export function ContainerSettingsPane({
       readOnly,
     ]
   );
-  const [envEditorMode, setEnvEditorMode] =
-    useState<EnvEditorMode>("structured");
+  const [envEditorMode, setEnvEditorMode] = useState<EnvEditorMode>(() =>
+    parseApEnvRawSource(initialEnvDraft.rawSource).valid ? "structured" : "raw"
+  );
   const processedAddDbDsnReferenceIntentId = useRef<string | null>(
     initialEnvDraft.consumedIntentId ?? null
   );
@@ -4072,6 +4199,15 @@ export function ContainerSettingsPane({
       envDraftKeyPrefix,
       envDraftKeyCounter
     )
+  );
+  const [revealedEnvValues, setRevealedEnvValues] = useState<
+    Map<number, string>
+  >(() => new Map());
+  const [editingSavedEnvRows, setEditingSavedEnvRows] = useState<Set<number>>(
+    () => new Set()
+  );
+  const revealTimeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(
+    new Map()
   );
   const previousAddDbDsnReferenceIntentIds = useRef<Set<string>>(new Set());
 
@@ -4142,6 +4278,30 @@ export function ContainerSettingsPane({
       createEnvDraftKeys(nextEnv.length, envDraftKeyPrefix, envDraftKeyCounter)
     );
   }, [env, envDraftKeyPrefix, envRawSource, settingsCommitMode]);
+
+  const clearRevealedEnvValues = useCallback(() => {
+    for (const timeout of revealTimeouts.current.values()) {
+      clearTimeout(timeout);
+    }
+    revealTimeouts.current.clear();
+    setRevealedEnvValues(new Map());
+  }, []);
+
+  useEffect(() => clearRevealedEnvValues, [clearRevealedEnvValues]);
+
+  const revealResetKey = JSON.stringify([
+    envResolvedValueScope ?? "",
+    envEditorMode,
+    initialEnvRawSource,
+    onEnvResolvedValue == null,
+  ]);
+  useEffect(() => {
+    if (revealResetKey === "") {
+      return;
+    }
+    clearRevealedEnvValues();
+    setEditingSavedEnvRows(new Set());
+  }, [clearRevealedEnvValues, revealResetKey]);
 
   useEffect(() => {
     const intent = addDbDsnReferenceIntent;
@@ -4297,13 +4457,6 @@ export function ContainerSettingsPane({
     }
     return byIndex;
   }, [envValidation]);
-  const committedEnvRawSource = canonicalApEnvRawSource({ env, envRawSource });
-  const envDirty = envRawSourceDraft !== committedEnvRawSource;
-  const canSaveEnv =
-    envDirty &&
-    envRawSourceParse.valid &&
-    envRuntimeCompile.valid &&
-    envValidation.valid;
   const activeDraftNetwork = settingsCommitMode
     ? draftNetwork
     : (draftNetwork ?? network);
@@ -4426,6 +4579,100 @@ export function ContainerSettingsPane({
     settingsDraft,
   ]);
   const settingsBaseDraft = settingsBackingState.base;
+  const committedEnvRawSource = settingsCommitMode
+    ? canonicalApEnvRawSource({
+        env: settingsBaseDraft.env,
+        envRawSource: settingsBaseDraft.envRawSource,
+      })
+    : canonicalApEnvRawSource({ env, envRawSource });
+  const envDirty = envRawSourceDraft !== committedEnvRawSource;
+  const resolveSavedEnvValue = useCallback(
+    (index: number) => {
+      if (onEnvResolvedValue == null) {
+        return undefined;
+      }
+      const row = envDraft[index];
+      const savedRow = envDraftRowsFromRawSource(committedEnvRawSource)[index];
+      if (
+        row == null ||
+        savedRow == null ||
+        !containerEnvRowsModelEqual([row], [savedRow])
+      ) {
+        return undefined;
+      }
+      return onEnvResolvedValue(row.name);
+    },
+    [committedEnvRawSource, envDraft, onEnvResolvedValue]
+  );
+  const revealResolvedEnvValue = useCallback(
+    async (index: number) => {
+      let value: string | undefined;
+      try {
+        value = await resolveSavedEnvValue(index);
+      } catch {
+        return;
+      }
+      if (value === undefined) {
+        return;
+      }
+      const existingTimeout = revealTimeouts.current.get(index);
+      if (existingTimeout !== undefined) {
+        clearTimeout(existingTimeout);
+      }
+      setRevealedEnvValues((current) => {
+        const next = new Map(current);
+        next.set(index, value);
+        return next;
+      });
+      revealTimeouts.current.set(
+        index,
+        setTimeout(() => {
+          revealTimeouts.current.delete(index);
+          setRevealedEnvValues((current) => {
+            const next = new Map(current);
+            next.delete(index);
+            return next;
+          });
+        }, ENV_REVEAL_DURATION_MS)
+      );
+    },
+    [resolveSavedEnvValue]
+  );
+  const copyResolvedEnvValue = useCallback(
+    async (index: number) => {
+      let value: string | undefined;
+      try {
+        value = await resolveSavedEnvValue(index);
+      } catch {
+        return;
+      }
+      if (
+        value === undefined ||
+        typeof navigator === "undefined" ||
+        !navigator.clipboard
+      ) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        // Clipboard permission failures should not affect the settings draft.
+      }
+    },
+    [resolveSavedEnvValue]
+  );
+  const editSavedEnvRow = useCallback((index: number) => {
+    setEditingSavedEnvRows((current) => {
+      const next = new Set(current);
+      next.add(index);
+      return next;
+    });
+  }, []);
+  const canSaveEnv =
+    envDirty &&
+    envRawSourceParse.valid &&
+    envRuntimeCompile.valid &&
+    envValidation.valid;
   const settingsDirty = containerSettingsDraftIsDirty(
     settingsBaseDraft,
     settingsDraft
@@ -5029,6 +5276,7 @@ export function ContainerSettingsPane({
           ) : (
             <EditableEnvRows
               dbDsnReferenceSources={dbDsnReferenceSources}
+              editingSavedRows={editingSavedEnvRows}
               envDirty={envDirty}
               envDraft={envDraft}
               envErrorsByIndex={envErrorsByIndex}
@@ -5038,11 +5286,17 @@ export function ContainerSettingsPane({
               envTokenDiagnostics={envTokenDiagnostics}
               envValidation={envValidation}
               mode={envEditorMode}
+              onCopyResolvedValue={copyResolvedEnvValue}
               onDeleteRow={handleDeleteEnvRow}
+              onEditSavedRow={editSavedEnvRow}
               onModeChange={setEnvEditorMode}
               onRawSourceChange={handleRawSourceChange}
+              onRevealResolvedValue={revealResolvedEnvValue}
               onUpdateRow={handleUpdateEnvRow}
+              resolvedValuesAvailable={onEnvResolvedValue != null}
+              revealedValues={revealedEnvValues}
               rows={envDraft}
+              savedRawSource={committedEnvRawSource}
             />
           )}
         </div>

@@ -37,9 +37,12 @@ const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
 const EXTERNAL_REFERENCE_RE = /External reference/;
 const RAW_ENV_EDITOR_RE = /Edit environment variables/;
 const ENV_RAW_SOURCE_RE = /aria-label="Environment raw source"/;
+const COPY_RAW_SOURCE_RE = /aria-label="Copy environment raw source"/;
+const POSTGRES_DSN_RE = /postgres:\/\/db:5432\/app/;
 const RAW_MODE_RE = />Raw</;
 const STRUCTURED_MODE_RE = />Structured</;
 const DATABASE_URL_RE = /DATABASE_URL/;
+const MASKED_ENV_VALUE_RE = />\*\*\*\*\*\*\*</;
 const ADD_ENV_RE = /aria-label="Add environment variable"/;
 const REFERENCE_RE = /aria-label="Reference"/;
 const REFERENCE_LABEL_RE = />Reference</;
@@ -90,6 +93,13 @@ const CUSTOM_DOMAIN_DETAIL_REASON_RE = /IssuerNotReady/;
 const CUSTOM_DOMAIN_DETAIL_MESSAGE_RE = /Certificate request failed/;
 const UNBIND_CUSTOM_DOMAIN_RE = /aria-label="Unbind Custom Domain"/;
 const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
+const COPY_ENV_VALUE_RE = /aria-label="Copy environment variable DATABASE_URL"/;
+const REVEAL_ENV_VALUE_RE =
+  /aria-label="Reveal environment variable DATABASE_URL"/;
+const COPY_MYSQL_ENV_VALUE_RE =
+  /aria-label="Copy environment variable MYSQL_DATABASE_URL"/;
+const REVEAL_MYSQL_ENV_VALUE_RE =
+  /aria-label="Reveal environment variable MYSQL_DATABASE_URL"/;
 const CNAME_RE = /CNAME/;
 const EDIT_PUBLIC_ADDRESS_RE = /aria-label="Edit Public Address"/;
 const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
@@ -166,6 +176,57 @@ test("container settings pane renders editable structured environment rows", () 
   assert.match(html, STRUCTURED_MODE_RE);
   assert.match(html, RAW_MODE_RE);
   assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
+});
+
+test("container settings pane masks clean saved structured environment rows", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, MASKED_ENV_VALUE_RE);
+  assert.doesNotMatch(html, ENV_VALUE_INPUT_RE);
+  assert.doesNotMatch(html, POSTGRES_DSN_RE);
+  assert.match(html, REVEAL_ENV_VALUE_RE);
+  assert.match(html, COPY_ENV_VALUE_RE);
+});
+
+test("container settings pane shows raw draft values for dirty structured rows", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      addDbDsnReferenceIntent={{
+        dbName: "mysql",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "mysql",
+          namespace: "default",
+        },
+      ]}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.doesNotMatch(html, POSTGRES_DSN_RE);
+  assert.match(html, MASKED_ENV_VALUE_RE);
+  assert.match(html, MYSQL_DATABASE_URL_REFERENCE_RE);
+  assert.doesNotMatch(html, REVEAL_MYSQL_ENV_VALUE_RE);
+  assert.doesNotMatch(html, COPY_MYSQL_ENV_VALUE_RE);
 });
 
 test("container settings pane renders add environment action in section header", () => {
@@ -1236,4 +1297,28 @@ test("container settings pane can focus only Environment Variables", () => {
   assert.doesNotMatch(html, CPU_MEMORY_SECTION_RE);
   assert.doesNotMatch(html, IMAGE_INPUT_RE);
   assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
+});
+
+test("container settings raw editor offers raw source copy", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      addDbDsnReferenceIntent={{
+        dbName: "mysql",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[{ name: "mysql", namespace: "default" }]}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      envRawSource="BROKEN"
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, COPY_RAW_SOURCE_RE);
+  assert.doesNotMatch(html, COPY_ENV_VALUE_RE);
 });

@@ -29,6 +29,10 @@ func TestAPMutationOpenAPIDocsDescribeDirectKubernetesContract(t *testing.T) {
 	if path == nil || path.Put == nil || path.Patch == nil {
 		t.Fatal("expected AP create and update routes to be registered")
 	}
+	envValuePath := api.OpenAPI().Paths["/api/ap/v1alpha1/env-value"]
+	if envValuePath == nil || envValuePath.Get == nil {
+		t.Fatal("expected AP resolved env value route to be registered")
+	}
 
 	descriptions := map[string]string{
 		"create": path.Put.Description,
