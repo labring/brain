@@ -33,6 +33,7 @@ const runtime = {
   },
   databaseWorkloadName: "orders-db",
   databaseWorkloadNamespace: "database-system",
+  dbServicePhase: "Running",
   engine: "POSTGRES",
   kubeconfig: "kube",
   namespace: "project-ns",
@@ -48,9 +49,28 @@ test("DB Service root renders a service-level Backup tab without close controls"
 
   assert.match(html, /data-testid="layout\.service-tab-bar"/);
   assert.match(html, /data-qa-tab-type="backup"/);
+  assert.match(html, /data-testid="database\.backup\.create-form"/);
+  assert.match(html, /Create backup/);
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /orders-db/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
+});
+
+test("DB Service backup creation is disabled unless source service is running", () => {
+  const html = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      runtime={{
+        ...runtime,
+        dbServicePhase: "Creating",
+      }}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+
+  assert.match(html, /data-qa-object="backup-create-form"/);
+  assert.match(html, /data-qa-state="disabled"/);
+  assert.match(html, /Current state: Creating/);
 });
 
 test("unsupported DB Service backup engines render unavailable state", () => {

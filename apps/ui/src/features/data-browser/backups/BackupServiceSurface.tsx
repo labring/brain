@@ -7,13 +7,93 @@ import {
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
 import { Button } from "@data-browser/components/ui/Button";
+import { Input } from "@data-browser/components/ui/Input";
+import { Textarea } from "@data-browser/components/ui/Textarea";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
-import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
 const DB_PRODUCT_ROUTE = "/api/db/v1alpha1";
+const DB_BACKUP_ROUTE = "/api/db/v1alpha1/backup";
+const BACKUP_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const BACKUP_DESCRIPTION_MAX_LENGTH = 120;
+
+export interface DbServiceBackupFormValues {
+  backupName: string;
+  description?: string;
+}
+
+export type DbServiceBackupFormErrors = Partial<
+  Record<keyof DbServiceBackupFormValues, string>
+>;
+
+export function validateDbServiceBackupForm({
+  backupName,
+  description = "",
+}: DbServiceBackupFormValues): DbServiceBackupFormErrors {
+  const errors: DbServiceBackupFormErrors = {};
+  const trimmedName = backupName.trim();
+  if (trimmedName === "") {
+    errors.backupName = "Backup Name is required.";
+  } else if (
+    trimmedName.length > 63 ||
+    !BACKUP_NAME_PATTERN.test(trimmedName)
+  ) {
+    errors.backupName =
+      "Backup Name must use lowercase letters, numbers, and hyphens, and start and end with a letter or number.";
+  }
+  if ([...description.trim()].length > BACKUP_DESCRIPTION_MAX_LENGTH) {
+    errors.description = "Description must be 120 characters or fewer.";
+  }
+  return errors;
+}
+
+export async function createDbServiceBackup({
+  backupName,
+  description = "",
+  kubeconfig,
+  name,
+  namespace,
+  onAccepted,
+}: DbServiceBackupFormValues & {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  onAccepted?: () => void | Promise<void>;
+}): Promise<unknown> {
+  const trimmedDescription = description.trim();
+  const response = await fetch(DB_BACKUP_ROUTE, {
+    body: JSON.stringify({
+      backupName: backupName.trim(),
+      ...(trimmedDescription === "" ? {} : { description: trimmedDescription }),
+      name,
+      namespace,
+    }),
+    headers: {
+      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      text.trim() ||
+        `DB Service backup creation failed with status ${response.status}`
+    );
+  }
+  const data = await response.json();
+  await onAccepted?.();
+  return data;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object"
@@ -181,6 +261,200 @@ function UnsupportedBackupSurface() {
   );
 }
 
+function isDbServiceRunning(phase: string | undefined): boolean {
+  return phase?.trim().toLowerCase() === "running";
+}
+
+function BackupCreationForm({
+  disabled,
+  disabledReason,
+  isSubmitting,
+  onSubmit,
+}: {
+  disabled: boolean;
+  disabledReason?: string;
+  isSubmitting: boolean;
+  onSubmit: (values: DbServiceBackupFormValues) => Promise<void>;
+}) {
+  const [backupName, setBackupName] = useState("");
+  const [description, setDescription] = useState("");
+  const [errors, setErrors] = useState<DbServiceBackupFormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [acceptedName, setAcceptedName] = useState<string | null>(null);
+  const descriptionLength = [...description].length;
+  const clearError = (
+    key: keyof DbServiceBackupFormErrors,
+    current: DbServiceBackupFormErrors
+  ): DbServiceBackupFormErrors => {
+    if (current[key] === undefined) {
+      return current;
+    }
+    const next = { ...current };
+    delete next[key];
+    return next;
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitError(null);
+    setAcceptedName(null);
+    const nextErrors = validateDbServiceBackupForm({
+      backupName,
+      description,
+    });
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+    const trimmedName = backupName.trim();
+    onSubmit({ backupName: trimmedName, description })
+      .then(() => {
+        setBackupName("");
+        setDescription("");
+        setAcceptedName(trimmedName);
+      })
+      .catch((error: unknown) => {
+        setSubmitError(
+          error instanceof Error ? error.message : "Failed to create backup."
+        );
+      });
+  };
+
+  return (
+    <form
+      className="rounded-md border border-border bg-card/40 p-3"
+      data-qa-module="database"
+      data-qa-object="backup-create-form"
+      data-qa-state={disabled ? "disabled" : "ready"}
+      data-testid="database.backup.create-form"
+      onSubmit={handleSubmit}
+    >
+      <div className="grid gap-3 lg:grid-cols-[minmax(220px,280px)_minmax(260px,1fr)_auto] lg:items-start">
+        <div className="min-w-0">
+          <label
+            className="mb-1.5 block font-medium text-[13px] leading-5"
+            htmlFor="db-service-backup-name"
+          >
+            {"Backup Name"}
+          </label>
+          <Input
+            aria-invalid={errors.backupName === undefined ? undefined : true}
+            autoComplete="off"
+            data-testid="database.backup.name-input"
+            disabled={disabled || isSubmitting}
+            id="db-service-backup-name"
+            maxLength={63}
+            onChange={(event) => {
+              setBackupName(event.target.value);
+              setErrors((current) => clearError("backupName", current));
+            }}
+            placeholder="orders-before-migration"
+            value={backupName}
+          />
+          {errors.backupName !== undefined && (
+            <p
+              className="mt-1 mb-0 text-[12px] text-destructive-foreground leading-4"
+              data-testid="database.backup.name-error"
+            >
+              {errors.backupName}
+            </p>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <label
+              className="block font-medium text-[13px] leading-5"
+              htmlFor="db-service-backup-description"
+            >
+              {"Description"}
+            </label>
+            <span className="text-[12px] text-muted-foreground leading-4">
+              {`${descriptionLength}/${BACKUP_DESCRIPTION_MAX_LENGTH}`}
+            </span>
+          </div>
+          <Textarea
+            aria-invalid={errors.description === undefined ? undefined : true}
+            className="min-h-9 resize-none"
+            data-testid="database.backup.description-input"
+            disabled={disabled || isSubmitting}
+            id="db-service-backup-description"
+            maxLength={BACKUP_DESCRIPTION_MAX_LENGTH + 1}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              setErrors((current) => clearError("description", current));
+            }}
+            placeholder="Optional reason for this recovery point"
+            rows={1}
+            value={description}
+          />
+          {errors.description !== undefined && (
+            <p
+              className="mt-1 mb-0 text-[12px] text-destructive-foreground leading-4"
+              data-testid="database.backup.description-error"
+            >
+              {errors.description}
+            </p>
+          )}
+        </div>
+
+        <Button
+          className="mt-0 lg:mt-[26px]"
+          data-qa-action="create"
+          data-qa-module="database"
+          data-qa-object="backup"
+          data-qa-state={isSubmitting ? "loading" : "idle"}
+          data-testid="database.backup.create-button"
+          disabled={disabled || isSubmitting}
+          size="sm"
+          type="submit"
+        >
+          {isSubmitting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
+          {"Create backup"}
+        </Button>
+      </div>
+
+      {disabled && disabledReason !== undefined && (
+        <p
+          className="mt-2 mb-0 text-[13px] text-muted-foreground leading-5"
+          data-testid="database.backup.create-disabled-reason"
+        >
+          {disabledReason}
+        </p>
+      )}
+
+      {submitError !== null && (
+        <div
+          className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          data-qa-module="database"
+          data-qa-object="backup-create-error"
+          data-qa-state="error"
+          data-testid="database.backup.create-error"
+        >
+          {submitError}
+        </div>
+      )}
+
+      {acceptedName !== null && (
+        <div
+          className="mt-2 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-300"
+          data-qa-module="database"
+          data-qa-object="backup-create-accepted"
+          data-qa-state="accepted"
+          data-testid="database.backup.create-accepted"
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span>{`Backup request accepted for ${acceptedName}.`}</span>
+        </div>
+      )}
+    </form>
+  );
+}
+
 function BackupRowsTable({ backups }: { backups: DbServiceBackupSummary[] }) {
   if (backups.length === 0) {
     return <EmptyBackupRows />;
@@ -271,6 +545,7 @@ export function BackupServiceSurface() {
   const runtime = useDbAccessRuntime();
   const [refreshData, setRefreshData] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const summaries = useMemo(() => {
     const refreshedBackups = statusBackupsFromProductResource(refreshData);
@@ -307,6 +582,32 @@ export function BackupServiceSurface() {
     runtime.engine,
     runtime.kubeconfig,
   ]);
+  const running = isDbServiceRunning(runtime.dbServicePhase);
+  const createDisabledReason = running
+    ? undefined
+    : `Manual backup creation requires the source DB Service to be Running. Current state: ${runtime.dbServicePhase ?? "Unknown"}.`;
+  const createBackup = useCallback(
+    async (values: DbServiceBackupFormValues) => {
+      setIsCreating(true);
+      try {
+        await createDbServiceBackup({
+          ...values,
+          kubeconfig: runtime.kubeconfig,
+          name: runtime.databaseWorkloadName,
+          namespace: runtime.databaseWorkloadNamespace,
+          onAccepted: refresh,
+        });
+      } finally {
+        setIsCreating(false);
+      }
+    },
+    [
+      refresh,
+      runtime.databaseWorkloadName,
+      runtime.databaseWorkloadNamespace,
+      runtime.kubeconfig,
+    ]
+  );
 
   useEffect(() => {
     if (!needsRefresh) {
@@ -358,6 +659,13 @@ export function BackupServiceSurface() {
           {"Refresh"}
         </Button>
       </div>
+
+      <BackupCreationForm
+        disabled={!running}
+        disabledReason={createDisabledReason}
+        isSubmitting={isCreating}
+        onSubmit={createBackup}
+      />
 
       {refreshError !== null && (
         <div

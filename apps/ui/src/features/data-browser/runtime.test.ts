@@ -14,6 +14,7 @@ const databaseData = {
     engineKey: "postgresql",
     formattedVersion: "16.4",
     name: "orders-db",
+    status: { label: "Running", tone: "running" },
   },
   uid: "cluster-uid-1",
   workload: {
@@ -40,6 +41,7 @@ test("data browser runtime is derived from host project and selected database", 
     namespace: "database-system",
     uid: "cluster-uid-1",
   });
+  assert.equal(runtime.dbServicePhase, "Running");
   assert.equal(runtime.database.name, "orders-db");
   assert.equal(runtime.database.displayEngine, "PostgreSQL");
   assert.equal(runtime.database.formattedVersion, "16.4");
