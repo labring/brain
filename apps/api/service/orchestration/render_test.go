@@ -720,7 +720,7 @@ func TestRenderDBResourcesAddsRestoreSourceWithoutChangingInheritedSettings(t *t
 	resources, err := RenderDBResources(DBResourcesInput{
 		BackupPolicy: map[string]interface{}{
 			"enabled": true,
-			"method":  "postgres-basebackup",
+			"method":  "pg-basebackup",
 		},
 		CPULimit:       "1500m",
 		CPURequest:     "500m",
@@ -762,8 +762,8 @@ func TestRenderDBResourcesAddsRestoreSourceWithoutChangingInheritedSettings(t *t
 	}
 	component := spec["componentSpecs"].([]interface{})[0].(map[string]interface{})
 	backupPolicy := spec["backup"].(map[string]interface{})
-	if got := backupPolicy["method"]; got != "postgres-basebackup" {
-		t.Fatalf("backup method = %v, want inherited postgres-basebackup", got)
+	if got := backupPolicy["method"]; got != "pg-basebackup" {
+		t.Fatalf("backup method = %v, want inherited pg-basebackup", got)
 	}
 	if got := component["replicas"]; got != int64(2) {
 		t.Fatalf("restored component replicas = %v, want inherited replicas 2", got)

@@ -66,7 +66,7 @@ var backupDynamicClientFactory backupDynamicClientFunc = defaultBackupDynamicCli
 
 // CreateBackupForDB creates an on-demand KubeBlocks Backup for the given DB.
 // The DB must have a running KubeBlocks Cluster.
-// For PostgreSQL uses postgres-basebackup; MySQL xtrabackup; MongoDB mongodb-dump; Redis datafile (match Cluster.spec.backup.method).
+// For PostgreSQL uses pg-basebackup; MySQL xtrabackup; MongoDB dump; Redis datafile (match BackupPolicy backupMethods[].name).
 func CreateBackupForDB(cfg *clientcmdapi.Config, opts CreateBackupForDBOptions) ([]byte, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("%w: kubeconfig is required", ErrBackupValidation)

@@ -26,7 +26,7 @@ test("adapts raw DB Service backup resources into stable summaries", () => {
           namespace: "database-system",
         },
         spec: {
-          backupMethod: "postgres-basebackup",
+          backupMethod: "pg-basebackup",
         },
         status: {
           completionTimestamp: "2026-06-09T05:03:00Z",
@@ -45,7 +45,7 @@ test("adapts raw DB Service backup resources into stable summaries", () => {
           namespace: "database-system",
         },
         spec: {
-          backupMethod: "postgres-basebackup",
+          backupMethod: "pg-basebackup",
         },
         status: {
           failureReason: "volume snapshot failed",

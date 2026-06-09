@@ -154,8 +154,8 @@ func TestBuildRestoreDBPlanCreatesNewDBInSameNamespaceAndProject(t *testing.T) {
 		t.Fatalf("replicas = %v, want inherited 2", got)
 	}
 	backupPolicy := spec["backup"].(map[string]interface{})
-	if got := backupPolicy["method"]; got != "postgres-basebackup" {
-		t.Fatalf("backup method = %v, want inherited postgres-basebackup", got)
+	if got := backupPolicy["method"]; got != "pg-basebackup" {
+		t.Fatalf("backup method = %v, want inherited pg-basebackup", got)
 	}
 	if got := backupPolicy["enabled"]; got != true {
 		t.Fatalf("backup enabled = %v, want inherited true", got)
@@ -192,7 +192,7 @@ func restoreTestCluster(name string) *unstructured.Unstructured {
 			"clusterVersionRef": "postgresql-16",
 			"backup": map[string]interface{}{
 				"enabled": true,
-				"method":  "postgres-basebackup",
+				"method":  "pg-basebackup",
 			},
 			"componentSpecs": []interface{}{
 				map[string]interface{}{

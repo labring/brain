@@ -539,8 +539,8 @@ func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpec(t *testing.T) {
 	if got := backup["retentionPeriod"]; got != "7d" {
 		t.Fatalf("backup.retentionPeriod = %v, want 7d", got)
 	}
-	if got := backup["method"]; got != "postgres-basebackup" {
-		t.Fatalf("backup.method = %v, want postgres-basebackup", got)
+	if got := backup["method"]; got != "pg-basebackup" {
+		t.Fatalf("backup.method = %v, want pg-basebackup", got)
 	}
 	if got := backup["repoName"]; got != "backuprepo-s3" {
 		t.Fatalf("backup.repoName = %v, want backuprepo-s3", got)

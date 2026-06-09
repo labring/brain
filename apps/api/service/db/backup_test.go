@@ -91,6 +91,9 @@ func TestCreateBackupForDBWithClientCreatesManualBackupMetadata(t *testing.T) {
 	if got := spec["backupPolicyName"]; got != "orders-db-postgresql-backup-policy" {
 		t.Fatalf("backupPolicyName = %v, want source DB policy", got)
 	}
+	if got := spec["backupMethod"]; got != "pg-basebackup" {
+		t.Fatalf("backupMethod = %v, want pg-basebackup", got)
+	}
 	if _, ok := spec["description"]; ok {
 		t.Fatal("description should be stored in metadata annotations, not spec")
 	}
@@ -204,12 +207,12 @@ func TestCreateBackupForDBUsesKubeconfigNamespaceWhenRequestOmitsNamespace(t *te
 		Contexts: map[string]*clientcmdapi.Context{
 			"test": {Cluster: "test", AuthInfo: "test", Namespace: "team-a"},
 		},
-		AuthInfos:       map[string]*clientcmdapi.AuthInfo{"test": {}},
-		CurrentContext:  "test",
-		Kind:            "Config",
-		APIVersion:      "v1",
-		Preferences:     clientcmdapi.Preferences{},
-		Extensions:      nil,
+		AuthInfos:      map[string]*clientcmdapi.AuthInfo{"test": {}},
+		CurrentContext: "test",
+		Kind:           "Config",
+		APIVersion:     "v1",
+		Preferences:    clientcmdapi.Preferences{},
+		Extensions:     nil,
 	}
 	capturedNamespace := ""
 	originalFactory := backupDynamicClientFactory
