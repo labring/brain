@@ -26,6 +26,7 @@ function editorToken(name: string): string {
 }
 
 const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
+const ENVIRONMENT_VARIABLES_TITLE_RE = /Environment Variables/;
 const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
 const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
 const EXTERNAL_REFERENCE_RE = /External reference/;
@@ -154,6 +155,19 @@ test("container settings pane renders editable structured environment rows", () 
   assert.match(html, ENV_NAME_INPUT_RE);
   assert.match(html, ENV_VALUE_INPUT_RE);
   assert.doesNotMatch(html, RAW_ENV_EDITOR_RE);
+});
+
+test("container settings pane renders add environment action in section header", () => {
+  const html = renderPane();
+  const titleIndex = html.search(ENVIRONMENT_VARIABLES_TITLE_RE);
+  const addIndex = html.search(ADD_ENV_RE);
+  const rowsIndex = html.search(ENV_ROWS_SLOT_RE);
+
+  assert.notEqual(titleIndex, -1);
+  assert.notEqual(addIndex, -1);
+  assert.notEqual(rowsIndex, -1);
+  assert.ok(titleIndex < addIndex);
+  assert.ok(addIndex < rowsIndex);
 });
 
 test("container settings pane renders Image below CPU / Memory", () => {

@@ -4608,6 +4608,18 @@ export function ContainerSettingsPane({
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
   const environmentFocus = sectionFocus === "environment";
+  const envSectionActions = readOnly ? null : (
+    <AppButton
+      aria-label="Add environment variable"
+      className="h-8 rounded-lg bg-white/5 px-3 text-primary text-sm hover:bg-input"
+      onClick={handleAddEnvRow}
+      type="button"
+      variant="quiet"
+    >
+      <Plus aria-hidden data-icon="inline-start" />
+      Add
+    </AppButton>
+  );
 
   return (
     <div
@@ -4689,7 +4701,11 @@ export function ContainerSettingsPane({
         </div>
       )}
 
-      <ResourceSettingsSection icon={SquarePen} title="Environment Variables">
+      <ResourceSettingsSection
+        actions={envSectionActions}
+        icon={SquarePen}
+        title="Environment Variables"
+      >
         <div className="flex min-w-0 flex-col gap-2">
           {readOnly ? (
             <ReadOnlyEnvRows env={env} />
@@ -4708,44 +4724,29 @@ export function ContainerSettingsPane({
             />
           )}
         </div>
-        {readOnly ? null : (
+        {readOnly || settingsCommitMode || !envDirty ? null : (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {!settingsCommitMode && envDirty ? (
-              <>
-                <AppButton
-                  aria-label="Cancel environment changes"
-                  className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-                  onClick={handleCancelEnvRows}
-                  size="lg"
-                  type="button"
-                  variant="quiet"
-                >
-                  <X aria-hidden data-icon="inline-start" />
-                  Cancel
-                </AppButton>
-                <AppButton
-                  className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-                  disabled={!canSaveEnv}
-                  onClick={handleSaveEnvRows}
-                  size="lg"
-                  type="button"
-                  variant="quiet"
-                >
-                  <Save aria-hidden data-icon="inline-start" />
-                  Save environment
-                </AppButton>
-              </>
-            ) : null}
             <AppButton
-              aria-label="Add environment variable"
+              aria-label="Cancel environment changes"
               className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-              onClick={handleAddEnvRow}
+              onClick={handleCancelEnvRows}
               size="lg"
               type="button"
               variant="quiet"
             >
-              <Plus aria-hidden data-icon="inline-start" />
-              Add
+              <X aria-hidden data-icon="inline-start" />
+              Cancel
+            </AppButton>
+            <AppButton
+              className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+              disabled={!canSaveEnv}
+              onClick={handleSaveEnvRows}
+              size="lg"
+              type="button"
+              variant="quiet"
+            >
+              <Save aria-hidden data-icon="inline-start" />
+              Save environment
             </AppButton>
           </div>
         )}
