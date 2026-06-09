@@ -489,6 +489,32 @@ func TestApplyDBBackupStateSetsRawBackups(t *testing.T) {
 	}
 }
 
+func TestApplyDBBackupStateSetsEmptyBackupList(t *testing.T) {
+	db := map[string]interface{}{
+		"status": map[string]interface{}{
+			"backups": []map[string]interface{}{
+				{
+					"metadata": map[string]interface{}{
+						"name": "stale-backup",
+					},
+				},
+			},
+			"phase": "Running",
+		},
+	}
+
+	applyDBBackupState(db, []map[string]interface{}{})
+
+	status := db["status"].(map[string]interface{})
+	backups, ok := status["backups"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("status.backups type = %T, want []map[string]interface{}", status["backups"])
+	}
+	if len(backups) != 0 {
+		t.Fatalf("status.backups length = %d, want 0", len(backups))
+	}
+}
+
 func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpec(t *testing.T) {
 	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
 		Enabled:        true,
@@ -538,6 +564,20 @@ func TestDBBackupPolicyPatchFromRequestPreservesExistingRepo(t *testing.T) {
 	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
 	if got := backup["repoName"]; got != "custom-repo" {
 		t.Fatalf("backup.repoName = %v, want custom-repo", got)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestRejectsUnsupportedCronShape(t *testing.T) {
+	_, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "*/15 8-18 * * *",
+		RetentionDays:  7,
+	}, "postgresql", "")
+	if err == nil {
+		t.Fatal("expected unsupported cron shape to be rejected")
+	}
+	if !strings.Contains(err.Error(), "hourly, daily, or weekly") {
+		t.Fatalf("expected supported schedule error, got %v", err)
 	}
 }
 

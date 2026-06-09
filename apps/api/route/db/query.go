@@ -170,7 +170,7 @@ func dbResponseFromClustersWithSupport(cfg *clientcmdapi.Config, jsonBytes []byt
 }
 
 func applyDBBackupState(db map[string]interface{}, backups []map[string]interface{}) {
-	if db == nil || len(backups) == 0 {
+	if db == nil {
 		return
 	}
 	status, _ := db["status"].(map[string]interface{})

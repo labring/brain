@@ -11,7 +11,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -28,12 +27,6 @@ const (
 	manualBackupType            = "manual"
 	maxBackupDescriptionRunes   = 120
 )
-
-var kubeBlocksBackupGVR = schema.GroupVersionResource{
-	Group:    "dataprotection.kubeblocks.io",
-	Version:  "v1alpha1",
-	Resource: "backups",
-}
 
 var (
 	ErrBackupConflict          = errors.New("backup name already exists")

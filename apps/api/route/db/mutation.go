@@ -568,8 +568,8 @@ func dbBackupPolicyPatchFromRequest(request dbBackupPolicyRequest, engine string
 		if cronExpression == "" {
 			return nil, fmt.Errorf("cronExpression is required when enabled is true")
 		}
-		if len(strings.Fields(cronExpression)) != 5 {
-			return nil, fmt.Errorf("cronExpression must have five cron fields")
+		if !isSupportedDBBackupPolicyCron(cronExpression) {
+			return nil, fmt.Errorf("cronExpression must be an hourly, daily, or weekly schedule")
 		}
 		if !isAllowedRetentionDays(request.RetentionDays) {
 			return nil, fmt.Errorf("retentionDays must be one of 1, 3, 7, 14, or 30")
@@ -590,6 +590,52 @@ func dbBackupPolicyPatchFromRequest(request dbBackupPolicyRequest, engine string
 			"backup": backup,
 		},
 	})
+}
+
+func isSupportedDBBackupPolicyCron(cronExpression string) bool {
+	fields := strings.Fields(strings.TrimSpace(cronExpression))
+	if len(fields) != 5 {
+		return false
+	}
+	minute, hour, dayOfMonth, month, weekday := fields[0], fields[1], fields[2], fields[3], fields[4]
+	if !isCronNumberInRange(minute, 0, 59) {
+		return false
+	}
+	if hour == "*" && dayOfMonth == "*" && month == "*" && weekday == "*" {
+		return true
+	}
+	if !isCronNumberInRange(hour, 0, 23) || dayOfMonth != "*" || month != "*" {
+		return false
+	}
+	return weekday == "*" || isCronWeekdayList(weekday)
+}
+
+func isCronNumberInRange(value string, min, max int) bool {
+	if value == "" {
+		return false
+	}
+	var parsed int
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+		parsed = parsed*10 + int(char-'0')
+	}
+	return parsed >= min && parsed <= max
+}
+
+func isCronWeekdayList(value string) bool {
+	if value == "" || value == "*" {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, part := range strings.Split(value, ",") {
+		if !isCronNumberInRange(part, 0, 6) || seen[part] {
+			return false
+		}
+		seen[part] = true
+	}
+	return true
 }
 
 func dbBackupRepoName(cluster unstructured.Unstructured) string {

@@ -19,6 +19,7 @@ const databaseData = {
     engineKey: "postgresql",
     formattedVersion: "16.4",
     name: "orders-db",
+    status: { label: "Running", tone: "running" },
   },
   uid: "cluster-uid-1",
   workload: {

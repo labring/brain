@@ -86,6 +86,23 @@ test("restore action is disabled for incomplete DB Service Backups", () => {
   assert.match(html, /data-qa-state="disabled"/);
 });
 
+test("manual backup creation is disabled when DB Service is not Running", () => {
+  const html = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      runtime={{
+        ...runtime,
+        dbServicePhase: "Creating",
+      }}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+
+  assert.match(html, /data-qa-object="backup-create-form"/);
+  assert.match(html, /data-qa-state="disabled"/);
+  assert.match(html, /Current state: Creating/);
+});
+
 test("unsupported DB Service backup engines render unavailable state", () => {
   const html = renderToStaticMarkup(
     <DbAccessSessionProvider
