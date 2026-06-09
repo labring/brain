@@ -48,13 +48,16 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  type CSSProperties,
   createContext,
   type FormEvent,
   type ReactNode,
   use,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -1084,15 +1087,22 @@ function applyWeeklyDaySelection(
 
 function BackupPolicyForm({
   initialPolicy,
+  onPolicyEnabledChange,
   onPolicySaved,
+  onPolicySavingChange,
+  policyEnabled,
 }: {
   initialPolicy: DbServiceBackupPolicyBackend | undefined;
+  onPolicyEnabledChange: (enabled: boolean) => void;
   onPolicySaved: (data: unknown) => void;
+  onPolicySavingChange: (isSaving: boolean) => void;
+  policyEnabled: boolean;
 }) {
   const runtime = useDbAccessRuntime();
-  const [form, setForm] = useState<DbServiceBackupPolicyForm>(() =>
-    backupPolicyFormFromBackend(initialPolicy)
-  );
+  const [form, setForm] = useState<DbServiceBackupPolicyForm>(() => ({
+    ...backupPolicyFormFromBackend(initialPolicy),
+    enabled: policyEnabled,
+  }));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const retention = validateDbServiceBackupPolicyRetentionDays(
@@ -1100,14 +1110,38 @@ function BackupPolicyForm({
   );
 
   useEffect(() => {
-    setForm(backupPolicyFormFromBackend(initialPolicy));
+    setForm((current) => ({
+      ...backupPolicyFormFromBackend(initialPolicy),
+      enabled: current.enabled,
+    }));
     setError(null);
   }, [initialPolicy]);
 
+  useEffect(() => {
+    setForm((current) =>
+      current.enabled === policyEnabled
+        ? current
+        : { ...current, enabled: policyEnabled }
+    );
+  }, [policyEnabled]);
+
+  useEffect(() => {
+    onPolicySavingChange(isSaving);
+  }, [isSaving, onPolicySavingChange]);
+
+  useEffect(
+    () => () => {
+      onPolicySavingChange(false);
+    },
+    [onPolicySavingChange]
+  );
+
   const resetPolicy = useCallback(() => {
-    setForm(backupPolicyFormFromBackend(initialPolicy));
+    const nextForm = backupPolicyFormFromBackend(initialPolicy);
+    setForm(nextForm);
+    onPolicyEnabledChange(nextForm.enabled);
     setError(null);
-  }, [initialPolicy]);
+  }, [initialPolicy, onPolicyEnabledChange]);
 
   const savePolicy = useCallback(async () => {
     setIsSaving(true);
@@ -1123,11 +1157,11 @@ function BackupPolicyForm({
         retentionDays: form.enabled ? form.retentionDays : undefined,
       });
       onPolicySaved(updated);
-      setForm(
-        backupPolicyFormFromBackend(
-          specBackupPolicyFromProductResource(updated)
-        )
+      const nextForm = backupPolicyFormFromBackend(
+        specBackupPolicyFromProductResource(updated)
       );
+      setForm(nextForm);
+      onPolicyEnabledChange(nextForm.enabled);
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -1139,6 +1173,7 @@ function BackupPolicyForm({
     }
   }, [
     form,
+    onPolicyEnabledChange,
     onPolicySaved,
     runtime.databaseWorkloadName,
     runtime.databaseWorkloadNamespace,
@@ -1191,9 +1226,6 @@ function BackupPolicyForm({
       };
     });
   }, []);
-  const setEnabled = useCallback((enabled: boolean) => {
-    setForm((current) => ({ ...current, enabled }));
-  }, []);
 
   return (
     <div
@@ -1203,20 +1235,6 @@ function BackupPolicyForm({
       data-qa-state={form.enabled ? "enabled" : "disabled"}
       data-testid="database.backup.policy"
     >
-      <div className="mb-4 flex items-center justify-end">
-        <label className="flex shrink-0 items-center gap-2 text-[13px] text-foreground leading-5">
-          <span>{"Auto Backup"}</span>
-          <Switch
-            aria-label="Auto Backup"
-            checked={form.enabled}
-            disabled={isSaving}
-            onCheckedChange={setEnabled}
-            size="default"
-            variant="brand"
-          />
-        </label>
-      </div>
-
       <div className="grid gap-4 md:grid-cols-2">
         <label className="flex min-w-0 flex-col gap-1 text-[13px]">
           <span className="font-medium text-muted-foreground leading-5">
@@ -1370,13 +1388,140 @@ function BackupPolicyForm({
 
 type BackupMethodMode = "manual" | "policy";
 
-const BACKUP_METHOD_CHOICES: readonly {
-  label: string;
+function BackupMethodToggle({
+  mode,
+  onModeChange,
+  onPolicyEnabledChange,
+  policyEnabled,
+  policySwitchDisabled,
+}: {
   mode: BackupMethodMode;
-}[] = [
-  { label: "Manual Backup", mode: "manual" },
-  { label: "Backup Policy", mode: "policy" },
-];
+  onModeChange: (mode: BackupMethodMode) => void;
+  onPolicyEnabledChange: (enabled: boolean) => void;
+  policyEnabled: boolean;
+  policySwitchDisabled: boolean;
+}) {
+  const manualRef = useRef<HTMLButtonElement | null>(null);
+  const policyRef = useRef<HTMLDivElement | null>(null);
+  const [indicator, setIndicator] = useState({ width: 0, x: 0 });
+  const changePolicyEnabled = useCallback(
+    (enabled: boolean) => {
+      onModeChange("policy");
+      onPolicyEnabledChange(enabled);
+    },
+    [onModeChange, onPolicyEnabledChange]
+  );
+  const updateIndicator = useCallback(() => {
+    const selected = mode === "manual" ? manualRef.current : policyRef.current;
+    const container = selected?.parentElement;
+    if (selected == null || container == null) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const selectedRect = selected.getBoundingClientRect();
+    const nextIndicator = {
+      width: selectedRect.width,
+      x: selectedRect.left - containerRect.left,
+    };
+    setIndicator((current) =>
+      Math.abs(current.width - nextIndicator.width) < 0.5 &&
+      Math.abs(current.x - nextIndicator.x) < 0.5
+        ? current
+        : nextIndicator
+    );
+  }, [mode]);
+
+  useLayoutEffect(() => {
+    updateIndicator();
+  }, [policyEnabled, updateIndicator]);
+
+  useEffect(() => {
+    updateIndicator();
+    const targets = [manualRef.current, policyRef.current].filter(
+      (target): target is HTMLElement => target != null
+    );
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateIndicator);
+      return () => {
+        window.removeEventListener("resize", updateIndicator);
+      };
+    }
+
+    const observer = new ResizeObserver(updateIndicator);
+    for (const target of targets) {
+      observer.observe(target);
+    }
+    return () => {
+      observer.disconnect();
+    };
+  }, [updateIndicator]);
+
+  const indicatorStyle = {
+    opacity: indicator.width > 0 ? 1 : 0,
+    transform: `translateX(${indicator.x}px)`,
+    width: `${indicator.width}px`,
+  } satisfies CSSProperties;
+
+  return (
+    <fieldset
+      aria-label="Backup Method"
+      className="relative m-0 mt-5 inline-flex h-[38px] w-fit max-w-full items-center self-start overflow-hidden rounded-lg border border-input bg-transparent p-0"
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-px left-0 z-0 rounded-lg bg-input transition-[opacity,transform,width] duration-200 ease-out"
+        data-slot="backup-method-toggle-indicator"
+        style={indicatorStyle}
+      />
+      <button
+        aria-pressed={mode === "manual"}
+        className={cn(
+          "relative z-10 inline-flex h-9 shrink-0 items-center justify-center rounded-lg bg-transparent px-4 font-normal text-sm transition-colors hover:bg-transparent",
+          mode === "manual"
+            ? "text-foreground"
+            : "text-foreground hover:bg-input/40"
+        )}
+        data-qa-backup-method="manual"
+        onClick={() => onModeChange("manual")}
+        ref={manualRef}
+        type="button"
+      >
+        {"Manual Backup"}
+      </button>
+
+      <div
+        className={cn(
+          "relative z-10 flex h-9 shrink-0 items-center gap-2 rounded-lg bg-transparent px-4 transition-colors",
+          mode === "policy"
+            ? "text-foreground"
+            : "text-foreground hover:bg-input/40"
+        )}
+        ref={policyRef}
+      >
+        <button
+          aria-pressed={mode === "policy"}
+          className="inline-flex h-full shrink-0 items-center justify-center bg-transparent font-medium text-sm"
+          data-qa-backup-method="policy"
+          onClick={() => onModeChange("policy")}
+          type="button"
+        >
+          {"Backup Policy"}
+        </button>
+        <Switch
+          aria-label="Auto Backup"
+          checked={policyEnabled}
+          className="shadow-none"
+          disabled={policySwitchDisabled}
+          onCheckedChange={changePolicyEnabled}
+          size="lg"
+          variant="brand"
+        />
+      </div>
+    </fieldset>
+  );
+}
 
 function BackupMethodPanel({
   createDisabled,
@@ -1393,9 +1538,20 @@ function BackupMethodPanel({
   onCreateBackup: (values: DbServiceBackupFormValues) => Promise<void>;
   onPolicySaved: (data: unknown) => void;
 }) {
+  const initialPolicyEnabled = currentPolicy?.enabled === true;
   const [mode, setMode] = useState<BackupMethodMode>(() =>
-    currentPolicy?.enabled === true ? "policy" : "manual"
+    initialPolicyEnabled ? "policy" : "manual"
   );
+  const [policyEnabled, setPolicyEnabled] = useState(initialPolicyEnabled);
+  const [isPolicySaving, setIsPolicySaving] = useState(false);
+
+  useEffect(() => {
+    const nextPolicyEnabled = currentPolicy?.enabled === true;
+    setPolicyEnabled(nextPolicyEnabled);
+    if (nextPolicyEnabled) {
+      setMode("policy");
+    }
+  }, [currentPolicy]);
 
   return (
     <section
@@ -1417,24 +1573,13 @@ function BackupMethodPanel({
         </p>
       </div>
 
-      <div className="mt-5 inline-flex h-9 w-fit items-center overflow-hidden rounded-md border border-input bg-transparent">
-        {BACKUP_METHOD_CHOICES.map((choice) => (
-          <button
-            className={cn(
-              "h-9 px-4 font-medium text-sm transition-colors",
-              mode === choice.mode
-                ? "bg-input text-foreground"
-                : "text-foreground hover:bg-input/40"
-            )}
-            data-qa-backup-method={choice.mode}
-            key={choice.mode}
-            onClick={() => setMode(choice.mode)}
-            type="button"
-          >
-            {choice.label}
-          </button>
-        ))}
-      </div>
+      <BackupMethodToggle
+        mode={mode}
+        onModeChange={setMode}
+        onPolicyEnabledChange={setPolicyEnabled}
+        policyEnabled={policyEnabled}
+        policySwitchDisabled={isPolicySaving}
+      />
 
       <div className="mt-5 flex min-h-0 flex-1">
         {mode === "manual" ? (
@@ -1447,7 +1592,10 @@ function BackupMethodPanel({
         ) : (
           <BackupPolicyForm
             initialPolicy={currentPolicy}
+            onPolicyEnabledChange={setPolicyEnabled}
             onPolicySaved={onPolicySaved}
+            onPolicySavingChange={setIsPolicySaving}
+            policyEnabled={policyEnabled}
           />
         )}
       </div>
