@@ -18,27 +18,86 @@ export interface DataBrowserRuntimeProviderProps {
   selectedDatabaseData: CanvasDatabaseNodeData;
 }
 
+function dbServiceBackupsFromValue(backups: unknown): unknown[] {
+  return Array.isArray(backups) ? backups : [];
+}
+
+function dbServiceBackupsFromNode(
+  selectedDatabaseData: CanvasDatabaseNodeData
+): unknown[] {
+  return dbServiceBackupsFromValue(selectedDatabaseData.backups);
+}
+
+function dbServiceUidFromNode(
+  selectedDatabaseData: CanvasDatabaseNodeData
+): string | undefined {
+  return typeof selectedDatabaseData.uid === "string" &&
+    selectedDatabaseData.uid.trim() !== ""
+    ? selectedDatabaseData.uid
+    : undefined;
+}
+
 export function dataBrowserRuntimeParts(
   selectedDatabaseData: CanvasDatabaseNodeData
 ) {
   const { states, workload } = selectedDatabaseData;
 
   return {
-    backups: Array.isArray(selectedDatabaseData.backups)
-      ? selectedDatabaseData.backups
-      : [],
+    backups: dbServiceBackupsFromNode(selectedDatabaseData),
     databaseDisplayEngine: states.displayEngine,
     databaseEngineKey: states.engineKey,
     databaseFormattedVersion: states.formattedVersion,
     databaseName: states.name,
     databaseWorkloadName: workload.name,
     databaseWorkloadNamespace: workload.namespace,
-    dbServiceUid:
-      typeof selectedDatabaseData.uid === "string" &&
-      selectedDatabaseData.uid.trim() !== ""
-        ? selectedDatabaseData.uid
-        : undefined,
+    dbServiceUid: dbServiceUidFromNode(selectedDatabaseData),
     engine: normalizeDataBrowserEngine(states.engineKey),
+  };
+}
+
+type DataBrowserRuntimeParts = ReturnType<typeof dataBrowserRuntimeParts>;
+
+function dataBrowserHostContextFromParts({
+  backups,
+  databaseDisplayEngine,
+  databaseEngineKey,
+  databaseFormattedVersion,
+  databaseName,
+  databaseWorkloadName,
+  databaseWorkloadNamespace,
+  dbServiceUid,
+  engine,
+  kubeconfig,
+  namespace,
+  projectId,
+}: DataBrowserRuntimeParts &
+  Pick<
+    DataBrowserRuntimeProviderProps,
+    "kubeconfig" | "namespace" | "projectId"
+  >): DataBrowserHostContext {
+  return {
+    backups,
+    database: {
+      displayEngine: databaseDisplayEngine,
+      ...(databaseEngineKey === undefined
+        ? {}
+        : { engineKey: databaseEngineKey }),
+      ...(databaseFormattedVersion === undefined
+        ? {}
+        : { formattedVersion: databaseFormattedVersion }),
+      name: databaseName,
+    },
+    dbService: {
+      name: databaseWorkloadName,
+      namespace: databaseWorkloadNamespace,
+      ...(dbServiceUid === undefined ? {} : { uid: dbServiceUid }),
+    },
+    databaseWorkloadName,
+    databaseWorkloadNamespace,
+    engine,
+    kubeconfig,
+    namespace,
+    projectId,
   };
 }
 
@@ -48,32 +107,12 @@ export function createDataBrowserHostContext({
   projectId,
   selectedDatabaseData,
 }: Omit<DataBrowserRuntimeProviderProps, "children">): DataBrowserHostContext {
-  const parts = dataBrowserRuntimeParts(selectedDatabaseData);
-
-  return {
-    backups: parts.backups,
-    database: {
-      displayEngine: parts.databaseDisplayEngine,
-      ...(parts.databaseEngineKey === undefined
-        ? {}
-        : { engineKey: parts.databaseEngineKey }),
-      ...(parts.databaseFormattedVersion === undefined
-        ? {}
-        : { formattedVersion: parts.databaseFormattedVersion }),
-      name: parts.databaseName,
-    },
-    dbService: {
-      name: parts.databaseWorkloadName,
-      namespace: parts.databaseWorkloadNamespace,
-      ...(parts.dbServiceUid === undefined ? {} : { uid: parts.dbServiceUid }),
-    },
-    databaseWorkloadName: parts.databaseWorkloadName,
-    databaseWorkloadNamespace: parts.databaseWorkloadNamespace,
-    engine: parts.engine,
+  return dataBrowserHostContextFromParts({
     kubeconfig,
     namespace,
     projectId,
-  };
+    ...dataBrowserRuntimeParts(selectedDatabaseData),
+  });
 }
 
 export function DataBrowserRuntimeProvider({
@@ -93,33 +132,23 @@ export function DataBrowserRuntimeProvider({
     dbServiceUid,
     engine,
   } = dataBrowserRuntimeParts(selectedDatabaseData);
+  const rawBackups = selectedDatabaseData.backups;
   const value = useMemo<DataBrowserHostContext>(
-    () => ({
-      backups: Array.isArray(selectedDatabaseData.backups)
-        ? selectedDatabaseData.backups
-        : [],
-      database: {
-        displayEngine: databaseDisplayEngine,
-        ...(databaseEngineKey === undefined
-          ? {}
-          : { engineKey: databaseEngineKey }),
-        ...(databaseFormattedVersion === undefined
-          ? {}
-          : { formattedVersion: databaseFormattedVersion }),
-        name: databaseName,
-      },
-      dbService: {
-        name: databaseWorkloadName,
-        namespace: databaseWorkloadNamespace,
-        ...(dbServiceUid === undefined ? {} : { uid: dbServiceUid }),
-      },
-      databaseWorkloadName,
-      databaseWorkloadNamespace,
-      engine,
-      kubeconfig,
-      namespace,
-      projectId,
-    }),
+    () =>
+      dataBrowserHostContextFromParts({
+        backups: dbServiceBackupsFromValue(rawBackups),
+        databaseDisplayEngine,
+        databaseEngineKey,
+        databaseFormattedVersion,
+        databaseName,
+        databaseWorkloadName,
+        databaseWorkloadNamespace,
+        dbServiceUid,
+        engine,
+        kubeconfig,
+        namespace,
+        projectId,
+      }),
     [
       databaseDisplayEngine,
       databaseEngineKey,
@@ -132,7 +161,7 @@ export function DataBrowserRuntimeProvider({
       kubeconfig,
       namespace,
       projectId,
-      selectedDatabaseData.backups,
+      rawBackups,
     ]
   );
 

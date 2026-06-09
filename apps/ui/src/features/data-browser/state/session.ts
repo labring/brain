@@ -42,11 +42,25 @@ export interface DbAccessSessionState {
 
 export type DbAccessTabInput = Omit<DbAccessTab, "id"> & { id?: string };
 
+function objectSurface(tabId: string): DbAccessActiveSurface {
+  return { kind: "object", tabId };
+}
+
+function serviceSurface(
+  tab: DbAccessServiceTab = "backup"
+): DbAccessActiveSurface {
+  return { kind: "service", tab };
+}
+
+function surfaceForActiveTab(tabId: string | null): DbAccessActiveSurface {
+  return tabId === null ? serviceSurface() : objectSurface(tabId);
+}
+
 export function createDbAccessSession(
   dbServiceKey: string
 ): DbAccessSessionState {
   return {
-    activeSurface: { kind: "service", tab: "backup" },
+    activeSurface: serviceSurface(),
     activeTabId: null,
     dbServiceKey,
     tabs: [],
@@ -124,7 +138,7 @@ export function openDbAccessTab(
     return {
       session: {
         ...session,
-        activeSurface: { kind: "object", tabId: existingTab.id },
+        activeSurface: objectSurface(existingTab.id),
         activeTabId: existingTab.id,
       },
       tabId: existingTab.id,
@@ -141,7 +155,7 @@ export function openDbAccessTab(
   return {
     session: {
       ...session,
-      activeSurface: { kind: "object", tabId: newTab.id },
+      activeSurface: objectSurface(newTab.id),
       activeTabId: newTab.id,
       tabs: [...session.tabs, newTab],
     },
@@ -163,10 +177,7 @@ export function closeDbAccessTab(
 
   return {
     ...session,
-    activeSurface:
-      activeTabId === null
-        ? { kind: "service", tab: "backup" }
-        : { kind: "object", tabId: activeTabId },
+    activeSurface: surfaceForActiveTab(activeTabId),
     activeTabId,
     tabs,
   };
@@ -183,7 +194,7 @@ export function closeOtherDbAccessTabs(
 
   return {
     ...session,
-    activeSurface: { kind: "object", tabId },
+    activeSurface: objectSurface(tabId),
     activeTabId: tabId,
     tabs: [tab],
   };
@@ -194,7 +205,7 @@ export function closeAllDbAccessTabs(
 ): DbAccessSessionState {
   return {
     ...session,
-    activeSurface: { kind: "service", tab: "backup" },
+    activeSurface: serviceSurface(),
     activeTabId: null,
     tabs: [],
   };
@@ -206,7 +217,7 @@ export function setActiveDbAccessTab(
 ): DbAccessSessionState {
   return {
     ...session,
-    activeSurface: { kind: "object", tabId },
+    activeSurface: objectSurface(tabId),
     activeTabId: tabId,
   };
 }
@@ -217,7 +228,7 @@ export function setActiveDbAccessServiceTab(
 ): DbAccessSessionState {
   return {
     ...session,
-    activeSurface: { kind: "service", tab },
+    activeSurface: serviceSurface(tab),
     activeTabId: null,
   };
 }

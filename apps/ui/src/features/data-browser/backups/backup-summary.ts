@@ -47,6 +47,33 @@ const AUTOMATIC_LABEL_KEYS = [
   "backupPolicy",
 ] as const;
 
+const SPEC_DESCRIPTION_KEYS = ["description"] as const;
+const BACKUP_TYPE_KEYS = ["brain.io/backup-type", "backupType"] as const;
+const SPEC_BACKUP_TYPE_KEYS = ["type", "backupType"] as const;
+const SPEC_BACKUP_POLICY_KEYS = ["backupPolicyName", "backupPolicy"] as const;
+const STATUS_PHASE_KEYS = ["phase", "status", "state"] as const;
+const START_TIME_KEYS = ["startTimestamp", "startedAt", "startTime"] as const;
+const CREATION_TIME_KEYS = ["creationTimestamp"] as const;
+const COMPLETION_TIME_KEYS = [
+  "completionTimestamp",
+  "completedAt",
+  "endTimestamp",
+  "endTime",
+] as const;
+const SIZE_KEYS = [
+  "totalSize",
+  "size",
+  "backupSize",
+  "dataSize",
+  "volumeSnapshotSize",
+] as const;
+const FAILURE_REASON_KEYS = [
+  "failureReason",
+  "failureMessage",
+  "reason",
+  "message",
+] as const;
+
 const ACTIVE_STATUSES: ReadonlySet<DbServiceBackupStatus> = new Set([
   "Deleting",
   "Pending",
@@ -98,7 +125,7 @@ function backupDescription(
 ): string | undefined {
   return (
     firstString(asRecord(metadata.annotations), DESCRIPTION_KEYS) ??
-    firstString(spec, ["description"])
+    firstString(spec, SPEC_DESCRIPTION_KEYS)
   );
 }
 
@@ -109,9 +136,9 @@ function backupType(
   const labels = asRecord(metadata.labels);
   const annotations = asRecord(metadata.annotations);
   const explicitType = (
-    firstString(labels, ["brain.io/backup-type", "backupType"]) ??
-    firstString(annotations, ["brain.io/backup-type", "backupType"]) ??
-    firstString(spec, ["type", "backupType"])
+    firstString(labels, BACKUP_TYPE_KEYS) ??
+    firstString(annotations, BACKUP_TYPE_KEYS) ??
+    firstString(spec, SPEC_BACKUP_TYPE_KEYS)
   )?.toLowerCase();
 
   if (explicitType === "automatic" || explicitType === "auto") {
@@ -124,7 +151,7 @@ function backupType(
   if (
     firstString(labels, AUTOMATIC_LABEL_KEYS) !== undefined ||
     firstString(annotations, AUTOMATIC_LABEL_KEYS) !== undefined ||
-    firstString(spec, ["backupPolicyName", "backupPolicy"]) !== undefined
+    firstString(spec, SPEC_BACKUP_POLICY_KEYS) !== undefined
   ) {
     return "Automatic";
   }
@@ -140,11 +167,7 @@ function backupStatus(
     return "Deleting";
   }
 
-  const phase = (
-    nonEmptyString(status.phase) ??
-    nonEmptyString(status.status) ??
-    nonEmptyString(status.state)
-  )?.toLowerCase();
+  const phase = firstString(status, STATUS_PHASE_KEYS)?.toLowerCase();
 
   switch (phase) {
     case "available":
@@ -178,29 +201,27 @@ function backupStartTime(
   status: Record<string, unknown>
 ): string | undefined {
   return (
-    firstString(status, ["startTimestamp", "startedAt", "startTime"]) ??
-    firstString(metadata, ["creationTimestamp"])
+    firstString(status, START_TIME_KEYS) ??
+    firstString(metadata, CREATION_TIME_KEYS)
   );
 }
 
 function backupCreatedAt(
   metadata: Record<string, unknown>
 ): string | undefined {
-  return firstString(metadata, ["creationTimestamp"]);
+  return firstString(metadata, CREATION_TIME_KEYS);
 }
 
 function backupCompletionTime(
   status: Record<string, unknown>
 ): string | undefined {
-  return firstString(status, [
-    "completionTimestamp",
-    "completedAt",
-    "endTimestamp",
-    "endTime",
-  ]);
+  return firstString(status, COMPLETION_TIME_KEYS);
 }
 
-function formatDuration(start: string | undefined, end: string | undefined) {
+function formatDuration(
+  start: string | undefined,
+  end: string | undefined
+): string | undefined {
   if (start === undefined || end === undefined) {
     return undefined;
   }
@@ -236,30 +257,19 @@ function backupDuration(status: Record<string, unknown>): string | undefined {
     return explicit;
   }
   return formatDuration(
-    firstString(status, ["startTimestamp", "startedAt", "startTime"]),
+    firstString(status, START_TIME_KEYS),
     backupCompletionTime(status)
   );
 }
 
 function backupSize(status: Record<string, unknown>): string | undefined {
-  return firstString(status, [
-    "totalSize",
-    "size",
-    "backupSize",
-    "dataSize",
-    "volumeSnapshotSize",
-  ]);
+  return firstString(status, SIZE_KEYS);
 }
 
 function backupFailureReason(
   status: Record<string, unknown>
 ): string | undefined {
-  return firstString(status, [
-    "failureReason",
-    "failureMessage",
-    "reason",
-    "message",
-  ]);
+  return firstString(status, FAILURE_REASON_KEYS);
 }
 
 function sortTime(summary: DbServiceBackupSummary): number {
@@ -270,12 +280,45 @@ function sortTime(summary: DbServiceBackupSummary): number {
 function stableBackupSort(
   left: DbServiceBackupSummary,
   right: DbServiceBackupSummary
-) {
+): number {
   const byTime = sortTime(right) - sortTime(left);
   if (byTime !== 0) {
     return byTime;
   }
   return left.name.localeCompare(right.name);
+}
+
+function adaptDbServiceBackup(
+  backup: unknown,
+  source: DataBrowserDBServiceBackupSource
+): DbServiceBackupSummary {
+  const root = asRecord(backup) ?? {};
+  const metadata = asRecord(root.metadata) ?? {};
+  const spec = asRecord(root.spec) ?? {};
+  const status = asRecord(root.status) ?? {};
+  const currentStatus = backupStatus(metadata, status);
+  const createdAt = backupCreatedAt(metadata);
+  const description = backupDescription(metadata, spec);
+  const duration = backupDuration(status);
+  const failureReason = backupFailureReason(status);
+  const size = backupSize(status);
+  const startedAt = backupStartTime(metadata, status);
+
+  return {
+    ...(createdAt === undefined ? {} : { createdAt }),
+    deletable: currentStatus === "Completed" || currentStatus === "Failed",
+    ...(description === undefined ? {} : { description }),
+    ...(duration === undefined ? {} : { duration }),
+    ...(failureReason === undefined ? {} : { failureReason }),
+    name: backupName(metadata),
+    namespace: backupNamespace(metadata, source),
+    restorable: currentStatus === "Completed",
+    ...(size === undefined ? {} : { size }),
+    source,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    status: currentStatus,
+    type: backupType(metadata, spec),
+  } satisfies DbServiceBackupSummary;
 }
 
 export function isDbServiceBackupSupportedEngine(
@@ -298,40 +341,6 @@ export function adaptDbServiceBackups({
   source: DataBrowserDBServiceBackupSource;
 }): DbServiceBackupSummary[] {
   return (backups ?? [])
-    .map((backup) => {
-      const root = asRecord(backup) ?? {};
-      const metadata = asRecord(root.metadata) ?? {};
-      const spec = asRecord(root.spec) ?? {};
-      const status = asRecord(root.status) ?? {};
-      const currentStatus = backupStatus(metadata, status);
-      const name = backupName(metadata);
-      const startedAt = backupStartTime(metadata, status);
-
-      return {
-        ...(backupCreatedAt(metadata) === undefined
-          ? {}
-          : { createdAt: backupCreatedAt(metadata) }),
-        deletable: currentStatus === "Completed" || currentStatus === "Failed",
-        ...(backupDescription(metadata, spec) === undefined
-          ? {}
-          : { description: backupDescription(metadata, spec) }),
-        ...(backupDuration(status) === undefined
-          ? {}
-          : { duration: backupDuration(status) }),
-        ...(backupFailureReason(status) === undefined
-          ? {}
-          : { failureReason: backupFailureReason(status) }),
-        name,
-        namespace: backupNamespace(metadata, source),
-        restorable: currentStatus === "Completed",
-        ...(backupSize(status) === undefined
-          ? {}
-          : { size: backupSize(status) }),
-        source,
-        ...(startedAt === undefined ? {} : { startedAt }),
-        status: currentStatus,
-        type: backupType(metadata, spec),
-      } satisfies DbServiceBackupSummary;
-    })
+    .map((backup) => adaptDbServiceBackup(backup, source))
     .sort(stableBackupSort);
 }
