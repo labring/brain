@@ -145,7 +145,10 @@ func deleteBackupForDBWithClient(ctx context.Context, client dynamic.Interface, 
 		return DeleteBackupForDBResult{}, fmt.Errorf("DBName, Namespace, and BackupName are required")
 	}
 
-	cluster, err := client.Resource(kubeBlocksClusterGVR).Namespace(opts.Namespace).Get(ctx, opts.DBName, metav1.GetOptions{})
+	clusterResource := client.Resource(kubeBlocksClusterGVR).Namespace(opts.Namespace)
+	backupResource := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace)
+
+	cluster, err := clusterResource.Get(ctx, opts.DBName, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return DeleteBackupForDBResult{}, apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), opts.BackupName)
@@ -157,7 +160,7 @@ func deleteBackupForDBWithClient(ctx context.Context, client dynamic.Interface, 
 		return DeleteBackupForDBResult{}, fmt.Errorf("source DB Service has no UID")
 	}
 
-	backup, err := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace).Get(ctx, opts.BackupName, metav1.GetOptions{})
+	backup, err := backupResource.Get(ctx, opts.BackupName, metav1.GetOptions{})
 	if err != nil {
 		return DeleteBackupForDBResult{}, err
 	}
@@ -165,11 +168,12 @@ func deleteBackupForDBWithClient(ctx context.Context, client dynamic.Interface, 
 		return DeleteBackupForDBResult{}, apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), opts.BackupName)
 	}
 
-	if !isDBBackupDeletable(backup) {
-		return DeleteBackupForDBResult{}, fmt.Errorf("%w: %s is %s", ErrDBBackupNotDeletable, opts.BackupName, dbBackupDeleteStatus(backup))
+	deleteStatus := dbBackupDeleteStatus(backup)
+	if !isDBBackupDeleteStatusDeletable(deleteStatus) {
+		return DeleteBackupForDBResult{}, fmt.Errorf("%w: %s is %s", ErrDBBackupNotDeletable, opts.BackupName, deleteStatus)
 	}
 
-	if err := client.Resource(kubeBlocksBackupGVR).Namespace(opts.Namespace).Delete(ctx, opts.BackupName, metav1.DeleteOptions{}); err != nil {
+	if err := backupResource.Delete(ctx, opts.BackupName, metav1.DeleteOptions{}); err != nil {
 		return DeleteBackupForDBResult{}, err
 	}
 
@@ -189,18 +193,17 @@ func dbBackupDeleteStatus(backup *unstructured.Unstructured) string {
 	if deletionTimestamp != nil && !deletionTimestamp.IsZero() {
 		return "deleting"
 	}
-	phase, _, _ := unstructured.NestedString(backup.Object, "status", "phase")
-	if strings.TrimSpace(phase) == "" {
-		phase, _, _ = unstructured.NestedString(backup.Object, "status", "status")
+	for _, field := range []string{"phase", "status", "state"} {
+		phase, _, _ := unstructured.NestedString(backup.Object, "status", field)
+		if strings.TrimSpace(phase) != "" {
+			return strings.ToLower(strings.TrimSpace(phase))
+		}
 	}
-	if strings.TrimSpace(phase) == "" {
-		phase, _, _ = unstructured.NestedString(backup.Object, "status", "state")
-	}
-	return strings.ToLower(strings.TrimSpace(phase))
+	return ""
 }
 
-func isDBBackupDeletable(backup *unstructured.Unstructured) bool {
-	switch dbBackupDeleteStatus(backup) {
+func isDBBackupDeleteStatusDeletable(status string) bool {
+	switch status {
 	case "available", "completed", "complete", "succeeded", "success", "failed", "error":
 		return true
 	default:
