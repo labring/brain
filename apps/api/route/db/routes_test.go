@@ -567,6 +567,34 @@ func TestDBBackupPolicyPatchFromRequestPreservesExistingRepo(t *testing.T) {
 	}
 }
 
+func TestIsSupportedDBBackupPolicyCron(t *testing.T) {
+	tests := []struct {
+		name           string
+		cronExpression string
+		want           bool
+	}{
+		{name: "hourly", cronExpression: "30 * * * *", want: true},
+		{name: "daily", cronExpression: "15 8 * * *", want: true},
+		{name: "weekly single weekday", cronExpression: "45 6 * * 6", want: true},
+		{name: "weekly weekday list", cronExpression: "15 8 * * 1,3,5", want: true},
+		{name: "step minute", cronExpression: "*/15 8-18 * * *", want: false},
+		{name: "out of range minute", cronExpression: "60 * * * *", want: false},
+		{name: "out of range hour", cronExpression: "0 24 * * *", want: false},
+		{name: "day of month", cronExpression: "0 8 1 * *", want: false},
+		{name: "out of range weekday", cronExpression: "0 8 * * 7", want: false},
+		{name: "duplicate weekday", cronExpression: "0 8 * * 1,1", want: false},
+		{name: "six fields", cronExpression: "0 8 * * * *", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSupportedDBBackupPolicyCron(tt.cronExpression); got != tt.want {
+				t.Fatalf("isSupportedDBBackupPolicyCron(%q) = %v, want %v", tt.cronExpression, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDBBackupPolicyPatchFromRequestRejectsUnsupportedCronShape(t *testing.T) {
 	_, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
 		Enabled:        true,

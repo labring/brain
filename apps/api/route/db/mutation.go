@@ -478,6 +478,14 @@ type dbBackupPolicyRequest struct {
 	RetentionDays  int64  `json:"retentionDays,omitempty" doc:"Automatic backup retention in days. Allowed values: 1, 3, 7, 14, or 30."`
 }
 
+type dbBackupPolicyCronFields struct {
+	dayOfMonth string
+	hour       string
+	minute     string
+	month      string
+	weekday    string
+}
+
 func registerBackupPolicy(grp huma.API) {
 	type dbBackupPolicyInput struct {
 		middleware.AuthInput
@@ -593,21 +601,51 @@ func dbBackupPolicyPatchFromRequest(request dbBackupPolicyRequest, engine string
 }
 
 func isSupportedDBBackupPolicyCron(cronExpression string) bool {
+	fields, ok := dbBackupPolicyCronFieldsFromExpression(cronExpression)
+	if !ok {
+		return false
+	}
+	return isHourlyDBBackupPolicyCron(fields) ||
+		isDailyDBBackupPolicyCron(fields) ||
+		isWeeklyDBBackupPolicyCron(fields)
+}
+
+func dbBackupPolicyCronFieldsFromExpression(cronExpression string) (dbBackupPolicyCronFields, bool) {
 	fields := strings.Fields(strings.TrimSpace(cronExpression))
 	if len(fields) != 5 {
-		return false
+		return dbBackupPolicyCronFields{}, false
 	}
-	minute, hour, dayOfMonth, month, weekday := fields[0], fields[1], fields[2], fields[3], fields[4]
-	if !isCronNumberInRange(minute, 0, 59) {
-		return false
-	}
-	if hour == "*" && dayOfMonth == "*" && month == "*" && weekday == "*" {
-		return true
-	}
-	if !isCronNumberInRange(hour, 0, 23) || dayOfMonth != "*" || month != "*" {
-		return false
-	}
-	return weekday == "*" || isCronWeekdayList(weekday)
+	return dbBackupPolicyCronFields{
+		minute:     fields[0],
+		hour:       fields[1],
+		dayOfMonth: fields[2],
+		month:      fields[3],
+		weekday:    fields[4],
+	}, true
+}
+
+func isHourlyDBBackupPolicyCron(fields dbBackupPolicyCronFields) bool {
+	return isCronNumberInRange(fields.minute, 0, 59) &&
+		fields.hour == "*" &&
+		fields.dayOfMonth == "*" &&
+		fields.month == "*" &&
+		fields.weekday == "*"
+}
+
+func isDailyDBBackupPolicyCron(fields dbBackupPolicyCronFields) bool {
+	return isCronNumberInRange(fields.minute, 0, 59) &&
+		isCronNumberInRange(fields.hour, 0, 23) &&
+		fields.dayOfMonth == "*" &&
+		fields.month == "*" &&
+		fields.weekday == "*"
+}
+
+func isWeeklyDBBackupPolicyCron(fields dbBackupPolicyCronFields) bool {
+	return isCronNumberInRange(fields.minute, 0, 59) &&
+		isCronNumberInRange(fields.hour, 0, 23) &&
+		fields.dayOfMonth == "*" &&
+		fields.month == "*" &&
+		isCronWeekdayList(fields.weekday)
 }
 
 func isCronNumberInRange(value string, min, max int) bool {
