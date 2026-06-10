@@ -10,6 +10,9 @@ const runtime = {
   backups: [
     {
       metadata: {
+        annotations: {
+          "brain.io/description": "Before invoice migration",
+        },
         creationTimestamp: "2026-06-09T05:00:00Z",
         name: "orders-manual-20260609",
         namespace: "database-system",
@@ -18,6 +21,33 @@ const runtime = {
         completionTimestamp: "2026-06-09T05:03:00Z",
         phase: "Completed",
         startTimestamp: "2026-06-09T05:00:00Z",
+        totalSize: "10Gi",
+      },
+    },
+    {
+      metadata: {
+        creationTimestamp: "2026-06-08T05:00:00Z",
+        labels: {
+          "dataprotection.kubeblocks.io/backup-policy": "daily",
+        },
+        name: "orders-auto-20260608",
+        namespace: "database-system",
+      },
+      status: {
+        failureReason: "volume snapshot failed",
+        phase: "Failed",
+        startTimestamp: "2026-06-08T05:00:00Z",
+      },
+    },
+    {
+      metadata: {
+        creationTimestamp: "2026-06-10T05:00:00Z",
+        name: "orders-running-20260610",
+        namespace: "database-system",
+      },
+      status: {
+        phase: "Running",
+        startTimestamp: "2026-06-10T05:00:00Z",
       },
     },
   ],
@@ -84,6 +114,29 @@ function elementClassName(
   return match[1];
 }
 
+function assertStatusBadgeClass(
+  html: string,
+  state: string,
+  backgroundClassName: string
+) {
+  const className = elementClassName(
+    html,
+    "span",
+    'data-qa-object="backup-status-badge"',
+    `data-qa-state="${state}"`
+  );
+  const classes = className.split(/\s+/);
+  assert.ok(classes.includes(backgroundClassName));
+  assert.ok(classes.includes("font-normal"));
+  assert.ok(classes.includes("px-2.5"));
+  assert.ok(classes.includes("shrink-0"));
+  assert.ok(classes.includes("text-brand-primary-foreground"));
+  assert.ok(classes.includes("text-xs"));
+  assert.ok(
+    !classes.some((name) => name === "border" || name.startsWith("border-"))
+  );
+}
+
 test("DB Service root renders a service-level Backup tab without close controls", () => {
   const html = renderToStaticMarkup(
     <DbAccessSessionProvider runtime={runtime}>
@@ -109,7 +162,33 @@ test("DB Service root renders a service-level Backup tab without close controls"
   assert.ok(html.includes("@min-[60rem]/backup-surface:grid-cols-"));
   assert.ok(html.includes("@min-[48rem]/backup-surface:flex-row"));
   assert.match(html, /orders-manual-20260609/);
-  assert.match(html, /orders-db/);
+  assert.match(html, /Before invoice migration/);
+  assert.match(html, /data-qa-object="backup-row-name"/);
+  assert.match(html, /data-qa-object="backup-row-description"/);
+  assert.match(html, /data-qa-object="backup-row-time"/);
+  assert.match(html, /data-qa-object="backup-row-type"/);
+  assert.match(html, />Manual</);
+  assert.match(html, />Automatic</);
+  assert.match(html, />Completed</);
+  assert.match(html, />Failed</);
+  assert.match(html, />Backing up</);
+  assert.doesNotMatch(html, />Running</);
+  assertStatusBadgeClass(html, "completed", "bg-emerald-500/30");
+  assertStatusBadgeClass(html, "failed", "bg-destructive/30");
+  assertStatusBadgeClass(html, "running", "bg-blue-500/30");
+  assert.match(html, /data-qa-object="backup-status-tooltip-trigger"/);
+  assert.match(html, /data-qa-state="failed"/);
+  assert.doesNotMatch(html, /bg-zinc-950/);
+  assert.doesNotMatch(html, /text-zinc-100/);
+  assert.doesNotMatch(html, /database\.backup\.create-accepted/);
+  assert.doesNotMatch(html, /database\.backup\.create-error/);
+  assert.doesNotMatch(html, /database\.backup\.delete-error/);
+  assert.doesNotMatch(html, /database\.backup\.refresh-error/);
+  assert.doesNotMatch(html, /database\.backup\.restore-feedback/);
+  assert.match(html, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+  assert.doesNotMatch(html, /10Gi/);
+  assert.doesNotMatch(html, /3m/);
+  assert.doesNotMatch(html, /orders-db \/ orders-manual-20260609/);
   assert.match(html, /data-testid="database\.backup\.create-button"/);
   assert.match(html, /data-qa-action="restore"/);
   assert.match(html, /data-qa-action="delete-backup"/);

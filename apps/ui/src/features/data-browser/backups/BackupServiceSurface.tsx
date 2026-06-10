@@ -34,9 +34,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ArchiveRestore,
-  CheckCircle2,
   CloudUpload,
-  Info,
   LayoutList,
   Loader2,
   RotateCcw,
@@ -53,6 +51,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
 const DB_PRODUCT_ROUTE = "/api/db/v1alpha1";
@@ -529,29 +528,31 @@ function formatDateTime(value: string | undefined): string {
   if (!Number.isFinite(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function valueOrDash(value: string | undefined): string {
-  return value === undefined || value.trim() === "" ? "—" : value;
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function statusTone(status: DbServiceBackupSummary["status"]): string {
   switch (status) {
     case "Completed":
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+      return "bg-emerald-500/30";
     case "Failed":
-      return "border-destructive/40 bg-destructive/10 text-destructive-foreground";
+      return "bg-destructive/30";
     case "Deleting":
     case "Pending":
     case "Running":
-      return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+      return "bg-blue-500/30";
     default:
-      return "border-border bg-muted/30 text-muted-foreground";
+      return "bg-muted/30";
   }
+}
+
+function backupStatusLabel(status: DbServiceBackupSummary["status"]): string {
+  return status === "Running" ? "Backing up" : status;
 }
 
 function BackupStatusBadge({
@@ -564,75 +565,37 @@ function BackupStatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full border px-2 font-medium text-[11px] leading-4",
+        "inline-flex h-5 shrink-0 items-center rounded-full px-2.5 font-normal text-brand-primary-foreground text-xs leading-4",
         statusTone(status),
         className
       )}
+      data-qa-object="backup-status-badge"
+      data-qa-state={status.toLowerCase()}
     >
-      {status}
+      {backupStatusLabel(status)}
     </span>
   );
 }
 
-function backupDiagnosticItems(backup: DbServiceBackupSummary) {
-  return [
-    { label: "Backup", value: backup.name },
-    {
-      label: "Source",
-      value: `${backup.source.namespace}/${backup.source.name}`,
-    },
-    {
-      label: "Started",
-      value: formatDateTime(backup.startedAt ?? backup.createdAt),
-    },
-    { label: "Duration", value: valueOrDash(backup.duration) },
-    { label: "Size", value: valueOrDash(backup.size) },
-    { label: "Failure", value: valueOrDash(backup.failureReason) },
-    {
-      label: "Restorable",
-      value: backup.restorable ? "Available" : "Unavailable",
-    },
-    {
-      label: "Deletable",
-      value: backup.deletable ? "Available" : "Unavailable",
-    },
-  ];
-}
+function BackupStatus({ backup }: { backup: DbServiceBackupSummary }) {
+  if (backup.status !== "Failed" || backup.failureReason === undefined) {
+    return <BackupStatusBadge status={backup.status} />;
+  }
 
-function BackupStatusTooltip({ backup }: { backup: DbServiceBackupSummary }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="inline-flex cursor-help items-center">
+          <span
+            className="inline-flex shrink-0 cursor-help items-center leading-none"
+            data-qa-object="backup-status-tooltip-trigger"
+            data-qa-state="failed"
+          >
             <BackupStatusBadge status={backup.status} />
           </span>
         }
       />
-      <TooltipContent
-        arrow
-        className="max-w-80 bg-zinc-950 text-zinc-100"
-        side="bottom"
-        sideOffset={0}
-      >
-        <div className="grid gap-1 text-left">
-          <div className="mb-1 flex items-center gap-1.5 font-medium">
-            <Info className="size-3.5" />
-            {"Backup status"}
-          </div>
-          {backupDiagnosticItems(backup).map((item) => (
-            <div
-              className="grid grid-cols-[72px_minmax(0,1fr)] gap-2 text-[11px] leading-4"
-              key={item.label}
-            >
-              <span className="text-zinc-400">{item.label}</span>
-              <span className="min-w-0 truncate text-zinc-100">
-                {item.value}
-              </span>
-            </div>
-          ))}
-        </div>
-      </TooltipContent>
+      <TooltipContent side="bottom">{backup.failureReason}</TooltipContent>
     </Tooltip>
   );
 }
@@ -649,7 +612,7 @@ function EmptyBackupRows() {
       <h3 className="m-0 font-medium text-sm leading-5">
         {"No backups found"}
       </h3>
-      <p className="mt-1.5 mb-0 max-w-md text-sm text-muted-foreground leading-5">
+      <p className="mt-1.5 mb-0 max-w-md text-muted-foreground text-sm leading-5">
         {"DB Service Backups for this service will appear here."}
       </p>
     </div>
@@ -657,17 +620,11 @@ function EmptyBackupRows() {
 }
 
 function backupTypeLabel(type: DbServiceBackupSummary["type"]): string {
-  return type === "Manual" ? "Manual Backup" : "Auto Backup";
+  return type === "Manual" ? "Manual" : "Automatic";
 }
 
-function backupRowMeta(backup: DbServiceBackupSummary): string {
-  return [
-    backup.source.name,
-    backup.name,
-    formatDateTime(backup.startedAt ?? backup.createdAt),
-    valueOrDash(backup.duration),
-    valueOrDash(backup.size),
-  ].join(" / ");
+function backupTimeLabel(backup: DbServiceBackupSummary): string {
+  return formatDateTime(backup.startedAt ?? backup.createdAt);
 }
 
 function UnsupportedBackupSurface() {
@@ -684,7 +641,7 @@ function UnsupportedBackupSurface() {
         <h3 className="m-0 font-medium text-sm leading-5">
           {"Backup unavailable"}
         </h3>
-        <p className="mt-1.5 mb-0 text-sm text-muted-foreground leading-5">
+        <p className="mt-1.5 mb-0 text-muted-foreground text-sm leading-5">
           {`${runtime.database.displayEngine} DB Service Backups are not available in this version.`}
         </p>
       </div>
@@ -747,14 +704,40 @@ function BackupRowsList({
                 >
                   <div className="min-w-0 @min-[48rem]/backup-surface:flex-1">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium text-sm leading-5">
+                      <span
+                        className="truncate font-medium text-sm leading-5"
+                        data-qa-object="backup-row-name"
+                      >
+                        {backup.name}
+                      </span>
+                      <BackupStatus backup={backup} />
+                    </div>
+                    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground leading-4">
+                      {backup.description === undefined ? null : (
+                        <>
+                          <span
+                            className="min-w-0 truncate"
+                            data-qa-object="backup-row-description"
+                          >
+                            {backup.description}
+                          </span>
+                          <span className="shrink-0">{"·"}</span>
+                        </>
+                      )}
+                      <span
+                        className="shrink-0"
+                        data-qa-object="backup-row-time"
+                      >
+                        {backupTimeLabel(backup)}
+                      </span>
+                      <span className="shrink-0">{"·"}</span>
+                      <span
+                        className="shrink-0"
+                        data-qa-object="backup-row-type"
+                      >
                         {backupTypeLabel(backup.type)}
                       </span>
-                      <BackupStatusTooltip backup={backup} />
                     </div>
-                    <p className="mt-1 mb-0 truncate text-[12px] text-muted-foreground leading-4">
-                      {backupRowMeta(backup)}
-                    </p>
                   </div>
 
                   <div className="flex min-w-0 @min-[48rem]/backup-surface:shrink-0 flex-wrap items-center justify-end gap-2">
@@ -822,8 +805,6 @@ function BackupCreationForm({
   const [isBackupNameEdited, setIsBackupNameEdited] = useState(false);
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState<DbServiceBackupFormErrors>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [acceptedName, setAcceptedName] = useState<string | null>(null);
   const descriptionLength = [...description].length;
 
   useEffect(() => {
@@ -834,8 +815,6 @@ function BackupCreationForm({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitError(null);
-    setAcceptedName(null);
     const nextErrors = validateDbServiceBackupForm({
       backupName,
       description,
@@ -845,18 +824,20 @@ function BackupCreationForm({
       return;
     }
     const trimmedName = backupName.trim();
-    onSubmit({ backupName: trimmedName, description })
-      .then(() => {
+    const submission = onSubmit({ backupName: trimmedName, description }).then(
+      () => {
         setBackupName(createDefaultBackupName());
         setIsBackupNameEdited(false);
         setDescription("");
-        setAcceptedName(trimmedName);
-      })
-      .catch((error: unknown) => {
-        setSubmitError(
-          error instanceof Error ? error.message : "Failed to create backup."
-        );
-      });
+      }
+    );
+    toast.promise(submission, {
+      error: (error) =>
+        error instanceof Error ? error.message : "Failed to create backup.",
+      loading: `Requesting backup ${trimmedName}...`,
+      success: `Backup request accepted for ${trimmedName}.`,
+    });
+    submission.catch(() => undefined);
   };
 
   return (
@@ -871,7 +852,7 @@ function BackupCreationForm({
       <div className="grid min-w-0 @min-[60rem]/backup-surface:grid-cols-[minmax(220px,320px)_minmax(260px,1fr)] gap-4">
         <div className="min-w-0">
           <label
-            className="mb-2 block font-medium text-sm text-muted-foreground leading-5"
+            className="mb-2 block font-medium text-muted-foreground text-sm leading-5"
             htmlFor="db-service-backup-name"
           >
             {"Backup Name"}
@@ -904,7 +885,7 @@ function BackupCreationForm({
         <div className="min-w-0">
           <div className="mb-2 flex items-center justify-between gap-2">
             <label
-              className="block font-medium text-sm text-muted-foreground leading-5"
+              className="block font-medium text-muted-foreground text-sm leading-5"
               htmlFor="db-service-backup-description"
             >
               {"Description"}
@@ -969,31 +950,6 @@ function BackupCreationForm({
           {"Backup"}
         </AppButton>
       </div>
-
-      {submitError !== null && (
-        <div
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
-          data-qa-module="database"
-          data-qa-object="backup-create-error"
-          data-qa-state="error"
-          data-testid="database.backup.create-error"
-        >
-          {submitError}
-        </div>
-      )}
-
-      {acceptedName !== null && (
-        <div
-          className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"
-          data-qa-module="database"
-          data-qa-object="backup-create-accepted"
-          data-qa-state="accepted"
-          data-testid="database.backup.create-accepted"
-        >
-          <CheckCircle2 className="size-4 shrink-0" />
-          <span>{`Backup request accepted for ${acceptedName}.`}</span>
-        </div>
-      )}
     </form>
   );
 }
@@ -1012,7 +968,6 @@ function RestoreBackupModal({
   const runtime = useDbAccessRuntime();
   const [restoredName, setRestoredName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const validationError =
     backup === null
       ? null
@@ -1026,7 +981,6 @@ function RestoreBackupModal({
           existingNames
         )
       );
-      setSubmitError(null);
       setIsSubmitting(false);
     }
   }, [backup, existingNames, runtime.databaseWorkloadName]);
@@ -1038,24 +992,30 @@ function RestoreBackupModal({
     }
 
     setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      await submitDbServiceBackupRestore({
-        backupName: backup.name,
-        backupNamespace: backup.namespace,
-        kubeconfig: runtime.kubeconfig,
-        name: runtime.databaseWorkloadName,
-        namespace: runtime.databaseWorkloadNamespace,
-        restoredName,
-      });
-      onSuccess(restoredName.trim());
+    const trimmedRestoredName = restoredName.trim();
+    const submission = submitDbServiceBackupRestore({
+      backupName: backup.name,
+      backupNamespace: backup.namespace,
+      kubeconfig: runtime.kubeconfig,
+      name: runtime.databaseWorkloadName,
+      namespace: runtime.databaseWorkloadNamespace,
+      restoredName: trimmedRestoredName,
+    }).then(() => {
+      onSuccess(trimmedRestoredName);
       onOpenChange(false);
-    } catch (error) {
-      setSubmitError(
+    });
+    toast.promise(submission, {
+      error: (error) =>
         error instanceof Error
           ? error.message
-          : "DB Service backup restore failed."
-      );
+          : "DB Service backup restore failed.",
+      loading: `Restoring DB Service ${trimmedRestoredName}...`,
+      success: "Restore request accepted.",
+    });
+    try {
+      await submission;
+    } catch {
+      // Error feedback is handled by the global toast.
     } finally {
       setIsSubmitting(false);
     }
@@ -1100,24 +1060,13 @@ function RestoreBackupModal({
                 />
                 {validationError === null ? null : (
                   <p
-                    className="m-0 text-sm text-destructive leading-5"
+                    className="m-0 text-destructive text-sm leading-5"
                     data-testid="database.backup.restore-name-error"
                   >
                     {validationError}
                   </p>
                 )}
               </AppDialog.Field>
-              {submitError === null ? null : (
-                <div
-                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
-                  data-qa-module="database"
-                  data-qa-object="backup-restore-error"
-                  data-qa-state="error"
-                  data-testid="database.backup.restore-error"
-                >
-                  {submitError}
-                </div>
-              )}
             </AppDialog.Body>
             <AppDialog.Footer>
               <AppDialog.Cancel disabled={isSubmitting}>
@@ -1192,7 +1141,6 @@ function BackupPolicyForm({
     enabled: policyEnabled,
   }));
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const retention = validateDbServiceBackupPolicyRetentionDays(
     form.retentionDays
   );
@@ -1202,7 +1150,6 @@ function BackupPolicyForm({
       ...backupPolicyFormFromBackend(initialPolicy),
       enabled: current.enabled,
     }));
-    setError(null);
   }, [initialPolicy]);
 
   useEffect(() => {
@@ -1228,13 +1175,11 @@ function BackupPolicyForm({
     const nextForm = backupPolicyFormFromBackend(initialPolicy);
     setForm(nextForm);
     onPolicyEnabledChange(nextForm.enabled);
-    setError(null);
   }, [initialPolicy, onPolicyEnabledChange]);
 
   const savePolicy = useCallback(async () => {
     setIsSaving(true);
-    setError(null);
-    try {
+    const save = (async () => {
       const backend = backupPolicyFormToBackend(form);
       const updated = await updateDbServiceBackupPolicy({
         cronExpression: backend.cronExpression,
@@ -1250,12 +1195,21 @@ function BackupPolicyForm({
       );
       setForm(nextForm);
       onPolicyEnabledChange(nextForm.enabled);
-    } catch (saveError) {
-      setError(
+    })();
+    toast.promise(save, {
+      error: (saveError) =>
         saveError instanceof Error
           ? saveError.message
-          : "Failed to update backup policy."
-      );
+          : "Failed to update backup policy.",
+      loading: "Saving backup policy...",
+      success: form.enabled
+        ? "Backup policy saved."
+        : "Backup policy disabled.",
+    });
+    try {
+      await save;
+    } catch {
+      // Error feedback is handled by the global toast.
     } finally {
       setIsSaving(false);
     }
@@ -1308,7 +1262,12 @@ function BackupPolicyForm({
       if (current.frequency !== "weekly") {
         return current;
       }
-      const weekday = parseBoundedInteger(value, current.weekdays[0] ?? 1, 0, 6);
+      const weekday = parseBoundedInteger(
+        value,
+        current.weekdays[0] ?? 1,
+        0,
+        6
+      );
       return {
         ...current,
         weekdays: [weekday],
@@ -1362,7 +1321,7 @@ function BackupPolicyForm({
         </label>
 
         {form.frequency === "weekly" && (
-          <label className="flex min-w-0 flex-col gap-2 text-sm @min-[40rem]/backup-surface:col-span-2">
+          <label className="@min-[40rem]/backup-surface:col-span-2 flex min-w-0 flex-col gap-2 text-sm">
             <span className="font-medium text-muted-foreground leading-5">
               {"Week"}
             </span>
@@ -1422,14 +1381,14 @@ function BackupPolicyForm({
         </label>
       </div>
 
-      {(!retention.ok || error !== null) && (
+      {!retention.ok && (
         <div
-          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
+          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive-foreground text-sm"
           data-qa-module="database"
           data-qa-object="backup-policy-error"
           data-testid="database.backup.policy-error"
         >
-          {retention.message ?? error}
+          {retention.message}
         </div>
       )}
 
@@ -1699,9 +1658,7 @@ export function BackupServiceSurface() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
+  const lastRefreshErrorRef = useRef<string | null>(null);
   const [restoreBackup, setRestoreBackup] =
     useState<DbServiceBackupSummary | null>(null);
   const [selectedDeleteBackup, setSelectedDeleteBackup] =
@@ -1733,7 +1690,6 @@ export function BackupServiceSurface() {
       return;
     }
     setIsLoading(true);
-    setRefreshError(null);
     try {
       setRefreshData(
         await fetchDbServiceBackupProductResource({
@@ -1743,10 +1699,14 @@ export function BackupServiceSurface() {
         })
       );
       setDeletedBackupNames(new Set());
+      lastRefreshErrorRef.current = null;
     } catch (error) {
-      setRefreshError(
-        error instanceof Error ? error.message : "Failed to refresh backups."
-      );
+      const message =
+        error instanceof Error ? error.message : "Failed to refresh backups.";
+      if (lastRefreshErrorRef.current !== message) {
+        lastRefreshErrorRef.current = message;
+        toast.error(message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1790,7 +1750,6 @@ export function BackupServiceSurface() {
     if (!backup.deletable) {
       return;
     }
-    setDeleteError(null);
     setSelectedDeleteBackup(backup);
   }, []);
   const confirmDeleteBackup = useCallback(async () => {
@@ -1798,29 +1757,32 @@ export function BackupServiceSurface() {
       return;
     }
     setIsDeleting(true);
-    setDeleteError(null);
-    try {
+    const backupName = selectedDeleteBackup.name;
+    const deletion = (async () => {
       await deleteDbServiceBackup({
-        backupName: selectedDeleteBackup.name,
+        backupName,
         kubeconfig: runtime.kubeconfig,
         name: runtime.databaseWorkloadName,
         namespace: runtime.databaseWorkloadNamespace,
       });
       setDeletedBackupNames((previous) => {
         const next = new Set(previous);
-        next.add(selectedDeleteBackup.name);
+        next.add(backupName);
         return next;
       });
       setSelectedDeleteBackup(null);
-      await refresh().catch((error) => {
-        setRefreshError(
-          error instanceof Error ? error.message : "Failed to refresh backups."
-        );
-      });
-    } catch (error) {
-      setDeleteError(
-        error instanceof Error ? error.message : "Failed to delete backup."
-      );
+      await refresh();
+    })();
+    toast.promise(deletion, {
+      error: (error) =>
+        error instanceof Error ? error.message : "Failed to delete backup.",
+      loading: `Deleting backup ${backupName}...`,
+      success: `Deleted backup ${backupName}.`,
+    });
+    try {
+      await deletion;
+    } catch {
+      // Error feedback is handled by the global toast.
     } finally {
       setIsDeleting(false);
     }
@@ -1837,7 +1799,6 @@ export function BackupServiceSurface() {
   );
   const handleRestoreSuccess = useCallback(
     (restoredName: string) => {
-      setRestoreSuccess("Restore request accepted.");
       setRestoreBackup(null);
       if (runtime.onDbServiceRestoreAccepted === undefined) {
         runtime.refreshProjectCanvas?.().catch(() => undefined);
@@ -1890,42 +1851,6 @@ export function BackupServiceSurface() {
         onCreateBackup={createBackup}
         onPolicySaved={setRefreshData}
       />
-
-      {refreshError !== null && (
-        <div
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
-          data-qa-module="database"
-          data-qa-object="backup-refresh-error"
-          data-qa-state="error"
-          data-testid="database.backup.refresh-error"
-        >
-          {refreshError}
-        </div>
-      )}
-
-      {deleteError !== null && (
-        <div
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
-          data-qa-module="database"
-          data-qa-object="backup-delete-error"
-          data-qa-state="error"
-          data-testid="database.backup.delete-error"
-        >
-          {deleteError}
-        </div>
-      )}
-
-      {restoreSuccess !== null && (
-        <div
-          className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"
-          data-qa-module="database"
-          data-qa-object="backup-restore-feedback"
-          data-qa-state="accepted"
-          data-testid="database.backup.restore-feedback"
-        >
-          {restoreSuccess}
-        </div>
-      )}
 
       <BackupRowsList
         backups={summaries}
