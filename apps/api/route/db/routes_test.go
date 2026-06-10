@@ -515,7 +515,7 @@ func TestApplyDBBackupStateSetsEmptyBackupList(t *testing.T) {
 	}
 }
 
-func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpec(t *testing.T) {
+func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpecWithoutDefaultRepo(t *testing.T) {
 	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
 		Enabled:        true,
 		CronExpression: "15 8 * * 1,3,5",
@@ -542,8 +542,8 @@ func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpec(t *testing.T) {
 	if got := backup["method"]; got != "pg-basebackup" {
 		t.Fatalf("backup.method = %v, want pg-basebackup", got)
 	}
-	if got := backup["repoName"]; got != "backuprepo-s3" {
-		t.Fatalf("backup.repoName = %v, want backuprepo-s3", got)
+	if _, ok := backup["repoName"]; ok {
+		t.Fatal("backup.repoName should be omitted when the source DB has no repo")
 	}
 }
 
@@ -564,6 +564,26 @@ func TestDBBackupPolicyPatchFromRequestPreservesExistingRepo(t *testing.T) {
 	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
 	if got := backup["repoName"]; got != "custom-repo" {
 		t.Fatalf("backup.repoName = %v, want custom-repo", got)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestClearsLegacyFallbackRepo(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * *",
+		RetentionDays:  7,
+	}, "postgresql", "backuprepo-s3")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got, ok := backup["repoName"]; !ok || got != nil {
+		t.Fatalf("backup.repoName = %v, present = %v; want explicit null", got, ok)
 	}
 }
 

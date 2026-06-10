@@ -590,7 +590,9 @@ func dbBackupPolicyPatchFromRequest(request dbBackupPolicyRequest, engine string
 		backup["incrementalBackupEnabled"] = false
 		backup["method"] = profile.BackupMethod
 		backup["pitrEnabled"] = false
-		backup["repoName"] = dbBackupPolicyRepoName(repoName)
+		if patchValue, ok := dbBackupPolicyRepoPatchValue(repoName); ok {
+			backup["repoName"] = patchValue
+		}
 		backup["retentionPeriod"] = fmt.Sprintf("%dd", request.RetentionDays)
 	}
 	return json.Marshal(map[string]interface{}{
@@ -681,12 +683,15 @@ func dbBackupRepoName(cluster unstructured.Unstructured) string {
 	return strings.TrimSpace(repoName)
 }
 
-func dbBackupPolicyRepoName(repoName string) string {
+func dbBackupPolicyRepoPatchValue(repoName string) (interface{}, bool) {
 	repoName = strings.TrimSpace(repoName)
 	if repoName == "" {
-		return "backuprepo-s3"
+		return nil, false
 	}
-	return repoName
+	if repoName == "backuprepo-s3" {
+		return nil, true
+	}
+	return repoName, true
 }
 
 func isAllowedRetentionDays(days int64) bool {
