@@ -5,6 +5,7 @@ import {
   apEnvRawSourceFromRows,
   apEnvRawSourceReferenceSuggestionContext,
   apEnvRawSourceRows,
+  appendApEnvRawSourceRow,
   applyApEnvRawSourceRowPatch,
   buildApEnvReferenceMenuItems,
   compileApEnvRawSourceForRuntime,
@@ -135,6 +136,27 @@ test("AP env raw source projects saved direct env rows when raw source is absent
       { name: "RUNTIME", value: "$(DATABASE_URL)" },
     ]),
     "DATABASE_URL=postgres://db:5432/app\nRUNTIME=$(DATABASE_URL)"
+  );
+});
+
+test("AP env raw source keeps newly added empty rows from making sticky quotes", () => {
+  assert.equal(
+    apEnvRawSourceFromRows([{ name: "NEW_VARIABLE", value: "" }]),
+    "NEW_VARIABLE="
+  );
+
+  const empty = appendApEnvRawSourceRow("", {
+    name: "NEW_VARIABLE",
+    value: "",
+  });
+  const next = applyApEnvRawSourceRowPatch(empty.source, 0, {
+    value: referenceExpression("postgres", "PG_USER"),
+  });
+
+  assert.equal(empty.source, "NEW_VARIABLE=");
+  assert.equal(
+    next.source,
+    `NEW_VARIABLE=${referenceExpression("postgres", "PG_USER")}`
   );
 });
 

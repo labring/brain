@@ -33,7 +33,7 @@ export function ResourceSettingsSection({
           </h3>
         </div>
         {actions == null ? null : (
-          <div className="flex shrink-0 items-center gap-1">{actions}</div>
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
         )}
       </header>
       <div className="flex min-w-0 flex-col gap-3 px-2.5 pb-3">{children}</div>

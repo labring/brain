@@ -1108,7 +1108,7 @@ function valueForExistingRawFormatting(
 }
 
 function rawValueForNewAssignment(value: string): string {
-  if (value === "" || EDGE_WHITESPACE_RE.test(value) || value.includes("\n")) {
+  if (EDGE_WHITESPACE_RE.test(value) || value.includes("\n")) {
     return `"${escapeDoubleQuotedValue(value)}"`;
   }
   return value;

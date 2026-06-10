@@ -168,6 +168,132 @@
   }
 }
 
+@layer components {
+  .monaco-editor.ap-env-raw-source-monaco .suggest-widget,
+  .monaco-editor.ap-env-raw-source-monaco .suggest-details {
+    overflow: hidden;
+    color: var(--popover-foreground);
+    background-color: color-mix(
+      in oklab,
+      var(--input) 30%,
+      transparent
+    ) !important;
+    border-color: var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: none !important;
+    backdrop-filter: blur(24px);
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco .suggest-widget {
+    width: min(28rem, calc(100% - 1rem));
+    padding: 0.25rem;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco .suggest-widget .monaco-list {
+    background-color: transparent !important;
+    border-radius: calc(var(--radius-md) - 0.125rem);
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row {
+    padding-right: 0.5rem;
+    color: var(--popover-foreground) !important;
+    background-color: transparent !important;
+    border-radius: var(--radius-sm);
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row
+    > .contents {
+    padding-left: 0.5rem;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row.focused {
+    color: var(--popover-foreground) !important;
+    background-color: var(--input) !important;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row:not(.focused):hover {
+    background-color: color-mix(
+      in oklab,
+      var(--input) 30%,
+      transparent
+    ) !important;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row
+    > .contents
+    > .main
+    > .left
+    > .monaco-icon-label {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row
+    .label-name {
+    font-weight: 500;
+    color: var(--popover-foreground) !important;
+    letter-spacing: 0;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row
+    > .contents
+    > .main
+    > .right
+    > .details-label {
+    margin-left: 1rem;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget
+    .monaco-list
+    .monaco-list-row.focused
+    > .contents
+    > .main
+    > .right
+    > .details-label {
+    color: color-mix(in oklab, var(--foreground) 68%, var(--muted-foreground));
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .suggest-widget:not(.frozen)
+    .monaco-highlighted-label
+    .highlight {
+    font-weight: 600;
+    color: var(--popover-foreground) !important;
+  }
+
+  .monaco-editor.ap-env-raw-source-monaco
+    .monaco-scrollable-element
+    > .scrollbar
+    > .slider {
+    background-color: color-mix(in oklab, var(--border) 74%, transparent);
+  }
+}
+
 @layer utilities {
   /** Chat scroll surfaces (transcript, thread picker): thin track, themed thumb — Firefox + WebKit. */
   .scrollbar-chat-thin {

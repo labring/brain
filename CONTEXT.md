@@ -187,7 +187,7 @@ The preferred default presentation of the AP Environment Raw Source. It recogniz
 
 ### Reference
 
-A DB Service selected in the AP Environment editor as a source for inserting or recognizing DB-backed environment entries. A Reference is editing context, not saved product state by itself.
+A DB Service selected in the AP Environment editor as a source for inserting or recognizing DB-backed environment entries. A Reference is editing context, not saved product state by itself, and is not an independent property of an AP environment row.
 
 _Avoid_: Binding record, hidden binding state.
 

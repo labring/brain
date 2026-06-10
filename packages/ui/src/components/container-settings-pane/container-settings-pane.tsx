@@ -9,19 +9,18 @@ import { AppInput } from "@workspace/ui/components/app-input";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Badge } from "@workspace/ui/components/badge";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
+import { CANVAS_NODE_DEFAULT_COPIED_FEEDBACK_MS } from "@workspace/ui/components/canvas-node/canvas-node.copyable-row";
 import { Label } from "@workspace/ui/components/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@workspace/ui/components/popover";
 import {
   ResourceSettingsDraftFooter,
   ResourceSettingsInset,
   ResourceSettingsSection,
 } from "@workspace/ui/components/resource-settings/resource-settings";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import {
@@ -70,14 +69,16 @@ import { parsePortNumberDigits } from "@workspace/ui/lib/port-number";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Braces,
-  ChevronDown,
+  Check,
   Copy,
   Cpu,
   Eye,
+  EyeClosed,
   MemoryStick,
   Network,
   Plus,
   Save,
+  Search,
   Settings,
   SquarePen,
   Trash2,
@@ -114,6 +115,7 @@ const DEFAULT_MEMORY_AVERAGE_TARGET_MIB = 512;
 const MEMORY_AVERAGE_VALUE_RE = /^([1-9][0-9]*)(Mi|Gi)$/;
 const AP_ENV_RAW_SOURCE_MONACO_LANGUAGE = "ap-env-raw-source";
 const AP_ENV_RAW_SOURCE_MARKER_OWNER = "ap-env-raw-source";
+const REFERENCE_PICKER_QUERY_SPLIT_RE = /\s+/;
 const AP_ENV_REFERENCE_VARIABLE_SORT_ORDER: Record<string, number> = {
   DATABASE_URL: 0,
   PG_USER: 1,
@@ -122,11 +124,11 @@ const AP_ENV_REFERENCE_VARIABLE_SORT_ORDER: Record<string, number> = {
   PG_PORT: 4,
 };
 const AP_ENV_REFERENCE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
-  DATABASE_URL: "Complete DSN",
+  DATABASE_URL: "Connection string",
   PG_HOST: "Host",
-  PG_PASSWORD: "Password",
+  PG_PASSWORD: "Password secret",
   PG_PORT: "Port",
-  PG_USER: "Username",
+  PG_USER: "Username secret",
 };
 let apEnvRawSourceMonacoConfigured = false;
 
@@ -670,6 +672,19 @@ type EnvDraftRow = ContainerEnvVar & AddDbDsnReferenceIntentDraftMetadata;
 export type ContainerEnvResolvedValueResolver = (
   name: string
 ) => Promise<string>;
+
+const ENV_EDITOR_MODE_TOGGLE_OPTIONS = [
+  {
+    ariaLabel: "List environment editor",
+    label: "List",
+    value: "structured",
+  },
+  {
+    ariaLabel: "Raw environment editor",
+    label: "Raw",
+    value: "raw",
+  },
+] as const satisfies readonly SlidingToggleOption<EnvEditorMode>[];
 
 function publicAddressDraftsEqual(
   a: readonly ContainerNetworkPublicAddress[],
@@ -1295,6 +1310,7 @@ function ReadOnlyEnvRows({ env }: { env: readonly ContainerEnvVar[] }) {
 }
 
 interface EditableEnvRowsProps {
+  copiedValueIndex: number | null;
   dbDsnReferenceSources: ContainerEnvDbDsnSource[];
   editingSavedRows: ReadonlySet<number>;
   envDirty: boolean;
@@ -1309,7 +1325,6 @@ interface EditableEnvRowsProps {
   onCopyResolvedValue: (index: number) => void;
   onDeleteRow: (index: number) => void;
   onEditSavedRow: (index: number) => void;
-  onModeChange: (mode: EnvEditorMode) => void;
   onRawSourceChange: (source: string) => void;
   onRevealResolvedValue: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ContainerEnvRow>) => void;
@@ -1326,7 +1341,6 @@ interface EnvRawSourceEditorProps {
 }
 
 interface EditableEnvNameControlProps {
-  dbDsnReferenceSources: ContainerEnvDbDsnSource[];
   error?: string;
   index: number;
   managed?: boolean;
@@ -1343,11 +1357,20 @@ interface EditableEnvValueControlProps {
 }
 
 interface SavedEnvValueControlProps {
+  copied?: boolean;
   index: number;
   onCopyResolvedValue: (index: number) => void;
-  onEditSavedRow: (index: number) => void;
   onRevealResolvedValue: (index: number) => void;
+  resolvedValuesAvailable: boolean;
   revealedValue?: string;
+  row: ContainerEnvVar;
+}
+
+interface EnvRowActionsMenuProps {
+  canEdit: boolean;
+  index: number;
+  onDeleteRow: (index: number) => void;
+  onEditSavedRow: (index: number) => void;
   row: ContainerEnvVar;
 }
 
@@ -1357,6 +1380,17 @@ function envRowIsManagedHelper(row: ContainerEnvVar): boolean {
 
 function envRowUsesExternalValue(row: ContainerEnvVar): boolean {
   return row.valueFrom != null || row.valueSource === "valueFrom";
+}
+
+function SavedEnvNameControl({ row }: { row: ContainerEnvVar }) {
+  return (
+    <div
+      className="flex h-9 min-w-0 items-center rounded-md border border-input bg-transparent px-3 text-foreground text-sm leading-5"
+      title={row.name}
+    >
+      <span className="min-w-0 truncate">{row.name}</span>
+    </div>
+  );
 }
 
 function configureApEnvRawSourceMonaco(monaco: Monaco) {
@@ -1382,13 +1416,17 @@ function configureApEnvRawSourceMonaco(monaco: Monaco) {
       "editorLineNumber.foreground": "#6b7280",
       "editorLineNumber.activeForeground": "#d1d5db",
       "editor.lineHighlightBackground": "#ffffff08",
+      "editor.lineHighlightBorder": "#00000000",
       "editorCursor.foreground": "#e5e7eb",
       "editor.selectionBackground": "#2563eb66",
-      "editorSuggestWidget.background": "#111827",
-      "editorSuggestWidget.border": "#374151",
+      "editorSuggestWidget.background": "#00000000",
+      "editorSuggestWidget.border": "#00000000",
       "editorSuggestWidget.foreground": "#e5e7eb",
-      "editorSuggestWidget.highlightForeground": "#93c5fd",
-      "editorSuggestWidget.selectedBackground": "#1f2937",
+      "editorSuggestWidget.focusHighlightForeground": "#f8fafc",
+      "editorSuggestWidget.highlightForeground": "#f8fafc",
+      "editorSuggestWidget.selectedBackground": "#ffffff26",
+      "editorSuggestWidget.selectedForeground": "#f8fafc",
+      "editorSuggestWidget.selectedIconForeground": "#f8fafc",
     },
   });
   apEnvRawSourceMonacoConfigured = true;
@@ -1419,6 +1457,58 @@ function referenceCompletionDocumentation(
     AP_ENV_REFERENCE_VARIABLE_DESCRIPTIONS[item.variableName] ??
     item.description
   );
+}
+
+function availableReferencePickerItems(
+  sources: readonly ContainerEnvDbDsnSource[]
+): ApEnvReferenceMenuItem[] {
+  return buildApEnvReferenceMenuItems(sources).filter((item) => item.available);
+}
+
+function referencePickerItemMatchesQuery(
+  item: ApEnvReferenceMenuItem,
+  query: string
+): boolean {
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(REFERENCE_PICKER_QUERY_SPLIT_RE)
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return true;
+  }
+  const fields = [
+    item.dbName,
+    item.variableName,
+    item.expression,
+    item.type,
+    referenceCompletionDocumentation(item),
+  ].map((field) => field.toLowerCase());
+  return tokens.every((token) => fields.some((field) => field.includes(token)));
+}
+
+function groupedReferencePickerItems(
+  items: readonly ApEnvReferenceMenuItem[],
+  query: string
+): { dbName: string; items: ApEnvReferenceMenuItem[] }[] {
+  const groups: { dbName: string; items: ApEnvReferenceMenuItem[] }[] = [];
+  const groupByDb = new Map<
+    string,
+    { dbName: string; items: ApEnvReferenceMenuItem[] }
+  >();
+  for (const item of items) {
+    if (!referencePickerItemMatchesQuery(item, query)) {
+      continue;
+    }
+    let group = groupByDb.get(item.dbName);
+    if (group === undefined) {
+      group = { dbName: item.dbName, items: [] };
+      groupByDb.set(item.dbName, group);
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  return groups;
 }
 
 function syncApEnvRawSourceMarkers({
@@ -1454,7 +1544,6 @@ function syncApEnvRawSourceMarkers({
 }
 
 function EditableEnvNameControl({
-  dbDsnReferenceSources,
   error,
   index,
   managed = false,
@@ -1469,17 +1558,10 @@ function EditableEnvNameControl({
     );
   }
 
-  const referenceSources = dbDsnReferenceSources;
-  const canAddReference = referenceSources.length > 0;
-  const input = (
+  return (
     <AppInput
       aria-invalid={error != null}
       aria-label="Environment variable name"
-      className={
-        canAddReference
-          ? "border-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
-          : undefined
-      }
       onChange={(event) =>
         onUpdateRow(index, {
           name: event.target.value,
@@ -1487,47 +1569,7 @@ function EditableEnvNameControl({
       }
       placeholder="Name"
       value={row.name}
-      variant={canAddReference ? "bare" : undefined}
     />
-  );
-
-  if (!canAddReference) {
-    return input;
-  }
-
-  return (
-    <div className="flex h-9 min-w-0 items-center rounded-md border border-input bg-transparent focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50">
-      <div className="min-w-0 flex-1">{input}</div>
-      <Select
-        onValueChange={(value) => {
-          onUpdateRow(index, { referenceDbKey: value });
-        }}
-        value={row.referenceDbKey}
-      >
-        <SelectTrigger
-          aria-label="Reference"
-          className="mr-1 h-7 w-auto shrink-0 gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
-          data-slot="container-env-reference-trigger"
-          indicator={false}
-          variant="ghost"
-        >
-          <SelectValue placeholder="Reference" />
-          <ChevronDown aria-hidden className="size-4" />
-        </SelectTrigger>
-        <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
-          {referenceSources.map((source) => (
-            <SelectItem
-              className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
-              indicator={false}
-              key={dbDsnSourceKey(source)}
-              value={dbDsnSourceKey(source)}
-            >
-              {source.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
 
@@ -1540,6 +1582,7 @@ function EditableEnvValueControl({
 }: EditableEnvValueControlProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
+  const [referenceQuery, setReferenceQuery] = useState("");
   const externalValue = envRowUsesExternalValue(row);
   if (managed) {
     return (
@@ -1561,7 +1604,29 @@ function EditableEnvValueControl({
     );
   }
 
-  const menuItems = buildApEnvReferenceMenuItems(dbDsnReferenceSources);
+  const menuItems = availableReferencePickerItems(dbDsnReferenceSources);
+  const visibleGroups = groupedReferencePickerItems(menuItems, referenceQuery);
+  const canInsertReference = menuItems.length > 0;
+  const handleReferenceMenuOpenChange = (open: boolean) => {
+    setReferenceMenuOpen(open);
+    if (!open) {
+      setReferenceQuery("");
+    }
+  };
+  const handleInsertReference = (expression: string) => {
+    const nextValue = insertApEnvReferenceText(
+      row.value,
+      expression,
+      inputRef.current?.selectionStart,
+      inputRef.current?.selectionEnd
+    );
+    onUpdateRow(index, {
+      value: nextValue,
+      valueSource: "direct",
+    });
+    setReferenceMenuOpen(false);
+    setReferenceQuery("");
+  };
 
   return (
     <div className="flex h-9 min-w-0 items-center rounded-md border border-input bg-transparent focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50">
@@ -1570,7 +1635,7 @@ function EditableEnvValueControl({
         className="border-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
         onChange={(event) => {
           const nextValue = event.target.value;
-          if (nextValue.includes("${{")) {
+          if (canInsertReference && nextValue.includes("${{")) {
             setReferenceMenuOpen(true);
           }
           onUpdateRow(index, {
@@ -1583,102 +1648,187 @@ function EditableEnvValueControl({
         value={row.value}
         variant="bare"
       />
-      <Select
-        disabled={menuItems.length === 0}
-        onOpenChange={setReferenceMenuOpen}
-        onValueChange={(expression) => {
-          const nextValue = insertApEnvReferenceText(
-            row.value,
-            expression,
-            inputRef.current?.selectionStart,
-            inputRef.current?.selectionEnd
-          );
-          onUpdateRow(index, {
-            value: nextValue,
-            valueSource: "direct",
-          });
-          setReferenceMenuOpen(false);
-        }}
+      <Popover
+        onOpenChange={handleReferenceMenuOpenChange}
         open={referenceMenuOpen}
       >
-        <SelectTrigger
+        <PopoverTrigger
           aria-label="Insert environment reference token"
-          className="mr-1 size-7 shrink-0 justify-center rounded-md bg-white/5 p-0 text-muted-foreground hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
+          className={cn(
+            "mr-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-white/5 p-0 text-muted-foreground outline-none hover:bg-input/40 hover:text-foreground focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50 disabled:pointer-events-none disabled:opacity-50",
+            referenceMenuOpen &&
+              "bg-input/40 text-foreground ring-[1px] ring-blue-400/50"
+          )}
           data-slot="container-env-token-trigger"
-          indicator={false}
+          disabled={!canInsertReference}
           title="Insert reference token"
-          variant="ghost"
+          type="button"
         >
           <Braces aria-hidden className="size-4" />
-        </SelectTrigger>
-        <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
-          {menuItems.map((item) => (
-            <SelectItem
-              className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
-              disabled={!item.available}
-              indicator={false}
-              key={`${item.dbName}-${item.variableName}`}
-              value={item.expression}
-            >
-              <span className="grid min-w-0">
-                <span className="min-w-0 truncate">{item.label}</span>
-                <span className="min-w-0 truncate text-muted-foreground text-xs">
-                  {item.type} · {item.description}
-                </span>
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className="w-80 gap-0 rounded-md border border-border bg-input/30 p-0 shadow-none ring-0 backdrop-blur-xl"
+          sideOffset={6}
+        >
+          <div
+            className="relative flex h-10 items-center border-border border-b px-3"
+            data-slot="container-env-reference-search"
+          >
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-3 size-4 text-muted-foreground"
+            />
+            <input
+              aria-label="Search DB references"
+              autoFocus
+              className="h-full min-w-0 flex-1 bg-transparent pl-6 font-medium text-muted-foreground text-sm outline-none placeholder:text-muted-foreground"
+              onChange={(event) => setReferenceQuery(event.target.value)}
+              placeholder="Search"
+              type="search"
+              value={referenceQuery}
+            />
+          </div>
+          <div
+            className="max-h-72 overflow-y-auto p-1"
+            data-slot="container-env-reference-results"
+            role="listbox"
+          >
+            {visibleGroups.length === 0 ? (
+              <div
+                className="px-2 py-6 text-center text-muted-foreground text-sm"
+                data-slot="container-env-reference-no-results"
+              >
+                No references found.
+              </div>
+            ) : (
+              visibleGroups.map((group) => (
+                <div
+                  className="grid gap-1 py-1 first:pt-0 last:pb-0"
+                  data-slot="container-env-reference-group"
+                  key={group.dbName}
+                >
+                  <div className="px-2 py-1 text-muted-foreground text-xs">
+                    {group.dbName}
+                  </div>
+                  {group.items.map((item) => (
+                    <button
+                      className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-input focus-visible:bg-input"
+                      data-slot="container-env-reference-item"
+                      key={`${item.dbName}-${item.variableName}`}
+                      onClick={() => handleInsertReference(item.expression)}
+                      role="option"
+                      type="button"
+                    >
+                      <span className="grid min-w-0 flex-1">
+                        <span className="min-w-0 truncate font-medium">
+                          {item.variableName}
+                        </span>
+                        <span className="min-w-0 truncate text-muted-foreground text-xs">
+                          {referenceCompletionDocumentation(item)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
 
 function SavedEnvValueControl({
+  copied = false,
   index,
   onCopyResolvedValue,
-  onEditSavedRow,
   onRevealResolvedValue,
   revealedValue,
+  resolvedValuesAvailable,
   row,
 }: SavedEnvValueControlProps) {
-  const displayValue = revealedValue ?? MASKED_ENV_VALUE;
+  const displayValue = resolvedValuesAvailable
+    ? (revealedValue ?? MASKED_ENV_VALUE)
+    : envRowDisplayValue(row);
+  const revealed = resolvedValuesAvailable && revealedValue !== undefined;
+  const revealIcon = revealed ? (
+    <EyeClosed aria-hidden className="size-4" />
+  ) : (
+    <Eye aria-hidden className="size-4" />
+  );
+  const copyIcon = copied ? (
+    <Check aria-hidden className="size-4" />
+  ) : (
+    <Copy aria-hidden className="size-4" />
+  );
   return (
-    <div className="flex h-9 min-w-0 items-center gap-1 rounded-md border border-input bg-transparent px-3 text-foreground text-sm leading-5">
+    <div className="flex h-9 min-w-0 items-center gap-1 rounded-md border border-input bg-transparent py-0 pr-1 pl-3 text-foreground text-sm leading-5">
       <span className="min-w-0 flex-1 truncate" title={displayValue}>
         {displayValue}
       </span>
-      <AppIconButton
-        aria-label={`Edit environment variable ${row.name}`}
-        className="text-muted-foreground hover:text-foreground"
-        onClick={() => onEditSavedRow(index)}
-        size="sm"
-        type="button"
-        variant="quiet"
-      >
-        <SquarePen aria-hidden className="size-4" />
-      </AppIconButton>
-      <AppIconButton
-        aria-label={`Reveal environment variable ${row.name}`}
-        className="text-muted-foreground hover:text-foreground"
-        onClick={() => onRevealResolvedValue(index)}
-        size="sm"
-        type="button"
-        variant="quiet"
-      >
-        <Eye aria-hidden className="size-4" />
-      </AppIconButton>
-      <AppIconButton
-        aria-label={`Copy environment variable ${row.name}`}
-        className="text-muted-foreground hover:text-foreground"
-        onClick={() => onCopyResolvedValue(index)}
-        size="sm"
-        type="button"
-        variant="quiet"
-      >
-        <Copy aria-hidden className="size-4" />
-      </AppIconButton>
+      {resolvedValuesAvailable ? (
+        <>
+          <AppIconButton
+            aria-label={`${revealed ? "Hide" : "Reveal"} environment variable ${row.name}`}
+            aria-pressed={revealed}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => onRevealResolvedValue(index)}
+            size="sm"
+            type="button"
+            variant="quiet"
+          >
+            {revealIcon}
+          </AppIconButton>
+          <AppIconButton
+            aria-label={`${copied ? "Copied" : "Copy"} environment variable ${row.name}`}
+            className={cn(
+              "text-muted-foreground hover:text-foreground",
+              copied && "text-foreground"
+            )}
+            onClick={() => onCopyResolvedValue(index)}
+            size="sm"
+            type="button"
+            variant="quiet"
+          >
+            {copyIcon}
+          </AppIconButton>
+        </>
+      ) : null}
     </div>
+  );
+}
+
+function EnvRowActionsMenu({
+  canEdit,
+  index,
+  onDeleteRow,
+  onEditSavedRow,
+  row,
+}: EnvRowActionsMenuProps) {
+  return (
+    <CanvasNode.ActionMenu
+      aria-label={`Environment variable actions for ${row.name}`}
+    >
+      {canEdit ? (
+        <CanvasNode.ActionMenuItem
+          action={{ onClick: () => onEditSavedRow(index) }}
+          actionKey="edit"
+          icon={<SquarePen aria-hidden className="size-4" />}
+        >
+          Edit
+        </CanvasNode.ActionMenuItem>
+      ) : null}
+      <CanvasNode.ActionMenuItem
+        action={{ onClick: () => onDeleteRow(index) }}
+        actionKey="delete"
+        icon={<Trash2 aria-hidden className="size-4" />}
+        tone="destructive"
+      >
+        Delete
+      </CanvasNode.ActionMenuItem>
+    </CanvasNode.ActionMenu>
   );
 }
 
@@ -1789,11 +1939,12 @@ function EnvRawSourceEditor({
       <div className="grid min-w-0 gap-2">
         <div
           className={cn(
-            "min-h-48 overflow-hidden rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30",
+            "min-h-48 overflow-visible rounded-md border border-input bg-transparent shadow-xs dark:bg-input/30",
             diagnostic == null
               ? null
               : "border-destructive ring-[3px] ring-destructive/20 dark:border-destructive/50 dark:ring-destructive/40"
           )}
+          data-slot="ap-env-raw-source-frame"
         >
           <Editor
             beforeMount={configureApEnvRawSourceMonaco}
@@ -1809,7 +1960,9 @@ function EnvRawSourceEditor({
             onChange={(nextValue) => onChange(nextValue ?? "")}
             onMount={handleMount}
             options={{
+              allowOverflow: true,
               automaticLayout: true,
+              extraEditorClassName: "ap-env-raw-source-monaco",
               folding: false,
               fontFamily:
                 "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)",
@@ -1829,7 +1982,14 @@ function EnvRawSourceEditor({
                 horizontalScrollbarSize: 8,
                 verticalScrollbarSize: 8,
               },
+              suggestFontSize: 12,
+              suggestLineHeight: 28,
               suggest: {
+                preview: false,
+                selectionMode: "always",
+                showIcons: false,
+                showInlineDetails: true,
+                showStatusBar: false,
                 showWords: false,
                 snippetsPreventQuickSuggestions: true,
               },
@@ -1860,6 +2020,7 @@ function EnvRawSourceEditor({
 }
 
 function EditableEnvRows({
+  copiedValueIndex,
   dbDsnReferenceSources,
   envDirty,
   envDraft,
@@ -1874,7 +2035,6 @@ function EditableEnvRows({
   onCopyResolvedValue,
   onEditSavedRow,
   onDeleteRow,
-  onModeChange,
   onRawSourceChange,
   onRevealResolvedValue,
   onUpdateRow,
@@ -1906,27 +2066,30 @@ function EditableEnvRows({
       const rowKey = envRowKeys[index] ?? envRowKey(row, index);
       const savedRow = savedRows[index];
       const cleanSavedRow =
-        resolvedValuesAvailable &&
         !editingSavedRows.has(index) &&
         savedRow != null &&
         containerEnvRowsModelEqual([row], [savedRow]);
       return (
         <div className="grid min-w-0 gap-1.5" key={rowKey}>
           <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
-            <EditableEnvNameControl
-              dbDsnReferenceSources={dbDsnReferenceSources}
-              error={error}
-              index={index}
-              managed={managed}
-              onUpdateRow={onUpdateRow}
-              row={row}
-            />
+            {cleanSavedRow ? (
+              <SavedEnvNameControl row={row} />
+            ) : (
+              <EditableEnvNameControl
+                error={error}
+                index={index}
+                managed={managed}
+                onUpdateRow={onUpdateRow}
+                row={row}
+              />
+            )}
             {cleanSavedRow ? (
               <SavedEnvValueControl
+                copied={copiedValueIndex === index}
                 index={index}
                 onCopyResolvedValue={onCopyResolvedValue}
-                onEditSavedRow={onEditSavedRow}
                 onRevealResolvedValue={onRevealResolvedValue}
+                resolvedValuesAvailable={resolvedValuesAvailable}
                 revealedValue={revealedValues.get(index)}
                 row={row}
               />
@@ -1942,16 +2105,13 @@ function EditableEnvRows({
             {managed ? (
               <div aria-hidden className="size-9" />
             ) : (
-              <AppIconButton
-                aria-label="Remove environment variable"
-                className="hover:text-red-500"
-                onClick={() => onDeleteRow(index)}
-                size="lg"
-                type="button"
-                variant="quiet"
-              >
-                <Trash2 aria-hidden className="size-4" />
-              </AppIconButton>
+              <EnvRowActionsMenu
+                canEdit={cleanSavedRow}
+                index={index}
+                onDeleteRow={onDeleteRow}
+                onEditSavedRow={onEditSavedRow}
+                row={row}
+              />
             )}
           </div>
           {error == null ? null : (
@@ -1966,44 +2126,12 @@ function EditableEnvRows({
 
   return (
     <div
-      className="flex max-h-72 w-full flex-col gap-2 overflow-y-auto"
+      className={cn(
+        "flex w-full flex-col gap-2",
+        mode === "raw" ? "overflow-visible" : "max-h-72 overflow-y-auto"
+      )}
       data-slot="container-env-rows"
     >
-      <fieldset
-        aria-label="Environment editor mode"
-        className="inline-flex w-fit items-center rounded-lg bg-white/5 p-1"
-      >
-        <AppButton
-          aria-pressed={mode === "structured"}
-          className={cn(
-            "h-7 rounded-md px-3 text-xs",
-            mode === "structured"
-              ? "bg-input text-foreground"
-              : "bg-transparent"
-          )}
-          onClick={() => {
-            if (envRawSourceDiagnostics.length === 0) {
-              onModeChange("structured");
-            }
-          }}
-          type="button"
-          variant="quiet"
-        >
-          Structured
-        </AppButton>
-        <AppButton
-          aria-pressed={mode === "raw"}
-          className={cn(
-            "h-7 rounded-md px-3 text-xs",
-            mode === "raw" ? "bg-input text-foreground" : "bg-transparent"
-          )}
-          onClick={() => onModeChange("raw")}
-          type="button"
-          variant="quiet"
-        >
-          Raw
-        </AppButton>
-      </fieldset>
       {editorContent}
       {mode === "structured" && !envValidation.valid && envDirty ? (
         <p className="text-destructive text-xs" role="status">
@@ -4400,11 +4528,17 @@ export function ContainerSettingsPane({
   const [revealedEnvValues, setRevealedEnvValues] = useState<
     Map<number, string>
   >(() => new Map());
+  const [copiedEnvValueIndex, setCopiedEnvValueIndex] = useState<number | null>(
+    null
+  );
   const [editingSavedEnvRows, setEditingSavedEnvRows] = useState<Set<number>>(
     () => new Set()
   );
   const revealTimeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map()
+  );
+  const copiedEnvValueTimeout = useRef<ReturnType<typeof setTimeout> | null>(
+    null
   );
   const previousAddDbDsnReferenceIntentIds = useRef<Set<string>>(new Set());
 
@@ -4490,6 +4624,33 @@ export function ContainerSettingsPane({
 
   useEffect(() => clearRevealTimeouts, [clearRevealTimeouts]);
 
+  const clearCopiedEnvValueTimeout = useCallback(() => {
+    if (copiedEnvValueTimeout.current == null) {
+      return;
+    }
+    clearTimeout(copiedEnvValueTimeout.current);
+    copiedEnvValueTimeout.current = null;
+  }, []);
+
+  const clearCopiedEnvValueFeedback = useCallback(() => {
+    clearCopiedEnvValueTimeout();
+    setCopiedEnvValueIndex(null);
+  }, [clearCopiedEnvValueTimeout]);
+
+  useEffect(() => clearCopiedEnvValueTimeout, [clearCopiedEnvValueTimeout]);
+
+  const showCopiedEnvValueFeedback = useCallback(
+    (index: number) => {
+      clearCopiedEnvValueTimeout();
+      setCopiedEnvValueIndex(index);
+      copiedEnvValueTimeout.current = setTimeout(() => {
+        setCopiedEnvValueIndex(null);
+        copiedEnvValueTimeout.current = null;
+      }, CANVAS_NODE_DEFAULT_COPIED_FEEDBACK_MS);
+    },
+    [clearCopiedEnvValueTimeout]
+  );
+
   const resolvedEnvValuesAvailable = onEnvResolvedValue != null;
   const revealResetKey = JSON.stringify([
     envResolvedValueScope ?? "",
@@ -4504,8 +4665,9 @@ export function ContainerSettingsPane({
     }
     previousRevealResetKey.current = revealResetKey;
     clearRevealedEnvValues();
+    clearCopiedEnvValueFeedback();
     setEditingSavedEnvRows(new Set());
-  }, [clearRevealedEnvValues, revealResetKey]);
+  }, [clearCopiedEnvValueFeedback, clearRevealedEnvValues, revealResetKey]);
 
   useEffect(() => {
     const intent = addDbDsnReferenceIntent;
@@ -4812,8 +4974,27 @@ export function ContainerSettingsPane({
     },
     [committedEnvRows, envDraft, onEnvResolvedValue]
   );
+  const hideResolvedEnvValue = useCallback((index: number) => {
+    const existingTimeout = revealTimeouts.current.get(index);
+    if (existingTimeout !== undefined) {
+      clearTimeout(existingTimeout);
+      revealTimeouts.current.delete(index);
+    }
+    setRevealedEnvValues((current) => {
+      if (!current.has(index)) {
+        return current;
+      }
+      const next = new Map(current);
+      next.delete(index);
+      return next;
+    });
+  }, []);
   const revealResolvedEnvValue = useCallback(
     async (index: number) => {
+      if (revealedEnvValues.has(index)) {
+        hideResolvedEnvValue(index);
+        return;
+      }
       let value: string | undefined;
       try {
         value = await resolveSavedEnvValue(index);
@@ -4844,7 +5025,7 @@ export function ContainerSettingsPane({
         }, ENV_REVEAL_DURATION_MS)
       );
     },
-    [resolveSavedEnvValue]
+    [hideResolvedEnvValue, resolveSavedEnvValue, revealedEnvValues]
   );
   const copyResolvedEnvValue = useCallback(
     async (index: number) => {
@@ -4858,8 +5039,9 @@ export function ContainerSettingsPane({
         return;
       }
       await writeTextToClipboard(value);
+      showCopiedEnvValueFeedback(index);
     },
-    [resolveSavedEnvValue]
+    [resolveSavedEnvValue, showCopiedEnvValueFeedback]
   );
   const editSavedEnvRow = useCallback((index: number) => {
     setEditingSavedEnvRows((current) => {
@@ -5373,16 +5555,32 @@ export function ContainerSettingsPane({
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
   const envSectionActions = readOnly ? null : (
-    <AppButton
-      aria-label="Add environment variable"
-      className="h-8 rounded-lg bg-white/5 px-3 text-primary text-sm hover:bg-input"
-      onClick={handleAddEnvRow}
-      type="button"
-      variant="quiet"
-    >
-      <Plus aria-hidden data-icon="inline-start" />
-      Add
-    </AppButton>
+    <>
+      <SlidingToggle
+        ariaLabel="Environment editor mode"
+        className="h-8 w-40"
+        disabled={readOnly}
+        indicatorClassName="rounded-md"
+        itemClassName="!rounded-md h-8 min-w-0 px-2 text-foreground text-sm"
+        onValueChange={setEnvEditorMode}
+        options={ENV_EDITOR_MODE_TOGGLE_OPTIONS.map((option) =>
+          option.value === "structured"
+            ? { ...option, disabled: envRawSourceParse.diagnostics.length > 0 }
+            : option
+        )}
+        value={envEditorMode}
+      />
+      <AppButton
+        aria-label="Add environment variable"
+        className="h-8 rounded-lg bg-white/5 px-3 text-foreground text-sm hover:bg-transparent"
+        onClick={handleAddEnvRow}
+        type="button"
+        variant="quiet"
+      >
+        <Plus aria-hidden data-icon="inline-start" />
+        Add
+      </AppButton>
+    </>
   );
 
   return (
@@ -5475,6 +5673,7 @@ export function ContainerSettingsPane({
             <ReadOnlyEnvRows env={env} />
           ) : (
             <EditableEnvRows
+              copiedValueIndex={copiedEnvValueIndex}
               dbDsnReferenceSources={dbDsnReferenceSources}
               editingSavedRows={editingSavedEnvRows}
               envDirty={envDirty}
@@ -5489,7 +5688,6 @@ export function ContainerSettingsPane({
               onCopyResolvedValue={copyResolvedEnvValue}
               onDeleteRow={handleDeleteEnvRow}
               onEditSavedRow={editSavedEnvRow}
-              onModeChange={setEnvEditorMode}
               onRawSourceChange={handleRawSourceChange}
               onRevealResolvedValue={revealResolvedEnvValue}
               onUpdateRow={handleUpdateEnvRow}

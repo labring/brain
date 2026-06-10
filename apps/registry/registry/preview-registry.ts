@@ -372,6 +372,7 @@ export const Index: RegistryIndex = {
       "textarea",
       "field",
       "dropdown-menu",
+      "popover",
       "app-dialog",
       "label",
       "input",

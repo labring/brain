@@ -31,6 +31,8 @@ function referenceExpression(db: string, variable: string): string {
 }
 
 const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
+const RAW_ENV_ROWS_OVERFLOW_VISIBLE_RE =
+  /class="flex w-full flex-col gap-2 overflow-visible" data-slot="container-env-rows"/;
 const ENVIRONMENT_VARIABLES_TITLE_RE = /Environment Variables/;
 const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
 const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
@@ -42,22 +44,25 @@ const INSERT_RAW_REFERENCE_RE =
   /aria-label="Insert environment reference token"/;
 const POSTGRES_DSN_RE = /postgres:\/\/db:5432\/app/;
 const RAW_MODE_RE = />Raw</;
-const STRUCTURED_MODE_RE = />Structured</;
+const LIST_MODE_RE = />List</;
+const ENV_EDITOR_MODE_RE = /aria-label="Environment editor mode"/;
 const DATABASE_URL_RE = /DATABASE_URL/;
 const MASKED_ENV_VALUE_RE = />\*\*\*\*\*\*\*</;
 const ADD_ENV_RE = /aria-label="Add environment variable"/;
-const REFERENCE_RE = /aria-label="Reference"/;
-const REFERENCE_LABEL_RE = />Reference</;
+const REFERENCE_SELECTOR_RE = /aria-label="Reference"/;
 const REFERENCE_DB_LABEL_RE = /Reference DB/;
 const INLINE_REFERENCE_TRIGGER_RE =
   /data-slot="container-env-reference-trigger"/;
-const INLINE_REFERENCE_TRIGGER_RE_GLOBAL =
-  /data-slot="container-env-reference-trigger"/g;
 const TOKEN_TRIGGER_RE = /data-slot="container-env-token-trigger"/;
-const TOKEN_TRIGGER_RE_GLOBAL = /data-slot="container-env-token-trigger"/g;
 const DB_FIELD_SELECT_RE = /aria-label="Project DB field"/;
-const REMOVE_ENV_RE = /aria-label="Remove environment variable"/;
-const REMOVE_ENV_RE_GLOBAL = /aria-label="Remove environment variable"/g;
+const ENV_ROW_ACTIONS_RE =
+  /aria-label="Environment variable actions for [^"]+"/;
+const ENV_ROW_ACTIONS_RE_GLOBAL =
+  /aria-label="Environment variable actions for [^"]+"/g;
+const CANVAS_NODE_ACTION_MENU_TRIGGER_RE = /canvas-node-action-menu-trigger/;
+const ENV_ROW_ACTIONS_NODE_VARIANT_RE =
+  /aria-label="Environment variable actions for DATABASE_URL"[^>]*data-variant="node"/;
+const EDIT_ENV_RE = /aria-label="Edit environment variable/;
 const SAVE_ENV_RE = /Save environment/;
 const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
 const UPDATE_ENVIRONMENT_VARIABLES_RE =
@@ -98,6 +103,9 @@ const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
 const COPY_ENV_VALUE_RE = /aria-label="Copy environment variable DATABASE_URL"/;
 const REVEAL_ENV_VALUE_RE =
   /aria-label="Reveal environment variable DATABASE_URL"/;
+const REVEAL_ENV_VALUE_UNPRESSED_RE =
+  /aria-label="Reveal environment variable DATABASE_URL"[^>]*aria-pressed="false"/;
+const HIDE_ENV_VALUE_RE = /aria-label="Hide environment variable DATABASE_URL"/;
 const COPY_MYSQL_ENV_VALUE_RE =
   /aria-label="Copy environment variable MYSQL_DATABASE_URL"/;
 const REVEAL_MYSQL_ENV_VALUE_RE =
@@ -168,14 +176,36 @@ function renderPane(
   );
 }
 
-test("container settings pane renders editable structured environment rows", () => {
-  const html = renderPane();
+test("container settings pane renders editable structured environment rows for new rows", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      addDbDsnReferenceIntent={{
+        dbName: "postgres",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "postgres",
+          namespace: "default",
+        },
+      ]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
 
   assert.match(html, ENV_ROWS_SLOT_RE);
   assert.match(html, ENV_NAME_INPUT_RE);
   assert.match(html, ENV_VALUE_INPUT_RE);
+  assert.match(html, TOKEN_TRIGGER_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
   assert.doesNotMatch(html, RAW_ENV_EDITOR_RE);
-  assert.match(html, STRUCTURED_MODE_RE);
+  assert.match(html, LIST_MODE_RE);
   assert.match(html, RAW_MODE_RE);
   assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
 });
@@ -197,6 +227,8 @@ test("container settings pane masks clean saved structured environment rows", ()
   assert.doesNotMatch(html, ENV_VALUE_INPUT_RE);
   assert.doesNotMatch(html, POSTGRES_DSN_RE);
   assert.match(html, REVEAL_ENV_VALUE_RE);
+  assert.match(html, REVEAL_ENV_VALUE_UNPRESSED_RE);
+  assert.doesNotMatch(html, HIDE_ENV_VALUE_RE);
   assert.match(html, COPY_ENV_VALUE_RE);
 });
 
@@ -231,15 +263,19 @@ test("container settings pane shows raw draft values for dirty structured rows",
   assert.doesNotMatch(html, COPY_MYSQL_ENV_VALUE_RE);
 });
 
-test("container settings pane renders add environment action in section header", () => {
+test("container settings pane renders environment actions in section header", () => {
   const html = renderPane();
   const titleIndex = html.search(ENVIRONMENT_VARIABLES_TITLE_RE);
+  const modeIndex = html.search(ENV_EDITOR_MODE_RE);
   const addIndex = html.search(ADD_ENV_RE);
   const rowsIndex = html.search(ENV_ROWS_SLOT_RE);
 
   assert.notEqual(titleIndex, -1);
+  assert.notEqual(modeIndex, -1);
   assert.notEqual(addIndex, -1);
   assert.notEqual(rowsIndex, -1);
+  assert.ok(titleIndex < modeIndex);
+  assert.ok(modeIndex < addIndex);
   assert.ok(titleIndex < addIndex);
   assert.ok(addIndex < rowsIndex);
 });
@@ -977,23 +1013,79 @@ test("read-only container settings view cannot mutate environment rows", () => {
   assert.match(html, ENV_ROWS_SLOT_RE);
   assert.match(html, DATABASE_URL_RE);
   assert.doesNotMatch(html, ADD_ENV_RE);
-  assert.doesNotMatch(html, REMOVE_ENV_RE);
+  assert.doesNotMatch(html, ENV_ROW_ACTIONS_RE);
   assert.doesNotMatch(html, SAVE_ENV_RE);
 });
 
 test("container settings pane offers DB references from editable environment rows", () => {
-  const html = renderPane();
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      addDbDsnReferenceIntent={{
+        dbName: "postgres",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "empty",
+          namespace: "default",
+        },
+        {
+          name: "postgres",
+          namespace: "default",
+          privateDsn: "postgres://private",
+          primitiveSecretRefs: {
+            password: {
+              key: "passwd",
+              name: "postgres-conn-credential",
+            },
+          },
+        },
+      ]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
 
-  assert.match(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
   assert.match(html, TOKEN_TRIGGER_RE);
-  assert.match(html, REFERENCE_RE);
-  assert.match(html, REFERENCE_LABEL_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
   assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
 
   const readOnlyHtml = renderPane(true);
 
   assert.doesNotMatch(readOnlyHtml, INLINE_REFERENCE_TRIGGER_RE);
-  assert.doesNotMatch(readOnlyHtml, REFERENCE_RE);
+  assert.doesNotMatch(readOnlyHtml, REFERENCE_SELECTOR_RE);
+});
+
+test("container settings pane hides DB Reference selector before saved row edit mode", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[{ name: "postgres", namespace: "default" }]}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, MASKED_ENV_VALUE_RE);
+  assert.match(html, REVEAL_ENV_VALUE_RE);
+  assert.match(html, COPY_ENV_VALUE_RE);
+  assert.match(html, ENV_ROW_ACTIONS_RE);
+  assert.match(html, CANVAS_NODE_ACTION_MENU_TRIGGER_RE);
+  assert.match(html, ENV_ROW_ACTIONS_NODE_VARIANT_RE);
+  assert.doesNotMatch(html, ENV_NAME_INPUT_RE);
+  assert.doesNotMatch(html, EDIT_ENV_RE);
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
 });
 
 test("container settings pane projects valueFrom-only environment rows out of raw direct source", () => {
@@ -1018,7 +1110,7 @@ test("container settings pane projects valueFrom-only environment rows out of ra
 
   assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
   assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
-  assert.doesNotMatch(html, REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
   assert.doesNotMatch(html, EXTERNAL_REFERENCE_RE);
   assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
@@ -1054,9 +1146,9 @@ test("container settings pane renders raw direct rows instead of automatic helpe
     },
   ]);
 
-  assert.equal(html.match(INLINE_REFERENCE_TRIGGER_RE_GLOBAL)?.length, 1);
-  assert.equal(html.match(TOKEN_TRIGGER_RE_GLOBAL)?.length, 1);
-  assert.equal(html.match(REMOVE_ENV_RE_GLOBAL)?.length, 1);
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
+  assert.equal(html.match(ENV_ROW_ACTIONS_RE_GLOBAL)?.length, 1);
   assert.doesNotMatch(html, EXTERNAL_REFERENCE_RE);
   assert.doesNotMatch(html, VALUE_FROM_PLACEHOLDER_RE);
 });
@@ -1099,7 +1191,7 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
   assert.match(html, DATABASE_URL_RE);
   assert.match(html, MYSQL_DATABASE_URL_REFERENCE_RE);
   assert.doesNotMatch(html, MYSQL_PRIVATE_DSN_RE);
-  assert.match(html, REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
   assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
   assert.match(html, TOKEN_TRIGGER_RE);
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
@@ -1321,6 +1413,7 @@ test("container settings raw editor omits fixed raw footer actions", () => {
   );
 
   assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, RAW_ENV_ROWS_OVERFLOW_VISIBLE_RE);
   assert.doesNotMatch(html, COPY_RAW_SOURCE_RE);
   assert.doesNotMatch(html, INSERT_RAW_REFERENCE_RE);
   assert.doesNotMatch(html, COPY_ENV_VALUE_RE);
