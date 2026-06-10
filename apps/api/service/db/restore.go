@@ -2,9 +2,11 @@ package db
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -144,11 +146,114 @@ func RestoreDBFromBackup(cfg *clientcmdapi.Config, opts RestoreDBOptions) ([]byt
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureRestoredConnectionSecret(ctx, client, source, restoredName); err != nil {
+		return nil, err
+	}
 	created, err := clusters.Create(ctx, plan.Resources.Cluster, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(created.Object)
+}
+
+func ensureRestoredConnectionSecret(ctx context.Context, client dynamic.Interface, source *unstructured.Unstructured, restoredName string) error {
+	engine := engineFromCluster(source.Object)
+	profile, ok := orchestration.DBEngineProfileFor(engine)
+	if !ok {
+		return fmt.Errorf("unsupported DB engine %q", engine)
+	}
+	namespace := source.GetNamespace()
+	secrets := client.Resource(coreSecretGVR).Namespace(namespace)
+	sourceSecretName := dbConnectionSecretName(source.GetName())
+	sourceSecret, err := secrets.Get(ctx, sourceSecretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("source DB Service connection secret %s not found: %w", sourceSecretName, err)
+	}
+	targetSecret, err := buildRestoredConnectionSecret(sourceSecret, restoredName, profile)
+	if err != nil {
+		return err
+	}
+	if _, err := secrets.Create(ctx, targetSecret, metav1.CreateOptions{}); err == nil {
+		return nil
+	} else if !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create restored DB Service connection secret: %w", err)
+	}
+	existing, err := secrets.Get(ctx, targetSecret.GetName(), metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get existing restored DB Service connection secret: %w", err)
+	}
+	if instance := strings.TrimSpace(existing.GetLabels()["app.kubernetes.io/instance"]); instance != "" && instance != restoredName {
+		return fmt.Errorf("restored DB Service connection secret %s already belongs to DB Service %s", targetSecret.GetName(), instance)
+	}
+	targetSecret.SetResourceVersion(existing.GetResourceVersion())
+	if _, err := secrets.Update(ctx, targetSecret, metav1.UpdateOptions{}); err != nil {
+		return fmt.Errorf("failed to update restored DB Service connection secret: %w", err)
+	}
+	return nil
+}
+
+func buildRestoredConnectionSecret(sourceSecret *unstructured.Unstructured, restoredName string, profile orchestration.DBEngineProfile) (*unstructured.Unstructured, error) {
+	if sourceSecret == nil {
+		return nil, fmt.Errorf("source DB Service connection secret is required")
+	}
+	restoredName = strings.TrimSpace(restoredName)
+	if restoredName == "" {
+		return nil, fmt.Errorf("restored DB Service name is required")
+	}
+	data, found, err := unstructured.NestedStringMap(sourceSecret.Object, "data")
+	if err != nil || !found || len(data) == 0 {
+		return nil, fmt.Errorf("source DB Service connection secret has no data")
+	}
+	if strings.TrimSpace(data["username"]) == "" || strings.TrimSpace(data["password"]) == "" {
+		return nil, fmt.Errorf("source DB Service connection secret is missing username or password")
+	}
+	secretData := map[string]string{}
+	for key, value := range data {
+		secretData[key] = value
+	}
+	host := restoredName + "-" + profile.ComponentName
+	secretData["host"] = encodeSecretData(host)
+	secretData["endpoint"] = encodeSecretData(fmt.Sprintf("%s:%d", host, profile.ServicePort))
+	secretData["port"] = encodeSecretData(strconv.Itoa(int(profile.ServicePort)))
+
+	labels := map[string]string{}
+	for key, value := range sourceSecret.GetLabels() {
+		labels[key] = value
+	}
+	labels["app.kubernetes.io/instance"] = restoredName
+	labels["app.kubernetes.io/managed-by"] = "kubeblocks"
+	labels["app.kubernetes.io/name"] = profile.ComponentName
+	labels["apps.kubeblocks.io/cluster-type"] = profile.ClusterDefinition
+
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]interface{}{
+			"name":      dbConnectionSecretName(restoredName),
+			"namespace": sourceSecret.GetNamespace(),
+		},
+		"type": "Opaque",
+		"data": stringMapToInterfaceMap(secretData),
+	}}
+	secret.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Secret"})
+	secret.SetLabels(labels)
+	return secret, nil
+}
+
+func dbConnectionSecretName(name string) string {
+	return strings.TrimSpace(name) + "-conn-credential"
+}
+
+func encodeSecretData(value string) string {
+	return base64.StdEncoding.EncodeToString([]byte(value))
+}
+
+func stringMapToInterfaceMap(values map[string]string) map[string]interface{} {
+	out := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func restoreRenderInputFromSource(source *unstructured.Unstructured, backup *unstructured.Unstructured, restoredName string) (orchestration.DBResourcesInput, error) {

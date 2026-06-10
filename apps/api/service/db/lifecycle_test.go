@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -173,6 +174,66 @@ func TestBuildRestoreDBPlanCreatesNewDBInSameNamespaceAndProject(t *testing.T) {
 	}
 }
 
+func TestBuildRestoredConnectionSecretKeepsSourceCredentialsAndTargetsRestoredHost(t *testing.T) {
+	sourceSecret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]interface{}{
+			"name":      "orders-db-conn-credential",
+			"namespace": "database-system",
+			"labels": map[string]interface{}{
+				"app.kubernetes.io/instance":      "orders-db",
+				"app.kubernetes.io/managed-by":    "kubeblocks",
+				"app.kubernetes.io/name":          "postgresql",
+				"apps.kubeblocks.io/cluster-type": "postgresql",
+			},
+		},
+		"data": map[string]interface{}{
+			"endpoint": base64.StdEncoding.EncodeToString([]byte("orders-db-postgresql:5432")),
+			"host":     base64.StdEncoding.EncodeToString([]byte("orders-db-postgresql")),
+			"password": base64.StdEncoding.EncodeToString([]byte("source-password")),
+			"port":     base64.StdEncoding.EncodeToString([]byte("5432")),
+			"username": base64.StdEncoding.EncodeToString([]byte("postgres")),
+		},
+	}}
+	profile, ok := orchestration.DBEngineProfileFor("postgresql")
+	if !ok {
+		t.Fatal("missing PostgreSQL profile")
+	}
+
+	secret, err := buildRestoredConnectionSecret(sourceSecret, "orders-restore", profile)
+	if err != nil {
+		t.Fatalf("buildRestoredConnectionSecret returned error: %v", err)
+	}
+
+	if secret.GetName() != "orders-restore-conn-credential" {
+		t.Fatalf("secret name = %q, want orders-restore-conn-credential", secret.GetName())
+	}
+	if secret.GetNamespace() != "database-system" {
+		t.Fatalf("secret namespace = %q, want database-system", secret.GetNamespace())
+	}
+	labels := secret.GetLabels()
+	if got := labels["app.kubernetes.io/instance"]; got != "orders-restore" {
+		t.Fatalf("instance label = %q, want orders-restore", got)
+	}
+	data, _, _ := unstructured.NestedStringMap(secret.Object, "data")
+	if decodeTestSecretValue(t, data["username"]) != "postgres" {
+		t.Fatalf("username was not inherited from source")
+	}
+	if decodeTestSecretValue(t, data["password"]) != "source-password" {
+		t.Fatalf("password was not inherited from source")
+	}
+	if got := decodeTestSecretValue(t, data["host"]); got != "orders-restore-postgresql" {
+		t.Fatalf("host = %q, want orders-restore-postgresql", got)
+	}
+	if got := decodeTestSecretValue(t, data["endpoint"]); got != "orders-restore-postgresql:5432" {
+		t.Fatalf("endpoint = %q, want orders-restore-postgresql:5432", got)
+	}
+	if got := decodeTestSecretValue(t, data["port"]); got != "5432" {
+		t.Fatalf("port = %q, want 5432", got)
+	}
+}
+
 func restoreTestCluster(name string) *unstructured.Unstructured {
 	cluster := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "apps.kubeblocks.io/v1alpha1",
@@ -249,4 +310,13 @@ func assertJSONEqual(t *testing.T, got []byte, want []byte) {
 	if string(gotCanonical) != string(wantCanonical) {
 		t.Fatalf("unexpected JSON\nwant: %s\n got: %s", wantCanonical, gotCanonical)
 	}
+}
+
+func decodeTestSecretValue(t *testing.T, encoded string) string {
+	t.Helper()
+	value, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("invalid base64 secret value: %v", err)
+	}
+	return string(value)
 }
