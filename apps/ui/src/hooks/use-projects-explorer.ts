@@ -13,7 +13,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
+import { useTemplateNativeWorkloads } from "@/features/project-canvas/snapshot/use-template-native-workloads";
+import {
+  BRAIN_PROJECT_ID_LABEL,
+  BRAIN_RESOURCE_KIND_LABEL,
+} from "@/lib/brain-labels";
 import {
   type BrainProjectResponse,
   type BrainProjectsResponse,
@@ -32,7 +36,8 @@ import { openAssistantPane } from "@/store/layout-store";
  * (they aren't tied to any Project row, so they cannot contribute).
  */
 function projectWorkloadsFromList(
-  data: K8sGetResponse | undefined
+  data: K8sGetResponse | undefined,
+  options?: { inferNativePhase?: boolean }
 ): ProjectWorkloadStatusInput[] {
   const items = apItemsFromList(data);
   const result: ProjectWorkloadStatusInput[] = [];
@@ -50,13 +55,37 @@ function projectWorkloadsFromList(
     const status = item.status as Record<string, unknown> | undefined;
     const phaseRaw = status?.phase;
     const spec = item.spec as Record<string, unknown> | undefined;
+    let phase: string | undefined;
+    if (typeof phaseRaw === "string") {
+      phase = phaseRaw;
+    } else if (options?.inferNativePhase === true) {
+      phase = nativeWorkloadPhase(status);
+    }
     result.push({
       projectId,
-      phase: typeof phaseRaw === "string" ? phaseRaw : undefined,
+      phase,
       paused: spec?.paused === true,
     });
   }
   return result;
+}
+
+function nativeWorkloadPhase(status: Record<string, unknown> | undefined) {
+  const phaseRaw = status?.phase;
+  if (typeof phaseRaw === "string") {
+    return phaseRaw;
+  }
+  const replicas = status?.replicas;
+  const readyReplicas = status?.readyReplicas;
+  if (
+    typeof replicas === "number" &&
+    replicas > 0 &&
+    typeof readyReplicas === "number" &&
+    readyReplicas >= replicas
+  ) {
+    return "Running";
+  }
+  return "Creating";
 }
 
 export function useProjectsExplorer(options: {
@@ -103,6 +132,7 @@ export function useProjectsExplorer(options: {
   // project names render as soon as the projects request resolves and dots
   // fill in when these arrive.
   const projectIdLabelExistence = BRAIN_PROJECT_ID_LABEL;
+  const templateNativeLabelSelector = `${projectIdLabelExistence},${BRAIN_RESOURCE_KIND_LABEL}=template`;
   const { data: apsData } = useApsK8sList({
     kubeconfig,
     labelSelector: projectIdLabelExistence,
@@ -113,16 +143,32 @@ export function useProjectsExplorer(options: {
     labelSelector: projectIdLabelExistence,
     namespace: ns,
   });
+  const { data: templateNativeData } = useTemplateNativeWorkloads({
+    kubeconfig,
+    labelSelector: templateNativeLabelSelector,
+    namespace: ns,
+  });
 
   const statusByProjectId = useMemo(() => {
-    if (apsData === undefined && dbsData === undefined) {
+    if (
+      apsData === undefined &&
+      dbsData === undefined &&
+      templateNativeData.deployments === undefined &&
+      templateNativeData.statefulSets === undefined
+    ) {
       return undefined;
     }
     return aggregateProjectStatuses([
       ...projectWorkloadsFromList(apsData),
       ...projectWorkloadsFromList(dbsData),
+      ...projectWorkloadsFromList(templateNativeData.deployments, {
+        inferNativePhase: true,
+      }),
+      ...projectWorkloadsFromList(templateNativeData.statefulSets, {
+        inferNativePhase: true,
+      }),
     ]);
-  }, [apsData, dbsData]);
+  }, [apsData, dbsData, templateNativeData]);
 
   const projects = useMemo<ProjectExplorerProject[]>(
     () => brainProjectsToExplorerProjects(rawProjects, statusByProjectId),

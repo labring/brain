@@ -427,7 +427,8 @@ export function useProjectCanvas(
       if (
         (entry.kind === "databaseDeployment" ||
           entry.kind === "dockerDeployment" ||
-          entry.kind === "githubDeployment") &&
+          entry.kind === "githubDeployment" ||
+          entry.kind === "templateDeployment") &&
         options?.projectId != null
       ) {
         return entry.projectId === options.projectId;

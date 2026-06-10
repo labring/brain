@@ -13,6 +13,7 @@ import {
   apsToCanvasState,
   dbsToCanvasState,
   entryPointsToCanvasState,
+  templateNativeWorkloadsToCanvasState,
 } from "@/features/project-canvas/flow/ap-list-to-canvas-state";
 import { detectedCanvasConnectionEdges } from "@/features/project-canvas/flow/detected-connections";
 import { mergeCanvasLayoutWithDetectedNodes } from "@/features/project-canvas/layout/merge";
@@ -20,11 +21,15 @@ import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
 } from "@/features/project-canvas/layout/types";
-import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
+import {
+  BRAIN_PROJECT_ID_LABEL,
+  BRAIN_RESOURCE_KIND_LABEL,
+} from "@/lib/brain-labels";
 import {
   entryPointRefreshIntervalForLifecycle,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
+import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
@@ -66,6 +71,10 @@ export function useProjectServices(options: {
   const labelSelector = useMemo(
     () => `${BRAIN_PROJECT_ID_LABEL}=${uid}`,
     [uid]
+  );
+  const templateNativeLabelSelector = useMemo(
+    () => `${labelSelector},${BRAIN_RESOURCE_KIND_LABEL}=template`,
+    [labelSelector]
   );
 
   const apsListRef = useRef<K8sGetResponse | undefined>(undefined);
@@ -159,6 +168,17 @@ export function useProjectServices(options: {
     namespace,
     refreshInterval: entryPointRefreshInterval,
   });
+  const {
+    data: templateNativeData,
+    error: templateNativeError,
+    isLoading: templateNativeLoading,
+    mutate: mutateTemplateNative,
+  } = useTemplateNativeWorkloads({
+    kubeconfig,
+    labelSelector: templateNativeLabelSelector,
+    namespace,
+    refreshInterval: apListRefreshInterval,
+  });
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
 
@@ -167,11 +187,17 @@ export function useProjectServices(options: {
       Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
     );
     resetWorkloadDiscoveryPollWindow();
-    return Promise.all([mutateAps(), mutateDbs(), mutateEntryPoints()]);
+    return Promise.all([
+      mutateAps(),
+      mutateDbs(),
+      mutateEntryPoints(),
+      mutateTemplateNative(),
+    ]);
   }, [
     mutateAps,
     mutateDbs,
     mutateEntryPoints,
+    mutateTemplateNative,
     resetWorkloadDiscoveryPollWindow,
   ]);
 
@@ -179,8 +205,9 @@ export function useProjectServices(options: {
     () => ({ aps: apsData, dbs: dbsData, entryPoints: entryPointsData }),
     [apsData, dbsData, entryPointsData]
   );
-  const error = apsError ?? dbsError ?? entryPointsError;
-  const isLoading = apsLoading || dbsLoading || entryPointsLoading;
+  const error = apsError ?? dbsError ?? entryPointsError ?? templateNativeError;
+  const isLoading =
+    apsLoading || dbsLoading || entryPointsLoading || templateNativeLoading;
 
   const layoutMerge = useMemo(() => {
     const apBlock = apsToCanvasState(apsData, {
@@ -196,10 +223,21 @@ export function useProjectServices(options: {
       gridIndexOffset: apBlock.nodes.length + dbBlock.nodes.length,
       namespaceFallback: namespace,
     });
+    const templateNativeBlock = templateNativeWorkloadsToCanvasState(
+      templateNativeData,
+      {
+        gridIndexOffset:
+          apBlock.nodes.length +
+          dbBlock.nodes.length +
+          entryPointBlock.nodes.length,
+        namespaceFallback: namespace,
+      }
+    );
     const detectedNodes = [
       ...apBlock.nodes,
       ...dbBlock.nodes,
       ...entryPointBlock.nodes,
+      ...templateNativeBlock.nodes,
     ];
     const merge = canvasLayoutReady
       ? mergeCanvasLayoutWithDetectedNodes({
@@ -218,7 +256,7 @@ export function useProjectServices(options: {
       : [];
     return {
       changed: merge.changed,
-      edges,
+      edges: [...edges, ...templateNativeBlock.edges],
       layout: merge.layout,
       nodes: merge.nodes,
     };
@@ -229,6 +267,7 @@ export function useProjectServices(options: {
     dbsData,
     entryPointsData,
     namespace,
+    templateNativeData,
   ]);
 
   useEffect(() => {

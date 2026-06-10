@@ -1,30 +1,20 @@
 import "server-only";
 
-import { decodeKubeconfig } from "./kubeconfig";
+import {
+  kubeconfigCredentialsMatch as kubeconfigCredentialsMatchCore,
+  kubeconfigYamlFromEncoded as kubeconfigYamlFromEncodedCore,
+} from "./kubeconfig-identity-core";
 
 /** Canonical YAML text for comparing kubeconfig credentials (decoded, trimmed). */
 export function kubeconfigYamlFromEncoded(
   encoded: string | undefined
 ): string | null {
-  const trimmed = encoded?.trim() ?? "";
-  if (trimmed === "") {
-    return null;
-  }
-  const decoded = decodeKubeconfig(trimmed);
-  if (decoded != null) {
-    return decoded.trim();
-  }
-  if (trimmed.includes("apiVersion:")) {
-    return trimmed;
-  }
-  return null;
+  return kubeconfigYamlFromEncodedCore(encoded);
 }
 
 export function kubeconfigCredentialsMatch(
   encodedA: string | undefined,
   encodedB: string | undefined
 ): boolean {
-  const yamlA = kubeconfigYamlFromEncoded(encodedA);
-  const yamlB = kubeconfigYamlFromEncoded(encodedB);
-  return yamlA != null && yamlB != null && yamlA === yamlB;
+  return kubeconfigCredentialsMatchCore(encodedA, encodedB);
 }

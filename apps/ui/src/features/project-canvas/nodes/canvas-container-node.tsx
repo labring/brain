@@ -25,8 +25,11 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   const { actions = {}, states } = data;
   const { name, namespace } = states;
   const telemetryTarget = useMemo(
-    () => containerTelemetryTargetFromStates({ name, namespace }),
-    [name, namespace]
+    () =>
+      data.resourceKind === "template"
+        ? null
+        : containerTelemetryTargetFromStates({ name, namespace }),
+    [data.resourceKind, name, namespace]
   );
   const { state } = useCanvas();
   const edge = state.selectedEdge;

@@ -66,6 +66,17 @@ test("project creation pane can open directly into Docker creation", () => {
   assert.equal(directOpen.resetKey, 1);
 });
 
+test("project creation pane can open directly into template creation", () => {
+  const directOpen = projectCreationPaneStateReducer(
+    initialProjectCreationPaneState,
+    { entryMode: "templateDirect", type: "open" }
+  );
+
+  assert.equal(directOpen.open, true);
+  assert.equal(directOpen.entryMode, "templateDirect");
+  assert.equal(directOpen.resetKey, 1);
+});
+
 test("project creation pane close hides the pane without mutating the next reset key", () => {
   const open = projectCreationPaneStateReducer(
     initialProjectCreationPaneState,

@@ -35,7 +35,10 @@ export {
   type UseK8sGetResourceOptions,
   useK8sGetResource,
 } from "./use-k8s-get-resource";
-export { useK8sNamespacedList } from "./use-k8s-namespaced-list";
+export {
+  type K8sNamespacedListRefreshInterval,
+  useK8sNamespacedList,
+} from "./use-k8s-namespaced-list";
 export {
   type BrainProductResourceKind,
   type UseBrainProductResourceOptions,

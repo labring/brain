@@ -7,6 +7,8 @@ import type {
   DeploymentTargetPipelineAdapters,
   GithubDeployTaskInput,
   GithubDeployTaskResult,
+  TemplateDeploymentInput,
+  TemplateDeploymentResult,
 } from "./pipeline";
 
 function deployTaskSuccessMessage(body: unknown): string {
@@ -65,6 +67,61 @@ export async function createGithubDeployTaskFromApi({
   };
 }
 
+function templateDeployErrorMessage(body: unknown): string {
+  if (body != null && typeof body === "object" && "error" in body) {
+    const error = (body as { error?: unknown }).error;
+    if (typeof error === "string" && error !== "") {
+      return error;
+    }
+  }
+  return "Could not deploy template.";
+}
+
+function projectDeleteErrorMessage(body: unknown): string {
+  if (body != null && typeof body === "object" && "error" in body) {
+    const error = (body as { error?: unknown }).error;
+    if (typeof error === "string" && error !== "") {
+      return error;
+    }
+  }
+  return "Could not delete project.";
+}
+
+export async function applyTemplateDeploymentFromApi({
+  encodedKubeconfig,
+  input,
+}: {
+  encodedKubeconfig: string;
+  input: TemplateDeploymentInput;
+}): Promise<TemplateDeploymentResult> {
+  const response = await fetch("/api/templates/deploy", {
+    body: JSON.stringify({
+      args: input.args,
+      encodedKubeconfig,
+      instanceName: input.instanceName,
+      namespace: input.namespace,
+      projectId: input.projectId,
+      projectName: input.projectName,
+      templateName: input.templateName,
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(templateDeployErrorMessage(body));
+  }
+  if (
+    body == null ||
+    typeof body !== "object" ||
+    typeof (body as { instanceName?: unknown }).instanceName !== "string" ||
+    !Array.isArray((body as { resources?: unknown }).resources)
+  ) {
+    throw new Error("Template deploy API returned an invalid response.");
+  }
+  return body as TemplateDeploymentResult;
+}
+
 export function createDeploymentTargetClientAdapters({
   kubeconfig,
 }: {
@@ -74,6 +131,11 @@ export function createDeploymentTargetClientAdapters({
   return {
     applyBrainProductManifest: (yaml) =>
       applyBrainProductManifest(kubeconfig, yaml),
+    applyTemplateDeployment: (input) =>
+      applyTemplateDeploymentFromApi({
+        encodedKubeconfig: encodeURIComponent(kubeconfig),
+        input,
+      }),
     createProject: async (input) => {
       const response = await fetch("/api/projects", {
         body: JSON.stringify({
@@ -102,6 +164,20 @@ export function createDeploymentTargetClientAdapters({
         throw new Error("Project API did not return a project id.");
       }
       return { id: project.id.trim() };
+    },
+    deleteProject: async (input) => {
+      const response = await fetch("/api/projects", {
+        body: JSON.stringify({
+          id: input.id,
+          namespace: input.namespace,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "DELETE",
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(projectDeleteErrorMessage(body));
+      }
     },
     createGithubDeployTask: (input) =>
       createGithubDeployTaskFromApi({

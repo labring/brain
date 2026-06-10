@@ -53,6 +53,7 @@ export interface CanvasContainerNodeData extends Record<string, unknown> {
     references: readonly ContainerSettingsPaneConfirmedAddDbDsnReference[]
   ) => (() => void) | undefined;
   onWorkloadMutation?: () => Promise<unknown>;
+  resourceKind?: "ap" | "template";
   settingsAccess?: CanvasNodeSettingsAccess;
   states: ContainerNodeStates;
 }

@@ -109,3 +109,31 @@ test("project surface URL codec preserves explicit main focus policy", () => {
     "resource-logs:ap:default:api:keep-side"
   );
 });
+
+test("project surface URL codec preserves template deployment side entries", () => {
+  const parsed = parseProjectSurfaceUrlState({
+    side: "template-deployment:project%3Aalpha",
+  });
+
+  assert.deepEqual(parsed.side, {
+    kind: "templateDeployment",
+    projectId: "project:alpha",
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    side: "template-deployment:project%3Aalpha",
+  });
+});
+
+test("project surface URL codec preserves template direct project creation", () => {
+  const parsed = parseProjectSurfaceUrlState({
+    side: "project-creation:templateDirect",
+  });
+
+  assert.deepEqual(parsed.side, {
+    entryMode: "templateDirect",
+    kind: "projectCreation",
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    side: "project-creation:templateDirect",
+  });
+});

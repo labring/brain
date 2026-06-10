@@ -15,8 +15,10 @@ import type {
   ProjectCreatorDatabaseChoice,
   ProjectCreatorGithubDeployerSlot,
   ProjectCreatorSourceKind,
+  ProjectCreatorTemplateChoice,
   ProjectCreatorValue,
 } from "./project-creator.types";
+import { DEFAULT_PROJECT_CREATOR_SOURCES } from "./project-creator.types";
 
 const ProjectCreatorContext = createContext<ProjectCreatorValue | null>(null);
 
@@ -50,6 +52,8 @@ export interface ProjectCreatorRootProps {
   databaseOptions?: ProjectCreatorDatabaseChoice[];
   /** Direct Docker entry derives the Project Display Name from the image first. */
   dockerDirect?: boolean;
+  /** Sources shown on the first Project Creator step. */
+  enabledSources?: readonly ProjectCreatorSourceKind[];
   /** Existing Project Display Names in the current namespace. */
   existingProjectDisplayNames?: readonly string[];
   /** Wired into the GitHub step’s `GithubDeployer` (authorize + repos + deploy). */
@@ -58,6 +62,10 @@ export interface ProjectCreatorRootProps {
   initialStep?: ProjectCreatorSourceKind | null;
   /** Reports active source changes to outer chrome such as pane headers. */
   onStepChange?: (step: ProjectCreatorSourceKind | null) => void;
+  /** Direct Template entry derives the Project Display Name from the selected template. */
+  templateDirect?: boolean;
+  /** Options for the template step combobox. */
+  templateOptions?: ProjectCreatorTemplateChoice[];
 }
 
 function normalizeProjectCreatorDisplayName(name: string): string {
@@ -71,10 +79,13 @@ export function ProjectCreatorRoot({
   databaseOptions,
   databaseDirect = false,
   dockerDirect = false,
+  enabledSources = DEFAULT_PROJECT_CREATOR_SOURCES,
   existingProjectDisplayNames = [],
   githubDeployer: githubDeployerProp,
   initialStep = null,
   onStepChange,
+  templateDirect = false,
+  templateOptions = [],
 }: ProjectCreatorRootProps) {
   const [step, setStep] = useState<ProjectCreatorSourceKind | null>(
     initialStep
@@ -181,12 +192,16 @@ export function ProjectCreatorRoot({
         onGithubConfirm: actionsProp?.onGithubConfirm,
         onDockerConfirm: actionsProp?.onDockerConfirm,
         onDatabaseConfirm: actionsProp?.onDatabaseConfirm,
+        onTemplateConfirm: actionsProp?.onTemplateConfirm,
       },
       meta: {
         databaseOptions: dbOptions,
         databaseDirect,
         dockerDirect,
+        enabledSources,
         githubDeployer: githubDeployerProp,
+        templateDirect,
+        templateOptions,
       },
     }),
     [
@@ -198,10 +213,13 @@ export function ProjectCreatorRoot({
       databaseDirect,
       dbOptions,
       dockerDirect,
+      enabledSources,
       githubDeployerProp,
       projectDisplayName,
       projectDisplayNameError,
       setProjectDisplayName,
+      templateDirect,
+      templateOptions,
       validateAndSetProjectDisplayNameError,
     ]
   );

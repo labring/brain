@@ -11,6 +11,12 @@ import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
 import type { ChildResourceKind } from "@/lib/project-child-resource-name";
 import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
 
+export interface TemplateDeploymentResourceSummary {
+  name: string;
+  resourceType: string;
+  uid: string;
+}
+
 export type DeploymentTarget =
   | {
       displayName: string;
@@ -37,6 +43,12 @@ export type DeploymentTargetPipelineRequest =
       kind: "github";
       repository: GithubDeployerRepo;
       target: DeploymentTarget;
+    }
+  | {
+      args?: Record<string, string>;
+      kind: "template";
+      target: DeploymentTarget;
+      templateName: string;
     };
 
 export interface GithubDeployTaskInput {
@@ -56,8 +68,25 @@ export interface GithubDeployTaskResult {
   taskId: string | null;
 }
 
+export interface TemplateDeploymentInput {
+  args?: Record<string, string>;
+  instanceName: string;
+  namespace: string;
+  projectId: string;
+  projectName: string;
+  templateName: string;
+}
+
+export interface TemplateDeploymentResult {
+  instanceName: string;
+  resources: TemplateDeploymentResourceSummary[];
+}
+
 export interface DeploymentTargetPipelineAdapters {
   applyBrainProductManifest: (yaml: string) => Promise<void>;
+  applyTemplateDeployment: (
+    input: TemplateDeploymentInput
+  ) => Promise<TemplateDeploymentResult>;
   createGithubDeployTask: (
     input: GithubDeployTaskInput
   ) => Promise<GithubDeployTaskResult>;
@@ -65,6 +94,7 @@ export interface DeploymentTargetPipelineAdapters {
     displayName: string;
     namespace: string;
   }) => Promise<{ id: string }>;
+  deleteProject: (input: { id: string; namespace: string }) => Promise<void>;
   fetchProjectIdByName: (name: string) => Promise<string | undefined>;
   generateChildResourceName: (
     projectName: string,
@@ -116,6 +146,15 @@ export type DeploymentTargetPipelineOutcome =
       repoFullName: string;
       taskMessage: string;
       taskId: string | null;
+    }
+  | {
+      createdProject: boolean;
+      displayName?: string;
+      instanceName: string;
+      kind: "template";
+      projectName: string;
+      projectId?: string;
+      resources: TemplateDeploymentResourceSummary[];
     };
 
 export function newProjectDeploymentTarget(
@@ -345,6 +384,58 @@ async function runGithubPipeline(
   };
 }
 
+async function runTemplatePipeline(
+  options: DeploymentTargetPipelineOptions & {
+    request: Extract<DeploymentTargetPipelineRequest, { kind: "template" }>;
+  }
+): Promise<DeploymentTargetPipelineOutcome> {
+  const templateName = options.request.templateName.trim();
+  if (!templateName) {
+    throw new Error("Choose a template.");
+  }
+  const target = await resolveDeploymentTarget(options);
+  if (target.projectId == null || target.projectId.trim() === "") {
+    throw new Error("Could not resolve the current project.");
+  }
+  const instanceName = options.adapters.generateChildResourceName(
+    target.projectName,
+    "template"
+  );
+  let result: TemplateDeploymentResult;
+  try {
+    result = await options.adapters.applyTemplateDeployment({
+      args: options.request.args,
+      instanceName,
+      namespace: options.namespace,
+      projectId: target.projectId,
+      projectName: target.projectName,
+      templateName,
+    });
+  } catch (error) {
+    if (target.createdProject) {
+      await options.adapters
+        .deleteProject({
+          id: target.projectId,
+          namespace: options.namespace,
+        })
+        .catch(() => undefined);
+    }
+    throw error;
+  }
+
+  return {
+    createdProject: target.createdProject,
+    ...(target.displayName === undefined
+      ? {}
+      : { displayName: target.displayName }),
+    instanceName: result.instanceName,
+    kind: "template",
+    projectName: target.projectName,
+    projectId: target.projectId,
+    resources: result.resources,
+  };
+}
+
 export function runDeploymentTargetPipeline(
   options: DeploymentTargetPipelineOptions
 ): Promise<DeploymentTargetPipelineOutcome> {
@@ -362,6 +453,11 @@ export function runDeploymentTargetPipeline(
       });
     case "github":
       return runGithubPipeline({
+        ...options,
+        request: options.request,
+      });
+    case "template":
+      return runTemplatePipeline({
         ...options,
         request: options.request,
       });

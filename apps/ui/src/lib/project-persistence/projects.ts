@@ -81,6 +81,18 @@ export async function listProjects(namespace: string): Promise<BrainProject[]> {
   return rows.map(rowToProject);
 }
 
+export async function getProject(
+  namespace: string,
+  id: string
+): Promise<BrainProject | null> {
+  const [row] = await getProjectDb()
+    .select()
+    .from(projects)
+    .where(whereProject(namespace, id))
+    .limit(1);
+  return row === undefined ? null : rowToProject(row);
+}
+
 export async function createProject(
   input: CreateProjectInput
 ): Promise<BrainProject> {

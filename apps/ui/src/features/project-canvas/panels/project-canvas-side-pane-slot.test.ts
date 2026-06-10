@@ -11,6 +11,7 @@ const DOCKER_DEPLOYMENT_RE = /Docker deployment/;
 const PROJECT_CREATION_RE = /Project creation/;
 const RESOURCE_SETTINGS_RE = /Resource settings/;
 const SKILLS_WORKFLOW_RE = /Skills workflow/;
+const TEMPLATE_DEPLOYMENT_RE = /Template deployment/;
 
 function renderSlot(
   entry: Parameters<typeof ProjectCanvasSidePaneSlot>[0]["entry"]
@@ -28,6 +29,11 @@ function renderSlot(
       projectCreationPane: createElement("aside", null, "Project creation"),
       resourcePane: createElement("aside", null, "Resource settings"),
       skillsWorkflowPane: createElement("aside", null, "Skills workflow"),
+      templateDeploymentPane: createElement(
+        "aside",
+        null,
+        "Template deployment"
+      ),
     })
   );
 }
@@ -60,6 +66,14 @@ test("canvas side pane slot can render skills workflow entries", () => {
 
   assert.match(html, SKILLS_WORKFLOW_RE);
   assert.doesNotMatch(html, GITHUB_DEPLOYMENT_RE);
+});
+
+test("canvas side pane slot can render template deployment entries", () => {
+  const html = renderSlot({ kind: "templateDeployment" });
+
+  assert.match(html, TEMPLATE_DEPLOYMENT_RE);
+  assert.doesNotMatch(html, GITHUB_DEPLOYMENT_RE);
+  assert.doesNotMatch(html, RESOURCE_SETTINGS_RE);
 });
 
 test("canvas side pane slot is absent without an active side entry", () => {
