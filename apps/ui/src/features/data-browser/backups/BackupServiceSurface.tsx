@@ -1480,7 +1480,7 @@ function BackupMethodToggle({
           "relative z-10 inline-flex h-9 shrink-0 items-center justify-center rounded-lg bg-transparent px-4 text-sm transition-colors hover:bg-transparent",
           mode === "manual"
             ? "font-medium text-foreground"
-            : "font-normal text-muted-foreground hover:text-foreground"
+            : "font-normal text-muted-foreground"
         )}
         data-qa-backup-method="manual"
         onClick={() => onModeChange("manual")}
@@ -1492,11 +1492,10 @@ function BackupMethodToggle({
 
       <div
         className={cn(
-          "relative z-10 flex h-9 shrink-0 items-center gap-2 rounded-lg bg-transparent px-4 transition-colors",
-          mode === "policy"
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground"
+          "relative z-10 flex h-9 shrink-0 items-center gap-2 rounded-lg bg-transparent pr-3 pl-4 transition-colors",
+          mode === "policy" ? "text-foreground" : "text-muted-foreground"
         )}
+        data-slot="backup-method-policy-segment"
         ref={policyRef}
       >
         <button

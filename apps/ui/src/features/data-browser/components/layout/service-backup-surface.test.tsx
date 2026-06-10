@@ -67,6 +67,23 @@ function assertDangerIconButton(html: string, ...attributePatterns: string[]) {
   );
 }
 
+function elementClassName(
+  html: string,
+  tagName: string,
+  ...attributePatterns: string[]
+) {
+  const attributeLookaheads = attributePatterns
+    .map((pattern) => `(?=[^>]*${pattern})`)
+    .join("");
+  const match = new RegExp(
+    `<${tagName}${attributeLookaheads}[^>]*class="([^"]*)"[^>]*>`
+  ).exec(html);
+  if (match?.[1] === undefined) {
+    assert.fail(`Expected ${tagName} with ${attributePatterns.join(", ")}`);
+  }
+  return match[1];
+}
+
 test("DB Service root renders a service-level Backup tab without close controls", () => {
   const html = renderToStaticMarkup(
     <DbAccessSessionProvider runtime={runtime}>
@@ -110,6 +127,46 @@ test("DB Service root renders a service-level Backup tab without close controls"
   );
   assert.match(html, /data-qa-state="enabled"/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
+});
+
+test("DB Service backup method toggle keeps inactive text stable and switch padding compact", () => {
+  const manualHtml = renderToStaticMarkup(
+    <DbAccessSessionProvider runtime={runtime}>
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+  const policySegmentClass = elementClassName(
+    manualHtml,
+    "div",
+    'data-slot="backup-method-policy-segment"'
+  );
+
+  assert.match(policySegmentClass, /\bpr-3\b/);
+  assert.match(policySegmentClass, /\bpl-4\b/);
+  assert.doesNotMatch(policySegmentClass, /hover:text-foreground/);
+
+  const policyHtml = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      runtime={{
+        ...runtime,
+        backupPolicy: {
+          cronExpression: "0 2 * * *",
+          enabled: true,
+          retentionPeriod: "7d",
+        },
+      }}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+  const manualButtonClass = elementClassName(
+    policyHtml,
+    "button",
+    'data-qa-backup-method="manual"'
+  );
+
+  assert.match(manualButtonClass, /\btext-muted-foreground\b/);
+  assert.doesNotMatch(manualButtonClass, /hover:text-foreground/);
 });
 
 test("DB Service backup policy actions use default secondary AppButton styling", () => {
