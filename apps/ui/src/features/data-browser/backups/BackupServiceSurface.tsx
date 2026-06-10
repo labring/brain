@@ -23,11 +23,6 @@ import { Checkbox } from "@data-browser/components/ui/checkbox";
 import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
 import { Input } from "@data-browser/components/ui/Input";
 import { ModalForm, useModalForm } from "@data-browser/components/ui/ModalForm";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@data-browser/components/ui/tooltip";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import { AppButton } from "@workspace/ui/components/app-button";
@@ -36,6 +31,11 @@ import { AppInput } from "@workspace/ui/components/app-input";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { SingleSelect } from "@workspace/ui/components/single-select";
 import { Switch } from "@workspace/ui/components/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import {
   ArchiveRestore,
   CheckCircle2,
@@ -506,12 +506,19 @@ function backupDiagnosticItems(backup: DbServiceBackupSummary) {
 function BackupStatusTooltip({ backup }: { backup: DbServiceBackupSummary }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex cursor-help items-center">
-          <BackupStatusBadge status={backup.status} />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-80 bg-zinc-950 text-zinc-100">
+      <TooltipTrigger
+        render={
+          <span className="inline-flex cursor-help items-center">
+            <BackupStatusBadge status={backup.status} />
+          </span>
+        }
+      />
+      <TooltipContent
+        arrow
+        className="max-w-80 bg-zinc-950 text-zinc-100"
+        side="bottom"
+        sideOffset={0}
+      >
         <div className="grid gap-1 text-left">
           <div className="mb-1 flex items-center gap-1.5 font-medium">
             <Info className="size-3.5" />
@@ -602,7 +609,7 @@ function BackupRowsList({
 }) {
   return (
     <section
-      className="flex min-h-0 flex-1 flex-col rounded-lg bg-input/30"
+      className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg bg-input/30"
       data-qa-module="database"
       data-qa-object="backup-list-surface"
       data-testid="database.backup.list-surface"
@@ -615,7 +622,9 @@ function BackupRowsList({
           </h3>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-muted-foreground text-sm leading-5">
-          <span>{"Recent execution records"}</span>
+          <span className="@min-[36rem]/backup-surface:inline hidden">
+            {"Recent execution records"}
+          </span>
         </div>
       </div>
 
@@ -636,7 +645,7 @@ function BackupRowsList({
               const canDelete = backup.deletable && !isDeleting;
               return (
                 <article
-                  className="flex min-h-[74px] items-center justify-between gap-3 rounded-md bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.06]"
+                  className="flex min-h-[74px] @min-[48rem]/backup-surface:flex-row flex-col @min-[48rem]/backup-surface:items-center items-stretch @min-[48rem]/backup-surface:justify-between gap-3 rounded-md bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.06]"
                   data-qa-module="database"
                   data-qa-object="backup-row"
                   data-qa-resource-id={backup.name}
@@ -645,7 +654,7 @@ function BackupRowsList({
                   data-testid="database.backup.row"
                   key={`${backup.namespace}/${backup.name}`}
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 @min-[48rem]/backup-surface:flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate font-medium text-sm leading-5">
                         {backupTypeLabel(backup.type)}
@@ -657,7 +666,7 @@ function BackupRowsList({
                     </p>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex min-w-0 @min-[48rem]/backup-surface:shrink-0 flex-wrap items-center justify-end gap-2">
                     <AppButton
                       data-qa-action="restore"
                       data-qa-module="database"
@@ -758,7 +767,7 @@ function BackupCreationForm({
       data-testid="database.backup.create-form"
       onSubmit={handleSubmit}
     >
-      <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_minmax(260px,1fr)]">
+      <div className="grid min-w-0 @min-[60rem]/backup-surface:grid-cols-[minmax(220px,320px)_minmax(260px,1fr)] gap-4">
         <div className="min-w-0">
           <label
             className="mb-2 block font-medium text-[13px] text-muted-foreground leading-5"
@@ -804,7 +813,7 @@ function BackupCreationForm({
           </div>
           <AppTextarea
             aria-invalid={errors.description === undefined ? undefined : true}
-            className="min-h-9 resize-none border-input bg-transparent text-sm"
+            className="min-h-9 min-w-0 resize-none border-input bg-transparent text-sm"
             data-testid="database.backup.description-input"
             disabled={disabled || isSubmitting}
             id="db-service-backup-description"
@@ -1252,7 +1261,7 @@ function BackupPolicyForm({
       data-qa-state={form.enabled ? "enabled" : "disabled"}
       data-testid="database.backup.policy"
     >
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 @min-[40rem]/backup-surface:grid-cols-2 gap-4">
         <label className="flex min-w-0 flex-col gap-1 text-[13px]">
           <span className="font-medium text-muted-foreground leading-5">
             {"Backup Frequency"}
@@ -1310,7 +1319,8 @@ function BackupPolicyForm({
         <label
           className={cn(
             "flex min-w-0 flex-col gap-1 text-[13px]",
-            form.frequency === "hourly" && "md:col-span-2"
+            form.frequency === "hourly" &&
+              "@min-[40rem]/backup-surface:col-span-2"
           )}
         >
           <span className="font-medium text-muted-foreground leading-5">
@@ -1779,7 +1789,7 @@ export function BackupServiceSurface() {
   return (
     <section
       aria-busy={isLoading || undefined}
-      className="flex min-h-0 flex-1 flex-col gap-2.5 px-3 pb-3"
+      className="@container/backup-surface flex min-h-0 min-w-0 flex-1 flex-col gap-2.5 px-3 pb-3"
       data-qa-db-service-key={`${runtime.projectId}:${runtime.databaseWorkloadNamespace}:${runtime.databaseWorkloadName}`}
       data-qa-module="database"
       data-qa-object="backup-surface"

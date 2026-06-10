@@ -88,6 +88,9 @@ test("DB Service root renders a service-level Backup tab without close controls"
     html,
     /class="[^"]*\bbg-input\/30\b[^"]*"[^>]*data-qa-object="backup-list-surface"/
   );
+  assert.ok(html.includes("@container/backup-surface"));
+  assert.ok(html.includes("@min-[60rem]/backup-surface:grid-cols-"));
+  assert.ok(html.includes("@min-[48rem]/backup-surface:flex-row"));
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /orders-db/);
   assert.match(html, /data-testid="database\.backup\.create-button"/);
@@ -135,6 +138,7 @@ test("DB Service backup policy actions use default secondary AppButton styling",
     'data-qa-action="save"',
     'data-qa-object="backup-policy"'
   );
+  assert.ok(html.includes("@min-[40rem]/backup-surface:grid-cols-2"));
 });
 
 test("restore action is disabled for incomplete DB Service Backups", () => {
