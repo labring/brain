@@ -19,7 +19,6 @@ import {
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
 import { DbAccessConfirmationDialog } from "@data-browser/components/shared/DbAccessDialogs";
-import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
@@ -34,6 +33,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import {
   ArchiveRestore,
   CheckCircle2,

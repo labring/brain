@@ -5,12 +5,12 @@ import {
 import type {
   AccessObjectRef,
   AccessRowsSort,
+  DataFlowTableData,
 } from "@data-browser/api/access-types";
 import {
   useDbAccessRefresh,
   useDbAccessRuntime,
 } from "@data-browser/state/db-access-session";
-import type { TableData } from "@data-browser/utils/graphql-transforms";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseDataQueryParams {
@@ -26,7 +26,7 @@ interface UseDataQueryParams {
 
 /** State returned by useDataQuery. */
 export interface DataQueryState {
-  data: TableData | null;
+  data: DataFlowTableData | null;
   error: string | null;
   foreignKeyColumns: string[];
   loading: boolean;
@@ -60,7 +60,7 @@ export function useDataQuery(params: UseDataQueryParams): {
   const { tableRefreshKey } = useDbAccessRefresh();
 
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<TableData | null>(null);
+  const [data, setData] = useState<DataFlowTableData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [primaryKey, setPrimaryKey] = useState<string | null>(null);
   const [foreignKeyColumns, setForeignKeyColumns] = useState<string[]>([]);

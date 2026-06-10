@@ -15,7 +15,6 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@ai-sdk/react": "^3.0.179",
-    "@apollo/client": "3.13.8",
     "@monaco-editor/react": "^4.7.0",
     "@workspace/api": "workspace:*",
     "@workspace/ui": "workspace:*",
@@ -27,7 +26,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.40.1",
-    "graphql": "16.11.0",
     "jose": "^6.2.2",
     "jotai": "^2.19.1",
     "jotai-effect": "^2.2.3",
@@ -47,7 +45,6 @@
     "swr": "^2.4.1",
     "tailwind-merge": "^3.5.0",
     "undici": "7",
-    "xlsx": "^0.18.5",
     "yaml": "^2.8.4",
     "zod": "^4.3.6"
   },

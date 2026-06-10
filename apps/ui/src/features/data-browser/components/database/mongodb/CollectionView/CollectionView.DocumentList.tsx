@@ -1,5 +1,5 @@
 import { FindBarContext } from "@data-browser/components/database/shared/FindBar.Provider";
-import { cn } from "@data-browser/lib/utils";
+import { cn } from "@workspace/ui/lib/utils";
 import { FileJson } from "lucide-react";
 import { use, useMemo } from "react";
 import { useCollectionView } from "./CollectionViewProvider";

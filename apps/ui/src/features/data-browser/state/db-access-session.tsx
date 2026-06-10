@@ -2,7 +2,6 @@
 
 import type { DataBrowserHostContext } from "@data-browser/api/access-types";
 import type { DataBrowserEngine } from "@data-browser/api/engine";
-import type { RecordInput } from "@data-browser/generated/graphql";
 import { atom, createStore, Provider, useAtomValue, useSetAtom } from "jotai";
 import {
   createContext,
@@ -314,7 +313,7 @@ export function useDbAccessReadOnlyActions() {
       clearTableData: disabledMutation,
       copyTable: disabledMutation,
       createDatabase: disabledMutation,
-      createTable: (..._args: [string, string, string, RecordInput[]]) =>
+      createTable: (..._args: [string, string, string, unknown[]]) =>
         disabledMutation(),
       deleteDatabase: disabledMutation,
       deleteTable: disabledMutation,

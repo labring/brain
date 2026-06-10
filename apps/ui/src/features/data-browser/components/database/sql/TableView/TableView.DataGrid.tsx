@@ -1,5 +1,5 @@
 import { FindBarContext } from "@data-browser/components/database/shared/FindBar.Provider";
-import { cn } from "@data-browser/lib/utils";
+import { cn } from "@workspace/ui/lib/utils";
 import { EyeOff, Loader2 } from "lucide-react";
 import { use, useCallback, useRef, useState } from "react";
 import { TableViewColumnHeader } from "./TableView.ColumnHeader";

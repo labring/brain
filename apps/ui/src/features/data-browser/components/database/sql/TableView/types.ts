@@ -1,4 +1,4 @@
-import type { TableData } from "@data-browser/utils/graphql-transforms";
+import type { DataFlowTableData } from "@data-browser/api/access-types";
 
 export type ChangesetCellValue = string | null;
 export type ChangesetRowKey = string;
@@ -22,7 +22,7 @@ export interface TableViewState {
   activeColumnMenu: string | null;
   columnWidths: Record<string, number>;
   currentPage: number;
-  data: TableData | null;
+  data: DataFlowTableData | null;
   error: string | null;
   foreignKeyColumns: string[];
   loading: boolean;

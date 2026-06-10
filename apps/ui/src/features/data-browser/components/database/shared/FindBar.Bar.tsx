@@ -1,10 +1,10 @@
-import { cn } from "@data-browser/lib/utils";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import { useFindBar } from "./FindBar.Provider";
 

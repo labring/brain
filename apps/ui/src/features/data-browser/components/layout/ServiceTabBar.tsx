@@ -1,5 +1,5 @@
-import { cn } from "@data-browser/lib/utils";
 import { useDbAccessTabs } from "@data-browser/state/db-access-session";
+import { cn } from "@workspace/ui/lib/utils";
 import { CloudUpload } from "lucide-react";
 
 const serviceTabActiveClassName = "bg-input text-foreground";

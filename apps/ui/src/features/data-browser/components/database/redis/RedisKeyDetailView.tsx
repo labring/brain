@@ -5,6 +5,7 @@ import {
 import type {
   AccessObjectRef,
   AccessRowsSort,
+  DataFlowTableData,
 } from "@data-browser/api/access-types";
 import { DataView } from "@data-browser/components/database/shared/DataView";
 import {
@@ -12,12 +13,10 @@ import {
   useFindBar,
 } from "@data-browser/components/database/shared/FindBar";
 import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
-import { cn } from "@data-browser/lib/utils";
 import {
   useDbAccessRefresh,
   useDbAccessRuntime,
 } from "@data-browser/state/db-access-session";
-import type { TableData } from "@data-browser/utils/graphql-transforms";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   DropdownMenu,
@@ -33,6 +32,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import {
   ArrowDownAZ,
   ArrowUpAZ,
@@ -104,7 +104,7 @@ export function RedisKeyDetailView({
   const { tableRefreshKey } = useDbAccessRefresh();
 
   // ---- Data state ----
-  const [data, setData] = useState<TableData | null>(null);
+  const [data, setData] = useState<DataFlowTableData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);

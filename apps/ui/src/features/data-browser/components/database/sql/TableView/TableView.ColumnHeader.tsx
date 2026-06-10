@@ -1,4 +1,3 @@
-import { cn } from "@data-browser/lib/utils";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { Badge } from "@workspace/ui/components/badge";
 import {
@@ -10,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
+import { cn } from "@workspace/ui/lib/utils";
 import { ArrowDownAZ, ArrowUpAZ, MoreHorizontal, X } from "lucide-react";
 import { simplifyColumnType, useTableView } from "./TableViewProvider";
 

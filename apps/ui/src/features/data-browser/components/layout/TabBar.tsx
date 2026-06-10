@@ -1,5 +1,4 @@
 import { PointerContextMenu } from "@data-browser/components/shared/PointerContextMenu";
-import { cn } from "@data-browser/lib/utils";
 import {
   type DbAccessTab,
   type DbAccessTabType,
@@ -12,6 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import {
   Database,
   KeyRound,
