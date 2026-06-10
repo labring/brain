@@ -58,6 +58,39 @@ test("AP claim settings reconstruct direct and non-direct environment rows", () 
   ]);
 });
 
+test("AP claim settings exposes saved env raw source as canonical AP environment state", () => {
+  const envRawSource = [
+    "# database",
+    "DATABASE_URL='postgres://db:5432/app' # private dsn",
+    "",
+    "RUNTIME=$(DATABASE_URL)",
+  ].join("\n");
+
+  const settings = claimToContainerSettings(
+    {
+      kind: "AP",
+      metadata: { name: "api", namespace: "default" },
+      spec: {
+        input: {
+          env: [
+            { name: "DATABASE_URL", value: "compiled-value" },
+            { name: "RUNTIME", value: "$(DATABASE_URL)" },
+          ],
+          envRawSource,
+          image: "ghcr.io/acme/api:latest",
+        },
+      },
+    },
+    "AP"
+  );
+
+  assert.equal(settings.envRawSource, envRawSource);
+  assert.deepEqual(settings.env, [
+    { name: "DATABASE_URL", value: "postgres://db:5432/app" },
+    { name: "RUNTIME", value: "$(DATABASE_URL)" },
+  ]);
+});
+
 test("AP claim settings maps private-only network from desired and observed AP state", () => {
   const settings = claimToContainerSettings(
     {
@@ -875,6 +908,13 @@ test("AP claim settings reconstruct DB primitive references from exact Secret ev
       primitiveSecretRefs: {
         username: secretKeyRef,
       },
+      variables: [
+        {
+          name: "PG_USER",
+          type: "secret",
+          valueFrom: { secretKeyRef },
+        },
+      ],
     },
   ]);
 

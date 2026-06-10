@@ -125,6 +125,22 @@ A Brain product resource and API view that represents a managed database workloa
 
 The user-facing database service represented by one DB resource and one database node on the Project Canvas. A DB Service may expose multiple engine-level Logical Databases through DB Access.
 
+### DB Service Backup
+
+A named recovery point for an entire DB Service, optionally annotated with a short description. The backup name is the backup's user-visible identity, while the description is non-identifying context. A DB Service Backup is either manual or automatic; automatic DB Service Backups are created by the DB Service Backup Policy. A DB Service Backup belongs to the DB Service rather than to one Logical Database, schema, table, collection, or key inside it. Deleting a DB Service Backup removes that recovery point, not the source DB Service or any DB Service already restored from it.
+
+When shown as a recovery point, a DB Service Backup's time represents when the recovery point was started or created, not when the backup job completed.
+
+Manual DB Service Backup creation requires the source DB Service to be running. DB Service Restore requires the selected DB Service Backup to be completed, and backup deletion is unavailable while the backup is still in progress.
+
+### DB Service Backup Policy
+
+The automatic backup rule for one DB Service. A DB Service has at most one current DB Service Backup Policy; the policy is distinct from the DB Service Backups it creates, may run hourly, daily, or weekly using the user's local time, and retains backups for a selected number of days. Disabling the policy stops future automatic backups but does not delete existing DB Service Backups.
+
+### DB Service Restore
+
+The act of creating a new DB Service from a DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project Canvas and namespace as the source DB Service. After the restored DB Service appears, it becomes the user's next Project Canvas focus. The restored DB Service inherits the source DB Service's database settings unless the product explicitly offers restore-time overrides.
+
 ### Logical Database
 
 An engine-level database namespace exposed inside one DB Service, such as a PostgreSQL database, MySQL database, MongoDB database, or Redis database index. A Logical Database is an object browsed inside DB Access, not a Project Canvas DB resource.
@@ -159,21 +175,49 @@ _Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 
 A runtime dependency where an AP is configured to consume one DB's connection credentials.
 
+### AP Environment Raw Source
+
+The canonical AP environment editing model: the complete set of AP environment entries as the user can author them in `.env` form, including direct values, AP Environment References, and runtime environment expansions. Structured AP Environment controls are views or insertion aids over the AP Environment Raw Source, not separate saved state.
+
+_Avoid_: Hidden binding metadata, editor-only environment language.
+
+### AP Environment Structured View
+
+The preferred default presentation of the AP Environment Raw Source. It recognizes direct values, AP Environment References, composed values, and Database Binding evidence while preserving the underlying raw environment entries; listed values are masked by default and revealed only through explicit user action.
+
 ### Reference
 
-A DB Service selected in the AP Environment editor as the source for resolving AP Environment Reference Tokens in one environment row. A Reference is editing context, not saved product state by itself.
+A DB Service selected in the AP Environment editor as a source for inserting or recognizing DB-backed environment entries. A Reference is editing context, not saved product state by itself, and is not an independent property of an AP environment row.
 
-### AP Environment Reference Token
+_Avoid_: Binding record, hidden binding state.
 
-An editor-only placeholder inside an AP environment value that names another AP environment variable so the user can compose values from runtime environment variables while keeping the value text editable.
+### AP Environment Reference
 
-### AP Environment Helper Variable
+A product-level expression in the AP Environment Raw Source that points at a DB Service-provided environment value. An AP Environment Reference is resolved before runtime into ordinary AP environment entries, while the user-facing raw source may retain the reference expression.
 
-A real AP environment variable materialized from an AP Environment Reference Token so the AP can receive the referenced runtime value. A Helper Variable is visible in the AP Environment editor but is managed by the token that requires it, not edited or deleted as an independent Reference row.
+_Avoid_: UI-only token, hidden binding metadata.
+
+### AP Environment Resolved Value
+
+The value produced by resolving an AP Environment Reference or ordinary AP environment entry for user inspection. AP Environment Resolved Values are requested explicitly and are not the default list presentation.
+
+### DB Connection DSN
+
+A complete connection string for one DB Service, including the credentials needed by an application to connect when the DB engine requires credentials.
+
+_Avoid_: Address-only DSN, credential-free DATABASE_URL.
+
+### AP Environment Composed Value
+
+An AP environment value that refers to another AP environment variable at runtime. The referenced variable remains an ordinary AP environment entry in the AP Environment Raw Source.
+
+_Avoid_: AP Environment Reference Token, AP Environment Helper Variable.
 
 ### DB Access
 
-A read-only resource workflow for inspecting one DB Service's objects and data without exposing its connection credentials. DB Access is distinct from DB Settings: DB Settings changes a DB's desired configuration, while DB Access explores the Logical Databases and objects exposed by that DB Service.
+A resource workflow for inspecting, and when the product enables it editing, one DB Service's objects and data without exposing its connection credentials. DB Access is distinct from DB Settings: DB Settings changes a DB's desired configuration, while DB Access works with the Logical Databases and objects exposed by that DB Service.
+
+_Avoid_: Data Browser, database browser.
 
 ### DB Access Session
 
@@ -181,7 +225,7 @@ One active DB Access browsing session for a single DB Service. A DB Access Sessi
 
 ### DB Terminal
 
-An interactive terminal session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Terminal is distinct from DB Access: DB Access is a read-only browser over a DB Service's objects and data, while a DB Terminal is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
+An interactive terminal session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Terminal is distinct from DB Access: DB Access is a structured object and data workflow, while a DB Terminal is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
 
 _Avoid_: DB Console, console.
 

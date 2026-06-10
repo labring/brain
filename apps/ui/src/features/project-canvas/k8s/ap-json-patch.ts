@@ -8,9 +8,12 @@ import type {
   ContainerStorageMount,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import {
+  canonicalApEnvRawSource,
+  compileApEnvRawSourceForRuntime,
+} from "@workspace/ui/lib/ap-env-raw-source";
+import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
   type ContainerEnvDbDsnSource,
-  containerEnvRowsEqual,
 } from "@workspace/ui/lib/container-env-rows";
 import { normalizeContainerEnvTokenRowsForSave } from "@workspace/ui/lib/container-env-tokens";
 import { parse as parseYaml } from "yaml";
@@ -60,10 +63,14 @@ const LEGACY_AP_NETWORK_INPUT_FIELDS = [
   "privatePort",
 ] as const;
 
-type ApNetworkSettingsPatch = Pick<
-  ContainerNetwork,
-  "appListeningPorts" | "privatePort"
-> &
+interface ApNetworkAppListeningPortsPatch {
+  appListeningPorts?: readonly NonNullable<
+    ContainerNetwork["appListeningPorts"]
+  >[number][];
+  privatePort?: ContainerNetwork["privatePort"];
+}
+
+type ApNetworkSettingsPatch = ApNetworkAppListeningPortsPatch &
   Partial<{
     customDomains: readonly NonNullable<
       ContainerNetwork["customDomains"]
@@ -73,10 +80,7 @@ type ApNetworkSettingsPatch = Pick<
 
 type ApPrivatePortSettingsPatch = Pick<ContainerNetwork, "privatePort">;
 
-type ApPublicAddressesSettingsPatch = Pick<
-  ContainerNetwork,
-  "appListeningPorts" | "privatePort" | "publicAddresses"
-> & {
+type ApPublicAddressesSettingsPatch = ApNetworkAppListeningPortsPatch & {
   customDomains?: readonly NonNullable<
     ContainerNetwork["customDomains"]
   >[number][];
@@ -85,6 +89,7 @@ type ApPublicAddressesSettingsPatch = Pick<
 
 interface ApNetworkSettingsPatchOptions {
   dbDsnReferenceSources?: readonly ContainerEnvDbDsnSource[];
+  envRawSource?: string;
   existingCustomDomains?: readonly ExistingCustomDomainBinding[];
   metadata?: Record<string, unknown>;
   routingDomain?: string;
@@ -96,6 +101,7 @@ export interface ApSettingsDraftPatch {
   configMaps?: readonly ContainerConfigMapMount[];
   cpuCores?: number;
   env?: readonly ContainerEnvVar[];
+  envRawSource?: string;
   image?: string;
   memoryMib?: number;
   network?: ApNetworkSettingsPatch;
@@ -549,16 +555,27 @@ function buildApNetworkInput(
   };
 }
 
+function sourcePortRowsForSave(
+  network: ApNetworkAppListeningPortsPatch
+): readonly { port: number | undefined }[] {
+  if (
+    network.appListeningPorts != null &&
+    network.appListeningPorts.length > 0
+  ) {
+    return network.appListeningPorts;
+  }
+  return [{ port: network.privatePort }];
+}
+
 function normalizedAppListeningPortsForSave(
-  network: Pick<ContainerNetwork, "appListeningPorts" | "privatePort">
+  network: ApNetworkAppListeningPortsPatch
 ): Record<string, unknown>[] {
-  const source =
-    network.appListeningPorts == null || network.appListeningPorts.length === 0
-      ? [{ port: network.privatePort }]
-      : network.appListeningPorts;
   const seen = new Set<number>();
-  return source.map((row) => {
-    const port = validatedNetworkPort(row.port, "App Listening Port");
+  return sourcePortRowsForSave(network).map((row) => {
+    const port = validatedNetworkPort(
+      row.port ?? Number.NaN,
+      "App Listening Port"
+    );
     if (seen.has(port)) {
       throw new Error("App Listening Ports must be unique.");
     }
@@ -838,8 +855,26 @@ export async function applyApResourceQuotas(
 export function patchOpsForApEnvSettings(
   spec: Record<string, unknown> | undefined,
   env: ContainerEnvVar[],
-  options: Pick<ApNetworkSettingsPatchOptions, "dbDsnReferenceSources"> = {}
+  options: Pick<
+    ApNetworkSettingsPatchOptions,
+    "dbDsnReferenceSources" | "envRawSource"
+  > = {}
 ): K8sJsonPatchOp[] {
+  const input = readApInput(spec ?? {});
+  if (options.envRawSource !== undefined) {
+    const result = compileApEnvRawSourceForRuntime(
+      options.envRawSource,
+      options.dbDsnReferenceSources
+    );
+    if (!result.valid) {
+      throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
+    }
+    return patchOpsForApInput(spec, {
+      env: buildEnvArray(input.env, result.env),
+      envRawSource: result.envRawSource,
+    });
+  }
+
   const result = normalizeContainerEnvTokenRowsForSave(
     env,
     options.dbDsnReferenceSources
@@ -847,8 +882,11 @@ export function patchOpsForApEnvSettings(
   if (!result.valid) {
     throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
   }
-  const list = buildEnvArray(readApInput(spec ?? {}).env, result.env);
-  return patchOpsForApInput(spec, { env: list });
+  const envRawSource = canonicalApEnvRawSource({ env: result.env });
+  return patchOpsForApInput(spec, {
+    env: buildEnvArray(input.env, result.env),
+    envRawSource,
+  });
 }
 
 function validatedNetworkPort(port: number, label: string): number {
@@ -1065,18 +1103,28 @@ function patchOpsForApSettingsDraftInput(
     inputPatch.image = image;
   }
 
-  if (
-    next.env !== undefined &&
-    !containerEnvRowsEqual([...next.env], [...(previous.env ?? [])])
-  ) {
-    const result = normalizeContainerEnvTokenRowsForSave(
-      [...next.env],
-      options.dbDsnReferenceSources
-    );
-    if (!result.valid) {
-      throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
+  if (next.env !== undefined) {
+    const nextRawSource = canonicalApEnvRawSource({
+      env: next.env,
+      envRawSource: next.envRawSource,
+    });
+    const previousRawSource = canonicalApEnvRawSource({
+      env: previous.env ?? [],
+      envRawSource: previous.envRawSource,
+    });
+    if (nextRawSource !== previousRawSource) {
+      const result = compileApEnvRawSourceForRuntime(
+        nextRawSource,
+        options.dbDsnReferenceSources
+      );
+      if (!result.valid) {
+        throw new Error(
+          result.diagnostics[0]?.message ?? "Invalid environment."
+        );
+      }
+      inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
+      inputPatch.envRawSource = result.envRawSource;
     }
-    inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
   }
 
   appendApSettingsDraftLaunchPatch(inputPatch, next, previous);
@@ -1177,7 +1225,10 @@ export async function applyApEnv(
   kubeconfig: string,
   claim: Record<string, unknown>,
   env: ContainerEnvVar[],
-  options: Pick<ApNetworkSettingsPatchOptions, "dbDsnReferenceSources"> = {}
+  options: Pick<
+    ApNetworkSettingsPatchOptions,
+    "dbDsnReferenceSources" | "envRawSource"
+  > = {}
 ): Promise<void> {
   const spec = asRecord(claim.spec);
   await patchAp(

@@ -12,14 +12,24 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
 	orchestration "sealos/api/service/orchestration"
+	transformdb "sealos/api/service/transform/db"
 )
+
+var kubeBlocksBackupGVR = schema.GroupVersionResource{
+	Group:    "dataprotection.kubeblocks.io",
+	Version:  "v1alpha1",
+	Resource: "backups",
+}
 
 func registerGet(grp huma.API) {
 	type dbGetInput struct {
@@ -190,6 +200,11 @@ func dbResponseFromClustersWithSupport(cfg *clientcmdapi.Config, jsonBytes []byt
 		}
 		db := orchestration.DBObjectFromCluster(&cluster)
 		applyDBConnectionState(cfg, db, cluster.GetName(), cluster.GetNamespace())
+		if backups, err := dbBackupsForCluster(cfg, &cluster); err != nil {
+			return nil, err
+		} else {
+			applyDBBackupState(db, backups)
+		}
 		return json.Marshal(db)
 	}
 	list, err := dbClusterListFromJSON(jsonBytes)
@@ -200,6 +215,11 @@ func dbResponseFromClustersWithSupport(cfg *clientcmdapi.Config, jsonBytes []byt
 	for i := range list.Items {
 		db := orchestration.DBObjectFromCluster(&list.Items[i])
 		applyDBConnectionState(cfg, db, list.Items[i].GetName(), list.Items[i].GetNamespace())
+		if backups, err := dbBackupsForCluster(cfg, &list.Items[i]); err != nil {
+			return nil, err
+		} else {
+			applyDBBackupState(db, backups)
+		}
 		items = append(items, db)
 	}
 	out := map[string]interface{}{
@@ -243,6 +263,59 @@ func dbClusterListFromJSON(jsonBytes []byte) (unstructured.UnstructuredList, err
 		return list, err
 	}
 	return list, nil
+}
+
+func applyDBBackupState(db map[string]interface{}, backups []map[string]interface{}) {
+	if db == nil {
+		return
+	}
+	status, _ := db["status"].(map[string]interface{})
+	if status == nil {
+		status = map[string]interface{}{}
+		db["status"] = status
+	}
+	status["backups"] = backups
+}
+
+func dbBackupsForCluster(cfg *clientcmdapi.Config, cluster *unstructured.Unstructured) ([]map[string]interface{}, error) {
+	if cfg == nil ||
+		cluster == nil ||
+		cluster.GetUID() == "" ||
+		cluster.GetNamespace() == "" {
+		return nil, nil
+	}
+	restConfig, err := restConfigForDBRoute(cfg)
+	if err != nil {
+		return nil, err
+	}
+	client, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+	list, err := client.Resource(kubeBlocksBackupGVR).Namespace(cluster.GetNamespace()).List(
+		context.Background(),
+		metav1.ListOptions{
+			LabelSelector: transformdb.KubeBlocksBackupClusterUIDLabel + "=" + string(cluster.GetUID()),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, list.Items[i].Object)
+	}
+	return items, nil
+}
+
+func restConfigForDBRoute(cfg *clientcmdapi.Config) (*rest.Config, error) {
+	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
+		DefaultNamespace: "",
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resolved.RestConfig, nil
 }
 
 func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{}, name string, namespace string) {

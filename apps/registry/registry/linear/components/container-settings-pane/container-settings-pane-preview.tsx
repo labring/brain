@@ -44,6 +44,20 @@ const DEMO_NETWORK: ContainerNetwork = {
   ],
 };
 
+const DEMO_DB_REFERENCE_SOURCES = [
+  {
+    name: "postgres",
+    namespace: "default",
+    privateDsn: "postgresql://postgres.default.svc:5432/app",
+    primitiveSecretRefs: {
+      host: { key: "endpoint", name: "postgres-conn-credential" },
+      password: { key: "passwd", name: "postgres-conn-credential" },
+      port: { key: "port", name: "postgres-conn-credential" },
+      username: { key: "user", name: "postgres-conn-credential" },
+    },
+  },
+];
+
 export default function ContainerSettingsPanePreview() {
   const [cpuCores, setCpuCores] = useState(2);
   const [memoryMib, setMemoryMib] = useState(2048);
@@ -63,6 +77,7 @@ export default function ContainerSettingsPanePreview() {
             step: 0.25,
             value: cpuCores,
           }}
+          dbDsnReferenceSources={DEMO_DB_REFERENCE_SOURCES}
           env={env}
           image={image}
           memoryQuota={{

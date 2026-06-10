@@ -2,7 +2,6 @@
 
 import type { DataBrowserHostContext } from "@data-browser/api/access-types";
 import type { DataBrowserEngine } from "@data-browser/api/engine";
-import type { RecordInput } from "@data-browser/generated/graphql";
 import { atom, createStore, Provider, useAtomValue, useSetAtom } from "jotai";
 import {
   createContext,
@@ -18,10 +17,12 @@ import {
   closeDbAccessTab,
   closeOtherDbAccessTabs,
   createDbAccessSession,
+  type DbAccessServiceTab,
   type DbAccessSessionState,
   type DbAccessTab,
   type DbAccessTabInput,
   openDbAccessTab,
+  setActiveDbAccessServiceTab,
   setActiveDbAccessTab,
   switchDbAccessSession,
   updateDbAccessTab,
@@ -106,7 +107,7 @@ const DbAccessRuntimeContext = createContext<DataBrowserHostContext | null>(
 
 function disabledMutation(..._args: unknown[]): Promise<DDLResult> {
   return Promise.resolve({
-    message: "This database browser is read-only in the current version.",
+    message: "DB Access is read-only in the current version.",
     success: false,
   });
 }
@@ -219,6 +220,12 @@ export function useDbAccessTabs() {
     [setSession]
   );
 
+  const setActiveServiceTab = useCallback(
+    (tab: DbAccessServiceTab) =>
+      setSession((current) => setActiveDbAccessServiceTab(current, tab)),
+    [setSession]
+  );
+
   const updateTab = useCallback(
     (tabId: string, updates: Partial<DbAccessTab>) =>
       setSession((current) => updateDbAccessTab(current, tabId, updates)),
@@ -227,11 +234,13 @@ export function useDbAccessTabs() {
 
   return {
     activeTabId: session.activeTabId,
+    activeSurface: session.activeSurface,
     closeAllTabs,
     closeOtherTabs,
     closeTab,
     openTab,
     setActiveTab,
+    setActiveServiceTab,
     tabs: session.tabs,
     updateTab,
   };
@@ -304,7 +313,7 @@ export function useDbAccessReadOnlyActions() {
       clearTableData: disabledMutation,
       copyTable: disabledMutation,
       createDatabase: disabledMutation,
-      createTable: (..._args: [string, string, string, RecordInput[]]) =>
+      createTable: (..._args: [string, string, string, unknown[]]) =>
         disabledMutation(),
       deleteDatabase: disabledMutation,
       deleteTable: disabledMutation,

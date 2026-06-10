@@ -8,6 +8,10 @@ import type {
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import {
+  apEnvRawSourceFromRows,
+  apEnvRawSourceRows,
+} from "@workspace/ui/lib/ap-env-raw-source";
+import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
   type ContainerEnvDbDsnSource,
   containerEnvDbDsnReferenceFromValue,
@@ -28,7 +32,6 @@ import {
 } from "./ap-replica-strategy";
 import {
   readApCpuLimit,
-  readApEnv,
   readApImage,
   readApInput,
   readApMemoryLimit,
@@ -183,6 +186,15 @@ function envFromSpecEnvList(
     }
   }
   return containerEnvRowsFromSavedEnv(out, dbDsnReferenceSources);
+}
+
+function envRawSourceFromSpecInput(
+  input: Record<string, unknown>,
+  fallbackEnv: readonly ContainerEnvVar[]
+): string {
+  return typeof input.envRawSource === "string"
+    ? input.envRawSource
+    : apEnvRawSourceFromRows(fallbackEnv);
 }
 
 function portNum(v: unknown): number | undefined {
@@ -634,6 +646,7 @@ export interface ClaimContainerSettings {
   configMaps: ContainerConfigMapMount[];
   cpuCores: number;
   env: ContainerEnvVar[];
+  envRawSource?: string;
   image: string;
   memoryMib: number;
   network?: ContainerNetwork;
@@ -667,12 +680,21 @@ function mapApClaim(
   const replicaStrategy = readApReplicaStrategy(spec);
   const replicas = normalizeApFixedReplicas(replicaStrategy.fixed.replicas);
   const input = readApInput(spec);
+  const savedEnv = envFromSpecEnvList(
+    input.env,
+    options?.dbDsnReferenceSources
+  );
+  const envRawSource = envRawSourceFromSpecInput(input, savedEnv);
   return {
     args: stringListFromSpec(input.args),
     command: stringListFromSpec(input.command),
     configMaps: configMapsFromSpecInput(input.configMaps),
     cpuCores,
-    env: envFromSpecEnvList(readApEnv(spec), options?.dbDsnReferenceSources),
+    env:
+      typeof input.envRawSource === "string"
+        ? apEnvRawSourceRows(envRawSource)
+        : savedEnv,
+    envRawSource,
     image,
     memoryMib,
     network: apNetworkFromSpecAndStatus(metadata, spec, status, options),
@@ -696,6 +718,7 @@ function mapDbSpec(spec: Record<string, unknown>): ClaimContainerSettings {
     configMaps: [],
     cpuCores: clampScale(cpuRaw ?? 1, CPU_MIN, CPU_MAX),
     env: [],
+    envRawSource: "",
     image: engine,
     memoryMib: clampScale(memRaw ?? 512, MEM_MIN, MEM_MAX),
     replicaStrategy: defaultFixedReplicaStrategy(),
@@ -717,6 +740,7 @@ export function claimToContainerSettings(
       configMaps: [],
       cpuCores: 1,
       env: [],
+      envRawSource: "",
       image: "",
       memoryMib: 512,
       replicaStrategy: defaultFixedReplicaStrategy(),

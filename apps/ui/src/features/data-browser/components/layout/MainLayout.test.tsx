@@ -21,6 +21,10 @@ const runtime = {
     formattedVersion: "16.4",
     name: "orders",
   },
+  dbService: {
+    name: "orders-db",
+    namespace: "database-system",
+  },
   databaseWorkloadName: "orders-db",
   databaseWorkloadNamespace: "database-system",
   engine: "POSTGRES",
@@ -35,6 +39,10 @@ test("layout provides tooltip context for tab controls", () => {
     html = renderToStaticMarkup(
       <DbAccessSessionProvider
         initialSession={{
+          activeSurface: {
+            kind: "object",
+            tabId: dbAccessObjectTabId(tableRef),
+          },
           activeTabId: dbAccessObjectTabId(tableRef),
           dbServiceKey: "project-uid:database-system:orders-db",
           tabs: [

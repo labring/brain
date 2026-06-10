@@ -1,9 +1,10 @@
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@data-browser/components/ui/tooltip";
-import { cn } from "@data-browser/lib/utils";
+} from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import { useFindBar } from "./FindBar.Provider";
 
@@ -69,52 +70,67 @@ export function FindBarBar({ className }: { className?: string }) {
 
         {/* Previous match */}
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span>
-              <button
-                className="flex size-9 items-center justify-center text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-                disabled={state.total === 0}
-                onClick={actions.goToPrevious}
-                type="button"
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
-            </span>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <span>
+                <AppIconButton
+                  aria-label="Previous match"
+                  className="text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                  disabled={state.total === 0}
+                  onClick={actions.goToPrevious}
+                  size="lg"
+                  type="button"
+                  variant="quiet"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </AppIconButton>
+              </span>
+            }
+          />
           <TooltipContent>{"Previous match"}</TooltipContent>
         </Tooltip>
 
         {/* Next match */}
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span>
-              <button
-                className="flex size-9 items-center justify-center text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-                disabled={state.total === 0}
-                onClick={actions.goToNext}
-                type="button"
-              >
-                <ArrowDown className="h-4 w-4" />
-              </button>
-            </span>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <span>
+                <AppIconButton
+                  aria-label="Next match"
+                  className="text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                  disabled={state.total === 0}
+                  onClick={actions.goToNext}
+                  size="lg"
+                  type="button"
+                  variant="quiet"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </AppIconButton>
+              </span>
+            }
+          />
           <TooltipContent>{"Next match"}</TooltipContent>
         </Tooltip>
 
         {/* Clear / close */}
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span>
-              <button
-                className="flex size-9 items-center justify-center text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-                disabled={!state.searchTerm}
-                onClick={actions.clear}
-                type="button"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </span>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <span>
+                <AppIconButton
+                  aria-label="Clear search"
+                  className="text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                  disabled={!state.searchTerm}
+                  onClick={actions.clear}
+                  size="lg"
+                  type="button"
+                  variant="quiet"
+                >
+                  <X className="h-4 w-4" />
+                </AppIconButton>
+              </span>
+            }
+          />
           <TooltipContent>{"Clear search"}</TooltipContent>
         </Tooltip>
       </div>

@@ -36,6 +36,8 @@ export const API_ROUTES = {
     root: "/api/ap/v1alpha1",
     /** Recent Kubernetes events for one AP workload. */
     events: "/api/ap/v1alpha1/events",
+    /** Explicitly reveal/copy one saved AP environment row value. */
+    envValue: "/api/ap/v1alpha1/env-value",
     /** Image version history for one AP workload. */
     versions: "/api/ap/v1alpha1/versions",
     /** Rollout-restart the composed Deployment (same name as the AP). */

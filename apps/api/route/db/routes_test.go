@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -102,6 +104,58 @@ func TestRegisterIncludesDBLifecycleRoutes(t *testing.T) {
 				t.Fatalf("unexpected operation ID: %q", got.Post.OperationID)
 			}
 		})
+	}
+}
+
+func TestRegisterIncludesDBRestoreRoute(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/restore"]
+	if path == nil || path.Post == nil {
+		t.Fatalf("expected POST /api/db/v1alpha1/restore to be registered")
+	}
+	if path.Post.OperationID != "db-restore" {
+		t.Fatalf("unexpected operation ID: %q", path.Post.OperationID)
+	}
+	description := path.Post.Description
+	for _, want := range []string{
+		"completed DB Service Backup",
+		"new DB Service",
+		"same namespace",
+		"projectId",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("expected restore docs to mention %q, got: %s", want, description)
+		}
+	}
+}
+
+func TestRegisterIncludesDBBackupDeleteRoute(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/backup"]
+	if path == nil || path.Delete == nil {
+		t.Fatalf("expected DELETE /api/db/v1alpha1/backup to be registered")
+	}
+	if path.Delete.OperationID != "db-backup-delete" {
+		t.Fatalf("unexpected operation ID: %q", path.Delete.OperationID)
+	}
+	description := path.Delete.Description
+	for _, want := range []string{
+		"completed or failed DB Service Backup",
+		"source DB Service",
+		"pending",
+		"running",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("expected backup delete docs to mention %q, got: %s", want, description)
+		}
 	}
 }
 
@@ -466,6 +520,265 @@ func TestDBResponseFromClustersAcceptsK8sServiceWrappedList(t *testing.T) {
 	spec := item["spec"].(map[string]interface{})
 	if got := spec["engine"]; got != "mysql" {
 		t.Fatalf("spec.engine = %v, want mysql", got)
+	}
+}
+
+func TestApplyDBBackupStateSetsRawBackups(t *testing.T) {
+	db := map[string]interface{}{
+		"status": map[string]interface{}{
+			"phase": "Running",
+		},
+	}
+	backups := []map[string]interface{}{
+		{
+			"metadata": map[string]interface{}{
+				"name": "pg-manual-20260609",
+			},
+			"status": map[string]interface{}{
+				"phase": "Completed",
+			},
+		},
+	}
+
+	applyDBBackupState(db, backups)
+
+	status := db["status"].(map[string]interface{})
+	if got := status["backups"]; !reflect.DeepEqual(got, backups) {
+		t.Fatalf("status.backups = %#v, want %#v", got, backups)
+	}
+}
+
+func TestApplyDBBackupStateSetsEmptyBackupList(t *testing.T) {
+	db := map[string]interface{}{
+		"status": map[string]interface{}{
+			"backups": []map[string]interface{}{
+				{
+					"metadata": map[string]interface{}{
+						"name": "stale-backup",
+					},
+				},
+			},
+			"phase": "Running",
+		},
+	}
+
+	applyDBBackupState(db, []map[string]interface{}{})
+
+	status := db["status"].(map[string]interface{})
+	backups, ok := status["backups"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("status.backups type = %T, want []map[string]interface{}", status["backups"])
+	}
+	if len(backups) != 0 {
+		t.Fatalf("status.backups length = %d, want 0", len(backups))
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestUpdatesClusterBackupSpecWithoutDefaultRepo(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * 1,3,5",
+		RetentionDays:  7,
+	}, "postgresql", "")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got := backup["enabled"]; got != true {
+		t.Fatalf("backup.enabled = %v, want true", got)
+	}
+	if got := backup["cronExpression"]; got != "15 8 * * 1,3,5" {
+		t.Fatalf("backup.cronExpression = %v, want 15 8 * * 1,3,5", got)
+	}
+	if got := backup["retentionPeriod"]; got != "7d" {
+		t.Fatalf("backup.retentionPeriod = %v, want 7d", got)
+	}
+	if got := backup["method"]; got != "pg-basebackup" {
+		t.Fatalf("backup.method = %v, want pg-basebackup", got)
+	}
+	if _, ok := backup["repoName"]; ok {
+		t.Fatal("backup.repoName should be omitted when the source DB has no repo")
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestPreservesExistingRepo(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * *",
+		RetentionDays:  7,
+	}, "postgresql", "custom-repo")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got := backup["repoName"]; got != "custom-repo" {
+		t.Fatalf("backup.repoName = %v, want custom-repo", got)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestClearsLegacyFallbackRepo(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * *",
+		RetentionDays:  7,
+	}, "postgresql", "backuprepo-s3")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got, ok := backup["repoName"]; !ok || got != nil {
+		t.Fatalf("backup.repoName = %v, present = %v; want explicit null", got, ok)
+	}
+}
+
+func TestIsSupportedDBBackupPolicyCron(t *testing.T) {
+	tests := []struct {
+		name           string
+		cronExpression string
+		want           bool
+	}{
+		{name: "hourly", cronExpression: "30 * * * *", want: true},
+		{name: "daily", cronExpression: "15 8 * * *", want: true},
+		{name: "weekly single weekday", cronExpression: "45 6 * * 6", want: true},
+		{name: "weekly weekday list", cronExpression: "15 8 * * 1,3,5", want: true},
+		{name: "step minute", cronExpression: "*/15 8-18 * * *", want: false},
+		{name: "out of range minute", cronExpression: "60 * * * *", want: false},
+		{name: "out of range hour", cronExpression: "0 24 * * *", want: false},
+		{name: "day of month", cronExpression: "0 8 1 * *", want: false},
+		{name: "out of range weekday", cronExpression: "0 8 * * 7", want: false},
+		{name: "duplicate weekday", cronExpression: "0 8 * * 1,1", want: false},
+		{name: "six fields", cronExpression: "0 8 * * * *", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSupportedDBBackupPolicyCron(tt.cronExpression); got != tt.want {
+				t.Fatalf("isSupportedDBBackupPolicyCron(%q) = %v, want %v", tt.cronExpression, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestRejectsUnsupportedCronShape(t *testing.T) {
+	_, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "*/15 8-18 * * *",
+		RetentionDays:  7,
+	}, "postgresql", "")
+	if err == nil {
+		t.Fatal("expected unsupported cron shape to be rejected")
+	}
+	if !strings.Contains(err.Error(), "hourly, daily, or weekly") {
+		t.Fatalf("expected supported schedule error, got %v", err)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestDisablesPolicyWithoutClearingSchedule(t *testing.T) {
+	patch, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled: false,
+	}, "postgresql", "")
+	if err != nil {
+		t.Fatalf("dbBackupPolicyPatchFromRequest returned error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(patch, &out); err != nil {
+		t.Fatalf("unmarshal policy patch: %v", err)
+	}
+	backup := out["spec"].(map[string]interface{})["backup"].(map[string]interface{})
+	if got := backup["enabled"]; got != false {
+		t.Fatalf("backup.enabled = %v, want false", got)
+	}
+	if _, ok := backup["cronExpression"]; ok {
+		t.Fatalf("disable patch should not clear cronExpression: %#v", backup)
+	}
+	if _, ok := backup["retentionPeriod"]; ok {
+		t.Fatalf("disable patch should not clear retentionPeriod: %#v", backup)
+	}
+}
+
+func TestDBBackupPolicyPatchFromRequestValidatesRetention(t *testing.T) {
+	_, err := dbBackupPolicyPatchFromRequest(dbBackupPolicyRequest{
+		Enabled:        true,
+		CronExpression: "15 8 * * *",
+		RetentionDays:  2,
+	}, "postgresql", "")
+	if err == nil {
+		t.Fatal("expected invalid retention to be rejected")
+	}
+	if !strings.Contains(err.Error(), "retentionDays") {
+		t.Fatalf("expected error to name retentionDays, got %v", err)
+	}
+}
+
+func TestBackupCreateErrorStatusMapping(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "request validation", err: dbsvc.ErrBackupValidation, want: http.StatusBadRequest},
+		{name: "source not found", err: dbsvc.ErrBackupSourceNotFound, want: http.StatusNotFound},
+		{name: "not running", err: dbsvc.ErrBackupSourceNotRunning, want: http.StatusConflict},
+		{name: "duplicate name", err: dbsvc.ErrBackupConflict, want: http.StatusConflict},
+		{name: "unsupported engine", err: dbsvc.ErrBackupUnsupportedEngine, want: http.StatusUnprocessableEntity},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := backupCreateError(tt.err)
+			statusErr, ok := err.(huma.StatusError)
+			if !ok {
+				t.Fatalf("expected Huma status error, got %T", err)
+			}
+			if statusErr.GetStatus() != tt.want {
+				t.Fatalf("expected status %d, got %d", tt.want, statusErr.GetStatus())
+			}
+		})
+	}
+}
+
+func TestBackupDeleteErrorStatusMapping(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "not found", err: apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), "orders-backup"), want: http.StatusNotFound},
+		{name: "not deletable", err: dbsvc.ErrDBBackupNotDeletable, want: http.StatusConflict},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got error
+			if apierrors.IsNotFound(tt.err) {
+				got = huma.Error404NotFound("DB Service Backup not found", tt.err)
+			} else if errors.Is(tt.err, dbsvc.ErrDBBackupNotDeletable) {
+				got = huma.Error409Conflict("DB Service Backup is not deletable", tt.err)
+			}
+			statusErr, ok := got.(huma.StatusError)
+			if !ok {
+				t.Fatalf("expected Huma status error, got %T", got)
+			}
+			if statusErr.GetStatus() != tt.want {
+				t.Fatalf("expected status %d, got %d", tt.want, statusErr.GetStatus())
+			}
+		})
 	}
 }
 

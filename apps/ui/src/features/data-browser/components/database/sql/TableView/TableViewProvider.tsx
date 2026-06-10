@@ -1,5 +1,4 @@
 import type { AccessObjectRef } from "@data-browser/api/access-types";
-import type { Alert } from "@data-browser/components/database/shared/types";
 import {
   createContext,
   type ReactNode,
@@ -10,13 +9,11 @@ import {
   useState,
 } from "react";
 import type {
-  FilterCondition,
   RenderedTableRow,
   TableViewActions,
   TableViewContextValue,
   TableViewState,
 } from "./types";
-import type { ChangesetManagerState } from "./useChangesetManager";
 import { useColumnResize } from "./useColumnResize";
 import { useDataQuery } from "./useDataQuery";
 
@@ -58,43 +55,11 @@ function buildExistingRowKey(pageOffset: number, sourceRowIndex: number) {
   return `existing-${pageOffset + sourceRowIndex}`;
 }
 
-const NOOP = (..._args: unknown[]) => undefined;
-const ASYNC_NOOP = async (..._args: unknown[]) => undefined;
-const EMPTY_SET = new Set<string>();
-
 function normalizeCellValue(value: unknown) {
   return value == null ? null : String(value);
 }
 
-const EMPTY_CHANGESET_STATE: ChangesetManagerState = {
-  activeCell: null,
-  activeDraftValue: "",
-  changes: new Map(),
-  newRowCounter: 0,
-  newRowOrder: [],
-  selectedRowKeys: EMPTY_SET,
-  showDiscardModal: false,
-  showPreviewModal: false,
-  showSubmitModal: false,
-  undoStack: [],
-};
-const READ_ONLY_CHANGESET_ACTIONS = {
-  activateCell: NOOP,
-  deactivateCell: NOOP,
-  updateActiveCellValue: NOOP,
-  moveActiveCell: NOOP,
-  toggleRowSelection: NOOP,
-  addPendingRow: NOOP,
-  markSelectedRowsForDelete: NOOP,
-  undoLastChange: NOOP,
-  discardChanges: NOOP,
-  setShowPreviewModal: NOOP,
-  setShowSubmitModal: NOOP,
-  setShowDiscardModal: NOOP,
-  submitChanges: ASYNC_NOOP,
-};
-
-/** Provider that owns all TableDetailView state, GraphQL operations, and handlers. */
+/** Provider that owns SQL table data, pagination, sorting, export, and column sizing. */
 export function TableViewProvider({
   dbServiceKey,
   databaseName,
@@ -103,40 +68,21 @@ export function TableViewProvider({
   schema,
   children,
 }: TableViewProviderProps) {
-  // ---- UI state ----
-  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-
-  // ---- Sorting state ----
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc" | null>(
     null
   );
   const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
-
-  // ---- Filter state ----
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
-  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>(
-    []
-  );
-
-  // ---- Modal state ----
   const [showExportModal, setShowExportModal] = useState(false);
-
-  // ---- Alert state ----
-  const [alert, setAlert] = useState<Alert | null>(null);
-
-  // ---- Refs ----
   const lastTableRef = useRef<string>("");
 
-  // ---- Callback for initial visible columns population ----
   const onInitVisibleColumns = useCallback((columns: string[]) => {
     setVisibleColumns(columns);
   }, []);
 
-  // ---- Data query (GraphQL fetch, loading/error, race condition prevention) ----
   const { state: queryState, actions: queryActions } = useDataQuery({
     currentPage,
     pageSize,
@@ -147,22 +93,10 @@ export function TableViewProvider({
     onInitVisibleColumns,
   });
 
-  // ---- Column resizing ----
   const { columnWidths, resizingColumn, resizedColumns, handleResizeStart } =
     useColumnResize(queryState.data?.columns);
 
-  // ---- Alert helpers ----
-  const showAlert = useCallback(
-    (title: string, message: string, type: Alert["type"] = "info") => {
-      setAlert({ title, message, type });
-    },
-    []
-  );
-
-  const closeAlert = useCallback(() => setAlert(null), []);
-
   const pageOffset = (currentPage - 1) * pageSize;
-
   const renderedRows: RenderedTableRow[] = (queryState.data?.rows ?? []).map(
     (row, sourceRowIndex) => {
       const originalRow = Object.fromEntries(
@@ -178,173 +112,70 @@ export function TableViewProvider({
         rowNumber: pageOffset + sourceRowIndex + 1,
         originalRow,
         values: originalRow,
-        changeType: null,
-        isDeleted: false,
-        isInserted: false,
       };
     }
   );
 
-  // Hidden write support remains compiled separately; the visible migration path is read-only.
-  const changesetState = {
-    ...EMPTY_CHANGESET_STATE,
-    renderedRows,
-    pendingChangeCount: 0,
-    hasPendingChanges: false,
-  };
-
-  const changesetActions = READ_ONLY_CHANGESET_ACTIONS;
-
-  const pendingReloadActionRef = useRef<null | (() => void)>(null);
-
-  const runWithDiscardGuard = useCallback(
-    (action: () => void) => {
-      if (!changesetState.hasPendingChanges) {
-        action();
-        return;
-      }
-
-      pendingReloadActionRef.current = action;
-      changesetActions.setShowDiscardModal(true);
-    },
-    [changesetActions, changesetState.hasPendingChanges]
-  );
-
-  const confirmDiscardAndContinue = useCallback(() => {
-    changesetActions.discardChanges();
-    changesetActions.setShowDiscardModal(false);
-    pendingReloadActionRef.current?.();
-    pendingReloadActionRef.current = null;
-  }, [changesetActions]);
-
-  // ---- Table switch: reset state ----
   useEffect(() => {
     const currentTableKey = `${dbServiceKey}:${databaseName}:${schema || ""}:${tableName}`;
     if (lastTableRef.current !== currentTableKey) {
       lastTableRef.current = currentTableKey;
       setVisibleColumns([]);
-      setFilterConditions([]);
       setSortColumn(null);
       setSortDirection(null);
-      setSearchTerm("");
       setCurrentPage(1);
-      changesetActions.discardChanges();
     }
-  }, [changesetActions, dbServiceKey, databaseName, schema, tableName]);
+  }, [dbServiceKey, databaseName, schema, tableName]);
 
-  useEffect(() => {
-    if (!changesetState.hasPendingChanges) {
-      return;
-    }
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [changesetState.hasPendingChanges]);
-
-  // ---- Search submit (reset to page 1) ----
-  const handleSearchSubmit = useCallback(() => {
-    runWithDiscardGuard(() => {
-      setCurrentPage(1);
-      queryActions.handleSubmitRequest(0);
-    });
-  }, [queryActions.handleSubmitRequest, runWithDiscardGuard]);
-
-  // ---- Sorting ----
   const handleSort = useCallback(
     (column: string, direction: "asc" | "desc") => {
-      runWithDiscardGuard(() => {
-        setSortColumn(column);
-        setSortDirection(direction);
-        setActiveColumnMenu(null);
-      });
+      setSortColumn(column);
+      setSortDirection(direction);
+      setActiveColumnMenu(null);
     },
-    [runWithDiscardGuard]
+    []
   );
 
   const clearSort = useCallback(() => {
-    runWithDiscardGuard(() => {
-      setSortColumn(null);
-      setSortDirection(null);
-      setActiveColumnMenu(null);
-    });
-  }, [runWithDiscardGuard]);
+    setSortColumn(null);
+    setSortDirection(null);
+    setActiveColumnMenu(null);
+  }, []);
 
-  // ---- Page change ----
-  const handlePageChange = useCallback(
-    (page: number) => {
-      runWithDiscardGuard(() => {
-        setCurrentPage(page);
-      });
-    },
-    [runWithDiscardGuard]
-  );
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
 
-  // ---- Page size change ----
-  const handlePageSizeChange = useCallback(
-    (size: number) => {
-      runWithDiscardGuard(() => {
-        setPageSize(size);
-        setCurrentPage(1);
-      });
-    },
-    [runWithDiscardGuard]
-  );
-
-  // ---- Filter apply ----
-  const handleFilterApply = useCallback(
-    (cols: string[], conditions: FilterCondition[]) => {
-      runWithDiscardGuard(() => {
-        setVisibleColumns(cols);
-        setFilterConditions(conditions);
-        setCurrentPage(1);
-        queryActions.refresh();
-      });
-    },
-    [queryActions.refresh, runWithDiscardGuard]
-  );
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  }, []);
 
   const state: TableViewState = {
     ...queryState,
     currentPage,
     pageSize,
-    searchTerm,
     visibleColumns,
-    filterConditions,
     sortColumn,
     sortDirection,
     activeColumnMenu,
-    ...changesetState,
+    renderedRows,
     columnWidths,
     resizingColumn,
     resizedColumns,
     showExportModal,
-    isFilterModalOpen,
-    alert,
   };
 
   const actions: TableViewActions = {
-    refresh: () => runWithDiscardGuard(queryActions.refresh),
+    refresh: queryActions.refresh,
     handleSubmitRequest: queryActions.handleSubmitRequest,
     handlePageChange,
     handlePageSizeChange,
-    setSearchTerm,
-    handleSearchSubmit,
     handleSort,
     clearSort,
     setActiveColumnMenu,
-    ...changesetActions,
     handleResizeStart,
-    setIsFilterModalOpen,
-    handleFilterApply,
     setShowExportModal,
-    confirmDiscardAndContinue,
-    showAlert,
-    closeAlert,
   };
 
   return <TableViewCtx value={{ state, actions }}>{children}</TableViewCtx>;

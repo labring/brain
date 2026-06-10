@@ -1,5 +1,5 @@
 import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
-import type { ContextMenuItem } from "@data-browser/components/ui/ContextMenu";
+import type { PointerContextMenuItem } from "@data-browser/components/shared/PointerContextMenu";
 import { Download, RefreshCw } from "lucide-react";
 import React from "react";
 
@@ -19,7 +19,9 @@ interface SystemObjectsState {
   systemSchemas: string[];
 }
 
-function refreshItem(onAction: (action: string) => void): ContextMenuItem {
+function refreshItem(
+  onAction: (action: string) => void
+): PointerContextMenuItem {
   return {
     icon: React.createElement(RefreshCw, { className: "h-4 w-4" }),
     label: "Refresh",
@@ -31,7 +33,7 @@ function exportItem(
   action: string,
   onAction: (action: string) => void,
   label: string
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   if (!DATA_BROWSER_CAPABILITIES.actions.singleObjectExport) {
     return [];
   }
@@ -50,7 +52,7 @@ export function getDbServiceMenuItems(
   _dbServiceEngineType: DbServiceEngineType,
   callbacks: MenuCallbacks,
   _systemObjectsState?: SystemObjectsState
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
@@ -59,28 +61,28 @@ export function getDatabaseMenuItems(
   _dbServiceEngineType: DbServiceEngineType,
   callbacks: MenuCallbacks,
   _systemObjectsState?: SystemObjectsState
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
 
 export function getSchemaMenuItems(
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
 
 export function getTableFolderMenuItems(
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
 
 export function getViewFolderMenuItems(
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
@@ -88,7 +90,7 @@ export function getViewFolderMenuItems(
 export function getTableMenuItems(
   _dbServiceEngineType: DbServiceEngineType,
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [
     ...exportItem("export_data", onAction, "Export data"),
@@ -96,7 +98,9 @@ export function getTableMenuItems(
   ];
 }
 
-export function getViewMenuItems(callbacks: MenuCallbacks): ContextMenuItem[] {
+export function getViewMenuItems(
+  callbacks: MenuCallbacks
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [
     ...exportItem("export_data", onAction, "Export data"),
@@ -106,7 +110,7 @@ export function getViewMenuItems(callbacks: MenuCallbacks): ContextMenuItem[] {
 
 export function getCollectionMenuItems(
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [
     ...exportItem("export_collection", onAction, "Export collection"),
@@ -116,14 +120,14 @@ export function getCollectionMenuItems(
 
 export function getRedisKeysFolderMenuItems(
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
 
 export function getRedisKeyMenuItems(
   callbacks: MenuCallbacks
-): ContextMenuItem[] {
+): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [
     ...exportItem("export_redis_key", onAction, "Export key"),

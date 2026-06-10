@@ -1,6 +1,6 @@
 import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
-import { AlertModal } from "@data-browser/components/ui/AlertModal";
-import type { Alert } from "@data-browser/components/ui/types";
+import type { Alert } from "@data-browser/components/database/shared/types";
+import { DbAccessAlertDialog } from "@data-browser/components/shared/DbAccessDialogs";
 import type { ModalState } from "./Sidebar";
 import type { TreeNodeData } from "./SidebarTree/types";
 
@@ -59,13 +59,7 @@ export function SidebarModals({
         />
       )}
 
-      <AlertModal
-        isOpen={alert !== null}
-        message={alert?.message ?? ""}
-        onClose={closeAlert}
-        title={alert?.title ?? ""}
-        type={alert?.type}
-      />
+      <DbAccessAlertDialog alert={alert} onClose={closeAlert} />
     </>
   );
 }

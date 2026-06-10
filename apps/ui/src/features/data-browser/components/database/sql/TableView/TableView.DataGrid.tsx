@@ -1,18 +1,11 @@
 import { FindBarContext } from "@data-browser/components/database/shared/FindBar.Provider";
-import { cn } from "@data-browser/lib/utils";
+import { cn } from "@workspace/ui/lib/utils";
 import { EyeOff, Loader2 } from "lucide-react";
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  use,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { use, useCallback, useRef, useState } from "react";
 import { TableViewColumnHeader } from "./TableView.ColumnHeader";
 import { useTableView } from "./TableViewProvider";
 
-/** Renders the SQL table data grid with row-number selection, cell editing, and pending-change states. */
+/** Renders the SQL table data grid with column resizing and find highlighting. */
 export function TableViewDataGrid() {
   const { state, actions } = useTableView();
   const findBar = use(FindBarContext);
@@ -35,28 +28,6 @@ export function TableViewDataGrid() {
     }
   }, []);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const isTypingTarget =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target?.isContentEditable;
-
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.key.toLowerCase() === "z" &&
-        !isTypingTarget
-      ) {
-        event.preventDefault();
-        actions.undoLastChange();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [actions.undoLastChange]);
-
   if (state.loading && !state.data) {
     return (
       <div
@@ -70,74 +41,6 @@ export function TableViewDataGrid() {
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  function isEditableCell(
-    _rowKey: string,
-    column: string,
-    isDeleted: boolean,
-    isInserted: boolean
-  ) {
-    if (!state.canEdit || isDeleted) {
-      return false;
-    }
-    if (isInserted) {
-      return true;
-    }
-    if (state.primaryKey && column === state.primaryKey) {
-      return false;
-    }
-    return true;
-  }
-
-  function handleCellKeyDown(
-    event: ReactKeyboardEvent<HTMLInputElement>,
-    rowKey: string,
-    column: string
-  ) {
-    const isComposing = event.nativeEvent.isComposing || event.keyCode === 229;
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      actions.deactivateCell();
-      return;
-    }
-
-    if (event.key === "Tab") {
-      event.preventDefault();
-      actions.moveActiveCell(event.shiftKey ? "left" : "right");
-      return;
-    }
-
-    if (event.key === "Enter") {
-      if (isComposing) {
-        return;
-      }
-      event.preventDefault();
-      actions.moveActiveCell(event.shiftKey ? "up" : "down");
-      return;
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      actions.deactivateCell();
-      actions.undoLastChange();
-      return;
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      actions.deactivateCell();
-      actions.setShowSubmitModal(true);
-      return;
-    }
-
-    if (
-      state.activeCell?.rowKey !== rowKey ||
-      state.activeCell.column !== column
-    ) {
-      actions.activateCell(rowKey, column);
-    }
   }
 
   return (
@@ -189,246 +92,128 @@ export function TableViewDataGrid() {
           </tr>
         </thead>
         <tbody className="bg-transparent">
-          {state.renderedRows.map((row, rowIdx) => {
-            const isSelected = state.selectedRowKeys.has(row.rowKey);
-
-            return (
-              <tr
-                className={cn(
-                  "group transition-colors",
-                  row.isInserted && "bg-blue-100/20",
-                  row.isDeleted && "bg-red-100/20",
-                  !(row.isInserted || row.isDeleted) && "hover:bg-input/30"
-                )}
+          {state.renderedRows.map((row, rowIdx) => (
+            <tr
+              className="group transition-colors hover:bg-input/30"
+              data-qa-module="sql"
+              data-qa-object="table-row"
+              data-qa-resource-id={row.rowKey}
+              data-qa-resource-type="table-row"
+              data-qa-state="ready"
+              data-testid="sql.table.row"
+              key={row.rowKey}
+            >
+              <td
+                className="sticky left-0 z-30 border-border border-r border-b bg-[#0C1120] px-2 py-2 text-center font-normal text-sm"
                 data-qa-module="sql"
                 data-qa-object="table-row"
                 data-qa-resource-id={row.rowKey}
                 data-qa-resource-type="table-row"
-                data-qa-state={
-                  row.isInserted
-                    ? "inserted"
-                    : row.isDeleted
-                      ? "deleted"
-                      : isSelected
-                        ? "selected"
-                        : "ready"
-                }
-                data-testid="sql.table.row"
-                key={row.rowKey}
+                data-qa-state="ready"
+                data-testid="sql.table.row-selector"
+                style={{ width: 48, minWidth: 48, maxWidth: 48 }}
               >
-                <td
-                  className={cn(
-                    "sticky left-0 z-30 border-border border-r border-b bg-[#0C1120] px-2 py-2 text-center font-normal text-sm",
-                    row.isInserted && "bg-blue-100/60",
-                    row.isDeleted &&
-                      "bg-red-100/60 text-muted-foreground line-through",
-                    isSelected && "bg-primary/10"
-                  )}
-                  data-qa-action="select"
-                  data-qa-disabled-reason={
-                    state.canEdit ? undefined : "read_only"
-                  }
-                  data-qa-module="sql"
-                  data-qa-object="table-row"
-                  data-qa-resource-id={row.rowKey}
-                  data-qa-resource-type="table-row"
-                  data-qa-state={isSelected ? "selected" : "ready"}
-                  data-testid="sql.table.row-selector"
-                  onClick={() => {
-                    if (state.canEdit) {
-                      actions.toggleRowSelection(row.rowKey);
+                {row.rowNumber ?? ""}
+              </td>
+
+              {visibleColumns.map((col) => {
+                const width = state.columnWidths[col] || 120;
+                const highlight = findBar?.state.total
+                  ? findBar.state.matches.findIndex(
+                      (match) =>
+                        match.rowIndex === rowIdx && match.columnKey === col
+                    ) === findBar.state.currentMatchIndex
+                    ? "current"
+                    : findBar.state.matches.some(
+                          (match) =>
+                            match.rowIndex === rowIdx && match.columnKey === col
+                        )
+                      ? "match"
+                      : null
+                  : null;
+                const displayValue = row.values[col];
+
+                return (
+                  <td
+                    className={cn(
+                      "relative scroll-mt-14 overflow-hidden border-border border-r border-b text-foreground/80 text-sm",
+                      "px-6 py-2",
+                      highlight === "current" && "bg-input",
+                      highlight === "match" && "bg-input/30"
+                    )}
+                    data-find-current={
+                      highlight === "current" ? "true" : undefined
                     }
-                  }}
-                  style={{ width: 48, minWidth: 48, maxWidth: 48 }}
-                >
-                  {row.rowNumber ?? ""}
-                </td>
-
-                {visibleColumns.map((col) => {
-                  const width = state.columnWidths[col] || 120;
-                  const isActiveCell =
-                    state.activeCell?.rowKey === row.rowKey &&
-                    state.activeCell.column === col;
-                  const editable = isEditableCell(
-                    row.rowKey,
-                    col,
-                    row.isDeleted,
-                    row.isInserted
-                  );
-                  const changed =
-                    row.changeType === "update" &&
-                    row.originalRow[col] !== row.values[col];
-                  const highlight = findBar?.state.total
-                    ? findBar.state.matches.findIndex(
-                        (match) =>
-                          match.rowIndex === rowIdx && match.columnKey === col
-                      ) === findBar.state.currentMatchIndex
-                      ? "current"
-                      : findBar.state.matches.some(
-                            (match) =>
-                              match.rowIndex === rowIdx &&
-                              match.columnKey === col
-                          )
-                        ? "match"
-                        : null
-                    : null;
-                  const displayValue = row.values[col];
-
-                  return (
-                    <td
-                      className={cn(
-                        "relative scroll-mt-14 overflow-hidden border-border border-r border-b text-foreground/80 text-sm",
-                        isActiveCell ? "p-0" : "px-6 py-2",
-                        row.isInserted && "bg-blue-100/60",
-                        row.isDeleted &&
-                          "bg-red-100/60 text-muted-foreground line-through",
-                        changed && "bg-green-100/60",
-                        isSelected &&
-                          !row.isInserted &&
-                          !row.isDeleted &&
-                          !changed &&
-                          "bg-primary/10",
-                        highlight === "current" && "bg-input",
-                        highlight === "match" && "bg-input/30",
-                        editable && !isActiveCell && "cursor-default"
-                      )}
-                      data-find-current={
-                        highlight === "current" ? "true" : undefined
-                      }
-                      data-qa-disabled-reason={
-                        editable
-                          ? undefined
-                          : row.isDeleted
-                            ? "row_deleted"
-                            : state.primaryKey && col === state.primaryKey
-                              ? "primary_key"
-                              : state.canEdit
-                                ? undefined
-                                : "read_only"
-                      }
-                      data-qa-field={col}
-                      data-qa-module="sql"
-                      data-qa-object="table-cell"
-                      data-qa-resource-id={row.rowKey}
-                      data-qa-resource-type="table-row"
-                      data-qa-state={
-                        isActiveCell
-                          ? "editing"
-                          : changed
-                            ? "changed"
-                            : row.isInserted
-                              ? "inserted"
-                              : row.isDeleted
-                                ? "deleted"
-                                : editable
-                                  ? "editable"
-                                  : "read_only"
-                      }
-                      data-testid="sql.table.cell"
-                      key={col}
-                      onDoubleClick={() => {
-                        if (editable) {
-                          actions.activateCell(row.rowKey, col);
-                        }
-                      }}
-                      style={{
-                        minWidth: `${width}px`,
-                        ...(state.resizedColumns.has(col) && {
-                          maxWidth: `${width}px`,
-                        }),
-                      }}
+                    data-qa-disabled-reason="read_only"
+                    data-qa-field={col}
+                    data-qa-module="sql"
+                    data-qa-object="table-cell"
+                    data-qa-resource-id={row.rowKey}
+                    data-qa-resource-type="table-row"
+                    data-qa-state="read_only"
+                    data-testid="sql.table.cell"
+                    key={col}
+                    style={{
+                      minWidth: `${width}px`,
+                      ...(state.resizedColumns.has(col) && {
+                        maxWidth: `${width}px`,
+                      }),
+                    }}
+                  >
+                    <span
+                      className="block truncate"
+                      title={displayValue ?? "NULL"}
                     >
-                      {isActiveCell ? (
-                        <input
-                          autoFocus
-                          className="min-h-[36px] w-full bg-transparent px-6 py-2 text-sm focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset"
-                          data-changeset-editor="true"
-                          data-qa-action="edit"
-                          data-qa-field={col}
-                          data-qa-module="sql"
-                          data-qa-object="table-cell"
-                          data-qa-resource-id={row.rowKey}
-                          data-qa-resource-type="table-row"
-                          data-qa-state="editing"
-                          data-testid="sql.table.cell-editor"
-                          onBlur={() => {
-                            queueMicrotask(() => {
-                              const activeElement = document.activeElement;
-                              if (
-                                activeElement instanceof HTMLInputElement &&
-                                activeElement.dataset.changesetEditor === "true"
-                              ) {
-                                return;
-                              }
-                              actions.deactivateCell();
-                            });
-                          }}
-                          onChange={(event) =>
-                            actions.updateActiveCellValue(event.target.value)
-                          }
-                          onKeyDown={(event) =>
-                            handleCellKeyDown(event, row.rowKey, col)
-                          }
-                          type="text"
-                          value={state.activeDraftValue}
-                        />
-                      ) : (
-                        <span
-                          className="block truncate"
-                          title={displayValue ?? "NULL"}
-                        >
-                          {displayValue == null ? (
-                            <span className="text-muted-foreground italic">
-                              NULL
-                            </span>
-                          ) : (
-                            String(displayValue)
-                          )}
+                      {displayValue == null ? (
+                        <span className="text-muted-foreground italic">
+                          NULL
                         </span>
+                      ) : (
+                        String(displayValue)
                       )}
-                      <div
-                        className={cn(
-                          "absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50",
-                          state.resizingColumn === col && "bg-primary/50"
-                        )}
-                        data-resize-col={col}
-                        onMouseDown={(e) => actions.handleResizeStart(e, col)}
-                        onMouseEnter={() => {
-                          if (state.resizingColumn) {
-                            return;
-                          }
-                          document
-                            .querySelectorAll<HTMLElement>(
-                              `[data-resize-col="${col}"]`
-                            )
-                            .forEach((el) => {
-                              el.dataset.resizeActive = "";
-                            });
-                        }}
-                        onMouseLeave={() => {
-                          if (state.resizingColumn) {
-                            return;
-                          }
-                          document
-                            .querySelectorAll<HTMLElement>(
-                              `[data-resize-col="${col}"]`
-                            )
-                            .forEach((el) => {
-                              delete el.dataset.resizeActive;
-                            });
-                        }}
-                      />
-                    </td>
-                  );
-                })}
+                    </span>
+                    <div
+                      className={cn(
+                        "absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50",
+                        state.resizingColumn === col && "bg-primary/50"
+                      )}
+                      data-resize-col={col}
+                      onMouseDown={(e) => actions.handleResizeStart(e, col)}
+                      onMouseEnter={() => {
+                        if (state.resizingColumn) {
+                          return;
+                        }
+                        document
+                          .querySelectorAll<HTMLElement>(
+                            `[data-resize-col="${col}"]`
+                          )
+                          .forEach((el) => {
+                            el.dataset.resizeActive = "";
+                          });
+                      }}
+                      onMouseLeave={() => {
+                        if (state.resizingColumn) {
+                          return;
+                        }
+                        document
+                          .querySelectorAll<HTMLElement>(
+                            `[data-resize-col="${col}"]`
+                          )
+                          .forEach((el) => {
+                            delete el.dataset.resizeActive;
+                          });
+                      }}
+                    />
+                  </td>
+                );
+              })}
 
-                {hiddenColumnCount > 0 && (
-                  <td className="border-border border-b bg-transparent" />
-                )}
-                <td className="w-full border-border border-b bg-transparent" />
-              </tr>
-            );
-          })}
+              {hiddenColumnCount > 0 && (
+                <td className="border-border border-b bg-transparent" />
+              )}
+              <td className="w-full border-border border-b bg-transparent" />
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

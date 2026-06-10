@@ -72,12 +72,37 @@ export interface DataBrowserDatabaseMetadata {
   name: string;
 }
 
+export interface DataBrowserDBServiceBackupSource {
+  name: string;
+  namespace: string;
+  uid?: string;
+}
+
+export interface DataBrowserDBServiceBackupPolicy {
+  cronExpression?: string;
+  enabled?: boolean;
+  retentionPeriod?: string;
+}
+
+export interface DataBrowserRestoredDbServiceTarget {
+  name: string;
+  namespace: string;
+}
+
 export interface DataBrowserHostContext {
+  backupPolicy?: DataBrowserDBServiceBackupPolicy;
+  backups?: unknown[];
   database: DataBrowserDatabaseMetadata;
   databaseWorkloadName: string;
   databaseWorkloadNamespace: string;
+  dbService: DataBrowserDBServiceBackupSource;
+  dbServicePhase?: string;
   engine: DataBrowserEngine;
   kubeconfig: string;
   namespace: string;
+  onDbServiceRestoreAccepted?: (
+    target: DataBrowserRestoredDbServiceTarget
+  ) => void;
   projectId: string;
+  refreshProjectCanvas?: () => Promise<unknown>;
 }

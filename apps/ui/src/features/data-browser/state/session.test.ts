@@ -44,19 +44,6 @@ test("object tabs dedupe and activate by canonical AccessObjectRef identity", ()
   assert.equal(second.session.activeTabId, first.tabId);
 });
 
-test("query tab opening is rejected while query capability is hidden", () => {
-  const session = createDbAccessSession("project/database-system/orders");
-
-  const result = openDbAccessTab(session, {
-    dbServiceKey: session.dbServiceKey,
-    title: "Query",
-    type: "query",
-  });
-
-  assert.equal(result.tabId, null);
-  assert.deepEqual(result.session.tabs, []);
-});
-
 test("switching DB Service starts a fresh DB Access Session", () => {
   let session = createDbAccessSession("project/database-system/orders");
 

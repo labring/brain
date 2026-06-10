@@ -3,6 +3,7 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import {
   type ContainerEnvDbDsnSource,
   type ContainerEnvDbPrimitiveField,
+  type ContainerEnvDbReferenceVariable,
   type ContainerEnvSecretKeyRef,
   containerEnvDbPrimitiveFieldForSecretKey,
 } from "@workspace/ui/lib/container-env-rows";
@@ -50,6 +51,37 @@ function primitiveSecretRefsFromStatus(
   return refs;
 }
 
+function variablesFromStatus(
+  status: Record<string, unknown>
+): ContainerEnvDbReferenceVariable[] {
+  const variables = Array.isArray(status.variables) ? status.variables : [];
+  const out: ContainerEnvDbReferenceVariable[] = [];
+  for (const item of variables) {
+    const variable = asRecord(item);
+    const name = nonEmptyString(variable?.name);
+    if (name === undefined) {
+      continue;
+    }
+    const valueFrom = asRecord(variable?.valueFrom);
+    const secretKeyRef = asRecord(valueFrom?.secretKeyRef);
+    const secretName = nonEmptyString(secretKeyRef?.name);
+    const secretKey = nonEmptyString(secretKeyRef?.key);
+    if (secretName !== undefined && secretKey !== undefined) {
+      out.push({
+        name,
+        type: "secret",
+        valueFrom: { secretKeyRef: { key: secretKey, name: secretName } },
+      });
+      continue;
+    }
+    const value = nonEmptyString(variable?.value);
+    if (value !== undefined) {
+      out.push({ name, type: "value", value });
+    }
+  }
+  return out;
+}
+
 export function dbDsnReferenceSourceFromDb(
   db: unknown,
   namespaceFallback?: string
@@ -64,9 +96,17 @@ export function dbDsnReferenceSourceFromDb(
   }
 
   const source: ContainerEnvDbDsnSource = { name, namespace };
+  const engine = nonEmptyString(asRecord(root.spec)?.engine);
+  if (engine !== undefined) {
+    source.engine = engine;
+  }
   const primitiveSecretRefs = primitiveSecretRefsFromStatus(status);
   if (Object.keys(primitiveSecretRefs).length > 0) {
     source.primitiveSecretRefs = primitiveSecretRefs;
+  }
+  const variables = variablesFromStatus(status);
+  if (variables.length > 0) {
+    source.variables = variables;
   }
   const privateDsn = nonEmptyString(status.connectionStringPrivate);
   if (privateDsn !== undefined) {

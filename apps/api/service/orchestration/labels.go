@@ -12,6 +12,7 @@ const (
 
 	APDesiredNetworkAnnotation    = "brain.io/ap-desired-network"
 	APConfigMapChecksumAnnotation = "brain.io/ap-config-checksum"
+	APEnvRawSourceAnnotation      = "brain.io/ap-env-raw-source"
 	APReplicaStrategyAnnotation   = "brain.io/ap-replica-strategy"
 	APDesiredStorageAnnotation    = "brain.io/ap-desired-storage"
 	APRestartRequestAnnotation    = "brain.io/ap-restart-request"

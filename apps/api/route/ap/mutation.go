@@ -209,6 +209,7 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		Command:          stringSliceFromValue(input["command"]),
 		ConfigMaps:       apConfigMapsFromInput(input),
 		Env:              envVarsFromValue(input["env"]),
+		EnvRawSource:     stringFromMap(input, "envRawSource"),
 		Image:            stringFromMap(input, "image"),
 		ImagePullSecrets: imagePullSecretsFromValue(input["imagePullSecrets"]),
 		ImagePullPolicy:  corev1.PullPolicy(stringFromMap(input, "imagePullPolicy")),
@@ -1054,6 +1055,7 @@ func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, cur
 	imagePullPolicy := container.ImagePullPolicy
 	restartRequest := apRestartRequestFromAnnotations(current.Annotations())
 	env := container.Env
+	envRawSource := current.Annotations()[orchestration.APEnvRawSourceAnnotation]
 	startupProbe := container.StartupProbe
 	livenessProbe := container.LivenessProbe
 	readinessProbe := container.ReadinessProbe
@@ -1128,6 +1130,9 @@ func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, cur
 		if nextEnv, ok := input["env"].([]interface{}); ok {
 			env = envVarsFromValue(nextEnv)
 		}
+		if value, found := input["envRawSource"]; found {
+			envRawSource = toString(value)
+		}
 		if probes, _ := input["probes"].(map[string]interface{}); probes != nil {
 			if _, found := probes["startup"]; found {
 				startupProbe = probeFromInput(input, "startup")
@@ -1178,6 +1183,7 @@ func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, cur
 		Command:          command,
 		ConfigMaps:       configMaps,
 		Env:              env,
+		EnvRawSource:     envRawSource,
 		Image:            image,
 		ImagePullSecrets: imagePullSecrets,
 		ImagePullPolicy:  imagePullPolicy,
@@ -1569,6 +1575,9 @@ func apDeploymentPatchFromProductPatch(raw json.RawMessage, name string) []byte 
 		}
 		if env, ok := input["env"].([]interface{}); ok {
 			containerPatch["env"] = env
+		}
+		if value, found := input["envRawSource"]; found {
+			annotationsPatch[orchestration.APEnvRawSourceAnnotation] = toString(value)
 		}
 		if network, _ := input["network"].(map[string]interface{}); network != nil {
 			annotationsPatch[orchestration.APDesiredNetworkAnnotation] = networkJSONFromMap(network)

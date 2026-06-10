@@ -4,10 +4,10 @@ import {
   exportObject,
 } from "@data-browser/api/access-adapter";
 import type { AccessObjectRef } from "@data-browser/api/access-types";
-import { cn } from "@data-browser/lib/utils";
 import { useDataBrowserRuntime } from "@data-browser/runtime";
 import { downloadBlob } from "@data-browser/utils/export-utils";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
+import { cn } from "@workspace/ui/lib/utils";
 import { Download, FileText } from "lucide-react";
 import { useState } from "react";
 

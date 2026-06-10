@@ -195,6 +195,9 @@ func apObjectFromWorkload(workload apWorkloadView) map[string]interface{} {
 	} else if storage := apStorageFromClaims(workload.StorageClaimTemplates); len(storage) > 0 {
 		input["storage"] = storage
 	}
+	if envRawSource, ok := workload.Annotations[APEnvRawSourceAnnotation]; ok && strings.TrimSpace(envRawSource) != "" {
+		input["envRawSource"] = envRawSource
+	}
 	if len(probes) > 0 {
 		input["probes"] = probes
 	}

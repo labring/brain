@@ -24,6 +24,7 @@ type APResourcesInput struct {
 	Command          []string
 	ConfigMaps       []APConfigMapMount
 	Env              []corev1.EnvVar
+	EnvRawSource     string
 	Image            string
 	ImagePullSecrets []corev1.LocalObjectReference
 	ImagePullPolicy  corev1.PullPolicy
@@ -173,6 +174,9 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	annotations := map[string]string{}
 	if networkJSON := strings.TrimSpace(input.NetworkJSON); networkJSON != "" {
 		annotations[APDesiredNetworkAnnotation] = networkJSON
+	}
+	if envRawSource := strings.TrimSpace(input.EnvRawSource); envRawSource != "" {
+		annotations[APEnvRawSourceAnnotation] = input.EnvRawSource
 	}
 	if replicaStrategyJSON := apReplicaStrategyJSON(replicaStrategy); replicaStrategyJSON != "" {
 		annotations[APReplicaStrategyAnnotation] = replicaStrategyJSON

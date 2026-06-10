@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -13,19 +14,26 @@ import (
 )
 
 type DBResourcesInput struct {
-	CPULimit       string
-	CPURequest     string
-	ClusterVersion string
-	Engine         string
-	ExposeNodePort bool
-	MemoryLimit    string
-	MemoryRequest  string
-	Name           string
-	Namespace      string
-	ProjectID      string
-	Quota          string
-	Replicas       int64
-	StorageSize    string
+	BackupPolicy      map[string]interface{}
+	CPULimit          string
+	CPURequest        string
+	ClusterVersion    string
+	Engine            string
+	ExposeNodePort    bool
+	MemoryLimit       string
+	MemoryRequest     string
+	Name              string
+	Namespace         string
+	ProjectID         string
+	Quota             string
+	Replicas          int64
+	RestoreFromBackup *DBRestoreFromBackupInput
+	StorageSize       string
+}
+
+type DBRestoreFromBackupInput struct {
+	BackupName      string
+	BackupNamespace string
 }
 
 type DBVerticalScalingInput struct {
@@ -267,12 +275,21 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 			},
 		},
 	}
+	if len(input.BackupPolicy) > 0 {
+		spec := cluster.Object["spec"].(map[string]interface{})
+		spec["backup"] = input.BackupPolicy
+	}
 	cluster.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "apps.kubeblocks.io",
 		Version: "v1alpha1",
 		Kind:    "Cluster",
 	})
 	cluster.SetLabels(labels)
+	if input.RestoreFromBackup != nil {
+		if err := applyDBRestoreFromBackupAnnotation(cluster, profile.ComponentName, input.RestoreFromBackup); err != nil {
+			return nil, err
+		}
+	}
 
 	var exportService *corev1.Service
 	if input.ExposeNodePort {
@@ -280,6 +297,33 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 	}
 
 	return &DBResources{Cluster: cluster, ExportService: exportService}, nil
+}
+
+func applyDBRestoreFromBackupAnnotation(cluster *unstructured.Unstructured, componentName string, input *DBRestoreFromBackupInput) error {
+	backupName := strings.TrimSpace(input.BackupName)
+	backupNamespace := strings.TrimSpace(input.BackupNamespace)
+	componentName = strings.TrimSpace(componentName)
+	if backupName == "" || backupNamespace == "" || componentName == "" {
+		return fmt.Errorf("backup name, backup namespace, and component name are required")
+	}
+	restore := map[string]interface{}{
+		componentName: map[string]interface{}{
+			"name":                backupName,
+			"namespace":           backupNamespace,
+			"volumeRestorePolicy": "Parallel",
+		},
+	}
+	annotation, err := json.Marshal(restore)
+	if err != nil {
+		return err
+	}
+	annotations := cluster.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations["kubeblocks.io/restore-from-backup"] = string(annotation)
+	cluster.SetAnnotations(annotations)
+	return nil
 }
 
 type dbResourcePresetValues struct {

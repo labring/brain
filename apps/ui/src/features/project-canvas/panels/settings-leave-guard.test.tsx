@@ -11,6 +11,7 @@ import {
 
 const UNSAVED_DATABASE_CONFIGURATION_RE =
   /Unsaved database configuration changes/;
+const UNSAVED_ENVIRONMENT_VARIABLE_RE = /Unsaved Environment Variable changes/;
 const UNSAVED_PUBLIC_ADDRESS_RE = /Unsaved Public Address changes/;
 const UPDATE_BUTTON_RE = />Update</;
 const UPDATE_DESCRIPTION_RE = /Update these settings/;
@@ -172,4 +173,19 @@ test("settings leave guard dialog names Public Address drafts", () => {
   );
 
   assert.match(html, UNSAVED_PUBLIC_ADDRESS_RE);
+});
+
+test("settings leave guard dialog names Environment Variable drafts", () => {
+  const html = renderToStaticMarkup(
+    <SettingsLeaveGuardDialogContent
+      action="switch"
+      guard={dirtyGuard("environmentVariables", [])}
+      onDecision={() => {
+        /* noop */
+      }}
+      pending={false}
+    />
+  );
+
+  assert.match(html, UNSAVED_ENVIRONMENT_VARIABLE_RE);
 });
