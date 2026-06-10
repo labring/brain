@@ -6,7 +6,6 @@ import {
   backupPolicyFormWithFrequency,
   DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES,
   DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES,
-  DB_SERVICE_BACKUP_WEEKDAY_LABELS,
   type DbServiceBackupPolicyBackend,
   type DbServiceBackupPolicyForm,
   type DbServiceBackupPolicyFrequency,
@@ -25,7 +24,6 @@ import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
-import { Checkbox } from "@workspace/ui/components/checkbox";
 import { SingleSelect } from "@workspace/ui/components/single-select";
 import { Switch } from "@workspace/ui/components/switch";
 import {
@@ -39,7 +37,7 @@ import {
   CheckCircle2,
   CloudUpload,
   Info,
-  List,
+  LayoutList,
   Loader2,
   RotateCcw,
   Save,
@@ -75,6 +73,15 @@ const MINUTE_OPTIONS = Array.from(
   { length: TIME_FIELD_BOUNDS.minute.max + 1 },
   (_, index) => index
 );
+const DB_SERVICE_BACKUP_WEEKDAY_SELECT_LABELS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
 
 export interface DbServiceBackupFormValues {
   backupName: string;
@@ -611,15 +618,10 @@ function BackupRowsList({
     >
       <div className="flex h-13 shrink-0 items-center justify-between gap-3 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <List className="size-3.5 shrink-0 text-muted-foreground" />
+          <LayoutList className="size-4 shrink-0 text-foreground" />
           <h3 className="m-0 truncate font-medium text-sm leading-5">
             {"Backup List"}
           </h3>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-muted-foreground text-sm leading-5">
-          <span className="@min-[36rem]/backup-surface:inline hidden">
-            {"Recent execution records"}
-          </span>
         </div>
       </div>
 
@@ -1061,27 +1063,6 @@ function parseBoundedInteger(
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }
 
-function uniqueSortedWeekdays(weekdays: number[]): number[] {
-  return weekdays
-    .filter((day, index, values) => values.indexOf(day) === index)
-    .sort((left, right) => left - right);
-}
-
-function applyWeeklyDaySelection(
-  currentWeekdays: number[],
-  weekday: number,
-  checked: boolean
-): number[] {
-  if (checked) {
-    return uniqueSortedWeekdays([...currentWeekdays, weekday]);
-  }
-
-  const nextWeekdays = currentWeekdays.filter((day) => day !== weekday);
-  return nextWeekdays.length === 0
-    ? currentWeekdays
-    : uniqueSortedWeekdays(nextWeekdays);
-}
-
 function BackupPolicyForm({
   initialPolicy,
   onPolicyEnabledChange,
@@ -1212,14 +1193,15 @@ function BackupPolicyForm({
   const setRetentionDays = useCallback((retentionDays: number) => {
     setForm((current) => ({ ...current, retentionDays }));
   }, []);
-  const setWeeklyDay = useCallback((weekday: number, checked: boolean) => {
+  const setWeekday = useCallback((value: string) => {
     setForm((current) => {
       if (current.frequency !== "weekly") {
         return current;
       }
+      const weekday = parseBoundedInteger(value, current.weekdays[0] ?? 1, 0, 6);
       return {
         ...current,
-        weekdays: applyWeeklyDaySelection(current.weekdays, weekday, checked),
+        weekdays: [weekday],
       };
     });
   }, []);
@@ -1269,6 +1251,26 @@ function BackupPolicyForm({
           />
         </label>
 
+        {form.frequency === "weekly" && (
+          <label className="flex min-w-0 flex-col gap-2 text-sm @min-[40rem]/backup-surface:col-span-2">
+            <span className="font-medium text-muted-foreground leading-5">
+              {"Week"}
+            </span>
+            <SingleSelect
+              className="w-full"
+              disabled={!form.enabled || isSaving}
+              onValueChange={setWeekday}
+              options={DB_SERVICE_BACKUP_WEEKDAY_SELECT_LABELS.map(
+                (label, weekday) => ({
+                  label,
+                  value: String(weekday),
+                })
+              )}
+              value={String(form.weekdays[0] ?? 1)}
+            />
+          </label>
+        )}
+
         {form.frequency !== "hourly" && (
           <label className="flex min-w-0 flex-col gap-2 text-sm">
             <span className="font-medium text-muted-foreground leading-5">
@@ -1309,29 +1311,6 @@ function BackupPolicyForm({
           />
         </label>
       </div>
-
-      {form.frequency === "weekly" && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {DB_SERVICE_BACKUP_WEEKDAY_LABELS.map((label, weekday) => {
-            const checked = form.weekdays.includes(weekday);
-            return (
-              <label
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-sm text-muted-foreground"
-                key={label}
-              >
-                <Checkbox
-                  checked={checked}
-                  disabled={!form.enabled || isSaving}
-                  onCheckedChange={(nextChecked) => {
-                    setWeeklyDay(weekday, nextChecked === true);
-                  }}
-                />
-                {label}
-              </label>
-            );
-          })}
-        </div>
-      )}
 
       {(!retention.ok || error !== null) && (
         <div
