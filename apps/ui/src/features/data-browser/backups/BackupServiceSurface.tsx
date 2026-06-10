@@ -548,7 +548,7 @@ function EmptyBackupRows() {
       <h3 className="m-0 font-medium text-sm leading-5">
         {"No backups found"}
       </h3>
-      <p className="mt-1.5 mb-0 max-w-md text-[13px] text-muted-foreground leading-5">
+      <p className="mt-1.5 mb-0 max-w-md text-sm text-muted-foreground leading-5">
         {"DB Service Backups for this service will appear here."}
       </p>
     </div>
@@ -583,7 +583,7 @@ function UnsupportedBackupSurface() {
         <h3 className="m-0 font-medium text-sm leading-5">
           {"Backup unavailable"}
         </h3>
-        <p className="mt-1.5 mb-0 text-[13px] text-muted-foreground leading-5">
+        <p className="mt-1.5 mb-0 text-sm text-muted-foreground leading-5">
           {`${runtime.database.displayEngine} DB Service Backups are not available in this version.`}
         </p>
       </div>
@@ -765,7 +765,7 @@ function BackupCreationForm({
       <div className="grid min-w-0 @min-[60rem]/backup-surface:grid-cols-[minmax(220px,320px)_minmax(260px,1fr)] gap-4">
         <div className="min-w-0">
           <label
-            className="mb-2 block font-medium text-[13px] text-muted-foreground leading-5"
+            className="mb-2 block font-medium text-sm text-muted-foreground leading-5"
             htmlFor="db-service-backup-name"
           >
             {"Backup Name"}
@@ -797,7 +797,7 @@ function BackupCreationForm({
         <div className="min-w-0">
           <div className="mb-2 flex items-center justify-between gap-2">
             <label
-              className="block font-medium text-[13px] text-muted-foreground leading-5"
+              className="block font-medium text-sm text-muted-foreground leading-5"
               htmlFor="db-service-backup-description"
             >
               {"Description"}
@@ -865,7 +865,7 @@ function BackupCreationForm({
 
       {submitError !== null && (
         <div
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
           data-qa-module="database"
           data-qa-object="backup-create-error"
           data-qa-state="error"
@@ -877,7 +877,7 @@ function BackupCreationForm({
 
       {acceptedName !== null && (
         <div
-          className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-300"
+          className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"
           data-qa-module="database"
           data-qa-object="backup-create-accepted"
           data-qa-state="accepted"
@@ -988,7 +988,7 @@ function RestoreBackupModal({
                 />
                 {validationError === null ? null : (
                   <p
-                    className="m-0 text-[13px] text-destructive leading-5"
+                    className="m-0 text-sm text-destructive leading-5"
                     data-testid="database.backup.restore-name-error"
                   >
                     {validationError}
@@ -997,7 +997,7 @@ function RestoreBackupModal({
               </AppDialog.Field>
               {submitError === null ? null : (
                 <div
-                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
                   data-qa-module="database"
                   data-qa-object="backup-restore-error"
                   data-qa-state="error"
@@ -1232,8 +1232,8 @@ function BackupPolicyForm({
       data-qa-state={form.enabled ? "enabled" : "disabled"}
       data-testid="database.backup.policy"
     >
-      <div className="grid min-w-0 @min-[40rem]/backup-surface:grid-cols-2 gap-4">
-        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+      <div className="grid min-w-0 @min-[40rem]/backup-surface:grid-cols-2 gap-x-2 gap-y-4">
+        <label className="flex min-w-0 flex-col gap-2 text-sm">
           <span className="font-medium text-muted-foreground leading-5">
             {"Backup Frequency"}
           </span>
@@ -1253,7 +1253,7 @@ function BackupPolicyForm({
           />
         </label>
 
-        <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+        <label className="flex min-w-0 flex-col gap-2 text-sm">
           <span className="font-medium text-muted-foreground leading-5">
             {"Retention Period"}
           </span>
@@ -1270,7 +1270,7 @@ function BackupPolicyForm({
         </label>
 
         {form.frequency !== "hourly" && (
-          <label className="flex min-w-0 flex-col gap-1 text-[13px]">
+          <label className="flex min-w-0 flex-col gap-2 text-sm">
             <span className="font-medium text-muted-foreground leading-5">
               {"Start Hour"}
             </span>
@@ -1289,7 +1289,7 @@ function BackupPolicyForm({
 
         <label
           className={cn(
-            "flex min-w-0 flex-col gap-1 text-[13px]",
+            "flex min-w-0 flex-col gap-2 text-sm",
             form.frequency === "hourly" &&
               "@min-[40rem]/backup-surface:col-span-2"
           )}
@@ -1316,7 +1316,7 @@ function BackupPolicyForm({
             const checked = form.weekdays.includes(weekday);
             return (
               <label
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-[13px] text-muted-foreground"
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2 text-sm text-muted-foreground"
                 key={label}
               >
                 <Checkbox
@@ -1335,7 +1335,7 @@ function BackupPolicyForm({
 
       {(!retention.ok || error !== null) && (
         <div
-          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
           data-qa-module="database"
           data-qa-object="backup-policy-error"
           data-testid="database.backup.policy-error"
@@ -1781,7 +1781,7 @@ export function BackupServiceSurface() {
 
       {refreshError !== null && (
         <div
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
           data-qa-module="database"
           data-qa-object="backup-refresh-error"
           data-qa-state="error"
@@ -1793,7 +1793,7 @@ export function BackupServiceSurface() {
 
       {deleteError !== null && (
         <div
-          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
           data-qa-module="database"
           data-qa-object="backup-delete-error"
           data-qa-state="error"
@@ -1805,7 +1805,7 @@ export function BackupServiceSurface() {
 
       {restoreSuccess !== null && (
         <div
-          className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-300"
+          className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"
           data-qa-module="database"
           data-qa-object="backup-restore-feedback"
           data-qa-state="accepted"
