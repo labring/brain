@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   apEnvRawSourceFromRows,
+  apEnvRawSourceReferenceSuggestionContext,
   apEnvRawSourceRows,
   applyApEnvRawSourceRowPatch,
   buildApEnvReferenceMenuItems,
@@ -84,6 +85,47 @@ test("AP env raw source parser rejects syntax errors and duplicate keys", () => 
       type: "duplicate-name",
     },
   ]);
+});
+
+test("AP env raw source reference suggestions only trigger in unclosed assignment values", () => {
+  assert.deepEqual(
+    apEnvRawSourceReferenceSuggestionContext("DATABASE_URL=${{post", 21),
+    {
+      endColumn: 21,
+      query: "post",
+      startColumn: 14,
+    }
+  );
+  assert.deepEqual(
+    apEnvRawSourceReferenceSuggestionContext("URL=prefix-${{postgres.PG", 26),
+    {
+      endColumn: 26,
+      query: "postgres.PG",
+      startColumn: 12,
+    }
+  );
+  assert.equal(
+    apEnvRawSourceReferenceSuggestionContext(
+      `DATABASE_URL=${referenceExpression("postgres", "DATABASE_URL")}`,
+      24
+    ),
+    undefined
+  );
+  assert.equal(
+    apEnvRawSourceReferenceSuggestionContext("# DATABASE_URL=${{post", 23),
+    undefined
+  );
+  assert.equal(
+    apEnvRawSourceReferenceSuggestionContext("${{BAD_NAME=foo", 4),
+    undefined
+  );
+  assert.equal(
+    apEnvRawSourceReferenceSuggestionContext(
+      "DATABASE_URL=value # ${{post",
+      25
+    ),
+    undefined
+  );
 });
 
 test("AP env raw source projects saved direct env rows when raw source is absent", () => {

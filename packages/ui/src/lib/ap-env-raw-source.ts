@@ -65,6 +65,12 @@ export interface ApEnvRawSourceParseResult {
   valid: boolean;
 }
 
+export interface ApEnvRawSourceReferenceSuggestionContext {
+  endColumn: number;
+  query: string;
+  startColumn: number;
+}
+
 interface ParsedApEnvRawValue {
   quote: "'" | '"' | null;
   value: string;
@@ -150,6 +156,7 @@ export interface ApEnvReferenceMenuItem {
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const DB_REFERENCE_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/i;
+const AP_ENV_REFERENCE_SUGGESTION_QUERY_RE = /^[A-Za-z0-9_.-]*$/;
 const AP_ENV_REFERENCE_RE =
   /\$\{\{([A-Za-z0-9](?:[-A-Za-z0-9]*[A-Za-z0-9])?)\.([A-Za-z_][A-Za-z0-9_.-]*)\}\}/g;
 const EDGE_WHITESPACE_RE = /^\s|\s$/;
@@ -374,6 +381,44 @@ export function parseApEnvRawSource(source: string): ApEnvRawSourceParseResult {
     rows,
     source,
     valid: diagnostics.length === 0,
+  };
+}
+
+export function apEnvRawSourceReferenceSuggestionContext(
+  rawLine: string,
+  column: number
+): ApEnvRawSourceReferenceSuggestionContext | undefined {
+  const cursorIndex = Math.max(0, Math.min(rawLine.length, column - 1));
+  const parsed = parseAssignmentLine(rawLine, 1).parsed;
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (cursorIndex < parsed.valueStart || cursorIndex > parsed.valueEnd) {
+    return undefined;
+  }
+
+  const beforeCursor = rawLine.slice(parsed.valueStart, cursorIndex);
+  const referenceStartInValue = beforeCursor.lastIndexOf("${{");
+  if (referenceStartInValue === -1) {
+    return undefined;
+  }
+  const referenceStart = parsed.valueStart + referenceStartInValue;
+  const closedBeforeCursor = beforeCursor.lastIndexOf("}}");
+  if (closedBeforeCursor > referenceStartInValue) {
+    return undefined;
+  }
+  if (rawLine.indexOf("}}", referenceStart + 3) !== -1) {
+    return undefined;
+  }
+
+  const query = rawLine.slice(referenceStart + 3, cursorIndex);
+  if (!AP_ENV_REFERENCE_SUGGESTION_QUERY_RE.test(query)) {
+    return undefined;
+  }
+  return {
+    endColumn: cursorIndex + 1,
+    query,
+    startColumn: referenceStart + 1,
   };
 }
 

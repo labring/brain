@@ -1,5 +1,7 @@
 "use client";
 
+import type { Monaco, OnMount } from "@monaco-editor/react";
+import { Editor } from "@monaco-editor/react";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
@@ -26,7 +28,6 @@ import {
   SlidingToggle,
   type SlidingToggleOption,
 } from "@workspace/ui/components/sliding-toggle";
-import { Textarea } from "@workspace/ui/components/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -35,6 +36,7 @@ import {
 import {
   type ApEnvRawSourceDiagnostic,
   apEnvRawAssignmentsToRows,
+  apEnvRawSourceReferenceSuggestionContext,
   apEnvRawSourceRows,
   appendApEnvRawSourceRow,
   applyApEnvRawSourceRowPatch,
@@ -81,6 +83,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { editor, IDisposable, languages } from "monaco-editor";
 import type { ReactNode } from "react";
 import {
   useCallback,
@@ -109,6 +112,27 @@ const MEMORY_AVERAGE_TARGET_LIMITS = { max: 8192, min: 128 } as const;
 const DEFAULT_CPU_UTILIZATION_TARGET_PERCENT = 80;
 const DEFAULT_MEMORY_AVERAGE_TARGET_MIB = 512;
 const MEMORY_AVERAGE_VALUE_RE = /^([1-9][0-9]*)(Mi|Gi)$/;
+const AP_ENV_RAW_SOURCE_MONACO_LANGUAGE = "ap-env-raw-source";
+const AP_ENV_RAW_SOURCE_MARKER_OWNER = "ap-env-raw-source";
+const AP_ENV_REFERENCE_VARIABLE_SORT_ORDER: Record<string, number> = {
+  DATABASE_URL: 0,
+  PG_USER: 1,
+  PG_PASSWORD: 2,
+  PG_HOST: 3,
+  PG_PORT: 4,
+};
+const AP_ENV_REFERENCE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
+  DATABASE_URL: "Complete DSN",
+  PG_HOST: "Host",
+  PG_PASSWORD: "Password",
+  PG_PORT: "Port",
+  PG_USER: "Username",
+};
+let apEnvRawSourceMonacoConfigured = false;
+
+type ApEnvReferenceMenuItem = ReturnType<
+  typeof buildApEnvReferenceMenuItems
+>[number];
 
 /** Quota sliders are controlled: parent owns `value` and receives `onValueChange`. */
 export interface ContainerSettingsControlledQuotaProps {
@@ -1335,6 +1359,100 @@ function envRowUsesExternalValue(row: ContainerEnvVar): boolean {
   return row.valueFrom != null || row.valueSource === "valueFrom";
 }
 
+function configureApEnvRawSourceMonaco(monaco: Monaco) {
+  if (apEnvRawSourceMonacoConfigured) {
+    return;
+  }
+  if (
+    !monaco.languages
+      .getLanguages()
+      .some(
+        (language: { id: string }) =>
+          language.id === AP_ENV_RAW_SOURCE_MONACO_LANGUAGE
+      )
+  ) {
+    monaco.languages.register({ id: AP_ENV_RAW_SOURCE_MONACO_LANGUAGE });
+  }
+  monaco.editor.defineTheme("ap-env-raw-source-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": "#00000000",
+      "editorLineNumber.foreground": "#6b7280",
+      "editorLineNumber.activeForeground": "#d1d5db",
+      "editor.lineHighlightBackground": "#ffffff08",
+      "editorCursor.foreground": "#e5e7eb",
+      "editor.selectionBackground": "#2563eb66",
+      "editorSuggestWidget.background": "#111827",
+      "editorSuggestWidget.border": "#374151",
+      "editorSuggestWidget.foreground": "#e5e7eb",
+      "editorSuggestWidget.highlightForeground": "#93c5fd",
+      "editorSuggestWidget.selectedBackground": "#1f2937",
+    },
+  });
+  apEnvRawSourceMonacoConfigured = true;
+}
+
+function sortedAvailableReferenceItems(
+  sources: readonly ContainerEnvDbDsnSource[]
+): ApEnvReferenceMenuItem[] {
+  return buildApEnvReferenceMenuItems(sources)
+    .filter((item) => item.available)
+    .sort((left, right) => {
+      const leftOrder =
+        AP_ENV_REFERENCE_VARIABLE_SORT_ORDER[left.variableName] ?? 99;
+      const rightOrder =
+        AP_ENV_REFERENCE_VARIABLE_SORT_ORDER[right.variableName] ?? 99;
+      return (
+        leftOrder - rightOrder ||
+        left.dbName.localeCompare(right.dbName) ||
+        left.variableName.localeCompare(right.variableName)
+      );
+    });
+}
+
+function referenceCompletionDocumentation(
+  item: ApEnvReferenceMenuItem
+): string {
+  return (
+    AP_ENV_REFERENCE_VARIABLE_DESCRIPTIONS[item.variableName] ??
+    item.description
+  );
+}
+
+function syncApEnvRawSourceMarkers({
+  diagnostics,
+  editorInstance,
+  monaco,
+}: {
+  diagnostics: readonly ApEnvRawSourceDiagnostic[];
+  editorInstance: editor.IStandaloneCodeEditor | null;
+  monaco: Monaco | null;
+}) {
+  const model = editorInstance?.getModel();
+  if (model == null || monaco == null) {
+    return;
+  }
+  monaco.editor.setModelMarkers(
+    model,
+    AP_ENV_RAW_SOURCE_MARKER_OWNER,
+    diagnostics.map((diagnostic) => {
+      const lineCount = model.getLineCount();
+      const line = Math.max(1, Math.min(lineCount, diagnostic.line));
+      return {
+        endColumn: model.getLineMaxColumn(line),
+        endLineNumber: line,
+        message: diagnostic.message,
+        severity: monaco.MarkerSeverity.Error,
+        source: AP_ENV_RAW_SOURCE_MARKER_OWNER,
+        startColumn: 1,
+        startLineNumber: line,
+      };
+    })
+  );
+}
+
 function EditableEnvNameControl({
   dbDsnReferenceSources,
   error,
@@ -1570,86 +1688,167 @@ function EnvRawSourceEditor({
   onChange,
   value,
 }: EnvRawSourceEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
-  const menuItems = buildApEnvReferenceMenuItems(dbDsnReferenceSources);
-  const copyRawSource = useCallback(async () => {
-    await writeTextToClipboard(value);
-  }, [value]);
+  const editorId = useId();
+  const editorInstanceRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const completionProviderRef = useRef<IDisposable | null>(null);
+  const diagnosticsRef = useRef<readonly ApEnvRawSourceDiagnostic[]>([]);
+  const menuItems = useMemo(
+    () => sortedAvailableReferenceItems(dbDsnReferenceSources),
+    [dbDsnReferenceSources]
+  );
+  const menuItemsRef = useRef(menuItems);
+  const editorPath = useMemo(
+    () => `inmemory://ap-env-raw-source/${encodeURIComponent(editorId)}.env`,
+    [editorId]
+  );
+  const diagnostics = useMemo(
+    () => (diagnostic == null ? [] : [diagnostic]),
+    [diagnostic]
+  );
+  diagnosticsRef.current = diagnostics;
+  menuItemsRef.current = menuItems;
+
+  const handleMount = useCallback<OnMount>((editorInstance, monaco) => {
+    editorInstanceRef.current = editorInstance;
+    monacoRef.current = monaco;
+    completionProviderRef.current?.dispose();
+    const completionProvider: languages.CompletionItemProvider = {
+      provideCompletionItems(model, position) {
+        if (model !== editorInstance.getModel()) {
+          return { suggestions: [] };
+        }
+        const context = apEnvRawSourceReferenceSuggestionContext(
+          model.getLineContent(position.lineNumber),
+          position.column
+        );
+        if (context === undefined) {
+          return { suggestions: [] };
+        }
+        const range = {
+          endColumn: context.endColumn,
+          endLineNumber: position.lineNumber,
+          startColumn: context.startColumn,
+          startLineNumber: position.lineNumber,
+        };
+        return {
+          suggestions: menuItemsRef.current.map((item, index) => {
+            const fieldOrder =
+              AP_ENV_REFERENCE_VARIABLE_SORT_ORDER[item.variableName] ?? 99;
+            const sortText = `${String(fieldOrder).padStart(2, "0")}-${
+              item.dbName
+            }-${String(index).padStart(3, "0")}`;
+            return {
+              detail: item.dbName,
+              documentation: referenceCompletionDocumentation(item),
+              filterText: item.expression,
+              insertText: item.expression,
+              kind: monaco.languages.CompletionItemKind.Reference,
+              label: {
+                description: item.dbName,
+                label: item.variableName,
+              },
+              range,
+              sortText,
+            };
+          }),
+        };
+      },
+      triggerCharacters: ["{"],
+    };
+    completionProviderRef.current =
+      monaco.languages.registerCompletionItemProvider(
+        AP_ENV_RAW_SOURCE_MONACO_LANGUAGE,
+        completionProvider
+      );
+    syncApEnvRawSourceMarkers({
+      diagnostics: diagnosticsRef.current,
+      editorInstance,
+      monaco,
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      completionProviderRef.current?.dispose();
+      completionProviderRef.current = null;
+    },
+    []
+  );
+
+  useEffect(() => {
+    syncApEnvRawSourceMarkers({
+      diagnostics,
+      editorInstance: editorInstanceRef.current,
+      monaco: monacoRef.current,
+    });
+  }, [diagnostics]);
 
   return (
     <>
       <div className="grid min-w-0 gap-2">
-        <Textarea
-          aria-invalid={diagnostic != null}
-          aria-label="Environment raw source"
-          className="min-h-48 resize-y font-mono text-sm"
-          onChange={(event) => {
-            const nextValue = event.target.value;
-            if (nextValue.includes("${{")) {
-              setReferenceMenuOpen(true);
+        <div
+          className={cn(
+            "min-h-48 overflow-hidden rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30",
+            diagnostic == null
+              ? null
+              : "border-destructive ring-[3px] ring-destructive/20 dark:border-destructive/50 dark:ring-destructive/40"
+          )}
+        >
+          <Editor
+            beforeMount={configureApEnvRawSourceMonaco}
+            defaultLanguage={AP_ENV_RAW_SOURCE_MONACO_LANGUAGE}
+            height="12rem"
+            keepCurrentModel={false}
+            language={AP_ENV_RAW_SOURCE_MONACO_LANGUAGE}
+            loading={
+              <span className="text-muted-foreground text-sm">
+                Loading editor…
+              </span>
             }
-            onChange(nextValue);
-          }}
-          ref={textareaRef}
-          spellCheck={false}
-          value={value}
-        />
-        <Select
-          disabled={menuItems.length === 0}
-          onOpenChange={setReferenceMenuOpen}
-          onValueChange={(expression) => {
-            onChange(
-              insertApEnvReferenceText(
-                value,
-                expression,
-                textareaRef.current?.selectionStart,
-                textareaRef.current?.selectionEnd
-              )
-            );
-            setReferenceMenuOpen(false);
-          }}
-          open={referenceMenuOpen}
-        >
-          <SelectTrigger
-            aria-label="Insert environment reference token"
-            className="h-8 w-fit gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground focus:ring-0 focus:ring-offset-0"
-            data-slot="container-env-token-trigger"
-            indicator={false}
-            title="Insert reference token"
-            variant="ghost"
-          >
-            <Braces aria-hidden className="size-4" />
-          </SelectTrigger>
-          <SelectContent className="border-border bg-input/30 shadow-none backdrop-blur-xl">
-            {menuItems.map((item) => (
-              <SelectItem
-                className="pl-2 focus:bg-input/30 data-[highlighted]:bg-input/30 data-[state=checked]:bg-input"
-                disabled={!item.available}
-                indicator={false}
-                key={`${item.dbName}-${item.variableName}`}
-                value={item.expression}
-              >
-                <span className="grid min-w-0">
-                  <span className="min-w-0 truncate">{item.label}</span>
-                  <span className="min-w-0 truncate text-muted-foreground text-xs">
-                    {item.type} · {item.description}
-                  </span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <AppButton
-          aria-label="Copy environment raw source"
-          className="h-8 w-fit gap-1.5 rounded-md bg-white/5 px-2.5 py-1 text-muted-foreground text-sm hover:bg-input/40 hover:text-foreground"
-          onClick={copyRawSource}
-          type="button"
-          variant="quiet"
-        >
-          <Copy aria-hidden className="size-4" />
-          Copy
-        </AppButton>
+            onChange={(nextValue) => onChange(nextValue ?? "")}
+            onMount={handleMount}
+            options={{
+              automaticLayout: true,
+              folding: false,
+              fontFamily:
+                "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)",
+              fontSize: 13,
+              glyphMargin: false,
+              hideCursorInOverviewRuler: true,
+              lineDecorationsWidth: 8,
+              lineNumbers: "on",
+              lineNumbersMinChars: 3,
+              minimap: { enabled: false },
+              overviewRulerLanes: 0,
+              padding: { bottom: 8, top: 8 },
+              quickSuggestions: false,
+              renderLineHighlight: "line",
+              scrollBeyondLastLine: false,
+              scrollbar: {
+                horizontalScrollbarSize: 8,
+                verticalScrollbarSize: 8,
+              },
+              suggest: {
+                showWords: false,
+                snippetsPreventQuickSuggestions: true,
+              },
+              suggestOnTriggerCharacters: true,
+              tabSize: 2,
+              wordBasedSuggestions: "off",
+              wordWrap: "on",
+            }}
+            path={editorPath}
+            saveViewState={false}
+            theme="ap-env-raw-source-dark"
+            value={value}
+            wrapperProps={{
+              "aria-invalid": diagnostic != null,
+              "aria-label": "Environment raw source",
+              "data-slot": "ap-env-raw-source-editor",
+            }}
+          />
+        </div>
       </div>
       {diagnostic == null ? null : (
         <p className="text-destructive text-xs" role="status">

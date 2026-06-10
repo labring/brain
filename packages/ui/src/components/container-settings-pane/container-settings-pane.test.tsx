@@ -38,6 +38,8 @@ const EXTERNAL_REFERENCE_RE = /External reference/;
 const RAW_ENV_EDITOR_RE = /Edit environment variables/;
 const ENV_RAW_SOURCE_RE = /aria-label="Environment raw source"/;
 const COPY_RAW_SOURCE_RE = /aria-label="Copy environment raw source"/;
+const INSERT_RAW_REFERENCE_RE =
+  /aria-label="Insert environment reference token"/;
 const POSTGRES_DSN_RE = /postgres:\/\/db:5432\/app/;
 const RAW_MODE_RE = />Raw</;
 const STRUCTURED_MODE_RE = />Structured</;
@@ -1299,7 +1301,7 @@ test("container settings pane can focus only Environment Variables", () => {
   assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
 });
 
-test("container settings raw editor offers raw source copy", () => {
+test("container settings raw editor omits fixed raw footer actions", () => {
   const html = renderToStaticMarkup(
     <ContainerSettingsPane
       addDbDsnReferenceIntent={{
@@ -1319,6 +1321,7 @@ test("container settings raw editor offers raw source copy", () => {
   );
 
   assert.match(html, ENV_RAW_SOURCE_RE);
-  assert.match(html, COPY_RAW_SOURCE_RE);
+  assert.doesNotMatch(html, COPY_RAW_SOURCE_RE);
+  assert.doesNotMatch(html, INSERT_RAW_REFERENCE_RE);
   assert.doesNotMatch(html, COPY_ENV_VALUE_RE);
 });
