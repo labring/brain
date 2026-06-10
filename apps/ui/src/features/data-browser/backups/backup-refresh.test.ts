@@ -6,6 +6,7 @@ import {
   deleteDbServiceBackup,
   fetchDbServiceBackupProductResource,
   submitDbServiceBackupRestore,
+  suggestedRestoredDbServiceName,
   updateDbServiceBackupPolicy,
   validateRestoredDbServiceName,
 } from "./BackupServiceSurface";
@@ -126,6 +127,20 @@ test("restored DB Service name validation matches lowercase DNS-style names", ()
   assert.equal(
     validateRestoredDbServiceName("orders-db", ["orders-db"]),
     "A DB Service with this name already exists."
+  );
+});
+
+test("restored DB Service name suggestion avoids existing names", () => {
+  assert.equal(
+    suggestedRestoredDbServiceName("orders-db", [
+      "orders-db",
+      "orders-db-restore",
+    ]),
+    "orders-db-restore-2"
+  );
+  assert.equal(
+    suggestedRestoredDbServiceName("123_orders", []),
+    "db-123-orders-restore"
   );
 });
 

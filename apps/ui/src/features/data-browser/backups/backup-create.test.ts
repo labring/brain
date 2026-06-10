@@ -3,6 +3,7 @@ import { afterEach, test } from "node:test";
 
 import {
   createDbServiceBackup,
+  suggestedDbServiceBackupName,
   validateDbServiceBackupForm,
 } from "./BackupServiceSurface";
 
@@ -35,6 +36,19 @@ test("manual backup form validates name and description before submit", () => {
       backupName: "orders-before-migration",
       description: "Before invoice migration",
     }),
+    {}
+  );
+});
+
+test("manual backup name suggestion uses the source DB Service and local timestamp", () => {
+  const suggestedName = suggestedDbServiceBackupName(
+    "Orders DB",
+    new Date(2026, 5, 10, 2, 3, 4)
+  );
+
+  assert.equal(suggestedName, "orders-db-manual-20260610-020304");
+  assert.deepEqual(
+    validateDbServiceBackupForm({ backupName: suggestedName }),
     {}
   );
 });

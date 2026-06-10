@@ -83,6 +83,100 @@ const DB_SERVICE_BACKUP_WEEKDAY_SELECT_LABELS = [
   "Saturday",
 ] as const;
 
+function padDatePart(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function localBackupTimestamp(now: Date): string {
+  return [
+    now.getFullYear(),
+    padDatePart(now.getMonth() + 1),
+    padDatePart(now.getDate()),
+    "-",
+    padDatePart(now.getHours()),
+    padDatePart(now.getMinutes()),
+    padDatePart(now.getSeconds()),
+  ].join("");
+}
+
+function dnsNameBase({
+  fallback,
+  requireLetterStart = false,
+  value,
+}: {
+  fallback: string;
+  requireLetterStart?: boolean;
+  value: string;
+}): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const base = normalized === "" ? fallback : normalized;
+  return requireLetterStart && !/^[a-z]/.test(base)
+    ? `${fallback}-${base}`.replace(/-+/g, "-").replace(/^-+|-+$/g, "")
+    : base;
+}
+
+function dnsNameWithSuffix({
+  fallback,
+  requireLetterStart = false,
+  suffix,
+  value,
+}: {
+  fallback: string;
+  requireLetterStart?: boolean;
+  suffix: string;
+  value: string;
+}): string {
+  const base = dnsNameBase({ fallback, requireLetterStart, value });
+  const maxBaseLength = Math.max(1, 63 - suffix.length);
+  const trimmedBase = base.slice(0, maxBaseLength).replace(/-+$/g, "");
+  const safeBase =
+    trimmedBase === "" || (requireLetterStart && !/^[a-z]/.test(trimmedBase))
+      ? fallback
+      : trimmedBase;
+  return `${safeBase}${suffix}`.slice(0, 63).replace(/-+$/g, "");
+}
+
+export function suggestedDbServiceBackupName(
+  sourceName: string,
+  now = new Date()
+): string {
+  return dnsNameWithSuffix({
+    fallback: "db",
+    suffix: `-manual-${localBackupTimestamp(now)}`,
+    value: sourceName,
+  });
+}
+
+export function suggestedRestoredDbServiceName(
+  sourceName: string,
+  existingNames: readonly string[] = []
+): string {
+  const existing = new Set(existingNames.map((name) => name.trim()));
+  const candidate = dnsNameWithSuffix({
+    fallback: "db",
+    requireLetterStart: true,
+    suffix: "-restore",
+    value: sourceName,
+  });
+  if (!existing.has(candidate)) {
+    return candidate;
+  }
+
+  for (let index = 2; index < 1000; index += 1) {
+    const suffix = `-${index}`;
+    const next = `${candidate.slice(0, 63 - suffix.length).replace(/-+$/g, "")}${suffix}`;
+    if (!existing.has(next)) {
+      return next;
+    }
+  }
+  return candidate;
+}
+
 export interface DbServiceBackupFormValues {
   backupName: string;
   description?: string;
@@ -712,22 +806,31 @@ function isDbServiceRunning(phase: string | undefined): boolean {
 }
 
 function BackupCreationForm({
+  createDefaultBackupName,
   disabled,
   disabledReason,
   isSubmitting,
   onSubmit,
 }: {
+  createDefaultBackupName: () => string;
   disabled: boolean;
   disabledReason?: string;
   isSubmitting: boolean;
   onSubmit: (values: DbServiceBackupFormValues) => Promise<void>;
 }) {
-  const [backupName, setBackupName] = useState("");
+  const [backupName, setBackupName] = useState(createDefaultBackupName);
+  const [isBackupNameEdited, setIsBackupNameEdited] = useState(false);
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState<DbServiceBackupFormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [acceptedName, setAcceptedName] = useState<string | null>(null);
   const descriptionLength = [...description].length;
+
+  useEffect(() => {
+    if (!isBackupNameEdited) {
+      setBackupName(createDefaultBackupName());
+    }
+  }, [createDefaultBackupName, isBackupNameEdited]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -744,7 +847,8 @@ function BackupCreationForm({
     const trimmedName = backupName.trim();
     onSubmit({ backupName: trimmedName, description })
       .then(() => {
-        setBackupName("");
+        setBackupName(createDefaultBackupName());
+        setIsBackupNameEdited(false);
         setDescription("");
         setAcceptedName(trimmedName);
       })
@@ -781,6 +885,7 @@ function BackupCreationForm({
             maxLength={63}
             onChange={(event) => {
               setBackupName(event.target.value);
+              setIsBackupNameEdited(true);
               setErrors((current) => removeFormError(current, "backupName"));
             }}
             placeholder="orders-before-migration"
@@ -915,11 +1020,16 @@ function RestoreBackupModal({
 
   useEffect(() => {
     if (backup !== null) {
-      setRestoredName("");
+      setRestoredName(
+        suggestedRestoredDbServiceName(
+          runtime.databaseWorkloadName,
+          existingNames
+        )
+      );
       setSubmitError(null);
       setIsSubmitting(false);
     }
-  }, [backup]);
+  }, [backup, existingNames, runtime.databaseWorkloadName]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1506,6 +1616,7 @@ function BackupMethodToggle({
 function BackupMethodPanel({
   createDisabled,
   createDisabledReason,
+  createDefaultBackupName,
   currentPolicy,
   isCreating,
   onCreateBackup,
@@ -1513,6 +1624,7 @@ function BackupMethodPanel({
 }: {
   createDisabled: boolean;
   createDisabledReason?: string;
+  createDefaultBackupName: () => string;
   currentPolicy: DbServiceBackupPolicyBackend | undefined;
   isCreating: boolean;
   onCreateBackup: (values: DbServiceBackupFormValues) => Promise<void>;
@@ -1561,6 +1673,7 @@ function BackupMethodPanel({
       <div className="mt-5 flex min-h-0 w-full min-w-0">
         {mode === "manual" ? (
           <BackupCreationForm
+            createDefaultBackupName={createDefaultBackupName}
             disabled={createDisabled}
             disabledReason={createDisabledReason}
             isSubmitting={isCreating}
@@ -1669,6 +1782,10 @@ export function BackupServiceSurface() {
       runtime.kubeconfig,
     ]
   );
+  const createDefaultBackupName = useCallback(
+    () => suggestedDbServiceBackupName(runtime.databaseWorkloadName),
+    [runtime.databaseWorkloadName]
+  );
   const requestDeleteBackup = useCallback((backup: DbServiceBackupSummary) => {
     if (!backup.deletable) {
       return;
@@ -1750,6 +1867,7 @@ export function BackupServiceSurface() {
       data-testid="database.backup.surface"
     >
       <BackupMethodPanel
+        createDefaultBackupName={createDefaultBackupName}
         createDisabled={!running}
         createDisabledReason={createDisabledReason}
         currentPolicy={currentPolicy}
