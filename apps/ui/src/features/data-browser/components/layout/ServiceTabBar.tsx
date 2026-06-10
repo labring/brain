@@ -2,6 +2,9 @@ import { cn } from "@data-browser/lib/utils";
 import { useDbAccessTabs } from "@data-browser/state/db-access-session";
 import { CloudUpload } from "lucide-react";
 
+const serviceTabActiveClassName = "bg-input text-foreground";
+const serviceTabInactiveClassName = "text-foreground hover:bg-input/40";
+
 export function ServiceTabBar() {
   const { activeSurface, setActiveServiceTab } = useDbAccessTabs();
   const isActive =
@@ -19,9 +22,7 @@ export function ServiceTabBar() {
         <button
           className={cn(
             "inline-flex h-9 cursor-pointer select-none items-center gap-2 px-4 font-medium text-sm transition-colors duration-150",
-            isActive
-              ? "bg-input text-foreground"
-              : "text-foreground hover:bg-input/40"
+            isActive ? serviceTabActiveClassName : serviceTabInactiveClassName
           )}
           data-qa-action="activate"
           data-qa-module="layout"

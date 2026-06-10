@@ -40,6 +40,33 @@ const runtime = {
   projectId: "project-uid",
 } satisfies DataBrowserHostContext;
 
+function assertDefaultSecondaryButton(
+  html: string,
+  ...attributePatterns: string[]
+) {
+  const attributeLookaheads = attributePatterns
+    .map((pattern) => `(?=[^>]*${pattern})`)
+    .join("");
+  assert.match(
+    html,
+    new RegExp(
+      `<button${attributeLookaheads}(?=[^>]*data-size="default")(?=[^>]*data-variant="secondary")[^>]*>`
+    )
+  );
+}
+
+function assertDangerIconButton(html: string, ...attributePatterns: string[]) {
+  const attributeLookaheads = attributePatterns
+    .map((pattern) => `(?=[^>]*${pattern})`)
+    .join("");
+  assert.match(
+    html,
+    new RegExp(
+      `<button${attributeLookaheads}(?=[^>]*data-size="lg")(?=[^>]*data-slot="app-icon-button")(?=[^>]*data-variant="danger")[^>]*>`
+    )
+  );
+}
+
 test("DB Service root renders a service-level Backup tab without close controls", () => {
   const html = renderToStaticMarkup(
     <DbAccessSessionProvider runtime={runtime}>
@@ -49,13 +76,65 @@ test("DB Service root renders a service-level Backup tab without close controls"
 
   assert.match(html, /data-testid="layout\.service-tab-bar"/);
   assert.match(html, /data-qa-tab-type="backup"/);
+  assert.match(
+    html,
+    /class="[^"]*\bbg-input\b[^"]*"[^>]*data-qa-object="service-tab"[^>]*data-qa-state="active"/
+  );
+  assert.match(
+    html,
+    /class="[^"]*\bbg-input\/30\b[^"]*"[^>]*data-qa-object="backup-method"/
+  );
+  assert.match(
+    html,
+    /class="[^"]*\bbg-input\/30\b[^"]*"[^>]*data-qa-object="backup-list-surface"/
+  );
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /orders-db/);
   assert.match(html, /data-testid="database\.backup\.create-button"/);
   assert.match(html, /data-qa-action="restore"/);
   assert.match(html, /data-qa-action="delete-backup"/);
+  assertDefaultSecondaryButton(
+    html,
+    'data-testid="database\\.backup\\.create-button"'
+  );
+  assertDefaultSecondaryButton(
+    html,
+    'data-testid="database\\.backup\\.restore-button"'
+  );
+  assertDangerIconButton(
+    html,
+    'data-testid="database\\.backup\\.delete-button"'
+  );
   assert.match(html, /data-qa-state="enabled"/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
+});
+
+test("DB Service backup policy actions use default secondary AppButton styling", () => {
+  const html = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      runtime={{
+        ...runtime,
+        backupPolicy: {
+          cronExpression: "0 2 * * *",
+          enabled: true,
+          retentionPeriod: "7d",
+        },
+      }}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+
+  assertDefaultSecondaryButton(
+    html,
+    'data-qa-action="reset"',
+    'data-qa-object="backup-policy"'
+  );
+  assertDefaultSecondaryButton(
+    html,
+    'data-qa-action="save"',
+    'data-qa-object="backup-policy"'
+  );
 });
 
 test("restore action is disabled for incomplete DB Service Backups", () => {

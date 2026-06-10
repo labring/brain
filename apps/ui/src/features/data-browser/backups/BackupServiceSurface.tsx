@@ -23,7 +23,6 @@ import { Checkbox } from "@data-browser/components/ui/checkbox";
 import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
 import { Input } from "@data-browser/components/ui/Input";
 import { ModalForm, useModalForm } from "@data-browser/components/ui/ModalForm";
-import { Textarea } from "@data-browser/components/ui/Textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -32,7 +31,9 @@ import {
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { SingleSelect } from "@workspace/ui/components/single-select";
 import { Switch } from "@workspace/ui/components/switch";
 import {
@@ -42,7 +43,6 @@ import {
   Info,
   List,
   Loader2,
-  Plus,
   RotateCcw,
   Save,
   Trash2,
@@ -601,7 +601,12 @@ function BackupRowsList({
   onRestore: (backup: DbServiceBackupSummary) => void;
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-lg bg-white/[0.03]">
+    <section
+      className="flex min-h-0 flex-1 flex-col rounded-lg bg-input/30"
+      data-qa-module="database"
+      data-qa-object="backup-list-surface"
+      data-testid="database.backup.list-surface"
+    >
       <div className="flex h-13 shrink-0 items-center justify-between gap-3 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <List className="size-3.5 shrink-0 text-muted-foreground" />
@@ -654,7 +659,6 @@ function BackupRowsList({
 
                   <div className="flex shrink-0 items-center gap-2">
                     <AppButton
-                      className="h-9 rounded-md px-3"
                       data-qa-action="restore"
                       data-qa-module="database"
                       data-qa-object="backup-row"
@@ -663,16 +667,14 @@ function BackupRowsList({
                       data-testid="database.backup.restore-button"
                       disabled={!backup.restorable}
                       onClick={() => onRestore(backup)}
-                      size="sm"
                       type="button"
                       variant="secondary"
                     >
-                      <ArchiveRestore className="size-3.5" />
+                      <ArchiveRestore />
                       {"Restore"}
                     </AppButton>
-                    <AppButton
+                    <AppIconButton
                       aria-label={`Delete backup ${backup.name}`}
-                      className="h-9 rounded-md px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       data-qa-action="delete-backup"
                       data-qa-module="database"
                       data-qa-object="backup-row-action"
@@ -681,13 +683,13 @@ function BackupRowsList({
                       data-testid="database.backup.delete-button"
                       disabled={!canDelete}
                       onClick={() => onRequestDelete(backup)}
-                      size="sm"
+                      size="lg"
+                      title={`Delete backup ${backup.name}`}
                       type="button"
-                      variant="quiet"
+                      variant="danger"
                     >
-                      <Trash2 className="size-3.5" />
-                      {"Delete"}
-                    </AppButton>
+                      <Trash2 aria-hidden />
+                    </AppIconButton>
                   </div>
                 </article>
               );
@@ -800,7 +802,7 @@ function BackupCreationForm({
               {`${descriptionLength}/${BACKUP_DESCRIPTION_MAX_LENGTH}`}
             </span>
           </div>
-          <Textarea
+          <AppTextarea
             aria-invalid={errors.description === undefined ? undefined : true}
             className="min-h-9 resize-none border-input bg-transparent text-sm"
             data-testid="database.backup.description-input"
@@ -839,21 +841,19 @@ function BackupCreationForm({
         </div>
 
         <AppButton
-          className="h-9 rounded-md px-3"
           data-qa-action="create"
           data-qa-module="database"
           data-qa-object="backup"
           data-qa-state={isSubmitting ? "loading" : "idle"}
           data-testid="database.backup.create-button"
           disabled={disabled || isSubmitting}
-          size="sm"
           type="submit"
           variant="secondary"
         >
           {isSubmitting ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="animate-spin" />
           ) : (
-            <Plus className="size-3.5" />
+            <CloudUpload />
           )}
           {"Backup"}
         </AppButton>
@@ -1365,21 +1365,18 @@ function BackupPolicyForm({
 
       <div className="mt-auto flex justify-end gap-2 pt-4">
         <AppButton
-          className="h-9 rounded-md px-3 text-muted-foreground hover:bg-input hover:text-foreground"
           data-qa-action="reset"
           data-qa-module="database"
           data-qa-object="backup-policy"
           disabled={isSaving}
           onClick={resetPolicy}
-          size="sm"
           type="button"
-          variant="quiet"
+          variant="secondary"
         >
-          <RotateCcw className="size-3.5" />
+          <RotateCcw />
           {"Reset"}
         </AppButton>
         <AppButton
-          className="h-9 rounded-md px-3"
           data-qa-action="save"
           data-qa-module="database"
           data-qa-object="backup-policy"
@@ -1387,15 +1384,10 @@ function BackupPolicyForm({
           onClick={() => {
             savePolicy().catch(() => undefined);
           }}
-          size="sm"
           type="button"
           variant="secondary"
         >
-          {isSaving ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Save className="size-3.5" />
-          )}
+          {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
           {isSaving ? "Saving" : "Save"}
         </AppButton>
       </div>
@@ -1484,21 +1476,26 @@ function BackupMethodToggle({
   return (
     <fieldset
       aria-label="Backup Method"
-      className="relative m-0 mt-5 inline-flex h-[38px] w-fit max-w-full items-center self-start overflow-hidden rounded-lg border border-input bg-transparent p-0"
+      className="relative m-0 mt-5 inline-flex h-9 w-fit max-w-full items-center self-start overflow-hidden rounded-lg bg-transparent p-0 shadow-[0_0_0_1px_var(--border)]"
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-px left-0 z-0 rounded-lg bg-input transition-[opacity,transform,width] duration-200 ease-out"
+        className={cn(
+          "pointer-events-none absolute inset-y-0 left-0 z-0 bg-input transition-[opacity,transform,width] duration-200 ease-out",
+          mode === "manual"
+            ? "rounded-r-lg rounded-l-none"
+            : "rounded-r-none rounded-l-lg"
+        )}
         data-slot="backup-method-toggle-indicator"
         style={indicatorStyle}
       />
       <button
         aria-pressed={mode === "manual"}
         className={cn(
-          "relative z-10 inline-flex h-9 shrink-0 items-center justify-center rounded-lg bg-transparent px-4 font-normal text-sm transition-colors hover:bg-transparent",
+          "relative z-10 inline-flex h-9 shrink-0 items-center justify-center rounded-lg bg-transparent px-4 text-sm transition-colors hover:bg-transparent",
           mode === "manual"
-            ? "text-foreground"
-            : "text-foreground hover:bg-input/40"
+            ? "font-medium text-foreground"
+            : "font-normal text-muted-foreground hover:text-foreground"
         )}
         data-qa-backup-method="manual"
         onClick={() => onModeChange("manual")}
@@ -1513,13 +1510,16 @@ function BackupMethodToggle({
           "relative z-10 flex h-9 shrink-0 items-center gap-2 rounded-lg bg-transparent px-4 transition-colors",
           mode === "policy"
             ? "text-foreground"
-            : "text-foreground hover:bg-input/40"
+            : "text-muted-foreground hover:text-foreground"
         )}
         ref={policyRef}
       >
         <button
           aria-pressed={mode === "policy"}
-          className="inline-flex h-full shrink-0 items-center justify-center bg-transparent font-medium text-sm"
+          className={cn(
+            "inline-flex h-full shrink-0 items-center justify-center bg-transparent text-sm",
+            mode === "policy" ? "font-medium" : "font-normal"
+          )}
           data-qa-backup-method="policy"
           onClick={() => onModeChange("policy")}
           type="button"
@@ -1572,7 +1572,7 @@ function BackupMethodPanel({
 
   return (
     <section
-      className="flex min-h-[276px] flex-col rounded-lg bg-white/[0.03] p-4"
+      className="flex min-h-[276px] flex-col rounded-lg bg-input/30 p-4"
       data-qa-module="database"
       data-qa-object="backup-method"
       data-qa-state={mode}
