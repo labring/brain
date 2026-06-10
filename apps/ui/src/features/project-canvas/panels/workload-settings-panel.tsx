@@ -116,6 +116,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
     isLoading,
     onEnvChange,
     onImageChange,
+    onEnvResolvedValue,
     onNetworkChange,
     onResourceQuotasCommit,
     onSettingsDraftCommit,
@@ -190,6 +191,8 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         }}
         dbDsnReferenceSources={data?.dbDsnReferenceSources}
         env={display.env}
+        envRawSource={display.envRawSource}
+        envResolvedValueScope={`${ns}/${name}`}
         image={display.image}
         memoryQuota={{
           max: 16_384,
@@ -212,6 +215,7 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         }
         onCustomDomainCnameVerify={verifyCustomDomainCnameFromApi}
         onEnvChange={canEditAp ? onEnvChange : ignoreEnv}
+        onEnvResolvedValue={canEditAp ? onEnvResolvedValue : undefined}
         onImageChange={canEditAp ? onImageChange : ignoreImage}
         onNetworkChange={canEditAp ? onNetworkChange : ignoreNetwork}
         onResourceQuotasCommit={canEditAp ? onResourceQuotasCommit : undefined}

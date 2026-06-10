@@ -98,6 +98,9 @@ func APObjectFromDeployment(deployment *appsv1.Deployment) map[string]interface{
 		"imagePullPolicy": string(imagePullPolicy),
 		"network":         network,
 	}
+	if envRawSource, ok := deployment.Annotations[APEnvRawSourceAnnotation]; ok && strings.TrimSpace(envRawSource) != "" {
+		input["envRawSource"] = envRawSource
+	}
 	if len(probes) > 0 {
 		input["probes"] = probes
 	}

@@ -1,5 +1,7 @@
 # Model Project DB References as AP Environment Variables
 
+Partially revised by ADR-0018 for the AP Environment editor source model, Reference syntax, and compiled runtime environment behavior. The Database Binding boundary remains: Project DB references still live inside AP environment configuration rather than a separate binding record.
+
 Project DB references are authored through the AP Environment editor and persisted as standard AP `spec.input.env` entries. This keeps Database Binding inside AP desired state, avoids a second binding persistence model, and lets the same editor handle ordinary external database credentials and Project DB references.
 
 ## Considered Options

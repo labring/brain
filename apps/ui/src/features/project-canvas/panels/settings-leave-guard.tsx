@@ -56,6 +56,8 @@ function settingsLeaveGuardTitle(scope: SettingsLeaveGuardScope) {
   switch (scope) {
     case "database":
       return "Unsaved database configuration changes";
+    case "environmentVariables":
+      return "Unsaved Environment Variable changes";
     case "publicAddresses":
       return "Unsaved Public Address changes";
     default:

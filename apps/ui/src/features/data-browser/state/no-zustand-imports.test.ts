@@ -21,7 +21,7 @@ function sourceFiles(dir: string): string[] {
   return result;
 }
 
-test("Data Browser source has no direct Zustand or legacy store imports", () => {
+test("DB Access source has no direct Zustand or legacy store imports", () => {
   const offenders = sourceFiles(dataBrowserRoot.pathname)
     .filter((file) => !file.endsWith("no-zustand-imports.test.ts"))
     .filter((file) => {

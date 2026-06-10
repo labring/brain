@@ -37,6 +37,10 @@ test("DB Service root node uses db_service type", () => {
       database: { displayEngine: "PostgreSQL", name: "app" },
       databaseWorkloadName: "postgres-main",
       databaseWorkloadNamespace: "database-system",
+      dbService: {
+        name: "postgres-main",
+        namespace: "database-system",
+      },
       engine: "POSTGRES",
       kubeconfig: "kube",
       namespace: "project-ns",

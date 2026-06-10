@@ -8,23 +8,34 @@ import {
 } from "./runtime";
 
 const databaseData = {
+  backupPolicy: {
+    cronExpression: "15 8 * * *",
+    enabled: true,
+    retentionPeriod: "7d",
+  },
   connections: [],
   states: {
     displayEngine: "PostgreSQL",
     engineKey: "postgresql",
     formattedVersion: "16.4",
     name: "orders-db",
+    status: { label: "Running", tone: "running" },
   },
+  uid: "cluster-uid-1",
   workload: {
     name: "orders-db-claim",
     namespace: "database-system",
   },
 } satisfies CanvasDatabaseNodeData;
 
-test("data browser runtime is derived from host project and selected database", () => {
+test("DB Access runtime is derived from host project and selected database", () => {
+  const refreshProjectCanvas = async () => undefined;
+  const onDbServiceRestoreAccepted = () => undefined;
   const runtime = createDataBrowserHostContext({
     kubeconfig: " kube ",
     namespace: "project-ns",
+    onDbServiceRestoreAccepted,
+    refreshProjectCanvas,
     projectId: "project-uid",
     selectedDatabaseData: databaseData,
   });
@@ -32,18 +43,34 @@ test("data browser runtime is derived from host project and selected database", 
   assert.equal(runtime.projectId, "project-uid");
   assert.equal(runtime.kubeconfig, " kube ");
   assert.equal(runtime.namespace, "project-ns");
+  assert.equal(runtime.refreshProjectCanvas, refreshProjectCanvas);
+  assert.equal(runtime.onDbServiceRestoreAccepted, onDbServiceRestoreAccepted);
   assert.equal(runtime.databaseWorkloadName, "orders-db-claim");
   assert.equal(runtime.databaseWorkloadNamespace, "database-system");
+  assert.deepEqual(runtime.dbService, {
+    name: "orders-db-claim",
+    namespace: "database-system",
+    uid: "cluster-uid-1",
+  });
+  assert.equal(runtime.dbServicePhase, "Running");
+  assert.deepEqual(runtime.backupPolicy, {
+    cronExpression: "15 8 * * *",
+    enabled: true,
+    retentionPeriod: "7d",
+  });
   assert.equal(runtime.database.name, "orders-db");
   assert.equal(runtime.database.displayEngine, "PostgreSQL");
   assert.equal(runtime.database.formattedVersion, "16.4");
   assert.equal(runtime.engine, "POSTGRES");
 });
 
-test("data browser runtime parts are stable across equivalent database node snapshots", () => {
+test("DB Access runtime parts are stable across equivalent database node snapshots", () => {
   const nextDatabaseData = {
+    backupPolicy: { ...databaseData.backupPolicy },
+    backups: [],
     connections: [],
     states: { ...databaseData.states },
+    uid: databaseData.uid,
     workload: { ...databaseData.workload },
   } satisfies CanvasDatabaseNodeData;
 

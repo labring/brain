@@ -3,7 +3,8 @@ package orchestration
 import "strings"
 
 type DBEngineProfile struct {
-	BackupMethod     string
+	// BackupMethod is the KubeBlocks BackupPolicy backupMethods[].name value, not the actionSetName.
+	BackupMethod      string
 	ClusterDefinition string
 	ClusterVersion    string
 	ComponentName     string
@@ -19,7 +20,7 @@ func DBEngineProfileFor(engine string) (DBEngineProfile, bool) {
 	switch normalized {
 	case "postgresql", "postgres", "pg":
 		return DBEngineProfile{
-			BackupMethod:      "postgres-basebackup",
+			BackupMethod:      "pg-basebackup",
 			ClusterDefinition: "postgresql",
 			ClusterVersion:    "postgresql-16.4.0",
 			ComponentName:     "postgresql",
@@ -55,7 +56,7 @@ func DBEngineProfileFor(engine string) (DBEngineProfile, bool) {
 		}, true
 	case "mongodb", "mongo":
 		return DBEngineProfile{
-			BackupMethod:      "mongodb-dump",
+			BackupMethod:      "dump",
 			ClusterDefinition: "mongodb",
 			ClusterVersion:    "mongodb-6.0",
 			ComponentName:     "mongodb",
@@ -69,4 +70,3 @@ func DBEngineProfileFor(engine string) (DBEngineProfile, bool) {
 		return DBEngineProfile{}, false
 	}
 }
-

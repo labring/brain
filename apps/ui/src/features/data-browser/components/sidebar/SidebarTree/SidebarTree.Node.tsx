@@ -1,4 +1,4 @@
-import { cn } from "@data-browser/lib/utils";
+import { cn } from "@workspace/ui/lib/utils";
 import {
   ArrowUpDown,
   ChevronDown,

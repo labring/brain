@@ -1,6 +1,7 @@
 import type { AccessObjectRef } from "@data-browser/api/access-types";
 import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
-import type { Alert } from "@data-browser/components/ui/types";
+import type { Alert } from "@data-browser/components/database/shared/types";
+import { PointerContextMenu } from "@data-browser/components/shared/PointerContextMenu";
 import {
   useDbAccessRefresh,
   useDbAccessSelection,
@@ -8,7 +9,6 @@ import {
   useDbAccessTabs,
 } from "@data-browser/state/db-access-session";
 import { type MouseEvent, useCallback, useReducer, useState } from "react";
-import { ContextMenu } from "../ui/ContextMenu";
 import {
   getCollectionMenuItems,
   getDatabaseMenuItems,
@@ -78,7 +78,7 @@ function SidebarInner() {
   const { selectedItem, selectItem } = useDbAccessSelection();
   const { triggerCollectionRefresh, triggerTableRefresh } =
     useDbAccessRefresh();
-  const { openTab } = useDbAccessTabs();
+  const { openTab, setActiveServiceTab } = useDbAccessTabs();
 
   const {
     expandedItems,
@@ -130,7 +130,9 @@ function SidebarInner() {
         }
       }
 
-      if (
+      if (node.type === "db_service") {
+        setActiveServiceTab("backup");
+      } else if (
         (node.type === "table" || node.type === "view") &&
         node.metadata.objectRef
       ) {
@@ -171,7 +173,14 @@ function SidebarInner() {
         });
       }
     },
-    [openTab, selectItem, showAlert, toggleItem, triggerCollectionRefresh]
+    [
+      openTab,
+      selectItem,
+      setActiveServiceTab,
+      showAlert,
+      toggleItem,
+      triggerCollectionRefresh,
+    ]
   );
 
   const handleContextMenu = useCallback(
@@ -338,7 +347,7 @@ function SidebarInner() {
       </div>
 
       {contextMenu && (
-        <ContextMenu
+        <PointerContextMenu
           items={contextMenuItems}
           onClose={() => setContextMenu(null)}
           x={contextMenu.x}

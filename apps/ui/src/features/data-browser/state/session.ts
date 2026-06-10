@@ -1,11 +1,18 @@
 import type { AccessObjectRef } from "@data-browser/api/access-types";
-import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
 
-export type DbAccessTabType =
-  | "query"
-  | "table"
-  | "collection"
-  | "redis_key_detail";
+export type DbAccessTabType = "table" | "collection" | "redis_key_detail";
+
+export type DbAccessServiceTab = "backup";
+
+export type DbAccessActiveSurface =
+  | {
+      kind: "service";
+      tab: DbAccessServiceTab;
+    }
+  | {
+      kind: "object";
+      tabId: string;
+    };
 
 export interface DbAccessTab {
   collectionName?: string;
@@ -15,13 +22,13 @@ export interface DbAccessTab {
   isDirty?: boolean;
   objectRef?: AccessObjectRef;
   schemaName?: string;
-  sqlContent?: string;
   tableName?: string;
   title: string;
   type: DbAccessTabType;
 }
 
 export interface DbAccessSessionState {
+  activeSurface: DbAccessActiveSurface;
   activeTabId: string | null;
   dbServiceKey: string;
   tabs: DbAccessTab[];
@@ -29,10 +36,25 @@ export interface DbAccessSessionState {
 
 export type DbAccessTabInput = Omit<DbAccessTab, "id"> & { id?: string };
 
+function objectSurface(tabId: string): DbAccessActiveSurface {
+  return { kind: "object", tabId };
+}
+
+function serviceSurface(
+  tab: DbAccessServiceTab = "backup"
+): DbAccessActiveSurface {
+  return { kind: "service", tab };
+}
+
+function surfaceForActiveTab(tabId: string | null): DbAccessActiveSurface {
+  return tabId === null ? serviceSurface() : objectSurface(tabId);
+}
+
 export function createDbAccessSession(
   dbServiceKey: string
 ): DbAccessSessionState {
   return {
+    activeSurface: serviceSurface(),
     activeTabId: null,
     dbServiceKey,
     tabs: [],
@@ -99,17 +121,13 @@ export function openDbAccessTab(
   session: DbAccessSessionState,
   tab: DbAccessTabInput
 ): { session: DbAccessSessionState; tabId: string | null } {
-  if (tab.type === "query" && !DATA_BROWSER_CAPABILITIES.actions.query) {
-    return { session, tabId: null };
-  }
-
-  const existingTab =
-    tab.type === "query" ? undefined : findExistingDbAccessTab(session, tab);
+  const existingTab = findExistingDbAccessTab(session, tab);
 
   if (existingTab) {
     return {
       session: {
         ...session,
+        activeSurface: objectSurface(existingTab.id),
         activeTabId: existingTab.id,
       },
       tabId: existingTab.id,
@@ -126,6 +144,7 @@ export function openDbAccessTab(
   return {
     session: {
       ...session,
+      activeSurface: objectSurface(newTab.id),
       activeTabId: newTab.id,
       tabs: [...session.tabs, newTab],
     },
@@ -145,7 +164,12 @@ export function closeDbAccessTab(
     activeTabId = tabs[Math.min(index, tabs.length - 1)]?.id ?? null;
   }
 
-  return { ...session, activeTabId, tabs };
+  return {
+    ...session,
+    activeSurface: surfaceForActiveTab(activeTabId),
+    activeTabId,
+    tabs,
+  };
 }
 
 export function closeOtherDbAccessTabs(
@@ -157,20 +181,52 @@ export function closeOtherDbAccessTabs(
     return session;
   }
 
-  return { ...session, activeTabId: tabId, tabs: [tab] };
+  return {
+    ...session,
+    activeSurface: objectSurface(tabId),
+    activeTabId: tabId,
+    tabs: [tab],
+  };
 }
 
 export function closeAllDbAccessTabs(
   session: DbAccessSessionState
 ): DbAccessSessionState {
-  return { ...session, activeTabId: null, tabs: [] };
+  return {
+    ...session,
+    activeSurface: serviceSurface(),
+    activeTabId: null,
+    tabs: [],
+  };
 }
 
 export function setActiveDbAccessTab(
   session: DbAccessSessionState,
   tabId: string
 ): DbAccessSessionState {
-  return { ...session, activeTabId: tabId };
+  return {
+    ...session,
+    activeSurface: objectSurface(tabId),
+    activeTabId: tabId,
+  };
+}
+
+export function setActiveDbAccessServiceTab(
+  session: DbAccessSessionState,
+  tab: DbAccessServiceTab
+): DbAccessSessionState {
+  return {
+    ...session,
+    activeSurface: serviceSurface(tab),
+    activeTabId: null,
+  };
+}
+
+export function openDbAccessServiceTab(
+  session: DbAccessSessionState,
+  tab: DbAccessServiceTab
+): DbAccessSessionState {
+  return setActiveDbAccessServiceTab(session, tab);
 }
 
 export function updateDbAccessTab(

@@ -20,6 +20,7 @@ import (
 
 type APResourcesInput struct {
 	Env             []corev1.EnvVar
+	EnvRawSource    string
 	Image           string
 	ImagePullPolicy corev1.PullPolicy
 	Name            string
@@ -106,6 +107,9 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	annotations := map[string]string{}
 	if networkJSON := strings.TrimSpace(input.NetworkJSON); networkJSON != "" {
 		annotations[APDesiredNetworkAnnotation] = networkJSON
+	}
+	if envRawSource := strings.TrimSpace(input.EnvRawSource); envRawSource != "" {
+		annotations[APEnvRawSourceAnnotation] = input.EnvRawSource
 	}
 	if replicaStrategyJSON := apReplicaStrategyJSON(replicaStrategy); replicaStrategyJSON != "" {
 		annotations[APReplicaStrategyAnnotation] = replicaStrategyJSON

@@ -1,4 +1,5 @@
 export interface ContainerEnvRow {
+  compiledReference?: ContainerEnvCompiledReferenceMetadata;
   dbDsn?: ContainerEnvDbDsnReference;
   helper?: ContainerEnvHelperMetadata;
   name: string;
@@ -30,6 +31,7 @@ export interface ContainerEnvDbDsnReference {
 }
 
 export interface ContainerEnvDbDsnSource {
+  engine?: string;
   name: string;
   namespace: string;
   primitiveSecretRefs?: Partial<
@@ -37,6 +39,7 @@ export interface ContainerEnvDbDsnSource {
   >;
   privateDsn?: string;
   publicDsn?: string;
+  variables?: ContainerEnvDbReferenceVariable[];
 }
 
 export interface ContainerEnvDbDsnReferenceTarget {
@@ -48,6 +51,23 @@ export interface ContainerEnvHelperMetadata {
   automatic: boolean;
   sourceDbKey?: string;
   sourceField?: ContainerEnvDbReferenceField;
+}
+
+export interface ContainerEnvDbReferenceVariable {
+  field?: ContainerEnvDbPrimitiveField | "databaseUrl";
+  name: string;
+  type: "alias" | "secret" | "value";
+  value?: string;
+  valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+}
+
+export interface ContainerEnvCompiledReferenceMetadata {
+  expression: string;
+  helpers: {
+    field: ContainerEnvDbPrimitiveField | "databaseUrl";
+    name: string;
+    valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+  }[];
 }
 
 export interface ContainerEnvDbDsnFieldOption {

@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { DATA_BROWSER_CAPABILITIES } from "./capabilities";
 
-test("data browser first version exposes only supported engines and object kinds", () => {
+test("DB Access first version exposes only supported engines and object kinds", () => {
   assert.deepEqual(
     [...DATA_BROWSER_CAPABILITIES.visibleEngines],
     ["POSTGRES", "MYSQL", "MONGODB", "REDIS"]
@@ -14,7 +14,7 @@ test("data browser first version exposes only supported engines and object kinds
   );
 });
 
-test("data browser first version hides write, query, and advanced actions", () => {
+test("DB Access first version hides write, query, and advanced actions", () => {
   assert.equal(DATA_BROWSER_CAPABILITIES.actions.refresh, true);
   assert.equal(DATA_BROWSER_CAPABILITIES.actions.singleObjectExport, true);
   assert.equal(DATA_BROWSER_CAPABILITIES.actions.query, false);

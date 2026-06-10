@@ -1,14 +1,15 @@
-import { Badge } from "@data-browser/components/ui/Badge";
-import { Button } from "@data-browser/components/ui/Button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { Badge } from "@workspace/ui/components/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@data-browser/components/ui/dropdown-menu";
-import { cn } from "@data-browser/lib/utils";
+} from "@workspace/ui/components/dropdown-menu";
+import { cn } from "@workspace/ui/lib/utils";
 import { ArrowDownAZ, ArrowUpAZ, MoreHorizontal, X } from "lucide-react";
 import { simplifyColumnType, useTableView } from "./TableViewProvider";
 
@@ -75,57 +76,63 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
           }
           open={state.activeColumnMenu === column}
         >
-          <DropdownMenuTrigger asChild>
-            <Button
-              className={cn(
-                "absolute top-2 right-2 text-muted-foreground",
-                state.activeColumnMenu === column && "bg-muted text-foreground"
-              )}
-              onClick={(event) => event.stopPropagation()}
-              size="icon-xs"
-              variant="ghost"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <AppIconButton
+                aria-label="Column actions"
+                className={cn(
+                  "absolute top-2 right-2 text-muted-foreground",
+                  state.activeColumnMenu === column &&
+                    "bg-muted text-foreground"
+                )}
+                onClick={(event) => event.stopPropagation()}
+                size="sm"
+                variant="quiet"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </AppIconButton>
+            }
+          />
           <DropdownMenuContent
             align={index === 0 ? "start" : "end"}
             className="w-40"
           >
-            <DropdownMenuLabel className="text-[10px] text-muted-foreground">
-              {"Sort actions"}
-            </DropdownMenuLabel>
-            <DropdownMenuItem
-              className={cn(
-                state.sortColumn === column &&
-                  state.sortDirection === "asc" &&
-                  "bg-primary/5 font-medium text-primary"
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                {"Sort actions"}
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                className={cn(
+                  state.sortColumn === column &&
+                    state.sortDirection === "asc" &&
+                    "bg-primary/5 font-medium text-primary"
+                )}
+                onClick={() => actions.handleSort(column, "asc")}
+              >
+                <ArrowUpAZ className="h-3.5 w-3.5" />
+                {"Sort ascending"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className={cn(
+                  state.sortColumn === column &&
+                    state.sortDirection === "desc" &&
+                    "bg-primary/5 font-medium text-primary"
+                )}
+                onClick={() => actions.handleSort(column, "desc")}
+              >
+                <ArrowDownAZ className="h-3.5 w-3.5" />
+                {"Sort descending"}
+              </DropdownMenuItem>
+              {state.sortColumn === column && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => actions.clearSort()}>
+                    <X className="h-3.5 w-3.5" />
+                    {"Clear sort"}
+                  </DropdownMenuItem>
+                </>
               )}
-              onSelect={() => actions.handleSort(column, "asc")}
-            >
-              <ArrowUpAZ className="h-3.5 w-3.5" />
-              {"Sort ascending"}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className={cn(
-                state.sortColumn === column &&
-                  state.sortDirection === "desc" &&
-                  "bg-primary/5 font-medium text-primary"
-              )}
-              onSelect={() => actions.handleSort(column, "desc")}
-            >
-              <ArrowDownAZ className="h-3.5 w-3.5" />
-              {"Sort descending"}
-            </DropdownMenuItem>
-            {state.sortColumn === column && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => actions.clearSort()}>
-                  <X className="h-3.5 w-3.5" />
-                  {"Clear sort"}
-                </DropdownMenuItem>
-              </>
-            )}
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

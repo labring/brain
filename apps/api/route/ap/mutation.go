@@ -207,6 +207,7 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 	}
 	return orchestration.APResourcesInput{
 		Env:             envVarsFromValue(input["env"]),
+		EnvRawSource:    stringFromMap(input, "envRawSource"),
 		Image:           stringFromMap(input, "image"),
 		ImagePullPolicy: corev1.PullPolicy(stringFromMap(input, "imagePullPolicy")),
 		LivenessProbe:   probeFromInput(input, "liveness"),
@@ -716,6 +717,7 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 	image := container.Image
 	imagePullPolicy := container.ImagePullPolicy
 	env := container.Env
+	envRawSource := current.Annotations[orchestration.APEnvRawSourceAnnotation]
 	startupProbe := container.StartupProbe
 	livenessProbe := container.LivenessProbe
 	readinessProbe := container.ReadinessProbe
@@ -758,6 +760,9 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 		if nextEnv, ok := input["env"].([]interface{}); ok {
 			env = envVarsFromValue(nextEnv)
 		}
+		if value, found := input["envRawSource"]; found {
+			envRawSource = toString(value)
+		}
 		if probes, _ := input["probes"].(map[string]interface{}); probes != nil {
 			if _, found := probes["startup"]; found {
 				startupProbe = probeFromInput(input, "startup")
@@ -792,6 +797,7 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 	}
 	return orchestration.APResourcesInput{
 		Env:             env,
+		EnvRawSource:    envRawSource,
 		Image:           image,
 		ImagePullPolicy: imagePullPolicy,
 		LivenessProbe:   livenessProbe,
@@ -924,6 +930,9 @@ func apDeploymentPatchFromProductPatch(raw json.RawMessage, name string) []byte 
 		}
 		if env, ok := input["env"].([]interface{}); ok {
 			containerPatch["env"] = env
+		}
+		if value, found := input["envRawSource"]; found {
+			annotationsPatch[orchestration.APEnvRawSourceAnnotation] = toString(value)
 		}
 		if network, _ := input["network"].(map[string]interface{}); network != nil {
 			annotationsPatch[orchestration.APDesiredNetworkAnnotation] = networkJSONFromMap(network)

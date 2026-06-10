@@ -1,7 +1,7 @@
+import { BackupServiceSurface } from "@data-browser/backups/BackupServiceSurface";
 import { CollectionDetailView } from "@data-browser/components/database/mongodb/CollectionDetailView";
 import { RedisKeyDetailView } from "@data-browser/components/database/redis/RedisKeyDetailView";
 import { TableDetailView } from "@data-browser/components/database/sql/TableDetailView";
-import { SQLEditorView } from "@data-browser/components/editor/SQLEditorView";
 import {
   type DbAccessTab,
   useDbAccessTabs,
@@ -10,11 +10,14 @@ import { Database } from "lucide-react";
 import { useMemo } from "react";
 
 export function TabContent() {
-  const { tabs, activeTabId, updateTab } = useDbAccessTabs();
-
+  const { tabs, activeTabId, activeSurface } = useDbAccessTabs();
   const activeTab = useMemo(() => {
     return tabs.find((t) => t.id === activeTabId);
   }, [tabs, activeTabId]);
+
+  if (activeSurface.kind === "service") {
+    return <BackupServiceSurface />;
+  }
 
   // When no tabs are open, show empty state
   if (!activeTab) {
@@ -38,22 +41,6 @@ export function TabContent() {
   // Render content based on tab type
   const renderTabContent = (tab: DbAccessTab) => {
     switch (tab.type) {
-      case "query":
-        return (
-          <SQLEditorView
-            context={{
-              dbServiceKey: tab.dbServiceKey,
-              databaseName: tab.databaseName,
-              schemaName: tab.schemaName,
-            }}
-            initialSql={tab.sqlContent}
-            key={tab.id}
-            onSqlChange={(sql) => {
-              updateTab(tab.id, { sqlContent: sql, isDirty: true });
-            }}
-            tabId={tab.id}
-          />
-        );
       case "table":
         if (!(tab.databaseName && tab.tableName && tab.objectRef)) {
           return (

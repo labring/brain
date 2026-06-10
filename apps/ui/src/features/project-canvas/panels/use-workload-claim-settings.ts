@@ -1,10 +1,12 @@
 "use client";
 
+import { API_ROUTES } from "@workspace/api/constants";
 import {
   useBrainProductResource,
   useEntryPointList,
 } from "@workspace/api/hooks";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
+import { ApiUrl } from "@workspace/api/utils";
 import type {
   ContainerEnvVar,
   ContainerSettingsDraft,
@@ -217,6 +219,38 @@ export function useWorkloadClaimSettings(
     /* read-only */
   }, []);
 
+  const resolveEnvValue = useCallback(
+    async (envName: string) => {
+      if (!isApWorkload || readOnly) {
+        throw new Error("Environment value reveal is unavailable.");
+      }
+      const kc = kubeconfig.trim();
+      const n = name.trim();
+      const ns = namespace.trim();
+      const rowName = envName.trim();
+      if (kc === "" || n === "" || ns === "" || rowName === "") {
+        throw new Error("Workload resource or kubeconfig missing.");
+      }
+      const url = new URL(API_ROUTES.ap.envValue, ApiUrl());
+      url.searchParams.set("name", n);
+      url.searchParams.set("namespace", ns);
+      url.searchParams.set("envName", rowName);
+      const response = await fetch(url.toString(), {
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${encodeURIComponent(kc)}`,
+        },
+        method: "GET",
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const body = (await response.json()) as { value?: unknown };
+      return typeof body.value === "string" ? body.value : "";
+    },
+    [isApWorkload, kubeconfig, name, namespace, readOnly]
+  );
+
   const onImageChange = useCallback(
     async (image: string) => {
       if (!isApWorkload || readOnly) {
@@ -255,14 +289,23 @@ export function useWorkloadClaimSettings(
         toast.error("Workload resource or kubeconfig missing.");
         return;
       }
-      setLocalOverride((prev) => ({ ...(prev ?? {}), env }));
+      setLocalOverride((prev) => ({
+        ...(prev ?? {}),
+        env,
+        ...(meta?.envRawSource == null
+          ? {}
+          : { envRawSource: meta.envRawSource }),
+      }));
       const confirmedReferences = meta?.confirmedAddDbDsnReferences ?? [];
       const clearPendingReferences =
         confirmedReferences.length === 0
           ? undefined
           : onAddDbDsnReferenceMutationStart?.(confirmedReferences);
       try {
-        await applyApEnv(kc, body, env, { dbDsnReferenceSources });
+        await applyApEnv(kc, body, env, {
+          dbDsnReferenceSources,
+          envRawSource: meta?.envRawSource,
+        });
         toast.success("Environment applied.");
         await revalidateAfterApMutation();
       } catch (e) {
@@ -427,6 +470,7 @@ export function useWorkloadClaimSettings(
       const previous: ContainerSettingsDraft = meta?.baseDraft ?? {
         cpuCores: display.cpuCores,
         env: display.env,
+        envRawSource: display.envRawSource,
         image: display.image,
         memoryMib: display.memoryMib,
         ...(display.network == null ? {} : { network: display.network }),
@@ -456,6 +500,7 @@ export function useWorkloadClaimSettings(
     [
       display.cpuCores,
       display.env,
+      display.envRawSource,
       display.image,
       display.memoryMib,
       display.network,
@@ -483,6 +528,7 @@ export function useWorkloadClaimSettings(
     isApWorkload,
     isLoading: isLoading || (isApWorkload && entryPointsLoading),
     onEnvChange,
+    onEnvResolvedValue: resolveEnvValue,
     onImageChange,
     onNetworkChange,
     onNetworkDraftCommit,

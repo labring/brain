@@ -37,6 +37,9 @@ func DBObjectFromCluster(cluster *unstructured.Unstructured) map[string]interfac
 	if storageSize, found := dbComponentStorageSize(component); found {
 		productSpec["storageSize"] = storageSize
 	}
+	if backupPolicy := dbBackupPolicyFromSpec(spec); backupPolicy != nil {
+		productSpec["backupPolicy"] = backupPolicy
+	}
 	statusRaw, _ := cluster.Object["status"].(map[string]interface{})
 	phase := dbPhase(statusRaw)
 	return map[string]interface{}{
@@ -78,6 +81,30 @@ func dbPrimaryComponent(cluster *unstructured.Unstructured, engine string) map[s
 	}
 	component, _ := components[0].(map[string]interface{})
 	return component
+}
+
+func dbBackupPolicyFromSpec(spec interface{}) map[string]interface{} {
+	specMap, _ := spec.(map[string]interface{})
+	if specMap == nil {
+		return nil
+	}
+	backup, _ := specMap["backup"].(map[string]interface{})
+	if backup == nil {
+		return nil
+	}
+	policy := map[string]interface{}{}
+	if enabled, ok := backup["enabled"].(bool); ok {
+		policy["enabled"] = enabled
+	}
+	for _, key := range []string{"cronExpression", "retentionPeriod"} {
+		if value, ok := backup[key].(string); ok && strings.TrimSpace(value) != "" {
+			policy[key] = strings.TrimSpace(value)
+		}
+	}
+	if len(policy) == 0 {
+		return nil
+	}
+	return policy
 }
 
 func dbComponentStorageSize(component map[string]interface{}) (string, bool) {

@@ -3,36 +3,20 @@
 import { MainLayout } from "@data-browser/components/layout/MainLayout";
 import { DbAccessSessionProvider } from "@data-browser/state/db-access-session";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import { isDataBrowserEngineVisible } from "./capabilities";
+import type { DataBrowserHostContext } from "./api/access-types";
 import { DataBrowserRuntimeProvider, useDataBrowserRuntime } from "./runtime";
 
 export interface DataBrowserPaneProps {
   kubeconfig: string;
   namespace: string;
+  onDbServiceRestoreAccepted?: DataBrowserHostContext["onDbServiceRestoreAccepted"];
   projectId: string;
+  refreshProjectCanvas?: () => Promise<unknown>;
   selectedDatabaseData: CanvasDatabaseNodeData;
 }
 
 function DataBrowserPaneBody() {
   const runtime = useDataBrowserRuntime();
-  const engineVisible = isDataBrowserEngineVisible(runtime.engine);
-
-  if (!engineVisible) {
-    return (
-      <div className="grid h-full min-h-64 place-items-center p-8">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-4">
-          <h3 className="m-0 font-medium text-sm leading-5">
-            {"Unsupported database engine"}
-          </h3>
-          <p className="mt-1.5 mb-0 text-[13px] text-muted-foreground leading-5">
-            {
-              "This database engine is not available in the first browser version."
-            }
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <DbAccessSessionProvider runtime={runtime}>
@@ -44,6 +28,8 @@ function DataBrowserPaneBody() {
 export function DataBrowserPane({
   kubeconfig,
   namespace,
+  onDbServiceRestoreAccepted,
+  refreshProjectCanvas,
   projectId,
   selectedDatabaseData,
 }: DataBrowserPaneProps) {
@@ -51,7 +37,9 @@ export function DataBrowserPane({
     <DataBrowserRuntimeProvider
       kubeconfig={kubeconfig}
       namespace={namespace}
+      onDbServiceRestoreAccepted={onDbServiceRestoreAccepted}
       projectId={projectId}
+      refreshProjectCanvas={refreshProjectCanvas}
       selectedDatabaseData={selectedDatabaseData}
     >
       <div className="dark flex h-full min-h-0 w-full overflow-hidden text-foreground">
