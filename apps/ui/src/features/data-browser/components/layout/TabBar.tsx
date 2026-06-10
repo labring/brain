@@ -1,20 +1,20 @@
-import { Button } from "@data-browser/components/ui/Button";
-import { ContextMenu } from "@data-browser/components/ui/ContextMenu";
-import { ScrollArea } from "@data-browser/components/ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@data-browser/components/ui/tooltip";
+import { PointerContextMenu } from "@data-browser/components/shared/PointerContextMenu";
 import { cn } from "@data-browser/lib/utils";
 import {
   type DbAccessTab,
   type DbAccessTabType,
   useDbAccessTabs,
 } from "@data-browser/state/db-access-session";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import {
   Database,
-  FileCode,
+  KeyRound,
   SplitSquareHorizontal,
   Table,
   X,
@@ -26,14 +26,14 @@ function getTabIcon(type: DbAccessTabType, isActive: boolean) {
   const iconClassName = cn("h-4 w-4", isActive && "text-blue-400");
 
   switch (type) {
-    case "query":
-      return <FileCode className={iconClassName} />;
     case "table":
       return <Table className={iconClassName} />;
     case "collection":
       return <Database className={iconClassName} />;
+    case "redis_key_detail":
+      return <KeyRound className={iconClassName} />;
     default:
-      return <FileCode className={iconClassName} />;
+      return <Database className={iconClassName} />;
   }
 }
 
@@ -87,25 +87,28 @@ function TabItem({
         {tab.isDirty && <span className="ml-1 text-primary">•</span>}
       </span>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            className={cn(
-              "flex-shrink-0 cursor-pointer text-muted-foreground transition-colors",
-              isActive ? "hover:bg-muted-foreground/20" : "hover:bg-input"
-            )}
-            data-qa-action="close"
-            data-qa-module="layout"
-            data-qa-object="tab"
-            data-qa-resource-id={tab.id}
-            data-qa-resource-type="tab"
-            data-testid="layout.tab.close-button"
-            onClick={onClose}
-            size="icon-xs"
-            variant="ghost"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <AppIconButton
+              aria-label={closeTitle}
+              className={cn(
+                "flex-shrink-0 cursor-pointer text-muted-foreground transition-colors",
+                isActive ? "hover:bg-muted-foreground/20" : "hover:bg-input"
+              )}
+              data-qa-action="close"
+              data-qa-module="layout"
+              data-qa-object="tab"
+              data-qa-resource-id={tab.id}
+              data-qa-resource-type="tab"
+              data-testid="layout.tab.close-button"
+              onClick={onClose}
+              size="sm"
+              variant="quiet"
+            >
+              <X className="h-4 w-4" />
+            </AppIconButton>
+          }
+        />
         <TooltipContent>{closeTitle}</TooltipContent>
       </Tooltip>
     </div>
@@ -183,7 +186,7 @@ export function TabBar() {
       </div>
 
       {contextMenu && (
-        <ContextMenu
+        <PointerContextMenu
           items={[
             {
               label: "Close tab",

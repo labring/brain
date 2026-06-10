@@ -108,7 +108,7 @@ const DbAccessRuntimeContext = createContext<DataBrowserHostContext | null>(
 
 function disabledMutation(..._args: unknown[]): Promise<DDLResult> {
   return Promise.resolve({
-    message: "This database browser is read-only in the current version.",
+    message: "DB Access is read-only in the current version.",
     success: false,
   });
 }

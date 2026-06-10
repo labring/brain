@@ -28,7 +28,7 @@ const databaseData = {
   },
 } satisfies CanvasDatabaseNodeData;
 
-test("data browser runtime is derived from host project and selected database", () => {
+test("DB Access runtime is derived from host project and selected database", () => {
   const refreshProjectCanvas = async () => undefined;
   const runtime = createDataBrowserHostContext({
     kubeconfig: " kube ",
@@ -61,7 +61,7 @@ test("data browser runtime is derived from host project and selected database", 
   assert.equal(runtime.engine, "POSTGRES");
 });
 
-test("data browser runtime parts are stable across equivalent database node snapshots", () => {
+test("DB Access runtime parts are stable across equivalent database node snapshots", () => {
   const nextDatabaseData = {
     backupPolicy: { ...databaseData.backupPolicy },
     backups: [],

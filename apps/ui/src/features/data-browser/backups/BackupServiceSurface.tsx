@@ -18,17 +18,15 @@ import {
   dbServiceBackupNeedsRefresh,
   isDbServiceBackupSupportedEngine,
 } from "@data-browser/backups/backup-summary";
-import { ConfirmationModal } from "@data-browser/components/ui/ConfirmationModal";
-import { Checkbox } from "@data-browser/components/ui/checkbox";
-import { Dialog, DialogContent } from "@data-browser/components/ui/dialog";
-import { Input } from "@data-browser/components/ui/Input";
-import { ModalForm, useModalForm } from "@data-browser/components/ui/ModalForm";
+import { DbAccessConfirmationDialog } from "@data-browser/components/shared/DbAccessDialogs";
 import { cn } from "@data-browser/lib/utils";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import { SingleSelect } from "@workspace/ui/components/single-select";
 import { Switch } from "@workspace/ui/components/switch";
 import {
@@ -49,10 +47,7 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
-  createContext,
   type FormEvent,
-  type ReactNode,
-  use,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -760,7 +755,7 @@ function BackupCreationForm({
 
   return (
     <form
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex min-h-0 w-full flex-col"
       data-qa-module="database"
       data-qa-object="backup-create-form"
       data-qa-state={disabled ? "disabled" : "ready"}
@@ -837,7 +832,7 @@ function BackupCreationForm({
         </div>
       </div>
 
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
         <div className="min-w-0">
           {disabled && disabledReason !== undefined ? (
             <p
@@ -896,132 +891,6 @@ function BackupCreationForm({
   );
 }
 
-interface RestoreModalContextValue {
-  restoredName: string;
-  setRestoredName: (name: string) => void;
-  validationError: string | null;
-}
-
-const RestoreModalContext = createContext<RestoreModalContextValue | null>(
-  null
-);
-
-function useRestoreModalContext(): RestoreModalContextValue {
-  const context = use(RestoreModalContext);
-  if (context === null) {
-    throw new Error(
-      "useRestoreModalContext must be used within RestoreModalProvider"
-    );
-  }
-  return context;
-}
-
-function RestoreModalProvider({
-  backup,
-  children,
-  existingNames,
-  onSuccess,
-}: {
-  backup: DbServiceBackupSummary;
-  children: ReactNode;
-  existingNames: readonly string[];
-  onSuccess: () => void;
-}) {
-  const runtime = useDbAccessRuntime();
-  const [restoredName, setRestoredName] = useState("");
-  const validationError = validateRestoredDbServiceName(
-    restoredName,
-    existingNames
-  );
-  const handleSubmit = useCallback(async () => {
-    if (validationError !== null) {
-      throw new Error(validationError);
-    }
-    await submitDbServiceBackupRestore({
-      backupName: backup.name,
-      backupNamespace: backup.namespace,
-      kubeconfig: runtime.kubeconfig,
-      name: runtime.databaseWorkloadName,
-      namespace: runtime.databaseWorkloadNamespace,
-      restoredName,
-    });
-    onSuccess();
-  }, [
-    backup.name,
-    backup.namespace,
-    onSuccess,
-    restoredName,
-    runtime.databaseWorkloadName,
-    runtime.databaseWorkloadNamespace,
-    runtime.kubeconfig,
-    validationError,
-  ]);
-
-  return (
-    <RestoreModalContext
-      value={{
-        restoredName,
-        setRestoredName,
-        validationError,
-      }}
-    >
-      <ModalForm.Provider
-        meta={{
-          description: `${backup.namespace}/${backup.name}`,
-          icon: ArchiveRestore,
-          title: "Restore DB Service Backup",
-        }}
-        onSubmit={handleSubmit}
-      >
-        {children}
-      </ModalForm.Provider>
-    </RestoreModalContext>
-  );
-}
-
-function RestoreModalFields() {
-  const { restoredName, setRestoredName, validationError } =
-    useRestoreModalContext();
-  const { state } = useModalForm();
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="font-medium text-foreground text-sm">
-        {"New DB Service name"}
-      </label>
-      <Input
-        aria-invalid={validationError !== null}
-        data-qa-module="database"
-        data-qa-object="restore-name"
-        data-qa-state={validationError === null ? "valid" : "invalid"}
-        data-testid="database.backup.restore-name-input"
-        disabled={state.isSubmitting}
-        onChange={(event) => setRestoredName(event.target.value)}
-        placeholder={"orders-restore"}
-        value={restoredName}
-      />
-      {validationError !== null && (
-        <p
-          className="m-0 text-[13px] text-destructive leading-5"
-          data-testid="database.backup.restore-name-error"
-        >
-          {validationError}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function RestoreSubmitButton() {
-  const { validationError } = useRestoreModalContext();
-  return (
-    <ModalForm.SubmitButton
-      disabled={validationError !== null}
-      label={"Restore"}
-    />
-  );
-}
-
 function RestoreBackupModal({
   backup,
   existingNames,
@@ -1033,26 +902,128 @@ function RestoreBackupModal({
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }) {
+  const runtime = useDbAccessRuntime();
+  const [restoredName, setRestoredName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const validationError =
+    backup === null
+      ? null
+      : validateRestoredDbServiceName(restoredName, existingNames);
+
+  useEffect(() => {
+    if (backup !== null) {
+      setRestoredName("");
+      setSubmitError(null);
+      setIsSubmitting(false);
+    }
+  }, [backup]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (backup === null || validationError !== null || isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await submitDbServiceBackupRestore({
+        backupName: backup.name,
+        backupNamespace: backup.namespace,
+        kubeconfig: runtime.kubeconfig,
+        name: runtime.databaseWorkloadName,
+        namespace: runtime.databaseWorkloadNamespace,
+        restoredName,
+      });
+      onSuccess();
+      onOpenChange(false);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "DB Service backup restore failed."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <Dialog onOpenChange={onOpenChange} open={backup !== null}>
-      <DialogContent>
+    <AppDialog.Root
+      onOpenChange={(open) => {
+        if (!(isSubmitting && !open)) {
+          onOpenChange(open);
+        }
+      }}
+      open={backup !== null}
+    >
+      <AppDialog.Content aria-describedby={undefined}>
         {backup !== null && (
-          <RestoreModalProvider
-            backup={backup}
-            existingNames={existingNames}
-            onSuccess={onSuccess}
-          >
-            <ModalForm.Header />
-            <RestoreModalFields />
-            <ModalForm.Alert />
-            <ModalForm.Footer>
-              <ModalForm.CancelButton />
-              <RestoreSubmitButton />
-            </ModalForm.Footer>
-          </RestoreModalProvider>
+          <form onSubmit={handleSubmit}>
+            <AppDialog.Header>
+              <AppDialog.Icon>
+                <ArchiveRestore aria-hidden />
+              </AppDialog.Icon>
+              <div className="min-w-0">
+                <AppDialog.Title>{"Restore DB Service Backup"}</AppDialog.Title>
+                <AppDialog.Description className="truncate">
+                  {`${backup.namespace}/${backup.name}`}
+                </AppDialog.Description>
+              </div>
+            </AppDialog.Header>
+            <AppDialog.Body>
+              <AppDialog.Field>
+                <AppDialog.Label>{"New DB Service name"}</AppDialog.Label>
+                <AppDialog.Input
+                  aria-invalid={validationError !== null}
+                  data-qa-module="database"
+                  data-qa-object="restore-name"
+                  data-qa-state={validationError === null ? "valid" : "invalid"}
+                  data-testid="database.backup.restore-name-input"
+                  disabled={isSubmitting}
+                  onChange={(event) => setRestoredName(event.target.value)}
+                  placeholder="orders-restore"
+                  value={restoredName}
+                />
+                {validationError === null ? null : (
+                  <p
+                    className="m-0 text-[13px] text-destructive leading-5"
+                    data-testid="database.backup.restore-name-error"
+                  >
+                    {validationError}
+                  </p>
+                )}
+              </AppDialog.Field>
+              {submitError === null ? null : (
+                <div
+                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive-foreground"
+                  data-qa-module="database"
+                  data-qa-object="backup-restore-error"
+                  data-qa-state="error"
+                  data-testid="database.backup.restore-error"
+                >
+                  {submitError}
+                </div>
+              )}
+            </AppDialog.Body>
+            <AppDialog.Footer>
+              <AppDialog.Cancel disabled={isSubmitting}>
+                {"Cancel"}
+              </AppDialog.Cancel>
+              <AppDialog.Action
+                disabled={validationError !== null || isSubmitting}
+                loading={isSubmitting}
+                loadingLabel="Restoring..."
+                type="submit"
+              >
+                {"Restore"}
+              </AppDialog.Action>
+            </AppDialog.Footer>
+          </form>
         )}
-      </DialogContent>
-    </Dialog>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }
 
@@ -1255,7 +1226,7 @@ function BackupPolicyForm({
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex min-h-0 w-full flex-col"
       data-qa-module="database"
       data-qa-object="backup-policy"
       data-qa-state={form.enabled ? "enabled" : "disabled"}
@@ -1373,7 +1344,7 @@ function BackupPolicyForm({
         </div>
       )}
 
-      <div className="mt-auto flex justify-end gap-2 pt-4">
+      <div className="flex justify-end gap-2 pt-4">
         <AppButton
           data-qa-action="reset"
           data-qa-module="database"
@@ -1457,9 +1428,13 @@ function BackupMethodToggle({
 
   useEffect(() => {
     updateIndicator();
-    const targets = [manualRef.current, policyRef.current].filter(
-      (target): target is HTMLElement => target != null
-    );
+    const targets: Element[] = [];
+    if (manualRef.current !== null) {
+      targets.push(manualRef.current);
+    }
+    if (policyRef.current !== null) {
+      targets.push(policyRef.current);
+    }
 
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", updateIndicator);
@@ -1582,7 +1557,7 @@ function BackupMethodPanel({
 
   return (
     <section
-      className="flex min-h-[276px] flex-col rounded-lg bg-input/30 p-4"
+      className="flex w-full min-w-0 flex-col rounded-lg bg-input/30 p-4"
       data-qa-module="database"
       data-qa-object="backup-method"
       data-qa-state={mode}
@@ -1605,7 +1580,7 @@ function BackupMethodPanel({
         policySwitchDisabled={isPolicySaving}
       />
 
-      <div className="mt-5 flex min-h-0 flex-1">
+      <div className="mt-5 flex min-h-0 w-full min-w-0">
         {mode === "manual" ? (
           <BackupCreationForm
             disabled={createDisabled}
@@ -1789,7 +1764,7 @@ export function BackupServiceSurface() {
   return (
     <section
       aria-busy={isLoading || undefined}
-      className="@container/backup-surface flex min-h-0 min-w-0 flex-1 flex-col gap-2.5 px-3 pb-3"
+      className="@container/backup-surface flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2.5 px-3 pb-3"
       data-qa-db-service-key={`${runtime.projectId}:${runtime.databaseWorkloadNamespace}:${runtime.databaseWorkloadName}`}
       data-qa-module="database"
       data-qa-object="backup-surface"
@@ -1857,7 +1832,7 @@ export function BackupServiceSurface() {
         }}
         onSuccess={handleRestoreSuccess}
       />
-      <ConfirmationModal
+      <DbAccessConfirmationDialog
         cancelText="Cancel"
         confirmText="Delete"
         isDestructive

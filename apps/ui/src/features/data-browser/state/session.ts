@@ -1,11 +1,6 @@
 import type { AccessObjectRef } from "@data-browser/api/access-types";
-import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
 
-export type DbAccessTabType =
-  | "query"
-  | "table"
-  | "collection"
-  | "redis_key_detail";
+export type DbAccessTabType = "table" | "collection" | "redis_key_detail";
 
 export type DbAccessServiceTab = "backup";
 
@@ -27,7 +22,6 @@ export interface DbAccessTab {
   isDirty?: boolean;
   objectRef?: AccessObjectRef;
   schemaName?: string;
-  sqlContent?: string;
   tableName?: string;
   title: string;
   type: DbAccessTabType;
@@ -127,12 +121,7 @@ export function openDbAccessTab(
   session: DbAccessSessionState,
   tab: DbAccessTabInput
 ): { session: DbAccessSessionState; tabId: string | null } {
-  if (tab.type === "query" && !DATA_BROWSER_CAPABILITIES.actions.query) {
-    return { session, tabId: null };
-  }
-
-  const existingTab =
-    tab.type === "query" ? undefined : findExistingDbAccessTab(session, tab);
+  const existingTab = findExistingDbAccessTab(session, tab);
 
   if (existingTab) {
     return {

@@ -11,7 +11,7 @@ import {
   entryPointsToCanvasState,
 } from "./ap-list-to-canvas-state";
 
-test("DB canvas node data preserves raw status backups for Data Browser", () => {
+test("DB canvas node data preserves raw status backups for DB Access", () => {
   const rawBackups = [
     {
       metadata: {
@@ -34,7 +34,7 @@ test("DB canvas node data preserves raw status backups for Data Browser", () => 
   assert.equal(data.backups, rawBackups);
 });
 
-test("DB canvas node data preserves backup policy for Data Browser", () => {
+test("DB canvas node data preserves backup policy for DB Access", () => {
   const backupPolicy = {
     cronExpression: "15 8 * * *",
     enabled: true,

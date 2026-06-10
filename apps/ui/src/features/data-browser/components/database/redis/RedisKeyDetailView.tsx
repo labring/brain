@@ -12,26 +12,27 @@ import {
   useFindBar,
 } from "@data-browser/components/database/shared/FindBar";
 import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
-import { Button } from "@data-browser/components/ui/Button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@data-browser/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@data-browser/components/ui/tooltip";
 import { cn } from "@data-browser/lib/utils";
 import {
   useDbAccessRefresh,
   useDbAccessRuntime,
 } from "@data-browser/state/db-access-session";
 import type { TableData } from "@data-browser/utils/graphql-transforms";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import {
   ArrowDownAZ,
   ArrowUpAZ,
@@ -92,7 +93,7 @@ interface RedisKeyDetailViewProps {
   objectRef: AccessObjectRef;
 }
 
-/** Displays and allows inline editing of a single Redis key's contents. */
+/** Displays a single Redis key's contents in the read-only DB Access surface. */
 export function RedisKeyDetailView({
   databaseName,
   dbServiceKey,
@@ -138,7 +139,7 @@ export function RedisKeyDetailView({
     startWidth: number;
   } | null>(null);
 
-  // ---- Delete confirmation ----
+  // ---- Export state ----
   const [showExport, setShowExport] = useState(false);
 
   // ---- Ref for race-condition prevention ----
@@ -368,41 +369,46 @@ export function RedisKeyDetailView({
         >
           <div className="flex items-center gap-1">
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  data-qa-action="refresh"
-                  data-qa-disabled-reason={loading ? "loading" : undefined}
-                  data-qa-module="redis"
-                  data-qa-object="key-data"
-                  data-qa-state={loading ? "loading" : "ready"}
-                  data-testid="redis.key.refresh-button"
-                  disabled={loading}
-                  onClick={refresh}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <RefreshCw
-                    className={cn("h-4 w-4", loading && "animate-spin")}
-                  />
-                </Button>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <AppIconButton
+                    aria-label="Refresh"
+                    data-qa-action="refresh"
+                    data-qa-disabled-reason={loading ? "loading" : undefined}
+                    data-qa-module="redis"
+                    data-qa-object="key-data"
+                    data-qa-state={loading ? "loading" : "ready"}
+                    data-testid="redis.key.refresh-button"
+                    disabled={loading}
+                    onClick={refresh}
+                    size="md"
+                    variant="quiet"
+                  >
+                    <RefreshCw
+                      className={cn("h-4 w-4", loading && "animate-spin")}
+                    />
+                  </AppIconButton>
+                }
+              />
               <TooltipContent>{"Refresh"}</TooltipContent>
             </Tooltip>
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  aria-label="Export"
-                  data-qa-action="export"
-                  data-qa-module="redis"
-                  data-qa-object="key-data"
-                  data-testid="redis.key.export-button"
-                  onClick={() => setShowExport(true)}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <AppIconButton
+                    aria-label="Export"
+                    data-qa-action="export"
+                    data-qa-module="redis"
+                    data-qa-object="key-data"
+                    data-testid="redis.key.export-button"
+                    onClick={() => setShowExport(true)}
+                    size="md"
+                    variant="quiet"
+                  >
+                    <Download className="h-4 w-4" />
+                  </AppIconButton>
+                }
+              />
               <TooltipContent>{"Export"}</TooltipContent>
             </Tooltip>
           </div>
@@ -421,13 +427,14 @@ export function RedisKeyDetailView({
             data-testid="redis.key.error"
           >
             <span>{error}</span>
-            <Button
+            <AppIconButton
+              aria-label="Dismiss error"
               onClick={() => setError(null)}
-              size="icon-xs"
-              variant="ghost"
+              size="sm"
+              variant="quiet"
             >
               <X className="h-3 w-3" />
-            </Button>
+            </AppIconButton>
           </div>
         )}
 
@@ -499,58 +506,63 @@ export function RedisKeyDetailView({
                           }
                           open={activeColumnMenu === col}
                         >
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              className={cn(
-                                "absolute top-2 right-2 text-muted-foreground",
-                                activeColumnMenu === col &&
-                                  "bg-muted text-foreground"
-                              )}
-                              onClick={(e) => e.stopPropagation()}
-                              size="icon-xs"
-                              variant="ghost"
-                            >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
-                            </Button>
-                          </DropdownMenuTrigger>
+                          <DropdownMenuTrigger
+                            render={
+                              <AppIconButton
+                                aria-label="Column actions"
+                                className={cn(
+                                  "absolute top-2 right-2 text-muted-foreground",
+                                  activeColumnMenu === col &&
+                                    "bg-muted text-foreground"
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                                size="sm"
+                                variant="quiet"
+                              >
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </AppIconButton>
+                            }
+                          />
                           <DropdownMenuContent
                             align={colIdx === 0 ? "start" : "end"}
                             className="w-40"
                           >
-                            <DropdownMenuLabel className="text-[10px] text-muted-foreground">
-                              {"Sort actions"}
-                            </DropdownMenuLabel>
-                            <DropdownMenuItem
-                              className={cn(
-                                sortColumn === col &&
-                                  sortDirection === "asc" &&
-                                  "bg-primary/5 font-medium text-primary"
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                                {"Sort actions"}
+                              </DropdownMenuLabel>
+                              <DropdownMenuItem
+                                className={cn(
+                                  sortColumn === col &&
+                                    sortDirection === "asc" &&
+                                    "bg-primary/5 font-medium text-primary"
+                                )}
+                                onClick={() => handleSort(col, "asc")}
+                              >
+                                <ArrowUpAZ className="h-3.5 w-3.5" />
+                                {"Sort ascending"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className={cn(
+                                  sortColumn === col &&
+                                    sortDirection === "desc" &&
+                                    "bg-primary/5 font-medium text-primary"
+                                )}
+                                onClick={() => handleSort(col, "desc")}
+                              >
+                                <ArrowDownAZ className="h-3.5 w-3.5" />
+                                {"Sort descending"}
+                              </DropdownMenuItem>
+                              {sortColumn === col && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={clearSort}>
+                                    <X className="h-3.5 w-3.5" />
+                                    {"Clear sort"}
+                                  </DropdownMenuItem>
+                                </>
                               )}
-                              onSelect={() => handleSort(col, "asc")}
-                            >
-                              <ArrowUpAZ className="h-3.5 w-3.5" />
-                              {"Sort ascending"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className={cn(
-                                sortColumn === col &&
-                                  sortDirection === "desc" &&
-                                  "bg-primary/5 font-medium text-primary"
-                              )}
-                              onSelect={() => handleSort(col, "desc")}
-                            >
-                              <ArrowDownAZ className="h-3.5 w-3.5" />
-                              {"Sort descending"}
-                            </DropdownMenuItem>
-                            {sortColumn === col && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onSelect={clearSort}>
-                                  <X className="h-3.5 w-3.5" />
-                                  {"Clear sort"}
-                                </DropdownMenuItem>
-                              </>
-                            )}
+                            </DropdownMenuGroup>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>

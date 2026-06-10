@@ -1,4 +1,8 @@
-export type { Alert } from "@data-browser/components/ui/types";
+export interface Alert {
+  message: string;
+  title: string;
+  type: "success" | "error" | "info";
+}
 
 /** Props for the shared pagination controls. */
 export interface PaginationProps {

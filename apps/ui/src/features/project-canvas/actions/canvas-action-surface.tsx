@@ -144,7 +144,7 @@ export function MainActionSurface({
       onClose={onClose}
       open={open}
       subtitle={states?.name}
-      title="Data Browser"
+      title="DB Access"
     >
       {model == null ? null : (
         <DataBrowserPane

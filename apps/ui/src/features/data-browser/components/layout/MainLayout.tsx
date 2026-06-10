@@ -1,6 +1,6 @@
 import { Sidebar } from "@data-browser/components/sidebar/Sidebar";
-import { TooltipProvider } from "@data-browser/components/ui/tooltip";
 import { useDbAccessTabs } from "@data-browser/state/db-access-session";
+import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ServiceTabBar } from "./ServiceTabBar";
 import { TabBar } from "./TabBar";

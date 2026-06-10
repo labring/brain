@@ -19,12 +19,12 @@ const CLOSE_LABEL_RE = /Close Main Action Surface/;
 const LABEL_RE = /aria-label="Main Action Surface"/;
 const CENTERED_NAME_RE =
   /<p class="[^"]*text-center[^"]*" title="orders-db">orders-db<\/p>/;
-const DATA_BROWSER_TITLE_RE =
-  /<h2 class="[^"]*" title="Data Browser">Data Browser<\/h2>/;
+const DB_ACCESS_TITLE_RE =
+  /<h2 class="[^"]*" title="DB Access">DB Access<\/h2>/;
 const ACTION_SURFACE_BACKGROUND_RE = /bg-neutral-950/;
 const MAIN_ACTION_SURFACE_BACKGROUND_RE = /main-action-surface-background/;
 const MAIN_ACTION_BODY_BACKGROUND_RE = /main-action-surface-body-background/;
-const DATA_BROWSER_RE = /text-foreground/;
+const DB_ACCESS_RE = /text-foreground/;
 const ENGINE_SUBTITLE_RE = /Database PostgreSQL 16.4/;
 const ASSISTANT_TOGGLE_OFFSET_RE = /pr-12/;
 const CUSTOM_BODY_RE = /Resource logs/;
@@ -74,13 +74,13 @@ test("main action surface renders shared chrome and empty body slot", () => {
 
   assert.match(html, LABEL_RE);
   assert.match(html, CENTERED_NAME_RE);
-  assert.match(html, DATA_BROWSER_TITLE_RE);
+  assert.match(html, DB_ACCESS_TITLE_RE);
   assert.doesNotMatch(html, ENGINE_SUBTITLE_RE);
   assert.match(html, CLOSE_LABEL_RE);
   assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
-  assert.match(html, DATA_BROWSER_RE);
+  assert.match(html, DB_ACCESS_RE);
 });
 
 test("main action surface frame renders custom surface content", () => {
@@ -121,7 +121,7 @@ test("main action surface stays absent without supported entry data", () => {
   assert.equal(html, "");
 });
 
-test("main action surface disables database browser when requested", () => {
+test("main action surface disables DB Access when requested", () => {
   const html = renderToStaticMarkup(
     <MainActionSurface
       dbAccessEnabled={false}

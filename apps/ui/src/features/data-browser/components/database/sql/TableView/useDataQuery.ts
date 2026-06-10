@@ -26,7 +26,6 @@ interface UseDataQueryParams {
 
 /** State returned by useDataQuery. */
 export interface DataQueryState {
-  canEdit: boolean;
   data: TableData | null;
   error: string | null;
   foreignKeyColumns: string[];
@@ -143,7 +142,6 @@ export function useDataQuery(params: UseDataQueryParams): {
     setRefreshKey((prev) => prev + 1);
   }, []);
 
-  const canEdit = false;
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / pageSize);
 
@@ -156,7 +154,6 @@ export function useDataQuery(params: UseDataQueryParams): {
       foreignKeyColumns,
       total,
       totalPages,
-      canEdit,
     },
     actions: { refresh, handleSubmitRequest },
   };
