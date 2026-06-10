@@ -17,6 +17,7 @@ export interface DataBrowserRuntimeProviderProps {
   children: ReactNode;
   kubeconfig: string;
   namespace: string;
+  onDbServiceRestoreAccepted?: DataBrowserHostContext["onDbServiceRestoreAccepted"];
   projectId: string;
   refreshProjectCanvas?: () => Promise<unknown>;
   selectedDatabaseData: CanvasDatabaseNodeData;
@@ -96,12 +97,17 @@ function dataBrowserHostContextFromParts({
   engine,
   kubeconfig,
   namespace,
+  onDbServiceRestoreAccepted,
   projectId,
   refreshProjectCanvas,
 }: DataBrowserRuntimeParts &
   Pick<
     DataBrowserRuntimeProviderProps,
-    "kubeconfig" | "namespace" | "projectId" | "refreshProjectCanvas"
+    | "kubeconfig"
+    | "namespace"
+    | "onDbServiceRestoreAccepted"
+    | "projectId"
+    | "refreshProjectCanvas"
   >): DataBrowserHostContext {
   return {
     ...(backupPolicy === undefined ? {} : { backupPolicy }),
@@ -127,6 +133,9 @@ function dataBrowserHostContextFromParts({
     engine,
     kubeconfig,
     namespace,
+    ...(onDbServiceRestoreAccepted === undefined
+      ? {}
+      : { onDbServiceRestoreAccepted }),
     projectId,
     ...(refreshProjectCanvas === undefined ? {} : { refreshProjectCanvas }),
   };
@@ -135,6 +144,7 @@ function dataBrowserHostContextFromParts({
 export function createDataBrowserHostContext({
   kubeconfig,
   namespace,
+  onDbServiceRestoreAccepted,
   projectId,
   refreshProjectCanvas,
   selectedDatabaseData,
@@ -142,6 +152,7 @@ export function createDataBrowserHostContext({
   return dataBrowserHostContextFromParts({
     kubeconfig,
     namespace,
+    onDbServiceRestoreAccepted,
     projectId,
     refreshProjectCanvas,
     ...dataBrowserRuntimeParts(selectedDatabaseData),
@@ -152,6 +163,7 @@ export function DataBrowserRuntimeProvider({
   children,
   kubeconfig,
   namespace,
+  onDbServiceRestoreAccepted,
   projectId,
   refreshProjectCanvas,
   selectedDatabaseData,
@@ -185,6 +197,7 @@ export function DataBrowserRuntimeProvider({
         engine,
         kubeconfig,
         namespace,
+        onDbServiceRestoreAccepted,
         projectId,
         refreshProjectCanvas,
       }),
@@ -200,6 +213,7 @@ export function DataBrowserRuntimeProvider({
       engine,
       kubeconfig,
       namespace,
+      onDbServiceRestoreAccepted,
       projectId,
       refreshProjectCanvas,
       rawBackups,

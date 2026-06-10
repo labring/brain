@@ -88,6 +88,7 @@ export function ProjectCanvasWorkbenchSurfaces({
         model={dbAccessMain}
         namespace={namespace}
         onClose={workbench.closeMainSurface}
+        onDbServiceRestoreAccepted={workbench.onDbServiceRestoreAccepted}
         projectId={projectId}
         refreshProjectCanvas={refreshWorkloadLists}
       />

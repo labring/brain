@@ -84,6 +84,11 @@ export interface DataBrowserDBServiceBackupPolicy {
   retentionPeriod?: string;
 }
 
+export interface DataBrowserRestoredDbServiceTarget {
+  name: string;
+  namespace: string;
+}
+
 export interface DataBrowserHostContext {
   backupPolicy?: DataBrowserDBServiceBackupPolicy;
   backups?: unknown[];
@@ -95,6 +100,9 @@ export interface DataBrowserHostContext {
   engine: DataBrowserEngine;
   kubeconfig: string;
   namespace: string;
+  onDbServiceRestoreAccepted?: (
+    target: DataBrowserRestoredDbServiceTarget
+  ) => void;
   projectId: string;
   refreshProjectCanvas?: () => Promise<unknown>;
 }

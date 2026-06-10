@@ -64,6 +64,7 @@ import {
   type ProjectCanvasSideRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
 import {
+  findCanvasNodeForProjectTarget,
   projectApTargetFromNode,
   projectDbTargetFromNode,
   projectSelectionNode,
@@ -74,6 +75,13 @@ import {
   type ProjectCanvasCommandPlan,
   planProjectCanvasCommand,
 } from "@/features/project-canvas/workbench/command-model";
+import {
+  canvasSelectionForRestoredDbService,
+  DB_RESTORE_CANVAS_FOCUS_TIMEOUT_MS,
+  type PendingDbServiceRestoreFocus,
+  restoredDbServiceTargetFromAccepted,
+  shouldCancelPendingDbServiceRestoreFocus,
+} from "@/features/project-canvas/workbench/db-restore-focus";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
 import type {
@@ -81,6 +89,7 @@ import type {
   ProjectMainSurfaceEntry,
   ProjectSideSurfaceEntry,
 } from "@/features/project-surfaces/surface-state";
+import type { ProjectDbTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 export interface UseProjectCanvasOptions {
@@ -364,6 +373,7 @@ export function useProjectCanvas(
     [options?.kubeconfig, readOnly]
   );
   const addDbDsnReferenceIntentCounter = useRef(0);
+  const dbServiceRestoreFocusId = useRef(0);
   const pendingApDbReferenceDraftCleanupById = useRef<Map<string, () => void>>(
     new Map()
   );
@@ -380,6 +390,12 @@ export function useProjectCanvas(
   >(() => new Map());
   const [pendingAddDbDsnReferenceIntent, setPendingAddDbDsnReferenceIntent] =
     useState<PendingAddDbDsnReferenceIntent | null>(null);
+  const [pendingDbServiceRestoreFocus, setPendingDbServiceRestoreFocus] =
+    useState<PendingDbServiceRestoreFocus | null>(null);
+  const [
+    restoredDbServiceViewportFocusTarget,
+    setRestoredDbServiceViewportFocusTarget,
+  ] = useState<ProjectDbTarget | null>(null);
   const {
     registerSettingsLeaveGuard,
     requestSettingsLeave,
@@ -467,6 +483,28 @@ export function useProjectCanvas(
   const onNodeExpansionChange = options?.onNodeExpansionChange;
   const onNodePositionChange = options?.onNodePositionChange;
   const onNodeStackOrderChange = options?.onNodeStackOrderChange;
+  const onDbServiceRestoreAccepted = useCallback(
+    (target: { name: string; namespace: string }) => {
+      const restoredTarget = restoredDbServiceTargetFromAccepted(target);
+      const sourceTarget =
+        surfaceState.main?.kind === "dbAccess"
+          ? surfaceState.main.target
+          : null;
+      refreshWorkloadLists?.().catch(() => undefined);
+
+      if (restoredTarget == null || sourceTarget == null) {
+        return;
+      }
+
+      dbServiceRestoreFocusId.current += 1;
+      setPendingDbServiceRestoreFocus({
+        id: dbServiceRestoreFocusId.current,
+        restoredTarget,
+        sourceTarget,
+      });
+    },
+    [refreshWorkloadLists, surfaceState.main]
+  );
   const dbDsnReferenceSources = useMemo(
     () =>
       dbDsnReferenceSourcesFromDbsData(options?.dbsData, options?.namespace),
@@ -638,6 +676,7 @@ export function useProjectCanvas(
 
   const executeCommandPlan = useCallback(
     (plan: ProjectCanvasCommandPlan) => {
+      setRestoredDbServiceViewportFocusTarget(null);
       const run = () =>
         executeUnguardedCommandPlan(plan, {
           bringNodeToFront: bringNodeToFrontById,
@@ -1022,14 +1061,82 @@ export function useProjectCanvas(
       }),
     [nodes, surfaceState]
   );
+  const pendingDbServiceRestoreFocusNode = useMemo(
+    () =>
+      pendingDbServiceRestoreFocus == null
+        ? null
+        : findCanvasNodeForProjectTarget(
+            nodes,
+            pendingDbServiceRestoreFocus.restoredTarget
+          ),
+    [nodes, pendingDbServiceRestoreFocus]
+  );
+  const restoredDbServiceViewportFocusNodeId = useMemo(
+    () =>
+      restoredDbServiceViewportFocusTarget == null
+        ? null
+        : (findCanvasNodeForProjectTarget(
+            nodes,
+            restoredDbServiceViewportFocusTarget
+          )?.id ?? null),
+    [nodes, restoredDbServiceViewportFocusTarget]
+  );
   const viewportFocusNodeId = useMemo(
-    () => viewportFocusNodeIdFromSideRenderModel(surfaceRenderModel.side),
-    [surfaceRenderModel.side]
+    () =>
+      viewportFocusNodeIdFromSideRenderModel(surfaceRenderModel.side) ??
+      restoredDbServiceViewportFocusNodeId,
+    [restoredDbServiceViewportFocusNodeId, surfaceRenderModel.side]
   );
   const viewportFocusActive = useMemo(
-    () => sideRenderModelHasViewportFocusSession(surfaceRenderModel.side),
-    [surfaceRenderModel.side]
+    () =>
+      sideRenderModelHasViewportFocusSession(surfaceRenderModel.side) ||
+      restoredDbServiceViewportFocusNodeId !== null,
+    [restoredDbServiceViewportFocusNodeId, surfaceRenderModel.side]
   );
+
+  useEffect(() => {
+    if (
+      pendingDbServiceRestoreFocus == null ||
+      !shouldCancelPendingDbServiceRestoreFocus({
+        main: surfaceState.main,
+        pending: pendingDbServiceRestoreFocus,
+      })
+    ) {
+      return;
+    }
+    setPendingDbServiceRestoreFocus(null);
+  }, [pendingDbServiceRestoreFocus, surfaceState.main]);
+
+  useEffect(() => {
+    if (pendingDbServiceRestoreFocus == null) {
+      return;
+    }
+    const pendingId = pendingDbServiceRestoreFocus.id;
+    const timeout = window.setTimeout(() => {
+      setPendingDbServiceRestoreFocus((current) =>
+        current?.id === pendingId ? null : current
+      );
+    }, DB_RESTORE_CANVAS_FOCUS_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [pendingDbServiceRestoreFocus]);
+
+  useEffect(() => {
+    if (
+      pendingDbServiceRestoreFocus == null ||
+      pendingDbServiceRestoreFocusNode == null
+    ) {
+      return;
+    }
+
+    const restoredTarget = pendingDbServiceRestoreFocus.restoredTarget;
+    setPendingDbServiceRestoreFocus(null);
+    setRestoredDbServiceViewportFocusTarget(restoredTarget);
+    focusCanvasSelection(canvasSelectionForRestoredDbService(restoredTarget));
+  }, [
+    focusCanvasSelection,
+    pendingDbServiceRestoreFocus,
+    pendingDbServiceRestoreFocusNode,
+  ]);
 
   useEffect(() => {
     if (selectedNode == null) {
@@ -1132,6 +1239,7 @@ export function useProjectCanvas(
   }, [closeDrawerRoute]);
 
   const clearSelection = useCallback(() => {
+    setRestoredDbServiceViewportFocusTarget(null);
     clearCanvasFocus();
   }, [clearCanvasFocus]);
 
@@ -1238,6 +1346,7 @@ export function useProjectCanvas(
     connectionOrigin,
     meta,
     nodes,
+    onDbServiceRestoreAccepted,
     openDrawerSurface,
     openMainSurface,
     openSideSurface,

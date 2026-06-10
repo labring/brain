@@ -137,7 +137,7 @@ The automatic backup rule for one DB Service. A DB Service has at most one curre
 
 ### DB Service Restore
 
-The act of creating a new DB Service from a DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project Canvas and namespace as the source DB Service. The restored DB Service inherits the source DB Service's database settings unless the product explicitly offers restore-time overrides.
+The act of creating a new DB Service from a DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project Canvas and namespace as the source DB Service. After the restored DB Service appears, it becomes the user's next Project Canvas focus. The restored DB Service inherits the source DB Service's database settings unless the product explicitly offers restore-time overrides.
 
 ### Logical Database
 

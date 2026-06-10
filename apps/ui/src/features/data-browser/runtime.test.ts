@@ -30,9 +30,11 @@ const databaseData = {
 
 test("DB Access runtime is derived from host project and selected database", () => {
   const refreshProjectCanvas = async () => undefined;
+  const onDbServiceRestoreAccepted = () => undefined;
   const runtime = createDataBrowserHostContext({
     kubeconfig: " kube ",
     namespace: "project-ns",
+    onDbServiceRestoreAccepted,
     refreshProjectCanvas,
     projectId: "project-uid",
     selectedDatabaseData: databaseData,
@@ -42,6 +44,7 @@ test("DB Access runtime is derived from host project and selected database", () 
   assert.equal(runtime.kubeconfig, " kube ");
   assert.equal(runtime.namespace, "project-ns");
   assert.equal(runtime.refreshProjectCanvas, refreshProjectCanvas);
+  assert.equal(runtime.onDbServiceRestoreAccepted, onDbServiceRestoreAccepted);
   assert.equal(runtime.databaseWorkloadName, "orders-db-claim");
   assert.equal(runtime.databaseWorkloadNamespace, "database-system");
   assert.deepEqual(runtime.dbService, {

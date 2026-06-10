@@ -3,11 +3,13 @@
 import { MainLayout } from "@data-browser/components/layout/MainLayout";
 import { DbAccessSessionProvider } from "@data-browser/state/db-access-session";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
+import type { DataBrowserHostContext } from "./api/access-types";
 import { DataBrowserRuntimeProvider, useDataBrowserRuntime } from "./runtime";
 
 export interface DataBrowserPaneProps {
   kubeconfig: string;
   namespace: string;
+  onDbServiceRestoreAccepted?: DataBrowserHostContext["onDbServiceRestoreAccepted"];
   projectId: string;
   refreshProjectCanvas?: () => Promise<unknown>;
   selectedDatabaseData: CanvasDatabaseNodeData;
@@ -26,6 +28,7 @@ function DataBrowserPaneBody() {
 export function DataBrowserPane({
   kubeconfig,
   namespace,
+  onDbServiceRestoreAccepted,
   refreshProjectCanvas,
   projectId,
   selectedDatabaseData,
@@ -34,6 +37,7 @@ export function DataBrowserPane({
     <DataBrowserRuntimeProvider
       kubeconfig={kubeconfig}
       namespace={namespace}
+      onDbServiceRestoreAccepted={onDbServiceRestoreAccepted}
       projectId={projectId}
       refreshProjectCanvas={refreshProjectCanvas}
       selectedDatabaseData={selectedDatabaseData}

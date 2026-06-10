@@ -1007,7 +1007,7 @@ function RestoreBackupModal({
   backup: DbServiceBackupSummary | null;
   existingNames: readonly string[];
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  onSuccess: (restoredName: string) => void;
 }) {
   const runtime = useDbAccessRuntime();
   const [restoredName, setRestoredName] = useState("");
@@ -1048,7 +1048,7 @@ function RestoreBackupModal({
         namespace: runtime.databaseWorkloadNamespace,
         restoredName,
       });
-      onSuccess();
+      onSuccess(restoredName.trim());
       onOpenChange(false);
     } catch (error) {
       setSubmitError(
@@ -1835,12 +1835,27 @@ export function BackupServiceSurface() {
     () => [runtime.databaseWorkloadName],
     [runtime.databaseWorkloadName]
   );
-  const handleRestoreSuccess = useCallback(() => {
-    setRestoreSuccess("Restore request accepted.");
-    setRestoreBackup(null);
-    runtime.refreshProjectCanvas?.().catch(() => undefined);
-    refresh().catch(() => undefined);
-  }, [refresh, runtime.refreshProjectCanvas]);
+  const handleRestoreSuccess = useCallback(
+    (restoredName: string) => {
+      setRestoreSuccess("Restore request accepted.");
+      setRestoreBackup(null);
+      if (runtime.onDbServiceRestoreAccepted === undefined) {
+        runtime.refreshProjectCanvas?.().catch(() => undefined);
+      } else {
+        runtime.onDbServiceRestoreAccepted({
+          name: restoredName,
+          namespace: runtime.databaseWorkloadNamespace,
+        });
+      }
+      refresh().catch(() => undefined);
+    },
+    [
+      refresh,
+      runtime.databaseWorkloadNamespace,
+      runtime.onDbServiceRestoreAccepted,
+      runtime.refreshProjectCanvas,
+    ]
+  );
 
   useEffect(() => {
     if (!needsRefresh) {

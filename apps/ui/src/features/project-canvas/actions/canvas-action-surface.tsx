@@ -6,7 +6,10 @@ import { useAtomValue } from "jotai";
 import { Database, X } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 
-import { DataBrowserPane } from "@/features/data-browser/DataBrowserPane";
+import {
+  DataBrowserPane,
+  type DataBrowserPaneProps,
+} from "@/features/data-browser/DataBrowserPane";
 import type { ProjectCanvasMainRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 
@@ -121,6 +124,7 @@ export interface MainActionSurfaceProps {
     | undefined;
   namespace: string;
   onClose: () => void;
+  onDbServiceRestoreAccepted?: DataBrowserPaneProps["onDbServiceRestoreAccepted"];
   projectId: string;
   refreshProjectCanvas?: () => Promise<unknown>;
 }
@@ -131,6 +135,7 @@ export function MainActionSurface({
   model,
   namespace,
   onClose,
+  onDbServiceRestoreAccepted,
   refreshProjectCanvas,
   projectId,
 }: MainActionSurfaceProps) {
@@ -150,6 +155,7 @@ export function MainActionSurface({
         <DataBrowserPane
           kubeconfig={kubeconfig}
           namespace={namespace}
+          onDbServiceRestoreAccepted={onDbServiceRestoreAccepted}
           projectId={projectId}
           refreshProjectCanvas={refreshProjectCanvas}
           selectedDatabaseData={model.databaseData}
