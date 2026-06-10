@@ -2,6 +2,8 @@ export type ChildResourceKind = "ap" | "db" | "template";
 
 const LOWERCASE_LETTERS = "abcdefghijklmnopqrstuvwxyz";
 const RANDOM_LETTER_COUNT = 6;
+const DNS_1035_MAX_LENGTH = 63;
+const RANDOM_SUFFIX_LENGTH = RANDOM_LETTER_COUNT + 1;
 
 function randomLowercaseLetters(length = RANDOM_LETTER_COUNT): string {
   const bytes = new Uint8Array(length);
@@ -22,8 +24,20 @@ function randomLowercaseLetters(length = RANDOM_LETTER_COUNT): string {
 
 /** Child resource name: `{kind}-{6 random lowercase letters}` (DNS-1035 label). */
 export function childResourceName(
-  _projectName: string,
+  projectName: string,
   kind: ChildResourceKind = "ap"
 ): string {
+  if (kind === "template") {
+    const maxPrefixLength = DNS_1035_MAX_LENGTH - RANDOM_SUFFIX_LENGTH;
+    const prefix = projectName
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, maxPrefixLength)
+      .replace(/-+$/g, "");
+
+    return `${prefix || "template"}-${randomLowercaseLetters()}`;
+  }
+
   return `${kind}-${randomLowercaseLetters()}`;
 }

@@ -1,19 +1,17 @@
 "use client";
 
-import { useAtomValue } from "jotai";
+import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
 import { scheduleChatDevboxWarmup } from "@/lib/devbox.actions";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 /**
- * Hydrates kubeconfig / namespace into Jotai from server props or dev env overrides.
- *
- * Access control: {@link fetchProjectCredentialsOrUnauthorized} in `app/project/layout.tsx`
- * calls `unauthorized()` from `next/navigation` when SealOS credentials are empty and there is
- * no dev bypass (`NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`). That must stay on the server — `unauthorized()` cannot be
- * invoked from this client module.
+ * Hydrates kubeconfig / namespace into Jotai from dev env or an optional
+ * server fallback. Desktop iframe auth is resolved by {@link SealosSdkBootstrap}
+ * because the desktop cookie can point at the wrong workspace.
  */
 
 interface AuthBootstrapProps {
@@ -51,6 +49,45 @@ export default function AuthBootstrap({
     [kubeconfigAtom, kubeconfig],
     [namespaceAtom, namespace],
   ]);
+
+  return null;
+}
+
+export function SealosSdkBootstrap() {
+  const setKubeconfig = useSetAtom(kubeconfigAtom);
+  const setNamespace = useSetAtom(namespaceAtom);
+
+  const loadSession = useCallback(async () => {
+    try {
+      const session = await sealosApp.getSession();
+      const kubeconfig = session.kubeconfig.trim();
+      if (kubeconfig === "") {
+        return;
+      }
+      setKubeconfig(kubeconfig);
+      setNamespace(namespaceFromKubeconfigText(kubeconfig) ?? "");
+    } catch (error) {
+      if (!process.env.NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG) {
+        console.warn("[SealosSdkBootstrap] desktop session unavailable", error);
+      }
+    }
+  }, [setKubeconfig, setNamespace]);
+
+  useEffect(() => {
+    const cleanup = createSealosApp();
+    loadSession().catch(() => undefined);
+    const removeUserUpdateListener = sealosApp?.addAppEventListen(
+      "user-update",
+      () => {
+        loadSession().catch(() => undefined);
+      }
+    );
+
+    return () => {
+      removeUserUpdateListener?.();
+      cleanup?.();
+    };
+  }, [loadSession]);
 
   return null;
 }

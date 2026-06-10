@@ -7,6 +7,7 @@ import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
+import { Aurora } from "@/components/aurora";
 import { ProjectCreationPane } from "@/components/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/components/project-creation-pane-state";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
@@ -154,12 +155,12 @@ export default function ProjectIndexPage() {
               "linear-gradient(to bottom, black 0%, black 58%, transparent 94%)",
           }}
         />
-        <div
-          className="absolute inset-0 z-10"
-          style={{
-            backgroundImage:
-              "radial-gradient(ellipse 60% 40% at 50% 100%, color-mix(in oklab, var(--color-blue-500) 22%, transparent), transparent 70%)",
-          }}
+        <Aurora
+          amplitude={1.35}
+          blend={0.42}
+          className={styles.ambientAurora}
+          colorStops={["#0a0a0a", "#1d4ed8", "#0a0a0a"]}
+          speed={0.5}
         />
       </div>
       <div

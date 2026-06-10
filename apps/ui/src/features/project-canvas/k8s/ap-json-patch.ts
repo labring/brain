@@ -2,8 +2,10 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import type {
+  ContainerConfigMapMount,
   ContainerEnvVar,
   ContainerNetwork,
+  ContainerStorageMount,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import {
   CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
@@ -89,6 +91,9 @@ interface ApNetworkSettingsPatchOptions {
 }
 
 export interface ApSettingsDraftPatch {
+  args?: readonly string[];
+  command?: readonly string[];
+  configMaps?: readonly ContainerConfigMapMount[];
   cpuCores?: number;
   env?: readonly ContainerEnvVar[];
   image?: string;
@@ -96,12 +101,78 @@ export interface ApSettingsDraftPatch {
   network?: ApNetworkSettingsPatch;
   replicaStrategy?: ApReplicaStrategy;
   replicas?: number;
+  storage?: readonly ContainerStorageMount[];
 }
 
 function asRecord(v: unknown): Record<string, unknown> | undefined {
   return v != null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : undefined;
+}
+
+function normalizeStringList(value: readonly string[] | undefined): string[] {
+  return (value ?? []).map((item) => item.trim()).filter(Boolean);
+}
+
+function stringListsEqual(
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined
+): boolean {
+  const left = normalizeStringList(a);
+  const right = normalizeStringList(b);
+  return (
+    left.length === right.length && left.every((item, i) => item === right[i])
+  );
+}
+
+function normalizeConfigMapMounts(
+  value: readonly ContainerConfigMapMount[] | undefined
+): ContainerConfigMapMount[] {
+  return (value ?? [])
+    .map((item) => ({ path: item.path.trim(), value: item.value }))
+    .filter((item) => item.path !== "" || item.value !== "");
+}
+
+function configMapMountsEqual(
+  a: readonly ContainerConfigMapMount[] | undefined,
+  b: readonly ContainerConfigMapMount[] | undefined
+): boolean {
+  const left = normalizeConfigMapMounts(a);
+  const right = normalizeConfigMapMounts(b);
+  return (
+    left.length === right.length &&
+    left.every((item, i) => {
+      const other = right[i];
+      return (
+        other != null && item.path === other.path && item.value === other.value
+      );
+    })
+  );
+}
+
+function normalizeStorageMounts(
+  value: readonly ContainerStorageMount[] | undefined
+): ContainerStorageMount[] {
+  return (value ?? [])
+    .map((item) => ({ path: item.path.trim(), size: item.size.trim() }))
+    .filter((item) => item.path !== "" || item.size !== "");
+}
+
+function storageMountsEqual(
+  a: readonly ContainerStorageMount[] | undefined,
+  b: readonly ContainerStorageMount[] | undefined
+): boolean {
+  const left = normalizeStorageMounts(a);
+  const right = normalizeStorageMounts(b);
+  return (
+    left.length === right.length &&
+    left.every((item, i) => {
+      const other = right[i];
+      return (
+        other != null && item.path === other.path && item.size === other.size
+      );
+    })
+  );
 }
 
 function assertApProductForPatch(
@@ -943,6 +1014,37 @@ export function patchOpsForApNetworkSettings(
   return ops;
 }
 
+function appendApSettingsDraftLaunchPatch(
+  inputPatch: Record<string, unknown>,
+  next: ApSettingsDraftPatch,
+  previous: ApSettingsDraftPatch
+): void {
+  if (
+    next.command !== undefined &&
+    !stringListsEqual(next.command, previous.command)
+  ) {
+    inputPatch.command = normalizeStringList(next.command);
+  }
+
+  if (next.args !== undefined && !stringListsEqual(next.args, previous.args)) {
+    inputPatch.args = normalizeStringList(next.args);
+  }
+
+  if (
+    next.configMaps !== undefined &&
+    !configMapMountsEqual(next.configMaps, previous.configMaps)
+  ) {
+    inputPatch.configMaps = normalizeConfigMapMounts(next.configMaps);
+  }
+
+  if (
+    next.storage !== undefined &&
+    !storageMountsEqual(next.storage, previous.storage)
+  ) {
+    inputPatch.storage = normalizeStorageMounts(next.storage);
+  }
+}
+
 function patchOpsForApSettingsDraftInput(
   spec: Record<string, unknown> | undefined,
   next: ApSettingsDraftPatch,
@@ -976,6 +1078,8 @@ function patchOpsForApSettingsDraftInput(
     }
     inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
   }
+
+  appendApSettingsDraftLaunchPatch(inputPatch, next, previous);
 
   if (
     next.network !== undefined &&

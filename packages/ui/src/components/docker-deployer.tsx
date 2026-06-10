@@ -5,23 +5,29 @@ import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { DeploymentSettings } from "@workspace/ui/components/deployment-settings/deployment-settings";
 import { Spinner } from "@workspace/ui/components/spinner";
+import { Textarea } from "@workspace/ui/components/textarea";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,
+  type DockerDeploymentConfigMap,
   type DockerDeploymentEnvVar,
   type DockerDeploymentSettings,
+  type DockerDeploymentStorageMount,
   normalizeDockerDeploymentSettings,
   validateDockerDeploymentSettings,
 } from "@workspace/ui/lib/docker-deployment-settings";
 import { cn } from "@workspace/ui/lib/utils";
 import {
+  HardDrive,
   Network,
   Package,
   Plus,
   Rocket,
+  ScrollText,
   Settings2,
+  TerminalSquare,
   Trash2,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 export type {
@@ -33,11 +39,31 @@ interface DockerDeploymentEnvRowState extends DockerDeploymentEnvVar {
   id: string;
 }
 
+interface DockerDeploymentConfigMapRowState extends DockerDeploymentConfigMap {
+  id: string;
+}
+
+interface DockerDeploymentStorageRowState extends DockerDeploymentStorageMount {
+  id: string;
+}
+
 let envRowIdSequence = 0;
+let configMapRowIdSequence = 0;
+let storageRowIdSequence = 0;
 
 function createEnvRowId(): string {
   envRowIdSequence += 1;
   return `docker-env-${envRowIdSequence}`;
+}
+
+function createConfigMapRowId(): string {
+  configMapRowIdSequence += 1;
+  return `docker-config-map-${configMapRowIdSequence}`;
+}
+
+function createStorageRowId(): string {
+  storageRowIdSequence += 1;
+  return `docker-storage-${storageRowIdSequence}`;
 }
 
 function nextEnvName(rows: readonly DockerDeploymentEnvRowState[]): string {
@@ -62,6 +88,36 @@ function envErrorForIndex(
   );
 }
 
+function rowErrorForIndex(
+  validation: ReturnType<typeof validateDockerDeploymentSettings>,
+  field: "configMaps" | "storage",
+  index: number
+) {
+  return validation.errors.find(
+    (error) => error.field === field && error.index === index
+  );
+}
+
+function splitCommandLine(value: string): string[] {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function AppTextarea({ className, ...props }: ComponentProps<typeof Textarea>) {
+  return (
+    <Textarea
+      className={cn(
+        "min-h-20 border-input bg-transparent text-foreground text-sm placeholder:text-muted-foreground dark:bg-transparent",
+        "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
 export function DockerDeployer({
   busy = false,
   childrenBeforeDeploy,
@@ -80,7 +136,22 @@ export function DockerDeployer({
   onSettingsChange?: (settings: DockerDeploymentSettings) => void;
 }) {
   const [image, setImage] = useState(initialSettings?.image ?? "");
+  const [commandText, setCommandText] = useState(
+    initialSettings?.command?.join("\n") ?? ""
+  );
+  const [argsText, setArgsText] = useState(
+    initialSettings?.args?.join("\n") ?? ""
+  );
   const [imageTouched, setImageTouched] = useState(false);
+  const [configMapRows, setConfigMapRows] = useState<
+    DockerDeploymentConfigMapRowState[]
+  >(
+    () =>
+      initialSettings?.configMaps?.map((row) => ({
+        ...row,
+        id: createConfigMapRowId(),
+      })) ?? []
+  );
   const [envRows, setEnvRows] = useState<DockerDeploymentEnvRowState[]>(
     () =>
       initialSettings?.env.map((row) => ({
@@ -93,14 +164,38 @@ export function DockerDeployer({
       initialSettings?.appListeningPort ?? DEFAULT_DOCKER_APP_LISTENING_PORT
     )
   );
+  const [storageRows, setStorageRows] = useState<
+    DockerDeploymentStorageRowState[]
+  >(
+    () =>
+      initialSettings?.storage?.map((row) => ({
+        ...row,
+        id: createStorageRowId(),
+      })) ?? []
+  );
 
   const settings = useMemo<DockerDeploymentSettings>(
     () => ({
       appListeningPort: Number(appListeningPort),
+      args: splitCommandLine(argsText),
+      command: splitCommandLine(commandText),
+      configMaps: configMapRows.map((row) => ({
+        path: row.path,
+        value: row.value,
+      })),
       env: envRows.map((row) => ({ name: row.name, value: row.value })),
       image,
+      storage: storageRows.map((row) => ({ path: row.path, size: row.size })),
     }),
-    [appListeningPort, envRows, image]
+    [
+      appListeningPort,
+      argsText,
+      commandText,
+      configMapRows,
+      envRows,
+      image,
+      storageRows,
+    ]
   );
   const validation = useMemo(
     () => validateDockerDeploymentSettings(settings),
@@ -156,6 +251,33 @@ export function DockerDeployer({
               </p>
             ) : null}
           </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
+
+        <DeploymentSettings.Section
+          description="Override the image default startup process."
+          icon={<TerminalSquare aria-hidden className="size-4" />}
+          title="Launch"
+        >
+          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <DeploymentSettings.Field label="Command">
+              <AppTextarea
+                aria-label="Launch command"
+                disabled={busy}
+                onChange={(event) => setCommandText(event.currentTarget.value)}
+                placeholder="/app/server"
+                value={commandText}
+              />
+            </DeploymentSettings.Field>
+            <DeploymentSettings.Field label="Args">
+              <AppTextarea
+                aria-label="Launch args"
+                disabled={busy}
+                onChange={(event) => setArgsText(event.currentTarget.value)}
+                placeholder={"--config\n/etc/app/config.yaml"}
+                value={argsText}
+              />
+            </DeploymentSettings.Field>
+          </div>
         </DeploymentSettings.Section>
 
         <DeploymentSettings.Section
@@ -261,6 +383,202 @@ export function DockerDeployer({
                   );
                 })}
               </div>
+            )}
+          </div>
+        </DeploymentSettings.Section>
+
+        <DeploymentSettings.Section
+          action={
+            <AppIconButton
+              aria-label="Add config file"
+              disabled={busy}
+              onClick={() =>
+                setConfigMapRows((rows) => [
+                  ...rows,
+                  {
+                    id: createConfigMapRowId(),
+                    path: "/etc/app/config.yaml",
+                    value: "",
+                  },
+                ])
+              }
+              size="md"
+              type="button"
+              variant="quiet"
+            >
+              <Plus aria-hidden className="size-4" />
+            </AppIconButton>
+          }
+          description="Mount file contents into the container."
+          icon={<ScrollText aria-hidden className="size-4" />}
+          title="Config Files"
+        >
+          <div className="flex min-w-0 flex-col gap-2">
+            {configMapRows.length === 0 ? (
+              <AppInput
+                aria-label="Config files"
+                disabled
+                readOnly
+                value="No config files."
+              />
+            ) : (
+              configMapRows.map((row, index) => {
+                const rowError = rowErrorForIndex(
+                  validation,
+                  "configMaps",
+                  index
+                );
+                return (
+                  <div
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2"
+                    key={row.id}
+                  >
+                    <AppInput
+                      aria-invalid={rowError ? true : undefined}
+                      aria-label={`Config file ${index + 1} path`}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const path = event.currentTarget.value;
+                        setConfigMapRows((rows) =>
+                          rows.map((current, rowIndex) =>
+                            rowIndex === index ? { ...current, path } : current
+                          )
+                        );
+                      }}
+                      placeholder="/etc/app/config.yaml"
+                      value={row.path}
+                    />
+                    <AppTextarea
+                      aria-label={`Config file ${index + 1} value`}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        setConfigMapRows((rows) =>
+                          rows.map((current, rowIndex) =>
+                            rowIndex === index ? { ...current, value } : current
+                          )
+                        );
+                      }}
+                      placeholder="file contents"
+                      value={row.value}
+                    />
+                    <AppIconButton
+                      aria-label="Remove config file"
+                      className="hover:text-red-500"
+                      disabled={busy}
+                      onClick={() =>
+                        setConfigMapRows((rows) =>
+                          rows.filter((_, rowIndex) => rowIndex !== index)
+                        )
+                      }
+                      size="lg"
+                      type="button"
+                      variant="quiet"
+                    >
+                      <Trash2 aria-hidden className="size-4" />
+                    </AppIconButton>
+                    {rowError ? (
+                      <p className="col-span-3 text-destructive text-xs leading-4">
+                        {rowError.message}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DeploymentSettings.Section>
+
+        <DeploymentSettings.Section
+          action={
+            <AppIconButton
+              aria-label="Add storage mount"
+              disabled={busy}
+              onClick={() =>
+                setStorageRows((rows) => [
+                  ...rows,
+                  { id: createStorageRowId(), path: "/data", size: "1Gi" },
+                ])
+              }
+              size="md"
+              type="button"
+              variant="quiet"
+            >
+              <Plus aria-hidden className="size-4" />
+            </AppIconButton>
+          }
+          description="Persist data at container paths."
+          icon={<HardDrive aria-hidden className="size-4" />}
+          title="Storage"
+        >
+          <div className="flex min-w-0 flex-col gap-2">
+            {storageRows.length === 0 ? (
+              <AppInput
+                aria-label="Storage mounts"
+                disabled
+                readOnly
+                value="No storage mounts."
+              />
+            ) : (
+              storageRows.map((row, index) => {
+                const rowError = rowErrorForIndex(validation, "storage", index);
+                return (
+                  <div
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_7rem_2.25rem] gap-2"
+                    key={row.id}
+                  >
+                    <AppInput
+                      aria-invalid={rowError ? true : undefined}
+                      aria-label={`Storage ${index + 1} path`}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const path = event.currentTarget.value;
+                        setStorageRows((rows) =>
+                          rows.map((current, rowIndex) =>
+                            rowIndex === index ? { ...current, path } : current
+                          )
+                        );
+                      }}
+                      placeholder="/data"
+                      value={row.path}
+                    />
+                    <AppInput
+                      aria-label={`Storage ${index + 1} size`}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const size = event.currentTarget.value;
+                        setStorageRows((rows) =>
+                          rows.map((current, rowIndex) =>
+                            rowIndex === index ? { ...current, size } : current
+                          )
+                        );
+                      }}
+                      placeholder="1Gi"
+                      value={row.size}
+                    />
+                    <AppIconButton
+                      aria-label="Remove storage mount"
+                      className="hover:text-red-500"
+                      disabled={busy}
+                      onClick={() =>
+                        setStorageRows((rows) =>
+                          rows.filter((_, rowIndex) => rowIndex !== index)
+                        )
+                      }
+                      size="lg"
+                      type="button"
+                      variant="quiet"
+                    >
+                      <Trash2 aria-hidden className="size-4" />
+                    </AppIconButton>
+                    {rowError ? (
+                      <p className="col-span-3 text-destructive text-xs leading-4">
+                        {rowError.message}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })
             )}
           </div>
         </DeploymentSettings.Section>

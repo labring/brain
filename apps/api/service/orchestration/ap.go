@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -19,28 +20,68 @@ import (
 )
 
 type APResourcesInput struct {
-	Env             []corev1.EnvVar
-	Image           string
-	ImagePullPolicy corev1.PullPolicy
-	Name            string
-	Namespace       string
-	PrivatePort     int32
-	ProjectID       string
-	Replicas        int32
-	LivenessProbe   *corev1.Probe
-	ResourceLimit   corev1.ResourceList
-	ResourceReq     corev1.ResourceList
-	RoutingDomain   string
-	NetworkJSON     string
-	ReadinessProbe  *corev1.Probe
-	ReplicaStrategy *APReplicaStrategy
-	StartupProbe    *corev1.Probe
+	Args             []string
+	Command          []string
+	ConfigMaps       []APConfigMapMount
+	Env              []corev1.EnvVar
+	Image            string
+	ImagePullSecrets []corev1.LocalObjectReference
+	ImagePullPolicy  corev1.PullPolicy
+	ImageRegistry    *APImageRegistry
+	Name             string
+	Namespace        string
+	PrivatePort      int32
+	ProjectID        string
+	Replicas         int32
+	LivenessProbe    *corev1.Probe
+	ResourceLimit    corev1.ResourceList
+	ResourceReq      corev1.ResourceList
+	RoutingDomain    string
+	NetworkJSON      string
+	ReadinessProbe   *corev1.Probe
+	ReplicaStrategy  *APReplicaStrategy
+	RestartRequest   *int64
+	Storage          []APStorageMount
+	StorageTemplate  []APStorageMount
+	StartupProbe     *corev1.Probe
+	WorkloadKind     APWorkloadKind
 }
 
 type APResources struct {
-	Deployment *appsv1.Deployment
-	HPA        *autoscalingv2.HorizontalPodAutoscaler
-	Service    *corev1.Service
+	Deployment      *appsv1.Deployment
+	ConfigMap       *corev1.ConfigMap
+	HPA             *autoscalingv2.HorizontalPodAutoscaler
+	ImagePullSecret *corev1.Secret
+	Service         *corev1.Service
+	StatefulSet     *appsv1.StatefulSet
+}
+
+type APWorkloadKind string
+
+const (
+	APWorkloadKindDeployment  APWorkloadKind = "deployment"
+	APWorkloadKindStatefulSet APWorkloadKind = "statefulset"
+)
+
+const (
+	APStorageMountPathAnnotation = "brain.io/mount-path"
+	APStorageSizeAnnotation      = "brain.io/storage-size"
+)
+
+type APConfigMapMount struct {
+	Path  string
+	Value string
+}
+
+type APStorageMount struct {
+	Path string
+	Size string
+}
+
+type APImageRegistry struct {
+	Password      string
+	ServerAddress string
+	Username      string
 }
 
 type APReplicaStrategy struct {
@@ -84,6 +125,32 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 		replicas = replicaStrategy.Elastic.MinReplicas
 	}
 
+	workloadKind, err := normalizeAPWorkloadKind(input.WorkloadKind, input.Storage)
+	if err != nil {
+		return nil, err
+	}
+	configMaps, err := normalizeAPConfigMapMounts(input.ConfigMaps)
+	if err != nil {
+		return nil, err
+	}
+	storage, err := normalizeAPStorageMounts(input.Storage)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateAPVolumeNames(name, configMaps, storage); err != nil {
+		return nil, err
+	}
+	storageTemplate := storage
+	if len(input.StorageTemplate) > 0 {
+		storageTemplate, err = normalizeAPStorageMounts(input.StorageTemplate)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAPVolumeNames(name, configMaps, storageTemplate); err != nil {
+			return nil, err
+		}
+	}
+
 	labels := mergeStringMap(
 		brainLabels(projectID, ResourceKindAP, name),
 		map[string]string{
@@ -110,6 +177,24 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	if replicaStrategyJSON := apReplicaStrategyJSON(replicaStrategy); replicaStrategyJSON != "" {
 		annotations[APReplicaStrategyAnnotation] = replicaStrategyJSON
 	}
+	if storageJSON := apStorageJSON(storage); storageJSON != "" {
+		annotations[APDesiredStorageAnnotation] = storageJSON
+	}
+	if input.RestartRequest != nil {
+		if *input.RestartRequest < 0 {
+			return nil, fmt.Errorf("restartRequest must be non-negative")
+		}
+		annotations[APRestartRequestAnnotation] = fmt.Sprintf("%d", *input.RestartRequest)
+	}
+	imagePullSecrets := normalizeAPImagePullSecrets(input.ImagePullSecrets)
+	var imagePullSecret *corev1.Secret
+	if input.ImageRegistry != nil {
+		imagePullSecret, err = renderAPImagePullSecret(name, namespace, managerLabels, input.ImageRegistry)
+		if err != nil {
+			return nil, err
+		}
+		imagePullSecrets = appendAPImagePullSecret(imagePullSecrets, imagePullSecret.Name)
+	}
 	requests := input.ResourceReq
 	if requests == nil {
 		requests = corev1.ResourceList{
@@ -125,45 +210,24 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 		}
 	}
 
-	deployment := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "apps/v1",
-			Kind:       "Deployment",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: annotations,
-			Labels:      managerLabels,
-			Name:        name,
-			Namespace:   namespace,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{LaunchpadAppLabel: name},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Env:             input.Env,
-							Image:           image,
-							ImagePullPolicy: normalizeImagePullPolicy(input.ImagePullPolicy),
-							LivenessProbe:   input.LivenessProbe,
-							Name:            name,
-							Ports:           apContainerPorts(appListeningPorts),
-							ReadinessProbe:  input.ReadinessProbe,
-							Resources: corev1.ResourceRequirements{
-								Limits:   limits,
-								Requests: requests,
-							},
-							StartupProbe: input.StartupProbe,
-						},
-					},
-				},
-			},
-		},
-	}
+	podTemplate := apPodTemplate(apPodTemplateInput{
+		Args:             input.Args,
+		Command:          input.Command,
+		ConfigMaps:       configMaps,
+		Env:              input.Env,
+		Image:            image,
+		ImagePullSecrets: imagePullSecrets,
+		ImagePullPolicy:  input.ImagePullPolicy,
+		Labels:           labels,
+		Limits:           limits,
+		LivenessProbe:    input.LivenessProbe,
+		Name:             name,
+		Ports:            appListeningPorts,
+		ReadinessProbe:   input.ReadinessProbe,
+		Requests:         requests,
+		StartupProbe:     input.StartupProbe,
+		Storage:          storage,
+	})
 
 	service := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -183,13 +247,442 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	}
 
 	resources := &APResources{
-		Deployment: deployment,
-		Service:    service,
+		ImagePullSecret: imagePullSecret,
+		Service:         service,
 	}
+	if len(configMaps) > 0 {
+		resources.ConfigMap = renderAPConfigMap(name, namespace, managerLabels, configMaps)
+	}
+
+	if workloadKind == APWorkloadKindStatefulSet {
+		resources.StatefulSet = &appsv1.StatefulSet{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "apps/v1",
+				Kind:       "StatefulSet",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: annotations,
+				Labels:      managerLabels,
+				Name:        name,
+				Namespace:   namespace,
+			},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{LaunchpadAppLabel: name},
+				},
+				ServiceName:          APServiceName(name),
+				Template:             podTemplate,
+				VolumeClaimTemplates: apVolumeClaimTemplates(storageTemplate, managerLabels),
+			},
+		}
+	} else {
+		resources.Deployment = &appsv1.Deployment{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: annotations,
+				Labels:      managerLabels,
+				Name:        name,
+				Namespace:   namespace,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{LaunchpadAppLabel: name},
+				},
+				Template: podTemplate,
+			},
+		}
+	}
+
 	if replicaStrategy.Type == "elastic" && replicaStrategy.Elastic != nil {
-		resources.HPA = renderAPHPA(name, namespace, projectID, replicaStrategy.Elastic)
+		resources.HPA = renderAPHPA(name, namespace, projectID, workloadKind, replicaStrategy.Elastic)
 	}
 	return resources, nil
+}
+
+type apPodTemplateInput struct {
+	Args             []string
+	Command          []string
+	ConfigMaps       []APConfigMapMount
+	Env              []corev1.EnvVar
+	Image            string
+	ImagePullSecrets []corev1.LocalObjectReference
+	ImagePullPolicy  corev1.PullPolicy
+	Labels           map[string]string
+	Limits           corev1.ResourceList
+	LivenessProbe    *corev1.Probe
+	Name             string
+	Ports            []APAppListeningPort
+	ReadinessProbe   *corev1.Probe
+	Requests         corev1.ResourceList
+	StartupProbe     *corev1.Probe
+	Storage          []APStorageMount
+}
+
+func apPodTemplate(input apPodTemplateInput) corev1.PodTemplateSpec {
+	automountServiceAccountToken := false
+	annotations := map[string]string{}
+	volumes := []corev1.Volume{}
+	volumeMounts := []corev1.VolumeMount{}
+	if len(input.ConfigMaps) > 0 {
+		annotations[APConfigMapChecksumAnnotation] = apConfigMapChecksum(input.ConfigMaps)
+		volumeName := APConfigMapVolumeName(input.Name)
+		volumes = append(volumes, corev1.Volume{
+			Name: volumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: APConfigMapName(input.Name)},
+				},
+			},
+		})
+		for _, item := range input.ConfigMaps {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				MountPath: item.Path,
+				Name:      volumeName,
+				SubPath:   APConfigMapKey(item.Path),
+			})
+		}
+	}
+	for _, item := range input.Storage {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			MountPath: item.Path,
+			Name:      APStorageClaimName(item.Path),
+		})
+	}
+
+	return corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: annotations,
+			Labels:      input.Labels,
+		},
+		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: &automountServiceAccountToken,
+			Containers: []corev1.Container{
+				{
+					Args:            input.Args,
+					Command:         input.Command,
+					Env:             input.Env,
+					Image:           input.Image,
+					ImagePullPolicy: normalizeImagePullPolicy(input.ImagePullPolicy),
+					LivenessProbe:   input.LivenessProbe,
+					Name:            input.Name,
+					Ports:           apContainerPorts(input.Ports),
+					ReadinessProbe:  input.ReadinessProbe,
+					Resources: corev1.ResourceRequirements{
+						Limits:   input.Limits,
+						Requests: input.Requests,
+					},
+					StartupProbe: input.StartupProbe,
+					VolumeMounts: volumeMounts,
+				},
+			},
+			ImagePullSecrets: input.ImagePullSecrets,
+			SecurityContext: &corev1.PodSecurityContext{
+				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+			},
+			Volumes: volumes,
+		},
+	}
+}
+
+func apConfigMapChecksum(configMaps []APConfigMapMount) string {
+	data, err := json.Marshal(configMaps)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+func normalizeAPImagePullSecrets(items []corev1.LocalObjectReference) []corev1.LocalObjectReference {
+	out := make([]corev1.LocalObjectReference, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, corev1.LocalObjectReference{Name: name})
+	}
+	return out
+}
+
+func appendAPImagePullSecret(items []corev1.LocalObjectReference, name string) []corev1.LocalObjectReference {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return items
+	}
+	for _, item := range items {
+		if item.Name == name {
+			return items
+		}
+	}
+	return append(items, corev1.LocalObjectReference{Name: name})
+}
+
+func renderAPImagePullSecret(name, namespace string, labels map[string]string, registry *APImageRegistry) (*corev1.Secret, error) {
+	if registry == nil {
+		return nil, nil
+	}
+	serverAddress := strings.TrimSpace(registry.ServerAddress)
+	username := strings.TrimSpace(registry.Username)
+	password := strings.TrimSpace(registry.Password)
+	if serverAddress == "" || username == "" || password == "" {
+		return nil, fmt.Errorf("imageRegistry.serverAddress, username, and password are required")
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	data, err := json.Marshal(map[string]interface{}{
+		"auths": map[string]interface{}{
+			serverAddress: map[string]string{
+				"auth":     auth,
+				"password": password,
+				"username": username,
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:    labels,
+			Name:      APImagePullSecretName(name),
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: data,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+	}, nil
+}
+
+func renderAPConfigMap(name, namespace string, labels map[string]string, configMaps []APConfigMapMount) *corev1.ConfigMap {
+	data := map[string]string{}
+	for _, item := range configMaps {
+		data[APConfigMapKey(item.Path)] = item.Value
+	}
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:    labels,
+			Name:      APConfigMapName(name),
+			Namespace: namespace,
+		},
+		Data: data,
+	}
+}
+
+func apVolumeClaimTemplates(storage []APStorageMount, labels map[string]string) []corev1.PersistentVolumeClaim {
+	out := make([]corev1.PersistentVolumeClaim, 0, len(storage))
+	for _, item := range storage {
+		out = append(out, corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					APStorageMountPathAnnotation: item.Path,
+					APStorageSizeAnnotation:      item.Size,
+				},
+				Labels: labels,
+				Name:   APStorageClaimName(item.Path),
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse(item.Size),
+					},
+				},
+			},
+		})
+	}
+	return out
+}
+
+func normalizeAPWorkloadKind(kind APWorkloadKind, storage []APStorageMount) (APWorkloadKind, error) {
+	switch kind {
+	case "", APWorkloadKindDeployment, APWorkloadKindStatefulSet:
+	default:
+		return "", fmt.Errorf("unsupported AP workload kind %q", kind)
+	}
+	if len(storage) > 0 {
+		if kind == APWorkloadKindDeployment {
+			return "", fmt.Errorf("spec.input.storage requires workload.kind statefulset")
+		}
+		return APWorkloadKindStatefulSet, nil
+	}
+	if kind == APWorkloadKindStatefulSet {
+		return APWorkloadKindStatefulSet, nil
+	}
+	return APWorkloadKindDeployment, nil
+}
+
+func normalizeAPConfigMapMounts(items []APConfigMapMount) ([]APConfigMapMount, error) {
+	out := make([]APConfigMapMount, 0, len(items))
+	seenPaths := map[string]bool{}
+	seenKeys := map[string]bool{}
+	for _, item := range items {
+		path := strings.TrimSpace(item.Path)
+		if path == "" {
+			continue
+		}
+		if !strings.HasPrefix(path, "/") {
+			return nil, fmt.Errorf("configMaps.path must be absolute: %s", path)
+		}
+		if seenPaths[path] {
+			return nil, fmt.Errorf("duplicate configMap path: %s", path)
+		}
+		key := APConfigMapKey(path)
+		if seenKeys[key] {
+			return nil, fmt.Errorf("duplicate configMap key generated from path: %s", path)
+		}
+		seenPaths[path] = true
+		seenKeys[key] = true
+		out = append(out, APConfigMapMount{Path: path, Value: item.Value})
+	}
+	return out, nil
+}
+
+func normalizeAPStorageMounts(items []APStorageMount) ([]APStorageMount, error) {
+	out := make([]APStorageMount, 0, len(items))
+	seenPaths := map[string]bool{}
+	seenNames := map[string]bool{}
+	for _, item := range items {
+		path := strings.TrimSpace(item.Path)
+		if path == "" {
+			continue
+		}
+		if !strings.HasPrefix(path, "/") {
+			return nil, fmt.Errorf("storage.path must be absolute: %s", path)
+		}
+		size := strings.TrimSpace(item.Size)
+		if size == "" {
+			size = "1Gi"
+		}
+		if _, err := resource.ParseQuantity(size); err != nil {
+			return nil, fmt.Errorf("invalid storage size %q: %w", size, err)
+		}
+		if seenPaths[path] {
+			return nil, fmt.Errorf("duplicate storage path: %s", path)
+		}
+		name := APStorageClaimName(path)
+		if seenNames[name] {
+			return nil, fmt.Errorf("duplicate storage claim name generated from path: %s", path)
+		}
+		seenPaths[path] = true
+		seenNames[name] = true
+		out = append(out, APStorageMount{Path: path, Size: size})
+	}
+	return out, nil
+}
+
+func validateAPVolumeNames(apName string, configMaps []APConfigMapMount, storage []APStorageMount) error {
+	if len(configMaps) == 0 || len(storage) == 0 {
+		return nil
+	}
+	configVolumeName := APConfigMapVolumeName(apName)
+	for _, item := range storage {
+		if APStorageClaimName(item.Path) == configVolumeName {
+			return fmt.Errorf("storage path %s conflicts with AP config map volume name %s", item.Path, configVolumeName)
+		}
+	}
+	return nil
+}
+
+func apStorageJSON(storage []APStorageMount) string {
+	if len(storage) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(storage)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func APConfigMapName(apName string) string {
+	return dns1035SupportName(apName, "ap", "-config", 63)
+}
+
+func APImagePullSecretName(apName string) string {
+	return dns1035SupportName(apName, "ap", "-registry", 63)
+}
+
+func APConfigMapVolumeName(apName string) string {
+	return dns1123VolumeName(APConfigMapName(apName))
+}
+
+func APConfigMapKey(path string) string {
+	return dns1123VolumeName(path)
+}
+
+func APStorageClaimName(path string) string {
+	return dns1123VolumeName(path)
+}
+
+func dns1123VolumeName(value string) string {
+	base := strings.ToLower(strings.TrimSpace(value))
+	base = strings.Trim(base, "/")
+	base = strings.ReplaceAll(base, "_", "-")
+	base = strings.ReplaceAll(base, ".", "-")
+	base = apPublicAddressResourceNameUnsafeCharsPattern.ReplaceAllString(base, "-")
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "data"
+	}
+	if len(base) > 63 {
+		base = strings.Trim(base[len(base)-63:], "-")
+	}
+	if base == "" {
+		base = "data"
+	}
+	return base
+}
+
+func APWorkloadKindForStatefulSet(sts *appsv1.StatefulSet) APWorkloadKind {
+	if sts == nil {
+		return APWorkloadKindDeployment
+	}
+	return APWorkloadKindStatefulSet
+}
+
+func APWorkloadKindString(kind APWorkloadKind) string {
+	if kind == APWorkloadKindStatefulSet {
+		return "statefulset"
+	}
+	return "deployment"
+}
+
+func renderAPDeployment(name string, namespace string, annotations map[string]string, managerLabels map[string]string, replicas int32, podTemplate corev1.PodTemplateSpec) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: annotations,
+			Labels:      managerLabels,
+			Name:        name,
+			Namespace:   namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{LaunchpadAppLabel: name},
+			},
+			Template: podTemplate,
+		},
+	}
 }
 
 func apContainerPorts(ports []APAppListeningPort) []corev1.ContainerPort {
@@ -352,7 +845,7 @@ func apReplicaStrategyJSON(strategy APReplicaStrategy) string {
 	return string(bytes)
 }
 
-func renderAPHPA(name string, namespace string, projectID string, elastic *APElasticReplicaSettings) *autoscalingv2.HorizontalPodAutoscaler {
+func renderAPHPA(name string, namespace string, projectID string, workloadKind APWorkloadKind, elastic *APElasticReplicaSettings) *autoscalingv2.HorizontalPodAutoscaler {
 	minReplicas := elastic.MinReplicas
 	metricName := corev1.ResourceCPU
 	target := autoscalingv2.MetricTarget{Type: autoscalingv2.UtilizationMetricType}
@@ -392,11 +885,18 @@ func renderAPHPA(name string, namespace string, projectID string, elastic *APEla
 			},
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
 				APIVersion: "apps/v1",
-				Kind:       "Deployment",
+				Kind:       apHPAWorkloadKind(workloadKind),
 				Name:       name,
 			},
 		},
 	}
+}
+
+func apHPAWorkloadKind(kind APWorkloadKind) string {
+	if kind == APWorkloadKindStatefulSet {
+		return "StatefulSet"
+	}
+	return "Deployment"
 }
 
 type APNetworkIngressInput struct {

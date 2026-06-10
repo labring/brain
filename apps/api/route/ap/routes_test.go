@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -18,6 +19,10 @@ import (
 	"sealos/api/service/apversion"
 	orchestration "sealos/api/service/orchestration"
 )
+
+func testTime() time.Time {
+	return time.Date(2026, 6, 10, 8, 9, 10, 0, time.UTC)
+}
 
 func TestAPMutationOpenAPIDocsDescribeDirectKubernetesContract(t *testing.T) {
 	router := chi.NewRouter()
@@ -113,6 +118,57 @@ func TestAPResponseFromDeploymentsReturnsAPList(t *testing.T) {
 	}
 }
 
+func TestAPObjectWithConfigMapValuesFillsMountedFileContents(t *testing.T) {
+	apObject := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"input": map[string]interface{}{
+				"configMaps": []interface{}{
+					map[string]interface{}{
+						"key":  "etc-app-config-yaml",
+						"path": "/etc/app/config.yaml",
+					},
+				},
+			},
+		},
+	}
+
+	got := apObjectWithConfigMapValues(apObject, []orchestration.APConfigMapMount{
+		{Path: "/etc/app/config.yaml", Value: "debug: true\n"},
+	})
+	spec := got["spec"].(map[string]interface{})
+	input := spec["input"].(map[string]interface{})
+	rows := input["configMaps"].([]interface{})
+	row := rows[0].(map[string]interface{})
+	if row["value"] != "debug: true\n" {
+		t.Fatalf("configMap value = %v, want file contents", row["value"])
+	}
+}
+
+func TestAPDirectResourceDeleteSelectorIsScopedToAPResources(t *testing.T) {
+	selector := apDirectResourceDeleteSelector("web")
+	for _, want := range []string{
+		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue,
+		orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP,
+		orchestration.BrainAppNameLabel + "=web",
+	} {
+		if !strings.Contains(selector, want) {
+			t.Fatalf("delete selector = %q, want %q", selector, want)
+		}
+	}
+}
+
+func TestValidateAPStatefulSetReplaceKindRejectsImplicitDeployment(t *testing.T) {
+	if err := validateAPStatefulSetReplaceKind(""); err == nil {
+		t.Fatal("validateAPStatefulSetReplaceKind error = nil, want implicit Deployment rejected")
+	}
+	if err := validateAPStatefulSetReplaceKind(orchestration.APWorkloadKindDeployment); err == nil {
+		t.Fatal("validateAPStatefulSetReplaceKind error = nil, want Deployment rejected")
+	}
+	if err := validateAPStatefulSetReplaceKind(orchestration.APWorkloadKindStatefulSet); err != nil {
+		t.Fatalf("validateAPStatefulSetReplaceKind returned error for StatefulSet: %v", err)
+	}
+}
+
 func TestRecordAPImageVersionSideEffectDoesNotBlockWhenDatabaseMissing(t *testing.T) {
 	body := json.RawMessage(`{
 		"apiVersion": "brain.io/direct",
@@ -151,6 +207,47 @@ func TestRecordAPImageVersionSideEffectDoesNotBlockWhenDatabaseMissing(t *testin
 	}
 	if got := warning["message"]; got != "AP image history storage is not configured" {
 		t.Fatalf("warning message = %v, want storage not configured message", got)
+	}
+}
+
+func TestAPVersionRollbackPatchUsesSpecSnapshotWhenAvailable(t *testing.T) {
+	patchBytes, err := apVersionRollbackPatch(apversion.Version{
+		Image:           "nginx:1.27",
+		ImagePullPolicy: "Always",
+		SpecSnapshot: map[string]interface{}{
+			"input": map[string]interface{}{
+				"args":  []interface{}{"--config", "/etc/app/config.yaml"},
+				"image": "nginx:1.27",
+			},
+			"resource": map[string]interface{}{
+				"replicas": float64(2),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("apVersionRollbackPatch returned error: %v", err)
+	}
+	var patch map[string]interface{}
+	if err := json.Unmarshal(patchBytes, &patch); err != nil {
+		t.Fatalf("unmarshal rollback patch: %v", err)
+	}
+	spec := patch["spec"].(map[string]interface{})
+	input := spec["input"].(map[string]interface{})
+	args := input["args"].([]interface{})
+	if got := args[0]; got != "--config" {
+		t.Fatalf("rollback args[0] = %v, want --config", got)
+	}
+	configMaps := input["configMaps"].([]interface{})
+	if len(configMaps) != 0 {
+		t.Fatalf("rollback configMaps length = %d, want clear list", len(configMaps))
+	}
+	probes := input["probes"].(map[string]interface{})
+	if _, ok := probes["liveness"]; !ok {
+		t.Fatal("rollback probes missing liveness clear marker")
+	}
+	resource := spec["resource"].(map[string]interface{})
+	if got := resource["replicas"]; got != float64(2) {
+		t.Fatalf("rollback replicas = %v, want 2", got)
 	}
 }
 
@@ -200,6 +297,36 @@ func TestAPOwnershipRejectsWrongResourceKind(t *testing.T) {
 	}
 	if err := requireBrainAPDeployment(deployment); err == nil {
 		t.Fatal("expected wrong brain.io/resource-kind label to fail ownership check")
+	}
+}
+
+func TestAPLikeOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
+	deployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:    "project-a",
+				orchestration.BrainResourceKindLabel: "template",
+			},
+			Name: "template-web",
+		},
+	}
+	if err := requireBrainAPLikeDeployment(deployment); err != nil {
+		t.Fatalf("expected managed template deployment to pass AP-like ownership check: %v", err)
+	}
+
+	statefulSet := appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:    "project-a",
+				orchestration.BrainResourceKindLabel: "template",
+			},
+			Name: "template-worker",
+		},
+	}
+	if err := requireBrainAPLikeStatefulSet(statefulSet); err != nil {
+		t.Fatalf("expected managed template statefulset to pass AP-like ownership check: %v", err)
 	}
 }
 
@@ -310,6 +437,236 @@ func TestAPRenderInputFromDeploymentPatchPreservesValueFromAndProbes(t *testing.
 	}
 	if got.ReadinessProbe.HTTPGet.Path != "/healthz" {
 		t.Fatalf("readiness path = %q, want /healthz", got.ReadinessProbe.HTTPGet.Path)
+	}
+}
+
+func TestAPRenderInputFromStatefulSetPatchSeparatesDesiredStorageFromTemplate(t *testing.T) {
+	replicas := int32(1)
+	current := appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainProjectIDLabel: "project-a",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Image: "nginx:1.27", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}},
+					},
+				},
+			},
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							orchestration.APStorageMountPathAnnotation: "/data",
+							orchestration.APStorageSizeAnnotation:      "10Gi",
+						},
+						Name: "data",
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+						},
+					},
+				},
+			},
+		},
+	}
+	patch := json.RawMessage(`{"spec":{"input":{"storage":[{"path":"/data","size":"20Gi"}]}}}`)
+
+	got, _, err := apRenderInputFromWorkloadPatch(apWorkload{StatefulSet: &current}, patch, nil)
+	if err != nil {
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
+	}
+	if len(got.Storage) != 1 || got.Storage[0].Size != "20Gi" {
+		t.Fatalf("desired storage = %#v, want /data 20Gi", got.Storage)
+	}
+	if len(got.StorageTemplate) != 1 || got.StorageTemplate[0].Size != "10Gi" {
+		t.Fatalf("storage template = %#v, want immutable template kept at 10Gi", got.StorageTemplate)
+	}
+	resources, err := orchestration.RenderAPResources(got)
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if got := resources.StatefulSet.Annotations[orchestration.APDesiredStorageAnnotation]; !strings.Contains(got, `"Size":"20Gi"`) {
+		t.Fatalf("desired storage annotation = %q, want 20Gi", got)
+	}
+	if got := resources.StatefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests.Storage().String(); got != "10Gi" {
+		t.Fatalf("volumeClaimTemplate storage = %q, want original 10Gi", got)
+	}
+}
+
+func TestAPRenderInputFromStatefulSetPatchPreservesDesiredStorageAnnotation(t *testing.T) {
+	replicas := int32(1)
+	current := appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				orchestration.APDesiredStorageAnnotation: `[{"Path":"/data","Size":"20Gi"}]`,
+			},
+			Labels: map[string]string{
+				orchestration.BrainProjectIDLabel: "project-a",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Image: "nginx:1.27", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}}},
+				},
+			},
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							orchestration.APStorageMountPathAnnotation: "/data",
+							orchestration.APStorageSizeAnnotation:      "10Gi",
+						},
+						Name: "data",
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, _, err := apRenderInputFromWorkloadPatch(apWorkload{StatefulSet: &current}, json.RawMessage(`{"spec":{"input":{"image":"nginx:1.28"}}}`), nil)
+	if err != nil {
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
+	}
+	if len(got.Storage) != 1 || got.Storage[0].Size != "20Gi" {
+		t.Fatalf("desired storage = %#v, want annotation size 20Gi", got.Storage)
+	}
+	if len(got.StorageTemplate) != 1 || got.StorageTemplate[0].Size != "10Gi" {
+		t.Fatalf("storage template = %#v, want VCT size 10Gi", got.StorageTemplate)
+	}
+}
+
+func TestAPRenderInputFromWorkloadPatchRejectsKindChange(t *testing.T) {
+	replicas := int32(1)
+	current := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainProjectIDLabel: "project-a",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Image: "nginx:1.27", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}}},
+				},
+			},
+		},
+	}
+
+	_, _, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"workload":{"kind":"statefulset"}}}`), nil)
+	if err == nil {
+		t.Fatal("apRenderInputFromWorkloadPatch error = nil, want workload kind change rejected")
+	}
+}
+
+func TestAPRenderInputFromWorkloadPatchParsesRestartAndImagePullSecrets(t *testing.T) {
+	replicas := int32(1)
+	current := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainProjectIDLabel: "project-a",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers:       []corev1.Container{{Image: "nginx:1.27", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}}},
+					ImagePullSecrets: []corev1.LocalObjectReference{{Name: "old-secret"}},
+				},
+			},
+		},
+	}
+	patch := json.RawMessage(`{"spec":{"restartRequest":3,"input":{"imagePullSecrets":[{"name":"new-secret"}],"imageRegistry":{"serverAddress":"registry.example.com","username":"alice","password":"secret"}}}}`)
+
+	got, _, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, patch, nil)
+	if err != nil {
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
+	}
+	if got.RestartRequest == nil || *got.RestartRequest != 3 {
+		t.Fatalf("restartRequest = %#v, want 3", got.RestartRequest)
+	}
+	if len(got.ImagePullSecrets) != 1 || got.ImagePullSecrets[0].Name != "new-secret" {
+		t.Fatalf("imagePullSecrets = %#v, want new-secret", got.ImagePullSecrets)
+	}
+	if got.ImageRegistry == nil || got.ImageRegistry.ServerAddress != "registry.example.com" {
+		t.Fatalf("imageRegistry = %#v, want registry.example.com", got.ImageRegistry)
+	}
+	resources, err := orchestration.RenderAPResources(got)
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	applyAPResourcesRestartRequest(resources, current.Annotations, got.RestartRequest, testTime())
+	if got := resources.Deployment.Annotations[orchestration.APRestartRequestAnnotation]; got != "3" {
+		t.Fatalf("restart annotation = %q, want 3", got)
+	}
+	if got := resources.Deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"]; got != testTime().UTC().Format("2006-01-02T15:04:05Z07:00") {
+		t.Fatalf("restartedAt = %q, want fixed test time", got)
+	}
+}
+
+func TestAPRenderInputFromWorkloadPatchRejectsNegativeRestartRequest(t *testing.T) {
+	current := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:    map[string]string{orchestration.BrainProjectIDLabel: "project-a"},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Image: "nginx:1.27", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}}},
+				},
+			},
+		},
+	}
+
+	_, _, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"restartRequest":-1}}`), nil)
+	if err == nil {
+		t.Fatal("apRenderInputFromWorkloadPatch error = nil, want negative restartRequest rejected")
+	}
+}
+
+func TestAPInputReferencesGeneratedImagePullSecret(t *testing.T) {
+	if apInputReferencesGeneratedImagePullSecret(orchestration.APResourcesInput{Name: "web"}) {
+		t.Fatal("empty input references generated image pull secret")
+	}
+	if !apInputReferencesGeneratedImagePullSecret(orchestration.APResourcesInput{
+		ImageRegistry: &orchestration.APImageRegistry{
+			Password:      "secret",
+			ServerAddress: "registry.example.com",
+			Username:      "alice",
+		},
+		Name: "web",
+	}) {
+		t.Fatal("imageRegistry input should retain generated image pull secret")
+	}
+	if !apInputReferencesGeneratedImagePullSecret(orchestration.APResourcesInput{
+		ImagePullSecrets: []corev1.LocalObjectReference{{Name: orchestration.APImagePullSecretName("web")}},
+		Name:             "web",
+	}) {
+		t.Fatal("explicit generated imagePullSecret reference should retain generated secret")
 	}
 }
 

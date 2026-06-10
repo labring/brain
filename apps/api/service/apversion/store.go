@@ -91,6 +91,8 @@ func VersionSchemaStatements() []string {
 			created_at timestamptz not null default now(),
 			constraint ap_image_versions_pk primary key (namespace, ap_name, version_hash)
 		)`,
+		`alter table sealai_project.ap_image_versions
+			add column if not exists spec_snapshot jsonb`,
 		`create index if not exists ap_image_versions_lookup_idx
 			on sealai_project.ap_image_versions (namespace, ap_name, created_at)`,
 	}
@@ -119,6 +121,25 @@ func VersionHash(namespace, apName, image, imagePullPolicy string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
+func VersionHashForSpec(namespace, apName, image, imagePullPolicy string, specSnapshot map[string]interface{}) string {
+	if len(specSnapshot) == 0 {
+		return VersionHash(namespace, apName, image, imagePullPolicy)
+	}
+	specJSON, err := json.Marshal(specSnapshot)
+	if err != nil {
+		return VersionHash(namespace, apName, image, imagePullPolicy)
+	}
+	payload := strings.Join([]string{
+		strings.TrimSpace(namespace),
+		strings.TrimSpace(apName),
+		strings.TrimSpace(image),
+		strings.TrimSpace(imagePullPolicy),
+		string(specJSON),
+	}, "\x00")
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
 func (s *Store) Record(ctx context.Context, input RecordInput) (*Version, error) {
 	if s == nil || s.pool == nil {
 		return nil, ErrDatabaseNotConfigured
@@ -134,7 +155,7 @@ func (s *Store) Record(ctx context.Context, input RecordInput) (*Version, error)
 	if source == "" {
 		source = "update"
 	}
-	hash := VersionHash(ns, name, image, policy)
+	hash := VersionHashForSpec(ns, name, image, policy, input.SpecSnapshot)
 	specJSON, err := json.Marshal(input.SpecSnapshot)
 	if err != nil {
 		return nil, err

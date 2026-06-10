@@ -14,7 +14,7 @@ function DeploymentSettingsSection({
   ...props
 }: ComponentPropsWithoutRef<"section"> & {
   action?: ReactNode;
-  description: ReactNode;
+  description?: ReactNode;
   icon: ReactNode;
   title: ReactNode;
 }) {
@@ -36,9 +36,11 @@ function DeploymentSettingsSection({
               {title}
             </h3>
           </div>
-          <p className="text-muted-foreground text-sm leading-5">
-            {description}
-          </p>
+          {description == null ? null : (
+            <p className="text-muted-foreground text-sm leading-5">
+              {description}
+            </p>
+          )}
         </div>
         {action == null ? null : (
           <div className="flex shrink-0 items-center gap-1">{action}</div>

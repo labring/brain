@@ -7,23 +7,43 @@ export interface DockerDeploymentEnvVar {
   value: string;
 }
 
+export interface DockerDeploymentConfigMap {
+  path: string;
+  value: string;
+}
+
+export interface DockerDeploymentStorageMount {
+  path: string;
+  size: string;
+}
+
 export interface DockerDeploymentSettings {
   appListeningPort: number;
+  args?: string[];
+  command?: string[];
+  configMaps?: DockerDeploymentConfigMap[];
   env: DockerDeploymentEnvVar[];
   image: string;
+  storage?: DockerDeploymentStorageMount[];
 }
 
 export type DockerDeploymentValidationField =
   | "appListeningPort"
+  | "configMaps"
   | "env"
-  | "image";
+  | "image"
+  | "storage";
 
 export type DockerDeploymentValidationErrorType =
   | "duplicate-env-name"
+  | "duplicate-mount-path"
   | "empty-image"
+  | "invalid-config-map-path"
   | "invalid-env-name"
   | "invalid-image"
   | "invalid-port"
+  | "invalid-storage-path"
+  | "invalid-storage-size"
   | "missing-env-name";
 
 export interface DockerDeploymentValidationError {
@@ -39,6 +59,7 @@ export interface DockerDeploymentValidationResult {
 }
 
 const IMAGE_WHITESPACE_RE = /\s/;
+const STORAGE_SIZE_RE = /^\d+(\.\d+)?(Gi|Mi|Ti)$/i;
 
 function validateImage(image: string): DockerDeploymentValidationError | null {
   const trimmed = image.trim();
@@ -118,13 +139,89 @@ function validateEnv(
   return errors;
 }
 
+function validateConfigMaps(
+  rows: readonly DockerDeploymentConfigMap[]
+): DockerDeploymentValidationError[] {
+  const errors: DockerDeploymentValidationError[] = [];
+  const seen = new Set<string>();
+  rows.forEach((row, index) => {
+    const path = row.path.trim();
+    if (path === "") {
+      return;
+    }
+    if (!path.startsWith("/")) {
+      errors.push({
+        field: "configMaps",
+        index,
+        message: "Config file path must be absolute.",
+        type: "invalid-config-map-path",
+      });
+      return;
+    }
+    if (seen.has(path)) {
+      errors.push({
+        field: "configMaps",
+        index,
+        message: "Mount paths must be unique.",
+        type: "duplicate-mount-path",
+      });
+      return;
+    }
+    seen.add(path);
+  });
+  return errors;
+}
+
+function validateStorage(
+  rows: readonly DockerDeploymentStorageMount[]
+): DockerDeploymentValidationError[] {
+  const errors: DockerDeploymentValidationError[] = [];
+  const seen = new Set<string>();
+  rows.forEach((row, index) => {
+    const path = row.path.trim();
+    if (path === "") {
+      return;
+    }
+    if (!path.startsWith("/")) {
+      errors.push({
+        field: "storage",
+        index,
+        message: "Storage path must be absolute.",
+        type: "invalid-storage-path",
+      });
+      return;
+    }
+    if (seen.has(path)) {
+      errors.push({
+        field: "storage",
+        index,
+        message: "Mount paths must be unique.",
+        type: "duplicate-mount-path",
+      });
+      return;
+    }
+    seen.add(path);
+    if (!STORAGE_SIZE_RE.test(row.size.trim())) {
+      errors.push({
+        field: "storage",
+        index,
+        message: "Use a size such as 10Gi, 512Mi, or 1Ti.",
+        type: "invalid-storage-size",
+      });
+    }
+  });
+  return errors;
+}
+
 export function validateDockerDeploymentSettings(
   settings: DockerDeploymentSettings
 ): DockerDeploymentValidationResult {
   const errors = [
     validateImage(settings.image),
     validateAppListeningPort(settings.appListeningPort),
-    ...validateEnv(settings.env),
+    ...validateConfigMaps(settings.configMaps ?? []),
+    ...validateEnv(settings.env ?? []),
+    ...validateStorage(settings.storage ?? []),
   ].filter((error): error is DockerDeploymentValidationError => error != null);
 
   return { errors, valid: errors.length === 0 };
@@ -135,10 +232,26 @@ export function normalizeDockerDeploymentSettings(
 ): DockerDeploymentSettings {
   return {
     appListeningPort: settings.appListeningPort,
-    env: settings.env.map((row) => ({
+    args: (settings.args ?? []).map((value) => value.trim()).filter(Boolean),
+    command: (settings.command ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean),
+    configMaps: (settings.configMaps ?? [])
+      .map((row) => ({
+        path: row.path.trim(),
+        value: row.value,
+      }))
+      .filter((row) => row.path !== ""),
+    env: (settings.env ?? []).map((row) => ({
       name: row.name.trim(),
       value: row.value,
     })),
     image: settings.image.trim(),
+    storage: (settings.storage ?? [])
+      .map((row) => ({
+        path: row.path.trim(),
+        size: row.size.trim(),
+      }))
+      .filter((row) => row.path !== ""),
   };
 }

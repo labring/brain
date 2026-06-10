@@ -7,15 +7,19 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
@@ -132,16 +136,16 @@ spec:
 		normalizeAPPublicNetworkIntent(&obj, ns)
 		yamlBytes, _ := yaml.Marshal(obj.Object)
 		input.Body.YAML = string(yamlBytes)
-		if err := ensureAPCreateTargetIsBrainManaged(cfg, name, ns); err != nil {
-			return nil, huma.Error409Conflict("AP name conflicts with a non-Brain Deployment", err)
+		renderInput := apRenderInputFromObject(obj, ns)
+		if err := ensureAPCreateTargetIsBrainManaged(cfg, name, ns, renderInput.WorkloadKind); err != nil {
+			return nil, huma.Error409Conflict("AP name conflicts with an incompatible existing workload", err)
 		}
 
-		renderInput := apRenderInputFromObject(obj, ns)
 		resources, err := orchestration.RenderAPResources(renderInput)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid AP direct resource request", err)
 		}
-		objects := []runtime.Object{resources.Deployment, resources.Service}
+		objects := apRuntimeObjects(resources)
 		if resources.HPA != nil {
 			objects = append(objects, resources.HPA)
 		}
@@ -156,17 +160,12 @@ spec:
 			return nil, huma.Error500InternalServerError("failed to create AP", err)
 		}
 
-		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:      "deployments",
-			Name:          name,
-			Namespace:     ns,
-			LabelSelector: orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP,
-		})
+		workload, err := currentAPWorkload(cfg, ns, name)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get created AP", err)
 		}
 
-		body, err := apResponseFromDeployments(jsonBytes, true)
+		body, err := apResponseFromWorkloadWithConfigMapValues(cfg, workload)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt created AP", err)
 		}
@@ -206,27 +205,58 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		privatePort = appListeningPorts[0].Port
 	}
 	return orchestration.APResourcesInput{
-		Env:             envVarsFromValue(input["env"]),
-		Image:           stringFromMap(input, "image"),
-		ImagePullPolicy: corev1.PullPolicy(stringFromMap(input, "imagePullPolicy")),
-		LivenessProbe:   probeFromInput(input, "liveness"),
-		Name:            obj.GetName(),
-		NetworkJSON:     networkJSONFromMap(network),
-		Namespace:       namespace,
-		PrivatePort:     privatePort,
-		ProjectID:       projectID,
-		ReadinessProbe:  probeFromInput(input, "readiness"),
-		Replicas:        apReplicasFromResourceSpec(resourceSpec),
-		ResourceLimit:   resourceListFromMap(resourceSpec, "limits"),
-		ResourceReq:     resourceListFromMap(resourceSpec, "requests"),
-		ReplicaStrategy: apReplicaStrategyFromResourceSpec(resourceSpec),
-		RoutingDomain:   routingDomainFromObject(obj),
-		StartupProbe:    probeFromInput(input, "startup"),
+		Args:             stringSliceFromValue(input["args"]),
+		Command:          stringSliceFromValue(input["command"]),
+		ConfigMaps:       apConfigMapsFromInput(input),
+		Env:              envVarsFromValue(input["env"]),
+		Image:            stringFromMap(input, "image"),
+		ImagePullSecrets: imagePullSecretsFromValue(input["imagePullSecrets"]),
+		ImagePullPolicy:  corev1.PullPolicy(stringFromMap(input, "imagePullPolicy")),
+		ImageRegistry:    imageRegistryFromInput(input),
+		LivenessProbe:    probeFromInput(input, "liveness"),
+		Name:             obj.GetName(),
+		NetworkJSON:      networkJSONFromMap(network),
+		Namespace:        namespace,
+		PrivatePort:      privatePort,
+		ProjectID:        projectID,
+		ReadinessProbe:   probeFromInput(input, "readiness"),
+		Replicas:         apReplicasFromResourceSpec(resourceSpec),
+		ResourceLimit:    resourceListFromMap(resourceSpec, "limits"),
+		ResourceReq:      resourceListFromMap(resourceSpec, "requests"),
+		ReplicaStrategy:  apReplicaStrategyFromResourceSpec(resourceSpec),
+		RestartRequest:   restartRequestFromSpec(spec),
+		RoutingDomain:    routingDomainFromObject(obj),
+		Storage:          apStorageFromInput(input),
+		StartupProbe:     probeFromInput(input, "startup"),
+		WorkloadKind:     apWorkloadKindFromSpec(spec),
 	}
 }
 
 func routingDomainFromObject(obj unstructured.Unstructured) string {
 	return strings.TrimSpace(obj.GetLabels()[orchestration.APRoutingDomainLabel])
+}
+
+func apRuntimeObjects(resources *orchestration.APResources) []runtime.Object {
+	if resources == nil {
+		return nil
+	}
+	objects := []runtime.Object{}
+	if resources.ConfigMap != nil {
+		objects = append(objects, resources.ConfigMap)
+	}
+	if resources.ImagePullSecret != nil {
+		objects = append(objects, resources.ImagePullSecret)
+	}
+	if resources.Service != nil {
+		objects = append(objects, resources.Service)
+	}
+	if resources.Deployment != nil {
+		objects = append(objects, resources.Deployment)
+	}
+	if resources.StatefulSet != nil {
+		objects = append(objects, resources.StatefulSet)
+	}
+	return objects
 }
 
 func requireBrainAPDeployment(deployment appsv1.Deployment) error {
@@ -239,9 +269,43 @@ func requireBrainAPDeployment(deployment appsv1.Deployment) error {
 	return nil
 }
 
-func ensureAPCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string) error {
-	currentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+func requireBrainAPLikeDeployment(deployment appsv1.Deployment) error {
+	labels := deployment.GetLabels()
+	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
+		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
+		return errors.New("deployment is not a Brain-managed workload")
+	}
+	resourceKind := labels[orchestration.BrainResourceKindLabel]
+	if resourceKind != orchestration.ResourceKindAP && resourceKind != "template" {
+		return errors.New("deployment is not a Brain-managed AP-like workload")
+	}
+	return nil
+}
+
+func ensureAPCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string, nextKind orchestration.APWorkloadKind) error {
+	deploymentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
 		Resource:  "deployments",
+		Name:      name,
+		Namespace: namespace,
+	})
+	if err == nil {
+		var current appsv1.Deployment
+		if err := json.Unmarshal(deploymentJSON, &current); err != nil {
+			return err
+		}
+		if err := requireBrainAPDeployment(current); err != nil {
+			return err
+		}
+		if nextKind == orchestration.APWorkloadKindStatefulSet {
+			return errors.New("existing Deployment-backed AP cannot be replaced by a StatefulSet-backed AP")
+		}
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
+	statefulSetJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Resource:  "statefulsets",
 		Name:      name,
 		Namespace: namespace,
 	})
@@ -251,11 +315,24 @@ func ensureAPCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, n
 	if err != nil {
 		return err
 	}
-	var current appsv1.Deployment
-	if err := json.Unmarshal(currentJSON, &current); err != nil {
+	var current appsv1.StatefulSet
+	if err := json.Unmarshal(statefulSetJSON, &current); err != nil {
 		return err
 	}
-	return requireBrainAPDeployment(current)
+	if err := requireBrainAPStatefulSet(current); err != nil {
+		return err
+	}
+	if err := validateAPStatefulSetReplaceKind(nextKind); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateAPStatefulSetReplaceKind(nextKind orchestration.APWorkloadKind) error {
+	if nextKind != orchestration.APWorkloadKindStatefulSet {
+		return errors.New("existing StatefulSet-backed AP cannot be replaced by a Deployment-backed AP")
+	}
+	return nil
 }
 
 func networkJSONFromMap(network map[string]interface{}) string {
@@ -399,6 +476,133 @@ func envVarsFromValue(value interface{}) []corev1.EnvVar {
 	return out
 }
 
+func imagePullSecretsFromValue(value interface{}) []corev1.LocalObjectReference {
+	rows, ok := value.([]interface{})
+	if !ok || len(rows) == 0 {
+		return nil
+	}
+	out := make([]corev1.LocalObjectReference, 0, len(rows))
+	for _, row := range rows {
+		item, _ := row.(map[string]interface{})
+		if item == nil {
+			if name, ok := row.(string); ok && strings.TrimSpace(name) != "" {
+				out = append(out, corev1.LocalObjectReference{Name: strings.TrimSpace(name)})
+			}
+			continue
+		}
+		name := stringFromMap(item, "name")
+		if name == "" {
+			continue
+		}
+		out = append(out, corev1.LocalObjectReference{Name: name})
+	}
+	return out
+}
+
+func imageRegistryFromInput(input map[string]interface{}) *orchestration.APImageRegistry {
+	registry, _ := input["imageRegistry"].(map[string]interface{})
+	if registry == nil {
+		registry, _ = input["registry"].(map[string]interface{})
+	}
+	if registry == nil {
+		return nil
+	}
+	return &orchestration.APImageRegistry{
+		Password:      stringFromMap(registry, "password"),
+		ServerAddress: firstStringFromMap(registry, "serverAddress", "server", "registry"),
+		Username:      stringFromMap(registry, "username"),
+	}
+}
+
+func restartRequestFromSpec(spec map[string]interface{}) *int64 {
+	raw, ok := spec["restartRequest"]
+	if !ok {
+		return nil
+	}
+	value, ok := int64Value(raw)
+	if !ok {
+		return nil
+	}
+	return &value
+}
+
+func stringSliceFromValue(value interface{}) []string {
+	rows, ok := value.([]interface{})
+	if !ok || len(rows) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		item := strings.TrimSpace(toString(row))
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func apConfigMapsFromInput(input map[string]interface{}) []orchestration.APConfigMapMount {
+	rows, ok := input["configMaps"].([]interface{})
+	if !ok || len(rows) == 0 {
+		rows, _ = input["configMap"].([]interface{})
+	}
+	out := make([]orchestration.APConfigMapMount, 0, len(rows))
+	for _, row := range rows {
+		item, _ := row.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		path := stringFromMap(item, "path")
+		if path == "" {
+			path = stringFromMap(item, "mountPath")
+		}
+		if path == "" {
+			continue
+		}
+		out = append(out, orchestration.APConfigMapMount{
+			Path:  path,
+			Value: stringFromMap(item, "value"),
+		})
+	}
+	return out
+}
+
+func apStorageFromInput(input map[string]interface{}) []orchestration.APStorageMount {
+	rows, ok := input["storage"].([]interface{})
+	if !ok || len(rows) == 0 {
+		return nil
+	}
+	out := make([]orchestration.APStorageMount, 0, len(rows))
+	for _, row := range rows {
+		item, _ := row.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		path := stringFromMap(item, "path")
+		if path == "" {
+			continue
+		}
+		size := stringFromMap(item, "size")
+		if size == "" {
+			size = stringFromMap(item, "value")
+			if size != "" && !strings.HasSuffix(strings.ToLower(size), "i") {
+				size += "Gi"
+			}
+		}
+		out = append(out, orchestration.APStorageMount{
+			Path: path,
+			Size: size,
+		})
+	}
+	return out
+}
+
+func apWorkloadKindFromSpec(spec map[string]interface{}) orchestration.APWorkloadKind {
+	workload, _ := spec["workload"].(map[string]interface{})
+	return orchestration.APWorkloadKind(strings.ToLower(stringFromMap(workload, "kind")))
+}
+
 func probeFromInput(input map[string]interface{}, key string) *corev1.Probe {
 	probes, _ := input["probes"].(map[string]interface{})
 	if probes == nil {
@@ -465,6 +669,34 @@ func stringFromMap(values map[string]interface{}, key string) string {
 	return strings.TrimSpace(value)
 }
 
+func firstStringFromMap(values map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value := stringFromMap(values, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func int64Value(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int32:
+		return int64(v), true
+	case int64:
+		return v, true
+	case float64:
+		i := int64(v)
+		return i, v == float64(i)
+	case json.Number:
+		i, err := v.Int64()
+		return i, err == nil
+	default:
+		return 0, false
+	}
+}
+
 func int32FromMap(values map[string]interface{}, key string) int32 {
 	if values == nil {
 		return 0
@@ -499,7 +731,7 @@ func registerUpdate(grp huma.API) {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"AP instance name to patch"`
 		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
-		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the AP resource.\n\nWhat to patch:\n- spec.input.image: update the application image.\n- spec.input.network.appListeningPorts: replace App Listening Ports as one coherent Network object.\n- spec.input.network.platformAddresses: replace Public Address requests as one coherent Network object.\n- spec.input.network.customDomains: replace Custom Domain Binding requests as part of the coherent Network object.\n- Legacy spec.input.network.privatePort remains readable as a one-port fallback.\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.paused: when true, scale the Deployment to 0 with SealOS pause annotations; false resumes using the active Fixed Replicas value.\n- spec.restartRequest: bump this integer to request a rollout (alternative: POST .../restart on the Deployment).\n- spec.input.env: replace the full environment variable list.\n- spec.input.probes: replace health probes (startup, liveness, readiness).\n- spec.resource.requests / spec.resource.limits: container resources.\n- spec.ingressAnnotations: add or replace Ingress annotations.\n\nPatch examples:\n- Pause: {\"spec\":{\"paused\":true}}\n- Resume: {\"spec\":{\"paused\":false}}\n- Update image: {\"spec\":{\"input\":{\"image\":\"nginx:1.27\"}}}\n- Replace App Listening Ports: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":80},{\"port\":3000}]}}}}\n- Replace Network with one Public Address: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":8080}],\"platformAddresses\":[{\"id\":\"pa_abc123\",\"port\":8080}]}}}}\n- Change Fixed Replicas: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"fixed\",\"fixed\":{\"replicas\":2}}}}}\n- Change CPU Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"cpu\",\"type\":\"utilization\",\"utilizationPercent\":75}}}}}}\n- Change Memory Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"memory\",\"type\":\"averageValue\",\"averageValue\":\"512Mi\"}}}}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Nested objects merge at the subtree you provide.\n- Arrays such as spec.input.network.appListeningPorts, spec.input.network.platformAddresses, spec.input.network.customDomains, and spec.input.env are replaced as whole lists."`
+		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the AP resource.\n\nWhat to patch:\n- spec.input.image: update the application image.\n- spec.input.command / spec.input.args: replace the container entrypoint command and arguments as whole string lists.\n- spec.input.configMaps: replace AP-managed mounted config files as a whole list.\n- spec.input.storage: replace StatefulSet-backed PVC desired sizes as a whole list. Existing storage mount paths are immutable; PVCs may expand but not shrink.\n- spec.input.network.appListeningPorts: replace App Listening Ports as one coherent Network object.\n- spec.input.network.platformAddresses: replace Public Address requests as one coherent Network object.\n- spec.input.network.customDomains: replace Custom Domain Binding requests as part of the coherent Network object.\n- Legacy spec.input.network.privatePort remains readable as a one-port fallback.\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.paused: when true, scale the Deployment or StatefulSet to 0 with SealOS pause annotations; false resumes using the active Fixed Replicas value.\n- spec.restartRequest: bump this integer to request a rollout (alternative: POST .../restart on the workload).\n- spec.input.env: replace the full environment variable list.\n- spec.input.probes: replace health probes (startup, liveness, readiness).\n- spec.resource.requests / spec.resource.limits: container resources.\n- spec.ingressAnnotations: add or replace Ingress annotations.\n\nPatch examples:\n- Pause: {\"spec\":{\"paused\":true}}\n- Resume: {\"spec\":{\"paused\":false}}\n- Update image: {\"spec\":{\"input\":{\"image\":\"nginx:1.27\"}}}\n- Replace Launch Command: {\"spec\":{\"input\":{\"command\":[\"/app/server\"],\"args\":[\"--config\",\"/etc/app/config.yaml\"]}}}\n- Replace Config Files: {\"spec\":{\"input\":{\"configMaps\":[{\"path\":\"/etc/app/config.yaml\",\"value\":\"debug: true\"}]}}}\n- Expand StatefulSet Storage: {\"spec\":{\"input\":{\"storage\":[{\"path\":\"/data\",\"size\":\"20Gi\"}]}}}\n- Replace App Listening Ports: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":80},{\"port\":3000}]}}}}\n- Replace Network with one Public Address: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":8080}],\"platformAddresses\":[{\"id\":\"pa_abc123\",\"port\":8080}]}}}}\n- Change Fixed Replicas: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"fixed\",\"fixed\":{\"replicas\":2}}}}}\n- Change CPU Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"cpu\",\"type\":\"utilization\",\"utilizationPercent\":75}}}}}}\n- Change Memory Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"memory\",\"type\":\"averageValue\",\"averageValue\":\"512Mi\"}}}}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Nested objects merge at the subtree you provide.\n- Arrays such as spec.input.command, spec.input.args, spec.input.configMaps, spec.input.storage, spec.input.network.appListeningPorts, spec.input.network.platformAddresses, spec.input.network.customDomains, and spec.input.env are replaced as whole lists."`
 	}
 	type updateOutput struct {
 		Body json.RawMessage
@@ -510,7 +742,7 @@ func registerUpdate(grp huma.API) {
 		Method:      http.MethodPatch,
 		Path:        "/",
 		Summary:     "Update AP",
-		Description: "Patch an AP instance by name. The Go API translates supported AP product patch fields into direct Kubernetes Deployment updates. Supported patch targets include `spec.input.image`, `spec.resource.replicas`, and `spec.paused`.",
+		Description: "Patch an AP instance by name. The Go API translates supported AP product patch fields into direct Kubernetes Deployment or StatefulSet updates. Supported patch targets include `spec.input.image`, `spec.input.env`, `spec.input.command`, `spec.input.args`, `spec.input.configMaps`, `spec.input.storage`, `spec.input.network`, `spec.resource.replicaStrategy`, `spec.resource.replicas`, and `spec.paused`.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *updateInput) (*updateOutput, error) {
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -535,26 +767,22 @@ func registerUpdate(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
-		currentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "deployments",
-			Name:      input.Name,
-			Namespace: resolved.Namespace,
-		})
+		workload, err := currentAPWorkload(cfg, resolved.Namespace, input.Name)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("AP not found", err)
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP for update", err)
 		}
-		var current appsv1.Deployment
-		if err := json.Unmarshal(currentJSON, &current); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode AP for update", err)
-		}
-		if err := requireBrainAPDeployment(current); err != nil {
+		if err := requireBrainAPWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 
-		renderInput, paused, err := apRenderInputFromDeploymentPatch(current, input.Body)
+		currentConfigMaps, err := currentAPConfigMapMounts(cfg, *workload)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to read AP config maps", err)
+		}
+		renderInput, paused, err := apRenderInputFromWorkloadPatch(*workload, input.Body, currentConfigMaps)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid AP update request", err)
 		}
@@ -562,12 +790,13 @@ func registerUpdate(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid AP direct resource request", err)
 		}
-		resources.Deployment.Annotations = mergeStringAnnotations(current.Annotations, resources.Deployment.Annotations)
-		applyAPPauseState(resources.Deployment, paused)
+		mergeAPWorkloadAnnotations(resources, workload.Annotations())
+		applyAPResourcesPauseState(resources, paused)
+		applyAPResourcesRestartRequest(resources, workload.Annotations(), renderInput.RestartRequest, time.Now().UTC())
 		if paused != nil && *paused {
 			resources.HPA = nil
 		}
-		objects := []runtime.Object{resources.Deployment, resources.Service}
+		objects := apRuntimeObjects(resources)
 		if resources.HPA != nil {
 			objects = append(objects, resources.HPA)
 		} else if err := deleteAPHPA(cfg, renderInput.Name, renderInput.Namespace); err != nil {
@@ -579,16 +808,25 @@ func registerUpdate(grp huma.API) {
 		if err := k8ssvc.ApplyObjects(restConfig, objects, resolved.Namespace); err != nil {
 			return nil, huma.Error500InternalServerError("failed to update AP", err)
 		}
+		if resources.ConfigMap == nil {
+			if err := deleteAPConfigMap(cfg, renderInput.Name, renderInput.Namespace); err != nil {
+				return nil, huma.Error500InternalServerError("failed to delete AP config map", err)
+			}
+		}
+		if !apInputReferencesGeneratedImagePullSecret(renderInput) {
+			if err := deleteAPImagePullSecret(cfg, renderInput.Name, renderInput.Namespace); err != nil {
+				return nil, huma.Error500InternalServerError("failed to delete AP image pull secret", err)
+			}
+		}
+		if err := patchAPStatefulSetPVCStorage(ctx, restConfig, *workload, renderInput.Storage); err != nil {
+			return nil, huma.Error500InternalServerError("failed to update AP storage", err)
+		}
 
-		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "deployments",
-			Name:      input.Name,
-			Namespace: resolved.Namespace,
-		})
+		updatedWorkload, err := currentAPWorkload(cfg, resolved.Namespace, input.Name)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get updated AP", err)
 		}
-		body, err := apResponseFromDeployments(jsonBytes, true)
+		body, err := apResponseFromWorkloadWithConfigMapValues(cfg, updatedWorkload)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt AP response", err)
 		}
@@ -654,21 +892,89 @@ func recordAPImageVersion(ctx context.Context, ap map[string]interface{}, source
 }
 
 func applyAPPauseState(deployment *appsv1.Deployment, paused *bool) {
-	if deployment == nil || paused == nil {
+	applyAPResourcesPauseState(&orchestration.APResources{Deployment: deployment}, paused)
+}
+
+func applyAPResourcesPauseState(resources *orchestration.APResources, paused *bool) {
+	if resources == nil || paused == nil {
 		return
 	}
-	if deployment.Annotations == nil {
-		deployment.Annotations = map[string]string{}
+	if resources.Deployment != nil {
+		if resources.Deployment.Annotations == nil {
+			resources.Deployment.Annotations = map[string]string{}
+		}
+		resources.Deployment.Annotations[orchestration.LaunchpadPauseAnnotation] = map[bool]string{true: "true", false: "false"}[*paused]
+		if *paused {
+			replicas := int32(0)
+			resources.Deployment.Spec.Replicas = &replicas
+			return
+		}
+		if resources.Deployment.Spec.Replicas == nil || *resources.Deployment.Spec.Replicas < 1 {
+			replicas := int32(1)
+			resources.Deployment.Spec.Replicas = &replicas
+		}
 	}
-	deployment.Annotations[orchestration.LaunchpadPauseAnnotation] = map[bool]string{true: "true", false: "false"}[*paused]
-	if *paused {
-		replicas := int32(0)
-		deployment.Spec.Replicas = &replicas
+	if resources.StatefulSet != nil {
+		if resources.StatefulSet.Annotations == nil {
+			resources.StatefulSet.Annotations = map[string]string{}
+		}
+		resources.StatefulSet.Annotations[orchestration.LaunchpadPauseAnnotation] = map[bool]string{true: "true", false: "false"}[*paused]
+		if *paused {
+			replicas := int32(0)
+			resources.StatefulSet.Spec.Replicas = &replicas
+			return
+		}
+		if resources.StatefulSet.Spec.Replicas == nil || *resources.StatefulSet.Spec.Replicas < 1 {
+			replicas := int32(1)
+			resources.StatefulSet.Spec.Replicas = &replicas
+		}
+	}
+}
+
+func applyAPResourcesRestartRequest(resources *orchestration.APResources, current map[string]string, restartRequest *int64, now time.Time) {
+	if resources == nil || restartRequest == nil {
 		return
 	}
-	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas < 1 {
-		replicas := int32(1)
-		deployment.Spec.Replicas = &replicas
+	value := strconv.FormatInt(*restartRequest, 10)
+	if strings.TrimSpace(current[orchestration.APRestartRequestAnnotation]) == value {
+		return
+	}
+	restartedAt := now.Format(time.RFC3339)
+	if resources.Deployment != nil {
+		if resources.Deployment.Spec.Template.Annotations == nil {
+			resources.Deployment.Spec.Template.Annotations = map[string]string{}
+		}
+		resources.Deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = restartedAt
+	}
+	if resources.StatefulSet != nil {
+		if resources.StatefulSet.Spec.Template.Annotations == nil {
+			resources.StatefulSet.Spec.Template.Annotations = map[string]string{}
+		}
+		resources.StatefulSet.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = restartedAt
+	}
+}
+
+func apRestartRequestFromAnnotations(annotations map[string]string) *int64 {
+	raw := strings.TrimSpace(annotations[orchestration.APRestartRequestAnnotation])
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return nil
+	}
+	return &value
+}
+
+func mergeAPWorkloadAnnotations(resources *orchestration.APResources, current map[string]string) {
+	if resources == nil {
+		return
+	}
+	if resources.Deployment != nil {
+		resources.Deployment.Annotations = mergeStringAnnotations(current, resources.Deployment.Annotations)
+	}
+	if resources.StatefulSet != nil {
+		resources.StatefulSet.Annotations = mergeStringAnnotations(current, resources.StatefulSet.Annotations)
 	}
 }
 
@@ -690,44 +996,74 @@ func mergeStringAnnotations(base map[string]string, overlays ...map[string]strin
 }
 
 func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMessage) (orchestration.APResourcesInput, *bool, error) {
+	return apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, raw, nil)
+}
+
+func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, currentConfigMaps []orchestration.APConfigMapMount) (orchestration.APResourcesInput, *bool, error) {
 	var patch map[string]interface{}
 	if err := json.Unmarshal(raw, &patch); err != nil {
 		return orchestration.APResourcesInput{}, nil, err
 	}
 	container := corev1.Container{}
-	if len(current.Spec.Template.Spec.Containers) > 0 {
-		container = current.Spec.Template.Spec.Containers[0]
+	replicas := int32(1)
+	projectID := strings.TrimSpace(current.Labels()[orchestration.BrainProjectIDLabel])
+	routingDomain := strings.TrimSpace(current.Labels()[orchestration.APRoutingDomainLabel])
+	network := desiredAPNetworkFromWorkload(current)
+	workloadKind := orchestration.APWorkloadKindDeployment
+	imagePullSecrets := []corev1.LocalObjectReference{}
+	storage := []orchestration.APStorageMount{}
+	storageTemplate := []orchestration.APStorageMount{}
+	if current.Deployment != nil {
+		if len(current.Deployment.Spec.Template.Spec.Containers) > 0 {
+			container = current.Deployment.Spec.Template.Spec.Containers[0]
+		}
+		imagePullSecrets = current.Deployment.Spec.Template.Spec.ImagePullSecrets
+		if current.Deployment.Spec.Replicas != nil {
+			replicas = *current.Deployment.Spec.Replicas
+		}
+	} else if current.StatefulSet != nil {
+		workloadKind = orchestration.APWorkloadKindStatefulSet
+		if len(current.StatefulSet.Spec.Template.Spec.Containers) > 0 {
+			container = current.StatefulSet.Spec.Template.Spec.Containers[0]
+		}
+		imagePullSecrets = current.StatefulSet.Spec.Template.Spec.ImagePullSecrets
+		if current.StatefulSet.Spec.Replicas != nil {
+			replicas = *current.StatefulSet.Spec.Replicas
+		}
+		storage = apStorageInputFromStatefulSet(current.StatefulSet)
+		storageTemplate = storage
+		if desiredStorage := apDesiredStorageInputFromAnnotations(current.Annotations()); len(desiredStorage) > 0 {
+			storage = desiredStorage
+		}
 	}
 	privatePort := int32(80)
 	if len(container.Ports) > 0 {
 		privatePort = container.Ports[0].ContainerPort
 	}
-	network := desiredAPNetworkFromDeployment(current)
 	if network == nil {
 		network = map[string]interface{}{"privatePort": privatePort}
 	}
 	if normalizedPorts, err := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, privatePort); err == nil && len(normalizedPorts) > 0 {
 		privatePort = normalizedPorts[0].Port
 	}
-	replicas := int32(1)
-	if current.Spec.Replicas != nil {
-		replicas = *current.Spec.Replicas
-	}
+	args := container.Args
+	command := container.Command
+	configMaps := currentConfigMaps
 	image := container.Image
+	imageRegistry := (*orchestration.APImageRegistry)(nil)
 	imagePullPolicy := container.ImagePullPolicy
+	restartRequest := apRestartRequestFromAnnotations(current.Annotations())
 	env := container.Env
 	startupProbe := container.StartupProbe
 	livenessProbe := container.LivenessProbe
 	readinessProbe := container.ReadinessProbe
 	limits := container.Resources.Limits
 	requests := container.Resources.Requests
-	routingDomain := strings.TrimSpace(current.Labels[orchestration.APRoutingDomainLabel])
-	projectID := strings.TrimSpace(current.Labels[orchestration.BrainProjectIDLabel])
 	replicaStrategy := orchestration.APReplicaStrategy{
 		Fixed: orchestration.APFixedReplicaSettings{Replicas: replicas},
 		Type:  "fixed",
 	}
-	if currentStrategy := apReplicaStrategyFromAnnotation(current.Annotations[orchestration.APReplicaStrategyAnnotation], replicas); currentStrategy != nil {
+	if currentStrategy := apReplicaStrategyFromAnnotation(current.Annotations()[orchestration.APReplicaStrategyAnnotation], replicas); currentStrategy != nil {
 		replicaStrategy = *currentStrategy
 	}
 	var paused *bool
@@ -749,8 +1085,42 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 		}
 	}
 	if input, _ := spec["input"].(map[string]interface{}); input != nil {
+		if nextArgs, ok := input["args"].([]interface{}); ok {
+			args = stringSliceFromValue(nextArgs)
+		}
+		if nextCommand, ok := input["command"].([]interface{}); ok {
+			command = stringSliceFromValue(nextCommand)
+		}
+		if _, ok := input["configMaps"].([]interface{}); ok {
+			configMaps = apConfigMapsFromInput(input)
+		} else if _, ok := input["configMap"].([]interface{}); ok {
+			configMaps = apConfigMapsFromInput(input)
+		}
+		if _, ok := input["storage"].([]interface{}); ok {
+			nextStorage := apStorageFromInput(input)
+			if err := validateAPStoragePatch(current, storage, nextStorage); err != nil {
+				return orchestration.APResourcesInput{}, nil, err
+			}
+			if current.StatefulSet != nil {
+				storageTemplate = storageForStatefulSetTemplate(storage, nextStorage)
+				storage = nextStorage
+			} else {
+				storage = nextStorage
+			}
+			if len(storage) > 0 {
+				workloadKind = orchestration.APWorkloadKindStatefulSet
+			}
+		}
 		if nextImage := stringFromMap(input, "image"); nextImage != "" {
 			image = nextImage
+		}
+		if nextSecrets, ok := input["imagePullSecrets"].([]interface{}); ok {
+			imagePullSecrets = imagePullSecretsFromValue(nextSecrets)
+		}
+		if _, ok := input["imageRegistry"].(map[string]interface{}); ok {
+			imageRegistry = imageRegistryFromInput(input)
+		} else if _, ok := input["registry"].(map[string]interface{}); ok {
+			imageRegistry = imageRegistryFromInput(input)
 		}
 		if nextPolicy := stringFromMap(input, "imagePullPolicy"); nextPolicy != "" {
 			imagePullPolicy = corev1.PullPolicy(nextPolicy)
@@ -776,6 +1146,19 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 			}
 		}
 	}
+	if specWorkload := apWorkloadKindFromSpec(spec); specWorkload != "" {
+		if specWorkload != workloadKind {
+			return orchestration.APResourcesInput{}, nil, errors.New("existing AP workload.kind cannot be changed")
+		}
+		workloadKind = specWorkload
+	}
+	if rawRestartRequest, ok := spec["restartRequest"]; ok {
+		nextRestartRequest, ok := int64Value(rawRestartRequest)
+		if !ok || nextRestartRequest < 0 {
+			return orchestration.APResourcesInput{}, nil, errors.New("spec.restartRequest must be a non-negative integer")
+		}
+		restartRequest = &nextRestartRequest
+	}
 	if resourceSpec, _ := spec["resource"].(map[string]interface{}); resourceSpec != nil {
 		if nextStrategy := apReplicaStrategyFromResourceSpec(resourceSpec); nextStrategy != nil {
 			replicaStrategy = *nextStrategy
@@ -791,22 +1174,31 @@ func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMes
 		}
 	}
 	return orchestration.APResourcesInput{
-		Env:             env,
-		Image:           image,
-		ImagePullPolicy: imagePullPolicy,
-		LivenessProbe:   livenessProbe,
-		Name:            current.Name,
-		Namespace:       current.Namespace,
-		NetworkJSON:     networkJSONFromMap(network),
-		PrivatePort:     privatePort,
-		ProjectID:       projectID,
-		ReadinessProbe:  readinessProbe,
-		Replicas:        replicas,
-		ResourceLimit:   limits,
-		ResourceReq:     requests,
-		ReplicaStrategy: &replicaStrategy,
-		RoutingDomain:   routingDomain,
-		StartupProbe:    startupProbe,
+		Args:             args,
+		Command:          command,
+		ConfigMaps:       configMaps,
+		Env:              env,
+		Image:            image,
+		ImagePullSecrets: imagePullSecrets,
+		ImagePullPolicy:  imagePullPolicy,
+		ImageRegistry:    imageRegistry,
+		LivenessProbe:    livenessProbe,
+		Name:             current.Name(),
+		Namespace:        current.Namespace(),
+		NetworkJSON:      networkJSONFromMap(network),
+		PrivatePort:      privatePort,
+		ProjectID:        projectID,
+		ReadinessProbe:   readinessProbe,
+		Replicas:         replicas,
+		ResourceLimit:    limits,
+		ResourceReq:      requests,
+		ReplicaStrategy:  &replicaStrategy,
+		RestartRequest:   restartRequest,
+		RoutingDomain:    routingDomain,
+		Storage:          storage,
+		StorageTemplate:  storageTemplate,
+		StartupProbe:     startupProbe,
+		WorkloadKind:     workloadKind,
 	}, paused, nil
 }
 
@@ -820,6 +1212,222 @@ func desiredAPNetworkFromDeployment(deployment appsv1.Deployment) map[string]int
 		return nil
 	}
 	return network
+}
+
+func desiredAPNetworkFromWorkload(workload apWorkload) map[string]interface{} {
+	raw := strings.TrimSpace(workload.Annotations()[orchestration.APDesiredNetworkAnnotation])
+	if raw == "" {
+		return nil
+	}
+	var network map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &network); err != nil {
+		return nil
+	}
+	return network
+}
+
+func currentAPConfigMapMounts(cfg *clientcmdapi.Config, workload apWorkload) ([]orchestration.APConfigMapMount, error) {
+	apObject := workload.APObject()
+	spec, _ := apObject["spec"].(map[string]interface{})
+	input, _ := spec["input"].(map[string]interface{})
+	rows, _ := input["configMaps"].([]interface{})
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	configMapsByName := map[string]corev1.ConfigMap{}
+	out := make([]orchestration.APConfigMapMount, 0, len(rows))
+	for _, row := range rows {
+		item, _ := row.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		path := stringFromMap(item, "path")
+		key := stringFromMap(item, "key")
+		if path == "" || key == "" {
+			continue
+		}
+		configMapName := stringFromMap(item, "name")
+		if configMapName == "" {
+			configMapName = orchestration.APConfigMapName(workload.Name())
+		}
+		configMap, ok := configMapsByName[configMapName]
+		if !ok {
+			configMapJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				Resource:  "configmaps",
+				Name:      configMapName,
+				Namespace: workload.Namespace(),
+			})
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(configMapJSON, &configMap); err != nil {
+				return nil, err
+			}
+			configMapsByName[configMapName] = configMap
+		}
+		out = append(out, orchestration.APConfigMapMount{
+			Path:  path,
+			Value: configMap.Data[key],
+		})
+	}
+	return out, nil
+}
+
+func apStorageInputFromStatefulSet(statefulSet *appsv1.StatefulSet) []orchestration.APStorageMount {
+	if statefulSet == nil {
+		return nil
+	}
+	out := make([]orchestration.APStorageMount, 0, len(statefulSet.Spec.VolumeClaimTemplates))
+	for _, claim := range statefulSet.Spec.VolumeClaimTemplates {
+		path := strings.TrimSpace(claim.Annotations[orchestration.APStorageMountPathAnnotation])
+		if path == "" {
+			path = strings.TrimSpace(claim.Annotations["path"])
+		}
+		if path == "" {
+			continue
+		}
+		size := strings.TrimSpace(claim.Annotations[orchestration.APStorageSizeAnnotation])
+		if size == "" {
+			size = claim.Spec.Resources.Requests.Storage().String()
+		}
+		out = append(out, orchestration.APStorageMount{Path: path, Size: size})
+	}
+	return out
+}
+
+func apDesiredStorageInputFromAnnotations(annotations map[string]string) []orchestration.APStorageMount {
+	raw := strings.TrimSpace(annotations[orchestration.APDesiredStorageAnnotation])
+	if raw == "" {
+		return nil
+	}
+	var out []orchestration.APStorageMount
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil
+	}
+	filtered := make([]orchestration.APStorageMount, 0, len(out))
+	for _, item := range out {
+		path := strings.TrimSpace(item.Path)
+		if path == "" {
+			continue
+		}
+		filtered = append(filtered, orchestration.APStorageMount{
+			Path: path,
+			Size: strings.TrimSpace(item.Size),
+		})
+	}
+	return filtered
+}
+
+func validateAPStoragePatch(current apWorkload, existing, next []orchestration.APStorageMount) error {
+	if current.Deployment != nil && len(next) > 0 {
+		return errors.New("adding storage to an existing Deployment AP is not supported; create a StatefulSet-backed AP")
+	}
+	if current.StatefulSet == nil {
+		return nil
+	}
+	if len(existing) != len(next) {
+		return errors.New("StatefulSet AP storage paths cannot be added or removed in this version")
+	}
+	existingByPath := map[string]string{}
+	for _, item := range existing {
+		existingByPath[item.Path] = item.Size
+	}
+	for _, item := range next {
+		currentSize, ok := existingByPath[item.Path]
+		if !ok {
+			return errors.New("StatefulSet AP storage paths cannot be changed in this version")
+		}
+		currentQuantity, err := resource.ParseQuantity(currentSize)
+		if err != nil {
+			return err
+		}
+		nextQuantity, err := resource.ParseQuantity(item.Size)
+		if err != nil {
+			return err
+		}
+		if nextQuantity.Cmp(currentQuantity) < 0 {
+			return errors.New("PVC storage cannot be shrunk")
+		}
+	}
+	return nil
+}
+
+func storageForStatefulSetTemplate(existing, next []orchestration.APStorageMount) []orchestration.APStorageMount {
+	if len(existing) == 0 {
+		return next
+	}
+	out := make([]orchestration.APStorageMount, 0, len(existing))
+	for _, item := range existing {
+		out = append(out, item)
+	}
+	return out
+}
+
+func patchAPStatefulSetPVCStorage(ctx context.Context, restConfig *rest.Config, workload apWorkload, desired []orchestration.APStorageMount) error {
+	if workload.StatefulSet == nil || len(desired) == 0 {
+		return nil
+	}
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return err
+	}
+	pvcs, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).List(ctx, metav1.ListOptions{
+		LabelSelector: apWorkloadLabelSelector(orchestration.BrainResourceNameLabel + "=" + workload.Name()),
+	})
+	if err != nil {
+		return err
+	}
+	desiredByPath := map[string]orchestration.APStorageMount{}
+	for _, item := range desired {
+		desiredByPath[item.Path] = item
+	}
+	for i := range pvcs.Items {
+		pvc := &pvcs.Items[i]
+		path := strings.TrimSpace(pvc.Annotations[orchestration.APStorageMountPathAnnotation])
+		if path == "" {
+			path = strings.TrimSpace(pvc.Annotations["path"])
+		}
+		desiredMount, ok := desiredByPath[path]
+		if !ok {
+			continue
+		}
+		nextQuantity, err := resource.ParseQuantity(desiredMount.Size)
+		if err != nil {
+			return err
+		}
+		currentQuantity := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		if !currentQuantity.IsZero() && nextQuantity.Cmp(currentQuantity) < 0 {
+			return errors.New("PVC storage cannot be shrunk")
+		}
+		if !currentQuantity.IsZero() && nextQuantity.Cmp(currentQuantity) <= 0 &&
+			strings.TrimSpace(pvc.Annotations[orchestration.APStorageSizeAnnotation]) == desiredMount.Size {
+			continue
+		}
+		patch, err := json.Marshal(map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"annotations": map[string]string{
+					orchestration.APStorageSizeAnnotation: desiredMount.Size,
+				},
+			},
+			"spec": map[string]interface{}{
+				"resources": map[string]interface{}{
+					"requests": map[string]string{
+						string(corev1.ResourceStorage): desiredMount.Size,
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).Patch(ctx, pvc.Name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func mergeAPNetwork(current map[string]interface{}, patch map[string]interface{}) map[string]interface{} {
@@ -847,6 +1455,43 @@ func deleteAPHPA(cfg *clientcmdapi.Config, name, namespace string) error {
 		return nil
 	}
 	return err
+}
+
+func deleteAPConfigMap(cfg *clientcmdapi.Config, name, namespace string) error {
+	_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+		Name:      orchestration.APConfigMapName(name),
+		Namespace: namespace,
+		Resource:  "configmaps",
+	})
+	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, "configmaps") {
+		return nil
+	}
+	return err
+}
+
+func deleteAPImagePullSecret(cfg *clientcmdapi.Config, name, namespace string) error {
+	_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+		Name:      orchestration.APImagePullSecretName(name),
+		Namespace: namespace,
+		Resource:  "secrets",
+	})
+	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, "secrets") {
+		return nil
+	}
+	return err
+}
+
+func apInputReferencesGeneratedImagePullSecret(input orchestration.APResourcesInput) bool {
+	generatedName := orchestration.APImagePullSecretName(input.Name)
+	if input.ImageRegistry != nil {
+		return true
+	}
+	for _, secret := range input.ImagePullSecrets {
+		if secret.Name == generatedName {
+			return true
+		}
+	}
+	return false
 }
 
 func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config, name, namespace string, input orchestration.APResourcesInput) error {
@@ -985,23 +1630,15 @@ func syncAPPublicIngressesFromPatch(restConfig *rest.Config, cfg *clientcmdapi.C
 	if !changed {
 		return nil
 	}
-	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-		Resource:  "deployments",
-		Name:      name,
-		Namespace: namespace,
-	})
+	workload, err := currentAPWorkload(cfg, namespace, name)
 	if err != nil {
 		return err
 	}
-	var deployment unstructured.Unstructured
-	if err := json.Unmarshal(jsonBytes, &deployment.Object); err != nil {
-		return err
-	}
 	if network == nil {
-		network = desiredAPNetworkFromUnstructured(deployment)
+		network = desiredAPNetworkFromWorkload(*workload)
 	}
 	if routingDomain == "" {
-		routingDomain = strings.TrimSpace(deployment.GetLabels()[orchestration.APRoutingDomainLabel])
+		routingDomain = strings.TrimSpace(workload.Labels()[orchestration.APRoutingDomainLabel])
 	}
 	obj := unstructured.Unstructured{Object: map[string]interface{}{
 		"metadata": map[string]interface{}{
@@ -1010,7 +1647,7 @@ func syncAPPublicIngressesFromPatch(restConfig *rest.Config, cfg *clientcmdapi.C
 			"namespace": namespace,
 		},
 		"spec": map[string]interface{}{
-			"projectId": deployment.GetLabels()[orchestration.BrainProjectIDLabel],
+			"projectId": workload.Labels()[orchestration.BrainProjectIDLabel],
 			"input": map[string]interface{}{
 				"network": network,
 			},
@@ -1265,23 +1902,15 @@ func registerDelete(grp huma.API) {
 }
 
 func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namespace string) error {
-	currentJSON, err := k8ssvc.Get(clientCfg, k8ssvc.GetOptions{
-		Resource:  "deployments",
-		Name:      name,
-		Namespace: namespace,
-	})
+	workload, err := currentAPWorkload(clientCfg, namespace, name)
 	if err != nil {
 		return err
 	}
-	var current appsv1.Deployment
-	if err := json.Unmarshal(currentJSON, &current); err != nil {
-		return err
+	if err := requireBrainAPWorkload(*workload); err != nil {
+		return apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, name)
 	}
-	if err := requireBrainAPDeployment(current); err != nil {
-		return apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, name)
-	}
-	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name
-	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets"} {
+	selector := apDirectResourceDeleteSelector(name)
+	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets", "persistentvolumeclaims"} {
 		_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
 			LabelSelector: selector,
 			Namespace:     namespace,
@@ -1294,7 +1923,7 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 	_, err = k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
 		Name:      name,
 		Namespace: namespace,
-		Resource:  "deployments",
+		Resource:  workload.Resource(),
 	})
 	if err != nil && apierrors.IsNotFound(err) {
 		return nil
@@ -1302,9 +1931,13 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 	return err
 }
 
+func apDirectResourceDeleteSelector(name string) string {
+	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP + "," + orchestration.BrainAppNameLabel + "=" + name
+}
+
 func registerRestart(grp huma.API) {
 	type restartBody struct {
-		Name      string `json:"name" required:"true" doc:"AP metadata.name; the backing Deployment uses the same name in the same namespace."`
+		Name      string `json:"name" required:"true" doc:"AP metadata.name; the backing workload uses the same name in the same namespace."`
 		Namespace string `json:"namespace" doc:"Namespace of the AP (default from kubeconfig; admin can override)."`
 	}
 	type restartInput struct {
@@ -1319,11 +1952,9 @@ func registerRestart(grp huma.API) {
 		OperationID: "ap-restart",
 		Method:      http.MethodPost,
 		Path:        "/restart",
-		Summary:     "Restart AP workload (rollout restart Deployment)",
-		Description: "Rollout-restarts the underlying Deployment for an AP: " +
-			"the Deployment is named like the AP (`metadata.name`) in the same namespace. " +
-			"Equivalent to `kubectl rollout restart deployment/<name>`.",
-		Tags: []string{"AP"},
+		Summary:     "Restart AP workload",
+		Description: "Rollout-restarts the underlying AP workload. The backing Deployment or StatefulSet is named like the AP (`metadata.name`) in the same namespace.",
+		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *restartInput) (*restartOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
@@ -1345,35 +1976,27 @@ func registerRestart(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
-		currentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Resource:  "deployments",
-			Name:      name,
-			Namespace: resolved.Namespace,
-		})
+		workload, err := currentAPWorkload(cfg, resolved.Namespace, name)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				return nil, huma.Error404NotFound("deployment for AP not found in namespace (expected same name as the AP)", err)
+				return nil, huma.Error404NotFound("AP workload not found in namespace (expected same name as the AP)", err)
 			}
-			return nil, huma.Error500InternalServerError("failed to get deployment for AP restart", err)
+			return nil, huma.Error500InternalServerError("failed to get AP workload for restart", err)
 		}
-		var current appsv1.Deployment
-		if err := json.Unmarshal(currentJSON, &current); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode AP for restart", err)
-		}
-		if err := requireBrainAPDeployment(current); err != nil {
+		if err := requireBrainAPWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 
 		jsonBytes, err := k8ssvc.RolloutRestart(cfg, k8ssvc.RolloutOptions{
-			Resource:  "deployment",
+			Resource:  workload.RolloutResource(),
 			Name:      name,
 			Namespace: resolved.Namespace,
 		})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				return nil, huma.Error404NotFound("deployment for AP not found in namespace (expected same name as the AP)", err)
+				return nil, huma.Error404NotFound("AP workload not found in namespace (expected same name as the AP)", err)
 			}
-			return nil, huma.Error500InternalServerError("failed to restart deployment", err)
+			return nil, huma.Error500InternalServerError("failed to restart AP workload", err)
 		}
 		return &restartOutput{Body: json.RawMessage(jsonBytes)}, nil
 	})

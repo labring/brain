@@ -1059,3 +1059,31 @@ test("AP claim settings leave non-matching Secret rows as external rows", () => 
     },
   ]);
 });
+
+test("AP claim settings map Launchpad-backed command config files storage and workload kind", () => {
+  const settings = claimToContainerSettings(
+    {
+      kind: "AP",
+      metadata: { name: "api", namespace: "default" },
+      spec: {
+        input: {
+          args: ["--config", "/etc/app/config.yaml"],
+          command: ["/app/server"],
+          configMaps: [{ path: "/etc/app/config.yaml", value: "debug: true" }],
+          image: "ghcr.io/acme/api:latest",
+          storage: [{ path: "/data", size: "20Gi" }],
+        },
+        workload: { kind: "statefulset" },
+      },
+    },
+    "AP"
+  );
+
+  assert.deepEqual(settings.command, ["/app/server"]);
+  assert.deepEqual(settings.args, ["--config", "/etc/app/config.yaml"]);
+  assert.deepEqual(settings.configMaps, [
+    { path: "/etc/app/config.yaml", value: "debug: true" },
+  ]);
+  assert.deepEqual(settings.storage, [{ path: "/data", size: "20Gi" }]);
+  assert.equal(settings.workloadKind, "statefulset");
+});

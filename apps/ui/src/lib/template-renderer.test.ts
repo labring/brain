@@ -122,6 +122,19 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
     statefulSet?.metadata?.labels?.["brain.io/project-id"],
     "project-uid"
   );
+  assert.equal(statefulSet?.metadata?.labels?.["brain.io/resource-kind"], "ap");
+  assert.equal(
+    statefulSet?.metadata?.labels?.["brain.io/app-name"],
+    "template-memos"
+  );
+  assert.equal(
+    statefulSet?.spec?.template?.metadata?.labels?.["brain.io/resource-kind"],
+    "ap"
+  );
+  assert.equal(
+    statefulSet?.spec?.template?.metadata?.labels?.["brain.io/app-name"],
+    "template-memos"
+  );
   assert.equal(
     (
       statefulSet?.spec?.volumeClaimTemplates as Array<{
@@ -130,11 +143,161 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
     )[0]?.metadata?.labels?.["brain.io/project-id"],
     "project-uid"
   );
+  assert.equal(
+    (
+      statefulSet?.spec?.volumeClaimTemplates as Array<{
+        metadata?: { labels?: Record<string, string> };
+      }>
+    )[0]?.metadata?.labels?.["brain.io/resource-kind"],
+    "ap"
+  );
+  assert.equal(
+    (
+      statefulSet?.spec?.volumeClaimTemplates as Array<{
+        metadata?: { labels?: Record<string, string> };
+      }>
+    )[0]?.metadata?.labels?.["brain.io/app-name"],
+    "template-memos"
+  );
+  assert.equal(
+    ingress?.metadata?.labels?.["brain.io/resource-kind"],
+    "template"
+  );
   assert.equal(ingress?.spec?.rules?.[0]?.host, "memos-host.apps.example.com");
 
   const parsedInstance = YAML.parse(rendered.instanceYaml);
   assert.equal(parsedInstance.kind, "Instance");
   assert.equal(rendered.dependentYamls.length, 2);
+});
+
+test("renderTemplateDeployment assigns matching Services and Ingresses to template AP support resources", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    instanceName: "template-web",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: template-web
+spec:
+  selector:
+    matchLabels:
+      app: template-web
+  template:
+    metadata:
+      labels:
+        app: template-web
+    spec:
+      containers:
+        - name: main
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: template-web-service
+spec:
+  selector:
+    app: template-web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: template-web
+spec:
+  rules:
+    - host: template-web.apps.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: template-web-service
+                port:
+                  number: 80
+`,
+    },
+    templateName: "web",
+  });
+
+  const service = rendered.resources.find((doc) => doc.kind === "Service");
+  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress");
+
+  assert.equal(service?.metadata?.labels?.["brain.io/resource-kind"], "ap");
+  assert.equal(
+    service?.metadata?.labels?.["brain.io/app-name"],
+    "template-web"
+  );
+  assert.equal(ingress?.metadata?.labels?.["brain.io/resource-kind"], "ap");
+  assert.equal(
+    ingress?.metadata?.labels?.["brain.io/app-name"],
+    "template-web"
+  );
+});
+
+test("renderTemplateDeployment exposes KubeBlocks Clusters as Brain DB resources", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    instanceName: "template-pg",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: apps.kubeblocks.io/v1alpha1
+kind: Cluster
+metadata:
+  name: template-pg
+  labels:
+    clusterdefinition.kubeblocks.io/name: postgresql
+spec:
+  clusterDefinitionRef: postgresql
+  componentSpecs:
+    - name: postgresql
+      replicas: 1
+      resources:
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      volumeClaimTemplates:
+        - name: data
+          spec:
+            resources:
+              requests:
+                storage: 8Gi
+`,
+    },
+    templateName: "postgres",
+  });
+
+  const cluster = rendered.resources.find((doc) => doc.kind === "Cluster");
+  const instance = rendered.resources.find((doc) => doc.kind === "Instance");
+
+  assert.equal(
+    instance?.metadata?.labels?.["brain.io/resource-kind"],
+    "template"
+  );
+  assert.equal(cluster?.metadata?.namespace, "ns-admin");
+  assert.equal(
+    cluster?.metadata?.labels?.["brain.io/project-id"],
+    "project-uid"
+  );
+  assert.equal(cluster?.metadata?.labels?.["brain.io/resource-kind"], "db");
+  assert.equal(cluster?.metadata?.labels?.["brain.io/managed-by"], "brain");
+  assert.equal(
+    cluster?.metadata?.labels?.["cloud.sealos.io/deploy-on-sealos"],
+    "template-pg"
+  );
 });
 
 test("renderTemplateDeployment can override provider cloud domain with target cluster domain", () => {

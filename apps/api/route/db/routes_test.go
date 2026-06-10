@@ -358,6 +358,20 @@ func TestDBOwnershipRejectsWrongResourceKind(t *testing.T) {
 	}
 }
 
+func TestDBLikeOwnershipAllowsManagedTemplateClusters(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("template-pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:    "project-a",
+		orchestration.BrainResourceKindLabel: "template",
+	})
+
+	if err := requireBrainDBLikeCluster(cluster); err != nil {
+		t.Fatalf("expected managed template cluster to pass DB-like ownership check: %v", err)
+	}
+}
+
 func TestKubeBlocksRestartConflictDetection(t *testing.T) {
 	err := errors.New(`admission webhook "vopsrequest.kb.io" denied the request: OpsRequest.spec.type=Restart is forbidden when Cluster.status.phase=Creating`)
 	if !isKubeBlocksOpsConflict(err) {
@@ -407,6 +421,51 @@ func TestDBResponseFromClustersReturnsDBList(t *testing.T) {
 	spec := item["spec"].(map[string]interface{})
 	if got := spec["engine"]; got != "postgresql" {
 		t.Fatalf("spec.engine = %v, want postgresql", got)
+	}
+}
+
+func TestDBResponseFromClustersAcceptsK8sServiceWrappedList(t *testing.T) {
+	raw := []byte(`{
+		"Object": {
+			"apiVersion": "apps.kubeblocks.io/v1alpha1",
+			"kind": "ClusterList",
+			"metadata": {"resourceVersion": "49933417"}
+		},
+		"items": [
+			{
+				"apiVersion": "apps.kubeblocks.io/v1alpha1",
+				"kind": "Cluster",
+				"metadata": {
+					"labels": {
+						"brain.io/db-engine": "mysql",
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "db",
+						"clusterdefinition.kubeblocks.io/name": "apecloud-mysql"
+					},
+					"name": "mysql",
+					"namespace": "ns-a"
+				},
+				"spec": {"clusterDefinitionRef": "apecloud-mysql"},
+				"status": {"phase": "Running"}
+			}
+		]
+	}`)
+	body, err := dbResponseFromClusters(raw, false)
+	if err != nil {
+		t.Fatalf("dbResponseFromClusters returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := out["items"].([]interface{})
+	item := items[0].(map[string]interface{})
+	if got := item["kind"]; got != "DB" {
+		t.Fatalf("item.kind = %v, want DB", got)
+	}
+	spec := item["spec"].(map[string]interface{})
+	if got := spec["engine"]; got != "mysql" {
+		t.Fatalf("spec.engine = %v, want mysql", got)
 	}
 }
 
@@ -502,6 +561,19 @@ func TestDBClusterLabelSelectorKeepsBrainOwnership(t *testing.T) {
 	for _, want := range []string{
 		"brain.io/managed-by=brain",
 		"brain.io/resource-kind=db",
+		"brain.io/project-id=project-a",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("selector %q missing %q", got, want)
+		}
+	}
+}
+
+func TestTemplateDBClusterLabelSelectorKeepsBrainOwnership(t *testing.T) {
+	got := templateDBClusterLabelSelector("brain.io/project-id=project-a")
+	for _, want := range []string{
+		"brain.io/managed-by=brain",
+		"brain.io/resource-kind=template",
 		"brain.io/project-id=project-a",
 	} {
 		if !strings.Contains(got, want) {

@@ -24,6 +24,7 @@ import {
   brainProjectsToExplorerProjects,
   isProjectDisplayNameTaken,
 } from "@/lib/brain-projects";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
@@ -116,11 +117,12 @@ export function useProjectsExplorer(options: {
 
   const { data: rawProjects, mutate } = useSWR(
     hasKubeconfig && ns !== ""
-      ? (["/api/projects", projectsQuery] as const)
+      ? (["/api/projects", projectsQuery, kubeconfig] as const)
       : null,
     () =>
       fetcher<BrainProjectsResponse>({
         base: window.location.origin,
+        header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
         path: "/api/projects",
         query: projectsQuery,
       }),
@@ -215,6 +217,7 @@ export function useProjectsExplorer(options: {
           base: window.location.origin,
           path: "/api/projects",
           method: "PATCH",
+          header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
           body: {
             displayName,
             id: p.id,
@@ -229,7 +232,7 @@ export function useProjectsExplorer(options: {
         throw e;
       }
     },
-    [hasKubeconfig, mutate, ns, projects]
+    [hasKubeconfig, kubeconfig, mutate, ns, projects]
   );
 
   const onProjectDelete = useCallback(
@@ -243,6 +246,7 @@ export function useProjectsExplorer(options: {
           base: window.location.origin,
           path: "/api/projects",
           method: "DELETE",
+          header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
           body: {
             id: p.id,
             namespace: ns,
@@ -260,7 +264,7 @@ export function useProjectsExplorer(options: {
         throw e;
       }
     },
-    [hasKubeconfig, mutate, ns, pathname, router]
+    [hasKubeconfig, kubeconfig, mutate, ns, pathname, router]
   );
 
   const actions = useMemo(

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import {
+  deployTemplateInstance,
   getTemplateSource,
   listTemplateCatalog,
 } from "./template-provider-core";
@@ -166,4 +167,79 @@ test("getTemplateSource preserves already encoded kubeconfig authorization", asy
     (requestedInit?.headers as Record<string, string>).Authorization,
     "apiVersion%3A%20v1%0Aclusters%3A%0A-%20cluster%3A%0A%20%20%20%20server%3A%20https%3A%2F%2Fexample.com"
   );
+});
+
+test("deployTemplateInstance posts args and Brain labels to provider", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com/";
+  let requestedUrl = "";
+  let requestedInit: RequestInit | undefined;
+  globalThis.fetch = ((url, init) => {
+    requestedUrl = String(url);
+    requestedInit = init;
+    return Promise.resolve(
+      jsonResponse(
+        {
+          name: "n8n-demo",
+          resources: [
+            {
+              name: "n8n-demo",
+              resourceType: "app",
+              uid: "resource-uid",
+            },
+          ],
+          uid: "instance-uid",
+        },
+        { status: 201 }
+      )
+    );
+  }) as typeof fetch;
+
+  const result = await deployTemplateInstance({
+    args: {
+      timezone: "Asia/Shanghai",
+    },
+    encodedKubeconfig:
+      "apiVersion: v1\nclusters:\n- cluster:\n    server: https://example.com",
+    extraLabels: {
+      "brain.io/managed-by": "brain",
+      "brain.io/project-id": "project-uid",
+      "brain.io/resource-kind": "template",
+      "brain.io/resource-name": "n8n",
+    },
+    instanceName: "n8n-demo",
+    templateName: "n8n",
+  });
+
+  assert.equal(
+    requestedUrl,
+    "https://template.example.com/api/v2alpha/templates/instances"
+  );
+  assert.equal(requestedInit?.method, "POST");
+  assert.equal(
+    (requestedInit?.headers as Record<string, string>).Authorization,
+    "apiVersion%3A%20v1%0Aclusters%3A%0A-%20cluster%3A%0A%20%20%20%20server%3A%20https%3A%2F%2Fexample.com"
+  );
+  assert.deepEqual(JSON.parse(String(requestedInit?.body)), {
+    args: {
+      timezone: "Asia/Shanghai",
+    },
+    extraLabels: {
+      "brain.io/managed-by": "brain",
+      "brain.io/project-id": "project-uid",
+      "brain.io/resource-kind": "template",
+      "brain.io/resource-name": "n8n",
+    },
+    name: "n8n-demo",
+    template: "n8n",
+  });
+  assert.deepEqual(result, {
+    instanceName: "n8n-demo",
+    resources: [
+      {
+        name: "n8n-demo",
+        resourceType: "app",
+        uid: "resource-uid",
+      },
+    ],
+  });
 });

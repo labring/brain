@@ -9,6 +9,7 @@ import {
   ProjectPersistenceError,
   renameProject,
 } from "@/lib/project-persistence/projects";
+import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
 import {
   fetchServerCredentials,
   hasDevCredentialBypass,
@@ -36,19 +37,27 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-async function authorizeNamespace(namespace: string): Promise<Response | null> {
+function authorizeNamespace(
+  request: Request,
+  namespace: string
+):
+  | { denied: null; encodedKubeconfig: string }
+  | { denied: Response; encodedKubeconfig?: never } {
   if (hasDevCredentialBypass()) {
-    return null;
+    return { denied: null, encodedKubeconfig: "" };
   }
 
-  const credentials = await fetchServerCredentials();
-  if (credentials.serverEncodedKubeconfig.trim() === "") {
-    return jsonError("Authentication is required.", 401);
+  const authorization = authorizeRequestNamespace(request, {
+    namespace,
+    subject: "Project",
+  });
+  if (!authorization.ok) {
+    return { denied: jsonError(authorization.message, authorization.status) };
   }
-  if (credentials.serverNamespace.trim() !== namespace) {
-    return jsonError("Project namespace is not accessible.", 403);
-  }
-  return null;
+  return {
+    denied: null,
+    encodedKubeconfig: authorization.encodedKubeconfig,
+  };
 }
 
 function persistenceError(error: ProjectPersistenceError): Response {
@@ -79,9 +88,9 @@ export async function GET(request: NextRequest) {
     return jsonError("Invalid project request.", 400);
   }
 
-  const denied = await authorizeNamespace(namespace.data);
-  if (denied !== null) {
-    return denied;
+  const authorization = await authorizeNamespace(request, namespace.data);
+  if (authorization.denied !== null) {
+    return authorization.denied;
   }
 
   try {
@@ -94,9 +103,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = createProjectRequestSchema.parse(await request.json());
-    const denied = await authorizeNamespace(body.namespace);
-    if (denied !== null) {
-      return denied;
+    const authorization = await authorizeNamespace(request, body.namespace);
+    if (authorization.denied !== null) {
+      return authorization.denied;
     }
     return NextResponse.json(
       { project: await createProject(body) },
@@ -113,9 +122,9 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = renameProjectRequestSchema.parse(await request.json());
-    const denied = await authorizeNamespace(body.namespace);
-    if (denied !== null) {
-      return denied;
+    const authorization = await authorizeNamespace(request, body.namespace);
+    if (authorization.denied !== null) {
+      return authorization.denied;
     }
     return NextResponse.json({ project: await renameProject(body) });
   } catch (error) {
@@ -129,16 +138,18 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = deleteProjectRequestSchema.parse(await request.json());
-    const denied = await authorizeNamespace(body.namespace);
-    if (denied !== null) {
-      return denied;
+    const authorization = await authorizeNamespace(request, body.namespace);
+    if (authorization.denied !== null) {
+      return authorization.denied;
     }
-    const credentials = await fetchServerCredentials();
-    if (credentials.serverEncodedKubeconfig.trim() === "") {
+    const encodedKubeconfig =
+      authorization.encodedKubeconfig ||
+      (await fetchServerCredentials()).serverEncodedKubeconfig;
+    if (encodedKubeconfig.trim() === "") {
       return jsonError("Authentication is required.", 401);
     }
     await deleteProjectManagedResources({
-      encodedKubeconfig: credentials.serverEncodedKubeconfig,
+      encodedKubeconfig,
       id: body.id,
       namespace: body.namespace,
     });

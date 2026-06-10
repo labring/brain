@@ -62,6 +62,25 @@ func registerGet(grp huma.API) {
 			Name:          input.Name,
 			Namespace:     resolved.Namespace,
 		})
+		if input.Name == "" && err == nil {
+			templateJSON, templateErr := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				LabelSelector: templateDBClusterLabelSelector(input.LabelSelector),
+				Resource:      "clusters",
+				Namespace:     resolved.Namespace,
+			})
+			if templateErr != nil && !apierrors.IsNotFound(templateErr) {
+				return nil, huma.Error500InternalServerError("failed to get template DBs", templateErr)
+			}
+			jsonBytes = mergeK8sListJSON(jsonBytes, templateJSON)
+		}
+		if input.Name != "" && apierrors.IsNotFound(err) {
+			jsonBytes, err = k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				LabelSelector: templateDBClusterLabelSelector(input.LabelSelector),
+				Resource:      "clusters",
+				Name:          input.Name,
+				Namespace:     resolved.Namespace,
+			})
+		}
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("DB not found", err)
@@ -88,19 +107,61 @@ func dbClusterLabelSelector(extra string) string {
 	return base + "," + extra
 }
 
+func templateDBClusterLabelSelector(extra string) string {
+	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=template"
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return base
+	}
+	return base + "," + extra
+}
+
+func mergeK8sListJSON(left, right []byte) []byte {
+	if len(left) == 0 {
+		return right
+	}
+	if len(right) == 0 {
+		return left
+	}
+	leftList, err := dbClusterListFromJSON(left)
+	if err != nil {
+		return left
+	}
+	rightList, err := dbClusterListFromJSON(right)
+	if err != nil {
+		return left
+	}
+	seen := map[string]bool{}
+	for _, item := range leftList.Items {
+		seen[item.GetNamespace()+"/"+item.GetName()] = true
+	}
+	for _, item := range rightList.Items {
+		key := item.GetNamespace() + "/" + item.GetName()
+		if seen[key] {
+			continue
+		}
+		leftList.Items = append(leftList.Items, item)
+	}
+	out, err := json.Marshal(leftList)
+	if err != nil {
+		return left
+	}
+	return out
+}
+
 func dbResponseFromClusters(jsonBytes []byte, single bool) (json.RawMessage, error) {
 	if single {
 		var cluster unstructured.Unstructured
 		if err := json.Unmarshal(jsonBytes, &cluster); err != nil {
 			return nil, err
 		}
-		if err := requireBrainDBCluster(cluster); err != nil {
+		if err := requireBrainDBLikeCluster(cluster); err != nil {
 			return nil, apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, cluster.GetName())
 		}
 		return json.Marshal(orchestration.DBObjectFromCluster(&cluster))
 	}
-	var list unstructured.UnstructuredList
-	if err := json.Unmarshal(jsonBytes, &list); err != nil {
+	list, err := dbClusterListFromJSON(jsonBytes)
+	if err != nil {
 		return nil, err
 	}
 	items := make([]interface{}, 0, len(list.Items))
@@ -124,15 +185,15 @@ func dbResponseFromClustersWithSupport(cfg *clientcmdapi.Config, jsonBytes []byt
 		if err := json.Unmarshal(jsonBytes, &cluster); err != nil {
 			return nil, err
 		}
-		if err := requireBrainDBCluster(cluster); err != nil {
+		if err := requireBrainDBLikeCluster(cluster); err != nil {
 			return nil, apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, cluster.GetName())
 		}
 		db := orchestration.DBObjectFromCluster(&cluster)
 		applyDBConnectionState(cfg, db, cluster.GetName(), cluster.GetNamespace())
 		return json.Marshal(db)
 	}
-	var list unstructured.UnstructuredList
-	if err := json.Unmarshal(jsonBytes, &list); err != nil {
+	list, err := dbClusterListFromJSON(jsonBytes)
+	if err != nil {
 		return nil, err
 	}
 	items := make([]interface{}, 0, len(list.Items))
@@ -147,6 +208,41 @@ func dbResponseFromClustersWithSupport(cfg *clientcmdapi.Config, jsonBytes []byt
 		"kind":       "DBList",
 	}
 	return json.Marshal(out)
+}
+
+func dbClusterListFromJSON(jsonBytes []byte) (unstructured.UnstructuredList, error) {
+	var list unstructured.UnstructuredList
+	if err := json.Unmarshal(jsonBytes, &list); err == nil {
+		return list, nil
+	}
+
+	var wrapped struct {
+		Object map[string]interface{}   `json:"Object"`
+		Items  []map[string]interface{} `json:"items"`
+	}
+	if err := json.Unmarshal(jsonBytes, &wrapped); err != nil {
+		return list, err
+	}
+	if wrapped.Object == nil {
+		return list, json.Unmarshal(jsonBytes, &list)
+	}
+	normalized := make(map[string]interface{}, len(wrapped.Object)+1)
+	for key, value := range wrapped.Object {
+		normalized[key] = value
+	}
+	items := make([]interface{}, 0, len(wrapped.Items))
+	for _, item := range wrapped.Items {
+		items = append(items, item)
+	}
+	normalized["items"] = items
+	normalizedBytes, err := json.Marshal(normalized)
+	if err != nil {
+		return list, err
+	}
+	if err := json.Unmarshal(normalizedBytes, &list); err != nil {
+		return list, err
+	}
+	return list, nil
 }
 
 func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{}, name string, namespace string) {

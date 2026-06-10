@@ -180,7 +180,10 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
     <WorkloadSettingsShell onClose={onClose} subtitle={subtitle} title={title}>
       <ContainerSettingsPane
         addDbDsnReferenceIntent={data?.addDbDsnReferenceIntent}
+        args={display.args}
         className="gap-5"
+        command={display.command}
+        configMaps={display.configMaps}
         cpuQuota={{
           max: 8,
           min: 0.25,
@@ -232,6 +235,8 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         }
         sectionFocus={focus}
         showImageSection={false}
+        storage={display.storage}
+        workloadKind={display.workloadKind}
       />
     </WorkloadSettingsShell>
   );

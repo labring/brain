@@ -7,6 +7,26 @@ import { renderDockerDeploymentYaml } from "./docker-deployment-yaml";
 const PLATFORM_ADDRESS_ID_RE = /^pa_[a-z0-9]{6,32}$/;
 const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = /^[a-z]{6}$/;
 
+function dockerSettings(overrides: {
+  appListeningPort?: number;
+  args?: string[];
+  command?: string[];
+  configMaps?: Array<{ path: string; value: string }>;
+  env?: Array<{ name: string; value: string }>;
+  image?: string;
+  storage?: Array<{ path: string; size: string }>;
+}) {
+  return {
+    appListeningPort: overrides.appListeningPort ?? 80,
+    args: overrides.args ?? [],
+    command: overrides.command ?? [],
+    configMaps: overrides.configMaps ?? [],
+    env: overrides.env ?? [],
+    image: overrides.image ?? "nginx:latest",
+    storage: overrides.storage ?? [],
+  };
+}
+
 test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifest", () => {
   const out = YAML.parse(
     renderDockerDeploymentYaml({
@@ -15,14 +35,14 @@ test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifes
       platformAddressId: "pa_abc123",
       projectName: "project-a",
       routingDomain: "apps.example.com",
-      settings: {
+      settings: dockerSettings({
         appListeningPort: 8080,
         env: [
           { name: "DATABASE_URL", value: "postgres://db:5432/app" },
           { name: "FEATURE_FLAG", value: "true" },
         ],
         image: "ghcr.io/acme/api:1.2",
-      },
+      }),
     })
   );
 
@@ -59,15 +79,43 @@ test("renderDockerDeploymentYaml omits empty environment variables", () => {
       platformAddressId: "pa_abc123",
       projectName: "project-a",
       routingDomain: "apps.example.com",
-      settings: {
+      settings: dockerSettings({
         appListeningPort: 80,
-        env: [],
         image: "nginx:latest",
-      },
+      }),
     })
   );
 
   assert.equal(out.spec.input.env, undefined);
+});
+
+test("renderDockerDeploymentYaml removes template workload when storage is empty", () => {
+  const out = YAML.parse(
+    renderDockerDeploymentYaml({
+      name: "project-a-web",
+      namespace: "ns-admin",
+      platformAddressId: "pa_abc123",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: dockerSettings({
+        appListeningPort: 80,
+        image: "nginx:latest",
+      }),
+      template: `
+apiVersion: brain.io/direct
+kind: AP
+metadata:
+  name: old
+spec:
+  workload:
+    kind: statefulset
+  input:
+    image: old-image
+`,
+    })
+  );
+
+  assert.equal(out.spec.workload, undefined);
 });
 
 test("renderDockerDeploymentYaml generates stable platform address ids", () => {
@@ -77,11 +125,10 @@ test("renderDockerDeploymentYaml generates stable platform address ids", () => {
       namespace: "ns-admin",
       projectName: "project-a",
       routingDomain: "apps.example.com",
-      settings: {
+      settings: dockerSettings({
         appListeningPort: 80,
-        env: [],
         image: "nginx:latest",
-      },
+      }),
     })
   );
   const second = YAML.parse(
@@ -90,11 +137,10 @@ test("renderDockerDeploymentYaml generates stable platform address ids", () => {
       namespace: "ns-admin",
       projectName: "project-a",
       routingDomain: "apps.example.com",
-      settings: {
+      settings: dockerSettings({
         appListeningPort: 80,
-        env: [],
         image: "nginx:latest",
-      },
+      }),
     })
   );
 
@@ -118,11 +164,10 @@ test("renderDockerDeploymentYaml resolves AP template placeholders before applyi
       platformAddressId: "pa_abc123",
       projectName: "project-a",
       routingDomain: "apps.example.com",
-      settings: {
+      settings: dockerSettings({
         appListeningPort: 3000,
-        env: [],
         image: "ghcr.io/acme/api:1.2",
-      },
+      }),
       template: `
 apiVersion: brain.io/direct
 kind: AP
@@ -171,11 +216,10 @@ test("renderDockerDeploymentYaml removes template routing domain when none is pr
       platformAddressId: "pa_abc123",
       projectName: "project-a",
       routingDomain: "",
-      settings: {
+      settings: dockerSettings({
         appListeningPort: 3000,
-        env: [],
         image: "ghcr.io/acme/api:1.2",
-      },
+      }),
       template: `
 apiVersion: brain.io/direct
 kind: AP
@@ -200,4 +244,32 @@ spec:
     PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
   );
   assert.equal(out.spec.input.network.platformAddresses[0].port, 3000);
+});
+
+test("renderDockerDeploymentYaml writes launch command config maps storage and StatefulSet kind", () => {
+  const out = YAML.parse(
+    renderDockerDeploymentYaml({
+      name: "project-a-api",
+      namespace: "ns-admin",
+      platformAddressId: "pa_abc123",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: dockerSettings({
+        appListeningPort: 8080,
+        args: ["--config", "/etc/app/config.yaml"],
+        command: ["/app/server"],
+        configMaps: [{ path: "/etc/app/config.yaml", value: "port: 8080\n" }],
+        image: "ghcr.io/acme/api:1.2",
+        storage: [{ path: "/data", size: "10Gi" }],
+      }),
+    })
+  );
+
+  assert.deepEqual(out.spec.input.command, ["/app/server"]);
+  assert.deepEqual(out.spec.input.args, ["--config", "/etc/app/config.yaml"]);
+  assert.deepEqual(out.spec.input.configMaps, [
+    { path: "/etc/app/config.yaml", value: "port: 8080\n" },
+  ]);
+  assert.deepEqual(out.spec.input.storage, [{ path: "/data", size: "10Gi" }]);
+  assert.deepEqual(out.spec.workload, { kind: "statefulset" });
 });

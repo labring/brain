@@ -1,5 +1,6 @@
 import YAML from "yaml";
 import {
+  BRAIN_APP_NAME_LABEL,
   BRAIN_MANAGED_BY_LABEL,
   BRAIN_MANAGED_BY_VALUE,
   BRAIN_PROJECT_ID_LABEL,
@@ -92,6 +93,16 @@ interface EvaluationContext {
   defaults: Record<string, string>;
   inputs: Record<string, string>;
   [key: string]: unknown;
+}
+
+interface TemplateApWorkloadInfo {
+  name: string;
+  podLabels: Record<string, string>;
+}
+
+interface TemplateResourceClassification {
+  appName?: string;
+  resourceKind: "ap" | "db" | "template";
 }
 
 function randomLowercase(length: number): string {
@@ -513,9 +524,280 @@ function normalizeRenderedResource(object: TemplateK8sObject) {
   normalizeServicePorts(object);
 }
 
+function isTemplateManagedApWorkload(object: TemplateK8sObject): boolean {
+  return object.kind === "Deployment" || object.kind === "StatefulSet";
+}
+
+function isTemplateManagedDbCluster(object: TemplateK8sObject): boolean {
+  return object.kind === "Cluster";
+}
+
+function objectMetadataName(object: TemplateK8sObject): string {
+  return object.metadata?.name?.trim() ?? "";
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  const record = asRecord(value);
+  if (record == null) {
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (typeof item === "string" && item !== "") {
+      out[key] = item;
+    }
+  }
+  return out;
+}
+
+function templateApWorkloads(
+  objects: TemplateK8sObject[]
+): TemplateApWorkloadInfo[] {
+  return objects.flatMap((object) => {
+    if (!isTemplateManagedApWorkload(object)) {
+      return [];
+    }
+    const name = objectMetadataName(object);
+    if (name === "") {
+      return [];
+    }
+    return [
+      {
+        name,
+        podLabels: stringRecord(
+          asRecord(asRecord(asRecord(object.spec)?.template)?.metadata)?.labels
+        ),
+      },
+    ];
+  });
+}
+
+function selectorMatchesPodLabels(
+  selector: Record<string, string>,
+  podLabels: Record<string, string>
+): boolean {
+  const entries = Object.entries(selector);
+  return (
+    entries.length > 0 &&
+    entries.every(([key, value]) => podLabels[key] === value)
+  );
+}
+
+function serviceApNameForResource(
+  service: TemplateK8sObject,
+  workloads: TemplateApWorkloadInfo[]
+): string | undefined {
+  const serviceName = objectMetadataName(service);
+  const selector = stringRecord(asRecord(service.spec)?.selector);
+  for (const workload of workloads) {
+    if (
+      workload.name === serviceName ||
+      selectorMatchesPodLabels(selector, workload.podLabels)
+    ) {
+      return workload.name;
+    }
+  }
+  return undefined;
+}
+
+function ingressBackendServiceNames(ingress: TemplateK8sObject): Set<string> {
+  const names = new Set<string>();
+  const defaultBackendName = asRecord(
+    asRecord(ingress.spec)?.defaultBackend
+  )?.service;
+  const defaultServiceName = asRecord(defaultBackendName)?.name;
+  if (typeof defaultServiceName === "string" && defaultServiceName !== "") {
+    names.add(defaultServiceName);
+  }
+  const rules = asRecord(ingress.spec)?.rules;
+  if (!Array.isArray(rules)) {
+    return names;
+  }
+  for (const rule of rules) {
+    const paths = asRecord(asRecord(rule)?.http)?.paths;
+    if (!Array.isArray(paths)) {
+      continue;
+    }
+    for (const path of paths) {
+      const serviceName = asRecord(
+        asRecord(asRecord(path)?.backend)?.service
+      )?.name;
+      if (typeof serviceName === "string" && serviceName !== "") {
+        names.add(serviceName);
+      }
+    }
+  }
+  return names;
+}
+
+function setTemplateApClassification(
+  classifications: Map<TemplateK8sObject, TemplateResourceClassification>,
+  object: TemplateK8sObject
+): boolean {
+  if (!isTemplateManagedApWorkload(object)) {
+    return false;
+  }
+  classifications.set(object, {
+    appName: objectMetadataName(object),
+    resourceKind: "ap",
+  });
+  return true;
+}
+
+function setTemplateDbClassification(
+  classifications: Map<TemplateK8sObject, TemplateResourceClassification>,
+  object: TemplateK8sObject
+): boolean {
+  if (!isTemplateManagedDbCluster(object)) {
+    return false;
+  }
+  classifications.set(object, { resourceKind: "db" });
+  return true;
+}
+
+function setTemplateServiceClassification(input: {
+  apNameByServiceName: Map<string, string>;
+  classifications: Map<TemplateK8sObject, TemplateResourceClassification>;
+  object: TemplateK8sObject;
+  workloads: TemplateApWorkloadInfo[];
+}): boolean {
+  if (input.object.kind !== "Service") {
+    return false;
+  }
+  const appName = serviceApNameForResource(input.object, input.workloads);
+  if (appName === undefined) {
+    return false;
+  }
+  input.classifications.set(input.object, { appName, resourceKind: "ap" });
+  const serviceName = objectMetadataName(input.object);
+  if (serviceName !== "") {
+    input.apNameByServiceName.set(serviceName, appName);
+  }
+  return true;
+}
+
+function setTemplateIngressClassification(input: {
+  apNameByServiceName: Map<string, string>;
+  classifications: Map<TemplateK8sObject, TemplateResourceClassification>;
+  object: TemplateK8sObject;
+}) {
+  if (
+    input.classifications.has(input.object) ||
+    input.object.kind !== "Ingress"
+  ) {
+    return;
+  }
+  for (const serviceName of ingressBackendServiceNames(input.object)) {
+    const appName = input.apNameByServiceName.get(serviceName);
+    if (appName !== undefined) {
+      input.classifications.set(input.object, { appName, resourceKind: "ap" });
+      return;
+    }
+  }
+}
+
+function templateResourceClassifications(
+  objects: TemplateK8sObject[]
+): Map<TemplateK8sObject, TemplateResourceClassification> {
+  const classifications = new Map<
+    TemplateK8sObject,
+    TemplateResourceClassification
+  >();
+  const workloads = templateApWorkloads(objects);
+  const apNameByServiceName = new Map<string, string>();
+
+  for (const object of objects) {
+    if (setTemplateApClassification(classifications, object)) {
+      continue;
+    }
+    if (setTemplateDbClassification(classifications, object)) {
+      continue;
+    }
+    setTemplateServiceClassification({
+      apNameByServiceName,
+      classifications,
+      object,
+      workloads,
+    });
+  }
+
+  for (const object of objects) {
+    setTemplateIngressClassification({
+      apNameByServiceName,
+      classifications,
+      object,
+    });
+  }
+
+  return classifications;
+}
+
+function applyTemplateApLabels(
+  labels: Record<string, string>,
+  input: RenderTemplateDeploymentInput,
+  objectName: string,
+  classification: TemplateResourceClassification
+) {
+  if (classification.resourceKind !== "ap") {
+    return;
+  }
+  labels[BRAIN_APP_NAME_LABEL] =
+    classification.appName ?? objectName ?? input.instanceName;
+  labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] =
+    labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] ?? input.instanceName;
+}
+
+function applyPodTemplateLabels(
+  object: TemplateK8sObject,
+  input: RenderTemplateDeploymentInput,
+  objectName: string,
+  classification: TemplateResourceClassification
+) {
+  const templateLabels = asRecord(
+    asRecord(asRecord(object.spec)?.template)?.metadata
+  )?.labels;
+  if (templateLabels == null) {
+    return;
+  }
+  const labels = templateLabels as Record<string, string>;
+  labels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
+  labels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
+  labels[BRAIN_RESOURCE_KIND_LABEL] = classification.resourceKind;
+  applyTemplateApLabels(labels, input, objectName, classification);
+}
+
+function applyVolumeClaimTemplateLabels(
+  object: TemplateK8sObject,
+  input: RenderTemplateDeploymentInput,
+  objectName: string,
+  classification: TemplateResourceClassification
+) {
+  const volumeClaimTemplates = asRecord(object.spec)?.volumeClaimTemplates;
+  if (!Array.isArray(volumeClaimTemplates)) {
+    return;
+  }
+  for (const claim of volumeClaimTemplates) {
+    const claimMeta = asRecord(claim)?.metadata;
+    if (claimMeta == null) {
+      continue;
+    }
+    const metadata = claimMeta as Record<string, unknown>;
+    if (metadata.labels == null) {
+      metadata.labels = {};
+    }
+    const claimLabels = metadata.labels as Record<string, string>;
+    claimLabels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
+    claimLabels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
+    claimLabels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
+    claimLabels[BRAIN_RESOURCE_KIND_LABEL] = classification.resourceKind;
+    applyTemplateApLabels(claimLabels, input, objectName, classification);
+  }
+}
+
 function applyResourceLabels(
   object: TemplateK8sObject,
-  input: RenderTemplateDeploymentInput
+  input: RenderTemplateDeploymentInput,
+  classification: TemplateResourceClassification
 ) {
   const meta = ensureMetadata(object);
   if (!CLUSTER_SCOPED_KINDS.has(object.kind ?? "")) {
@@ -525,46 +807,17 @@ function applyResourceLabels(
   labels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
   labels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
   labels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
-  labels[BRAIN_RESOURCE_KIND_LABEL] = "template";
+  labels[BRAIN_RESOURCE_KIND_LABEL] = classification.resourceKind;
   labels[BRAIN_RESOURCE_NAME_LABEL] = input.templateName;
-
-  if (
-    object.kind === "Deployment" ||
-    object.kind === "StatefulSet" ||
-    object.kind === "App"
-  ) {
+  const objectName = meta.name ?? input.instanceName;
+  applyTemplateApLabels(labels, input, objectName, classification);
+  if (object.kind === "App") {
     labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] =
       labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] ?? input.instanceName;
   }
 
-  const templateLabels = asRecord(
-    asRecord(asRecord(object.spec)?.template)?.metadata
-  )?.labels;
-  if (templateLabels != null) {
-    const labels = templateLabels as Record<string, string>;
-    labels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
-    labels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
-    labels[BRAIN_RESOURCE_KIND_LABEL] = "template";
-  }
-
-  const volumeClaimTemplates = asRecord(object.spec)?.volumeClaimTemplates;
-  if (Array.isArray(volumeClaimTemplates)) {
-    for (const claim of volumeClaimTemplates) {
-      const claimMeta = asRecord(claim)?.metadata;
-      if (claimMeta == null) {
-        continue;
-      }
-      const metadata = claimMeta as Record<string, unknown>;
-      if (metadata.labels == null) {
-        metadata.labels = {};
-      }
-      const claimLabels = metadata.labels as Record<string, string>;
-      claimLabels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
-      claimLabels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
-      claimLabels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
-      claimLabels[BRAIN_RESOURCE_KIND_LABEL] = "template";
-    }
-  }
+  applyPodTemplateLabels(object, input, objectName, classification);
+  applyVolumeClaimTemplateLabels(object, input, objectName, classification);
   normalizeRenderedResource(object);
 }
 
@@ -661,8 +914,15 @@ export function renderTemplateDeployment(
   if (resources.length === 0) {
     throw new Error("Template rendered no Kubernetes resources.");
   }
+  const classifications = templateResourceClassifications(resources);
   for (const resource of resources) {
-    applyResourceLabels(resource, input);
+    applyResourceLabels(
+      resource,
+      input,
+      classifications.get(resource) ?? {
+        resourceKind: "template",
+      }
+    );
   }
   const instanceResource = resources.find(
     (resource) =>

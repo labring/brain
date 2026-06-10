@@ -20,6 +20,7 @@ import { useAtomValue } from "jotai";
 import { SquarePen, Upload } from "lucide-react";
 import { memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
+import YAML from "yaml";
 
 import {
   containerStatesFromNode,
@@ -216,6 +217,14 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         namespace: ns,
         versionHash,
       });
+      if (version.specSnapshot != null) {
+        return YAML.stringify({
+          apiVersion: "brain.io/direct",
+          kind: "AP",
+          metadata: { name, namespace: ns },
+          spec: version.specSnapshot,
+        }).trimEnd();
+      }
       return [
         `image: ${version.image}`,
         version.imagePullPolicy == null || version.imagePullPolicy === ""
@@ -271,8 +280,8 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         }
       })(),
       {
-        loading: "Rolling back image version...",
-        success: "AP image updated from the selected version.",
+        loading: "Rolling back deployment...",
+        success: "AP restored from the selected deployment.",
         error: (e) =>
           e instanceof Error ? e.message : "Rollback failed unexpectedly.",
       }
@@ -401,16 +410,17 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         <AppDialog.Content>
           <AppDialog.Header>
             <AppDialog.WarningIcon />
-            <AppDialog.Title>Rollback to this image?</AppDialog.Title>
+            <AppDialog.Title>Rollback to this deployment?</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>
               The AP <span className="font-medium text-foreground">{name}</span>{" "}
-              image will be changed to the selected recorded version{" "}
+              settings will be restored from the selected recorded version{" "}
               <span className="break-all font-mono text-foreground">
                 {rollbackConfirmVersion ?? ""}
               </span>
-              . Other AP settings will stay unchanged.
+              . Storage rollback still follows Kubernetes constraints: PVCs
+              cannot shrink or change mount paths.
             </AppDialog.Description>
           </AppDialog.Body>
           <AppDialog.Footer>

@@ -186,6 +186,19 @@ func requireBrainDBCluster(cluster unstructured.Unstructured) error {
 	return nil
 }
 
+func requireBrainDBLikeCluster(cluster unstructured.Unstructured) error {
+	labels := cluster.GetLabels()
+	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
+		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
+		return errors.New("cluster is not a Brain-managed workload")
+	}
+	resourceKind := labels[orchestration.BrainResourceKindLabel]
+	if resourceKind != orchestration.ResourceKindDB && resourceKind != "template" {
+		return errors.New("cluster is not a Brain-managed DB-like workload")
+	}
+	return nil
+}
+
 func ensureDBCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string) error {
 	clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
 		Resource:  "clusters",
@@ -529,7 +542,7 @@ func registerUpdate(grp huma.API) {
 		if err := json.Unmarshal(clusterJSON, &currentCluster); err != nil {
 			return nil, huma.Error500InternalServerError("failed to decode DB for update", err)
 		}
-		if err := requireBrainDBCluster(currentCluster); err != nil {
+		if err := requireBrainDBLikeCluster(currentCluster); err != nil {
 			return nil, huma.Error404NotFound("DB not found", err)
 		}
 
@@ -930,7 +943,7 @@ func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace st
 	if err := json.Unmarshal(clusterJSON, &current); err != nil {
 		return err
 	}
-	if err := requireBrainDBCluster(current); err != nil {
+	if err := requireBrainDBLikeCluster(current); err != nil {
 		return apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, name)
 	}
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDBNameLabel + "=" + name

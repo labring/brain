@@ -78,21 +78,32 @@ function layoutNodesSignatureWithOptions(
 
 export function useProjectCanvasLayout(options: {
   enabled?: boolean;
+  kubeconfig: string;
   namespace: string;
   projectId: string;
 }) {
+  const kubeconfig = options.kubeconfig.trim();
   const namespace = options.namespace.trim();
   const projectId = options.projectId.trim();
   const enabled =
-    options.enabled === true && namespace !== "" && projectId !== "";
+    options.enabled === true &&
+    kubeconfig !== "" &&
+    namespace !== "" &&
+    projectId !== "";
 
   const swrKey = enabled
-    ? ([PROJECT_CANVAS_LAYOUT_API_PATH, namespace, projectId] as const)
+    ? ([
+        PROJECT_CANVAS_LAYOUT_API_PATH,
+        namespace,
+        projectId,
+        kubeconfig,
+      ] as const)
     : null;
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
     () =>
       fetchProjectCanvasLayout({
+        kubeconfig,
         namespace,
         projectId,
       }),
@@ -138,6 +149,7 @@ export function useProjectCanvasLayout(options: {
       inFlightNodesCanonicalSignatureRef.current = nextCanonicalSignature;
       try {
         const next = await patchProjectCanvasLayoutNodes({
+          kubeconfig,
           namespace,
           nodes,
           projectId,
@@ -161,7 +173,7 @@ export function useProjectCanvasLayout(options: {
         }
       }
     },
-    [enabled, mutate, namespace, projectId]
+    [enabled, kubeconfig, mutate, namespace, projectId]
   );
 
   const scheduler = useMemo(

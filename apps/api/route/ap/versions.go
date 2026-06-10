@@ -9,9 +9,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
@@ -53,8 +52,8 @@ func registerVersionList(grp huma.API) {
 		OperationID: "ap-version-list",
 		Method:      http.MethodGet,
 		Path:        "/versions",
-		Summary:     "List AP image versions",
-		Description: "List image versions recorded for one AP. Version rollback changes only the AP image fields.",
+		Summary:     "List AP deployment versions",
+		Description: "List deployment versions recorded for one AP. New records include a full AP spec snapshot when available; older image-only records remain readable.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *listInput) (*listOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -65,11 +64,14 @@ func registerVersionList(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
-		current, err := currentAPDeployment(ctx, cfg, ns, input.Name)
+		current, err := currentAPWorkloadForVersions(cfg, ns, input.Name)
 		if err != nil {
 			return nil, err
 		}
-		activeHash := apversion.VersionHash(ns, input.Name, apDeploymentImage(current), apDeploymentImagePullPolicy(current))
+		activeHash, err := currentAPVersionHash(cfg, current)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to compute active AP version", err)
+		}
 		store, err := apversion.DefaultStore(ctx)
 		if err != nil {
 			return nil, apVersionStoreError(err)
@@ -112,7 +114,7 @@ func registerVersionDetail(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
-		if _, err := currentAPDeployment(ctx, cfg, ns, input.Name); err != nil {
+		if _, err := currentAPWorkloadForVersions(cfg, ns, input.Name); err != nil {
 			return nil, err
 		}
 		store, err := apversion.DefaultStore(ctx)
@@ -144,8 +146,8 @@ func registerVersionRollback(grp huma.API) {
 		OperationID: "ap-version-rollback",
 		Method:      http.MethodPost,
 		Path:        "/versions/{versionHash}/rollback",
-		Summary:     "Rollback AP image",
-		Description: "Rollback one AP to a previous image version. Only spec.input.image and imagePullPolicy are changed.",
+		Summary:     "Rollback AP deployment",
+		Description: "Rollback one AP to a previous recorded AP spec snapshot. Older records without spec snapshots fall back to image-only rollback.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *rollbackInput) (*rollbackOutput, error) {
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -167,22 +169,19 @@ func registerVersionRollback(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get AP version", err)
 		}
-		current, err := currentAPDeployment(ctx, cfg, ns, input.Name)
+		current, err := currentAPWorkloadForVersions(cfg, ns, input.Name)
 		if err != nil {
 			return nil, err
 		}
-		patch := map[string]interface{}{
-			"spec": map[string]interface{}{
-				"input": map[string]interface{}{
-					"image": version.Image,
-				},
-			},
+		patchBytes, err := apVersionRollbackPatch(*version)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to build rollback patch", err)
 		}
-		if strings.TrimSpace(version.ImagePullPolicy) != "" {
-			patch["spec"].(map[string]interface{})["input"].(map[string]interface{})["imagePullPolicy"] = version.ImagePullPolicy
+		configMaps, err := currentAPConfigMapMounts(cfg, *current)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to read AP config maps", err)
 		}
-		patchBytes, _ := json.Marshal(patch)
-		renderInput, paused, err := apRenderInputFromDeploymentPatch(*current, patchBytes)
+		renderInput, paused, err := apRenderInputFromWorkloadPatch(*current, patchBytes, configMaps)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid rollback version", err)
 		}
@@ -190,20 +189,39 @@ func registerVersionRollback(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid AP direct resource request", err)
 		}
-		resources.Deployment.Annotations = mergeStringAnnotations(current.Annotations, resources.Deployment.Annotations)
-		applyAPPauseState(resources.Deployment, paused)
-		objects := []runtime.Object{resources.Deployment, resources.Service}
+		mergeAPWorkloadAnnotations(resources, current.Annotations())
+		applyAPResourcesPauseState(resources, paused)
+		applyAPResourcesRestartRequest(resources, current.Annotations(), renderInput.RestartRequest, time.Now().UTC())
+		objects := apRuntimeObjects(resources)
+		if resources.HPA != nil {
+			objects = append(objects, resources.HPA)
+		} else if err := deleteAPHPA(cfg, renderInput.Name, renderInput.Namespace); err != nil {
+			return nil, huma.Error500InternalServerError("failed to rollback AP autoscaling", err)
+		}
 		if err := replaceAPPublicIngresses(restConfig, cfg, renderInput.Name, renderInput.Namespace, renderInput); err != nil {
 			return nil, huma.Error500InternalServerError("failed to update AP public routing", err)
 		}
 		if err := k8ssvc.ApplyObjects(restConfig, objects, ns); err != nil {
-			return nil, huma.Error500InternalServerError("failed to rollback AP image", err)
+			return nil, huma.Error500InternalServerError("failed to rollback AP", err)
 		}
-		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{Resource: "deployments", Name: input.Name, Namespace: ns})
+		if resources.ConfigMap == nil {
+			if err := deleteAPConfigMap(cfg, renderInput.Name, renderInput.Namespace); err != nil {
+				return nil, huma.Error500InternalServerError("failed to delete AP config map", err)
+			}
+		}
+		if !apInputReferencesGeneratedImagePullSecret(renderInput) {
+			if err := deleteAPImagePullSecret(cfg, renderInput.Name, renderInput.Namespace); err != nil {
+				return nil, huma.Error500InternalServerError("failed to delete AP image pull secret", err)
+			}
+		}
+		if err := patchAPStatefulSetPVCStorage(ctx, restConfig, *current, renderInput.Storage); err != nil {
+			return nil, huma.Error500InternalServerError("failed to rollback AP storage", err)
+		}
+		updatedWorkload, err := currentAPWorkload(cfg, ns, input.Name)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to get updated AP", err)
 		}
-		body, err := apResponseFromDeployments(jsonBytes, true)
+		body, err := apResponseFromWorkloadWithConfigMapValues(cfg, updatedWorkload)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt AP response", err)
 		}
@@ -232,36 +250,127 @@ func resolveAPNamespace(cfg *clientcmdapi.Config, namespace string) (string, err
 	return resolved.Namespace, nil
 }
 
-func currentAPDeployment(ctx context.Context, cfg *clientcmdapi.Config, namespace, name string) (*appsv1.Deployment, error) {
+func currentAPWorkloadForVersions(cfg *clientcmdapi.Config, namespace, name string) (*apWorkload, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, huma.Error400BadRequest("name is required", nil)
 	}
-	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{Resource: "deployments", Name: name, Namespace: namespace})
+	workload, err := currentAPWorkload(cfg, namespace, name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 		return nil, huma.Error500InternalServerError("failed to get AP", err)
 	}
-	var deployment appsv1.Deployment
-	if err := json.Unmarshal(jsonBytes, &deployment); err != nil {
-		return nil, huma.Error500InternalServerError("failed to decode AP", err)
+	if err := requireBrainAPWorkload(*workload); err != nil {
+		return nil, huma.Error404NotFound("AP not found", err)
 	}
-	return &deployment, nil
+	return workload, nil
 }
 
-func apDeploymentImage(deployment *appsv1.Deployment) string {
-	if deployment == nil || len(deployment.Spec.Template.Spec.Containers) == 0 {
+func apWorkloadImage(workload *apWorkload) string {
+	container, ok := apWorkloadContainer(workload)
+	if !ok {
 		return ""
 	}
-	return deployment.Spec.Template.Spec.Containers[0].Image
+	return container.Image
 }
 
-func apDeploymentImagePullPolicy(deployment *appsv1.Deployment) string {
-	if deployment == nil || len(deployment.Spec.Template.Spec.Containers) == 0 {
+func apWorkloadImagePullPolicy(workload *apWorkload) string {
+	container, ok := apWorkloadContainer(workload)
+	if !ok {
 		return ""
 	}
-	return string(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+	return string(container.ImagePullPolicy)
+}
+
+func apWorkloadContainer(workload *apWorkload) (corev1.Container, bool) {
+	if workload == nil {
+		return corev1.Container{}, false
+	}
+	if workload.Deployment != nil && len(workload.Deployment.Spec.Template.Spec.Containers) > 0 {
+		return workload.Deployment.Spec.Template.Spec.Containers[0], true
+	}
+	if workload.StatefulSet != nil && len(workload.StatefulSet.Spec.Template.Spec.Containers) > 0 {
+		return workload.StatefulSet.Spec.Template.Spec.Containers[0], true
+	}
+	return corev1.Container{}, false
+}
+
+func currentAPVersionHash(cfg *clientcmdapi.Config, workload *apWorkload) (string, error) {
+	if workload == nil {
+		return "", nil
+	}
+	body, err := apResponseFromWorkloadWithConfigMapValues(cfg, workload)
+	if err != nil {
+		return "", err
+	}
+	var ap map[string]interface{}
+	if err := json.Unmarshal(body, &ap); err != nil {
+		return "", err
+	}
+	spec, _ := ap["spec"].(map[string]interface{})
+	input, _ := spec["input"].(map[string]interface{})
+	return apversion.VersionHashForSpec(
+		workload.Namespace(),
+		workload.Name(),
+		stringFromMap(input, "image"),
+		stringFromMap(input, "imagePullPolicy"),
+		spec,
+	), nil
+}
+
+func apVersionRollbackPatch(version apversion.Version) ([]byte, error) {
+	if len(version.SpecSnapshot) > 0 {
+		return json.Marshal(map[string]interface{}{"spec": apFullReplaySpec(version.SpecSnapshot)})
+	}
+	patch := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"input": map[string]interface{}{
+				"image": version.Image,
+			},
+		},
+	}
+	if strings.TrimSpace(version.ImagePullPolicy) != "" {
+		patch["spec"].(map[string]interface{})["input"].(map[string]interface{})["imagePullPolicy"] = version.ImagePullPolicy
+	}
+	return json.Marshal(patch)
+}
+
+func apFullReplaySpec(snapshot map[string]interface{}) map[string]interface{} {
+	spec := copyStringInterfaceMap(snapshot)
+	input, _ := spec["input"].(map[string]interface{})
+	if input == nil {
+		input = map[string]interface{}{}
+		spec["input"] = input
+	}
+	for _, key := range []string{"args", "command", "configMaps", "env", "imagePullSecrets", "storage"} {
+		if _, ok := input[key]; !ok {
+			input[key] = []interface{}{}
+		}
+	}
+	probes, _ := input["probes"].(map[string]interface{})
+	if probes == nil {
+		probes = map[string]interface{}{}
+		input["probes"] = probes
+	}
+	for _, key := range []string{"startup", "liveness", "readiness"} {
+		if _, ok := probes[key]; !ok {
+			probes[key] = nil
+		}
+	}
+	return spec
+}
+
+func copyStringInterfaceMap(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for key, value := range in {
+		if nested, ok := value.(map[string]interface{}); ok {
+			out[key] = copyStringInterfaceMap(nested)
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func apVersionRowFromVersion(version apversion.Version) apVersionRow {
