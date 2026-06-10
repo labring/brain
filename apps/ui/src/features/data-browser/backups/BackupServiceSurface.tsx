@@ -603,7 +603,7 @@ function BackupStatus({ backup }: { backup: DbServiceBackupSummary }) {
 function EmptyBackupRows() {
   return (
     <div
-      className="flex flex-1 flex-col items-center justify-center rounded-md border border-border bg-card/40 p-8 text-center"
+      className="flex flex-1 flex-col items-center justify-center p-8 text-center"
       data-qa-module="database"
       data-qa-object="backup-empty"
       data-qa-state="empty"

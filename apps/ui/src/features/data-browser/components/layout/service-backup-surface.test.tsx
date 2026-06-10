@@ -248,6 +248,31 @@ test("DB Service backup method toggle keeps inactive text stable and switch padd
   assert.doesNotMatch(manualButtonClass, /hover:text-foreground/);
 });
 
+test("DB Service backup empty state is unframed", () => {
+  const html = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      runtime={{
+        ...runtime,
+        backups: [],
+      }}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+  const emptyClassName = elementClassName(
+    html,
+    "div",
+    'data-testid="database\\.backup\\.empty"'
+  );
+  const classes = emptyClassName.split(/\s+/);
+
+  assert.ok(
+    !classes.some((name) => name === "border" || name.startsWith("border-"))
+  );
+  assert.ok(!classes.some((name) => name.startsWith("bg-")));
+  assert.match(html, /No backups found/);
+});
+
 test("DB Service backup policy actions use default secondary AppButton styling", () => {
   const html = renderToStaticMarkup(
     <DbAccessSessionProvider
