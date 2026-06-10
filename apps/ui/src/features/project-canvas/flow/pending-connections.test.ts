@@ -68,6 +68,40 @@ test("pending AP-DB canvas references are removed by id when the AP mutation fai
   );
 });
 
+test("adding the same pending AP-DB reference keeps the existing collection", () => {
+  const current = [
+    {
+      id: "intent-1",
+      source: { kind: "AP", name: "api", namespace: "default" },
+      target: { kind: "DB", name: "postgres", namespace: "default" },
+    },
+  ] satisfies ReturnType<typeof addPendingApDbCanvasReferences>;
+
+  const pending = addPendingApDbCanvasReferences(current, [
+    {
+      id: "intent-1",
+      source: { kind: "AP", name: "api", namespace: "default" },
+      target: { kind: "DB", name: "postgres", namespace: "default" },
+    },
+  ]);
+
+  assert.equal(pending, current);
+});
+
+test("removing a missing pending AP-DB reference keeps the existing collection", () => {
+  const current = [
+    {
+      id: "intent-1",
+      source: { kind: "AP", name: "api", namespace: "default" },
+      target: { kind: "DB", name: "postgres", namespace: "default" },
+    },
+  ] satisfies ReturnType<typeof addPendingApDbCanvasReferences>;
+
+  const pending = removePendingApDbCanvasReferences(current, ["intent-2"]);
+
+  assert.equal(pending, current);
+});
+
 test("resource-backed AP-DB connections make matching pending edges unnecessary", () => {
   assert.deepEqual(
     pendingApDbCanvasConnectionEdges({

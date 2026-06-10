@@ -53,6 +53,13 @@ function mergeNodeData(existing: Node, incoming: Node): Node["data"] {
 
   const incomingData = asRecord(incoming.data) ?? {};
   const incomingLayout = asRecord(incomingData.layout) ?? {};
+  if (
+    incoming.data === existing.data &&
+    incomingLayout.expanded === existingExpanded
+  ) {
+    return existing.data;
+  }
+
   return {
     ...incomingData,
     layout: {
@@ -62,20 +69,48 @@ function mergeNodeData(existing: Node, incoming: Node): Node["data"] {
   };
 }
 
+function mergedNodeMatchesExisting(existing: Node, merged: Node): boolean {
+  for (const key of Object.keys(merged) as Array<keyof Node>) {
+    if (key === "position") {
+      if (!positionsEqual(existing.position, merged.position)) {
+        return false;
+      }
+      continue;
+    }
+
+    if (!Object.is(existing[key], merged[key])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function mergeNodes(prev: Node[], next: Node[]): Node[] {
   const prevById = new Map(prev.map((node) => [node.id, node]));
-  return next.map((incoming) => {
+  let changed = prev.length !== next.length;
+  const mergedNodes = next.map((incoming) => {
     const existing = prevById.get(incoming.id);
     if (existing === undefined) {
+      changed = true;
       return incoming;
     }
 
-    return {
+    const merged = {
       ...incoming,
       data: mergeNodeData(existing, incoming),
       position: shouldUseIncomingPosition(existing, incoming)
         ? incoming.position
         : existing.position,
     };
+
+    if (mergedNodeMatchesExisting(existing, merged)) {
+      return existing;
+    }
+
+    changed = true;
+    return merged;
   });
+
+  return changed ? mergedNodes : prev;
 }

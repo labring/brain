@@ -39,3 +39,13 @@ test("mergeNodes preserves a generated node after the user has moved it", () => 
 
   assert.deepEqual(node?.position, { x: 24, y: 32 });
 });
+
+test("mergeNodes keeps the current nodes when incoming nodes are already represented", () => {
+  const incoming = generatedNode("entry-api", { x: 0, y: 0 });
+  const current = [{ ...incoming, measured: { height: 64, width: 272 } }];
+
+  const nodes = mergeNodes(current, [incoming]);
+
+  assert.equal(nodes, current);
+  assert.equal(nodes[0], current[0]);
+});

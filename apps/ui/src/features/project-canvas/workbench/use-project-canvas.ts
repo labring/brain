@@ -299,6 +299,30 @@ interface ProjectCanvasCommandPlanAdapters {
   writeSelection: (selection: ProjectCanvasSelection | null) => void;
 }
 
+interface PendingApDbReferenceDraftRegistration {
+  cleanup?: () => void;
+  signature: string;
+}
+
+function pendingApDbReferenceDraftSignature(
+  references: readonly PendingApDbCanvasReference[]
+): string {
+  return references
+    .map((reference) =>
+      [
+        reference.id,
+        reference.source.kind,
+        reference.source.namespace,
+        reference.source.name,
+        reference.target.kind,
+        reference.target.namespace,
+        reference.target.name,
+      ].join(":")
+    )
+    .sort()
+    .join("|");
+}
+
 function applyCommandFeedback(plan: ProjectCanvasCommandPlan) {
   if (plan.feedback?.tone === "error") {
     toast.error(plan.feedback.message);
@@ -374,9 +398,9 @@ export function useProjectCanvas(
   );
   const addDbDsnReferenceIntentCounter = useRef(0);
   const dbServiceRestoreFocusId = useRef(0);
-  const pendingApDbReferenceDraftCleanupById = useRef<Map<string, () => void>>(
-    new Map()
-  );
+  const pendingApDbReferenceDraftById = useRef<
+    Map<string, PendingApDbReferenceDraftRegistration>
+  >(new Map());
   const connectHandledInGestureRef = useRef(false);
   const connectingFromHandleRef = useRef<ProjectCanvasConnectionHandle | null>(
     null
@@ -531,33 +555,37 @@ export function useProjectCanvas(
         apNamespace: string;
       }
     ) => {
-      const cleanupById = pendingApDbReferenceDraftCleanupById.current;
-      cleanupById.get(change.id)?.();
-      cleanupById.delete(change.id);
-
+      const draftById = pendingApDbReferenceDraftById.current;
       const references = pendingApDbCanvasReferencesFromIntentChange({
         apName: change.apName,
         apNamespace: change.apNamespace,
         change,
       });
+      const signature = pendingApDbReferenceDraftSignature(references);
+      const existing = draftById.get(change.id);
+      if (existing?.signature === signature) {
+        return;
+      }
+
+      existing?.cleanup?.();
+      draftById.delete(change.id);
+
       if (references.length === 0 || onPendingApDbReferencesStart == null) {
         return;
       }
 
       const cleanup = onPendingApDbReferencesStart(references);
-      if (cleanup !== undefined) {
-        cleanupById.set(change.id, cleanup);
-      }
+      draftById.set(change.id, { cleanup, signature });
     },
     [onPendingApDbReferencesStart]
   );
   useEffect(
     () => () => {
-      const cleanupById = pendingApDbReferenceDraftCleanupById.current;
-      for (const cleanup of cleanupById.values()) {
-        cleanup();
+      const draftById = pendingApDbReferenceDraftById.current;
+      for (const { cleanup } of draftById.values()) {
+        cleanup?.();
       }
-      cleanupById.clear();
+      draftById.clear();
     },
     []
   );
@@ -879,10 +907,10 @@ export function useProjectCanvas(
           apName: name,
           apNamespace: ns,
           onBeforeStart: (ids) => {
-            const cleanupById = pendingApDbReferenceDraftCleanupById.current;
+            const draftById = pendingApDbReferenceDraftById.current;
             for (const id of ids) {
-              cleanupById.get(id)?.();
-              cleanupById.delete(id);
+              draftById.get(id)?.cleanup?.();
+              draftById.delete(id);
             }
           },
           onPendingApDbReferencesStart,

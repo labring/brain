@@ -18,22 +18,49 @@ export interface PendingApDbCanvasConnectionEdgesOptions {
   pendingReferences: readonly PendingApDbCanvasReference[];
 }
 
+function pendingReferenceEqual(
+  a: PendingApDbCanvasReference,
+  b: PendingApDbCanvasReference
+): boolean {
+  return (
+    a.id === b.id &&
+    a.source.kind === b.source.kind &&
+    a.source.name === b.source.name &&
+    a.source.namespace === b.source.namespace &&
+    a.target.kind === b.target.kind &&
+    a.target.name === b.target.name &&
+    a.target.namespace === b.target.namespace
+  );
+}
+
 export function addPendingApDbCanvasReferences(
-  current: readonly PendingApDbCanvasReference[],
+  current: PendingApDbCanvasReference[],
   next: readonly PendingApDbCanvasReference[]
 ): PendingApDbCanvasReference[] {
+  let changed = false;
   const byId = new Map(current.map((reference) => [reference.id, reference]));
   for (const reference of next) {
+    const existing = byId.get(reference.id);
+    if (existing !== undefined && pendingReferenceEqual(existing, reference)) {
+      continue;
+    }
     byId.set(reference.id, reference);
+    changed = true;
+  }
+  if (!changed) {
+    return current;
   }
   return Array.from(byId.values());
 }
 
 export function removePendingApDbCanvasReferences(
-  current: readonly PendingApDbCanvasReference[],
+  current: PendingApDbCanvasReference[],
   ids: readonly string[]
 ): PendingApDbCanvasReference[] {
   const idsToRemove = new Set(ids);
+  if (!current.some((reference) => idsToRemove.has(reference.id))) {
+    return current;
+  }
   return current.filter((reference) => !idsToRemove.has(reference.id));
 }
 

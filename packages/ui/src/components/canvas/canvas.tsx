@@ -290,6 +290,23 @@ function resolveCanvasReactFlowProps({
   };
 }
 
+function edgesMatchIncoming(current: Edge[], incoming: Edge[]): boolean {
+  if (current.length !== incoming.length) {
+    return false;
+  }
+
+  return incoming.every((edge, index) => {
+    const existing = current[index];
+    if (existing === undefined) {
+      return false;
+    }
+
+    return (Object.keys(edge) as Array<keyof Edge>).every((key) =>
+      Object.is(existing[key], edge[key])
+    );
+  });
+}
+
 function CanvasFlow({ children }: CanvasFlowProps) {
   const { interactionMode, meta, navigationChrome, rootRef, state } =
     useCanvas();
@@ -324,12 +341,14 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       setNodes((prev) => mergeNodes(prev, state.nodes));
     } else {
       initializedRef.current = true;
-      setNodes(state.nodes);
+      setNodes((prev) => (prev === state.nodes ? prev : state.nodes));
     }
   }, [nodeDragging, setNodes, state.nodes]);
 
   useLayoutEffect(() => {
-    setEdges(state.edges);
+    setEdges((prev) =>
+      edgesMatchIncoming(prev, state.edges) ? prev : state.edges
+    );
   }, [setEdges, state.edges]);
 
   const edgesWithSelectionStyle = useMemo((): Edge[] => {
