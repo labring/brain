@@ -246,7 +246,7 @@ func dbClusterListFromJSON(jsonBytes []byte) (unstructured.UnstructuredList, err
 	if wrapped.Object == nil {
 		return list, json.Unmarshal(jsonBytes, &list)
 	}
-	normalized := make(map[string]interface{}, len(wrapped.Object)+1)
+	normalized := map[string]interface{}{}
 	for key, value := range wrapped.Object {
 		normalized[key] = value
 	}

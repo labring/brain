@@ -34,7 +34,8 @@ const TEMPLATE_OPTIONS = [
 const COMBOBOX_ROLE_RE = /role="combobox"/;
 const TEMPLATE_ARIA_RE = /aria-label="Template"/;
 const DIFY_RE = /dify/;
-const TEMPLATE_ICON_RE = /https:\/\/example.com\/dify\.png/;
+const TEMPLATE_ICON_RE = /^https:\/\/example\.com\/dify\.png$/;
+const IMAGE_SRC_RE = /src="([^"]+)"/;
 const REQUIRED_ARG_RE = /init_password/;
 const EMPTY_RE = /No templates/;
 const DIFY_DESCRIPTION = "Dify is an open-source LLM app development platform.";
@@ -50,7 +51,8 @@ test("TemplateDeployer renders searchable template trigger with selected icon", 
   assert.match(html, COMBOBOX_ROLE_RE);
   assert.match(html, TEMPLATE_ARIA_RE);
   assert.match(html, DIFY_RE);
-  assert.match(html, TEMPLATE_ICON_RE);
+  const imageSrc = IMAGE_SRC_RE.exec(html)?.[1] ?? "";
+  assert.match(imageSrc, TEMPLATE_ICON_RE);
   assert.match(html, REQUIRED_ARG_RE);
   assert.ok(
     html.indexOf('role="combobox"') < html.indexOf(DIFY_DESCRIPTION),
