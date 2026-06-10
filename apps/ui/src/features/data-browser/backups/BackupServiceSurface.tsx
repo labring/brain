@@ -1040,8 +1040,8 @@ function policyFrequencyLabel(
   }
 }
 
-function timeOptionLabel(value: number, unit: "hour" | "min"): string {
-  return `${String(value).padStart(2, "0")} ${unit}`;
+function timeOptionLabel(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 function numberInputValue(value: number): string {
@@ -1279,7 +1279,7 @@ function BackupPolicyForm({
               disabled={!form.enabled || isSaving}
               onValueChange={setHour}
               options={HOUR_OPTIONS.map((hour) => ({
-                label: timeOptionLabel(hour, "hour"),
+                label: timeOptionLabel(hour),
                 value: String(hour),
               }))}
               value={numberInputValue(form.hour)}
@@ -1302,7 +1302,7 @@ function BackupPolicyForm({
             disabled={!form.enabled || isSaving}
             onValueChange={setMinute}
             options={MINUTE_OPTIONS.map((minute) => ({
-              label: timeOptionLabel(minute, "min"),
+              label: timeOptionLabel(minute),
               value: String(minute),
             }))}
             value={numberInputValue(form.minute)}
