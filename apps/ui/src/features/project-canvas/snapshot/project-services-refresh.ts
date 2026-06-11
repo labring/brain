@@ -3,7 +3,6 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 
 import { isPlatformAddressId } from "@/features/project-canvas/platform-addresses";
 
-export const ENTRYPOINT_FAST_REFRESH_MS = 1000;
 export const WORKLOAD_LIST_FAST_REFRESH_MS = 1000;
 export const WORKLOAD_LIST_MEDIUM_REFRESH_MS = 5000;
 export const WORKLOAD_LIST_STUCK_REFRESH_MS = 10_000;
@@ -259,47 +258,6 @@ export function workloadListRefreshIntervalForCanvas({
     peerEmpty
   ) {
     interval = minPositiveInterval(interval, WORKLOAD_LIST_FAST_REFRESH_MS);
-  }
-
-  return applyPageVisibilityRefreshInterval({ interval, isPageVisible });
-}
-
-export function entryPointRefreshIntervalForLifecycle({
-  apsData,
-  entryPointsData,
-  fallbackNamespace,
-  isPageVisible = true,
-  now = Date.now(),
-  publicEndpointSinceByKey = new Map<string, number>(),
-  workloadReconcilePollUntil,
-}: {
-  apsData: K8sGetResponse | undefined;
-  entryPointsData: K8sGetResponse | undefined;
-  fallbackNamespace?: string | undefined;
-  isPageVisible?: boolean;
-  now?: number;
-  publicEndpointSinceByKey?: WorkloadTransientSinceByKey;
-  workloadReconcilePollUntil: number;
-}) {
-  let interval = 0;
-  if (workloadReconcilePollUntil > now) {
-    interval = ENTRYPOINT_FAST_REFRESH_MS;
-  }
-
-  if (apItemsFromList(entryPointsData).length === 0) {
-    interval = minPositiveInterval(
-      interval,
-      trackedWorkloadRefreshInterval({
-        fallbackNamespace,
-        latestData: apsData,
-        now,
-        predicate: hasPublicApEndpointItem,
-        resourceKind: "entrypoint-public-routing",
-        transientSinceByKey: publicEndpointSinceByKey,
-      })
-    );
-  } else {
-    publicEndpointSinceByKey.clear();
   }
 
   return applyPageVisibilityRefreshInterval({ interval, isPageVisible });

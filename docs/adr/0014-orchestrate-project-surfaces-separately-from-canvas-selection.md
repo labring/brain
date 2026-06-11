@@ -8,21 +8,21 @@ Main Action Surface intents may also state how they interact with Side Pane focu
 
 The orchestrator uses three slot names: `side`, `main`, and `drawer`. `side` hosts Side Pane entries such as resource inspection, Project creation, and deployment panes. `main` hosts Main Action Surface entries such as DB Access and Resource Logs. `drawer` hosts Session Drawer entries such as AP Terminal and DB Terminal. Each slot is single-active, while Session Drawer may coexist with Side Pane or Main Action Surface.
 
-Surface entries use stable resource targets rather than Kubernetes UID as the primary identity. AP and DB targets use the resource kind, namespace, and name; EntryPoint-facing public address surfaces use the AP-bound surface key. Kubernetes UID may be carried as last-seen observed identity, but it is not the URL or surface ownership key.
+Surface entries use stable resource targets rather than Kubernetes UID as the primary identity. AP and DB targets use the resource kind, namespace, and name; AP public address surfaces use the AP-bound surface key. Kubernetes UID may be carried as last-seen observed identity, but it is not the URL or surface ownership key.
 
 Canvas selection is separate from surface targets. Resource-related surface intents normally synchronize canvas selection to the same resource so the canvas highlights the target, but closing or changing a surface does not require clearing selection, and Session Drawer remains pinned to its own target rather than following selection.
 
 ## Considered Options
 
-- Keep AP, DB, EntryPoint, action, and terminal state inside Project Canvas: rejected because assistant chat and future project features also need to open project surfaces.
+- Keep AP, DB, public access, action, and terminal state inside Project Canvas: rejected because assistant chat and future project features also need to open project surfaces.
 - Treat AP Terminal and DB Terminal as AP/DB pane modes: rejected because interactive sessions can coexist with inspection surfaces and should remain pinned to their session target rather than following canvas selection.
 - Let each feature own its own surface query state: rejected because replacement, coexistence, and leave-guard behavior would become inconsistent across entry points.
 
 ## Consequences
 
-The URL model should separate canvas selection from project surface slots. Surface entries belong to slots such as `side`, `main`, and `drawer`, while canvas selection records which AP, DB, AP-bound EntryPoint surface, or edge is selected.
+The URL model should separate canvas selection from project surface slots. Surface entries belong to slots such as `side`, `main`, and `drawer`, while canvas selection records which AP, DB, AP Public Access Node, or edge is selected.
 
-The refactor will move directly to the slot-based URL model rather than preserving the old AP, DB, EntryPoint, and canvas action query parameters through a compatibility codec.
+The refactor will move directly to the slot-based URL model rather than preserving the old AP, DB, public access, and canvas action query parameters through a compatibility codec.
 
 The target URL shape should use independent `selected`, `side`, `main`, and `drawer` query keys rather than resource-specific pane keys such as `apPane`, `dbPane`, `entryPane`, or `canvasAction`.
 

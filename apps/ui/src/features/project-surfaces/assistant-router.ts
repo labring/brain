@@ -1,5 +1,5 @@
 import type {
-  ProjectApBoundEntryPointTarget,
+  ProjectApBoundPublicAccessTarget,
   ProjectApTarget,
   ProjectDbTarget,
   ProjectResourceTarget,
@@ -13,8 +13,8 @@ export type ProjectSidePaneAssistantIntent =
   | { target: ProjectDbTarget; type: "dbTerminal" }
   | { target: ProjectResourceTarget; type: "logs" | "metrics" }
   | {
-      target: ProjectApBoundEntryPointTarget;
-      type: "entrypointPublicAddresses";
+      target: ProjectApBoundPublicAccessTarget;
+      type: "publicAddresses";
     };
 
 export type ProjectSidePaneIntentResult =

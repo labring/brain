@@ -164,7 +164,7 @@ export function projectCanvasEntryForAssistantIntent(
       slot: "drawer",
     };
   }
-  if (intent.type === "entrypointPublicAddresses") {
+  if (intent.type === "publicAddresses") {
     return {
       entry: {
         kind: "settings",

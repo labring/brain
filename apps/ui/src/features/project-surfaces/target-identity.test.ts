@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   parseProjectTarget,
-  projectApBoundEntryPointTarget,
+  projectApBoundPublicAccessTarget,
   projectApTarget,
   projectDbTarget,
   projectTargetKey,
@@ -11,7 +11,7 @@ import {
   targetsEqual,
 } from "./target-identity";
 
-test("project surface targets serialize stable AP, DB, and AP-bound EntryPoint identities", () => {
+test("project surface targets serialize stable AP, DB, and AP-bound PublicAccess identities", () => {
   assert.equal(
     serializeProjectTarget({ kind: "AP", name: "api", namespace: "default" }),
     "ap:default:api"
@@ -23,10 +23,10 @@ test("project surface targets serialize stable AP, DB, and AP-bound EntryPoint i
   assert.equal(
     serializeProjectTarget({
       apName: "api",
-      kind: "EntryPoint",
+      kind: "PublicAccess",
       namespace: "default",
     }),
-    "entry:default:api"
+    "public-access:default:api"
   );
 });
 
@@ -43,7 +43,12 @@ test("project surface targets decode without requiring Kubernetes UID", () => {
   });
   assert.deepEqual(parseProjectTarget("entry:default:api"), {
     apName: "api",
-    kind: "EntryPoint",
+    kind: "PublicAccess",
+    namespace: "default",
+  });
+  assert.deepEqual(parseProjectTarget("public-access:default:api"), {
+    apName: "api",
+    kind: "PublicAccess",
     namespace: "default",
   });
 });
@@ -71,7 +76,7 @@ test("project surface target factories reject empty identity parts", () => {
   assert.equal(projectApTarget({ name: "", namespace: "default" }), null);
   assert.equal(projectDbTarget({ name: "pg", namespace: "" }), null);
   assert.equal(
-    projectApBoundEntryPointTarget({ apName: " ", namespace: "default" }),
+    projectApBoundPublicAccessTarget({ apName: " ", namespace: "default" }),
     null
   );
 });

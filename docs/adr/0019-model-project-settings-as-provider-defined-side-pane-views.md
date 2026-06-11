@@ -1,10 +1,10 @@
 # Model Project Settings as Provider-Defined Side Pane Views
 
-Project Side Pane should host a generic settings surface entry instead of separate AP Settings, DB Settings, AP Environment Settings, and EntryPoint Public Addresses pane entries. The Side Pane remains a slot and shell; a new project settings feature resolves the Settings Owner target to a provider, and the provider owns data loading, draft behavior, presentation, and named Settings Views made from provider-local sections.
+Project Side Pane should host a generic settings surface entry instead of separate AP Settings, DB Settings, AP Environment Settings, and Public Addresses pane entries. The Side Pane remains a slot and shell; a new project settings feature resolves the Settings Owner target to a provider, and the provider owns data loading, draft behavior, presentation, and named Settings Views made from provider-local sections.
 
 Settings Views are provider-defined product scopes, not arbitrary section bundles passed by callers. A view may contain one or more sections, defaults to `full` when omitted, falls back to `full` when an unknown view is requested, and saves or discards changes at view granularity. Switching away from a dirty view must resolve the current edits first so hidden unsaved changes are not carried into another view and accidentally submitted.
 
-Settings targets identify the Settings Owner rather than the entry source. AP and DB resources are initial Settings Owners, with room for future owners such as Project; EntryPoint is not a Settings Owner, so EntryPoint Public Addresses opens the associated AP settings target with a Public Addresses view.
+Settings targets identify the Settings Owner rather than the entry source. AP and DB resources are initial Settings Owners, with room for future owners such as Project; Public Addresses is not a Settings Owner, so AP Public Access Node selection opens the associated AP settings target with a Public Addresses view.
 
 The route model should move directly to a unified settings side entry such as `settings:<owner-target>[:view]` and should not preserve the old settings side URL forms. Unsupported settings targets close the Side Pane and repair URL state, because there is no safe fallback provider.
 

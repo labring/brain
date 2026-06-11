@@ -350,8 +350,8 @@ func TestRenderAPPublicIngressLabelsAndBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderAPPublicIngress returned error: %v", err)
 	}
-	if got := ingress.Labels[BrainResourceKindLabel]; got != ResourceKindEntryPointSupport {
-		t.Fatalf("%s = %q, want %s", BrainResourceKindLabel, got, ResourceKindEntryPointSupport)
+	if got := ingress.Labels[BrainResourceKindLabel]; got != ResourceKindPublicAccessSupport {
+		t.Fatalf("%s = %q, want %s", BrainResourceKindLabel, got, ResourceKindPublicAccessSupport)
 	}
 	if got := ingress.Labels[LaunchpadAppDeployManagerDomainLabel]; got == "" || got == "web.example.com" {
 		t.Fatalf("%s = %q, want stable short host key", LaunchpadAppDeployManagerDomainLabel, got)
@@ -515,86 +515,6 @@ func TestAPPublicAddressResourceNameIsShortLowercaseMetadataName(t *testing.T) {
 	}
 	if strings.Contains(name, "571800") || strings.Contains(name, "jrjjio") {
 		t.Fatalf("public ingress name = %q, should not include AP name or public address id", name)
-	}
-}
-
-func TestEntryPointObjectFromIngressReturnsEntryPointLikeShape(t *testing.T) {
-	ingress, err := RenderAPPublicIngress(APPublicIngressInput{
-		APName:       "web",
-		Host:         "web.example.com",
-		Namespace:    "ns-a",
-		ProjectID:    "project-a",
-		PublicID:     "pa_abc",
-		PublicKind:   "platform",
-		ResourceName: "web-pa-abc",
-		ServicePort:  8080,
-	})
-	if err != nil {
-		t.Fatalf("RenderAPPublicIngress returned error: %v", err)
-	}
-	entryPoint := EntryPointObjectFromIngress(ingress)
-	if got := entryPoint["kind"]; got != "EntryPoint" {
-		t.Fatalf("kind = %v, want EntryPoint", got)
-	}
-	metadata := entryPoint["metadata"].(map[string]interface{})
-	if got := metadata["name"]; got != "web" {
-		t.Fatalf("metadata.name = %v, want AP-bound name web", got)
-	}
-	spec := entryPoint["spec"].(map[string]interface{})
-	if got := spec["apRef"]; got != "web" {
-		t.Fatalf("spec.apRef = %v, want web", got)
-	}
-	status := entryPoint["status"].(map[string]interface{})
-	targets := status["targets"].([]interface{})
-	target := targets[0].(map[string]interface{})
-	if got := target["host"]; got != "web.example.com" {
-		t.Fatalf("target.host = %v, want web.example.com", got)
-	}
-}
-
-func TestEntryPointObjectsFromIngressesAggregatesOneNodePerAP(t *testing.T) {
-	platformIngress, err := RenderAPPublicIngress(APPublicIngressInput{
-		APName:       "web",
-		Host:         "web.example.com",
-		Namespace:    "ns-a",
-		ProjectID:    "project-a",
-		PublicID:     "pa_abc",
-		PublicKind:   "platform",
-		ResourceName: "web-pa-abc",
-		ServicePort:  8080,
-	})
-	if err != nil {
-		t.Fatalf("RenderAPPublicIngress returned error: %v", err)
-	}
-	customIngress, err := RenderAPPublicIngress(APPublicIngressInput{
-		APName:       "web",
-		Host:         "www.example.com",
-		Namespace:    "ns-a",
-		ProjectID:    "project-a",
-		PublicID:     "cd_def",
-		PublicKind:   "custom-domain",
-		ResourceName: "web-cd-def",
-		ServicePort:  8080,
-	})
-	if err != nil {
-		t.Fatalf("RenderAPPublicIngress returned error: %v", err)
-	}
-
-	entryPoints := EntryPointObjectsFromIngresses([]networkingv1.Ingress{
-		*platformIngress,
-		*customIngress,
-	})
-	if got := len(entryPoints); got != 1 {
-		t.Fatalf("entryPoints length = %d, want 1", got)
-	}
-	metadata := entryPoints[0]["metadata"].(map[string]interface{})
-	if got := metadata["name"]; got != "web" {
-		t.Fatalf("metadata.name = %v, want web", got)
-	}
-	status := entryPoints[0]["status"].(map[string]interface{})
-	targets := status["targets"].([]interface{})
-	if got := len(targets); got != 2 {
-		t.Fatalf("targets length = %d, want 2", got)
 	}
 }
 

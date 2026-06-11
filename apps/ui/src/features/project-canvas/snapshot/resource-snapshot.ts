@@ -4,7 +4,7 @@ import {
   apLikeWorkloadKeysFromList,
   apsToCanvasState,
   dbsToCanvasState,
-  entryPointsToCanvasState,
+  publicAccessToCanvasState,
   templateNativeWorkloadsToCanvasState,
 } from "@/features/project-canvas/flow/ap-list-to-canvas-state";
 import {
@@ -31,7 +31,6 @@ export interface ProjectCanvasResourceSnapshotInput {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
   dbsData?: K8sGetResponse;
-  entryPointsData?: K8sGetResponse;
   error?: Error;
   isEmptyGraphLoading: boolean;
   kubeconfig: string;
@@ -56,7 +55,6 @@ export function buildProjectCanvasResourceSnapshot({
   canvasLayout,
   canvasLayoutReady = true,
   dbsData,
-  entryPointsData,
   error,
   isEmptyGraphLoading,
   kubeconfig,
@@ -73,8 +71,7 @@ export function buildProjectCanvasResourceSnapshot({
     gridIndexOffset: apBlock.nodes.length,
     namespaceFallback: namespace,
   });
-  const entryPointBlock = entryPointsToCanvasState(entryPointsData, {
-    apsData,
+  const publicAccessBlock = publicAccessToCanvasState(apsData, {
     gridIndexOffset: apBlock.nodes.length + dbBlock.nodes.length,
     namespaceFallback: namespace,
   });
@@ -88,14 +85,14 @@ export function buildProjectCanvasResourceSnapshot({
       gridIndexOffset:
         apBlock.nodes.length +
         dbBlock.nodes.length +
-        entryPointBlock.nodes.length,
+        publicAccessBlock.nodes.length,
       namespaceFallback: namespace,
     }
   );
   const detectedNodes = [
     ...apBlock.nodes,
     ...dbBlock.nodes,
-    ...entryPointBlock.nodes,
+    ...publicAccessBlock.nodes,
     ...templateNativeBlock.nodes,
   ];
   const detectedConnections = canvasLayoutReady
@@ -103,7 +100,6 @@ export function buildProjectCanvasResourceSnapshot({
         apEnvironmentDbReferenceSources,
         apsData,
         dbsData,
-        entryPointsData,
         namespaceFallback: namespace,
       })
     : [];

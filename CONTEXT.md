@@ -18,18 +18,13 @@ A transient, non-interactive hint used by the product design system for compact 
 
 _Avoid_: All tooltip, native title tooltip, chart tooltip.
 
-### EntryPoint
+### AP Public Access Node
 
-An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource or CRD.
+An AP Public Access Node is a presentation-only Project Canvas node derived from an AP's Public Addresses. It is not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
 
-EntryPoint is derived by the Brain Go API from an AP's desired public routing state and observed support resources such as Ingress, Certificate, and route health. A Requested Platform Address may remain pending before an EntryPoint view has allocated host data.
+The node represents AP-owned public access, including pending Platform Addresses and Custom Domains; its user-visible label is Public access.
 
-EntryPoint manages:
-
-- **Public Addresses** — externally reachable URLs/domains for the AP, each targeting an App Listening Port.
-- **Custom Domain Bindings** — DNS verification, routing, and TLS certificate lifecycle for user-owned Public Addresses.
-
-Not to be confused with: App Listening Ports (container ports where the application accepts traffic), AP endpoints (retired legacy fields), or Ingress (an underlying Kubernetes resource rendered by the Go API).
+_Avoid_: EntryPoint, EntryPoint resource, EntryPoint API view, AP endpoints, Ingress.
 
 ### App Listening Port
 
@@ -89,9 +84,9 @@ _Avoid_: Registry Component, product workflow, standalone settings pane.
 
 ### Settings Owner
 
-The resource whose desired configuration is edited by a settings surface. AP and DB resources can be Settings Owners; an EntryPoint selection may open an AP-owned Settings View, but EntryPoint is not the Settings Owner.
+The resource whose desired configuration is edited by a settings surface. AP and DB resources can be Settings Owners; selecting an AP Public Access Node may open an AP-owned Settings View, but the AP Public Access Node is not the Settings Owner.
 
-_Avoid_: EntryPoint Settings Owner.
+_Avoid_: EntryPoint Settings Owner, Public Access Node Settings Owner.
 
 ### AP Environment Settings Focus
 
@@ -123,19 +118,19 @@ The Project relationship selected for Docker Deployment Settings before AP creat
 
 The Project relationship selected for a GitHub repository deployment before the deployment task starts. A GitHub Deployment Target is either a new Project being created in the same flow or an existing Project that will receive the deployment task.
 
-### EntryPoint Public Addresses Panel
+### Public Access Panel
 
-A narrow UI surface opened from an EntryPoint selection that presents the associated AP's Public Addresses. It is scoped to public routing and is not the full AP Settings surface.
+A narrow UI surface opened from an AP Public Access Node selection that presents the associated AP's Public Addresses. It is scoped to public access and is not the full AP Settings surface.
 
-The panel is a Settings View for the associated AP's Public Addresses, even though its entry point is an EntryPoint selection.
+The panel is a Settings View for the associated AP's Public Addresses, even though it opens from a presentation-only canvas node.
 
-The panel can open for an AP-derived pending EntryPoint selection before allocated routing data exists, because the user's public routing intent belongs to the associated AP's Public Addresses. It includes Platform Address rows and Custom Domain rows, and does not present the AP's Private Address.
+The panel can open for an AP Public Access Node before allocated routing data exists, because the user's public access intent belongs to the associated AP's Public Addresses. It includes Platform Address rows and Custom Domain rows, and does not present the AP's Private Address.
 
 Edits made from the panel use the same Settings Draft confirmation model as AP Settings.
 
-The panel title is anchored on the associated AP name, even when the derived EntryPoint view has no allocated host data yet.
+The panel title is anchored on the associated AP name, even when no Public Address has allocated host data yet.
 
-After the last Public Address is removed, the panel may remain open as an AP-bound Public Addresses settings surface even though the EntryPoint node disappears from the canvas.
+After the last Public Address is removed, the panel may remain open as an AP-bound Public Addresses settings surface even though the AP Public Access Node disappears from the canvas.
 
 The panel closes when the associated AP no longer exists.
 
@@ -369,7 +364,7 @@ A set of new canvas nodes that Incremental Canvas Placement positions together b
 
 Canvas Placement Groups are evaluated against Canvas Placement Occupancy as a whole so related new nodes remain near one another when they first appear.
 
-An AP with desired Public Address intent and its AP-bound EntryPoint form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the EntryPoint is the AP's public routing surface rather than an independent placement result.
+An AP with desired Public Address intent and its AP Public Access Node form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the AP Public Access Node is a presentation node for AP-owned public access rather than an independent resource.
 
 After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes.
 
@@ -413,17 +408,17 @@ Pointer hover alone is not canvas navigation and does not reveal Canvas Navigati
 
 ### Canvas Resource Identity
 
-The product identity of a canvas node's backing AP, DB, or AP-bound EntryPoint surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.
+The product identity of a canvas node's backing AP, DB, or AP Public Access Node surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.
 
-For AP and DB nodes, `name` is the product resource name and also the primary underlying workload or Cluster name used by the Brain renderer. For EntryPoint nodes, `name` is the associated AP name: the node represents that AP's Public Addresses surface, including pending allocation state.
+For AP and DB nodes, `name` is the product resource name and also the primary underlying workload or Cluster name used by the Brain renderer. For AP Public Access Nodes, `name` is the associated AP name: the node represents that AP's Public Addresses surface, including pending allocation state.
 
-Underlying Kubernetes UID is retained separately as the last-seen entity identity where available so the UI can detect when a same-named AP workload or DB Cluster is meaningfully new. EntryPoint surfaces use AP-bound identity and observed routing facts rather than their own Kubernetes UID.
+Underlying Kubernetes UID is retained separately as the last-seen entity identity where available so the UI can detect when a same-named AP workload or DB Cluster is meaningfully new. AP Public Access Nodes use AP-bound identity and observed public access facts rather than their own Kubernetes UID.
 
 ### AP-bound Surface Key
 
-The EntryPoint selection identity used by URL state and the Canvas Resource Pane. An AP-bound Surface Key is stable for `{ namespace, apName }` and selects the AP's Public Addresses surface, whether allocated routing data already exists or is still pending.
+The public access selection identity used by URL state and the Canvas Resource Pane. An AP-bound Surface Key is stable for `{ namespace, apName }` and selects the AP's Public Addresses surface, whether allocated routing data already exists or is still pending.
 
-The AP-bound Surface Key is not the same thing as the Canvas Layout resource key. Canvas Layout uses Canvas Resource Identity. URL and pane selection may derive an AP-bound Surface Key from the same EntryPoint node facts, but the two keys are not interchangeable.
+The AP-bound Surface Key is not the same thing as the Canvas Layout resource key. Canvas Layout uses Canvas Resource Identity. URL and pane selection may derive an AP-bound Surface Key from the same AP Public Access Node facts, but the two keys are not interchangeable.
 
 ### Canvas Node Expansion State
 
@@ -445,11 +440,11 @@ A right-side canvas surface opened from a selected AP or DB node to inspect or c
 
 ### Project Canvas Resource Snapshot
 
-The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP-bound EntryPoint, and template-native workload list state plus the current Canvas Layout.
+The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP Public Access Node, and template-native workload list state plus the current Canvas Layout.
 
 A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, empty/loading/error frame state, resource refresh policy, and Canvas Layout save intent such as first placement or layout merge. It does not own Canvas Layout persistence; it emits layout intent for the Canvas Layout save pipeline to persist.
 
-Downstream Project Canvas modules should consume canvas-ready resource facts from a Project Canvas Resource Snapshot rather than raw AP, DB, EntryPoint, or workload list payloads. For example, DB reference sources for AP Environment References are Project Canvas Resource Snapshot facts, while the raw DB list payload remains internal implementation detail.
+Downstream Project Canvas modules should consume canvas-ready resource facts from a Project Canvas Resource Snapshot rather than raw AP, DB, AP Public Access Node, or workload list payloads. For example, DB reference sources for AP Environment References are Project Canvas Resource Snapshot facts, while the raw DB list payload remains internal implementation detail.
 
 Project Canvas Resource Snapshot is distinct from Workload Telemetry Snapshot: resource snapshot data determines whether resources and Canvas Connections exist, while telemetry snapshot data only decorates already-known AP and DB nodes with current usage metrics.
 
@@ -523,7 +518,7 @@ The Project Creation Pane may also open in a source-specific entry path. In a Gi
 
 ### Custom Domain Binding
 
-The relationship that attaches a Custom Domain to an AP by promoting one Platform Address as the CNAME target. The AP owns the user's binding intent, while EntryPoint owns DNS verification, routing, certificate lifecycle, and binding health.
+The relationship that attaches a Custom Domain to an AP by promoting one Platform Address as the CNAME target. The AP owns the user's binding intent and public access health; the AP Public Access Node only presents that AP-owned public access state on the canvas.
 
 A Custom Domain Binding targets the App Listening Port selected on the promoted Platform Address. Binding a Custom Domain may also retarget that promoted Platform Address to a different App Listening Port.
 

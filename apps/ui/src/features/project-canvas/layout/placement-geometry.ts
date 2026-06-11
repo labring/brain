@@ -9,7 +9,7 @@ export const CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED =
 export const CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED = 220;
 export const COLUMN_STEP = 340;
 export const ROW_STEP = 280;
-export const ENTRY_POINT_AP_LEFT_OFFSET = COLUMN_STEP;
+export const PUBLIC_ACCESS_AP_LEFT_OFFSET = COLUMN_STEP;
 
 export interface CanvasNodeRect {
   height: number;
@@ -45,15 +45,15 @@ export function singleNodeFootprint(height: number): PlacementFootprint {
   return { rects: [rectFromPosition({ x: 0, y: 0 }, height)] };
 }
 
-export function apEntryPointFootprint(
+export function apPublicAccessFootprint(
   apHeight: number,
-  entryPointHeight: number
+  publicAccessHeight: number
 ): PlacementFootprint {
   return {
     rects: [
       {
-        height: Math.max(apHeight, entryPointHeight),
-        width: ENTRY_POINT_AP_LEFT_OFFSET + CANVAS_NODE_FOOTPRINT_WIDTH,
+        height: Math.max(apHeight, publicAccessHeight),
+        width: PUBLIC_ACCESS_AP_LEFT_OFFSET + CANVAS_NODE_FOOTPRINT_WIDTH,
         x: 0,
         y: 0,
       },

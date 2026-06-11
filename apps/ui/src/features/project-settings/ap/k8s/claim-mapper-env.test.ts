@@ -223,7 +223,7 @@ test("AP claim settings maps public addresses from observed AP network state", (
   ]);
 });
 
-test("AP claim settings prefers EntryPoint target health over AP-projected Public Address status", () => {
+test("AP claim settings uses AP-projected Public Address status", () => {
   const settings = claimToApSettings(
     {
       kind: "AP",
@@ -254,28 +254,7 @@ test("AP claim settings prefers EntryPoint target health over AP-projected Publi
         },
       },
     },
-    "AP",
-    {
-      entryPointsData: {
-        items: [
-          {
-            kind: "EntryPoint",
-            metadata: { name: "api", namespace: "default" },
-            spec: { apRef: "api" },
-            status: {
-              targets: [
-                {
-                  id: "pa_abc123",
-                  platformDomain: "api.example.com",
-                  port: 8080,
-                  status: "accessible",
-                },
-              ],
-            },
-          },
-        ],
-      },
-    }
+    "AP"
   );
 
   assert.deepEqual(settings.network?.publicAddresses, [
@@ -283,7 +262,7 @@ test("AP claim settings prefers EntryPoint target health over AP-projected Publi
       host: "api.example.com",
       id: "pa_abc123",
       port: 8080,
-      status: "accessible",
+      status: "progressing",
       type: "platform",
       url: "https://api.example.com/",
     },
@@ -394,116 +373,6 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
       status: "progressing",
       type: "platform",
       url: "https://ucflzg.apps.example.com/",
-    },
-  ]);
-});
-
-test("AP claim settings prefers EntryPoint Custom Domain Binding health over AP projection", () => {
-  const settings = claimToApSettings(
-    {
-      kind: "AP",
-      metadata: {
-        labels: { region: "apps.example.com" },
-        name: "api",
-        namespace: "default",
-      },
-      spec: {
-        input: {
-          image: "ghcr.io/acme/api:latest",
-          network: {
-            customDomains: [
-              {
-                domain: "www.example.com",
-                id: "cd_def456",
-                platformAddressId: "pa_abc123",
-              },
-            ],
-            privatePort: 8080,
-            platformAddresses: [{ id: "pa_abc123", port: 8080 }],
-          },
-        },
-      },
-      status: {
-        network: {
-          privatePort: 8080,
-          publicAddresses: [
-            {
-              cnameTarget: "ucflzg.apps.example.com",
-              host: "www.example.com",
-              id: "cd_def456",
-              platformAddressId: "pa_abc123",
-              port: 8080,
-              status: "pending",
-              type: "custom",
-              url: "https://www.example.com/",
-            },
-          ],
-        },
-      },
-    },
-    "AP",
-    {
-      entryPointsData: {
-        items: [
-          {
-            kind: "EntryPoint",
-            metadata: { name: "api", namespace: "default" },
-            spec: { apRef: "api" },
-            status: {
-              customDomains: [
-                {
-                  certificate: {
-                    message: "Certificate request failed.",
-                    reason: "IssuerNotReady",
-                    status: "failed",
-                  },
-                  cnameTarget: "ucflzg.apps.example.com",
-                  dns: {
-                    message:
-                      "CNAME for www.example.com was verified before save.",
-                    status: "verified",
-                  },
-                  domain: "www.example.com",
-                  id: "cd_def456",
-                  platformAddressId: "pa_abc123",
-                  routing: {
-                    message: "Custom Domain Ingress has not been observed yet.",
-                    reason: "IngressPending",
-                    status: "pending",
-                  },
-                  status: "blocked",
-                  targetPort: 8080,
-                },
-              ],
-            },
-          },
-        ],
-      },
-    }
-  );
-
-  assert.deepEqual(settings.network?.customDomains, [
-    {
-      certificate: {
-        message: "Certificate request failed.",
-        reason: "IssuerNotReady",
-        status: "failed",
-      },
-      cnameTarget: "ucflzg.apps.example.com",
-      dns: {
-        message: "CNAME for www.example.com was verified before save.",
-        status: "verified",
-      },
-      domain: "www.example.com",
-      id: "cd_def456",
-      platformAddressId: "pa_abc123",
-      routing: {
-        message: "Custom Domain Ingress has not been observed yet.",
-        reason: "IngressPending",
-        status: "pending",
-      },
-      status: "blocked",
-      targetPort: 8080,
     },
   ]);
 });

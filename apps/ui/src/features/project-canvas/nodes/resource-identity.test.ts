@@ -107,12 +107,12 @@ test("Canvas Resource Identity uses DB workload namespace and name", () => {
   assert.equal(canvasNodeSelectionKey(node), "db-uid");
 });
 
-test("EntryPoint identity is the AP-bound Public Addresses surface", () => {
+test("PublicAccess identity is the AP-bound Public Addresses surface", () => {
   const node = {
     data: {
       resource: {
         apRef: "web",
-        name: "web-entrypoint",
+        name: "web-public-access",
         namespace: "default",
         uid: "entry-uid",
       },
@@ -123,26 +123,26 @@ test("EntryPoint identity is the AP-bound Public Addresses surface", () => {
   } as Node;
 
   assert.deepEqual(canvasResourceIdentityFromNode(node), {
-    kind: "EntryPoint",
+    kind: "PublicAccess",
     name: "web",
     namespace: "default",
   });
   assert.equal(canvasResourceLastSeenUidFromNode(node), "entry-uid");
-  assert.equal(canvasNodeSelectionKey(node), "entry:default:web");
+  assert.equal(canvasNodeSelectionKey(node), "public-access:default:web");
   assert.deepEqual(apBoundSurfaceRefFromKey("entry:default:web"), {
     apName: "web",
     namespace: "default",
   });
 });
 
-test("EntryPoint explicit selection key wins over observed resource uid", () => {
+test("PublicAccess explicit selection key wins over observed resource uid", () => {
   const node = {
     data: {
       resource: {
         apRef: "web",
-        name: "web-entrypoint",
+        name: "web-public-access",
         namespace: "default",
-        selectionKey: "entry:default:web",
+        selectionKey: "public-access:default:web",
         uid: "entry-uid",
       },
     },
@@ -151,5 +151,5 @@ test("EntryPoint explicit selection key wins over observed resource uid", () => 
     type: CANVAS_ENTRY_NODE_TYPE,
   } as Node;
 
-  assert.equal(canvasNodeSelectionKey(node), "entry:default:web");
+  assert.equal(canvasNodeSelectionKey(node), "public-access:default:web");
 });

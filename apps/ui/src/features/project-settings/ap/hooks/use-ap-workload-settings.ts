@@ -1,10 +1,7 @@
 "use client";
 
 import { API_ROUTES } from "@workspace/api/constants";
-import {
-  useBrainProductResource,
-  useEntryPointList,
-} from "@workspace/api/hooks";
+import { useApsK8sList, useBrainProductResource } from "@workspace/api/hooks";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { ApiUrl } from "@workspace/api/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +21,7 @@ import {
   applyApResourceQuotas,
   applyApSettingsDraft,
 } from "@/features/project-settings/ap/k8s/ap-json-patch";
+import { existingCustomDomainBindingsFromAps } from "@/features/project-settings/ap/k8s/ap-public-access";
 import {
   type ApReplicaStrategy,
   canonicalFixedReplicaStrategy,
@@ -34,7 +32,6 @@ import {
   k8sGetClaimBody,
   type WorkloadClaimKind,
 } from "@/features/project-settings/ap/k8s/claim-mapper";
-import { existingCustomDomainBindingsFromEntryPoints } from "@/features/project-settings/ap/k8s/entrypoint-custom-domains";
 import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import { settingsDraftSaveFailureMessage } from "@/features/project-settings/ap/lib/settings-draft-backing";
 
@@ -129,11 +126,11 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
       claimReconcilePollUntil > Date.now() ? WORKLOAD_RECONCILE_POLL_MS : 0,
   });
   const {
-    data: entryPointsData,
-    error: entryPointsError,
-    isLoading: entryPointsLoading,
-    mutate: revalidateEntryPoints,
-  } = useEntryPointList({
+    data: apsData,
+    error: apsError,
+    isLoading: apsLoading,
+    mutate: revalidateAps,
+  } = useApsK8sList({
     kubeconfig: isApWorkload ? kubeconfig : "",
     namespace,
     pollWhileEmpty: false,
@@ -169,22 +166,12 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     () =>
       claimToApSettings(k8sGetClaimBody(claimPayload), workloadKind, {
         dbDsnReferenceSources,
-        entryPointsData: isApWorkload ? entryPointsData : undefined,
       }),
-    [
-      claimPayload,
-      dbDsnReferenceSources,
-      entryPointsData,
-      isApWorkload,
-      workloadKind,
-    ]
+    [claimPayload, dbDsnReferenceSources, workloadKind]
   );
   const existingCustomDomains = useMemo(
-    () =>
-      isApWorkload
-        ? existingCustomDomainBindingsFromEntryPoints(entryPointsData)
-        : [],
-    [entryPointsData, isApWorkload]
+    () => (isApWorkload ? existingCustomDomainBindingsFromAps(apsData) : []),
+    [apsData, isApWorkload]
   );
 
   const display = useMemo(
@@ -195,10 +182,10 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     setClaimReconcilePollUntil(Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS);
     await Promise.all([
       revalidateClaim(),
-      revalidateEntryPoints(),
+      revalidateAps(),
       onWorkloadMutation?.().catch(() => undefined),
     ]);
-  }, [onWorkloadMutation, revalidateClaim, revalidateEntryPoints]);
+  }, [onWorkloadMutation, revalidateAps, revalidateClaim]);
 
   const ignoreImage = useCallback((_image: string) => {
     /* read-only */
@@ -518,14 +505,14 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   return {
     claimPayload: claimPayload as K8sGetResponse | undefined,
     display,
-    error: error ?? (isApWorkload ? entryPointsError : undefined),
+    error: error ?? (isApWorkload ? apsError : undefined),
     ignoreEnv,
     ignoreImage,
     ignoreNetwork,
     ignoreQuota,
     ignoreReplicas,
     isApWorkload,
-    isLoading: isLoading || (isApWorkload && entryPointsLoading),
+    isLoading: isLoading || (isApWorkload && apsLoading),
     onEnvChange,
     onEnvResolvedValue: resolveEnvValue,
     onImageChange,

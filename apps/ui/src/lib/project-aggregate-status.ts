@@ -52,7 +52,7 @@ export function phaseToVisualTone(phase: string | undefined): VisualTone {
 
 /**
  * One workload contributing to a project's aggregate health. Flat shape so
- * future sources (EntryPoint reachability, sandbox runners, external workloads)
+ * future sources (public access reachability, sandbox runners, external workloads)
  * can append without changing the call site — see PRD User Story 26.
  */
 export interface ProjectWorkloadStatusInput {
@@ -72,7 +72,7 @@ export interface ProjectWorkloadStatusInput {
  * typically a neutral dot for "empty / loading" rows.
  *
  * The `warning` slot is included in the severity ordering for forward-
- * compatibility (e.g. future EntryPoint reachability source); no current
+ * compatibility (e.g. future public access reachability source); no current
  * workload phase maps to `warning` on this surface.
  */
 const TONE_SEVERITY: Readonly<Record<VisualTone, number>> = {

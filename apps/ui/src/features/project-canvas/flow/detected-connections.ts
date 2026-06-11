@@ -17,8 +17,8 @@ import {
 } from "../nodes/resource-identity";
 import { isPlatformAddressId } from "../platform-addresses";
 
-export type CanvasDetectedConnectionKind = "EntryPointToAP" | "APToDB";
-export type CanvasConnectionResourceKind = "AP" | "DB" | "EntryPoint";
+export type CanvasDetectedConnectionKind = "PublicAccessToAP" | "APToDB";
+export type CanvasConnectionResourceKind = "AP" | "DB" | "PublicAccess";
 
 export interface CanvasConnectionResourceRef {
   kind: CanvasConnectionResourceKind;
@@ -36,7 +36,6 @@ export interface DetectCanvasConnectionsOptions {
   apEnvironmentDbReferenceSources?: readonly ApEnvironmentDbReferenceSource[];
   apsData: K8sGetResponse | undefined;
   dbsData: K8sGetResponse | undefined;
-  entryPointsData: K8sGetResponse | undefined;
   namespaceFallback?: string;
 }
 
@@ -89,10 +88,6 @@ function connectionKey(connection: CanvasDetectedConnection): string {
   return `${sourceKey}->${targetKey}`;
 }
 
-function namespacedResourceKey(namespace: string, name: string): string {
-  return `${namespace}/${name}`;
-}
-
 function resourceRef(
   kind: CanvasConnectionResourceKind,
   name: string | undefined,
@@ -124,27 +119,6 @@ export function canvasConnectionNodeResourceRef(
 
 function specRecord(resource: unknown): Record<string, unknown> | undefined {
   return asRecord(asRecord(resource)?.spec);
-}
-
-function entryPointApRef(entryPoint: unknown): string | undefined {
-  return nonEmptyString(specRecord(entryPoint)?.apRef);
-}
-
-function entryPointRefByApKey(
-  entryPoints: readonly unknown[],
-  namespaceFallback: string | undefined
-): Map<string, CanvasConnectionResourceRef> {
-  const map = new Map<string, CanvasConnectionResourceRef>();
-  for (const entryPoint of entryPoints) {
-    const apRef = entryPointApRef(entryPoint);
-    const namespace = metadataNamespace(entryPoint, namespaceFallback);
-    const ref = resourceRef("EntryPoint", apRef, namespace);
-    if (apRef === undefined || namespace === undefined || ref === undefined) {
-      continue;
-    }
-    map.set(namespacedResourceKey(namespace, apRef), ref);
-  }
-  return map;
 }
 
 function hasPublicAddressesFromNetwork(network: unknown): boolean {
@@ -225,52 +199,10 @@ function addUniqueConnection(
   connections.push(connection);
 }
 
-function apResourceKeySet(
-  aps: readonly unknown[],
-  namespaceFallback: string | undefined
-): Set<string> {
-  const refs = new Set<string>();
-  for (const ap of aps) {
-    const ref = resourceRefFromMetadata("AP", ap, namespaceFallback);
-    if (ref !== undefined) {
-      refs.add(canvasConnectionResourceKey(ref));
-    }
-  }
-  return refs;
-}
-
-function addEntryPointConnections(
-  connections: CanvasDetectedConnection[],
-  seenConnectionKeys: Set<string>,
-  entryPoints: readonly unknown[],
-  apRefs: ReadonlySet<string>,
-  namespaceFallback: string | undefined
-): void {
-  for (const entryPoint of entryPoints) {
-    const namespace = metadataNamespace(entryPoint, namespaceFallback);
-    const apRef = entryPointApRef(entryPoint);
-    const source = resourceRef("EntryPoint", apRef, namespace);
-    const target = resourceRef("AP", apRef, namespace);
-    if (
-      source === undefined ||
-      target === undefined ||
-      !apRefs.has(canvasConnectionResourceKey(target))
-    ) {
-      continue;
-    }
-    addUniqueConnection(connections, seenConnectionKeys, {
-      kind: "EntryPointToAP",
-      source,
-      target,
-    });
-  }
-}
-
 function addNetworkPublicAddressConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   aps: readonly unknown[],
-  entryPointRefsByApKey: ReadonlyMap<string, CanvasConnectionResourceRef>,
   namespaceFallback: string | undefined
 ): void {
   for (const ap of aps) {
@@ -281,15 +213,12 @@ function addNetworkPublicAddressConnections(
     if (target === undefined) {
       continue;
     }
-    const apKey = namespacedResourceKey(target.namespace, target.name);
-    const source =
-      entryPointRefsByApKey.get(apKey) ??
-      resourceRef("EntryPoint", target.name, target.namespace);
+    const source = resourceRef("PublicAccess", target.name, target.namespace);
     if (source === undefined) {
       continue;
     }
     addUniqueConnection(connections, seenConnectionKeys, {
-      kind: "EntryPointToAP",
+      kind: "PublicAccessToAP",
       source,
       target,
     });
@@ -429,33 +358,19 @@ export function detectCanvasConnections({
   apEnvironmentDbReferenceSources,
   apsData,
   dbsData,
-  entryPointsData,
   namespaceFallback,
 }: DetectCanvasConnectionsOptions): CanvasDetectedConnection[] {
   const aps = apItemsFromList(apsData);
   const dbs = apItemsFromList(dbsData);
-  const entryPoints = apItemsFromList(entryPointsData);
   const dbReferenceSources =
     apEnvironmentDbReferenceSources ??
     dbDsnReferenceSourcesFromDbs(dbs, namespaceFallback);
   const connections: CanvasDetectedConnection[] = [];
   const seenConnectionKeys = new Set<string>();
-  const entryPointRefsByApKey = entryPointRefByApKey(
-    entryPoints,
-    namespaceFallback
-  );
-  addEntryPointConnections(
-    connections,
-    seenConnectionKeys,
-    entryPoints,
-    apResourceKeySet(aps, namespaceFallback),
-    namespaceFallback
-  );
   addNetworkPublicAddressConnections(
     connections,
     seenConnectionKeys,
     aps,
-    entryPointRefsByApKey,
     namespaceFallback
   );
   addApDbConnections(

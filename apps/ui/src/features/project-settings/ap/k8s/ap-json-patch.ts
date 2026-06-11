@@ -34,6 +34,10 @@ import {
   routingDomainFromKubeconfig,
 } from "@/lib/kubeconfig-routing-domain";
 import {
+  type ExistingCustomDomainBinding,
+  normalizeCustomDomainName,
+} from "./ap-public-access";
+import {
   type ApReplicaStrategy,
   canonicalApReplicaStrategy,
   canonicalFixedReplicaStrategy,
@@ -49,10 +53,6 @@ import {
   readApInput,
   readApReplicaStrategy,
 } from "./ap-spec-access";
-import {
-  type ExistingCustomDomainBinding,
-  normalizeCustomDomainName,
-} from "./entrypoint-custom-domains";
 import type { K8sJsonPatchOp } from "./http/json-patch";
 
 const LEGACY_AP_NETWORK_INPUT_FIELDS = [

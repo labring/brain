@@ -11,7 +11,7 @@ import {
   normalizeProductPatch,
 } from "./chat-product-tools";
 
-test("product read requests use Brain AP, DB, and EntryPoint product API routes", () => {
+test("product read requests use Brain AP and DB product API routes", () => {
   assert.deepEqual(
     buildProductResourceRequest({
       kind: "AP",
@@ -37,17 +37,6 @@ test("product read requests use Brain AP, DB, and EntryPoint product API routes"
       operation: "read",
     }).path,
     API_ROUTES.db.root
-  );
-
-  assert.equal(
-    buildProductResourceRequest({
-      kind: "EntryPoint",
-      kubeconfig: "kc",
-      labelSelector: "brain.io/ap=web",
-      namespace: "ns",
-      operation: "read",
-    }).path,
-    API_ROUTES.entrypoint.root
   );
 });
 

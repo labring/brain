@@ -1,6 +1,6 @@
 # Derive Canvas Connections from Resource State
 
-Established Canvas Connections are derived from AP, DB, and EntryPoint product/API state plus observed dependency evidence rather than stored as freeform diagram edges or separate App Postgres records. Users may drag lines on the canvas, but only supported relationships become commands; unsupported Connecting Edges are discarded after lightweight feedback.
+Established Canvas Connections are derived from AP and DB product/API state plus observed dependency evidence. AP public access connections are presentation-only edges derived from AP network state. They are not stored as freeform diagram edges or separate App Postgres records. Users may drag lines on the canvas, but only supported relationships become commands; unsupported Connecting Edges are discarded after lightweight feedback.
 
 ## Considered Options
 

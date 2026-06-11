@@ -9,7 +9,7 @@ import {
   apLikeWorkloadKeysFromList,
   dbsToCanvasState,
   dbToDatabaseNodeData,
-  entryPointsToCanvasState,
+  publicAccessToCanvasState,
   templateNativeWorkloadsToCanvasState,
 } from "./ap-list-to-canvas-state";
 
@@ -55,9 +55,9 @@ test("DB canvas node data preserves backup policy for DB Access", () => {
   assert.deepEqual(data.backupPolicy, backupPolicy);
 });
 
-test("EntryPoint canvas nodes are derived from AP Network public addresses", () => {
-  const state = entryPointsToCanvasState(undefined, {
-    apsData: {
+test("PublicAccess canvas nodes are derived from AP Network public addresses", () => {
+  const state = publicAccessToCanvasState(
+    {
       items: [
         {
           metadata: { name: "api", namespace: "default", uid: "ap-uid" },
@@ -104,8 +104,8 @@ test("EntryPoint canvas nodes are derived from AP Network public addresses", () 
         },
       ],
     },
-    namespaceFallback: "default",
-  });
+    { namespaceFallback: "default" }
+  );
 
   assert.equal(state.nodes.length, 1);
   assert.equal(state.nodes[0]?.id, "entry-api");
@@ -119,7 +119,7 @@ test("EntryPoint canvas nodes are derived from AP Network public addresses", () 
       apRef: "api",
       name: "api",
       namespace: "default",
-      selectionKey: "entry:default:api",
+      selectionKey: "public-access:default:api",
     },
     states: { name: "api" },
     targets: [
@@ -133,9 +133,9 @@ test("EntryPoint canvas nodes are derived from AP Network public addresses", () 
   });
 });
 
-test("EntryPoint canvas nodes display AP-projected Custom Domain rows", () => {
-  const state = entryPointsToCanvasState(undefined, {
-    apsData: {
+test("PublicAccess canvas nodes display AP-projected Custom Domain rows", () => {
+  const state = publicAccessToCanvasState(
+    {
       items: [
         {
           metadata: { name: "api", namespace: "default", uid: "ap-uid" },
@@ -175,8 +175,8 @@ test("EntryPoint canvas nodes display AP-projected Custom Domain rows", () => {
         },
       ],
     },
-    namespaceFallback: "default",
-  });
+    { namespaceFallback: "default" }
+  );
 
   assert.deepEqual(state.nodes[0]?.data, {
     accessDomain: {
@@ -187,7 +187,7 @@ test("EntryPoint canvas nodes display AP-projected Custom Domain rows", () => {
       apRef: "api",
       name: "api",
       namespace: "default",
-      selectionKey: "entry:default:api",
+      selectionKey: "public-access:default:api",
     },
     states: { name: "api" },
     targets: [
@@ -201,99 +201,9 @@ test("EntryPoint canvas nodes display AP-projected Custom Domain rows", () => {
   });
 });
 
-test("EntryPoint canvas nodes prefer observed EntryPoint target status for AP-projected Public Addresses", () => {
-  const state = entryPointsToCanvasState(
+test("PublicAccess canvas nodes fall back to desired Platform Addresses while observed URLs are pending", () => {
+  const state = publicAccessToCanvasState(
     {
-      items: [
-        {
-          metadata: { name: "api", namespace: "default", uid: "entry-uid" },
-          spec: { apRef: "api" },
-          status: {
-            phase: "Running",
-            targets: [
-              {
-                id: "cd_def456",
-                platformDomain: "www.example.com",
-                port: 8080,
-                status: "accessible",
-              },
-            ],
-          },
-        },
-      ],
-    },
-    {
-      apsData: {
-        items: [
-          {
-            metadata: { name: "api", namespace: "default", uid: "ap-uid" },
-            spec: {
-              input: {
-                network: {
-                  customDomains: [
-                    {
-                      domain: "www.example.com",
-                      id: "cd_def456",
-                      platformAddressId: "pa_abc123",
-                    },
-                  ],
-                  privatePort: 8080,
-                  platformAddresses: [{ id: "pa_abc123", port: 8080 }],
-                },
-              },
-            },
-            status: {
-              network: {
-                privateAddress: "http://api-service.default.svc:8080",
-                privatePort: 8080,
-                publicAddresses: [
-                  {
-                    cnameTarget: "api.example.com",
-                    host: "www.example.com",
-                    id: "cd_def456",
-                    platformAddressId: "pa_abc123",
-                    port: 8080,
-                    status: "pending",
-                    type: "custom",
-                    url: "https://www.example.com/",
-                  },
-                ],
-              },
-            },
-          },
-        ],
-      },
-      namespaceFallback: "default",
-    }
-  );
-
-  assert.deepEqual(state.nodes[0]?.data, {
-    accessDomain: {
-      label: "Access domain",
-      value: "www.example.com",
-    },
-    resource: {
-      apRef: "api",
-      name: "api",
-      namespace: "default",
-      selectionKey: "entry:default:api",
-      uid: "entry-uid",
-    },
-    states: { name: "api" },
-    targets: [
-      {
-        id: "cd_def456",
-        label: "Custom Domain",
-        status: { label: "Accessible", tone: "accessible" },
-        value: "https://www.example.com/",
-      },
-    ],
-  });
-});
-
-test("EntryPoint canvas nodes fall back to desired Platform Addresses while observed URLs are pending", () => {
-  const state = entryPointsToCanvasState(undefined, {
-    apsData: {
       items: [
         {
           metadata: { name: "api", namespace: "default" },
@@ -314,8 +224,8 @@ test("EntryPoint canvas nodes fall back to desired Platform Addresses while obse
         },
       ],
     },
-    namespaceFallback: "default",
-  });
+    { namespaceFallback: "default" }
+  );
 
   assert.deepEqual(state.nodes[0]?.data, {
     accessDomain: {
@@ -326,7 +236,7 @@ test("EntryPoint canvas nodes fall back to desired Platform Addresses while obse
       apRef: "api",
       name: "api",
       namespace: "default",
-      selectionKey: "entry:default:api",
+      selectionKey: "public-access:default:api",
     },
     states: { name: "api" },
     targets: [
@@ -335,54 +245,6 @@ test("EntryPoint canvas nodes fall back to desired Platform Addresses while obse
         label: "Platform Address",
         status: { label: "Progressing", tone: "progressing" },
         value: "Pending",
-      },
-    ],
-  });
-});
-
-test("EntryPoint canvas nodes keep uid fallback when resource name is unavailable", () => {
-  const state = entryPointsToCanvasState(
-    {
-      items: [
-        {
-          metadata: { namespace: "default", uid: "entry-uid" },
-          spec: {
-            apRef: "api",
-            targets: [
-              {
-                id: "pa_abc123",
-                platformDomain: "https://api.example.com",
-                port: 8080,
-                status: "accessible",
-              },
-            ],
-          },
-        },
-      ],
-    },
-    { namespaceFallback: "default" }
-  );
-
-  assert.equal(state.nodes[0]?.id, "entry-entry-uid");
-  assert.deepEqual(state.nodes[0]?.data, {
-    accessDomain: {
-      label: "Access domain",
-      value: "api.example.com",
-    },
-    resource: {
-      apRef: "api",
-      name: "unknown",
-      namespace: "default",
-      selectionKey: "entry:default:api",
-      uid: "entry-uid",
-    },
-    states: { name: "unknown" },
-    targets: [
-      {
-        id: "pa_abc123",
-        label: "Public Domain",
-        status: { label: "Accessible", tone: "accessible" },
-        value: "https://api.example.com/",
       },
     ],
   });

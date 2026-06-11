@@ -166,7 +166,7 @@ function settingsPaneModel(
     entry.target.kind === "AP" && entry.view === "public-addresses"
       ? findCanvasNodeForProjectTarget(nodes, {
           apName: entry.target.name,
-          kind: "EntryPoint",
+          kind: "PublicAccess",
           namespace: entry.target.namespace,
         })
       : undefined;

@@ -1,4 +1,4 @@
-export type CanvasLayoutResourceKind = "AP" | "DB" | "EntryPoint";
+export type CanvasLayoutResourceKind = "AP" | "DB" | "PublicAccess";
 
 export interface CanvasLayoutResourceRef {
   kind: CanvasLayoutResourceKind;

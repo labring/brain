@@ -54,12 +54,6 @@ export const API_ROUTES = {
     stop: "/api/db/v1alpha1/stop",
   },
 
-  entrypoint: {
-    base: "/api/entrypoint/v1alpha1",
-    /** GET list/get — group root. */
-    root: "/api/entrypoint/v1alpha1",
-  },
-
   telemetry: {
     base: "/api/telemetry/v1alpha1",
     logsHealth: "/api/telemetry/v1alpha1/logs/health",

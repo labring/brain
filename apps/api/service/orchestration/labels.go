@@ -18,9 +18,9 @@ const (
 	APRestartRequestAnnotation    = "brain.io/ap-restart-request"
 	APRoutingDomainLabel          = "region"
 
-	ResourceKindAP                = "ap"
-	ResourceKindDB                = "db"
-	ResourceKindEntryPointSupport = "entrypoint-support"
+	ResourceKindAP                  = "ap"
+	ResourceKindDB                  = "db"
+	ResourceKindPublicAccessSupport = "public-access-support"
 
 	LaunchpadAppDeployManagerLabel                = "cloud.sealos.io/app-deploy-manager"
 	LaunchpadAppDeployManagerDomainLabel          = "cloud.sealos.io/app-deploy-manager-domain"

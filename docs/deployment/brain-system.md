@@ -1,6 +1,6 @@
 # brain-system Deployment Runbook
 
-This runbook describes the current `brain-system` deployment model after AP/DB/EntryPoint orchestration moved to direct Kubernetes and KubeBlocks resources.
+This runbook describes the current `brain-system` deployment model after AP/DB orchestration and AP public access support moved to direct Kubernetes and KubeBlocks resources.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ The chart renders:
 - Native Kubernetes `Deployment` and `Service` for `whodb`.
 - Optional application env `Secret` objects and image pull `Secret`.
 
-The Brain Go API owns the AP/DB lifecycle. It accepts `apiVersion: brain.io/direct` product manifests, renders native Kubernetes/KubeBlocks resources, applies them, and reads observed state back into the AP/DB/EntryPoint API views.
+The Brain Go API owns the AP/DB lifecycle. It accepts `apiVersion: brain.io/direct` product manifests, renders native Kubernetes/KubeBlocks resources plus AP public access support resources, applies them, and reads observed state back into AP/DB API views.
 
 ## Platform Prerequisites
 

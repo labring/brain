@@ -16,7 +16,9 @@ const optionalTimestamp = z
   .optional();
 
 export const canvasLayoutResourceRefSchema = z.object({
-  kind: z.enum(["AP", "DB", "EntryPoint"]),
+  kind: z
+    .enum(["AP", "DB", "PublicAccess", "EntryPoint"])
+    .transform((kind) => (kind === "EntryPoint" ? "PublicAccess" : kind)),
   namespace: boundedString,
   name: boundedString,
 });

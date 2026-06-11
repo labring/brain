@@ -15,7 +15,7 @@ export type BringCanvasStackOrderItemToFrontResult =
 const DEFAULT_LAYER_BY_KIND: Record<CanvasLayoutResourceRef["kind"], number> = {
   AP: 0,
   DB: 1,
-  EntryPoint: 2,
+  PublicAccess: 2,
 };
 
 export function canvasStackOrderValue(value: unknown): number | undefined {

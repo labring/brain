@@ -12,7 +12,7 @@ import {
 const state = {
   canvasSelection: {
     kind: "publicAddresses",
-    target: { apName: "api", kind: "EntryPoint", namespace: "default" },
+    target: { apName: "api", kind: "PublicAccess", namespace: "default" },
   },
   surfaces: {
     drawer: {
@@ -37,7 +37,7 @@ test("project workbench route codec parses and serializes selected and surface s
   assert.deepEqual(serialized, {
     drawer: "ap-terminal:ap:default:api",
     main: "db-access:db:data:pg",
-    selected: "entry:default:api",
+    selected: "public-access:default:api",
     side: "settings:ap:default:api:public-addresses",
   });
   assert.deepEqual(parseProjectWorkbenchRouteState(serialized), {

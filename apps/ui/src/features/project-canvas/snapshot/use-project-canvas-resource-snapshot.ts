@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  useApsK8sList,
-  useDbsK8sList,
-  useEntryPointList,
-} from "@workspace/api/hooks";
+import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +11,6 @@ import {
 } from "@/lib/brain-labels";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {
-  entryPointRefreshIntervalForLifecycle,
   type WorkloadTransientSinceByKey,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
@@ -37,7 +32,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   canvasLayoutReady?: boolean;
   /** URL-encoded kubeconfig (Authorization bearer body). */
   kubeconfig: string;
-  /** K8s namespace for AP, DB, and entrypoint discovery. */
+  /** K8s namespace for AP, DB, and public access discovery. */
   namespace: string;
   /** Project UID from the route (decoded). */
   uid: string;
@@ -72,9 +67,6 @@ export function useProjectCanvasResourceSnapshot(options: {
   const dbTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const deploymentTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const statefulSetTransientSinceByKeyRef = useRef(createTransientSinceMap());
-  const entryPointPublicEndpointSinceByKeyRef = useRef(
-    createTransientSinceMap()
-  );
   const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
     useState(0);
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
@@ -166,7 +158,6 @@ export function useProjectCanvasResourceSnapshot(options: {
     dbTransientSinceByKeyRef.current.clear();
     deploymentTransientSinceByKeyRef.current.clear();
     statefulSetTransientSinceByKeyRef.current.clear();
-    entryPointPublicEndpointSinceByKeyRef.current.clear();
   }, [labelSelector]);
 
   const {
@@ -194,29 +185,6 @@ export function useProjectCanvasResourceSnapshot(options: {
     pollWhileEmpty: false,
     refreshInterval: dbListRefreshInterval,
   });
-  const entryPointRefreshInterval = useCallback(
-    (latestData: K8sGetResponse | undefined) =>
-      entryPointRefreshIntervalForLifecycle({
-        apsData,
-        entryPointsData: latestData,
-        fallbackNamespace: namespace,
-        isPageVisible,
-        publicEndpointSinceByKey: entryPointPublicEndpointSinceByKeyRef.current,
-        workloadReconcilePollUntil,
-      }),
-    [apsData, isPageVisible, namespace, workloadReconcilePollUntil]
-  );
-  const {
-    data: entryPointsData,
-    error: entryPointsError,
-    isLoading: entryPointsLoading,
-    mutate: mutateEntryPoints,
-  } = useEntryPointList({
-    kubeconfig,
-    labelSelector,
-    namespace,
-    refreshInterval: entryPointRefreshInterval,
-  });
   const {
     data: templateNativeData,
     error: templateNativeError,
@@ -233,13 +201,8 @@ export function useProjectCanvasResourceSnapshot(options: {
   dbsListRef.current = dbsData;
 
   const revalidate = useCallback(() => {
-    return Promise.all([
-      mutateAps(),
-      mutateDbs(),
-      mutateEntryPoints(),
-      mutateTemplateNative(),
-    ]);
-  }, [mutateAps, mutateDbs, mutateEntryPoints, mutateTemplateNative]);
+    return Promise.all([mutateAps(), mutateDbs(), mutateTemplateNative()]);
+  }, [mutateAps, mutateDbs, mutateTemplateNative]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(
@@ -267,9 +230,8 @@ export function useProjectCanvasResourceSnapshot(options: {
     };
   }, [revalidate]);
 
-  const error = apsError ?? dbsError ?? entryPointsError ?? templateNativeError;
-  const isLoading =
-    apsLoading || dbsLoading || entryPointsLoading || templateNativeLoading;
+  const error = apsError ?? dbsError ?? templateNativeError;
+  const isLoading = apsLoading || dbsLoading || templateNativeLoading;
 
   const snapshot = useMemo(
     () =>
@@ -278,7 +240,6 @@ export function useProjectCanvasResourceSnapshot(options: {
         canvasLayout,
         canvasLayoutReady,
         dbsData,
-        entryPointsData,
         error,
         isEmptyGraphLoading: false,
         kubeconfig,
@@ -290,7 +251,6 @@ export function useProjectCanvasResourceSnapshot(options: {
       canvasLayout,
       canvasLayoutReady,
       dbsData,
-      entryPointsData,
       error,
       kubeconfig,
       namespace,

@@ -231,7 +231,7 @@ function buildAssistantContextPayload(
       ? {}
       : {
           selectedWorkload:
-            target.kind === "EntryPoint"
+            target.kind === "PublicAccess"
               ? {
                   kind: target.kind,
                   name: target.apName,

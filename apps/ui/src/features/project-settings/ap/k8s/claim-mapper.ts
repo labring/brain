@@ -1,4 +1,3 @@
-import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import type {
   ApConfigMapMount,
@@ -18,13 +17,13 @@ import {
   apEnvDbSecretReferenceFromValueFrom,
 } from "@/features/project-settings/ap/lib/ap-env-rows";
 import { apEnvRowsFromSavedEnv } from "@/features/project-settings/ap/lib/ap-env-tokens";
-
 import {
   customDomainBindingIdFromValue,
   platformAddressEndpoint,
   platformAddressIdFromValue,
   platformAddressIdsFromRows,
 } from "@/features/project-settings/ap/lib/platform-address";
+import { normalizeCustomDomainName } from "./ap-public-access";
 import {
   type ApReplicaStrategy,
   defaultFixedReplicaStrategy,
@@ -37,11 +36,6 @@ import {
   readApMemoryLimit,
   readApReplicaStrategy,
 } from "./ap-spec-access";
-import {
-  entryPointCustomDomainStatusesForAp,
-  entryPointPublicAddressStatusesForAp,
-  normalizeCustomDomainName,
-} from "./entrypoint-custom-domains";
 
 export type WorkloadClaimKind = "AP" | "DB";
 type ApClaimCustomDomain = NonNullable<ApNetwork["customDomains"]>[number];
@@ -275,8 +269,7 @@ function apRoutingDomainFromMetadata(
 function apNetworkFromSpecAndStatus(
   metadata: Record<string, unknown> | undefined,
   spec: Record<string, unknown>,
-  status: Record<string, unknown>,
-  options?: ClaimToApSettingsOptions
+  status: Record<string, unknown>
 ): ApNetwork | undefined {
   const inputNetwork = asRecord(readApInput(spec).network);
   const statusNetwork = asRecord(status.network);
@@ -291,28 +284,15 @@ function apNetworkFromSpecAndStatus(
   const privateAddress =
     appListeningPorts[0]?.privateAddress ??
     trimStr(statusNetwork?.privateAddress);
-  const entryPointCustomDomains = entryPointCustomDomainStatusesForAp(
-    options?.entryPointsData,
-    metadata ?? {}
-  );
-  const entryPointPublicAddresses = entryPointPublicAddressStatusesForAp(
-    options?.entryPointsData,
-    metadata ?? {}
-  );
   return {
     appListeningPorts,
     ...(privateAddress === "" ? {} : { privateAddress }),
-    ...apNetworkCustomDomains(
-      inputNetwork,
-      statusNetwork,
-      entryPointCustomDomains
-    ),
+    ...apNetworkCustomDomains(inputNetwork, statusNetwork),
     privatePort: primaryPort,
     publicAddresses: apNetworkPublicAddresses(
       metadata,
       inputNetwork,
-      statusNetwork,
-      entryPointPublicAddresses
+      statusNetwork
     ),
   };
 }
@@ -381,13 +361,11 @@ function normalizeAppListeningPortRows(
 
 function apNetworkCustomDomains(
   inputNetwork: Record<string, unknown> | undefined,
-  statusNetwork: Record<string, unknown> | undefined,
-  entryPointCustomDomains: ReadonlyMap<string, ApClaimCustomDomain>
+  statusNetwork: Record<string, unknown> | undefined
 ): Pick<ApNetwork, "customDomains"> | Record<string, never> {
   const customDomains = normalizeDesiredCustomDomains(
     inputNetwork?.customDomains,
-    projectedCustomDomainsById(statusNetwork?.publicAddresses),
-    entryPointCustomDomains
+    projectedCustomDomainsById(statusNetwork?.publicAddresses)
   );
   return customDomains.length === 0 ? {} : { customDomains };
 }
@@ -395,26 +373,16 @@ function apNetworkCustomDomains(
 function apNetworkPublicAddresses(
   metadata: Record<string, unknown> | undefined,
   inputNetwork: Record<string, unknown> | undefined,
-  statusNetwork: Record<string, unknown> | undefined,
-  entryPointPublicAddresses: ReadonlyMap<
-    string,
-    Pick<ApNetwork["publicAddresses"][number], "status">
-  >
+  statusNetwork: Record<string, unknown> | undefined
 ): ApNetwork["publicAddresses"] {
   const observed = normalizeNetworkPublicAddresses(
     statusNetwork?.publicAddresses,
     true
-  )
-    .filter(isPlatformPublicAddressRow)
-    .map((address) =>
-      mergePublicAddressStatus(address, entryPointPublicAddresses)
-    );
+  ).filter(isPlatformPublicAddressRow);
   const desiredPending = normalizeDesiredPlatformAddresses(
     inputNetwork?.platformAddresses,
     metadata,
     apRoutingDomainFromMetadata(metadata)
-  ).map((address) =>
-    mergePublicAddressStatus(address, entryPointPublicAddresses)
   );
   if (observed.length > 0) {
     const observedIds = platformAddressIdsFromRows(observed);
@@ -426,22 +394,6 @@ function apNetworkPublicAddresses(
     ];
   }
   return desiredPending;
-}
-
-function mergePublicAddressStatus(
-  address: ApNetwork["publicAddresses"][number],
-  entryPointPublicAddresses: ReadonlyMap<
-    string,
-    Pick<ApNetwork["publicAddresses"][number], "status">
-  >
-): ApNetwork["publicAddresses"][number] {
-  if (address.id === undefined) {
-    return address;
-  }
-  return {
-    ...address,
-    ...entryPointPublicAddresses.get(address.id),
-  };
 }
 
 function isCustomPublicAddressRow(
@@ -458,8 +410,7 @@ function isPlatformPublicAddressRow(
 
 function normalizeDesiredCustomDomains(
   raw: unknown,
-  projectedCustomDomains: CustomDomainReadModelById = new Map(),
-  entryPointCustomDomains: ReadonlyMap<string, ApClaimCustomDomain> = new Map()
+  projectedCustomDomains: CustomDomainReadModelById = new Map()
 ): NonNullable<ApNetwork["customDomains"]> {
   if (!Array.isArray(raw)) {
     return [];
@@ -481,8 +432,7 @@ function normalizeDesiredCustomDomains(
     out.push(
       mergedCustomDomainReadModel(
         { domain, id, platformAddressId },
-        projectedCustomDomains.get(id),
-        entryPointCustomDomains.get(id)
+        projectedCustomDomains.get(id)
       )
     );
   }
@@ -491,22 +441,18 @@ function normalizeDesiredCustomDomains(
 
 function mergedCustomDomainReadModel(
   desired: Pick<ApClaimCustomDomain, "domain" | "id" | "platformAddressId">,
-  projected: CustomDomainReadModelPatch | undefined,
-  entryPoint: ApClaimCustomDomain | undefined
+  projected: CustomDomainReadModelPatch | undefined
 ): ApClaimCustomDomain {
   const observed = {
     status: "pending",
     ...projected,
-    ...entryPoint,
   };
   return {
     ...observed,
-    domain: entryPoint?.domain ?? projected?.domain ?? desired.domain,
+    domain: projected?.domain ?? desired.domain,
     id: desired.id,
     platformAddressId:
-      entryPoint?.platformAddressId ??
-      projected?.platformAddressId ??
-      desired.platformAddressId,
+      projected?.platformAddressId ?? desired.platformAddressId,
   };
 }
 
@@ -655,7 +601,6 @@ const MEM_MIN = 512;
 const MEM_MAX = 8192;
 export interface ClaimToApSettingsOptions {
   dbDsnReferenceSources?: ApEnvDbDsnSource[];
-  entryPointsData?: K8sGetResponse;
 }
 
 function mapApClaim(
@@ -689,7 +634,7 @@ function mapApClaim(
     envRawSource,
     image,
     memoryMib,
-    network: apNetworkFromSpecAndStatus(metadata, spec, status, options),
+    network: apNetworkFromSpecAndStatus(metadata, spec, status),
     replicaStrategy,
     replicas,
     storage: storageFromSpecInput(input.storage),

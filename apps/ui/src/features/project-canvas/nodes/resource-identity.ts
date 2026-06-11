@@ -10,7 +10,8 @@ import {
   CANVAS_ENTRY_NODE_TYPE,
 } from "./constants";
 
-const AP_BOUND_SURFACE_PREFIX = "entry";
+const AP_BOUND_SURFACE_PREFIX = "public-access";
+const LEGACY_AP_BOUND_SURFACE_PREFIX = "entry";
 
 export type CanvasResourceIdentity = CanvasLayoutResourceRef;
 
@@ -49,7 +50,7 @@ function resourceIdentityFromRecord(
   return { kind, name, namespace };
 }
 
-function entryPointResourceIdentityFromRecord(
+function publicAccessResourceIdentityFromRecord(
   source: Record<string, unknown> | undefined
 ): CanvasResourceIdentity | undefined {
   const namespace = nonEmptyString(source?.namespace);
@@ -59,7 +60,7 @@ function entryPointResourceIdentityFromRecord(
     return undefined;
   }
 
-  return { kind: "EntryPoint", name: apName, namespace };
+  return { kind: "PublicAccess", name: apName, namespace };
 }
 
 export function canvasResourceIdentityFromNode(
@@ -76,13 +77,13 @@ export function canvasResourceIdentityFromNode(
     case CANVAS_DATABASE_NODE_TYPE:
       return resourceIdentityFromRecord("DB", asRecord(data?.workload));
     case CANVAS_ENTRY_NODE_TYPE:
-      return entryPointResourceIdentityFromRecord(asRecord(data?.resource));
+      return publicAccessResourceIdentityFromRecord(asRecord(data?.resource));
     default:
       return undefined;
   }
 }
 
-export function canvasEntryPointApResourceIdentityFromNode(
+export function canvasPublicAccessApResourceIdentityFromNode(
   node: Node
 ): CanvasResourceIdentity | undefined {
   if (node.type !== CANVAS_ENTRY_NODE_TYPE) {
@@ -136,7 +137,11 @@ export function apBoundSurfaceRefFromKey(
   key: string | null | undefined
 ): ApBoundSurfaceKeyRef | null {
   const parts = key?.split(":");
-  if (parts?.length !== 3 || parts[0] !== AP_BOUND_SURFACE_PREFIX) {
+  if (
+    parts?.length !== 3 ||
+    (parts[0] !== AP_BOUND_SURFACE_PREFIX &&
+      parts[0] !== LEGACY_AP_BOUND_SURFACE_PREFIX)
+  ) {
     return null;
   }
 
