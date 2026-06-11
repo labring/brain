@@ -9,6 +9,7 @@ import {
 } from "@/lib/project-persistence/schema";
 
 import { cleanupCanvasLayoutDocument } from "./cleanup";
+import { parseCanvasLayoutDocument } from "./contract";
 import { applyCanvasLayoutPatch, CanvasLayoutValidationError } from "./patch";
 import type { CanvasLayoutDocument, CanvasLayoutPatch } from "./types";
 
@@ -33,7 +34,7 @@ function rowToDocument(
   options?: { now?: Date }
 ): CanvasLayoutDocument {
   return cleanupCanvasLayoutDocument(
-    {
+    parseCanvasLayoutDocument({
       namespace: row.namespace,
       nodes: row.nodes,
       ...(row.projectNameSnapshot == null
@@ -41,7 +42,7 @@ function rowToDocument(
         : { projectNameSnapshot: row.projectNameSnapshot }),
       projectId: row.projectId,
       version: row.version,
-    },
+    }),
     options
   );
 }

@@ -15,8 +15,12 @@ const optionalTimestamp = z
   })
   .optional();
 
+const canvasLayoutResourceKindSchema = z
+  .enum(["AP", "DB", "PublicAccess", "EntryPoint"])
+  .transform((kind) => (kind === "EntryPoint" ? "PublicAccess" : kind));
+
 export const canvasLayoutResourceRefSchema = z.object({
-  kind: z.enum(["AP", "DB", "PublicAccess"]),
+  kind: canvasLayoutResourceKindSchema,
   namespace: boundedString,
   name: boundedString,
 });

@@ -59,6 +59,22 @@ test("canvas layout document accepts projectId", () => {
   );
 });
 
+test("canvas layout document normalizes legacy EntryPoint refs to PublicAccess", () => {
+  const parsed = parseCanvasLayoutDocument({
+    namespace: "default",
+    nodes: [
+      {
+        position: { x: 10, y: 20 },
+        ref: { kind: "EntryPoint", name: "api", namespace: "default" },
+      },
+    ],
+    projectId: "project-uid",
+    version: 1,
+  });
+
+  assert.equal(parsed.nodes[0]?.ref.kind, "PublicAccess");
+});
+
 test("canvas layout patch rejects malformed stack order", () => {
   assert.throws(() =>
     parseCanvasLayoutPatchRequest({
