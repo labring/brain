@@ -168,6 +168,19 @@ function resourceTargetStillValid(
   return target == null || targetExists(target);
 }
 
+function sideEntryTargetStillValid(
+  entry: ProjectSideSurfaceEntry,
+  targetExists: (target: ProjectSurfaceTarget) => boolean
+) {
+  if (entry.kind === "settings") {
+    return true;
+  }
+  return resourceTargetStillValid(
+    projectSurfaceEntryTarget(entry),
+    targetExists
+  );
+}
+
 export function repairStaleProjectWorkbenchRouteState(
   state: ProjectWorkbenchRouteState,
   options: {
@@ -194,10 +207,7 @@ export function repairStaleProjectWorkbenchRouteState(
     side != null &&
     !(
       options.sideEntrySupported(side) &&
-      resourceTargetStillValid(
-        projectSurfaceEntryTarget(side),
-        options.targetExists
-      )
+      sideEntryTargetStillValid(side, options.targetExists)
     )
   ) {
     side = null;

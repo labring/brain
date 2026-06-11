@@ -1,8 +1,8 @@
+import YAML from "yaml";
 import type {
   DockerDeploymentEnvVar,
   DockerDeploymentSettings,
-} from "@workspace/ui/lib/docker-deployment-settings";
-import YAML from "yaml";
+} from "@/features/deployment/docker-deployment-settings";
 import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";

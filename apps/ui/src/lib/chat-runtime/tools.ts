@@ -1,11 +1,11 @@
 import "server-only";
 
+import { type ToolSet, tool } from "ai";
 import {
   buildEmitGenUISpecDescription,
   executeEmitGenUISpec,
   genUISpecInputSchema,
-} from "@workspace/ui/lib/gen-ui-tool";
-import { type ToolSet, tool } from "ai";
+} from "@/features/project-assistant/agui/gen-ui-tool";
 import type { AssistantContextPayload } from "@/lib/chat-persistence/types";
 import { createChatBashTool } from "@/lib/tool/chat-bash-tool";
 import { createDeployTaskTools } from "@/lib/tool/chat-deploy-task-tool";

@@ -1,4 +1,4 @@
-import type { DatabaseDeploymentChoice } from "@workspace/ui/components/database-deployer";
+import type { DatabaseDeploymentChoice } from "@/features/deployment/database-deployer";
 
 const DATABASE_PROJECT_FALLBACK_DISPLAY_NAME = "Database Project";
 

@@ -10,8 +10,6 @@ import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-ico
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { ContainerHistoryPane } from "@workspace/ui/components/container-history-pane/container-history-pane";
-import type { ContainerHistorySnapshotRow } from "@workspace/ui/components/container-history-pane/container-history-pane.types";
 import { Label } from "@workspace/ui/components/label";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { Spinner } from "@workspace/ui/components/spinner";
@@ -26,14 +24,16 @@ import {
   containerStatesFromNode,
   workloadClaimKindFromStates,
 } from "@/features/project-canvas/flow/container-node-workload";
-import { applyApImage } from "@/features/project-canvas/k8s/ap-json-patch";
-import { readApImage } from "@/features/project-canvas/k8s/ap-spec-access";
-import { k8sGetClaimBody } from "@/features/project-canvas/k8s/claim-mapper";
+import { applyApImage } from "@/features/project-settings/ap/k8s/ap-json-patch";
+import { readApImage } from "@/features/project-settings/ap/k8s/ap-spec-access";
+import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import {
   CanvasResourcePane,
   type CanvasResourcePaneProps,
 } from "./canvas-resource-pane";
+import { ContainerHistoryPane } from "./workload-history/container-history-pane";
+import type { ContainerHistorySnapshotRow } from "./workload-history/container-history-pane.types";
 
 type WorkloadHistoryShellProps = Pick<
   CanvasResourcePaneProps,

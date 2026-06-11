@@ -45,7 +45,7 @@ test("opening side updates side and canvas selection while clearing main", () =>
 
   const result = planOpenProjectWorkbenchSurface(state, {
     canvasSelection: { kind: "resource", target: ap },
-    entry: { kind: "apSettings", target: ap },
+    entry: { kind: "settings", target: ap },
     slot: "side",
   });
 
@@ -54,7 +54,7 @@ test("opening side updates side and canvas selection while clearing main", () =>
     surfaces: {
       drawer: { kind: "dbTerminal", target: db },
       main: null,
-      side: { kind: "apSettings", target: ap },
+      side: { kind: "settings", target: ap },
     },
   });
   assert.equal(result.requiredLeave, null);
@@ -65,7 +65,7 @@ test("opening focused main requires side leave only when visible side is hidden"
     ...emptyState,
     surfaces: {
       ...emptyState.surfaces,
-      side: { kind: "dbSettings", target: db },
+      side: { kind: "settings", target: db },
     },
   };
 
@@ -97,7 +97,7 @@ test("clear canvas focus clears selection, side and main while keeping drawer", 
     surfaces: {
       drawer: { kind: "dbTerminal", target: db },
       main: { kind: "dbAccess", target: db },
-      side: { kind: "dbSettings", target: db },
+      side: { kind: "settings", target: db },
     },
   };
 
@@ -123,7 +123,7 @@ test("focus canvas selection replaces side and main while keeping drawer", () =>
     surfaces: {
       drawer: { kind: "dbTerminal", target: db },
       main: { kind: "dbAccess", target: db },
-      side: { kind: "dbSettings", target: db },
+      side: { kind: "settings", target: db },
     },
   };
 
@@ -146,13 +146,13 @@ test("focus canvas selection replaces side and main while keeping drawer", () =>
   });
 });
 
-test("stale cleanup clears invalid targets without leave guard", () => {
+test("stale cleanup keeps settings side entries for provider-owned loading", () => {
   const state: ProjectWorkbenchRouteState = {
     canvasSelection: { kind: "resource", target: db },
     surfaces: {
       drawer: { kind: "dbTerminal", target: db },
       main: { kind: "resourceLogs", target: ap },
-      side: { kind: "dbSettings", target: db },
+      side: { kind: "settings", target: db },
     },
   };
 
@@ -168,7 +168,7 @@ test("stale cleanup clears invalid targets without leave guard", () => {
     surfaces: {
       drawer: null,
       main: { kind: "resourceLogs", target: ap },
-      side: null,
+      side: { kind: "settings", target: db },
     },
   });
   assert.equal(result.requiredLeave, null);

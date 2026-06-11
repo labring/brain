@@ -4,16 +4,16 @@ import { fetcher } from "@workspace/api/fetch";
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import type {
-  ProjectExplorerActions,
-  ProjectExplorerProject,
-  ProjectExplorerStates,
-} from "@workspace/ui/components/project-explorer/project-explorer";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { useTemplateNativeWorkloads } from "@/features/project-canvas/snapshot/use-template-native-workloads";
+import type {
+  ProjectExplorerActions,
+  ProjectExplorerProject,
+  ProjectExplorerStates,
+} from "@/features/projects/explorer/project-explorer";
 import {
   BRAIN_PROJECT_ID_LABEL,
   BRAIN_RESOURCE_KIND_LABEL,

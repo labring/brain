@@ -219,7 +219,7 @@ function planApDbConnectionCommand(
     },
     selection: { kind: "resource", target },
     surface: {
-      entry: { kind: "apEnvironmentSettings", target },
+      entry: { kind: "settings", target, view: "environment" },
       slot: "side",
     },
   };

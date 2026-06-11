@@ -1,6 +1,5 @@
 "use client";
 
-import { ProjectExplorer } from "@workspace/ui/components/project-explorer/project-explorer";
 import { SidePanePresence } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
@@ -8,14 +7,15 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
 import { Aurora } from "@/components/aurora";
-import { ProjectCreationPane } from "@/components/project-creation-pane";
-import type { ProjectCreationPaneEntryMode } from "@/components/project-creation-pane-state";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
+import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
+import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
+import { useProjectCreator } from "@/features/project-creation/use-project-creator";
 import { useProjectSideRouteState } from "@/features/project-route-state/use-project-side-route-state";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
-import { useProjectCreator } from "@/hooks/use-project-creator";
+import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import styles from "./project-index.module.css";
@@ -60,6 +60,7 @@ export default function ProjectIndexPage() {
     creatorResetKey,
     githubDeployerLoading,
     onCreationPaneOpenChange,
+    onCreationPaneSourceChange,
     openCreationPane: prepareCreationPane,
   } = useProjectCreator({
     existingProjects: states.projects,
@@ -116,6 +117,7 @@ export default function ProjectIndexPage() {
           busy={githubDeployerLoading}
           creatorRootProps={creatorRootProps}
           entryMode={creationPaneEntryMode}
+          onActiveSourceChange={onCreationPaneSourceChange}
           onClose={() => closeProjectSideRoute()}
           resetKey={creatorResetKey}
         />
@@ -134,6 +136,7 @@ export default function ProjectIndexPage() {
     creatorResetKey,
     creatorRootProps,
     githubDeployerLoading,
+    onCreationPaneSourceChange,
     skillsPaneOpen,
   ]);
 

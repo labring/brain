@@ -214,6 +214,22 @@ export function useProjectWorkbenchRouteState(options: {
     [openSurface]
   );
 
+  const repairSide = useCallback(
+    (entry: ProjectSideSurfaceEntry | null) => {
+      commit(
+        {
+          ...state,
+          surfaces: {
+            ...state.surfaces,
+            side: entry,
+          },
+        },
+        "replace"
+      );
+    },
+    [commit, state]
+  );
+
   const openMain = useCallback(
     (
       entry: ProjectMainSurfaceEntry,
@@ -282,6 +298,7 @@ export function useProjectWorkbenchRouteState(options: {
     openDrawer,
     openMain,
     openSide,
+    repairSide,
     side: state.surfaces.side,
     state,
     surfaces: state.surfaces,

@@ -87,13 +87,13 @@ test("EntryPoint click selects the AP-bound Public Addresses surface target", ()
     },
   });
   assert.deepEqual(defaultProjectSideSurfaceForNode(entryNode), {
-    kind: "publicAddresses",
+    kind: "settings",
     target: {
-      apName: "api",
-      kind: "EntryPoint",
+      kind: "AP",
+      name: "api",
       namespace: "default",
-      observedUid: "entry-uid",
     },
+    view: "public-addresses",
   });
 });
 

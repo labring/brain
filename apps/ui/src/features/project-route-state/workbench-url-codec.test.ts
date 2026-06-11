@@ -24,8 +24,9 @@ const state = {
       target: { kind: "DB", name: "pg", namespace: "data" },
     },
     side: {
-      kind: "publicAddresses",
-      target: { apName: "api", kind: "EntryPoint", namespace: "default" },
+      kind: "settings",
+      target: { kind: "AP", name: "api", namespace: "default" },
+      view: "public-addresses",
     },
   },
 } satisfies ProjectWorkbenchRouteState;
@@ -37,7 +38,7 @@ test("project workbench route codec parses and serializes selected and surface s
     drawer: "ap-terminal:ap:default:api",
     main: "db-access:db:data:pg",
     selected: "entry:default:api",
-    side: "public-addresses:entry:default:api",
+    side: "settings:ap:default:api:public-addresses",
   });
   assert.deepEqual(parseProjectWorkbenchRouteState(serialized), {
     canvasSelection: state.canvasSelection,
@@ -100,16 +101,17 @@ test("project workbench route codec uses DB terminal drawer entries", () => {
 test("project workbench route codec preserves AP Environment Settings focus", () => {
   const parsed = parseProjectWorkbenchRouteState({
     selected: "ap:default:api",
-    side: "ap-environment-settings:ap:default:api",
+    side: "settings:ap:default:api:environment",
   });
 
   assert.deepEqual(parsed.surfaces.side, {
-    kind: "apEnvironmentSettings",
+    kind: "settings",
     target: { kind: "AP", name: "api", namespace: "default" },
+    view: "environment",
   });
   assert.equal(
     serializeProjectWorkbenchRouteState(parsed).side,
-    "ap-environment-settings:ap:default:api"
+    "settings:ap:default:api:environment"
   );
 });
 

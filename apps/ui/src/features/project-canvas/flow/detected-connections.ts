@@ -1,14 +1,13 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { resolveApEnvRawSourceReferences } from "@workspace/ui/lib/ap-env-raw-source";
+import type { Edge, Node } from "@xyflow/react";
+import { dbDsnReferenceSourceFromDb } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import { resolveApEnvRawSourceReferences } from "@/features/project-settings/ap/lib/ap-env-raw-source";
 import {
   type ContainerEnvDbDsnSource,
   containerEnvDbDsnReferenceFromValue,
   containerEnvDbSecretReferenceFromValueFrom,
-} from "@workspace/ui/lib/container-env-rows";
-import type { Edge, Node } from "@xyflow/react";
-
-import { dbDsnReferenceSourceFromDb } from "../k8s/db-dsn-reference-sources";
+} from "@/features/project-settings/ap/lib/container-env-rows";
 import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,

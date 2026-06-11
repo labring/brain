@@ -17,8 +17,9 @@ const state = {
     target: { kind: "DB", name: "pg", namespace: "data" },
   },
   side: {
-    kind: "publicAddresses",
-    target: { apName: "api", kind: "EntryPoint", namespace: "default" },
+    kind: "settings",
+    target: { kind: "AP", name: "api", namespace: "default" },
+    view: "public-addresses",
   },
 } satisfies ProjectSurfaceState;
 
@@ -28,7 +29,7 @@ test("project surface URL codec parses and serializes side, main, and drawer slo
   assert.deepEqual(serialized, {
     drawer: "ap-terminal:ap:default:api",
     main: "db-access:db:data:pg",
-    side: "public-addresses:entry:default:api",
+    side: "settings:ap:default:api:public-addresses",
   });
   assert.deepEqual(parseProjectSurfaceUrlState(serialized), {
     ...state,
@@ -67,15 +68,16 @@ test("project surface URL codec uses DB terminal drawer entries", () => {
 
 test("project surface URL codec preserves AP Environment Settings focus", () => {
   const parsed = parseProjectSurfaceUrlState({
-    side: "ap-environment-settings:ap:default:api",
+    side: "settings:ap:default:api:environment",
   });
 
   assert.deepEqual(parsed.side, {
-    kind: "apEnvironmentSettings",
+    kind: "settings",
     target: { kind: "AP", name: "api", namespace: "default" },
+    view: "environment",
   });
   assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
-    side: "ap-environment-settings:ap:default:api",
+    side: "settings:ap:default:api:environment",
   });
 });
 

@@ -1,7 +1,7 @@
 import type { ContainerNodeStates } from "@workspace/ui/components/container-node/container-node";
 import type { Node } from "@xyflow/react";
+import type { WorkloadClaimKind } from "@/features/project-settings/ap/k8s/claim-mapper";
 
-import type { WorkloadClaimKind } from "../k8s/claim-mapper";
 import { CANVAS_CONTAINER_NODE_TYPE } from "../nodes/constants";
 
 export function containerStatesFromNode(

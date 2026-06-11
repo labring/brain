@@ -13,10 +13,6 @@ import type {
 import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-node/canvas-node";
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type {
-  ContainerSettingsPaneAddDbDsnReferenceIntent,
-  ContainerSettingsPanePendingDbReference,
-} from "@workspace/ui/components/container-settings-pane/container-settings-pane";
-import type {
   DatabaseNodeCopyConnectionHandler,
   DatabaseNodeLifecycleActionKey,
   DatabaseNodeQuickActionKey,
@@ -40,7 +36,6 @@ import {
   projectCanvasInteractionProps,
 } from "@/features/project-canvas/flow/interaction";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
-import { dbDsnReferenceSourcesFromDbsData } from "@/features/project-canvas/k8s/db-dsn-reference-sources";
 import {
   applyCanvasStackOrderToNodes,
   bringCanvasNodeToFrontInStackOrder,
@@ -58,7 +53,6 @@ import type {
   CanvasNodeLayoutState,
   CanvasNodeSettingsAccess,
 } from "@/features/project-canvas/nodes/types";
-import { useSettingsLeaveGuardController } from "@/features/project-canvas/panels/settings-leave-guard";
 import {
   createProjectCanvasSurfaceRenderModel,
   type ProjectCanvasSideRenderModel,
@@ -84,6 +78,12 @@ import {
 } from "@/features/project-canvas/workbench/db-restore-focus";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
+import type {
+  ApSettingsAddDbDsnReferenceIntent,
+  ApSettingsPendingDbReference,
+} from "@/features/project-settings/ap/ap-settings-sections";
+import { dbDsnReferenceSourcesFromDbsData } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import { useSettingsLeaveGuardController } from "@/features/project-settings/settings-leave-guard-controller";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
@@ -112,7 +112,7 @@ export interface UseProjectCanvasOptions {
 }
 
 interface PendingAddDbDsnReferenceIntent
-  extends ContainerSettingsPaneAddDbDsnReferenceIntent {
+  extends ApSettingsAddDbDsnReferenceIntent {
   apNodeId: string;
 }
 
@@ -136,8 +136,16 @@ function viewportFocusNodeIdFromSideRenderModel(
     return null;
   }
 
-  if (side.content.kind === "publicAddresses") {
+  if (
+    side.content.kind === "settings" &&
+    side.content.target.target.kind === "AP" &&
+    side.content.target.view === "public-addresses"
+  ) {
     return side.content.entryNode?.id ?? null;
+  }
+
+  if (side.content.kind === "settings") {
+    return side.content.node?.id ?? null;
   }
 
   return side.content.node.id;
@@ -264,7 +272,7 @@ function pendingApDbCanvasReferencesFromDraftReferences({
 }: {
   apName: string;
   apNamespace: string;
-  references: readonly ContainerSettingsPanePendingDbReference[];
+  references: readonly ApSettingsPendingDbReference[];
 }): PendingApDbCanvasReference[] {
   if (apName === "" || apNamespace === "") {
     return [];
@@ -431,10 +439,7 @@ export function useProjectCanvas(
     Map<string, PendingApDbReferenceDraftRegistration>
   >(new Map());
   const pendingDbReferencesChangeHandlerByApKey = useRef<
-    Map<
-      string,
-      (references: readonly ContainerSettingsPanePendingDbReference[]) => void
-    >
+    Map<string, (references: readonly ApSettingsPendingDbReference[]) => void>
   >(new Map());
   const connectHandledInGestureRef = useRef(false);
   const connectingFromHandleRef = useRef<ProjectCanvasConnectionHandle | null>(
@@ -509,6 +514,7 @@ export function useProjectCanvas(
   const openSideSurface = workbenchRoute.openSide;
   const openMainSurface = workbenchRoute.openMain;
   const openDrawerSurface = workbenchRoute.openDrawer;
+  const repairSide = workbenchRoute.repairSide;
   const closeSideRoute = workbenchRoute.closeSide;
   const closeMainRoute = workbenchRoute.closeMain;
   const closeDrawerRoute = workbenchRoute.closeDrawer;
@@ -587,7 +593,7 @@ export function useProjectCanvas(
     (change: {
       apName: string;
       apNamespace: string;
-      references: readonly ContainerSettingsPanePendingDbReference[];
+      references: readonly ApSettingsPendingDbReference[];
     }) => {
       const draftByApKey = pendingApDbReferenceDraftByApKey.current;
       const draftKey = pendingApDbReferenceDraftKey({
@@ -630,9 +636,7 @@ export function useProjectCanvas(
         return existing;
       }
 
-      const handler = (
-        references: readonly ContainerSettingsPanePendingDbReference[]
-      ) => {
+      const handler = (references: readonly ApSettingsPendingDbReference[]) => {
         handlePendingDbReferencesChangeRef.current({
           apName,
           apNamespace,
@@ -1445,6 +1449,7 @@ export function useProjectCanvas(
     openMainSurface,
     openSideSurface,
     registerSettingsLeaveGuard,
+    repairSide,
     requestResourcePaneReplacement,
     selected,
     selectedEdge,

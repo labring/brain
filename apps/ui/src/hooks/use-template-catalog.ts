@@ -1,8 +1,8 @@
 "use client";
 
-import type { TemplateDeploymentChoice } from "@workspace/ui/components/template-deployer";
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
+import type { TemplateDeploymentChoice } from "@/features/deployment/template-deployer";
 import { desktopLanguageAtom } from "@/store/auth-store";
 
 function templatesFromBody(body: unknown): TemplateDeploymentChoice[] {
@@ -45,19 +45,20 @@ async function fetchTemplateCatalog(
   return templatesFromBody(body);
 }
 
-export function useTemplateCatalog(): {
+export function useTemplateCatalog(options?: { enabled?: boolean }): {
   error: Error | undefined;
   isLoading: boolean;
   templates: TemplateDeploymentChoice[];
 } {
+  const enabled = options?.enabled ?? true;
   const language = useAtomValue(desktopLanguageAtom);
   const { data, error, isLoading } = useSWR(
-    ["template-catalog", language],
+    enabled ? (["template-catalog", language] as const) : null,
     ([, value]) => fetchTemplateCatalog(value)
   );
   return {
     error,
-    isLoading,
+    isLoading: enabled ? isLoading : false,
     templates: data ?? [],
   };
 }

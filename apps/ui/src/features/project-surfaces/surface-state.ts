@@ -1,24 +1,25 @@
-import type { ProjectCreationPaneEntryMode } from "@/components/project-creation-pane-state";
+import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
 import type {
-  ProjectApBoundEntryPointTarget,
   ProjectApTarget,
   ProjectDbTarget,
   ProjectResourceTarget,
   ProjectSurfaceTarget,
+  SettingsOwnerTarget,
 } from "./target-identity";
 
 export type ProjectSurfaceSlot = "drawer" | "main" | "side";
 export type ProjectMainSurfaceFocusPolicy = "focusMain" | "keepSideVisible";
 
 export type ProjectResourceSidePaneEntry =
-  | { kind: "apEnvironmentSettings"; target: ProjectApTarget }
   | { kind: "apEvents"; target: ProjectApTarget }
   | { kind: "apHistory"; target: ProjectApTarget }
   | { kind: "apMetrics"; target: ProjectApTarget }
-  | { kind: "apSettings"; target: ProjectApTarget }
   | { kind: "dbMetrics"; target: ProjectDbTarget }
-  | { kind: "dbSettings"; target: ProjectDbTarget }
-  | { kind: "publicAddresses"; target: ProjectApBoundEntryPointTarget };
+  | {
+      kind: "settings";
+      target: SettingsOwnerTarget;
+      view?: string;
+    };
 
 export type ProjectGlobalSidePaneEntry =
   | { kind: "databaseDeployment"; projectId: string }

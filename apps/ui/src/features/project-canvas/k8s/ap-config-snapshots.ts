@@ -1,5 +1,5 @@
-import type { ContainerHistorySnapshotRow } from "@workspace/ui/components/container-history-pane/container-history-pane.types";
-import { sortSnapshotRowsByCreatedAtDesc } from "@workspace/ui/components/container-history-pane/sort-snapshot-rows";
+import type { ContainerHistorySnapshotRow } from "@/features/project-canvas/panels/workload-history/container-history-pane.types";
+import { sortSnapshotRowsByCreatedAtDesc } from "@/features/project-canvas/panels/workload-history/sort-snapshot-rows";
 
 function asRecord(v: unknown): Record<string, unknown> | undefined {
   return v != null && typeof v === "object" && !Array.isArray(v)

@@ -22,15 +22,15 @@ const db: ProjectDbTarget = {
 
 test("project surface slots are single-active within each slot", () => {
   const state = createProjectSurfaceState({
-    side: { kind: "apSettings", target: ap },
+    side: { kind: "settings", target: ap },
   });
 
   const next = openProjectSurface(state, {
-    entry: { kind: "dbSettings", target: db },
+    entry: { kind: "settings", target: db },
     slot: "side",
   });
 
-  assert.deepEqual(next.side, { kind: "dbSettings", target: db });
+  assert.deepEqual(next.side, { kind: "settings", target: db });
 });
 
 test("session drawer coexists with side and main surfaces", () => {
@@ -39,7 +39,7 @@ test("session drawer coexists with side and main surfaces", () => {
     slot: "drawer",
   });
   const withSide = openProjectSurface(withDrawer, {
-    entry: { kind: "dbSettings", target: db },
+    entry: { kind: "settings", target: db },
     slot: "side",
   });
 
@@ -47,13 +47,13 @@ test("session drawer coexists with side and main surfaces", () => {
     kind: "apTerminal",
     target: ap,
   });
-  assert.deepEqual(withSide.side, { kind: "dbSettings", target: db });
+  assert.deepEqual(withSide.side, { kind: "settings", target: db });
 });
 
 test("opening a second drawer entry replaces the first drawer entry only", () => {
   const state = createProjectSurfaceState({
     drawer: { kind: "apTerminal", target: ap },
-    side: { kind: "apSettings", target: ap },
+    side: { kind: "settings", target: ap },
   });
 
   const next = openProjectSurface(state, {
@@ -68,7 +68,7 @@ test("opening a second drawer entry replaces the first drawer entry only", () =>
 test("main action surface defaults to focusing main-area work over side", () => {
   const state = openProjectSurface(
     createProjectSurfaceState({
-      side: { kind: "dbSettings", target: db },
+      side: { kind: "settings", target: db },
     }),
     {
       entry: { kind: "dbAccess", target: db },
@@ -77,13 +77,13 @@ test("main action surface defaults to focusing main-area work over side", () => 
   );
 
   assert.equal(projectSideSurfaceVisible(state), false);
-  assert.deepEqual(state.side, { kind: "dbSettings", target: db });
+  assert.deepEqual(state.side, { kind: "settings", target: db });
 });
 
 test("main action surface can explicitly keep inspection visible", () => {
   const state = openProjectSurface(
     createProjectSurfaceState({
-      side: { kind: "dbSettings", target: db },
+      side: { kind: "settings", target: db },
     }),
     {
       entry: {
@@ -102,7 +102,7 @@ test("closing one surface slot does not disturb selection or other slots", () =>
   const state = createProjectSurfaceState({
     drawer: { kind: "dbTerminal", target: db },
     main: { kind: "dbAccess", target: db },
-    side: { kind: "dbSettings", target: db },
+    side: { kind: "settings", target: db },
   });
 
   const next = closeProjectSurfaceSlot(state, "main");

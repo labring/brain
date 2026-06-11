@@ -20,6 +20,7 @@ export interface ProjectApBoundEntryPointTarget {
 }
 
 export type ProjectResourceTarget = ProjectApTarget | ProjectDbTarget;
+export type SettingsOwnerTarget = ProjectResourceTarget;
 export type ProjectSurfaceTarget =
   | ProjectResourceTarget
   | ProjectApBoundEntryPointTarget;
@@ -71,6 +72,12 @@ export function serializeProjectTarget(target: ProjectSurfaceTarget): string {
   return `entry:${encodePart(target.namespace)}:${encodePart(target.apName)}`;
 }
 
+export function serializeSettingsOwnerTarget(
+  target: SettingsOwnerTarget
+): string {
+  return serializeProjectTarget(target);
+}
+
 export function parseProjectTarget(
   value: string | null | undefined
 ): ProjectSurfaceTarget | null {
@@ -94,6 +101,13 @@ export function parseProjectTarget(
     default:
       return null;
   }
+}
+
+export function parseSettingsOwnerTarget(
+  value: string | null | undefined
+): SettingsOwnerTarget | null {
+  const target = parseProjectTarget(value);
+  return target?.kind === "AP" || target?.kind === "DB" ? target : null;
 }
 
 export function projectApTarget(input: {

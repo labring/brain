@@ -1,6 +1,5 @@
 import type { Node } from "@xyflow/react";
 import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/database-node-data";
-import type { CanvasEntrySelectionRef } from "@/features/project-canvas/nodes/entry-node-selection";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import {
   type ProjectDrawerSurfaceEntry,
@@ -11,15 +10,11 @@ import {
   projectSideSurfaceVisible,
 } from "@/features/project-surfaces/surface-state";
 import type {
-  ProjectApBoundEntryPointTarget,
   ProjectApTarget,
   ProjectDbTarget,
   ProjectSurfaceTarget,
 } from "@/features/project-surfaces/target-identity";
-import {
-  findCanvasNodeForProjectTarget,
-  projectTargetExistsOnCanvas,
-} from "./selection";
+import { findCanvasNodeForProjectTarget } from "./selection";
 
 type ProjectCanvasTargetedSideEntry = Extract<
   ProjectSideSurfaceEntry,
@@ -31,13 +26,11 @@ type ProjectCanvasPendingTargetEntry =
   | ProjectMainSurfaceEntry;
 
 export type ProjectCanvasApResourcePaneKind =
-  | "apEnvironmentSettings"
   | "apEvents"
   | "apHistory"
-  | "apMetrics"
-  | "apSettings";
+  | "apMetrics";
 
-export type ProjectCanvasDbResourcePaneKind = "dbMetrics" | "dbSettings";
+export type ProjectCanvasDbResourcePaneKind = "dbMetrics";
 
 export type ProjectCanvasResourcePaneRenderModel =
   | {
@@ -52,10 +45,11 @@ export type ProjectCanvasResourcePaneRenderModel =
       target: ProjectDbTarget;
     }
   | {
-      entryNode: Node | null;
-      kind: "publicAddresses";
-      selection: CanvasEntrySelectionRef;
-      target: ProjectApBoundEntryPointTarget;
+      databaseData?: CanvasDatabaseNodeData;
+      entryNode?: Node | null;
+      kind: "settings";
+      node?: Node | null;
+      target: ProjectSideSurfaceEntry & { kind: "settings" };
     };
 
 export interface ProjectCanvasPendingTargetRenderModel<
@@ -160,22 +154,30 @@ function dbResourcePaneModel(
   };
 }
 
-function publicAddressesPaneModel(
+function settingsPaneModel(
   nodes: readonly Node[],
-  entry: Extract<ProjectSideSurfaceEntry, { kind: "publicAddresses" }>
+  entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>
 ): ProjectCanvasSideRenderModel {
-  if (!projectTargetExistsOnCanvas(nodes, entry.target)) {
-    return pendingTargetModel(entry);
-  }
+  const node = findCanvasNodeForProjectTarget(nodes, entry.target);
+  const databaseData =
+    entry.target.kind === "DB" ? databaseNodeDataFromNode(node) : undefined;
+
+  const entryNode =
+    entry.target.kind === "AP" && entry.view === "public-addresses"
+      ? findCanvasNodeForProjectTarget(nodes, {
+          apName: entry.target.name,
+          kind: "EntryPoint",
+          namespace: entry.target.namespace,
+        })
+      : undefined;
+
   return {
     content: {
-      entryNode: findCanvasNodeForProjectTarget(nodes, entry.target),
-      kind: "publicAddresses",
-      selection: {
-        apName: entry.target.apName,
-        namespace: entry.target.namespace,
-      },
-      target: entry.target,
+      ...(databaseData == null ? {} : { databaseData }),
+      ...(entryNode === undefined ? {} : { entryNode }),
+      kind: "settings",
+      node,
+      target: entry,
     },
     kind: "resource",
   };
@@ -194,17 +196,14 @@ function sideRenderModel({
   }
 
   switch (entry.kind) {
-    case "apEnvironmentSettings":
     case "apEvents":
     case "apHistory":
     case "apMetrics":
-    case "apSettings":
       return apResourcePaneModel(nodes, entry);
     case "dbMetrics":
-    case "dbSettings":
       return dbResourcePaneModel(nodes, entry);
-    case "publicAddresses":
-      return publicAddressesPaneModel(nodes, entry);
+    case "settings":
+      return settingsPaneModel(nodes, entry);
     case "databaseDeployment":
     case "dockerDeployment":
     case "githubDeployment":

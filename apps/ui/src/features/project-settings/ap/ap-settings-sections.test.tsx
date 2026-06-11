@@ -1,0 +1,1584 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import type {
+  ApSettingsSectionsProps,
+  ContainerEnvVar,
+  ContainerReplicaStrategy,
+} from "./ap-settings-sections";
+import {
+  confirmedAddDbDsnReferencesFromEnvDraft,
+  containerNetworkAfterBindCustomDomain,
+  containerNetworkAfterEditPublicAddress,
+  containerNetworkAfterUnbindCustomDomain,
+  containerSettingsDraftIsDirty,
+  envRawSourceDraftWithAddReferenceIntent,
+  pendingDbReferencesFromEnvRawSourceDraft,
+  resourceQuotaReplicaPatchFromDraft,
+  useApSettingsSections,
+} from "./ap-settings-sections";
+
+function TestApSettingsSections({
+  className,
+  ...props
+}: ApSettingsSectionsProps & { className?: string }) {
+  const model = useApSettingsSections(props);
+  return (
+    <div className={className} data-slot="ap-settings-sections-test-wrapper">
+      {model.sections.map((section) =>
+        section.chromeless ? (
+          <div data-settings-section={section.id} key={section.id}>
+            {section.content}
+          </div>
+        ) : (
+          <ResourceSettingsSection
+            actions={section.actions}
+            icon={section.icon}
+            key={section.id}
+            title={section.title}
+          >
+            {section.content}
+          </ResourceSettingsSection>
+        )
+      )}
+      {model.footer}
+    </div>
+  );
+}
+
+const noop = () => {
+  /* test noop */
+};
+
+function editorToken(name: string): string {
+  return ["$", "{{", name, "}}"].join("");
+}
+
+function referenceExpression(db: string, variable: string): string {
+  return ["$", "{{", db, ".", variable, "}}"].join("");
+}
+
+const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
+const RAW_ENV_ROWS_OVERFLOW_VISIBLE_RE =
+  /class="flex w-full flex-col gap-2 overflow-visible" data-slot="container-env-rows"/;
+const ENVIRONMENT_VARIABLES_TITLE_RE = /Environment Variables/;
+const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
+const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
+const EXTERNAL_REFERENCE_RE = /External reference/;
+const RAW_ENV_EDITOR_RE = /Edit environment variables/;
+const ENV_RAW_SOURCE_RE = /aria-label="Environment raw source"/;
+const COPY_RAW_SOURCE_RE = /aria-label="Copy environment raw source"/;
+const INSERT_RAW_REFERENCE_RE =
+  /aria-label="Insert environment reference token"/;
+const POSTGRES_DSN_RE = /postgres:\/\/db:5432\/app/;
+const RAW_MODE_RE = />Raw</;
+const LIST_MODE_RE = />List</;
+const ENV_EDITOR_MODE_RE = /aria-label="Environment editor mode"/;
+const DATABASE_URL_RE = /DATABASE_URL/;
+const MASKED_ENV_VALUE_RE = />\*\*\*\*\*\*\*</;
+const ADD_ENV_RE = /aria-label="Add environment variable"/;
+const REFERENCE_SELECTOR_RE = /aria-label="Reference"/;
+const REFERENCE_DB_LABEL_RE = /Reference DB/;
+const INLINE_REFERENCE_TRIGGER_RE =
+  /data-slot="container-env-reference-trigger"/;
+const TOKEN_TRIGGER_RE = /data-slot="container-env-token-trigger"/;
+const DB_FIELD_SELECT_RE = /aria-label="Project DB field"/;
+const ENV_ROW_ACTIONS_RE =
+  /aria-label="Environment variable actions for [^"]+"/;
+const ENV_ROW_ACTIONS_RE_GLOBAL =
+  /aria-label="Environment variable actions for [^"]+"/g;
+const CANVAS_NODE_ACTION_MENU_TRIGGER_RE = /canvas-node-action-menu-trigger/;
+const ENV_ROW_ACTIONS_NODE_VARIANT_RE =
+  /aria-label="Environment variable actions for DATABASE_URL"[^>]*data-variant="node"/;
+const EDIT_ENV_RE = /aria-label="Edit environment variable/;
+const SAVE_ENV_RE = /Save environment/;
+const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
+const UPDATE_ENVIRONMENT_VARIABLES_RE =
+  /aria-label="Update Environment Variables"/;
+const VALUE_FROM_PLACEHOLDER_RE = /\(valueFrom\)/;
+const CANCEL_ENV_RE = /Cancel environment changes/;
+const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
+const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
+const IMAGE_INPUT_RE = /aria-label="Container image"/;
+const LAUNCH_COMMAND_RE = /Launch Command/;
+const CONFIG_FILES_RE = /Config Files/;
+const STORAGE_RE = /Storage/;
+const CONTAINER_COMMAND_RE = /aria-label="Container command"/;
+const CONFIG_FILE_PATH_RE = /aria-label="Config file mount path"/;
+const STORAGE_SIZE_RE = /aria-label="Storage size"/;
+const CONFIG_FILE_MOUNT_PATH_RE = /\/etc\/app\/config\.yaml/;
+const STORAGE_SIZE_VALUE_RE = /20Gi/;
+const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
+const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
+const PRIVATE_ADDRESS_RE = /Private Address/;
+const ADD_PORT_RE = /Add Port/;
+const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
+  /http:\/\/api-service.default.svc:8080/;
+const PRIVATE_ADDRESS_VALUE_RE =
+  /http:\/\/api-service-port-8080.default.svc:8080/;
+const COPY_PRIVATE_ADDRESS_RE = /aria-label="Copy Private Address"/;
+const DOMAIN_LIST_RE = /Domain List/;
+const NO_PUBLIC_ADDRESSES_RE = /No public addresses yet/;
+const PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api.example.com\//;
+const FIRST_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-a.example.com\//;
+const SECOND_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-b.example.com\//;
+const THIRD_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-c.example.com\//;
+const FOURTH_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/api-d.example.com\//;
+const DRAFT_PUBLIC_ADDRESS_VALUE_RE = /https:\/\/ffyrwq.apps.example.com\//;
+const PUBLIC_ADDRESS_STATUS_RE = /Public Address status: accessible/;
+const CUSTOM_DOMAIN_VALUE_RE = /www\.example\.com/;
+const CUSTOM_DOMAIN_STATUS_RE = /Custom Domain status: accessible/;
+const CUSTOM_DOMAIN_BLOCKED_STATUS_RE = /Custom Domain status: blocked/;
+const CUSTOM_DOMAIN_DNS_DETAIL_RE = /DNS verified/;
+const CUSTOM_DOMAIN_CERT_DETAIL_RE = /Certificate failed/;
+const CUSTOM_DOMAIN_ROUTING_DETAIL_RE = /Routing pending/;
+const CUSTOM_DOMAIN_DETAIL_REASON_RE = /IssuerNotReady/;
+const CUSTOM_DOMAIN_DETAIL_MESSAGE_RE = /Certificate request failed/;
+const UNBIND_CUSTOM_DOMAIN_RE = /aria-label="Unbind Custom Domain"/;
+const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
+const COPY_ENV_VALUE_RE = /aria-label="Copy environment variable DATABASE_URL"/;
+const REVEAL_ENV_VALUE_RE =
+  /aria-label="Reveal environment variable DATABASE_URL"/;
+const REVEAL_ENV_VALUE_UNPRESSED_RE =
+  /aria-label="Reveal environment variable DATABASE_URL"[^>]*aria-pressed="false"/;
+const HIDE_ENV_VALUE_RE = /aria-label="Hide environment variable DATABASE_URL"/;
+const COPY_MYSQL_ENV_VALUE_RE =
+  /aria-label="Copy environment variable MYSQL_DATABASE_URL"/;
+const REVEAL_MYSQL_ENV_VALUE_RE =
+  /aria-label="Reveal environment variable MYSQL_DATABASE_URL"/;
+const CNAME_RE = /CNAME/;
+const EDIT_PUBLIC_ADDRESS_RE = /aria-label="Edit Public Address"/;
+const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
+const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
+const ADD_DOMAIN_LABEL_RE = /Add Domain/;
+const VIEW_ALL_PUBLIC_ADDRESSES_RE = /aria-label="View All Public Addresses"/;
+const PUBLIC_ADDRESSES_COLLAPSED_RE = /aria-expanded="false"/;
+const SHOW_LESS_PUBLIC_ADDRESSES_RE = /aria-label="Show Less Public Addresses"/;
+const INLINE_END_ICON_RE = /data-icon="inline-end"/;
+const CURSOR_POINTER_RE = /cursor-pointer/;
+const PRIVATE_PORT_VALUE_RE = />8080</;
+const REPLICA_STRATEGY_RE = /Replica Strategy/;
+const FIXED_REPLICAS_RE = /Fixed Replicas/;
+const ELASTIC_SCALING_RE = /Elastic Scaling/;
+const REPLICA_COUNT_RE = /Number of Replicas/;
+const REPLICA_VALUE_RE = />4</;
+const MIN_REPLICAS_RE = /Minimum replicas/;
+const MIN_REPLICA_VALUE_RE = />2</;
+const MAX_REPLICAS_RE = /Maximum replicas/;
+const MAX_REPLICA_VALUE_RE = />8</;
+const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
+const CPU_TARGET_RE = /CPU utilization target/;
+const CPU_TARGET_VALUE_RE = />75%/;
+const CPU_TARGET_PERCENT_RE = />75%</;
+const SCALING_TARGET_RE = /Scaling target/;
+const MEMORY_TARGET_RE = /Memory average target/;
+const MEMORY_TARGET_VALUE_RE = />512 Mi</;
+const MEMORY_TARGET_QUANTITY_RE = />512 Mi</;
+const BUTTON_RE = /<button/;
+
+function renderPane(
+  readOnly = false,
+  env: ContainerEnvVar[] = [
+    { name: "DATABASE_URL", value: "postgres://db:5432/app" },
+  ]
+): string {
+  return renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "empty",
+          namespace: "default",
+        },
+        {
+          name: "postgres",
+          namespace: "default",
+          privateDsn: "postgres://private",
+          primitiveSecretRefs: {
+            password: {
+              key: "passwd",
+              name: "postgres-conn-credential",
+            },
+          },
+        },
+      ]}
+      env={env}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      readOnly={readOnly}
+    />
+  );
+}
+
+test("container settings pane renders editable structured environment rows for new rows", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "postgres",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "postgres",
+          namespace: "default",
+        },
+      ]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_ROWS_SLOT_RE);
+  assert.match(html, ENV_NAME_INPUT_RE);
+  assert.match(html, ENV_VALUE_INPUT_RE);
+  assert.match(html, TOKEN_TRIGGER_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
+  assert.doesNotMatch(html, RAW_ENV_EDITOR_RE);
+  assert.match(html, LIST_MODE_RE);
+  assert.match(html, RAW_MODE_RE);
+  assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
+});
+
+test("container settings pane masks clean saved structured environment rows", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, MASKED_ENV_VALUE_RE);
+  assert.doesNotMatch(html, ENV_VALUE_INPUT_RE);
+  assert.doesNotMatch(html, POSTGRES_DSN_RE);
+  assert.match(html, REVEAL_ENV_VALUE_RE);
+  assert.match(html, REVEAL_ENV_VALUE_UNPRESSED_RE);
+  assert.doesNotMatch(html, HIDE_ENV_VALUE_RE);
+  assert.match(html, COPY_ENV_VALUE_RE);
+});
+
+test("container settings pane shows raw draft values for dirty structured rows", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "mysql",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "mysql",
+          namespace: "default",
+        },
+      ]}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.doesNotMatch(html, POSTGRES_DSN_RE);
+  assert.match(html, MASKED_ENV_VALUE_RE);
+  assert.match(html, MYSQL_DATABASE_URL_REFERENCE_RE);
+  assert.doesNotMatch(html, REVEAL_MYSQL_ENV_VALUE_RE);
+  assert.doesNotMatch(html, COPY_MYSQL_ENV_VALUE_RE);
+});
+
+test("container settings pane renders environment actions in section header", () => {
+  const html = renderPane();
+  const titleIndex = html.search(ENVIRONMENT_VARIABLES_TITLE_RE);
+  const modeIndex = html.search(ENV_EDITOR_MODE_RE);
+  const addIndex = html.search(ADD_ENV_RE);
+  const rowsIndex = html.search(ENV_ROWS_SLOT_RE);
+
+  assert.notEqual(titleIndex, -1);
+  assert.notEqual(modeIndex, -1);
+  assert.notEqual(addIndex, -1);
+  assert.notEqual(rowsIndex, -1);
+  assert.ok(titleIndex < modeIndex);
+  assert.ok(modeIndex < addIndex);
+  assert.ok(titleIndex < addIndex);
+  assert.ok(addIndex < rowsIndex);
+});
+
+test("container settings pane renders Image below CPU / Memory", () => {
+  const html = renderPane();
+  const cpuMemoryIndex = html.search(CPU_MEMORY_SECTION_RE);
+  const imageIndex = html.search(IMAGE_INPUT_RE);
+
+  assert.notEqual(cpuMemoryIndex, -1);
+  assert.notEqual(imageIndex, -1);
+  assert.ok(cpuMemoryIndex < imageIndex);
+});
+
+test("container settings pane can hide Image section", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      showImageSection={false}
+    />
+  );
+
+  assert.match(html, CPU_MEMORY_SECTION_RE);
+  assert.doesNotMatch(html, IMAGE_INPUT_RE);
+});
+
+test("container settings pane shows no AP networking surface without Network data", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
+  assert.doesNotMatch(html, DOMAIN_LIST_RE);
+});
+
+test("container settings pane renders address settings instead of Ports for private-only APs", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service-port-8080.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, PRIVATE_ADDRESS_RE);
+  assert.match(html, PRIVATE_ADDRESS_VALUE_RE);
+  assert.match(html, ADD_PORT_RE);
+  assert.match(html, PRIVATE_PORT_VALUE_RE);
+  assert.match(html, COPY_PRIVATE_ADDRESS_RE);
+  assert.match(html, DOMAIN_LIST_RE);
+  assert.match(html, NO_PUBLIC_ADDRESSES_RE);
+});
+
+test("container settings pane renders editable public address rows", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, DOMAIN_LIST_RE);
+  assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, PUBLIC_ADDRESS_STATUS_RE);
+  assert.match(html, COPY_PUBLIC_ADDRESS_RE);
+  assert.doesNotMatch(html, CNAME_RE);
+  assert.match(html, EDIT_PUBLIC_ADDRESS_RE);
+  assert.match(html, DELETE_PUBLIC_ADDRESS_RE);
+  assert.match(html, ADD_PUBLIC_ADDRESS_RE);
+  assert.match(html, ADD_DOMAIN_LABEL_RE);
+  assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
+});
+
+test("container settings pane collapses overflowing public address rows by default", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api-a.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-a.example.com/",
+          },
+          {
+            host: "api-b.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-b.example.com/",
+          },
+          {
+            host: "api-c.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-c.example.com/",
+          },
+          {
+            host: "api-d.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api-d.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, FIRST_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, SECOND_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, THIRD_PUBLIC_ADDRESS_VALUE_RE);
+  assert.doesNotMatch(html, FOURTH_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, VIEW_ALL_PUBLIC_ADDRESSES_RE);
+  assert.match(html, PUBLIC_ADDRESSES_COLLAPSED_RE);
+  assert.match(html, CURSOR_POINTER_RE);
+  assert.doesNotMatch(html, SHOW_LESS_PUBLIC_ADDRESSES_RE);
+  assert.doesNotMatch(html, INLINE_END_ICON_RE);
+});
+
+test("container settings pane renders draft-visible Platform Address hosts", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "ffyrwq.apps.example.com",
+            id: "pa_old123",
+            port: 8080,
+            status: "progressing",
+            type: "platform",
+            url: "https://ffyrwq.apps.example.com/",
+          },
+        ],
+      }}
+      networkPlatformAddressDraftContext={{
+        appName: "api",
+        namespace: "project-a",
+        routingDomain: "apps.example.com",
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, DRAFT_PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, COPY_PUBLIC_ADDRESS_RE);
+  assert.doesNotMatch(html, CNAME_RE);
+  assert.match(html, EDIT_PUBLIC_ADDRESS_RE);
+  assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
+});
+
+test("container settings pane shows Custom Domain rows instead of bound Platform Addresses", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        customDomains: [
+          {
+            domain: "www.example.com",
+            id: "cd_def456",
+            platformAddressId: "pa_abc123",
+            status: "accessible",
+          },
+        ],
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            id: "pa_abc123",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, CUSTOM_DOMAIN_VALUE_RE);
+  assert.match(html, CUSTOM_DOMAIN_STATUS_RE);
+  assert.doesNotMatch(html, PUBLIC_ADDRESS_VALUE_RE);
+  assert.doesNotMatch(html, EDIT_PUBLIC_ADDRESS_RE);
+});
+
+test("container settings pane renders Custom Domain Binding lifecycle detail states", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        customDomains: [
+          {
+            certificate: {
+              message: "Certificate request failed.",
+              reason: "IssuerNotReady",
+              status: "failed",
+            },
+            dns: { status: "verified" },
+            domain: "www.example.com",
+            id: "cd_def456",
+            platformAddressId: "pa_abc123",
+            routing: {
+              message: "Custom Domain Ingress has not been observed yet.",
+              status: "pending",
+            },
+            status: "blocked",
+            targetPort: 8080,
+          },
+        ],
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            id: "pa_abc123",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, CUSTOM_DOMAIN_BLOCKED_STATUS_RE);
+  assert.match(html, CUSTOM_DOMAIN_DNS_DETAIL_RE);
+  assert.match(html, CUSTOM_DOMAIN_CERT_DETAIL_RE);
+  assert.match(html, CUSTOM_DOMAIN_ROUTING_DETAIL_RE);
+  assert.match(html, CUSTOM_DOMAIN_DETAIL_REASON_RE);
+  assert.match(html, CUSTOM_DOMAIN_DETAIL_MESSAGE_RE);
+  assert.match(html, UNBIND_CUSTOM_DOMAIN_RE);
+});
+
+test("container settings pane unbinds Custom Domains without deleting Platform Addresses", () => {
+  const next = containerNetworkAfterUnbindCustomDomain(
+    {
+      customDomains: [
+        {
+          domain: "www.example.com",
+          id: "cd_def456",
+          platformAddressId: "pa_abc123",
+          status: "accessible",
+        },
+      ],
+      privateAddress: "http://api-service.default.svc:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+    { id: "cd_def456" }
+  );
+
+  assert.deepEqual(next.customDomains, []);
+  assert.deepEqual(next.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 8080,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+  assert.match(
+    renderToStaticMarkup(
+      <TestApSettingsSections
+        cpuQuota={{ onValueChange: noop, value: 1 }}
+        env={[]}
+        image="ghcr.io/acme/api:latest"
+        memoryQuota={{ onValueChange: noop, value: 512 }}
+        network={next}
+        onEnvChange={noop}
+        onImageChange={noop}
+        onNetworkChange={noop}
+      />
+    ),
+    PUBLIC_ADDRESS_VALUE_RE
+  );
+});
+
+test("container settings pane binds Custom Domains and retargets the Platform Address port", () => {
+  const next = containerNetworkAfterBindCustomDomain(
+    {
+      privateAddress: "http://api-service.default.svc:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+    {
+      customDomain: {
+        cnameTarget: "api.example.com",
+        domain: "www.example.com",
+        id: "cd_def456",
+        platformAddressId: "pa_abc123",
+        status: "verified",
+        targetPort: 8080,
+      },
+      platformAddress: {
+        host: "api.example.com",
+        id: "pa_abc123",
+        port: 8080,
+        status: "accessible",
+        type: "platform",
+        url: "https://api.example.com/",
+      },
+      platformAddressIndex: 0,
+      port: 9000,
+    }
+  );
+
+  assert.deepEqual(next.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 9000,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+  assert.deepEqual(next.customDomains, [
+    {
+      cnameTarget: "api.example.com",
+      domain: "www.example.com",
+      id: "cd_def456",
+      platformAddressId: "pa_abc123",
+      status: "verified",
+      targetPort: 9000,
+    },
+  ]);
+});
+
+test("container settings pane edits Public Address ports without binding Custom Domains", () => {
+  const next = containerNetworkAfterEditPublicAddress(
+    {
+      privateAddress: "http://api-service.default.svc:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+    {
+      platformAddress: {
+        host: "api.example.com",
+        id: "pa_abc123",
+        port: 8080,
+        status: "accessible",
+        type: "platform",
+        url: "https://api.example.com/",
+      },
+      platformAddressIndex: 0,
+      port: 9000,
+    }
+  );
+
+  assert.deepEqual(next.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 9000,
+      status: "accessible",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+  assert.equal(next.customDomains, undefined);
+  assert.deepEqual(next.appListeningPorts, [
+    {
+      port: 8080,
+      privateAddress: "http://api-service.default.svc:8080",
+    },
+    { port: 9000 },
+  ]);
+});
+
+test("container settings pane renders fixed replica strategy controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      replicaStrategy={{
+        fixed: { replicas: 4 },
+        type: "fixed",
+      }}
+      replicasQuota={{ onValueChange: noop, value: 4 }}
+    />
+  );
+
+  assert.match(html, REPLICA_STRATEGY_RE);
+  assert.match(html, FIXED_REPLICAS_RE);
+  assert.match(html, ELASTIC_SCALING_RE);
+  assert.match(html, REPLICA_COUNT_RE);
+  assert.match(html, REPLICA_VALUE_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
+});
+
+test("container settings pane renders CPU elastic replica strategy controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      replicaStrategy={{
+        elastic: {
+          maxReplicas: 8,
+          minReplicas: 2,
+          target: {
+            metric: "cpu",
+            type: "utilization",
+            utilizationPercent: 75,
+          },
+        },
+        fixed: { replicas: 4 },
+        type: "elastic",
+      }}
+      replicasQuota={{ onValueChange: noop, value: 4 }}
+    />
+  );
+
+  assert.match(html, REPLICA_STRATEGY_RE);
+  assert.match(html, FIXED_REPLICAS_RE);
+  assert.match(html, ELASTIC_SCALING_RE);
+  assert.match(html, MIN_REPLICAS_RE);
+  assert.match(html, MIN_REPLICA_VALUE_RE);
+  assert.match(html, MAX_REPLICAS_RE);
+  assert.match(html, MAX_REPLICA_VALUE_RE);
+  assert.match(html, CPU_TARGET_RE);
+  assert.match(html, CPU_TARGET_VALUE_RE);
+  assert.doesNotMatch(html, REPLICA_COUNT_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
+});
+
+test("container settings pane renders Memory elastic replica strategy controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      replicaStrategy={{
+        elastic: {
+          maxReplicas: 8,
+          minReplicas: 2,
+          target: {
+            averageValue: "512Mi",
+            metric: "memory",
+            type: "averageValue",
+          },
+        },
+        fixed: { replicas: 4 },
+        type: "elastic",
+      }}
+      replicasQuota={{ onValueChange: noop, value: 4 }}
+    />
+  );
+
+  assert.match(html, REPLICA_STRATEGY_RE);
+  assert.match(html, SCALING_TARGET_RE);
+  assert.match(html, CPU_TARGET_RE);
+  assert.match(html, MEMORY_TARGET_RE);
+  assert.match(html, MEMORY_TARGET_VALUE_RE);
+  assert.doesNotMatch(html, REPLICA_COUNT_RE);
+});
+
+test("container settings pane fixed save payload preserves inactive elastic branch", () => {
+  const draft: ContainerReplicaStrategy = {
+    elastic: {
+      maxReplicas: 9,
+      minReplicas: 3,
+      target: {
+        averageValue: "768Mi",
+        metric: "memory",
+        type: "averageValue",
+      },
+    },
+    fixed: { replicas: 4 },
+    type: "fixed",
+  };
+
+  assert.deepEqual(resourceQuotaReplicaPatchFromDraft(true, draft), {
+    replicaStrategy: draft,
+  });
+});
+
+test("read-only container settings view renders fixed replica strategy without mutation controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      readOnly
+      replicaStrategy={{
+        fixed: { replicas: 4 },
+        type: "fixed",
+      }}
+      replicasQuota={{ onValueChange: noop, value: 4 }}
+    />
+  );
+
+  assert.match(html, REPLICA_STRATEGY_RE);
+  assert.match(html, FIXED_REPLICAS_RE);
+  assert.match(html, REPLICA_COUNT_RE);
+  assert.match(html, REPLICA_VALUE_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
+  assert.doesNotMatch(html, ELASTIC_SCALING_RE);
+  assert.doesNotMatch(html, BUTTON_RE);
+});
+
+test("read-only container settings view renders CPU elastic replica strategy without mutation controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      readOnly
+      replicaStrategy={{
+        elastic: {
+          maxReplicas: 8,
+          minReplicas: 2,
+          target: {
+            metric: "cpu",
+            type: "utilization",
+            utilizationPercent: 75,
+          },
+        },
+        fixed: { replicas: 4 },
+        type: "elastic",
+      }}
+      replicasQuota={{ onValueChange: noop, value: 4 }}
+    />
+  );
+
+  assert.match(html, REPLICA_STRATEGY_RE);
+  assert.match(html, ELASTIC_SCALING_RE);
+  assert.match(html, MIN_REPLICAS_RE);
+  assert.match(html, MIN_REPLICA_VALUE_RE);
+  assert.match(html, MAX_REPLICAS_RE);
+  assert.match(html, MAX_REPLICA_VALUE_RE);
+  assert.match(html, SCALING_TARGET_RE);
+  assert.match(html, CPU_TARGET_RE);
+  assert.match(html, CPU_TARGET_PERCENT_RE);
+  assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
+  assert.doesNotMatch(html, FIXED_REPLICAS_RE);
+  assert.doesNotMatch(html, BUTTON_RE);
+});
+
+test("read-only container settings view renders Memory elastic replica strategy without mutation controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      readOnly
+      replicaStrategy={{
+        elastic: {
+          maxReplicas: 8,
+          minReplicas: 2,
+          target: {
+            averageValue: "512Mi",
+            metric: "memory",
+            type: "averageValue",
+          },
+        },
+        fixed: { replicas: 4 },
+        type: "elastic",
+      }}
+      replicasQuota={{ onValueChange: noop, value: 4 }}
+    />
+  );
+
+  assert.match(html, REPLICA_STRATEGY_RE);
+  assert.match(html, ELASTIC_SCALING_RE);
+  assert.match(html, MIN_REPLICAS_RE);
+  assert.match(html, MAX_REPLICAS_RE);
+  assert.match(html, SCALING_TARGET_RE);
+  assert.match(html, MEMORY_TARGET_RE);
+  assert.match(html, MEMORY_TARGET_QUANTITY_RE);
+  assert.doesNotMatch(html, FIXED_REPLICAS_RE);
+  assert.doesNotMatch(html, BUTTON_RE);
+});
+
+test("read-only network view renders addresses without mutation controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+      readOnly
+    />
+  );
+
+  assert.match(html, PRIVATE_ADDRESS_RE);
+  assert.match(html, PRIVATE_ADDRESS_DEFAULT_VALUE_RE);
+  assert.match(html, DOMAIN_LIST_RE);
+  assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
+  assert.match(html, COPY_PRIVATE_ADDRESS_RE);
+  assert.match(html, COPY_PUBLIC_ADDRESS_RE);
+  assert.doesNotMatch(html, ADD_PUBLIC_ADDRESS_RE);
+  assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
+});
+
+test("read-only container settings view cannot mutate environment rows", () => {
+  const html = renderPane(true);
+
+  assert.match(html, ENV_ROWS_SLOT_RE);
+  assert.match(html, DATABASE_URL_RE);
+  assert.doesNotMatch(html, ADD_ENV_RE);
+  assert.doesNotMatch(html, ENV_ROW_ACTIONS_RE);
+  assert.doesNotMatch(html, SAVE_ENV_RE);
+});
+
+test("container settings pane offers DB references from editable environment rows", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "postgres",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "empty",
+          namespace: "default",
+        },
+        {
+          name: "postgres",
+          namespace: "default",
+          privateDsn: "postgres://private",
+          primitiveSecretRefs: {
+            password: {
+              key: "passwd",
+              name: "postgres-conn-credential",
+            },
+          },
+        },
+      ]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.match(html, TOKEN_TRIGGER_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
+
+  const readOnlyHtml = renderPane(true);
+
+  assert.doesNotMatch(readOnlyHtml, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(readOnlyHtml, REFERENCE_SELECTOR_RE);
+});
+
+test("container settings pane hides DB Reference selector before saved row edit mode", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[{ name: "postgres", namespace: "default" }]}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, MASKED_ENV_VALUE_RE);
+  assert.match(html, REVEAL_ENV_VALUE_RE);
+  assert.match(html, COPY_ENV_VALUE_RE);
+  assert.match(html, ENV_ROW_ACTIONS_RE);
+  assert.match(html, CANVAS_NODE_ACTION_MENU_TRIGGER_RE);
+  assert.match(html, ENV_ROW_ACTIONS_NODE_VARIANT_RE);
+  assert.doesNotMatch(html, ENV_NAME_INPUT_RE);
+  assert.doesNotMatch(html, EDIT_ENV_RE);
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
+});
+
+test("container settings pane projects valueFrom-only environment rows out of raw direct source", () => {
+  const html = renderPane(false, [
+    {
+      dbDsn: {
+        dbName: "postgres",
+        dbNamespace: "default",
+        field: "password",
+      },
+      name: "DATABASE_PASSWORD",
+      value: "(valueFrom)",
+      valueFrom: {
+        secretKeyRef: {
+          key: "passwd",
+          name: "postgres-conn-credential",
+        },
+      },
+      valueSource: "dbDsn",
+    },
+  ]);
+
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
+  assert.doesNotMatch(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
+  assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
+});
+
+test("container settings pane renders raw direct rows instead of automatic helper rows", () => {
+  const html = renderPane(false, [
+    {
+      name: "DATABASE_URL",
+      referenceDbKey: "default/postgres",
+      value: editorToken("PGPASSWORD"),
+    },
+    {
+      dbDsn: {
+        dbName: "postgres",
+        dbNamespace: "default",
+        field: "password",
+      },
+      helper: {
+        automatic: true,
+        sourceDbKey: "default/postgres",
+        sourceField: "password",
+      },
+      name: "PGPASSWORD",
+      value: "(valueFrom)",
+      valueFrom: {
+        secretKeyRef: {
+          key: "passwd",
+          name: "postgres-conn-credential",
+        },
+      },
+      valueSource: "dbDsn",
+    },
+  ]);
+
+  assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);
+  assert.doesNotMatch(html, TOKEN_TRIGGER_RE);
+  assert.equal(html.match(ENV_ROW_ACTIONS_RE_GLOBAL)?.length, 1);
+  assert.doesNotMatch(html, EXTERNAL_REFERENCE_RE);
+  assert.doesNotMatch(html, VALUE_FROM_PLACEHOLDER_RE);
+});
+
+test("container settings pane opens dragged DB Add Reference intent preselected", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "mysql",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "postgres",
+          namespace: "default",
+          privateDsn: "postgres://private",
+        },
+        {
+          name: "mysql",
+          namespace: "default",
+          privateDsn: "mysql://private",
+          primitiveSecretRefs: {
+            host: { key: "endpoint", name: "mysql-conn-credential" },
+            password: { key: "passwd", name: "mysql-conn-credential" },
+            port: { key: "port", name: "mysql-conn-credential" },
+            username: { key: "user", name: "mysql-conn-credential" },
+          },
+        },
+      ]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, DATABASE_URL_RE);
+  assert.match(html, MYSQL_DATABASE_URL_REFERENCE_RE);
+  assert.doesNotMatch(html, MYSQL_PRIVATE_DSN_RE);
+  assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
+  assert.doesNotMatch(html, REFERENCE_DB_LABEL_RE);
+  assert.match(html, TOKEN_TRIGGER_RE);
+  assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
+  assert.match(html, SAVE_ENV_RE);
+});
+
+test("container settings pane appends dragged DB Add Reference intent to raw source", () => {
+  const draft = envRawSourceDraftWithAddReferenceIntent({
+    intent: {
+      dbName: "mysql",
+      dbNamespace: "default",
+      id: "drag-1",
+    },
+    rawSource: "# app\nFEATURE_FLAG=true",
+    readOnly: false,
+    sources: [
+      {
+        name: "mysql",
+        namespace: "default",
+        privateDsn: "mysql://private",
+      },
+    ],
+  });
+
+  assert.equal(
+    draft.rawSource,
+    [
+      "# app",
+      "FEATURE_FLAG=true",
+      `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+    ].join("\n")
+  );
+  assert.deepEqual(draft.rows, [
+    { name: "FEATURE_FLAG", value: "true" },
+    {
+      canvasAddDbDsnReferenceIntentId: "drag-1",
+      name: "DATABASE_URL",
+      referenceDbKey: "default/mysql",
+      value: referenceExpression("mysql", "DATABASE_URL"),
+    },
+  ]);
+});
+
+test("container settings pane uses DB identity and numeric suffixes for dragged DB reference name conflicts", () => {
+  const draft = envRawSourceDraftWithAddReferenceIntent({
+    intent: {
+      dbName: "mysql",
+      dbNamespace: "default",
+      id: "drag-1",
+    },
+    rawSource: [
+      "DATABASE_URL=postgres://manual",
+      "MYSQL_DATABASE_URL=mysql://manual",
+    ].join("\n"),
+    readOnly: false,
+    sources: [
+      {
+        name: "mysql",
+        namespace: "default",
+      },
+    ],
+  });
+
+  assert.equal(
+    draft.rawSource,
+    [
+      "DATABASE_URL=postgres://manual",
+      "MYSQL_DATABASE_URL=mysql://manual",
+      `MYSQL_DATABASE_URL_2=${referenceExpression("mysql", "DATABASE_URL")}`,
+    ].join("\n")
+  );
+});
+
+test("container settings pane derives pending DB references from explicit raw source references", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: "FEATURE_FLAG=true",
+      draftRawSource: [
+        "FEATURE_FLAG=true",
+        `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+        `MYSQL_HOST=${referenceExpression("mysql", "PG_HOST")}`,
+      ].join("\n"),
+      sources: [
+        {
+          name: "mysql",
+          namespace: "default",
+          primitiveSecretRefs: {
+            host: { key: "host", name: "mysql-conn-credential" },
+          },
+        },
+        { name: "postgres", namespace: "default" },
+      ],
+    }),
+    [{ dbName: "mysql", dbNamespace: "default" }]
+  );
+});
+
+test("container settings pane does not derive pending DB references from already committed references", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: `DATABASE_URL=${referenceExpression(
+        "mysql",
+        "DATABASE_URL"
+      )}`,
+      draftRawSource: [
+        `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+        "FEATURE_FLAG=true",
+      ].join("\n"),
+      sources: [{ name: "mysql", namespace: "default" }],
+    }),
+    []
+  );
+});
+
+test("container settings pane does not derive pending DB references from ordinary DSN strings", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: "",
+      draftRawSource: "DATABASE_URL=mysql://private",
+      sources: [
+        {
+          name: "mysql",
+          namespace: "default",
+          privateDsn: "mysql://private",
+        },
+      ],
+    }),
+    []
+  );
+});
+
+test("container settings pane derives pending DB references for newly referenced DBs only", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: `DATABASE_URL=${referenceExpression(
+        "mysql",
+        "DATABASE_URL"
+      )}`,
+      draftRawSource: [
+        `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+        `CACHE_URL=${referenceExpression("redis", "DATABASE_URL")}`,
+      ].join("\n"),
+      sources: [
+        { name: "mysql", namespace: "default" },
+        { name: "redis", namespace: "default" },
+      ],
+    }),
+    [{ dbName: "redis", dbNamespace: "default" }]
+  );
+});
+
+test("container settings pane leaves pending DB references unchanged for invalid raw source drafts", () => {
+  assert.equal(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: "",
+      draftRawSource: `DATABASE_URL=${referenceExpression(
+        "missing",
+        "DATABASE_URL"
+      )}`,
+      sources: [{ name: "mysql", namespace: "default" }],
+    }),
+    undefined
+  );
+});
+
+test("container settings pane reports confirmed dragged DB reference rows from the saved draft", () => {
+  const sourceRow = {
+    canvasAddDbDsnReferenceIntentId: "drag-1",
+    name: "DATABASE_URL",
+    referenceDbKey: "default/mysql",
+    value: `mysql://${editorToken("MYSQL_PRIVATE_DSN")}`,
+  } satisfies ContainerEnvVar & { canvasAddDbDsnReferenceIntentId: string };
+  const helperRow = {
+    helper: {
+      automatic: true,
+      sourceDbKey: "default/mysql",
+      sourceField: "private",
+    },
+    name: "MYSQL_PRIVATE_DSN",
+    value: "mysql://private",
+    valueSource: "dbDsn",
+  } satisfies ContainerEnvVar;
+
+  assert.deepEqual(
+    confirmedAddDbDsnReferencesFromEnvDraft([sourceRow, helperRow]),
+    [{ dbName: "mysql", dbNamespace: "default", id: "drag-1" }]
+  );
+});
+
+test("container settings draft detects dirty AP settings and restored state", () => {
+  const original = {
+    cpuCores: 1,
+    env: [{ name: "DATABASE_URL", value: "postgres://old" }],
+    image: "ghcr.io/acme/api:old",
+    memoryMib: 1024,
+    network: {
+      privatePort: 80,
+      publicAddresses: [{ id: "pa_old123", port: 80 }],
+    },
+    replicaStrategy: {
+      fixed: { replicas: 2 },
+      type: "fixed",
+    },
+  } satisfies Parameters<typeof containerSettingsDraftIsDirty>[0];
+
+  assert.equal(containerSettingsDraftIsDirty(original, original), false);
+  assert.equal(
+    containerSettingsDraftIsDirty(original, {
+      ...original,
+      args: ["--port", "8080"],
+      command: ["/app/server"],
+      configMaps: [{ path: "/etc/app/config.yaml", value: "debug: false" }],
+      env: [...original.env, { name: "FEATURE_FLAG", value: "true" }],
+      image: "ghcr.io/acme/api:new",
+      network: {
+        privatePort: 8080,
+        publicAddresses: [
+          { id: "pa_old123", port: 80 },
+          { id: "pa_new456", port: 9000 },
+        ],
+      },
+      replicaStrategy: {
+        elastic: {
+          maxReplicas: 8,
+          minReplicas: 2,
+          target: {
+            metric: "cpu",
+            type: "utilization",
+            utilizationPercent: 75,
+          },
+        },
+        fixed: { replicas: 2 },
+        type: "elastic",
+      },
+      storage: [{ path: "/data", size: "20Gi" }],
+      workloadKind: "statefulset",
+    }),
+    true
+  );
+  assert.equal(containerSettingsDraftIsDirty(original, { ...original }), false);
+});
+
+test("container settings pane renders Launchpad-backed command config and storage fields", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      args={["--config", "/etc/app/config.yaml"]}
+      command={["/app/server"]}
+      configMaps={[{ path: "/etc/app/config.yaml", value: "debug: false" }]}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onSettingsDraftCommit={noop}
+      storage={[{ path: "/data", size: "20Gi" }]}
+      workloadKind="statefulset"
+    />
+  );
+
+  assert.match(html, LAUNCH_COMMAND_RE);
+  assert.match(html, CONFIG_FILES_RE);
+  assert.match(html, STORAGE_RE);
+  assert.match(html, CONTAINER_COMMAND_RE);
+  assert.match(html, CONFIG_FILE_PATH_RE);
+  assert.match(html, STORAGE_SIZE_RE);
+  assert.match(html, CONFIG_FILE_MOUNT_PATH_RE);
+  assert.match(html, STORAGE_SIZE_VALUE_RE);
+});
+
+test("container settings pane exposes panel-level draft actions without environment save controls", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "mysql",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[
+        {
+          name: "mysql",
+          namespace: "default",
+          privateDsn: "mysql://private",
+        },
+      ]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onSettingsDraftCommit={noop}
+    />
+  );
+
+  assert.match(html, UPDATE_AP_SETTINGS_RE);
+  assert.match(html, DISCARD_AP_SETTINGS_RE);
+  assert.doesNotMatch(html, SAVE_ENV_RE);
+  assert.doesNotMatch(html, CANCEL_ENV_RE);
+});
+
+test("container settings pane can focus only Environment Variables", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privatePort: 8080,
+        publicAddresses: [],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onSettingsDraftCommit={noop}
+      sectionFocus="environment"
+    />
+  );
+
+  assert.match(html, ENV_ROWS_SLOT_RE);
+  assert.match(html, UPDATE_ENVIRONMENT_VARIABLES_RE);
+  assert.doesNotMatch(html, CPU_MEMORY_SECTION_RE);
+  assert.doesNotMatch(html, IMAGE_INPUT_RE);
+  assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
+});
+
+test("container settings raw editor omits fixed raw footer actions", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "mysql",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[{ name: "mysql", namespace: "default" }]}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      envRawSource="BROKEN"
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, RAW_ENV_ROWS_OVERFLOW_VISIBLE_RE);
+  assert.doesNotMatch(html, COPY_RAW_SOURCE_RE);
+  assert.doesNotMatch(html, INSERT_RAW_REFERENCE_RE);
+  assert.doesNotMatch(html, COPY_ENV_VALUE_RE);
+});

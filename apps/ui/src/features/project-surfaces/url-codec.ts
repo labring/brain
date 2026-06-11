@@ -6,12 +6,13 @@ import type {
   ProjectSurfaceState,
 } from "./surface-state";
 import {
-  type ProjectApBoundEntryPointTarget,
   type ProjectApTarget,
   type ProjectDbTarget,
   type ProjectResourceTarget,
   parseProjectTarget,
+  parseSettingsOwnerTarget,
   serializeProjectTarget,
+  serializeSettingsOwnerTarget,
 } from "./target-identity";
 
 function encodePart(value: string): string {
@@ -71,15 +72,17 @@ function resourceTargetFromParts(
   return target?.kind === "AP" || target?.kind === "DB" ? target : null;
 }
 
-function entryTargetFromParts(
-  parts: readonly string[]
-): ProjectApBoundEntryPointTarget | null {
-  const target = targetFromParts(parts);
-  return target?.kind === "EntryPoint" ? target : null;
-}
-
 function serializeTargetEntry(prefix: string, target: ProjectResourceTarget) {
   return `${prefix}:${serializeProjectTarget(target)}`;
+}
+
+function serializeSettingsSideEntry(
+  entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>
+) {
+  const view = entry.view?.trim();
+  return `settings:${serializeSettingsOwnerTarget(entry.target)}${
+    view == null || view === "" ? "" : `:${encodePart(view)}`
+  }`;
 }
 
 function serializeFocusPolicy(policy?: ProjectMainSurfaceFocusPolicy) {
@@ -105,22 +108,16 @@ export function serializeProjectSideSurfaceEntry(
     return null;
   }
   switch (entry.kind) {
-    case "apEnvironmentSettings":
-      return serializeTargetEntry("ap-environment-settings", entry.target);
     case "apEvents":
       return serializeTargetEntry("ap-events", entry.target);
     case "apHistory":
       return serializeTargetEntry("ap-history", entry.target);
     case "apMetrics":
       return serializeTargetEntry("ap-metrics", entry.target);
-    case "apSettings":
-      return serializeTargetEntry("ap-settings", entry.target);
     case "databaseDeployment":
       return `database-deployment:${encodePart(entry.projectId)}`;
     case "dbMetrics":
       return serializeTargetEntry("db-metrics", entry.target);
-    case "dbSettings":
-      return serializeTargetEntry("db-settings", entry.target);
     case "dockerDeployment":
       return `docker-deployment:${encodePart(entry.projectId)}`;
     case "githubDeployment":
@@ -131,8 +128,8 @@ export function serializeProjectSideSurfaceEntry(
       return "skills-workflow";
     case "templateDeployment":
       return `template-deployment:${encodePart(entry.projectId)}`;
-    case "publicAddresses":
-      return `public-addresses:${serializeProjectTarget(entry.target)}`;
+    case "settings":
+      return serializeSettingsSideEntry(entry);
     default:
       return null;
   }
@@ -142,10 +139,6 @@ function parseResourceSideSurfaceEntry(
   parts: readonly string[]
 ): ProjectSideSurfaceEntry | null | undefined {
   switch (parts[0]) {
-    case "ap-environment-settings": {
-      const target = apTargetFromParts(parts.slice(1));
-      return target == null ? null : { kind: "apEnvironmentSettings", target };
-    }
     case "ap-events": {
       const target = apTargetFromParts(parts.slice(1));
       return target == null ? null : { kind: "apEvents", target };
@@ -158,21 +151,24 @@ function parseResourceSideSurfaceEntry(
       const target = apTargetFromParts(parts.slice(1));
       return target == null ? null : { kind: "apMetrics", target };
     }
-    case "ap-settings": {
-      const target = apTargetFromParts(parts.slice(1));
-      return target == null ? null : { kind: "apSettings", target };
-    }
     case "db-metrics": {
       const target = dbTargetFromParts(parts.slice(1));
       return target == null ? null : { kind: "dbMetrics", target };
     }
-    case "db-settings": {
-      const target = dbTargetFromParts(parts.slice(1));
-      return target == null ? null : { kind: "dbSettings", target };
-    }
-    case "public-addresses": {
-      const target = entryTargetFromParts(parts.slice(1));
-      return target == null ? null : { kind: "publicAddresses", target };
+    case "settings": {
+      if (parts.length !== 4 && parts.length !== 5) {
+        return null;
+      }
+      const target = parseSettingsOwnerTarget(parts.slice(1, 4).join(":"));
+      const view = decodePart(parts[4]);
+      if (target == null || (parts.length === 5 && view == null)) {
+        return null;
+      }
+      return {
+        kind: "settings",
+        target,
+        ...(view == null ? {} : { view }),
+      };
     }
     default:
       return undefined;

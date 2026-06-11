@@ -67,7 +67,7 @@ test("canvas surface adapter resolves AP side panes from surface targets", () =>
     surfaceState: {
       ...emptyState,
       side: {
-        kind: "apSettings",
+        kind: "settings",
         target: { kind: "AP", name: "api", namespace: "default" },
       },
     },
@@ -76,8 +76,12 @@ test("canvas surface adapter resolves AP side panes from surface targets", () =>
   if (model.side?.kind !== "resource") {
     assert.fail("expected resource side render model");
   }
-  assert.equal(model.side.content.kind, "apSettings");
+  assert.equal(model.side.content.kind, "settings");
   assert.equal(model.side.content.node, apNode);
+  assert.deepEqual(model.side.content.target, {
+    kind: "settings",
+    target: { kind: "AP", name: "api", namespace: "default" },
+  });
 });
 
 test("canvas surface adapter resolves AP Environment Settings focus", () => {
@@ -86,8 +90,9 @@ test("canvas surface adapter resolves AP Environment Settings focus", () => {
     surfaceState: {
       ...emptyState,
       side: {
-        kind: "apEnvironmentSettings",
+        kind: "settings",
         target: { kind: "AP", name: "api", namespace: "default" },
+        view: "environment",
       },
     },
   });
@@ -95,8 +100,9 @@ test("canvas surface adapter resolves AP Environment Settings focus", () => {
   if (model.side?.kind !== "resource") {
     assert.fail("expected resource side render model");
   }
-  assert.equal(model.side.content.kind, "apEnvironmentSettings");
+  assert.equal(model.side.content.kind, "settings");
   assert.equal(model.side.content.node, apNode);
+  assert.equal(model.side.content.target.view, "environment");
 });
 
 test("canvas surface adapter resolves DB access and DB terminal independently", () => {
@@ -164,8 +170,9 @@ test("canvas surface adapter keeps AP-bound Public Addresses resolved through th
     surfaceState: {
       ...emptyState,
       side: {
-        kind: "publicAddresses",
-        target: { apName: "api", kind: "EntryPoint", namespace: "default" },
+        kind: "settings",
+        target: { kind: "AP", name: "api", namespace: "default" },
+        view: "public-addresses",
       },
     },
   });
@@ -173,11 +180,8 @@ test("canvas surface adapter keeps AP-bound Public Addresses resolved through th
   if (model.side?.kind !== "resource") {
     assert.fail("expected resource side render model");
   }
-  assert.equal(model.side.content.kind, "publicAddresses");
-  assert.deepEqual(model.side.content.selection, {
-    apName: "api",
-    namespace: "default",
-  });
+  assert.equal(model.side.content.kind, "settings");
+  assert.equal(model.side.content.target.view, "public-addresses");
   assert.equal(model.side.content.entryNode, null);
 });
 
@@ -187,8 +191,9 @@ test("canvas surface adapter attaches the EntryPoint node when it exists", () =>
     surfaceState: {
       ...emptyState,
       side: {
-        kind: "publicAddresses",
-        target: { apName: "api", kind: "EntryPoint", namespace: "default" },
+        kind: "settings",
+        target: { kind: "AP", name: "api", namespace: "default" },
+        view: "public-addresses",
       },
     },
   });
@@ -196,29 +201,56 @@ test("canvas surface adapter attaches the EntryPoint node when it exists", () =>
   if (model.side?.kind !== "resource") {
     assert.fail("expected resource side render model");
   }
-  assert.equal(model.side.content.kind, "publicAddresses");
+  assert.equal(model.side.content.kind, "settings");
   assert.equal(model.side.content.entryNode, entryNode);
 });
 
-test("canvas surface adapter represents unresolved targets explicitly", () => {
+test("canvas surface adapter lets settings providers resolve missing canvas targets", () => {
   const model = createProjectCanvasSurfaceRenderModel({
     nodes: [],
     surfaceState: {
       ...emptyState,
       side: {
-        kind: "apSettings",
+        kind: "settings",
         target: { kind: "AP", name: "api", namespace: "default" },
       },
     },
   });
 
-  if (model.side?.kind !== "pendingTarget") {
-    assert.fail("expected pending target side render model");
+  if (model.side?.kind !== "resource") {
+    assert.fail("expected settings side render model");
   }
-  assert.deepEqual(model.side.target, {
+  assert.equal(model.side.content.kind, "settings");
+  assert.equal(model.side.content.node, null);
+  assert.deepEqual(model.side.content.target.target, {
     kind: "AP",
     name: "api",
     namespace: "default",
+  });
+});
+
+test("canvas surface adapter opens DB settings without canvas database data", () => {
+  const model = createProjectCanvasSurfaceRenderModel({
+    nodes: [],
+    surfaceState: {
+      ...emptyState,
+      side: {
+        kind: "settings",
+        target: { kind: "DB", name: "pg", namespace: "data" },
+      },
+    },
+  });
+
+  if (model.side?.kind !== "resource") {
+    assert.fail("expected settings side render model");
+  }
+  assert.equal(model.side.content.kind, "settings");
+  assert.equal(model.side.content.databaseData, undefined);
+  assert.equal(model.side.content.node, null);
+  assert.deepEqual(model.side.content.target.target, {
+    kind: "DB",
+    name: "pg",
+    namespace: "data",
   });
 });
 
@@ -250,7 +282,7 @@ test("canvas surface adapter hides side entries behind focused main surfaces", (
         target: { kind: "DB", name: "pg", namespace: "data" },
       },
       side: {
-        kind: "apSettings",
+        kind: "settings",
         target: { kind: "AP", name: "api", namespace: "default" },
       },
     },

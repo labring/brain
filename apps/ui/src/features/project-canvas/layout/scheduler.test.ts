@@ -9,7 +9,7 @@ function layoutNode(
   return {
     expanded: false,
     position: { x: 10, y: 20 },
-    ref: { kind: "ap", name: "api", namespace: "default" },
+    ref: { kind: "AP", name: "api", namespace: "default" },
     ...overrides,
   };
 }

@@ -6,8 +6,7 @@ import {
   k8sGetResponseSchema,
 } from "@workspace/api/schemas/k8s-get";
 import { ApiUrl } from "@workspace/api/utils";
-
-import { k8sGetClaimBody } from "./claim-mapper";
+import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
 
 function asRecord(v: unknown): Record<string, unknown> | undefined {
   return v != null && typeof v === "object" && !Array.isArray(v)

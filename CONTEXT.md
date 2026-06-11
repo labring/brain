@@ -2,6 +2,16 @@
 
 ## Ubiquitous Language
 
+### Component Registry
+
+An internal catalog for reusable UI components in the product design system. It is not a catalog for complete product surfaces, panes, or workflows.
+
+### Registry Component
+
+A reusable UI component eligible for the Component Registry. A Registry Component may carry product vocabulary, but it must be driven by a host surface and must not own a complete product workflow or settings lifecycle.
+
+_Avoid_: Product Surface Registry, Pane Registry, Flow Registry.
+
 ### EntryPoint
 
 An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource or CRD.
@@ -64,6 +74,12 @@ The primary UI surface for viewing and editing AP desired configuration, includi
 A settings entry point that presents one named subset of a resource's settings surface, containing one or more settings sections rather than necessarily showing the full settings surface. It remains part of that resource's settings surface and uses the same Settings Draft confirmation model as the full surface.
 
 _Avoid_: Standalone Settings Section Pane, Section Pane, arbitrary section bundle.
+
+### Settings Section
+
+A coherent subset of a Settings Owner's configuration shown inside a Settings View. Settings Sections belong to their Settings Owner's settings surface and are not standalone panes, Component Registry items, or caller-selected arbitrary bundles.
+
+_Avoid_: Registry Component, product workflow, standalone settings pane.
 
 ### Settings Owner
 

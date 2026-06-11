@@ -1,4 +1,4 @@
-import type { ProjectExplorerProject } from "@workspace/ui/components/project-explorer/project-explorer";
+import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 
 import type { VisualTone } from "./project-aggregate-status";
 

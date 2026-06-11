@@ -1,7 +1,7 @@
 "use client";
 
-import type { GithubDeployerRepo } from "@workspace/ui/components/github-deployer/github-deployer.types";
 import useSWR from "swr";
+import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
 
 interface GithubReposResponse {
   repos: GithubDeployerRepo[];

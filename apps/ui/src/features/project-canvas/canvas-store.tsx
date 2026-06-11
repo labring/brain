@@ -33,7 +33,7 @@ export const ENTRY_PANE = {
 } as const;
 
 /**
- * Bounds for AP fixed replicas in the workload Settings panel (`ContainerSettingsPane`).
+ * Bounds for AP fixed replicas in the workload settings panel.
  */
 export const WORKLOAD_PANEL_REPLICAS = { min: 1, max: 20 } as const;
 

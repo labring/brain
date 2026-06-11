@@ -3,13 +3,7 @@ import type {
   ContainerNodeStates,
 } from "@workspace/ui/components/container-node/container-node";
 import type {
-  ContainerSettingsPaneAddDbDsnReferenceIntent,
-  ContainerSettingsPaneConfirmedAddDbDsnReference,
-  ContainerSettingsPanePendingDbReference,
-} from "@workspace/ui/components/container-settings-pane/container-settings-pane";
-import type {
   DatabaseNodeActions,
-  DatabaseNodeConnection,
   DatabaseNodeStates,
 } from "@workspace/ui/components/database-node/database-node";
 import type {
@@ -18,8 +12,14 @@ import type {
   EntryNodeStates,
   EntryNodeTarget,
 } from "@workspace/ui/components/entry-node/entry-node";
-import type { ContainerEnvDbDsnSource } from "@workspace/ui/lib/container-env-rows";
 import type { Node } from "@xyflow/react";
+import type {
+  ApSettingsAddDbDsnReferenceIntent,
+  ApSettingsConfirmedAddDbDsnReference,
+  ApSettingsPendingDbReference,
+} from "@/features/project-settings/ap/ap-settings-sections";
+import type { ContainerEnvDbDsnSource } from "@/features/project-settings/ap/lib/container-env-rows";
+import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
 
 // `Node`'s second type parameter must match the node type constants in ./constants.
 // biome-ignore lint/style/useImportType: value required for `typeof` in `CanvasContainerRfNode`
@@ -42,15 +42,15 @@ export interface CanvasNodeSettingsAccess {
 
 export interface CanvasContainerNodeData extends Record<string, unknown> {
   actions?: ContainerNodeActions;
-  addDbDsnReferenceIntent?: ContainerSettingsPaneAddDbDsnReferenceIntent | null;
+  addDbDsnReferenceIntent?: ApSettingsAddDbDsnReferenceIntent | null;
   dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
   layout?: CanvasNodeLayoutState;
   onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
   onAddDbDsnReferenceMutationStart?: (
-    references: readonly ContainerSettingsPaneConfirmedAddDbDsnReference[]
+    references: readonly ApSettingsConfirmedAddDbDsnReference[]
   ) => (() => void) | undefined;
   onPendingDbReferencesChange?: (
-    references: readonly ContainerSettingsPanePendingDbReference[]
+    references: readonly ApSettingsPendingDbReference[]
   ) => void;
   onWorkloadMutation?: () => Promise<unknown>;
   resourceKind?: "ap" | "template";
@@ -68,30 +68,11 @@ export interface CanvasDatabaseWorkloadRef {
   namespace: string;
 }
 
-export interface CanvasDatabaseNodeData extends Record<string, unknown> {
+export interface CanvasDatabaseNodeData extends DbSettingsData {
   actions?: DatabaseNodeActions;
-  backupPolicy?: {
-    cronExpression?: string;
-    enabled?: boolean;
-    retentionPeriod?: string;
-  };
-  connections: DatabaseNodeConnection[];
-  desired?: {
-    cpuLimit?: string;
-    cpuRequest?: string;
-    exposeNodePort?: boolean;
-    memoryLimit?: string;
-    memoryRequest?: string;
-    replicas?: number;
-    storageSize?: string;
-  };
   layout?: CanvasNodeLayoutState;
-  metadata?: {
-    labels?: Record<string, unknown>;
-  };
   settingsAccess?: CanvasNodeSettingsAccess;
   states: DatabaseNodeStates;
-  uid?: string;
   workload: CanvasDatabaseWorkloadRef;
 }
 
