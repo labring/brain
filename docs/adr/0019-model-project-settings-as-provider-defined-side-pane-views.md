@@ -19,3 +19,5 @@ The route model should move directly to a unified settings side entry such as `s
 ## Consequences
 
 Project Canvas, assistant actions, and toolbar actions should request `kind: "settings"` with a Settings Owner target and optional view, rather than directly choosing AP or DB pane components. The settings feature becomes the boundary for provider registration, view validation, and settings draft/leave-guard behavior; shared UI packages remain focused on reusable controls and layout primitives rather than AP/DB provider knowledge.
+
+The existing monolithic AP settings pane should be split into provider-local rendered sections as part of this architecture change rather than kept as an opaque pane behind the new host. The host renders shared settings chrome and section layout, while providers return structured section models and section content.
