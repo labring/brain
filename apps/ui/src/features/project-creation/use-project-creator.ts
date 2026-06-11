@@ -27,6 +27,7 @@ import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
+import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
@@ -326,6 +327,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           return;
         }
         toast.success(outcome.taskMessage);
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectName: outcome.projectName,
+            repoFullName: outcome.sourceLabel,
+            taskId: outcome.taskId,
+          });
+        }
         setLastConfirmedKind(
           `github:${outcome.sourceLabel}:${outcome.projectName}`
         );
