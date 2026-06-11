@@ -9,7 +9,7 @@ import {
   logChatToolIntention,
 } from "@/lib/tool/chat-tool-intention";
 
-export type BrainProductToolResourceKind = "AP" | "DB" | "EntryPoint";
+export type BrainProductToolResourceKind = "AP" | "DB";
 
 export type BrainProductToolWriteOperation = "create" | "delete" | "patch";
 
@@ -25,7 +25,7 @@ export interface ProductResourceRequestInput {
 }
 
 export interface ProductResourceDraftInput {
-  kind: Exclude<BrainProductToolResourceKind, "EntryPoint">;
+  kind: BrainProductToolResourceKind;
   manifest?: unknown;
   name: string;
   namespace: string;
@@ -51,7 +51,7 @@ export type ProductResourceDraft =
 export interface ConfirmedProductWriteInput {
   base?: string;
   confirmed: boolean;
-  kind: Exclude<BrainProductToolResourceKind, "EntryPoint">;
+  kind: BrainProductToolResourceKind;
   kubeconfig: string;
   manifest?: unknown;
   name: string;
@@ -71,13 +71,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function productRoute(kind: BrainProductToolResourceKind): string {
-  if (kind === "AP") {
-    return API_ROUTES.ap.root;
-  }
-  if (kind === "DB") {
-    return API_ROUTES.db.root;
-  }
-  return API_ROUTES.entrypoint.root;
+  return kind === "DB" ? API_ROUTES.db.root : API_ROUTES.ap.root;
 }
 
 function productWriteMethod(
@@ -116,7 +110,7 @@ function productCreateBody(manifest: unknown): { yaml: string } | undefined {
 }
 
 export function normalizeProductPatch(
-  kind: Exclude<BrainProductToolResourceKind, "EntryPoint">,
+  kind: BrainProductToolResourceKind,
   patch: unknown
 ): unknown {
   if (kind !== "AP" || !isPlainRecord(patch) || isPlainRecord(patch.spec)) {
@@ -252,7 +246,7 @@ export async function executeConfirmedProductWrite(
 
 const productReadInputSchema = z.object({
   intention: chatToolIntentionField,
-  kind: z.enum(["AP", "DB", "EntryPoint"]),
+  kind: z.enum(["AP", "DB"]),
   labelSelector: z.string().trim().max(1000).optional(),
   name: z.string().trim().min(1).max(253).optional(),
 });
@@ -311,10 +305,10 @@ export function createChatProductTools(options: {
 
   const readProductResource = tool({
     description: [
-      "Read Brain product resources through the direct AP, DB, or EntryPoint product APIs.",
-      "Use this before answering resource-specific AP/DB/EntryPoint questions or before proposing a mutation.",
+      "Read Brain product resources through the direct AP or DB product APIs.",
+      "Use this before answering resource-specific AP/DB questions or before proposing a mutation.",
       "This is preferred over kubectl for normal Brain product inspection.",
-      "For a single AP/DB, pass kind + name. For lists, omit name and optionally pass labelSelector. EntryPoint is read-only and is AP-bound derived state.",
+      "For a single AP/DB, pass kind + name. For lists, omit name and optionally pass labelSelector. Public address and domain state is read from AP network state.",
     ].join(" "),
     inputSchema: productReadInputSchema,
     execute: async (input) => {
@@ -338,7 +332,7 @@ export function createChatProductTools(options: {
     description: [
       "Draft a Brain AP/DB product change without applying it.",
       "Use this to show the user the exact create manifest or merge patch that would be sent to the product API.",
-      "For EntryPoint/public-address changes, draft the AP network change instead because EntryPoint is AP-bound derived state.",
+      "For public-address/domain changes, draft the AP network change.",
     ].join(" "),
     inputSchema: draftProductResourceChangeInput,
     execute: (input) => {
@@ -368,7 +362,7 @@ export function createChatProductTools(options: {
       "Apply a confirmed Brain AP/DB product write through the direct product API.",
       "This tool always requests browser UI approval before execution; call it only when the user has asked to apply the exact intended change.",
       "If approval is missing, call draftProductResourceChange or ask for confirmation instead.",
-      "Never use this for EntryPoint writes; public address/domain changes belong in the AP network intent.",
+      "Public address/domain changes belong in the AP network intent.",
     ].join(" "),
     inputSchema: productWriteInputSchema,
     needsApproval: true,

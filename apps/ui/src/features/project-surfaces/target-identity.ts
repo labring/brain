@@ -12,9 +12,9 @@ export interface ProjectDbTarget {
   observedUid?: string;
 }
 
-export interface ProjectApBoundEntryPointTarget {
+export interface ProjectApBoundPublicAccessTarget {
   apName: string;
-  kind: "EntryPoint";
+  kind: "PublicAccess";
   namespace: string;
   observedUid?: string;
 }
@@ -23,7 +23,7 @@ export type ProjectResourceTarget = ProjectApTarget | ProjectDbTarget;
 export type SettingsOwnerTarget = ProjectResourceTarget;
 export type ProjectSurfaceTarget =
   | ProjectResourceTarget
-  | ProjectApBoundEntryPointTarget;
+  | ProjectApBoundPublicAccessTarget;
 
 function cleanPart(value: string): string | null {
   const trimmed = value.trim();
@@ -46,8 +46,8 @@ function decodePart(value: string | undefined): string | null {
 }
 
 export function projectTargetKey(target: ProjectSurfaceTarget): string {
-  if (target.kind === "EntryPoint") {
-    return `entry:${target.namespace}:${target.apName}`;
+  if (target.kind === "PublicAccess") {
+    return `public-access:${target.namespace}:${target.apName}`;
   }
   return `${target.kind}:${target.namespace}:${target.name}`;
 }
@@ -69,7 +69,7 @@ export function serializeProjectTarget(target: ProjectSurfaceTarget): string {
   if (target.kind === "DB") {
     return `db:${encodePart(target.namespace)}:${encodePart(target.name)}`;
   }
-  return `entry:${encodePart(target.namespace)}:${encodePart(target.apName)}`;
+  return `public-access:${encodePart(target.namespace)}:${encodePart(target.apName)}`;
 }
 
 export function serializeSettingsOwnerTarget(
@@ -97,7 +97,8 @@ export function parseProjectTarget(
     case "db":
       return { kind: "DB", name, namespace };
     case "entry":
-      return { apName: name, kind: "EntryPoint", namespace };
+    case "public-access":
+      return { apName: name, kind: "PublicAccess", namespace };
     default:
       return null;
   }
@@ -150,11 +151,11 @@ export function projectDbTarget(input: {
   };
 }
 
-export function projectApBoundEntryPointTarget(input: {
+export function projectApBoundPublicAccessTarget(input: {
   apName: string;
   namespace: string;
   observedUid?: string;
-}): ProjectApBoundEntryPointTarget | null {
+}): ProjectApBoundPublicAccessTarget | null {
   const apName = cleanPart(input.apName);
   const namespace = cleanPart(input.namespace);
   if (apName == null || namespace == null) {
@@ -162,7 +163,7 @@ export function projectApBoundEntryPointTarget(input: {
   }
   return {
     apName,
-    kind: "EntryPoint",
+    kind: "PublicAccess",
     namespace,
     ...(input.observedUid?.trim()
       ? { observedUid: input.observedUid.trim() }

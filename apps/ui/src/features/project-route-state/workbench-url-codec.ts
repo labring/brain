@@ -70,7 +70,7 @@ export function parseProjectCanvasSelection(
   if (target?.kind === "AP" || target?.kind === "DB") {
     return { kind: "resource", target };
   }
-  if (target?.kind === "EntryPoint") {
+  if (target?.kind === "PublicAccess") {
     return { kind: "publicAddresses", target };
   }
   return null;

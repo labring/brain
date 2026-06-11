@@ -43,7 +43,6 @@ test("canvas connections detect AP to DB edges from exact DB DSN env values and 
     detectCanvasConnections({
       apsData,
       dbsData,
-      entryPointsData: undefined,
     }),
     [
       {
@@ -84,7 +83,6 @@ test("canvas connections stay resource-backed when DB public access desired stat
           },
         ],
       },
-      entryPointsData: undefined,
     }),
     [
       {
@@ -107,7 +105,6 @@ test("canvas connections stay resource-backed when DB public access desired stat
           },
         ],
       },
-      entryPointsData: undefined,
     }),
     [
       {
@@ -145,7 +142,6 @@ test("canvas connections detect public DB bindings only after resource status ha
           },
         ],
       },
-      entryPointsData: undefined,
     }),
     []
   );
@@ -165,7 +161,6 @@ test("canvas connections detect public DB bindings only after resource status ha
           },
         ],
       },
-      entryPointsData: undefined,
     }),
     [
       {
@@ -252,7 +247,6 @@ test("canvas connections detect primitive Secret-backed AP to DB edges and de-du
     detectCanvasConnections({
       apsData,
       dbsData,
-      entryPointsData: undefined,
     }),
     [
       {
@@ -306,7 +300,6 @@ test("canvas connections prefer raw source DB references for AP to DB edges", ()
     detectCanvasConnections({
       apsData,
       dbsData,
-      entryPointsData: undefined,
     }),
     [
       {
@@ -371,13 +364,12 @@ test("canvas connections ignore primitive Secret refs with non-matching names or
         ],
       },
       dbsData,
-      entryPointsData: undefined,
     }),
     []
   );
 });
 
-test("canvas connections keep EntryPoint-to-AP detection alongside AP-to-DB detection", () => {
+test("canvas connections keep PublicAccess-to-AP detection alongside AP-to-DB detection", () => {
   const apsData = {
     items: [
       {
@@ -390,6 +382,9 @@ test("canvas connections keep EntryPoint-to-AP detection alongside AP-to-DB dete
                 value: "postgres://private",
               },
             ],
+            network: {
+              platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+            },
           },
         },
       },
@@ -403,25 +398,15 @@ test("canvas connections keep EntryPoint-to-AP detection alongside AP-to-DB dete
       },
     ],
   };
-  const entryPointsData = {
-    items: [
-      {
-        metadata: { name: "api-entry", namespace: "default" },
-        spec: { apRef: "api" },
-      },
-    ],
-  };
-
   assert.deepEqual(
     detectCanvasConnections({
       apsData,
       dbsData,
-      entryPointsData,
     }),
     [
       {
-        kind: "EntryPointToAP",
-        source: { kind: "EntryPoint", name: "api", namespace: "default" },
+        kind: "PublicAccessToAP",
+        source: { kind: "PublicAccess", name: "api", namespace: "default" },
         target: { kind: "AP", name: "api", namespace: "default" },
       },
       {
@@ -455,7 +440,6 @@ test("canvas connection edges include DSN-backed AP to DB connections", () => {
     detectedCanvasConnectionEdges({
       apsData,
       dbsData,
-      entryPointsData: undefined,
       nodes: [
         {
           data: { states: { name: "api", namespace: "default" } },

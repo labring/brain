@@ -191,7 +191,7 @@ test("marks only in-memory generated positions as viewport follow targets", () =
   assert.equal(isCanvasNodeGeneratedPosition(byId.get("ap-saved-api")), false);
 });
 
-test("anchors an unplaced EntryPoint to the left side of a saved AP", () => {
+test("anchors an unplaced PublicAccess to the left side of a saved AP", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -269,7 +269,7 @@ test("wraps unanchored global placement before the canvas becomes too wide", () 
   assert.deepEqual(node?.position, { x: 0, y: 280 });
 });
 
-test("places a new AP and EntryPoint as one combined footprint", () => {
+test("places a new AP and PublicAccess as one combined footprint", () => {
   const nodes = placeCanvasNodes({
     layout: undefined,
     nodes: [entryNode("api-entry", "api"), apNode("api")],
@@ -280,7 +280,7 @@ test("places a new AP and EntryPoint as one combined footprint", () => {
   assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: 0 });
 });
 
-test("includes anchored EntryPoints in same-pass placement occupancy", () => {
+test("includes anchored PublicAccess in same-pass placement occupancy", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -303,7 +303,7 @@ test("includes anchored EntryPoints in same-pass placement occupancy", () => {
   assert.notDeepEqual(positions.get("db-postgres"), { x: 0, y: 0 });
 });
 
-test("moves anchored EntryPoints through local slots to avoid saved occupancy", () => {
+test("moves anchored PublicAccess through local slots to avoid saved occupancy", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -330,7 +330,7 @@ test("moves anchored EntryPoints through local slots to avoid saved occupancy", 
   assert.deepEqual(positions.get("db-postgres"), { x: 0, y: 0 });
 });
 
-test("returns placement group layout nodes for AP and EntryPoint first placement", () => {
+test("returns placement group layout nodes for AP and PublicAccess first placement", () => {
   const result = placeCanvasNodesWithLayout({
     layout: {
       namespace: "default",
@@ -349,7 +349,7 @@ test("returns placement group layout nodes for AP and EntryPoint first placement
     })),
     [
       { kind: "AP", name: "api", position: { x: 340, y: 0 } },
-      { kind: "EntryPoint", name: "api", position: { x: 0, y: 0 } },
+      { kind: "PublicAccess", name: "api", position: { x: 0, y: 0 } },
     ]
   );
 });

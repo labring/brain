@@ -28,9 +28,9 @@ const dbTargetSchema = z.object({
   observedUid: z.string().trim().min(1).max(256).optional(),
 });
 
-const entryPointTargetSchema = z.object({
+const publicAccessTargetSchema = z.object({
   apName: resourceNameField,
-  kind: z.literal("EntryPoint"),
+  kind: z.literal("PublicAccess"),
   namespace: namespaceField,
   observedUid: z.string().trim().min(1).max(256).optional(),
 });
@@ -38,7 +38,7 @@ const entryPointTargetSchema = z.object({
 const openProjectSurfaceInputSchema = z.object({
   intention: chatToolIntentionField,
   target: z
-    .union([apTargetSchema, dbTargetSchema, entryPointTargetSchema])
+    .union([apTargetSchema, dbTargetSchema, publicAccessTargetSchema])
     .optional(),
   type: z.enum([
     "apEvents",
@@ -52,10 +52,10 @@ const openProjectSurfaceInputSchema = z.object({
     "dbSettings",
     "dbTerminal",
     "docker",
-    "entrypointPublicAddresses",
     "github",
     "logs",
     "metrics",
+    "publicAddresses",
     "template",
   ]),
 });
@@ -110,9 +110,9 @@ function toAssistantIntent(
       ? { target, type }
       : { error: `${type} requires an AP or DB target.` };
   }
-  return target.kind === "EntryPoint"
+  return target.kind === "PublicAccess"
     ? { target, type }
-    : { error: `${type} requires an EntryPoint target.` };
+    : { error: `${type} requires a PublicAccess target.` };
 }
 
 export async function runOpenProjectSurfaceTool(
@@ -153,9 +153,9 @@ export async function runOpenProjectSurfaceTool(
 function buildOpenProjectSurfaceToolDescription(): string {
   return [
     "Open a concrete Sealos Brain project surface in the user's browser tab.",
-    "Use after selecting the relevant project/AP/DB/EntryPoint target, or when the user asks to open settings, logs, metrics, terminal, database access, public addresses, GitHub deploy, Docker deploy, database deploy, or template deploy.",
+    "Use after selecting the relevant project/AP/DB/PublicAccess target, or when the user asks to open settings, logs, metrics, terminal, database access, public addresses, GitHub deploy, Docker deploy, database deploy, or template deploy.",
     "For deploy task status, use the server-side getDeployTaskStatus tool instead of this browser surface tool.",
-    "For AP settings, terminal, logs, events, history, and metrics, pass an AP target. For DB settings, access, terminal, logs, and metrics, pass a DB target. For public addresses, pass an EntryPoint target bound to the AP name.",
+    "For AP settings, terminal, logs, events, history, and metrics, pass an AP target. For DB settings, access, terminal, logs, and metrics, pass a DB target. For public addresses, pass a PublicAccess target bound to the AP name.",
     "This is a UI navigation/orchestration tool only; it does not mutate product resources.",
     "Always include `intention`: one short clause explaining why opening that surface helps.",
   ].join(" ");

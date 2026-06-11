@@ -87,7 +87,7 @@ test("node click plans selection, default Side Pane, and stack order", () => {
   );
 });
 
-test("EntryPoint node click opens AP-bound Public Addresses", () => {
+test("PublicAccess node click opens AP-bound Public Addresses", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
       intent: { kind: "nodeClick", node: entryNode },
@@ -99,7 +99,7 @@ test("EntryPoint node click opens AP-bound Public Addresses", () => {
         kind: "publicAddresses",
         target: {
           apName: "api",
-          kind: "EntryPoint",
+          kind: "PublicAccess",
           namespace: "default",
           observedUid: "entry-uid",
         },

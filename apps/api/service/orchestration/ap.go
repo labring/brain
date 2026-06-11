@@ -1062,7 +1062,7 @@ func RenderAPCustomDomainIssuer(apName, namespace, projectID, resourceName strin
 		"kind":       "Issuer",
 		"metadata": map[string]interface{}{
 			"labels": mergeStringMap(
-				brainLabels(strings.TrimSpace(projectID), ResourceKindEntryPointSupport, resourceName),
+				brainLabels(strings.TrimSpace(projectID), ResourceKindPublicAccessSupport, resourceName),
 				map[string]string{
 					BrainAppNameLabel:              strings.TrimSpace(apName),
 					LaunchpadAppDeployManagerLabel: strings.TrimSpace(apName),
@@ -1100,7 +1100,7 @@ func RenderAPCustomDomainCertificate(apName, namespace, projectID, resourceName,
 		"kind":       "Certificate",
 		"metadata": map[string]interface{}{
 			"labels": mergeStringMap(
-				brainLabels(strings.TrimSpace(projectID), ResourceKindEntryPointSupport, resourceName),
+				brainLabels(strings.TrimSpace(projectID), ResourceKindPublicAccessSupport, resourceName),
 				map[string]string{
 					BrainAppNameLabel:              strings.TrimSpace(apName),
 					LaunchpadAppDeployManagerLabel: strings.TrimSpace(apName),
@@ -1187,7 +1187,7 @@ func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, e
 	}
 	pathType := networkingv1.PathTypePrefix
 	labels := mergeStringMap(
-		brainLabels(projectID, ResourceKindEntryPointSupport, resourceName),
+		brainLabels(projectID, ResourceKindPublicAccessSupport, resourceName),
 		map[string]string{
 			BrainAppNameLabel:                    apName,
 			"brain.io/public-address-id":         strings.TrimSpace(input.PublicID),

@@ -352,10 +352,14 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
     {
       customDomains: [
         {
+          dns: {
+            status: "verified",
+            target: "api.example.com",
+            verifiedAt: "2026-06-12T00:00:00.000Z",
+          },
           domain: "www.example.com",
           id: "cd_def456",
           platformAddressId: "pa_abc123",
-          status: "verified",
         },
       ],
       appListeningPorts: [{ port: 8080 }],
@@ -379,6 +383,11 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
       value: {
         customDomains: [
           {
+            dns: {
+              status: "verified",
+              target: "api.example.com",
+              verifiedAt: "2026-06-12T00:00:00.000Z",
+            },
             domain: "www.example.com",
             id: "cd_def456",
             platformAddressId: "pa_abc123",
@@ -1413,10 +1422,14 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
       network: {
         customDomains: [
           {
+            dns: {
+              status: "verified",
+              target: "api.example.com",
+              verifiedAt: "2026-06-12T00:00:00.000Z",
+            },
             domain: "www.example.com",
             id: "cd_def456",
             platformAddressId: "pa_abc123",
-            status: "verified",
           },
         ],
         appListeningPorts: [{ port: 80 }],
@@ -1433,6 +1446,11 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
       value: {
         customDomains: [
           {
+            dns: {
+              status: "verified",
+              target: "api.example.com",
+              verifiedAt: "2026-06-12T00:00:00.000Z",
+            },
             domain: "www.example.com",
             id: "cd_def456",
             platformAddressId: "pa_abc123",

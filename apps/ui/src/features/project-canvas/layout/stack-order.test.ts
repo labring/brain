@@ -11,9 +11,9 @@ function ref(kind: CanvasLayoutResourceRef["kind"], name: string) {
   return { kind, name, namespace: "default" };
 }
 
-test("stack order defaults AP below DB below EntryPoint until explicit ranks take precedence", () => {
+test("stack order defaults AP below DB below PublicAccess until explicit ranks take precedence", () => {
   const ranks = resolveCanvasStackOrderRanks([
-    { key: "entry", ref: ref("EntryPoint", "api") },
+    { key: "entry", ref: ref("PublicAccess", "api") },
     { key: "ap", ref: ref("AP", "api") },
     { key: "db", ref: ref("DB", "postgres") },
     { key: "selected-ap", ref: ref("AP", "worker"), stackOrder: 0 },
@@ -43,7 +43,7 @@ test("bringing the top stack item forward is a no-op", () => {
     bringCanvasStackOrderItemToFront(
       [
         { key: "api", ref: ref("AP", "api") },
-        { key: "entry", ref: ref("EntryPoint", "api") },
+        { key: "entry", ref: ref("PublicAccess", "api") },
       ],
       "entry"
     ),

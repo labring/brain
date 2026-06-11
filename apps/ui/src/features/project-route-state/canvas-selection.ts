@@ -1,5 +1,5 @@
 import type {
-  ProjectApBoundEntryPointTarget,
+  ProjectApBoundPublicAccessTarget,
   ProjectResourceTarget,
   ProjectSurfaceTarget,
 } from "@/features/project-surfaces/target-identity";
@@ -7,7 +7,7 @@ import type {
 export type ProjectCanvasSelection =
   | { kind: "edge"; edgeId: string }
   | { kind: "resource"; target: ProjectResourceTarget }
-  | { kind: "publicAddresses"; target: ProjectApBoundEntryPointTarget };
+  | { kind: "publicAddresses"; target: ProjectApBoundPublicAccessTarget };
 
 export function projectCanvasSelectionTarget(
   selection: ProjectCanvasSelection | null | undefined

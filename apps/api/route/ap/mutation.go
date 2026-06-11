@@ -1505,14 +1505,15 @@ func apInputReferencesGeneratedImagePullSecret(input orchestration.APResourcesIn
 }
 
 func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config, name, namespace string, input orchestration.APResourcesInput) error {
-	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindEntryPointSupport
-	for _, resource := range []string{"ingresses", "certificates", "issuers"} {
-		if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-			LabelSelector: selector,
-			Namespace:     namespace,
-			Resource:      resource,
-		}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
-			return err
+	for _, selector := range apPublicRoutingSupportSelectors(name) {
+		for _, resource := range []string{"ingresses", "certificates", "issuers"} {
+			if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+				LabelSelector: selector,
+				Namespace:     namespace,
+				Resource:      resource,
+			}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+				return err
+			}
 		}
 	}
 	var network map[string]interface{}
@@ -1671,20 +1672,31 @@ func syncAPPublicIngressesFromPatch(restConfig *rest.Config, cfg *clientcmdapi.C
 	if err != nil {
 		return err
 	}
-	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindEntryPointSupport
-	for _, resource := range []string{"ingresses", "certificates", "issuers"} {
-		if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-			LabelSelector: selector,
-			Namespace:     namespace,
-			Resource:      resource,
-		}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
-			return err
+	for _, selector := range apPublicRoutingSupportSelectors(name) {
+		for _, resource := range []string{"ingresses", "certificates", "issuers"} {
+			if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
+				LabelSelector: selector,
+				Namespace:     namespace,
+				Resource:      resource,
+			}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+				return err
+			}
 		}
 	}
 	if len(objects) == 0 {
 		return nil
 	}
 	return k8ssvc.ApplyObjects(restConfig, objects, namespace)
+}
+
+func apPublicRoutingSupportSelectors(name string) []string {
+	return []string{
+		apPublicRoutingSupportSelector(name),
+	}
+}
+
+func apPublicRoutingSupportSelector(name string) string {
+	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindPublicAccessSupport
 }
 
 func apNetworkIngressStateFromPatch(raw json.RawMessage) (map[string]interface{}, string, bool) {

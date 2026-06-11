@@ -16,6 +16,7 @@ import (
 
 	k8ssvc "sealos/api/service/k8s"
 	orchestration "sealos/api/service/orchestration"
+	aptransform "sealos/api/service/transform/ap"
 )
 
 type apWorkload struct {
@@ -170,6 +171,10 @@ func apResponseFromWorkloadWithConfigMapValues(cfg *clientcmdapi.Config, workloa
 		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, "")
 	}
 	apObject := workload.APObject()
+	apObject, err := apObjectWithPublicAccessSupportResources(cfg, *workload, apObject)
+	if err != nil {
+		return nil, err
+	}
 	configMaps, err := currentAPConfigMapMounts(cfg, *workload)
 	if err != nil {
 		return nil, err
@@ -180,6 +185,45 @@ func apResponseFromWorkloadWithConfigMapValues(cfg *clientcmdapi.Config, workloa
 		return nil, err
 	}
 	return json.Marshal(apObjectWithStorageStatus(apObject, storageStatus))
+}
+
+func apObjectWithPublicAccessSupportResources(cfg *clientcmdapi.Config, workload apWorkload, apObject map[string]interface{}) (map[string]interface{}, error) {
+	ingresses, err := currentAPPublicAccessSupportResources(cfg, workload, "ingresses")
+	if err != nil {
+		return nil, err
+	}
+	certificates, err := currentAPPublicAccessSupportResources(cfg, workload, "certificates")
+	if err != nil {
+		return nil, err
+	}
+	issuers, err := currentAPPublicAccessSupportResources(cfg, workload, "issuers")
+	if err != nil {
+		return nil, err
+	}
+	return aptransform.APWithPublicAccessSupportResourcesFromList(apObject, ingresses, nil, certificates, issuers), nil
+}
+
+func currentAPPublicAccessSupportResources(cfg *clientcmdapi.Config, workload apWorkload, resource string) ([]map[string]interface{}, error) {
+	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		LabelSelector: apPublicRoutingSupportSelector(workload.Name()),
+		Namespace:     workload.Namespace(),
+		Resource:      resource,
+	})
+	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, resource) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var list unstructured.UnstructuredList
+	if err := json.Unmarshal(jsonBytes, &list); err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, list.Items[i].Object)
+	}
+	return items, nil
 }
 
 func apObjectWithConfigMapValues(apObject map[string]interface{}, configMaps []orchestration.APConfigMapMount) map[string]interface{} {
@@ -358,6 +402,89 @@ func apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON []byte) (json.R
 		"kind":       "APList",
 	}
 	return json.Marshal(out)
+}
+
+func apResponseFromWorkloadListsWithPublicAccessSupport(cfg *clientcmdapi.Config, deploymentJSON, statefulSetJSON []byte) (json.RawMessage, error) {
+	body, err := apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, err
+	}
+	rawItems, _ := out["items"].([]interface{})
+	items := make([]interface{}, 0, len(rawItems))
+	for _, raw := range rawItems {
+		item, _ := raw.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		workload := apWorkloadRefFromAPObject(item)
+		if workload.Name == "" || workload.Namespace == "" {
+			items = append(items, item)
+			continue
+		}
+		projected, err := apObjectWithPublicAccessSupportResourcesForRef(cfg, workload, item)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, projected)
+	}
+	out["items"] = items
+	return json.Marshal(out)
+}
+
+type apWorkloadRef struct {
+	Name      string
+	Namespace string
+}
+
+func apWorkloadRefFromAPObject(apObject map[string]interface{}) apWorkloadRef {
+	metadata, _ := apObject["metadata"].(map[string]interface{})
+	return apWorkloadRef{
+		Name:      strings.TrimSpace(stringFromMap(metadata, "name")),
+		Namespace: strings.TrimSpace(stringFromMap(metadata, "namespace")),
+	}
+}
+
+func apObjectWithPublicAccessSupportResourcesForRef(cfg *clientcmdapi.Config, workload apWorkloadRef, apObject map[string]interface{}) (map[string]interface{}, error) {
+	ingresses, err := currentAPPublicAccessSupportResourcesForRef(cfg, workload, "ingresses")
+	if err != nil {
+		return nil, err
+	}
+	certificates, err := currentAPPublicAccessSupportResourcesForRef(cfg, workload, "certificates")
+	if err != nil {
+		return nil, err
+	}
+	issuers, err := currentAPPublicAccessSupportResourcesForRef(cfg, workload, "issuers")
+	if err != nil {
+		return nil, err
+	}
+	return aptransform.APWithPublicAccessSupportResourcesFromList(apObject, ingresses, nil, certificates, issuers), nil
+}
+
+func currentAPPublicAccessSupportResourcesForRef(cfg *clientcmdapi.Config, workload apWorkloadRef, resource string) ([]map[string]interface{}, error) {
+	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		LabelSelector: apPublicRoutingSupportSelector(workload.Name),
+		Namespace:     workload.Namespace,
+		Resource:      resource,
+	})
+	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, resource) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var list unstructured.UnstructuredList
+	if err := json.Unmarshal(jsonBytes, &list); err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, list.Items[i].Object)
+	}
+	return items, nil
 }
 
 func mergeK8sListJSON(left, right []byte) []byte {

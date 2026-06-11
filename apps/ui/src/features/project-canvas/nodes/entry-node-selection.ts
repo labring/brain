@@ -9,14 +9,14 @@ import {
 
 export type CanvasEntrySelectionRef = ApBoundSurfaceKeyRef;
 
-export function entryPointSelectionKey({
+export function publicAccessSelectionKey({
   apName,
   namespace,
 }: CanvasEntrySelectionRef): string {
   return apBoundSurfaceKey({ apName, namespace });
 }
 
-export function entryPointSelectionRefFromKey(
+export function publicAccessSelectionRefFromKey(
   key: string | null | undefined
 ): CanvasEntrySelectionRef | null {
   return apBoundSurfaceRefFromKey(key);

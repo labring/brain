@@ -34,6 +34,10 @@ import {
   routingDomainFromKubeconfig,
 } from "@/lib/kubeconfig-routing-domain";
 import {
+  type ExistingCustomDomainBinding,
+  normalizeCustomDomainName,
+} from "./ap-public-access";
+import {
   type ApReplicaStrategy,
   canonicalApReplicaStrategy,
   canonicalFixedReplicaStrategy,
@@ -49,10 +53,6 @@ import {
   readApInput,
   readApReplicaStrategy,
 } from "./ap-spec-access";
-import {
-  type ExistingCustomDomainBinding,
-  normalizeCustomDomainName,
-} from "./entrypoint-custom-domains";
 import type { K8sJsonPatchOp } from "./http/json-patch";
 
 const LEGACY_AP_NETWORK_INPUT_FIELDS = [
@@ -472,8 +472,22 @@ function customDomainsEqual(
       domain.domain.trim().toLowerCase() ===
         other.domain.trim().toLowerCase() &&
       normalizePlatformAddressId(domain.platformAddressId) ===
-        normalizePlatformAddressId(other.platformAddressId)
+        normalizePlatformAddressId(other.platformAddressId) &&
+      customDomainDetailSignature(domain.dns) ===
+        customDomainDetailSignature(other.dns)
     );
+  });
+}
+
+function customDomainDetailSignature(
+  detail: NonNullable<ApNetwork["customDomains"]>[number]["dns"] | undefined
+): string {
+  return JSON.stringify({
+    message: detail?.message?.trim() ?? "",
+    reason: detail?.reason?.trim() ?? "",
+    status: detail?.status?.trim() ?? "",
+    target: detail?.target?.trim() ?? "",
+    verifiedAt: detail?.verifiedAt?.trim() ?? "",
   });
 }
 
@@ -987,8 +1001,34 @@ function validatedCustomDomains(
     seenDomains.add(domain);
     assertCustomDomainAvailableInNamespace(domain, options);
 
-    return { domain, id, platformAddressId };
+    return {
+      ...(customDomain.dns == null
+        ? {}
+        : { dns: validatedCustomDomainDns(customDomain.dns) }),
+      domain,
+      id,
+      platformAddressId,
+    };
   });
+}
+
+function validatedCustomDomainDns(
+  detail: NonNullable<ApNetwork["customDomains"]>[number]["dns"]
+): Record<string, unknown> {
+  const status = detail?.status?.trim().toLowerCase() ?? "";
+  const target = detail?.target?.trim() ?? "";
+  const verifiedAt = detail?.verifiedAt?.trim() ?? "";
+  const out: Record<string, unknown> = {};
+  if (status !== "") {
+    out.status = status;
+  }
+  if (target !== "") {
+    out.target = target;
+  }
+  if (verifiedAt !== "") {
+    out.verifiedAt = verifiedAt;
+  }
+  return out;
 }
 
 function assertCustomDomainAvailableInNamespace(

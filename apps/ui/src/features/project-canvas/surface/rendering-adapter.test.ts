@@ -185,7 +185,7 @@ test("canvas surface adapter keeps AP-bound Public Addresses resolved through th
   assert.equal(model.side.content.entryNode, null);
 });
 
-test("canvas surface adapter attaches the EntryPoint node when it exists", () => {
+test("canvas surface adapter attaches the PublicAccess node when it exists", () => {
   const model = createProjectCanvasSurfaceRenderModel({
     nodes: [apNode, entryNode],
     surfaceState: {

@@ -5,7 +5,7 @@ import {
 } from "@/features/project-canvas/canvas-store";
 import { CANVAS_ENTRY_NODE_TYPE } from "@/features/project-canvas/nodes/constants";
 import {
-  canvasEntryPointApResourceIdentityFromNode,
+  canvasPublicAccessApResourceIdentityFromNode,
   canvasResourceIdentityFromNode,
   canvasResourceLastSeenUidFromNode,
 } from "@/features/project-canvas/nodes/resource-identity";
@@ -20,7 +20,7 @@ import {
   type ProjectDbTarget,
   type ProjectResourceTarget,
   type ProjectSurfaceTarget,
-  projectApBoundEntryPointTarget,
+  projectApBoundPublicAccessTarget,
   projectApTarget,
   projectDbTarget,
   targetsEqual,
@@ -32,10 +32,10 @@ export function projectSurfaceTargetFromCanvasNode(
   const observedUid = canvasResourceLastSeenUidFromNode(node);
   if (node.type === CANVAS_ENTRY_NODE_TYPE) {
     const identity = canvasResourceIdentityFromNode(node);
-    if (identity?.kind !== "EntryPoint") {
+    if (identity?.kind !== "PublicAccess") {
       return null;
     }
-    return projectApBoundEntryPointTarget({
+    return projectApBoundPublicAccessTarget({
       apName: identity.name,
       namespace: identity.namespace,
       observedUid,
@@ -67,7 +67,7 @@ export function projectCanvasSelectionFromNode(
   if (target == null) {
     return null;
   }
-  if (target.kind === "EntryPoint") {
+  if (target.kind === "PublicAccess") {
     return { kind: "publicAddresses", target };
   }
   return { kind: "resource", target };
@@ -83,7 +83,7 @@ export function defaultProjectSideSurfaceForNode(
   if (target?.kind === "DB") {
     return { kind: "settings", target };
   }
-  if (target?.kind === "EntryPoint") {
+  if (target?.kind === "PublicAccess") {
     return {
       kind: "settings",
       target: {
@@ -162,11 +162,11 @@ export function projectSurfaceTargetMatchesCanvasNode(
     return true;
   }
 
-  if (target.kind !== "EntryPoint") {
+  if (target.kind !== "PublicAccess") {
     return false;
   }
 
-  const apIdentity = canvasEntryPointApResourceIdentityFromNode(node);
+  const apIdentity = canvasPublicAccessApResourceIdentityFromNode(node);
   return (
     apIdentity?.kind === "AP" &&
     apIdentity.namespace === target.namespace &&
@@ -195,7 +195,7 @@ export function projectTargetExistsOnCanvas(
   if (target == null) {
     return false;
   }
-  if (target.kind !== "EntryPoint") {
+  if (target.kind !== "PublicAccess") {
     return findCanvasNodeForProjectTarget(nodes, target) != null;
   }
 
@@ -253,5 +253,5 @@ export function projectCanvasNodeSelectionKey(node: Node): string | null {
   if (selection.kind !== "publicAddresses") {
     return null;
   }
-  return `EntryPoint:${selection.target.namespace}:${selection.target.apName}`;
+  return `PublicAccess:${selection.target.namespace}:${selection.target.apName}`;
 }

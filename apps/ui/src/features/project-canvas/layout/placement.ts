@@ -2,7 +2,7 @@ import type { Node } from "@xyflow/react";
 
 import type { CanvasDetectedConnection } from "../flow/detected-connections";
 import {
-  canvasEntryPointApResourceIdentityFromNode,
+  canvasPublicAccessApResourceIdentityFromNode,
   canvasResourceIdentityFromNode,
   canvasResourceKey,
   canvasResourceLastSeenUidFromNode,
@@ -14,16 +14,16 @@ import {
   type PlacementDirection,
 } from "./placement-anchors";
 import {
-  apEntryPointFootprint,
+  apPublicAccessFootprint,
   CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED,
   CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED,
   CANVAS_NODE_FOOTPRINT_WIDTH,
   type CanvasNodeRect,
   type CanvasRectBounds,
   COLUMN_STEP,
-  ENTRY_POINT_AP_LEFT_OFFSET,
   footprintBounds,
   type PlacementFootprint,
+  PUBLIC_ACCESS_AP_LEFT_OFFSET,
   ROW_STEP,
   rectFromPosition,
   rectsFromFootprintPosition,
@@ -69,8 +69,8 @@ interface GlobalCandidateRows {
 
 interface PlacementGroupCandidate {
   ap: PlacementCandidate & { ref: CanvasLayoutResourceRef };
-  entryPoint: PlacementCandidate & { ref: CanvasLayoutResourceRef };
   footprint: PlacementFootprint;
+  publicAccess: PlacementCandidate & { ref: CanvasLayoutResourceRef };
   sortKey: string;
 }
 
@@ -194,11 +194,11 @@ function positionForAnchorCandidate(
   return { x: anchor.x + offset.x, y: anchor.y + offset.y };
 }
 
-function entryPointAnchorOffsets(): CanvasLayoutPosition[] {
+function publicAccessAnchorOffsets(): CanvasLayoutPosition[] {
   return [
-    { x: -ENTRY_POINT_AP_LEFT_OFFSET, y: 0 },
-    { x: -ENTRY_POINT_AP_LEFT_OFFSET, y: -ROW_STEP },
-    { x: -ENTRY_POINT_AP_LEFT_OFFSET, y: ROW_STEP },
+    { x: -PUBLIC_ACCESS_AP_LEFT_OFFSET, y: 0 },
+    { x: -PUBLIC_ACCESS_AP_LEFT_OFFSET, y: -ROW_STEP },
+    { x: -PUBLIC_ACCESS_AP_LEFT_OFFSET, y: ROW_STEP },
     { x: 0, y: -ROW_STEP },
     { x: 0, y: ROW_STEP },
     { x: COLUMN_STEP, y: 0 },
@@ -429,7 +429,7 @@ function anchoredGroupPosition(
   return anchorOffsets(anchor.direction)
     .map((offset) => positionForAnchorCandidate(anchorPosition, offset))
     .map((apPosition) => ({
-      x: apPosition.x - ENTRY_POINT_AP_LEFT_OFFSET,
+      x: apPosition.x - PUBLIC_ACCESS_AP_LEFT_OFFSET,
       y: apPosition.y,
     }))
     .find((position) => occupancy.isFootprintOpen(footprint, position));
@@ -459,12 +459,12 @@ function singleCandidateFootprint(candidate: PlacementCandidate) {
   return singleNodeFootprint(nodeFootprintHeight(candidate.node));
 }
 
-function entryPointAnchorPosition(
+function publicAccessAnchorPosition(
   candidate: PlacementCandidate,
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
   occupancy: PlacementOccupancy
 ): CanvasLayoutPosition | undefined {
-  const apRef = canvasEntryPointApResourceIdentityFromNode(candidate.node);
+  const apRef = canvasPublicAccessApResourceIdentityFromNode(candidate.node);
   const apPosition =
     apRef === undefined
       ? undefined
@@ -473,7 +473,7 @@ function entryPointAnchorPosition(
     return undefined;
   }
   return occupancy.firstOpenPosition(
-    entryPointAnchorOffsets().map((offset) =>
+    publicAccessAnchorOffsets().map((offset) =>
       positionForAnchorCandidate(apPosition, offset)
     ),
     nodeFootprintHeight(candidate.node)
@@ -486,13 +486,13 @@ function isReferencedPlacementCandidate(
   return candidate.ref !== undefined;
 }
 
-function apEntryPointPositionFromGroupOrigin(origin: CanvasLayoutPosition): {
+function apPublicAccessPositionFromGroupOrigin(origin: CanvasLayoutPosition): {
   ap: CanvasLayoutPosition;
-  entryPoint: CanvasLayoutPosition;
+  publicAccess: CanvasLayoutPosition;
 } {
   return {
-    ap: { x: origin.x + ENTRY_POINT_AP_LEFT_OFFSET, y: origin.y },
-    entryPoint: { x: origin.x, y: origin.y },
+    ap: { x: origin.x + PUBLIC_ACCESS_AP_LEFT_OFFSET, y: origin.y },
+    publicAccess: { x: origin.x, y: origin.y },
   };
 }
 
@@ -510,7 +510,7 @@ function buildPlacementUnits(
     string,
     PlacementCandidate & { ref: CanvasLayoutResourceRef }
   >();
-  const entryPointCandidatesByApKey = new Map<
+  const publicAccessCandidatesByApKey = new Map<
     string,
     PlacementCandidate & { ref: CanvasLayoutResourceRef }
   >();
@@ -521,8 +521,8 @@ function buildPlacementUnits(
     if (candidate.ref.kind === "AP") {
       apCandidatesByKey.set(canvasResourceKey(candidate.ref), candidate);
     }
-    if (candidate.ref.kind === "EntryPoint") {
-      entryPointCandidatesByApKey.set(
+    if (candidate.ref.kind === "PublicAccess") {
+      publicAccessCandidatesByApKey.set(
         canvasResourceKey({
           kind: "AP",
           name: candidate.ref.name,
@@ -536,19 +536,19 @@ function buildPlacementUnits(
   const groupedIndexes = new Set<number>();
   const units: PlacementUnit[] = [];
   for (const [apKey, ap] of apCandidatesByKey) {
-    const entryPoint = entryPointCandidatesByApKey.get(apKey);
-    if (entryPoint === undefined) {
+    const publicAccess = publicAccessCandidatesByApKey.get(apKey);
+    if (publicAccess === undefined) {
       continue;
     }
     groupedIndexes.add(ap.index);
-    groupedIndexes.add(entryPoint.index);
+    groupedIndexes.add(publicAccess.index);
     units.push({
       group: {
         ap,
-        entryPoint,
-        footprint: apEntryPointFootprint(
+        publicAccess,
+        footprint: apPublicAccessFootprint(
           nodeFootprintHeight(ap.node),
-          nodeFootprintHeight(entryPoint.node)
+          nodeFootprintHeight(publicAccess.node)
         ),
         sortKey: ap.sortKey,
       },
@@ -603,7 +603,7 @@ function placeUnitAt(
     return;
   }
 
-  const positions = apEntryPointPositionFromGroupOrigin(origin);
+  const positions = apPublicAccessPositionFromGroupOrigin(origin);
   placeCandidateAt(
     unit.group.ap,
     positions.ap,
@@ -612,8 +612,8 @@ function placeUnitAt(
     placedLayoutNodes
   );
   placeCandidateAt(
-    unit.group.entryPoint,
-    positions.entryPoint,
+    unit.group.publicAccess,
+    positions.publicAccess,
     positionByRef,
     placedNodes,
     placedLayoutNodes
@@ -639,9 +639,9 @@ function placementForUnit(
   }
 
   const candidate = unit.candidate;
-  const entryPointPosition =
-    candidate.ref?.kind === "EntryPoint"
-      ? entryPointAnchorPosition(candidate, positionByRef, occupancy)
+  const publicAccessPosition =
+    candidate.ref?.kind === "PublicAccess"
+      ? publicAccessAnchorPosition(candidate, positionByRef, occupancy)
       : undefined;
   const anchored =
     candidate.ref === undefined
@@ -653,7 +653,7 @@ function placementForUnit(
           footprint
         );
   return (
-    entryPointPosition ??
+    publicAccessPosition ??
     anchored ??
     firstOpenGlobalPosition(occupancy, footprint)
   );

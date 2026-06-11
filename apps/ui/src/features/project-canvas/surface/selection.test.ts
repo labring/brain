@@ -76,12 +76,12 @@ test("canvas node click selection uses stable resource targets", () => {
   });
 });
 
-test("EntryPoint click selects the AP-bound Public Addresses surface target", () => {
+test("PublicAccess click selects the AP-bound Public Addresses surface target", () => {
   assert.deepEqual(projectCanvasSelectionFromNode(entryNode), {
     kind: "publicAddresses",
     target: {
       apName: "api",
-      kind: "EntryPoint",
+      kind: "PublicAccess",
       namespace: "default",
       observedUid: "entry-uid",
     },
@@ -97,10 +97,10 @@ test("EntryPoint click selects the AP-bound Public Addresses surface target", ()
   });
 });
 
-test("AP-bound Public Addresses surface remains meaningful while observed EntryPoint is absent", () => {
+test("AP-bound Public Addresses surface remains meaningful while observed PublicAccess is absent", () => {
   const target = {
     apName: "api",
-    kind: "EntryPoint" as const,
+    kind: "PublicAccess" as const,
     namespace: "default",
   };
 
@@ -112,7 +112,7 @@ test("missing AP-bound Public Addresses target clears when the AP disappears", (
   assert.equal(
     projectTargetExistsOnCanvas([dbNode], {
       apName: "api",
-      kind: "EntryPoint",
+      kind: "PublicAccess",
       namespace: "default",
     }),
     false

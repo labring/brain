@@ -4,7 +4,7 @@ Incremental Canvas Placement persists the first accepted position for a canvas n
 
 ## Considered Options
 
-- Keep generated positions unsaved until direct user movement: rejected because AP-bound EntryPoint nodes and other related new nodes would need extra anchor-following rules to avoid jumping after refresh or partial saves.
+- Keep generated positions unsaved until direct user movement: rejected because AP Public Access Nodes and other related new nodes would need extra anchor-following rules to avoid jumping after refresh or partial saves.
 - Auto-layout and save the whole canvas whenever resources change: rejected because resource discovery should not reinterpret user-arranged Canvas Layout.
 - Let later first-placement writes overwrite earlier ones: rejected because concurrent clients may discover the same missing node from different snapshots, and an already persisted Canvas Layout position should win.
 
