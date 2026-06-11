@@ -6,6 +6,7 @@ import type { Node } from "@xyflow/react";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
+  CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import {
@@ -63,6 +64,21 @@ function dbNode(name: string): Node {
   };
 }
 
+function deploymentPlaceholderNode(
+  name: string,
+  position: Node["position"]
+): Node {
+  return {
+    data: {
+      hasProjectionPosition: true,
+      taskId: name,
+    },
+    id: `deployment-placeholder-${name}`,
+    position,
+    type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+  };
+}
+
 function positionById(nodes: readonly Node[]): Map<string, Node["position"]> {
   return new Map(nodes.map((node) => [node.id, node.position]));
 }
@@ -95,6 +111,20 @@ test("places an unanchored node after saved layout when shape remains acceptable
   });
 
   assert.deepEqual(node?.position, { x: 340, y: 0 });
+});
+
+test("treats placed deployment placeholders as placement occupancy", () => {
+  const nodes = placeCanvasNodes({
+    layout: undefined,
+    nodes: [deploymentPlaceholderNode("task-1", { x: 0, y: 0 }), apNode("api")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("deployment-placeholder-task-1"), {
+    x: 0,
+    y: 0,
+  });
+  assert.deepEqual(positions.get("ap-api"), { x: 340, y: 0 });
 });
 
 test("places unplaced nodes in kind namespace name lexicographic order", () => {

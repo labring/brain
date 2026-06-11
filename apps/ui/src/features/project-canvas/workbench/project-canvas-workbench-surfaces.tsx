@@ -68,6 +68,7 @@ export function ProjectCanvasWorkbenchSurfaces({
             kubeconfig={kubeconfig}
             namespace={namespace}
             onClose={workbench.closeResourcePane}
+            onDeployed={refreshWorkloadLists}
             projectId={projectId}
           />
         }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  DeploymentTaskCanvasProjection,
   DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
   DeploymentTaskSource,
@@ -14,6 +15,7 @@ import type {
 } from "./schema";
 
 export type {
+  DeploymentTaskCanvasProjection,
   DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
   DeploymentTaskSource,
@@ -134,9 +136,28 @@ export const submitDeployTaskInputSchema = z.object({
 
 export type SubmitDeployTaskInput = z.infer<typeof submitDeployTaskInputSchema>;
 
+export const deploymentTaskCanvasProjectionSchema = z.object({
+  position: z
+    .object({
+      x: z.number().finite(),
+      y: z.number().finite(),
+    })
+    .optional(),
+}) satisfies z.ZodType<DeploymentTaskCanvasProjection>;
+
+export const updateDeployTaskCanvasProjectionInputSchema = z.object({
+  mode: z.enum(["set-if-empty", "replace"]).optional(),
+  projection: deploymentTaskCanvasProjectionSchema,
+});
+
+export type UpdateDeployTaskCanvasProjectionInput = z.infer<
+  typeof updateDeployTaskCanvasProjectionInputSchema
+>;
+
 export interface DeployTaskDTO {
   artifactSummary: DeployTaskArtifactSummary;
   blockingInputs: DeployTaskBlockingInput[];
+  canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: string | null;
   createdAt: string;
   createdFrom: DeploymentTaskCreatedFrom;

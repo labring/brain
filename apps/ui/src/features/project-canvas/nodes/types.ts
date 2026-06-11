@@ -26,6 +26,7 @@ import type { DbSettingsData } from "@/features/project-settings/db/db-settings-
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
+  CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "./constants";
 
@@ -99,4 +100,15 @@ export interface CanvasEntryNodeData extends Record<string, unknown> {
 export type CanvasEntryRfNode = Node<
   CanvasEntryNodeData,
   typeof CANVAS_ENTRY_NODE_TYPE
+>;
+
+export interface CanvasDeploymentPlaceholderNodeData
+  extends Record<string, unknown> {
+  hasProjectionPosition?: boolean;
+  taskId: string;
+}
+
+export type CanvasDeploymentPlaceholderRfNode = Node<
+  CanvasDeploymentPlaceholderNodeData,
+  typeof CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE
 >;

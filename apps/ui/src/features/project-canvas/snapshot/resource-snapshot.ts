@@ -20,6 +20,12 @@ import {
   type ApEnvironmentDbReferenceSource,
   apEnvironmentDbReferenceSourcesFromDbsData,
 } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+import {
+  deploymentPlaceholderHandoffs,
+  deploymentPlaceholderNodesFromTasks,
+  shouldHideDeploymentPlaceholderForHandoff,
+} from "./deployment-placeholders";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 
 export type ProjectCanvasLayoutIntent =
@@ -31,6 +37,7 @@ export interface ProjectCanvasResourceSnapshotInput {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
   dbsData?: K8sGetResponse;
+  deployTasks?: DeployTaskDTO[];
   error?: Error;
   isEmptyGraphLoading: boolean;
   kubeconfig: string;
@@ -55,6 +62,7 @@ export function buildProjectCanvasResourceSnapshot({
   canvasLayout,
   canvasLayoutReady = true,
   dbsData,
+  deployTasks,
   error,
   isEmptyGraphLoading,
   kubeconfig,
@@ -95,6 +103,26 @@ export function buildProjectCanvasResourceSnapshot({
     ...publicAccessBlock.nodes,
     ...templateNativeBlock.nodes,
   ];
+  const deployTaskById = new Map(
+    (deployTasks ?? []).map((task) => [task.id, task])
+  );
+  const deploymentPlaceholderNodes = deploymentPlaceholderNodesFromTasks(
+    deployTasks
+  ).filter((node) => {
+    const task = deployTaskById.get(node.data.taskId);
+    return (
+      task === undefined ||
+      !shouldHideDeploymentPlaceholderForHandoff({
+        nodes: detectedNodes,
+        task,
+      })
+    );
+  });
+  const initialPositions = deploymentPlaceholderHandoffs({
+    layout: canvasLayout,
+    nodes: detectedNodes,
+    tasks: deployTasks,
+  });
   const detectedConnections = canvasLayoutReady
     ? detectCanvasConnections({
         apEnvironmentDbReferenceSources,
@@ -106,8 +134,10 @@ export function buildProjectCanvasResourceSnapshot({
   const merge = canvasLayoutReady
     ? mergeCanvasLayoutWithDetectedNodes({
         connections: detectedConnections,
+        initialPositionByNodeId: initialPositions.byNodeId,
+        initialPositionByRef: initialPositions.byRef,
         layout: canvasLayout,
-        nodes: detectedNodes,
+        nodes: [...detectedNodes, ...deploymentPlaceholderNodes],
       })
     : {
         changed: false,

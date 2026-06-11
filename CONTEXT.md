@@ -138,6 +138,20 @@ _Avoid_: GitHub task, deploy job, deployment request.
 
 A Deployment Task is owned by the deployment domain, not by the Project Assistant Pane or any Chat thread. Chat may create, inspect, or explain a Deployment Task through tools, but the task's lifecycle, events, artifacts, and runner transcript remain deployment records.
 
+### Deployment Placeholder Node
+
+A temporary, generic Project Canvas skeleton node that represents one active Deployment Task expected to add resources to its resolved Deployment Target Project. It is a task projection, not an AP, DB, AP Public Access Node, template workload, Settings Owner, resource action target, or Canvas Connection endpoint.
+
+A Deployment Placeholder Node may have project-scoped temporary placement while visible, but durable Canvas Layout belongs to resulting resource nodes after handoff.
+
+_Avoid_: ghost node, pending AP, fake resource node.
+
+### Primary Deployment Result
+
+The resulting canvas resource node that inherits the Deployment Placeholder Node's visual position when a Deployment Task produces multiple resources. AP results are primary before DB results, template-native workload results are primary only when no AP or DB result exists, and AP Public Access Nodes are never the Primary Deployment Result.
+
+_Avoid_: main ghost target, first applied YAML, primary public access.
+
 ### Deployment Source
 
 The user-provided origin or intent for a Deployment Task, such as a GitHub repository, Docker image, database choice, application template, or natural-language deployment prompt. A Deployment Source describes what should be deployed, not where it should land.
@@ -494,7 +508,7 @@ A right-side canvas surface opened from a selected AP or DB node to inspect or c
 
 The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP Public Access Node, and template-native workload list state plus the current Canvas Layout.
 
-A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, empty/loading/error frame state, resource refresh policy, and Canvas Layout save intent such as first placement or layout merge. It does not own Canvas Layout persistence; it emits layout intent for the Canvas Layout save pipeline to persist.
+A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, empty/loading/error frame state, resource refresh policy, and Canvas Layout save intent such as first placement or layout merge. It may include Deployment Placeholder Nodes from active Deployment Task records, but it does not own Canvas Layout persistence; it emits layout intent for the Canvas Layout save pipeline to persist.
 
 Downstream Project Canvas modules should consume canvas-ready resource facts from a Project Canvas Resource Snapshot rather than raw AP, DB, AP Public Access Node, or workload list payloads. For example, DB reference sources for AP Environment References are Project Canvas Resource Snapshot facts, while the raw DB list payload remains internal implementation detail.
 

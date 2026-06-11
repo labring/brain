@@ -49,6 +49,13 @@ export interface DeployTaskArtifactSummary {
   resourceYamls?: string[];
 }
 
+export interface DeploymentTaskCanvasProjection {
+  position?: {
+    x: number;
+    y: number;
+  };
+}
+
 export interface DeployTaskBlockingInput {
   id: string;
   label: string;
@@ -152,6 +159,10 @@ export const deployTasks = ns.table(
     artifactSummary: jsonb("artifact_summary")
       .notNull()
       .$type<DeployTaskArtifactSummary>()
+      .default({}),
+    canvasProjection: jsonb("canvas_projection")
+      .notNull()
+      .$type<DeploymentTaskCanvasProjection>()
       .default({}),
     blockingInputs: jsonb("blocking_inputs")
       .notNull()

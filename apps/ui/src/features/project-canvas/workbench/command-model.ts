@@ -5,6 +5,7 @@ import {
   classifyProjectCanvasConnectionCommand,
   type ProjectCanvasConnectionCommand,
 } from "@/features/project-canvas/flow/connection-command";
+import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "@/features/project-canvas/nodes/constants";
 import {
   defaultProjectSideSurfaceForNode,
   drawerSurfaceForApTerminal,
@@ -98,6 +99,11 @@ function drawerSurfacePlan(
 }
 
 function planNodeClick(node: Node): ProjectCanvasCommandPlan {
+  if (node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE) {
+    return {
+      stackOrder: { kind: "bringNodeToFront", nodeId: node.id },
+    };
+  }
   return {
     ...planWithSurface(
       sideSurfacePlan(defaultProjectSideSurfaceForNode(node)),

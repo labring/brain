@@ -1,6 +1,7 @@
 import type { Node } from "@xyflow/react";
 
 import type { CanvasDetectedConnection } from "../flow/detected-connections";
+import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
 import {
   canvasPublicAccessApResourceIdentityFromNode,
   canvasResourceIdentityFromNode,
@@ -46,6 +47,8 @@ const GENERATED_POSITION_SOURCE = "generated";
 
 export interface PlaceCanvasNodesOptions {
   connections?: readonly CanvasDetectedConnection[];
+  initialPositionByNodeId?: ReadonlyMap<string, CanvasLayoutPosition>;
+  initialPositionByRef?: ReadonlyMap<string, CanvasLayoutPosition>;
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
 }
@@ -106,6 +109,19 @@ function nodeFootprintHeight(node: Node): number {
   return isNodeExpanded(node)
     ? CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED
     : CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED;
+}
+
+function hasFinitePosition(node: Node): boolean {
+  return Number.isFinite(node.position.x) && Number.isFinite(node.position.y);
+}
+
+function isPlacedDeploymentPlaceholderNode(node: Node): boolean {
+  const data = asRecord(node.data);
+  return (
+    node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE &&
+    data?.hasProjectionPosition === true &&
+    hasFinitePosition(node)
+  );
 }
 
 export function isCanvasNodeGeneratedPosition(node: Node | undefined): boolean {
@@ -623,12 +639,45 @@ function placeUnitAt(
 function placementForUnit(
   unit: PlacementUnit,
   anchorIndex: PlacementAnchorIndex,
+  initialPositionByNodeId:
+    | ReadonlyMap<string, CanvasLayoutPosition>
+    | undefined,
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined,
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
   occupancy: PlacementOccupancy
 ): CanvasLayoutPosition {
   const footprint = placementUnitFootprint(unit);
+  let initialPosition: CanvasLayoutPosition | undefined;
+  if (unit.kind === "single") {
+    initialPosition =
+      unit.candidate.ref === undefined
+        ? initialPositionByNodeId?.get(unit.candidate.node.id)
+        : initialPositionByRef?.get(canvasResourceKey(unit.candidate.ref));
+  }
+  if (
+    initialPosition !== undefined &&
+    occupancy.isFootprintOpen(footprint, initialPosition)
+  ) {
+    return initialPosition;
+  }
 
   if (unit.kind === "group") {
+    const apInitialPosition = initialPositionByRef?.get(
+      canvasResourceKey(unit.group.ap.ref)
+    );
+    const initialGroupOrigin =
+      apInitialPosition === undefined
+        ? undefined
+        : {
+            x: apInitialPosition.x - PUBLIC_ACCESS_AP_LEFT_OFFSET,
+            y: apInitialPosition.y,
+          };
+    if (
+      initialGroupOrigin !== undefined &&
+      occupancy.isFootprintOpen(footprint, initialGroupOrigin)
+    ) {
+      return initialGroupOrigin;
+    }
     const position = firstAnchoredGroupPosition(
       unit.group,
       anchorIndex.anchorsForRef(unit.group.ap.ref),
@@ -672,6 +721,8 @@ function savedPositionByRef(
 
 export function placeCanvasNodesWithLayout({
   connections,
+  initialPositionByNodeId,
+  initialPositionByRef,
   layout,
   nodes,
 }: PlaceCanvasNodesOptions): PlaceCanvasNodesResult {
@@ -695,6 +746,13 @@ export function placeCanvasNodesWithLayout({
       placedNodes[index] = nodeWithPosition(node, savedPosition);
       return;
     }
+    if (ref === undefined && isPlacedDeploymentPlaceholderNode(node)) {
+      occupancy.allocateFootprint(
+        singleNodeFootprint(nodeFootprintHeight(node)),
+        node.position
+      );
+      return;
+    }
 
     placementCandidates.push({
       index,
@@ -709,6 +767,8 @@ export function placeCanvasNodesWithLayout({
     const placement = placementForUnit(
       unit,
       anchorIndex,
+      initialPositionByNodeId,
+      initialPositionByRef,
       positionByRef,
       occupancy
     );

@@ -26,11 +26,13 @@ export function GitHubDeploymentPane({
   kubeconfig,
   namespace,
   onClose,
+  onDeployed,
   projectId,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
+  onDeployed?: () => Promise<unknown>;
   projectId: string;
 }) {
   const projectIdTrimmed = projectId.trim();
@@ -109,6 +111,9 @@ export function GitHubDeploymentPane({
           });
         }
         toast.success(outcome.taskMessage);
+        if (onDeployed != null) {
+          onDeployed().catch(() => undefined);
+        }
         onClose();
       } catch (error) {
         toast.error(
@@ -126,6 +131,7 @@ export function GitHubDeploymentPane({
       kubeconfig,
       namespace,
       onClose,
+      onDeployed,
       projectIdTrimmed,
     ]
   );

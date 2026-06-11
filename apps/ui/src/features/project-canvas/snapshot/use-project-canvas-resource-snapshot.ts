@@ -4,11 +4,16 @@ import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import type { CanvasLayoutDocument } from "@/features/project-canvas/layout/types";
 import {
   BRAIN_PROJECT_ID_LABEL,
   BRAIN_RESOURCE_KIND_LABEL,
 } from "@/lib/brain-labels";
+import {
+  DEPLOY_TASKS_API_PATH,
+  fetchProjectDeployTasks,
+} from "@/lib/deploy-task/client";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {
   type WorkloadTransientSinceByKey,
@@ -197,12 +202,40 @@ export function useProjectCanvasResourceSnapshot(options: {
     deploymentsRefreshInterval: deploymentListRefreshInterval,
     statefulSetsRefreshInterval: statefulSetListRefreshInterval,
   });
+  const deployTasksSWRKey =
+    kubeconfig.trim() !== "" && namespace.trim() !== "" && uid.trim() !== ""
+      ? ([DEPLOY_TASKS_API_PATH, namespace, uid, kubeconfig] as const)
+      : null;
+  const {
+    data: deployTasks,
+    error: deployTasksError,
+    isLoading: deployTasksLoading,
+    mutate: mutateDeployTasks,
+  } = useSWR(
+    deployTasksSWRKey,
+    () =>
+      fetchProjectDeployTasks({
+        kubeconfig,
+        namespace,
+        projectId: uid,
+      }),
+    {
+      refreshInterval: isPageVisible ? 3000 : 0,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  );
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
 
   const revalidate = useCallback(() => {
-    return Promise.all([mutateAps(), mutateDbs(), mutateTemplateNative()]);
-  }, [mutateAps, mutateDbs, mutateTemplateNative]);
+    return Promise.all([
+      mutateAps(),
+      mutateDbs(),
+      mutateTemplateNative(),
+      mutateDeployTasks(),
+    ]);
+  }, [mutateAps, mutateDbs, mutateDeployTasks, mutateTemplateNative]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(
@@ -230,8 +263,9 @@ export function useProjectCanvasResourceSnapshot(options: {
     };
   }, [revalidate]);
 
-  const error = apsError ?? dbsError ?? templateNativeError;
-  const isLoading = apsLoading || dbsLoading || templateNativeLoading;
+  const error = apsError ?? dbsError ?? templateNativeError ?? deployTasksError;
+  const isLoading =
+    apsLoading || dbsLoading || templateNativeLoading || deployTasksLoading;
 
   const snapshot = useMemo(
     () =>
@@ -240,6 +274,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         canvasLayout,
         canvasLayoutReady,
         dbsData,
+        deployTasks,
         error,
         isEmptyGraphLoading: false,
         kubeconfig,
@@ -251,6 +286,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       canvasLayout,
       canvasLayoutReady,
       dbsData,
+      deployTasks,
       error,
       kubeconfig,
       namespace,

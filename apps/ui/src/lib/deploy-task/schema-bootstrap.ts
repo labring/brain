@@ -97,6 +97,7 @@ async function createDeployTaskTables(pool: Pool): Promise<void> {
       gateway_thread_id text,
       gateway_turn_id text,
       artifact_summary jsonb not null default '{}'::jsonb,
+      canvas_projection jsonb not null default '{}'::jsonb,
       blocking_inputs jsonb not null default '[]'::jsonb,
       preview_url text,
       result_url text,
@@ -156,6 +157,7 @@ async function migrateDeployTaskTableShape(
     alter table ${deployTasks} add column if not exists target jsonb;
     alter table ${deployTasks} add column if not exists runner jsonb;
     alter table ${deployTasks} add column if not exists created_from text not null default 'api';
+    alter table ${deployTasks} add column if not exists canvas_projection jsonb not null default '{}'::jsonb;
   `);
 
   const columns = await tableColumns(pool, schemaName, "deploy_tasks");
@@ -344,6 +346,7 @@ async function copyLegacyDeployTaskRows(pool: Pool): Promise<void> {
       gateway_thread_id,
       gateway_turn_id,
       artifact_summary,
+      canvas_projection,
       blocking_inputs,
       preview_url,
       result_url,
@@ -374,6 +377,7 @@ async function copyLegacyDeployTaskRows(pool: Pool): Promise<void> {
       gateway_thread_id,
       gateway_turn_id,
       artifact_summary,
+      coalesce(canvas_projection, '{}'::jsonb),
       blocking_inputs,
       preview_url,
       result_url,

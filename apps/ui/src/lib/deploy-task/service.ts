@@ -27,6 +27,7 @@ import type {
   DeployTaskMessageDTO,
   DeployTaskSnapshotDTO,
   SubmitDeployTaskInput,
+  UpdateDeployTaskCanvasProjectionInput,
 } from "./types";
 
 const MAX_DEPLOY_EVENTS = 200;
@@ -73,6 +74,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
   return {
     artifactSummary: row.artifactSummary,
     blockingInputs: row.blockingInputs,
+    canvasProjection: row.canvasProjection,
     completedAt: nowIso(row.completedAt),
     createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
@@ -336,6 +338,40 @@ export async function updateDeployTaskState(
     .where(eq(deployTasks.id, taskId))
     .returning();
   return task == null ? null : toDeployTaskDTO(task);
+}
+
+export async function updateDeployTaskCanvasProjection(
+  taskId: string,
+  input: UpdateDeployTaskCanvasProjectionInput
+): Promise<DeployTaskDTO | null> {
+  await ensureDeployTaskStorageSchema();
+  return await getDeploymentTaskDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
+    const [existing] = await tx
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, taskId))
+      .limit(1);
+    if (existing == null) {
+      return null;
+    }
+    const mode = input.mode ?? "replace";
+    if (
+      mode === "set-if-empty" &&
+      existing.canvasProjection.position !== undefined
+    ) {
+      return toDeployTaskDTO(existing);
+    }
+    const [task] = await tx
+      .update(deployTasks)
+      .set({
+        canvasProjection: input.projection,
+        updatedAt: new Date(),
+      })
+      .where(eq(deployTasks.id, taskId))
+      .returning();
+    return task == null ? null : toDeployTaskDTO(task);
+  });
 }
 
 export async function appendDeployTaskMessage(input: {

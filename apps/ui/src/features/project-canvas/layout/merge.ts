@@ -38,6 +38,8 @@ export interface CanvasLayoutMergeResult {
 
 export interface CanvasLayoutMergeOptions {
   connections?: readonly CanvasDetectedConnection[];
+  initialPositionByNodeId?: ReadonlyMap<string, CanvasLayoutPosition>;
+  initialPositionByRef?: ReadonlyMap<string, CanvasLayoutPosition>;
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
   now?: Date;
@@ -221,12 +223,20 @@ function orphanedLayoutNode(
 
 export function mergeCanvasLayoutWithDetectedNodes({
   connections,
+  initialPositionByNodeId,
+  initialPositionByRef,
   layout,
   nodes,
   now = new Date(),
 }: CanvasLayoutMergeOptions): CanvasLayoutMergeResult {
   if (layout === undefined) {
-    const placed = placeCanvasNodesWithLayout({ connections, layout, nodes });
+    const placed = placeCanvasNodesWithLayout({
+      connections,
+      initialPositionByNodeId,
+      initialPositionByRef,
+      layout,
+      nodes,
+    });
     return {
       changed: false,
       layout: undefined,
@@ -284,6 +294,8 @@ export function mergeCanvasLayoutWithDetectedNodes({
 
   const placed = placeCanvasNodesWithLayout({
     connections,
+    initialPositionByNodeId,
+    initialPositionByRef,
     layout: cleanedLayout,
     nodes: renderedNodes,
   });
