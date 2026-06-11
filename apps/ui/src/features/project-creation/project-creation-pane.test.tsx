@@ -21,7 +21,7 @@ const AUTO_GENERATED_PUBLIC_ADDRESS_RE = /Auto-generated Public Address/;
 const PANE_LABEL_RE = /aria-label="Project creation pane"/;
 const PROJECT_NAME_RE = /Project Name/;
 const PROJECT_TITLE_RE = /Create New Project/;
-const GITHUB_CONNECTED_RE = /GitHub connected/;
+const GITHUB_CONNECTED_RE = /GitHub connected/i;
 const GITHUB_REPO_CARD_RE = /data-slot="github-deployer-repo-card"/;
 const GITHUB_SEARCH_RE = /placeholder="Search"/;
 const SCENARIO_RE = /Scenario/;

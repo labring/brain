@@ -4,8 +4,7 @@ import type { UIMessage } from "ai";
 import { generateId } from "ai";
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 
-import { getAssistantDb } from "@/lib/chat-persistence/db";
-import { ensureDeployTaskStorageSchema } from "@/lib/chat-persistence/deploy-task-schema-bootstrap";
+import { getDeploymentTaskDb } from "./db";
 import {
   type DeploymentTaskSource,
   type DeployTaskEventPayload,
@@ -17,7 +16,8 @@ import {
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
-} from "@/lib/chat-persistence/schema";
+} from "./schema";
+import { ensureDeployTaskStorageSchema } from "./schema-bootstrap";
 
 import type {
   CreateDeployTaskInput,
@@ -74,6 +74,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     artifactSummary: row.artifactSummary,
     blockingInputs: row.blockingInputs,
     completedAt: nowIso(row.completedAt),
+    createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
     error: row.error,
     gatewaySessionId: row.gatewaySessionId,
@@ -129,7 +130,7 @@ export async function recordDeployTaskEvent(
   input: DeployTaskEventInput
 ): Promise<DeployTaskEventRow> {
   await ensureDeployTaskStorageSchema();
-  return await getAssistantDb().transaction(async (tx) => {
+  return await getDeploymentTaskDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
 
     const [row] = await tx
@@ -170,11 +171,12 @@ export async function createDeployTask(
   await ensureDeployTaskStorageSchema();
   const id = generateId();
   const now = new Date();
-  const [task] = await getAssistantDb()
+  const [task] = await getDeploymentTaskDb()
     .insert(deployTasks)
     .values({
       id,
       createdAt: now,
+      createdFrom: input.createdFrom ?? "api",
       heartbeatAt: now,
       namespace: input.namespace.trim(),
       phase: "queued",
@@ -190,7 +192,7 @@ export async function createDeployTask(
     throw new Error("Failed to create deploy task.");
   }
 
-  await getAssistantDb()
+  await getDeploymentTaskDb()
     .insert(deployTaskMessages)
     .values({
       id: generateId(),
@@ -221,7 +223,7 @@ export async function getDeployTaskById(
   taskId: string
 ): Promise<DeployTaskRow | null> {
   await ensureDeployTaskStorageSchema();
-  const [task] = await getAssistantDb()
+  const [task] = await getDeploymentTaskDb()
     .select()
     .from(deployTasks)
     .where(eq(deployTasks.id, taskId))
@@ -239,7 +241,7 @@ export async function getDeployTaskSnapshot(
     filters.push(eq(deployTasks.namespace, namespace.trim()));
   }
 
-  const [task] = await getAssistantDb()
+  const [task] = await getDeploymentTaskDb()
     .select()
     .from(deployTasks)
     .where(and(...filters))
@@ -249,13 +251,13 @@ export async function getDeployTaskSnapshot(
   }
 
   const [events, messages] = await Promise.all([
-    getAssistantDb()
+    getDeploymentTaskDb()
       .select()
       .from(deployTaskEvents)
       .where(eq(deployTaskEvents.taskId, taskId))
       .orderBy(desc(deployTaskEvents.seq))
       .limit(MAX_DEPLOY_EVENTS),
-    getAssistantDb()
+    getDeploymentTaskDb()
       .select()
       .from(deployTaskMessages)
       .where(eq(deployTaskMessages.taskId, taskId))
@@ -279,7 +281,7 @@ export async function listDeployTasks(input: {
   if (input.projectId?.trim()) {
     filters.push(eq(deployTasks.projectId, input.projectId.trim()));
   }
-  const rows = await getAssistantDb()
+  const rows = await getDeploymentTaskDb()
     .select()
     .from(deployTasks)
     .where(and(...filters))
@@ -321,7 +323,7 @@ export async function updateDeployTaskState(
     input.status === "running" ||
     input.status === "blocked" ||
     input.status === "applying";
-  const [task] = await getAssistantDb()
+  const [task] = await getDeploymentTaskDb()
     .update(deployTasks)
     .set({
       ...input,
@@ -343,7 +345,7 @@ export async function appendDeployTaskMessage(input: {
   taskId: string;
 }): Promise<DeployTaskMessageDTO> {
   await ensureDeployTaskStorageSchema();
-  const [message] = await getAssistantDb()
+  const [message] = await getDeploymentTaskDb()
     .insert(deployTaskMessages)
     .values({
       id: input.id ?? generateId(),

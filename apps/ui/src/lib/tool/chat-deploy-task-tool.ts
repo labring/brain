@@ -125,6 +125,7 @@ export function createDeployTaskTools(options: {
       }
 
       const task = await createDeployTask({
+        createdFrom: "chat",
         namespace,
         prompt: input.prompt,
         runner: input.runner ?? defaultRunnerForSource(input.source),

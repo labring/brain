@@ -136,6 +136,8 @@ A deploy workflow work unit for creating or changing Project resources from a De
 
 _Avoid_: GitHub task, deploy job, deployment request.
 
+A Deployment Task is owned by the deployment domain, not by the Project Assistant Pane or any Chat thread. Chat may create, inspect, or explain a Deployment Task through tools, but the task's lifecycle, events, artifacts, and runner transcript remain deployment records.
+
 ### Deployment Source
 
 The user-provided origin or intent for a Deployment Task, such as a GitHub repository, Docker image, database choice, application template, or natural-language deployment prompt. A Deployment Source describes what should be deployed, not where it should land.

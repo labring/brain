@@ -14,7 +14,6 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 
 export function DatabaseDeploymentPane({
@@ -62,13 +61,6 @@ export function DatabaseDeploymentPane({
         });
         if (outcome.kind !== "database") {
           return;
-        }
-        if (outcome.taskId != null) {
-          dispatchDeployTaskCreatedEvent({
-            projectName: outcome.projectName,
-            sourceLabel: outcome.sourceLabel,
-            taskId: outcome.taskId,
-          });
         }
         toast.success(outcome.taskMessage);
         if (onDeployed != null) {

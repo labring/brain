@@ -14,7 +14,6 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 
 export function DockerDeploymentPane({
   kubeconfig,
@@ -60,13 +59,6 @@ export function DockerDeploymentPane({
         });
         if (outcome.kind !== "docker") {
           return;
-        }
-        if (outcome.taskId != null) {
-          dispatchDeployTaskCreatedEvent({
-            projectName: outcome.projectName,
-            sourceLabel: outcome.sourceLabel,
-            taskId: outcome.taskId,
-          });
         }
         toast.success(outcome.taskMessage);
         if (onDeployed != null) {

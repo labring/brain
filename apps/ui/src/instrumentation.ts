@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 
 import { ASSISTANT_DB_SCHEMA } from "@/lib/chat-persistence/types";
+import { DEPLOYMENT_TASK_DB_SCHEMA } from "@/lib/deploy-task/schema";
 import { PROJECT_DB_SCHEMA } from "@/lib/project-persistence/types";
 
 /**
@@ -17,7 +18,11 @@ export async function register() {
   }
   const pool = new Pool({ connectionString: url, max: 1 });
   try {
-    for (const schemaName of [ASSISTANT_DB_SCHEMA, PROJECT_DB_SCHEMA]) {
+    for (const schemaName of [
+      ASSISTANT_DB_SCHEMA,
+      DEPLOYMENT_TASK_DB_SCHEMA,
+      PROJECT_DB_SCHEMA,
+    ]) {
       await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
     }
   } catch (error) {

@@ -12,7 +12,6 @@ import type {
 } from "@/features/deployment/database-deployer";
 import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
 import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
-import type { DeployTaskRow } from "@/lib/chat-persistence/schema";
 import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import {
   createDevbox,
@@ -46,6 +45,7 @@ import {
   getCodexGatewayContextFromDevboxInfo,
   runDeployTaskGateway,
 } from "./gateway";
+import type { DeployTaskRow } from "./schema";
 import {
   getDeployTaskById,
   recordDeployTaskEvent,

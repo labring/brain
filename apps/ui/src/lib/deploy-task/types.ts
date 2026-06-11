@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeploymentTaskTarget,
@@ -10,9 +11,10 @@ import type {
   DeployTaskMessageRow,
   DeployTaskPhase,
   DeployTaskStatus,
-} from "@/lib/chat-persistence/schema";
+} from "./schema";
 
 export type {
+  DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeploymentTaskTarget,
@@ -24,7 +26,7 @@ export type {
   DeployTaskPhase,
   DeployTaskRow,
   DeployTaskStatus,
-} from "@/lib/chat-persistence/schema";
+} from "./schema";
 
 export const deployTaskPhaseSchema = z.enum([
   "queued",
@@ -107,6 +109,7 @@ export const deploymentTaskRunnerSchema = z.discriminatedUnion("kind", [
 ]) satisfies z.ZodType<DeploymentTaskRunner>;
 
 export const createDeployTaskInputSchema = z.object({
+  createdFrom: z.enum(["api", "automation", "chat", "ui"]).optional(),
   namespace: z.string().trim().min(1),
   prompt: z.string().trim().max(4000).optional(),
   runner: deploymentTaskRunnerSchema,
@@ -136,6 +139,7 @@ export interface DeployTaskDTO {
   blockingInputs: DeployTaskBlockingInput[];
   completedAt: string | null;
   createdAt: string;
+  createdFrom: DeploymentTaskCreatedFrom;
   error: string | null;
   gatewaySessionId: string | null;
   gatewayTurnId: string | null;

@@ -15,9 +15,11 @@ import { createDeployTaskInputSchema } from "@/lib/deploy-task/types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const requestSchema = createDeployTaskInputSchema.extend({
-  encodedKubeconfig: z.string().optional(),
-});
+const requestSchema = createDeployTaskInputSchema
+  .omit({ createdFrom: true })
+  .extend({
+    encodedKubeconfig: z.string().optional(),
+  });
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
   const { encodedKubeconfig: _encodedKubeconfig, ...taskInput } = parsed.data;
   const task = await createDeployTask({
     ...taskInput,
+    createdFrom: "ui",
     namespace: namespaceResolved.namespace ?? taskInput.namespace,
   });
   const resolved = await resolveDeploymentTaskTarget({

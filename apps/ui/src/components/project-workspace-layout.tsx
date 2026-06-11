@@ -8,7 +8,6 @@ import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
   lastAssistantMessageIsCompleteWithToolCalls,
-  type UIMessage,
 } from "ai";
 import { useAtomValue, useSetAtom } from "jotai";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
@@ -37,7 +36,6 @@ import {
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
-  appendAssistantThreadMessage,
   createAssistantThread,
   fetchAssistantSession,
   fetchAssistantThreadMessages,
@@ -48,11 +46,6 @@ import type {
   AssistantSessionPayload,
   AssistantThreadDTO,
 } from "@/lib/chat-persistence/types";
-import {
-  consumePendingDeployTaskCreatedEvents,
-  DEPLOY_TASK_CREATED_EVENT,
-  type DeployTaskCreatedEvent,
-} from "@/lib/deploy-task/browser-events";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -71,26 +64,6 @@ import {
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 
-const DEPLOY_TASK_STATUS_POLL_MS = 3000;
-const TERMINAL_DEPLOY_TASK_STATUSES = new Set([
-  "completed",
-  "failed",
-  "cancelled",
-]);
-
-interface DeployTaskStatusSnapshot {
-  events?: {
-    message: string | null;
-    phase: string | null;
-    seq: number;
-  }[];
-  task?: {
-    error?: string | null;
-    phase?: string;
-    status?: string;
-  };
-}
-
 type AssistantClientToolSubmission =
   | {
       tool: typeof NAVIGATE_APP_TOOL_NAME;
@@ -107,111 +80,6 @@ type AssistantClientToolSubmission =
       toolCallId: string;
       output: OpenProjectSurfaceToolOutput;
     };
-
-function deployTaskChatMessage(input: {
-  error?: string | null;
-  events?: { message: string | null; phase: string | null; seq: number }[];
-  phase?: string;
-  projectName: string;
-  sourceLabel: string;
-  status?: string;
-  taskId: string;
-}): UIMessage {
-  const events = input.events?.slice(-6) ?? [];
-  const statusLine =
-    input.status == null
-      ? "Status: queued"
-      : `Status: ${input.status}${input.phase ? ` (${input.phase})` : ""}`;
-  const eventLines =
-    events.length === 0
-      ? []
-      : [
-          "",
-          "Recent events:",
-          ...events.map((event) => {
-            const phase = event.phase ? ` [${event.phase}]` : "";
-            return `- #${event.seq}${phase} ${event.message ?? "No details"}`;
-          }),
-        ];
-  const errorLines = input.error ? ["", `Error: ${input.error}`] : [];
-
-  return {
-    id: `deploy-task-created-${input.taskId}`,
-    role: "assistant",
-    parts: [
-      {
-        type: "text",
-        text: [
-          `Deployment task **${input.taskId}** has been created for **${input.sourceLabel}**.`,
-          "",
-          `Project: \`${input.projectName}\``,
-          "",
-          statusLine,
-          ...eventLines,
-          ...errorLines,
-        ].join("\n"),
-      },
-    ],
-  };
-}
-
-function deployTaskStatusUrl(input: {
-  kubeconfig: string;
-  namespace: string;
-  taskId: string;
-}): string {
-  const params = new URLSearchParams({
-    encodedKubeconfig: encodeURIComponent(input.kubeconfig),
-    namespace: input.namespace,
-  });
-  return `/api/deploy-tasks/${encodeURIComponent(input.taskId)}?${params.toString()}`;
-}
-
-async function fetchDeployTaskStatusSnapshot(input: {
-  kubeconfig: string;
-  namespace: string;
-  signal: AbortSignal;
-  taskId: string;
-}): Promise<DeployTaskStatusSnapshot> {
-  const response = await fetch(deployTaskStatusUrl(input), {
-    cache: "no-store",
-    signal: input.signal,
-  });
-  if (!response.ok) {
-    throw new Error(`Deploy task status returned ${response.status}`);
-  }
-  return (await response.json()) as DeployTaskStatusSnapshot;
-}
-
-function deployTaskIsTerminal(snapshot: DeployTaskStatusSnapshot): boolean {
-  return (
-    snapshot.task?.status != null &&
-    TERMINAL_DEPLOY_TASK_STATUSES.has(snapshot.task.status)
-  );
-}
-
-function waitForDeployTaskPollDelay(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, DEPLOY_TASK_STATUS_POLL_MS);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true }
-    );
-  });
-}
-
-function logDeployTaskPollError(input: {
-  error: unknown;
-  signal: AbortSignal;
-}) {
-  if (!input.signal.aborted) {
-    console.error("[deploy-task-chat-adapter] poll failed:", input.error);
-  }
-}
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
@@ -354,7 +222,6 @@ function ProjectAssistantChatSession({
     addToolApprovalResponse,
     messages,
     sendMessage,
-    setMessages,
     status,
     stop,
     addToolOutput,
@@ -445,112 +312,6 @@ function ProjectAssistantChatSession({
   // console.log("messages", messages);
 
   addToolOutputRef.current = addToolOutput;
-  useEffect(() => {
-    const trackedTaskIds = new Set<string>();
-    const abortControllers = new Map<string, AbortController>();
-
-    const persistMessage = (message: UIMessage) => {
-      appendAssistantThreadMessage({
-        chatId,
-        message,
-        namespace: assistantNamespaceRaw,
-      }).catch((error: unknown) => {
-        console.error("[deploy-task-chat-adapter] persist failed:", error);
-      });
-    };
-
-    const upsertMessage = (message: UIMessage) => {
-      setMessages((current) => {
-        const index = current.findIndex((item) => item.id === message.id);
-        if (index === -1) {
-          return [...current, message];
-        }
-        const next = [...current];
-        next[index] = message;
-        return next;
-      });
-      persistMessage(message);
-    };
-
-    const trackDeployTask = (
-      detail: DeployTaskCreatedEvent["detail"]
-    ): void => {
-      if (trackedTaskIds.has(detail.taskId)) {
-        return;
-      }
-      trackedTaskIds.add(detail.taskId);
-      const controller = new AbortController();
-      abortControllers.set(detail.taskId, controller);
-
-      const poll = async (): Promise<void> => {
-        while (!controller.signal.aborted) {
-          try {
-            const snapshot = await fetchDeployTaskStatusSnapshot({
-              kubeconfig,
-              namespace: assistantNamespaceRaw,
-              signal: controller.signal,
-              taskId: detail.taskId,
-            });
-            const message = deployTaskChatMessage({
-              ...detail,
-              error: snapshot.task?.error ?? null,
-              events: snapshot.events,
-              phase: snapshot.task?.phase,
-              status: snapshot.task?.status,
-            });
-            upsertMessage(message);
-
-            if (deployTaskIsTerminal(snapshot)) {
-              return;
-            }
-          } catch (error) {
-            logDeployTaskPollError({ error, signal: controller.signal });
-          }
-
-          await waitForDeployTaskPollDelay(controller.signal);
-        }
-      };
-
-      poll().catch((error: unknown) => {
-        logDeployTaskPollError({ error, signal: controller.signal });
-      });
-    };
-
-    const showDeployTaskCreated = (
-      detail: DeployTaskCreatedEvent["detail"]
-    ) => {
-      if (
-        detail == null ||
-        typeof detail.taskId !== "string" ||
-        typeof detail.sourceLabel !== "string" ||
-        typeof detail.projectName !== "string"
-      ) {
-        return;
-      }
-
-      const message = deployTaskChatMessage(detail);
-      upsertMessage(message);
-      trackDeployTask(detail);
-    };
-
-    const onDeployTaskCreated = (event: Event) => {
-      showDeployTaskCreated((event as DeployTaskCreatedEvent).detail);
-    };
-
-    for (const pending of consumePendingDeployTaskCreatedEvents()) {
-      showDeployTaskCreated(pending);
-    }
-    window.addEventListener(DEPLOY_TASK_CREATED_EVENT, onDeployTaskCreated);
-    return () => {
-      window.removeEventListener(
-        DEPLOY_TASK_CREATED_EVENT,
-        onDeployTaskCreated
-      );
-      for (const controller of abortControllers.values()) {
-        controller.abort();
-      }
-    };
-  }, [assistantNamespaceRaw, chatId, kubeconfig, setMessages]);
   const [input, setInput] = useState("");
   const { isAuthorized, isLoading: authLoading } = useGithubAuth();
 

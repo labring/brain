@@ -1,8 +1,8 @@
 import "server-only";
 
-import type { DeployTaskRow } from "@/lib/chat-persistence/schema";
 import type { DevboxInfo } from "@/lib/devbox/types";
 
+import type { DeployTaskRow } from "./schema";
 import {
   appendDeployTaskMessage,
   recordDeployTaskEvent,
