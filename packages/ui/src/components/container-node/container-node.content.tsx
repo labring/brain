@@ -1,5 +1,6 @@
 "use client";
 
+import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
 import {
   CanvasNode,
   type CanvasNodeMetricListItem,
@@ -7,7 +8,6 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
-  Box,
   CalendarDays,
   Cpu,
   FileText,
@@ -125,7 +125,10 @@ export function ContainerNodeHeaderContent({
     <div className={cn("flex min-w-0 flex-1 items-center gap-1.5", className)}>
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/5">
-          <Box aria-hidden className="size-4" strokeWidth={2} />
+          <ProjectSourceDockerIcon
+            aria-hidden
+            className="size-4 text-blue-400"
+          />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span
