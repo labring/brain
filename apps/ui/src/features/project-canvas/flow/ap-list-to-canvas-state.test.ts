@@ -13,6 +13,8 @@ import {
   templateNativeWorkloadsToCanvasState,
 } from "./ap-list-to-canvas-state";
 
+const POSTGRESQL_ORIGINAL_ICON_RE = /postgresql-original\.svg/;
+
 test("DB canvas node data preserves raw status backups for DB Access", () => {
   const rawBackups = [
     {
@@ -308,6 +310,37 @@ test("DB canvas nodes preserve desired replicas and effective resources for sett
       labels: { region: "192.168.12.53.nip.io" },
     }
   );
+});
+
+test("DB canvas nodes resolve known database engine icons", () => {
+  const state = dbsToCanvasState(
+    {
+      items: [
+        {
+          metadata: {
+            name: "postgres",
+            namespace: "default",
+          },
+          spec: {
+            engine: "postgres",
+          },
+          status: {
+            phase: "Running",
+          },
+        },
+      ],
+    },
+    { namespaceFallback: "default" }
+  );
+
+  const data = state.nodes[0]?.data as {
+    states?: {
+      displayEngine?: string;
+      iconUrl?: string;
+    };
+  };
+  assert.equal(data.states?.displayEngine, "PostgreSQL");
+  assert.match(data.states?.iconUrl ?? "", POSTGRESQL_ORIGINAL_ICON_RE);
 });
 
 test("DB canvas nodes preserve stopped status tone for lifecycle actions", () => {

@@ -1,3 +1,8 @@
+import {
+  type DeviconKey,
+  deviconSrc,
+  devicons,
+} from "@workspace/ui/assets/devicons";
 import type {
   DatabaseEngineKey,
   DatabaseNodeStates,
@@ -13,9 +18,20 @@ export interface DbSettingsMetricPercents {
 const DISPLAY_ENGINE_BY_KEY: Record<string, string> = {
   mongodb: "MongoDB",
   mysql: "MySQL",
+  postgres: "PostgreSQL",
   postgresql: "PostgreSQL",
   redis: "Redis",
 };
+
+const DATABASE_ENGINE_ICON_BY_KEY = {
+  mongo: "mongodb",
+  mongodb: "mongodb",
+  mysql: "mysql",
+  pg: "postgresql",
+  postgres: "postgresql",
+  postgresql: "postgresql",
+  redis: "redis",
+} as const satisfies Record<string, Exclude<DeviconKey, "docker">>;
 
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
 const STATUS_TONES = new Set([
@@ -70,6 +86,18 @@ function displayEngineFromKey(engineKey: string | undefined): string {
   }
   const normalized = engineKey.toLowerCase();
   return DISPLAY_ENGINE_BY_KEY[normalized] ?? engineKey;
+}
+
+function databaseEngineIconUrl(
+  engineKey: string | undefined
+): string | undefined {
+  if (engineKey === undefined) {
+    return undefined;
+  }
+  const iconKey = DATABASE_ENGINE_ICON_BY_KEY[engineKey.toLowerCase()];
+  return iconKey === undefined
+    ? undefined
+    : deviconSrc(devicons[iconKey].original);
 }
 
 function formatDatabaseVersion(
@@ -275,7 +303,8 @@ export function dbResourceToSettingsData(
   const iconUrl =
     engineKey === undefined
       ? undefined
-      : options?.engineIconByName?.get(engineKey);
+      : (options?.engineIconByName?.get(engineKey) ??
+        databaseEngineIconUrl(engineKey));
   const metricCapacities = databaseMetricCapacitiesFromStatus(status);
   const mountPath = nonEmptyString(status.mountPath);
   const backups = Array.isArray(status.backups) ? status.backups : undefined;

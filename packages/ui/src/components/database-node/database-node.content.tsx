@@ -125,7 +125,13 @@ function DatabaseNodeHeaderIcon({ iconUrl }: { iconUrl?: string }) {
     );
   }
 
-  return <Database aria-hidden className="size-4" strokeWidth={2} />;
+  return (
+    <Database
+      aria-hidden
+      className="size-4 shrink-0 text-blue-400"
+      strokeWidth={2}
+    />
+  );
 }
 
 export function DatabaseNodeContent() {
