@@ -5,16 +5,16 @@ import { ResourceSettingsSection } from "@workspace/ui/components/resource-setti
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type {
+  ApEnvVar,
+  ApReplicaStrategy,
   ApSettingsSectionsProps,
-  ContainerEnvVar,
-  ContainerReplicaStrategy,
 } from "./ap-settings-sections";
 import {
+  apNetworkAfterBindCustomDomain,
+  apNetworkAfterEditPublicAddress,
+  apNetworkAfterUnbindCustomDomain,
+  apSettingsDraftIsDirty,
   confirmedAddDbDsnReferencesFromEnvDraft,
-  containerNetworkAfterBindCustomDomain,
-  containerNetworkAfterEditPublicAddress,
-  containerNetworkAfterUnbindCustomDomain,
-  containerSettingsDraftIsDirty,
   envRawSourceDraftWithAddReferenceIntent,
   pendingDbReferencesFromEnvRawSourceDraft,
   resourceQuotaReplicaPatchFromDraft,
@@ -61,9 +61,9 @@ function referenceExpression(db: string, variable: string): string {
   return ["$", "{{", db, ".", variable, "}}"].join("");
 }
 
-const ENV_ROWS_SLOT_RE = /data-slot="container-env-rows"/;
+const ENV_ROWS_SLOT_RE = /data-slot="ap-env-rows"/;
 const RAW_ENV_ROWS_OVERFLOW_VISIBLE_RE =
-  /class="flex w-full flex-col gap-2 overflow-visible" data-slot="container-env-rows"/;
+  /class="flex w-full flex-col gap-2 overflow-visible" data-slot="ap-env-rows"/;
 const ENVIRONMENT_VARIABLES_TITLE_RE = /Environment Variables/;
 const ENV_NAME_INPUT_RE = /aria-label="Environment variable name"/;
 const ENV_VALUE_INPUT_RE = /aria-label="Environment variable value"/;
@@ -82,9 +82,8 @@ const MASKED_ENV_VALUE_RE = />\*\*\*\*\*\*\*</;
 const ADD_ENV_RE = /aria-label="Add environment variable"/;
 const REFERENCE_SELECTOR_RE = /aria-label="Reference"/;
 const REFERENCE_DB_LABEL_RE = /Reference DB/;
-const INLINE_REFERENCE_TRIGGER_RE =
-  /data-slot="container-env-reference-trigger"/;
-const TOKEN_TRIGGER_RE = /data-slot="container-env-token-trigger"/;
+const INLINE_REFERENCE_TRIGGER_RE = /data-slot="ap-env-reference-trigger"/;
+const TOKEN_TRIGGER_RE = /data-slot="ap-env-token-trigger"/;
 const DB_FIELD_SELECT_RE = /aria-label="Project DB field"/;
 const ENV_ROW_ACTIONS_RE =
   /aria-label="Environment variable actions for [^"]+"/;
@@ -102,11 +101,11 @@ const VALUE_FROM_PLACEHOLDER_RE = /\(valueFrom\)/;
 const CANCEL_ENV_RE = /Cancel environment changes/;
 const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
-const IMAGE_INPUT_RE = /aria-label="Container image"/;
+const IMAGE_INPUT_RE = /aria-label="AP image"/;
 const LAUNCH_COMMAND_RE = /Launch Command/;
 const CONFIG_FILES_RE = /Config Files/;
 const STORAGE_RE = /Storage/;
-const CONTAINER_COMMAND_RE = /aria-label="Container command"/;
+const AP_COMMAND_RE = /aria-label="AP command"/;
 const CONFIG_FILE_PATH_RE = /aria-label="Config file mount path"/;
 const STORAGE_SIZE_RE = /aria-label="Storage size"/;
 const CONFIG_FILE_MOUNT_PATH_RE = /\/etc\/app\/config\.yaml/;
@@ -181,9 +180,7 @@ const BUTTON_RE = /<button/;
 
 function renderPane(
   readOnly = false,
-  env: ContainerEnvVar[] = [
-    { name: "DATABASE_URL", value: "postgres://db:5432/app" },
-  ]
+  env: ApEnvVar[] = [{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]
 ): string {
   return renderToStaticMarkup(
     <TestApSettingsSections
@@ -215,7 +212,7 @@ function renderPane(
   );
 }
 
-test("container settings pane renders editable structured environment rows for new rows", () => {
+test("AP settings pane renders editable structured environment rows for new rows", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       addDbDsnReferenceIntent={{
@@ -249,7 +246,7 @@ test("container settings pane renders editable structured environment rows for n
   assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
 });
 
-test("container settings pane masks clean saved structured environment rows", () => {
+test("AP settings pane masks clean saved structured environment rows", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -271,7 +268,7 @@ test("container settings pane masks clean saved structured environment rows", ()
   assert.match(html, COPY_ENV_VALUE_RE);
 });
 
-test("container settings pane shows raw draft values for dirty structured rows", () => {
+test("AP settings pane shows raw draft values for dirty structured rows", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       addDbDsnReferenceIntent={{
@@ -302,7 +299,7 @@ test("container settings pane shows raw draft values for dirty structured rows",
   assert.doesNotMatch(html, COPY_MYSQL_ENV_VALUE_RE);
 });
 
-test("container settings pane renders environment actions in section header", () => {
+test("AP settings pane renders environment actions in section header", () => {
   const html = renderPane();
   const titleIndex = html.search(ENVIRONMENT_VARIABLES_TITLE_RE);
   const modeIndex = html.search(ENV_EDITOR_MODE_RE);
@@ -319,7 +316,7 @@ test("container settings pane renders environment actions in section header", ()
   assert.ok(addIndex < rowsIndex);
 });
 
-test("container settings pane renders Image below CPU / Memory", () => {
+test("AP settings pane renders Image below CPU / Memory", () => {
   const html = renderPane();
   const cpuMemoryIndex = html.search(CPU_MEMORY_SECTION_RE);
   const imageIndex = html.search(IMAGE_INPUT_RE);
@@ -329,7 +326,7 @@ test("container settings pane renders Image below CPU / Memory", () => {
   assert.ok(cpuMemoryIndex < imageIndex);
 });
 
-test("container settings pane can hide Image section", () => {
+test("AP settings pane can hide Image section", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -346,7 +343,7 @@ test("container settings pane can hide Image section", () => {
   assert.doesNotMatch(html, IMAGE_INPUT_RE);
 });
 
-test("container settings pane shows no AP networking surface without Network data", () => {
+test("AP settings pane shows no AP networking surface without Network data", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -362,7 +359,7 @@ test("container settings pane shows no AP networking surface without Network dat
   assert.doesNotMatch(html, DOMAIN_LIST_RE);
 });
 
-test("container settings pane renders address settings instead of Ports for private-only APs", () => {
+test("AP settings pane renders address settings instead of Ports for private-only APs", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -389,7 +386,7 @@ test("container settings pane renders address settings instead of Ports for priv
   assert.match(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
-test("container settings pane renders editable public address rows", () => {
+test("AP settings pane renders editable public address rows", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -427,7 +424,7 @@ test("container settings pane renders editable public address rows", () => {
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
-test("container settings pane collapses overflowing public address rows by default", () => {
+test("AP settings pane collapses overflowing public address rows by default", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -485,7 +482,7 @@ test("container settings pane collapses overflowing public address rows by defau
   assert.doesNotMatch(html, INLINE_END_ICON_RE);
 });
 
-test("container settings pane renders draft-visible Platform Address hosts", () => {
+test("AP settings pane renders draft-visible Platform Address hosts", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -524,7 +521,7 @@ test("container settings pane renders draft-visible Platform Address hosts", () 
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
-test("container settings pane shows Custom Domain rows instead of bound Platform Addresses", () => {
+test("AP settings pane shows Custom Domain rows instead of bound Platform Addresses", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -565,7 +562,7 @@ test("container settings pane shows Custom Domain rows instead of bound Platform
   assert.doesNotMatch(html, EDIT_PUBLIC_ADDRESS_RE);
 });
 
-test("container settings pane renders Custom Domain Binding lifecycle detail states", () => {
+test("AP settings pane renders Custom Domain Binding lifecycle detail states", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -620,8 +617,8 @@ test("container settings pane renders Custom Domain Binding lifecycle detail sta
   assert.match(html, UNBIND_CUSTOM_DOMAIN_RE);
 });
 
-test("container settings pane unbinds Custom Domains without deleting Platform Addresses", () => {
-  const next = containerNetworkAfterUnbindCustomDomain(
+test("AP settings pane unbinds Custom Domains without deleting Platform Addresses", () => {
+  const next = apNetworkAfterUnbindCustomDomain(
     {
       customDomains: [
         {
@@ -675,8 +672,8 @@ test("container settings pane unbinds Custom Domains without deleting Platform A
   );
 });
 
-test("container settings pane binds Custom Domains and retargets the Platform Address port", () => {
-  const next = containerNetworkAfterBindCustomDomain(
+test("AP settings pane binds Custom Domains and retargets the Platform Address port", () => {
+  const next = apNetworkAfterBindCustomDomain(
     {
       privateAddress: "http://api-service.default.svc:8080",
       privatePort: 8080,
@@ -735,8 +732,8 @@ test("container settings pane binds Custom Domains and retargets the Platform Ad
   ]);
 });
 
-test("container settings pane edits Public Address ports without binding Custom Domains", () => {
-  const next = containerNetworkAfterEditPublicAddress(
+test("AP settings pane edits Public Address ports without binding Custom Domains", () => {
+  const next = apNetworkAfterEditPublicAddress(
     {
       privateAddress: "http://api-service.default.svc:8080",
       privatePort: 8080,
@@ -785,7 +782,7 @@ test("container settings pane edits Public Address ports without binding Custom 
   ]);
 });
 
-test("container settings pane renders fixed replica strategy controls", () => {
+test("AP settings pane renders fixed replica strategy controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -810,7 +807,7 @@ test("container settings pane renders fixed replica strategy controls", () => {
   assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
 });
 
-test("container settings pane renders CPU elastic replica strategy controls", () => {
+test("AP settings pane renders CPU elastic replica strategy controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -849,7 +846,7 @@ test("container settings pane renders CPU elastic replica strategy controls", ()
   assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
 });
 
-test("container settings pane renders Memory elastic replica strategy controls", () => {
+test("AP settings pane renders Memory elastic replica strategy controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -883,8 +880,8 @@ test("container settings pane renders Memory elastic replica strategy controls",
   assert.doesNotMatch(html, REPLICA_COUNT_RE);
 });
 
-test("container settings pane fixed save payload preserves inactive elastic branch", () => {
-  const draft: ContainerReplicaStrategy = {
+test("AP settings pane fixed save payload preserves inactive elastic branch", () => {
+  const draft: ApReplicaStrategy = {
     elastic: {
       maxReplicas: 9,
       minReplicas: 3,
@@ -903,7 +900,7 @@ test("container settings pane fixed save payload preserves inactive elastic bran
   });
 });
 
-test("read-only container settings view renders fixed replica strategy without mutation controls", () => {
+test("read-only AP settings view renders fixed replica strategy without mutation controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -930,7 +927,7 @@ test("read-only container settings view renders fixed replica strategy without m
   assert.doesNotMatch(html, BUTTON_RE);
 });
 
-test("read-only container settings view renders CPU elastic replica strategy without mutation controls", () => {
+test("read-only AP settings view renders CPU elastic replica strategy without mutation controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -971,7 +968,7 @@ test("read-only container settings view renders CPU elastic replica strategy wit
   assert.doesNotMatch(html, BUTTON_RE);
 });
 
-test("read-only container settings view renders Memory elastic replica strategy without mutation controls", () => {
+test("read-only AP settings view renders Memory elastic replica strategy without mutation controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -1046,7 +1043,7 @@ test("read-only network view renders addresses without mutation controls", () =>
   assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
 });
 
-test("read-only container settings view cannot mutate environment rows", () => {
+test("read-only AP settings view cannot mutate environment rows", () => {
   const html = renderPane(true);
 
   assert.match(html, ENV_ROWS_SLOT_RE);
@@ -1056,7 +1053,7 @@ test("read-only container settings view cannot mutate environment rows", () => {
   assert.doesNotMatch(html, SAVE_ENV_RE);
 });
 
-test("container settings pane offers DB references from editable environment rows", () => {
+test("AP settings pane offers DB references from editable environment rows", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       addDbDsnReferenceIntent={{
@@ -1101,7 +1098,7 @@ test("container settings pane offers DB references from editable environment row
   assert.doesNotMatch(readOnlyHtml, REFERENCE_SELECTOR_RE);
 });
 
-test("container settings pane hides DB Reference selector before saved row edit mode", () => {
+test("AP settings pane hides DB Reference selector before saved row edit mode", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -1127,7 +1124,7 @@ test("container settings pane hides DB Reference selector before saved row edit 
   assert.doesNotMatch(html, REFERENCE_SELECTOR_RE);
 });
 
-test("container settings pane projects valueFrom-only environment rows out of raw direct source", () => {
+test("AP settings pane projects valueFrom-only environment rows out of raw direct source", () => {
   const html = renderPane(false, [
     {
       dbDsn: {
@@ -1155,7 +1152,7 @@ test("container settings pane projects valueFrom-only environment rows out of ra
   assert.doesNotMatch(html, DB_FIELD_SELECT_RE);
 });
 
-test("container settings pane renders raw direct rows instead of automatic helper rows", () => {
+test("AP settings pane renders raw direct rows instead of automatic helper rows", () => {
   const html = renderPane(false, [
     {
       name: "DATABASE_URL",
@@ -1192,7 +1189,7 @@ test("container settings pane renders raw direct rows instead of automatic helpe
   assert.doesNotMatch(html, VALUE_FROM_PLACEHOLDER_RE);
 });
 
-test("container settings pane opens dragged DB Add Reference intent preselected", () => {
+test("AP settings pane opens dragged DB Add Reference intent preselected", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       addDbDsnReferenceIntent={{
@@ -1237,7 +1234,7 @@ test("container settings pane opens dragged DB Add Reference intent preselected"
   assert.match(html, SAVE_ENV_RE);
 });
 
-test("container settings pane appends dragged DB Add Reference intent to raw source", () => {
+test("AP settings pane appends dragged DB Add Reference intent to raw source", () => {
   const draft = envRawSourceDraftWithAddReferenceIntent({
     intent: {
       dbName: "mysql",
@@ -1274,7 +1271,7 @@ test("container settings pane appends dragged DB Add Reference intent to raw sou
   ]);
 });
 
-test("container settings pane uses DB identity and numeric suffixes for dragged DB reference name conflicts", () => {
+test("AP settings pane uses DB identity and numeric suffixes for dragged DB reference name conflicts", () => {
   const draft = envRawSourceDraftWithAddReferenceIntent({
     intent: {
       dbName: "mysql",
@@ -1304,7 +1301,7 @@ test("container settings pane uses DB identity and numeric suffixes for dragged 
   );
 });
 
-test("container settings pane derives pending DB references from explicit raw source references", () => {
+test("AP settings pane derives pending DB references from explicit raw source references", () => {
   assert.deepEqual(
     pendingDbReferencesFromEnvRawSourceDraft({
       committedRawSource: "FEATURE_FLAG=true",
@@ -1328,7 +1325,7 @@ test("container settings pane derives pending DB references from explicit raw so
   );
 });
 
-test("container settings pane does not derive pending DB references from already committed references", () => {
+test("AP settings pane does not derive pending DB references from already committed references", () => {
   assert.deepEqual(
     pendingDbReferencesFromEnvRawSourceDraft({
       committedRawSource: `DATABASE_URL=${referenceExpression(
@@ -1345,7 +1342,7 @@ test("container settings pane does not derive pending DB references from already
   );
 });
 
-test("container settings pane does not derive pending DB references from ordinary DSN strings", () => {
+test("AP settings pane does not derive pending DB references from ordinary DSN strings", () => {
   assert.deepEqual(
     pendingDbReferencesFromEnvRawSourceDraft({
       committedRawSource: "",
@@ -1362,7 +1359,7 @@ test("container settings pane does not derive pending DB references from ordinar
   );
 });
 
-test("container settings pane derives pending DB references for newly referenced DBs only", () => {
+test("AP settings pane derives pending DB references for newly referenced DBs only", () => {
   assert.deepEqual(
     pendingDbReferencesFromEnvRawSourceDraft({
       committedRawSource: `DATABASE_URL=${referenceExpression(
@@ -1382,7 +1379,7 @@ test("container settings pane derives pending DB references for newly referenced
   );
 });
 
-test("container settings pane leaves pending DB references unchanged for invalid raw source drafts", () => {
+test("AP settings pane leaves pending DB references unchanged for invalid raw source drafts", () => {
   assert.equal(
     pendingDbReferencesFromEnvRawSourceDraft({
       committedRawSource: "",
@@ -1396,13 +1393,13 @@ test("container settings pane leaves pending DB references unchanged for invalid
   );
 });
 
-test("container settings pane reports confirmed dragged DB reference rows from the saved draft", () => {
+test("AP settings pane reports confirmed dragged DB reference rows from the saved draft", () => {
   const sourceRow = {
     canvasAddDbDsnReferenceIntentId: "drag-1",
     name: "DATABASE_URL",
     referenceDbKey: "default/mysql",
     value: `mysql://${editorToken("MYSQL_PRIVATE_DSN")}`,
-  } satisfies ContainerEnvVar & { canvasAddDbDsnReferenceIntentId: string };
+  } satisfies ApEnvVar & { canvasAddDbDsnReferenceIntentId: string };
   const helperRow = {
     helper: {
       automatic: true,
@@ -1412,7 +1409,7 @@ test("container settings pane reports confirmed dragged DB reference rows from t
     name: "MYSQL_PRIVATE_DSN",
     value: "mysql://private",
     valueSource: "dbDsn",
-  } satisfies ContainerEnvVar;
+  } satisfies ApEnvVar;
 
   assert.deepEqual(
     confirmedAddDbDsnReferencesFromEnvDraft([sourceRow, helperRow]),
@@ -1420,7 +1417,7 @@ test("container settings pane reports confirmed dragged DB reference rows from t
   );
 });
 
-test("container settings draft detects dirty AP settings and restored state", () => {
+test("AP settings draft detects dirty AP settings and restored state", () => {
   const original = {
     cpuCores: 1,
     env: [{ name: "DATABASE_URL", value: "postgres://old" }],
@@ -1434,11 +1431,11 @@ test("container settings draft detects dirty AP settings and restored state", ()
       fixed: { replicas: 2 },
       type: "fixed",
     },
-  } satisfies Parameters<typeof containerSettingsDraftIsDirty>[0];
+  } satisfies Parameters<typeof apSettingsDraftIsDirty>[0];
 
-  assert.equal(containerSettingsDraftIsDirty(original, original), false);
+  assert.equal(apSettingsDraftIsDirty(original, original), false);
   assert.equal(
-    containerSettingsDraftIsDirty(original, {
+    apSettingsDraftIsDirty(original, {
       ...original,
       args: ["--port", "8080"],
       command: ["/app/server"],
@@ -1470,10 +1467,10 @@ test("container settings draft detects dirty AP settings and restored state", ()
     }),
     true
   );
-  assert.equal(containerSettingsDraftIsDirty(original, { ...original }), false);
+  assert.equal(apSettingsDraftIsDirty(original, { ...original }), false);
 });
 
-test("container settings pane renders Launchpad-backed command config and storage fields", () => {
+test("AP settings pane renders Launchpad-backed command config and storage fields", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       args={["--config", "/etc/app/config.yaml"]}
@@ -1494,14 +1491,14 @@ test("container settings pane renders Launchpad-backed command config and storag
   assert.match(html, LAUNCH_COMMAND_RE);
   assert.match(html, CONFIG_FILES_RE);
   assert.match(html, STORAGE_RE);
-  assert.match(html, CONTAINER_COMMAND_RE);
+  assert.match(html, AP_COMMAND_RE);
   assert.match(html, CONFIG_FILE_PATH_RE);
   assert.match(html, STORAGE_SIZE_RE);
   assert.match(html, CONFIG_FILE_MOUNT_PATH_RE);
   assert.match(html, STORAGE_SIZE_VALUE_RE);
 });
 
-test("container settings pane exposes panel-level draft actions without environment save controls", () => {
+test("AP settings pane exposes panel-level draft actions without environment save controls", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       addDbDsnReferenceIntent={{
@@ -1532,7 +1529,7 @@ test("container settings pane exposes panel-level draft actions without environm
   assert.doesNotMatch(html, CANCEL_ENV_RE);
 });
 
-test("container settings pane can focus only Environment Variables", () => {
+test("AP settings pane can focus only Environment Variables", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -1557,7 +1554,7 @@ test("container settings pane can focus only Environment Variables", () => {
   assert.doesNotMatch(html, PRIVATE_ADDRESS_RE);
 });
 
-test("container settings raw editor omits fixed raw footer actions", () => {
+test("AP settings raw editor omits fixed raw footer actions", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       addDbDsnReferenceIntent={{

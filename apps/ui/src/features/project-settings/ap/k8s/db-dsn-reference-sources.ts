@@ -1,14 +1,14 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import {
-  type ContainerEnvDbDsnSource,
-  type ContainerEnvDbPrimitiveField,
-  type ContainerEnvDbReferenceVariable,
-  type ContainerEnvSecretKeyRef,
-  containerEnvDbPrimitiveFieldForSecretKey,
-} from "@/features/project-settings/ap/lib/container-env-rows";
+  type ApEnvDbDsnSource,
+  type ApEnvDbPrimitiveField,
+  type ApEnvDbReferenceVariable,
+  type ApEnvSecretKeyRef,
+  apEnvDbPrimitiveFieldForSecretKey,
+} from "@/features/project-settings/ap/lib/ap-env-rows";
 
-export type ApEnvironmentDbReferenceSource = ContainerEnvDbDsnSource;
+export type ApEnvironmentDbReferenceSource = ApEnvDbDsnSource;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -22,12 +22,10 @@ function nonEmptyString(value: unknown): string | undefined {
 
 function primitiveSecretRefsFromStatus(
   status: Record<string, unknown>
-): Partial<Record<ContainerEnvDbPrimitiveField, ContainerEnvSecretKeyRef>> {
+): Partial<Record<ApEnvDbPrimitiveField, ApEnvSecretKeyRef>> {
   const variables = Array.isArray(status.variables) ? status.variables : [];
-  const refs: Partial<
-    Record<ContainerEnvDbPrimitiveField, ContainerEnvSecretKeyRef>
-  > = {};
-  const priorityByField = new Map<ContainerEnvDbPrimitiveField, number>();
+  const refs: Partial<Record<ApEnvDbPrimitiveField, ApEnvSecretKeyRef>> = {};
+  const priorityByField = new Map<ApEnvDbPrimitiveField, number>();
 
   for (const item of variables) {
     const variable = asRecord(item);
@@ -38,7 +36,7 @@ function primitiveSecretRefsFromStatus(
     if (key === undefined || name === undefined) {
       continue;
     }
-    const match = containerEnvDbPrimitiveFieldForSecretKey(key);
+    const match = apEnvDbPrimitiveFieldForSecretKey(key);
     if (match === undefined) {
       continue;
     }
@@ -55,9 +53,9 @@ function primitiveSecretRefsFromStatus(
 
 function variablesFromStatus(
   status: Record<string, unknown>
-): ContainerEnvDbReferenceVariable[] {
+): ApEnvDbReferenceVariable[] {
   const variables = Array.isArray(status.variables) ? status.variables : [];
-  const out: ContainerEnvDbReferenceVariable[] = [];
+  const out: ApEnvDbReferenceVariable[] = [];
   for (const item of variables) {
     const variable = asRecord(item);
     const name = nonEmptyString(variable?.name);
@@ -87,7 +85,7 @@ function variablesFromStatus(
 export function dbDsnReferenceSourceFromDb(
   db: unknown,
   namespaceFallback?: string
-): ContainerEnvDbDsnSource | undefined {
+): ApEnvDbDsnSource | undefined {
   const root = asRecord(db) ?? {};
   const metadata = asRecord(root.metadata) ?? {};
   const status = asRecord(root.status) ?? {};
@@ -97,7 +95,7 @@ export function dbDsnReferenceSourceFromDb(
     return undefined;
   }
 
-  const source: ContainerEnvDbDsnSource = { name, namespace };
+  const source: ApEnvDbDsnSource = { name, namespace };
   const engine = nonEmptyString(asRecord(root.spec)?.engine);
   if (engine !== undefined) {
     source.engine = engine;
@@ -127,9 +125,7 @@ export function dbDsnReferenceSourcesFromDbsData(
 ): ApEnvironmentDbReferenceSource[] {
   return apItemsFromList(dbsData)
     .map((item) => dbDsnReferenceSourceFromDb(item, namespaceFallback))
-    .filter(
-      (source): source is ContainerEnvDbDsnSource => source !== undefined
-    );
+    .filter((source): source is ApEnvDbDsnSource => source !== undefined);
 }
 
 export const apEnvironmentDbReferenceSourcesFromDbsData =

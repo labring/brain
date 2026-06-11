@@ -1,10 +1,10 @@
 import {
-  CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
-  type ContainerEnvDbDsnSource,
-  type ContainerEnvDbPrimitiveField,
-  type ContainerEnvRow,
-  type ContainerEnvSecretKeyRef,
-} from "./container-env-rows";
+  AP_ENV_VALUE_FROM_PLACEHOLDER,
+  type ApEnvDbDsnSource,
+  type ApEnvDbPrimitiveField,
+  type ApEnvRow,
+  type ApEnvSecretKeyRef,
+} from "./ap-env-rows";
 
 export type ApEnvRawSourceDiagnosticType =
   | "duplicate-name"
@@ -94,7 +94,7 @@ export interface ApEnvResolvedReferenceToken extends ApEnvReferenceToken {
   canonicalRaw: string;
   canonicalVariableName: ApEnvReferenceVariableName;
   line: number;
-  source: ContainerEnvDbDsnSource;
+  source: ApEnvDbDsnSource;
 }
 
 export type ApEnvReferenceVariableName =
@@ -105,29 +105,29 @@ export type ApEnvReferenceVariableName =
   | "PG_USER";
 
 interface ApEnvReferenceVariableOption {
-  field: ContainerEnvDbPrimitiveField | "databaseUrl";
+  field: ApEnvDbPrimitiveField | "databaseUrl";
   name: ApEnvReferenceVariableName;
   type: "alias" | "secret" | "value";
   value?: string;
-  valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+  valueFrom?: { secretKeyRef: ApEnvSecretKeyRef };
 }
 
 interface ApEnvRuntimeCompileContext {
   diagnostics: ApEnvRawSourceDiagnostic[];
   explicitNames: ReadonlySet<string>;
-  helperByDbField: Map<string, ContainerEnvRow>;
+  helperByDbField: Map<string, ApEnvRow>;
   helperNameByDbField: Map<string, string>;
   helperNames: Set<string>;
 }
 
 interface ApEnvReferenceCompileResult {
-  helpers: ContainerEnvRow[];
-  helpersUsed: NonNullable<ContainerEnvRow["compiledReference"]>["helpers"];
+  helpers: ApEnvRow[];
+  helpersUsed: NonNullable<ApEnvRow["compiledReference"]>["helpers"];
   value: string;
 }
 
 type ApEnvCompiledReferenceHelper = NonNullable<
-  ContainerEnvRow["compiledReference"]
+  ApEnvRow["compiledReference"]
 >["helpers"][number];
 
 export interface ApEnvRawSourceReferenceResolutionResult {
@@ -139,7 +139,7 @@ export interface ApEnvRawSourceReferenceResolutionResult {
 
 export interface ApEnvRawSourceRuntimeCompileResult {
   diagnostics: ApEnvRawSourceDiagnostic[];
-  env: ContainerEnvRow[];
+  env: ApEnvRow[];
   envRawSource: string;
   valid: boolean;
 }
@@ -170,15 +170,19 @@ const AP_ENV_REFERENCE_VARIABLES = [
 ] as const satisfies readonly ApEnvReferenceVariableName[];
 const AP_ENV_REFERENCE_PRIMITIVE_VARIABLES: Record<
   Exclude<ApEnvReferenceVariableName, "DATABASE_URL">,
-  ContainerEnvDbPrimitiveField
+  ApEnvDbPrimitiveField
 > = {
   PG_HOST: "host",
   PG_PASSWORD: "password",
   PG_PORT: "port",
   PG_USER: "username",
 };
-const AP_ENV_REFERENCE_DSN_FIELD_ORDER: readonly ContainerEnvDbPrimitiveField[] =
-  ["username", "password", "host", "port"];
+const AP_ENV_REFERENCE_DSN_FIELD_ORDER: readonly ApEnvDbPrimitiveField[] = [
+  "username",
+  "password",
+  "host",
+  "port",
+];
 
 function splitSourceLines(source: string): string[] {
   const lines = source.split("\n");
@@ -468,27 +472,27 @@ function normalizeReferenceVariableName(
 }
 
 function sourceMatchesDbReferenceName(
-  source: ContainerEnvDbDsnSource,
+  source: ApEnvDbDsnSource,
   name: string
 ): boolean {
   return source.name.toLowerCase() === name.toLowerCase();
 }
 
 function dbSourceByReferenceName(
-  sources: readonly ContainerEnvDbDsnSource[],
+  sources: readonly ApEnvDbDsnSource[],
   name: string
-): ContainerEnvDbDsnSource | undefined {
+): ApEnvDbDsnSource | undefined {
   if (!DB_REFERENCE_NAME_RE.test(name)) {
     return undefined;
   }
   return sources.find((source) => sourceMatchesDbReferenceName(source, name));
 }
 
-function dbReferenceSourceKey(source: ContainerEnvDbDsnSource): string {
+function dbReferenceSourceKey(source: ApEnvDbDsnSource): string {
   return `${source.namespace}/${source.name}`;
 }
 
-function dbIdentityForHelper(source: ContainerEnvDbDsnSource): string {
+function dbIdentityForHelper(source: ApEnvDbDsnSource): string {
   const identity = source.name
     .trim()
     .toUpperCase()
@@ -498,7 +502,7 @@ function dbIdentityForHelper(source: ContainerEnvDbDsnSource): string {
 }
 
 function helperFieldSuffix(
-  field: ContainerEnvDbPrimitiveField | "databaseUrl"
+  field: ApEnvDbPrimitiveField | "databaseUrl"
 ): string {
   switch (field) {
     case "databaseUrl":
@@ -511,7 +515,7 @@ function helperFieldSuffix(
 }
 
 function referenceVariableOptions(
-  source: ContainerEnvDbDsnSource
+  source: ApEnvDbDsnSource
 ): ApEnvReferenceVariableOption[] {
   const options: ApEnvReferenceVariableOption[] = [
     { field: "databaseUrl", name: "DATABASE_URL", type: "alias" },
@@ -520,7 +524,7 @@ function referenceVariableOptions(
     AP_ENV_REFERENCE_PRIMITIVE_VARIABLES
   ) as [
     Exclude<ApEnvReferenceVariableName, "DATABASE_URL">,
-    ContainerEnvDbPrimitiveField,
+    ApEnvDbPrimitiveField,
   ][]) {
     const valueFrom = source.primitiveSecretRefs?.[field];
     if (valueFrom === undefined) {
@@ -553,7 +557,7 @@ function referenceVariableOptions(
 
 function referenceFieldForVariable(
   variableName: ApEnvReferenceVariableName
-): ContainerEnvDbPrimitiveField | "databaseUrl" {
+): ApEnvDbPrimitiveField | "databaseUrl" {
   if (variableName === "DATABASE_URL") {
     return "databaseUrl";
   }
@@ -561,7 +565,7 @@ function referenceFieldForVariable(
 }
 
 function referenceVariableOption(
-  source: ContainerEnvDbDsnSource,
+  source: ApEnvDbDsnSource,
   variableName: ApEnvReferenceVariableName
 ): ApEnvReferenceVariableOption | undefined {
   return referenceVariableOptions(source).find(
@@ -581,16 +585,14 @@ function referenceMenuItemType(
   return "Alias";
 }
 
-function databaseUrlReferenceAvailable(
-  source: ContainerEnvDbDsnSource
-): boolean {
+function databaseUrlReferenceAvailable(source: ApEnvDbDsnSource): boolean {
   return AP_ENV_REFERENCE_DSN_FIELD_ORDER.every(
     (field) => source.primitiveSecretRefs?.[field] !== undefined
   );
 }
 
 export function buildApEnvReferenceMenuItems(
-  sources: readonly ContainerEnvDbDsnSource[]
+  sources: readonly ApEnvDbDsnSource[]
 ): ApEnvReferenceMenuItem[] {
   const items: ApEnvReferenceMenuItem[] = [];
   for (const source of sources) {
@@ -675,7 +677,7 @@ function parseApEnvReferenceTokens(value: string): ApEnvReferenceToken[] {
 function resolveApEnvReferenceToken(
   token: ApEnvReferenceToken,
   line: number,
-  sources: readonly ContainerEnvDbDsnSource[]
+  sources: readonly ApEnvDbDsnSource[]
 ): {
   diagnostic?: ApEnvRawSourceDiagnostic;
   reference?: ApEnvResolvedReferenceToken;
@@ -723,7 +725,7 @@ function resolveApEnvReferenceToken(
 function resolvedReferencesForValue(
   value: string,
   line: number,
-  sources: readonly ContainerEnvDbDsnSource[]
+  sources: readonly ApEnvDbDsnSource[]
 ): {
   diagnostics: ApEnvRawSourceDiagnostic[];
   references: ApEnvResolvedReferenceToken[];
@@ -781,7 +783,7 @@ function sourceWithCanonicalReferences(
 
 export function resolveApEnvRawSourceReferences(
   source: string,
-  sources: readonly ContainerEnvDbDsnSource[] = []
+  sources: readonly ApEnvDbDsnSource[] = []
 ): ApEnvRawSourceReferenceResolutionResult {
   const parsed = parseApEnvRawSource(source);
   const diagnostics = [...parsed.diagnostics];
@@ -805,8 +807,8 @@ export function resolveApEnvRawSourceReferences(
 }
 
 function helperNameForDbField(
-  source: ContainerEnvDbDsnSource,
-  field: ContainerEnvDbPrimitiveField,
+  source: ApEnvDbDsnSource,
+  field: ApEnvDbPrimitiveField,
   context: ApEnvRuntimeCompileContext
 ): string {
   const sourceKey = dbReferenceSourceKey(source);
@@ -832,11 +834,11 @@ function helperNameForDbField(
 }
 
 function helperRowForDbField(
-  source: ContainerEnvDbDsnSource,
-  field: ContainerEnvDbPrimitiveField,
+  source: ApEnvDbDsnSource,
+  field: ApEnvDbPrimitiveField,
   line: number,
   context: ApEnvRuntimeCompileContext
-): ContainerEnvRow | undefined {
+): ApEnvRow | undefined {
   const sourceKey = dbReferenceSourceKey(source);
   const helperKey = `${sourceKey}:${field}`;
   const existing = context.helperByDbField.get(helperKey);
@@ -854,7 +856,7 @@ function helperRowForDbField(
     return undefined;
   }
 
-  const row: ContainerEnvRow = {
+  const row: ApEnvRow = {
     dbDsn: {
       dbName: source.name,
       dbNamespace: source.namespace,
@@ -866,7 +868,7 @@ function helperRowForDbField(
       sourceField: field,
     },
     name: helperNameForDbField(source, field, context),
-    value: CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+    value: AP_ENV_VALUE_FROM_PLACEHOLDER,
     valueFrom: { secretKeyRef },
     valueSource: "valueFrom",
   };
@@ -875,8 +877,8 @@ function helperRowForDbField(
 }
 
 function compiledReferenceHelperForDbField(
-  field: ContainerEnvDbPrimitiveField,
-  helper: ContainerEnvRow
+  field: ApEnvDbPrimitiveField,
+  helper: ApEnvRow
 ): ApEnvCompiledReferenceHelper {
   return {
     field,
@@ -884,11 +886,11 @@ function compiledReferenceHelperForDbField(
     valueFrom:
       helper.valueFrom == null
         ? undefined
-        : (helper.valueFrom as { secretKeyRef: ContainerEnvSecretKeyRef }),
+        : (helper.valueFrom as { secretKeyRef: ApEnvSecretKeyRef }),
   };
 }
 
-function dbDsnScheme(source: ContainerEnvDbDsnSource): string {
+function dbDsnScheme(source: ApEnvDbDsnSource): string {
   const engine = source.engine?.trim().toLowerCase() ?? "";
   if (engine.includes("mysql")) {
     return "mysql";
@@ -907,11 +909,9 @@ function compileDatabaseUrlReference(
   line: number,
   context: ApEnvRuntimeCompileContext
 ): ApEnvReferenceCompileResult {
-  const helpers: ContainerEnvRow[] = [];
-  const helpersUsed: NonNullable<
-    ContainerEnvRow["compiledReference"]
-  >["helpers"] = [];
-  const helperNames: Partial<Record<ContainerEnvDbPrimitiveField, string>> = {};
+  const helpers: ApEnvRow[] = [];
+  const helpersUsed: NonNullable<ApEnvRow["compiledReference"]>["helpers"] = [];
+  const helperNames: Partial<Record<ApEnvDbPrimitiveField, string>> = {};
 
   for (const field of AP_ENV_REFERENCE_DSN_FIELD_ORDER) {
     const helper = helperRowForDbField(reference.source, field, line, context);
@@ -967,18 +967,18 @@ function compileRowReferences(
   references: readonly ApEnvResolvedReferenceToken[],
   context: ApEnvRuntimeCompileContext
 ): {
-  helpers: ContainerEnvRow[];
-  row: ContainerEnvRow;
+  helpers: ApEnvRow[];
+  row: ApEnvRow;
 } {
   if (references.length === 0) {
     return { helpers: [], row: { name: row.key, value: row.value } };
   }
 
   let value = row.value;
-  const helperByName = new Map<string, ContainerEnvRow>();
+  const helperByName = new Map<string, ApEnvRow>();
   const helpersUsedByName = new Map<
     string,
-    NonNullable<ContainerEnvRow["compiledReference"]>["helpers"][number]
+    NonNullable<ApEnvRow["compiledReference"]>["helpers"][number]
   >();
   for (const reference of references) {
     const compiled = compilePrimitiveReference(reference, row.line, context);
@@ -1027,7 +1027,7 @@ function referencesByRow(
 
 export function compileApEnvRawSourceForRuntime(
   source: string,
-  sources: readonly ContainerEnvDbDsnSource[] = []
+  sources: readonly ApEnvDbDsnSource[] = []
 ): ApEnvRawSourceRuntimeCompileResult {
   const resolution = resolveApEnvRawSourceReferences(source, sources);
   const parsed = parseApEnvRawSource(resolution.source);
@@ -1050,8 +1050,8 @@ export function compileApEnvRawSourceForRuntime(
     helperNames: new Set(),
   };
   const references = referencesByRow(parsed, resolution.references);
-  const env: ContainerEnvRow[] = [];
-  const helperByName = new Map<string, ContainerEnvRow>();
+  const env: ApEnvRow[] = [];
+  const helperByName = new Map<string, ApEnvRow>();
   for (const row of parsed.rows) {
     const compiled = compileRowReferences(
       row,
@@ -1116,19 +1116,19 @@ function rawValueForNewAssignment(value: string): string {
 
 export function apEnvRawAssignmentsToRows(
   rows: readonly ApEnvRawSourceAssignment[]
-): ContainerEnvRow[] {
+): ApEnvRow[] {
   return rows.map((row) => ({
     name: row.key,
     value: row.value,
   }));
 }
 
-export function apEnvRawSourceRows(source: string): ContainerEnvRow[] {
+export function apEnvRawSourceRows(source: string): ApEnvRow[] {
   return apEnvRawAssignmentsToRows(parseApEnvRawSource(source).rows);
 }
 
 export function apEnvRawSourceFromRows(
-  rows: readonly Pick<ContainerEnvRow, "name" | "value" | "valueFrom">[]
+  rows: readonly Pick<ApEnvRow, "name" | "value" | "valueFrom">[]
 ): string {
   return rows
     .flatMap((row) => {
@@ -1145,7 +1145,7 @@ export function canonicalApEnvRawSource({
   env,
   envRawSource,
 }: {
-  env: readonly Pick<ContainerEnvRow, "name" | "value" | "valueFrom">[];
+  env: readonly Pick<ApEnvRow, "name" | "value" | "valueFrom">[];
   envRawSource?: string;
 }): string {
   return envRawSource == null ? apEnvRawSourceFromRows(env) : envRawSource;
@@ -1154,7 +1154,7 @@ export function canonicalApEnvRawSource({
 export function applyApEnvRawSourceRowPatch(
   source: string,
   rowIndex: number,
-  patch: Partial<Pick<ContainerEnvRow, "name" | "value">>
+  patch: Partial<Pick<ApEnvRow, "name" | "value">>
 ): ApEnvRawSourceParseResult {
   const parsed = parseApEnvRawSource(source);
   const target = parsed.rows[rowIndex];
@@ -1179,7 +1179,7 @@ export function applyApEnvRawSourceRowPatch(
 
 export function appendApEnvRawSourceRow(
   source: string,
-  row: Pick<ContainerEnvRow, "name" | "value">
+  row: Pick<ApEnvRow, "name" | "value">
 ): ApEnvRawSourceParseResult {
   const assignment = `${row.name.trim()}=${rawValueForNewAssignment(row.value)}`;
   const nextSource = source === "" ? assignment : `${source}\n${assignment}`;
@@ -1202,7 +1202,7 @@ export function deleteApEnvRawSourceRow(
 
 export function normalizeApEnvRawSourceForSave(source: string): {
   diagnostics: ApEnvRawSourceDiagnostic[];
-  env: ContainerEnvRow[];
+  env: ApEnvRow[];
   envRawSource: string;
   valid: boolean;
 } {

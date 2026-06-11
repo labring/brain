@@ -10,11 +10,11 @@ import { ApiUrl } from "@workspace/api/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
+  ApEnvVar,
   ApSettingsConfirmedAddDbDsnReference,
+  ApSettingsDraft,
   ApSettingsDraftCommitMeta,
   ApSettingsEnvChangeMeta,
-  ContainerEnvVar,
-  ContainerSettingsDraft,
 } from "@/features/project-settings/ap/ap-settings-sections";
 import {
   applyApEnv,
@@ -29,20 +29,20 @@ import {
   canonicalFixedReplicaStrategy,
 } from "@/features/project-settings/ap/k8s/ap-replica-strategy";
 import {
-  type ClaimContainerSettings,
-  claimToContainerSettings,
+  type ClaimApSettings,
+  claimToApSettings,
   k8sGetClaimBody,
   type WorkloadClaimKind,
 } from "@/features/project-settings/ap/k8s/claim-mapper";
 import { existingCustomDomainBindingsFromEntryPoints } from "@/features/project-settings/ap/k8s/entrypoint-custom-domains";
-import type { ContainerEnvDbDsnSource } from "@/features/project-settings/ap/lib/container-env-rows";
+import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import { settingsDraftSaveFailureMessage } from "@/features/project-settings/ap/lib/settings-draft-backing";
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
 
 export interface UseApWorkloadSettingsOptions {
-  dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
+  dbDsnReferenceSources?: ApEnvDbDsnSource[];
   kubeconfig?: string;
   name: string;
   namespace: string;
@@ -64,7 +64,7 @@ interface ResourceQuotaCommitDraft {
 function resourceQuotaReplicaOverride(
   next: ResourceQuotaCommitDraft,
   currentReplicaStrategy: ApReplicaStrategy
-): Partial<ClaimContainerSettings> {
+): Partial<ClaimApSettings> {
   if (next.replicaStrategy !== undefined) {
     return {
       replicaStrategy: next.replicaStrategy,
@@ -157,7 +157,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   }, [claimPayload]);
 
   const [localOverride, setLocalOverride] =
-    useState<Partial<ClaimContainerSettings> | null>(null);
+    useState<Partial<ClaimApSettings> | null>(null);
 
   // Reset optimistic fields when the fetched claim revision changes (refetch / external edit).
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — run when `claimResourceVersion` updates
@@ -167,7 +167,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
 
   const mapped = useMemo(
     () =>
-      claimToContainerSettings(k8sGetClaimBody(claimPayload), workloadKind, {
+      claimToApSettings(k8sGetClaimBody(claimPayload), workloadKind, {
         dbDsnReferenceSources,
         entryPointsData: isApWorkload ? entryPointsData : undefined,
       }),
@@ -203,7 +203,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   const ignoreImage = useCallback((_image: string) => {
     /* read-only */
   }, []);
-  const ignoreEnv = useCallback((_env: ContainerEnvVar[]) => {
+  const ignoreEnv = useCallback((_env: ApEnvVar[]) => {
     /* read-only */
   }, []);
   const ignoreNetwork = useCallback(() => {
@@ -273,7 +273,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   );
 
   const onEnvChange = useCallback(
-    async (env: ContainerEnvVar[], meta?: ApSettingsEnvChangeMeta) => {
+    async (env: ApEnvVar[], meta?: ApSettingsEnvChangeMeta) => {
       if (!isApWorkload || readOnly) {
         return;
       }
@@ -319,7 +319,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   );
 
   const onNetworkChange = useCallback(
-    async (network: NonNullable<ClaimContainerSettings["network"]>) => {
+    async (network: NonNullable<ClaimApSettings["network"]>) => {
       if (!isApWorkload || readOnly) {
         return;
       }
@@ -349,7 +349,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   );
 
   const onNetworkDraftCommit = useCallback(
-    async (network: NonNullable<ClaimContainerSettings["network"]>) => {
+    async (network: NonNullable<ClaimApSettings["network"]>) => {
       if (!isApWorkload || readOnly) {
         return;
       }
@@ -445,7 +445,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   );
 
   const onSettingsDraftCommit = useCallback(
-    async (draft: ContainerSettingsDraft, meta?: ApSettingsDraftCommitMeta) => {
+    async (draft: ApSettingsDraft, meta?: ApSettingsDraftCommitMeta) => {
       if (!isApWorkload || readOnly) {
         return;
       }
@@ -457,7 +457,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         throw error;
       }
 
-      const previous: ContainerSettingsDraft = meta?.baseDraft ?? {
+      const previous: ApSettingsDraft = meta?.baseDraft ?? {
         args: display.args,
         command: display.command,
         configMaps: display.configMaps,

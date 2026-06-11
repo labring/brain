@@ -8,7 +8,7 @@ import {
   apSettingsStatesFromSource,
 } from "@/features/project-settings/ap/ap-settings-context";
 import {
-  type ContainerNetwork,
+  type ApNetwork,
   useApPublicAddressesSettingsSections,
   useApSettingsSections,
 } from "@/features/project-settings/ap/ap-settings-sections";
@@ -87,8 +87,8 @@ function apSettingsRepairEntry({
 }
 
 function publicAddressNetworkOrNull(
-  network: ContainerNetwork | undefined
-): ContainerNetwork | null {
+  network: ApNetwork | undefined
+): ApNetwork | null {
   return network ?? null;
 }
 
@@ -248,7 +248,7 @@ function publicAddressesSectionsHookProps({
   canEditAp: boolean;
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
-  network: ContainerNetwork | null;
+  network: ApNetwork | null;
   onNetworkDraftCommit: ApWorkloadSettingsState["onNetworkDraftCommit"];
 }): Parameters<typeof useApPublicAddressesSettingsSections>[0] {
   return {
@@ -292,7 +292,7 @@ interface ApSettingsModelInput {
   ignoreReplicas: ApWorkloadSettingsState["ignoreReplicas"];
   isApWorkload: boolean;
   isLoading: boolean;
-  network: ContainerNetwork | null;
+  network: ApNetwork | null;
   onEnvChange: ApWorkloadSettingsState["onEnvChange"];
   onEnvResolvedValue: ApWorkloadSettingsState["onEnvResolvedValue"];
   onImageChange: ApWorkloadSettingsState["onImageChange"];

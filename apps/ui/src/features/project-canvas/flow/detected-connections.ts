@@ -7,10 +7,10 @@ import {
 } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import { resolveApEnvRawSourceReferences } from "@/features/project-settings/ap/lib/ap-env-raw-source";
 import {
-  type ContainerEnvDbDsnSource,
-  containerEnvDbDsnReferenceFromValue,
-  containerEnvDbSecretReferenceFromValueFrom,
-} from "@/features/project-settings/ap/lib/container-env-rows";
+  type ApEnvDbDsnSource,
+  apEnvDbDsnReferenceFromValue,
+  apEnvDbSecretReferenceFromValueFrom,
+} from "@/features/project-settings/ap/lib/ap-env-rows";
 import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,
@@ -314,11 +314,11 @@ function addSecretBackedApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   source: CanvasConnectionResourceRef,
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   ap: unknown
 ): void {
   for (const valueFrom of valueFromRefsFromAp(ap)) {
-    const reference = containerEnvDbSecretReferenceFromValueFrom(
+    const reference = apEnvDbSecretReferenceFromValueFrom(
       valueFrom,
       dbDsnSources
     );
@@ -341,14 +341,11 @@ function addDsnBackedApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   source: CanvasConnectionResourceRef,
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   ap: unknown
 ): void {
   for (const envValue of envValuesFromAp(ap)) {
-    const reference = containerEnvDbDsnReferenceFromValue(
-      envValue,
-      dbDsnSources
-    );
+    const reference = apEnvDbDsnReferenceFromValue(envValue, dbDsnSources);
     const target = resourceRef(
       "DB",
       reference?.dbDsn?.dbName,
@@ -368,7 +365,7 @@ function addRawSourceApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   source: CanvasConnectionResourceRef,
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   ap: unknown
 ): void {
   const rawSource = envRawSourceFromAp(ap);
@@ -396,7 +393,7 @@ function addApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   aps: readonly unknown[],
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   namespaceFallback: string | undefined
 ): void {
   for (const ap of aps) {

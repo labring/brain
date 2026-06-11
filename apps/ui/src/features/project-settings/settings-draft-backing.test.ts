@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ContainerSettingsDraft } from "@/features/project-settings/ap/ap-settings-sections";
-import { containerSettingsDraftIsDirty } from "@/features/project-settings/ap/ap-settings-sections";
+import type { ApSettingsDraft } from "@/features/project-settings/ap/ap-settings-sections";
+import { apSettingsDraftIsDirty } from "@/features/project-settings/ap/ap-settings-sections";
 import {
   commitSettingsDraftBackingState,
   createSettingsDraftBackingState,
@@ -51,7 +51,7 @@ test("DB settings dirty draft survives backing refresh until the user reloads", 
 });
 
 test("AP settings clean draft follows backing refresh while dirty draft preserves save failures", () => {
-  const base: ContainerSettingsDraft = {
+  const base: ApSettingsDraft = {
     cpuCores: 1,
     env: [{ name: "DATABASE_URL", value: "postgres://old" }],
     image: "ghcr.io/acme/api:old",
@@ -69,7 +69,7 @@ test("AP settings clean draft follows backing refresh while dirty draft preserve
     backing: latest,
     backingKey: "rv-2",
     draft: base,
-    isDirty: containerSettingsDraftIsDirty,
+    isDirty: apSettingsDraftIsDirty,
   });
 
   assert.deepEqual(cleanRefresh.draft, latest);
@@ -88,7 +88,7 @@ test("AP settings clean draft follows backing refresh while dirty draft preserve
     backing: externallyChanged,
     backingKey: "rv-3",
     draft: dirtyDraft,
-    isDirty: containerSettingsDraftIsDirty,
+    isDirty: apSettingsDraftIsDirty,
   });
 
   assert.equal(dirtyRefresh.draft, undefined);

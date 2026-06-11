@@ -1,23 +1,23 @@
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import type {
-  ContainerConfigMapMount,
-  ContainerEnvVar,
-  ContainerNetwork,
-  ContainerStorageMount,
-  ContainerWorkloadKind,
+  ApConfigMapMount,
+  ApEnvVar,
+  ApNetwork,
+  ApStorageMount,
+  ApWorkloadKind,
 } from "@/features/project-settings/ap/ap-settings-sections";
 import {
   apEnvRawSourceFromRows,
   apEnvRawSourceRows,
 } from "@/features/project-settings/ap/lib/ap-env-raw-source";
 import {
-  CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
-  type ContainerEnvDbDsnSource,
-  containerEnvDbDsnReferenceFromValue,
-  containerEnvDbSecretReferenceFromValueFrom,
-} from "@/features/project-settings/ap/lib/container-env-rows";
-import { containerEnvRowsFromSavedEnv } from "@/features/project-settings/ap/lib/container-env-tokens";
+  AP_ENV_VALUE_FROM_PLACEHOLDER,
+  type ApEnvDbDsnSource,
+  apEnvDbDsnReferenceFromValue,
+  apEnvDbSecretReferenceFromValueFrom,
+} from "@/features/project-settings/ap/lib/ap-env-rows";
+import { apEnvRowsFromSavedEnv } from "@/features/project-settings/ap/lib/ap-env-tokens";
 
 import {
   customDomainBindingIdFromValue,
@@ -44,10 +44,8 @@ import {
 } from "./entrypoint-custom-domains";
 
 export type WorkloadClaimKind = "AP" | "DB";
-type ContainerCustomDomain = NonNullable<
-  ContainerNetwork["customDomains"]
->[number];
-type CustomDomainReadModelPatch = Partial<ContainerCustomDomain>;
+type ApClaimCustomDomain = NonNullable<ApNetwork["customDomains"]>[number];
+type CustomDomainReadModelPatch = Partial<ApClaimCustomDomain>;
 type CustomDomainReadModelById = ReadonlyMap<
   string,
   CustomDomainReadModelPatch
@@ -148,12 +146,12 @@ export function parseMemoryToMib(q: unknown): number | undefined {
 
 function envFromSpecEnvList(
   raw: unknown,
-  dbDsnReferenceSources: readonly ContainerEnvDbDsnSource[] = []
-): ContainerEnvVar[] {
+  dbDsnReferenceSources: readonly ApEnvDbDsnSource[] = []
+): ApEnvVar[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: ContainerEnvVar[] = [];
+  const out: ApEnvVar[] = [];
   for (const item of raw) {
     const e = asRecord(item);
     if (e == null) {
@@ -166,31 +164,30 @@ function envFromSpecEnvList(
     if (typeof e.value === "string") {
       out.push({
         name,
-        ...(containerEnvDbDsnReferenceFromValue(
-          e.value,
-          dbDsnReferenceSources
-        ) ?? { value: e.value }),
+        ...(apEnvDbDsnReferenceFromValue(e.value, dbDsnReferenceSources) ?? {
+          value: e.value,
+        }),
       });
     } else if (e.valueFrom != null) {
       out.push({
         name,
-        ...(containerEnvDbSecretReferenceFromValueFrom(
+        ...(apEnvDbSecretReferenceFromValueFrom(
           e.valueFrom,
           dbDsnReferenceSources
         ) ?? {
-          value: CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+          value: AP_ENV_VALUE_FROM_PLACEHOLDER,
           valueFrom: e.valueFrom,
           valueSource: "valueFrom",
         }),
       });
     }
   }
-  return containerEnvRowsFromSavedEnv(out, dbDsnReferenceSources);
+  return apEnvRowsFromSavedEnv(out, dbDsnReferenceSources);
 }
 
 function envRawSourceFromSpecInput(
   input: Record<string, unknown>,
-  fallbackEnv: readonly ContainerEnvVar[]
+  fallbackEnv: readonly ApEnvVar[]
 ): string {
   return typeof input.envRawSource === "string"
     ? input.envRawSource
@@ -227,11 +224,11 @@ function stringListFromSpec(raw: unknown): string[] {
   return raw.filter((item): item is string => typeof item === "string");
 }
 
-function configMapsFromSpecInput(raw: unknown): ContainerConfigMapMount[] {
+function configMapsFromSpecInput(raw: unknown): ApConfigMapMount[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: ContainerConfigMapMount[] = [];
+  const out: ApConfigMapMount[] = [];
   for (const item of raw) {
     const row = asRecord(item);
     const path = trimStr(row?.path);
@@ -244,11 +241,11 @@ function configMapsFromSpecInput(raw: unknown): ContainerConfigMapMount[] {
   return out;
 }
 
-function storageFromSpecInput(raw: unknown): ContainerStorageMount[] {
+function storageFromSpecInput(raw: unknown): ApStorageMount[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: ContainerStorageMount[] = [];
+  const out: ApStorageMount[] = [];
   for (const item of raw) {
     const row = asRecord(item);
     const path = trimStr(row?.path);
@@ -261,9 +258,7 @@ function storageFromSpecInput(raw: unknown): ContainerStorageMount[] {
   return out;
 }
 
-function apWorkloadKindFromSpec(
-  spec: Record<string, unknown>
-): ContainerWorkloadKind {
+function apWorkloadKindFromSpec(spec: Record<string, unknown>): ApWorkloadKind {
   const workload = asRecord(spec.workload);
   return trimStr(workload?.kind).toLowerCase() === "statefulset"
     ? "statefulset"
@@ -281,8 +276,8 @@ function apNetworkFromSpecAndStatus(
   metadata: Record<string, unknown> | undefined,
   spec: Record<string, unknown>,
   status: Record<string, unknown>,
-  options?: ClaimToContainerSettingsOptions
-): ContainerNetwork | undefined {
+  options?: ClaimToApSettingsOptions
+): ApNetwork | undefined {
   const inputNetwork = asRecord(readApInput(spec).network);
   const statusNetwork = asRecord(status.network);
   const appListeningPorts = normalizeNetworkAppListeningPorts(
@@ -325,7 +320,7 @@ function apNetworkFromSpecAndStatus(
 function normalizeNetworkAppListeningPorts(
   statusNetwork: Record<string, unknown> | undefined,
   inputNetwork: Record<string, unknown> | undefined
-): NonNullable<ContainerNetwork["appListeningPorts"]> {
+): NonNullable<ApNetwork["appListeningPorts"]> {
   const fromStatus = normalizeAppListeningPortRows(
     statusNetwork?.appListeningPorts,
     true
@@ -360,11 +355,11 @@ function normalizeNetworkAppListeningPorts(
 function normalizeAppListeningPortRows(
   raw: unknown,
   includeObservedFields: boolean
-): NonNullable<ContainerNetwork["appListeningPorts"]> {
+): NonNullable<ApNetwork["appListeningPorts"]> {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: NonNullable<ContainerNetwork["appListeningPorts"]> = [];
+  const out: NonNullable<ApNetwork["appListeningPorts"]> = [];
   const seen = new Set<number>();
   for (const item of raw) {
     const row = asRecord(item);
@@ -387,8 +382,8 @@ function normalizeAppListeningPortRows(
 function apNetworkCustomDomains(
   inputNetwork: Record<string, unknown> | undefined,
   statusNetwork: Record<string, unknown> | undefined,
-  entryPointCustomDomains: ReadonlyMap<string, ContainerCustomDomain>
-): Pick<ContainerNetwork, "customDomains"> | Record<string, never> {
+  entryPointCustomDomains: ReadonlyMap<string, ApClaimCustomDomain>
+): Pick<ApNetwork, "customDomains"> | Record<string, never> {
   const customDomains = normalizeDesiredCustomDomains(
     inputNetwork?.customDomains,
     projectedCustomDomainsById(statusNetwork?.publicAddresses),
@@ -403,9 +398,9 @@ function apNetworkPublicAddresses(
   statusNetwork: Record<string, unknown> | undefined,
   entryPointPublicAddresses: ReadonlyMap<
     string,
-    Pick<ContainerNetwork["publicAddresses"][number], "status">
+    Pick<ApNetwork["publicAddresses"][number], "status">
   >
-): ContainerNetwork["publicAddresses"] {
+): ApNetwork["publicAddresses"] {
   const observed = normalizeNetworkPublicAddresses(
     statusNetwork?.publicAddresses,
     true
@@ -434,12 +429,12 @@ function apNetworkPublicAddresses(
 }
 
 function mergePublicAddressStatus(
-  address: ContainerNetwork["publicAddresses"][number],
+  address: ApNetwork["publicAddresses"][number],
   entryPointPublicAddresses: ReadonlyMap<
     string,
-    Pick<ContainerNetwork["publicAddresses"][number], "status">
+    Pick<ApNetwork["publicAddresses"][number], "status">
   >
-): ContainerNetwork["publicAddresses"][number] {
+): ApNetwork["publicAddresses"][number] {
   if (address.id === undefined) {
     return address;
   }
@@ -450,13 +445,13 @@ function mergePublicAddressStatus(
 }
 
 function isCustomPublicAddressRow(
-  address: ContainerNetwork["publicAddresses"][number]
+  address: ApNetwork["publicAddresses"][number]
 ): boolean {
   return address.type?.trim().toLowerCase() === "custom";
 }
 
 function isPlatformPublicAddressRow(
-  address: ContainerNetwork["publicAddresses"][number]
+  address: ApNetwork["publicAddresses"][number]
 ): boolean {
   return !isCustomPublicAddressRow(address);
 }
@@ -464,15 +459,12 @@ function isPlatformPublicAddressRow(
 function normalizeDesiredCustomDomains(
   raw: unknown,
   projectedCustomDomains: CustomDomainReadModelById = new Map(),
-  entryPointCustomDomains: ReadonlyMap<
-    string,
-    ContainerCustomDomain
-  > = new Map()
-): NonNullable<ContainerNetwork["customDomains"]> {
+  entryPointCustomDomains: ReadonlyMap<string, ApClaimCustomDomain> = new Map()
+): NonNullable<ApNetwork["customDomains"]> {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: NonNullable<ContainerNetwork["customDomains"]> = [];
+  const out: NonNullable<ApNetwork["customDomains"]> = [];
   for (const item of raw) {
     const binding = asRecord(item);
     if (binding == null) {
@@ -498,10 +490,10 @@ function normalizeDesiredCustomDomains(
 }
 
 function mergedCustomDomainReadModel(
-  desired: Pick<ContainerCustomDomain, "domain" | "id" | "platformAddressId">,
+  desired: Pick<ApClaimCustomDomain, "domain" | "id" | "platformAddressId">,
   projected: CustomDomainReadModelPatch | undefined,
-  entryPoint: ContainerCustomDomain | undefined
-): ContainerCustomDomain {
+  entryPoint: ApClaimCustomDomain | undefined
+): ApClaimCustomDomain {
   const observed = {
     status: "pending",
     ...projected,
@@ -554,13 +546,13 @@ function normalizeDesiredPlatformAddresses(
   raw: unknown,
   metadata: Record<string, unknown> | undefined,
   routingDomain: string
-): ContainerNetwork["publicAddresses"] {
+): ApNetwork["publicAddresses"] {
   if (!Array.isArray(raw)) {
     return [];
   }
   const namespace = trimStr(metadata?.namespace);
   const appName = trimStr(metadata?.name);
-  const out: ContainerNetwork["publicAddresses"] = [];
+  const out: ApNetwork["publicAddresses"] = [];
   for (const item of raw) {
     const address = asRecord(item);
     if (address == null) {
@@ -591,11 +583,11 @@ function normalizeDesiredPlatformAddresses(
 function normalizeNetworkPublicAddresses(
   raw: unknown,
   includeObservedFields: boolean
-): ContainerNetwork["publicAddresses"] {
+): ApNetwork["publicAddresses"] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: ContainerNetwork["publicAddresses"] = [];
+  const out: ApNetwork["publicAddresses"] = [];
   for (const item of raw) {
     const address = normalizeNetworkPublicAddress(item, includeObservedFields);
     if (address != null) {
@@ -608,7 +600,7 @@ function normalizeNetworkPublicAddresses(
 function normalizeNetworkPublicAddress(
   raw: unknown,
   includeObservedFields: boolean
-): ContainerNetwork["publicAddresses"][number] | undefined {
+): ApNetwork["publicAddresses"][number] | undefined {
   const address = asRecord(raw);
   if (address == null) {
     return undefined;
@@ -619,7 +611,7 @@ function normalizeNetworkPublicAddress(
   if ((host === "" && id === "") || port == null) {
     return undefined;
   }
-  const normalized: ContainerNetwork["publicAddresses"][number] = {
+  const normalized: ApNetwork["publicAddresses"][number] = {
     ...(host === "" ? {} : { host }),
     ...(id === "" ? {} : { id }),
     port,
@@ -640,29 +632,29 @@ function normalizeNetworkPublicAddress(
   };
 }
 
-export interface ClaimContainerSettings {
+export interface ClaimApSettings {
   args: string[];
   command: string[];
-  configMaps: ContainerConfigMapMount[];
+  configMaps: ApConfigMapMount[];
   cpuCores: number;
-  env: ContainerEnvVar[];
+  env: ApEnvVar[];
   envRawSource?: string;
   image: string;
   memoryMib: number;
-  network?: ContainerNetwork;
+  network?: ApNetwork;
   replicaStrategy: ApReplicaStrategy;
   /** AP fixed replicas (1–20 in UI); legacy `spec.resource.replicas` is a fallback only. */
   replicas: number;
-  storage: ContainerStorageMount[];
-  workloadKind: ContainerWorkloadKind;
+  storage: ApStorageMount[];
+  workloadKind: ApWorkloadKind;
 }
 
 const CPU_MIN = 0.25;
 const CPU_MAX = 16;
 const MEM_MIN = 512;
 const MEM_MAX = 8192;
-export interface ClaimToContainerSettingsOptions {
-  dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
+export interface ClaimToApSettingsOptions {
+  dbDsnReferenceSources?: ApEnvDbDsnSource[];
   entryPointsData?: K8sGetResponse;
 }
 
@@ -670,8 +662,8 @@ function mapApClaim(
   metadata: Record<string, unknown>,
   spec: Record<string, unknown>,
   status: Record<string, unknown>,
-  options?: ClaimToContainerSettingsOptions
-): ClaimContainerSettings {
+  options?: ClaimToApSettingsOptions
+): ClaimApSettings {
   const image = readApImage(spec) ?? "—";
   const cpuRaw = parseCpuToCores(readApCpuLimit(spec));
   const memRaw = parseMemoryToMib(readApMemoryLimit(spec));
@@ -705,7 +697,7 @@ function mapApClaim(
   };
 }
 
-function mapDbSpec(spec: Record<string, unknown>): ClaimContainerSettings {
+function mapDbSpec(spec: Record<string, unknown>): ClaimApSettings {
   const engine =
     typeof spec.engine === "string" && spec.engine.trim() !== ""
       ? spec.engine.trim()
@@ -728,11 +720,11 @@ function mapDbSpec(spec: Record<string, unknown>): ClaimContainerSettings {
   };
 }
 
-export function claimToContainerSettings(
+export function claimToApSettings(
   claim: Record<string, unknown> | undefined,
   workloadKind: WorkloadClaimKind,
-  options?: ClaimToContainerSettingsOptions
-): ClaimContainerSettings {
+  options?: ClaimToApSettingsOptions
+): ClaimApSettings {
   if (claim == null) {
     return {
       args: [],
