@@ -5,6 +5,7 @@ import { generateId } from "ai";
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 
 import { getAssistantDb } from "@/lib/chat-persistence/db";
+import { ensureDeployTaskStorageSchema } from "@/lib/chat-persistence/deploy-task-schema-bootstrap";
 import {
   type DeploymentTaskSource,
   type DeployTaskEventPayload,
@@ -127,6 +128,7 @@ export async function recordDeployTaskEvent(
   taskId: string,
   input: DeployTaskEventInput
 ): Promise<DeployTaskEventRow> {
+  await ensureDeployTaskStorageSchema();
   return await getAssistantDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
 
@@ -165,6 +167,7 @@ export async function recordDeployTaskEvent(
 export async function createDeployTask(
   input: CreateDeployTaskInput
 ): Promise<DeployTaskDTO> {
+  await ensureDeployTaskStorageSchema();
   const id = generateId();
   const now = new Date();
   const [task] = await getAssistantDb()
@@ -217,6 +220,7 @@ export async function createDeployTask(
 export async function getDeployTaskById(
   taskId: string
 ): Promise<DeployTaskRow | null> {
+  await ensureDeployTaskStorageSchema();
   const [task] = await getAssistantDb()
     .select()
     .from(deployTasks)
@@ -229,6 +233,7 @@ export async function getDeployTaskSnapshot(
   taskId: string,
   namespace?: string
 ): Promise<DeployTaskSnapshotDTO | null> {
+  await ensureDeployTaskStorageSchema();
   const filters = [eq(deployTasks.id, taskId)];
   if (namespace?.trim()) {
     filters.push(eq(deployTasks.namespace, namespace.trim()));
@@ -269,6 +274,7 @@ export async function listDeployTasks(input: {
   namespace: string;
   projectId?: string;
 }): Promise<DeployTaskDTO[]> {
+  await ensureDeployTaskStorageSchema();
   const filters = [eq(deployTasks.namespace, input.namespace.trim())];
   if (input.projectId?.trim()) {
     filters.push(eq(deployTasks.projectId, input.projectId.trim()));
@@ -304,6 +310,7 @@ export async function updateDeployTaskState(
     status?: DeployTaskStatus;
   }
 ): Promise<DeployTaskDTO | null> {
+  await ensureDeployTaskStorageSchema();
   const now = new Date();
   const isTerminal =
     input.status === "completed" ||
@@ -335,6 +342,7 @@ export async function appendDeployTaskMessage(input: {
   role: UIMessage["role"];
   taskId: string;
 }): Promise<DeployTaskMessageDTO> {
+  await ensureDeployTaskStorageSchema();
   const [message] = await getAssistantDb()
     .insert(deployTaskMessages)
     .values({
