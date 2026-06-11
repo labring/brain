@@ -53,6 +53,7 @@ export default function ProjectIdPage() {
     canvasLayoutReady: projectCanvasLayout.layoutReady,
     kubeconfig,
     namespace,
+    onCanvasFirstPlacement: projectCanvasLayout.saveFirstPlacementNodes,
     onCanvasLayoutMerge: projectCanvasLayout.saveLayoutNodes,
     uid,
   });
