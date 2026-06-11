@@ -4,7 +4,10 @@ import { useAtomValue } from "jotai";
 import { useCallback } from "react";
 import useSWR from "swr";
 
-import { GITHUB_OAUTH_CALLBACK_PATH } from "@/lib/github-oauth/types";
+import {
+  GITHUB_OAUTH_CALLBACK_PATH,
+  parseOAuthNamespaceParam,
+} from "@/lib/github-oauth/types";
 import { namespaceAtom } from "@/store/auth-store";
 
 interface GithubConnectionResponse {
@@ -63,10 +66,14 @@ export function useGithubAuth(): UseGithubAuthResult {
 
   const initiateGithubAuth = useCallback(() => {
     const next = `${window.location.pathname}${window.location.search}`;
-    window.location.assign(
-      `${GITHUB_OAUTH_CALLBACK_PATH}?next=${encodeURIComponent(next)}`
-    );
-  }, []);
+    const url = new URL(GITHUB_OAUTH_CALLBACK_PATH, window.location.origin);
+    url.searchParams.set("next", next);
+    const normalizedNamespace = parseOAuthNamespaceParam(namespace);
+    if (normalizedNamespace) {
+      url.searchParams.set("namespace", normalizedNamespace);
+    }
+    window.location.assign(`${url.pathname}${url.search}`);
+  }, [namespace]);
 
   return {
     canCheck,

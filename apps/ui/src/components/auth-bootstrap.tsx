@@ -5,6 +5,7 @@ import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useEffect } from "react";
+import { applySealosSdkHydration } from "@/components/auth-bootstrap-core";
 import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
 import { scheduleChatDevboxWarmup } from "@/lib/devbox.actions";
 import {
@@ -83,21 +84,19 @@ export function SealosSdkBootstrap() {
     const hydrate = async () => {
       try {
         const [session, language] = await Promise.all([
-          sealosApp.getSession(),
+          sealosApp.getSession().catch(() => null),
           sealosApp.getLanguage().catch(() => null),
         ]);
         if (cancelled) {
           return;
         }
-        const kubeconfig = session.kubeconfig.trim();
-        if (kubeconfig === "") {
-          return;
-        }
-        setKubeconfig(kubeconfig);
-        setNamespace(namespaceFromKubeconfigText(kubeconfig) ?? "");
-        if (language !== null) {
-          setDesktopLanguage(language.lng.trim() || "en");
-        }
+        applySealosSdkHydration({
+          language,
+          session,
+          setDesktopLanguage,
+          setKubeconfig,
+          setNamespace,
+        });
       } catch (e: unknown) {
         if (!cancelled) {
           console.warn("[SealosSdkBootstrap] session hydrate failed:", e);

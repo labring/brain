@@ -115,7 +115,11 @@ export function useProjectsExplorer(options: {
 
   const projectsQuery = useMemo(() => ({ namespace: ns }), [ns]);
 
-  const { data: rawProjects, mutate } = useSWR(
+  const {
+    data: rawProjects,
+    error: projectsError,
+    mutate,
+  } = useSWR(
     hasKubeconfig && ns !== ""
       ? (["/api/projects", projectsQuery, kubeconfig] as const)
       : null,
@@ -179,9 +183,18 @@ export function useProjectsExplorer(options: {
 
   const states = useMemo(
     (): ProjectExplorerStates => ({
+      ...(projectsError
+        ? {
+            empty: {
+              description:
+                "Project history is temporarily unavailable because the app database cannot be reached. Check DATABASE_URL and database status, then refresh.",
+              title: "System configuration unavailable",
+            },
+          }
+        : {}),
       projects,
     }),
-    [projects]
+    [projects, projectsError]
   );
 
   const onProjectClick = useCallback(

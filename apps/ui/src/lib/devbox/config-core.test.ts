@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { getDevboxExecRequestTimeoutMs } from "./client-core";
 import {
+  getChatDevboxResourceFromEnv,
   getDevboxAuthTokenFromEnv,
   getDevboxBaseUrlFromEnv,
 } from "./config-core";
@@ -33,6 +34,26 @@ test("getDevboxAuthTokenFromEnv reports clear error when no auth source is confi
   await assert.rejects(
     () => getDevboxAuthTokenFromEnv({}, "ns-user"),
     MISSING_SIGNING_KEY_ERROR
+  );
+});
+
+test("getChatDevboxResourceFromEnv returns small chat runtime defaults", () => {
+  assert.deepEqual(getChatDevboxResourceFromEnv({}), {
+    cpu: "500m",
+    memory: "256Mi",
+  });
+});
+
+test("getChatDevboxResourceFromEnv reads chat-specific overrides", () => {
+  assert.deepEqual(
+    getChatDevboxResourceFromEnv({
+      CHAT_DEVBOX_RESOURCE_CPU: "2",
+      CHAT_DEVBOX_RESOURCE_MEMORY: "1Gi",
+    }),
+    {
+      cpu: "2",
+      memory: "1Gi",
+    }
   );
 });
 

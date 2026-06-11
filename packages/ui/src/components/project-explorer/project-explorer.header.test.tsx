@@ -15,6 +15,9 @@ const RESPONSIVE_BUTTON_RE = /project-explorer-new-project-button/;
 const RESPONSIVE_LABEL_RE = /project-explorer-new-project-label/;
 const SVG_RE = /<svg/;
 const TOOLTIP_TEXT_RE = /<span[^>]*>New Project<\/span>/;
+const SYSTEM_CONFIG_TITLE_RE = /System configuration unavailable/;
+const SYSTEM_CONFIG_DESCRIPTION_RE =
+  /Project history is temporarily unavailable/;
 
 function renderHeaderButton() {
   const html = renderToStaticMarkup(
@@ -40,4 +43,24 @@ test("project explorer new-project action renders responsive default content", (
   assert.match(buttonHtml, RESPONSIVE_LABEL_RE);
   assert.match(buttonHtml, SVG_RE);
   assert.match(html, TOOLTIP_TEXT_RE);
+});
+
+test("project explorer renders custom empty-state messaging", () => {
+  const html = renderToStaticMarkup(
+    <ProjectExplorer.Root
+      states={{
+        empty: {
+          description:
+            "Project history is temporarily unavailable because the app database cannot be reached.",
+          title: "System configuration unavailable",
+        },
+        projects: [],
+      }}
+    >
+      <ProjectExplorer.Variant1 />
+    </ProjectExplorer.Root>
+  );
+
+  assert.match(html, SYSTEM_CONFIG_TITLE_RE);
+  assert.match(html, SYSTEM_CONFIG_DESCRIPTION_RE);
 });
