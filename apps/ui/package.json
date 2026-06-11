@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@ai-sdk/react": "^3.0.179",
+    "@labring/sealos-desktop-sdk": "^0.1.21",
     "@workspace/api": "workspace:*",
     "@workspace/ui": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
