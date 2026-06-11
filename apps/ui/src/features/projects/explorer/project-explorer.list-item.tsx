@@ -38,6 +38,7 @@ export function ProjectExplorerListItem({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteVerification, setDeleteVerification] = useState("");
 
   useEffect(() => {
     if (renameOpen) {
@@ -45,6 +46,11 @@ export function ProjectExplorerListItem({
       setRenameError(null);
     }
   }, [renameOpen, project.name]);
+  useEffect(() => {
+    if (deleteOpen) {
+      setDeleteVerification("");
+    }
+  }, [deleteOpen]);
 
   const created = toDate(project.createdAt);
   const iso = Number.isNaN(created.getTime())
@@ -89,7 +95,10 @@ export function ProjectExplorerListItem({
   }, [actions, project, renameDraft]);
 
   const submitDelete = useCallback(async () => {
-    if (!actions.onProjectDelete) {
+    if (
+      !actions.onProjectDelete ||
+      deleteVerification !== projectResourceName
+    ) {
       return;
     }
     setDeleteBusy(true);
@@ -99,7 +108,7 @@ export function ProjectExplorerListItem({
     } finally {
       setDeleteBusy(false);
     }
-  }, [actions, project]);
+  }, [actions, deleteVerification, project, projectResourceName]);
 
   return (
     <li
@@ -280,10 +289,29 @@ export function ProjectExplorerListItem({
               (<span className="font-mono">{projectResourceName}</span>) from
               the cluster. This cannot be undone.
             </AppDialog.Description>
+            <AppDialog.Field>
+              <p className="select-text text-sm/5 text-zinc-400">
+                Type{" "}
+                <span className="font-mono text-zinc-100">
+                  {projectResourceName}
+                </span>{" "}
+                to confirm.
+              </p>
+              <AppDialog.Input
+                aria-label={`Type ${projectResourceName} to confirm.`}
+                autoComplete="off"
+                className="font-mono"
+                onChange={(event) => setDeleteVerification(event.target.value)}
+                placeholder={projectResourceName}
+                type="text"
+                value={deleteVerification}
+              />
+            </AppDialog.Field>
           </AppDialog.Body>
           <AppDialog.Footer>
             <AppDialog.Cancel disabled={deleteBusy}>Cancel</AppDialog.Cancel>
             <AppDialog.DestructiveAction
+              disabled={deleteVerification !== projectResourceName}
               loading={deleteBusy}
               loadingLabel="Deleting"
               onClick={(e) => {

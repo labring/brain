@@ -131,8 +131,16 @@ export function DbAccessConfirmationDialog({
           </div>
           {verificationText ? (
             <AppDialog.Field>
-              <AppDialog.Label>
-                {verificationLabel ?? `Type ${verificationText} to confirm.`}
+              <AppDialog.Label className="select-text text-sm/5 text-zinc-400">
+                {verificationLabel ?? (
+                  <>
+                    Type{" "}
+                    <span className="font-mono text-zinc-100">
+                      {verificationText}
+                    </span>{" "}
+                    to confirm.
+                  </>
+                )}
               </AppDialog.Label>
               <AppDialog.Input
                 className="font-mono"
