@@ -18,6 +18,12 @@ export const GITHUB_OAUTH_SCOPES = "repo read:packages write:packages" as const;
 /** Max length for path + search stored in OAuth return cookie / `next` query. */
 export const MAX_OAUTH_RETURN_PATH_LEN = 2048;
 
+/** Conservative namespace format accepted from the browser during OAuth. */
+const OAUTH_NAMESPACE_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+
+/** Max length for Kubernetes namespace names. */
+const MAX_OAUTH_NAMESPACE_LEN = 63;
+
 /**
  * Normalize and validate a same-origin relative return target (pathname + optional search).
  * Rejects absolute URLs and protocol-relative paths to avoid open redirects.
@@ -44,4 +50,29 @@ export function parseOAuthReturnPathParam(raw: string | null): string | null {
     return null;
   }
   return decoded;
+}
+
+/**
+ * Normalize the current UI namespace for the OAuth round-trip.
+ * Rejects invalid values instead of persisting arbitrary client input.
+ */
+export function parseOAuthNamespaceParam(raw: string | null): string | null {
+  if (raw == null || raw === "") {
+    return null;
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  const namespace = decoded.trim();
+  if (
+    namespace.length === 0 ||
+    namespace.length > MAX_OAUTH_NAMESPACE_LEN ||
+    !OAUTH_NAMESPACE_RE.test(namespace)
+  ) {
+    return null;
+  }
+  return namespace;
 }

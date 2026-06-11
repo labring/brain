@@ -1,10 +1,45 @@
 package main
 
 import (
+	"bytes"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestRequestLoggerLogsMethodTargetStatusAndDuration(t *testing.T) {
+	var output bytes.Buffer
+	previousOutput := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() {
+		log.SetOutput(previousOutput)
+	})
+
+	handler := requestLogger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/api/k8s/v1alpha1/get?kind=pods", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	got := output.String()
+	for _, want := range []string{
+		"GET /api/k8s/v1alpha1/get?kind=pods -> 400",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("request log %q does not contain %q", got, want)
+		}
+	}
+	parts := strings.Fields(got)
+	if len(parts) < 5 {
+		t.Fatalf("request log %q does not include duration", got)
+	}
+}
 
 func TestLoadLocalEnvUsesUIEnvForSharedDatabaseAndAPIEnvForServiceDeps(t *testing.T) {
 	dir := t.TempDir()

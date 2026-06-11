@@ -3,7 +3,10 @@ import {
   handleProviderError,
   startAuthorize,
 } from "@/lib/github-oauth/service";
-import { parseOAuthReturnPathParam } from "@/lib/github-oauth/types";
+import {
+  parseOAuthNamespaceParam,
+  parseOAuthReturnPathParam,
+} from "@/lib/github-oauth/types";
 
 export const runtime = "nodejs";
 
@@ -21,6 +24,7 @@ export function GET(request: Request) {
   const code = searchParams.get("code");
   if (!code) {
     return startAuthorize(request, {
+      namespace: parseOAuthNamespaceParam(searchParams.get("namespace")),
       returnPath: parseOAuthReturnPathParam(searchParams.get("next")),
     });
   }

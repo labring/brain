@@ -5,6 +5,7 @@ import {
   assertProjectHasNoManagedResources,
   deleteProjectManagedResources,
   ProjectDeleteBlockedError,
+  ProjectManagedResourceCleanupError,
 } from "./delete-guard";
 
 function managedResourceItems(url: URL) {
@@ -95,6 +96,84 @@ test("project delete guard allows deletion when no managed resources exist", asy
     id: "project-a",
     namespace: "ns-a",
   });
+});
+
+test("project delete guard does not double encode kubeconfig authorization", async () => {
+  const calls: string[] = [];
+  const encodedKubeconfig = encodeURIComponent(
+    "apiVersion: v1\nkind: Config\n"
+  );
+  const fetchImpl: typeof fetch = (_url, init) => {
+    const headers = new Headers(init?.headers);
+    calls.push(headers.get("Authorization") ?? "");
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+
+  await assertProjectHasNoManagedResources({
+    apiBaseUrl: "https://brain.test",
+    encodedKubeconfig,
+    fetchImpl,
+    id: "project-a",
+    namespace: "ns-a",
+  });
+
+  assert.equal(calls.length, 4);
+  for (const authorization of calls) {
+    assert.equal(authorization, `Bearer ${encodedKubeconfig}`);
+  }
+});
+
+test("project delete guard requires an API base URL", async () => {
+  await assert.rejects(
+    () =>
+      assertProjectHasNoManagedResources({
+        encodedKubeconfig: "kubeconfig",
+        fetchImpl: () =>
+          new Response(JSON.stringify({ items: [] }), { status: 200 }),
+        id: "project-a",
+        namespace: "ns-a",
+      }),
+    (error) => {
+      assert.equal(error instanceof ProjectManagedResourceCleanupError, true);
+      assert.equal(
+        (error as ProjectManagedResourceCleanupError).message,
+        "API_URL is required to clean up project resources."
+      );
+      return true;
+    }
+  );
+});
+
+test("project delete guard surfaces downstream cleanup errors", async () => {
+  const fetchImpl: typeof fetch = (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("kind") === "persistentvolumeclaims") {
+      return new Response(JSON.stringify({ error: "forbidden" }), {
+        status: 403,
+      });
+    }
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+
+  await assert.rejects(
+    () =>
+      deleteProjectManagedResources({
+        apiBaseUrl: "https://brain.test",
+        encodedKubeconfig: "kubeconfig",
+        fetchImpl,
+        id: "project-a",
+        namespace: "ns-a",
+      }),
+    (error) => {
+      assert.equal(error instanceof ProjectManagedResourceCleanupError, true);
+      assert.equal((error as ProjectManagedResourceCleanupError).status, 403);
+      assert.equal(
+        (error as ProjectManagedResourceCleanupError).message,
+        "Failed to inspect project resources (403): forbidden"
+      );
+      return true;
+    }
+  );
 });
 
 test("project managed resource cleanup deletes DBs, APs, template PVCs, then template Instances", async () => {

@@ -1,20 +1,20 @@
 "use client";
 
+import { EVENT_NAME } from "@labring/sealos-desktop-sdk";
+import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useEffect } from "react";
+import { applySealosSdkHydration } from "@/components/auth-bootstrap-core";
 import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
 import { scheduleChatDevboxWarmup } from "@/lib/devbox.actions";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import {
+  desktopLanguageAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/store/auth-store";
 
-/**
- * Hydrates kubeconfig / namespace into Jotai from server props or dev env overrides.
- *
- * Access control: {@link fetchProjectCredentialsOrUnauthorized} in `app/project/layout.tsx`
- * calls `unauthorized()` from `next/navigation` when SealOS credentials are empty and there is
- * no dev bypass (`NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`). That must stay on the server - `unauthorized()` cannot be
- * invoked from this client module.
- */
+/** Hydrates kubeconfig / namespace into Jotai from server props or dev env overrides. */
 
 interface AuthBootstrapProps {
   serverEncodedKubeconfig: string;
@@ -29,43 +29,19 @@ function safeDecode(value: string): string {
   }
 }
 
-interface SealosSdkSession {
-  encodedKubeconfig?: unknown;
-  kubeconfig?: unknown;
-  namespace?: unknown;
-}
-
-interface SealosSdkApp {
-  getSession?: () => Promise<SealosSdkSession | null | undefined>;
-}
-
-function sealosSdkApp(): SealosSdkApp | undefined {
-  return (globalThis as { sealosApp?: SealosSdkApp }).sealosApp;
-}
-
-function sessionKubeconfig(session: SealosSdkSession): string {
-  const kubeconfig =
-    typeof session.kubeconfig === "string" ? session.kubeconfig.trim() : "";
-  if (kubeconfig !== "") {
-    return kubeconfig;
+function eventLanguage(event: unknown): string {
+  if (typeof event === "string") {
+    return event.trim();
   }
-
-  const encoded =
-    typeof session.encodedKubeconfig === "string"
-      ? session.encodedKubeconfig.trim()
-      : "";
-  return encoded === "" ? "" : safeDecode(encoded).trim();
-}
-
-function sessionNamespace(
-  session: SealosSdkSession,
-  kubeconfig: string
-): string {
-  const namespace =
-    typeof session.namespace === "string" ? session.namespace.trim() : "";
-  return namespace === ""
-    ? (namespaceFromKubeconfigText(kubeconfig) ?? "")
-    : namespace;
+  if (
+    typeof event === "object" &&
+    event !== null &&
+    "lng" in event &&
+    typeof event.lng === "string"
+  ) {
+    return event.lng.trim();
+  }
+  return "";
 }
 
 export default function AuthBootstrap({
@@ -96,39 +72,56 @@ export default function AuthBootstrap({
 
 /** Hydrates credentials from the Sealos Desktop iframe SDK when available. */
 export function SealosSdkBootstrap() {
+  const setDesktopLanguage = useSetAtom(desktopLanguageAtom);
   const setKubeconfig = useSetAtom(kubeconfigAtom);
   const setNamespace = useSetAtom(namespaceAtom);
 
   useEffect(() => {
-    const app = sealosSdkApp();
-    if (app?.getSession == null) {
-      return;
-    }
-
     let cancelled = false;
+    const cleanup = createSealosApp();
+    let unsubscribeLanguage: (() => void) | undefined;
+
     const hydrate = async () => {
       try {
-        const session = await app.getSession?.();
-        if (cancelled || session == null) {
+        const [session, language] = await Promise.all([
+          sealosApp.getSession().catch(() => null),
+          sealosApp.getLanguage().catch(() => null),
+        ]);
+        if (cancelled) {
           return;
         }
-        const kubeconfig = sessionKubeconfig(session);
-        if (kubeconfig === "") {
-          return;
-        }
-        setKubeconfig(kubeconfig);
-        setNamespace(sessionNamespace(session, kubeconfig));
+        applySealosSdkHydration({
+          language,
+          session,
+          setDesktopLanguage,
+          setKubeconfig,
+          setNamespace,
+        });
       } catch (e: unknown) {
-        console.warn("[SealosSdkBootstrap] session hydrate failed:", e);
+        if (!cancelled) {
+          console.warn("[SealosSdkBootstrap] session hydrate failed:", e);
+        }
       }
     };
+
+    unsubscribeLanguage = sealosApp.addAppEventListen(
+      EVENT_NAME.CHANGE_I18N,
+      (event) => {
+        const language = eventLanguage(event);
+        if (language !== "") {
+          setDesktopLanguage(language);
+        }
+      }
+    );
 
     hydrate().catch(() => undefined);
 
     return () => {
       cancelled = true;
+      unsubscribeLanguage?.();
+      cleanup?.();
     };
-  }, [setKubeconfig, setNamespace]);
+  }, [setDesktopLanguage, setKubeconfig, setNamespace]);
 
   return null;
 }

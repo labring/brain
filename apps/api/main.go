@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/danielgtaylor/huma/v2"
@@ -27,6 +29,7 @@ import (
 func main() {
 	loadLocalEnv()
 	router := chi.NewMux()
+	router.Use(requestLogger)
 	router.Use(appendSlashForGroupRoots)
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
@@ -75,6 +78,44 @@ func main() {
 	if err := http.ListenAndServe(":9000", router); err != nil {
 		fmt.Println("Server error:", err)
 	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(body []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(body)
+}
+
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		target := r.URL.Path
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		log.Printf("%s %s -> %d %s", r.Method, target, status, time.Since(start).Round(time.Millisecond))
+	})
 }
 
 func loadLocalEnv() {

@@ -12,6 +12,7 @@ import {
   resumeDevbox,
 } from "./client";
 import {
+  getChatDevboxResource,
   getDevboxArchiveAfterPauseTime,
   getDevboxDefaultImage,
 } from "./config";
@@ -252,6 +253,7 @@ async function ensureChatDevbox(
     ],
     name,
     pauseAt: getPauseAt(),
+    resource: getChatDevboxResource(),
     upstreamID,
   });
 
