@@ -136,8 +136,16 @@ function viewportFocusNodeIdFromSideRenderModel(
     return null;
   }
 
-  if (side.content.kind === "publicAddresses") {
+  if (
+    side.content.kind === "settings" &&
+    side.content.target.target.kind === "AP" &&
+    side.content.target.view === "public-addresses"
+  ) {
     return side.content.entryNode?.id ?? null;
+  }
+
+  if (side.content.kind === "settings") {
+    return side.content.node?.id ?? null;
   }
 
   return side.content.node.id;
@@ -509,6 +517,7 @@ export function useProjectCanvas(
   const openSideSurface = workbenchRoute.openSide;
   const openMainSurface = workbenchRoute.openMain;
   const openDrawerSurface = workbenchRoute.openDrawer;
+  const repairSide = workbenchRoute.repairSide;
   const closeSideRoute = workbenchRoute.closeSide;
   const closeMainRoute = workbenchRoute.closeMain;
   const closeDrawerRoute = workbenchRoute.closeDrawer;
@@ -1445,6 +1454,7 @@ export function useProjectCanvas(
     openMainSurface,
     openSideSurface,
     registerSettingsLeaveGuard,
+    repairSide,
     requestResourcePaneReplacement,
     selected,
     selectedEdge,

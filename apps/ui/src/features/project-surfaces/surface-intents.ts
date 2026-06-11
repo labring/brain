@@ -126,7 +126,7 @@ export function projectCanvasEntryForAssistantIntent(
   }
   if (intent.type === "apSettings") {
     return {
-      entry: { kind: "apSettings", target: intent.target },
+      entry: { kind: "settings", target: intent.target },
       slot: "side",
     };
   }
@@ -154,7 +154,7 @@ export function projectCanvasEntryForAssistantIntent(
   }
   if (intent.type === "dbSettings") {
     return {
-      entry: { kind: "dbSettings", target: intent.target },
+      entry: { kind: "settings", target: intent.target },
       slot: "side",
     };
   }
@@ -166,7 +166,15 @@ export function projectCanvasEntryForAssistantIntent(
   }
   if (intent.type === "entrypointPublicAddresses") {
     return {
-      entry: { kind: "publicAddresses", target: intent.target },
+      entry: {
+        kind: "settings",
+        target: {
+          kind: "AP",
+          name: intent.target.apName,
+          namespace: intent.target.namespace,
+        },
+        view: "public-addresses",
+      },
       slot: "side",
     };
   }

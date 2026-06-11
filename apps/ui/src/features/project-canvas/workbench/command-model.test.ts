@@ -73,7 +73,7 @@ test("node click plans selection, default Side Pane, and stack order", () => {
       stackOrder: { kind: "bringNodeToFront", nodeId: "ap-api" },
       surface: {
         entry: {
-          kind: "apSettings",
+          kind: "settings",
           target: {
             kind: "AP",
             name: "api",
@@ -107,13 +107,13 @@ test("EntryPoint node click opens AP-bound Public Addresses", () => {
       stackOrder: { kind: "bringNodeToFront", nodeId: "entry-api" },
       surface: {
         entry: {
-          kind: "publicAddresses",
+          kind: "settings",
           target: {
-            apName: "api",
-            kind: "EntryPoint",
+            kind: "AP",
+            name: "api",
             namespace: "default",
-            observedUid: "entry-uid",
           },
+          view: "public-addresses",
         },
         slot: "side",
       },
@@ -241,13 +241,14 @@ test("AP-to-DB Connecting Edge plans AP Environment Settings with pending Databa
       },
       surface: {
         entry: {
-          kind: "apEnvironmentSettings",
+          kind: "settings",
           target: {
             kind: "AP",
             name: "api",
             namespace: "default",
             observedUid: "ap-uid",
           },
+          view: "environment",
         },
         slot: "side",
       },

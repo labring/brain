@@ -78,13 +78,21 @@ export function defaultProjectSideSurfaceForNode(
 ): ProjectSideSurfaceEntry | null {
   const target = projectSurfaceTargetFromCanvasNode(node);
   if (target?.kind === "AP") {
-    return { kind: "apSettings", target };
+    return { kind: "settings", target };
   }
   if (target?.kind === "DB") {
-    return { kind: "dbSettings", target };
+    return { kind: "settings", target };
   }
   if (target?.kind === "EntryPoint") {
-    return { kind: "publicAddresses", target };
+    return {
+      kind: "settings",
+      target: {
+        kind: "AP",
+        name: target.apName,
+        namespace: target.namespace,
+      },
+      view: "public-addresses",
+    };
   }
   return null;
 }
@@ -101,7 +109,7 @@ export function sideSurfaceForWorkloadPane(
     case WORKLOAD_PANE.metrics:
       return { kind: "apMetrics", target };
     case WORKLOAD_PANE.settings:
-      return { kind: "apSettings", target };
+      return { kind: "settings", target };
     default:
       return null;
   }
@@ -115,7 +123,7 @@ export function sideSurfaceForDatabasePane(
     case DATABASE_PANE.metrics:
       return { kind: "dbMetrics", target };
     case DATABASE_PANE.settings:
-      return { kind: "dbSettings", target };
+      return { kind: "settings", target };
     default:
       return null;
   }

@@ -76,6 +76,7 @@ export function ProjectCanvasWorkbenchSurfaces({
             content={sideResourceContent}
             kubeconfig={kubeconfig}
             onClose={workbench.closeResourcePane}
+            onRepairSideEntry={workbench.repairSide}
             onSettingsLeaveGuardChange={workbench.registerSettingsLeaveGuard}
             onUpdated={refreshWorkloadLists}
           />

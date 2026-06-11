@@ -6,24 +6,20 @@ import type {
   ProjectCanvasApResourcePaneKind,
   ProjectCanvasResourcePaneRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
+import { SettingsHost } from "@/features/project-settings/settings-host";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
-import { DatabaseSettingsPane } from "./database-settings-pane";
-import { EntryPointSettingsPane } from "./entrypoint-settings-panel";
 import type { SettingsLeaveGuardRegistration } from "./settings-leave-guard";
 import { WorkloadResourcePane } from "./workload-resource-pane";
 
 function workloadPaneMode(kind: ProjectCanvasApResourcePaneKind): string {
   switch (kind) {
-    case "apEnvironmentSettings":
-      return WORKLOAD_PANE.environmentSettings;
     case "apEvents":
       return WORKLOAD_PANE.events;
     case "apHistory":
       return WORKLOAD_PANE.history;
     case "apMetrics":
       return WORKLOAD_PANE.metrics;
-    case "apSettings":
-      return WORKLOAD_PANE.settings;
     default:
       return kind satisfies never;
   }
@@ -33,6 +29,7 @@ export interface ProjectCanvasResourcePaneContentProps {
   content: ProjectCanvasResourcePaneRenderModel | null | undefined;
   kubeconfig?: string;
   onClose: () => void;
+  onRepairSideEntry?: (entry: ProjectSideSurfaceEntry | null) => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
   readOnly?: boolean;
@@ -42,23 +39,21 @@ export function renderProjectCanvasResourcePaneContent({
   content,
   kubeconfig,
   onClose,
+  onRepairSideEntry,
   onSettingsLeaveGuardChange,
   onUpdated,
   readOnly = false,
 }: ProjectCanvasResourcePaneContentProps): ReactNode {
   if (
-    content?.kind === "apEnvironmentSettings" ||
     content?.kind === "apEvents" ||
     content?.kind === "apHistory" ||
-    content?.kind === "apMetrics" ||
-    content?.kind === "apSettings"
+    content?.kind === "apMetrics"
   ) {
     return (
       <WorkloadResourcePane
         mode={workloadPaneMode(content.kind)}
         node={content.node}
         onClose={onClose}
-        onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
       />
     );
   }
@@ -74,27 +69,22 @@ export function renderProjectCanvasResourcePaneContent({
     );
   }
 
-  if (content?.kind === "dbSettings") {
+  if (content?.kind === "settings") {
     return (
-      <DatabaseSettingsPane
-        data={content.databaseData}
+      <SettingsHost
+        entry={content.target}
         kubeconfig={kubeconfig}
         onClose={onClose}
-        onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
-        onUpdated={onUpdated}
-      />
-    );
-  }
-
-  if (content?.kind === "publicAddresses") {
-    return (
-      <EntryPointSettingsPane
-        kubeconfig={kubeconfig}
-        onClose={onClose}
+        onRepairSideEntry={onRepairSideEntry}
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
         onUpdated={onUpdated}
         readOnly={readOnly}
-        selection={content.selection}
+        sourceContext={{
+          databaseData: content.databaseData,
+          entryNode: content.entryNode,
+          kind: "canvas",
+          node: content.node,
+        }}
       />
     );
   }

@@ -30,10 +30,12 @@ import {
   Cpu,
   Database,
   HardDrive,
+  type LucideIcon,
   MemoryStick,
   Network,
   Settings2,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
@@ -54,7 +56,10 @@ import {
   normalizeDbSettingsReplicas,
   normalizeDbSettingsStorageGi,
 } from "./database-settings-draft";
-import type { SettingsLeaveGuardRegistration } from "./settings-leave-guard";
+import type {
+  SettingsLeaveGuardHandle,
+  SettingsLeaveGuardRegistration,
+} from "./settings-leave-guard";
 
 interface DatabaseSettingsPaneProps {
   data: CanvasDatabaseNodeData;
@@ -64,15 +69,35 @@ interface DatabaseSettingsPaneProps {
   onUpdated?: () => Promise<unknown>;
 }
 
-interface DatabaseSettingsPaneContentProps {
+export interface DatabaseSettingsSectionsProps {
   data: CanvasDatabaseNodeData;
   editable?: boolean;
-  onClose: () => void;
-  onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onSubmitPatch?: (patch: DatabaseSettingsPatch) => Promise<unknown> | unknown;
   onUpdated?: () => Promise<unknown>;
   routingDomain?: string;
   updating?: boolean;
+}
+
+interface DatabaseSettingsPaneContentProps
+  extends DatabaseSettingsSectionsProps {
+  onClose: () => void;
+  onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
+  renderShell?: boolean;
+}
+
+export interface DatabaseSettingsRenderedSection {
+  actions?: ReactNode;
+  chromeless?: boolean;
+  content: ReactNode;
+  icon?: LucideIcon;
+  id: string;
+  title: string;
+}
+
+export interface DatabaseSettingsSectionsModel {
+  footer?: ReactNode;
+  leaveGuard?: SettingsLeaveGuardHandle | null;
+  sections: DatabaseSettingsRenderedSection[];
 }
 
 function databaseHeaderSubtitle({
@@ -394,16 +419,14 @@ export function DatabaseSettingsPane({
   );
 }
 
-export function DatabaseSettingsPaneContent({
+export function useDatabaseSettingsSections({
   data,
   editable = true,
-  onClose,
-  onSettingsLeaveGuardChange,
   onSubmitPatch,
   onUpdated,
   routingDomain,
   updating = false,
-}: DatabaseSettingsPaneContentProps) {
+}: DatabaseSettingsSectionsProps): DatabaseSettingsSectionsModel {
   const readOnly = data.settingsAccess?.readOnly === true;
   const canEdit = editable && !readOnly;
   const desired = data.desired;
@@ -483,7 +506,6 @@ export function DatabaseSettingsPaneContent({
   const dirty = dbSettingsDraftIsDirty(original, draft);
   const canUpdate =
     canEdit && pendingPatch !== null && !updating && onSubmitPatch != null;
-  const subtitle = databaseHeaderSubtitle(data.states);
   const controlsDisabled = !canEdit || updating;
 
   const saveSettingsDraft = useCallback(async () => {
@@ -536,34 +558,208 @@ export function DatabaseSettingsPaneContent({
     setBackingState((current) => keepEditingSettingsDraftBackingState(current));
   }, []);
 
+  const leaveGuard =
+    canEdit && dirty
+      ? {
+          canSave: canUpdate,
+          dirty: true,
+          discard: handleReloadDraft,
+          save: saveSettingsDraft,
+          scope: "database",
+        }
+      : null;
+
+  return {
+    footer: readOnly ? null : (
+      <DatabaseSettingsFooter
+        backingResourceChanged={backingState.resourceChanged}
+        canUpdate={canUpdate}
+        dirty={dirty}
+        onCancel={handleReloadDraft}
+        onKeepEditing={handleKeepEditingDraft}
+        onReload={handleReloadDraft}
+        onUpdate={handleUpdate}
+        saveFailureMessage={backingState.saveFailureMessage}
+        updating={updating}
+      />
+    ),
+    leaveGuard,
+    sections: [
+      {
+        content: (
+          <>
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="Database replica count"
+                disabled={controlsDisabled}
+                label="Number of Replicas"
+                max={DB_SETTINGS_REPLICA_COUNT.max}
+                maxDecimals={0}
+                min={DB_SETTINGS_REPLICA_COUNT.min}
+                onValueChange={(value) => {
+                  setDraft((current) => ({
+                    ...current,
+                    replicas: normalizeDbSettingsReplicas(value),
+                  }));
+                }}
+                step={DB_SETTINGS_REPLICA_COUNT.step}
+                value={draft.replicas}
+              />
+            </ResourceSettingsInset>
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="Database CPU limit in cores"
+                disabled={controlsDisabled}
+                icon={Cpu}
+                label="CPU"
+                max={DB_SETTINGS_CPU_LIMIT_CORES.max}
+                maxDecimals={2}
+                min={DB_SETTINGS_CPU_LIMIT_CORES.min}
+                onValueChange={(value) => {
+                  setDraft((current) => ({
+                    ...current,
+                    cpuLimitCores: normalizeDbSettingsCpuLimitCores(value),
+                  }));
+                }}
+                step={DB_SETTINGS_CPU_LIMIT_CORES.step}
+                value={draft.cpuLimitCores}
+                valueSuffix={cpuValueSuffix}
+              />
+            </ResourceSettingsInset>
+            <ResourceSettingsInset>
+              <SettingsSlider
+                ariaLabel="Database memory limit in Gi"
+                disabled={controlsDisabled}
+                displayValue={giDisplayValue(draft.memoryLimitGi)}
+                formatBound={formatGiValue}
+                icon={MemoryStick}
+                label="Memory"
+                max={DB_SETTINGS_MEMORY_LIMIT_GIB.max}
+                maxDecimals={1}
+                min={DB_SETTINGS_MEMORY_LIMIT_GIB.min}
+                onValueChange={(value) => {
+                  setDraft((current) => ({
+                    ...current,
+                    memoryLimitGi: normalizeDbSettingsMemoryLimitGi(value),
+                  }));
+                }}
+                step={DB_SETTINGS_MEMORY_LIMIT_GIB.step}
+                value={draft.memoryLimitGi}
+                valueSuffix={giValueSuffix(draft.memoryLimitGi)}
+              />
+            </ResourceSettingsInset>
+          </>
+        ),
+        icon: Settings2,
+        id: "resources",
+        title: "Replicas & Resources",
+      },
+      {
+        content: (
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="Database storage size in Gi"
+              disabled={controlsDisabled}
+              formatBound={formatGiValue}
+              icon={HardDrive}
+              label="Storage"
+              max={DB_SETTINGS_STORAGE_GIB.max}
+              maxDecimals={0}
+              min={DB_SETTINGS_STORAGE_GIB.min}
+              onValueChange={(value) => {
+                setDraft((current) => ({
+                  ...current,
+                  storageSizeGi: normalizeDbSettingsStorageGi(value),
+                }));
+              }}
+              step={DB_SETTINGS_STORAGE_GIB.step}
+              value={draft.storageSizeGi}
+              valueSuffix=" Gi"
+            />
+          </ResourceSettingsInset>
+        ),
+        icon: HardDrive,
+        id: "storage",
+        title: "Storage",
+      },
+      {
+        content: (
+          <DatabaseSettingsConnectionAddressList
+            connections={data.connections}
+            controlsDisabled={controlsDisabled}
+            onPublicConnectionChange={(nextEnabled) => {
+              setDraft((current) => ({
+                ...current,
+                exposeNodePort: nextEnabled,
+              }));
+            }}
+            publicConnectionEnabled={draft.exposeNodePort}
+          />
+        ),
+        icon: Network,
+        id: "connection-address",
+        title: "Connection Address",
+      },
+    ],
+  };
+}
+
+export function DatabaseSettingsPaneContent({
+  data,
+  editable = true,
+  renderShell = true,
+  onClose,
+  onSettingsLeaveGuardChange,
+  onSubmitPatch,
+  onUpdated,
+  routingDomain,
+  updating = false,
+}: DatabaseSettingsPaneContentProps) {
+  const subtitle = databaseHeaderSubtitle(data.states);
+  const model = useDatabaseSettingsSections({
+    data,
+    editable,
+    onSubmitPatch,
+    onUpdated,
+    routingDomain,
+    updating,
+  });
+
   useEffect(() => {
-    if (!canEdit || onSettingsLeaveGuardChange == null) {
+    if (onSettingsLeaveGuardChange == null) {
       return;
     }
-
-    onSettingsLeaveGuardChange(
-      dirty
-        ? {
-            canSave: canUpdate,
-            dirty: true,
-            discard: handleReloadDraft,
-            save: saveSettingsDraft,
-            scope: "database",
-          }
-        : null
-    );
-
+    onSettingsLeaveGuardChange(model.leaveGuard ?? null);
     return () => {
       onSettingsLeaveGuardChange(null);
     };
-  }, [
-    canEdit,
-    canUpdate,
-    dirty,
-    handleReloadDraft,
-    onSettingsLeaveGuardChange,
-    saveSettingsDraft,
-  ]);
+  }, [model.leaveGuard, onSettingsLeaveGuardChange]);
+
+  const content = (
+    <>
+      {model.sections.map((section) =>
+        section.chromeless ? (
+          <div data-settings-section={section.id} key={section.id}>
+            {section.content}
+          </div>
+        ) : (
+          <ResourceSettingsSection
+            actions={section.actions}
+            icon={section.icon}
+            key={section.id}
+            title={section.title}
+          >
+            {section.content}
+          </ResourceSettingsSection>
+        )
+      )}
+      {model.footer}
+    </>
+  );
+
+  if (!renderShell) {
+    return content;
+  }
 
   return (
     <CanvasResourcePane
@@ -573,120 +769,7 @@ export function DatabaseSettingsPaneContent({
       subtitle={subtitle}
       title={data.states.name}
     >
-      <ResourceSettingsSection icon={Settings2} title="Replicas & Resources">
-        <ResourceSettingsInset>
-          <SettingsSlider
-            ariaLabel="Database replica count"
-            disabled={controlsDisabled}
-            label="Number of Replicas"
-            max={DB_SETTINGS_REPLICA_COUNT.max}
-            maxDecimals={0}
-            min={DB_SETTINGS_REPLICA_COUNT.min}
-            onValueChange={(value) => {
-              setDraft((current) => ({
-                ...current,
-                replicas: normalizeDbSettingsReplicas(value),
-              }));
-            }}
-            step={DB_SETTINGS_REPLICA_COUNT.step}
-            value={draft.replicas}
-          />
-        </ResourceSettingsInset>
-        <ResourceSettingsInset>
-          <SettingsSlider
-            ariaLabel="Database CPU limit in cores"
-            disabled={controlsDisabled}
-            icon={Cpu}
-            label="CPU"
-            max={DB_SETTINGS_CPU_LIMIT_CORES.max}
-            maxDecimals={2}
-            min={DB_SETTINGS_CPU_LIMIT_CORES.min}
-            onValueChange={(value) => {
-              setDraft((current) => ({
-                ...current,
-                cpuLimitCores: normalizeDbSettingsCpuLimitCores(value),
-              }));
-            }}
-            step={DB_SETTINGS_CPU_LIMIT_CORES.step}
-            value={draft.cpuLimitCores}
-            valueSuffix={cpuValueSuffix}
-          />
-        </ResourceSettingsInset>
-        <ResourceSettingsInset>
-          <SettingsSlider
-            ariaLabel="Database memory limit in Gi"
-            disabled={controlsDisabled}
-            displayValue={giDisplayValue(draft.memoryLimitGi)}
-            formatBound={formatGiValue}
-            icon={MemoryStick}
-            label="Memory"
-            max={DB_SETTINGS_MEMORY_LIMIT_GIB.max}
-            maxDecimals={1}
-            min={DB_SETTINGS_MEMORY_LIMIT_GIB.min}
-            onValueChange={(value) => {
-              setDraft((current) => ({
-                ...current,
-                memoryLimitGi: normalizeDbSettingsMemoryLimitGi(value),
-              }));
-            }}
-            step={DB_SETTINGS_MEMORY_LIMIT_GIB.step}
-            value={draft.memoryLimitGi}
-            valueSuffix={giValueSuffix(draft.memoryLimitGi)}
-          />
-        </ResourceSettingsInset>
-      </ResourceSettingsSection>
-
-      <ResourceSettingsSection icon={HardDrive} title="Storage">
-        <ResourceSettingsInset>
-          <SettingsSlider
-            ariaLabel="Database storage size in Gi"
-            disabled={controlsDisabled}
-            formatBound={formatGiValue}
-            icon={HardDrive}
-            label="Storage"
-            max={DB_SETTINGS_STORAGE_GIB.max}
-            maxDecimals={0}
-            min={DB_SETTINGS_STORAGE_GIB.min}
-            onValueChange={(value) => {
-              setDraft((current) => ({
-                ...current,
-                storageSizeGi: normalizeDbSettingsStorageGi(value),
-              }));
-            }}
-            step={DB_SETTINGS_STORAGE_GIB.step}
-            value={draft.storageSizeGi}
-            valueSuffix=" Gi"
-          />
-        </ResourceSettingsInset>
-      </ResourceSettingsSection>
-
-      <ResourceSettingsSection icon={Network} title="Connection Address">
-        <DatabaseSettingsConnectionAddressList
-          connections={data.connections}
-          controlsDisabled={controlsDisabled}
-          onPublicConnectionChange={(nextEnabled) => {
-            setDraft((current) => ({
-              ...current,
-              exposeNodePort: nextEnabled,
-            }));
-          }}
-          publicConnectionEnabled={draft.exposeNodePort}
-        />
-      </ResourceSettingsSection>
-
-      {readOnly ? null : (
-        <DatabaseSettingsFooter
-          backingResourceChanged={backingState.resourceChanged}
-          canUpdate={canUpdate}
-          dirty={dirty}
-          onCancel={handleReloadDraft}
-          onKeepEditing={handleKeepEditingDraft}
-          onReload={handleReloadDraft}
-          onUpdate={handleUpdate}
-          saveFailureMessage={backingState.saveFailureMessage}
-          updating={updating}
-        />
-      )}
+      {content}
     </CanvasResourcePane>
   );
 }

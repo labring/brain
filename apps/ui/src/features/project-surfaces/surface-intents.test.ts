@@ -104,7 +104,7 @@ test("Project Canvas translates assistant AP settings intent to an AP side surfa
     }),
     {
       entry: {
-        kind: "apSettings",
+        kind: "settings",
         target: { kind: "AP", name: "web", namespace: "ns" },
       },
       slot: "side",
@@ -112,7 +112,7 @@ test("Project Canvas translates assistant AP settings intent to an AP side surfa
   );
 });
 
-test("Project Canvas translates assistant public address intent to an EntryPoint side surface", () => {
+test("Project Canvas translates assistant public address intent to an AP-owned settings view", () => {
   assert.deepEqual(
     projectCanvasEntryForAssistantIntent({
       target: { apName: "web", kind: "EntryPoint", namespace: "ns" },
@@ -120,8 +120,9 @@ test("Project Canvas translates assistant public address intent to an EntryPoint
     }),
     {
       entry: {
-        kind: "publicAddresses",
-        target: { apName: "web", kind: "EntryPoint", namespace: "ns" },
+        kind: "settings",
+        target: { kind: "AP", name: "web", namespace: "ns" },
+        view: "public-addresses",
       },
       slot: "side",
     }

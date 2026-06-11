@@ -79,6 +79,7 @@ import {
   EyeClosed,
   FileText,
   HardDrive,
+  type LucideIcon,
   MemoryStick,
   Network,
   Plus,
@@ -111,7 +112,10 @@ import {
   reloadSettingsDraftBackingState,
   syncSettingsDraftBackingState,
 } from "../../lib/settings-draft-backing";
-import type { SettingsLeaveGuardRegistration } from "../../lib/settings-leave-guard";
+import type {
+  SettingsLeaveGuardHandle,
+  SettingsLeaveGuardRegistration,
+} from "../../lib/settings-leave-guard";
 
 const CPU_QUOTA_DIRTY_EPS = 1e-9;
 const REPLICA_LIMITS = { max: 20, min: 1 } as const;
@@ -678,6 +682,23 @@ export interface ContainerSettingsPaneProps {
   storage?: readonly ContainerStorageMount[];
   workloadKind?: ContainerWorkloadKind;
 }
+
+export interface ContainerSettingsRenderedSection {
+  actions?: ReactNode;
+  chromeless?: boolean;
+  content: ReactNode;
+  icon?: LucideIcon;
+  id: string;
+  title: string;
+}
+
+export interface ContainerSettingsSectionsModel {
+  footer?: ReactNode;
+  leaveGuard?: SettingsLeaveGuardHandle | null;
+  sections: ContainerSettingsRenderedSection[];
+}
+
+export type ContainerSettingsSectionsProps = ContainerSettingsPaneProps;
 
 export interface ContainerPublicAddressesSettingsPaneProps {
   className?: string;
@@ -3851,16 +3872,14 @@ function publicAddressNetworkDirty(
   return !containerNetworksEqual(base, draft);
 }
 
-export function ContainerPublicAddressesSettingsPane({
-  className,
+export function useContainerPublicAddressesSettingsSections({
   identityKey,
   network,
   networkPlatformAddressDraftContext,
   onCustomDomainCnameVerify,
   onNetworkDraftCommit,
-  onSettingsDraftLeaveGuardChange,
   readOnly = false,
-}: ContainerPublicAddressesSettingsPaneProps) {
+}: ContainerPublicAddressesSettingsPaneProps): ContainerSettingsSectionsModel {
   const commitMode = onNetworkDraftCommit != null && readOnly !== true;
   const [draftNetwork, setDraftNetwork] = useState(network);
   const [savePending, setSavePending] = useState(false);
@@ -4012,34 +4031,16 @@ export function ContainerPublicAddressesSettingsPane({
     [networkForRender]
   );
 
-  useEffect(() => {
-    if (!commitMode || onSettingsDraftLeaveGuardChange == null) {
-      return;
-    }
-
-    onSettingsDraftLeaveGuardChange(
-      networkDirty
-        ? {
-            canSave,
-            dirty: true,
-            discard: resetNetworkDraft,
-            save: saveNetworkDraft,
-            scope: "publicAddresses",
-          }
-        : null
-    );
-
-    return () => {
-      onSettingsDraftLeaveGuardChange(null);
-    };
-  }, [
-    canSave,
-    commitMode,
-    networkDirty,
-    onSettingsDraftLeaveGuardChange,
-    resetNetworkDraft,
-    saveNetworkDraft,
-  ]);
+  const leaveGuard: SettingsLeaveGuardHandle | null =
+    commitMode && networkDirty
+      ? {
+          canSave,
+          dirty: true,
+          discard: resetNetworkDraft,
+          save: saveNetworkDraft,
+          scope: "publicAddresses",
+        }
+      : null;
 
   const handleAddPublicAddress = (
     address: PublicAddressDraft,
@@ -4098,6 +4099,84 @@ export function ContainerPublicAddressesSettingsPane({
     );
   };
 
+  return {
+    footer: commitMode ? (
+      <ContainerSettingsDraftFooter
+        backingResourceChanged={networkBackingState.resourceChanged}
+        canSave={canSave}
+        dirty={networkDirty}
+        discardAriaLabel="Discard Public Address changes"
+        onCancel={resetNetworkDraft}
+        onKeepEditing={keepEditingNetworkDraft}
+        onReload={reloadNetworkDraft}
+        onSave={handleSaveNetworkDraft}
+        pending={savePending}
+        saveFailureMessage={networkBackingState.saveFailureMessage}
+        submitAriaLabel="Update Public Address settings"
+      />
+    ) : null,
+    leaveGuard,
+    sections: [
+      {
+        content: (
+          <>
+            <DomainListSection
+              addOpen={addOpen}
+              canMutateNetwork={canMutateNetwork}
+              defaultPort={networkForRender.privatePort}
+              expandedCnameRowKeys={expandedCnameRowKeys}
+              onAddPublicAddress={handleAddPublicAddress}
+              onBindAddress={handleBindCustomDomain}
+              onCancelAddPublicAddress={() => setAddOpen(false)}
+              onCancelBindAddress={handleCancelBindAddress}
+              onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
+              onDeletePublicAddress={handleDeletePublicAddress}
+              onOpenAddPublicAddress={() => setAddOpen(true)}
+              onOpenBindAddress={handleOpenBindAddress}
+              onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
+              onUnbindCustomDomain={handleUnbindCustomDomain}
+              platformAddressDraftContext={networkPlatformAddressDraftContext}
+              readOnly={readOnly}
+              showAllPublicAddresses={showAllPublicAddresses}
+              verify={onCustomDomainCnameVerify}
+              visibleDomainRows={visibleDomains}
+              visiblePublicAddresses={visiblePublicAddresses}
+            />
+            {portNotice == null ? null : (
+              <p className="text-muted-foreground text-sm" role="status">
+                {portNotice}
+              </p>
+            )}
+          </>
+        ),
+        icon: Network,
+        id: "public-addresses",
+        title: "Public Addresses",
+      },
+    ],
+  };
+}
+
+export function ContainerPublicAddressesSettingsPane({
+  className,
+  onSettingsDraftLeaveGuardChange,
+  ...props
+}: ContainerPublicAddressesSettingsPaneProps) {
+  const model = useContainerPublicAddressesSettingsSections({
+    ...props,
+    onSettingsDraftLeaveGuardChange,
+  });
+
+  useEffect(() => {
+    if (onSettingsDraftLeaveGuardChange == null) {
+      return;
+    }
+    onSettingsDraftLeaveGuardChange(model.leaveGuard ?? null);
+    return () => {
+      onSettingsDraftLeaveGuardChange(null);
+    };
+  }, [model.leaveGuard, onSettingsDraftLeaveGuardChange]);
+
   return (
     <div
       className={cn(
@@ -4106,54 +4185,28 @@ export function ContainerPublicAddressesSettingsPane({
       )}
       data-slot="container-public-addresses-settings-pane"
     >
-      <DomainListSection
-        addOpen={addOpen}
-        canMutateNetwork={canMutateNetwork}
-        defaultPort={networkForRender.privatePort}
-        expandedCnameRowKeys={expandedCnameRowKeys}
-        onAddPublicAddress={handleAddPublicAddress}
-        onBindAddress={handleBindCustomDomain}
-        onCancelAddPublicAddress={() => setAddOpen(false)}
-        onCancelBindAddress={handleCancelBindAddress}
-        onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
-        onDeletePublicAddress={handleDeletePublicAddress}
-        onOpenAddPublicAddress={() => setAddOpen(true)}
-        onOpenBindAddress={handleOpenBindAddress}
-        onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
-        onUnbindCustomDomain={handleUnbindCustomDomain}
-        platformAddressDraftContext={networkPlatformAddressDraftContext}
-        readOnly={readOnly}
-        showAllPublicAddresses={showAllPublicAddresses}
-        verify={onCustomDomainCnameVerify}
-        visibleDomainRows={visibleDomains}
-        visiblePublicAddresses={visiblePublicAddresses}
-      />
-      {portNotice == null ? null : (
-        <p className="text-muted-foreground text-sm" role="status">
-          {portNotice}
-        </p>
+      {model.sections.map((section) =>
+        section.chromeless ? (
+          <div data-settings-section={section.id} key={section.id}>
+            {section.content}
+          </div>
+        ) : (
+          <ResourceSettingsSection
+            actions={section.actions}
+            icon={section.icon}
+            key={section.id}
+            title={section.title}
+          >
+            {section.content}
+          </ResourceSettingsSection>
+        )
       )}
-      {commitMode ? (
-        <ContainerSettingsDraftFooter
-          backingResourceChanged={networkBackingState.resourceChanged}
-          canSave={canSave}
-          dirty={networkDirty}
-          discardAriaLabel="Discard Public Address changes"
-          onCancel={resetNetworkDraft}
-          onKeepEditing={keepEditingNetworkDraft}
-          onReload={reloadNetworkDraft}
-          onSave={handleSaveNetworkDraft}
-          pending={savePending}
-          saveFailureMessage={networkBackingState.saveFailureMessage}
-          submitAriaLabel="Update Public Address settings"
-        />
-      ) : null}
+      {model.footer}
     </div>
   );
 }
 
-interface ReplicaStrategySectionProps {
-  actions?: ReactNode;
+interface ReplicaStrategyContentProps {
   elastic: ContainerElasticReplicaSettings;
   fixedReplicasSliderParts: {
     onReplicasQuotaChange: (value: number) => void;
@@ -4279,25 +4332,23 @@ function readOnlyReplicaStrategyRows({
   return rows;
 }
 
-interface ReadOnlyReplicaStrategySummaryProps {
+interface ReadOnlyReplicaStrategyContentProps {
   rows: readonly ReadOnlyReplicaValueProps[];
 }
 
-function ReadOnlyReplicaStrategySummary({
+function ReadOnlyReplicaStrategyContent({
   rows,
-}: ReadOnlyReplicaStrategySummaryProps) {
+}: ReadOnlyReplicaStrategyContentProps) {
   return (
-    <ResourceSettingsSection title="Replica Strategy">
-      <div className="grid min-w-0 gap-2">
-        {rows.map((row) => (
-          <ReadOnlyReplicaValue
-            key={row.label}
-            label={row.label}
-            value={row.value}
-          />
-        ))}
-      </div>
-    </ResourceSettingsSection>
+    <div className="grid min-w-0 gap-2">
+      {rows.map((row) => (
+        <ReadOnlyReplicaValue
+          key={row.label}
+          label={row.label}
+          value={row.value}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -4384,8 +4435,7 @@ function ScalingTargetSlider({
   );
 }
 
-function ReplicaStrategySection({
-  actions,
+function ReplicaStrategyContent({
   elastic,
   fixedReplicasSliderParts,
   onElasticCpuTargetChange,
@@ -4396,7 +4446,7 @@ function ReplicaStrategySection({
   onStrategyTypeChange,
   readOnly,
   strategyType,
-}: ReplicaStrategySectionProps) {
+}: ReplicaStrategyContentProps) {
   const minReplicas = normalizeReplicaCount(elastic.minReplicas);
   const maxReplicas = Math.max(
     minReplicas,
@@ -4412,98 +4462,94 @@ function ReplicaStrategySection({
       ? memoryAverageValueToMib(elastic.target.averageValue)
       : DEFAULT_MEMORY_AVERAGE_TARGET_MIB;
 
+  const readOnlyRows = readOnlyReplicaStrategyRows({
+    cpuTargetPercent,
+    elastic,
+    fixedReplicas: fixedReplicasSliderParts.replicasValue,
+    maxReplicas,
+    memoryTargetMib,
+    minReplicas,
+    strategyType,
+    targetMetric,
+  });
+
   if (readOnly) {
-    return (
-      <ReadOnlyReplicaStrategySummary
-        rows={readOnlyReplicaStrategyRows({
-          cpuTargetPercent,
-          elastic,
-          fixedReplicas: fixedReplicasSliderParts.replicasValue,
-          maxReplicas,
-          memoryTargetMib,
-          minReplicas,
-          strategyType,
-          targetMetric,
-        })}
-      />
-    );
+    return <ReadOnlyReplicaStrategyContent rows={readOnlyRows} />;
   }
 
   return (
-    <ResourceSettingsSection actions={actions} title="Replica Strategy">
-      <div className="grid min-w-0 gap-3">
-        <SlidingToggle
-          ariaLabel="Replica Strategy"
-          disabled={readOnly}
-          onValueChange={onStrategyTypeChange}
-          options={REPLICA_STRATEGY_TOGGLE_OPTIONS}
-          value={strategyType}
-        />
+    <div className="grid min-w-0 gap-3">
+      <SlidingToggle
+        ariaLabel="Replica Strategy"
+        disabled={readOnly}
+        onValueChange={onStrategyTypeChange}
+        options={REPLICA_STRATEGY_TOGGLE_OPTIONS}
+        value={strategyType}
+      />
 
-        {strategyType === "fixed" ? (
+      {strategyType === "fixed" ? (
+        <ResourceSettingsInset>
+          <SettingsSlider
+            ariaLabel="Replica count"
+            disabled={readOnly || fixedReplicasSliderParts.rest.disabled}
+            formatBound={formatReplicaValue}
+            label="Number of Replicas"
+            max={fixedReplicasSliderParts.rest.max ?? REPLICA_LIMITS.max}
+            maxDecimals={0}
+            min={fixedReplicasSliderParts.rest.min ?? REPLICA_LIMITS.min}
+            onValueChange={fixedReplicasSliderParts.onReplicasQuotaChange}
+            step={fixedReplicasSliderParts.rest.step ?? 1}
+            value={fixedReplicasSliderParts.replicasValue}
+          />
+        </ResourceSettingsInset>
+      ) : (
+        <div className="flex flex-col gap-3">
           <ResourceSettingsInset>
             <SettingsSlider
-              ariaLabel="Replica count"
-              disabled={readOnly || fixedReplicasSliderParts.rest.disabled}
+              ariaLabel="Minimum replicas"
+              disabled={readOnly}
               formatBound={formatReplicaValue}
-              label="Number of Replicas"
-              max={fixedReplicasSliderParts.rest.max ?? REPLICA_LIMITS.max}
+              label="Minimum replicas"
+              max={REPLICA_LIMITS.max}
               maxDecimals={0}
-              min={fixedReplicasSliderParts.rest.min ?? REPLICA_LIMITS.min}
-              onValueChange={fixedReplicasSliderParts.onReplicasQuotaChange}
-              step={fixedReplicasSliderParts.rest.step ?? 1}
-              value={fixedReplicasSliderParts.replicasValue}
+              min={REPLICA_LIMITS.min}
+              onValueChange={onElasticMinReplicasChange}
+              step={1}
+              value={minReplicas}
             />
           </ResourceSettingsInset>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <ResourceSettingsInset>
-              <SettingsSlider
-                ariaLabel="Minimum replicas"
-                disabled={readOnly}
-                formatBound={formatReplicaValue}
-                label="Minimum replicas"
-                max={REPLICA_LIMITS.max}
-                maxDecimals={0}
-                min={REPLICA_LIMITS.min}
-                onValueChange={onElasticMinReplicasChange}
-                step={1}
-                value={minReplicas}
-              />
-            </ResourceSettingsInset>
 
-            <ResourceSettingsInset>
-              <SettingsSlider
-                ariaLabel="Maximum replicas"
-                disabled={readOnly}
-                formatBound={formatReplicaValue}
-                label="Maximum replicas"
-                max={REPLICA_LIMITS.max}
-                maxDecimals={0}
-                min={REPLICA_LIMITS.min}
-                onValueChange={onElasticMaxReplicasChange}
-                step={1}
-                value={maxReplicas}
-              />
-            </ResourceSettingsInset>
-
-            <ScalingTargetSlider
-              cpuTargetPercent={cpuTargetPercent}
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="Maximum replicas"
               disabled={readOnly}
-              memoryTargetMib={memoryTargetMib}
-              onCpuTargetChange={onElasticCpuTargetChange}
-              onMemoryTargetChange={onElasticMemoryTargetChange}
-              onTargetMetricChange={onElasticTargetMetricChange}
-              targetMetric={targetMetric}
+              formatBound={formatReplicaValue}
+              label="Maximum replicas"
+              max={REPLICA_LIMITS.max}
+              maxDecimals={0}
+              min={REPLICA_LIMITS.min}
+              onValueChange={onElasticMaxReplicasChange}
+              step={1}
+              value={maxReplicas}
             />
-          </div>
-        )}
-      </div>
-    </ResourceSettingsSection>
+          </ResourceSettingsInset>
+
+          <ScalingTargetSlider
+            cpuTargetPercent={cpuTargetPercent}
+            disabled={readOnly}
+            memoryTargetMib={memoryTargetMib}
+            onCpuTargetChange={onElasticCpuTargetChange}
+            onMemoryTargetChange={onElasticMemoryTargetChange}
+            onTargetMetricChange={onElasticTargetMetricChange}
+            targetMetric={targetMetric}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
-function ImageSettingsSection({
+function ImageSettingsContent({
   imageInputId,
   onBlur,
   onChange,
@@ -4519,34 +4565,32 @@ function ImageSettingsSection({
   const shownImage = value.trim() === "" ? "No image configured" : value;
 
   return (
-    <ResourceSettingsSection icon={SquarePen} title="Image">
-      <div className="flex min-w-0 flex-col gap-2">
-        <Label
-          className="text-foreground text-sm leading-none"
-          htmlFor={imageInputId}
+    <div className="flex min-w-0 flex-col gap-2">
+      <Label
+        className="text-foreground text-sm leading-none"
+        htmlFor={imageInputId}
+      >
+        Image
+      </Label>
+      {readOnly ? (
+        <div
+          className="flex h-9 min-w-0 items-center overflow-hidden rounded-md border border-input bg-transparent px-3 py-2 text-muted-foreground text-sm leading-5"
+          title={shownImage}
         >
-          Image
-        </Label>
-        {readOnly ? (
-          <div
-            className="flex h-9 min-w-0 items-center overflow-hidden rounded-md border border-input bg-transparent px-3 py-2 text-muted-foreground text-sm leading-5"
-            title={shownImage}
-          >
-            <span className="min-w-0 truncate">{shownImage}</span>
-          </div>
-        ) : (
-          <AppInput
-            aria-label="Container image"
-            id={imageInputId}
-            onBlur={onBlur}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder="ghcr.io/org/app:1.0.0"
-            title={shownImage}
-            value={value}
-          />
-        )}
-      </div>
-    </ResourceSettingsSection>
+          <span className="min-w-0 truncate">{shownImage}</span>
+        </div>
+      ) : (
+        <AppInput
+          aria-label="Container image"
+          id={imageInputId}
+          onBlur={onBlur}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="ghcr.io/org/app:1.0.0"
+          title={shownImage}
+          value={value}
+        />
+      )}
+    </div>
   );
 }
 
@@ -4601,7 +4645,7 @@ function ContainerSettingsTextarea({
   );
 }
 
-function LaunchCommandSettingsSection({
+function LaunchCommandSettingsContent({
   args,
   command,
   onArgsChange,
@@ -4615,42 +4659,38 @@ function LaunchCommandSettingsSection({
   readOnly: boolean;
 }) {
   return (
-    <ResourceSettingsSection icon={Terminal} title="Launch Command">
-      <div className="grid min-w-0 gap-3">
-        <div className="grid min-w-0 gap-2">
-          <Label className="text-foreground text-sm leading-none">
-            Command
-          </Label>
-          <ContainerSettingsTextarea
-            aria-label="Container command"
-            onChange={(event) =>
-              onCommandChange(splitDraftLines(event.target.value))
-            }
-            placeholder="/app/server"
-            readOnly={readOnly}
-            value={command.join("\n")}
-          />
-        </div>
-        <div className="grid min-w-0 gap-2">
-          <Label className="text-foreground text-sm leading-none">
-            Arguments
-          </Label>
-          <ContainerSettingsTextarea
-            aria-label="Container arguments"
-            onChange={(event) =>
-              onArgsChange(splitDraftLines(event.target.value))
-            }
-            placeholder={"--config\n/etc/app/config.yaml"}
-            readOnly={readOnly}
-            value={args.join("\n")}
-          />
-        </div>
+    <div className="grid min-w-0 gap-3">
+      <div className="grid min-w-0 gap-2">
+        <Label className="text-foreground text-sm leading-none">Command</Label>
+        <ContainerSettingsTextarea
+          aria-label="Container command"
+          onChange={(event) =>
+            onCommandChange(splitDraftLines(event.target.value))
+          }
+          placeholder="/app/server"
+          readOnly={readOnly}
+          value={command.join("\n")}
+        />
       </div>
-    </ResourceSettingsSection>
+      <div className="grid min-w-0 gap-2">
+        <Label className="text-foreground text-sm leading-none">
+          Arguments
+        </Label>
+        <ContainerSettingsTextarea
+          aria-label="Container arguments"
+          onChange={(event) =>
+            onArgsChange(splitDraftLines(event.target.value))
+          }
+          placeholder={"--config\n/etc/app/config.yaml"}
+          readOnly={readOnly}
+          value={args.join("\n")}
+        />
+      </div>
+    </div>
   );
 }
 
-function ConfigMapSettingsSection({
+function ConfigMapSettingsContent({
   configMaps,
   configMapKeys,
   onAdd,
@@ -4666,7 +4706,7 @@ function ConfigMapSettingsSection({
   readOnly: boolean;
 }) {
   return (
-    <ResourceSettingsSection icon={FileText} title="Config Files">
+    <>
       <div className="flex min-w-0 flex-col gap-2">
         {configMaps.length === 0 ? (
           <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
@@ -4731,11 +4771,11 @@ function ConfigMapSettingsSection({
           </AppButton>
         </div>
       )}
-    </ResourceSettingsSection>
+    </>
   );
 }
 
-function StorageSettingsSection({
+function StorageSettingsContent({
   onUpdate,
   readOnly,
   storage,
@@ -4747,38 +4787,36 @@ function StorageSettingsSection({
   storageKeys: readonly string[];
 }) {
   return (
-    <ResourceSettingsSection icon={HardDrive} title="Storage">
-      <div className="flex min-w-0 flex-col gap-2">
-        {storage.length === 0 ? (
-          <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
-            No storage
+    <div className="flex min-w-0 flex-col gap-2">
+      {storage.length === 0 ? (
+        <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
+          No storage
+        </div>
+      ) : (
+        storage.map((item, index) => (
+          <div
+            className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"
+            key={storageKeys[index] ?? `${item.path}\u0000${item.size}`}
+          >
+            <AppInput
+              aria-label="Storage mount path"
+              readOnly
+              title="StatefulSet storage mount path is immutable."
+              value={item.path}
+            />
+            <AppInput
+              aria-label="Storage size"
+              onChange={(event) =>
+                onUpdate(index, { size: event.target.value })
+              }
+              placeholder="1Gi"
+              readOnly={readOnly}
+              value={item.size}
+            />
           </div>
-        ) : (
-          storage.map((item, index) => (
-            <div
-              className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"
-              key={storageKeys[index] ?? `${item.path}\u0000${item.size}`}
-            >
-              <AppInput
-                aria-label="Storage mount path"
-                readOnly
-                title="StatefulSet storage mount path is immutable."
-                value={item.path}
-              />
-              <AppInput
-                aria-label="Storage size"
-                onChange={(event) =>
-                  onUpdate(index, { size: event.target.value })
-                }
-                placeholder="1Gi"
-                readOnly={readOnly}
-                value={item.size}
-              />
-            </div>
-          ))
-        )}
-      </div>
-    </ResourceSettingsSection>
+        ))
+      )}
+    </div>
   );
 }
 
@@ -4838,10 +4876,9 @@ function ContainerSettingsDraftFooter({
  * All fields are controlled by the host.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: coordinates several controlled AP settings sections plus legacy section commit props.
-export function ContainerSettingsPane({
+export function useContainerSettingsSections({
   addDbDsnReferenceIntent,
   args = [],
-  className,
   command = [],
   configMaps = [],
   envRawSource,
@@ -4863,14 +4900,13 @@ export function ContainerSettingsPane({
   onResourceQuotasCommit,
   onEnvResolvedValue,
   onSettingsDraftCommit,
-  onSettingsDraftLeaveGuardChange,
   readOnly = false,
   dbDsnReferenceSources = [],
   sectionFocus = "all",
   showImageSection = true,
   storage = [],
   workloadKind = "deployment",
-}: ContainerSettingsPaneProps) {
+}: ContainerSettingsSectionsProps): ContainerSettingsSectionsModel {
   const [draftImage, setDraftImage] = useState(image);
   const [quotaSavePending, setQuotaSavePending] = useState(false);
   const [settingsSavePending, setSettingsSavePending] = useState(false);
@@ -5993,35 +6029,16 @@ export function ContainerSettingsPane({
 
   const environmentFocus = sectionFocus === "environment";
 
-  useEffect(() => {
-    if (!settingsCommitMode || onSettingsDraftLeaveGuardChange == null) {
-      return;
-    }
-
-    onSettingsDraftLeaveGuardChange(
-      panelDraftDirty
-        ? {
-            canSave: canSaveSettings,
-            dirty: true,
-            discard: resetSettingsDraft,
-            save: saveSettingsDraft,
-            scope: environmentFocus ? "environmentVariables" : "ap",
-          }
-        : null
-    );
-
-    return () => {
-      onSettingsDraftLeaveGuardChange(null);
-    };
-  }, [
-    canSaveSettings,
-    environmentFocus,
-    onSettingsDraftLeaveGuardChange,
-    panelDraftDirty,
-    resetSettingsDraft,
-    saveSettingsDraft,
-    settingsCommitMode,
-  ]);
+  const leaveGuard: SettingsLeaveGuardHandle | null =
+    settingsCommitMode && panelDraftDirty
+      ? {
+          canSave: canSaveSettings,
+          dirty: true,
+          discard: resetSettingsDraft,
+          save: saveSettingsDraft,
+          scope: environmentFocus ? "environmentVariables" : "ap",
+        }
+      : null;
 
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
@@ -6054,121 +6071,149 @@ export function ContainerSettingsPane({
     </>
   );
 
-  return (
-    <div
-      className={cn(
-        "flex w-full flex-col gap-5 text-muted-foreground",
-        className
-      )}
-      data-slot="container-settings-pane"
-    >
-      {environmentFocus ? null : (
-        <div className="grid gap-5">
-          {replicasSliderParts == null ? null : (
-            <ReplicaStrategySection
-              actions={quotaActions}
-              elastic={normalizeElasticReplicaSettings(
-                elasticSettingsFromStrategy(draftReplicaStrategy)
-              )}
-              fixedReplicasSliderParts={replicasSliderParts}
-              onElasticCpuTargetChange={handleElasticCpuTargetChange}
-              onElasticMaxReplicasChange={handleElasticMaxReplicasChange}
-              onElasticMemoryTargetChange={handleElasticMemoryTargetChange}
-              onElasticMinReplicasChange={handleElasticMinReplicasChange}
-              onElasticTargetMetricChange={handleElasticTargetMetricChange}
-              onStrategyTypeChange={handleReplicaStrategyTypeChange}
-              readOnly={readOnly}
-              strategyType={replicaStrategyType}
-            />
-          )}
+  const sections: ContainerSettingsRenderedSection[] = [];
 
-          <ResourceSettingsSection
-            actions={replicasSliderParts == null ? quotaActions : undefined}
-            title="CPU / Memory"
-          >
-            <ResourceSettingsInset>
-              <SettingsSlider
-                ariaLabel="CPU quota (cores)"
-                disabled={cpuSliderRest.disabled}
-                formatBound={(next) => formatPlainNumber(next, 2)}
-                icon={Cpu}
-                label="CPU"
-                max={cpuSlider.max}
-                maxDecimals={cpuDecimals}
-                min={cpuSlider.min}
-                onValueChange={onCpuQuotaChange}
-                step={cpuSliderRest.step}
-                value={cpuValue}
-                valueSuffix={cpuCoresValueSuffix}
-              />
-            </ResourceSettingsInset>
-
-            <ResourceSettingsInset>
-              <SettingsSlider
-                ariaLabel="Memory quota (MiB)"
-                disabled={memorySliderRest.disabled}
-                displayValue={memoryMibDisplayValue(memoryValue)}
-                formatBound={formatMemoryMibValue}
-                icon={MemoryStick}
-                label="Memory"
-                max={memorySlider.max}
-                maxDecimals={2}
-                min={memorySlider.min}
-                onValueChange={onMemoryQuotaChange}
-                step={memorySliderRest.step}
-                value={memoryValue}
-                valueSuffix={memoryMibValueSuffix(memoryValue)}
-              />
-            </ResourceSettingsInset>
-          </ResourceSettingsSection>
-
-          {showImageSection ? (
-            <ImageSettingsSection
-              imageInputId={imageInputId}
-              onBlur={handleImageBlur}
-              onChange={handleImageChange}
-              readOnly={readOnly}
-              value={displayImage}
-            />
-          ) : null}
-
-          <LaunchCommandSettingsSection
-            args={settingsDraft.args ?? []}
-            command={settingsDraft.command ?? []}
-            onArgsChange={(value) =>
-              setDraftArgs(normalizeCommandDraftLines(value))
-            }
-            onCommandChange={(value) =>
-              setDraftCommand(normalizeCommandDraftLines(value))
-            }
+  if (!environmentFocus) {
+    if (replicasSliderParts != null) {
+      sections.push({
+        actions: quotaActions,
+        content: (
+          <ReplicaStrategyContent
+            elastic={normalizeElasticReplicaSettings(
+              elasticSettingsFromStrategy(draftReplicaStrategy)
+            )}
+            fixedReplicasSliderParts={replicasSliderParts}
+            onElasticCpuTargetChange={handleElasticCpuTargetChange}
+            onElasticMaxReplicasChange={handleElasticMaxReplicasChange}
+            onElasticMemoryTargetChange={handleElasticMemoryTargetChange}
+            onElasticMinReplicasChange={handleElasticMinReplicasChange}
+            onElasticTargetMetricChange={handleElasticTargetMetricChange}
+            onStrategyTypeChange={handleReplicaStrategyTypeChange}
             readOnly={readOnly}
+            strategyType={replicaStrategyType}
           />
+        ),
+        id: "replica-strategy",
+        title: "Replica Strategy",
+      });
+    }
 
-          <ConfigMapSettingsSection
-            configMapKeys={configMapDraftKeys}
-            configMaps={settingsDraft.configMaps ?? []}
-            onAdd={handleAddConfigMapRow}
-            onDelete={handleDeleteConfigMapRow}
-            onUpdate={handleUpdateConfigMapRow}
-            readOnly={readOnly}
-          />
-
-          {workloadKind === "statefulset" || draftStorage.length > 0 ? (
-            <StorageSettingsSection
-              onUpdate={handleUpdateStorageRow}
-              readOnly={readOnly}
-              storage={settingsDraft.storage ?? []}
-              storageKeys={storageDraftKeys}
+    sections.push({
+      actions: replicasSliderParts == null ? quotaActions : undefined,
+      content: (
+        <>
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="CPU quota (cores)"
+              disabled={cpuSliderRest.disabled}
+              formatBound={(next) => formatPlainNumber(next, 2)}
+              icon={Cpu}
+              label="CPU"
+              max={cpuSlider.max}
+              maxDecimals={cpuDecimals}
+              min={cpuSlider.min}
+              onValueChange={onCpuQuotaChange}
+              step={cpuSliderRest.step}
+              value={cpuValue}
+              valueSuffix={cpuCoresValueSuffix}
             />
-          ) : null}
-        </div>
-      )}
+          </ResourceSettingsInset>
+          <ResourceSettingsInset>
+            <SettingsSlider
+              ariaLabel="Memory quota (MiB)"
+              disabled={memorySliderRest.disabled}
+              displayValue={memoryMibDisplayValue(memoryValue)}
+              formatBound={formatMemoryMibValue}
+              icon={MemoryStick}
+              label="Memory"
+              max={memorySlider.max}
+              maxDecimals={2}
+              min={memorySlider.min}
+              onValueChange={onMemoryQuotaChange}
+              step={memorySliderRest.step}
+              value={memoryValue}
+              valueSuffix={memoryMibValueSuffix(memoryValue)}
+            />
+          </ResourceSettingsInset>
+        </>
+      ),
+      id: "cpu-memory",
+      title: "CPU / Memory",
+    });
 
-      <ResourceSettingsSection
-        actions={envSectionActions}
-        icon={SquarePen}
-        title="Environment Variables"
-      >
+    if (showImageSection) {
+      sections.push({
+        content: (
+          <ImageSettingsContent
+            imageInputId={imageInputId}
+            onBlur={handleImageBlur}
+            onChange={handleImageChange}
+            readOnly={readOnly}
+            value={displayImage}
+          />
+        ),
+        icon: SquarePen,
+        id: "image",
+        title: "Image",
+      });
+    }
+
+    sections.push({
+      content: (
+        <LaunchCommandSettingsContent
+          args={settingsDraft.args ?? []}
+          command={settingsDraft.command ?? []}
+          onArgsChange={(value) =>
+            setDraftArgs(normalizeCommandDraftLines(value))
+          }
+          onCommandChange={(value) =>
+            setDraftCommand(normalizeCommandDraftLines(value))
+          }
+          readOnly={readOnly}
+        />
+      ),
+      icon: Terminal,
+      id: "launch-command",
+      title: "Launch Command",
+    });
+
+    sections.push({
+      content: (
+        <ConfigMapSettingsContent
+          configMapKeys={configMapDraftKeys}
+          configMaps={settingsDraft.configMaps ?? []}
+          onAdd={handleAddConfigMapRow}
+          onDelete={handleDeleteConfigMapRow}
+          onUpdate={handleUpdateConfigMapRow}
+          readOnly={readOnly}
+        />
+      ),
+      icon: FileText,
+      id: "config-files",
+      title: "Config Files",
+    });
+
+    if (workloadKind === "statefulset" || draftStorage.length > 0) {
+      sections.push({
+        content: (
+          <StorageSettingsContent
+            onUpdate={handleUpdateStorageRow}
+            readOnly={readOnly}
+            storage={settingsDraft.storage ?? []}
+            storageKeys={storageDraftKeys}
+          />
+        ),
+        icon: HardDrive,
+        id: "storage",
+        title: "Storage",
+      });
+    }
+  }
+
+  sections.push({
+    actions: envSectionActions,
+    content: (
+      <>
         <div className="flex min-w-0 flex-col gap-2">
           {readOnly ? (
             <ReadOnlyEnvRows env={env} />
@@ -6224,9 +6269,16 @@ export function ContainerSettingsPane({
             </AppButton>
           </div>
         )}
-      </ResourceSettingsSection>
+      </>
+    ),
+    icon: SquarePen,
+    id: "environment",
+    title: "Environment Variables",
+  });
 
-      {environmentFocus || networkForRender == null ? null : (
+  if (!environmentFocus && networkForRender != null) {
+    sections.push({
+      content: (
         <NetworkSettingsSection
           network={networkForRender}
           onCustomDomainCnameVerify={onCustomDomainCnameVerify}
@@ -6237,28 +6289,84 @@ export function ContainerSettingsPane({
           platformAddressDraftContext={networkPlatformAddressDraftContext}
           readOnly={readOnly}
         />
-      )}
+      ),
+      icon: Network,
+      id: "network",
+      title: "Network",
+    });
+  }
 
-      {settingsCommitMode ? (
-        <ContainerSettingsDraftFooter
-          backingResourceChanged={settingsBackingState.resourceChanged}
-          canSave={canSaveSettings}
-          dirty={panelDraftDirty}
-          discardAriaLabel="Discard AP Settings changes"
-          onCancel={resetSettingsDraft}
-          onKeepEditing={keepEditingSettingsDraft}
-          onReload={reloadSettingsDraft}
-          onSave={handleSaveSettingsDraft}
-          pending={settingsSavePending}
-          saveFailureMessage={settingsBackingState.saveFailureMessage}
-          submitAriaLabel={
-            environmentFocus
-              ? "Update Environment Variables"
-              : "Update AP Settings"
-          }
-          submitLabel="Update"
-        />
-      ) : null}
+  return {
+    footer: settingsCommitMode ? (
+      <ContainerSettingsDraftFooter
+        backingResourceChanged={settingsBackingState.resourceChanged}
+        canSave={canSaveSettings}
+        dirty={panelDraftDirty}
+        discardAriaLabel="Discard AP Settings changes"
+        onCancel={resetSettingsDraft}
+        onKeepEditing={keepEditingSettingsDraft}
+        onReload={reloadSettingsDraft}
+        onSave={handleSaveSettingsDraft}
+        pending={settingsSavePending}
+        saveFailureMessage={settingsBackingState.saveFailureMessage}
+        submitAriaLabel={
+          environmentFocus
+            ? "Update Environment Variables"
+            : "Update AP Settings"
+        }
+        submitLabel="Update"
+      />
+    ) : null,
+    leaveGuard,
+    sections,
+  };
+}
+
+export function ContainerSettingsPane({
+  className,
+  onSettingsDraftLeaveGuardChange,
+  ...props
+}: ContainerSettingsPaneProps) {
+  const model = useContainerSettingsSections({
+    ...props,
+    onSettingsDraftLeaveGuardChange,
+  });
+
+  useEffect(() => {
+    if (onSettingsDraftLeaveGuardChange == null) {
+      return;
+    }
+    onSettingsDraftLeaveGuardChange(model.leaveGuard ?? null);
+    return () => {
+      onSettingsDraftLeaveGuardChange(null);
+    };
+  }, [model.leaveGuard, onSettingsDraftLeaveGuardChange]);
+
+  return (
+    <div
+      className={cn(
+        "flex w-full flex-col gap-5 text-muted-foreground",
+        className
+      )}
+      data-slot="container-settings-pane"
+    >
+      {model.sections.map((section) =>
+        section.chromeless ? (
+          <div data-settings-section={section.id} key={section.id}>
+            {section.content}
+          </div>
+        ) : (
+          <ResourceSettingsSection
+            actions={section.actions}
+            icon={section.icon}
+            key={section.id}
+            title={section.title}
+          >
+            {section.content}
+          </ResourceSettingsSection>
+        )
+      )}
+      {model.footer}
     </div>
   );
 }
