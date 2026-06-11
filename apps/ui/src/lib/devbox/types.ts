@@ -50,11 +50,6 @@ export interface CreateDevboxKubeAccess {
   roleTemplate?: "view" | "edit" | "admin";
 }
 
-export interface CreateDevboxResource {
-  cpu?: string;
-  memory?: string;
-}
-
 export interface CreateDevboxInput {
   archiveAfterPauseTime?: string;
   env?: Record<string, string>;
@@ -63,7 +58,6 @@ export interface CreateDevboxInput {
   labels?: CreateDevboxLabel[];
   name: string;
   pauseAt?: string;
-  resource?: CreateDevboxResource;
   storageLimit?: string;
   upstreamID?: string;
 }

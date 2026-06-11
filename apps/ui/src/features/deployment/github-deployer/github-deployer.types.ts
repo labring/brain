@@ -50,11 +50,14 @@ export interface GithubDeployerActions {
   onAuthorize?: () => void;
   /** Invoked when Deploy is pressed with the selected repo. */
   onDeploy?: (repo: GithubDeployerRepo) => void;
+  /** Invoked when the user disconnects the current server-side GitHub credential. */
+  onDisconnect?: () => void;
 }
 
 export interface GithubDeployerResolvedActions {
   onAuthorize?: () => void;
   onDeploy?: (repo: GithubDeployerRepo) => void;
+  onDisconnect?: () => void;
 }
 
 export interface GithubDeployerValue {

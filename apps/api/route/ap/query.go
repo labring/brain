@@ -64,21 +64,28 @@ func registerGet(grp huma.API) {
 			return &getOutput{Body: body}, nil
 		}
 
-		deploymentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			LabelSelector: apWorkloadLabelSelector(input.LabelSelector),
-			Resource:      "deployments",
-			Namespace:     resolved.Namespace,
-		})
-		if err != nil && !apierrors.IsNotFound(err) {
-			return nil, huma.Error500InternalServerError("failed to list AP deployments", err)
-		}
-		statefulSetJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			LabelSelector: apWorkloadLabelSelector(input.LabelSelector),
-			Resource:      "statefulsets",
-			Namespace:     resolved.Namespace,
-		})
-		if err != nil && !apierrors.IsNotFound(err) {
-			return nil, huma.Error500InternalServerError("failed to list AP statefulsets", err)
+		var deploymentJSON []byte
+		var statefulSetJSON []byte
+		for _, selector := range apLikeWorkloadLabelSelectors(input.LabelSelector) {
+			nextDeploymentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				LabelSelector: selector,
+				Resource:      "deployments",
+				Namespace:     resolved.Namespace,
+			})
+			if err != nil && !apierrors.IsNotFound(err) {
+				return nil, huma.Error500InternalServerError("failed to list AP deployments", err)
+			}
+			deploymentJSON = mergeK8sListJSON(deploymentJSON, nextDeploymentJSON)
+
+			nextStatefulSetJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				LabelSelector: selector,
+				Resource:      "statefulsets",
+				Namespace:     resolved.Namespace,
+			})
+			if err != nil && !apierrors.IsNotFound(err) {
+				return nil, huma.Error500InternalServerError("failed to list AP statefulsets", err)
+			}
+			statefulSetJSON = mergeK8sListJSON(statefulSetJSON, nextStatefulSetJSON)
 		}
 		body, err := apResponseFromWorkloadLists(
 			deploymentJSON,

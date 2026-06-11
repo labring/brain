@@ -1,9 +1,7 @@
 import "server-only";
 
 import {
-  type ChatDevboxResource,
   DEVBOX_API_PREFIX,
-  getChatDevboxResourceFromEnv,
   getDevboxArchiveAfterPauseTimeFromEnv,
   getDevboxAuthTokenFromEnv,
   getDevboxBaseUrlFromEnv,
@@ -24,10 +22,6 @@ export function getDevboxDefaultImage(): string | undefined {
 
 export function getDevboxArchiveAfterPauseTime(): string | undefined {
   return getDevboxArchiveAfterPauseTimeFromEnv(process.env);
-}
-
-export function getChatDevboxResource(): ChatDevboxResource {
-  return getChatDevboxResourceFromEnv(process.env);
 }
 
 export async function getDevboxAuthToken(namespace: string): Promise<string> {

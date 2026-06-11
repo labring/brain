@@ -130,6 +130,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   });
 
   const {
+    disconnectGithubAuth,
     initiateGithubAuth,
     isAuthorized: githubAuthorized,
     isLoading: githubAuthLoading,
@@ -355,10 +356,23 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]
   );
 
+  const handleGithubDisconnect = useCallback(async () => {
+    try {
+      await disconnectGithubAuth();
+      await mutateGithubRepos([], { revalidate: false });
+      toast.success("Disconnected GitHub.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not disconnect GitHub."
+      );
+    }
+  }, [disconnectGithubAuth, mutateGithubRepos]);
+
   const githubDeployer = useMemo(
     () => ({
       actions: {
         onAuthorize: initiateGithubAuth,
+        onDisconnect: handleGithubDisconnect,
         onDeploy: handleGithubDeploy,
       },
       states: {
@@ -377,6 +391,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       githubReposError,
       githubRepos,
       githubAuthorized,
+      handleGithubDisconnect,
       handleGithubDeploy,
       initiateGithubAuth,
       mutateGithubRepos,

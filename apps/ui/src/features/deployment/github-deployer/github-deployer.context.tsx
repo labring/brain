@@ -54,9 +54,10 @@ export function GithubDeployerRoot({
   const resolvedActions = useMemo(
     () => ({
       onAuthorize: actions.onAuthorize,
+      onDisconnect: actions.onDisconnect,
       onDeploy: actions.onDeploy,
     }),
-    [actions.onAuthorize, actions.onDeploy]
+    [actions.onAuthorize, actions.onDisconnect, actions.onDeploy]
   );
 
   const value = useMemo(

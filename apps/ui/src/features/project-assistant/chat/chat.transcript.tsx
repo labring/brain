@@ -7,6 +7,8 @@ import {
 } from "@workspace/ui/components/ai-elements/conversation";
 import {
   Message,
+  MessageAction,
+  MessageActions,
   MessageContent,
 } from "@workspace/ui/components/ai-elements/message";
 import { Shimmer } from "@workspace/ui/components/ai-elements/shimmer";
@@ -14,13 +16,25 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import type { ChatStatus, UIMessage } from "ai";
 import { isToolUIPart } from "ai";
+import { Check, Copy } from "lucide-react";
 import type { ComponentProps } from "react";
+import { useCallback, useState } from "react";
 import { renderChatMessageParts } from "./chat.part";
 import { isChatToolPartStateInFlight } from "./chat.tool-group";
 import type { ChatTranscriptProps } from "./chat.types";
 
 const userBubbleClassName =
   "group-[.is-user]:rounded-3xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:bg-input/30 group-[.is-user]:px-3 group-[.is-user]:py-1.5";
+
+const COPIED_FEEDBACK_MS = 1500;
+
+function textContentForMessage(message: UIMessage): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n\n")
+    .trim();
+}
 
 /** Tool activity is already shown in the transcript; avoid a duplicate loading row. */
 function assistantHasInFlightToolCalls(message: UIMessage): boolean {
@@ -61,6 +75,62 @@ function streamingAwaitingAssistantText(
   return true;
 }
 
+function MessageCopyAction({
+  disabled,
+  message,
+}: {
+  disabled?: boolean;
+  message: UIMessage;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copyText = textContentForMessage(message);
+  const copyable = copyText !== "";
+
+  const copyMessage = useCallback(async () => {
+    if (!copyable || disabled) {
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+    } catch {
+      // Clipboard availability is best-effort UI affordance.
+    }
+  }, [copyText, copyable, disabled]);
+
+  if (!copyable) {
+    return null;
+  }
+
+  return (
+    <MessageActions
+      className={cn(
+        "pointer-events-none opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
+        message.role === "user" ? "self-end" : "self-start"
+      )}
+    >
+      <MessageAction
+        aria-label={copied ? "Copied message" : "Copy message"}
+        disabled={disabled}
+        onClick={() => {
+          copyMessage().catch(() => undefined);
+        }}
+        tooltip={copied ? "Copied" : "Copy message"}
+      >
+        {copied ? (
+          <Check aria-hidden className="size-3" />
+        ) : (
+          <Copy aria-hidden className="size-3" />
+        )}
+      </MessageAction>
+    </MessageActions>
+  );
+}
+
 /** Message list + scroll region; pass AI SDK message state from the host. */
 export function ChatTranscript({
   addToolApprovalResponse,
@@ -90,6 +160,10 @@ export function ChatTranscript({
                   message,
                 })}
               </MessageContent>
+              <MessageCopyAction
+                disabled={status === "streaming" && message === messages.at(-1)}
+                message={message}
+              />
             </Message>
           ))}
           {showLoadingRow && (

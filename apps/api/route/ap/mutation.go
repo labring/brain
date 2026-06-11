@@ -775,7 +775,7 @@ func registerUpdate(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP for update", err)
 		}
-		if err := requireBrainAPWorkload(*workload); err != nil {
+		if err := requireBrainAPLikeWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 
@@ -1380,11 +1380,15 @@ func patchAPStatefulSetPVCStorage(ctx context.Context, restConfig *rest.Config, 
 	if err != nil {
 		return err
 	}
-	pvcs, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).List(ctx, metav1.ListOptions{
-		LabelSelector: apWorkloadLabelSelector(orchestration.BrainResourceNameLabel + "=" + workload.Name()),
-	})
-	if err != nil {
-		return err
+	var pvcs corev1.PersistentVolumeClaimList
+	for _, selector := range apLikeWorkloadLabelSelectors(orchestration.BrainResourceNameLabel + "=" + workload.Name()) {
+		next, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).List(ctx, metav1.ListOptions{
+			LabelSelector: selector,
+		})
+		if err != nil {
+			return err
+		}
+		pvcs.Items = append(pvcs.Items, next.Items...)
 	}
 	desiredByPath := map[string]orchestration.APStorageMount{}
 	for _, item := range desired {
@@ -1915,18 +1919,20 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 	if err != nil {
 		return err
 	}
-	if err := requireBrainAPWorkload(*workload); err != nil {
+	if err := requireBrainAPLikeWorkload(*workload); err != nil {
 		return apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, name)
 	}
-	selector := apDirectResourceDeleteSelector(name)
-	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets", "persistentvolumeclaims"} {
-		_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
-			LabelSelector: selector,
-			Namespace:     namespace,
-			Resource:      resource,
-		})
-		if err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
-			return err
+	if isStrictBrainAPWorkload(*workload) {
+		selector := apDirectResourceDeleteSelector(name)
+		for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets", "persistentvolumeclaims"} {
+			_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
+				LabelSelector: selector,
+				Namespace:     namespace,
+				Resource:      resource,
+			})
+			if err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+				return err
+			}
 		}
 	}
 	_, err = k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
@@ -1992,7 +1998,7 @@ func registerRestart(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP workload for restart", err)
 		}
-		if err := requireBrainAPWorkload(*workload); err != nil {
+		if err := requireBrainAPLikeWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 

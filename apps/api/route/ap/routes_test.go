@@ -122,6 +122,110 @@ func TestAPResponseFromDeploymentsReturnsAPList(t *testing.T) {
 	}
 }
 
+func TestAPResponseFromWorkloadListsIncludesTemplateStatefulSets(t *testing.T) {
+	deployments := []byte(`{
+		"apiVersion": "apps/v1",
+		"kind": "DeploymentList",
+		"items": [
+			{
+				"apiVersion": "apps/v1",
+				"kind": "Deployment",
+				"metadata": {
+					"labels": {
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "ap"
+					},
+					"name": "web",
+					"namespace": "ns-a"
+				},
+				"spec": {
+					"replicas": 1,
+					"template": {"spec": {"containers": [{"name": "web", "image": "nginx:1.27"}]}}
+				}
+			}
+		]
+	}`)
+	statefulSets := []byte(`{
+		"apiVersion": "apps/v1",
+		"kind": "StatefulSetList",
+		"items": [
+			{
+				"apiVersion": "apps/v1",
+				"kind": "StatefulSet",
+				"metadata": {
+					"labels": {
+						"brain.io/project-id": "project-a",
+						"brain.io/resource-kind": "template"
+					},
+					"name": "affine",
+					"namespace": "ns-a"
+				},
+				"spec": {
+					"replicas": 1,
+					"template": {"spec": {"containers": [{"name": "main", "image": "ghcr.io/toeverything/affine:stable"}]}}
+				}
+			}
+		]
+	}`)
+	body, err := apResponseFromWorkloadLists(deployments, statefulSets)
+	if err != nil {
+		t.Fatalf("apResponseFromWorkloadLists returned error: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := out["items"].([]interface{})
+	if len(items) != 2 {
+		t.Fatalf("items length = %d, want 2", len(items))
+	}
+	templateAP := items[1].(map[string]interface{})
+	if got := templateAP["kind"]; got != "AP" {
+		t.Fatalf("template workload kind = %v, want AP", got)
+	}
+	spec := templateAP["spec"].(map[string]interface{})
+	input := spec["input"].(map[string]interface{})
+	if got := input["image"]; got != "ghcr.io/toeverything/affine:stable" {
+		t.Fatalf("template workload image = %v, want affine image", got)
+	}
+}
+
+func TestMergeK8sListJSONPreservesStandardListShape(t *testing.T) {
+	left := []byte(`{
+		"apiVersion": "apps/v1",
+		"kind": "DeploymentList",
+		"metadata": {"resourceVersion": "1"},
+		"items": []
+	}`)
+	right := []byte(`{
+		"apiVersion": "apps/v1",
+		"kind": "DeploymentList",
+		"metadata": {"resourceVersion": "2"},
+		"items": [
+			{
+				"apiVersion": "apps/v1",
+				"kind": "Deployment",
+				"metadata": {"name": "web", "namespace": "ns-a"}
+			}
+		]
+	}`)
+	merged := mergeK8sListJSON(left, right)
+	var out map[string]interface{}
+	if err := json.Unmarshal(merged, &out); err != nil {
+		t.Fatalf("unmarshal merged list: %v", err)
+	}
+	if _, exists := out["Object"]; exists {
+		t.Fatalf("merged list must not expose unstructured.UnstructuredList internals: %s", string(merged))
+	}
+	if got := out["kind"]; got != "DeploymentList" {
+		t.Fatalf("kind = %v, want DeploymentList", got)
+	}
+	items := out["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(items))
+	}
+}
+
 func TestAPObjectWithConfigMapValuesFillsMountedFileContents(t *testing.T) {
 	apObject := map[string]interface{}{
 		"spec": map[string]interface{}{
@@ -331,6 +435,9 @@ func TestAPLikeOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
 	}
 	if err := requireBrainAPLikeStatefulSet(statefulSet); err != nil {
 		t.Fatalf("expected managed template statefulset to pass AP-like ownership check: %v", err)
+	}
+	if err := requireBrainAPLikeWorkload(apWorkload{StatefulSet: &statefulSet}); err != nil {
+		t.Fatalf("expected managed template workload to pass AP-like ownership check: %v", err)
 	}
 }
 

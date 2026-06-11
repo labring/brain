@@ -6,6 +6,7 @@ import {
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import {
+  apLikeWorkloadKeysFromList,
   dbsToCanvasState,
   dbToDatabaseNodeData,
   entryPointsToCanvasState,
@@ -534,6 +535,57 @@ test("Template native workloads map Brain template Deployment and StatefulSet re
       uid: "sts-uid",
     },
   });
+});
+
+test("Template native workloads omit items already represented by AP-like list", () => {
+  const apLikeWorkloadKeys = apLikeWorkloadKeysFromList(
+    {
+      items: [
+        {
+          apiVersion: "brain.io/direct",
+          kind: "AP",
+          metadata: {
+            name: "affine",
+            namespace: "ns-admin",
+          },
+        },
+      ],
+    },
+    { namespaceFallback: "ns-admin" }
+  );
+  const state = templateNativeWorkloadsToCanvasState(
+    {
+      statefulSets: {
+        items: [
+          {
+            apiVersion: "apps/v1",
+            kind: "StatefulSet",
+            metadata: {
+              labels: {
+                "brain.io/resource-kind": "template",
+              },
+              name: "affine",
+              namespace: "ns-admin",
+              uid: "sts-uid",
+            },
+            spec: {
+              template: {
+                spec: {
+                  containers: [{ image: "affine:stable", name: "main" }],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+    {
+      apLikeWorkloadKeys,
+      namespaceFallback: "ns-admin",
+    }
+  );
+
+  assert.deepEqual(state.nodes, []);
 });
 
 test("Template native workloads ignore direct AP controller Deployments", () => {

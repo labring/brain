@@ -129,6 +129,16 @@ export async function getGithubConnection(
   return toConnectionDTO(row);
 }
 
+export async function revokeGithubConnection(namespace: string): Promise<void> {
+  const now = new Date();
+  await getAssistantDb()
+    .update(githubConnections)
+    .set({ revokedAt: now, updatedAt: now })
+    .where(
+      eq(githubConnections.namespace, normalizeAssistantNamespace(namespace))
+    );
+}
+
 export async function getGithubAccessToken(
   namespace: string
 ): Promise<string | null> {

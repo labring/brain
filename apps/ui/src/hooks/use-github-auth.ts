@@ -22,6 +22,7 @@ interface GithubConnectionResponse {
 
 export interface UseGithubAuthResult {
   canCheck: boolean;
+  disconnectGithubAuth: () => Promise<void>;
   error: Error | undefined;
   githubLogin: string | undefined;
   initiateGithubAuth: () => void;
@@ -40,6 +41,18 @@ async function fetchConnection(
     throw new Error(await response.text());
   }
   return (await response.json()) as GithubConnectionResponse;
+}
+
+async function deleteConnection(namespace: string): Promise<void> {
+  const url = new URL("/api/github/connection", window.location.origin);
+  url.searchParams.set("namespace", namespace);
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
 }
 
 export function useGithubAuth(options?: {
@@ -78,8 +91,17 @@ export function useGithubAuth(options?: {
     window.location.assign(`${url.pathname}${url.search}`);
   }, [namespace]);
 
+  const disconnectGithubAuth = useCallback(async () => {
+    if (!canCheck) {
+      return;
+    }
+    await deleteConnection(namespace);
+    await mutate({ connection: null }, { revalidate: false });
+  }, [canCheck, mutate, namespace]);
+
   return {
     canCheck,
+    disconnectGithubAuth,
     error: err,
     githubLogin: data?.connection?.githubLogin,
     initiateGithubAuth,

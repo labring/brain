@@ -142,6 +142,22 @@ func apWorkloadLabelSelector(extra string) string {
 	return base + "," + extra
 }
 
+func templateAPLikeWorkloadLabelSelector(extra string) string {
+	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=template"
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return base
+	}
+	return base + "," + extra
+}
+
+func apLikeWorkloadLabelSelectors(extra string) []string {
+	return []string{
+		apWorkloadLabelSelector(extra),
+		templateAPLikeWorkloadLabelSelector(extra),
+	}
+}
+
 func apResponseFromWorkload(workload *apWorkload) (json.RawMessage, error) {
 	if workload == nil {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, "")
@@ -210,16 +226,23 @@ func currentAPStorageStatus(cfg *clientcmdapi.Config, workload apWorkload, apObj
 	if workload.StatefulSet == nil {
 		return nil, nil
 	}
-	pvcJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-		LabelSelector: apWorkloadLabelSelector(orchestration.BrainResourceNameLabel + "=" + workload.Name()),
-		Namespace:     workload.Namespace(),
-		Resource:      "persistentvolumeclaims",
-	})
-	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, "persistentvolumeclaims") {
-		return nil, nil
+	var pvcJSON []byte
+	for _, selector := range apLikeWorkloadLabelSelectors(orchestration.BrainResourceNameLabel + "=" + workload.Name()) {
+		nextJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+			LabelSelector: selector,
+			Namespace:     workload.Namespace(),
+			Resource:      "persistentvolumeclaims",
+		})
+		if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, "persistentvolumeclaims") {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		pvcJSON = mergeK8sListJSON(pvcJSON, nextJSON)
 	}
-	if err != nil {
-		return nil, err
+	if len(pvcJSON) == 0 {
+		return nil, nil
 	}
 	var list corev1.PersistentVolumeClaimList
 	if err := json.Unmarshal(pvcJSON, &list); err != nil {
@@ -363,7 +386,16 @@ func mergeK8sListJSON(left, right []byte) []byte {
 		}
 		leftList.Items = append(leftList.Items, item)
 	}
-	out, err := json.Marshal(leftList)
+	outObject := leftList.Object
+	if outObject == nil {
+		outObject = map[string]interface{}{}
+	}
+	items := make([]interface{}, 0, len(leftList.Items))
+	for i := range leftList.Items {
+		items = append(items, leftList.Items[i].Object)
+	}
+	outObject["items"] = items
+	out, err := json.Marshal(outObject)
 	if err != nil {
 		return left
 	}
@@ -376,6 +408,20 @@ func requireBrainAPWorkload(workload apWorkload) error {
 	}
 	if workload.StatefulSet != nil {
 		return requireBrainAPStatefulSet(*workload.StatefulSet)
+	}
+	return errors.New("AP workload is empty")
+}
+
+func isStrictBrainAPWorkload(workload apWorkload) bool {
+	return requireBrainAPWorkload(workload) == nil
+}
+
+func requireBrainAPLikeWorkload(workload apWorkload) error {
+	if workload.Deployment != nil {
+		return requireBrainAPLikeDeployment(*workload.Deployment)
+	}
+	if workload.StatefulSet != nil {
+		return requireBrainAPLikeStatefulSet(*workload.StatefulSet)
 	}
 	return errors.New("AP workload is empty")
 }

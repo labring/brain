@@ -10,6 +10,7 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  apLikeWorkloadKeysFromList,
   apsToCanvasState,
   dbsToCanvasState,
   entryPointsToCanvasState,
@@ -223,9 +224,13 @@ export function useProjectServices(options: {
       gridIndexOffset: apBlock.nodes.length + dbBlock.nodes.length,
       namespaceFallback: namespace,
     });
+    const apLikeWorkloadKeys = apLikeWorkloadKeysFromList(apsData, {
+      namespaceFallback: namespace,
+    });
     const templateNativeBlock = templateNativeWorkloadsToCanvasState(
       templateNativeData,
       {
+        apLikeWorkloadKeys,
         gridIndexOffset:
           apBlock.nodes.length +
           dbBlock.nodes.length +

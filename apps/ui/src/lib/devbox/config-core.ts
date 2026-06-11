@@ -2,18 +2,11 @@ import { SignJWT } from "jose";
 
 export const DEVBOX_API_PREFIX = "/api/v1/devbox";
 
-const DEFAULT_CHAT_DEVBOX_RESOURCE_CPU = "500m";
-const DEFAULT_CHAT_DEVBOX_RESOURCE_MEMORY = "256Mi";
 const DEFAULT_DEVBOX_TOKEN_TTL_SECONDS = 4 * 60 * 60;
 const DNS_1123_LABEL_REGEX = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const TRAILING_SLASHES_REGEX = /\/+$/;
 
 export type DevboxEnv = Record<string, string | undefined>;
-
-export interface ChatDevboxResource {
-  cpu: string;
-  memory: string;
-}
 
 function getRequiredEnv(env: DevboxEnv, name: keyof DevboxEnv): string {
   const value = env[name];
@@ -40,18 +33,6 @@ export function getDevboxDefaultImageFromEnv(
 
 export function getDevboxArchiveAfterPauseTimeFromEnv(env: DevboxEnv): string {
   return env.DEVBOX_ARCHIVE_AFTER_PAUSE_TIME?.trim() || "24h";
-}
-
-export function getChatDevboxResourceFromEnv(
-  env: DevboxEnv
-): ChatDevboxResource {
-  return {
-    cpu:
-      env.CHAT_DEVBOX_RESOURCE_CPU?.trim() || DEFAULT_CHAT_DEVBOX_RESOURCE_CPU,
-    memory:
-      env.CHAT_DEVBOX_RESOURCE_MEMORY?.trim() ||
-      DEFAULT_CHAT_DEVBOX_RESOURCE_MEMORY,
-  };
 }
 
 export function validateDevboxAuthNamespace(namespace: string): string {

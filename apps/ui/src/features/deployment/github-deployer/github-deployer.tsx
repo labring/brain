@@ -8,6 +8,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import {
   CheckCircle2,
   Link2,
+  Link2Off,
   Lock,
   RefreshCw,
   Rocket,
@@ -281,7 +282,7 @@ function GithubRepoCard({
 
 function GithubDeployerRepoSelect({ className }: { className?: string }) {
   const {
-    actions: { onDeploy },
+    actions: { onDeploy, onDisconnect },
     states: {
       isAuthorized,
       deployedRepo,
@@ -323,17 +324,31 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       className={cn("flex w-full min-w-0 flex-col gap-3", className)}
       data-slot="github-deployer-repo-select"
     >
-      <div
-        className="flex min-h-9 w-full min-w-0 items-center gap-2 rounded-md bg-input/30 px-3 text-muted-foreground text-sm"
-        data-slot="github-deployer-authorized"
-        role="status"
-      >
-        <CheckCircle2
-          aria-hidden
-          className="size-4 shrink-0 text-primary"
-          strokeWidth={2}
-        />
-        <span className="truncate">GitHub connected</span>
+      <div className="flex w-full min-w-0 items-center gap-3">
+        <div
+          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md bg-input/30 px-3 text-muted-foreground text-sm"
+          data-slot="github-deployer-authorized"
+          role="status"
+        >
+          <CheckCircle2
+            aria-hidden
+            className="size-4 shrink-0 text-primary"
+            strokeWidth={2}
+          />
+          <span className="truncate">GitHub Connected</span>
+        </div>
+        <Button
+          aria-label="Disconnect GitHub"
+          className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
+          data-slot="github-deployer-disconnect"
+          disabled={isLoading || !onDisconnect}
+          onClick={onDisconnect}
+          size="icon-lg"
+          type="button"
+          variant="ghost"
+        >
+          <Link2Off aria-hidden className="size-4" strokeWidth={2} />
+        </Button>
       </div>
       <div className="relative min-w-0">
         <Search

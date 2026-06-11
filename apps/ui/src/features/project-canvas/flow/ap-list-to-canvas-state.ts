@@ -236,6 +236,8 @@ export interface EntryPointsToCanvasStateOptions {
 }
 
 export interface TemplateNativeWorkloadsToCanvasStateOptions {
+  /** Workload keys already represented as AP-like nodes (`namespace/name`). */
+  apLikeWorkloadKeys?: Set<string>;
   /** Index offset for deterministic fallback placement when combining node lists. @default 0 */
   gridIndexOffset?: number;
   /** Used when a list item has no `metadata.namespace` (same as k8s list query). */
@@ -328,6 +330,32 @@ function isTemplateNativeWorkload(item: unknown): boolean {
   );
 }
 
+export function apLikeWorkloadKeysFromList(
+  data: K8sGetResponse | undefined,
+  options?: { namespaceFallback?: string }
+): Set<string> {
+  const keys = new Set<string>();
+  for (const item of apItemsFromList(data)) {
+    const name = metadataName(item);
+    const namespace = metadataNamespace(item) ?? options?.namespaceFallback;
+    if (name !== undefined && namespace !== undefined && namespace !== "") {
+      keys.add(`${namespace}/${name}`);
+    }
+  }
+  return keys;
+}
+
+function templateNativeWorkloadKey(
+  item: unknown,
+  namespaceFallback: string | undefined
+): string | undefined {
+  const name = metadataName(item);
+  const namespace = metadataNamespace(item) ?? namespaceFallback;
+  return name !== undefined && namespace !== undefined && namespace !== ""
+    ? `${namespace}/${name}`
+    : undefined;
+}
+
 export function templateNativeWorkloadsToCanvasState(
   data: {
     deployments?: K8sGetResponse;
@@ -338,7 +366,13 @@ export function templateNativeWorkloadsToCanvasState(
   const items = [
     ...apItemsFromList(data.deployments),
     ...apItemsFromList(data.statefulSets),
-  ].filter(isTemplateNativeWorkload);
+  ].filter((item) => {
+    if (!isTemplateNativeWorkload(item)) {
+      return false;
+    }
+    const key = templateNativeWorkloadKey(item, options?.namespaceFallback);
+    return key === undefined || !options?.apLikeWorkloadKeys?.has(key);
+  });
   const grid0 = options?.gridIndexOffset ?? 0;
   const nodes: Node[] = items.map((item, i) => {
     const stable = metadataName(item) ?? metadataUid(item) ?? `i-${i}`;

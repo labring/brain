@@ -45,11 +45,9 @@ ui:
     DEVBOX_API_BASE_URL: "https://devbox-server.192.168.10.189.nip.io"
     DEVBOX_TOKEN: ""
     DEVBOX_JWT_SIGNING_KEY: "REPLACE_ME_DEVBOX_JWT_SIGNING_KEY"
-    DEVBOX_RUNTIME_IMAGE: ""
+    DEVBOX_RUNTIME_IMAGE: "ghcr.io/labring-actions/devbox-base-images/sandbox-v1:2026-6-stable-zh-cn-amd64"
     DEVBOX_ARCHIVE_AFTER_PAUSE_TIME: "24h"
     DEVBOX_JWT_TTL_SECONDS: "14400"
-    CHAT_DEVBOX_RESOURCE_CPU: "500m"
-    CHAT_DEVBOX_RESOURCE_MEMORY: "256Mi"
 
 imagePullSecret:
   # App workload pods reference ghcr-cred when this chart creates it.

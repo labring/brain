@@ -261,7 +261,7 @@ func currentAPWorkloadForVersions(cfg *clientcmdapi.Config, namespace, name stri
 		}
 		return nil, huma.Error500InternalServerError("failed to get AP", err)
 	}
-	if err := requireBrainAPWorkload(*workload); err != nil {
+	if err := requireBrainAPLikeWorkload(*workload); err != nil {
 		return nil, huma.Error404NotFound("AP not found", err)
 	}
 	return workload, nil

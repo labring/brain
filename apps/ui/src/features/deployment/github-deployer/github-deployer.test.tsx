@@ -9,6 +9,7 @@ const URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
 const URL_PLACEHOLDER_RE = /https:\/\/github.com\/owner\/repo/;
 const AUTH_BUTTON_RE = /aria-label="Authorize GitHub"/;
 const AUTHORIZED_RE = /data-slot="github-deployer-authorized"/;
+const DISCONNECT_BUTTON_RE = /aria-label="Disconnect GitHub"/;
 const HEADER_TITLE_RE = /GitHub Import/;
 const HEADER_SUBTITLE_RE =
   /Import repository from URL or GitHub authorization\./;
@@ -57,6 +58,7 @@ test("GithubDeployer keeps URL input while showing authorized repo choices", () 
 
   assert.match(html, URL_INPUT_RE);
   assert.match(html, AUTHORIZED_RE);
+  assert.match(html, DISCONNECT_BUTTON_RE);
   assert.match(html, REPO_SELECT_RE);
   assert.match(html, REPO_CARD_RE);
   assert.match(html, EXAMPLE_REPO_RE);

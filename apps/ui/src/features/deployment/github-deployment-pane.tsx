@@ -43,6 +43,7 @@ export function GitHubDeploymentPane({
   });
 
   const {
+    disconnectGithubAuth,
     initiateGithubAuth,
     isAuthorized,
     isLoading: authLoading,
@@ -129,12 +130,25 @@ export function GitHubDeploymentPane({
     ]
   );
 
+  const handleDisconnect = useCallback(async () => {
+    try {
+      await disconnectGithubAuth();
+      await mutateRepos([], { revalidate: false });
+      toast.success("Disconnected GitHub.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not disconnect GitHub."
+      );
+    }
+  }, [disconnectGithubAuth, mutateRepos]);
+
   const actions = useMemo(
     () => ({
       onAuthorize: initiateGithubAuth,
+      onDisconnect: handleDisconnect,
       onDeploy: handleDeploy,
     }),
-    [handleDeploy, initiateGithubAuth]
+    [handleDeploy, handleDisconnect, initiateGithubAuth]
   );
 
   return (
