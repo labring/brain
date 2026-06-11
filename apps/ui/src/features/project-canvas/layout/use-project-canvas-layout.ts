@@ -129,7 +129,10 @@ export function useProjectCanvasLayout(options: {
   const lastSavedNodesSignatureRef = useRef("");
   const saveNodes = useCallback(
     async (
-      nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
+      nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"],
+      options?: {
+        intent?: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["intent"];
+      }
     ) => {
       if (!enabled) {
         return;
@@ -149,6 +152,7 @@ export function useProjectCanvasLayout(options: {
       inFlightNodesCanonicalSignatureRef.current = nextCanonicalSignature;
       try {
         const next = await patchProjectCanvasLayoutNodes({
+          ...(options?.intent === undefined ? {} : { intent: options.intent }),
           kubeconfig,
           namespace,
           nodes,
@@ -174,6 +178,11 @@ export function useProjectCanvasLayout(options: {
       }
     },
     [enabled, kubeconfig, mutate, namespace, projectId]
+  );
+  const saveFirstPlacementNodes = useCallback(
+    (nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]) =>
+      saveNodes(nodes, { intent: "first-placement" }),
+    [saveNodes]
   );
 
   const scheduler = useMemo(
@@ -207,6 +216,7 @@ export function useProjectCanvasLayout(options: {
     layout: data,
     layoutLoadError: error instanceof Error ? error : undefined,
     layoutReady: !(enabled && isLoading) || error != null,
+    saveFirstPlacementNodes,
     saveLayoutNodes: saveNodes,
     scheduleNodeLayoutSave,
     scheduleNodePositionSave: scheduleNodeLayoutSave,

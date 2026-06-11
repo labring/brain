@@ -42,6 +42,7 @@ export const canvasLayoutDocumentSchema = z.object({
 });
 
 export const canvasLayoutPatchRequestSchema = z.object({
+  intent: z.enum(["first-placement", "layout"]).optional(),
   namespace: boundedString,
   nodes: z.array(canvasLayoutNodeSchema),
   projectNameSnapshot: z.string().trim().max(256).optional(),

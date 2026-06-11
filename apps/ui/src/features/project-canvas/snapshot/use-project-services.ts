@@ -15,7 +15,10 @@ import {
   entryPointsToCanvasState,
   templateNativeWorkloadsToCanvasState,
 } from "@/features/project-canvas/flow/ap-list-to-canvas-state";
-import { detectedCanvasConnectionEdges } from "@/features/project-canvas/flow/detected-connections";
+import {
+  canvasConnectionEdgesFromDetectedConnections,
+  detectCanvasConnections,
+} from "@/features/project-canvas/flow/detected-connections";
 import { mergeCanvasLayoutWithDetectedNodes } from "@/features/project-canvas/layout/merge";
 import type {
   CanvasLayoutDocument,
@@ -41,6 +44,7 @@ export function useProjectServices(options: {
   kubeconfig: string;
   /** K8s namespace for AP, DB, and entrypoint discovery. */
   namespace: string;
+  onCanvasFirstPlacement?: (nodes: CanvasLayoutNode[]) => void;
   onCanvasLayoutMerge?: (nodes: CanvasLayoutNode[]) => void;
   /** Project UID from the route (decoded). */
   uid: string;
@@ -64,6 +68,7 @@ export function useProjectServices(options: {
     canvasLayoutReady = true,
     kubeconfig,
     namespace,
+    onCanvasFirstPlacement,
     onCanvasLayoutMerge,
     uid,
   } = options;
@@ -239,26 +244,38 @@ export function useProjectServices(options: {
       ...entryPointBlock.nodes,
       ...templateNativeBlock.nodes,
     ];
-    const merge = canvasLayoutReady
-      ? mergeCanvasLayoutWithDetectedNodes({
-          layout: canvasLayout,
-          nodes: detectedNodes,
-        })
-      : { changed: false, layout: canvasLayout, nodes: [] };
-    const edges = canvasLayoutReady
-      ? detectedCanvasConnectionEdges({
+    const detectedConnections = canvasLayoutReady
+      ? detectCanvasConnections({
           apsData,
           dbsData,
           entryPointsData,
           namespaceFallback: namespace,
-          nodes: merge.nodes,
         })
+      : [];
+    const merge = canvasLayoutReady
+      ? mergeCanvasLayoutWithDetectedNodes({
+          connections: detectedConnections,
+          layout: canvasLayout,
+          nodes: detectedNodes,
+        })
+      : {
+          changed: false,
+          layout: canvasLayout,
+          nodes: [],
+          placedLayoutNodes: [],
+        };
+    const edges = canvasLayoutReady
+      ? canvasConnectionEdgesFromDetectedConnections(
+          detectedConnections,
+          merge.nodes
+        )
       : [];
     return {
       changed: merge.changed,
       edges: [...edges, ...templateNativeBlock.edges],
       layout: merge.layout,
       nodes: merge.nodes,
+      placedLayoutNodes: merge.placedLayoutNodes,
     };
   }, [
     apsData,
@@ -271,11 +288,29 @@ export function useProjectServices(options: {
   ]);
 
   useEffect(() => {
-    if (isLoading || !layoutMerge.changed || layoutMerge.layout === undefined) {
+    if (
+      isLoading ||
+      layoutMerge.placedLayoutNodes.length > 0 ||
+      !layoutMerge.changed ||
+      layoutMerge.layout === undefined
+    ) {
       return;
     }
     onCanvasLayoutMerge?.(layoutMerge.layout.nodes);
-  }, [isLoading, layoutMerge.changed, layoutMerge.layout, onCanvasLayoutMerge]);
+  }, [
+    isLoading,
+    layoutMerge.changed,
+    layoutMerge.layout,
+    layoutMerge.placedLayoutNodes.length,
+    onCanvasLayoutMerge,
+  ]);
+
+  useEffect(() => {
+    if (isLoading || layoutMerge.placedLayoutNodes.length === 0) {
+      return;
+    }
+    onCanvasFirstPlacement?.(layoutMerge.placedLayoutNodes);
+  }, [isLoading, layoutMerge.placedLayoutNodes, onCanvasFirstPlacement]);
 
   const canvasState = useMemo((): CanvasState => {
     return {

@@ -46,12 +46,14 @@ export async function fetchProjectCanvasLayout(input: {
 }
 
 export async function patchProjectCanvasLayoutNodes(input: {
+  intent?: CanvasLayoutPatchRequest["intent"];
   kubeconfig: string;
   namespace: string;
   nodes: CanvasLayoutNode[];
   projectId: string;
 }): Promise<CanvasLayoutDocument> {
   const body: CanvasLayoutPatchRequest = {
+    ...(input.intent === undefined ? {} : { intent: input.intent }),
     namespace: input.namespace,
     nodes: input.nodes,
     projectId: input.projectId,

@@ -55,7 +55,7 @@ function entryNode(name: string, apRef = "api"): Node {
   };
 }
 
-test("merge places unplaced nodes in memory without adding them to Canvas Layout", () => {
+test("merge returns first-placement layout nodes without rewriting loaded layout", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [],
@@ -71,6 +71,13 @@ test("merge places unplaced nodes in memory without adding them to Canvas Layout
   assert.equal(result.changed, false);
   assert.deepEqual(result.layout?.nodes, []);
   assert.deepEqual(result.nodes[0]?.position, { x: 0, y: 0 });
+  assert.deepEqual(result.placedLayoutNodes, [
+    {
+      expanded: false,
+      position: { x: 0, y: 0 },
+      ref: { kind: "AP", name: "api", namespace: "default" },
+    },
+  ]);
 });
 
 test("merge exposes default Canvas Node Stack Order as React Flow z-index", () => {
