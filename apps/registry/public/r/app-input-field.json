@@ -3,7 +3,10 @@
   "name": "app-input-field",
   "title": "App Input Field",
   "description": "SealAI product text input field with label, description, error, and accessibility wiring",
-  "registryDependencies": ["app-input", "field"],
+  "registryDependencies": [
+    "app-input",
+    "field"
+  ],
   "files": [
     {
       "path": "../../packages/ui/src/components/app-input-field.tsx",

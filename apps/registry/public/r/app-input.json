@@ -3,7 +3,9 @@
   "name": "app-input",
   "title": "App Input",
   "description": "SealAI product input style layer for pane and settings forms",
-  "registryDependencies": ["input"],
+  "registryDependencies": [
+    "input"
+  ],
   "files": [
     {
       "path": "../../packages/ui/src/components/app-input.tsx",
