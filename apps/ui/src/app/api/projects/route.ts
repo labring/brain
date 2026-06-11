@@ -1,7 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError, z } from "zod";
 
-import { deleteProjectManagedResources } from "@/lib/project-persistence/delete-guard";
+import {
+  deleteProjectManagedResources,
+  ProjectManagedResourceCleanupError,
+} from "@/lib/project-persistence/delete-guard";
 import {
   createProject,
   deleteProject,
@@ -73,6 +76,9 @@ function persistenceError(error: ProjectPersistenceError): Response {
 function validationError(error: unknown): Response | null {
   if (error instanceof ZodError) {
     return jsonError("Invalid project request.", 400);
+  }
+  if (error instanceof ProjectManagedResourceCleanupError) {
+    return jsonError(error.message, 502);
   }
   if (error instanceof ProjectPersistenceError) {
     return persistenceError(error);

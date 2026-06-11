@@ -3,6 +3,9 @@ import {
   BRAIN_PROJECT_ID_LABEL,
   BRAIN_RESOURCE_KIND_LABEL,
 } from "@/lib/brain-labels";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+
+const TRAILING_PERIOD_RE = /\.$/;
 
 export interface ProjectDeleteGuardInput {
   apiBaseUrl?: string;
@@ -39,11 +42,47 @@ export class ProjectDeleteBlockedError extends Error {
   }
 }
 
+export class ProjectManagedResourceCleanupError extends Error {
+  readonly operation: "delete" | "inspect";
+  readonly status?: number;
+
+  constructor(input: {
+    message: string;
+    operation: ProjectManagedResourceCleanupError["operation"];
+    status?: number;
+  }) {
+    super(input.message);
+    this.name = "ProjectManagedResourceCleanupError";
+    this.operation = input.operation;
+    this.status = input.status;
+  }
+}
+
 function apiUrl(baseUrl: string, path: string, params: URLSearchParams): URL {
-  const base = baseUrl.trim() || "http://localhost:3000";
+  const base = baseUrl.trim();
+  if (base === "") {
+    throw new ProjectManagedResourceCleanupError({
+      message: "API_URL is required to clean up project resources.",
+      operation: "inspect",
+    });
+  }
   const url = new URL(path, base);
   url.search = params.toString();
   return url;
+}
+
+async function responseErrorMessage(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  const body = await response.json().catch(() => null);
+  if (body != null && typeof body === "object" && "error" in body) {
+    const error = (body as { error?: unknown }).error;
+    if (typeof error === "string" && error.trim() !== "") {
+      return `${fallback.replace(TRAILING_PERIOD_RE, "")}: ${error.trim()}`;
+    }
+  }
+  return fallback;
 }
 
 function resourceNames(payload: unknown): string[] {
@@ -84,14 +123,19 @@ async function listProjectResources(
     {
       cache: "no-store",
       headers: {
-        Authorization: `Bearer ${encodeURIComponent(input.encodedKubeconfig.trim())}`,
+        Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
       },
     }
   );
   if (!response.ok) {
-    throw new Error(
-      `Failed to inspect project resources (${response.status}).`
-    );
+    throw new ProjectManagedResourceCleanupError({
+      message: await responseErrorMessage(
+        response,
+        `Failed to inspect project resources (${response.status}).`
+      ),
+      operation: "inspect",
+      status: response.status,
+    });
   }
   return resourceNames(await response.json());
 }
@@ -122,7 +166,7 @@ async function deleteProjectResource(
     {
       cache: "no-store",
       headers: {
-        Authorization: `Bearer ${encodeURIComponent(input.encodedKubeconfig.trim())}`,
+        Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
       },
       method: "DELETE",
     }
@@ -131,9 +175,14 @@ async function deleteProjectResource(
     if (response.status === 404) {
       return;
     }
-    throw new Error(
-      `Failed to delete project resource ${name} (${response.status}).`
-    );
+    throw new ProjectManagedResourceCleanupError({
+      message: await responseErrorMessage(
+        response,
+        `Failed to delete project resource ${name} (${response.status}).`
+      ),
+      operation: "delete",
+      status: response.status,
+    });
   }
 }
 
@@ -157,7 +206,7 @@ async function deleteProjectK8sResource(
     {
       cache: "no-store",
       headers: {
-        Authorization: `Bearer ${encodeURIComponent(input.encodedKubeconfig.trim())}`,
+        Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
       },
       method: "DELETE",
     }
@@ -166,9 +215,14 @@ async function deleteProjectK8sResource(
     if (response.status === 404) {
       return;
     }
-    throw new Error(
-      `Failed to delete project resource ${name} (${response.status}).`
-    );
+    throw new ProjectManagedResourceCleanupError({
+      message: await responseErrorMessage(
+        response,
+        `Failed to delete project resource ${name} (${response.status}).`
+      ),
+      operation: "delete",
+      status: response.status,
+    });
   }
 }
 
@@ -192,7 +246,7 @@ async function deleteProjectK8sResourcesBySelector(
     {
       cache: "no-store",
       headers: {
-        Authorization: `Bearer ${encodeURIComponent(input.encodedKubeconfig.trim())}`,
+        Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
       },
       method: "DELETE",
     }
@@ -201,9 +255,14 @@ async function deleteProjectK8sResourcesBySelector(
     if (response.status === 404) {
       return;
     }
-    throw new Error(
-      `Failed to delete project resources (${kind}, ${response.status}).`
-    );
+    throw new ProjectManagedResourceCleanupError({
+      message: await responseErrorMessage(
+        response,
+        `Failed to delete project resources (${kind}, ${response.status}).`
+      ),
+      operation: "delete",
+      status: response.status,
+    });
   }
 }
 
