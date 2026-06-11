@@ -693,7 +693,7 @@ function BackupRowsList({
               const canDelete = backup.deletable && !isDeleting;
               return (
                 <article
-                  className="flex min-h-[74px] @min-[48rem]/backup-surface:flex-row flex-col @min-[48rem]/backup-surface:items-center items-stretch @min-[48rem]/backup-surface:justify-between gap-3 rounded-md bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.06]"
+                  className="flex min-h-[74px] flex-row items-center justify-between gap-3 rounded-md bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.06]"
                   data-qa-module="database"
                   data-qa-object="backup-row"
                   data-qa-resource-id={backup.name}
@@ -702,7 +702,7 @@ function BackupRowsList({
                   data-testid="database.backup.row"
                   key={`${backup.namespace}/${backup.name}`}
                 >
-                  <div className="min-w-0 @min-[48rem]/backup-surface:flex-1">
+                  <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span
                         className="truncate font-medium text-sm leading-5"
@@ -740,7 +740,11 @@ function BackupRowsList({
                     </div>
                   </div>
 
-                  <div className="flex min-w-0 @min-[48rem]/backup-surface:shrink-0 flex-wrap items-center justify-end gap-2">
+                  <div
+                    className="flex min-w-0 shrink-0 items-center justify-end gap-2"
+                    data-qa-object="backup-row-actions"
+                    data-qa-resource-id={backup.name}
+                  >
                     <AppButton
                       data-qa-action="restore"
                       data-qa-module="database"
