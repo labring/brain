@@ -68,6 +68,7 @@ export async function buildChatToolset({
   ]);
   const deployTaskTools = createDeployTaskTools({
     assistantContext,
+    kubeconfig,
     kubernetesNamespace,
   });
   const productTools = createChatProductTools({

@@ -24,6 +24,26 @@ export interface DeployTaskArtifactContext {
   projectName: string | null;
 }
 
+export interface DeploymentBrainManifestArtifact {
+  kind: "brain-manifest";
+  yaml: string;
+}
+
+export interface DeploymentTemplateInstanceArtifact {
+  instanceName: string;
+  kind: "template-instance";
+  resources: {
+    name: string;
+    resourceType: string;
+    uid: string;
+  }[];
+  templateName: string;
+}
+
+export type DeploymentArtifact =
+  | DeploymentBrainManifestArtifact
+  | DeploymentTemplateInstanceArtifact;
+
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -191,4 +211,17 @@ export function prepareDeployTaskArtifacts(input: {
     resources,
     yaml: joinKubeYamlDocuments(normalizedDocs),
   };
+}
+
+export function prepareBrainManifestArtifact(input: {
+  artifact: DeploymentBrainManifestArtifact;
+  task: DeployTaskArtifactContext;
+}): DeployTaskPreparedArtifacts {
+  const output = {
+    resourceYamls: [input.artifact.yaml],
+  };
+  return prepareDeployTaskArtifacts({
+    output,
+    task: input.task,
+  });
 }

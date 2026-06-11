@@ -1,6 +1,9 @@
 import { z } from "zod";
 
 import type {
+  DeploymentTaskRunner,
+  DeploymentTaskSource,
+  DeploymentTaskTarget,
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
   DeployTaskEventPayload,
@@ -10,6 +13,9 @@ import type {
 } from "@/lib/chat-persistence/schema";
 
 export type {
+  DeploymentTaskRunner,
+  DeploymentTaskSource,
+  DeploymentTaskTarget,
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
   DeployTaskEventPayload,
@@ -22,14 +28,14 @@ export type {
 
 export const deployTaskPhaseSchema = z.enum([
   "queued",
-  "runtime",
-  "workspace",
-  "analyze",
+  "resolve-target",
+  "prepare",
+  "plan",
   "configure",
-  "generate",
+  "generate-artifacts",
   "apply",
-  "preview",
-  "ship",
+  "verify",
+  "completed",
 ]) satisfies z.ZodType<DeployTaskPhase>;
 
 export const deployTaskStatusSchema = z.enum([
@@ -42,19 +48,70 @@ export const deployTaskStatusSchema = z.enum([
   "cancelled",
 ]) satisfies z.ZodType<DeployTaskStatus>;
 
-export const createDeployTaskInputSchema = z.object({
-  branch: z.string().trim().max(256).optional(),
-  namespace: z.string().trim().min(1),
-  projectName: z.string().trim().max(512).optional(),
-  projectId: z.string().trim().max(256).optional(),
-  prompt: z.string().trim().max(4000).optional(),
-  repo: z.object({
-    fullName: z.string().trim().min(1).max(512),
-    id: z.string().trim().max(128).optional(),
-    name: z.string().trim().min(1).max(256),
-    url: z.string().trim().url(),
+const boundedString = z.string().trim().min(1).max(512);
+
+export const deploymentTaskSourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    branch: z.string().trim().max(256).optional(),
+    kind: z.literal("github"),
+    repo: z.object({
+      fullName: boundedString,
+      id: z.string().trim().max(128).optional(),
+      name: z.string().trim().min(1).max(256),
+      url: z.string().trim().url(),
+    }),
   }),
-  selectedWorkloadUid: z.string().trim().max(256).optional(),
+  z.object({
+    kind: z.literal("docker"),
+    settings: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    kind: z.literal("database"),
+    settings: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    args: z.record(z.string(), z.string()).optional(),
+    kind: z.literal("template"),
+    templateName: z.string().trim().min(1).max(256),
+  }),
+  z.object({
+    kind: z.literal("prompt"),
+    text: z.string().trim().min(1).max(4000),
+  }),
+]) satisfies z.ZodType<DeploymentTaskSource>;
+
+export const deploymentTaskTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    displayName: z.string().trim().min(1).max(256),
+    kind: z.literal("newProject"),
+  }),
+  z.object({
+    kind: z.literal("existingProject"),
+    projectId: z.string().trim().min(1).max(256),
+    projectName: z.string().trim().max(512).optional(),
+  }),
+]) satisfies z.ZodType<DeploymentTaskTarget>;
+
+export const deploymentTaskRunnerSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("direct"),
+  }),
+  z.object({
+    kind: z.literal("template"),
+  }),
+  z.object({
+    kind: z.literal("ai"),
+    runtimeProvider: z.literal("devbox"),
+    skill: z.string().trim().min(1).max(256).optional(),
+  }),
+]) satisfies z.ZodType<DeploymentTaskRunner>;
+
+export const createDeployTaskInputSchema = z.object({
+  namespace: z.string().trim().min(1),
+  prompt: z.string().trim().max(4000).optional(),
+  runner: deploymentTaskRunnerSchema,
+  source: deploymentTaskSourceSchema,
+  target: deploymentTaskTargetSchema,
 });
 
 export type CreateDeployTaskInput = z.infer<typeof createDeployTaskInputSchema>;
@@ -77,7 +134,6 @@ export type SubmitDeployTaskInput = z.infer<typeof submitDeployTaskInputSchema>;
 export interface DeployTaskDTO {
   artifactSummary: DeployTaskArtifactSummary;
   blockingInputs: DeployTaskBlockingInput[];
-  branch: string | null;
   completedAt: string | null;
   createdAt: string;
   error: string | null;
@@ -90,16 +146,15 @@ export interface DeployTaskDTO {
   previewUrl: string | null;
   projectId: string | null;
   projectName: string | null;
-  repoFullName: string;
-  repoName: string;
-  repoUrl: string;
   resultUrl: string | null;
+  runner: DeploymentTaskRunner;
   runtimeName: string | null;
   runtimeProvider: string | null;
   runtimeState: string | null;
-  selectedWorkloadUid: string | null;
+  source: DeploymentTaskSource;
   startedAt: string | null;
   status: DeployTaskStatus;
+  target: DeploymentTaskTarget;
   updatedAt: string;
 }
 

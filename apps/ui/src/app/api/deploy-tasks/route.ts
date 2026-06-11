@@ -5,7 +5,10 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/lib/deploy-task/api-auth";
-import { startDeployTaskRunner } from "@/lib/deploy-task/runner";
+import {
+  resolveDeploymentTaskTarget,
+  startDeployTaskRunner,
+} from "@/lib/deploy-task/runner";
 import { createDeployTask, listDeployTasks } from "@/lib/deploy-task/service";
 import { createDeployTaskInputSchema } from "@/lib/deploy-task/types";
 
@@ -70,12 +73,28 @@ export async function POST(request: Request) {
     ...taskInput,
     namespace: namespaceResolved.namespace ?? taskInput.namespace,
   });
+  const resolved = await resolveDeploymentTaskTarget({
+    ...task,
+    namespace: namespaceResolved.namespace ?? task.namespace,
+  });
 
   startDeployTaskRunner({
+    encodedKubeconfig: parsed.data.encodedKubeconfig,
     taskId: task.id,
   }).catch((error: unknown) => {
     console.error("[deploy-tasks] runner failed:", error);
   });
 
-  return NextResponse.json({ task }, { status: 201 });
+  return NextResponse.json(
+    {
+      task: {
+        ...task,
+        projectId: resolved.projectId,
+        projectName: resolved.projectName,
+        phase: "resolve-target",
+        status: "running",
+      },
+    },
+    { status: 201 }
+  );
 }

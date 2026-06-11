@@ -6,7 +6,7 @@ const DEPLOY_TASK_CREATED_PENDING_KEY =
 
 export interface DeployTaskCreatedEventDetail {
   projectName: string;
-  repoFullName: string;
+  sourceLabel: string;
   taskId: string;
 }
 
@@ -28,7 +28,7 @@ function readPendingDeployTaskCreatedEvents(): DeployTaskCreatedEventDetail[] {
         typeof item === "object" &&
         typeof (item as DeployTaskCreatedEventDetail).projectName ===
           "string" &&
-        typeof (item as DeployTaskCreatedEventDetail).repoFullName ===
+        typeof (item as DeployTaskCreatedEventDetail).sourceLabel ===
           "string" &&
         typeof (item as DeployTaskCreatedEventDetail).taskId === "string"
     );

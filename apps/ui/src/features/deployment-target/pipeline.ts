@@ -1,21 +1,15 @@
-import type {
-  DatabaseDeploymentChoice,
-  DatabaseDeploymentSettings,
-} from "@/features/deployment/database-deployer";
+import type { DatabaseDeploymentSettings } from "@/features/deployment/database-deployer";
 import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
 import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
 import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
-import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
-import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
-import type { ChildResourceKind } from "@/lib/project-child-resource-name";
+import type {
+  DeploymentTaskRunner,
+  DeploymentTaskSource,
+  DeploymentTaskTarget,
+} from "@/lib/deploy-task/types";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
-
-export interface TemplateDeploymentResourceSummary {
-  name: string;
-  resourceType: string;
-  uid: string;
-}
 
 export type DeploymentTarget =
   | {
@@ -51,111 +45,45 @@ export type DeploymentTargetPipelineRequest =
       templateName: string;
     };
 
-export interface GithubDeployTaskInput {
+export interface DeploymentTaskCreateInput {
   namespace: string;
-  projectId?: string;
-  projectName: string;
-  repo: {
-    fullName: string;
-    id: string | number;
-    name: string;
-    url: string;
-  };
+  prompt?: string;
+  runner: DeploymentTaskRunner;
+  source: DeploymentTaskSource;
+  target: DeploymentTaskTarget;
 }
 
-export interface GithubDeployTaskResult {
+export interface DeploymentTaskCreateResult {
   message: string;
+  projectId: string | null;
+  projectName: string | null;
   taskId: string | null;
 }
 
-export interface TemplateDeploymentInput {
-  args?: Record<string, string>;
-  instanceName: string;
-  namespace: string;
-  projectId: string;
-  projectName: string;
-  templateName: string;
-}
-
-export interface TemplateDeploymentResult {
-  instanceName: string;
-  resources: TemplateDeploymentResourceSummary[];
-}
-
 export interface DeploymentTargetPipelineAdapters {
-  applyBrainProductManifest: (yaml: string) => Promise<void>;
-  applyTemplateDeployment: (
-    input: TemplateDeploymentInput
-  ) => Promise<TemplateDeploymentResult>;
-  createGithubDeployTask: (
-    input: GithubDeployTaskInput
-  ) => Promise<GithubDeployTaskResult>;
-  createProject: (input: {
-    displayName: string;
-    namespace: string;
-  }) => Promise<{ id: string }>;
-  deleteProject: (input: { id: string; namespace: string }) => Promise<void>;
-  fetchProjectIdByName: (name: string) => Promise<string | undefined>;
-  generateChildResourceName: (
-    projectName: string,
-    kind: ChildResourceKind
-  ) => string;
-  generateProjectName: () => string;
+  createDeploymentTask: (
+    input: DeploymentTaskCreateInput
+  ) => Promise<DeploymentTaskCreateResult>;
 }
 
 export interface DeploymentTargetPipelineOptions {
   adapters: DeploymentTargetPipelineAdapters;
   credentialsReady: boolean;
-  databaseOptions?: readonly DatabaseDeploymentChoice[];
   existingProjects?: readonly ProjectExplorerProject[];
   namespace: string;
   request: DeploymentTargetPipelineRequest;
-  routingDomain?: string;
 }
 
-interface ResolvedDeploymentTarget {
+export interface DeploymentTargetPipelineOutcome {
   createdProject: boolean;
   displayName?: string;
+  kind: DeploymentTargetPipelineRequest["kind"];
   projectId?: string;
   projectName: string;
+  sourceLabel: string;
+  taskId: string | null;
+  taskMessage: string;
 }
-
-export type DeploymentTargetPipelineOutcome =
-  | {
-      apName: string;
-      createdProject: boolean;
-      displayName?: string;
-      kind: "docker";
-      projectName: string;
-      projectId?: string;
-    }
-  | {
-      createdProject: boolean;
-      dbName: string;
-      displayName?: string;
-      kind: "database";
-      projectName: string;
-      projectId?: string;
-    }
-  | {
-      createdProject: boolean;
-      displayName?: string;
-      kind: "github";
-      projectName: string;
-      projectId?: string;
-      repoFullName: string;
-      taskMessage: string;
-      taskId: string | null;
-    }
-  | {
-      createdProject: boolean;
-      displayName?: string;
-      instanceName: string;
-      kind: "template";
-      projectName: string;
-      projectId?: string;
-      resources: TemplateDeploymentResourceSummary[];
-    };
 
 export function newProjectDeploymentTarget(
   displayName: string
@@ -194,19 +122,6 @@ function assertPipelineEnvironment(options: DeploymentTargetPipelineOptions) {
   }
 }
 
-function resolveDatabaseChoice(
-  databaseOptions: readonly DatabaseDeploymentChoice[] | undefined,
-  settings: DatabaseDeploymentSettings
-): DatabaseDeploymentChoice {
-  const choice = databaseOptions?.find(
-    (option) => option.id === settings.databaseId
-  );
-  if (choice == null) {
-    throw new Error("Choose a database engine.");
-  }
-  return choice;
-}
-
 function githubRepoFields(repository: GithubDeployerRepo): {
   fullName: string;
   repoUrl: string;
@@ -221,29 +136,20 @@ function githubRepoFields(repository: GithubDeployerRepo): {
   };
 }
 
-async function resolveDeploymentTarget(
-  options: DeploymentTargetPipelineOptions
-): Promise<ResolvedDeploymentTarget> {
-  const {
-    adapters,
-    existingProjects = [],
-    namespace,
-    target,
-  } = {
-    ...options,
-    target: options.request.target,
-  };
-
+function normalizeTarget(
+  target: DeploymentTarget,
+  existingProjects: readonly ProjectExplorerProject[]
+): DeploymentTaskTarget {
   if (target.kind === "existingProject") {
-    const projectName = target.projectName.trim();
-    if (projectName === "") {
+    const projectId = target.projectId.trim();
+    if (!projectId) {
       throw new Error("Could not resolve the current project.");
     }
     return {
-      createdProject: false,
-      projectName,
-      ...(target.projectId.trim()
-        ? { projectId: target.projectId.trim() }
+      kind: "existingProject",
+      projectId,
+      ...(target.projectName.trim()
+        ? { projectName: target.projectName.trim() }
         : {}),
     };
   }
@@ -256,212 +162,140 @@ async function resolveDeploymentTarget(
   if (displayNameError != null) {
     throw new Error(displayNameError);
   }
-
-  const project = await adapters.createProject({
+  return {
     displayName,
-    namespace,
-  });
-
-  return {
-    createdProject: true,
-    displayName,
-    projectName: project.id,
-    projectId: project.id,
+    kind: "newProject",
   };
 }
 
-async function runDockerPipeline(
-  options: DeploymentTargetPipelineOptions & {
-    request: Extract<DeploymentTargetPipelineRequest, { kind: "docker" }>;
+function sourceLabel(source: DeploymentTaskSource): string {
+  switch (source.kind) {
+    case "database":
+      return "database";
+    case "docker":
+      return String(source.settings.image ?? "Docker image");
+    case "github":
+      return source.repo.fullName;
+    case "prompt":
+      return "AI prompt";
+    case "template":
+      return source.templateName;
+    default:
+      return source satisfies never;
   }
-): Promise<DeploymentTargetPipelineOutcome> {
-  const settingsValidation = validateDockerDeploymentSettings(
-    options.request.settings
-  );
-  if (!settingsValidation.valid) {
-    throw new Error(
-      settingsValidation.errors[0]?.message ??
-        "Docker deployment settings are invalid."
-    );
-  }
-
-  const target = await resolveDeploymentTarget(options);
-  const apName = options.adapters.generateChildResourceName(
-    target.projectName,
-    "ap"
-  );
-  const apYaml = renderDockerDeploymentYaml({
-    name: apName,
-    namespace: options.namespace,
-    projectName: target.projectName,
-    routingDomain: options.routingDomain?.trim() ?? "",
-    settings: options.request.settings,
-  });
-
-  await options.adapters.applyBrainProductManifest(apYaml);
-
-  return {
-    apName,
-    createdProject: target.createdProject,
-    ...(target.displayName === undefined
-      ? {}
-      : { displayName: target.displayName }),
-    kind: "docker",
-    projectName: target.projectName,
-    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
-  };
 }
 
-async function runDatabasePipeline(
-  options: DeploymentTargetPipelineOptions & {
-    request: Extract<DeploymentTargetPipelineRequest, { kind: "database" }>;
-  }
-): Promise<DeploymentTargetPipelineOutcome> {
-  const choice = resolveDatabaseChoice(
-    options.databaseOptions,
-    options.request.settings
-  );
-  const target = await resolveDeploymentTarget(options);
-  const dbName = options.adapters.generateChildResourceName(
-    target.projectName,
-    "db"
-  );
-  const dbYaml = renderDbDeploymentYaml({
-    engine: choice.engine,
-    name: dbName,
-    namespace: options.namespace,
-    projectName: target.projectName,
-    quota: options.request.settings.instancePreset,
-    replicas: options.request.settings.replicas,
-    template: choice.template,
-  });
-
-  await options.adapters.applyBrainProductManifest(dbYaml);
-
-  return {
-    createdProject: target.createdProject,
-    dbName,
-    ...(target.displayName === undefined
-      ? {}
-      : { displayName: target.displayName }),
-    kind: "database",
-    projectName: target.projectName,
-    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
-  };
+function settingsRecord(settings: object): Record<string, unknown> {
+  return { ...settings };
 }
 
-async function runGithubPipeline(
-  options: DeploymentTargetPipelineOptions & {
-    request: Extract<DeploymentTargetPipelineRequest, { kind: "github" }>;
-  }
-): Promise<DeploymentTargetPipelineOutcome> {
-  const { fullName, repoUrl } = githubRepoFields(options.request.repository);
-  const target = await resolveDeploymentTarget(options);
-
-  const task = await options.adapters.createGithubDeployTask({
-    namespace: options.namespace,
-    projectName: target.projectName,
-    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
-    repo: {
-      fullName,
-      id: options.request.repository.id,
-      name: options.request.repository.name,
-      url: repoUrl,
-    },
-  });
-
-  return {
-    createdProject: target.createdProject,
-    ...(target.displayName === undefined
-      ? {}
-      : { displayName: target.displayName }),
-    kind: "github",
-    projectName: target.projectName,
-    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
-    repoFullName: fullName,
-    taskId: task.taskId,
-    taskMessage: task.message,
-  };
-}
-
-async function runTemplatePipeline(
-  options: DeploymentTargetPipelineOptions & {
-    request: Extract<DeploymentTargetPipelineRequest, { kind: "template" }>;
-  }
-): Promise<DeploymentTargetPipelineOutcome> {
-  const templateName = options.request.templateName.trim();
-  if (!templateName) {
-    throw new Error("Choose a template.");
-  }
-  const target = await resolveDeploymentTarget(options);
-  if (target.projectId == null || target.projectId.trim() === "") {
-    throw new Error("Could not resolve the current project.");
-  }
-  const instanceName = options.adapters.generateChildResourceName(
-    templateName,
-    "template"
-  );
-  let result: TemplateDeploymentResult;
-  try {
-    result = await options.adapters.applyTemplateDeployment({
-      args: options.request.args,
-      instanceName,
-      namespace: options.namespace,
-      projectId: target.projectId,
-      projectName: target.projectName,
-      templateName,
-    });
-  } catch (error) {
-    if (target.createdProject) {
-      await options.adapters
-        .deleteProject({
-          id: target.projectId,
-          namespace: options.namespace,
-        })
-        .catch(() => undefined);
+function deploymentTaskForRequest(
+  request: DeploymentTargetPipelineRequest
+): Pick<DeploymentTaskCreateInput, "runner" | "source"> {
+  switch (request.kind) {
+    case "docker": {
+      const settingsValidation = validateDockerDeploymentSettings(
+        request.settings
+      );
+      if (!settingsValidation.valid) {
+        throw new Error(
+          settingsValidation.errors[0]?.message ??
+            "Docker deployment settings are invalid."
+        );
+      }
+      return {
+        runner: { kind: "direct" },
+        source: { kind: "docker", settings: settingsRecord(request.settings) },
+      };
     }
-    throw error;
+    case "database": {
+      if (!request.settings.databaseId?.trim()) {
+        throw new Error("Choose a database engine.");
+      }
+      if (
+        !DIRECT_DB_DEPLOYMENT_OPTIONS.some(
+          (option) => option.id === request.settings.databaseId
+        )
+      ) {
+        throw new Error("Choose a database engine.");
+      }
+      return {
+        runner: { kind: "direct" },
+        source: {
+          kind: "database",
+          settings: settingsRecord(request.settings),
+        },
+      };
+    }
+    case "github": {
+      const { fullName, repoUrl } = githubRepoFields(request.repository);
+      return {
+        runner: {
+          kind: "ai",
+          runtimeProvider: "devbox",
+          skill: "brain-github-deploy",
+        },
+        source: {
+          kind: "github",
+          repo: {
+            fullName,
+            id: String(request.repository.id),
+            name: request.repository.name,
+            url: repoUrl,
+          },
+        },
+      };
+    }
+    case "template": {
+      const templateName = request.templateName.trim();
+      if (!templateName) {
+        throw new Error("Choose a template.");
+      }
+      return {
+        runner: { kind: "template" },
+        source: {
+          args: request.args,
+          kind: "template",
+          templateName,
+        },
+      };
+    }
+    default:
+      return request satisfies never;
   }
-
-  return {
-    createdProject: target.createdProject,
-    ...(target.displayName === undefined
-      ? {}
-      : { displayName: target.displayName }),
-    instanceName: result.instanceName,
-    kind: "template",
-    projectName: target.projectName,
-    projectId: target.projectId,
-    resources: result.resources,
-  };
 }
 
-export function runDeploymentTargetPipeline(
+export async function runDeploymentTargetPipeline(
   options: DeploymentTargetPipelineOptions
 ): Promise<DeploymentTargetPipelineOutcome> {
   assertPipelineEnvironment(options);
-  switch (options.request.kind) {
-    case "docker":
-      return runDockerPipeline({
-        ...options,
-        request: options.request,
-      });
-    case "database":
-      return runDatabasePipeline({
-        ...options,
-        request: options.request,
-      });
-    case "github":
-      return runGithubPipeline({
-        ...options,
-        request: options.request,
-      });
-    case "template":
-      return runTemplatePipeline({
-        ...options,
-        request: options.request,
-      });
-    default:
-      return options.request satisfies never;
-  }
+
+  const target = normalizeTarget(
+    options.request.target,
+    options.existingProjects ?? []
+  );
+  const taskInput = deploymentTaskForRequest(options.request);
+  const task = await options.adapters.createDeploymentTask({
+    ...taskInput,
+    namespace: options.namespace,
+    target,
+  });
+  const projectName =
+    task.projectName?.trim() ||
+    (target.kind === "existingProject" ? target.projectName?.trim() : "") ||
+    task.projectId?.trim() ||
+    "";
+
+  return {
+    createdProject: target.kind === "newProject",
+    ...(target.kind === "newProject"
+      ? { displayName: target.displayName }
+      : {}),
+    kind: options.request.kind,
+    ...(task.projectId?.trim() ? { projectId: task.projectId.trim() } : {}),
+    projectName,
+    sourceLabel: sourceLabel(taskInput.source),
+    taskId: task.taskId,
+    taskMessage: task.message,
+  };
 }

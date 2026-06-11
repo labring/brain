@@ -130,13 +130,43 @@ _Avoid_: AP node events.
 
 The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
 
+### Deployment Task
+
+A deploy workflow work unit for creating or changing Project resources from a Deployment Source into a Deployment Target. A Deployment Task has one Deployment Runner and may produce Deployment Artifacts.
+
+_Avoid_: GitHub task, deploy job, deployment request.
+
+### Deployment Source
+
+The user-provided origin or intent for a Deployment Task, such as a GitHub repository, Docker image, database choice, application template, or natural-language deployment prompt. A Deployment Source describes what should be deployed, not where it should land.
+
+_Avoid_: deploy input, entry path, creation method.
+
+### Deployment Target
+
+The Project relationship selected before a Deployment Task starts. A Deployment Target is either a new Project being created in the same flow or an existing Project that will receive the deployed resources.
+
+_Avoid_: GitHub Deployment Target, Docker Deployment Target, project selector.
+
+### Deployment Runner
+
+The execution strategy for one Deployment Task. Direct and template runners use already-structured Deployment Sources, while an AI Runner interprets less-structured sources such as repositories or natural-language prompts.
+
+_Avoid_: task type, deploy engine.
+
+### Deployment Artifact
+
+A product resource description produced or selected by a Deployment Task for application into the Deployment Target. Deployment Artifacts are distinct from Deployment Source details and task progress messages.
+
+_Avoid_: task output, generated file.
+
 ### Docker Deployment Target
 
-The Project relationship selected for Docker Deployment Settings before AP creation. A Docker Deployment Target is either a new Project being created in the same flow or an existing Project that will own the new AP.
+The source-specific wording for the Deployment Target used with Docker Deployment Settings.
 
 ### GitHub Deployment Target
 
-The Project relationship selected for a GitHub repository deployment before the deployment task starts. A GitHub Deployment Target is either a new Project being created in the same flow or an existing Project that will receive the deployment task.
+The source-specific wording for the Deployment Target used with a GitHub repository Deployment Source.
 
 ### Public Access Panel
 

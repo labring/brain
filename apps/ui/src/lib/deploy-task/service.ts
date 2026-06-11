@@ -6,6 +6,7 @@ import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 
 import { getAssistantDb } from "@/lib/chat-persistence/db";
 import {
+  type DeploymentTaskSource,
   type DeployTaskEventPayload,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
@@ -36,10 +37,31 @@ function compactOptional(value: string | undefined): string | null {
 }
 
 function taskTitle(input: CreateDeployTaskInput): string {
-  const project = compactOptional(input.projectName);
-  return project
-    ? `Deploy ${input.repo.fullName} into ${project}`
-    : `Deploy ${input.repo.fullName}`;
+  const source = deploymentSourceLabel(input.source);
+  if (input.target.kind === "existingProject") {
+    const project = compactOptional(
+      input.target.projectName ?? input.target.projectId
+    );
+    return project ? `Deploy ${source} into ${project}` : `Deploy ${source}`;
+  }
+  return `Deploy ${source} into new Project ${input.target.displayName}`;
+}
+
+function deploymentSourceLabel(source: DeploymentTaskSource): string {
+  switch (source.kind) {
+    case "database":
+      return "database";
+    case "docker":
+      return String(source.settings.image ?? "Docker image");
+    case "github":
+      return source.repo.fullName;
+    case "prompt":
+      return "AI prompt";
+    case "template":
+      return source.templateName;
+    default:
+      return source satisfies never;
+  }
 }
 
 function nowIso(value: Date | null): string | null {
@@ -50,7 +72,6 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
   return {
     artifactSummary: row.artifactSummary,
     blockingInputs: row.blockingInputs,
-    branch: row.branch,
     completedAt: nowIso(row.completedAt),
     createdAt: row.createdAt.toISOString(),
     error: row.error,
@@ -61,18 +82,17 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     namespace: row.namespace,
     phase: row.phase,
     previewUrl: row.previewUrl,
-    projectName: row.projectName,
     projectId: row.projectId,
-    repoFullName: row.repoFullName,
-    repoName: row.repoName,
-    repoUrl: row.repoUrl,
+    projectName: row.projectName,
     resultUrl: row.resultUrl,
+    runner: row.runner,
     runtimeName: row.runtimeName,
     runtimeProvider: row.runtimeProvider,
     runtimeState: row.runtimeState,
-    selectedWorkloadUid: row.selectedWorkloadUid,
+    source: row.source,
     startedAt: nowIso(row.startedAt),
     status: row.status,
+    target: row.target,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -151,20 +171,15 @@ export async function createDeployTask(
     .insert(deployTasks)
     .values({
       id,
-      branch: compactOptional(input.branch),
       createdAt: now,
       heartbeatAt: now,
       namespace: input.namespace.trim(),
       phase: "queued",
-      projectName: compactOptional(input.projectName),
-      projectId: compactOptional(input.projectId),
       prompt: compactOptional(input.prompt) ?? taskTitle(input),
-      repoFullName: input.repo.fullName.trim(),
-      repoId: compactOptional(input.repo.id),
-      repoName: input.repo.name.trim(),
-      repoUrl: input.repo.url.trim(),
-      selectedWorkloadUid: compactOptional(input.selectedWorkloadUid),
+      runner: input.runner,
+      source: input.source,
       status: "queued",
+      target: input.target,
       updatedAt: now,
     })
     .returning();
@@ -190,8 +205,8 @@ export async function createDeployTask(
     kind: "deploy_task.created",
     message: "Deploy task queued.",
     payload: {
-      repoFullName: task.repoFullName,
-      projectId: task.projectId,
+      source: task.source,
+      target: task.target,
     },
     phase: "queued",
   });
@@ -279,6 +294,8 @@ export async function updateDeployTaskState(
     gatewayUrl?: string | null;
     phase?: DeployTaskPhase;
     previewUrl?: string | null;
+    projectId?: string | null;
+    projectName?: string | null;
     resultUrl?: string | null;
     runtimeName?: string | null;
     runtimeProvider?: string | null;

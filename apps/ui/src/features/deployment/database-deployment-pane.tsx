@@ -14,6 +14,7 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
+import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 
 export function DatabaseDeploymentPane({
@@ -49,7 +50,6 @@ export function DatabaseDeploymentPane({
         const outcome = await runDeploymentTargetPipeline({
           adapters: deploymentAdapters,
           credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
-          databaseOptions,
           namespace,
           request: {
             kind: "database",
@@ -63,8 +63,17 @@ export function DatabaseDeploymentPane({
         if (outcome.kind !== "database") {
           return;
         }
-        toast.success(`Deployed database "${outcome.dbName}".`);
-        await onDeployed?.();
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectName: outcome.projectName,
+            sourceLabel: outcome.sourceLabel,
+            taskId: outcome.taskId,
+          });
+        }
+        toast.success(outcome.taskMessage);
+        if (onDeployed != null) {
+          onDeployed().catch(() => undefined);
+        }
         onClose();
       } catch (error) {
         toast.error(

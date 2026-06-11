@@ -113,7 +113,7 @@ function deployTaskChatMessage(input: {
   events?: { message: string | null; phase: string | null; seq: number }[];
   phase?: string;
   projectName: string;
-  repoFullName: string;
+  sourceLabel: string;
   status?: string;
   taskId: string;
 }): UIMessage {
@@ -142,7 +142,7 @@ function deployTaskChatMessage(input: {
       {
         type: "text",
         text: [
-          `GitHub deployment task **${input.taskId}** has been created for **${input.repoFullName}**.`,
+          `Deployment task **${input.taskId}** has been created for **${input.sourceLabel}**.`,
           "",
           `Project: \`${input.projectName}\``,
           "",
@@ -522,7 +522,7 @@ function ProjectAssistantChatSession({
       if (
         detail == null ||
         typeof detail.taskId !== "string" ||
-        typeof detail.repoFullName !== "string" ||
+        typeof detail.sourceLabel !== "string" ||
         typeof detail.projectName !== "string"
       ) {
         return;

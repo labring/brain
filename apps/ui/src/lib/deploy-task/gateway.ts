@@ -270,7 +270,7 @@ async function projectGatewayState(input: {
   await updateDeployTaskState(input.taskId, {
     gatewayThreadId: input.state.threadId ?? null,
     gatewayTurnId: input.state.currentTurnId ?? null,
-    status: input.state.activeTurn ? "running" : "blocked",
+    status: "running",
   });
 
   const assistantText = assistantTextFromState(input.state);
@@ -314,7 +314,7 @@ async function waitForGatewayTurnCompletion(input: {
   await recordDeployTaskEvent(input.taskId, {
     kind: "deploy_task.gateway_timeout",
     message: "Codex gateway response timed out.",
-    phase: "analyze",
+    phase: "plan",
   });
 
   if (latestState != null) {
@@ -333,13 +333,13 @@ async function persistGatewayStateEvent(input: {
   await updateDeployTaskState(input.taskId, {
     gatewayThreadId: state.threadId ?? null,
     gatewayTurnId: state.currentTurnId ?? null,
-    status: state.activeTurn === false ? "blocked" : "running",
+    status: "running",
   });
   await recordDeployTaskEvent(input.taskId, {
     kind: "deploy_task.gateway_state",
     message: "Codex gateway state updated.",
     payload: input.payload ?? {},
-    phase: "analyze",
+    phase: "plan",
   });
 
   if (!Array.isArray(state.transcript)) {
@@ -376,7 +376,7 @@ export async function persistDeployGatewayEvent(input: {
 }): Promise<void> {
   const common = {
     payload: input.payload ?? {},
-    phase: "analyze" as const,
+    phase: "plan" as const,
   };
 
   if (input.eventName === "session") {
@@ -400,13 +400,35 @@ export async function persistDeployGatewayEvent(input: {
   });
 }
 
+function gatewaySourcePromptLines(task: DeployTaskRow): string[] {
+  switch (task.source.kind) {
+    case "github":
+      return [
+        "The workspace contains the cloned GitHub repository.",
+        `Repository: ${task.source.repo.fullName}`,
+        `Branch: ${task.source.branch ?? "default"}`,
+      ];
+    case "prompt":
+      return [
+        "The workspace is empty except for the .sealos output directory.",
+        "Create deployment artifacts from the natural-language deployment request.",
+        `Deployment request: ${task.source.text}`,
+      ];
+    default:
+      throw new Error(
+        `AI runner does not support ${task.source.kind} deployments.`
+      );
+  }
+}
+
 function buildGatewayPrompt(task: DeployTaskRow): string {
   return [
     "You are running inside a SealAI deployment Devbox.",
-    "Work in /home/devbox/project, which already contains the cloned GitHub repository.",
+    "Work in /home/devbox/project.",
+    ...gatewaySourcePromptLines(task),
     "",
     "Run the brain-github-deploy skill to completion:",
-    "/brain-github-deploy using the already-cloned repository in /home/devbox/project.",
+    "/brain-github-deploy using /home/devbox/project as the deployment workspace.",
     "",
     "Proceed automatically through all phases without stopping to ask for confirmation or input.",
     "Do not replace the skill workflow with your own ad-hoc deployment format.",
@@ -420,8 +442,6 @@ function buildGatewayPrompt(task: DeployTaskRow): string {
     'If anything fails, write /home/devbox/project/.sealos/deployment-output.json with status "failed" and include an actionable error message in the error field.',
     "Before ending, verify with: test -s /home/devbox/project/.sealos/deployment-output.json && test -s /home/devbox/project/.sealos/brain/ap.yaml",
     "",
-    `Repository: ${task.repoFullName}`,
-    `Branch: ${task.branch ?? "default"}`,
     `Namespace: ${task.namespace}`,
     task.projectName ? `Project: ${task.projectName}` : null,
     task.prompt ? `User request: ${task.prompt}` : null,
@@ -443,6 +463,12 @@ function buildGatewayRepairPrompt(task: DeployTaskRow): string {
     task.projectName
       ? `Use this project id in generated AP/DB specs as spec.projectId: ${task.projectName}`
       : null,
+    task.source.kind === "github"
+      ? `Repository: ${task.source.repo.fullName}`
+      : null,
+    task.source.kind === "prompt"
+      ? `Deployment request: ${task.source.text}`
+      : null,
     task.prompt ? `User request: ${task.prompt}` : null,
     "Before ending, verify with: test -s /home/devbox/project/.sealos/deployment-output.json && test -s /home/devbox/project/.sealos/brain/ap.yaml",
   ]
@@ -457,13 +483,13 @@ export async function runDeployTaskGateway(input: {
 }): Promise<void> {
   await updateDeployTaskState(input.task.id, {
     gatewayUrl: input.context.url,
-    phase: "analyze",
+    phase: "plan",
     status: "running",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_waiting",
     message: "Waiting for Codex gateway.",
-    phase: "analyze",
+    phase: "plan",
   });
 
   await waitForCodexGatewayReady(input.context);
@@ -481,7 +507,7 @@ export async function runDeployTaskGateway(input: {
       sessionId: session.sessionId,
       threadId: session.state.threadId ?? null,
     },
-    phase: "analyze",
+    phase: "plan",
   });
 
   const turn = await sendGatewayTurn(
@@ -494,7 +520,7 @@ export async function runDeployTaskGateway(input: {
   await updateDeployTaskState(input.task.id, {
     gatewayThreadId: turn.state.threadId ?? null,
     gatewayTurnId: turn.state.currentTurnId ?? null,
-    status: turn.state.activeTurn ? "running" : "blocked",
+    status: "running",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_turn_sent",
@@ -505,7 +531,7 @@ export async function runDeployTaskGateway(input: {
       threadId: turn.state.threadId ?? null,
       turnId: turn.state.currentTurnId ?? null,
     },
-    phase: "analyze",
+    phase: "plan",
   });
 
   const assistantText = assistantTextFromState(turn.state);
@@ -529,6 +555,6 @@ export async function runDeployTaskGateway(input: {
       lastTurnStatus: finalState.lastTurnStatus ?? null,
       turnId: finalState.currentTurnId ?? null,
     },
-    phase: "generate",
+    phase: "generate-artifacts",
   });
 }

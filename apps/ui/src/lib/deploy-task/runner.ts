@@ -2,6 +2,18 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
+import { API_ROUTES } from "@workspace/api/constants";
+import { fetcher } from "@workspace/api/fetch";
+import { ApiUrl } from "@workspace/api/utils";
+import { templateDeploymentExtraLabels } from "@/app/api/templates/deploy/labels";
+import type {
+  DatabaseDeploymentChoice,
+  DatabaseDeploymentSettings,
+} from "@/features/deployment/database-deployer";
+import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
+import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
+import type { DeployTaskRow } from "@/lib/chat-persistence/schema";
+import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import {
   createDevbox,
   DevboxApiError,
@@ -16,9 +28,19 @@ import {
   getDevboxDefaultImage,
 } from "@/lib/devbox/config";
 import type { DevboxInfo } from "@/lib/devbox/types";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
+import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
 import { getGithubAccessToken } from "@/lib/github-oauth/connection-service";
+import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { childResourceName } from "@/lib/project-child-resource-name";
+import { createProject, getProject } from "@/lib/project-persistence/projects";
+import { deployTemplateInstance } from "@/lib/template-provider-core";
 
-import { prepareDeployTaskArtifacts } from "./artifacts";
+import {
+  type DeploymentArtifact,
+  prepareBrainManifestArtifact,
+  prepareDeployTaskArtifacts,
+} from "./artifacts";
 import {
   DEPLOY_GATEWAY_MODEL,
   getCodexGatewayContextFromDevboxInfo,
@@ -43,9 +65,9 @@ const DEPLOY_OUTPUT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/deployment-output.js
 const DEPLOY_AP_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain/ap.yaml`;
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
-const APPLY_OUTPUT_TIMEOUT_SECONDS = 120;
 
 export interface StartDeployTaskRunnerInput {
+  encodedKubeconfig?: string;
   taskId: string;
 }
 
@@ -59,11 +81,11 @@ function shellQuote(value: string): string {
 
 function runtimeHash(input: {
   namespace: string;
-  repoUrl: string;
+  sourceKey: string;
   taskId: string;
 }): string {
   return createHash("sha256")
-    .update(`${input.namespace}|${input.repoUrl}|${input.taskId}`)
+    .update(`${input.namespace}|${input.sourceKey}|${input.taskId}`)
     .digest("hex")
     .slice(0, 32);
 }
@@ -85,6 +107,111 @@ function getPauseAt(): string {
 function compactEnvValue(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function decodeRunnerKubeconfig(encoded: string | undefined): string {
+  if (encoded == null || encoded.trim() === "") {
+    return "";
+  }
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return "";
+  }
+}
+
+function requireKubeconfig(input: StartDeployTaskRunnerInput): string {
+  const kubeconfig = decodeRunnerKubeconfig(input.encodedKubeconfig);
+  if (kubeconfig.trim() === "") {
+    throw new Error("Kubeconfig is required to run deployment task.");
+  }
+  return kubeconfig;
+}
+
+function brainProductPath(kind: string): string {
+  switch (kind) {
+    case "AP":
+      return API_ROUTES.ap.root;
+    case "DB":
+      return API_ROUTES.db.root;
+    default:
+      throw new Error(
+        `Unsupported Brain direct product ${kind || "<missing>"}.`
+      );
+  }
+}
+
+async function applyBrainManifestWithKubeconfig(input: {
+  kubeconfig: string;
+  yaml: string;
+}): Promise<string> {
+  const YAML = await import("yaml");
+  const docs = YAML.parseAllDocuments(input.yaml)
+    .map((doc) => doc.toJS())
+    .filter((doc) => doc != null);
+  if (docs.length === 0) {
+    throw new Error("Brain product manifest is empty.");
+  }
+  const header = {
+    Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    "Content-Type": "application/json",
+  };
+  for (const doc of docs) {
+    if (doc == null || typeof doc !== "object" || Array.isArray(doc)) {
+      throw new Error("Brain product manifest must be a YAML object.");
+    }
+    const record = doc as Record<string, unknown>;
+    const kind = typeof record.kind === "string" ? record.kind.trim() : "";
+    await fetcher({
+      base: ApiUrl(),
+      body: { yaml: YAML.stringify(doc).trimEnd() },
+      header,
+      method: "PUT",
+      path: brainProductPath(kind),
+    });
+  }
+  return `Applied ${docs.length} Brain direct resource${docs.length === 1 ? "" : "s"}.`;
+}
+
+async function applyDeploymentArtifact(input: {
+  artifact: DeploymentArtifact;
+  kubeconfig: string;
+  task: DeployTaskRow;
+}): Promise<{
+  artifactSummary: Record<string, unknown>;
+  notes: string;
+}> {
+  if (input.artifact.kind === "template-instance") {
+    return {
+      artifactSummary: {
+        artifacts: [input.artifact],
+        resources: input.artifact.resources.map((resource) => ({
+          apiVersion: "template.sealos.io",
+          kind: resource.resourceType,
+          name: resource.name,
+          namespace: input.task.namespace,
+        })),
+      },
+      notes: `Deployed template instance ${input.artifact.instanceName}.`,
+    };
+  }
+
+  const prepared = prepareBrainManifestArtifact({
+    artifact: input.artifact,
+    task: input.task,
+  });
+  const notes = await applyBrainManifestWithKubeconfig({
+    kubeconfig: input.kubeconfig,
+    yaml: prepared.yaml,
+  });
+  return {
+    artifactSummary: {
+      artifacts: [input.artifact],
+      resources: prepared.resources,
+      resourceYamls: [prepared.yaml],
+    },
+    notes,
+  };
 }
 
 function codexGatewayEnv(): Record<string, string> {
@@ -127,6 +254,188 @@ function isDevboxSdkPendingError(error: unknown): error is DevboxApiError {
     error.message.includes("sdk server") &&
     error.message.includes("is not reachable yet")
   );
+}
+
+type ResolvableDeploymentTaskTarget = Pick<
+  DeployTaskRow,
+  "id" | "namespace" | "projectId" | "projectName" | "target"
+>;
+
+export async function resolveDeploymentTaskTarget(
+  task: ResolvableDeploymentTaskTarget
+): Promise<{
+  createdProject: boolean;
+  projectId: string;
+  projectName: string;
+}> {
+  const cachedProjectId = task.projectId?.trim();
+  const cachedProjectName = task.projectName?.trim();
+  if (cachedProjectId && cachedProjectName) {
+    return {
+      createdProject: false,
+      projectId: cachedProjectId,
+      projectName: cachedProjectName,
+    };
+  }
+
+  await updateDeployTaskState(task.id, {
+    phase: "resolve-target",
+    status: "running",
+  });
+  await recordDeployTaskEvent(task.id, {
+    kind: "deployment_task.target_resolve_started",
+    message: "Resolving deployment target.",
+    phase: "resolve-target",
+  });
+
+  if (task.target.kind === "newProject") {
+    const project = await createProject({
+      displayName: task.target.displayName,
+      namespace: task.namespace,
+    });
+    await updateDeployTaskState(task.id, {
+      projectId: project.id,
+      projectName: project.id,
+    });
+    await recordDeployTaskEvent(task.id, {
+      kind: "deployment_task.target_resolved",
+      message: `Created Project "${project.displayName}".`,
+      payload: { projectId: project.id },
+      phase: "resolve-target",
+    });
+    return {
+      createdProject: true,
+      projectId: project.id,
+      projectName: project.id,
+    };
+  }
+
+  const project = await getProject(task.namespace, task.target.projectId);
+  if (project == null) {
+    throw new Error("Project not found.");
+  }
+  const projectName = task.target.projectName?.trim() || project.id;
+  await updateDeployTaskState(task.id, {
+    projectId: project.id,
+    projectName,
+  });
+  await recordDeployTaskEvent(task.id, {
+    kind: "deployment_task.target_resolved",
+    message: `Resolved Project "${project.displayName}".`,
+    payload: { projectId: project.id },
+    phase: "resolve-target",
+  });
+  return {
+    createdProject: false,
+    projectId: project.id,
+    projectName,
+  };
+}
+
+function databaseChoice(databaseId: string): DatabaseDeploymentChoice {
+  const choice = DIRECT_DB_DEPLOYMENT_OPTIONS.find(
+    (option) => option.id === databaseId
+  );
+  if (choice == null) {
+    throw new Error("Choose a database engine.");
+  }
+  return choice;
+}
+
+function dockerSettings(sourceSettings: Record<string, unknown>) {
+  const settings = sourceSettings as unknown as DockerDeploymentSettings;
+  const validation = validateDockerDeploymentSettings(settings);
+  if (!validation.valid) {
+    throw new Error(
+      validation.errors[0]?.message ?? "Docker deployment settings are invalid."
+    );
+  }
+  return settings;
+}
+
+function databaseSettings(
+  sourceSettings: Record<string, unknown>
+): DatabaseDeploymentSettings {
+  const settings = sourceSettings as unknown as DatabaseDeploymentSettings;
+  if (!settings.databaseId?.trim()) {
+    throw new Error("Choose a database engine.");
+  }
+  if (!settings.instancePreset) {
+    throw new Error("Choose a database resource preset.");
+  }
+  if (!Number.isFinite(settings.replicas)) {
+    throw new Error("Choose database replicas.");
+  }
+  return settings;
+}
+
+function generateDirectArtifact(input: {
+  kubeconfig: string;
+  projectName: string;
+  task: DeployTaskRow;
+}): DeploymentArtifact {
+  switch (input.task.source.kind) {
+    case "docker": {
+      const settings = dockerSettings(input.task.source.settings);
+      return {
+        kind: "brain-manifest",
+        yaml: renderDockerDeploymentYaml({
+          name: childResourceName(input.projectName, "ap"),
+          namespace: input.task.namespace,
+          projectName: input.projectName,
+          routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+          settings,
+        }),
+      };
+    }
+    case "database": {
+      const settings = databaseSettings(input.task.source.settings);
+      const choice = databaseChoice(settings.databaseId);
+      return {
+        kind: "brain-manifest",
+        yaml: renderDbDeploymentYaml({
+          engine: choice.engine,
+          name: childResourceName(input.projectName, "db"),
+          namespace: input.task.namespace,
+          projectName: input.projectName,
+          quota: settings.instancePreset,
+          replicas: settings.replicas,
+          template: choice.template ?? choice.id,
+        }),
+      };
+    }
+    default:
+      throw new Error(
+        `Direct runner does not support ${input.task.source.kind} deployments.`
+      );
+  }
+}
+
+async function generateTemplateArtifact(input: {
+  encodedKubeconfig: string;
+  projectId: string;
+  task: DeployTaskRow;
+}): Promise<DeploymentArtifact> {
+  if (input.task.source.kind !== "template") {
+    throw new Error("Template runner requires a template source.");
+  }
+  const templateName = input.task.source.templateName.trim();
+  const deployed = await deployTemplateInstance({
+    args: input.task.source.args,
+    encodedKubeconfig: input.encodedKubeconfig,
+    extraLabels: templateDeploymentExtraLabels({
+      projectId: input.projectId,
+      templateName,
+    }),
+    instanceName: childResourceName(templateName, "template"),
+    templateName,
+  });
+  return {
+    instanceName: deployed.instanceName,
+    kind: "template-instance",
+    resources: deployed.resources,
+    templateName,
+  };
 }
 
 async function getDevboxWithSecretRetry(
@@ -250,6 +559,23 @@ function prepareWorkspaceOutputCommand(): string {
   ].join("\n");
 }
 
+function prepareEmptyWorkspaceCommand(): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'mkdir -p "$workspace_dir"',
+    'find "$workspace_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
+    'mkdir -p "$workspace_dir/.sealos/brain"',
+    "if id devbox >/dev/null 2>&1; then",
+    '  if [ "$(id -u)" = "0" ]; then',
+    '    chown -R devbox:devbox "$workspace_dir"',
+    "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+    '    sudo chown -R devbox:devbox "$workspace_dir"',
+    "  fi",
+    "fi",
+  ].join("\n");
+}
+
 function installSkillsCommand(): string {
   return [
     "set -euo pipefail",
@@ -283,17 +609,6 @@ function readDeployOutputCommand(): string {
   ].join("\n");
 }
 
-function applyYamlCommand(): string {
-  return [
-    "set -euo pipefail",
-    "tmpfile=$(mktemp)",
-    'cleanup() { rm -f "$tmpfile"; }',
-    "trap cleanup EXIT",
-    'cat > "$tmpfile"',
-    'kubectl apply -f "$tmpfile"',
-  ].join("\n");
-}
-
 async function ensureDeployDevbox(input: {
   existingRuntimeName?: string | null;
   githubToken?: string;
@@ -313,7 +628,11 @@ async function ensureDeployDevbox(input: {
     return { info, name: existingRuntimeName };
   }
 
-  const hash = runtimeHash(input);
+  const hash = runtimeHash({
+    namespace: input.namespace,
+    sourceKey: input.repoUrl,
+    taskId: input.taskId,
+  });
   const name = runtimeName(hash);
   const upstreamID = runtimeUpstreamId(hash);
   const existing = (await listDevboxes(input.namespace, upstreamID)).data
@@ -409,23 +728,318 @@ async function readDeployOutput(input: {
     : null;
 }
 
-async function applyDeployYaml(input: {
-  namespace: string;
-  runtimeName: string;
-  yaml: string;
-}): Promise<string> {
-  const result = (
-    await execDevbox(input.namespace, input.runtimeName, {
-      command: ["bash", "-lc", applyYamlCommand()],
-      stdin: input.yaml,
-      timeoutSeconds: APPLY_OUTPUT_TIMEOUT_SECONDS,
-    })
-  ).data;
+async function completeTaskWithArtifact(input: {
+  artifact: DeploymentArtifact;
+  kubeconfig: string;
+  outputJson?: Record<string, unknown>;
+  task: DeployTaskRow;
+}) {
+  await updateDeployTaskState(input.task.id, {
+    phase: "apply",
+    status: "applying",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.apply_started",
+    message: "Applying deployment artifacts.",
+    phase: "apply",
+  });
 
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim());
+  const applied = await applyDeploymentArtifact({
+    artifact: input.artifact,
+    kubeconfig: input.kubeconfig,
+    task: input.task,
+  });
+
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      ...applied.artifactSummary,
+      notes: applied.notes,
+      ...(input.outputJson === undefined
+        ? {}
+        : { outputJson: input.outputJson }),
+    },
+    phase: "completed",
+    status: "completed",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.completed",
+    message: "Deployment task completed.",
+    payload: applied.artifactSummary,
+    phase: "completed",
+  });
+}
+
+async function runDirectDeploymentTask(input: {
+  kubeconfig: string;
+  projectName: string;
+  task: DeployTaskRow;
+}) {
+  await updateDeployTaskState(input.task.id, {
+    phase: "plan",
+    status: "running",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.plan_created",
+    message: "Prepared direct deployment plan.",
+    phase: "plan",
+  });
+
+  const artifact = generateDirectArtifact(input);
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: { artifacts: [artifact] },
+    phase: "generate-artifacts",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.artifacts_generated",
+    message: "Generated deployment artifacts.",
+    phase: "generate-artifacts",
+  });
+
+  await completeTaskWithArtifact({
+    artifact,
+    kubeconfig: input.kubeconfig,
+    task: input.task,
+  });
+}
+
+async function runTemplateDeploymentTask(input: {
+  encodedKubeconfig: string;
+  kubeconfig: string;
+  projectId: string;
+  task: DeployTaskRow;
+}) {
+  await updateDeployTaskState(input.task.id, {
+    phase: "plan",
+    status: "running",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.plan_created",
+    message: "Prepared template deployment plan.",
+    phase: "plan",
+  });
+
+  const artifact = await generateTemplateArtifact({
+    encodedKubeconfig: input.encodedKubeconfig,
+    projectId: input.projectId,
+    task: input.task,
+  });
+
+  await completeTaskWithArtifact({
+    artifact,
+    kubeconfig: input.kubeconfig,
+    task: input.task,
+  });
+}
+
+function aiSourceKey(task: DeployTaskRow): string {
+  switch (task.source.kind) {
+    case "github":
+      return task.source.repo.url;
+    case "prompt":
+      return `prompt:${task.id}`;
+    default:
+      return `${task.source.kind}:${task.id}`;
   }
-  return result.stdout.trim();
+}
+
+async function runAiDeploymentTask(input: {
+  kubeconfig: string;
+  task: DeployTaskRow;
+}) {
+  if (
+    input.task.source.kind !== "github" &&
+    input.task.source.kind !== "prompt"
+  ) {
+    throw new Error(
+      `AI runner does not support ${input.task.source.kind} deployments.`
+    );
+  }
+
+  await updateDeployTaskState(input.task.id, {
+    phase: "prepare",
+    status: "running",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.prepare_started",
+    message: "Preparing deploy runtime.",
+    phase: "prepare",
+  });
+
+  const githubToken =
+    input.task.source.kind === "github"
+      ? await getGithubAccessToken(input.task.namespace)
+      : null;
+
+  const runtime = await ensureDeployDevbox({
+    existingRuntimeName: input.task.runtimeName,
+    githubToken: githubToken ?? undefined,
+    namespace: input.task.namespace,
+    repoUrl: aiSourceKey(input.task),
+    taskId: input.task.id,
+  });
+
+  await updateDeployTaskState(input.task.id, {
+    runtimeName: runtime.name,
+    runtimeProvider: "devbox",
+    runtimeState: runtime.info.state.phase,
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.runtime_ready",
+    message: "Deploy runtime is ready.",
+    payload: { runtimeName: runtime.name },
+    phase: "prepare",
+  });
+
+  if (input.task.source.kind === "github") {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.workspace_clone_started",
+      message: "Cloning repository into deploy workspace.",
+      phase: "prepare",
+    });
+    await execOrThrow({
+      command: cloneWorkspaceCommand({
+        branch: input.task.source.branch ?? null,
+        githubToken: githubToken ?? undefined,
+        repoUrl: input.task.source.repo.url,
+      }),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.workspace_clone_ready",
+      message: "Repository clone is ready.",
+      phase: "prepare",
+    });
+  } else {
+    await execOrThrow({
+      command: prepareEmptyWorkspaceCommand(),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+    });
+  }
+
+  await execOrThrow({
+    command: prepareWorkspaceOutputCommand(),
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+    timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+  });
+
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.skill_install_started",
+    message: "Installing deploy skills into workspace.",
+    phase: "prepare",
+  });
+  await execOrThrow({
+    command: installSkillsCommand(),
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+    timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+  });
+
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.workspace_ready",
+    message: "Deployment workspace is ready.",
+    phase: "prepare",
+  });
+
+  const latestRuntimeInfo = await getDevboxWithSecretRetry(
+    input.task.namespace,
+    runtime.name
+  );
+  const gatewayContext =
+    getCodexGatewayContextFromDevboxInfo(latestRuntimeInfo);
+
+  if (gatewayContext == null) {
+    await updateDeployTaskState(input.task.id, {
+      phase: "plan",
+      status: "blocked",
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.gateway_unavailable",
+      message:
+        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
+      phase: "plan",
+    });
+    return;
+  }
+
+  await runDeployTaskGateway({
+    context: gatewayContext,
+    task: input.task,
+  });
+
+  const deployOutput = await readDeployOutput({
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+  });
+  let finalDeployOutput = deployOutput;
+  if (finalDeployOutput == null) {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.output_repair_started",
+      message:
+        "Codex gateway completed without deployment output; requesting a repair turn.",
+      phase: "generate-artifacts",
+    });
+    await runDeployTaskGateway({
+      context: gatewayContext,
+      repairOutput: true,
+      task: input.task,
+    });
+    finalDeployOutput = await readDeployOutput({
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+    });
+  }
+
+  if (finalDeployOutput == null) {
+    await updateDeployTaskState(input.task.id, {
+      artifactSummary: {
+        notes: "Codex gateway completed without deployment output.",
+      },
+      phase: "generate-artifacts",
+      status: "blocked",
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.output_missing",
+      message: "Codex gateway completed without deployment output.",
+      phase: "generate-artifacts",
+    });
+    return;
+  }
+
+  const prepared = prepareDeployTaskArtifacts({
+    output: finalDeployOutput,
+    task: input.task,
+  });
+  const artifact: DeploymentArtifact = {
+    kind: "brain-manifest",
+    yaml: prepared.yaml,
+  };
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      artifacts: [artifact],
+      outputJson: finalDeployOutput,
+      resources: prepared.resources,
+      resourceYamls: [prepared.yaml],
+    },
+    phase: "generate-artifacts",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.artifacts_generated",
+    message: "Generated deployment artifacts.",
+    payload: { resources: prepared.resources },
+    phase: "generate-artifacts",
+  });
+
+  await completeTaskWithArtifact({
+    artifact,
+    kubeconfig: input.kubeconfig,
+    outputJson: finalDeployOutput,
+    task: input.task,
+  });
 }
 
 export async function startDeployTaskRunner(
@@ -437,193 +1051,36 @@ export async function startDeployTaskRunner(
   }
 
   try {
-    await updateDeployTaskState(task.id, {
-      phase: "runtime",
-      status: "running",
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.runner_started",
-      message: "Preparing deploy runtime.",
-      phase: "runtime",
-    });
+    const kubeconfig = requireKubeconfig(input);
+    const target = await resolveDeploymentTaskTarget(task);
+    const resolvedTask = (await getDeployTaskById(task.id)) ?? task;
 
-    const githubToken = await getGithubAccessToken(task.namespace);
-
-    const runtime = await ensureDeployDevbox({
-      existingRuntimeName: task.runtimeName,
-      githubToken: githubToken ?? undefined,
-      namespace: task.namespace,
-      repoUrl: task.repoUrl,
-      taskId: task.id,
-    });
-
-    await updateDeployTaskState(task.id, {
-      runtimeName: runtime.name,
-      runtimeProvider: "devbox",
-      runtimeState: runtime.info.state.phase,
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.runtime_ready",
-      message: "Deploy runtime is ready.",
-      payload: { runtimeName: runtime.name },
-      phase: "runtime",
-    });
-
-    await updateDeployTaskState(task.id, {
-      phase: "workspace",
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.workspace_clone_started",
-      message: "Cloning repository into deploy workspace.",
-      phase: "workspace",
-    });
-    await execOrThrow({
-      command: cloneWorkspaceCommand({
-        branch: task.branch,
-        githubToken: githubToken ?? undefined,
-        repoUrl: task.repoUrl,
-      }),
-      namespace: task.namespace,
-      runtimeName: runtime.name,
-      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.workspace_clone_ready",
-      message: "Repository clone is ready.",
-      phase: "workspace",
-    });
-    await execOrThrow({
-      command: prepareWorkspaceOutputCommand(),
-      namespace: task.namespace,
-      runtimeName: runtime.name,
-      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.skill_install_started",
-      message: "Installing deploy skills into workspace.",
-      phase: "workspace",
-    });
-    await execOrThrow({
-      command: installSkillsCommand(),
-      namespace: task.namespace,
-      runtimeName: runtime.name,
-      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.workspace_ready",
-      message: "Repository workspace is ready.",
-      phase: "workspace",
-    });
-
-    const latestRuntimeInfo = await getDevboxWithSecretRetry(
-      task.namespace,
-      runtime.name
-    );
-    const gatewayContext =
-      getCodexGatewayContextFromDevboxInfo(latestRuntimeInfo);
-
-    if (gatewayContext == null) {
-      await updateDeployTaskState(task.id, {
-        phase: "analyze",
-        status: "blocked",
-      });
-      await recordDeployTaskEvent(task.id, {
-        kind: "deploy_task.gateway_unavailable",
-        message:
-          "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
-        phase: "analyze",
-      });
-      return;
+    switch (resolvedTask.runner.kind) {
+      case "direct":
+        await runDirectDeploymentTask({
+          kubeconfig,
+          projectName: target.projectName,
+          task: resolvedTask,
+        });
+        break;
+      case "template":
+        await runTemplateDeploymentTask({
+          encodedKubeconfig: input.encodedKubeconfig ?? "",
+          kubeconfig,
+          projectId: target.projectId,
+          task: resolvedTask,
+        });
+        break;
+      case "ai":
+        await runAiDeploymentTask({
+          kubeconfig,
+          task: resolvedTask,
+        });
+        break;
+      default:
+        resolvedTask.runner satisfies never;
+        break;
     }
-
-    await runDeployTaskGateway({
-      context: gatewayContext,
-      task,
-    });
-
-    const deployOutput = await readDeployOutput({
-      namespace: task.namespace,
-      runtimeName: runtime.name,
-    });
-    let finalDeployOutput = deployOutput;
-    if (finalDeployOutput == null) {
-      await recordDeployTaskEvent(task.id, {
-        kind: "deploy_task.output_repair_started",
-        message:
-          "Codex gateway completed without deployment output; requesting a repair turn.",
-        phase: "generate",
-      });
-      await runDeployTaskGateway({
-        context: gatewayContext,
-        repairOutput: true,
-        task,
-      });
-      finalDeployOutput = await readDeployOutput({
-        namespace: task.namespace,
-        runtimeName: runtime.name,
-      });
-    }
-
-    if (finalDeployOutput == null) {
-      await updateDeployTaskState(task.id, {
-        artifactSummary: {
-          notes: "Codex gateway completed without deployment output.",
-        },
-        phase: "ship",
-        status: "blocked",
-      });
-      await recordDeployTaskEvent(task.id, {
-        kind: "deploy_task.output_missing",
-        message: "Codex gateway completed without deployment output.",
-        phase: "ship",
-      });
-      return;
-    }
-
-    const preparedArtifacts = prepareDeployTaskArtifacts({
-      output: finalDeployOutput,
-      task,
-    });
-    await updateDeployTaskState(task.id, {
-      artifactSummary: {
-        outputJson: finalDeployOutput,
-        resources: preparedArtifacts.resources,
-        resourceYamls: [preparedArtifacts.yaml],
-      },
-      phase: "apply",
-      status: "applying",
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.apply_started",
-      message: "Applying generated Brain direct resources.",
-      payload: { resources: preparedArtifacts.resources },
-      phase: "apply",
-    });
-    const applyOutput = await applyDeployYaml({
-      namespace: task.namespace,
-      runtimeName: runtime.name,
-      yaml: preparedArtifacts.yaml,
-    });
-
-    await updateDeployTaskState(task.id, {
-      artifactSummary: {
-        notes: applyOutput,
-        outputJson: finalDeployOutput,
-        resources: preparedArtifacts.resources,
-        resourceYamls: [preparedArtifacts.yaml],
-      },
-      phase: "ship",
-      status: "completed",
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.completed",
-      message: "Deploy task completed.",
-      payload: {
-        applyOutput,
-        resources: preparedArtifacts.resources,
-      },
-      phase: "ship",
-    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await updateDeployTaskState(task.id, {
@@ -631,7 +1088,7 @@ export async function startDeployTaskRunner(
       status: "failed",
     });
     await recordDeployTaskEvent(task.id, {
-      kind: "deploy_task.failed",
+      kind: "deployment_task.failed",
       message,
     });
     throw error;

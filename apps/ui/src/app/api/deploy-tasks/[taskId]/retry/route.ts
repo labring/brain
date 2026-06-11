@@ -20,6 +20,11 @@ interface RouteContext {
 }
 
 const requestSchema = z.object({}).optional();
+const bodySchema = z
+  .object({
+    encodedKubeconfig: z.string().optional(),
+  })
+  .optional();
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -28,20 +33,6 @@ function jsonError(message: string, status: number) {
 export async function POST(request: Request, context: RouteContext) {
   const { taskId } = await context.params;
   const params = deployTaskRequestParams(request);
-  const namespaceResolved = await resolveDeployTaskRequestNamespace({
-    clientNamespace: params.namespace,
-    encodedKubeconfig: params.encodedKubeconfig,
-  });
-  if (!namespaceResolved.ok) {
-    return jsonError(
-      namespaceResolved.message ?? "Invalid deploy task namespace",
-      namespaceResolved.status ?? 400
-    );
-  }
-  if (namespaceResolved.namespace == null) {
-    return jsonError("Invalid deploy task namespace", 400);
-  }
-
   const body = await request.json().catch(() => undefined);
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
@@ -52,6 +43,24 @@ export async function POST(request: Request, context: RouteContext) {
       },
       { status: 400 }
     );
+  }
+  const parsedBody = bodySchema.safeParse(body);
+  const encodedKubeconfig = parsedBody.success
+    ? (parsedBody.data?.encodedKubeconfig ?? params.encodedKubeconfig)
+    : params.encodedKubeconfig;
+
+  const namespaceResolved = await resolveDeployTaskRequestNamespace({
+    clientNamespace: params.namespace,
+    encodedKubeconfig,
+  });
+  if (!namespaceResolved.ok) {
+    return jsonError(
+      namespaceResolved.message ?? "Invalid deploy task namespace",
+      namespaceResolved.status ?? 400
+    );
+  }
+  if (namespaceResolved.namespace == null) {
+    return jsonError("Invalid deploy task namespace", 400);
   }
 
   const snapshot = await getDeployTaskSnapshot(
@@ -81,6 +90,7 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   startDeployTaskRunner({
+    encodedKubeconfig,
     taskId,
   }).catch((error: unknown) => {
     console.error("[deploy-tasks] runner retry failed:", error);

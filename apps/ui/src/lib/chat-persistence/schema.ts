@@ -135,16 +135,17 @@ export type DeployTaskStatus =
 
 export type DeployTaskPhase =
   | "queued"
-  | "runtime"
-  | "workspace"
-  | "analyze"
+  | "resolve-target"
+  | "prepare"
+  | "plan"
   | "configure"
-  | "generate"
+  | "generate-artifacts"
   | "apply"
-  | "preview"
-  | "ship";
+  | "verify"
+  | "completed";
 
 export interface DeployTaskArtifactSummary {
+  artifacts?: unknown[];
   entrypointYaml?: string;
   notes?: string;
   outputJson?: unknown;
@@ -168,6 +169,69 @@ export interface DeployTaskEventPayload {
   [key: string]: unknown;
 }
 
+export interface DeploymentTaskGithubSource {
+  branch?: string;
+  kind: "github";
+  repo: {
+    fullName: string;
+    id?: string;
+    name: string;
+    url: string;
+  };
+}
+
+export interface DeploymentTaskDockerSource {
+  kind: "docker";
+  settings: Record<string, unknown>;
+}
+
+export interface DeploymentTaskDatabaseSource {
+  kind: "database";
+  settings: Record<string, unknown>;
+}
+
+export interface DeploymentTaskTemplateSource {
+  args?: Record<string, string>;
+  kind: "template";
+  templateName: string;
+}
+
+export interface DeploymentTaskPromptSource {
+  kind: "prompt";
+  text: string;
+}
+
+export type DeploymentTaskSource =
+  | DeploymentTaskDatabaseSource
+  | DeploymentTaskDockerSource
+  | DeploymentTaskGithubSource
+  | DeploymentTaskPromptSource
+  | DeploymentTaskTemplateSource;
+
+export type DeploymentTaskTarget =
+  | {
+      displayName: string;
+      kind: "newProject";
+    }
+  | {
+      kind: "existingProject";
+      projectId: string;
+      projectName?: string;
+    };
+
+export type DeploymentTaskRunner =
+  | {
+      kind: "direct";
+    }
+  | {
+      kind: "template";
+    }
+  | {
+      kind: "ai";
+      runtimeProvider: "devbox";
+      skill?: string;
+    };
+
 export const deployTasks = ns.table(
   "deploy_tasks",
   {
@@ -177,13 +241,10 @@ export const deployTasks = ns.table(
     // the app-level contract is the Brain Project ID.
     projectId: text("project_uid"),
     projectName: text("project_name"),
-    selectedWorkloadUid: text("selected_workload_uid"),
-    repoId: text("repo_id"),
-    repoFullName: text("repo_full_name").notNull(),
-    repoName: text("repo_name").notNull(),
-    repoUrl: text("repo_url").notNull(),
-    branch: text("branch"),
     prompt: text("prompt"),
+    source: jsonb("source").notNull().$type<DeploymentTaskSource>(),
+    target: jsonb("target").notNull().$type<DeploymentTaskTarget>(),
+    runner: jsonb("runner").notNull().$type<DeploymentTaskRunner>(),
     status: text("status").notNull().$type<DeployTaskStatus>(),
     phase: text("phase").notNull().$type<DeployTaskPhase>(),
     runtimeProvider: text("runtime_provider"),

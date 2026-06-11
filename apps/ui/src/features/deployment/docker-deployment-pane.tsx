@@ -14,7 +14,7 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 
 export function DockerDeploymentPane({
   kubeconfig,
@@ -57,13 +57,21 @@ export function DockerDeploymentPane({
               projectId,
             }),
           },
-          routingDomain: routingDomainFromKubeconfig(kubeconfig),
         });
         if (outcome.kind !== "docker") {
           return;
         }
-        toast.success(`Deployed Docker AP "${outcome.apName}".`);
-        await onDeployed?.();
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectName: outcome.projectName,
+            sourceLabel: outcome.sourceLabel,
+            taskId: outcome.taskId,
+          });
+        }
+        toast.success(outcome.taskMessage);
+        if (onDeployed != null) {
+          onDeployed().catch(() => undefined);
+        }
         onClose();
       } catch (error) {
         toast.error(

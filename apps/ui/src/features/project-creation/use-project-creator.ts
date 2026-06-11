@@ -31,7 +31,6 @@ import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
-import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
 const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
@@ -209,20 +208,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       runDeploymentTargetPipeline({
         adapters: deploymentAdapters,
         credentialsReady: hasKubeconfig && namespace !== "",
-        databaseOptions,
         existingProjects,
         namespace,
         request,
-        routingDomain: routingDomainFromKubeconfig(kubeconfig),
       }),
-    [
-      databaseOptions,
-      deploymentAdapters,
-      existingProjects,
-      hasKubeconfig,
-      kubeconfig,
-      namespace,
-    ]
+    [deploymentAdapters, existingProjects, hasKubeconfig, namespace]
   );
 
   const actions = useMemo<ProjectCreatorActions>(
@@ -255,8 +245,15 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.kind !== "docker") {
             return;
           }
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectName: outcome.projectName,
+              sourceLabel: outcome.sourceLabel,
+              taskId: outcome.taskId,
+            });
+          }
           toast.success(
-            `Applied project "${displayName}" and AP "${outcome.apName}".`
+            `Created deployment task for project "${displayName}".`
           );
           setLastConfirmedKind(
             `docker:${settings.image}:${outcome.projectName}`
@@ -279,8 +276,15 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.kind !== "database") {
             return;
           }
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectName: outcome.projectName,
+              sourceLabel: outcome.sourceLabel,
+              taskId: outcome.taskId,
+            });
+          }
           toast.success(
-            `Applied project "${displayName}" and database "${outcome.dbName}".`
+            `Created deployment task for project "${displayName}".`
           );
           setLastConfirmedKind(
             `database:${settings.databaseId}:${outcome.projectName}`
@@ -305,8 +309,15 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.kind !== "template") {
             return;
           }
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectName: outcome.projectName,
+              sourceLabel: outcome.sourceLabel,
+              taskId: outcome.taskId,
+            });
+          }
           toast.success(
-            `Applied project "${displayName}" and template "${outcome.instanceName}".`
+            `Created deployment task for project "${displayName}".`
           );
           setLastConfirmedKind(
             `template:${choice.name}:${outcome.projectName}`
@@ -336,18 +347,16 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         if (outcome.kind !== "github") {
           return;
         }
-        toast.success(
-          `Created project "${displayName}". ${outcome.taskMessage}`
-        );
+        toast.success(outcome.taskMessage);
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectName: outcome.projectName,
-            repoFullName: outcome.repoFullName,
+            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }
         setLastConfirmedKind(
-          `github:${outcome.repoFullName}:${outcome.projectName}`
+          `github:${outcome.sourceLabel}:${outcome.projectName}`
         );
         dispatchCreationPaneState({ type: "close" });
         await onProjectCreated?.(outcome.projectId);

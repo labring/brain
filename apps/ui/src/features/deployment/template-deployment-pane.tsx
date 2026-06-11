@@ -13,6 +13,7 @@ import {
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
+import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 
 export function TemplateDeploymentPane({
   kubeconfig,
@@ -61,8 +62,17 @@ export function TemplateDeploymentPane({
         if (outcome.kind !== "template") {
           return;
         }
-        toast.success(`Deployed template "${outcome.instanceName}".`);
-        await onDeployed?.();
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectName: outcome.projectName,
+            sourceLabel: outcome.sourceLabel,
+            taskId: outcome.taskId,
+          });
+        }
+        toast.success(outcome.taskMessage);
+        if (onDeployed != null) {
+          onDeployed().catch(() => undefined);
+        }
         onClose();
       } catch (error) {
         toast.error(
