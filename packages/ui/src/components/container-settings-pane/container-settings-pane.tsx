@@ -46,6 +46,7 @@ import {
   deleteApEnvRawSourceRow,
   insertApEnvReferenceText,
   parseApEnvRawSource,
+  resolveApEnvRawSourceReferences,
 } from "@workspace/ui/lib/ap-env-raw-source";
 import {
   addContainerEnvRow,
@@ -557,14 +558,14 @@ export interface ContainerSettingsPaneConfirmedAddDbDsnReference {
   id: string;
 }
 
+export interface ContainerSettingsPanePendingDbReference {
+  dbName: string;
+  dbNamespace: string;
+}
+
 export interface ContainerSettingsPaneEnvChangeMeta {
   confirmedAddDbDsnReferences?: ContainerSettingsPaneConfirmedAddDbDsnReference[];
   envRawSource?: string;
-}
-
-export interface ContainerSettingsPaneAddDbDsnReferenceIntentChange {
-  id: string;
-  references: ContainerSettingsPaneConfirmedAddDbDsnReference[];
 }
 
 export interface ContainerConfigMapMount {
@@ -630,9 +631,6 @@ export interface ContainerSettingsPaneProps {
   network?: ContainerNetwork;
   networkPlatformAddressDraftContext?: ContainerNetworkPlatformAddressDraftContext;
   onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
-  onAddDbDsnReferenceIntentDraftChange?: (
-    change: ContainerSettingsPaneAddDbDsnReferenceIntentChange
-  ) => void;
   onCustomDomainCnameVerify?: ContainerCustomDomainCnameVerifier;
   onEnvChange: (
     env: ContainerEnvVar[],
@@ -642,6 +640,9 @@ export interface ContainerSettingsPaneProps {
   onEnvResolvedValue?: ContainerEnvResolvedValueResolver;
   onImageChange: (image: string) => void;
   onNetworkChange?: (network: ContainerNetwork) => void | Promise<void>;
+  onPendingDbReferencesChange?: (
+    references: readonly ContainerSettingsPanePendingDbReference[]
+  ) => void;
   /**
    * When set (and not `readOnly`), CPU/memory/replicas sliders keep local drafts until Update; Discard reverts.
    * Omit for live slider updates via `cpuQuota` / `memoryQuota` / `replicasQuota` `onValueChange`.
@@ -1372,6 +1373,55 @@ export function confirmedAddDbDsnReferencesFromEnvDraft(
   }
 
   return Array.from(byIntentId.values());
+}
+
+function dbReferenceKey(reference: ContainerSettingsPanePendingDbReference) {
+  return `${reference.dbNamespace}/${reference.dbName}`;
+}
+
+function dbReferencesFromRawSource(
+  source: string,
+  sources: readonly ContainerEnvDbDsnSource[]
+): ContainerSettingsPanePendingDbReference[] | undefined {
+  const resolved = resolveApEnvRawSourceReferences(source, sources);
+  if (!resolved.valid) {
+    return undefined;
+  }
+
+  const byKey = new Map<string, ContainerSettingsPanePendingDbReference>();
+  for (const reference of resolved.references) {
+    const pendingReference = {
+      dbName: reference.canonicalDbName,
+      dbNamespace: reference.source.namespace,
+    };
+    byKey.set(dbReferenceKey(pendingReference), pendingReference);
+  }
+  return Array.from(byKey.values());
+}
+
+export function pendingDbReferencesFromEnvRawSourceDraft({
+  committedRawSource,
+  draftRawSource,
+  sources,
+}: {
+  committedRawSource: string;
+  draftRawSource: string;
+  sources: readonly ContainerEnvDbDsnSource[];
+}): ContainerSettingsPanePendingDbReference[] | undefined {
+  const draftReferences = dbReferencesFromRawSource(draftRawSource, sources);
+  if (draftReferences === undefined) {
+    return undefined;
+  }
+  if (draftRawSource === committedRawSource) {
+    return [];
+  }
+
+  const committedReferences =
+    dbReferencesFromRawSource(committedRawSource, sources) ?? [];
+  const committedKeys = new Set(committedReferences.map(dbReferenceKey));
+  return draftReferences.filter(
+    (reference) => !committedKeys.has(dbReferenceKey(reference))
+  );
 }
 
 function ReadOnlyEnvRows({ env }: { env: readonly ContainerEnvVar[] }) {
@@ -4800,7 +4850,7 @@ export function ContainerSettingsPane({
   onNetworkChange,
   onEnvChange,
   onAddDbDsnReferenceIntentConsumed,
-  onAddDbDsnReferenceIntentDraftChange,
+  onPendingDbReferencesChange,
   cpuQuota,
   memoryQuota,
   env,
@@ -4903,8 +4953,6 @@ export function ContainerSettingsPane({
   const copiedEnvValueTimeout = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const previousAddDbDsnReferenceIntentIds = useRef<Set<string>>(new Set());
-
   const settingsCommitMode = onSettingsDraftCommit != null && readOnly !== true;
   const quotaCommitMode = onResourceQuotasCommit != null && readOnly !== true;
   const quotaDraftMode = settingsCommitMode || quotaCommitMode;
@@ -5152,37 +5200,6 @@ export function ContainerSettingsPane({
       compileApEnvRawSourceForRuntime(envRawSourceDraft, dbDsnReferenceSources),
     [dbDsnReferenceSources, envRawSourceDraft]
   );
-  useEffect(() => {
-    if (onAddDbDsnReferenceIntentDraftChange == null) {
-      return;
-    }
-
-    const currentIds = new Set<string>();
-    for (const row of envDraft) {
-      const intentId = row.canvasAddDbDsnReferenceIntentId;
-      if (intentId != null && intentId !== "") {
-        currentIds.add(intentId);
-      }
-    }
-
-    const confirmedReferences =
-      confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
-    for (const id of currentIds) {
-      onAddDbDsnReferenceIntentDraftChange({
-        id,
-        references: confirmedReferences.filter(
-          (reference) => reference.id === id
-        ),
-      });
-    }
-
-    for (const id of previousAddDbDsnReferenceIntentIds.current) {
-      if (!currentIds.has(id)) {
-        onAddDbDsnReferenceIntentDraftChange({ id, references: [] });
-      }
-    }
-    previousAddDbDsnReferenceIntentIds.current = currentIds;
-  }, [envDraft, onAddDbDsnReferenceIntentDraftChange]);
   const envTokenDiagnostics = useMemo(
     () =>
       envRuntimeCompile.diagnostics.map((diagnostic) => ({
@@ -5361,6 +5378,30 @@ export function ContainerSettingsPane({
     [committedEnvRawSource]
   );
   const envDirty = envRawSourceDraft !== committedEnvRawSource;
+  const pendingDbReferences = useMemo(
+    () =>
+      pendingDbReferencesFromEnvRawSourceDraft({
+        committedRawSource: committedEnvRawSource,
+        draftRawSource: envRawSourceDraft,
+        sources: dbDsnReferenceSources,
+      }),
+    [committedEnvRawSource, dbDsnReferenceSources, envRawSourceDraft]
+  );
+  useEffect(() => {
+    if (onPendingDbReferencesChange == null || readOnly) {
+      return;
+    }
+    if (pendingDbReferences === undefined) {
+      return;
+    }
+    onPendingDbReferencesChange(pendingDbReferences);
+  }, [onPendingDbReferencesChange, pendingDbReferences, readOnly]);
+  useEffect(
+    () => () => {
+      onPendingDbReferencesChange?.([]);
+    },
+    [onPendingDbReferencesChange]
+  );
   const resolveSavedEnvValue = useCallback(
     (index: number) => {
       if (onEnvResolvedValue == null) {
@@ -5733,17 +5774,7 @@ export function ContainerSettingsPane({
       return;
     }
     const normalized = result.env;
-    const confirmedAddDbDsnReferences =
-      confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
-    onEnvChange(
-      normalized,
-      confirmedAddDbDsnReferences.length === 0
-        ? { envRawSource: result.envRawSource }
-        : {
-            confirmedAddDbDsnReferences,
-            envRawSource: result.envRawSource,
-          }
-    );
+    onEnvChange(normalized, { envRawSource: result.envRawSource });
     setEnvDraft(envDraftRowsFromRawSource(result.envRawSource));
   };
 
@@ -5902,8 +5933,6 @@ export function ContainerSettingsPane({
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
     const normalizedEnv = result.env;
-    const confirmedAddDbDsnReferences =
-      confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
     const draft: ContainerSettingsDraft = {
       ...settingsDraft,
       args: normalizeCommandDraftLines(settingsDraft.args),
@@ -5916,9 +5945,6 @@ export function ContainerSettingsPane({
     };
     const meta: ContainerSettingsPaneSettingsDraftCommitMeta = {
       baseDraft: settingsBaseDraft,
-      ...(confirmedAddDbDsnReferences.length === 0
-        ? {}
-        : { confirmedAddDbDsnReferences }),
     };
     setSettingsSavePending(true);
     setSettingsBackingState((current) => ({

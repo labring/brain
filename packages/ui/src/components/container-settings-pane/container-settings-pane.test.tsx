@@ -15,6 +15,7 @@ import {
   containerNetworkAfterUnbindCustomDomain,
   containerSettingsDraftIsDirty,
   envRawSourceDraftWithAddReferenceIntent,
+  pendingDbReferencesFromEnvRawSourceDraft,
   resourceQuotaReplicaPatchFromDraft,
 } from "./container-settings-pane";
 
@@ -1270,6 +1271,98 @@ test("container settings pane uses DB identity and numeric suffixes for dragged 
       "MYSQL_DATABASE_URL=mysql://manual",
       `MYSQL_DATABASE_URL_2=${referenceExpression("mysql", "DATABASE_URL")}`,
     ].join("\n")
+  );
+});
+
+test("container settings pane derives pending DB references from explicit raw source references", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: "FEATURE_FLAG=true",
+      draftRawSource: [
+        "FEATURE_FLAG=true",
+        `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+        `MYSQL_HOST=${referenceExpression("mysql", "PG_HOST")}`,
+      ].join("\n"),
+      sources: [
+        {
+          name: "mysql",
+          namespace: "default",
+          primitiveSecretRefs: {
+            host: { key: "host", name: "mysql-conn-credential" },
+          },
+        },
+        { name: "postgres", namespace: "default" },
+      ],
+    }),
+    [{ dbName: "mysql", dbNamespace: "default" }]
+  );
+});
+
+test("container settings pane does not derive pending DB references from already committed references", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: `DATABASE_URL=${referenceExpression(
+        "mysql",
+        "DATABASE_URL"
+      )}`,
+      draftRawSource: [
+        `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+        "FEATURE_FLAG=true",
+      ].join("\n"),
+      sources: [{ name: "mysql", namespace: "default" }],
+    }),
+    []
+  );
+});
+
+test("container settings pane does not derive pending DB references from ordinary DSN strings", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: "",
+      draftRawSource: "DATABASE_URL=mysql://private",
+      sources: [
+        {
+          name: "mysql",
+          namespace: "default",
+          privateDsn: "mysql://private",
+        },
+      ],
+    }),
+    []
+  );
+});
+
+test("container settings pane derives pending DB references for newly referenced DBs only", () => {
+  assert.deepEqual(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: `DATABASE_URL=${referenceExpression(
+        "mysql",
+        "DATABASE_URL"
+      )}`,
+      draftRawSource: [
+        `DATABASE_URL=${referenceExpression("mysql", "DATABASE_URL")}`,
+        `CACHE_URL=${referenceExpression("redis", "DATABASE_URL")}`,
+      ].join("\n"),
+      sources: [
+        { name: "mysql", namespace: "default" },
+        { name: "redis", namespace: "default" },
+      ],
+    }),
+    [{ dbName: "redis", dbNamespace: "default" }]
+  );
+});
+
+test("container settings pane leaves pending DB references unchanged for invalid raw source drafts", () => {
+  assert.equal(
+    pendingDbReferencesFromEnvRawSourceDraft({
+      committedRawSource: "",
+      draftRawSource: `DATABASE_URL=${referenceExpression(
+        "missing",
+        "DATABASE_URL"
+      )}`,
+      sources: [{ name: "mysql", namespace: "default" }],
+    }),
+    undefined
   );
 });
 

@@ -308,11 +308,10 @@ export function useWorkloadClaimSettings(
         });
         toast.success("Environment applied.");
         await revalidateAfterApMutation();
+        clearPendingReferences?.();
       } catch (e) {
         setLocalOverride(null);
         toast.error(e instanceof Error ? e.message : "Apply failed");
-      } finally {
-        clearPendingReferences?.();
       }
     },
     [
@@ -495,11 +494,10 @@ export function useWorkloadClaimSettings(
         });
         toast.success("Settings applied.");
         await revalidateAfterApMutation();
+        clearPendingReferences?.();
       } catch (e) {
         toast.error(settingsDraftSaveFailureMessage(e, "Apply failed."));
         throw e;
-      } finally {
-        clearPendingReferences?.();
       }
     },
     [

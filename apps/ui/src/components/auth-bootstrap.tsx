@@ -1,6 +1,6 @@
 "use client";
 
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useEffect } from "react";
 import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
@@ -29,6 +29,45 @@ function safeDecode(value: string): string {
   }
 }
 
+interface SealosSdkSession {
+  encodedKubeconfig?: unknown;
+  kubeconfig?: unknown;
+  namespace?: unknown;
+}
+
+interface SealosSdkApp {
+  getSession?: () => Promise<SealosSdkSession | null | undefined>;
+}
+
+function sealosSdkApp(): SealosSdkApp | undefined {
+  return (globalThis as { sealosApp?: SealosSdkApp }).sealosApp;
+}
+
+function sessionKubeconfig(session: SealosSdkSession): string {
+  const kubeconfig =
+    typeof session.kubeconfig === "string" ? session.kubeconfig.trim() : "";
+  if (kubeconfig !== "") {
+    return kubeconfig;
+  }
+
+  const encoded =
+    typeof session.encodedKubeconfig === "string"
+      ? session.encodedKubeconfig.trim()
+      : "";
+  return encoded === "" ? "" : safeDecode(encoded).trim();
+}
+
+function sessionNamespace(
+  session: SealosSdkSession,
+  kubeconfig: string
+): string {
+  const namespace =
+    typeof session.namespace === "string" ? session.namespace.trim() : "";
+  return namespace === ""
+    ? (namespaceFromKubeconfigText(kubeconfig) ?? "")
+    : namespace;
+}
+
 export default function AuthBootstrap({
   serverEncodedKubeconfig,
   serverNamespace,
@@ -51,6 +90,45 @@ export default function AuthBootstrap({
     [kubeconfigAtom, kubeconfig],
     [namespaceAtom, namespace],
   ]);
+
+  return null;
+}
+
+/** Hydrates credentials from the Sealos Desktop iframe SDK when available. */
+export function SealosSdkBootstrap() {
+  const setKubeconfig = useSetAtom(kubeconfigAtom);
+  const setNamespace = useSetAtom(namespaceAtom);
+
+  useEffect(() => {
+    const app = sealosSdkApp();
+    if (app?.getSession == null) {
+      return;
+    }
+
+    let cancelled = false;
+    const hydrate = async () => {
+      try {
+        const session = await app.getSession?.();
+        if (cancelled || session == null) {
+          return;
+        }
+        const kubeconfig = sessionKubeconfig(session);
+        if (kubeconfig === "") {
+          return;
+        }
+        setKubeconfig(kubeconfig);
+        setNamespace(sessionNamespace(session, kubeconfig));
+      } catch (e: unknown) {
+        console.warn("[SealosSdkBootstrap] session hydrate failed:", e);
+      }
+    };
+
+    hydrate().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setKubeconfig, setNamespace]);
 
   return null;
 }

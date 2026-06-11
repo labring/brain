@@ -59,9 +59,21 @@ A Brain product resource and API view that represents an application workload. `
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
 
+### Settings View
+
+A settings entry point that presents one named subset of a resource's settings surface, containing one or more settings sections rather than necessarily showing the full settings surface. It remains part of that resource's settings surface and uses the same Settings Draft confirmation model as the full surface.
+
+_Avoid_: Standalone Settings Section Pane, Section Pane, arbitrary section bundle.
+
+### Settings Owner
+
+The resource whose desired configuration is edited by a settings surface. AP and DB resources can be Settings Owners; an EntryPoint selection may open an AP-owned Settings View, but EntryPoint is not the Settings Owner.
+
+_Avoid_: EntryPoint Settings Owner.
+
 ### AP Environment Settings Focus
 
-A focused AP Settings entry point that presents only the Environment Variables section for one AP. It is used for AP environment-specific work, including authoring Database Bindings, and is not a separate Database Binding surface.
+A Settings View that presents only the Environment Variables section for one AP. It is used for AP environment-specific work, including authoring Database Bindings, and is not a separate Database Binding surface.
 
 _Avoid_: Database Binding Pane, AP-DB Binding Pane.
 
@@ -92,6 +104,8 @@ The Project relationship selected for a GitHub repository deployment before the 
 ### EntryPoint Public Addresses Panel
 
 A narrow UI surface opened from an EntryPoint selection that presents the associated AP's Public Addresses. It is scoped to public routing and is not the full AP Settings surface.
+
+The panel is a Settings View for the associated AP's Public Addresses, even though its entry point is an EntryPoint selection.
 
 The panel can open for an AP-derived pending EntryPoint selection before allocated routing data exists, because the user's public routing intent belongs to the associated AP's Public Addresses. It includes Platform Address rows and Custom Domain rows, and does not present the AP's Private Address.
 
@@ -174,6 +188,24 @@ _Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 ### Database Binding
 
 A runtime dependency where an AP is configured to consume one DB's connection credentials.
+
+### Pending Database Binding Intent
+
+An unsaved AP Environment draft intent to create a Database Binding by adding one or more AP Environment References to a DB Service. A Pending Database Binding Intent may be visualized on the Project Canvas as a pending AP-to-DB edge, but it is not a Canvas Connection until the AP environment is updated and the relationship can be detected from saved AP and DB resource state.
+
+A Pending Database Binding Intent is derived from explicit AP Environment References in the current AP Environment draft. Ordinary user-authored DSN strings do not create a Pending Database Binding Intent, even if they happen to equal a DB Service's current DSN; after update, exact saved DSN evidence may still produce an established Canvas Connection.
+
+A Pending Database Binding Intent remains while the current AP Environment draft still contains explicit AP Environment References to the DB Service. It ends when those references are removed from the draft, the Settings Draft is discarded, the user leaves the AP or Project scope, or a successful update lets saved resource state produce the established Canvas Connection. A failed update does not end the intent because the AP Environment draft still exists.
+
+An AP-to-DB Connecting Edge is only a shortcut for opening AP Environment Settings and inserting an AP Environment Reference. Users may also create the same Pending Database Binding Intent directly in the AP Environment editor by authoring an AP Environment Reference.
+
+Multiple AP Environment References from one AP Environment draft to the same DB Service collapse into one Pending Database Binding Intent. References from the same AP Environment draft to different DB Services are separate Pending Database Binding Intents.
+
+A Pending Database Binding Intent does not require a duplicate pending canvas edge when an established AP-to-DB Canvas Connection for the same AP and DB Service already exists.
+
+When an AP Environment Raw Source draft is temporarily invalid while the user is editing, it does not redefine Pending Database Binding Intents. The last valid draft-derived intents remain until the draft becomes valid again, the Settings Draft is discarded, or the user leaves the AP or Project scope.
+
+_Avoid_: Pending edge, hidden binding record, inferred string binding.
 
 ### AP Environment Raw Source
 
@@ -312,6 +344,8 @@ The per-node visual layering order used when canvas node cards overlap.
 ### Canvas Connection
 
 A canvas edge that represents an established runtime dependency between resources.
+
+Canvas Connections are derived from saved resource state. Removing Database Binding evidence in an unsaved AP Environment draft does not remove or hide the established AP-to-DB Canvas Connection before the AP environment update succeeds.
 
 ### Canvas Resource Pane
 

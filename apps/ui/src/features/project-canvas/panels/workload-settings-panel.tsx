@@ -213,14 +213,12 @@ export const WorkloadSettingsPane = memo(function WorkloadSettingsPane({
         onAddDbDsnReferenceIntentConsumed={
           data?.onAddDbDsnReferenceIntentConsumed
         }
-        onAddDbDsnReferenceIntentDraftChange={
-          data?.onAddDbDsnReferenceIntentDraftChange
-        }
         onCustomDomainCnameVerify={verifyCustomDomainCnameFromApi}
         onEnvChange={canEditAp ? onEnvChange : ignoreEnv}
         onEnvResolvedValue={canEditAp ? onEnvResolvedValue : undefined}
         onImageChange={canEditAp ? onImageChange : ignoreImage}
         onNetworkChange={canEditAp ? onNetworkChange : ignoreNetwork}
+        onPendingDbReferencesChange={data?.onPendingDbReferencesChange}
         onResourceQuotasCommit={canEditAp ? onResourceQuotasCommit : undefined}
         onSettingsDraftCommit={canEditAp ? onSettingsDraftCommit : undefined}
         onSettingsDraftLeaveGuardChange={onSettingsLeaveGuardChange}

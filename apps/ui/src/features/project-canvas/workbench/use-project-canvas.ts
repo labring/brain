@@ -14,7 +14,7 @@ import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-n
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type {
   ContainerSettingsPaneAddDbDsnReferenceIntent,
-  ContainerSettingsPaneAddDbDsnReferenceIntentChange,
+  ContainerSettingsPanePendingDbReference,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import type {
   DatabaseNodeCopyConnectionHandler,
@@ -200,7 +200,7 @@ function createPendingApDbReferenceMutationStartHandler({
 }: {
   apName: string;
   apNamespace: string;
-  onBeforeStart?: (ids: readonly string[]) => void;
+  onBeforeStart?: () => void;
   onPendingApDbReferencesStart:
     | UseProjectCanvasOptions["onPendingApDbReferencesStart"]
     | undefined;
@@ -214,7 +214,7 @@ function createPendingApDbReferenceMutationStartHandler({
   }
 
   return (references) => {
-    onBeforeStart?.(references.map((reference) => reference.id));
+    onBeforeStart?.();
     return onPendingApDbReferencesStart(
       references.map((reference) => ({
         id: reference.id,
@@ -233,20 +233,49 @@ function createPendingApDbReferenceMutationStartHandler({
   };
 }
 
-function pendingApDbCanvasReferencesFromIntentChange({
+function pendingApDbReferenceDraftKey({
   apName,
   apNamespace,
-  change,
 }: {
   apName: string;
   apNamespace: string;
-  change: ContainerSettingsPaneAddDbDsnReferenceIntentChange;
+}): string {
+  return `${apNamespace}/${apName}`;
+}
+
+function pendingApDbCanvasReferenceId({
+  apName,
+  apNamespace,
+  dbName,
+  dbNamespace,
+}: {
+  apName: string;
+  apNamespace: string;
+  dbName: string;
+  dbNamespace: string;
+}): string {
+  return `draft:${apNamespace}/${apName}->${dbNamespace}/${dbName}`;
+}
+
+function pendingApDbCanvasReferencesFromDraftReferences({
+  apName,
+  apNamespace,
+  references,
+}: {
+  apName: string;
+  apNamespace: string;
+  references: readonly ContainerSettingsPanePendingDbReference[];
 }): PendingApDbCanvasReference[] {
   if (apName === "" || apNamespace === "") {
     return [];
   }
-  return change.references.map((reference) => ({
-    id: reference.id,
+  return references.map((reference) => ({
+    id: pendingApDbCanvasReferenceId({
+      apName,
+      apNamespace,
+      dbName: reference.dbName,
+      dbNamespace: reference.dbNamespace,
+    }),
     source: {
       kind: "AP",
       name: apName,
@@ -398,8 +427,14 @@ export function useProjectCanvas(
   );
   const addDbDsnReferenceIntentCounter = useRef(0);
   const dbServiceRestoreFocusId = useRef(0);
-  const pendingApDbReferenceDraftById = useRef<
+  const pendingApDbReferenceDraftByApKey = useRef<
     Map<string, PendingApDbReferenceDraftRegistration>
+  >(new Map());
+  const pendingDbReferencesChangeHandlerByApKey = useRef<
+    Map<
+      string,
+      (references: readonly ContainerSettingsPanePendingDbReference[]) => void
+    >
   >(new Map());
   const connectHandledInGestureRef = useRef(false);
   const connectingFromHandleRef = useRef<ProjectCanvasConnectionHandle | null>(
@@ -548,44 +583,75 @@ export function useProjectCanvas(
       current?.id === id ? null : current
     );
   }, []);
-  const handleAddDbDsnReferenceIntentDraftChange = useCallback(
-    (
-      change: ContainerSettingsPaneAddDbDsnReferenceIntentChange & {
-        apName: string;
-        apNamespace: string;
-      }
-    ) => {
-      const draftById = pendingApDbReferenceDraftById.current;
-      const references = pendingApDbCanvasReferencesFromIntentChange({
+  const handlePendingDbReferencesChange = useCallback(
+    (change: {
+      apName: string;
+      apNamespace: string;
+      references: readonly ContainerSettingsPanePendingDbReference[];
+    }) => {
+      const draftByApKey = pendingApDbReferenceDraftByApKey.current;
+      const draftKey = pendingApDbReferenceDraftKey({
         apName: change.apName,
         apNamespace: change.apNamespace,
-        change,
+      });
+      const references = pendingApDbCanvasReferencesFromDraftReferences({
+        apName: change.apName,
+        apNamespace: change.apNamespace,
+        references: change.references,
       });
       const signature = pendingApDbReferenceDraftSignature(references);
-      const existing = draftById.get(change.id);
+      const existing = draftByApKey.get(draftKey);
       if (existing?.signature === signature) {
         return;
       }
 
       existing?.cleanup?.();
-      draftById.delete(change.id);
+      draftByApKey.delete(draftKey);
 
       if (references.length === 0 || onPendingApDbReferencesStart == null) {
         return;
       }
 
       const cleanup = onPendingApDbReferencesStart(references);
-      draftById.set(change.id, { cleanup, signature });
+      draftByApKey.set(draftKey, { cleanup, signature });
     },
     [onPendingApDbReferencesStart]
   );
+  const handlePendingDbReferencesChangeRef = useRef(
+    handlePendingDbReferencesChange
+  );
+  handlePendingDbReferencesChangeRef.current = handlePendingDbReferencesChange;
+  const pendingDbReferencesChangeHandlerForAp = useCallback(
+    ({ apName, apNamespace }: { apName: string; apNamespace: string }) => {
+      const draftKey = pendingApDbReferenceDraftKey({ apName, apNamespace });
+      const existing =
+        pendingDbReferencesChangeHandlerByApKey.current.get(draftKey);
+      if (existing !== undefined) {
+        return existing;
+      }
+
+      const handler = (
+        references: readonly ContainerSettingsPanePendingDbReference[]
+      ) => {
+        handlePendingDbReferencesChangeRef.current({
+          apName,
+          apNamespace,
+          references,
+        });
+      };
+      pendingDbReferencesChangeHandlerByApKey.current.set(draftKey, handler);
+      return handler;
+    },
+    []
+  );
   useEffect(
     () => () => {
-      const draftById = pendingApDbReferenceDraftById.current;
-      for (const { cleanup } of draftById.values()) {
+      const draftByApKey = pendingApDbReferenceDraftByApKey.current;
+      for (const { cleanup } of draftByApKey.values()) {
         cleanup?.();
       }
-      draftById.clear();
+      draftByApKey.clear();
+      pendingDbReferencesChangeHandlerByApKey.current.clear();
     },
     []
   );
@@ -890,15 +956,12 @@ export function useProjectCanvas(
         nodeId: node.id,
         onConsumed: handleAddDbDsnReferenceIntentConsumed,
       });
-      const onAddDbDsnReferenceIntentDraftChange = (
-        change: ContainerSettingsPaneAddDbDsnReferenceIntentChange
-      ) => {
-        handleAddDbDsnReferenceIntentDraftChange({
-          ...change,
+      const onPendingDbReferencesChange = pendingDbReferencesChangeHandlerForAp(
+        {
           apName: name,
           apNamespace: ns,
-        });
-      };
+        }
+      );
       const settingsAccess = canvasNodeSettingsAccess({
         readOnly,
       });
@@ -906,12 +969,14 @@ export function useProjectCanvas(
         createPendingApDbReferenceMutationStartHandler({
           apName: name,
           apNamespace: ns,
-          onBeforeStart: (ids) => {
-            const draftById = pendingApDbReferenceDraftById.current;
-            for (const id of ids) {
-              draftById.get(id)?.cleanup?.();
-              draftById.delete(id);
-            }
+          onBeforeStart: () => {
+            const draftByApKey = pendingApDbReferenceDraftByApKey.current;
+            const draftKey = pendingApDbReferenceDraftKey({
+              apName: name,
+              apNamespace: ns,
+            });
+            draftByApKey.get(draftKey)?.cleanup?.();
+            draftByApKey.delete(draftKey);
           },
           onPendingApDbReferencesStart,
         });
@@ -924,7 +989,7 @@ export function useProjectCanvas(
             dbDsnReferenceSources,
             ...dbReferenceIntentData,
             onAddDbDsnReferenceMutationStart,
-            onAddDbDsnReferenceIntentDraftChange,
+            onPendingDbReferencesChange,
             settingsAccess,
           },
         };
@@ -991,8 +1056,8 @@ export function useProjectCanvas(
           ...data,
           ...dbReferenceIntentData,
           dbDsnReferenceSources,
-          onAddDbDsnReferenceIntentDraftChange,
           onAddDbDsnReferenceMutationStart,
+          onPendingDbReferencesChange,
           onWorkloadMutation: afterLifecycle,
           settingsAccess,
           actions: {
@@ -1009,10 +1074,10 @@ export function useProjectCanvas(
       dbDsnReferenceSources,
       deleteWorkload,
       executeCommandPlan,
-      handleAddDbDsnReferenceIntentDraftChange,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,
       pendingAddDbDsnReferenceIntent,
+      pendingDbReferencesChangeHandlerForAp,
       pauseWorkload,
       readOnly,
       restartWorkload,
