@@ -1,7 +1,7 @@
 "use client";
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 export interface ProjectCanvasApDeleteTarget {
   displayName: string;
@@ -56,6 +56,7 @@ interface ProjectCanvasDeleteDialogProps {
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;
+  verificationText: string;
 }
 
 function ProjectCanvasDeleteDialog({
@@ -65,7 +66,17 @@ function ProjectCanvasDeleteDialog({
   onOpenChange,
   open,
   title,
+  verificationText,
 }: ProjectCanvasDeleteDialogProps) {
+  const [verificationValue, setVerificationValue] = useState("");
+  const confirmDisabled = verificationValue !== verificationText;
+
+  useEffect(() => {
+    if (open) {
+      setVerificationValue("");
+    }
+  }, [open]);
+
   return (
     <AppDialog.Root onOpenChange={onOpenChange} open={open}>
       <AppDialog.Content data-slot={dataSlot}>
@@ -75,10 +86,32 @@ function ProjectCanvasDeleteDialog({
         </AppDialog.Header>
         <AppDialog.Body>
           <AppDialog.Description>{children}</AppDialog.Description>
+          <AppDialog.Field>
+            <p className="select-text text-sm/5 text-zinc-400">
+              Type{" "}
+              <span className="font-mono text-zinc-100">
+                {verificationText}
+              </span>{" "}
+              to confirm.
+            </p>
+            <AppDialog.Input
+              aria-label={`Type ${verificationText} to confirm.`}
+              autoComplete="off"
+              className="font-mono"
+              onChange={(event) => setVerificationValue(event.target.value)}
+              placeholder={verificationText}
+              type="text"
+              value={verificationValue}
+            />
+          </AppDialog.Field>
         </AppDialog.Body>
         <AppDialog.Footer>
           <AppDialog.Cancel>Cancel</AppDialog.Cancel>
-          <AppDialog.DestructiveAction onClick={onConfirm} type="button">
+          <AppDialog.DestructiveAction
+            disabled={confirmDisabled}
+            onClick={onConfirm}
+            type="button"
+          >
             Delete
           </AppDialog.DestructiveAction>
         </AppDialog.Footer>
@@ -108,6 +141,7 @@ function ProjectCanvasApDeleteDialog({
       onOpenChange={onOpenChange}
       open
       title="Delete workload?"
+      verificationText={target.displayName}
     >
       This will delete{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
@@ -142,6 +176,7 @@ function ProjectCanvasDbDeleteDialog({
       onOpenChange={onOpenChange}
       open
       title="Delete DB Service?"
+      verificationText={target.displayName}
     >
       This will delete{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>{" "}
