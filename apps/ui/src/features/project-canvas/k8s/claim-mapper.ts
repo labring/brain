@@ -1,7 +1,10 @@
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
+  ContainerConfigMapMount,
   ContainerEnvVar,
   ContainerNetwork,
+  ContainerStorageMount,
+  ContainerWorkloadKind,
 } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
 import {
@@ -215,6 +218,56 @@ function privatePortNum(v: unknown): number | undefined {
 
 function trimStr(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
+}
+
+function stringListFromSpec(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter((item): item is string => typeof item === "string");
+}
+
+function configMapsFromSpecInput(raw: unknown): ContainerConfigMapMount[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: ContainerConfigMapMount[] = [];
+  for (const item of raw) {
+    const row = asRecord(item);
+    const path = trimStr(row?.path);
+    const value = typeof row?.value === "string" ? row.value : "";
+    if (path === "" && value === "") {
+      continue;
+    }
+    out.push({ path, value });
+  }
+  return out;
+}
+
+function storageFromSpecInput(raw: unknown): ContainerStorageMount[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: ContainerStorageMount[] = [];
+  for (const item of raw) {
+    const row = asRecord(item);
+    const path = trimStr(row?.path);
+    const size = trimStr(row?.size);
+    if (path === "" && size === "") {
+      continue;
+    }
+    out.push({ path, size });
+  }
+  return out;
+}
+
+function apWorkloadKindFromSpec(
+  spec: Record<string, unknown>
+): ContainerWorkloadKind {
+  const workload = asRecord(spec.workload);
+  return trimStr(workload?.kind).toLowerCase() === "statefulset"
+    ? "statefulset"
+    : "deployment";
 }
 
 function apRoutingDomainFromMetadata(
@@ -588,6 +641,9 @@ function normalizeNetworkPublicAddress(
 }
 
 export interface ClaimContainerSettings {
+  args: string[];
+  command: string[];
+  configMaps: ContainerConfigMapMount[];
   cpuCores: number;
   env: ContainerEnvVar[];
   envRawSource?: string;
@@ -597,6 +653,8 @@ export interface ClaimContainerSettings {
   replicaStrategy: ApReplicaStrategy;
   /** AP fixed replicas (1–20 in UI); legacy `spec.resource.replicas` is a fallback only. */
   replicas: number;
+  storage: ContainerStorageMount[];
+  workloadKind: ContainerWorkloadKind;
 }
 
 const CPU_MIN = 0.25;
@@ -628,6 +686,9 @@ function mapApClaim(
   );
   const envRawSource = envRawSourceFromSpecInput(input, savedEnv);
   return {
+    args: stringListFromSpec(input.args),
+    command: stringListFromSpec(input.command),
+    configMaps: configMapsFromSpecInput(input.configMaps),
     cpuCores,
     env:
       typeof input.envRawSource === "string"
@@ -639,6 +700,8 @@ function mapApClaim(
     network: apNetworkFromSpecAndStatus(metadata, spec, status, options),
     replicaStrategy,
     replicas,
+    storage: storageFromSpecInput(input.storage),
+    workloadKind: apWorkloadKindFromSpec(spec),
   };
 }
 
@@ -650,6 +713,9 @@ function mapDbSpec(spec: Record<string, unknown>): ClaimContainerSettings {
   const cpuRaw = parseCpuToCores(spec.cpuLimit);
   const memRaw = parseMemoryToMib(spec.memoryLimit);
   return {
+    args: [],
+    command: [],
+    configMaps: [],
     cpuCores: clampScale(cpuRaw ?? 1, CPU_MIN, CPU_MAX),
     env: [],
     envRawSource: "",
@@ -657,6 +723,8 @@ function mapDbSpec(spec: Record<string, unknown>): ClaimContainerSettings {
     memoryMib: clampScale(memRaw ?? 512, MEM_MIN, MEM_MAX),
     replicaStrategy: defaultFixedReplicaStrategy(),
     replicas: 1,
+    storage: [],
+    workloadKind: "deployment",
   };
 }
 
@@ -667,6 +735,9 @@ export function claimToContainerSettings(
 ): ClaimContainerSettings {
   if (claim == null) {
     return {
+      args: [],
+      command: [],
+      configMaps: [],
       cpuCores: 1,
       env: [],
       envRawSource: "",
@@ -674,6 +745,8 @@ export function claimToContainerSettings(
       memoryMib: 512,
       replicaStrategy: defaultFixedReplicaStrategy(),
       replicas: 1,
+      storage: [],
+      workloadKind: "deployment",
     };
   }
   const spec = asRecord(claim.spec) ?? {};

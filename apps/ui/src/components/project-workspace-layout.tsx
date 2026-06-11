@@ -656,12 +656,12 @@ function ProjectAssistantChatSession({
                     isAuthorized={isAuthorized}
                     onComposerAction={onGithubIntent}
                   />
+                  <Chat.SkillsWorkflowButton
+                    onComposerAction={onSkillsIntent}
+                  />
                   <Chat.DockerDeployButton onComposerAction={onDockerIntent} />
                   <Chat.DatabaseDeployButton
                     onComposerAction={onDatabaseIntent}
-                  />
-                  <Chat.SkillsWorkflowButton
-                    onComposerAction={onSkillsIntent}
                   />
                 </div>
                 <Chat.ComposerSend

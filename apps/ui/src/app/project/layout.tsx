@@ -3,27 +3,24 @@ import {
   AppShellSidebar,
   AppShellView,
 } from "@/components/app-shell";
-import AuthBootstrap, { DevboxBootstrap } from "@/components/auth-bootstrap";
+import AuthBootstrap, {
+  DevboxBootstrap,
+  SealosSdkBootstrap,
+} from "@/components/auth-bootstrap";
 import ProjectWorkspaceLayout from "@/components/project-workspace-layout";
-import { fetchProjectCredentialsOrUnauthorized } from "@/lib/server-credentials";
 
-/** Request-bound (`cookies()`, env); avoids Full Route Cache skipping credentials on refresh. */
+/** Desktop iframe auth is resolved on the client through the Sealos SDK. */
 export const dynamic = "force-dynamic";
 
-export default async function ProjectLayout({
+export default function ProjectLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { serverEncodedKubeconfig, serverNamespace } =
-    await fetchProjectCredentialsOrUnauthorized();
-
   return (
     <AppShellChrome>
-      <AuthBootstrap
-        serverEncodedKubeconfig={serverEncodedKubeconfig}
-        serverNamespace={serverNamespace}
-      />
+      <AuthBootstrap serverEncodedKubeconfig="" serverNamespace="" />
+      <SealosSdkBootstrap />
       <DevboxBootstrap />
       <AppShellSidebar />
       <AppShellView className="min-w-0 flex-1 basis-0">

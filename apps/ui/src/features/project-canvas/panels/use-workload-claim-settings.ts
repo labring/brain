@@ -468,6 +468,9 @@ export function useWorkloadClaimSettings(
       }
 
       const previous: ContainerSettingsDraft = meta?.baseDraft ?? {
+        args: display.args,
+        command: display.command,
+        configMaps: display.configMaps,
         cpuCores: display.cpuCores,
         env: display.env,
         envRawSource: display.envRawSource,
@@ -476,6 +479,8 @@ export function useWorkloadClaimSettings(
         ...(display.network == null ? {} : { network: display.network }),
         replicaStrategy: display.replicaStrategy,
         replicas: display.replicas,
+        storage: display.storage,
+        workloadKind: display.workloadKind,
       };
       const confirmedReferences = meta?.confirmedAddDbDsnReferences ?? [];
       const clearPendingReferences =
@@ -499,6 +504,9 @@ export function useWorkloadClaimSettings(
     },
     [
       display.cpuCores,
+      display.args,
+      display.command,
+      display.configMaps,
       display.env,
       display.envRawSource,
       display.image,
@@ -506,6 +514,8 @@ export function useWorkloadClaimSettings(
       display.network,
       display.replicaStrategy,
       display.replicas,
+      display.storage,
+      display.workloadKind,
       dbDsnReferenceSources,
       existingCustomDomains,
       isApWorkload,

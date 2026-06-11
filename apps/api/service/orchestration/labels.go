@@ -10,10 +10,13 @@ const (
 	BrainDBNameLabel       = "brain.io/db-name"
 	BrainDBEngineLabel     = "brain.io/db-engine"
 
-	APDesiredNetworkAnnotation  = "brain.io/ap-desired-network"
-	APEnvRawSourceAnnotation    = "brain.io/ap-env-raw-source"
-	APReplicaStrategyAnnotation = "brain.io/ap-replica-strategy"
-	APRoutingDomainLabel        = "region"
+	APDesiredNetworkAnnotation    = "brain.io/ap-desired-network"
+	APConfigMapChecksumAnnotation = "brain.io/ap-config-checksum"
+	APEnvRawSourceAnnotation      = "brain.io/ap-env-raw-source"
+	APReplicaStrategyAnnotation   = "brain.io/ap-replica-strategy"
+	APDesiredStorageAnnotation    = "brain.io/ap-desired-storage"
+	APRestartRequestAnnotation    = "brain.io/ap-restart-request"
+	APRoutingDomainLabel          = "region"
 
 	ResourceKindAP                = "ap"
 	ResourceKindDB                = "db"

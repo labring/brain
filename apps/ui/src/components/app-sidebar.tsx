@@ -10,16 +10,21 @@ import {
 } from "@workspace/ui/assets/devicons";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@workspace/ui/components/popover";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ComponentProps, type ReactNode, useMemo } from "react";
+import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
@@ -191,6 +196,13 @@ function ProjectShortcutIcon({
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
 
+const UPGRADE_USAGE_ROWS = [
+  ["CPU", "0.0/0"],
+  ["Memory", "0.0/0"],
+  ["Storage", "0.0/0"],
+  ["Ports", "0.0/0"],
+] as const;
+
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
   "aria-label" | "children"
@@ -236,6 +248,63 @@ function BrainV2Logo() {
       className="block size-full bg-center bg-contain bg-no-repeat"
       style={{ backgroundImage: `url(${JSON.stringify(brainV2LogoSrc)})` }}
     />
+  );
+}
+
+function AppSidebarUpgrade() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger
+        render={
+          <AppIconButton
+            aria-expanded={open}
+            aria-label="Upgrade"
+            className={cn(
+              APP_SIDEBAR_LINK_CLASS,
+              "bg-white/10 hover:bg-white/14 data-[popup-open]:bg-white/14"
+            )}
+            size="lg"
+            type="button"
+            variant="quiet"
+          />
+        }
+      >
+        <Sparkles aria-hidden className="size-4" strokeWidth={1.8} />
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        alignOffset={0}
+        className="w-[180px] gap-0 rounded-lg border border-white/12 bg-zinc-950/85 p-3 text-zinc-100 shadow-[0_18px_56px_rgba(0,0,0,0.38)] ring-0 backdrop-blur-xl"
+        side="right"
+        sideOffset={10}
+      >
+        <div className="flex flex-col gap-3.5">
+          <div className="grid gap-3.5">
+            {UPGRADE_USAGE_ROWS.map(([label, value]) => (
+              <div
+                className="grid grid-cols-[1fr_auto] items-center gap-4 text-xs leading-none"
+                key={label}
+              >
+                <span className="text-zinc-400">{label}</span>
+                <span className="font-medium text-zinc-100 tabular-nums">
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <button
+            className="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-blue-950/65 px-3 font-semibold text-xs text-zinc-100 leading-none transition-colors hover:bg-blue-900/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/45"
+            type="button"
+          >
+            <Sparkles aria-hidden className="size-3.5" strokeWidth={1.75} />
+            <span>Upgrade</span>
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -302,6 +371,8 @@ export default function AppSidebar() {
             );
           })}
         </nav>
+
+        <AppSidebarUpgrade />
       </div>
     </aside>
   );

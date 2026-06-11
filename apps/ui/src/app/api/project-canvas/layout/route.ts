@@ -10,10 +10,8 @@ import {
   loadProjectCanvasLayout,
   patchProjectCanvasLayout,
 } from "@/features/project-canvas/layout/repository";
-import {
-  fetchServerCredentials,
-  hasDevCredentialBypass,
-} from "@/lib/server-credentials";
+import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
+import { hasDevCredentialBypass } from "@/lib/server-credentials";
 
 export const runtime = "nodejs";
 
@@ -21,25 +19,29 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-async function authorizeNamespace(namespace: string): Promise<Response | null> {
+function authorizeNamespace(
+  request: Request,
+  namespace: string
+): Response | null {
   if (hasDevCredentialBypass()) {
     return null;
   }
 
-  const credentials = await fetchServerCredentials();
-  if (credentials.serverEncodedKubeconfig.trim() === "") {
-    return jsonError("Authentication is required.", 401);
-  }
-  if (credentials.serverNamespace.trim() !== namespace) {
-    return jsonError("Canvas layout namespace is not accessible.", 403);
+  const authorization = authorizeRequestNamespace(request, {
+    namespace,
+    subject: "Canvas layout",
+  });
+  if (!authorization.ok) {
+    return jsonError(authorization.message, authorization.status);
   }
   return null;
 }
 
 function authorizeLayoutRead(
+  request: Request,
   query: ReturnType<typeof parseCanvasLayoutGetQuery>
-): Promise<Response | null> {
-  return authorizeNamespace(query.namespace);
+): Response | null {
+  return authorizeNamespace(request, query.namespace);
 }
 
 function validationError(error: unknown): Response | null {
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
     return validationError(error) ?? jsonError("Invalid request.", 400);
   }
 
-  const denied = await authorizeLayoutRead(query);
+  const denied = await authorizeLayoutRead(request, query);
   if (denied !== null) {
     return denied;
   }
@@ -91,7 +93,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const denied = await authorizeNamespace(body.namespace);
+  const denied = await authorizeNamespace(request, body.namespace);
   if (denied !== null) {
     return denied;
   }

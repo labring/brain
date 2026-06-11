@@ -5,8 +5,30 @@ import type { BrainProject } from "@/lib/project-persistence/projects";
 import type { ServerCredentials } from "@/lib/server-credentials";
 import { authorizeTemplateDeployIdentity } from "./auth";
 
-const SERVER_KUBECONFIG = encodeURIComponent("apiVersion: v1\nserver");
-const CALLER_KUBECONFIG = encodeURIComponent("apiVersion: v1\ncaller");
+function kubeconfig(namespace: string, user: string) {
+  return encodeURIComponent(`
+apiVersion: v1
+clusters:
+  - name: cluster
+    cluster:
+      server: https://example.test
+contexts:
+  - name: ${user}
+    context:
+      cluster: cluster
+      namespace: ${namespace}
+      user: ${user}
+current-context: ${user}
+users:
+  - name: ${user}
+    user:
+      token: token-${user}
+`);
+}
+
+const SERVER_KUBECONFIG = kubeconfig("ns-admin", "server");
+const CALLER_KUBECONFIG = kubeconfig("ns-admin", "caller");
+const OTHER_NAMESPACE_KUBECONFIG = kubeconfig("other-ns", "caller");
 
 const PROJECT: BrainProject = {
   createdAt: "",
@@ -36,20 +58,20 @@ function authorize(
   });
 }
 
-test("template deploy auth forwards authenticated server kubeconfig", () => {
-  const result = authorize({ encodedKubeconfig: SERVER_KUBECONFIG });
+test("template deploy auth forwards caller kubeconfig from desktop sdk", () => {
+  const result = authorize({ encodedKubeconfig: CALLER_KUBECONFIG });
 
   assert.deepEqual(result, {
-    encodedKubeconfig: SERVER_KUBECONFIG,
+    encodedKubeconfig: CALLER_KUBECONFIG,
     ok: true,
   });
 });
 
-test("template deploy auth rejects kubeconfig that differs from authenticated session", () => {
-  const result = authorize({ encodedKubeconfig: CALLER_KUBECONFIG });
+test("template deploy auth rejects kubeconfig namespace mismatch", () => {
+  const result = authorize({ encodedKubeconfig: OTHER_NAMESPACE_KUBECONFIG });
 
   assert.deepEqual(result, {
-    message: "kubeconfig does not match authenticated Sealos session.",
+    message: "Project namespace is not accessible.",
     ok: false,
     status: 403,
   });

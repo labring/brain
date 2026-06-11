@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import useSWR from "swr";
 
 import type { BrainProjectsResponse } from "@/lib/brain-projects";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 
 export function useCurrentProjectDisplayName(options: {
   kubeconfig: string;
@@ -20,11 +21,12 @@ export function useCurrentProjectDisplayName(options: {
 
   const { data, error, isLoading } = useSWR(
     enabled && namespace !== ""
-      ? (["/api/projects", projectsQuery] as const)
+      ? (["/api/projects", projectsQuery, kubeconfig] as const)
       : null,
     () =>
       fetcher<BrainProjectsResponse>({
         base: window.location.origin,
+        header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
         path: "/api/projects",
         query: projectsQuery,
       })

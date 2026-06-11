@@ -512,7 +512,11 @@ function templateNativeStatus(item: unknown) {
 
 function isTemplateNativeWorkload(item: unknown): boolean {
   const labels = asRecord(asRecord(asRecord(item)?.metadata)?.labels) ?? {};
-  return labels[BRAIN_RESOURCE_KIND_LABEL] === "template";
+  const kind = nonEmptyString(asRecord(item)?.kind);
+  return (
+    labels[BRAIN_RESOURCE_KIND_LABEL] === "template" &&
+    (kind === "Deployment" || kind === "StatefulSet")
+  );
 }
 
 export function templateNativeWorkloadsToCanvasState(

@@ -1447,6 +1447,62 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
   ]);
 });
 
+test("AP settings draft patches command args config files and storage", () => {
+  const previous = {
+    args: ["--old"],
+    command: ["/app/old"],
+    configMaps: [{ path: "/etc/app/config.yaml", value: "debug: false" }],
+    cpuCores: 1,
+    env: [],
+    image: "ghcr.io/acme/api:old",
+    memoryMib: 1024,
+    replicaStrategy: {
+      fixed: { replicas: 1 },
+      type: "fixed",
+    },
+    storage: [{ path: "/data", size: "10Gi" }],
+  } as const;
+
+  const ops = patchOpsForApSettingsDraft(
+    {
+      input: {
+        args: ["--old"],
+        command: ["/app/old"],
+        configMaps: [{ path: "/etc/app/config.yaml", value: "debug: false" }],
+        env: [],
+        image: "ghcr.io/acme/api:old",
+        storage: [{ path: "/data", size: "10Gi" }],
+      },
+      resource: {
+        limits: { cpu: "1", memory: "1024Mi" },
+        replicaStrategy: {
+          fixed: { replicas: 1 },
+          type: "fixed",
+        },
+      },
+    },
+    {
+      ...previous,
+      args: ["--config", "/etc/app/config.yaml"],
+      command: ["/app/server"],
+      configMaps: [{ path: "/etc/app/config.yaml", value: "debug: true" }],
+      storage: [{ path: "/data", size: "20Gi" }],
+    },
+    previous
+  );
+
+  assert.deepEqual(apMergePatchFromJsonPatchOps(ops), {
+    spec: {
+      input: {
+        args: ["--config", "/etc/app/config.yaml"],
+        command: ["/app/server"],
+        configMaps: [{ path: "/etc/app/config.yaml", value: "debug: true" }],
+        storage: [{ path: "/data", size: "20Gi" }],
+      },
+    },
+  });
+});
+
 test("AP settings draft omits unchanged settings from the patch", () => {
   const previous = {
     cpuCores: 1,

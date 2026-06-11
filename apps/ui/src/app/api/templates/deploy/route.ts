@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
-import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { getProject } from "@/lib/project-persistence/projects";
 import {
   devCredentialsFromEnv,
-  fetchServerCredentials,
   hasDevCredentialBypass,
 } from "@/lib/server-credentials";
-import { applyRenderedTemplateDeployment } from "@/lib/template-k8s-apply";
-import { getTemplateSource } from "@/lib/template-provider-core";
-import { renderTemplateDeployment } from "@/lib/template-renderer";
+import { deployTemplateInstance } from "@/lib/template-provider-core";
 import { authorizeTemplateDeployIdentity } from "./auth";
+import { templateDeploymentExtraLabels } from "./labels";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -59,7 +55,6 @@ async function authorizeTemplateDeploy(input: {
       : { denied: jsonError(authorization.message, authorization.status) };
   }
 
-  const credentials = await fetchServerCredentials();
   const project = await getProject(input.namespace, input.projectId);
   const authorization = authorizeTemplateDeployIdentity({
     devBypass: false,
@@ -68,7 +63,10 @@ async function authorizeTemplateDeploy(input: {
     encodedKubeconfig: input.encodedKubeconfig,
     namespace: input.namespace,
     project,
-    serverCredentials: credentials,
+    serverCredentials: {
+      serverEncodedKubeconfig: "",
+      serverNamespace: "",
+    },
   });
   return authorization.ok
     ? { denied: null, encodedKubeconfig: authorization.encodedKubeconfig }
@@ -97,27 +95,15 @@ export async function POST(request: Request) {
     if (authorization.denied !== null) {
       return authorization.denied;
     }
-    const source = await getTemplateSource({
-      encodedKubeconfig: authorization.encodedKubeconfig,
-      templateName: parsed.data.templateName,
-    });
-    const rendered = renderTemplateDeployment({
+    const deployed = await deployTemplateInstance({
       args: parsed.data.args,
-      instanceName: parsed.data.instanceName,
-      namespace: parsed.data.namespace,
-      projectId: parsed.data.projectId,
-      projectName: parsed.data.projectName,
-      routingDomain: routingDomainFromKubeconfig(
-        decodeKubeconfig(authorization.encodedKubeconfig) ??
-          authorization.encodedKubeconfig
-      ),
-      source,
-      templateName: parsed.data.templateName,
-    });
-    const deployed = await applyRenderedTemplateDeployment({
       encodedKubeconfig: authorization.encodedKubeconfig,
-      namespace: parsed.data.namespace,
-      rendered,
+      extraLabels: templateDeploymentExtraLabels({
+        projectId: parsed.data.projectId,
+        templateName: parsed.data.templateName,
+      }),
+      instanceName: parsed.data.instanceName,
+      templateName: parsed.data.templateName,
     });
     return NextResponse.json({
       instanceName: deployed.instanceName,

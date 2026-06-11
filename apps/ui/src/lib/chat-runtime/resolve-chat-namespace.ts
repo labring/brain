@@ -3,7 +3,6 @@ import "server-only";
 import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
 import {
   devCredentialsFromEnv,
-  fetchServerCredentials,
   hasDevCredentialBypass,
 } from "@/lib/server-credentials";
 
@@ -75,16 +74,15 @@ function rejectClientNamespaceMismatch(
  * - Client `namespace` consistent with kubeconfig `current-context` when set
  *
  * Then one of:
- * - **Sealos session:** `fetchServerCredentials()` kubeconfig must match the request body;
- *   namespace comes from the region token API (fallback: kubeconfig context).
+ * - **Sealos Desktop iframe:** the client kubeconfig comes from `sealosApp.getSession()`;
+ *   namespace comes from the kubeconfig current context.
  * - **Dev bypass:** optional match against `NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`;
  *   namespace from kubeconfig context.
- * - Otherwise **401**.
  */
-export async function resolveAuthoritativeChatNamespace(options: {
+export function resolveAuthoritativeChatNamespace(options: {
   encodedKubeconfig: string | undefined;
   clientNamespace: string;
-}): Promise<ResolveChatNamespaceOutcome> {
+}): ResolveChatNamespaceOutcome {
   const kubeconfigText = decodeKubeconfig(options.encodedKubeconfig);
   if (kubeconfigText == null) {
     return {
@@ -100,35 +98,6 @@ export async function resolveAuthoritativeChatNamespace(options: {
   });
   if (!parsed.ok) {
     return parsed;
-  }
-
-  const server = await fetchServerCredentials();
-  const serverEncoded = server.serverEncodedKubeconfig.trim();
-
-  if (serverEncoded !== "") {
-    if (!kubeconfigCredentialsMatch(options.encodedKubeconfig, serverEncoded)) {
-      return {
-        ok: false,
-        status: 403,
-        message: "kubeconfig does not match authenticated Sealos session.",
-      };
-    }
-
-    const fromServerNs = server.serverNamespace.trim();
-    const authoritativeNamespace =
-      fromServerNs === ""
-        ? parsed.namespace
-        : normalizeAssistantNamespace(fromServerNs);
-
-    const nsMismatch = rejectClientNamespaceMismatch(
-      options.clientNamespace,
-      authoritativeNamespace
-    );
-    if (nsMismatch != null) {
-      return nsMismatch;
-    }
-
-    return { ok: true, namespace: authoritativeNamespace };
   }
 
   if (hasDevCredentialBypass()) {
@@ -163,9 +132,5 @@ export async function resolveAuthoritativeChatNamespace(options: {
     return { ok: true, namespace: authoritativeNamespace };
   }
 
-  return {
-    ok: false,
-    status: 401,
-    message: "Not authenticated (missing Sealos session).",
-  };
+  return { ok: true, namespace: parsed.namespace };
 }

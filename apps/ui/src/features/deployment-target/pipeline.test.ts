@@ -60,7 +60,7 @@ function testAdapters(overrides?: {
       overrides?.fetchProjectIdByName ?? (() => Promise.resolve("project-uid")),
     generateChildResourceName:
       overrides?.generateChildResourceName ??
-      ((projectName, kind) => `${kind}-${projectName}-child`),
+      ((resourceName, kind) => `${kind}-${resourceName}-child`),
     generateProjectName: overrides?.generateProjectName ?? (() => "project-a"),
   };
 }
@@ -228,14 +228,14 @@ test("Deployment Target pipeline deploys a template into an existing Project", a
 
   assert.deepEqual(applied, {
     args: { storage: "10" },
-    instanceName: "template-existing-project-child",
+    instanceName: "template-memos-child",
     namespace: "ns-admin",
     projectId: "existing-uid",
     projectName: "existing-project",
     templateName: "memos",
   });
   assert.equal(outcome.kind, "template");
-  assert.equal(outcome.instanceName, "template-existing-project-child");
+  assert.equal(outcome.instanceName, "template-memos-child");
   assert.equal(outcome.projectId, "existing-uid");
   assert.equal(outcome.createdProject, false);
 });

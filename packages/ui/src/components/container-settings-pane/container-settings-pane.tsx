@@ -27,6 +27,7 @@ import {
   SlidingToggle,
   type SlidingToggleOption,
 } from "@workspace/ui/components/sliding-toggle";
+import { Textarea } from "@workspace/ui/components/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -52,6 +53,7 @@ import {
   type ContainerEnvDbDsnSource,
   type ContainerEnvDbReferenceField,
   type ContainerEnvRow,
+  containerEnvRowsEqual,
   containerEnvRowsModelEqual,
   validateContainerEnvRows,
 } from "@workspace/ui/lib/container-env-rows";
@@ -74,6 +76,8 @@ import {
   Cpu,
   Eye,
   EyeClosed,
+  FileText,
+  HardDrive,
   MemoryStick,
   Network,
   Plus,
@@ -81,12 +85,14 @@ import {
   Search,
   Settings,
   SquarePen,
+  Terminal,
   Trash2,
   X,
 } from "lucide-react";
 import type { editor, IDisposable, languages } from "monaco-editor";
 import type { ReactNode } from "react";
 import {
+  type ComponentProps,
   useCallback,
   useEffect,
   useId,
@@ -135,6 +141,7 @@ let apEnvRawSourceMonacoConfigured = false;
 type ApEnvReferenceMenuItem = ReturnType<
   typeof buildApEnvReferenceMenuItems
 >[number];
+let containerSettingsDraftKeyCounter = 0;
 
 /** Quota sliders are controlled: parent owns `value` and receives `onValueChange`. */
 export interface ContainerSettingsControlledQuotaProps {
@@ -560,7 +567,22 @@ export interface ContainerSettingsPaneAddDbDsnReferenceIntentChange {
   references: ContainerSettingsPaneConfirmedAddDbDsnReference[];
 }
 
+export interface ContainerConfigMapMount {
+  path: string;
+  value: string;
+}
+
+export interface ContainerStorageMount {
+  path: string;
+  size: string;
+}
+
+export type ContainerWorkloadKind = "deployment" | "statefulset";
+
 export interface ContainerSettingsDraft {
+  args?: readonly string[];
+  command?: readonly string[];
+  configMaps?: readonly ContainerConfigMapMount[];
   cpuCores: number;
   env: readonly ContainerEnvVar[];
   envRawSource?: string;
@@ -569,6 +591,8 @@ export interface ContainerSettingsDraft {
   network?: ContainerNetwork;
   replicaStrategy?: ContainerReplicaStrategy;
   replicas?: number;
+  storage?: readonly ContainerStorageMount[];
+  workloadKind?: ContainerWorkloadKind;
 }
 
 export interface ContainerSettingsPaneSettingsDraftCommitMeta
@@ -586,7 +610,10 @@ export interface ContainerSettingsPaneProps {
    * with the dragged DB selected as transient Reference context.
    */
   addDbDsnReferenceIntent?: ContainerSettingsPaneAddDbDsnReferenceIntent | null;
+  args?: readonly string[];
   className?: string;
+  command?: readonly string[];
+  configMaps?: readonly ContainerConfigMapMount[];
   cpuQuota: ContainerSettingsControlledQuotaProps;
   /** Project DB connection strings that can be saved into AP env values as DSN references. */
   dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
@@ -647,6 +674,8 @@ export interface ContainerSettingsPaneProps {
   sectionFocus?: "all" | "environment";
   /** Hide the Image section when image updates belong in a separate deployment surface. */
   showImageSection?: boolean;
+  storage?: readonly ContainerStorageMount[];
+  workloadKind?: ContainerWorkloadKind;
 }
 
 export interface ContainerPublicAddressesSettingsPaneProps {
@@ -742,6 +771,56 @@ function containerNetworksEqual(
   );
 }
 
+function stringArrayDraftsEqual(
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value.trim() === right[index]?.trim());
+}
+
+function configMapMountDraftsEqual(
+  a: readonly ContainerConfigMapMount[] | undefined,
+  b: readonly ContainerConfigMapMount[] | undefined
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => {
+    const other = right[index];
+    return (
+      other != null &&
+      value.path.trim() === other.path.trim() &&
+      value.value === other.value
+    );
+  });
+}
+
+function storageMountDraftsEqual(
+  a: readonly ContainerStorageMount[] | undefined,
+  b: readonly ContainerStorageMount[] | undefined
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => {
+    const other = right[index];
+    return (
+      other != null &&
+      value.path.trim() === other.path.trim() &&
+      value.size.trim() === other.size.trim()
+    );
+  });
+}
+
 function containerDraftResourcesDirty(
   original: ContainerSettingsDraft,
   draft: ContainerSettingsDraft
@@ -775,6 +854,11 @@ export function containerSettingsDraftIsDirty(
   });
   return (
     draft.image.trim() !== original.image.trim() ||
+    !stringArrayDraftsEqual(draft.command, original.command) ||
+    !stringArrayDraftsEqual(draft.args, original.args) ||
+    !configMapMountDraftsEqual(draft.configMaps, original.configMaps) ||
+    !storageMountDraftsEqual(draft.storage, original.storage) ||
+    !containerEnvRowsEqual([...draft.env], [...original.env]) ||
     draftEnvRawSource !== originalEnvRawSource ||
     containerDraftResourcesDirty(original, draft) ||
     !containerNetworksEqual(original.network, draft.network)
@@ -790,6 +874,9 @@ function containerNetworkDraftBackingKey(network: ContainerNetwork) {
 }
 
 interface ContainerSettingsDraftValues {
+  args?: readonly string[];
+  command?: readonly string[];
+  configMaps?: readonly ContainerConfigMapMount[];
   cpuCores: number;
   env: readonly ContainerEnvVar[];
   envRawSource?: string;
@@ -797,9 +884,14 @@ interface ContainerSettingsDraftValues {
   memoryMib: number;
   network?: ContainerNetwork;
   replicaStrategy?: ContainerReplicaStrategy;
+  storage?: readonly ContainerStorageMount[];
+  workloadKind?: ContainerWorkloadKind;
 }
 
 function containerSettingsDraftFromValues({
+  args,
+  command,
+  configMaps,
   cpuCores,
   env,
   envRawSource,
@@ -807,8 +899,13 @@ function containerSettingsDraftFromValues({
   memoryMib,
   network,
   replicaStrategy,
+  storage,
+  workloadKind,
 }: ContainerSettingsDraftValues): ContainerSettingsDraft {
   return {
+    ...(args == null ? {} : { args }),
+    ...(command == null ? {} : { command }),
+    ...(configMaps == null ? {} : { configMaps }),
     cpuCores,
     env,
     envRawSource: canonicalApEnvRawSource({ env, envRawSource }),
@@ -821,6 +918,8 @@ function containerSettingsDraftFromValues({
           replicaStrategy,
           replicas: replicaStrategy.fixed.replicas,
         }),
+    ...(storage == null ? {} : { storage }),
+    ...(workloadKind == null ? {} : { workloadKind }),
   };
 }
 
@@ -1041,6 +1140,15 @@ function nextEnvDraftKey(prefix: string, counter: { current: number }): string {
   const key = `${prefix}-${counter.current}`;
   counter.current += 1;
   return key;
+}
+
+function createDraftRowKey(prefix: string): string {
+  containerSettingsDraftKeyCounter += 1;
+  return `${prefix}-${containerSettingsDraftKeyCounter}`;
+}
+
+function createDraftRowKeys(count: number, prefix: string): string[] {
+  return Array.from({ length: count }, () => createDraftRowKey(prefix));
 }
 
 function createEnvDraftKeys(
@@ -4392,6 +4500,238 @@ function ImageSettingsSection({
   );
 }
 
+function normalizeCommandDraftLines(
+  value: readonly string[] | undefined
+): string[] {
+  return (value ?? []).map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeConfigMapDraftRows(
+  value: readonly ContainerConfigMapMount[] | undefined
+): ContainerConfigMapMount[] {
+  return (value ?? [])
+    .map((item) => ({
+      path: item.path.trim(),
+      value: item.value,
+    }))
+    .filter((item) => item.path !== "" || item.value !== "");
+}
+
+function normalizeStorageDraftRows(
+  value: readonly ContainerStorageMount[] | undefined
+): ContainerStorageMount[] {
+  return (value ?? [])
+    .map((item) => ({
+      path: item.path.trim(),
+      size: item.size.trim(),
+    }))
+    .filter((item) => item.path !== "" || item.size !== "");
+}
+
+function splitDraftLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function ContainerSettingsTextarea({
+  className,
+  ...props
+}: ComponentProps<typeof Textarea>) {
+  return (
+    <Textarea
+      className={cn(
+        "min-h-20 border-input bg-transparent text-foreground text-sm placeholder:text-muted-foreground dark:bg-transparent",
+        "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+function LaunchCommandSettingsSection({
+  args,
+  command,
+  onArgsChange,
+  onCommandChange,
+  readOnly,
+}: {
+  args: readonly string[];
+  command: readonly string[];
+  onArgsChange: (value: readonly string[]) => void;
+  onCommandChange: (value: readonly string[]) => void;
+  readOnly: boolean;
+}) {
+  return (
+    <ResourceSettingsSection icon={Terminal} title="Launch Command">
+      <div className="grid min-w-0 gap-3">
+        <div className="grid min-w-0 gap-2">
+          <Label className="text-foreground text-sm leading-none">
+            Command
+          </Label>
+          <ContainerSettingsTextarea
+            aria-label="Container command"
+            onChange={(event) =>
+              onCommandChange(splitDraftLines(event.target.value))
+            }
+            placeholder="/app/server"
+            readOnly={readOnly}
+            value={command.join("\n")}
+          />
+        </div>
+        <div className="grid min-w-0 gap-2">
+          <Label className="text-foreground text-sm leading-none">
+            Arguments
+          </Label>
+          <ContainerSettingsTextarea
+            aria-label="Container arguments"
+            onChange={(event) =>
+              onArgsChange(splitDraftLines(event.target.value))
+            }
+            placeholder={"--config\n/etc/app/config.yaml"}
+            readOnly={readOnly}
+            value={args.join("\n")}
+          />
+        </div>
+      </div>
+    </ResourceSettingsSection>
+  );
+}
+
+function ConfigMapSettingsSection({
+  configMaps,
+  configMapKeys,
+  onAdd,
+  onDelete,
+  onUpdate,
+  readOnly,
+}: {
+  configMaps: readonly ContainerConfigMapMount[];
+  configMapKeys: readonly string[];
+  onAdd: () => void;
+  onDelete: (index: number) => void;
+  onUpdate: (index: number, patch: Partial<ContainerConfigMapMount>) => void;
+  readOnly: boolean;
+}) {
+  return (
+    <ResourceSettingsSection icon={FileText} title="Config Files">
+      <div className="flex min-w-0 flex-col gap-2">
+        {configMaps.length === 0 ? (
+          <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
+            No config files
+          </div>
+        ) : (
+          configMaps.map((item, index) => (
+            <div
+              className="grid min-w-0 gap-2 rounded-md border border-input bg-transparent p-2"
+              key={configMapKeys[index] ?? `${item.path}\u0000${item.value}`}
+            >
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_2.25rem]">
+                <AppInput
+                  aria-label="Config file mount path"
+                  onChange={(event) =>
+                    onUpdate(index, { path: event.target.value })
+                  }
+                  placeholder="/etc/app/config.yaml"
+                  readOnly={readOnly}
+                  value={item.path}
+                />
+                {readOnly ? (
+                  <div aria-hidden className="size-9" />
+                ) : (
+                  <AppIconButton
+                    aria-label="Remove config file"
+                    className="hover:text-red-500"
+                    onClick={() => onDelete(index)}
+                    size="lg"
+                    type="button"
+                    variant="quiet"
+                  >
+                    <Trash2 aria-hidden className="size-4" />
+                  </AppIconButton>
+                )}
+              </div>
+              <ContainerSettingsTextarea
+                aria-label="Config file content"
+                onChange={(event) =>
+                  onUpdate(index, { value: event.target.value })
+                }
+                placeholder="key: value"
+                readOnly={readOnly}
+                value={item.value}
+              />
+            </div>
+          ))
+        )}
+      </div>
+      {readOnly ? null : (
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <AppButton
+            aria-label="Add config file"
+            className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+            onClick={onAdd}
+            size="lg"
+            type="button"
+            variant="quiet"
+          >
+            <Plus aria-hidden data-icon="inline-start" />
+            Add
+          </AppButton>
+        </div>
+      )}
+    </ResourceSettingsSection>
+  );
+}
+
+function StorageSettingsSection({
+  onUpdate,
+  readOnly,
+  storage,
+  storageKeys,
+}: {
+  onUpdate: (index: number, patch: Partial<ContainerStorageMount>) => void;
+  readOnly: boolean;
+  storage: readonly ContainerStorageMount[];
+  storageKeys: readonly string[];
+}) {
+  return (
+    <ResourceSettingsSection icon={HardDrive} title="Storage">
+      <div className="flex min-w-0 flex-col gap-2">
+        {storage.length === 0 ? (
+          <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
+            No storage
+          </div>
+        ) : (
+          storage.map((item, index) => (
+            <div
+              className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"
+              key={storageKeys[index] ?? `${item.path}\u0000${item.size}`}
+            >
+              <AppInput
+                aria-label="Storage mount path"
+                readOnly
+                title="StatefulSet storage mount path is immutable."
+                value={item.path}
+              />
+              <AppInput
+                aria-label="Storage size"
+                onChange={(event) =>
+                  onUpdate(index, { size: event.target.value })
+                }
+                placeholder="1Gi"
+                readOnly={readOnly}
+                value={item.size}
+              />
+            </div>
+          ))
+        )}
+      </div>
+    </ResourceSettingsSection>
+  );
+}
+
 function ContainerSettingsDraftFooter({
   backingResourceChanged,
   canSave,
@@ -4450,7 +4790,10 @@ function ContainerSettingsDraftFooter({
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: coordinates several controlled AP settings sections plus legacy section commit props.
 export function ContainerSettingsPane({
   addDbDsnReferenceIntent,
+  args = [],
   className,
+  command = [],
+  configMaps = [],
   envRawSource,
   image,
   onImageChange,
@@ -4475,6 +4818,8 @@ export function ContainerSettingsPane({
   dbDsnReferenceSources = [],
   sectionFocus = "all",
   showImageSection = true,
+  storage = [],
+  workloadKind = "deployment",
 }: ContainerSettingsPaneProps) {
   const [draftImage, setDraftImage] = useState(image);
   const [quotaSavePending, setQuotaSavePending] = useState(false);
@@ -4482,9 +4827,27 @@ export function ContainerSettingsPane({
   const [draftNetwork, setDraftNetwork] = useState<
     ContainerNetwork | undefined
   >(network);
+  const [draftCommand, setDraftCommand] = useState<string[]>(() =>
+    normalizeCommandDraftLines(command)
+  );
+  const [draftArgs, setDraftArgs] = useState<string[]>(() =>
+    normalizeCommandDraftLines(args)
+  );
   const imageInputId = useId();
   const envDraftKeyPrefix = useId();
   const envDraftKeyCounter = useRef(0);
+  const [draftConfigMaps, setDraftConfigMaps] = useState<
+    ContainerConfigMapMount[]
+  >(() => normalizeConfigMapDraftRows(configMaps));
+  const [configMapDraftKeys, setConfigMapDraftKeys] = useState<string[]>(() =>
+    createDraftRowKeys(normalizeConfigMapDraftRows(configMaps).length, "cm")
+  );
+  const [draftStorage, setDraftStorage] = useState<ContainerStorageMount[]>(
+    () => normalizeStorageDraftRows(storage)
+  );
+  const [storageDraftKeys, setStorageDraftKeys] = useState<string[]>(() =>
+    createDraftRowKeys(normalizeStorageDraftRows(storage).length, "storage")
+  );
   const initialEnvRawSource = useMemo(
     () => canonicalApEnvRawSource({ env, envRawSource }),
     [env, envRawSource]
@@ -4568,6 +4931,20 @@ export function ContainerSettingsPane({
     }
     setDraftNetwork(network);
   }, [network, settingsCommitMode]);
+
+  useEffect(() => {
+    if (settingsCommitMode) {
+      return;
+    }
+    setDraftCommand(normalizeCommandDraftLines(command));
+    setDraftArgs(normalizeCommandDraftLines(args));
+    const nextConfigMaps = normalizeConfigMapDraftRows(configMaps);
+    setDraftConfigMaps(nextConfigMaps);
+    setConfigMapDraftKeys(createDraftRowKeys(nextConfigMaps.length, "cm"));
+    const nextStorage = normalizeStorageDraftRows(storage);
+    setDraftStorage(nextStorage);
+    setStorageDraftKeys(createDraftRowKeys(nextStorage.length, "storage"));
+  }, [args, command, configMaps, settingsCommitMode, storage]);
 
   useEffect(() => {
     if (settingsCommitMode) {
@@ -4837,6 +5214,9 @@ export function ContainerSettingsPane({
   const originalSettingsDraft = useMemo<ContainerSettingsDraft>(
     () =>
       containerSettingsDraftFromValues({
+        args: normalizeCommandDraftLines(args),
+        command: normalizeCommandDraftLines(command),
+        configMaps: normalizeConfigMapDraftRows(configMaps),
         cpuCores: cpuQuota.value,
         env,
         envRawSource,
@@ -4844,15 +5224,22 @@ export function ContainerSettingsPane({
         memoryMib: memoryQuota.value,
         network,
         replicaStrategy: committedReplicaStrategy,
+        storage: normalizeStorageDraftRows(storage),
+        workloadKind,
       }),
     [
+      args,
+      command,
       committedReplicaStrategy,
+      configMaps,
       cpuQuota.value,
       env,
       envRawSource,
       image,
       memoryQuota.value,
       network,
+      storage,
+      workloadKind,
     ]
   );
   const originalSettingsDraftKey = useMemo(
@@ -4862,6 +5249,9 @@ export function ContainerSettingsPane({
   const settingsDraft = useMemo<ContainerSettingsDraft>(
     () =>
       containerSettingsDraftFromValues({
+        args: draftArgs,
+        command: draftCommand,
+        configMaps: draftConfigMaps,
         cpuCores: draftCpu,
         env: envDraft,
         envRawSource: envRawSourceDraft,
@@ -4870,16 +5260,23 @@ export function ContainerSettingsPane({
         network: settingsDraftNetwork,
         replicaStrategy:
           replicasQuota == null ? undefined : draftReplicaStrategy,
+        storage: draftStorage,
+        workloadKind,
       }),
     [
+      draftArgs,
+      draftCommand,
+      draftConfigMaps,
       draftCpu,
       draftImage,
       draftMem,
       draftReplicaStrategy,
+      draftStorage,
       envDraft,
       envRawSourceDraft,
       replicasQuota,
       settingsDraftNetwork,
+      workloadKind,
     ]
   );
   const [settingsBackingState, setSettingsBackingState] = useState(() =>
@@ -4916,6 +5313,14 @@ export function ContainerSettingsPane({
       syncedEnvRef.current = nextEnv;
       syncedEnvRawSourceRef.current = nextRawSource;
       setDraftNetwork(next.network);
+      setDraftCommand(normalizeCommandDraftLines(next.command));
+      setDraftArgs(normalizeCommandDraftLines(next.args));
+      const nextConfigMaps = normalizeConfigMapDraftRows(next.configMaps);
+      setDraftConfigMaps(nextConfigMaps);
+      setConfigMapDraftKeys(createDraftRowKeys(nextConfigMaps.length, "cm"));
+      const nextStorage = normalizeStorageDraftRows(next.storage);
+      setDraftStorage(nextStorage);
+      setStorageDraftKeys(createDraftRowKeys(nextStorage.length, "storage"));
     },
     [envDraftKeyPrefix, replicasQuota?.value]
   );
@@ -5387,6 +5792,42 @@ export function ContainerSettingsPane({
     });
   };
 
+  const handleAddConfigMapRow = () => {
+    setDraftConfigMaps((rows) => [...rows, { path: "", value: "" }]);
+    setConfigMapDraftKeys((keys) => [...keys, createDraftRowKey("cm")]);
+  };
+
+  const handleDeleteConfigMapRow = (index: number) => {
+    setDraftConfigMaps((rows) =>
+      rows.filter((_, rowIndex) => rowIndex !== index)
+    );
+    setConfigMapDraftKeys((keys) =>
+      keys.filter((_, keyIndex) => keyIndex !== index)
+    );
+  };
+
+  const handleUpdateConfigMapRow = (
+    index: number,
+    patch: Partial<ContainerConfigMapMount>
+  ) => {
+    setDraftConfigMaps((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row
+      )
+    );
+  };
+
+  const handleUpdateStorageRow = (
+    index: number,
+    patch: Partial<ContainerStorageMount>
+  ) => {
+    setDraftStorage((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch, path: row.path } : row
+      )
+    );
+  };
+
   const handleUpdateEnvRow = (
     index: number,
     patch: Partial<ContainerEnvRow>
@@ -5465,9 +5906,13 @@ export function ContainerSettingsPane({
       confirmedAddDbDsnReferencesFromEnvDraft(envDraft);
     const draft: ContainerSettingsDraft = {
       ...settingsDraft,
+      args: normalizeCommandDraftLines(settingsDraft.args),
+      command: normalizeCommandDraftLines(settingsDraft.command),
+      configMaps: normalizeConfigMapDraftRows(settingsDraft.configMaps),
       env: normalizedEnv,
       envRawSource: result.envRawSource,
       image: settingsDraft.image.trim(),
+      storage: normalizeStorageDraftRows(settingsDraft.storage),
     };
     const meta: ContainerSettingsPaneSettingsDraftCommitMeta = {
       baseDraft: settingsBaseDraft,
@@ -5658,6 +6103,36 @@ export function ContainerSettingsPane({
               onChange={handleImageChange}
               readOnly={readOnly}
               value={displayImage}
+            />
+          ) : null}
+
+          <LaunchCommandSettingsSection
+            args={settingsDraft.args ?? []}
+            command={settingsDraft.command ?? []}
+            onArgsChange={(value) =>
+              setDraftArgs(normalizeCommandDraftLines(value))
+            }
+            onCommandChange={(value) =>
+              setDraftCommand(normalizeCommandDraftLines(value))
+            }
+            readOnly={readOnly}
+          />
+
+          <ConfigMapSettingsSection
+            configMapKeys={configMapDraftKeys}
+            configMaps={settingsDraft.configMaps ?? []}
+            onAdd={handleAddConfigMapRow}
+            onDelete={handleDeleteConfigMapRow}
+            onUpdate={handleUpdateConfigMapRow}
+            readOnly={readOnly}
+          />
+
+          {workloadKind === "statefulset" || draftStorage.length > 0 ? (
+            <StorageSettingsSection
+              onUpdate={handleUpdateStorageRow}
+              readOnly={readOnly}
+              storage={settingsDraft.storage ?? []}
+              storageKeys={storageDraftKeys}
             />
           ) : null}
         </div>

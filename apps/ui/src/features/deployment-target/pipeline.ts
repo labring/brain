@@ -398,7 +398,7 @@ async function runTemplatePipeline(
     throw new Error("Could not resolve the current project.");
   }
   const instanceName = options.adapters.generateChildResourceName(
-    target.projectName,
+    templateName,
     "template"
   );
   let result: TemplateDeploymentResult;

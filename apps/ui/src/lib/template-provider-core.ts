@@ -24,6 +24,8 @@ export interface TemplateDeploymentResourceSummary {
   uid: string;
 }
 
+export type TemplateDeploymentExtraLabels = Record<string, string>;
+
 export interface TemplateDefaultValue {
   type?: string;
   value: string;
@@ -168,6 +170,50 @@ function readJsonResponse(response: Response): Promise<unknown> {
   return response.json().catch(() => null);
 }
 
+function templateDeploymentResource(
+  value: unknown
+): TemplateDeploymentResourceSummary | null {
+  const raw = objectValue(value);
+  if (raw == null) {
+    return null;
+  }
+  const name = stringValue(raw.name);
+  const resourceType = stringValue(raw.resourceType);
+  if (!(name && resourceType)) {
+    return null;
+  }
+  return {
+    name,
+    resourceType,
+    uid: stringValue(raw.uid),
+  };
+}
+
+function templateDeploymentPayload(value: unknown): {
+  instanceName: string;
+  resources: TemplateDeploymentResourceSummary[];
+} | null {
+  const raw = objectValue(value);
+  if (raw == null) {
+    return null;
+  }
+  const instanceName = stringValue(raw.name);
+  if (!instanceName) {
+    return null;
+  }
+  const resources = Array.isArray(raw.resources)
+    ? raw.resources
+        .map(templateDeploymentResource)
+        .filter(
+          (item): item is TemplateDeploymentResourceSummary => item != null
+        )
+    : [];
+  return {
+    instanceName,
+    resources,
+  };
+}
+
 function templateSourcePayload(value: unknown): TemplateSourcePayload | null {
   const raw = objectValue(value);
   if (raw == null) {
@@ -240,6 +286,44 @@ export async function getTemplateSource(input: {
   const payload = templateSourcePayload(wrapped?.data ?? body);
   if (payload == null) {
     throw new Error("Template provider returned an invalid source response.");
+  }
+  return payload;
+}
+
+export async function deployTemplateInstance(input: {
+  args?: Record<string, string>;
+  encodedKubeconfig: string;
+  extraLabels?: TemplateDeploymentExtraLabels;
+  instanceName: string;
+  templateName: string;
+}): Promise<{
+  instanceName: string;
+  resources: TemplateDeploymentResourceSummary[];
+}> {
+  const response = await fetch(
+    providerUrl("/api/v2alpha/templates/instances"),
+    {
+      body: JSON.stringify({
+        args: input.args ?? {},
+        extraLabels: input.extraLabels ?? {},
+        name: input.instanceName,
+        template: input.templateName,
+      }),
+      headers: {
+        Authorization: headerSafeEncodedKubeconfig(input.encodedKubeconfig),
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    }
+  );
+  const body = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(providerErrorMessage(body, "Could not deploy template."));
+  }
+  const wrapped = objectValue(body) as ProviderTemplateSourceResponse | null;
+  const payload = templateDeploymentPayload(wrapped?.data ?? body);
+  if (payload == null) {
+    throw new Error("Template provider returned an invalid deploy response.");
   }
   return payload;
 }

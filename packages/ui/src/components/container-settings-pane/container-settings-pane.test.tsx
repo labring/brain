@@ -72,6 +72,14 @@ const CANCEL_ENV_RE = /Cancel environment changes/;
 const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="Container image"/;
+const LAUNCH_COMMAND_RE = /Launch Command/;
+const CONFIG_FILES_RE = /Config Files/;
+const STORAGE_RE = /Storage/;
+const CONTAINER_COMMAND_RE = /aria-label="Container command"/;
+const CONFIG_FILE_PATH_RE = /aria-label="Config file mount path"/;
+const STORAGE_SIZE_RE = /aria-label="Storage size"/;
+const CONFIG_FILE_MOUNT_PATH_RE = /\/etc\/app\/config\.yaml/;
+const STORAGE_SIZE_VALUE_RE = /20Gi/;
 const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
 const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
@@ -1309,6 +1317,9 @@ test("container settings draft detects dirty AP settings and restored state", ()
   assert.equal(
     containerSettingsDraftIsDirty(original, {
       ...original,
+      args: ["--port", "8080"],
+      command: ["/app/server"],
+      configMaps: [{ path: "/etc/app/config.yaml", value: "debug: false" }],
       env: [...original.env, { name: "FEATURE_FLAG", value: "true" }],
       image: "ghcr.io/acme/api:new",
       network: {
@@ -1331,10 +1342,40 @@ test("container settings draft detects dirty AP settings and restored state", ()
         fixed: { replicas: 2 },
         type: "elastic",
       },
+      storage: [{ path: "/data", size: "20Gi" }],
+      workloadKind: "statefulset",
     }),
     true
   );
   assert.equal(containerSettingsDraftIsDirty(original, { ...original }), false);
+});
+
+test("container settings pane renders Launchpad-backed command config and storage fields", () => {
+  const html = renderToStaticMarkup(
+    <ContainerSettingsPane
+      args={["--config", "/etc/app/config.yaml"]}
+      command={["/app/server"]}
+      configMaps={[{ path: "/etc/app/config.yaml", value: "debug: false" }]}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onSettingsDraftCommit={noop}
+      storage={[{ path: "/data", size: "20Gi" }]}
+      workloadKind="statefulset"
+    />
+  );
+
+  assert.match(html, LAUNCH_COMMAND_RE);
+  assert.match(html, CONFIG_FILES_RE);
+  assert.match(html, STORAGE_RE);
+  assert.match(html, CONTAINER_COMMAND_RE);
+  assert.match(html, CONFIG_FILE_PATH_RE);
+  assert.match(html, STORAGE_SIZE_RE);
+  assert.match(html, CONFIG_FILE_MOUNT_PATH_RE);
+  assert.match(html, STORAGE_SIZE_VALUE_RE);
 });
 
 test("container settings pane exposes panel-level draft actions without environment save controls", () => {

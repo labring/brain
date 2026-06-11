@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -122,6 +123,216 @@ func TestRenderAPResourcesRendersMultipleAppListeningPorts(t *testing.T) {
 	}
 	if got := servicePorts[1].TargetPort.IntVal; got != 3000 {
 		t.Fatalf("service targetPort[1] = %d, want 3000", got)
+	}
+}
+
+func TestRenderAPResourcesSetsSecurityDefaultsAndConfigChecksum(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		ConfigMaps: []APConfigMapMount{
+			{Path: "/etc/app/config.yaml", Value: "debug: true\n"},
+		},
+		Image:       "nginx:1.27",
+		Name:        "web",
+		Namespace:   "ns-a",
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	podSpec := resources.Deployment.Spec.Template.Spec
+	if podSpec.AutomountServiceAccountToken == nil || *podSpec.AutomountServiceAccountToken {
+		t.Fatal("automountServiceAccountToken = true/nil, want false")
+	}
+	if podSpec.SecurityContext == nil || podSpec.SecurityContext.SeccompProfile == nil {
+		t.Fatal("pod seccomp profile missing")
+	}
+	if got := podSpec.SecurityContext.SeccompProfile.Type; got != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Fatalf("seccomp profile = %q, want RuntimeDefault", got)
+	}
+	if got := resources.Deployment.Spec.Template.Annotations[APConfigMapChecksumAnnotation]; got == "" {
+		t.Fatal("config checksum annotation is empty")
+	}
+}
+
+func TestRenderAPResourcesCreatesImagePullSecret(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Image: "registry.example.com/team/app:1.0",
+		ImagePullSecrets: []corev1.LocalObjectReference{
+			{Name: "external-registry"},
+		},
+		ImageRegistry: &APImageRegistry{
+			Password:      "secret",
+			ServerAddress: "registry.example.com",
+			Username:      "alice",
+		},
+		Name:        "web",
+		Namespace:   "ns-a",
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if resources.ImagePullSecret == nil {
+		t.Fatal("ImagePullSecret = nil, want generated docker config secret")
+	}
+	if got := resources.ImagePullSecret.Name; got != APImagePullSecretName("web") {
+		t.Fatalf("secret name = %q, want generated name", got)
+	}
+	if got := resources.ImagePullSecret.Type; got != corev1.SecretTypeDockerConfigJson {
+		t.Fatalf("secret type = %q, want dockerconfigjson", got)
+	}
+	secrets := resources.Deployment.Spec.Template.Spec.ImagePullSecrets
+	if len(secrets) != 2 {
+		t.Fatalf("imagePullSecrets length = %d, want 2", len(secrets))
+	}
+	if got := secrets[0].Name; got != "external-registry" {
+		t.Fatalf("first imagePullSecret = %q, want external-registry", got)
+	}
+	if got := secrets[1].Name; got != APImagePullSecretName("web") {
+		t.Fatalf("generated imagePullSecret = %q, want AP secret", got)
+	}
+}
+
+func TestRenderAPResourcesRendersStatefulSetStorageAndConfigMap(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Args:      []string{"--config", "/etc/app/config.yaml"},
+		Command:   []string{"/app/server"},
+		Image:     "example/app:1.0",
+		Name:      "web",
+		Namespace: "ns-a",
+		ConfigMaps: []APConfigMapMount{
+			{Path: "/etc/app/config.yaml", Value: "port: 8080\n"},
+		},
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+		Storage: []APStorageMount{
+			{Path: "/data", Size: "10Gi"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if resources.Deployment != nil {
+		t.Fatalf("Deployment = %#v, want nil for storage-backed AP", resources.Deployment)
+	}
+	if resources.StatefulSet == nil {
+		t.Fatal("StatefulSet = nil, want rendered StatefulSet")
+	}
+	if resources.ConfigMap == nil {
+		t.Fatal("ConfigMap = nil, want AP config map")
+	}
+
+	sts := resources.StatefulSet
+	if got := sts.Spec.ServiceName; got != "web-service" {
+		t.Fatalf("statefulset serviceName = %q, want web-service", got)
+	}
+	container := sts.Spec.Template.Spec.Containers[0]
+	if got := strings.Join(container.Command, " "); got != "/app/server" {
+		t.Fatalf("command = %q, want /app/server", got)
+	}
+	if got := strings.Join(container.Args, " "); got != "--config /etc/app/config.yaml" {
+		t.Fatalf("args = %q, want --config /etc/app/config.yaml", got)
+	}
+	if got := len(sts.Spec.VolumeClaimTemplates); got != 1 {
+		t.Fatalf("volumeClaimTemplates count = %d, want 1", got)
+	}
+	claim := sts.Spec.VolumeClaimTemplates[0]
+	if got := claim.Name; got != "data" {
+		t.Fatalf("claim name = %q, want data", got)
+	}
+	if got := claim.Annotations[APStorageMountPathAnnotation]; got != "/data" {
+		t.Fatalf("claim mount path annotation = %q, want /data", got)
+	}
+	if got := claim.Spec.Resources.Requests.Storage().String(); got != "10Gi" {
+		t.Fatalf("claim storage = %q, want 10Gi", got)
+	}
+	if got := container.VolumeMounts[0].Name; got != APConfigMapVolumeName("web") {
+		t.Fatalf("config map mount name = %q, want AP config map volume name", got)
+	}
+	if got := container.VolumeMounts[0].MountPath; got != "/etc/app/config.yaml" {
+		t.Fatalf("config map mountPath = %q, want file path", got)
+	}
+	if got := container.VolumeMounts[0].SubPath; got != "etc-app-config-yaml" {
+		t.Fatalf("config map subPath = %q, want path-derived key", got)
+	}
+	if got := resources.ConfigMap.Data["etc-app-config-yaml"]; got != "port: 8080\n" {
+		t.Fatalf("config map data = %q, want file contents", got)
+	}
+	if got := container.VolumeMounts[1].Name; got != "data" {
+		t.Fatalf("storage mount name = %q, want data", got)
+	}
+	if got := container.VolumeMounts[1].MountPath; got != "/data" {
+		t.Fatalf("storage mount path = %q, want /data", got)
+	}
+}
+
+func TestRenderAPResourcesRejectsDeploymentWithStorage(t *testing.T) {
+	_, err := RenderAPResources(APResourcesInput{
+		Image:        "example/app:1.0",
+		Name:         "web",
+		Namespace:    "ns-a",
+		PrivatePort:  8080,
+		ProjectID:    "project-a",
+		Storage:      []APStorageMount{{Path: "/data", Size: "10Gi"}},
+		WorkloadKind: APWorkloadKindDeployment,
+	})
+	if err == nil {
+		t.Fatal("RenderAPResources error = nil, want deployment plus storage rejection")
+	}
+}
+
+func TestRenderAPResourcesRejectsConfigMapStorageVolumeNameCollision(t *testing.T) {
+	_, err := RenderAPResources(APResourcesInput{
+		ConfigMaps:  []APConfigMapMount{{Path: "/etc/app/config.yaml", Value: "port: 8080\n"}},
+		Image:       "example/app:1.0",
+		Name:        "web",
+		Namespace:   "ns-a",
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+		Storage:     []APStorageMount{{Path: "/web-config", Size: "10Gi"}},
+	})
+	if err == nil {
+		t.Fatal("RenderAPResources error = nil, want configMap and storage volume name collision rejection")
+	}
+}
+
+func TestRenderAPHPAUsesStatefulSetTargetForStorage(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Image:       "example/app:1.0",
+		Name:        "web",
+		Namespace:   "ns-a",
+		ProjectID:   "project-a",
+		PrivatePort: 8080,
+		ReplicaStrategy: &APReplicaStrategy{
+			Type: "elastic",
+			Fixed: APFixedReplicaSettings{
+				Replicas: 1,
+			},
+			Elastic: &APElasticReplicaSettings{
+				MinReplicas: 2,
+				MaxReplicas: 4,
+				Target: APElasticReplicaTarget{
+					Metric:             "cpu",
+					Type:               "utilization",
+					UtilizationPercent: 70,
+				},
+			},
+		},
+		Storage: []APStorageMount{{Path: "/data", Size: "10Gi"}},
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if resources.HPA == nil {
+		t.Fatal("HPA = nil, want elastic scaling HPA")
+	}
+	if got := resources.HPA.Spec.ScaleTargetRef.Kind; got != "StatefulSet" {
+		t.Fatalf("HPA target kind = %q, want StatefulSet", got)
+	}
+	if got := resources.HPA.Spec.Metrics[0].Resource.Target.Type; got != autoscalingv2.UtilizationMetricType {
+		t.Fatalf("HPA target type = %q, want Utilization", got)
 	}
 }
 
@@ -388,8 +599,12 @@ func TestEntryPointObjectsFromIngressesAggregatesOneNodePerAP(t *testing.T) {
 }
 
 func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
+	restartRequest := int64(7)
 	resources, err := RenderAPResources(APResourcesInput{
-		Image:       "nginx:1.27",
+		Image: "nginx:1.27",
+		ImagePullSecrets: []corev1.LocalObjectReference{
+			{Name: "registry-secret"},
+		},
 		Name:        "web",
 		Namespace:   "ns-a",
 		PrivatePort: 8080,
@@ -399,6 +614,7 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 			corev1.ResourceCPU:    resource.MustParse("500m"),
 			corev1.ResourceMemory: resource.MustParse("512Mi"),
 		},
+		RestartRequest: &restartRequest,
 	})
 	if err != nil {
 		t.Fatalf("RenderAPResources returned error: %v", err)
@@ -415,6 +631,17 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 	network := input["network"].(map[string]interface{})
 	if got := input["image"]; got != "nginx:1.27" {
 		t.Fatalf("spec.input.image = %v, want nginx:1.27", got)
+	}
+	imagePullSecrets := input["imagePullSecrets"].([]interface{})
+	imagePullSecret := imagePullSecrets[0].(map[string]interface{})
+	if got := imagePullSecret["name"]; got != "registry-secret" {
+		t.Fatalf("imagePullSecrets[0].name = %v, want registry-secret", got)
+	}
+	if got := spec["projectId"]; got != "project-a" {
+		t.Fatalf("spec.projectId = %v, want project-a", got)
+	}
+	if got := spec["restartRequest"]; got != int64(7) {
+		t.Fatalf("spec.restartRequest = %v, want 7", got)
 	}
 	if got := network["privatePort"]; got != int32(8080) {
 		t.Fatalf("privatePort = %v, want 8080", got)
@@ -441,6 +668,63 @@ func TestAPObjectFromDeploymentReturnsAPLikeShape(t *testing.T) {
 	}
 	if got := limits["memory"]; got != "512Mi" {
 		t.Fatalf("memory limit = %v, want 512Mi", got)
+	}
+	if got := status["phase"]; got != "Running" {
+		t.Fatalf("status.phase = %v, want Running", got)
+	}
+}
+
+func TestAPObjectFromStatefulSetReturnsAPLikeShape(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Args:      []string{"--config", "/etc/app/config.yaml"},
+		Command:   []string{"/app/server"},
+		Image:     "example/app:1.0",
+		Name:      "web",
+		Namespace: "ns-a",
+		ConfigMaps: []APConfigMapMount{
+			{Path: "/etc/app/config.yaml", Value: "port: 8080\n"},
+		},
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+		Storage: []APStorageMount{
+			{Path: "/data", Size: "10Gi"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	resources.StatefulSet.Status.Replicas = 1
+	resources.StatefulSet.Status.ReadyReplicas = 1
+	ap := APObjectFromStatefulSet(resources.StatefulSet)
+	if got := ap["kind"]; got != "AP" {
+		t.Fatalf("kind = %v, want AP", got)
+	}
+	spec := ap["spec"].(map[string]interface{})
+	workload := spec["workload"].(map[string]interface{})
+	if got := workload["kind"]; got != "statefulset" {
+		t.Fatalf("spec.workload.kind = %v, want statefulset", got)
+	}
+	input := spec["input"].(map[string]interface{})
+	command := input["command"].([]string)
+	if got := command[0]; got != "/app/server" {
+		t.Fatalf("command[0] = %v, want /app/server", got)
+	}
+	configMaps := input["configMaps"].([]interface{})
+	configMap := configMaps[0].(map[string]interface{})
+	if got := configMap["path"]; got != "/etc/app/config.yaml" {
+		t.Fatalf("configMaps[0].path = %v, want /etc/app/config.yaml", got)
+	}
+	storage := input["storage"].([]interface{})
+	volume := storage[0].(map[string]interface{})
+	if got := volume["path"]; got != "/data" {
+		t.Fatalf("storage[0].path = %v, want /data", got)
+	}
+	if got := volume["size"]; got != "10Gi" {
+		t.Fatalf("storage[0].size = %v, want 10Gi", got)
+	}
+	status := ap["status"].(map[string]interface{})
+	if got := status["configVersionHash"]; got == "" {
+		t.Fatal("status.configVersionHash is empty")
 	}
 	if got := status["phase"]; got != "Running" {
 		t.Fatalf("status.phase = %v, want Running", got)

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
@@ -478,7 +477,7 @@ test("DB canvas nodes preserve stopped status tone for lifecycle actions", () =>
   });
 });
 
-test("Template native workloads render as container canvas nodes", () => {
+test("Template native workloads map Brain template Deployment and StatefulSet resources", () => {
   const state = templateNativeWorkloadsToCanvasState(
     {
       statefulSets: {
@@ -518,8 +517,8 @@ test("Template native workloads render as container canvas nodes", () => {
     { namespaceFallback: "ns-admin" }
   );
 
+  assert.equal(state.nodes.length, 1);
   assert.equal(state.nodes[0]?.id, "template-memos");
-  assert.equal(state.nodes[0]?.type, CANVAS_CONTAINER_NODE_TYPE);
   assert.deepEqual(state.nodes[0]?.data, {
     resourceKind: "template",
     states: {
@@ -528,7 +527,10 @@ test("Template native workloads render as container canvas nodes", () => {
       name: "memos",
       namespace: "ns-admin",
       replicas: 1,
-      status: { label: "Running", tone: "running" },
+      status: {
+        label: "Running",
+        tone: "running",
+      },
       uid: "sts-uid",
     },
   });

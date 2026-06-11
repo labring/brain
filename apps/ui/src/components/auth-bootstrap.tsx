@@ -12,7 +12,7 @@ import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
  *
  * Access control: {@link fetchProjectCredentialsOrUnauthorized} in `app/project/layout.tsx`
  * calls `unauthorized()` from `next/navigation` when SealOS credentials are empty and there is
- * no dev bypass (`NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`). That must stay on the server — `unauthorized()` cannot be
+ * no dev bypass (`NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`). That must stay on the server - `unauthorized()` cannot be
  * invoked from this client module.
  */
 

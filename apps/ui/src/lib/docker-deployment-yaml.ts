@@ -141,8 +141,16 @@ export function renderDockerDeploymentYaml(
     spec.input && typeof spec.input === "object"
       ? { ...(spec.input as Record<string, unknown>) }
       : {};
-  const inputWithoutEnv = Object.fromEntries(
-    Object.entries(input).filter(([key]) => key !== "env")
+  const inputWithoutManagedFields = Object.fromEntries(
+    Object.entries(input).filter(
+      ([key]) =>
+        key !== "args" &&
+        key !== "command" &&
+        key !== "configMap" &&
+        key !== "configMaps" &&
+        key !== "env" &&
+        key !== "storage"
+    )
   );
   const network =
     input.network && typeof input.network === "object"
@@ -152,7 +160,7 @@ export function renderDockerDeploymentYaml(
   network.privatePort = undefined;
 
   const nextInput: Record<string, unknown> = {
-    ...inputWithoutEnv,
+    ...inputWithoutManagedFields,
     image: options.settings.image.trim(),
     network: {
       ...network,
@@ -180,6 +188,26 @@ export function renderDockerDeploymentYaml(
   if (env !== undefined) {
     nextInput.env = env;
   }
+  const command = options.settings.command ?? [];
+  const args = options.settings.args ?? [];
+  if (command.length > 0) {
+    nextInput.command = command;
+  }
+  if (args.length > 0) {
+    nextInput.args = args;
+  }
+  const configMaps = (options.settings.configMaps ?? [])
+    .map((row) => ({ path: row.path.trim(), value: row.value }))
+    .filter((row) => row.path !== "");
+  if (configMaps.length > 0) {
+    nextInput.configMaps = configMaps;
+  }
+  const storage = (options.settings.storage ?? [])
+    .map((row) => ({ path: row.path.trim(), size: row.size.trim() }))
+    .filter((row) => row.path !== "");
+  if (storage.length > 0) {
+    nextInput.storage = storage;
+  }
 
   const nextSpec = {
     ...spec,
@@ -187,9 +215,15 @@ export function renderDockerDeploymentYaml(
     name: options.name,
     projectId: options.projectName,
   };
+  if (storage.length > 0) {
+    nextSpec.workload = { kind: "statefulset" };
+  } else if ("workload" in nextSpec) {
+    nextSpec.workload = undefined;
+  }
   doc.spec = Object.fromEntries(
     Object.entries(nextSpec).filter(
-      ([key]) => key !== "legacyRuntime" && key !== "projectName"
+      ([key, value]) =>
+        key !== "legacyRuntime" && key !== "projectName" && value !== undefined
     )
   );
 

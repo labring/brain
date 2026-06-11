@@ -2,6 +2,7 @@
 
 import { randomName } from "@workspace/ui/lib/random-name";
 import { applyBrainProductManifest } from "@/features/project-canvas/k8s/http/apply-yaml";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { childResourceName } from "@/lib/project-child-resource-name";
 import type {
   DeploymentTargetPipelineAdapters,
@@ -142,7 +143,10 @@ export function createDeploymentTargetClientAdapters({
           displayName: input.displayName,
           namespace: input.namespace,
         }),
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: kubeconfigBearerHeader(kubeconfig),
+          "Content-Type": "application/json",
+        },
         method: "POST",
       });
       const body = await response.json().catch(() => null);
@@ -171,7 +175,10 @@ export function createDeploymentTargetClientAdapters({
           id: input.id,
           namespace: input.namespace,
         }),
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: kubeconfigBearerHeader(kubeconfig),
+          "Content-Type": "application/json",
+        },
         method: "DELETE",
       });
       const body = await response.json().catch(() => null);

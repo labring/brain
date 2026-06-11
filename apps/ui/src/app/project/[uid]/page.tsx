@@ -13,6 +13,7 @@ import {
 } from "@/features/project-canvas/flow/pending-connections";
 import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
+import { projectCanvasFrameState } from "@/features/project-canvas/snapshot/project-canvas-page-state";
 import { useProjectServices } from "@/features/project-canvas/snapshot/use-project-services";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
@@ -36,6 +37,7 @@ export default function ProjectIdPage() {
   >([]);
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
+    kubeconfig,
     namespace,
     projectId: uid,
   });
@@ -143,10 +145,17 @@ export default function ProjectIdPage() {
     workbench.surfaceRenderModel.side == null
       ? 0
       : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET;
+  const frameState = projectCanvasFrameState({
+    edgeCount: canvasEdges.length,
+    error,
+    isEmptyGraphLoading,
+    kubeconfig,
+    nodeCount: workbench.nodes.length,
+  });
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      {kubeconfig !== "" && error == null && (
+      {frameState.renderCanvas && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <WorkloadTelemetryProvider
             kubeconfig={kubeconfig}
@@ -165,7 +174,7 @@ export default function ProjectIdPage() {
               }}
             >
               <div className="relative min-h-0 flex-1">
-                {isEmptyGraphLoading ? (
+                {frameState.overlay === "loading" ? (
                   <div
                     aria-live="polite"
                     className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[min(100%-2rem,20rem)]"
@@ -179,6 +188,23 @@ export default function ProjectIdPage() {
                       />
                       <span className="font-medium text-foreground text-sm">
                         Loading workloads…
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+                {frameState.overlay === "error" ||
+                frameState.overlay === "empty" ? (
+                  <div
+                    aria-live="polite"
+                    className="pointer-events-none absolute top-6 left-1/2 z-10 -translate-x-1/2"
+                    data-slot="project-canvas-empty-state"
+                    role="status"
+                  >
+                    <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-md">
+                      <span className="font-medium text-foreground text-sm">
+                        {frameState.overlay === "error"
+                          ? "Workloads unavailable"
+                          : "No workloads"}
                       </span>
                     </div>
                   </div>

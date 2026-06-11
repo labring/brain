@@ -1,3 +1,4 @@
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import {
   type CanvasLayoutPatchRequest,
   parseCanvasLayoutDocument,
@@ -26,6 +27,7 @@ async function jsonOrError<T>(response: Response): Promise<T> {
 }
 
 export async function fetchProjectCanvasLayout(input: {
+  kubeconfig: string;
   namespace: string;
   projectId: string;
 }): Promise<CanvasLayoutDocument> {
@@ -34,12 +36,17 @@ export async function fetchProjectCanvasLayout(input: {
   url.searchParams.set("projectId", input.projectId);
 
   const raw = await jsonOrError<unknown>(
-    await fetch(url, { method: "GET", cache: "no-store" })
+    await fetch(url, {
+      cache: "no-store",
+      headers: { Authorization: kubeconfigBearerHeader(input.kubeconfig) },
+      method: "GET",
+    })
   );
   return parseCanvasLayoutDocument(raw);
 }
 
 export async function patchProjectCanvasLayoutNodes(input: {
+  kubeconfig: string;
   namespace: string;
   nodes: CanvasLayoutNode[];
   projectId: string;
@@ -52,7 +59,10 @@ export async function patchProjectCanvasLayoutNodes(input: {
   const raw = await jsonOrError<unknown>(
     await fetch(PROJECT_CANVAS_LAYOUT_API_PATH, {
       body: JSON.stringify(body),
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: kubeconfigBearerHeader(input.kubeconfig),
+        "Content-Type": "application/json",
+      },
       method: "PATCH",
     })
   );

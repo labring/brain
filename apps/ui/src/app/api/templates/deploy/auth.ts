@@ -1,5 +1,6 @@
 import { kubeconfigCredentialsMatch } from "@/lib/chat-runtime/kubeconfig-identity-core";
 import type { BrainProject } from "@/lib/project-persistence/projects";
+import { authorizeEncodedKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
 import type { ServerCredentials } from "@/lib/server-credentials";
 
 export type TemplateDeployAuthorization =
@@ -48,34 +49,18 @@ export function authorizeTemplateDeployIdentity(input: {
         };
   }
 
-  if (input.serverCredentials.serverEncodedKubeconfig.trim() === "") {
-    return { message: "Authentication is required.", ok: false, status: 401 };
-  }
-  if (
-    !kubeconfigCredentialsMatch(
-      input.encodedKubeconfig,
-      input.serverCredentials.serverEncodedKubeconfig
-    )
-  ) {
-    return {
-      message: "kubeconfig does not match authenticated Sealos session.",
-      ok: false,
-      status: 403,
-    };
-  }
-  if (
-    input.serverCredentials.serverNamespace.trim() !== input.namespace.trim()
-  ) {
-    return {
-      message: "Project namespace is not accessible.",
-      ok: false,
-      status: 403,
-    };
+  const authorization = authorizeEncodedKubeconfigNamespace({
+    encodedKubeconfig: input.encodedKubeconfig,
+    namespace: input.namespace,
+    subject: "Project",
+  });
+  if (!authorization.ok) {
+    return authorization;
   }
   return input.project == null
     ? { message: "Project not found.", ok: false, status: 404 }
     : {
-        encodedKubeconfig: input.serverCredentials.serverEncodedKubeconfig,
+        encodedKubeconfig: authorization.encodedKubeconfig,
         ok: true,
       };
 }
