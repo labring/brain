@@ -37,6 +37,7 @@ import { deployTemplateInstance } from "@/lib/template-provider-core";
 
 import {
   type DeploymentArtifact,
+  type DeployTaskPreparedArtifacts,
   prepareBrainManifestArtifact,
   prepareDeployTaskArtifacts,
 } from "./artifacts";
@@ -65,6 +66,7 @@ const DEPLOY_OUTPUT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/deployment-output.js
 const DEPLOY_AP_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain/ap.yaml`;
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
+const APPLY_OUTPUT_TIMEOUT_SECONDS = 120;
 
 export interface StartDeployTaskRunnerInput {
   encodedKubeconfig?: string;
@@ -609,6 +611,17 @@ function readDeployOutputCommand(): string {
   ].join("\n");
 }
 
+function applyYamlCommand(): string {
+  return [
+    "set -euo pipefail",
+    "tmpfile=$(mktemp)",
+    'cleanup() { rm -f "$tmpfile"; }',
+    "trap cleanup EXIT",
+    'cat > "$tmpfile"',
+    'kubectl apply -f "$tmpfile"',
+  ].join("\n");
+}
+
 async function ensureDeployDevbox(input: {
   existingRuntimeName?: string | null;
   githubToken?: string;
@@ -728,6 +741,25 @@ async function readDeployOutput(input: {
     : null;
 }
 
+async function applyDeployYaml(input: {
+  namespace: string;
+  runtimeName: string;
+  yaml: string;
+}): Promise<string> {
+  const result = (
+    await execDevbox(input.namespace, input.runtimeName, {
+      command: ["bash", "-lc", applyYamlCommand()],
+      stdin: input.yaml,
+      timeoutSeconds: APPLY_OUTPUT_TIMEOUT_SECONDS,
+    })
+  ).data;
+
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim());
+  }
+  return result.stdout.trim();
+}
+
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   kubeconfig: string;
@@ -765,6 +797,58 @@ async function completeTaskWithArtifact(input: {
     kind: "deployment_task.completed",
     message: "Deployment task completed.",
     payload: applied.artifactSummary,
+    phase: "completed",
+  });
+}
+
+async function completeGithubAiTaskWithDevboxApply(input: {
+  artifact: DeploymentArtifact;
+  outputJson: Record<string, unknown>;
+  prepared: DeployTaskPreparedArtifacts;
+  runtimeName: string;
+  task: DeployTaskRow;
+}) {
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      artifacts: [input.artifact],
+      outputJson: input.outputJson,
+      resources: input.prepared.resources,
+      resourceYamls: [input.prepared.yaml],
+    },
+    phase: "apply",
+    status: "applying",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.apply_started",
+    message: "Applying generated Brain direct resources in deploy Devbox.",
+    payload: { resources: input.prepared.resources },
+    phase: "apply",
+  });
+
+  const applyOutput = await applyDeployYaml({
+    namespace: input.task.namespace,
+    runtimeName: input.runtimeName,
+    yaml: input.prepared.yaml,
+  });
+
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      artifacts: [input.artifact],
+      notes: applyOutput,
+      outputJson: input.outputJson,
+      resources: input.prepared.resources,
+      resourceYamls: [input.prepared.yaml],
+    },
+    phase: "completed",
+    status: "completed",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.completed",
+    message: "Deployment task completed.",
+    payload: {
+      applyOutput,
+      resources: input.prepared.resources,
+    },
     phase: "completed",
   });
 }
@@ -1033,6 +1117,17 @@ async function runAiDeploymentTask(input: {
     payload: { resources: prepared.resources },
     phase: "generate-artifacts",
   });
+
+  if (input.task.source.kind === "github") {
+    await completeGithubAiTaskWithDevboxApply({
+      artifact,
+      outputJson: finalDeployOutput,
+      prepared,
+      runtimeName: runtime.name,
+      task: input.task,
+    });
+    return;
+  }
 
   await completeTaskWithArtifact({
     artifact,
