@@ -4,7 +4,7 @@ import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,
 } from "./ap-settings-sections";
-import type { ContainerEnvDbDsnSource } from "./lib/container-env-rows";
+import type { ApEnvDbDsnSource } from "./lib/ap-env-rows";
 
 export interface ApSettingsAccess {
   readOnly?: boolean;
@@ -12,7 +12,7 @@ export interface ApSettingsAccess {
 
 export interface ApSettingsSourceData extends Record<string, unknown> {
   addDbDsnReferenceIntent?: ApSettingsAddDbDsnReferenceIntent | null;
-  dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
+  dbDsnReferenceSources?: ApEnvDbDsnSource[];
   onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
   onAddDbDsnReferenceMutationStart?: (
     references: readonly ApSettingsConfirmedAddDbDsnReference[]

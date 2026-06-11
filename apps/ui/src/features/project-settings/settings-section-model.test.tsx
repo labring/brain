@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  type ContainerSettingsSectionsModel,
+  type ApSettingsSectionsModel,
   useApSettingsSections,
 } from "@/features/project-settings/ap/ap-settings-sections";
 import {
@@ -39,7 +39,7 @@ const BASE_DB_DATA = {
 function SectionIds({
   model,
 }: {
-  model: ContainerSettingsSectionsModel | DatabaseSettingsSectionsModel;
+  model: ApSettingsSectionsModel | DatabaseSettingsSectionsModel;
 }) {
   return createElement(
     "output",

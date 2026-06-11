@@ -10,71 +10,14 @@ import {
   PROJECT_CANVAS_LAYOUT_API_PATH,
   patchProjectCanvasLayoutNodes,
 } from "@/features/project-canvas/layout/client";
+import {
+  canvasLayoutNodesCanonicalSignature,
+  canvasLayoutNodesSignature,
+} from "@/features/project-canvas/layout/layout-node-equality";
 import { canvasLayoutNodeFromNode } from "@/features/project-canvas/layout/merge";
 import { createCanvasLayoutNodeSaveScheduler } from "@/features/project-canvas/layout/scheduler";
 
 const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
-
-function layoutNodeSignature(
-  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number]
-) {
-  return layoutNodeSignatureWithOptions(node, { normalizeOrphanedAt: false });
-}
-
-function layoutNodeCanonicalSignature(
-  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number]
-) {
-  return layoutNodeSignatureWithOptions(node, { normalizeOrphanedAt: true });
-}
-
-function layoutNodeSignatureWithOptions(
-  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number],
-  options: { normalizeOrphanedAt: boolean }
-) {
-  return JSON.stringify({
-    expanded: node.expanded ?? null,
-    lastSeenUid: node.lastSeenUid ?? null,
-    orphanedAt: layoutNodeOrphanedAtSignature(node, options),
-    position: node.position,
-    ref: node.ref,
-    stackOrder: node.stackOrder ?? null,
-  });
-}
-
-function layoutNodeOrphanedAtSignature(
-  node: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"][number],
-  options: { normalizeOrphanedAt: boolean }
-) {
-  if (!options.normalizeOrphanedAt) {
-    return node.orphanedAt ?? null;
-  }
-  return node.orphanedAt === undefined ? null : "present";
-}
-
-function layoutNodesSignature(
-  nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
-) {
-  return layoutNodesSignatureWithOptions(nodes, { normalizeOrphanedAt: false });
-}
-
-function layoutNodesCanonicalSignature(
-  nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]
-) {
-  return layoutNodesSignatureWithOptions(nodes, { normalizeOrphanedAt: true });
-}
-
-function layoutNodesSignatureWithOptions(
-  nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"],
-  options: { normalizeOrphanedAt: boolean }
-) {
-  return nodes
-    .map(
-      (node) =>
-        `${node.ref.kind}:${node.ref.namespace}:${node.ref.name}:${options.normalizeOrphanedAt ? layoutNodeCanonicalSignature(node) : layoutNodeSignature(node)}`
-    )
-    .sort()
-    .join("|");
-}
 
 export function useProjectCanvasLayout(options: {
   enabled?: boolean;
@@ -137,8 +80,8 @@ export function useProjectCanvasLayout(options: {
       if (!enabled) {
         return;
       }
-      const nextSignature = layoutNodesSignature(nodes);
-      const nextCanonicalSignature = layoutNodesCanonicalSignature(nodes);
+      const nextSignature = canvasLayoutNodesSignature(nodes);
+      const nextCanonicalSignature = canvasLayoutNodesCanonicalSignature(nodes);
       if (
         nextSignature === lastSavedNodesSignatureRef.current ||
         nextSignature === inFlightNodesSignatureRef.current ||
@@ -158,9 +101,11 @@ export function useProjectCanvasLayout(options: {
           nodes,
           projectId,
         });
-        lastSavedNodesSignatureRef.current = layoutNodesSignature(next.nodes);
+        lastSavedNodesSignatureRef.current = canvasLayoutNodesSignature(
+          next.nodes
+        );
         lastSavedNodesCanonicalSignatureRef.current =
-          layoutNodesCanonicalSignature(next.nodes);
+          canvasLayoutNodesCanonicalSignature(next.nodes);
         await mutate(next, { revalidate: false });
       } catch {
         toast.error(

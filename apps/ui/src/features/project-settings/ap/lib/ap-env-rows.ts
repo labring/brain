@@ -1,7 +1,7 @@
-export interface ContainerEnvRow {
-  compiledReference?: ContainerEnvCompiledReferenceMetadata;
-  dbDsn?: ContainerEnvDbDsnReference;
-  helper?: ContainerEnvHelperMetadata;
+export interface ApEnvRow {
+  compiledReference?: ApEnvCompiledReferenceMetadata;
+  dbDsn?: ApEnvDbDsnReference;
+  helper?: ApEnvHelperMetadata;
   name: string;
   referenceDbKey?: string;
   value: string;
@@ -9,100 +9,94 @@ export interface ContainerEnvRow {
   valueSource?: "direct" | "valueFrom" | "dbDsn";
 }
 
-export type ContainerEnvDbDsnField = "private" | "public";
-export type ContainerEnvDbPrimitiveField =
-  | "host"
-  | "password"
-  | "port"
-  | "username";
-export type ContainerEnvDbReferenceField =
-  | ContainerEnvDbDsnField
-  | ContainerEnvDbPrimitiveField;
+export type ApEnvDbDsnField = "private" | "public";
+export type ApEnvDbPrimitiveField = "host" | "password" | "port" | "username";
+export type ApEnvDbReferenceField = ApEnvDbDsnField | ApEnvDbPrimitiveField;
 
-export interface ContainerEnvSecretKeyRef {
+export interface ApEnvSecretKeyRef {
   key: string;
   name: string;
 }
 
-export interface ContainerEnvDbDsnReference {
+export interface ApEnvDbDsnReference {
   dbName: string;
   dbNamespace: string;
-  field: ContainerEnvDbReferenceField;
+  field: ApEnvDbReferenceField;
 }
 
-export interface ContainerEnvDbDsnSource {
+export interface ApEnvDbDsnSource {
   engine?: string;
   name: string;
   namespace: string;
   primitiveSecretRefs?: Partial<
-    Record<ContainerEnvDbPrimitiveField, ContainerEnvSecretKeyRef>
+    Record<ApEnvDbPrimitiveField, ApEnvSecretKeyRef>
   >;
   privateDsn?: string;
   publicDsn?: string;
-  variables?: ContainerEnvDbReferenceVariable[];
+  variables?: ApEnvDbReferenceVariable[];
 }
 
-export interface ContainerEnvDbDsnReferenceTarget {
+export interface ApEnvDbDsnReferenceTarget {
   name: string;
   namespace: string;
 }
 
-export interface ContainerEnvHelperMetadata {
+export interface ApEnvHelperMetadata {
   automatic: boolean;
   sourceDbKey?: string;
-  sourceField?: ContainerEnvDbReferenceField;
+  sourceField?: ApEnvDbReferenceField;
 }
 
-export interface ContainerEnvDbReferenceVariable {
-  field?: ContainerEnvDbPrimitiveField | "databaseUrl";
+export interface ApEnvDbReferenceVariable {
+  field?: ApEnvDbPrimitiveField | "databaseUrl";
   name: string;
   type: "alias" | "secret" | "value";
   value?: string;
-  valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+  valueFrom?: { secretKeyRef: ApEnvSecretKeyRef };
 }
 
-export interface ContainerEnvCompiledReferenceMetadata {
+export interface ApEnvCompiledReferenceMetadata {
   expression: string;
   helpers: {
-    field: ContainerEnvDbPrimitiveField | "databaseUrl";
+    field: ApEnvDbPrimitiveField | "databaseUrl";
     name: string;
-    valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+    valueFrom?: { secretKeyRef: ApEnvSecretKeyRef };
   }[];
 }
 
-export interface ContainerEnvDbDsnFieldOption {
-  field: ContainerEnvDbReferenceField;
+export interface ApEnvDbDsnFieldOption {
+  field: ApEnvDbReferenceField;
   label: string;
   value?: string;
-  valueFrom?: { secretKeyRef: ContainerEnvSecretKeyRef };
+  valueFrom?: { secretKeyRef: ApEnvSecretKeyRef };
 }
 
-export type ContainerEnvDbReferenceRowPatch = Pick<
-  ContainerEnvRow,
+export type ApEnvDbReferenceRowPatch = Pick<
+  ApEnvRow,
   "dbDsn" | "value" | "valueFrom" | "valueSource"
 >;
 
-export type ContainerEnvRowValidationErrorType =
+export type ApEnvRowValidationErrorType =
   | "duplicate-name"
   | "invalid-name"
   | "missing-name";
 
-export interface ContainerEnvRowValidationError {
+export interface ApEnvRowValidationError {
   index: number;
   message: string;
-  type: ContainerEnvRowValidationErrorType;
+  type: ApEnvRowValidationErrorType;
 }
 
-export interface ContainerEnvRowValidationResult {
-  errors: ContainerEnvRowValidationError[];
+export interface ApEnvRowValidationResult {
+  errors: ApEnvRowValidationError[];
   valid: boolean;
 }
 
-export const CONTAINER_ENV_VALUE_FROM_PLACEHOLDER = "(valueFrom)";
+export const AP_ENV_VALUE_FROM_PLACEHOLDER = "(valueFrom)";
 
 const K8S_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const DEFAULT_ROW_NAME = "NEW_VARIABLE";
-const DB_REFERENCE_ROW_NAMES: Record<ContainerEnvDbReferenceField, string> = {
+const DB_REFERENCE_ROW_NAMES: Record<ApEnvDbReferenceField, string> = {
   host: "DATABASE_HOST",
   password: "DATABASE_PASSWORD",
   port: "DATABASE_PORT",
@@ -110,14 +104,14 @@ const DB_REFERENCE_ROW_NAMES: Record<ContainerEnvDbReferenceField, string> = {
   public: "DATABASE_PUBLIC_URL",
   username: "DATABASE_USER",
 };
-const PRIMITIVE_FIELD_LABELS: Record<ContainerEnvDbPrimitiveField, string> = {
+const PRIMITIVE_FIELD_LABELS: Record<ApEnvDbPrimitiveField, string> = {
   host: "Host",
   password: "Password",
   port: "Port",
   username: "Username",
 };
-export const CONTAINER_ENV_DB_SECRET_KEY_CANDIDATES: Record<
-  ContainerEnvDbPrimitiveField,
+export const AP_ENV_DB_SECRET_KEY_CANDIDATES: Record<
+  ApEnvDbPrimitiveField,
   readonly string[]
 > = {
   host: ["host", "endpoint"],
@@ -125,15 +119,15 @@ export const CONTAINER_ENV_DB_SECRET_KEY_CANDIDATES: Record<
   port: ["port"],
   username: ["username", "user"],
 };
-export const CONTAINER_ENV_DB_PRIMITIVE_FIELD_ORDER: readonly ContainerEnvDbPrimitiveField[] =
+export const AP_ENV_DB_PRIMITIVE_FIELD_ORDER: readonly ApEnvDbPrimitiveField[] =
   ["username", "password", "host", "port"];
 
-function nextDefaultRowName(rows: readonly ContainerEnvRow[]): string {
+function nextDefaultRowName(rows: readonly ApEnvRow[]): string {
   return nextAvailableEnvRowName(rows, DEFAULT_ROW_NAME);
 }
 
 function nextAvailableEnvRowName(
-  rows: readonly ContainerEnvRow[],
+  rows: readonly ApEnvRow[],
   baseName: string
 ): string {
   const used = new Set(rows.map((row) => row.name.trim()).filter(Boolean));
@@ -147,9 +141,9 @@ function nextAvailableEnvRowName(
   return `${baseName}_${suffix}`;
 }
 
-export function defaultContainerEnvDbReferenceRowName(
-  rows: readonly ContainerEnvRow[],
-  field: ContainerEnvDbReferenceField | undefined
+export function defaultApEnvDbReferenceRowName(
+  rows: readonly ApEnvRow[],
+  field: ApEnvDbReferenceField | undefined
 ): string {
   return nextAvailableEnvRowName(
     rows,
@@ -162,23 +156,23 @@ function nonEmptyValue(value: string | undefined): string | undefined {
 }
 
 function isPrimitiveDbReferenceField(
-  field: ContainerEnvDbReferenceField
-): field is ContainerEnvDbPrimitiveField {
+  field: ApEnvDbReferenceField
+): field is ApEnvDbPrimitiveField {
   return field !== "private" && field !== "public";
 }
 
-function valueForDbReferenceField(field: ContainerEnvDbDsnFieldOption): string {
-  return field.value ?? CONTAINER_ENV_VALUE_FROM_PLACEHOLDER;
+function valueForDbReferenceField(field: ApEnvDbDsnFieldOption): string {
+  return field.value ?? AP_ENV_VALUE_FROM_PLACEHOLDER;
 }
 
 export function isKubernetesEnvName(name: string): boolean {
   return K8S_ENV_NAME_RE.test(name);
 }
 
-export function containerEnvDbDsnFieldOptions(
-  source: ContainerEnvDbDsnSource | undefined
-): ContainerEnvDbDsnFieldOption[] {
-  const options: ContainerEnvDbDsnFieldOption[] = [];
+export function apEnvDbDsnFieldOptions(
+  source: ApEnvDbDsnSource | undefined
+): ApEnvDbDsnFieldOption[] {
+  const options: ApEnvDbDsnFieldOption[] = [];
   const privateDsn = nonEmptyValue(source?.privateDsn);
   if (privateDsn !== undefined) {
     options.push({
@@ -197,15 +191,15 @@ export function containerEnvDbDsnFieldOptions(
     });
   }
 
-  return [...options, ...containerEnvDbPrimitiveFieldOptions(source)];
+  return [...options, ...apEnvDbPrimitiveFieldOptions(source)];
 }
 
-export function containerEnvDbDsnReferenceFromValue(
+export function apEnvDbDsnReferenceFromValue(
   value: string,
-  sources: readonly ContainerEnvDbDsnSource[]
-): Pick<ContainerEnvRow, "dbDsn" | "value" | "valueSource"> | undefined {
+  sources: readonly ApEnvDbDsnSource[]
+): Pick<ApEnvRow, "dbDsn" | "value" | "valueSource"> | undefined {
   for (const source of sources) {
-    for (const field of containerEnvDbDsnFieldOptions(source)) {
+    for (const field of apEnvDbDsnFieldOptions(source)) {
       if (field.value !== value) {
         continue;
       }
@@ -223,15 +217,15 @@ export function containerEnvDbDsnReferenceFromValue(
   return undefined;
 }
 
-export function normalizeContainerEnvRowsForSave(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRow[] {
+export function normalizeApEnvRowsForSave(
+  rows: readonly ApEnvRow[]
+): ApEnvRow[] {
   return rows.map((row) => {
     const name = row.name.trim();
     if (row.valueSource === "valueFrom" && row.valueFrom != null) {
       return {
         name,
-        value: CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+        value: AP_ENV_VALUE_FROM_PLACEHOLDER,
         valueFrom: row.valueFrom,
         valueSource: "valueFrom",
       };
@@ -243,7 +237,7 @@ export function normalizeContainerEnvRowsForSave(
       ) {
         return {
           name,
-          value: CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+          value: AP_ENV_VALUE_FROM_PLACEHOLDER,
           valueFrom: row.valueFrom,
           valueSource: "valueFrom",
         };
@@ -254,17 +248,15 @@ export function normalizeContainerEnvRowsForSave(
   });
 }
 
-export function addContainerEnvRow(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRow[] {
+export function addApEnvRow(rows: readonly ApEnvRow[]): ApEnvRow[] {
   return [...rows, { name: nextDefaultRowName(rows), value: "" }];
 }
 
-export function addContainerEnvDbDsnReferenceRow(
-  rows: readonly ContainerEnvRow[],
-  sources: readonly ContainerEnvDbDsnSource[],
-  target?: ContainerEnvDbDsnReferenceTarget
-): ContainerEnvRow[] {
+export function addApEnvDbDsnReferenceRow(
+  rows: readonly ApEnvRow[],
+  sources: readonly ApEnvDbDsnSource[],
+  target?: ApEnvDbDsnReferenceTarget
+): ApEnvRow[] {
   for (const source of sources) {
     if (
       target !== undefined &&
@@ -272,15 +264,15 @@ export function addContainerEnvDbDsnReferenceRow(
     ) {
       continue;
     }
-    const field = containerEnvDbDsnFieldOptions(source)[0];
+    const field = apEnvDbDsnFieldOptions(source)[0];
     if (field === undefined) {
       continue;
     }
     return [
       ...rows,
       {
-        name: defaultContainerEnvDbReferenceRowName(rows, field.field),
-        ...containerEnvDbReferenceRowPatch(source, field),
+        name: defaultApEnvDbReferenceRowName(rows, field.field),
+        ...apEnvDbReferenceRowPatch(source, field),
       },
     ];
   }
@@ -288,20 +280,20 @@ export function addContainerEnvDbDsnReferenceRow(
   return [...rows];
 }
 
-export function updateContainerEnvRow(
-  rows: readonly ContainerEnvRow[],
+export function updateApEnvRow(
+  rows: readonly ApEnvRow[],
   index: number,
-  patch: Partial<ContainerEnvRow>
-): ContainerEnvRow[] {
+  patch: Partial<ApEnvRow>
+): ApEnvRow[] {
   return rows.map((row, rowIndex) =>
     rowIndex === index ? { ...row, ...patch } : row
   );
 }
 
-export function deleteContainerEnvRow(
-  rows: readonly ContainerEnvRow[],
+export function deleteApEnvRow(
+  rows: readonly ApEnvRow[],
   index: number
-): ContainerEnvRow[] {
+): ApEnvRow[] {
   return rows.filter((_, rowIndex) => rowIndex !== index);
 }
 
@@ -310,8 +302,8 @@ function valueFromKey(valueFrom: unknown): string {
 }
 
 function dbDsnReferencesEqual(
-  a: ContainerEnvDbDsnReference | undefined,
-  b: ContainerEnvDbDsnReference | undefined
+  a: ApEnvDbDsnReference | undefined,
+  b: ApEnvDbDsnReference | undefined
 ): boolean {
   if (a == null || b == null) {
     return a == null && b == null;
@@ -324,8 +316,8 @@ function dbDsnReferencesEqual(
 }
 
 function helperMetadataEqual(
-  a: ContainerEnvHelperMetadata | undefined,
-  b: ContainerEnvHelperMetadata | undefined
+  a: ApEnvHelperMetadata | undefined,
+  b: ApEnvHelperMetadata | undefined
 ): boolean {
   if (a == null || b == null) {
     return a == null && b == null;
@@ -337,40 +329,38 @@ function helperMetadataEqual(
   );
 }
 
-function rowValueSource(
-  row: ContainerEnvRow
-): NonNullable<ContainerEnvRow["valueSource"]> {
+function rowValueSource(row: ApEnvRow): NonNullable<ApEnvRow["valueSource"]> {
   return row.valueSource ?? "direct";
 }
 
-function containerEnvDbReferenceValuePatch(
-  field: ContainerEnvDbDsnFieldOption
-): Pick<ContainerEnvRow, "value" | "valueFrom"> {
+function apEnvDbReferenceValuePatch(
+  field: ApEnvDbDsnFieldOption
+): Pick<ApEnvRow, "value" | "valueFrom"> {
   if (field.valueFrom === undefined) {
     return { value: valueForDbReferenceField(field) };
   }
   return {
-    value: CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
+    value: AP_ENV_VALUE_FROM_PLACEHOLDER,
     valueFrom: field.valueFrom,
   };
 }
 
-export function containerEnvDbReferenceRowPatch(
-  source: ContainerEnvDbDsnSource,
-  field: ContainerEnvDbDsnFieldOption
-): ContainerEnvDbReferenceRowPatch {
+export function apEnvDbReferenceRowPatch(
+  source: ApEnvDbDsnSource,
+  field: ApEnvDbDsnFieldOption
+): ApEnvDbReferenceRowPatch {
   return {
     dbDsn: {
       dbName: source.name,
       dbNamespace: source.namespace,
       field: field.field,
     },
-    ...containerEnvDbReferenceValuePatch(field),
+    ...apEnvDbReferenceValuePatch(field),
     valueSource: "dbDsn",
   };
 }
 
-function rowSavesAsValueFrom(row: ContainerEnvRow): boolean {
+function rowSavesAsValueFrom(row: ApEnvRow): boolean {
   if (row.valueSource === "valueFrom" && row.valueFrom != null) {
     return true;
   }
@@ -390,7 +380,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function secretKeyRefFromValueFrom(
   valueFrom: unknown
-): ContainerEnvSecretKeyRef | undefined {
+): ApEnvSecretKeyRef | undefined {
   const valueFromRecord = asRecord(valueFrom);
   const secretKeyRef = asRecord(valueFromRecord?.secretKeyRef);
   const name = secretKeyRef?.name;
@@ -404,11 +394,11 @@ function secretKeyRefFromValueFrom(
   return { key, name };
 }
 
-export function containerEnvDbPrimitiveFieldForSecretKey(
+export function apEnvDbPrimitiveFieldForSecretKey(
   key: string
-): { field: ContainerEnvDbPrimitiveField; priority: number } | undefined {
-  for (const field of CONTAINER_ENV_DB_PRIMITIVE_FIELD_ORDER) {
-    const priority = CONTAINER_ENV_DB_SECRET_KEY_CANDIDATES[field].indexOf(key);
+): { field: ApEnvDbPrimitiveField; priority: number } | undefined {
+  for (const field of AP_ENV_DB_PRIMITIVE_FIELD_ORDER) {
+    const priority = AP_ENV_DB_SECRET_KEY_CANDIDATES[field].indexOf(key);
     if (priority !== -1) {
       return { field, priority };
     }
@@ -416,11 +406,11 @@ export function containerEnvDbPrimitiveFieldForSecretKey(
   return undefined;
 }
 
-function containerEnvDbPrimitiveFieldOptions(
-  source: ContainerEnvDbDsnSource | undefined
-): ContainerEnvDbDsnFieldOption[] {
-  const options: ContainerEnvDbDsnFieldOption[] = [];
-  for (const field of CONTAINER_ENV_DB_PRIMITIVE_FIELD_ORDER) {
+function apEnvDbPrimitiveFieldOptions(
+  source: ApEnvDbDsnSource | undefined
+): ApEnvDbDsnFieldOption[] {
+  const options: ApEnvDbDsnFieldOption[] = [];
+  for (const field of AP_ENV_DB_PRIMITIVE_FIELD_ORDER) {
     const secretKeyRef = source?.primitiveSecretRefs?.[field];
     if (secretKeyRef === undefined) {
       continue;
@@ -434,24 +424,22 @@ function containerEnvDbPrimitiveFieldOptions(
   return options;
 }
 
-export function containerEnvDbSecretReferenceFromValueFrom(
+export function apEnvDbSecretReferenceFromValueFrom(
   valueFrom: unknown,
-  sources: readonly ContainerEnvDbDsnSource[]
-):
-  | Pick<ContainerEnvRow, "dbDsn" | "value" | "valueFrom" | "valueSource">
-  | undefined {
+  sources: readonly ApEnvDbDsnSource[]
+): Pick<ApEnvRow, "dbDsn" | "value" | "valueFrom" | "valueSource"> | undefined {
   const ref = secretKeyRefFromValueFrom(valueFrom);
   if (ref === undefined) {
     return undefined;
   }
   for (const source of sources) {
-    for (const field of containerEnvDbPrimitiveFieldOptions(source)) {
+    for (const field of apEnvDbPrimitiveFieldOptions(source)) {
       const fieldRef = field.valueFrom?.secretKeyRef;
       if (fieldRef?.name !== ref.name || fieldRef.key !== ref.key) {
         continue;
       }
       return {
-        ...containerEnvDbReferenceRowPatch(source, field),
+        ...apEnvDbReferenceRowPatch(source, field),
         valueFrom,
       };
     }
@@ -459,9 +447,9 @@ export function containerEnvDbSecretReferenceFromValueFrom(
   return undefined;
 }
 
-export function containerEnvRowsEqual(
-  a: readonly ContainerEnvRow[],
-  b: readonly ContainerEnvRow[]
+export function apEnvRowsEqual(
+  a: readonly ApEnvRow[],
+  b: readonly ApEnvRow[]
 ): boolean {
   if (a.length !== b.length) {
     return false;
@@ -484,9 +472,9 @@ export function containerEnvRowsEqual(
   });
 }
 
-export function containerEnvRowsModelEqual(
-  a: readonly ContainerEnvRow[],
-  b: readonly ContainerEnvRow[]
+export function apEnvRowsModelEqual(
+  a: readonly ApEnvRow[],
+  b: readonly ApEnvRow[]
 ): boolean {
   if (a.length !== b.length) {
     return false;
@@ -508,10 +496,10 @@ export function containerEnvRowsModelEqual(
   });
 }
 
-export function validateContainerEnvRows(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRowValidationResult {
-  const errors: ContainerEnvRowValidationError[] = [];
+export function validateApEnvRows(
+  rows: readonly ApEnvRow[]
+): ApEnvRowValidationResult {
+  const errors: ApEnvRowValidationError[] = [];
   const firstIndexByName = new Map<string, number>();
 
   rows.forEach((row, index) => {

@@ -3,20 +3,20 @@ import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import { parse as parseYaml } from "yaml";
 import type {
-  ContainerConfigMapMount,
-  ContainerEnvVar,
-  ContainerNetwork,
-  ContainerStorageMount,
+  ApConfigMapMount,
+  ApEnvVar,
+  ApNetwork,
+  ApStorageMount,
 } from "@/features/project-settings/ap/ap-settings-sections";
 import {
   canonicalApEnvRawSource,
   compileApEnvRawSourceForRuntime,
 } from "@/features/project-settings/ap/lib/ap-env-raw-source";
 import {
-  CONTAINER_ENV_VALUE_FROM_PLACEHOLDER,
-  type ContainerEnvDbDsnSource,
-} from "@/features/project-settings/ap/lib/container-env-rows";
-import { normalizeContainerEnvTokenRowsForSave } from "@/features/project-settings/ap/lib/container-env-tokens";
+  AP_ENV_VALUE_FROM_PLACEHOLDER,
+  type ApEnvDbDsnSource,
+} from "@/features/project-settings/ap/lib/ap-env-rows";
+import { normalizeApEnvTokenRowsForSave } from "@/features/project-settings/ap/lib/ap-env-tokens";
 import {
   CUSTOM_DOMAIN_BINDING_ID_PATTERN,
   generatePlatformAddressId,
@@ -64,30 +64,26 @@ const LEGACY_AP_NETWORK_INPUT_FIELDS = [
 
 interface ApNetworkAppListeningPortsPatch {
   appListeningPorts?: readonly NonNullable<
-    ContainerNetwork["appListeningPorts"]
+    ApNetwork["appListeningPorts"]
   >[number][];
-  privatePort?: ContainerNetwork["privatePort"];
+  privatePort?: ApNetwork["privatePort"];
 }
 
 type ApNetworkSettingsPatch = ApNetworkAppListeningPortsPatch &
   Partial<{
-    customDomains: readonly NonNullable<
-      ContainerNetwork["customDomains"]
-    >[number][];
-    publicAddresses: readonly ContainerNetwork["publicAddresses"][number][];
+    customDomains: readonly NonNullable<ApNetwork["customDomains"]>[number][];
+    publicAddresses: readonly ApNetwork["publicAddresses"][number][];
   }>;
 
-type ApPrivatePortSettingsPatch = Pick<ContainerNetwork, "privatePort">;
+type ApPrivatePortSettingsPatch = Pick<ApNetwork, "privatePort">;
 
 type ApPublicAddressesSettingsPatch = ApNetworkAppListeningPortsPatch & {
-  customDomains?: readonly NonNullable<
-    ContainerNetwork["customDomains"]
-  >[number][];
-  publicAddresses: readonly ContainerNetwork["publicAddresses"][number][];
+  customDomains?: readonly NonNullable<ApNetwork["customDomains"]>[number][];
+  publicAddresses: readonly ApNetwork["publicAddresses"][number][];
 };
 
 interface ApNetworkSettingsPatchOptions {
-  dbDsnReferenceSources?: readonly ContainerEnvDbDsnSource[];
+  dbDsnReferenceSources?: readonly ApEnvDbDsnSource[];
   envRawSource?: string;
   existingCustomDomains?: readonly ExistingCustomDomainBinding[];
   metadata?: Record<string, unknown>;
@@ -97,16 +93,16 @@ interface ApNetworkSettingsPatchOptions {
 export interface ApSettingsDraftPatch {
   args?: readonly string[];
   command?: readonly string[];
-  configMaps?: readonly ContainerConfigMapMount[];
+  configMaps?: readonly ApConfigMapMount[];
   cpuCores?: number;
-  env?: readonly ContainerEnvVar[];
+  env?: readonly ApEnvVar[];
   envRawSource?: string;
   image?: string;
   memoryMib?: number;
   network?: ApNetworkSettingsPatch;
   replicaStrategy?: ApReplicaStrategy;
   replicas?: number;
-  storage?: readonly ContainerStorageMount[];
+  storage?: readonly ApStorageMount[];
 }
 
 function asRecord(v: unknown): Record<string, unknown> | undefined {
@@ -131,16 +127,16 @@ function stringListsEqual(
 }
 
 function normalizeConfigMapMounts(
-  value: readonly ContainerConfigMapMount[] | undefined
-): ContainerConfigMapMount[] {
+  value: readonly ApConfigMapMount[] | undefined
+): ApConfigMapMount[] {
   return (value ?? [])
     .map((item) => ({ path: item.path.trim(), value: item.value }))
     .filter((item) => item.path !== "" || item.value !== "");
 }
 
 function configMapMountsEqual(
-  a: readonly ContainerConfigMapMount[] | undefined,
-  b: readonly ContainerConfigMapMount[] | undefined
+  a: readonly ApConfigMapMount[] | undefined,
+  b: readonly ApConfigMapMount[] | undefined
 ): boolean {
   const left = normalizeConfigMapMounts(a);
   const right = normalizeConfigMapMounts(b);
@@ -156,16 +152,16 @@ function configMapMountsEqual(
 }
 
 function normalizeStorageMounts(
-  value: readonly ContainerStorageMount[] | undefined
-): ContainerStorageMount[] {
+  value: readonly ApStorageMount[] | undefined
+): ApStorageMount[] {
   return (value ?? [])
     .map((item) => ({ path: item.path.trim(), size: item.size.trim() }))
     .filter((item) => item.path !== "" || item.size !== "");
 }
 
 function storageMountsEqual(
-  a: readonly ContainerStorageMount[] | undefined,
-  b: readonly ContainerStorageMount[] | undefined
+  a: readonly ApStorageMount[] | undefined,
+  b: readonly ApStorageMount[] | undefined
 ): boolean {
   const left = normalizeStorageMounts(a);
   const right = normalizeStorageMounts(b);
@@ -191,9 +187,7 @@ function assertApProductForPatch(
   const kind =
     typeof resource.kind === "string" ? resource.kind.trim().toUpperCase() : "";
   if (kind !== "AP") {
-    throw new Error(
-      "Only AP resources can be patched from container settings."
-    );
+    throw new Error("Only AP resources can be patched from AP settings.");
   }
   const meta = asRecord(resource.metadata);
   const name = typeof meta?.name === "string" ? meta.name.trim() : "";
@@ -339,7 +333,7 @@ export function mibToMemoryLimit(mib: number): string {
 
 function buildEnvArray(
   originalEnv: unknown,
-  edited: ContainerEnvVar[]
+  edited: ApEnvVar[]
 ): Record<string, unknown>[] {
   const orig = Array.isArray(originalEnv) ? originalEnv : [];
   const byName = new Map<string, Record<string, unknown>>();
@@ -358,7 +352,7 @@ function buildEnvArray(
     if (e.valueSource === "valueFrom" && e.valueFrom != null) {
       return { name: e.name, valueFrom: e.valueFrom };
     }
-    if (e.value === CONTAINER_ENV_VALUE_FROM_PLACEHOLDER) {
+    if (e.value === AP_ENV_VALUE_FROM_PLACEHOLDER) {
       const prev = byName.get(e.name);
       if (prev != null && prev.valueFrom != null) {
         return { name: e.name, valueFrom: prev.valueFrom };
@@ -441,8 +435,8 @@ function apReplicaStrategiesEqual(
 }
 
 function publicAddressesEqual(
-  a: readonly ContainerNetwork["publicAddresses"][number][] | undefined,
-  b: readonly ContainerNetwork["publicAddresses"][number][] | undefined
+  a: readonly ApNetwork["publicAddresses"][number][] | undefined,
+  b: readonly ApNetwork["publicAddresses"][number][] | undefined
 ): boolean {
   const left = a ?? [];
   const right = b ?? [];
@@ -461,12 +455,8 @@ function publicAddressesEqual(
 }
 
 function customDomainsEqual(
-  a:
-    | readonly NonNullable<ContainerNetwork["customDomains"]>[number][]
-    | undefined,
-  b:
-    | readonly NonNullable<ContainerNetwork["customDomains"]>[number][]
-    | undefined
+  a: readonly NonNullable<ApNetwork["customDomains"]>[number][] | undefined,
+  b: readonly NonNullable<ApNetwork["customDomains"]>[number][] | undefined
 ): boolean {
   const left = a ?? [];
   const right = b ?? [];
@@ -853,7 +843,7 @@ export async function applyApResourceQuotas(
 
 export function patchOpsForApEnvSettings(
   spec: Record<string, unknown> | undefined,
-  env: ContainerEnvVar[],
+  env: ApEnvVar[],
   options: Pick<
     ApNetworkSettingsPatchOptions,
     "dbDsnReferenceSources" | "envRawSource"
@@ -874,7 +864,7 @@ export function patchOpsForApEnvSettings(
     });
   }
 
-  const result = normalizeContainerEnvTokenRowsForSave(
+  const result = normalizeApEnvTokenRowsForSave(
     env,
     options.dbDsnReferenceSources
   );
@@ -897,9 +887,7 @@ function validatedNetworkPort(port: number, label: string): number {
 }
 
 function validatedPlatformAddresses(
-  publicAddresses:
-    | readonly ContainerNetwork["publicAddresses"][number][]
-    | undefined
+  publicAddresses: readonly ApNetwork["publicAddresses"][number][] | undefined
 ): Record<string, unknown>[] | undefined {
   if (publicAddresses == null) {
     return undefined;
@@ -943,7 +931,7 @@ function validatedPlatformAddresses(
 
 function validatedCustomDomains(
   customDomains:
-    | readonly NonNullable<ContainerNetwork["customDomains"]>[number][]
+    | readonly NonNullable<ApNetwork["customDomains"]>[number][]
     | undefined,
   platformAddresses: readonly Record<string, unknown>[] | undefined,
   options: ApNetworkSettingsPatchOptions = {}
@@ -1223,7 +1211,7 @@ export function patchOpsForApSettingsDraft(
 export async function applyApEnv(
   kubeconfig: string,
   claim: Record<string, unknown>,
-  env: ContainerEnvVar[],
+  env: ApEnvVar[],
   options: Pick<
     ApNetworkSettingsPatchOptions,
     "dbDsnReferenceSources" | "envRawSource"

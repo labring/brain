@@ -1,6 +1,6 @@
 "use client";
 
-import type { ContainerCustomDomainCnameVerifier } from "@/features/project-settings/ap/ap-settings-sections";
+import type { ApCustomDomainCnameVerifier } from "@/features/project-settings/ap/ap-settings-sections";
 
 const CNAME_VERIFY_PATH = "/api/project-canvas/custom-domain/cname";
 
@@ -10,7 +10,7 @@ interface CnameVerifyResponse {
   reason?: string;
 }
 
-export const verifyCustomDomainCnameFromApi: ContainerCustomDomainCnameVerifier =
+export const verifyCustomDomainCnameFromApi: ApCustomDomainCnameVerifier =
   async ({ domain, target }) => {
     const response = await fetch(CNAME_VERIFY_PATH, {
       body: JSON.stringify({ domain, target }),

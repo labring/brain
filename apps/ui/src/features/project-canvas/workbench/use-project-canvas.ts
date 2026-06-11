@@ -4,7 +4,6 @@ import {
   useApLifecycleOperations,
   useDbLifecycleOperations,
 } from "@workspace/api/hooks";
-import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
   CanvasMeta,
   CanvasReactFlowProps,
@@ -94,7 +93,7 @@ import type {
   ApSettingsAddDbDsnReferenceIntent,
   ApSettingsPendingDbReference,
 } from "@/features/project-settings/ap/ap-settings-sections";
-import { dbDsnReferenceSourcesFromDbsData } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import { useSettingsLeaveGuardController } from "@/features/project-settings/settings-leave-guard-controller";
 import type {
   ProjectDrawerSurfaceEntry,
@@ -105,7 +104,7 @@ import type { ProjectDbTarget } from "@/features/project-surfaces/target-identit
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 export interface UseProjectCanvasOptions {
-  dbsData?: K8sGetResponse;
+  apEnvironmentDbReferenceSources?: ApEnvironmentDbReferenceSource[];
   edges?: Edge[];
   kubeconfig?: string;
   namespace?: string;
@@ -139,6 +138,8 @@ const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
   "right",
   "top",
 ]);
+const EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES: ApEnvironmentDbReferenceSource[] =
+  [];
 export const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
 
 function viewportFocusNodeIdFromSideRenderModel(
@@ -587,11 +588,9 @@ export function useProjectCanvas(
     },
     [refreshWorkloadLists, surfaceState.main]
   );
-  const dbDsnReferenceSources = useMemo(
-    () =>
-      dbDsnReferenceSourcesFromDbsData(options?.dbsData, options?.namespace),
-    [options?.dbsData, options?.namespace]
-  );
+  const apEnvironmentDbReferenceSources =
+    options?.apEnvironmentDbReferenceSources ??
+    EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES;
   const afterLifecycle = useCallback(async () => {
     try {
       await refreshWorkloadLists?.();
@@ -1006,7 +1005,7 @@ export function useProjectCanvas(
           ...node,
           data: {
             ...data,
-            dbDsnReferenceSources,
+            dbDsnReferenceSources: apEnvironmentDbReferenceSources,
             ...dbReferenceIntentData,
             onAddDbDsnReferenceMutationStart,
             onPendingDbReferencesChange,
@@ -1077,7 +1076,7 @@ export function useProjectCanvas(
         data: {
           ...data,
           ...dbReferenceIntentData,
-          dbDsnReferenceSources,
+          dbDsnReferenceSources: apEnvironmentDbReferenceSources,
           onAddDbDsnReferenceMutationStart,
           onPendingDbReferencesChange,
           onWorkloadMutation: afterLifecycle,
@@ -1093,7 +1092,7 @@ export function useProjectCanvas(
     [
       apAuthReady,
       afterLifecycle,
-      dbDsnReferenceSources,
+      apEnvironmentDbReferenceSources,
       executeCommandPlan,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,

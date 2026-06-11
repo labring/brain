@@ -7,10 +7,12 @@ import {
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 
 export function useTemplateNativeWorkloads(options: {
+  deploymentsRefreshInterval?: K8sNamespacedListRefreshInterval;
   kubeconfig: string;
   labelSelector: string;
   namespace: string;
   refreshInterval?: K8sNamespacedListRefreshInterval;
+  statefulSetsRefreshInterval?: K8sNamespacedListRefreshInterval;
 }): {
   data: {
     deployments: K8sGetResponse | undefined;
@@ -25,14 +27,16 @@ export function useTemplateNativeWorkloads(options: {
     kubeconfig: options.kubeconfig,
     labelSelector: options.labelSelector,
     namespace: options.namespace,
-    refreshInterval: options.refreshInterval,
+    refreshInterval:
+      options.deploymentsRefreshInterval ?? options.refreshInterval,
   });
   const statefulSets = useK8sNamespacedList({
     kind: "statefulsets",
     kubeconfig: options.kubeconfig,
     labelSelector: options.labelSelector,
     namespace: options.namespace,
-    refreshInterval: options.refreshInterval,
+    refreshInterval:
+      options.statefulSetsRefreshInterval ?? options.refreshInterval,
   });
 
   return {

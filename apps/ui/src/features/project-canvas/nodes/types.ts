@@ -18,7 +18,7 @@ import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,
 } from "@/features/project-settings/ap/ap-settings-sections";
-import type { ContainerEnvDbDsnSource } from "@/features/project-settings/ap/lib/container-env-rows";
+import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
 
 // `Node`'s second type parameter must match the node type constants in ./constants.
@@ -43,7 +43,7 @@ export interface CanvasNodeSettingsAccess {
 export interface CanvasContainerNodeData extends Record<string, unknown> {
   actions?: ContainerNodeActions;
   addDbDsnReferenceIntent?: ApSettingsAddDbDsnReferenceIntent | null;
-  dbDsnReferenceSources?: ContainerEnvDbDsnSource[];
+  dbDsnReferenceSources?: ApEnvDbDsnSource[];
   layout?: CanvasNodeLayoutState;
   onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
   onAddDbDsnReferenceMutationStart?: (

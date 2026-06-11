@@ -1,9 +1,9 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type {
-  ContainerNetworkCustomDomain,
-  ContainerNetworkCustomDomainDetail,
-  ContainerNetworkPublicAddress,
+  ApNetworkCustomDomain,
+  ApNetworkCustomDomainDetail,
+  ApNetworkPublicAddress,
 } from "@/features/project-settings/ap/ap-settings-sections";
 
 import {
@@ -87,7 +87,7 @@ function publicAddressIdFromValue(value: unknown): string | undefined {
 
 function publicAddressStatusFromTargetRecord(
   record: Record<string, unknown>
-): Pick<ContainerNetworkPublicAddress, "status"> | undefined {
+): Pick<ApNetworkPublicAddress, "status"> | undefined {
   if (publicAddressIdFromValue(record.id) == null) {
     return undefined;
   }
@@ -100,7 +100,7 @@ function publicAddressStatusFromTargetRecord(
 
 function lifecycleDetail(
   value: unknown
-): ContainerNetworkCustomDomainDetail | undefined {
+): ApNetworkCustomDomainDetail | undefined {
   const record = asRecord(value);
   if (record == null) {
     return undefined;
@@ -120,7 +120,7 @@ function lifecycleDetail(
 
 function customDomainStatusFromRecord(
   record: Record<string, unknown>
-): ContainerNetworkCustomDomain | undefined {
+): ApNetworkCustomDomain | undefined {
   const id = customDomainBindingIdFromValue(record.id);
   const platformAddressId = platformAddressIdFromValue(
     record.platformAddressId
@@ -198,8 +198,8 @@ function customDomainBindingsFromRecords(
 export function entryPointCustomDomainStatusesForAp(
   data: K8sGetResponse | undefined,
   apMetadata: Record<string, unknown>
-): ReadonlyMap<string, ContainerNetworkCustomDomain> {
-  const out = new Map<string, ContainerNetworkCustomDomain>();
+): ReadonlyMap<string, ApNetworkCustomDomain> {
+  const out = new Map<string, ApNetworkCustomDomain>();
   for (const entryPoint of apItemsFromList(data)) {
     if (!entryPointMatchesAp(entryPoint, apMetadata)) {
       continue;
@@ -219,8 +219,8 @@ export function entryPointCustomDomainStatusesForAp(
 export function entryPointPublicAddressStatusesForAp(
   data: K8sGetResponse | undefined,
   apMetadata: Record<string, unknown>
-): ReadonlyMap<string, Pick<ContainerNetworkPublicAddress, "status">> {
-  const out = new Map<string, Pick<ContainerNetworkPublicAddress, "status">>();
+): ReadonlyMap<string, Pick<ApNetworkPublicAddress, "status">> {
+  const out = new Map<string, Pick<ApNetworkPublicAddress, "status">>();
   for (const entryPoint of apItemsFromList(data)) {
     if (!entryPointMatchesAp(entryPoint, apMetadata)) {
       continue;

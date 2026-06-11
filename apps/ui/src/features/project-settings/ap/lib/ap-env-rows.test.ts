@@ -2,23 +2,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  addContainerEnvDbDsnReferenceRow,
-  addContainerEnvRow,
-  containerEnvDbDsnFieldOptions,
-  containerEnvDbDsnReferenceFromValue,
-  containerEnvRowsEqual,
-  containerEnvRowsModelEqual,
-  deleteContainerEnvRow,
-  normalizeContainerEnvRowsForSave,
-  updateContainerEnvRow,
-  validateContainerEnvRows,
-} from "./container-env-rows";
+  addApEnvDbDsnReferenceRow,
+  addApEnvRow,
+  apEnvDbDsnFieldOptions,
+  apEnvDbDsnReferenceFromValue,
+  apEnvRowsEqual,
+  apEnvRowsModelEqual,
+  deleteApEnvRow,
+  normalizeApEnvRowsForSave,
+  updateApEnvRow,
+  validateApEnvRows,
+} from "./ap-env-rows";
 
-test("container env rows add, edit, and delete direct value rows", () => {
-  const added = addContainerEnvRow([]);
+test("AP env rows add, edit, and delete direct value rows", () => {
+  const added = addApEnvRow([]);
   assert.deepEqual(added, [{ name: "NEW_VARIABLE", value: "" }]);
 
-  const edited = updateContainerEnvRow(added, 0, {
+  const edited = updateApEnvRow(added, 0, {
     name: "DATABASE_URL",
     value: "postgres://db:5432/app",
   });
@@ -26,11 +26,11 @@ test("container env rows add, edit, and delete direct value rows", () => {
     { name: "DATABASE_URL", value: "postgres://db:5432/app" },
   ]);
 
-  assert.deepEqual(deleteContainerEnvRow(edited, 0), []);
+  assert.deepEqual(deleteApEnvRow(edited, 0), []);
 });
 
-test("container env rows reject duplicate names", () => {
-  const result = validateContainerEnvRows([
+test("AP env rows reject duplicate names", () => {
+  const result = validateApEnvRows([
     { name: "DATABASE_URL", value: "postgres://primary" },
     { name: "DATABASE_URL", value: "postgres://replica" },
   ]);
@@ -45,9 +45,9 @@ test("container env rows reject duplicate names", () => {
   ]);
 });
 
-test("container env rows normalize direct rows and compare by saved shape", () => {
+test("AP env rows normalize direct rows and compare by saved shape", () => {
   assert.deepEqual(
-    normalizeContainerEnvRowsForSave([
+    normalizeApEnvRowsForSave([
       {
         name: " DATABASE_URL ",
         value: "postgres://db:5432/app",
@@ -58,7 +58,7 @@ test("container env rows normalize direct rows and compare by saved shape", () =
   );
 
   assert.equal(
-    containerEnvRowsEqual(
+    apEnvRowsEqual(
       [{ name: "DATABASE_URL", value: "postgres://db:5432/app" }],
       [
         {
@@ -72,7 +72,7 @@ test("container env rows normalize direct rows and compare by saved shape", () =
   );
 
   assert.equal(
-    containerEnvRowsEqual(
+    apEnvRowsEqual(
       [
         {
           name: "DATABASE_PASSWORD",
@@ -94,9 +94,9 @@ test("container env rows normalize direct rows and compare by saved shape", () =
   );
 });
 
-test("container env rows compare primitive DB references by saved Secret ref", () => {
+test("AP env rows compare primitive DB references by saved Secret ref", () => {
   assert.equal(
-    containerEnvRowsEqual(
+    apEnvRowsEqual(
       [
         {
           dbDsn: {
@@ -138,7 +138,7 @@ test("container env rows compare primitive DB references by saved Secret ref", (
   );
 });
 
-test("container env rows model comparison preserves editor reference rows", () => {
+test("AP env rows model comparison preserves editor reference rows", () => {
   const direct = [{ name: "DATABASE_URL", value: "postgres://private" }];
   const reference = [
     {
@@ -153,10 +153,10 @@ test("container env rows model comparison preserves editor reference rows", () =
     },
   ];
 
-  assert.equal(containerEnvRowsEqual(direct, reference), true);
-  assert.equal(containerEnvRowsModelEqual(direct, reference), false);
+  assert.equal(apEnvRowsEqual(direct, reference), true);
+  assert.equal(apEnvRowsModelEqual(direct, reference), false);
   assert.equal(
-    containerEnvRowsModelEqual(direct, [
+    apEnvRowsModelEqual(direct, [
       {
         name: "DATABASE_URL",
         value: "postgres://private",
@@ -167,7 +167,7 @@ test("container env rows model comparison preserves editor reference rows", () =
   );
 });
 
-test("container env rows add DB DSN references with private DSN as the default field", () => {
+test("AP env rows add DB DSN references with private DSN as the default field", () => {
   const dbs = [
     {
       name: "postgres",
@@ -177,12 +177,12 @@ test("container env rows add DB DSN references with private DSN as the default f
     },
   ];
 
-  assert.deepEqual(containerEnvDbDsnFieldOptions(dbs[0]), [
+  assert.deepEqual(apEnvDbDsnFieldOptions(dbs[0]), [
     { field: "private", label: "Private DSN", value: "postgres://private" },
     { field: "public", label: "Public DSN", value: "postgres://public" },
   ]);
 
-  const rows = addContainerEnvDbDsnReferenceRow([], dbs);
+  const rows = addApEnvDbDsnReferenceRow([], dbs);
 
   assert.deepEqual(rows, [
     {
@@ -196,16 +196,16 @@ test("container env rows add DB DSN references with private DSN as the default f
       valueSource: "dbDsn",
     },
   ]);
-  assert.deepEqual(normalizeContainerEnvRowsForSave(rows), [
+  assert.deepEqual(normalizeApEnvRowsForSave(rows), [
     { name: "DATABASE_URL", value: "postgres://private" },
   ]);
 });
 
-test("container env rows name DB reference rows by selected field", () => {
+test("AP env rows name DB reference rows by selected field", () => {
   const secretKeyRef = { key: "user", name: "postgres-conn-credential" };
 
   assert.deepEqual(
-    addContainerEnvDbDsnReferenceRow(
+    addApEnvDbDsnReferenceRow(
       [{ name: "DATABASE_USER", value: "manual" }],
       [
         {
@@ -234,9 +234,9 @@ test("container env rows name DB reference rows by selected field", () => {
   );
 });
 
-test("container env rows omit unavailable public DSNs and cannot add DBs without DSNs", () => {
+test("AP env rows omit unavailable public DSNs and cannot add DBs without DSNs", () => {
   assert.deepEqual(
-    containerEnvDbDsnFieldOptions({
+    apEnvDbDsnFieldOptions({
       name: "private-only",
       namespace: "default",
       privateDsn: "postgres://private",
@@ -245,15 +245,12 @@ test("container env rows omit unavailable public DSNs and cannot add DBs without
   );
 
   assert.deepEqual(
-    addContainerEnvDbDsnReferenceRow(
-      [],
-      [{ name: "empty", namespace: "default" }]
-    ),
+    addApEnvDbDsnReferenceRow([], [{ name: "empty", namespace: "default" }]),
     []
   );
 });
 
-test("container env rows offer primitive DB fields from Secret key evidence", () => {
+test("AP env rows offer primitive DB fields from Secret key evidence", () => {
   const source = {
     name: "postgres",
     namespace: "default",
@@ -265,7 +262,7 @@ test("container env rows offer primitive DB fields from Secret key evidence", ()
     },
   };
 
-  assert.deepEqual(containerEnvDbDsnFieldOptions(source), [
+  assert.deepEqual(apEnvDbDsnFieldOptions(source), [
     {
       field: "username",
       label: "Username",
@@ -297,7 +294,7 @@ test("container env rows offer primitive DB fields from Secret key evidence", ()
   ]);
 });
 
-test("container env rows reconstruct DB DSN references only by exact value equality", () => {
+test("AP env rows reconstruct DB DSN references only by exact value equality", () => {
   const sources = [
     {
       name: "postgres",
@@ -308,7 +305,7 @@ test("container env rows reconstruct DB DSN references only by exact value equal
   ];
 
   assert.deepEqual(
-    containerEnvDbDsnReferenceFromValue("postgres://private", sources),
+    apEnvDbDsnReferenceFromValue("postgres://private", sources),
     {
       dbDsn: {
         dbName: "postgres",
@@ -320,14 +317,11 @@ test("container env rows reconstruct DB DSN references only by exact value equal
     }
   );
   assert.equal(
-    containerEnvDbDsnReferenceFromValue("postgres://private ", sources),
+    apEnvDbDsnReferenceFromValue("postgres://private ", sources),
     undefined
   );
   assert.equal(
-    containerEnvDbDsnReferenceFromValue(
-      "postgres://private?looks-like-dsn",
-      sources
-    ),
+    apEnvDbDsnReferenceFromValue("postgres://private?looks-like-dsn", sources),
     undefined
   );
 });

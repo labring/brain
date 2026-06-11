@@ -1,4 +1,7 @@
-import { canvasResourceKey } from "../nodes/resource-identity";
+import {
+  canvasLayoutNodeKey,
+  canvasLayoutNodesEqual,
+} from "./layout-node-equality";
 import type { CanvasLayoutNode } from "./types";
 
 interface TimerApi {
@@ -7,23 +10,6 @@ interface TimerApi {
     callback: () => void | Promise<void>,
     delayMs: number
   ) => unknown;
-}
-
-function layoutNodeKey(node: CanvasLayoutNode) {
-  return `${node.ref.kind}:${node.ref.namespace}:${node.ref.name}`;
-}
-
-function layoutNodesEqual(a: CanvasLayoutNode, b: CanvasLayoutNode) {
-  return (
-    a.expanded === b.expanded &&
-    a.lastSeenUid === b.lastSeenUid &&
-    a.position.x === b.position.x &&
-    a.position.y === b.position.y &&
-    a.ref.kind === b.ref.kind &&
-    a.ref.name === b.ref.name &&
-    a.ref.namespace === b.ref.namespace &&
-    a.stackOrder === b.stackOrder
-  );
 }
 
 export interface CanvasLayoutNodeSaveScheduler {
@@ -56,7 +42,7 @@ export function createCanvasLayoutNodeSaveScheduler(
     if (nodes.length > 0) {
       await options.save(nodes);
       for (const node of nodes) {
-        saved.set(layoutNodeKey(node), node);
+        saved.set(canvasLayoutNodeKey(node), node);
       }
     }
   };
@@ -65,9 +51,9 @@ export function createCanvasLayoutNodeSaveScheduler(
     cancel,
     flush,
     schedule: (node) => {
-      const key = canvasResourceKey(node.ref);
+      const key = canvasLayoutNodeKey(node);
       const previous = pending.get(key) ?? saved.get(key);
-      if (previous !== undefined && layoutNodesEqual(previous, node)) {
+      if (previous !== undefined && canvasLayoutNodesEqual(previous, node)) {
         return;
       }
       pending.set(key, node);

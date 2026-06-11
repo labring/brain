@@ -1,18 +1,18 @@
 import {
-  type ContainerEnvDbDsnFieldOption,
-  type ContainerEnvDbDsnSource,
-  type ContainerEnvDbReferenceField,
-  type ContainerEnvRow,
-  containerEnvDbDsnFieldOptions,
-  containerEnvDbReferenceRowPatch,
+  type ApEnvDbDsnFieldOption,
+  type ApEnvDbDsnSource,
+  type ApEnvDbReferenceField,
+  type ApEnvRow,
+  apEnvDbDsnFieldOptions,
+  apEnvDbReferenceRowPatch,
   isKubernetesEnvName,
-  normalizeContainerEnvRowsForSave,
-  validateContainerEnvRows,
-} from "./container-env-rows";
+  normalizeApEnvRowsForSave,
+  validateApEnvRows,
+} from "./ap-env-rows";
 
 const EDITOR_TOKEN_RE = /\$\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}/g;
 const K8S_ENV_EXPANSION_RE = /\$\(([A-Za-z_][A-Za-z0-9_.-]*)\)/g;
-const DB_HELPER_NAMES: Record<ContainerEnvDbReferenceField, string> = {
+const DB_HELPER_NAMES: Record<ApEnvDbReferenceField, string> = {
   host: "PGHOST",
   password: "PGPASSWORD",
   port: "PGPORT",
@@ -37,7 +37,7 @@ export interface EnvTokenDiagnostic {
 
 export interface EnvTokenSaveResult {
   diagnostics: EnvTokenDiagnostic[];
-  env: ContainerEnvRow[];
+  env: ApEnvRow[];
   valid: boolean;
 }
 
@@ -56,22 +56,22 @@ interface TokenMatch {
 
 interface HelperSpec {
   dbKey: string;
-  field: ContainerEnvDbReferenceField;
+  field: ApEnvDbReferenceField;
   name: string;
-  patch: Pick<ContainerEnvRow, "dbDsn" | "value" | "valueFrom" | "valueSource">;
+  patch: Pick<ApEnvRow, "dbDsn" | "value" | "valueFrom" | "valueSource">;
 }
 
 interface SourceFieldMatch {
-  field: ContainerEnvDbDsnFieldOption;
+  field: ApEnvDbDsnFieldOption;
   helperName: string;
-  source: ContainerEnvDbDsnSource;
+  source: ApEnvDbDsnSource;
 }
 
 interface ResolveTokenContext {
-  dbSources: readonly ContainerEnvDbDsnSource[];
+  dbSources: readonly ApEnvDbDsnSource[];
   existingNames: ReadonlySet<string>;
   ownerByName: ReadonlyMap<string, string>;
-  row: ContainerEnvRow;
+  row: ApEnvRow;
   rowIndex: number;
 }
 
@@ -81,13 +81,13 @@ interface ResolveTokenResult {
   resolved: boolean;
 }
 
-export function containerEnvDbSourceKey(
-  source: Pick<ContainerEnvDbDsnSource, "name" | "namespace">
+export function apEnvDbSourceKey(
+  source: Pick<ApEnvDbDsnSource, "name" | "namespace">
 ): string {
   return `${source.namespace}/${source.name}`;
 }
 
-function dbIdentityForName(source: ContainerEnvDbDsnSource): string {
+function dbIdentityForName(source: ApEnvDbDsnSource): string {
   return source.name
     .trim()
     .toUpperCase()
@@ -96,8 +96,8 @@ function dbIdentityForName(source: ContainerEnvDbDsnSource): string {
 }
 
 function helperNameForField(
-  source: ContainerEnvDbDsnSource,
-  field: ContainerEnvDbReferenceField
+  source: ApEnvDbDsnSource,
+  field: ApEnvDbReferenceField
 ): string {
   if (field === "private" || field === "public") {
     const identity = dbIdentityForName(source);
@@ -114,11 +114,11 @@ function helperNameWithConflicts({
   source,
 }: {
   existingNames: ReadonlySet<string>;
-  field: ContainerEnvDbReferenceField;
+  field: ApEnvDbReferenceField;
   ownerByName: ReadonlyMap<string, string>;
-  source: ContainerEnvDbDsnSource;
+  source: ApEnvDbDsnSource;
 }): string {
-  const dbKey = containerEnvDbSourceKey(source);
+  const dbKey = apEnvDbSourceKey(source);
   const base = helperNameForField(source, field);
   const owner = ownerByName.get(base);
   if ((!existingNames.has(base) && owner === undefined) || owner === dbKey) {
@@ -158,23 +158,23 @@ function parseEditorTokens(value: string): TokenMatch[] {
   return matches;
 }
 
-export function containerEnvValueToEditorTokens(value: string): string {
+export function apEnvValueToEditorTokens(value: string): string {
   return value.replaceAll(K8S_ENV_EXPANSION_RE, (_match, name: string) => {
     return `\${{${name}}}`;
   });
 }
 
-export function containerEnvValueToKubernetesExpansion(value: string): string {
+export function apEnvValueToKubernetesExpansion(value: string): string {
   return value.replaceAll(EDITOR_TOKEN_RE, (_match, name: string) => {
     return `$(${name})`;
   });
 }
 
-function rowIsAutomaticHelper(row: ContainerEnvRow): boolean {
+function rowIsAutomaticHelper(row: ApEnvRow): boolean {
   return row.helper?.automatic === true;
 }
 
-function rowDbKey(row: ContainerEnvRow): string {
+function rowDbKey(row: ApEnvRow): string {
   if (row.dbDsn == null) {
     return "";
   }
@@ -182,22 +182,22 @@ function rowDbKey(row: ContainerEnvRow): string {
 }
 
 function sourceFromKey(
-  dbSources: readonly ContainerEnvDbDsnSource[],
+  dbSources: readonly ApEnvDbDsnSource[],
   key: string | undefined
-): ContainerEnvDbDsnSource | undefined {
+): ApEnvDbDsnSource | undefined {
   if (key == null || key === "") {
     return undefined;
   }
-  return dbSources.find((source) => containerEnvDbSourceKey(source) === key);
+  return dbSources.find((source) => apEnvDbSourceKey(source) === key);
 }
 
 function fieldOptionByName(
-  source: ContainerEnvDbDsnSource,
+  source: ApEnvDbDsnSource,
   tokenName: string,
   existingNames: ReadonlySet<string>,
   ownerByName: ReadonlyMap<string, string>
 ): SourceFieldMatch | undefined {
-  for (const field of containerEnvDbDsnFieldOptions(source)) {
+  for (const field of apEnvDbDsnFieldOptions(source)) {
     const helperName = helperNameWithConflicts({
       existingNames,
       field: field.field,
@@ -212,8 +212,8 @@ function fieldOptionByName(
 }
 
 function findDbTokenMatch(
-  dbSources: readonly ContainerEnvDbDsnSource[],
-  row: ContainerEnvRow,
+  dbSources: readonly ApEnvDbDsnSource[],
+  row: ApEnvRow,
   tokenName: string,
   existingNames: ReadonlySet<string>,
   ownerByName: ReadonlyMap<string, string>
@@ -248,12 +248,12 @@ function findDbTokenMatch(
 }
 
 function helperSpecForMatch(match: SourceFieldMatch): HelperSpec {
-  const dbKey = containerEnvDbSourceKey(match.source);
+  const dbKey = apEnvDbSourceKey(match.source);
   return {
     dbKey,
     field: match.field.field,
     name: match.helperName,
-    patch: containerEnvDbReferenceRowPatch(match.source, match.field),
+    patch: apEnvDbReferenceRowPatch(match.source, match.field),
   };
 }
 
@@ -307,7 +307,7 @@ function resolveTokenName({
   return { helper, resolved: true };
 }
 
-function referencedTokenNames(rows: readonly ContainerEnvRow[]): Set<string> {
+function referencedTokenNames(rows: readonly ApEnvRow[]): Set<string> {
   const names = new Set<string>();
   for (const row of rows) {
     for (const token of parseEditorTokens(row.value)) {
@@ -318,7 +318,7 @@ function referencedTokenNames(rows: readonly ContainerEnvRow[]): Set<string> {
 }
 
 function firstReferenceIndexByToken(
-  rows: readonly ContainerEnvRow[]
+  rows: readonly ApEnvRow[]
 ): Map<string, number> {
   const first = new Map<string, number>();
   rows.forEach((row, index) => {
@@ -331,21 +331,19 @@ function firstReferenceIndexByToken(
   return first;
 }
 
-function rowsWithConvertedSavedValues(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRow[] {
+function rowsWithConvertedSavedValues(rows: readonly ApEnvRow[]): ApEnvRow[] {
   return rows.map((row) => ({
     ...row,
     value:
       row.valueSource === "valueFrom"
         ? row.value
-        : containerEnvValueToKubernetesExpansion(row.value),
+        : apEnvValueToKubernetesExpansion(row.value),
   }));
 }
 
 function rowsWithInferredReferenceDbKeys(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRow[] {
+  rows: readonly ApEnvRow[]
+): ApEnvRow[] {
   const helperSourceByName = new Map<string, string>();
   for (const row of rows) {
     const sourceDbKey = row.helper?.sourceDbKey;
@@ -374,15 +372,13 @@ function rowsWithInferredReferenceDbKeys(
   });
 }
 
-function stripTokenMetadata(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRow[] {
+function stripTokenMetadata(rows: readonly ApEnvRow[]): ApEnvRow[] {
   return rows.map(
     ({ helper: _helper, referenceDbKey: _referenceDbKey, ...row }) => row
   );
 }
 
-function helperRowFromSpec(spec: HelperSpec): ContainerEnvRow {
+function helperRowFromSpec(spec: HelperSpec): ApEnvRow {
   return {
     ...spec.patch,
     helper: {
@@ -395,11 +391,11 @@ function helperRowFromSpec(spec: HelperSpec): ContainerEnvRow {
 }
 
 function sortRowsWithHelpersNearFirstUse(
-  rows: readonly ContainerEnvRow[]
-): ContainerEnvRow[] {
+  rows: readonly ApEnvRow[]
+): ApEnvRow[] {
   const firstUse = firstReferenceIndexByToken(rows);
-  const helperByName = new Map<string, ContainerEnvRow>();
-  const baseRows: ContainerEnvRow[] = [];
+  const helperByName = new Map<string, ApEnvRow>();
+  const baseRows: ApEnvRow[] = [];
   for (const row of rows) {
     if (rowIsAutomaticHelper(row)) {
       helperByName.set(row.name, row);
@@ -408,7 +404,7 @@ function sortRowsWithHelpersNearFirstUse(
     }
   }
 
-  const out: ContainerEnvRow[] = [];
+  const out: ApEnvRow[] = [];
   baseRows.forEach((row, baseIndex) => {
     out.push(row);
     const helperNames = Array.from(helperByName.keys()).filter(
@@ -428,7 +424,7 @@ function sortRowsWithHelpersNearFirstUse(
 }
 
 function automaticHelperOwnerByName(
-  rows: readonly ContainerEnvRow[]
+  rows: readonly ApEnvRow[]
 ): Map<string, string> {
   const ownerByName = new Map<string, string>();
   for (const row of rows) {
@@ -443,7 +439,7 @@ function automaticHelperOwnerByName(
   return ownerByName;
 }
 
-function helperEquivalent(row: ContainerEnvRow, spec: HelperSpec): boolean {
+function helperEquivalent(row: ApEnvRow, spec: HelperSpec): boolean {
   if (row.valueSource !== spec.patch.valueSource) {
     return false;
   }
@@ -460,8 +456,8 @@ function helperEquivalent(row: ContainerEnvRow, spec: HelperSpec): boolean {
 }
 
 function helperMetadataFromSavedRow(
-  row: ContainerEnvRow
-): ContainerEnvRow["helper"] | undefined {
+  row: ApEnvRow
+): ApEnvRow["helper"] | undefined {
   if (row.helper != null) {
     return row.helper;
   }
@@ -475,10 +471,10 @@ function helperMetadataFromSavedRow(
   };
 }
 
-export function refreshContainerEnvTokenDraft(
-  rows: readonly ContainerEnvRow[],
-  dbSources: readonly ContainerEnvDbDsnSource[] = []
-): { diagnostics: EnvTokenDiagnostic[]; rows: ContainerEnvRow[] } {
+export function refreshApEnvTokenDraft(
+  rows: readonly ApEnvRow[],
+  dbSources: readonly ApEnvDbDsnSource[] = []
+): { diagnostics: EnvTokenDiagnostic[]; rows: ApEnvRow[] } {
   const referenced = referencedTokenNames(rows);
   const keptRows = rows.filter(
     (row) => !rowIsAutomaticHelper(row) || referenced.has(row.name)
@@ -544,12 +540,12 @@ export function refreshContainerEnvTokenDraft(
   };
 }
 
-export function normalizeContainerEnvTokenRowsForSave(
-  rows: readonly ContainerEnvRow[],
-  dbSources: readonly ContainerEnvDbDsnSource[] = []
+export function normalizeApEnvTokenRowsForSave(
+  rows: readonly ApEnvRow[],
+  dbSources: readonly ApEnvDbDsnSource[] = []
 ): EnvTokenSaveResult {
-  const refreshed = refreshContainerEnvTokenDraft(rows, dbSources);
-  const validation = validateContainerEnvRows(refreshed.rows);
+  const refreshed = refreshApEnvTokenDraft(rows, dbSources);
+  const validation = validateApEnvRows(refreshed.rows);
   const diagnostics: EnvTokenDiagnostic[] = [
     ...refreshed.diagnostics,
     ...validation.errors.map((error) => ({
@@ -565,17 +561,17 @@ export function normalizeContainerEnvTokenRowsForSave(
 
   return {
     diagnostics,
-    env: normalizeContainerEnvRowsForSave(
+    env: normalizeApEnvRowsForSave(
       stripTokenMetadata(rowsWithConvertedSavedValues(refreshed.rows))
     ),
     valid: true,
   };
 }
 
-export function containerEnvRowsFromSavedEnv(
-  rows: readonly ContainerEnvRow[],
-  dbSources: readonly ContainerEnvDbDsnSource[] = []
-): ContainerEnvRow[] {
+export function apEnvRowsFromSavedEnv(
+  rows: readonly ApEnvRow[],
+  dbSources: readonly ApEnvDbDsnSource[] = []
+): ApEnvRow[] {
   const withEditorValues = rowsWithInferredReferenceDbKeys(
     rows.map((row) => {
       const helper = helperMetadataFromSavedRow(row);
@@ -585,17 +581,17 @@ export function containerEnvRowsFromSavedEnv(
         value:
           row.valueSource === "valueFrom"
             ? row.value
-            : containerEnvValueToEditorTokens(row.value),
+            : apEnvValueToEditorTokens(row.value),
       };
     })
   );
-  return refreshContainerEnvTokenDraft(withEditorValues, dbSources).rows;
+  return refreshApEnvTokenDraft(withEditorValues, dbSources).rows;
 }
 
-export function deleteContainerEnvTokenRow(
-  rows: readonly ContainerEnvRow[],
+export function deleteApEnvTokenRow(
+  rows: readonly ApEnvRow[],
   index: number
-): { diagnostic?: EnvTokenDiagnostic; rows: ContainerEnvRow[] } {
+): { diagnostic?: EnvTokenDiagnostic; rows: ApEnvRow[] } {
   const row = rows[index];
   if (row === undefined) {
     return { rows: [...rows] };
@@ -614,11 +610,11 @@ export function deleteContainerEnvTokenRow(
   return { rows: rows.filter((_, rowIndex) => rowIndex !== index) };
 }
 
-export function renameContainerEnvTokenRow(
-  rows: readonly ContainerEnvRow[],
+export function renameApEnvTokenRow(
+  rows: readonly ApEnvRow[],
   index: number,
   name: string
-): ContainerEnvRow[] {
+): ApEnvRow[] {
   const previousName = rows[index]?.name;
   if (previousName == null || previousName === name) {
     return rows.map((row, rowIndex) =>
@@ -636,9 +632,7 @@ export function renameContainerEnvTokenRow(
   }));
 }
 
-export function markContainerEnvTokenRowManual(
-  row: ContainerEnvRow
-): ContainerEnvRow {
+export function markApEnvTokenRowManual(row: ApEnvRow): ApEnvRow {
   if (!rowIsAutomaticHelper(row)) {
     if (row.dbDsn == null && row.valueSource !== "dbDsn") {
       return row;
@@ -669,17 +663,17 @@ export function markContainerEnvTokenRowManual(
   return next;
 }
 
-export function updateContainerEnvTokenRow(
-  rows: readonly ContainerEnvRow[],
+export function updateApEnvTokenRow(
+  rows: readonly ApEnvRow[],
   index: number,
-  patch: Partial<ContainerEnvRow>
-): ContainerEnvRow[] {
+  patch: Partial<ApEnvRow>
+): ApEnvRow[] {
   const target = rows[index];
   const nextRows =
     target !== undefined &&
     patch.name !== undefined &&
     patch.name !== target.name
-      ? renameContainerEnvTokenRow(rows, index, patch.name)
+      ? renameApEnvTokenRow(rows, index, patch.name)
       : [...rows];
 
   return nextRows.map((row, rowIndex) => {
@@ -692,18 +686,18 @@ export function updateContainerEnvTokenRow(
       patch.valueSource !== undefined ||
       patch.dbDsn !== undefined;
     const merged = { ...row, ...patch };
-    return sourceChanging ? markContainerEnvTokenRowManual(merged) : merged;
+    return sourceChanging ? markApEnvTokenRowManual(merged) : merged;
   });
 }
 
-export function buildContainerEnvTokenMenuItems({
+export function buildApEnvTokenMenuItems({
   dbSources,
   rows,
   row,
 }: {
-  dbSources: readonly ContainerEnvDbDsnSource[];
-  row: ContainerEnvRow;
-  rows: readonly ContainerEnvRow[];
+  dbSources: readonly ApEnvDbDsnSource[];
+  row: ApEnvRow;
+  rows: readonly ApEnvRow[];
 }): EnvTokenMenuItem[] {
   const items = new Map<string, EnvTokenMenuItem>();
   for (const candidate of rows) {
@@ -728,7 +722,7 @@ export function buildContainerEnvTokenMenuItems({
         .filter(Boolean)
     );
     const ownerByName = automaticHelperOwnerByName(rows);
-    for (const field of containerEnvDbDsnFieldOptions(selectedSource)) {
+    for (const field of apEnvDbDsnFieldOptions(selectedSource)) {
       const token = helperNameWithConflicts({
         existingNames,
         field: field.field,
@@ -750,7 +744,7 @@ export function buildContainerEnvTokenMenuItems({
   return Array.from(items.values());
 }
 
-export function insertContainerEnvTokenText(
+export function insertApEnvTokenText(
   value: string,
   token: string,
   selectionStart: number | null | undefined,
@@ -765,9 +759,9 @@ export function insertContainerEnvTokenText(
   return `${value.slice(0, start)}${safeToken}${value.slice(end)}`;
 }
 
-export function unresolvedContainerEnvTokenDiagnostics(
-  rows: readonly ContainerEnvRow[],
-  dbSources: readonly ContainerEnvDbDsnSource[] = []
+export function unresolvedApEnvTokenDiagnostics(
+  rows: readonly ApEnvRow[],
+  dbSources: readonly ApEnvDbDsnSource[] = []
 ): EnvTokenDiagnostic[] {
-  return refreshContainerEnvTokenDraft(rows, dbSources).diagnostics;
+  return refreshApEnvTokenDraft(rows, dbSources).diagnostics;
 }

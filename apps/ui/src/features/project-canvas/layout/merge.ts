@@ -11,6 +11,7 @@ import {
   cloneCanvasLayoutDocument,
   cloneCanvasLayoutNode,
 } from "./cleanup";
+import { canvasLayoutNodesEqual } from "./layout-node-equality";
 import {
   applyCanvasStackOrderToNodes,
   canvasNodeStackOrder,
@@ -180,22 +181,8 @@ function layoutDocumentsEqual(
     a.nodes.length === b.nodes.length &&
     a.nodes.every((node, index) => {
       const other = b.nodes[index];
-      return other !== undefined && layoutNodesEqual(node, other);
+      return other !== undefined && canvasLayoutNodesEqual(node, other);
     })
-  );
-}
-
-function layoutNodesEqual(a: CanvasLayoutNode, b: CanvasLayoutNode): boolean {
-  return (
-    a.expanded === b.expanded &&
-    a.lastSeenUid === b.lastSeenUid &&
-    a.orphanedAt === b.orphanedAt &&
-    a.position.x === b.position.x &&
-    a.position.y === b.position.y &&
-    a.ref.kind === b.ref.kind &&
-    a.ref.name === b.ref.name &&
-    a.ref.namespace === b.ref.namespace &&
-    a.stackOrder === b.stackOrder
   );
 }
 

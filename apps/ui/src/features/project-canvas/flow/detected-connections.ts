@@ -1,13 +1,16 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { Edge, Node } from "@xyflow/react";
-import { dbDsnReferenceSourceFromDb } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import {
+  type ApEnvironmentDbReferenceSource,
+  dbDsnReferenceSourceFromDb,
+} from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import { resolveApEnvRawSourceReferences } from "@/features/project-settings/ap/lib/ap-env-raw-source";
 import {
-  type ContainerEnvDbDsnSource,
-  containerEnvDbDsnReferenceFromValue,
-  containerEnvDbSecretReferenceFromValueFrom,
-} from "@/features/project-settings/ap/lib/container-env-rows";
+  type ApEnvDbDsnSource,
+  apEnvDbDsnReferenceFromValue,
+  apEnvDbSecretReferenceFromValueFrom,
+} from "@/features/project-settings/ap/lib/ap-env-rows";
 import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,
@@ -30,6 +33,7 @@ export interface CanvasDetectedConnection {
 }
 
 export interface DetectCanvasConnectionsOptions {
+  apEnvironmentDbReferenceSources?: readonly ApEnvironmentDbReferenceSource[];
   apsData: K8sGetResponse | undefined;
   dbsData: K8sGetResponse | undefined;
   entryPointsData: K8sGetResponse | undefined;
@@ -295,8 +299,8 @@ function addNetworkPublicAddressConnections(
 function dbDsnReferenceSourcesFromDbs(
   dbs: readonly unknown[],
   namespaceFallback: string | undefined
-): ContainerEnvDbDsnSource[] {
-  const dbDsnSources: ContainerEnvDbDsnSource[] = [];
+): ApEnvironmentDbReferenceSource[] {
+  const dbDsnSources: ApEnvironmentDbReferenceSource[] = [];
   for (const db of dbs) {
     const dsnSource = dbDsnReferenceSourceFromDb(db, namespaceFallback);
     if (dsnSource !== undefined) {
@@ -310,11 +314,11 @@ function addSecretBackedApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   source: CanvasConnectionResourceRef,
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   ap: unknown
 ): void {
   for (const valueFrom of valueFromRefsFromAp(ap)) {
-    const reference = containerEnvDbSecretReferenceFromValueFrom(
+    const reference = apEnvDbSecretReferenceFromValueFrom(
       valueFrom,
       dbDsnSources
     );
@@ -337,14 +341,11 @@ function addDsnBackedApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   source: CanvasConnectionResourceRef,
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   ap: unknown
 ): void {
   for (const envValue of envValuesFromAp(ap)) {
-    const reference = containerEnvDbDsnReferenceFromValue(
-      envValue,
-      dbDsnSources
-    );
+    const reference = apEnvDbDsnReferenceFromValue(envValue, dbDsnSources);
     const target = resourceRef(
       "DB",
       reference?.dbDsn?.dbName,
@@ -364,7 +365,7 @@ function addRawSourceApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   source: CanvasConnectionResourceRef,
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   ap: unknown
 ): void {
   const rawSource = envRawSourceFromAp(ap);
@@ -392,7 +393,7 @@ function addApDbConnections(
   connections: CanvasDetectedConnection[],
   seenConnectionKeys: Set<string>,
   aps: readonly unknown[],
-  dbDsnSources: readonly ContainerEnvDbDsnSource[],
+  dbDsnSources: readonly ApEnvDbDsnSource[],
   namespaceFallback: string | undefined
 ): void {
   for (const ap of aps) {
@@ -425,6 +426,7 @@ function addApDbConnections(
 }
 
 export function detectCanvasConnections({
+  apEnvironmentDbReferenceSources,
   apsData,
   dbsData,
   entryPointsData,
@@ -433,6 +435,9 @@ export function detectCanvasConnections({
   const aps = apItemsFromList(apsData);
   const dbs = apItemsFromList(dbsData);
   const entryPoints = apItemsFromList(entryPointsData);
+  const dbReferenceSources =
+    apEnvironmentDbReferenceSources ??
+    dbDsnReferenceSourcesFromDbs(dbs, namespaceFallback);
   const connections: CanvasDetectedConnection[] = [];
   const seenConnectionKeys = new Set<string>();
   const entryPointRefsByApKey = entryPointRefByApKey(
@@ -457,7 +462,7 @@ export function detectCanvasConnections({
     connections,
     seenConnectionKeys,
     aps,
-    dbDsnReferenceSourcesFromDbs(dbs, namespaceFallback),
+    dbReferenceSources,
     namespaceFallback
   );
 

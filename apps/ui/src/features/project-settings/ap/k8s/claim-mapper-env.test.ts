@@ -9,7 +9,7 @@ import {
   useApSettingsSections,
 } from "@/features/project-settings/ap/ap-settings-sections";
 
-import { claimToContainerSettings } from "./claim-mapper";
+import { claimToApSettings } from "./claim-mapper";
 import { dbDsnReferenceSourcesFromDbsData } from "./db-dsn-reference-sources";
 
 const noop = () => {
@@ -61,7 +61,7 @@ test("AP claim settings reconstruct direct and non-direct environment rows", () 
     name: "external-db",
   };
 
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -97,7 +97,7 @@ test("AP claim settings exposes saved env raw source as canonical AP environment
     "RUNTIME=$(DATABASE_URL)",
   ].join("\n");
 
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -123,7 +123,7 @@ test("AP claim settings exposes saved env raw source as canonical AP environment
 });
 
 test("AP claim settings maps private-only network from desired and observed AP state", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -159,7 +159,7 @@ test("AP claim settings maps private-only network from desired and observed AP s
 });
 
 test("AP claim settings maps public addresses from observed AP network state", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -224,7 +224,7 @@ test("AP claim settings maps public addresses from observed AP network state", (
 });
 
 test("AP claim settings prefers EntryPoint target health over AP-projected Public Address status", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -291,7 +291,7 @@ test("AP claim settings prefers EntryPoint target health over AP-projected Publi
 });
 
 test("AP claim settings falls back to desired Platform Addresses while observed URLs are pending", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: {
@@ -331,7 +331,7 @@ test("AP claim settings falls back to desired Platform Addresses while observed 
 });
 
 test("AP claim settings maps desired Custom Domain Bindings into the network draft", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: {
@@ -399,7 +399,7 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
 });
 
 test("AP claim settings prefers EntryPoint Custom Domain Binding health over AP projection", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: {
@@ -509,7 +509,7 @@ test("AP claim settings prefers EntryPoint Custom Domain Binding health over AP 
 });
 
 test("AP claim settings Platform Address host ignores AP UID and target port", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: {
@@ -544,7 +544,7 @@ test("AP claim settings Platform Address host ignores AP UID and target port", (
 });
 
 test("AP claim settings leaves desired Platform Address hosts pending when draft inputs are missing", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -567,7 +567,7 @@ test("AP claim settings leaves desired Platform Address hosts pending when draft
 });
 
 test("AP claim settings ignores retired endpoint fields", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -594,7 +594,7 @@ test("AP claim settings ignores retired endpoint fields", () => {
 });
 
 test("AP claim settings ignores invalid private-only network ports", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -614,7 +614,7 @@ test("AP claim settings ignores invalid private-only network ports", () => {
 });
 
 test("AP claim settings maps canonical fixed replica strategy", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -642,7 +642,7 @@ test("AP claim settings maps canonical fixed replica strategy", () => {
 });
 
 test("AP claim settings clamps displayed fixed replica strategy to AP bounds", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -669,7 +669,7 @@ test("AP claim settings clamps displayed fixed replica strategy to AP bounds", (
 });
 
 test("AP claim settings maps legacy replicas as fixed replica strategy", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -693,7 +693,7 @@ test("AP claim settings maps legacy replicas as fixed replica strategy", () => {
 });
 
 test("read-only AP settings renders legacy replicas as fixed replica strategy", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -733,7 +733,7 @@ test("read-only AP settings renders legacy replicas as fixed replica strategy", 
 });
 
 test("AP claim settings maps canonical CPU elastic replica strategy", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -779,7 +779,7 @@ test("AP claim settings maps canonical CPU elastic replica strategy", () => {
 });
 
 test("AP claim settings maps canonical Memory elastic replica strategy", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -857,7 +857,7 @@ test("AP claim settings reconstruct DB DSN references only from exact current DB
     },
   ]);
 
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -949,7 +949,7 @@ test("AP claim settings reconstruct DB primitive references from exact Secret ev
     },
   ]);
 
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -1010,7 +1010,7 @@ test("AP claim settings reconstruct editor tokens from saved env expansion and h
     "default"
   );
 
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -1092,7 +1092,7 @@ test("AP claim settings leave non-matching Secret rows as external rows", () => 
     name: "postgres-conn-credential",
   };
 
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
@@ -1132,7 +1132,7 @@ test("AP claim settings leave non-matching Secret rows as external rows", () => 
 });
 
 test("AP claim settings map Launchpad-backed command config files storage and workload kind", () => {
-  const settings = claimToContainerSettings(
+  const settings = claimToApSettings(
     {
       kind: "AP",
       metadata: { name: "api", namespace: "default" },
