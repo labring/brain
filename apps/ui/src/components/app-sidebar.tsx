@@ -268,11 +268,11 @@ function AppSidebarUpgrade() {
             size="lg"
             type="button"
             variant="quiet"
-          />
+          >
+            <Sparkles aria-hidden className="size-4" strokeWidth={1.8} />
+          </AppIconButton>
         }
-      >
-        <Sparkles aria-hidden className="size-4" strokeWidth={1.8} />
-      </PopoverTrigger>
+      />
       <PopoverContent
         align="start"
         alignOffset={0}

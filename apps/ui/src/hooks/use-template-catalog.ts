@@ -1,7 +1,9 @@
 "use client";
 
 import type { TemplateDeploymentChoice } from "@workspace/ui/components/template-deployer";
+import { useAtomValue } from "jotai";
 import useSWR from "swr";
+import { desktopLanguageAtom } from "@/store/auth-store";
 
 function templatesFromBody(body: unknown): TemplateDeploymentChoice[] {
   if (body == null || typeof body !== "object" || !("templates" in body)) {
@@ -20,8 +22,15 @@ function templatesFromBody(body: unknown): TemplateDeploymentChoice[] {
     : [];
 }
 
-async function fetchTemplateCatalog(): Promise<TemplateDeploymentChoice[]> {
-  const response = await fetch("/api/templates");
+async function fetchTemplateCatalog(
+  language: string
+): Promise<TemplateDeploymentChoice[]> {
+  const searchParams = new URLSearchParams();
+  const normalizedLanguage = language.trim();
+  if (normalizedLanguage !== "") {
+    searchParams.set("language", normalizedLanguage);
+  }
+  const response = await fetch(`/api/templates?${searchParams}`);
   const body = await response.json().catch(() => null);
   if (!response.ok) {
     const message =
@@ -41,9 +50,10 @@ export function useTemplateCatalog(): {
   isLoading: boolean;
   templates: TemplateDeploymentChoice[];
 } {
+  const language = useAtomValue(desktopLanguageAtom);
   const { data, error, isLoading } = useSWR(
-    "template-catalog",
-    fetchTemplateCatalog
+    ["template-catalog", language],
+    ([, value]) => fetchTemplateCatalog(value)
   );
   return {
     error,

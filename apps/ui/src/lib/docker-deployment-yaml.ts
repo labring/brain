@@ -17,6 +17,17 @@ interface RenderDockerDeploymentYamlOptions {
   template?: string;
 }
 
+interface DirectApWorkloadSpec {
+  kind: "deployment" | "statefulset";
+}
+
+type DirectApSpec = Record<string, unknown> & {
+  input: Record<string, unknown>;
+  name: string;
+  projectId: string;
+  workload?: DirectApWorkloadSpec;
+};
+
 function baseApManifest(options: RenderDockerDeploymentYamlOptions) {
   return {
     apiVersion: DIRECT_PRODUCT_API_VERSION,
@@ -209,7 +220,7 @@ export function renderDockerDeploymentYaml(
     nextInput.storage = storage;
   }
 
-  const nextSpec = {
+  const nextSpec: DirectApSpec = {
     ...spec,
     input: nextInput,
     name: options.name,
