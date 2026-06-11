@@ -6,8 +6,6 @@ export type {
   DatabaseNodeConnectionKey,
   DatabaseNodeContextValue,
   DatabaseNodeCopyConnectionHandler,
-  DatabaseNodeDeleteDialogPanelProps,
-  DatabaseNodeDeleteDialogProps,
   DatabaseNodeLifecycleActionKey,
   DatabaseNodeLifecycleActions,
   DatabaseNodeMeta,

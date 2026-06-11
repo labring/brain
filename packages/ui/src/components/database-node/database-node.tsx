@@ -11,16 +11,8 @@ import {
   DatabaseNodeFooterContent,
   DatabaseNodeHeaderContent,
 } from "./database-node.content";
-import {
-  DatabaseNodeDeleteDialog,
-  DatabaseNodeDeleteDialogPanel,
-} from "./database-node.delete-dialog";
 import { DatabaseNodeRoot } from "./database-node.root";
 
-export type {
-  DatabaseNodeDeleteDialogPanelProps,
-  DatabaseNodeDeleteDialogProps,
-} from "./database-node.delete-dialog";
 // biome-ignore lint/performance/noBarrelFile: compound component public API includes colocated helpers.
 export { maskDatabaseConnectionString } from "./database-node.mask";
 export { databaseNodeLifecycleMenuVisibility } from "./database-node.menu-visibility";
@@ -64,8 +56,6 @@ export const DatabaseNode = {
   ConnectionList: DatabaseNodeConnectionList,
   ConnectionRow: DatabaseNodeConnectionRow,
   Content: DatabaseNodeContent,
-  DeleteDialog: DatabaseNodeDeleteDialog,
-  DeleteDialogPanel: DatabaseNodeDeleteDialogPanel,
   FooterContent: DatabaseNodeFooterContent,
   HeaderContent: DatabaseNodeHeaderContent,
   Root: DatabaseNodeRoot,
@@ -77,8 +67,6 @@ const dn = (component: object, name: string) => {
 
 dn(DatabaseNodeRoot, "DatabaseNode.Root");
 dn(DatabaseNodeContent, "DatabaseNode.Content");
-dn(DatabaseNodeDeleteDialog, "DatabaseNode.DeleteDialog");
-dn(DatabaseNodeDeleteDialogPanel, "DatabaseNode.DeleteDialogPanel");
 dn(DatabaseNodeHeaderContent, "DatabaseNode.HeaderContent");
 dn(DatabaseNodeBodyContent, "DatabaseNode.BodyContent");
 dn(DatabaseNodeConnectionList, "DatabaseNode.ConnectionList");

@@ -142,7 +142,6 @@
       "dependencies": ["lucide-react"],
       "registryDependencies": [
         "canvas-node",
-        "app-dialog",
         "button",
         "dropdown-menu"
       ],
@@ -176,11 +175,6 @@
           "path": "../../packages/ui/src/components/container-node/container-node.menu-visibility.ts",
           "type": "registry:lib",
           "target": "components/container-node/container-node.menu-visibility.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/container-node/container-node.delete-dialog.tsx",
-          "type": "registry:component",
-          "target": "components/container-node/container-node.delete-dialog.tsx"
         },
         {
           "path": "../../packages/ui/src/components/container-node/container-node.css",
@@ -371,7 +365,6 @@
       "description": "Managed database canvas node with connection rows, public-access toggle, lifecycle and quick actions, footer metrics, and metadata-driven icons",
       "dependencies": ["lucide-react"],
       "registryDependencies": [
-        "app-dialog",
         "button",
         "canvas-node",
         "dropdown-menu",
@@ -412,11 +405,6 @@
           "path": "../../packages/ui/src/components/database-node/database-node.content.tsx",
           "type": "registry:component",
           "target": "components/database-node/database-node.content.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/database-node/database-node.delete-dialog.tsx",
-          "type": "registry:component",
-          "target": "components/database-node/database-node.delete-dialog.tsx"
         },
         {
           "path": "../../packages/ui/src/components/database-node/database-node.css",
