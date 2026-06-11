@@ -160,7 +160,26 @@ test("DB Service root renders a service-level Backup tab without close controls"
   );
   assert.ok(html.includes("@container/backup-surface"));
   assert.ok(html.includes("@min-[60rem]/backup-surface:grid-cols-"));
-  assert.ok(html.includes("@min-[48rem]/backup-surface:flex-row"));
+  const backupRowClassName = elementClassName(
+    html,
+    "article",
+    'data-testid="database\\.backup\\.row"',
+    'data-qa-resource-id="orders-manual-20260609"'
+  );
+  const backupRowClasses = backupRowClassName.split(/\s+/);
+  assert.ok(backupRowClasses.includes("flex-row"));
+  assert.ok(backupRowClasses.includes("items-center"));
+  assert.ok(backupRowClasses.includes("justify-between"));
+  assert.ok(!backupRowClasses.includes("flex-col"));
+  const backupRowActionsClassName = elementClassName(
+    html,
+    "div",
+    'data-qa-object="backup-row-actions"',
+    'data-qa-resource-id="orders-manual-20260609"'
+  );
+  const backupRowActionsClasses = backupRowActionsClassName.split(/\s+/);
+  assert.ok(backupRowActionsClasses.includes("shrink-0"));
+  assert.ok(!backupRowActionsClasses.includes("flex-wrap"));
   assert.match(html, /orders-manual-20260609/);
   assert.match(html, /Before invoice migration/);
   assert.match(html, /data-qa-object="backup-row-name"/);
