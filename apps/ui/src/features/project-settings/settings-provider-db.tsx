@@ -18,6 +18,25 @@ import type {
 
 const DB_SETTINGS_FULL_VIEW = "full";
 
+function DatabaseSettingsIcon({ iconUrl }: { iconUrl?: string }) {
+  const resolvedIconUrl = iconUrl?.trim();
+  if (resolvedIconUrl) {
+    return (
+      // biome-ignore lint/performance/noImgElement: DB icons are arbitrary remote URLs that are not covered by Next image domain config.
+      <img
+        alt=""
+        className="size-4 object-contain"
+        decoding="async"
+        height={16}
+        loading="lazy"
+        src={resolvedIconUrl}
+        width={16}
+      />
+    );
+  }
+  return <Database aria-hidden className="size-4 shrink-0 text-blue-400" />;
+}
+
 function metadataRecord(resource: unknown): Record<string, unknown> {
   if (resource == null || typeof resource !== "object") {
     return {};
@@ -160,9 +179,7 @@ export function DbSettingsProvider({
     if (target.kind !== "DB") {
       return {
         closeAriaLabel: "Close database settings",
-        icon: (
-          <Database aria-hidden className="size-4 shrink-0 text-blue-400" />
-        ),
+        icon: <DatabaseSettingsIcon />,
         resolvedView,
         sections: [
           {
@@ -184,9 +201,7 @@ export function DbSettingsProvider({
       const loading = dbsList.isLoading || dbsList.isValidating;
       return {
         closeAriaLabel: "Close database settings",
-        icon: (
-          <Database aria-hidden className="size-4 shrink-0 text-blue-400" />
-        ),
+        icon: <DatabaseSettingsIcon />,
         resolvedView,
         sections: [
           {
@@ -208,7 +223,7 @@ export function DbSettingsProvider({
 
     return {
       closeAriaLabel: "Close database settings",
-      icon: <Database aria-hidden className="size-4 shrink-0 text-blue-400" />,
+      icon: <DatabaseSettingsIcon iconUrl={data.states.iconUrl} />,
       footer: sectionsModel.footer,
       leaveGuard: sectionsModel.leaveGuard,
       resolvedView,
