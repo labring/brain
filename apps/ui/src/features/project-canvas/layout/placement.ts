@@ -118,6 +118,19 @@ export function isCanvasNodeGeneratedPosition(node: Node | undefined): boolean {
   return layout?.positionSource === GENERATED_POSITION_SOURCE;
 }
 
+function hasGeneratedPosition(
+  node: Node,
+  position: CanvasLayoutPosition
+): boolean {
+  const layout = asRecord(asRecord(node.data)?.layout);
+  const generatedPosition = asRecord(layout?.generatedPosition);
+  return (
+    layout?.positionSource === GENERATED_POSITION_SOURCE &&
+    generatedPosition?.x === position.x &&
+    generatedPosition?.y === position.y
+  );
+}
+
 function comparePlacementCandidates(
   a: PlacementCandidate,
   b: PlacementCandidate
@@ -126,6 +139,9 @@ function comparePlacementCandidates(
 }
 
 function nodeWithPosition(node: Node, position: CanvasLayoutPosition): Node {
+  if (node.position.x === position.x && node.position.y === position.y) {
+    return node;
+  }
   return {
     ...node,
     position: { x: position.x, y: position.y },
@@ -136,6 +152,14 @@ function nodeWithGeneratedPosition(
   node: Node,
   position: CanvasLayoutPosition
 ): Node {
+  if (
+    node.position.x === position.x &&
+    node.position.y === position.y &&
+    hasGeneratedPosition(node, position)
+  ) {
+    return node;
+  }
+
   const data = asRecord(node.data) ?? {};
   const layout = asRecord(data.layout) ?? {};
   return {
@@ -417,7 +441,7 @@ export function placeCanvasNodesWithLayout({
     rectFromPosition(node.position, layoutNodeFootprintHeight(node))
   );
   const globalOrigins = globalBlockOrigins(allocated);
-  const placedNodes = nodes.map((node) => ({ ...node }));
+  const placedNodes = [...nodes];
   const placedLayoutNodes: CanvasLayoutNode[] = [];
   const rasterCandidates: PlacementCandidate[] = [];
   const entryPointCandidates: PlacementCandidate[] = [];
@@ -493,7 +517,12 @@ export function placeCanvasNodesWithLayout({
     }
   }
 
-  return { nodes: placedNodes, placedLayoutNodes };
+  const resolvedNodes = placedNodes.every(
+    (node, index) => node === nodes[index]
+  )
+    ? nodes
+    : placedNodes;
+  return { nodes: resolvedNodes, placedLayoutNodes };
 }
 
 export function placeCanvasNodes(options: PlaceCanvasNodesOptions): Node[] {

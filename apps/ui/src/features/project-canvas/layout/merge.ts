@@ -61,6 +61,13 @@ function finitePosition(
   return { x: position.x, y: position.y };
 }
 
+function positionsEqual(
+  a: CanvasLayoutPosition,
+  b: CanvasLayoutPosition
+): boolean {
+  return a.x === b.x && a.y === b.y;
+}
+
 function canvasLayoutExpandedFromNode(node: Node): boolean | undefined {
   const data = asRecord(node.data);
   const layout = asRecord(data?.layout);
@@ -72,6 +79,9 @@ function withCanvasLayoutExpansion(
   expanded: boolean | undefined
 ): Node {
   if (expanded === undefined) {
+    return node;
+  }
+  if (canvasLayoutExpandedFromNode(node) === expanded) {
     return node;
   }
 
@@ -87,6 +97,16 @@ function withCanvasLayoutExpansion(
       },
     },
   };
+}
+
+function withCanvasLayoutPosition(
+  node: Node,
+  position: CanvasLayoutPosition | undefined
+): Node {
+  if (position === undefined || positionsEqual(node.position, position)) {
+    return node;
+  }
+  return { ...node, position: { x: position.x, y: position.y } };
 }
 
 export function canvasLayoutNodeFromNode(
@@ -240,13 +260,13 @@ export function mergeCanvasLayoutWithDetectedNodes({
   const renderedNodes = nodes.map((node) => {
     const ref = canvasResourceIdentityFromNode(node);
     if (ref === undefined) {
-      return { ...node };
+      return node;
     }
 
     const key = canvasResourceKey(ref);
     const saved = layoutByRef.get(key);
     if (saved === undefined) {
-      return { ...node };
+      return node;
     }
 
     const restored = restoredLayoutNodeFromDetectedNode(saved, node);
@@ -257,10 +277,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
     nextLayoutByRef.set(key, restored);
 
     const savedPosition = finitePosition(saved.position);
-    const positioned =
-      savedPosition === undefined
-        ? { ...node }
-        : { ...node, position: savedPosition };
+    const positioned = withCanvasLayoutPosition(node, savedPosition);
     const expandedNode = withCanvasLayoutExpansion(positioned, saved.expanded);
     const stackOrder = canvasStackOrderValue(restored.stackOrder);
     return stackOrder === undefined

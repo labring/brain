@@ -56,17 +56,25 @@ export function useCanvasNodeExpansion({
   const defaultExpanded = data.layout?.expanded ?? false;
   const [expandedState, setExpandedState] = useState(defaultExpanded);
   useEffect(() => {
-    setExpandedState(defaultExpanded);
+    setExpandedState((current) =>
+      current === defaultExpanded ? current : defaultExpanded
+    );
   }, [defaultExpanded]);
 
   const onExpandedChange = useCallback(
     (expanded: boolean) => {
-      setExpandedState(expanded);
+      setExpandedState((current) =>
+        current === expanded ? current : expanded
+      );
       updateNodeData(id, (node) => {
         const nodeData = node.data as Record<string, unknown>;
+        const layout = layoutFromData(nodeData);
+        if (layout.expanded === expanded) {
+          return {};
+        }
         return {
           layout: {
-            ...layoutFromData(nodeData),
+            ...layout,
             expanded,
           },
         };

@@ -96,6 +96,47 @@ test("merge exposes default Canvas Node Stack Order as React Flow z-index", () =
   );
 });
 
+test("merge reuses nodes that already carry the resolved layout state", () => {
+  const layout: CanvasLayoutDocument = {
+    namespace: "default",
+    nodes: [
+      {
+        expanded: false,
+        position: { x: 999, y: 999 },
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
+    ],
+    projectId: "project-uid",
+    version: 1,
+  };
+  const [rankedNode] = mergeCanvasLayoutWithDetectedNodes({
+    layout,
+    nodes: [apNode("api")],
+  }).nodes;
+
+  const result = mergeCanvasLayoutWithDetectedNodes({
+    layout,
+    nodes: rankedNode === undefined ? [] : [rankedNode],
+  });
+
+  assert.equal(result.nodes[0], rankedNode);
+});
+
+test("merge reuses ranked nodes when layout is unavailable", () => {
+  const ranked = mergeCanvasLayoutWithDetectedNodes({
+    layout: undefined,
+    nodes: [entryNode("api"), apNode("api")],
+  }).nodes;
+  const reranked = mergeCanvasLayoutWithDetectedNodes({
+    layout: undefined,
+    nodes: ranked,
+  }).nodes;
+
+  assert.equal(reranked, ranked);
+  assert.equal(reranked[0], ranked[0]);
+  assert.equal(reranked[1], ranked[1]);
+});
+
 test("merge does not persist first placements when layout is unavailable", () => {
   const result = mergeCanvasLayoutWithDetectedNodes({
     layout: undefined,

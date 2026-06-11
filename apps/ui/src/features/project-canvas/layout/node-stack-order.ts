@@ -40,6 +40,10 @@ function canvasStackOrderItemsFromNodes(
 }
 
 export function nodeWithCanvasStackOrder(node: Node, stackOrder: number): Node {
+  if (canvasNodeStackOrder(node) === stackOrder) {
+    return node;
+  }
+
   const data = asRecord(node.data) ?? {};
   const layout = asRecord(data.layout) ?? {};
   return {
@@ -58,10 +62,16 @@ export function applyCanvasStackOrderToNodes(nodes: readonly Node[]): Node[] {
   const ranks = resolveCanvasStackOrderRanks(
     canvasStackOrderItemsFromNodes(nodes)
   );
-  return nodes.map((node) => {
+  let changed = false;
+  const rankedNodes = nodes.map((node) => {
     const zIndex = ranks.get(node.id);
-    return zIndex === undefined ? { ...node } : { ...node, zIndex };
+    if (zIndex === undefined || node.zIndex === zIndex) {
+      return node;
+    }
+    changed = true;
+    return { ...node, zIndex };
   });
+  return changed ? rankedNodes : (nodes as Node[]);
 }
 
 export function canvasNodeResourceStackKey(node: Node): string | undefined {
