@@ -8,6 +8,8 @@ import {
   containerEnvDbPrimitiveFieldForSecretKey,
 } from "@/features/project-settings/ap/lib/container-env-rows";
 
+export type ApEnvironmentDbReferenceSource = ContainerEnvDbDsnSource;
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -122,10 +124,13 @@ export function dbDsnReferenceSourceFromDb(
 export function dbDsnReferenceSourcesFromDbsData(
   dbsData: K8sGetResponse | undefined,
   namespaceFallback?: string
-): ContainerEnvDbDsnSource[] {
+): ApEnvironmentDbReferenceSource[] {
   return apItemsFromList(dbsData)
     .map((item) => dbDsnReferenceSourceFromDb(item, namespaceFallback))
     .filter(
       (source): source is ContainerEnvDbDsnSource => source !== undefined
     );
 }
+
+export const apEnvironmentDbReferenceSourcesFromDbsData =
+  dbDsnReferenceSourcesFromDbsData;

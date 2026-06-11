@@ -245,6 +245,14 @@ A DB Service selected in the AP Environment editor as a source for inserting or 
 
 _Avoid_: Binding record, hidden binding state.
 
+### AP Environment DB Reference Source
+
+The AP Environment Settings fact that describes one DB Service as a source for AP Environment References, including its DB Service identity, engine, available DSN values, and Secret-backed primitive fields such as host, port, username, and password.
+
+AP Environment DB Reference Sources are derived from DB resource state. They let AP Environment Settings present Database Binding choices and recognize saved DB-derived environment values without exposing the raw DB list payload to Project Canvas Workbench.
+
+AP Environment DB Reference Source is not a Database Binding and is not a Canvas Connection. A Database Binding exists only after AP environment state is saved and can be detected from saved AP and DB resource state; a Canvas Connection is the rendered edge derived from that saved evidence.
+
 ### AP Environment Reference
 
 A product-level expression in the AP Environment Raw Source that points at a DB Service-provided environment value. An AP Environment Reference is resolved before runtime into ordinary AP environment entries, while the user-facing raw source may retain the reference expression.
@@ -434,6 +442,16 @@ Canvas Connections are derived from saved resource state. Removing Database Bind
 ### Canvas Resource Pane
 
 A right-side canvas surface opened from a selected AP or DB node to inspect or change resource-scoped details such as settings, metrics, or history. It is distinct from the project assistant chat pane.
+
+### Project Canvas Resource Snapshot
+
+The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP-bound EntryPoint, and template-native workload list state plus the current Canvas Layout.
+
+A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, empty/loading/error frame state, resource refresh policy, and Canvas Layout save intent such as first placement or layout merge. It does not own Canvas Layout persistence; it emits layout intent for the Canvas Layout save pipeline to persist.
+
+Downstream Project Canvas modules should consume canvas-ready resource facts from a Project Canvas Resource Snapshot rather than raw AP, DB, EntryPoint, or workload list payloads. For example, DB reference sources for AP Environment References are Project Canvas Resource Snapshot facts, while the raw DB list payload remains internal implementation detail.
+
+Project Canvas Resource Snapshot is distinct from Workload Telemetry Snapshot: resource snapshot data determines whether resources and Canvas Connections exist, while telemetry snapshot data only decorates already-known AP and DB nodes with current usage metrics.
 
 ### Project Canvas Workbench
 

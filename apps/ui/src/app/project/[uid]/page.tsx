@@ -13,8 +13,7 @@ import {
 } from "@/features/project-canvas/flow/pending-connections";
 import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
-import { projectCanvasFrameState } from "@/features/project-canvas/snapshot/project-canvas-page-state";
-import { useProjectServices } from "@/features/project-canvas/snapshot/use-project-services";
+import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import { ProjectCanvasWorkbenchSurfaces } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
@@ -43,20 +42,35 @@ export default function ProjectIdPage() {
   });
 
   const {
+    apEnvironmentDbReferenceSources,
     canvasState,
-    data: projectServicesData,
-    error,
+    frameState,
     isEmptyGraphLoading,
-    refreshWorkloadLists,
-  } = useProjectServices({
+    isLoading: resourceSnapshotLoading,
+    layoutIntent,
+    refresh,
+  } = useProjectCanvasResourceSnapshot({
     canvasLayout: projectCanvasLayout.layout,
     canvasLayoutReady: projectCanvasLayout.layoutReady,
     kubeconfig,
     namespace,
-    onCanvasFirstPlacement: projectCanvasLayout.saveFirstPlacementNodes,
-    onCanvasLayoutMerge: projectCanvasLayout.saveLayoutNodes,
     uid,
   });
+  useEffect(() => {
+    if (resourceSnapshotLoading || layoutIntent == null) {
+      return;
+    }
+    const save =
+      layoutIntent.kind === "first-placement"
+        ? projectCanvasLayout.saveFirstPlacementNodes
+        : projectCanvasLayout.saveLayoutNodes;
+    save(layoutIntent.nodes).catch(() => undefined);
+  }, [
+    layoutIntent,
+    projectCanvasLayout.saveFirstPlacementNodes,
+    projectCanvasLayout.saveLayoutNodes,
+    resourceSnapshotLoading,
+  ]);
   const beginPendingApDbReferences = useCallback(
     (references: readonly PendingApDbCanvasReference[]) => {
       const referenceIds = references.map((reference) => reference.id);
@@ -87,7 +101,7 @@ export default function ProjectIdPage() {
   }, [canvasState.edges, canvasState.nodes, pendingApDbReferences]);
 
   const workbench = useProjectCanvas(canvasState.nodes, {
-    dbsData: projectServicesData.dbs,
+    apEnvironmentDbReferenceSources,
     edges: canvasEdges,
     kubeconfig,
     namespace,
@@ -96,7 +110,7 @@ export default function ProjectIdPage() {
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onPendingApDbReferencesStart: beginPendingApDbReferences,
     projectId: uid,
-    refreshWorkloadLists,
+    refreshWorkloadLists: refresh,
     selectionReady: !isEmptyGraphLoading,
   });
   const selectedTelemetryTarget = useMemo(
@@ -146,14 +160,6 @@ export default function ProjectIdPage() {
     workbench.surfaceRenderModel.side == null
       ? 0
       : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET;
-  const frameState = projectCanvasFrameState({
-    edgeCount: canvasEdges.length,
-    error,
-    isEmptyGraphLoading,
-    kubeconfig,
-    nodeCount: workbench.nodes.length,
-  });
-
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
       {frameState.renderCanvas && (
@@ -217,7 +223,7 @@ export default function ProjectIdPage() {
                     kubeconfig={kubeconfig}
                     namespace={namespace}
                     projectId={uid}
-                    refreshWorkloadLists={refreshWorkloadLists}
+                    refreshWorkloadLists={refresh}
                     workbench={workbench}
                   />
                 </Canvas.Flow>
