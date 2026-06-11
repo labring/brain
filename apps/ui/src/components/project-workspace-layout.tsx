@@ -830,7 +830,7 @@ function ProjectRouteTopBar({
   return (
     <header
       className={cn(
-        "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 bg-transparent pr-2 pl-6",
+        "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 bg-[#09090B]/10 pr-2 pl-6 backdrop-blur-lg",
         !assistantPaneOpen && "pr-12"
       )}
     >
