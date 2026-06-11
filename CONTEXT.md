@@ -361,6 +361,8 @@ A set of new canvas nodes that Incremental Canvas Placement positions together b
 
 Canvas Placement Groups are evaluated against Canvas Placement Occupancy as a whole so related new nodes remain near one another when they first appear.
 
+An AP with desired Public Address intent and its AP-bound EntryPoint form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the EntryPoint is the AP's public routing surface rather than an independent placement result.
+
 After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes.
 
 ### Canvas Viewport Focus

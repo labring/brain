@@ -76,7 +76,7 @@ test("places an unplaced AP at the fallback grid origin", () => {
   assert.deepEqual(node?.position, { x: 0, y: 0 });
 });
 
-test("places unanchored nodes in the global block to the right of saved layout", () => {
+test("places an unanchored node after saved layout when shape remains acceptable", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -213,7 +213,7 @@ test("anchors an unplaced EntryPoint to the left side of a saved AP", () => {
   assert.deepEqual(positions.get("entry-api-entry"), { x: 340, y: 280 });
 });
 
-test("uses AABB rectangles from saved and same-run placed nodes during global block placement", () => {
+test("uses AABB rectangles from saved and same-run placed nodes during row-major global placement", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -237,10 +237,10 @@ test("uses AABB rectangles from saved and same-run placed nodes during global bl
   const positions = positionById(nodes);
 
   assert.deepEqual(positions.get("ap-a-api"), { x: 680, y: 0 });
-  assert.deepEqual(positions.get("ap-b-api"), { x: 1020, y: 0 });
+  assert.deepEqual(positions.get("ap-b-api"), { x: 0, y: 280 });
 });
 
-test("fills the right-side global placement block before moving rows", () => {
+test("wraps unanchored global placement before the canvas becomes too wide", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -266,18 +266,18 @@ test("fills the right-side global placement block before moving rows", () => {
     nodes: [dbNode("postgres")],
   });
 
-  assert.deepEqual(node?.position, { x: 1020, y: 0 });
+  assert.deepEqual(node?.position, { x: 0, y: 280 });
 });
 
-test("anchors an EntryPoint to its AP after the AP receives a fallback slot", () => {
+test("places a new AP and EntryPoint as one combined footprint", () => {
   const nodes = placeCanvasNodes({
     layout: undefined,
     nodes: [entryNode("api-entry", "api"), apNode("api")],
   });
   const positions = positionById(nodes);
 
-  assert.deepEqual(positions.get("ap-api"), { x: 0, y: 0 });
-  assert.deepEqual(positions.get("entry-api-entry"), { x: -340, y: 0 });
+  assert.deepEqual(positions.get("ap-api"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: 0 });
 });
 
 test("includes anchored EntryPoints in same-pass placement occupancy", () => {
@@ -348,8 +348,8 @@ test("returns placement group layout nodes for AP and EntryPoint first placement
       position: node.position,
     })),
     [
-      { kind: "AP", name: "api", position: { x: 0, y: 0 } },
-      { kind: "EntryPoint", name: "api", position: { x: -340, y: 0 } },
+      { kind: "AP", name: "api", position: { x: 340, y: 0 } },
+      { kind: "EntryPoint", name: "api", position: { x: 0, y: 0 } },
     ]
   );
 });

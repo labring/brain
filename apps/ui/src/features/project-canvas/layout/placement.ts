@@ -18,15 +18,15 @@ export const CANVAS_NODE_FALLBACK_WIDTH = 272;
 export const CANVAS_NODE_FALLBACK_HEIGHT = 62;
 
 const GLOBAL_BLOCK_COLUMNS = 3;
-const GLOBAL_BLOCK_ROWS = 3;
-const GLOBAL_RIGHT_BLOCKS = 2;
+const GLOBAL_CANVAS_TARGET_RATIO = 2;
+const GLOBAL_SHAPE_SOFT_TOLERANCE = 0.2;
+const GLOBAL_EXTRA_COLUMNS = 4;
+const GLOBAL_ROW_SEARCH_LIMIT = 24;
 const CANVAS_NODE_FOOTPRINT_WIDTH = CANVAS_NODE_FALLBACK_WIDTH;
 const CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED = CANVAS_NODE_FALLBACK_HEIGHT;
 const CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED = 220;
 const COLUMN_STEP = 340;
 const ROW_STEP = 280;
-const BLOCK_COLUMN_STEP = GLOBAL_BLOCK_COLUMNS * COLUMN_STEP;
-const BLOCK_ROW_STEP = GLOBAL_BLOCK_ROWS * ROW_STEP;
 const ENTRY_POINT_AP_LEFT_OFFSET = COLUMN_STEP;
 const GENERATED_POSITION_SOURCE = "generated";
 
@@ -48,12 +48,39 @@ interface CanvasNodeRect {
   y: number;
 }
 
+interface CanvasRectBounds {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+}
+
 interface PlacementCandidate {
   index: number;
   node: Node;
   ref: CanvasLayoutResourceRef | undefined;
   sortKey: string;
 }
+
+interface PlacementFootprint {
+  rects: CanvasNodeRect[];
+}
+
+interface GlobalCandidateRows {
+  currentRow: CanvasLayoutPosition[];
+  futureRows: CanvasLayoutPosition[];
+}
+
+interface PlacementGroupCandidate {
+  ap: PlacementCandidate & { ref: CanvasLayoutResourceRef };
+  entryPoint: PlacementCandidate & { ref: CanvasLayoutResourceRef };
+  footprint: PlacementFootprint;
+  sortKey: string;
+}
+
+type PlacementUnit =
+  | { candidate: PlacementCandidate; kind: "single" }
+  | { group: PlacementGroupCandidate; kind: "group" };
 
 type PlacementDirection = "left" | "right";
 
@@ -81,12 +108,66 @@ function rectFromPosition(
   };
 }
 
+function singleNodeFootprint(height: number): PlacementFootprint {
+  return { rects: [rectFromPosition({ x: 0, y: 0 }, height)] };
+}
+
+function apEntryPointFootprint(
+  apHeight: number,
+  entryPointHeight: number
+): PlacementFootprint {
+  return {
+    rects: [
+      {
+        height: Math.max(apHeight, entryPointHeight),
+        width: ENTRY_POINT_AP_LEFT_OFFSET + CANVAS_NODE_FOOTPRINT_WIDTH,
+        x: 0,
+        y: 0,
+      },
+    ],
+  };
+}
+
+function rectBounds(rects: readonly CanvasNodeRect[]): CanvasRectBounds {
+  return {
+    maxX: Math.max(...rects.map((rect) => rect.x + rect.width)),
+    maxY: Math.max(...rects.map((rect) => rect.y + rect.height)),
+    minX: Math.min(...rects.map((rect) => rect.x)),
+    minY: Math.min(...rects.map((rect) => rect.y)),
+  };
+}
+
+function footprintBounds(footprint: PlacementFootprint): CanvasRectBounds {
+  return rectBounds(footprint.rects);
+}
+
+function rectsFromFootprintPosition(
+  footprint: PlacementFootprint,
+  position: CanvasLayoutPosition
+): CanvasNodeRect[] {
+  return footprint.rects.map((rect) => ({
+    height: rect.height,
+    width: rect.width,
+    x: position.x + rect.x,
+    y: position.y + rect.y,
+  }));
+}
+
 function rectsIntersect(a: CanvasNodeRect, b: CanvasNodeRect): boolean {
   return (
     a.x < b.x + b.width &&
     a.x + a.width > b.x &&
     a.y < b.y + b.height &&
     a.y + a.height > b.y
+  );
+}
+
+function rectsAreOpen(
+  rects: readonly CanvasNodeRect[],
+  allocated: readonly CanvasNodeRect[]
+): boolean {
+  return rects.every(
+    (candidate) => !allocated.some((rect) => rectsIntersect(candidate, rect))
   );
 }
 
@@ -131,11 +212,10 @@ function hasGeneratedPosition(
   );
 }
 
-function comparePlacementCandidates(
-  a: PlacementCandidate,
-  b: PlacementCandidate
-): number {
-  return a.sortKey.localeCompare(b.sortKey);
+function comparePlacementUnits(a: PlacementUnit, b: PlacementUnit): number {
+  const aKey = a.kind === "group" ? a.group.sortKey : a.candidate.sortKey;
+  const bKey = b.kind === "group" ? b.group.sortKey : b.candidate.sortKey;
+  return aKey.localeCompare(bKey);
 }
 
 function nodeWithPosition(node: Node, position: CanvasLayoutPosition): Node {
@@ -233,50 +313,81 @@ function leftAnchorOffsets(): CanvasLayoutPosition[] {
   ];
 }
 
-function globalBlockOrigins(
-  allocated: readonly CanvasNodeRect[]
-): CanvasLayoutPosition[] {
-  if (allocated.length === 0) {
-    return [{ x: 0, y: 0 }];
-  }
-
-  const minX = Math.min(...allocated.map((rect) => rect.x));
-  const minY = Math.min(...allocated.map((rect) => rect.y));
-  const maxX = Math.max(...allocated.map((rect) => rect.x + rect.width));
-  const maxY = Math.max(...allocated.map((rect) => rect.y + rect.height));
-  const rightX = minX + Math.ceil((maxX - minX) / COLUMN_STEP) * COLUMN_STEP;
-  const belowY = minY + Math.ceil((maxY - minY) / ROW_STEP) * ROW_STEP;
-  const origins: CanvasLayoutPosition[] = [];
-
-  for (let block = 0; block < GLOBAL_RIGHT_BLOCKS; block += 1) {
-    origins.push({ x: rightX, y: minY + block * BLOCK_ROW_STEP });
-  }
-
-  for (let row = 0; row < 16; row += 1) {
-    for (let column = 0; column < GLOBAL_RIGHT_BLOCKS; column += 1) {
-      origins.push({
-        x: minX + column * BLOCK_COLUMN_STEP,
-        y: belowY + row * BLOCK_ROW_STEP,
-      });
-    }
-  }
-
-  return origins;
+function paddedCanvasHeight(bounds: CanvasRectBounds): number {
+  return Math.max(
+    ROW_STEP,
+    Math.ceil((bounds.maxY - bounds.minY) / ROW_STEP) * ROW_STEP
+  );
 }
 
-function blockCandidatePositions(
-  origin: CanvasLayoutPosition
-): CanvasLayoutPosition[] {
-  const positions: CanvasLayoutPosition[] = [];
-  for (let row = 0; row < GLOBAL_BLOCK_ROWS; row += 1) {
-    for (let column = 0; column < GLOBAL_BLOCK_COLUMNS; column += 1) {
-      positions.push({
-        x: origin.x + column * COLUMN_STEP,
-        y: origin.y + row * ROW_STEP,
+function canvasShapePenalty(rects: readonly CanvasNodeRect[]): number {
+  const bounds = rectBounds(rects);
+  const width = Math.max(
+    CANVAS_NODE_FOOTPRINT_WIDTH,
+    bounds.maxX - bounds.minX
+  );
+  const height = paddedCanvasHeight(bounds);
+  const ratio = width / height;
+  return Math.abs(Math.log(ratio / GLOBAL_CANVAS_TARGET_RATIO));
+}
+
+function candidateRowIndex(rect: CanvasNodeRect, minY: number): number {
+  return Math.max(0, Math.round((rect.y - minY) / ROW_STEP));
+}
+
+function globalCandidateRows(
+  allocated: readonly CanvasNodeRect[],
+  footprint: PlacementFootprint
+): GlobalCandidateRows {
+  if (allocated.length === 0) {
+    return { currentRow: [{ x: 0, y: 0 }], futureRows: [] };
+  }
+
+  const bounds = rectBounds(allocated);
+  const maxRow = Math.max(
+    ...allocated.map((rect) => candidateRowIndex(rect, bounds.minY))
+  );
+  const lastRowRects = allocated.filter(
+    (rect) => candidateRowIndex(rect, bounds.minY) === maxRow
+  );
+  const lastRowRight = Math.max(
+    ...lastRowRects.map((rect) => rect.x + rect.width)
+  );
+  const lastRowNextColumn = Math.max(
+    0,
+    Math.ceil((lastRowRight - bounds.minX) / COLUMN_STEP)
+  );
+  const footprintWidth = footprintBounds(footprint).maxX;
+  const columnSpan = Math.max(1, Math.ceil(footprintWidth / COLUMN_STEP));
+  const maxColumn = lastRowNextColumn + columnSpan + GLOBAL_EXTRA_COLUMNS;
+  const currentRow: CanvasLayoutPosition[] = [];
+  const futureRows: CanvasLayoutPosition[] = [];
+
+  for (
+    let column = lastRowNextColumn;
+    column <= lastRowNextColumn + columnSpan + GLOBAL_EXTRA_COLUMNS;
+    column += 1
+  ) {
+    currentRow.push({
+      x: bounds.minX + column * COLUMN_STEP,
+      y: bounds.minY + maxRow * ROW_STEP,
+    });
+  }
+
+  for (
+    let row = maxRow + 1;
+    row <= maxRow + GLOBAL_ROW_SEARCH_LIMIT;
+    row += 1
+  ) {
+    for (let column = 0; column <= maxColumn; column += 1) {
+      futureRows.push({
+        x: bounds.minX + column * COLUMN_STEP,
+        y: bounds.minY + row * ROW_STEP,
       });
     }
   }
-  return positions;
+
+  return { currentRow, futureRows };
 }
 
 function firstOpenPosition(
@@ -290,27 +401,72 @@ function firstOpenPosition(
   });
 }
 
-function firstOpenGlobalPosition(
-  origins: readonly CanvasLayoutPosition[],
+function firstOpenFootprintPosition(
+  candidates: readonly CanvasLayoutPosition[],
   allocated: readonly CanvasNodeRect[],
-  height: number
+  footprint: PlacementFootprint
+): CanvasLayoutPosition | undefined {
+  return candidates.find((position) =>
+    rectsAreOpen(rectsFromFootprintPosition(footprint, position), allocated)
+  );
+}
+
+function globalCandidatePenalty(
+  allocated: readonly CanvasNodeRect[],
+  footprint: PlacementFootprint,
+  position: CanvasLayoutPosition
+): number {
+  return canvasShapePenalty([
+    ...allocated,
+    ...rectsFromFootprintPosition(footprint, position),
+  ]);
+}
+
+function firstOpenGlobalPosition(
+  allocated: readonly CanvasNodeRect[],
+  footprint: PlacementFootprint
 ): CanvasLayoutPosition {
-  for (const origin of origins) {
-    const position = firstOpenPosition(
-      blockCandidatePositions(origin),
+  const candidates = globalCandidateRows(allocated, footprint);
+  const currentRow = firstOpenFootprintPosition(
+    candidates.currentRow,
+    allocated,
+    footprint
+  );
+  const futureRow = firstOpenFootprintPosition(
+    candidates.futureRows,
+    allocated,
+    footprint
+  );
+
+  if (currentRow !== undefined && futureRow !== undefined) {
+    const currentPenalty = globalCandidatePenalty(
       allocated,
-      height
+      footprint,
+      currentRow
     );
-    if (position !== undefined) {
-      return position;
-    }
+    const futurePenalty = globalCandidatePenalty(
+      allocated,
+      footprint,
+      futureRow
+    );
+    return currentPenalty <= futurePenalty + GLOBAL_SHAPE_SOFT_TOLERANCE
+      ? currentRow
+      : futureRow;
+  }
+
+  if (currentRow !== undefined) {
+    return currentRow;
+  }
+
+  if (futureRow !== undefined) {
+    return futureRow;
   }
 
   let index = 0;
   while (true) {
     const position = fallbackCanvasPosition(index);
-    const candidate = rectFromPosition(position, height);
-    if (!allocated.some((rect) => rectsIntersect(candidate, rect))) {
+    const rects = rectsFromFootprintPosition(footprint, position);
+    if (rectsAreOpen(rects, allocated)) {
       return position;
     }
     index += 1;
@@ -367,34 +523,82 @@ function anchoredPosition(
   anchor: PlacementAnchor,
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
   allocated: readonly CanvasNodeRect[],
-  height: number
+  footprint: PlacementFootprint
 ): CanvasLayoutPosition | undefined {
   const anchorPosition = positionByRef.get(canvasResourceKey(anchor.ref));
   if (anchorPosition === undefined) {
     return undefined;
   }
-  return firstOpenPosition(
-    anchorOffsets(anchor.direction).map((offset) =>
-      positionForAnchorCandidate(anchorPosition, offset)
-    ),
-    allocated,
-    height
-  );
+  return anchorOffsets(anchor.direction)
+    .map((offset) => positionForAnchorCandidate(anchorPosition, offset))
+    .find((position) =>
+      rectsAreOpen(rectsFromFootprintPosition(footprint, position), allocated)
+    );
 }
 
 function firstAnchoredPosition(
   anchors: readonly PlacementAnchor[],
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
   allocated: readonly CanvasNodeRect[],
-  height: number
+  footprint: PlacementFootprint
 ): CanvasLayoutPosition | undefined {
   for (const anchor of anchors) {
-    const position = anchoredPosition(anchor, positionByRef, allocated, height);
+    const position = anchoredPosition(
+      anchor,
+      positionByRef,
+      allocated,
+      footprint
+    );
     if (position !== undefined) {
       return position;
     }
   }
   return undefined;
+}
+
+function anchoredGroupPosition(
+  anchor: PlacementAnchor,
+  positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
+  allocated: readonly CanvasNodeRect[],
+  footprint: PlacementFootprint
+): CanvasLayoutPosition | undefined {
+  const anchorPosition = positionByRef.get(canvasResourceKey(anchor.ref));
+  if (anchorPosition === undefined) {
+    return undefined;
+  }
+  return anchorOffsets(anchor.direction)
+    .map((offset) => positionForAnchorCandidate(anchorPosition, offset))
+    .map((apPosition) => ({
+      x: apPosition.x - ENTRY_POINT_AP_LEFT_OFFSET,
+      y: apPosition.y,
+    }))
+    .find((position) =>
+      rectsAreOpen(rectsFromFootprintPosition(footprint, position), allocated)
+    );
+}
+
+function firstAnchoredGroupPosition(
+  group: PlacementGroupCandidate,
+  anchors: readonly PlacementAnchor[],
+  positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
+  allocated: readonly CanvasNodeRect[]
+): CanvasLayoutPosition | undefined {
+  for (const anchor of anchors) {
+    const position = anchoredGroupPosition(
+      anchor,
+      positionByRef,
+      allocated,
+      group.footprint
+    );
+    if (position !== undefined) {
+      return position;
+    }
+  }
+  return undefined;
+}
+
+function singleCandidateFootprint(candidate: PlacementCandidate) {
+  return singleNodeFootprint(nodeFootprintHeight(candidate.node));
 }
 
 function entryPointAnchorPosition(
@@ -419,6 +623,185 @@ function entryPointAnchorPosition(
   );
 }
 
+function isReferencedPlacementCandidate(
+  candidate: PlacementCandidate
+): candidate is PlacementCandidate & { ref: CanvasLayoutResourceRef } {
+  return candidate.ref !== undefined;
+}
+
+function apEntryPointPositionFromGroupOrigin(origin: CanvasLayoutPosition): {
+  ap: CanvasLayoutPosition;
+  entryPoint: CanvasLayoutPosition;
+} {
+  return {
+    ap: { x: origin.x + ENTRY_POINT_AP_LEFT_OFFSET, y: origin.y },
+    entryPoint: { x: origin.x, y: origin.y },
+  };
+}
+
+function placementUnitFootprint(unit: PlacementUnit): PlacementFootprint {
+  if (unit.kind === "group") {
+    return unit.group.footprint;
+  }
+  return singleCandidateFootprint(unit.candidate);
+}
+
+function buildPlacementUnits(
+  candidates: readonly PlacementCandidate[]
+): PlacementUnit[] {
+  const apCandidatesByKey = new Map<
+    string,
+    PlacementCandidate & { ref: CanvasLayoutResourceRef }
+  >();
+  const entryPointCandidatesByApKey = new Map<
+    string,
+    PlacementCandidate & { ref: CanvasLayoutResourceRef }
+  >();
+  for (const candidate of candidates) {
+    if (!isReferencedPlacementCandidate(candidate)) {
+      continue;
+    }
+    if (candidate.ref.kind === "AP") {
+      apCandidatesByKey.set(canvasResourceKey(candidate.ref), candidate);
+    }
+    if (candidate.ref.kind === "EntryPoint") {
+      entryPointCandidatesByApKey.set(
+        canvasResourceKey({
+          kind: "AP",
+          name: candidate.ref.name,
+          namespace: candidate.ref.namespace,
+        }),
+        candidate
+      );
+    }
+  }
+
+  const groupedIndexes = new Set<number>();
+  const units: PlacementUnit[] = [];
+  for (const [apKey, ap] of apCandidatesByKey) {
+    const entryPoint = entryPointCandidatesByApKey.get(apKey);
+    if (entryPoint === undefined) {
+      continue;
+    }
+    groupedIndexes.add(ap.index);
+    groupedIndexes.add(entryPoint.index);
+    units.push({
+      group: {
+        ap,
+        entryPoint,
+        footprint: apEntryPointFootprint(
+          nodeFootprintHeight(ap.node),
+          nodeFootprintHeight(entryPoint.node)
+        ),
+        sortKey: ap.sortKey,
+      },
+      kind: "group",
+    });
+  }
+
+  for (const candidate of candidates) {
+    if (groupedIndexes.has(candidate.index)) {
+      continue;
+    }
+    units.push({ candidate, kind: "single" });
+  }
+
+  return units.sort(comparePlacementUnits);
+}
+
+function placeCandidateAt(
+  candidate: PlacementCandidate,
+  position: CanvasLayoutPosition,
+  positionByRef: Map<string, CanvasLayoutPosition>,
+  placedNodes: Node[],
+  placedLayoutNodes: CanvasLayoutNode[]
+): void {
+  placedNodes[candidate.index] = nodeWithGeneratedPosition(
+    candidate.node,
+    position
+  );
+  if (candidate.ref !== undefined) {
+    positionByRef.set(canvasResourceKey(candidate.ref), position);
+    placedLayoutNodes.push(
+      layoutNodeFromPlacedNode(candidate.node, candidate.ref, position)
+    );
+  }
+}
+
+function placeUnitAt(
+  unit: PlacementUnit,
+  origin: CanvasLayoutPosition,
+  positionByRef: Map<string, CanvasLayoutPosition>,
+  placedNodes: Node[],
+  placedLayoutNodes: CanvasLayoutNode[]
+): void {
+  if (unit.kind === "single") {
+    placeCandidateAt(
+      unit.candidate,
+      origin,
+      positionByRef,
+      placedNodes,
+      placedLayoutNodes
+    );
+    return;
+  }
+
+  const positions = apEntryPointPositionFromGroupOrigin(origin);
+  placeCandidateAt(
+    unit.group.ap,
+    positions.ap,
+    positionByRef,
+    placedNodes,
+    placedLayoutNodes
+  );
+  placeCandidateAt(
+    unit.group.entryPoint,
+    positions.entryPoint,
+    positionByRef,
+    placedNodes,
+    placedLayoutNodes
+  );
+}
+
+function placementForUnit(
+  unit: PlacementUnit,
+  connections: readonly CanvasDetectedConnection[] | undefined,
+  positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
+  allocated: readonly CanvasNodeRect[]
+): CanvasLayoutPosition {
+  const footprint = placementUnitFootprint(unit);
+
+  if (unit.kind === "group") {
+    const position = firstAnchoredGroupPosition(
+      unit.group,
+      connectionAnchorsForRef(unit.group.ap.ref, connections),
+      positionByRef,
+      allocated
+    );
+    return position ?? firstOpenGlobalPosition(allocated, footprint);
+  }
+
+  const candidate = unit.candidate;
+  const entryPointPosition =
+    candidate.ref?.kind === "EntryPoint"
+      ? entryPointAnchorPosition(candidate, positionByRef, allocated)
+      : undefined;
+  const anchored =
+    candidate.ref === undefined
+      ? undefined
+      : firstAnchoredPosition(
+          connectionAnchorsForRef(candidate.ref, connections),
+          positionByRef,
+          allocated,
+          footprint
+        );
+  return (
+    entryPointPosition ??
+    anchored ??
+    firstOpenGlobalPosition(allocated, footprint)
+  );
+}
+
 function savedPositionByRef(
   layout: CanvasLayoutDocument | undefined
 ): Map<string, CanvasLayoutPosition> {
@@ -440,11 +823,9 @@ export function placeCanvasNodesWithLayout({
   const allocated = (layout?.nodes ?? []).map((node) =>
     rectFromPosition(node.position, layoutNodeFootprintHeight(node))
   );
-  const globalOrigins = globalBlockOrigins(allocated);
   const placedNodes = [...nodes];
   const placedLayoutNodes: CanvasLayoutNode[] = [];
-  const rasterCandidates: PlacementCandidate[] = [];
-  const entryPointCandidates: PlacementCandidate[] = [];
+  const placementCandidates: PlacementCandidate[] = [];
 
   placedNodes.forEach((node, index) => {
     const ref = canvasResourceIdentityFromNode(node);
@@ -455,66 +836,24 @@ export function placeCanvasNodesWithLayout({
       return;
     }
 
-    const candidate = {
+    placementCandidates.push({
       index,
       node,
       ref,
       sortKey: key ?? `Unknown:${index}:${node.id}`,
-    };
-    if (ref?.kind === "EntryPoint") {
-      entryPointCandidates.push(candidate);
-    } else {
-      rasterCandidates.push(candidate);
-    }
+    });
   });
 
-  for (const candidate of [...rasterCandidates].sort(
-    comparePlacementCandidates
-  )) {
-    const height = nodeFootprintHeight(candidate.node);
-    const position =
-      candidate.ref === undefined
-        ? undefined
-        : firstAnchoredPosition(
-            connectionAnchorsForRef(candidate.ref, connections),
-            positionByRef,
-            allocated,
-            height
-          );
-    const placement =
-      position ?? firstOpenGlobalPosition(globalOrigins, allocated, height);
-    allocated.push(rectFromPosition(placement, height));
-    placedNodes[candidate.index] = nodeWithGeneratedPosition(
-      candidate.node,
-      placement
+  for (const unit of buildPlacementUnits(placementCandidates)) {
+    const footprint = placementUnitFootprint(unit);
+    const placement = placementForUnit(
+      unit,
+      connections,
+      positionByRef,
+      allocated
     );
-    if (candidate.ref !== undefined) {
-      positionByRef.set(canvasResourceKey(candidate.ref), placement);
-      placedLayoutNodes.push(
-        layoutNodeFromPlacedNode(candidate.node, candidate.ref, placement)
-      );
-    }
-  }
-
-  for (const candidate of [...entryPointCandidates].sort(
-    comparePlacementCandidates
-  )) {
-    const height = nodeFootprintHeight(candidate.node);
-    const position =
-      entryPointAnchorPosition(candidate, positionByRef, allocated) ??
-      firstOpenGlobalPosition(globalOrigins, allocated, height);
-
-    allocated.push(rectFromPosition(position, height));
-    placedNodes[candidate.index] = nodeWithGeneratedPosition(
-      candidate.node,
-      position
-    );
-    if (candidate.ref !== undefined) {
-      positionByRef.set(canvasResourceKey(candidate.ref), position);
-      placedLayoutNodes.push(
-        layoutNodeFromPlacedNode(candidate.node, candidate.ref, position)
-      );
-    }
+    allocated.push(...rectsFromFootprintPosition(footprint, placement));
+    placeUnitAt(unit, placement, positionByRef, placedNodes, placedLayoutNodes);
   }
 
   const resolvedNodes = placedNodes.every(
