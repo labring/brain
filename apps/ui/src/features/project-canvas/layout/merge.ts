@@ -224,7 +224,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
       changed: false,
       layout: undefined,
       nodes: applyCanvasStackOrderToNodes(placed.nodes),
-      placedLayoutNodes: placed.placedLayoutNodes,
+      placedLayoutNodes: [],
     };
   }
 

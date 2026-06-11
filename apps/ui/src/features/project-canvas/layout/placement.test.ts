@@ -15,12 +15,13 @@ import {
 } from "./placement";
 import type { CanvasLayoutDocument } from "./types";
 
-function apNode(name: string): Node {
+function apNode(name: string, uid?: string): Node {
   return {
     data: {
       states: {
         name,
         namespace: "default",
+        ...(uid === undefined ? {} : { uid }),
       },
     },
     id: `ap-${name}`,
@@ -125,6 +126,25 @@ test("returns newly placed layout nodes for first placement persistence", () => 
       ref: { kind: "AP", name: "api", namespace: "default" },
     },
   ]);
+});
+
+test("includes last seen UID in first-placement layout nodes", () => {
+  const result = placeCanvasNodesWithLayout({
+    layout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    nodes: [apNode("api", "api-uid")],
+  });
+
+  assert.deepEqual(result.placedLayoutNodes[0], {
+    expanded: false,
+    lastSeenUid: "api-uid",
+    position: { x: 0, y: 0 },
+    ref: { kind: "AP", name: "api", namespace: "default" },
+  });
 });
 
 test("keeps saved layout positions for detected nodes", () => {

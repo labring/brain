@@ -5,6 +5,7 @@ import {
   canvasEntryPointApResourceIdentityFromNode,
   canvasResourceIdentityFromNode,
   canvasResourceKey,
+  canvasResourceLastSeenUidFromNode,
 } from "../nodes/resource-identity";
 import type {
   CanvasLayoutDocument,
@@ -159,8 +160,10 @@ function layoutNodeFromPlacedNode(
   const layout = asRecord(data?.layout);
   const expanded =
     typeof layout?.expanded === "boolean" ? layout.expanded : false;
+  const lastSeenUid = canvasResourceLastSeenUidFromNode(node);
   return {
     expanded,
+    ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
     position: { x: position.x, y: position.y },
     ref,
   };

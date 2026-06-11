@@ -96,6 +96,16 @@ test("merge exposes default Canvas Node Stack Order as React Flow z-index", () =
   );
 });
 
+test("merge does not persist first placements when layout is unavailable", () => {
+  const result = mergeCanvasLayoutWithDetectedNodes({
+    layout: undefined,
+    nodes: [apNode("api")],
+  });
+
+  assert.deepEqual(result.nodes[0]?.position, { x: 0, y: 0 });
+  assert.deepEqual(result.placedLayoutNodes, []);
+});
+
 test("merge lets explicit Canvas Node Stack Order render above default layers", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
