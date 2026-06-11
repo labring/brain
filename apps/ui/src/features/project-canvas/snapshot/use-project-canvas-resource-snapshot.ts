@@ -16,6 +16,7 @@ import {
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {
   entryPointRefreshIntervalForLifecycle,
+  type WorkloadTransientSinceByKey,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
 import {
@@ -25,7 +26,11 @@ import {
 import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
-const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
+const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
+
+function createTransientSinceMap(): WorkloadTransientSinceByKey {
+  return new Map<string, number>();
+}
 
 export function useProjectCanvasResourceSnapshot(options: {
   canvasLayout?: CanvasLayoutDocument;
@@ -63,10 +68,18 @@ export function useProjectCanvasResourceSnapshot(options: {
 
   const apsListRef = useRef<K8sGetResponse | undefined>(undefined);
   const dbsListRef = useRef<K8sGetResponse | undefined>(undefined);
+  const apTransientSinceByKeyRef = useRef(createTransientSinceMap());
+  const dbTransientSinceByKeyRef = useRef(createTransientSinceMap());
+  const deploymentTransientSinceByKeyRef = useRef(createTransientSinceMap());
+  const statefulSetTransientSinceByKeyRef = useRef(createTransientSinceMap());
+  const entryPointPublicEndpointSinceByKeyRef = useRef(
+    createTransientSinceMap()
+  );
   const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
     useState(0);
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
     useState(0);
+  const [isPageVisible, setIsPageVisible] = useState(true);
   const peerDbsEmpty = useCallback(
     () => apItemsFromList(dbsListRef.current).length === 0,
     []
@@ -81,30 +94,79 @@ export function useProjectCanvasResourceSnapshot(options: {
     );
   }, []);
   const workloadListRefreshInterval = useCallback(
-    (latestData: K8sGetResponse | undefined, peerEmpty: () => boolean) =>
+    (
+      latestData: K8sGetResponse | undefined,
+      peerEmpty: () => boolean,
+      resourceKind: string,
+      transientSinceByKey: WorkloadTransientSinceByKey
+    ) =>
       workloadListRefreshIntervalForCanvas({
         discoveryPollUntil: workloadDiscoveryPollUntil,
+        fallbackNamespace: namespace,
+        isPageVisible,
         latestData,
         peerEmpty: peerEmpty(),
+        resourceKind,
+        transientSinceByKey,
         workloadReconcilePollUntil,
       }),
-    [workloadDiscoveryPollUntil, workloadReconcilePollUntil]
+    [
+      isPageVisible,
+      namespace,
+      workloadDiscoveryPollUntil,
+      workloadReconcilePollUntil,
+    ]
   );
   const apListRefreshInterval = useCallback(
     (latestData: K8sGetResponse | undefined) =>
-      workloadListRefreshInterval(latestData, peerDbsEmpty),
+      workloadListRefreshInterval(
+        latestData,
+        peerDbsEmpty,
+        "ap",
+        apTransientSinceByKeyRef.current
+      ),
     [peerDbsEmpty, workloadListRefreshInterval]
   );
   const dbListRefreshInterval = useCallback(
     (latestData: K8sGetResponse | undefined) =>
-      workloadListRefreshInterval(latestData, peerApsEmpty),
+      workloadListRefreshInterval(
+        latestData,
+        peerApsEmpty,
+        "db",
+        dbTransientSinceByKeyRef.current
+      ),
     [peerApsEmpty, workloadListRefreshInterval]
+  );
+  const deploymentListRefreshInterval = useCallback(
+    (latestData: K8sGetResponse | undefined) =>
+      workloadListRefreshInterval(
+        latestData,
+        peerDbsEmpty,
+        "deployment",
+        deploymentTransientSinceByKeyRef.current
+      ),
+    [peerDbsEmpty, workloadListRefreshInterval]
+  );
+  const statefulSetListRefreshInterval = useCallback(
+    (latestData: K8sGetResponse | undefined) =>
+      workloadListRefreshInterval(
+        latestData,
+        peerDbsEmpty,
+        "statefulset",
+        statefulSetTransientSinceByKeyRef.current
+      ),
+    [peerDbsEmpty, workloadListRefreshInterval]
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset discovery polling when project changes
   useEffect(() => {
     resetWorkloadDiscoveryPollWindow();
     setWorkloadReconcilePollUntil(0);
+    apTransientSinceByKeyRef.current.clear();
+    dbTransientSinceByKeyRef.current.clear();
+    deploymentTransientSinceByKeyRef.current.clear();
+    statefulSetTransientSinceByKeyRef.current.clear();
+    entryPointPublicEndpointSinceByKeyRef.current.clear();
   }, [labelSelector]);
 
   const {
@@ -137,9 +199,12 @@ export function useProjectCanvasResourceSnapshot(options: {
       entryPointRefreshIntervalForLifecycle({
         apsData,
         entryPointsData: latestData,
+        fallbackNamespace: namespace,
+        isPageVisible,
+        publicEndpointSinceByKey: entryPointPublicEndpointSinceByKeyRef.current,
         workloadReconcilePollUntil,
       }),
-    [apsData, workloadReconcilePollUntil]
+    [apsData, isPageVisible, namespace, workloadReconcilePollUntil]
   );
   const {
     data: entryPointsData,
@@ -161,29 +226,46 @@ export function useProjectCanvasResourceSnapshot(options: {
     kubeconfig,
     labelSelector: templateNativeLabelSelector,
     namespace,
-    refreshInterval: apListRefreshInterval,
+    deploymentsRefreshInterval: deploymentListRefreshInterval,
+    statefulSetsRefreshInterval: statefulSetListRefreshInterval,
   });
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
 
-  const refresh = useCallback(() => {
-    setWorkloadReconcilePollUntil(
-      Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
-    );
-    resetWorkloadDiscoveryPollWindow();
+  const revalidate = useCallback(() => {
     return Promise.all([
       mutateAps(),
       mutateDbs(),
       mutateEntryPoints(),
       mutateTemplateNative(),
     ]);
-  }, [
-    mutateAps,
-    mutateDbs,
-    mutateEntryPoints,
-    mutateTemplateNative,
-    resetWorkloadDiscoveryPollWindow,
-  ]);
+  }, [mutateAps, mutateDbs, mutateEntryPoints, mutateTemplateNative]);
+
+  const refresh = useCallback(() => {
+    setWorkloadReconcilePollUntil(
+      Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
+    );
+    resetWorkloadDiscoveryPollWindow();
+    return revalidate();
+  }, [revalidate, resetWorkloadDiscoveryPollWindow]);
+
+  useEffect(() => {
+    const nextIsPageVisible =
+      typeof document === "undefined" ? true : !document.hidden;
+    setIsPageVisible(nextIsPageVisible);
+
+    const onVisibilityChange = () => {
+      const visible = !document.hidden;
+      setIsPageVisible(visible);
+      if (visible) {
+        revalidate().catch(() => undefined);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [revalidate]);
 
   const error = apsError ?? dbsError ?? entryPointsError ?? templateNativeError;
   const isLoading =
