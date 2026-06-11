@@ -13,14 +13,22 @@ AP desired state records the user's Custom Domain Binding intent and the Platfor
 
 To preserve Launchpad's one-screen binding experience, Platform Address hosts need deterministic draft-visible allocation: the UI/API and AP direct renderer must be able to compute the same platform host from namespace, AP name, Platform Address ID, and routing domain before observed routing status exists. AP UID is excluded from the host slug because it is not draft-visible; observed state still decides whether the address is actually reachable.
 
+For Platform Address health, the top-level `accessible` status means AP-owned platform routing support matches the AP's Public Address intent and target App Listening Port. A separately reported load balancer address is useful detail but is not required before the Platform Address can be considered accessible.
+
 Submit-time CNAME verification lives in the Next.js backend that serves AP Settings, following Launchpad's existing pattern. This verification gates the local Settings Draft flow. Ongoing DNS, routing, certificate, and binding health should be projected through AP public access status.
 
 Custom Domain Ingress and certificate resources are public access support resources owned by the AP direct orchestration path. Platform Domain Ingress continues to use the platform wildcard certificate, while Custom Domain Bindings require per-domain certificates. AP status derives each binding from AP desired network state and any observed public access support state the API chooses to project.
+
+The AP product view is the projection boundary for Public Address health. AP list and get responses should aggregate AP-owned public access support resources into AP public access status, while the AP Public Access Node, AP Settings, and Public Access Panel consume the AP status rather than monitoring those support resources independently.
+
+Public Address health matches support resources by Public Address identity first: Platform Address IDs identify platform routing support, and Custom Domain Binding IDs identify custom-domain routing and certificate support. Hosts and domains are health evidence and display values, not the primary identity.
 
 Unlike Launchpad, AP Settings v1 only supports CNAME verification as the submit-time ownership check. It does not include Launchpad's HTTP challenge fallback, because the Custom Domain Binding model intentionally ties the user-owned domain to a promoted Platform Address host.
 
 Custom Domain Binding health is derived from public access support resources, not from application HTTP responses. AP public access status may record submit-time DNS verification as the DNS signal, derive certificate health from cert-manager `Certificate` conditions, and derive routing health from whether the Custom Domain Ingress matches the binding task. Business-level responses from the workload, including HTTP 404 or 500, do not make the binding unhealthy.
 
-AP public access status projects each Custom Domain Binding with a top-level status (`pending`, `verifying`, `accessible`, or `blocked`) and may include nested DNS, certificate, and routing details. DNS detail records the submit-time CNAME verification result and may be `unknown` after save because v1 does not include ongoing DNS polling; certificate detail is projected from cert-manager; routing detail is projected from Custom Domain Ingress configuration.
+AP public access status projects each Custom Domain Binding with a top-level status (`progressing`, `verifying`, `accessible`, or `blocked`) and may include nested DNS, certificate, and routing details. DNS detail records persisted submit-time CNAME verification evidence; v1 does not include ongoing DNS polling, so later DNS drift is detected only when the user edits or resubmits the binding. Certificate detail is projected from cert-manager; routing detail is projected from Custom Domain Ingress configuration.
+
+CNAME verification evidence is saved with the Custom Domain Binding intent. It is not written by the frontend into AP status and does not require a separate product resource; the AP read model combines the saved evidence with observed certificate and routing support to project Custom Domain health.
 
 The v1 Routing Scope for duplicate Custom Domain detection is the current Kubernetes namespace. AP Settings and backend validation reject duplicate Custom Domains within the same AP and namespace-visible AP set; cluster-wide uniqueness is deferred until the platform has admission control or a public access index.

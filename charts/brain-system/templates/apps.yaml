@@ -101,7 +101,7 @@ metadata:
   namespace: {{ $root.Release.Namespace }}
   labels:
     {{- include "brain-system.labels" $root | nindent 4 }}
-    {{- include "brain-system.brainLabels" (dict "projectId" $projectId "kind" "entrypoint-support" "name" (include "brain-system.publicIngressName" (dict "name" $cfg.name "id" $address.id))) | nindent 4 }}
+    {{- include "brain-system.brainLabels" (dict "projectId" $projectId "kind" "public-access-support" "name" (include "brain-system.publicIngressName" (dict "name" $cfg.name "id" $address.id))) | nindent 4 }}
     brain.io/app-name: {{ $cfg.name | quote }}
     brain.io/public-address-id: {{ $address.id | quote }}
     brain.io/public-address-kind: "platform"

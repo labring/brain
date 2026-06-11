@@ -403,6 +403,111 @@ func TestAPTransformObservedCustomDomainHidesPromotedPlatformAddress(t *testing.
 	assertPublicNetworkAddressIDMissing(t, addresses, "pa_abc123")
 }
 
+func TestAPTransformProjectsPlatformAddressAccessibleFromSupportIngress(t *testing.T) {
+	out := APWithPublicAccessSupportResourcesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"labels":    map[string]interface{}{"region": "apps.example.com"},
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+						},
+						"platformAddresses": []interface{}{
+							map[string]interface{}{"id": "pa_abc123", "port": 8080},
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			publicAccessIngress("api", "pa_abc123", "platform", "ucflzg.apps.example.com", "api-service", 8080),
+		},
+		nil,
+		nil,
+		nil,
+	)
+
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	addresses := network["publicAddresses"].([]map[string]interface{})
+	assertPublicNetworkAddress(t, addresses, "ucflzg.apps.example.com", "https://ucflzg.apps.example.com/", 8080)
+}
+
+func TestAPTransformProjectsCustomDomainAccessibleFromSupportResources(t *testing.T) {
+	out := APWithPublicAccessSupportResourcesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"labels":    map[string]interface{}{"region": "apps.example.com"},
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+						},
+						"platformAddresses": []interface{}{
+							map[string]interface{}{"id": "pa_abc123", "port": 8080},
+						},
+						"customDomains": []interface{}{
+							map[string]interface{}{
+								"dns": map[string]interface{}{
+									"status":     "verified",
+									"target":     "ucflzg.apps.example.com",
+									"verifiedAt": "2026-06-12T00:00:00Z",
+								},
+								"domain":            "www.example.com",
+								"id":                "cd_def456",
+								"platformAddressId": "pa_abc123",
+							},
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			publicAccessIngress("api", "cd_def456", "custom-domain", "www.example.com", "api-service", 8080),
+		},
+		nil,
+		[]map[string]interface{}{
+			publicAccessCertificate("api", "cd_def456", true, "", ""),
+		},
+		nil,
+	)
+
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	addresses := network["publicAddresses"].([]map[string]interface{})
+	for _, address := range addresses {
+		if address["id"] != "cd_def456" {
+			continue
+		}
+		if got := address["status"]; got != "accessible" {
+			t.Fatalf("custom domain status = %v, want accessible", got)
+		}
+		dns := address["dns"].(map[string]interface{})
+		if got := dns["status"]; got != "verified" {
+			t.Fatalf("dns status = %v, want verified", got)
+		}
+		certificate := address["certificate"].(map[string]interface{})
+		if got := certificate["status"]; got != "ready" {
+			t.Fatalf("certificate status = %v, want ready", got)
+		}
+		routing := address["routing"].(map[string]interface{})
+		if got := routing["status"]; got != "ready" {
+			t.Fatalf("routing status = %v, want ready", got)
+		}
+		return
+	}
+	t.Fatal("missing custom domain public address")
+}
+
 func TestAPTransformBlocksCustomDomainWhenTargetPortMissing(t *testing.T) {
 	out := APWithIngressesAndServicesFromList(
 		map[string]interface{}{
@@ -575,6 +680,50 @@ func ingressRule(host string, serviceName string, port int) map[string]interface
 	}
 }
 
+func publicAccessIngress(apName, publicID, publicKind, host, serviceName string, port int) map[string]interface{} {
+	return map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"labels": map[string]interface{}{
+				"brain.io/app-name":            apName,
+				"brain.io/public-address-id":   publicID,
+				"brain.io/public-address-kind": publicKind,
+				"brain.io/resource-kind":       "public-access-support",
+			},
+		},
+		"spec": map[string]interface{}{
+			"rules": []interface{}{
+				ingressRule(host, serviceName, port),
+			},
+		},
+	}
+}
+
+func publicAccessCertificate(apName, id string, ready bool, reason string, message string) map[string]interface{} {
+	status := "False"
+	if ready {
+		status = "True"
+	}
+	condition := map[string]interface{}{"type": "Ready", "status": status}
+	if reason != "" {
+		condition["reason"] = reason
+	}
+	if message != "" {
+		condition["message"] = message
+	}
+	return map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"labels": map[string]interface{}{
+				"brain.io/app-name":      apName,
+				"brain.io/resource-kind": "public-access-support",
+			},
+			"name": "cd-" + stablePlatformAddressHostLabel("api/"+id, 6),
+		},
+		"status": map[string]interface{}{
+			"conditions": []interface{}{condition},
+		},
+	}
+}
+
 func assertPublicNetworkAddress(t *testing.T, addresses []map[string]interface{}, host string, url string, port int) {
 	t.Helper()
 	for _, address := range addresses {
@@ -648,8 +797,8 @@ func assertCustomDomainPublicNetworkAddress(t *testing.T, addresses []map[string
 		if got := address["type"]; got != "custom" {
 			t.Fatalf("custom domain address %s type = %v, want custom", id, got)
 		}
-		if got := address["status"]; got != "pending" {
-			t.Fatalf("custom domain address %s status = %v, want pending", id, got)
+		if got := address["status"]; got != "verifying" {
+			t.Fatalf("custom domain address %s status = %v, want verifying", id, got)
 		}
 		return
 	}

@@ -891,10 +891,14 @@ async function verifiedCustomDomainDraft({
   }
   return {
     cnameTarget,
+    dns: {
+      status: "verified",
+      target: cnameTarget,
+      verifiedAt: new Date().toISOString(),
+    },
     domain,
     id: generateCustomDomainBindingId(),
     platformAddressId,
-    status: "verified",
     targetPort: port,
   };
 }

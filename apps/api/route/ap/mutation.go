@@ -30,8 +30,6 @@ import (
 	orchestration "sealos/api/service/orchestration"
 )
 
-const legacyPublicAccessSupportResourceKind = "entrypoint-support"
-
 func registerCreate(grp huma.API) {
 	type createBody struct {
 		YAML string `json:"yaml" required:"true" doc:"AP product manifest (YAML or JSON). The Go API renders it directly into Kubernetes Deployment and Service resources. Required fields: metadata.name, spec.projectId, spec.input.image, and spec.input.network.appListeningPorts."`
@@ -1692,11 +1690,13 @@ func syncAPPublicIngressesFromPatch(restConfig *rest.Config, cfg *clientcmdapi.C
 }
 
 func apPublicRoutingSupportSelectors(name string) []string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "="
 	return []string{
-		base + orchestration.ResourceKindPublicAccessSupport,
-		base + legacyPublicAccessSupportResourceKind,
+		apPublicRoutingSupportSelector(name),
 	}
+}
+
+func apPublicRoutingSupportSelector(name string) string {
+	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindPublicAccessSupport
 }
 
 func apNetworkIngressStateFromPatch(raw json.RawMessage) (map[string]interface{}, string, bool) {

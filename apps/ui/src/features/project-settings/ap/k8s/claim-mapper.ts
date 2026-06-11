@@ -431,7 +431,16 @@ function normalizeDesiredCustomDomains(
     }
     out.push(
       mergedCustomDomainReadModel(
-        { domain, id, platformAddressId },
+        {
+          ...(customDomainDetailFromRecord(asRecord(binding.dns)) == null
+            ? {}
+            : {
+                dns: customDomainDetailFromRecord(asRecord(binding.dns)),
+              }),
+          domain,
+          id,
+          platformAddressId,
+        },
         projectedCustomDomains.get(id)
       )
     );
@@ -440,15 +449,19 @@ function normalizeDesiredCustomDomains(
 }
 
 function mergedCustomDomainReadModel(
-  desired: Pick<ApClaimCustomDomain, "domain" | "id" | "platformAddressId">,
+  desired: Pick<
+    ApClaimCustomDomain,
+    "dns" | "domain" | "id" | "platformAddressId"
+  >,
   projected: CustomDomainReadModelPatch | undefined
 ): ApClaimCustomDomain {
   const observed = {
-    status: "pending",
+    status: "verifying",
     ...projected,
   };
   return {
     ...observed,
+    dns: projected?.dns ?? desired.dns,
     domain: projected?.domain ?? desired.domain,
     id: desired.id,
     platformAddressId:
@@ -463,29 +476,76 @@ function projectedCustomDomainsById(raw: unknown): CustomDomainReadModelById {
   const out = new Map<string, CustomDomainReadModelPatch>();
   for (const item of raw) {
     const row = asRecord(item);
-    if (row == null || trimStr(row.type).toLowerCase() !== "custom") {
+    if (!isProjectedCustomDomainRow(row)) {
       continue;
     }
     const id = customDomainBindingIdFromValue(row.id);
-    const platformAddressId = platformAddressIdFromValue(row.platformAddressId);
-    const domain = normalizeCustomDomainName(row.host);
     if (id === undefined) {
       continue;
     }
-    const cnameTarget = trimStr(row.cnameTarget);
-    const reason = trimStr(row.reason);
-    const status = trimStr(row.status);
-    const targetPort = privatePortNum(row.port);
-    out.set(id, {
-      ...(cnameTarget === "" ? {} : { cnameTarget }),
-      ...(domain === "" ? {} : { domain }),
-      ...(platformAddressId === undefined ? {} : { platformAddressId }),
-      ...(reason === "" ? {} : { reason }),
-      ...(status === "" ? {} : { status }),
-      ...(targetPort == null ? {} : { targetPort }),
-    });
+    out.set(id, customDomainReadModelPatchFromRow(row));
   }
   return out;
+}
+
+function isProjectedCustomDomainRow(
+  row: Record<string, unknown> | undefined
+): row is Record<string, unknown> {
+  return row != null && trimStr(row.type).toLowerCase() === "custom";
+}
+
+function customDomainReadModelPatchFromRow(
+  row: Record<string, unknown>
+): CustomDomainReadModelPatch {
+  const certificate = customDomainDetailFromRecord(asRecord(row.certificate));
+  const cnameTarget = trimStr(row.cnameTarget);
+  const dns = customDomainDetailFromRecord(asRecord(row.dns));
+  const domain = normalizeCustomDomainName(row.host);
+  const platformAddressId = platformAddressIdFromValue(row.platformAddressId);
+  const reason = trimStr(row.reason);
+  const routing = customDomainDetailFromRecord(asRecord(row.routing));
+  const status = trimStr(row.status);
+  const targetPort = privatePortNum(row.port);
+  return {
+    ...(certificate == null ? {} : { certificate }),
+    ...(cnameTarget === "" ? {} : { cnameTarget }),
+    ...(dns == null ? {} : { dns }),
+    ...(domain === "" ? {} : { domain }),
+    ...(platformAddressId === undefined ? {} : { platformAddressId }),
+    ...(reason === "" ? {} : { reason }),
+    ...(routing == null ? {} : { routing }),
+    ...(status === "" ? {} : { status }),
+    ...(targetPort == null ? {} : { targetPort }),
+  };
+}
+
+function customDomainDetailFromRecord(
+  record: Record<string, unknown> | undefined
+): ApNetworkCustomDomainDetail | undefined {
+  if (record == null) {
+    return undefined;
+  }
+  const message = trimStr(record.message);
+  const reason = trimStr(record.reason);
+  const status = trimStr(record.status);
+  const target = trimStr(record.target);
+  const verifiedAt = trimStr(record.verifiedAt);
+  if (
+    message === "" &&
+    reason === "" &&
+    status === "" &&
+    target === "" &&
+    verifiedAt === ""
+  ) {
+    return undefined;
+  }
+  return {
+    ...(message === "" ? {} : { message }),
+    ...(reason === "" ? {} : { reason }),
+    ...(status === "" ? {} : { status }),
+    ...(target === "" ? {} : { target }),
+    ...(verifiedAt === "" ? {} : { verifiedAt }),
+  };
 }
 
 function normalizeDesiredPlatformAddresses(

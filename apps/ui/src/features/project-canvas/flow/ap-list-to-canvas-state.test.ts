@@ -165,7 +165,7 @@ test("PublicAccess canvas nodes display AP-projected Custom Domain rows", () => 
                   id: "cd_def456",
                   platformAddressId: "pa_abc123",
                   port: 8080,
-                  status: "pending",
+                  status: "verifying",
                   type: "custom",
                   url: "https://www.example.com/",
                 },
@@ -194,7 +194,7 @@ test("PublicAccess canvas nodes display AP-projected Custom Domain rows", () => 
       {
         id: "cd_def456",
         label: "Custom Domain",
-        status: { label: "Pending", tone: "pending" },
+        status: { label: "Verifying", tone: "verifying" },
         value: "https://www.example.com/",
       },
     ],

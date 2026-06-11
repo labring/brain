@@ -87,7 +87,8 @@ func registerGet(grp huma.API) {
 			}
 			statefulSetJSON = mergeK8sListJSON(statefulSetJSON, nextStatefulSetJSON)
 		}
-		body, err := apResponseFromWorkloadLists(
+		body, err := apResponseFromWorkloadListsWithPublicAccessSupport(
+			cfg,
 			deploymentJSON,
 			statefulSetJSON,
 		)

@@ -16,6 +16,8 @@ export interface ApNetworkCustomDomainDetail {
   message?: string;
   reason?: string;
   status?: string;
+  target?: string;
+  verifiedAt?: string;
 }
 
 export interface ApNetworkCustomDomain {
@@ -94,8 +96,22 @@ function customDomainDraftsEqual(
       domain.id.trim() === other.id.trim() &&
       domain.domain.trim().toLowerCase() ===
         other.domain.trim().toLowerCase() &&
-      domain.platformAddressId.trim() === other.platformAddressId.trim()
+      domain.platformAddressId.trim() === other.platformAddressId.trim() &&
+      customDomainDetailSignature(domain.dns) ===
+        customDomainDetailSignature(other.dns)
     );
+  });
+}
+
+function customDomainDetailSignature(
+  detail: ApNetworkCustomDomainDetail | undefined
+): string {
+  return JSON.stringify({
+    message: detail?.message?.trim() ?? "",
+    reason: detail?.reason?.trim() ?? "",
+    status: detail?.status?.trim() ?? "",
+    target: detail?.target?.trim() ?? "",
+    verifiedAt: detail?.verifiedAt?.trim() ?? "",
   });
 }
 

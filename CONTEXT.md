@@ -42,6 +42,8 @@ An externally reachable URL/domain alias for an AP that declares a target port. 
 
 A system-assigned Public Address that the platform can create without user DNS or certificate setup; in v1, users request one by choosing an App Listening Port, not by providing a host or URL. A Platform Address may be promoted into the CNAME target for a Custom Domain Binding, after which its host remains the binding target rather than the primary displayed Public Address.
 
+Platform Address health is based on whether the AP's platform routing support matches the AP's Public Address intent and target App Listening Port. It does not require a separately reported load balancer address before the Platform Address can be considered accessible.
+
 ### Requested Platform Address
 
 A v1 Platform Address desired entry in AP `spec.input.network.platformAddresses[]`. It has a stable Platform Address ID and target App Listening Port, but no platform-allocated host or URL yet.
@@ -54,9 +56,27 @@ A Platform Address whose host and URL have been assigned by the platform and pub
 
 A Public Address whose allocated host resolves and successfully routes external traffic to the target App Listening Port. Business-level HTTP errors from the workload do not make the Public Address unreachable; a missing target App Listening Port, DNS failure, TLS/connectivity failure, or routing to the wrong backend does.
 
+### AP Public Access Health
+
+An AP-owned read-side assessment of each Public Address's public routing readiness and reachability. It is routing health rather than application response monitoring: workload HTTP 404 or 500 responses do not make a Public Address unhealthy.
+
+AP Settings and the AP Public Access Node may present AP Public Access Health, but it does not belong to a separate EntryPoint, AP Public Access Node, or independent public access resource.
+
+An AP with no Public Address intent has no AP Public Access Health entries; this is absence of public access, not a blocked or unconfigured health state.
+
+_Avoid_: EntryPoint health, AP Public Access Node health, standalone public access monitor.
+
+### AP Public Access Health Status
+
+The AP-owned public routing health state for a Public Address: `progressing`, `verifying`, `accessible`, or `blocked`. `Pending` is legacy-compatible wording, not the canonical health status.
+
+_Avoid_: Pending Public Address health, EntryPoint status, node status.
+
 ### Custom Domain
 
 A user-owned Public Address for an AP. A Custom Domain reaches an App Listening Port through a Custom Domain Binding.
+
+Custom Domain health uses `verifying` while DNS ownership, certificate readiness, or routing readiness is still being established. It becomes `blocked` only when the binding is known not to be able to proceed without a changed user or platform action.
 
 ### Routing Scope
 
@@ -523,3 +543,7 @@ The relationship that attaches a Custom Domain to an AP by promoting one Platfor
 A Custom Domain Binding targets the App Listening Port selected on the promoted Platform Address. Binding a Custom Domain may also retarget that promoted Platform Address to a different App Listening Port.
 
 Unbinding a Custom Domain removes that relationship and returns the promoted Platform Address to ordinary display; it does not delete the Platform Address or close public access.
+
+### CNAME Verification Evidence
+
+The remembered fact that a Custom Domain pointed to the promoted Platform Address when the Custom Domain Binding was submitted. It belongs to the Custom Domain Binding intent lifecycle and is not ongoing DNS monitoring.

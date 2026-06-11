@@ -340,11 +340,16 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
           publicAddresses: [
             {
               cnameTarget: "ucflzg.apps.example.com",
+              dns: {
+                status: "verified",
+                target: "ucflzg.apps.example.com",
+                verifiedAt: "2026-06-12T00:00:00.000Z",
+              },
               host: "www.example.com",
               id: "cd_def456",
               platformAddressId: "pa_abc123",
               port: 8080,
-              status: "pending",
+              status: "verifying",
               type: "custom",
               url: "https://www.example.com/",
             },
@@ -358,10 +363,15 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
   assert.deepEqual(settings.network?.customDomains, [
     {
       cnameTarget: "ucflzg.apps.example.com",
+      dns: {
+        status: "verified",
+        target: "ucflzg.apps.example.com",
+        verifiedAt: "2026-06-12T00:00:00.000Z",
+      },
       domain: "www.example.com",
       id: "cd_def456",
       platformAddressId: "pa_abc123",
-      status: "pending",
+      status: "verifying",
       targetPort: 8080,
     },
   ]);
