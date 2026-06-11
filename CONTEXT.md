@@ -12,6 +12,12 @@ A reusable UI component eligible for the Component Registry. A Registry Componen
 
 _Avoid_: Product Surface Registry, Pane Registry, Flow Registry.
 
+### Product Tooltip
+
+A transient, non-interactive hint used by the product design system for compact controls or labels. Product Tooltip does not include browser title hints, chart data callouts, or editor/autocomplete overlays.
+
+_Avoid_: All tooltip, native title tooltip, chart tooltip.
+
 ### EntryPoint
 
 An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource or CRD.

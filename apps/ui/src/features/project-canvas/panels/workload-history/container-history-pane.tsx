@@ -119,7 +119,7 @@ function SnapshotHistoryListItem({
                 </AppIconButton>
               }
             />
-            <TooltipContent side="top">Review settings</TooltipContent>
+            <TooltipContent>Review settings</TooltipContent>
           </Tooltip>
           <AppButton
             aria-busy={rollbackInFlightHere}
