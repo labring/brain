@@ -20,10 +20,9 @@ import {
   SquareTerminal,
   Trash2,
 } from "lucide-react";
-import { type ComponentType, type SVGProps, useState } from "react";
+import type { ComponentType, SVGProps } from "react";
 
 import { useContainerNode } from "./container-node.context";
-import { ContainerNodeDeleteDialog } from "./container-node.delete-dialog";
 import { containerNodeLifecycleMenuVisibility } from "./container-node.menu-visibility";
 import { resolveContainerNodeStatus } from "./container-node.status";
 import type {
@@ -281,55 +280,40 @@ function ContainerNodeHeaderMenu() {
   const {
     actions: { lifecycleActions },
     state: {
-      states: { kind, name, status },
+      states: { status },
     },
   } = useContainerNode();
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { showRestart, showStart, showStop } =
     containerNodeLifecycleMenuVisibility(status?.tone ?? status?.label);
-  const deleteAction = lifecycleActions?.delete;
 
   return (
-    <>
-      <CanvasNode.ActionMenu aria-label="Open workload actions">
-        {LIFECYCLE_ACTION_ITEMS.map((item) => {
-          if (item.key === "start" && !showStart) {
-            return null;
-          }
-          if (item.key === "stop" && !showStop) {
-            return null;
-          }
-          if (item.key === "restart" && !showRestart) {
-            return null;
-          }
+    <CanvasNode.ActionMenu aria-label="Open workload actions">
+      {LIFECYCLE_ACTION_ITEMS.map((item) => {
+        if (item.key === "start" && !showStart) {
+          return null;
+        }
+        if (item.key === "stop" && !showStop) {
+          return null;
+        }
+        if (item.key === "restart" && !showRestart) {
+          return null;
+        }
 
-          const action = lifecycleActions?.[item.key];
-          const menuAction =
-            item.key === "delete" && action != null
-              ? { ...action, onClick: () => setDeleteDialogOpen(true) }
-              : action;
-          const Icon = item.icon;
+        const action = lifecycleActions?.[item.key];
+        const Icon = item.icon;
 
-          return (
-            <CanvasNode.ActionMenuItem
-              action={menuAction}
-              actionKey={item.key}
-              icon={<Icon aria-hidden className="size-4" />}
-              key={item.key}
-              tone={item.tone}
-            >
-              {item.label}
-            </CanvasNode.ActionMenuItem>
-          );
-        })}
-      </CanvasNode.ActionMenu>
-      <ContainerNodeDeleteDialog
-        kind={kind}
-        name={name}
-        onConfirmDelete={deleteAction?.onClick}
-        onOpenChange={setDeleteDialogOpen}
-        open={deleteDialogOpen}
-      />
-    </>
+        return (
+          <CanvasNode.ActionMenuItem
+            action={action}
+            actionKey={item.key}
+            icon={<Icon aria-hidden className="size-4" />}
+            key={item.key}
+            tone={item.tone}
+          >
+            {item.label}
+          </CanvasNode.ActionMenuItem>
+        );
+      })}
+    </CanvasNode.ActionMenu>
   );
 }

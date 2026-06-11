@@ -2,8 +2,6 @@ export type {
   ContainerNodeAction,
   ContainerNodeActions,
   ContainerNodeContextValue,
-  ContainerNodeDeleteDialogPanelProps,
-  ContainerNodeDeleteDialogProps,
   ContainerNodeLifecycleActionKey,
   ContainerNodeLifecycleActions,
   ContainerNodeMetricKey,
