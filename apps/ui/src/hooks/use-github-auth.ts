@@ -39,9 +39,10 @@ async function fetchConnection(
   return (await response.json()) as GithubConnectionResponse;
 }
 
-export function useGithubAuth(): UseGithubAuthResult {
+export function useGithubAuth(options?: { enabled?: boolean }): UseGithubAuthResult {
+  const enabled = options?.enabled ?? true;
   const namespace = useAtomValue(namespaceAtom).trim();
-  const canCheck = namespace !== "";
+  const canCheck = enabled && namespace !== "";
   const swrKey = canCheck ? (["github-connection", namespace] as const) : null;
 
   const { data, error, isLoading, mutate } = useSWR(

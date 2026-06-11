@@ -1,7 +1,7 @@
 "use client";
 
-import type { TemplateDeploymentChoice } from "@workspace/ui/components/template-deployer";
 import useSWR from "swr";
+import type { TemplateDeploymentChoice } from "@/features/deployment/template-deployer";
 
 function templatesFromBody(body: unknown): TemplateDeploymentChoice[] {
   if (body == null || typeof body !== "object" || !("templates" in body)) {
@@ -36,18 +36,19 @@ async function fetchTemplateCatalog(): Promise<TemplateDeploymentChoice[]> {
   return templatesFromBody(body);
 }
 
-export function useTemplateCatalog(): {
+export function useTemplateCatalog(options?: { enabled?: boolean }): {
   error: Error | undefined;
   isLoading: boolean;
   templates: TemplateDeploymentChoice[];
 } {
+  const enabled = options?.enabled ?? true;
   const { data, error, isLoading } = useSWR(
-    "template-catalog",
+    enabled ? "template-catalog" : null,
     fetchTemplateCatalog
   );
   return {
     error,
-    isLoading,
+    isLoading: enabled ? isLoading : false,
     templates: data ?? [],
   };
 }

@@ -1,8 +1,8 @@
 "use client";
 
+import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CanvasResourcePane } from "@/features/project-canvas/panels/canvas-resource-pane";
-import type { SettingsLeaveGuardRegistration } from "@/features/project-canvas/panels/settings-leave-guard";
+import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
 import { ApSettingsProvider } from "./settings-provider-ap";
@@ -131,9 +131,10 @@ export function SettingsHost({
   }
 
   return (
-    <CanvasResourcePane
+    <SidePane
       closeAriaLabel={model?.closeAriaLabel ?? "Close settings"}
       icon={model?.icon}
+      label="Settings pane"
       onClose={onClose}
       subtitle={model?.subtitle}
       title={model?.title ?? "Settings"}
@@ -149,6 +150,6 @@ export function SettingsHost({
         target={entry.target}
         view={entry.view}
       />
-    </CanvasResourcePane>
+    </SidePane>
   );
 }

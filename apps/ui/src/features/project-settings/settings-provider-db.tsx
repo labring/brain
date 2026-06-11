@@ -4,9 +4,9 @@ import { useDbSettingsOperations, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import { Database } from "lucide-react";
 import { useCallback, useEffect, useMemo } from "react";
-import { dbToDatabaseNodeData } from "@/features/project-canvas/flow/ap-list-to-canvas-state";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import { useDatabaseSettingsSections } from "@/features/project-canvas/panels/database-settings-pane";
+import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
+import { useDatabaseSettingsSections } from "@/features/project-settings/db/db-settings-sections";
+import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ProjectDbTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -63,7 +63,7 @@ function resourceMatchesDbTarget(resource: unknown, target: ProjectDbTarget) {
 export function dbDataFromList(
   data: ReturnType<typeof useDbsK8sList>["data"],
   target: ProjectDbTarget | null
-): CanvasDatabaseNodeData | null {
+): DbSettingsData | null {
   if (target == null) {
     return null;
   }
@@ -72,7 +72,9 @@ export function dbDataFromList(
   );
   return resource == null
     ? null
-    : dbToDatabaseNodeData(resource, { namespaceFallback: target.namespace });
+    : dbResourceToSettingsData(resource, {
+        namespaceFallback: target.namespace,
+      });
 }
 
 function resolvedDbSettingsView(view: string | undefined) {
@@ -111,6 +113,7 @@ export function DbSettingsProvider({
   const dbTarget = target.kind === "DB" ? target : null;
   const dbsList = useDbsK8sList({
     kubeconfig: dbTarget == null ? "" : (kubeconfig ?? ""),
+    labelSelector: "",
     namespace: dbTarget?.namespace,
   });
   const listData = useMemo(
@@ -149,7 +152,7 @@ export function DbSettingsProvider({
           name: target.name,
           namespace: target.namespace,
         },
-      } satisfies CanvasDatabaseNodeData),
+      } satisfies DbSettingsData),
     editable: data != null && !effectiveReadOnly && authReady,
     onSubmitPatch:
       data != null && !effectiveReadOnly && authReady

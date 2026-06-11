@@ -1,8 +1,8 @@
+import YAML from "yaml";
 import type {
   DockerDeploymentEnvVar,
   DockerDeploymentSettings,
-} from "@workspace/ui/lib/docker-deployment-settings";
-import YAML from "yaml";
+} from "@/features/deployment/docker-deployment-settings";
 import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
@@ -16,6 +16,13 @@ interface RenderDockerDeploymentYamlOptions {
   settings: DockerDeploymentSettings;
   template?: string;
 }
+
+type DockerDeploymentSpec = Record<string, unknown> & {
+  input: Record<string, unknown>;
+  name: string;
+  projectId: string;
+  workload?: { kind: "statefulset" };
+};
 
 function baseApManifest(options: RenderDockerDeploymentYamlOptions) {
   return {
@@ -209,7 +216,7 @@ export function renderDockerDeploymentYaml(
     nextInput.storage = storage;
   }
 
-  const nextSpec = {
+  const nextSpec: DockerDeploymentSpec = {
     ...spec,
     input: nextInput,
     name: options.name,

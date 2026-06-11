@@ -1,6 +1,6 @@
 "use client";
 
-import type { ContainerCustomDomainCnameVerifier } from "@workspace/ui/components/container-settings-pane/container-settings-pane";
+import type { ContainerCustomDomainCnameVerifier } from "@/features/project-settings/ap/ap-settings-sections";
 
 const CNAME_VERIFY_PATH = "/api/project-canvas/custom-domain/cname";
 

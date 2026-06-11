@@ -28,14 +28,13 @@ const LOG_LEVEL_ALIASES: Record<string, StandardLogLevel> = {
 };
 
 const LEADING_LEVEL_RE =
-  /^(?<leading>\s*)(?:\[(?<bracket>[A-Za-z][A-Za-z0-9_-]*)\]|(?<bare>[A-Za-z][A-Za-z0-9_-]*))(?:[:\]\s-]+|$)/;
+  /^(\s*)(?:\[([A-Za-z][A-Za-z0-9_-]*)\]|([A-Za-z][A-Za-z0-9_-]*))(?:[:\]\s-]+|$)/;
 const LEADING_LEVEL_KEY_VALUE_RE =
-  /^(?<leading>\s*)(?<key>level|severity)=["']?(?<value>[A-Za-z][A-Za-z0-9_-]*)["']?(?:[:\s,]+|$)/i;
-const JSON_LEVEL_RE =
-  /"(?:level|severity)"\s*:\s*"(?<value>[A-Za-z][A-Za-z0-9_-]*)"/i;
+  /^(\s*)(level|severity)=["']?([A-Za-z][A-Za-z0-9_-]*)["']?(?:[:\s,]+|$)/i;
+const JSON_LEVEL_RE = /"(?:level|severity)"\s*:\s*"([A-Za-z][A-Za-z0-9_-]*)"/i;
 const INLINE_LEVEL_KEY_VALUE_RE =
-  /(?:^|\s)(?:level|severity)=["']?(?<value>[A-Za-z][A-Za-z0-9_-]*)["']?(?:\s|,|$)/i;
-const KLOG_PREFIX_RE = /^(?<level>[IWEF])\d{4}\s/;
+  /(?:^|\s)(?:level|severity)=["']?([A-Za-z][A-Za-z0-9_-]*)["']?(?:\s|,|$)/i;
+const KLOG_PREFIX_RE = /^([IWEF])\d{4}\s/;
 const POSTGRES_DEBUG_LEVEL_RE = /^DEBUG[1-5]$/;
 const LEADING_TIMESTAMP_RES = [
   /^\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\s+/,
@@ -74,19 +73,20 @@ export function normalizeLogLevel(
 
 export function parseLeadingLogLevel(message: string): LeadingLogLevel | null {
   const keyValueMatch = message.match(LEADING_LEVEL_KEY_VALUE_RE);
-  if (keyValueMatch?.groups?.value) {
-    const level = normalizeLogLevel(keyValueMatch.groups.value);
+  const keyValueToken = keyValueMatch?.[3];
+  if (keyValueToken) {
+    const level = normalizeLogLevel(keyValueToken);
     if (level) {
       return {
         endIndex: keyValueMatch[0].length,
         level,
-        token: keyValueMatch.groups.value,
+        token: keyValueToken,
       };
     }
   }
 
   const levelMatch = message.match(LEADING_LEVEL_RE);
-  const token = levelMatch?.groups?.bracket ?? levelMatch?.groups?.bare;
+  const token = levelMatch?.[2] ?? levelMatch?.[3];
   const level = normalizeLogLevel(token);
   if (!(levelMatch && token && level)) {
     return null;
@@ -124,17 +124,17 @@ export function getLogLevel(message: string): StandardLogLevel | null {
   }
 
   const klogMatch = formatted.match(KLOG_PREFIX_RE);
-  if (klogMatch?.groups?.level) {
-    return KLOG_LEVELS[klogMatch.groups.level] ?? null;
+  if (klogMatch?.[1]) {
+    return KLOG_LEVELS[klogMatch[1]] ?? null;
   }
 
-  const jsonLevel = JSON_LEVEL_RE.exec(formatted)?.groups?.value;
+  const jsonLevel = JSON_LEVEL_RE.exec(formatted)?.[1];
   const jsonNormalized = normalizeLogLevel(jsonLevel);
   if (jsonNormalized) {
     return jsonNormalized;
   }
 
-  const inlineLevel = INLINE_LEVEL_KEY_VALUE_RE.exec(formatted)?.groups?.value;
+  const inlineLevel = INLINE_LEVEL_KEY_VALUE_RE.exec(formatted)?.[1];
   return normalizeLogLevel(inlineLevel);
 }
 

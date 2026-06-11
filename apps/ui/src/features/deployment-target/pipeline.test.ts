@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DatabaseDeploymentChoice } from "@workspace/ui/components/database-deployer";
-import type { ProjectExplorerProject } from "@workspace/ui/components/project-explorer/project-explorer";
 import YAML from "yaml";
+import type { DatabaseDeploymentChoice } from "@/features/deployment/database-deployer";
+import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import {
   type DeploymentTargetPipelineAdapters,
   existingProjectDeploymentTarget,

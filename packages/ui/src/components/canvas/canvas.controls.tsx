@@ -161,7 +161,7 @@ function isCanvasKeyboardScope(
         '[data-slot="chat-composer-focus-scope"]',
         '[data-slot="exec-terminal-plane"]',
         '[data-slot="main-action-surface"]',
-        '[data-slot="container-settings-pane"]',
+        '[data-slot="settings-host-sections"]',
         '[data-slot="side-pane"]',
         '[aria-label="Terminal session"]',
         ".xterm",

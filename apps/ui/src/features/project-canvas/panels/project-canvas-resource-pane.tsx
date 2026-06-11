@@ -6,10 +6,11 @@ import type {
   ProjectCanvasApResourcePaneKind,
   ProjectCanvasResourcePaneRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
+import { apSettingsSourceDataFromUnknown } from "@/features/project-settings/ap/ap-settings-context";
 import { SettingsHost } from "@/features/project-settings/settings-host";
+import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
-import type { SettingsLeaveGuardRegistration } from "./settings-leave-guard";
 import { WorkloadResourcePane } from "./workload-resource-pane";
 
 function workloadPaneMode(kind: ProjectCanvasApResourcePaneKind): string {
@@ -80,10 +81,9 @@ export function renderProjectCanvasResourcePaneContent({
         onUpdated={onUpdated}
         readOnly={readOnly}
         sourceContext={{
+          apData: apSettingsSourceDataFromUnknown(content.node?.data),
           databaseData: content.databaseData,
-          entryNode: content.entryNode,
           kind: "canvas",
-          node: content.node,
         }}
       />
     );

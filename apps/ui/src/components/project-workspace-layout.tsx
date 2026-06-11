@@ -2,8 +2,6 @@
 
 import { useChat as useAIChat } from "@ai-sdk/react";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
-import { Chat } from "@workspace/ui/components/chat/chat";
-import type { ChatHeaderThreadHistory } from "@workspace/ui/components/chat/chat.types";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -25,6 +23,8 @@ import {
   useState,
 } from "react";
 import { useSWRConfig } from "swr";
+import { Chat } from "@/features/project-assistant/chat/chat";
+import type { ChatHeaderThreadHistory } from "@/features/project-assistant/chat/chat.types";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import {
   PROJECT_SELECTED_QUERY_KEY,

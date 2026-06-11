@@ -1,11 +1,11 @@
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
-} from "@workspace/ui/components/database-deployer";
-import type { DockerDeploymentSettings } from "@workspace/ui/components/docker-deployer";
-import type { GithubDeployerRepo } from "@workspace/ui/components/github-deployer/github-deployer.types";
-import type { ProjectExplorerProject } from "@workspace/ui/components/project-explorer/project-explorer";
-import { validateDockerDeploymentSettings } from "@workspace/ui/lib/docker-deployment-settings";
+} from "@/features/deployment/database-deployer";
+import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
+import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
+import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
+import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
 import type { ChildResourceKind } from "@/lib/project-child-resource-name";

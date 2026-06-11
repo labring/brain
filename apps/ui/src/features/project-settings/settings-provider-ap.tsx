@@ -1,21 +1,21 @@
 "use client";
 
-import {
-  type ContainerNetwork,
-  useContainerPublicAddressesSettingsSections,
-  useContainerSettingsSections,
-} from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import { Router, Settings2, SquarePen } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { WORKLOAD_PANEL_REPLICAS } from "@/features/project-canvas/canvas-store";
-import { verifyCustomDomainCnameFromApi } from "@/features/project-canvas/custom-domain-cname-client";
 import {
-  containerStatesFromNode,
-  workloadClaimKindFromStates,
-} from "@/features/project-canvas/flow/container-node-workload";
-import { k8sGetClaimBody } from "@/features/project-canvas/k8s/claim-mapper";
-import type { CanvasContainerNodeData } from "@/features/project-canvas/nodes/types";
-import { useWorkloadClaimSettings } from "@/features/project-canvas/panels/use-workload-claim-settings";
+  AP_SETTINGS_REPLICA_LIMITS,
+  type ApSettingsSourceData,
+  apSettingsStatesFromSource,
+} from "@/features/project-settings/ap/ap-settings-context";
+import {
+  type ContainerNetwork,
+  useApPublicAddressesSettingsSections,
+  useApSettingsSections,
+} from "@/features/project-settings/ap/ap-settings-sections";
+import { verifyCustomDomainCnameFromApi } from "@/features/project-settings/ap/custom-domain-cname-client";
+import { useApWorkloadSettings } from "@/features/project-settings/ap/hooks/use-ap-workload-settings";
+import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
+import { workloadClaimKindFromApSettingsStates } from "@/features/project-settings/ap/workload-kind";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -128,28 +128,28 @@ function apSettingsModelBase({
   };
 }
 
-type WorkloadClaimSettingsState = ReturnType<typeof useWorkloadClaimSettings>;
+type ApWorkloadSettingsState = ReturnType<typeof useApWorkloadSettings>;
 
 interface ApSettingsSectionsHookInput {
   apTarget: ProjectApTarget | null;
   canEditAp: boolean;
-  display: WorkloadClaimSettingsState["display"];
+  display: ApWorkloadSettingsState["display"];
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
-  ignoreEnv: WorkloadClaimSettingsState["ignoreEnv"];
-  ignoreImage: WorkloadClaimSettingsState["ignoreImage"];
-  ignoreNetwork: WorkloadClaimSettingsState["ignoreNetwork"];
-  ignoreQuota: WorkloadClaimSettingsState["ignoreQuota"];
-  ignoreReplicas: WorkloadClaimSettingsState["ignoreReplicas"];
+  ignoreEnv: ApWorkloadSettingsState["ignoreEnv"];
+  ignoreImage: ApWorkloadSettingsState["ignoreImage"];
+  ignoreNetwork: ApWorkloadSettingsState["ignoreNetwork"];
+  ignoreQuota: ApWorkloadSettingsState["ignoreQuota"];
+  ignoreReplicas: ApWorkloadSettingsState["ignoreReplicas"];
   isApWorkload: boolean;
-  nodeData: CanvasContainerNodeData | undefined;
-  onEnvChange: WorkloadClaimSettingsState["onEnvChange"];
-  onEnvResolvedValue: WorkloadClaimSettingsState["onEnvResolvedValue"];
-  onImageChange: WorkloadClaimSettingsState["onImageChange"];
-  onNetworkChange: WorkloadClaimSettingsState["onNetworkChange"];
-  onResourceQuotasCommit: WorkloadClaimSettingsState["onResourceQuotasCommit"];
-  onSettingsDraftCommit: WorkloadClaimSettingsState["onSettingsDraftCommit"];
+  onEnvChange: ApWorkloadSettingsState["onEnvChange"];
+  onEnvResolvedValue: ApWorkloadSettingsState["onEnvResolvedValue"];
+  onImageChange: ApWorkloadSettingsState["onImageChange"];
+  onNetworkChange: ApWorkloadSettingsState["onNetworkChange"];
+  onResourceQuotasCommit: ApWorkloadSettingsState["onResourceQuotasCommit"];
+  onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
   resolvedView: string;
+  sourceData: ApSettingsSourceData | undefined;
 }
 
 function apSettingsSectionsHookProps({
@@ -164,7 +164,7 @@ function apSettingsSectionsHookProps({
   ignoreQuota,
   ignoreReplicas,
   isApWorkload,
-  nodeData,
+  sourceData,
   onEnvChange,
   onEnvResolvedValue,
   onImageChange,
@@ -172,12 +172,10 @@ function apSettingsSectionsHookProps({
   onResourceQuotasCommit,
   onSettingsDraftCommit,
   resolvedView,
-}: ApSettingsSectionsHookInput): Parameters<
-  typeof useContainerSettingsSections
->[0] {
+}: ApSettingsSectionsHookInput): Parameters<typeof useApSettingsSections>[0] {
   const metadata = apSettingsSectionMetadata(resolvedView);
   return {
-    addDbDsnReferenceIntent: nodeData?.addDbDsnReferenceIntent,
+    addDbDsnReferenceIntent: sourceData?.addDbDsnReferenceIntent,
     args: display.args,
     command: display.command,
     configMaps: display.configMaps,
@@ -188,7 +186,7 @@ function apSettingsSectionsHookProps({
       step: 0.25,
       value: display.cpuCores,
     },
-    dbDsnReferenceSources: nodeData?.dbDsnReferenceSources,
+    dbDsnReferenceSources: sourceData?.dbDsnReferenceSources,
     env: display.env,
     envRawSource: display.envRawSource,
     envResolvedValueScope:
@@ -211,20 +209,20 @@ function apSettingsSectionsHookProps({
             routingDomain: draftRoutingDomain,
           },
     onAddDbDsnReferenceIntentConsumed:
-      nodeData?.onAddDbDsnReferenceIntentConsumed,
+      sourceData?.onAddDbDsnReferenceIntentConsumed,
     onCustomDomainCnameVerify: verifyCustomDomainCnameFromApi,
     onEnvChange: canEditAp ? onEnvChange : ignoreEnv,
     onEnvResolvedValue: canEditAp ? onEnvResolvedValue : undefined,
     onImageChange: canEditAp ? onImageChange : ignoreImage,
     onNetworkChange: canEditAp ? onNetworkChange : ignoreNetwork,
-    onPendingDbReferencesChange: nodeData?.onPendingDbReferencesChange,
+    onPendingDbReferencesChange: sourceData?.onPendingDbReferencesChange,
     onResourceQuotasCommit: canEditAp ? onResourceQuotasCommit : undefined,
     onSettingsDraftCommit: canEditAp ? onSettingsDraftCommit : undefined,
     readOnly: !isApWorkload || effectiveReadOnly,
     replicaStrategy: display.replicaStrategy,
     replicasQuota: isApWorkload
       ? {
-          ...WORKLOAD_PANEL_REPLICAS,
+          ...AP_SETTINGS_REPLICA_LIMITS,
           disabled: !canEditAp,
           onValueChange: ignoreReplicas,
           step: 1,
@@ -251,8 +249,8 @@ function publicAddressesSectionsHookProps({
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
   network: ContainerNetwork | null;
-  onNetworkDraftCommit: WorkloadClaimSettingsState["onNetworkDraftCommit"];
-}): Parameters<typeof useContainerPublicAddressesSettingsSections>[0] {
+  onNetworkDraftCommit: ApWorkloadSettingsState["onNetworkDraftCommit"];
+}): Parameters<typeof useApPublicAddressesSettingsSections>[0] {
   return {
     identityKey:
       apTarget == null ? undefined : `${apTarget.namespace}/${apTarget.name}`,
@@ -282,36 +280,36 @@ interface ApSettingsModelInput {
   apTarget: ProjectApTarget | null;
   baseSubtitle: string;
   canEditAp: boolean;
-  display: WorkloadClaimSettingsState["display"];
+  display: ApWorkloadSettingsState["display"];
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
-  error: WorkloadClaimSettingsState["error"];
+  error: ApWorkloadSettingsState["error"];
   hasResource: boolean;
-  ignoreEnv: WorkloadClaimSettingsState["ignoreEnv"];
-  ignoreImage: WorkloadClaimSettingsState["ignoreImage"];
-  ignoreNetwork: WorkloadClaimSettingsState["ignoreNetwork"];
-  ignoreQuota: WorkloadClaimSettingsState["ignoreQuota"];
-  ignoreReplicas: WorkloadClaimSettingsState["ignoreReplicas"];
+  ignoreEnv: ApWorkloadSettingsState["ignoreEnv"];
+  ignoreImage: ApWorkloadSettingsState["ignoreImage"];
+  ignoreNetwork: ApWorkloadSettingsState["ignoreNetwork"];
+  ignoreQuota: ApWorkloadSettingsState["ignoreQuota"];
+  ignoreReplicas: ApWorkloadSettingsState["ignoreReplicas"];
   isApWorkload: boolean;
   isLoading: boolean;
   network: ContainerNetwork | null;
-  nodeData: CanvasContainerNodeData | undefined;
-  onEnvChange: WorkloadClaimSettingsState["onEnvChange"];
-  onEnvResolvedValue: WorkloadClaimSettingsState["onEnvResolvedValue"];
-  onImageChange: WorkloadClaimSettingsState["onImageChange"];
-  onNetworkChange: WorkloadClaimSettingsState["onNetworkChange"];
-  onNetworkDraftCommit: WorkloadClaimSettingsState["onNetworkDraftCommit"];
-  onResourceQuotasCommit: WorkloadClaimSettingsState["onResourceQuotasCommit"];
-  onSettingsDraftCommit: WorkloadClaimSettingsState["onSettingsDraftCommit"];
+  onEnvChange: ApWorkloadSettingsState["onEnvChange"];
+  onEnvResolvedValue: ApWorkloadSettingsState["onEnvResolvedValue"];
+  onImageChange: ApWorkloadSettingsState["onImageChange"];
+  onNetworkChange: ApWorkloadSettingsState["onNetworkChange"];
+  onNetworkDraftCommit: ApWorkloadSettingsState["onNetworkDraftCommit"];
+  onResourceQuotasCommit: ApWorkloadSettingsState["onResourceQuotasCommit"];
+  onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
   publicAddressesModel: Pick<
-    ReturnType<typeof useContainerPublicAddressesSettingsSections>,
+    ReturnType<typeof useApPublicAddressesSettingsSections>,
     "footer" | "leaveGuard" | "sections"
   >;
   resolvedView: string;
   settingsSectionsModel: Pick<
-    ReturnType<typeof useContainerSettingsSections>,
+    ReturnType<typeof useApSettingsSections>,
     "footer" | "leaveGuard" | "sections"
   >;
+  sourceData: ApSettingsSourceData | undefined;
 }
 
 function unavailableApSettingsModel(resolvedView: string): SettingsViewModel {
@@ -493,17 +491,10 @@ export function ApSettingsProvider({
 }: SettingsProviderProps) {
   const resolvedView = resolvedApSettingsView(view);
   const apTarget = target.kind === "AP" ? target : null;
-  const nodeData =
-    sourceContext?.node?.data != null &&
-    typeof sourceContext.node.data === "object"
-      ? (sourceContext.node.data as CanvasContainerNodeData)
-      : undefined;
-  const states =
-    sourceContext?.node == null
-      ? null
-      : containerStatesFromNode(sourceContext.node);
-  const workloadKind = workloadClaimKindFromStates(states);
-  const settingsReadOnly = nodeData?.settingsAccess?.readOnly === true;
+  const sourceData = sourceContext?.apData;
+  const states = apSettingsStatesFromSource(sourceData);
+  const workloadKind = workloadClaimKindFromApSettingsStates(states);
+  const settingsReadOnly = sourceData?.settingsAccess?.readOnly === true;
   const effectiveReadOnly = readOnly || settingsReadOnly;
   const {
     claimPayload,
@@ -523,14 +514,14 @@ export function ApSettingsProvider({
     onNetworkChange,
     onResourceQuotasCommit,
     onSettingsDraftCommit,
-  } = useWorkloadClaimSettings({
-    dbDsnReferenceSources: nodeData?.dbDsnReferenceSources,
+  } = useApWorkloadSettings({
+    dbDsnReferenceSources: sourceData?.dbDsnReferenceSources,
     kubeconfig,
     name: apTarget?.name ?? "",
     namespace: apTarget?.namespace ?? "",
     onAddDbDsnReferenceMutationStart:
-      nodeData?.onAddDbDsnReferenceMutationStart,
-    onWorkloadMutation: nodeData?.onWorkloadMutation ?? onUpdated,
+      sourceData?.onAddDbDsnReferenceMutationStart,
+    onWorkloadMutation: sourceData?.onWorkloadMutation ?? onUpdated,
     readOnly: effectiveReadOnly,
     workloadKind: "AP",
   });
@@ -545,7 +536,7 @@ export function ApSettingsProvider({
     kind: workloadKind,
   });
   const network = publicAddressNetworkOrNull(display.network);
-  const settingsSectionsModel = useContainerSettingsSections(
+  const settingsSectionsModel = useApSettingsSections(
     apSettingsSectionsHookProps({
       apTarget,
       canEditAp,
@@ -558,7 +549,7 @@ export function ApSettingsProvider({
       ignoreQuota,
       ignoreReplicas,
       isApWorkload,
-      nodeData,
+      sourceData,
       onEnvChange,
       onEnvResolvedValue,
       onImageChange,
@@ -568,7 +559,7 @@ export function ApSettingsProvider({
       resolvedView,
     })
   );
-  const publicAddressesModel = useContainerPublicAddressesSettingsSections(
+  const publicAddressesModel = useApPublicAddressesSettingsSections(
     publicAddressesSectionsHookProps({
       apTarget,
       canEditAp,
@@ -612,7 +603,7 @@ export function ApSettingsProvider({
       isApWorkload,
       isLoading,
       network,
-      nodeData,
+      sourceData,
       onEnvChange,
       onEnvResolvedValue,
       onImageChange,
@@ -640,7 +631,7 @@ export function ApSettingsProvider({
     isApWorkload,
     isLoading,
     network,
-    nodeData,
+    sourceData,
     onEnvChange,
     onEnvResolvedValue,
     onImageChange,

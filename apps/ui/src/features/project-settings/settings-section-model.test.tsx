@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
-import {
-  type ContainerSettingsSectionsModel,
-  useContainerSettingsSections,
-} from "@workspace/ui/components/container-settings-pane/container-settings-pane";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
+import {
+  type ContainerSettingsSectionsModel,
+  useApSettingsSections,
+} from "@/features/project-settings/ap/ap-settings-sections";
 import {
   type DatabaseSettingsSectionsModel,
   useDatabaseSettingsSections,
-} from "@/features/project-canvas/panels/database-settings-pane";
+} from "@/features/project-settings/db/db-settings-sections";
+import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
 import { dbDataFromList } from "./settings-provider-db";
 
 const noop = () => {
@@ -35,7 +34,7 @@ const BASE_DB_DATA = {
     status: { label: "Running", tone: "running" },
   },
   workload: { name: "postgres", namespace: "default" },
-} satisfies CanvasDatabaseNodeData;
+} satisfies DbSettingsData;
 
 function SectionIds({
   model,
@@ -56,7 +55,7 @@ function ApSettingsSectionsHarness({
 }: {
   sectionFocus?: "all" | "environment";
 }) {
-  const model = useContainerSettingsSections({
+  const model = useApSettingsSections({
     args: [],
     command: [],
     configMaps: [],

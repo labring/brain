@@ -48,6 +48,20 @@
       ]
     },
     {
+      "name": "app-input-field",
+      "type": "registry:ui",
+      "title": "App Input Field",
+      "description": "SealAI product text input field with label, description, error, and accessibility wiring",
+      "registryDependencies": ["app-input", "field"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-input-field.tsx",
+          "type": "registry:component",
+          "target": "components/app-input-field.tsx"
+        }
+      ]
+    },
+    {
       "name": "log-viewer",
       "type": "registry:ui",
       "title": "Log viewer (Linear)",
@@ -533,126 +547,6 @@
           "path": "../../packages/ui/src/components/environment-node/environment-node.tsx",
           "type": "registry:component",
           "target": "components/environment-node/environment-node.tsx"
-        }
-      ]
-    },
-    {
-      "name": "project-explorer",
-      "type": "registry:ui",
-      "title": "Project Explorer",
-      "description": "Projects list with composable header (brand, search, new-project) and rows (rename / delete menu). Default preset: Variant1.",
-      "dependencies": [],
-      "registryDependencies": ["app-dialog", "button", "dropdown-menu"],
-      "files": [
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.types.ts",
-          "type": "registry:lib",
-          "target": "components/project-explorer/project-explorer.types.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.utils.ts",
-          "type": "registry:lib",
-          "target": "components/project-explorer/project-explorer.utils.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.context.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.context.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.layout.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.layout.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.header.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.header.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.list.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.list.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.list-item.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.list-item.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.variant1.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.variant1.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/project-explorer/project-explorer.tsx",
-          "type": "registry:component",
-          "target": "components/project-explorer/project-explorer.tsx"
-        }
-      ]
-    },
-    {
-      "name": "canvas",
-      "type": "registry:ui",
-      "title": "Canvas",
-      "description": "React Flow workspace surface with Jotai, provider context, and error fallback",
-      "dependencies": ["@xyflow/react", "jotai"],
-      "registryDependencies": ["preview", "button", "entry-node"],
-      "files": [
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.types.ts",
-          "type": "registry:lib",
-          "target": "components/canvas/canvas.types.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.context.ts",
-          "type": "registry:lib",
-          "target": "components/canvas/canvas.context.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.use.ts",
-          "type": "registry:lib",
-          "target": "components/canvas/canvas.use.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.provider.tsx",
-          "type": "registry:component",
-          "target": "components/canvas/canvas.provider.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.error-fallback.tsx",
-          "type": "registry:component",
-          "target": "components/canvas/canvas.error-fallback.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.css",
-          "type": "registry:component",
-          "target": "components/canvas/canvas.css"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.edge-anchors.ts",
-          "type": "registry:lib",
-          "target": "components/canvas/canvas.edge-anchors.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.node-merge.ts",
-          "type": "registry:lib",
-          "target": "components/canvas/canvas.node-merge.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.upper-right.tsx",
-          "type": "registry:component",
-          "target": "components/canvas/canvas.upper-right.tsx"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.viewport-follow.ts",
-          "type": "registry:lib",
-          "target": "components/canvas/canvas.viewport-follow.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/canvas/canvas.tsx",
-          "type": "registry:component",
-          "target": "components/canvas/canvas.tsx"
         }
       ]
     },

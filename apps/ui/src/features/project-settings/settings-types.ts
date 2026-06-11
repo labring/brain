@@ -1,19 +1,18 @@
 "use client";
 
-import type { Node } from "@xyflow/react";
 import type { LucideIcon } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import type { SettingsLeaveGuardHandle } from "@/features/project-canvas/panels/settings-leave-guard";
+import type { ApSettingsSourceData } from "@/features/project-settings/ap/ap-settings-context";
+import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+import type { SettingsLeaveGuardHandle } from "@/features/project-settings/settings-leave-guard";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
 
 export type SettingsSourceContext =
   | {
-      databaseData?: CanvasDatabaseNodeData;
-      entryNode?: Node | null;
+      apData?: ApSettingsSourceData;
+      databaseData?: DbSettingsData;
       kind: "canvas";
-      node?: Node | null;
     }
   | undefined;
 

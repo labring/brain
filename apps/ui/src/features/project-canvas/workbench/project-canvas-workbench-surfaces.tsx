@@ -1,10 +1,10 @@
 "use client";
 
-import { DatabaseDeploymentPane } from "@/components/database-deployment-pane";
-import { DockerDeploymentPane } from "@/components/docker-deployment-pane";
-import { GitHubDeploymentPane } from "@/components/github-deployment-pane";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
-import { TemplateDeploymentPane } from "@/components/template-deployment-pane";
+import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
+import { DockerDeploymentPane } from "@/features/deployment/docker-deployment-pane";
+import { GitHubDeploymentPane } from "@/features/deployment/github-deployment-pane";
+import { TemplateDeploymentPane } from "@/features/deployment/template-deployment-pane";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";

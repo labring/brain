@@ -1,4 +1,4 @@
-import type { DatabaseDeploymentChoice } from "@workspace/ui/components/database-deployer";
+import type { DatabaseDeploymentChoice } from "@/features/deployment/database-deployer";
 
 export const DIRECT_DB_DEPLOYMENT_OPTIONS = [
   {
