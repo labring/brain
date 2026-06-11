@@ -232,13 +232,18 @@ type customDomainRequest struct {
 func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]interface{}) {
 	platformAddresses := apPlatformAddressRequests(ap)
 	if len(platformAddresses) == 0 {
+		removePublicNetworkStatus(status)
 		return
 	}
 	customDomains := apCustomDomainRequests(ap, platformAddresses)
 	appListeningPortSet := apAppListeningPortSet(ap)
 	networkCopy := networkStatusCopy(status)
 	if _, exists := networkCopy["publicAddresses"]; exists {
-		publicAddresses := publicAddressRowsFromValue(networkCopy["publicAddresses"])
+		publicAddresses := publicAddressRowsForIntent(
+			publicAddressRowsFromValue(networkCopy["publicAddresses"]),
+			platformAddresses,
+			customDomains,
+		)
 		seenIDs, promotedPlatformAddressIDs := publicAddressMergeState(publicAddresses)
 		for _, customDomain := range customDomains {
 			if seenIDs[customDomain.id] {
@@ -285,6 +290,19 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 	status["network"] = networkCopy
 }
 
+func removePublicNetworkStatus(status map[string]interface{}) {
+	networkCopy := networkStatusCopy(status)
+	if _, exists := networkCopy["publicAddresses"]; !exists {
+		return
+	}
+	delete(networkCopy, "publicAddresses")
+	if len(networkCopy) == 0 {
+		delete(status, "network")
+		return
+	}
+	status["network"] = networkCopy
+}
+
 func publicAddressRowsFromValue(value interface{}) []map[string]interface{} {
 	switch rows := value.(type) {
 	case []map[string]interface{}:
@@ -306,6 +324,34 @@ func publicAddressRowsFromValue(value interface{}) []map[string]interface{} {
 	default:
 		return nil
 	}
+}
+
+func publicAddressRowsForIntent(rows []map[string]interface{}, platformAddresses []platformAddressRequest, customDomains []customDomainRequest) []map[string]interface{} {
+	if len(rows) == 0 {
+		return rows
+	}
+	intentIDs := publicAddressIntentIDs(platformAddresses, customDomains)
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		id, _ := row["id"].(string)
+		id = strings.TrimSpace(id)
+		if id == "" || !intentIDs[id] {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func publicAddressIntentIDs(platformAddresses []platformAddressRequest, customDomains []customDomainRequest) map[string]bool {
+	ids := make(map[string]bool, len(platformAddresses)+len(customDomains))
+	for _, address := range platformAddresses {
+		ids[address.id] = true
+	}
+	for _, domain := range customDomains {
+		ids[domain.id] = true
+	}
+	return ids
 }
 
 func apAppListeningPortSet(ap map[string]interface{}) map[int]bool {

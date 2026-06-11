@@ -219,6 +219,121 @@ func TestAPTransformMergesObservedAndPendingPlatformAddresses(t *testing.T) {
 	assertPendingPublicNetworkAddress(t, addresses, "pa_def456", 8080)
 }
 
+func TestAPTransformRemovesObservedPublicAddressesWithoutIntent(t *testing.T) {
+	out := APWithPublicAccessSupportResourcesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"labels":    map[string]interface{}{"region": "apps.example.com"},
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+						},
+					},
+				},
+			},
+			"status": map[string]interface{}{
+				"network": map[string]interface{}{
+					"appListeningPorts": []interface{}{
+						map[string]interface{}{
+							"port":           8080,
+							"privateAddress": "http://api-service.default.svc.cluster.local:8080",
+						},
+					},
+					"privateAddress": "http://api-service.default.svc.cluster.local:8080",
+					"privatePort":    8080,
+					"publicAddresses": []interface{}{
+						map[string]interface{}{
+							"host":   "ucflzg.apps.example.com",
+							"id":     "pa_abc123",
+							"port":   8080,
+							"status": "accessible",
+							"type":   "platform",
+							"url":    "https://ucflzg.apps.example.com/",
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			publicAccessIngress("api", "pa_abc123", "platform", "ucflzg.apps.example.com", "api-service", 8080),
+		},
+		nil,
+		nil,
+		nil,
+	)
+
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	if _, ok := network["publicAddresses"]; ok {
+		t.Fatalf("status.network.publicAddresses = %v, want absent after public address intent is removed", network["publicAddresses"])
+	}
+	if got := network["privatePort"]; got != 8080 {
+		t.Fatalf("status.network.privatePort = %v, want private network preserved", got)
+	}
+}
+
+func TestAPTransformDropsObservedPublicAddressesRemovedFromIntent(t *testing.T) {
+	out := APWithIngressesAndServicesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"labels":    map[string]interface{}{"region": "apps.example.com"},
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 8080},
+						},
+						"platformAddresses": []interface{}{
+							map[string]interface{}{"id": "pa_def456", "port": 8080},
+						},
+					},
+				},
+			},
+			"status": map[string]interface{}{
+				"network": map[string]interface{}{
+					"publicAddresses": []interface{}{
+						map[string]interface{}{
+							"host":   "ucflzg.apps.example.com",
+							"id":     "pa_abc123",
+							"port":   8080,
+							"status": "accessible",
+							"type":   "platform",
+							"url":    "https://ucflzg.apps.example.com/",
+						},
+						map[string]interface{}{
+							"host":   "hndpda.apps.example.com",
+							"id":     "pa_def456",
+							"port":   8080,
+							"status": "accessible",
+							"type":   "platform",
+							"url":    "https://hndpda.apps.example.com/",
+						},
+					},
+				},
+			},
+		},
+		nil,
+		nil,
+	)
+
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	addresses := network["publicAddresses"].([]map[string]interface{})
+	if got := len(addresses); got != 1 {
+		t.Fatalf("status.network.publicAddresses count = %d, want only desired public address", got)
+	}
+	assertPublicNetworkAddress(t, addresses, "hndpda.apps.example.com", "https://hndpda.apps.example.com/", 8080)
+	assertPublicNetworkAddressIDMissing(t, addresses, "pa_abc123")
+}
+
 func TestAPTransformEnrichesPendingPublicAddressesFromDesiredPlatformAddresses(t *testing.T) {
 	out := APWithIngressesAndServicesFromList(
 		map[string]interface{}{

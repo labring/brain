@@ -227,12 +227,47 @@ function mergePatchSetPath(
   }
 }
 
+const AP_NETWORK_REPLACE_FIELDS = [
+  "appListeningPorts",
+  "customDomains",
+  "endpoints",
+  "host",
+  "platformAddresses",
+  "port",
+  "privatePort",
+  "publicAddresses",
+] as const;
+
+function apNetworkReplacementMergePatchValue(value: unknown): unknown {
+  const network = asRecord(value);
+  if (network == null) {
+    return value;
+  }
+  const out: Record<string, unknown> = { ...network };
+  for (const field of AP_NETWORK_REPLACE_FIELDS) {
+    if (!Object.hasOwn(network, field)) {
+      out[field] = null;
+    }
+  }
+  return out;
+}
+
+function mergePatchValueForJsonPatchOp(op: K8sJsonPatchOp): unknown {
+  if (op.op === "remove") {
+    return null;
+  }
+  if (op.path === "/spec/input/network") {
+    return apNetworkReplacementMergePatchValue(op.value);
+  }
+  return op.value;
+}
+
 export function apMergePatchFromJsonPatchOps(
   ops: readonly K8sJsonPatchOp[]
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const op of ops) {
-    mergePatchSetPath(patch, op.path, op.op === "remove" ? null : op.value);
+    mergePatchSetPath(patch, op.path, mergePatchValueForJsonPatchOp(op));
   }
   return patch;
 }

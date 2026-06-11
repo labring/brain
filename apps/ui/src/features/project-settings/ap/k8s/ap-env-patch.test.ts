@@ -539,6 +539,30 @@ test("AP public address settings patch persists auto-added App Listening Port", 
   ]);
 });
 
+test("AP public address settings patch removes the final Public Address", () => {
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 80 }],
+          platformAddresses: [{ id: "pa_old123", port: 80 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ port: 80 }],
+      publicAddresses: [],
+    }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "remove",
+      path: "/spec/input/network/platformAddresses",
+    },
+  ]);
+});
+
 test("AP private port settings patch does not rewrite Public Addresses", () => {
   const ops = patchOpsForApPrivatePortSettings(
     {
@@ -1463,6 +1487,68 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
       },
     },
   ]);
+});
+
+test("AP settings draft merge patch clears the final Public Address", () => {
+  const previous = {
+    cpuCores: 1,
+    env: [],
+    image: "ghcr.io/acme/api:old",
+    memoryMib: 1024,
+    network: {
+      appListeningPorts: [{ port: 80 }],
+      publicAddresses: [{ id: "pa_old123", port: 80 }],
+    },
+    replicaStrategy: {
+      fixed: { replicas: 2 },
+      type: "fixed",
+    },
+  } as const;
+
+  const ops = patchOpsForApSettingsDraft(
+    {
+      input: {
+        env: [],
+        image: "ghcr.io/acme/api:old",
+        network: {
+          appListeningPorts: [{ port: 80 }],
+          platformAddresses: [{ id: "pa_old123", port: 80 }],
+        },
+      },
+      resource: {
+        limits: { cpu: "1", memory: "1024Mi" },
+        replicaStrategy: {
+          fixed: { replicas: 2 },
+          type: "fixed",
+        },
+      },
+    },
+    {
+      ...previous,
+      network: {
+        appListeningPorts: [{ port: 80 }],
+        publicAddresses: [],
+      },
+    },
+    previous
+  );
+
+  assert.deepEqual(apMergePatchFromJsonPatchOps(ops), {
+    spec: {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 80 }],
+          customDomains: null,
+          endpoints: null,
+          host: null,
+          platformAddresses: null,
+          port: null,
+          privatePort: null,
+          publicAddresses: null,
+        },
+      },
+    },
+  });
 });
 
 test("AP settings draft patches command args config files and storage", () => {
