@@ -118,6 +118,7 @@ export function ProjectCanvasWorkbenchSurfaces({
         />
       ) : null}
       {workbench.settingsLeaveGuardDialog}
+      {workbench.resourceDeleteDialog}
       {drawer?.kind === "apTerminal" ? (
         <WorkloadTerminalPane
           node={drawer.node}

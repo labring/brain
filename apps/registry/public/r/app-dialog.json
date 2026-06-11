@@ -3,8 +3,14 @@
   "name": "app-dialog",
   "title": "App Dialog",
   "description": "Dark compound dialog component for confirmations, form modals, and loading actions",
-  "dependencies": ["lucide-react"],
-  "registryDependencies": ["dialog", "input", "label"],
+  "dependencies": [
+    "lucide-react"
+  ],
+  "registryDependencies": [
+    "dialog",
+    "input",
+    "label"
+  ],
   "files": [
     {
       "path": "../../packages/ui/src/components/app-dialog.tsx",

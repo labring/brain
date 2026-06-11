@@ -10,10 +10,6 @@ import {
   ContainerNodeHeaderContent,
   ContainerNodeImageRow,
 } from "./container-node.content";
-import {
-  ContainerNodeDeleteDialog,
-  ContainerNodeDeleteDialogPanel,
-} from "./container-node.delete-dialog";
 import { ContainerNodeRoot } from "./container-node.root";
 
 // biome-ignore lint/performance/noBarrelFile: compound component public API includes colocated helpers.
@@ -26,14 +22,6 @@ export {
   ContainerNodeImageRow,
 } from "./container-node.content";
 export { useContainerNode } from "./container-node.context";
-export type {
-  ContainerNodeDeleteDialogPanelProps,
-  ContainerNodeDeleteDialogProps,
-} from "./container-node.delete-dialog";
-export {
-  ContainerNodeDeleteDialog,
-  ContainerNodeDeleteDialogPanel,
-} from "./container-node.delete-dialog";
 export { containerNodeLifecycleMenuVisibility } from "./container-node.menu-visibility";
 export { ContainerNodeRoot } from "./container-node.root";
 export {
@@ -62,8 +50,6 @@ export const ContainerNode = {
   ActionBar: ContainerNodeActionBar,
   BodyContent: ContainerNodeBodyContent,
   Content: ContainerNodeContent,
-  DeleteDialog: ContainerNodeDeleteDialog,
-  DeleteDialogPanel: ContainerNodeDeleteDialogPanel,
   FooterContent: ContainerNodeFooterContent,
   HeaderContent: ContainerNodeHeaderContent,
   ImageRow: ContainerNodeImageRow,
@@ -81,5 +67,3 @@ dn(ContainerNodeBodyContent, "ContainerNode.BodyContent");
 dn(ContainerNodeImageRow, "ContainerNode.ImageRow");
 dn(ContainerNodeActionBar, "ContainerNode.ActionBar");
 dn(ContainerNodeFooterContent, "ContainerNode.FooterContent");
-dn(ContainerNodeDeleteDialog, "ContainerNode.DeleteDialog");
-dn(ContainerNodeDeleteDialogPanel, "ContainerNode.DeleteDialogPanel");

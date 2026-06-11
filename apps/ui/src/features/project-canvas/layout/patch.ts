@@ -104,6 +104,21 @@ function upsertNormalizedNode(
   nodesByRef.set(key, normalized);
 }
 
+function insertFirstPlacementNode(
+  nodesByRef: Map<string, CanvasLayoutNode>,
+  order: string[],
+  node: CanvasLayoutNode
+): boolean {
+  const normalized = normalizeNode(node);
+  const key = canvasResourceKey(normalized.ref);
+  if (nodesByRef.has(key)) {
+    return false;
+  }
+  order.push(key);
+  nodesByRef.set(key, normalized);
+  return true;
+}
+
 export function applyCanvasLayoutPatch(
   existing: CanvasLayoutDocument,
   patch: CanvasLayoutPatch,
@@ -116,8 +131,23 @@ export function applyCanvasLayoutPatch(
     upsertNormalizedNode(nextByRef, order, node);
   }
 
+  let firstPlacementInserted = false;
   for (const node of patch.nodes) {
-    upsertNormalizedNode(nextByRef, order, node);
+    if (patch.intent === "first-placement") {
+      firstPlacementInserted =
+        insertFirstPlacementNode(nextByRef, order, node) ||
+        firstPlacementInserted;
+    } else {
+      upsertNormalizedNode(nextByRef, order, node);
+    }
+  }
+
+  if (
+    patch.intent === "first-placement" &&
+    !firstPlacementInserted &&
+    patch.projectNameSnapshot === undefined
+  ) {
+    return cleanupCanvasLayoutDocument(existing, options);
   }
 
   const projectNameSnapshot =

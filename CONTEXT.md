@@ -12,6 +12,12 @@ A reusable UI component eligible for the Component Registry. A Registry Componen
 
 _Avoid_: Product Surface Registry, Pane Registry, Flow Registry.
 
+### Product Tooltip
+
+A transient, non-interactive hint used by the product design system for compact controls or labels. Product Tooltip does not include browser title hints, chart data callouts, or editor/autocomplete overlays.
+
+_Avoid_: All tooltip, native title tooltip, chart tooltip.
+
 ### EntryPoint
 
 An API view that represents the **allocated public routing layer** for an AP. EntryPoint is a Brain product surface, not a Kubernetes API resource or CRD.
@@ -296,6 +302,66 @@ A canvas node that represents an AP workload. The name is retained as a product/
 ### Canvas Layout
 
 A Project-scoped visual arrangement of the canvas, shared by everyone who opens that Project.
+
+### Generated Canvas Position
+
+A deterministic placement proposed for a canvas node that does not yet have a Canvas Layout position. Once accepted by Incremental Canvas Placement, it becomes part of Canvas Layout for that node.
+
+_Avoid_: recalculating a Generated Canvas Position for a node that already has a Canvas Layout position.
+
+### Incremental Canvas Placement
+
+A canvas placement rule that assigns positions only to canvas nodes without a Canvas Layout position. It preserves existing Canvas Layout positions and does not reinterpret user-arranged canvas structure when resources appear, disappear, or reconcile.
+
+When Incremental Canvas Placement accepts a Generated Canvas Position, the placement save is scoped to the newly placed node or Canvas Placement Group rather than rewriting unrelated Canvas Layout nodes.
+
+_Avoid_: using Incremental Canvas Placement to describe whole-canvas auto-layout.
+
+### Canvas Placement Anchor
+
+An existing canvas node or relationship fact used as the local reference for placing a canvas node that does not yet have a Canvas Layout position.
+
+Incremental Canvas Placement prefers Canvas Placement Anchors that reflect resource relationships before using global open canvas space.
+
+### Canvas Placement Anchor Strength
+
+The relative priority of possible Canvas Placement Anchors when a node has more than one meaningful local reference. User-initiated workflow context is stronger than passively discovered resource relationships.
+
+Incremental Canvas Placement may evaluate more than one Canvas Placement Anchor in strength order before using Global Canvas Placement Blocks.
+
+### Canvas Placement Direction Preference
+
+A preferred side or nearby pattern for placing a canvas node around a Canvas Placement Anchor. Direction preferences make resource relationships easier to read, but they do not permit canvas node overlap.
+
+_Avoid_: treating a Canvas Placement Direction Preference as a hard coordinate.
+
+### Canvas Node Footprint
+
+The stable placement rectangle reserved for a canvas node when checking whether Generated Canvas Positions overlap. A Canvas Node Footprint is based on node type and layout-relevant presentation state rather than on transient DOM measurement.
+
+Canvas Node Expansion State affects Canvas Node Footprint when the expansion state is saved or otherwise explicit in the current canvas state.
+
+### Canvas Placement Occupancy
+
+The set of Canvas Node Footprints treated as unavailable while Incremental Canvas Placement assigns Generated Canvas Positions. Canvas Placement Occupancy includes existing Canvas Layout nodes and Generated Canvas Positions already assigned in the same placement pass.
+
+Recently orphaned Canvas Layout nodes may remain in Canvas Placement Occupancy during their retention window. Expired orphaned layout nodes do not reserve placement space.
+
+### Global Canvas Placement Block
+
+A bounded group of candidate positions used when Incremental Canvas Placement cannot find a Canvas Placement Anchor for a new node. Global Canvas Placement Blocks expand around the existing canvas structure in a deterministic order instead of filling arbitrary holes or growing indefinitely in one direction.
+
+### Anchor-Local Canvas Placement Block
+
+A bounded group of candidate positions around a Canvas Placement Anchor. Anchor-Local Canvas Placement Blocks use Canvas Placement Direction Preferences to order nearby candidates while still respecting Canvas Placement Occupancy.
+
+### Canvas Placement Group
+
+A set of new canvas nodes that Incremental Canvas Placement positions together because they come from one user workflow or have direct resource relationship evidence. A Canvas Placement Group is not defined merely by appearing in the same resource refresh.
+
+Canvas Placement Groups are evaluated against Canvas Placement Occupancy as a whole so related new nodes remain near one another when they first appear.
+
+After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes.
 
 ### Canvas Viewport Focus
 

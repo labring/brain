@@ -29,6 +29,7 @@ export interface CanvasLayoutDocument {
 }
 
 export interface CanvasLayoutPatch {
+  intent?: "first-placement" | "layout";
   nodes: CanvasLayoutNode[];
   projectNameSnapshot?: string;
 }

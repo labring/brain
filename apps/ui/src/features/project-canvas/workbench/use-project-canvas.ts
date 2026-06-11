@@ -19,7 +19,14 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Connection, Edge, Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { projectCanvasFlowNodeTypes } from "@/features/project-canvas/canvas-store";
 import {
@@ -76,6 +83,11 @@ import {
   restoredDbServiceTargetFromAccepted,
   shouldCancelPendingDbServiceRestoreFocus,
 } from "@/features/project-canvas/workbench/db-restore-focus";
+import {
+  type ProjectCanvasApDeleteTarget,
+  type ProjectCanvasDbDeleteTarget,
+  ProjectCanvasDeleteDialogs,
+} from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
 import type {
@@ -520,6 +532,10 @@ export function useProjectCanvas(
   const closeDrawerRoute = workbenchRoute.closeDrawer;
   const clearCanvasFocus = workbenchRoute.clearCanvasFocus;
   const focusCanvasSelection = workbenchRoute.focusCanvasSelection;
+  const [pendingApDeleteTarget, setPendingApDeleteTarget] =
+    useState<ProjectCanvasApDeleteTarget | null>(null);
+  const [pendingDbDeleteTarget, setPendingDbDeleteTarget] =
+    useState<ProjectCanvasDbDeleteTarget | null>(null);
 
   const {
     authReady: apAuthReady,
@@ -855,14 +871,15 @@ export function useProjectCanvas(
       const hasSurfaceActions = target != null;
       const lifecycleActions = canUseLifecycle
         ? {
-            delete: dbLifecycleAction(
-              "delete",
-              () => deleteDbWorkload(workload),
-              {
-                loading: `Deleting "${displayName}"...`,
-                success: `Deleted "${displayName}"`,
-              }
-            ),
+            delete: {
+              loading: isDbLifecycleLoading(workload, "delete"),
+              onClick: () =>
+                setPendingDbDeleteTarget({
+                  displayName,
+                  name: workload.name,
+                  namespace: workload.namespace,
+                }),
+            },
             restart: dbLifecycleAction(
               "restart",
               () => restartDbWorkload(workload),
@@ -928,7 +945,6 @@ export function useProjectCanvas(
       copyDatabaseConnection,
       clearPublicAccessPendingTarget,
       dbAuthReady,
-      deleteDbWorkload,
       executeCommandPlan,
       getPublicAccessPendingTarget,
       isDbLifecycleLoading,
@@ -1017,9 +1033,11 @@ export function useProjectCanvas(
         ? {
             delete: {
               onClick: () =>
-                runMutationThenRefresh(() => deleteWorkload(ref), {
-                  loading: `Deleting "${displayName}"...`,
-                  success: `Deleted "${displayName}"`,
+                setPendingApDeleteTarget({
+                  displayName,
+                  kind: states.kind,
+                  name: ref.name,
+                  namespace: ref.namespace,
                 }),
             },
             restart: {
@@ -1076,7 +1094,6 @@ export function useProjectCanvas(
       apAuthReady,
       afterLifecycle,
       dbDsnReferenceSources,
-      deleteWorkload,
       executeCommandPlan,
       handleAddDbDsnReferenceIntentConsumed,
       onPendingApDbReferencesStart,
@@ -1159,6 +1176,54 @@ export function useProjectCanvas(
       }),
     [nodes, surfaceState]
   );
+  const confirmPendingApDelete = useCallback(() => {
+    if (pendingApDeleteTarget == null) {
+      return;
+    }
+    const target = pendingApDeleteTarget;
+    setPendingApDeleteTarget(null);
+    runMutationThenRefresh(
+      () => deleteWorkload({ name: target.name, namespace: target.namespace }),
+      {
+        loading: `Deleting "${target.displayName}"...`,
+        success: `Deleted "${target.displayName}"`,
+      }
+    );
+  }, [deleteWorkload, pendingApDeleteTarget, runMutationThenRefresh]);
+  const confirmPendingDbDelete = useCallback(() => {
+    if (pendingDbDeleteTarget == null) {
+      return;
+    }
+    const target = pendingDbDeleteTarget;
+    setPendingDbDeleteTarget(null);
+    runMutationThenRefresh(
+      () =>
+        deleteDbWorkload({
+          name: target.name,
+          namespace: target.namespace,
+        }),
+      {
+        loading: `Deleting "${target.displayName}"...`,
+        success: `Deleted "${target.displayName}"`,
+      }
+    );
+  }, [deleteDbWorkload, pendingDbDeleteTarget, runMutationThenRefresh]);
+  const resourceDeleteDialog = createElement(ProjectCanvasDeleteDialogs, {
+    apTarget: pendingApDeleteTarget,
+    dbTarget: pendingDbDeleteTarget,
+    onApConfirm: confirmPendingApDelete,
+    onApOpenChange: (open: boolean) => {
+      if (!open) {
+        setPendingApDeleteTarget(null);
+      }
+    },
+    onDbConfirm: confirmPendingDbDelete,
+    onDbOpenChange: (open: boolean) => {
+      if (!open) {
+        setPendingDbDeleteTarget(null);
+      }
+    },
+  });
   const pendingDbServiceRestoreFocusNode = useMemo(
     () =>
       pendingDbServiceRestoreFocus == null
@@ -1448,6 +1513,7 @@ export function useProjectCanvas(
     openDrawerSurface,
     openMainSurface,
     openSideSurface,
+    resourceDeleteDialog,
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,

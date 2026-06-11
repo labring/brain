@@ -401,15 +401,6 @@ export default function DatabaseNodePreview() {
           />
         </PreviewSurface>
       </Preview>
-      <Preview title="Delete confirmation">
-        <PreviewSurface>
-          <DatabaseNode.DeleteDialogPanel
-            name="orders-api"
-            onCancel={() => undefined}
-            onConfirmDelete={() => undefined}
-          />
-        </PreviewSurface>
-      </Preview>
       <Preview title="Generic fallback icon">
         <PreviewSurface>
           <DatabaseNodeSample

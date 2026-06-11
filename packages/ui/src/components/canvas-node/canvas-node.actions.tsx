@@ -11,7 +11,6 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
@@ -105,18 +104,10 @@ export function CanvasNodeActionButton({
   );
 
   return (
-    <TooltipProvider delay={420}>
-      <Tooltip>
-        <TooltipTrigger render={button} />
-        <TooltipContent
-          className="canvas-node-action-tooltip rounded-md border-0 bg-white/5 px-2 py-1 font-normal text-xs text-zinc-50 leading-4 shadow-none ring-0 backdrop-blur-xl"
-          side="bottom"
-          sideOffset={6}
-        >
-          {tooltip}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger render={button} />
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 

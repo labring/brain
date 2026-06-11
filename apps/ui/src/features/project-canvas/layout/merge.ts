@@ -1,5 +1,6 @@
 import type { Node } from "@xyflow/react";
 
+import type { CanvasDetectedConnection } from "../flow/detected-connections";
 import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,
@@ -15,7 +16,7 @@ import {
   canvasNodeStackOrder,
   nodeWithCanvasStackOrder,
 } from "./node-stack-order";
-import { placeCanvasNodes } from "./placement";
+import { placeCanvasNodesWithLayout } from "./placement";
 import {
   CANVAS_STACK_ORDER_RETURN_STABILITY_MS,
   canvasStackOrderValue,
@@ -31,9 +32,11 @@ export interface CanvasLayoutMergeResult {
   changed: boolean;
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
+  placedLayoutNodes: CanvasLayoutNode[];
 }
 
 export interface CanvasLayoutMergeOptions {
+  connections?: readonly CanvasDetectedConnection[];
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
   now?: Date;
@@ -210,15 +213,18 @@ function orphanedLayoutNode(
 }
 
 export function mergeCanvasLayoutWithDetectedNodes({
+  connections,
   layout,
   nodes,
   now = new Date(),
 }: CanvasLayoutMergeOptions): CanvasLayoutMergeResult {
   if (layout === undefined) {
+    const placed = placeCanvasNodesWithLayout({ connections, layout, nodes });
     return {
       changed: false,
       layout: undefined,
-      nodes: applyCanvasStackOrderToNodes(placeCanvasNodes({ layout, nodes })),
+      nodes: applyCanvasStackOrderToNodes(placed.nodes),
+      placedLayoutNodes: [],
     };
   }
 
@@ -272,12 +278,16 @@ export function mergeCanvasLayoutWithDetectedNodes({
     return orphanedLayoutNode(item, nowIso);
   });
 
+  const placed = placeCanvasNodesWithLayout({
+    connections,
+    layout: cleanedLayout,
+    nodes: renderedNodes,
+  });
   return {
     changed: !layoutDocumentsEqual(layout, nextLayout),
     layout: nextLayout,
-    nodes: applyCanvasStackOrderToNodes(
-      placeCanvasNodes({ layout: cleanedLayout, nodes: renderedNodes })
-    ),
+    nodes: applyCanvasStackOrderToNodes(placed.nodes),
+    placedLayoutNodes: placed.placedLayoutNodes,
   };
 }
 

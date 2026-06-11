@@ -8,15 +8,20 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
-import { isCanvasNodeGeneratedPosition, placeCanvasNodes } from "./placement";
+import {
+  isCanvasNodeGeneratedPosition,
+  placeCanvasNodes,
+  placeCanvasNodesWithLayout,
+} from "./placement";
 import type { CanvasLayoutDocument } from "./types";
 
-function apNode(name: string): Node {
+function apNode(name: string, uid?: string): Node {
   return {
     data: {
       states: {
         name,
         namespace: "default",
+        ...(uid === undefined ? {} : { uid }),
       },
     },
     id: `ap-${name}`,
@@ -71,7 +76,7 @@ test("places an unplaced AP at the fallback grid origin", () => {
   assert.deepEqual(node?.position, { x: 0, y: 0 });
 });
 
-test("skips saved layout rectangles when raster-scanning fallback slots", () => {
+test("places unanchored nodes in the global block to the right of saved layout", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -101,6 +106,45 @@ test("places unplaced nodes in kind namespace name lexicographic order", () => {
 
   assert.deepEqual(positions.get("ap-a-api"), { x: 0, y: 0 });
   assert.deepEqual(positions.get("ap-z-api"), { x: 340, y: 0 });
+});
+
+test("returns newly placed layout nodes for first placement persistence", () => {
+  const result = placeCanvasNodesWithLayout({
+    layout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    nodes: [apNode("api")],
+  });
+
+  assert.deepEqual(result.placedLayoutNodes, [
+    {
+      expanded: false,
+      position: { x: 0, y: 0 },
+      ref: { kind: "AP", name: "api", namespace: "default" },
+    },
+  ]);
+});
+
+test("includes last seen UID in first-placement layout nodes", () => {
+  const result = placeCanvasNodesWithLayout({
+    layout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    nodes: [apNode("api", "api-uid")],
+  });
+
+  assert.deepEqual(result.placedLayoutNodes[0], {
+    expanded: false,
+    lastSeenUid: "api-uid",
+    position: { x: 0, y: 0 },
+    ref: { kind: "AP", name: "api", namespace: "default" },
+  });
 });
 
 test("keeps saved layout positions for detected nodes", () => {
@@ -169,7 +213,7 @@ test("anchors an unplaced EntryPoint to the left side of a saved AP", () => {
   assert.deepEqual(positions.get("entry-api-entry"), { x: 340, y: 280 });
 });
 
-test("uses AABB rectangles from saved and same-run placed nodes during raster scan", () => {
+test("uses AABB rectangles from saved and same-run placed nodes during global block placement", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -193,10 +237,10 @@ test("uses AABB rectangles from saved and same-run placed nodes during raster sc
   const positions = positionById(nodes);
 
   assert.deepEqual(positions.get("ap-a-api"), { x: 680, y: 0 });
-  assert.deepEqual(positions.get("ap-b-api"), { x: 0, y: 280 });
+  assert.deepEqual(positions.get("ap-b-api"), { x: 1020, y: 0 });
 });
 
-test("moves to the next raster row when the first row is fully occupied", () => {
+test("fills the right-side global placement block before moving rows", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -222,7 +266,7 @@ test("moves to the next raster row when the first row is fully occupied", () => 
     nodes: [dbNode("postgres")],
   });
 
-  assert.deepEqual(node?.position, { x: 0, y: 280 });
+  assert.deepEqual(node?.position, { x: 1020, y: 0 });
 });
 
 test("anchors an EntryPoint to its AP after the AP receives a fallback slot", () => {
@@ -236,7 +280,7 @@ test("anchors an EntryPoint to its AP after the AP receives a fallback slot", ()
   assert.deepEqual(positions.get("entry-api-entry"), { x: -340, y: 0 });
 });
 
-test("excludes anchored EntryPoints from raster-scan occupancy", () => {
+test("includes anchored EntryPoints in same-pass placement occupancy", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -256,5 +300,84 @@ test("excludes anchored EntryPoints from raster-scan occupancy", () => {
   const positions = positionById(nodes);
 
   assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: 0 });
+  assert.notDeepEqual(positions.get("db-postgres"), { x: 0, y: 0 });
+});
+
+test("moves anchored EntryPoints through local slots to avoid saved occupancy", () => {
+  const layout: CanvasLayoutDocument = {
+    namespace: "default",
+    nodes: [
+      {
+        position: { x: 340, y: 0 },
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
+      {
+        position: { x: 0, y: 0 },
+        ref: { kind: "DB", name: "postgres", namespace: "default" },
+      },
+    ],
+    projectId: "project-uid",
+    version: 1,
+  };
+
+  const nodes = placeCanvasNodes({
+    layout,
+    nodes: [apNode("api"), entryNode("api-entry", "api"), dbNode("postgres")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: -280 });
   assert.deepEqual(positions.get("db-postgres"), { x: 0, y: 0 });
+});
+
+test("returns placement group layout nodes for AP and EntryPoint first placement", () => {
+  const result = placeCanvasNodesWithLayout({
+    layout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    nodes: [entryNode("api-entry", "api"), apNode("api")],
+  });
+
+  assert.deepEqual(
+    result.placedLayoutNodes.map((node) => ({
+      kind: node.ref.kind,
+      name: node.ref.name,
+      position: node.position,
+    })),
+    [
+      { kind: "AP", name: "api", position: { x: 0, y: 0 } },
+      { kind: "EntryPoint", name: "api", position: { x: -340, y: 0 } },
+    ]
+  );
+});
+
+test("anchors new DB nodes to connected AP nodes before global placement", () => {
+  const layout: CanvasLayoutDocument = {
+    namespace: "default",
+    nodes: [
+      {
+        position: { x: 0, y: 0 },
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
+    ],
+    projectId: "project-uid",
+    version: 1,
+  };
+
+  const [node] = placeCanvasNodes({
+    connections: [
+      {
+        kind: "APToDB",
+        source: { kind: "AP", name: "api", namespace: "default" },
+        target: { kind: "DB", name: "postgres", namespace: "default" },
+      },
+    ],
+    layout,
+    nodes: [dbNode("postgres")],
+  });
+
+  assert.deepEqual(node?.position, { x: 340, y: 0 });
 });

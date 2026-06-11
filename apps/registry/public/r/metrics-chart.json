@@ -3,8 +3,12 @@
   "name": "metrics-chart",
   "title": "Metrics chart",
   "description": "Multi-series metrics area chart: compound MetricsChart.Root + Area / Variant0 / Variant1, provider + context (mirrors Canvas layout)",
-  "dependencies": ["recharts"],
-  "registryDependencies": ["chart"],
+  "dependencies": [
+    "recharts"
+  ],
+  "registryDependencies": [
+    "chart"
+  ],
   "files": [
     {
       "path": "../../packages/ui/src/components/metrics-chart/metrics-chart.defaults.ts",

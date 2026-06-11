@@ -50,3 +50,49 @@ test("canvas layout patch rejects non-integer stack order values", () => {
     CanvasLayoutValidationError
   );
 });
+
+test("first placement patch inserts missing nodes without overwriting saved positions", () => {
+  const result = applyCanvasLayoutPatch(
+    layout([node("api", undefined, { position: { x: 10, y: 20 } })]),
+    {
+      intent: "first-placement",
+      nodes: [
+        node("api", undefined, { position: { x: 999, y: 999 } }),
+        node("worker", undefined, { position: { x: 340, y: 0 } }),
+      ],
+    }
+  );
+
+  assert.deepEqual(
+    result.nodes.map((item) => ({
+      name: item.ref.name,
+      position: item.position,
+    })),
+    [
+      { name: "api", position: { x: 10, y: 20 } },
+      { name: "worker", position: { x: 340, y: 0 } },
+    ]
+  );
+});
+
+test("first placement patch does not overwrite an existing layout node", () => {
+  const result = applyCanvasLayoutPatch(
+    layout([node("api", undefined, { position: { x: 48, y: 64 } })]),
+    {
+      intent: "first-placement",
+      nodes: [node("api", undefined, { position: { x: 999, y: 999 } })],
+    }
+  );
+
+  assert.deepEqual(result.nodes[0]?.position, { x: 48, y: 64 });
+  assert.equal(result.version, 0);
+});
+
+test("first placement patch inserts missing layout nodes", () => {
+  const result = applyCanvasLayoutPatch(layout([]), {
+    intent: "first-placement",
+    nodes: [node("api", undefined, { position: { x: 340, y: 0 } })],
+  });
+
+  assert.deepEqual(result.nodes[0]?.position, { x: 340, y: 0 });
+});
