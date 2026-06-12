@@ -653,6 +653,46 @@ test("AP network settings validate Platform Address IDs and Public Address ports
   );
 });
 
+test("AP network settings ignore observed Public Address rows when saving desired platform addresses", () => {
+  const ops = patchOpsForApNetworkSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ port: 8080 }],
+      publicAddresses: [
+        {
+          host: "affine.example.com",
+          id: "observed-affineweb01",
+          port: 3010,
+          status: "accessible",
+          type: "observed",
+          url: "https://affine.example.com/",
+        },
+        { id: "pa_abc123", port: 8080 },
+      ],
+    }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/network",
+      value: {
+        appListeningPorts: [{ port: 8080 }],
+        platformAddresses: [
+          { domainPrefix: "tsbmom", id: "pa_abc123", port: 8080 },
+        ],
+      },
+    },
+  ]);
+});
+
 test("AP network settings validate Custom Domain Binding references", () => {
   assert.throws(
     () =>

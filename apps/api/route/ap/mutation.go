@@ -775,7 +775,7 @@ func registerUpdate(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP for update", err)
 		}
-		if err := requireBrainAPLikeWorkload(*workload); err != nil {
+		if err := requireBrainAPWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 
@@ -1931,20 +1931,18 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 	if err != nil {
 		return err
 	}
-	if err := requireBrainAPLikeWorkload(*workload); err != nil {
+	if err := requireBrainAPWorkload(*workload); err != nil {
 		return apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, name)
 	}
-	if isStrictBrainAPWorkload(*workload) {
-		selector := apDirectResourceDeleteSelector(name)
-		for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets", "persistentvolumeclaims"} {
-			_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
-				LabelSelector: selector,
-				Namespace:     namespace,
-				Resource:      resource,
-			})
-			if err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
-				return err
-			}
+	selector := apDirectResourceDeleteSelector(name)
+	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets", "persistentvolumeclaims"} {
+		_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
+			LabelSelector: selector,
+			Namespace:     namespace,
+			Resource:      resource,
+		})
+		if err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
+			return err
 		}
 	}
 	_, err = k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
@@ -2010,7 +2008,7 @@ func registerRestart(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP workload for restart", err)
 		}
-		if err := requireBrainAPLikeWorkload(*workload); err != nil {
+		if err := requireBrainAPWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 

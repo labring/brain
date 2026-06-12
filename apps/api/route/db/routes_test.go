@@ -429,6 +429,21 @@ func TestDBLikeOwnershipAllowsManagedTemplateClusters(t *testing.T) {
 	}
 }
 
+func TestDBStrictOwnershipRejectsManagedTemplateClusters(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("template-pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+		orchestration.BrainDeploymentNameLabel: "template-pg",
+		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:      "project-a",
+	})
+
+	if err := requireBrainDBCluster(cluster); err == nil {
+		t.Fatal("expected strict DB ownership to reject template cluster")
+	}
+}
+
 func TestKubeBlocksRestartConflictDetection(t *testing.T) {
 	err := errors.New(`admission webhook "vopsrequest.kb.io" denied the request: OpsRequest.spec.type=Restart is forbidden when Cluster.status.phase=Creating`)
 	if !isKubeBlocksOpsConflict(err) {

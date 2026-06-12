@@ -72,9 +72,12 @@ test("project delete guard blocks deletion when managed resources still exist", 
     const url = new URL(call);
     assert.equal(url.searchParams.get("namespace"), "ns-a");
     if (url.searchParams.get("kind") === null) {
-      assert.equal(
-        url.searchParams.get("label-selector"),
-        "brain.io/project-id=project-a"
+      const selector = url.searchParams.get("label-selector");
+      assert.ok(
+        selector ===
+          "brain.io/project-id=project-a,brain.io/deployment-kind=ap" ||
+          selector ===
+            "brain.io/project-id=project-a,brain.io/deployment-kind=db"
       );
     } else {
       assert.equal(
@@ -176,7 +179,7 @@ test("project delete guard surfaces downstream cleanup errors", async () => {
   );
 });
 
-test("project managed resource cleanup deletes DBs, APs, template PVCs, then template Instances", async () => {
+test("project managed resource cleanup deletes direct DBs, direct APs, template PVCs, then template Instances", async () => {
   const calls: string[] = [];
   const fetchImpl: typeof fetch = (url, init) => {
     calls.push(`${init?.method ?? "GET"} ${String(url)}`);

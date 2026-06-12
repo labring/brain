@@ -274,13 +274,25 @@ function templateProjectLabelSelector(projectId: string): string {
   return `${projectLabelSelector(projectId)},${BRAIN_DEPLOYMENT_KIND_LABEL}=template`;
 }
 
+function directApProjectLabelSelector(projectId: string): string {
+  return `${projectLabelSelector(projectId)},${BRAIN_DEPLOYMENT_KIND_LABEL}=ap`;
+}
+
+function directDbProjectLabelSelector(projectId: string): string {
+  return `${projectLabelSelector(projectId)},${BRAIN_DEPLOYMENT_KIND_LABEL}=db`;
+}
+
 export async function assertProjectHasNoManagedResources(
   input: ProjectDeleteGuardInput
 ): Promise<void> {
   const templateSelector = templateProjectLabelSelector(input.id);
   const [ap, db, template, templatePersistentVolumeClaims] = await Promise.all([
-    listProjectResources(input, API_ROUTES.ap.root),
-    listProjectResources(input, API_ROUTES.db.root),
+    listProjectResources(input, API_ROUTES.ap.root, {
+      "label-selector": directApProjectLabelSelector(input.id),
+    }),
+    listProjectResources(input, API_ROUTES.db.root, {
+      "label-selector": directDbProjectLabelSelector(input.id),
+    }),
     listProjectK8sResources(input, "instances", templateSelector),
     listProjectK8sResources(input, "persistentvolumeclaims", templateSelector),
   ]);
@@ -300,8 +312,12 @@ export async function deleteProjectManagedResources(
 ): Promise<ProjectChildResourceSummary> {
   const templateSelector = templateProjectLabelSelector(input.id);
   const [ap, db, template, templatePersistentVolumeClaims] = await Promise.all([
-    listProjectResources(input, API_ROUTES.ap.root),
-    listProjectResources(input, API_ROUTES.db.root),
+    listProjectResources(input, API_ROUTES.ap.root, {
+      "label-selector": directApProjectLabelSelector(input.id),
+    }),
+    listProjectResources(input, API_ROUTES.db.root, {
+      "label-selector": directDbProjectLabelSelector(input.id),
+    }),
     listProjectK8sResources(input, "instances", templateSelector),
     listProjectK8sResources(input, "persistentvolumeclaims", templateSelector),
   ]);

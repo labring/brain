@@ -445,6 +445,23 @@ func TestAPLikeOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
 	}
 }
 
+func TestAPStrictOwnershipRejectsManagedTemplateWorkloads(t *testing.T) {
+	deployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainDeploymentNameLabel: "template-web",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name: "template-web",
+		},
+	}
+	if err := requireBrainAPWorkload(apWorkload{Deployment: &deployment}); err == nil {
+		t.Fatal("expected strict AP ownership to reject template deployment")
+	}
+}
+
 func TestAPDeploymentPatchFromProductPatch(t *testing.T) {
 	raw := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true,"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"envRawSource":"\n# app\nFEATURE_FLAG=true\n","network":{"privatePort":8080,"platformAddresses":[{"id":"pa_abc123","port":8080}]}},"resource":{"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":3}}}}}`)
 	patch := apDeploymentPatchFromProductPatch(raw, "web")

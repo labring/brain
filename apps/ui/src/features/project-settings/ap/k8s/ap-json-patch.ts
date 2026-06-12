@@ -942,40 +942,42 @@ function validatedPlatformAddresses(
     return undefined;
   }
   const seenIds = new Set<string>();
-  return publicAddresses.map((address) => {
-    const rawId = normalizePlatformAddressId(address.id);
-    let id = rawId === "" ? generatePlatformAddressId() : rawId;
-    while (rawId === "" && seenIds.has(id)) {
-      id = generatePlatformAddressId();
-    }
-    if (!isPlatformAddressId(id)) {
-      throw new Error(
-        `Platform Address ID must match ${PLATFORM_ADDRESS_ID_PATTERN}.`
-      );
-    }
-    if (seenIds.has(id)) {
-      throw new Error("Platform Address IDs must be unique.");
-    }
-    seenIds.add(id);
-    const rawDomainPrefix =
-      typeof address.domainPrefix === "string"
-        ? address.domainPrefix.trim().toLowerCase()
-        : "";
-    const domainPrefix =
-      rawDomainPrefix === ""
-        ? stablePlatformAddressDomainPrefix(id)
-        : rawDomainPrefix;
-    if (!PLATFORM_ADDRESS_DOMAIN_PREFIX_RE.test(domainPrefix)) {
-      throw new Error(
-        `Platform Address domainPrefix must match ${PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN}.`
-      );
-    }
-    return {
-      domainPrefix,
-      id,
-      port: validatedNetworkPort(address.port, "Public Address target port"),
-    };
-  });
+  return publicAddresses
+    .filter((address) => address.type?.trim().toLowerCase() !== "observed")
+    .map((address) => {
+      const rawId = normalizePlatformAddressId(address.id);
+      let id = rawId === "" ? generatePlatformAddressId() : rawId;
+      while (rawId === "" && seenIds.has(id)) {
+        id = generatePlatformAddressId();
+      }
+      if (!isPlatformAddressId(id)) {
+        throw new Error(
+          `Platform Address ID must match ${PLATFORM_ADDRESS_ID_PATTERN}.`
+        );
+      }
+      if (seenIds.has(id)) {
+        throw new Error("Platform Address IDs must be unique.");
+      }
+      seenIds.add(id);
+      const rawDomainPrefix =
+        typeof address.domainPrefix === "string"
+          ? address.domainPrefix.trim().toLowerCase()
+          : "";
+      const domainPrefix =
+        rawDomainPrefix === ""
+          ? stablePlatformAddressDomainPrefix(id)
+          : rawDomainPrefix;
+      if (!PLATFORM_ADDRESS_DOMAIN_PREFIX_RE.test(domainPrefix)) {
+        throw new Error(
+          `Platform Address domainPrefix must match ${PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN}.`
+        );
+      }
+      return {
+        domainPrefix,
+        id,
+        port: validatedNetworkPort(address.port, "Public Address target port"),
+      };
+    });
 }
 
 function validatedCustomDomains(
