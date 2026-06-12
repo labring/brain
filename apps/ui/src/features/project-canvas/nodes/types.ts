@@ -23,6 +23,8 @@ import type { DbSettingsData } from "@/features/project-settings/db/db-settings-
 import type {
   DeploymentTaskCanvasProjectionEdge,
   DeploymentTaskCanvasProjectionExpectedRef,
+  DeploymentTaskCanvasProjectionPosition,
+  DeploymentTaskCanvasProjectionPositionSource,
 } from "@/lib/deploy-task/types";
 
 // `Node`'s second type parameter must match the node type constants in ./constants.
@@ -113,12 +115,13 @@ export interface CanvasDeploymentPlaceholderNodeData
   hasProjectionPosition?: boolean;
   primary?: boolean;
   projectionEdges?: DeploymentTaskCanvasProjectionEdge[];
+  projectionPositionSource?: DeploymentTaskCanvasProjectionPositionSource;
   projectionRelativePosition?: { x: number; y: number };
   projectionShape?: "generic" | "result-preview";
   projectionSlots?: {
     expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
     id: string;
-    position?: { x: number; y: number };
+    position?: DeploymentTaskCanvasProjectionPosition;
     primary?: boolean;
   }[];
   slotId?: string;

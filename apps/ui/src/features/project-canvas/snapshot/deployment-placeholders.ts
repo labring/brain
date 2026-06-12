@@ -11,6 +11,7 @@ import type {
   DeploymentTaskCanvasProjection,
   DeploymentTaskCanvasProjectionEdge,
   DeploymentTaskCanvasProjectionExpectedRef,
+  DeploymentTaskCanvasProjectionPositionSource,
   DeploymentTaskCanvasProjectionSlot,
 } from "@/lib/deploy-task/types";
 import {
@@ -87,9 +88,28 @@ function finitePosition(
 
 function positionWithSource(
   position: CanvasLayoutPosition,
-  source: "generated" | "user"
+  source: DeploymentTaskCanvasProjectionPositionSource
 ): NonNullable<DeploymentTaskCanvasProjection["position"]> {
   return { source, x: position.x, y: position.y };
+}
+
+function projectionSlotPositionSource(input: {
+  anchorSource: DeploymentTaskCanvasProjectionPositionSource | undefined;
+  primarySlotId: string | undefined;
+  saveSource: DeploymentTaskCanvasProjectionPositionSource;
+  slot: NonNullable<
+    CanvasDeploymentPlaceholderNodeData["projectionSlots"]
+  >[number];
+}): DeploymentTaskCanvasProjectionPositionSource {
+  if (input.saveSource === "user") {
+    return "user";
+  }
+  if (input.slot.position?.source !== undefined) {
+    return input.slot.position.source;
+  }
+  return input.anchorSource === "user" && input.slot.id === input.primarySlotId
+    ? "user"
+    : "generated";
 }
 
 function normalizeResourceKind(kind: string): CanvasLayoutResourceKind | null {
@@ -674,6 +694,12 @@ function resultPreviewPlaceholderNodes(input: {
         slot.primary === true ||
         primarySlot(input.preview.slots)?.id === slot.id,
       projectionEdges: input.preview.edges,
+      ...(input.task.canvasProjection.position?.source === undefined
+        ? {}
+        : {
+            projectionPositionSource:
+              input.task.canvasProjection.position.source,
+          }),
       projectionRelativePosition: relative.get(slot.id) ?? { x: 0, y: 0 },
       projectionShape: "result-preview",
       projectionSlots: input.preview.slots.map((item) => ({
@@ -683,7 +709,15 @@ function resultPreviewPlaceholderNodes(input: {
         id: item.id,
         ...(item.position === undefined
           ? {}
-          : { position: { x: item.position.x, y: item.position.y } }),
+          : {
+              position: {
+                ...(item.position.source === undefined
+                  ? {}
+                  : { source: item.position.source }),
+                x: item.position.x,
+                y: item.position.y,
+              },
+            }),
         ...(item.primary === undefined ? {} : { primary: item.primary }),
       })),
       slotId: slot.id,
@@ -1155,6 +1189,10 @@ export function deploymentProjectionPatchFromPlaceholderNode(input: {
           x: input.node.position.x - previous.position.x,
           y: input.node.position.y - previous.position.y,
         };
+  const primarySlotId =
+    input.node.data.projectionSlots?.find((slot) => slot.primary === true)
+      ?.id ??
+    (input.node.data.primary === true ? input.node.data.slotId : undefined);
   const slots = (input.node.data.projectionSlots ?? []).map((slot) => {
     const node =
       groupNodes.find((candidate) => candidate.data.slotId === slot.id) ??
@@ -1172,7 +1210,12 @@ export function deploymentProjectionPatchFromPlaceholderNode(input: {
           x: position.x + (input.source === "user" ? delta.x : 0),
           y: position.y + (input.source === "user" ? delta.y : 0),
         },
-        input.source
+        projectionSlotPositionSource({
+          anchorSource: input.node.data.projectionPositionSource,
+          primarySlotId,
+          saveSource: input.source,
+          slot,
+        })
       ),
       ...(slot.primary === undefined ? {} : { primary: slot.primary }),
     };
