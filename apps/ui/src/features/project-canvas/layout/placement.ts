@@ -77,9 +77,17 @@ interface PlacementGroupCandidate {
   sortKey: string;
 }
 
+interface DeploymentPreviewGroupCandidate {
+  candidates: PlacementCandidate[];
+  footprint: PlacementFootprint;
+  relativePositions: Map<number, CanvasLayoutPosition>;
+  sortKey: string;
+}
+
 type PlacementUnit =
   | { candidate: PlacementCandidate; kind: "single" }
-  | { group: PlacementGroupCandidate; kind: "group" };
+  | { group: PlacementGroupCandidate; kind: "group" }
+  | { group: DeploymentPreviewGroupCandidate; kind: "deploymentPreviewGroup" };
 
 function fallbackCanvasPosition(index: number): CanvasLayoutPosition {
   return {
@@ -143,8 +151,8 @@ function hasGeneratedPosition(
 }
 
 function comparePlacementUnits(a: PlacementUnit, b: PlacementUnit): number {
-  const aKey = a.kind === "group" ? a.group.sortKey : a.candidate.sortKey;
-  const bKey = b.kind === "group" ? b.group.sortKey : b.candidate.sortKey;
+  const aKey = a.kind === "single" ? a.candidate.sortKey : a.group.sortKey;
+  const bKey = b.kind === "single" ? b.candidate.sortKey : b.group.sortKey;
   return aKey.localeCompare(bKey);
 }
 
@@ -513,14 +521,99 @@ function apPublicAccessPositionFromGroupOrigin(origin: CanvasLayoutPosition): {
 }
 
 function placementUnitFootprint(unit: PlacementUnit): PlacementFootprint {
-  if (unit.kind === "group") {
+  if (unit.kind !== "single") {
     return unit.group.footprint;
   }
   return singleCandidateFootprint(unit.candidate);
 }
 
-function buildPlacementUnits(
+function deploymentPreviewGroupInfo(
+  candidate: PlacementCandidate
+): { groupId: string; relativePosition: CanvasLayoutPosition } | undefined {
+  const data = asRecord(candidate.node.data);
+  const relative = asRecord(data?.projectionRelativePosition);
+  const groupId = data?.groupId;
+  const relativeX = relative?.x;
+  const relativeY = relative?.y;
+  if (
+    data?.projectionShape !== "result-preview" ||
+    typeof groupId !== "string" ||
+    !Number.isFinite(relativeX) ||
+    !Number.isFinite(relativeY)
+  ) {
+    return undefined;
+  }
+  return {
+    groupId,
+    relativePosition: { x: relativeX as number, y: relativeY as number },
+  };
+}
+
+function deploymentPreviewFootprint(
+  candidates: readonly PlacementCandidate[],
+  relativePositions: ReadonlyMap<number, CanvasLayoutPosition>
+): PlacementFootprint {
+  return {
+    rects: candidates.map((candidate) => ({
+      height: nodeFootprintHeight(candidate.node),
+      width: CANVAS_NODE_FOOTPRINT_WIDTH,
+      x: relativePositions.get(candidate.index)?.x ?? 0,
+      y: relativePositions.get(candidate.index)?.y ?? 0,
+    })),
+  };
+}
+
+function deploymentPreviewGroupUnits(
   candidates: readonly PlacementCandidate[]
+): { groupedIndexes: Set<number>; units: PlacementUnit[] } {
+  const candidatesByGroup = new Map<string, PlacementCandidate[]>();
+  const relativePositionsByGroup = new Map<
+    string,
+    Map<number, CanvasLayoutPosition>
+  >();
+  for (const candidate of candidates) {
+    const previewGroup = deploymentPreviewGroupInfo(candidate);
+    if (previewGroup === undefined) {
+      continue;
+    }
+    const group = candidatesByGroup.get(previewGroup.groupId) ?? [];
+    group.push(candidate);
+    candidatesByGroup.set(previewGroup.groupId, group);
+    const relativePositions =
+      relativePositionsByGroup.get(previewGroup.groupId) ??
+      new Map<number, CanvasLayoutPosition>();
+    relativePositions.set(candidate.index, previewGroup.relativePosition);
+    relativePositionsByGroup.set(previewGroup.groupId, relativePositions);
+  }
+
+  const groupedIndexes = new Set<number>();
+  const units: PlacementUnit[] = [];
+  for (const [groupId, groupCandidates] of candidatesByGroup) {
+    const relativePositions =
+      relativePositionsByGroup.get(groupId) ??
+      new Map<number, CanvasLayoutPosition>();
+    for (const candidate of groupCandidates) {
+      groupedIndexes.add(candidate.index);
+    }
+    units.push({
+      group: {
+        candidates: groupCandidates,
+        footprint: deploymentPreviewFootprint(
+          groupCandidates,
+          relativePositions
+        ),
+        relativePositions,
+        sortKey: `DeploymentPreview:${groupId}`,
+      },
+      kind: "deploymentPreviewGroup",
+    });
+  }
+  return { groupedIndexes, units };
+}
+
+function apPublicAccessGroupUnits(
+  candidates: readonly PlacementCandidate[],
+  groupedIndexes: Set<number>
 ): PlacementUnit[] {
   const apCandidatesByKey = new Map<
     string,
@@ -549,7 +642,6 @@ function buildPlacementUnits(
     }
   }
 
-  const groupedIndexes = new Set<number>();
   const units: PlacementUnit[] = [];
   for (const [apKey, ap] of apCandidatesByKey) {
     const publicAccess = publicAccessCandidatesByApKey.get(apKey);
@@ -571,7 +663,18 @@ function buildPlacementUnits(
       kind: "group",
     });
   }
+  return units;
+}
 
+function buildPlacementUnits(
+  candidates: readonly PlacementCandidate[]
+): PlacementUnit[] {
+  const previewGroups = deploymentPreviewGroupUnits(candidates);
+  const groupedIndexes = previewGroups.groupedIndexes;
+  const units: PlacementUnit[] = [
+    ...previewGroups.units,
+    ...apPublicAccessGroupUnits(candidates, groupedIndexes),
+  ];
   for (const candidate of candidates) {
     if (groupedIndexes.has(candidate.index)) {
       continue;
@@ -619,6 +722,23 @@ function placeUnitAt(
     return;
   }
 
+  if (unit.kind === "deploymentPreviewGroup") {
+    for (const candidate of unit.group.candidates) {
+      const relative = unit.group.relativePositions.get(candidate.index) ?? {
+        x: 0,
+        y: 0,
+      };
+      placeCandidateAt(
+        candidate,
+        { x: origin.x + relative.x, y: origin.y + relative.y },
+        positionByRef,
+        placedNodes,
+        placedLayoutNodes
+      );
+    }
+    return;
+  }
+
   const positions = apPublicAccessPositionFromGroupOrigin(origin);
   placeCandidateAt(
     unit.group.ap,
@@ -636,8 +756,8 @@ function placeUnitAt(
   );
 }
 
-function placementForUnit(
-  unit: PlacementUnit,
+function placementForSingleUnit(
+  candidate: PlacementCandidate,
   anchorIndex: PlacementAnchorIndex,
   initialPositionByNodeId:
     | ReadonlyMap<string, CanvasLayoutPosition>
@@ -646,14 +766,11 @@ function placementForUnit(
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
   occupancy: PlacementOccupancy
 ): CanvasLayoutPosition {
-  const footprint = placementUnitFootprint(unit);
-  let initialPosition: CanvasLayoutPosition | undefined;
-  if (unit.kind === "single") {
-    initialPosition =
-      unit.candidate.ref === undefined
-        ? initialPositionByNodeId?.get(unit.candidate.node.id)
-        : initialPositionByRef?.get(canvasResourceKey(unit.candidate.ref));
-  }
+  const footprint = singleCandidateFootprint(candidate);
+  const initialPosition =
+    candidate.ref === undefined
+      ? initialPositionByNodeId?.get(candidate.node.id)
+      : initialPositionByRef?.get(canvasResourceKey(candidate.ref));
   if (
     initialPosition !== undefined &&
     occupancy.isFootprintOpen(footprint, initialPosition)
@@ -661,33 +778,6 @@ function placementForUnit(
     return initialPosition;
   }
 
-  if (unit.kind === "group") {
-    const apInitialPosition = initialPositionByRef?.get(
-      canvasResourceKey(unit.group.ap.ref)
-    );
-    const initialGroupOrigin =
-      apInitialPosition === undefined
-        ? undefined
-        : {
-            x: apInitialPosition.x - PUBLIC_ACCESS_AP_LEFT_OFFSET,
-            y: apInitialPosition.y,
-          };
-    if (
-      initialGroupOrigin !== undefined &&
-      occupancy.isFootprintOpen(footprint, initialGroupOrigin)
-    ) {
-      return initialGroupOrigin;
-    }
-    const position = firstAnchoredGroupPosition(
-      unit.group,
-      anchorIndex.anchorsForRef(unit.group.ap.ref),
-      positionByRef,
-      occupancy
-    );
-    return position ?? firstOpenGlobalPosition(occupancy, footprint);
-  }
-
-  const candidate = unit.candidate;
   const publicAccessPosition =
     candidate.ref?.kind === "PublicAccess"
       ? publicAccessAnchorPosition(candidate, positionByRef, occupancy)
@@ -705,6 +795,97 @@ function placementForUnit(
     publicAccessPosition ??
     anchored ??
     firstOpenGlobalPosition(occupancy, footprint)
+  );
+}
+
+function placementForDeploymentPreviewGroup(
+  group: DeploymentPreviewGroupCandidate,
+  occupancy: PlacementOccupancy
+): CanvasLayoutPosition {
+  const firstCandidate = group.candidates[0];
+  const relative =
+    firstCandidate === undefined
+      ? undefined
+      : group.relativePositions.get(firstCandidate.index);
+  const initialOrigin =
+    firstCandidate === undefined || relative === undefined
+      ? undefined
+      : {
+          x: firstCandidate.node.position.x - relative.x,
+          y: firstCandidate.node.position.y - relative.y,
+        };
+  if (
+    initialOrigin !== undefined &&
+    occupancy.isFootprintOpen(group.footprint, initialOrigin)
+  ) {
+    return initialOrigin;
+  }
+  return firstOpenGlobalPosition(occupancy, group.footprint);
+}
+
+function placementForApPublicAccessGroup(
+  group: PlacementGroupCandidate,
+  anchorIndex: PlacementAnchorIndex,
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined,
+  positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
+  occupancy: PlacementOccupancy
+): CanvasLayoutPosition {
+  const apInitialPosition = initialPositionByRef?.get(
+    canvasResourceKey(group.ap.ref)
+  );
+  const initialGroupOrigin =
+    apInitialPosition === undefined
+      ? undefined
+      : {
+          x: apInitialPosition.x - PUBLIC_ACCESS_AP_LEFT_OFFSET,
+          y: apInitialPosition.y,
+        };
+  if (
+    initialGroupOrigin !== undefined &&
+    occupancy.isFootprintOpen(group.footprint, initialGroupOrigin)
+  ) {
+    return initialGroupOrigin;
+  }
+  const position = firstAnchoredGroupPosition(
+    group,
+    anchorIndex.anchorsForRef(group.ap.ref),
+    positionByRef,
+    occupancy
+  );
+  return position ?? firstOpenGlobalPosition(occupancy, group.footprint);
+}
+
+function placementForUnit(
+  unit: PlacementUnit,
+  anchorIndex: PlacementAnchorIndex,
+  initialPositionByNodeId:
+    | ReadonlyMap<string, CanvasLayoutPosition>
+    | undefined,
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined,
+  positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
+  occupancy: PlacementOccupancy
+): CanvasLayoutPosition {
+  if (unit.kind === "single") {
+    return placementForSingleUnit(
+      unit.candidate,
+      anchorIndex,
+      initialPositionByNodeId,
+      initialPositionByRef,
+      positionByRef,
+      occupancy
+    );
+  }
+
+  if (unit.kind === "deploymentPreviewGroup") {
+    return placementForDeploymentPreviewGroup(unit.group, occupancy);
+  }
+
+  return placementForApPublicAccessGroup(
+    unit.group,
+    anchorIndex,
+    initialPositionByRef,
+    positionByRef,
+    occupancy
   );
 }
 

@@ -20,6 +20,10 @@ import type {
 } from "@/features/project-settings/ap/ap-settings-sections";
 import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+import type {
+  DeploymentTaskCanvasProjectionEdge,
+  DeploymentTaskCanvasProjectionExpectedRef,
+} from "@/lib/deploy-task/types";
 
 // `Node`'s second type parameter must match the node type constants in ./constants.
 // biome-ignore lint/style/useImportType: value required for `typeof` in `CanvasContainerRfNode`
@@ -104,7 +108,20 @@ export type CanvasEntryRfNode = Node<
 
 export interface CanvasDeploymentPlaceholderNodeData
   extends Record<string, unknown> {
+  expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
+  groupId?: string;
   hasProjectionPosition?: boolean;
+  primary?: boolean;
+  projectionEdges?: DeploymentTaskCanvasProjectionEdge[];
+  projectionRelativePosition?: { x: number; y: number };
+  projectionShape?: "generic" | "result-preview";
+  projectionSlots?: {
+    expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
+    id: string;
+    position?: { x: number; y: number };
+    primary?: boolean;
+  }[];
+  slotId?: string;
   taskId: string;
 }
 

@@ -16,6 +16,7 @@ import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
 import {
   deploymentPlaceholderTaskIdFromNode,
+  deploymentProjectionPatchFromPlaceholderNode,
   isDeploymentPlaceholderNode,
 } from "@/features/project-canvas/snapshot/deployment-placeholders";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
@@ -63,10 +64,21 @@ export default function ProjectIdPage() {
     uid,
   });
   const saveDeploymentPlaceholderPosition = useCallback(
-    async (node: Node, mode: "replace" | "set-if-empty") => {
+    async (
+      node: Node,
+      nodes: readonly Node[],
+      mode: "replace" | "set-if-empty",
+      source: "generated" | "user"
+    ) => {
       const taskId = deploymentPlaceholderTaskIdFromNode(node);
+      const patch = deploymentProjectionPatchFromPlaceholderNode({
+        node,
+        nodes,
+        source,
+      });
       if (
         taskId === undefined ||
+        patch === null ||
         kubeconfig.trim() === "" ||
         namespace.trim() === ""
       ) {
@@ -78,12 +90,7 @@ export default function ProjectIdPage() {
         taskId,
         update: {
           mode,
-          projection: {
-            position: {
-              x: node.position.x,
-              y: node.position.y,
-            },
-          },
+          projection: patch.projection,
         },
       });
       refresh().catch(() => undefined);
@@ -109,14 +116,20 @@ export default function ProjectIdPage() {
     if (resourceSnapshotLoading) {
       return;
     }
+    const savedTaskIds = new Set<string>();
     for (const node of canvasState.nodes) {
       if (
         isDeploymentPlaceholderNode(node) &&
-        node.data.hasProjectionPosition !== true
+        node.data.hasProjectionPosition !== true &&
+        !savedTaskIds.has(node.data.taskId)
       ) {
-        saveDeploymentPlaceholderPosition(node, "set-if-empty").catch(
-          () => undefined
-        );
+        savedTaskIds.add(node.data.taskId);
+        saveDeploymentPlaceholderPosition(
+          node,
+          canvasState.nodes,
+          "set-if-empty",
+          "generated"
+        ).catch(() => undefined);
       }
     }
   }, [
@@ -161,9 +174,12 @@ export default function ProjectIdPage() {
     onNodeExpansionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodePositionChange: (node) => {
       if (isDeploymentPlaceholderNode(node)) {
-        saveDeploymentPlaceholderPosition(node, "replace").catch(
-          () => undefined
-        );
+        saveDeploymentPlaceholderPosition(
+          node,
+          canvasState.nodes,
+          "replace",
+          "user"
+        ).catch(() => undefined);
         return;
       }
       projectCanvasLayout.scheduleNodeLayoutSave(node);

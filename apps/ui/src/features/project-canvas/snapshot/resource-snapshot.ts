@@ -24,6 +24,9 @@ import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderNodesFromTasks,
+  deploymentPlaceholderPendingResultKeys,
+  deploymentPreviewEdgesFromTasks,
+  isDeploymentPlaceholderPendingResultNode,
   shouldHideDeploymentPlaceholderForHandoff,
 } from "./deployment-placeholders";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
@@ -97,26 +100,41 @@ export function buildProjectCanvasResourceSnapshot({
       namespaceFallback: namespace,
     }
   );
-  const detectedNodes = [
+  const rawDetectedNodes = [
     ...apBlock.nodes,
     ...dbBlock.nodes,
     ...publicAccessBlock.nodes,
     ...templateNativeBlock.nodes,
   ];
+  const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
+    layout: canvasLayout,
+    tasks: deployTasks,
+  });
+  const detectedNodes = rawDetectedNodes.filter(
+    (node) =>
+      !isDeploymentPlaceholderPendingResultNode({
+        keys: pendingResultKeys,
+        node,
+      })
+  );
   const deployTaskById = new Map(
     (deployTasks ?? []).map((task) => [task.id, task])
   );
   const deploymentPlaceholderNodes = deploymentPlaceholderNodesFromTasks(
-    deployTasks
+    deployTasks,
+    {
+      layout: canvasLayout,
+      nodes: rawDetectedNodes,
+    }
   ).filter((node) => {
-    const task = deployTaskById.get(node.data.taskId);
-    return (
-      task === undefined ||
-      !shouldHideDeploymentPlaceholderForHandoff({
-        nodes: detectedNodes,
-        task,
-      })
-    );
+    if (!deployTaskById.has(node.data.taskId)) {
+      return true;
+    }
+    return !shouldHideDeploymentPlaceholderForHandoff({
+      layout: canvasLayout,
+      node,
+      nodes: rawDetectedNodes,
+    });
   });
   const initialPositions = deploymentPlaceholderHandoffs({
     layout: canvasLayout,
@@ -151,8 +169,15 @@ export function buildProjectCanvasResourceSnapshot({
         merge.nodes
       )
     : [];
+  const deploymentPreviewEdges = canvasLayoutReady
+    ? deploymentPreviewEdgesFromTasks({
+        existingEdges: edges,
+        nodes: merge.nodes,
+        tasks: deployTasks,
+      })
+    : [];
   const canvasState: CanvasState = {
-    edges: [...edges, ...templateNativeBlock.edges],
+    edges: [...edges, ...deploymentPreviewEdges, ...templateNativeBlock.edges],
     nodes: merge.nodes,
     selectedEdge: null,
     selectedNode: null,

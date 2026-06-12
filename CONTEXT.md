@@ -146,6 +146,56 @@ A Deployment Placeholder Node may have project-scoped temporary placement while 
 
 _Avoid_: ghost node, pending node, pending AP, fake resource node.
 
+### Deployment Placeholder Placement
+
+The project-scoped temporary visual position of a Deployment Placeholder Node before Deployment Handoff. It is distinct from Canvas Layout, and it may become the visual position inherited by the Primary Deployment Result.
+
+_Avoid_: pending node layout, fake resource layout, viewport placement.
+
+### Deployment Result Preview Placement
+
+The project-scoped temporary visual arrangement of a Deployment Result Preview. Deployment Result Preview Placement is chosen for the preview group as one footprint and then expanded into per-slot positions for Deployment Handoff.
+
+When a generic Deployment Placeholder Node upgrades into a Deployment Result Preview, the generic placeholder position anchors the preview's primary slot unless preserving that anchor would conflict with existing canvas occupancy.
+
+Deployment Result Preview Placement distinguishes system-generated positions from user-chosen positions so Deployment Handoff can preserve intentional placement.
+
+Moving a Deployment Result Placeholder Node moves its Deployment Result Preview group by default; individual slot placement is not part of the default projection interaction.
+
+_Avoid_: independent pending node placement, result auto-layout.
+
+### Deployment Result Preview
+
+A Project Canvas projection of a Deployment Task's anticipated canvas results once the task has enough evidence to describe their shape. A Deployment Result Preview may contain one or more Deployment Result Placeholder Nodes and Deployment Preview Edges, and it replaces the generic Deployment Placeholder Node for that Deployment Task.
+
+Deployment Result Preview evidence must come from structured deployment facts such as generated manifests, artifact summaries, template previews, or AP/DB relationship fields; natural-language task text and broad task type are not enough.
+
+Viewport follow for a Deployment Result Preview targets the preview group rather than only the primary slot.
+
+_Avoid_: pending resource graph, fake resources, guessed canvas.
+
+### Deployment Result Slot
+
+A task-local identity for one anticipated canvas result within a Deployment Result Preview. A Deployment Result Slot may carry the anticipated result identity used for Deployment Handoff, but it is not a Canvas Resource Identity.
+
+_Avoid_: pending resource identity, fake Canvas Resource Identity.
+
+### Deployment Result Placeholder Node
+
+A temporary Project Canvas skeleton node for one Deployment Result Slot within a Deployment Result Preview. It is not an AP, DB, AP Public Access Node, template workload, Settings Owner, or resource action target.
+
+A Deployment Result Placeholder Node is used only for an anticipated result that does not already have a live canvas node or Canvas Layout position.
+
+_Avoid_: pending AP, pending DB, fake resource node.
+
+### Deployment Preview Edge
+
+A temporary visual relationship between Deployment Result Placeholder Nodes in one Deployment Result Preview. It is not a Canvas Connection and does not represent an established runtime dependency.
+
+Deployment Preview Edges require explicit preview evidence, such as generated AP-to-DB reference intent, template-declared dependency, or AP-to-Public-Access presentation relationship. Sharing one Deployment Task is not enough to create a Deployment Preview Edge.
+
+_Avoid_: pending connection, fake edge, draft Canvas Connection.
+
 ### Deployment Task Projection
 
 A Project-scoped read-side view of one Deployment Task containing only the facts needed by project surfaces to present deployment progress and resource handoff. It is distinct from the Deployment Task record, task event log, runner transcript, and resulting AP, DB, or template workload state.
@@ -163,6 +213,8 @@ _Avoid_: main ghost target, first applied YAML, primary public access.
 ### Deployment Handoff
 
 The transition where a completed Deployment Task stops being represented by a Deployment Placeholder Node and its Primary Deployment Result appears as a normal Project Canvas resource node. Deployment Handoff may carry the placeholder's temporary position to the Primary Deployment Result when that resource has no existing Canvas Layout position.
+
+When a Deployment Result Preview has multiple result slots, Deployment Handoff may complete per slot while unresolved slots remain visible as Deployment Result Placeholder Nodes.
 
 _Avoid_: completed placeholder, ghost replacement, result takeover.
 

@@ -16,6 +16,11 @@ import type {
 
 export type {
   DeploymentTaskCanvasProjection,
+  DeploymentTaskCanvasProjectionEdge,
+  DeploymentTaskCanvasProjectionExpectedRef,
+  DeploymentTaskCanvasProjectionPosition,
+  DeploymentTaskCanvasProjectionPositionSource,
+  DeploymentTaskCanvasProjectionSlot,
   DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
   DeploymentTaskSource,
@@ -136,13 +141,37 @@ export const submitDeployTaskInputSchema = z.object({
 
 export type SubmitDeployTaskInput = z.infer<typeof submitDeployTaskInputSchema>;
 
+const deploymentTaskCanvasProjectionPositionSchema = z.object({
+  source: z.enum(["generated", "user"]).optional(),
+  x: z.number().finite(),
+  y: z.number().finite(),
+});
+
+const deploymentTaskCanvasProjectionExpectedRefSchema = z.object({
+  kind: z.enum(["AP", "DB", "PublicAccess", "TemplateNative"]),
+  name: z.string().trim().min(1),
+  namespace: z.string().trim().min(1),
+});
+
+const deploymentTaskCanvasProjectionSlotSchema = z.object({
+  expectedRef: deploymentTaskCanvasProjectionExpectedRefSchema.optional(),
+  id: z.string().trim().min(1),
+  position: deploymentTaskCanvasProjectionPositionSchema.optional(),
+  primary: z.boolean().optional(),
+});
+
+const deploymentTaskCanvasProjectionEdgeSchema = z.object({
+  evidence: z.string().trim().min(1).optional(),
+  id: z.string().trim().min(1).optional(),
+  sourceSlotId: z.string().trim().min(1),
+  targetSlotId: z.string().trim().min(1),
+});
+
 export const deploymentTaskCanvasProjectionSchema = z.object({
-  position: z
-    .object({
-      x: z.number().finite(),
-      y: z.number().finite(),
-    })
-    .optional(),
+  edges: z.array(deploymentTaskCanvasProjectionEdgeSchema).optional(),
+  position: deploymentTaskCanvasProjectionPositionSchema.optional(),
+  shape: z.enum(["generic", "result-preview"]).optional(),
+  slots: z.array(deploymentTaskCanvasProjectionSlotSchema).optional(),
 }) satisfies z.ZodType<DeploymentTaskCanvasProjection>;
 
 export const updateDeployTaskCanvasProjectionInputSchema = z.object({

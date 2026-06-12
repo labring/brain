@@ -49,11 +49,39 @@ export interface DeployTaskArtifactSummary {
   resourceYamls?: string[];
 }
 
+export type DeploymentTaskCanvasProjectionPositionSource = "generated" | "user";
+
+export interface DeploymentTaskCanvasProjectionPosition {
+  source?: DeploymentTaskCanvasProjectionPositionSource;
+  x: number;
+  y: number;
+}
+
+export interface DeploymentTaskCanvasProjectionExpectedRef {
+  kind: "AP" | "DB" | "PublicAccess" | "TemplateNative";
+  name: string;
+  namespace: string;
+}
+
+export interface DeploymentTaskCanvasProjectionSlot {
+  expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
+  id: string;
+  position?: DeploymentTaskCanvasProjectionPosition;
+  primary?: boolean;
+}
+
+export interface DeploymentTaskCanvasProjectionEdge {
+  evidence?: string;
+  id?: string;
+  sourceSlotId: string;
+  targetSlotId: string;
+}
+
 export interface DeploymentTaskCanvasProjection {
-  position?: {
-    x: number;
-    y: number;
-  };
+  edges?: DeploymentTaskCanvasProjectionEdge[];
+  position?: DeploymentTaskCanvasProjectionPosition;
+  shape?: "generic" | "result-preview";
+  slots?: DeploymentTaskCanvasProjectionSlot[];
 }
 
 export interface DeployTaskBlockingInput {

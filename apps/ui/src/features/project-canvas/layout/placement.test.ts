@@ -79,6 +79,27 @@ function deploymentPlaceholderNode(
   };
 }
 
+function deploymentResultPlaceholderNode(
+  name: string,
+  slotId: string,
+  relativePosition: Node["position"],
+  position: Node["position"]
+): Node {
+  return {
+    data: {
+      groupId: name,
+      hasProjectionPosition: false,
+      projectionRelativePosition: relativePosition,
+      projectionShape: "result-preview",
+      slotId,
+      taskId: name,
+    },
+    id: `deployment-result-placeholder-${name}-${slotId}`,
+    position,
+    type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+  };
+}
+
 function positionById(nodes: readonly Node[]): Map<string, Node["position"]> {
   return new Map(nodes.map((node) => [node.id, node.position]));
 }
@@ -308,6 +329,38 @@ test("places a new AP and PublicAccess as one combined footprint", () => {
 
   assert.deepEqual(positions.get("ap-api"), { x: 340, y: 0 });
   assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: 0 });
+});
+
+test("places deployment result placeholders as one preview footprint", () => {
+  const nodes = placeCanvasNodes({
+    layout: undefined,
+    nodes: [
+      deploymentResultPlaceholderNode(
+        "task-1",
+        "AP:default:api",
+        { x: 340, y: 0 },
+        { x: 340, y: 0 }
+      ),
+      deploymentResultPlaceholderNode(
+        "task-1",
+        "PublicAccess:default:api",
+        { x: 0, y: 0 },
+        { x: 0, y: 0 }
+      ),
+    ],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(
+    positions.get("deployment-result-placeholder-task-1-AP:default:api"),
+    { x: 340, y: 0 }
+  );
+  assert.deepEqual(
+    positions.get(
+      "deployment-result-placeholder-task-1-PublicAccess:default:api"
+    ),
+    { x: 0, y: 0 }
+  );
 });
 
 test("includes anchored PublicAccess in same-pass placement occupancy", () => {

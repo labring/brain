@@ -27,6 +27,7 @@ import { ensureDeployTaskStorageSchema } from "./schema-bootstrap";
 
 import type {
   CreateDeployTaskInput,
+  DeploymentTaskCanvasProjection,
   DeployTaskDTO,
   DeployTaskEventDTO,
   DeployTaskEventInput,
@@ -38,6 +39,23 @@ import type {
 
 const MAX_DEPLOY_EVENTS = 200;
 const MAX_DEPLOY_MESSAGES = 200;
+
+function canvasProjectionHasSlotPosition(
+  projection: DeploymentTaskCanvasProjection
+): boolean {
+  return projection.slots?.some((slot) => slot.position !== undefined) === true;
+}
+
+function shouldSkipSetIfEmptyCanvasProjection(input: {
+  existing: DeploymentTaskCanvasProjection;
+  incoming: DeploymentTaskCanvasProjection;
+}): boolean {
+  const incomingHasSlots = (input.incoming.slots?.length ?? 0) > 0;
+  if (incomingHasSlots) {
+    return canvasProjectionHasSlotPosition(input.existing);
+  }
+  return input.existing.position !== undefined;
+}
 
 function compactOptional(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -392,7 +410,10 @@ export async function updateDeployTaskCanvasProjection(
     const mode = input.mode ?? "replace";
     if (
       mode === "set-if-empty" &&
-      existing.canvasProjection.position !== undefined
+      shouldSkipSetIfEmptyCanvasProjection({
+        existing: existing.canvasProjection,
+        incoming: input.projection,
+      })
     ) {
       return toDeployTaskDTO(existing);
     }

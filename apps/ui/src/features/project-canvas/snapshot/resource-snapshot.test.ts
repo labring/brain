@@ -199,13 +199,27 @@ test("resource snapshot hands placeholder position to primary AP result", () => 
             },
           ],
         },
-        canvasProjection: { position: { x: 680, y: 280 } },
-        completedAt: "2026-06-11T10:00:00.000Z",
+        canvasProjection: {
+          shape: "result-preview",
+          slots: [
+            {
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "AP:default:api",
+              position: { x: 680, y: 280 },
+              primary: true,
+            },
+          ],
+        },
+        completedAt: null,
         id: "task-1",
         namespace: "default",
-        phase: "completed",
+        phase: "apply",
         projectId: "project-uid",
-        status: "completed",
+        status: "applying",
         updatedAt: "2026-06-11T10:00:00.000Z",
       },
     ],
@@ -238,6 +252,248 @@ test("resource snapshot hands placeholder position to primary AP result", () => 
       },
     ],
   });
+});
+
+test("resource snapshot keeps placeholder path until projection position is recorded", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default" },
+          spec: { input: {} },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {
+          resources: [
+            {
+              apiVersion: "brain.io/direct",
+              kind: "AP",
+              name: "api",
+              namespace: "default",
+            },
+          ],
+        },
+        canvasProjection: {},
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "deployment-result-placeholder-task-1-AP:default:api",
+        position: { x: 0, y: 0 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
+  assert.equal(snapshot.layoutIntent, null);
+});
+
+test("resource snapshot previews AP public access as related result placeholders", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    canvasLayout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {
+          resourceYamls: [
+            `
+apiVersion: brain.io/direct
+kind: AP
+metadata:
+  name: api
+  namespace: default
+spec:
+  input:
+    network:
+      platformAddresses:
+        - https://api.example.test
+`,
+          ],
+        },
+        canvasProjection: {},
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "deployment-result-placeholder-task-1-AP:default:api",
+        position: { x: 340, y: 0 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+      {
+        id: "deployment-result-placeholder-task-1-PublicAccess:default:api",
+        position: { x: 0, y: 0 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
+  assert.deepEqual(
+    snapshot.canvasState.edges.map((edge) => ({
+      data: edge.data,
+      source: edge.source,
+      target: edge.target,
+    })),
+    [
+      {
+        data: {
+          evidence: "ap-public-access-intent",
+          kind: "deploymentPreview",
+        },
+        source: "deployment-result-placeholder-task-1-PublicAccess:default:api",
+        target: "deployment-result-placeholder-task-1-AP:default:api",
+      },
+    ]
+  );
+});
+
+test("resource snapshot keeps unresolved result slots beside handed-off results", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default" },
+          spec: { input: {} },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          edges: [
+            {
+              evidence: "ap-env-raw-source-reference",
+              sourceSlotId: "AP:default:api",
+              targetSlotId: "DB:default:postgres",
+            },
+          ],
+          shape: "result-preview",
+          slots: [
+            {
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "AP:default:api",
+              position: { x: 680, y: 280 },
+              primary: true,
+            },
+            {
+              expectedRef: {
+                kind: "DB",
+                name: "postgres",
+                namespace: "default",
+              },
+              id: "DB:default:postgres",
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "ap-api",
+        position: { x: 680, y: 280 },
+        type: CANVAS_CONTAINER_NODE_TYPE,
+      },
+      {
+        id: "deployment-result-placeholder-task-1-DB:default:postgres",
+        position: { x: 1020, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
+  assert.deepEqual(
+    snapshot.canvasState.edges.map((edge) => ({
+      data: edge.data,
+      source: edge.source,
+      target: edge.target,
+    })),
+    [
+      {
+        data: {
+          evidence: "ap-env-raw-source-reference",
+          kind: "deploymentPreview",
+        },
+        source: "ap-api",
+        target: "deployment-result-placeholder-task-1-DB:default:postgres",
+      },
+    ]
+  );
 });
 
 test("resource snapshot does not let placeholder handoff override saved resource layout", () => {
