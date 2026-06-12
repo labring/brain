@@ -2,6 +2,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/lib/deploy-task/api-auth";
+import type { DeploymentTaskProjectionStreamEvent } from "@/lib/deploy-task/projection";
 import { subscribeDeploymentTaskProjectionEvents } from "@/lib/deploy-task/projection-events";
 import { listDeploymentTaskProjections } from "@/lib/deploy-task/service";
 
@@ -47,19 +48,54 @@ export async function GET(request: Request) {
     async start(controller) {
       let closed = false;
       let snapshotSent = false;
-      const pendingEvents: unknown[] = [];
-      const send = (event: string, data: unknown) => {
+      let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+      let unsubscribe: (() => void) | undefined;
+      const pendingEvents: DeploymentTaskProjectionStreamEvent[] = [];
+
+      function cleanup() {
         if (closed) {
           return;
         }
-        try {
-          controller.enqueue(encoder.encode(encodeSse(event, data)));
-        } catch {
-          closed = true;
+        closed = true;
+        if (heartbeatTimer !== undefined) {
+          clearInterval(heartbeatTimer);
         }
-      };
+        unsubscribe?.();
+        request.signal.removeEventListener("abort", close);
+      }
 
-      const unsubscribe = subscribeDeploymentTaskProjectionEvents({
+      function close() {
+        cleanup();
+        try {
+          controller.close();
+        } catch {
+          // Ignore close errors after client disconnect.
+        }
+      }
+
+      function write(chunk: string): boolean {
+        if (closed) {
+          return false;
+        }
+        try {
+          controller.enqueue(encoder.encode(chunk));
+          return true;
+        } catch {
+          cleanup();
+          return false;
+        }
+      }
+
+      const send = (event: string, data: unknown): boolean =>
+        write(encodeSse(event, data));
+
+      request.signal.addEventListener("abort", close, { once: true });
+      if (request.signal.aborted) {
+        close();
+        return;
+      }
+
+      unsubscribe = subscribeDeploymentTaskProjectionEvents({
         listener: (event) => {
           if (snapshotSent) {
             send(event.type, event);
@@ -70,32 +106,24 @@ export async function GET(request: Request) {
         namespace,
         projectId,
       });
-      const heartbeatTimer = setInterval(() => {
-        if (closed) {
-          return;
-        }
-        try {
-          controller.enqueue(encoder.encode(": ping\n\n"));
-        } catch {
-          closed = true;
-        }
-      }, STREAM_HEARTBEAT_INTERVAL_MS);
+      heartbeatTimer = setInterval(
+        () => write(": ping\n\n"),
+        STREAM_HEARTBEAT_INTERVAL_MS
+      );
 
       try {
         const projections = await listDeploymentTaskProjections({
           namespace,
           projectId,
         });
+        if (closed) {
+          return;
+        }
         send("snapshot", { projections, type: "snapshot" });
         snapshotSent = true;
         for (const event of pendingEvents) {
-          if (
-            event != null &&
-            typeof event === "object" &&
-            "type" in event &&
-            typeof event.type === "string"
-          ) {
-            send(event.type, event);
+          if (!send(event.type, event)) {
+            break;
           }
         }
         pendingEvents.length = 0;
@@ -107,22 +135,8 @@ export async function GET(request: Request) {
               : "Could not load deployment task projections.",
           type: "error",
         });
+        close();
       }
-
-      request.signal.addEventListener(
-        "abort",
-        () => {
-          closed = true;
-          clearInterval(heartbeatTimer);
-          unsubscribe();
-          try {
-            controller.close();
-          } catch {
-            // Ignore close errors after client disconnect.
-          }
-        },
-        { once: true }
-      );
     },
   });
 

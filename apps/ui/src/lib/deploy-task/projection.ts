@@ -22,6 +22,13 @@ export const PROJECTABLE_DEPLOYMENT_TASK_STATUSES = [
 export type DeploymentTaskProjectionStatus =
   (typeof PROJECTABLE_DEPLOYMENT_TASK_STATUSES)[number];
 
+const ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET = new Set<DeployTaskStatus>(
+  ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUSES
+);
+const PROJECTABLE_DEPLOYMENT_TASK_STATUS_SET = new Set<DeployTaskStatus>(
+  PROJECTABLE_DEPLOYMENT_TASK_STATUSES
+);
+
 export interface DeploymentTaskProjection {
   artifactSummary: DeployTaskArtifactSummary;
   canvasProjection: DeploymentTaskCanvasProjection;
@@ -48,6 +55,13 @@ export type DeploymentTaskProjectionStreamEvent =
       projectId: string;
       taskId: string;
       type: "remove";
+    };
+
+export type DeploymentTaskProjectionStreamServerEvent =
+  | DeploymentTaskProjectionStreamEvent
+  | {
+      message: string;
+      type: "error";
     };
 
 interface DeploymentTaskProjectionSource {
@@ -81,15 +95,17 @@ function taskHasResultResources(task: DeploymentTaskProjectionSource): boolean {
   return (task.artifactSummary.resources?.length ?? 0) > 0;
 }
 
+export function isDeploymentTaskProjectionStatus(
+  status: DeployTaskStatus
+): status is DeploymentTaskProjectionStatus {
+  return PROJECTABLE_DEPLOYMENT_TASK_STATUS_SET.has(status);
+}
+
 export function deploymentTaskProjectionIsVisible(
   projection: DeploymentTaskProjection,
   now = new Date()
 ): boolean {
-  if (
-    ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUSES.includes(
-      projection.status as (typeof ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUSES)[number]
-    )
-  ) {
+  if (ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(projection.status)) {
     return true;
   }
   if (projection.status !== "completed") {
@@ -111,6 +127,9 @@ export function toDeploymentTaskProjection(
   if (!projectId) {
     return null;
   }
+  if (!isDeploymentTaskProjectionStatus(task.status)) {
+    return null;
+  }
 
   const completedAt = dateIso(task.completedAt);
   const projection: DeploymentTaskProjection = {
@@ -121,7 +140,7 @@ export function toDeploymentTaskProjection(
     namespace: task.namespace,
     phase: task.phase,
     projectId,
-    status: task.status as DeploymentTaskProjectionStatus,
+    status: task.status,
     updatedAt: dateIso(task.updatedAt) ?? new Date(0).toISOString(),
   };
 

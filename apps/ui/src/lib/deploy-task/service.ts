@@ -2,11 +2,12 @@ import "server-only";
 
 import type { UIMessage } from "ai";
 import { generateId } from "ai";
-import { and, asc, desc, eq, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 
 import { getDeploymentTaskDb } from "./db";
 import {
   type DeploymentTaskProjection,
+  PROJECTABLE_DEPLOYMENT_TASK_STATUSES,
   toDeploymentTaskProjection,
 } from "./projection";
 import { publishDeploymentTaskProjectionChange } from "./projection-events";
@@ -308,7 +309,8 @@ export async function listDeploymentTaskProjections(input: {
     .where(
       and(
         eq(deployTasks.namespace, input.namespace.trim()),
-        eq(deployTasks.projectId, input.projectId.trim())
+        eq(deployTasks.projectId, input.projectId.trim()),
+        inArray(deployTasks.status, PROJECTABLE_DEPLOYMENT_TASK_STATUSES)
       )
     )
     .orderBy(desc(deployTasks.updatedAt))

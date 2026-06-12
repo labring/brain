@@ -4,6 +4,7 @@ import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import type {
   DeploymentTaskProjection,
   DeploymentTaskProjectionStreamEvent,
+  DeploymentTaskProjectionStreamServerEvent,
 } from "./projection";
 import type {
   DeployTaskDTO,
@@ -54,19 +55,14 @@ export async function fetchProjectDeploymentTaskProjections(input: {
   return Array.isArray(body.projections) ? body.projections : [];
 }
 
-function parseSseEventBlock(block: string): {
-  dataText: string;
-  eventName: string;
-} | null {
+function parseSseEventBlock(block: string): string | null {
   if (!block.trim() || block.trimStart().startsWith(":")) {
     return null;
   }
 
-  let eventName = "message";
   const dataLines: string[] = [];
   for (const line of block.split(SSE_LINE_SEPARATOR_REGEX)) {
     if (line.startsWith("event:")) {
-      eventName = line.slice("event:".length).trim() || "message";
       continue;
     }
     if (line.startsWith("data:")) {
@@ -74,7 +70,7 @@ function parseSseEventBlock(block: string): {
     }
   }
 
-  return { dataText: dataLines.join("\n"), eventName };
+  return dataLines.join("\n");
 }
 
 function flushSseEventBlocks(input: {
@@ -90,11 +86,14 @@ function flushSseEventBlocks(input: {
 
     const block = buffer.slice(0, match.index);
     buffer = buffer.slice(match.index + match[0].length);
-    const parsed = parseSseEventBlock(block);
-    if (parsed?.dataText) {
+    const dataText = parseSseEventBlock(block);
+    if (dataText) {
       const event = JSON.parse(
-        parsed.dataText
-      ) as DeploymentTaskProjectionStreamEvent;
+        dataText
+      ) as DeploymentTaskProjectionStreamServerEvent;
+      if (event.type === "error") {
+        throw new Error(event.message || "Deployment task stream failed.");
+      }
       input.onEvent(event);
     }
   }
@@ -149,6 +148,9 @@ export async function streamProjectDeploymentTaskProjections(input: {
       buffer,
       onEvent: input.onEvent,
     });
+    if (!input.signal.aborted) {
+      throw new Error("Deployment task stream closed.");
+    }
   } finally {
     reader.releaseLock();
   }
@@ -164,15 +166,12 @@ export async function patchDeployTaskCanvasProjection(input: {
     `${DEPLOY_TASKS_API_PATH}/${encodeURIComponent(input.taskId)}`,
     window.location.origin
   );
-  url.searchParams.set(
-    "encodedKubeconfig",
-    encodeURIComponent(input.kubeconfig)
-  );
   url.searchParams.set("namespace", input.namespace);
   const body = await jsonOrError<{ task?: DeployTaskDTO }>(
     await fetch(url, {
       body: JSON.stringify(input.update),
       headers: {
+        Authorization: kubeconfigBearerHeader(input.kubeconfig),
         "Content-Type": "application/json",
       },
       method: "PATCH",

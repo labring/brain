@@ -1,0 +1,128 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS,
+  deploymentTaskProjectionIsVisible,
+  toDeploymentTaskProjection,
+  upsertDeploymentTaskProjection,
+} from "./projection";
+
+const NOW = new Date("2026-06-11T10:00:00.000Z");
+
+function deploymentTaskSource(
+  overrides: Partial<Parameters<typeof toDeploymentTaskProjection>[0]> = {}
+): Parameters<typeof toDeploymentTaskProjection>[0] {
+  return {
+    artifactSummary: {},
+    canvasProjection: {},
+    completedAt: null,
+    id: "task-1",
+    namespace: "default",
+    phase: "queued",
+    projectId: "project-uid",
+    status: "queued",
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+test("deployment task projection includes active project tasks", () => {
+  assert.deepEqual(toDeploymentTaskProjection(deploymentTaskSource(), NOW), {
+    artifactSummary: {},
+    canvasProjection: {},
+    completedAt: null,
+    id: "task-1",
+    namespace: "default",
+    phase: "queued",
+    projectId: "project-uid",
+    status: "queued",
+    updatedAt: "2026-06-11T10:00:00.000Z",
+  });
+});
+
+test("deployment task projection excludes non-projectable tasks", () => {
+  assert.equal(
+    toDeploymentTaskProjection(
+      deploymentTaskSource({
+        completedAt: NOW,
+        status: "failed",
+      }),
+      NOW
+    ),
+    null
+  );
+  assert.equal(
+    toDeploymentTaskProjection(
+      deploymentTaskSource({
+        projectId: "  ",
+      }),
+      NOW
+    ),
+    null
+  );
+});
+
+test("completed deployment task projection stays visible only during handoff grace", () => {
+  const completedAt = NOW.toISOString();
+  const projection = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        resources: [
+          {
+            apiVersion: "brain.io/direct",
+            kind: "AP",
+            name: "api",
+            namespace: "default",
+          },
+        ],
+      },
+      completedAt,
+      phase: "completed",
+      status: "completed",
+    }),
+    NOW
+  );
+
+  assert.notEqual(projection, null);
+  assert.equal(deploymentTaskProjectionIsVisible(projection, NOW), true);
+  assert.equal(
+    deploymentTaskProjectionIsVisible(
+      projection,
+      new Date(
+        NOW.getTime() + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS + 1
+      )
+    ),
+    false
+  );
+});
+
+test("upserting deployment task projections keeps existing order", () => {
+  const first = toDeploymentTaskProjection(deploymentTaskSource(), NOW);
+  const second = toDeploymentTaskProjection(
+    deploymentTaskSource({ id: "task-2" }),
+    NOW
+  );
+  assert.notEqual(first, null);
+  assert.notEqual(second, null);
+
+  assert.deepEqual(upsertDeploymentTaskProjection([first], second), [
+    second,
+    first,
+  ]);
+  assert.deepEqual(
+    upsertDeploymentTaskProjection([first, second], {
+      ...second,
+      phase: "running",
+      status: "running",
+    }),
+    [
+      first,
+      {
+        ...second,
+        phase: "running",
+        status: "running",
+      },
+    ]
+  );
+});

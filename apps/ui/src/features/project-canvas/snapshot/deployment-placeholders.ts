@@ -1,5 +1,9 @@
 import type { Node } from "@xyflow/react";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import {
+  DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS,
+  type DeploymentTaskProjection,
+  deploymentTaskProjectionIsVisible,
+} from "@/lib/deploy-task/projection";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutPosition,
@@ -13,14 +17,8 @@ import {
 } from "../nodes/resource-identity";
 import type { CanvasDeploymentPlaceholderRfNode } from "../nodes/types";
 
-export const DEPLOYMENT_PLACEHOLDER_COMPLETED_GRACE_MS = 60_000;
-
-const ACTIVE_DEPLOY_TASK_STATUSES = new Set([
-  "queued",
-  "running",
-  "blocked",
-  "applying",
-]);
+export const DEPLOYMENT_PLACEHOLDER_COMPLETED_GRACE_MS =
+  DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS;
 
 function sanitizeNodeIdPart(value: string): string {
   return value.replace(/\s+/g, "-");
@@ -39,29 +37,6 @@ function finitePosition(
   return { x: position.x, y: position.y };
 }
 
-function completedAtMs(task: DeploymentTaskProjection): number | undefined {
-  if (task.completedAt == null) {
-    return undefined;
-  }
-  const ms = Date.parse(task.completedAt);
-  return Number.isFinite(ms) ? ms : undefined;
-}
-
-function taskWithinCompletedGrace(
-  task: DeploymentTaskProjection,
-  now: Date
-): boolean {
-  const completedMs = completedAtMs(task);
-  return (
-    completedMs !== undefined &&
-    now.getTime() - completedMs <= DEPLOYMENT_PLACEHOLDER_COMPLETED_GRACE_MS
-  );
-}
-
-function taskHasResultResources(task: DeploymentTaskProjection): boolean {
-  return (task.artifactSummary.resources?.length ?? 0) > 0;
-}
-
 export function shouldShowDeploymentPlaceholder(
   task: DeploymentTaskProjection,
   now = new Date()
@@ -70,13 +45,7 @@ export function shouldShowDeploymentPlaceholder(
   if (!projectId) {
     return false;
   }
-  if (ACTIVE_DEPLOY_TASK_STATUSES.has(task.status)) {
-    return true;
-  }
-  if (task.status !== "completed") {
-    return false;
-  }
-  return taskHasResultResources(task) && taskWithinCompletedGrace(task, now);
+  return deploymentTaskProjectionIsVisible(task, now);
 }
 
 export function deploymentPlaceholderNodeId(taskId: string): string {
