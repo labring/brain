@@ -167,7 +167,7 @@ test("Deployment Target pipeline creates a GitHub AI Deployment Task", async () 
     runner: {
       kind: "ai",
       runtimeProvider: "devbox",
-      skill: "brain-github-deploy",
+      skill: "sealos-deploy",
     },
     source: {
       kind: "github",

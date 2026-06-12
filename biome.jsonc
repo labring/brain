@@ -1,10 +1,6 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["ultracite/biome/core"],
-  "files": {
-    // External skill bundle lives as a submodule and keeps its own style rules.
-    "includes": ["!!brain-sandbox-skills"]
-  },
   "overrides": [
     {
       // Compound-component dot-notation per apps/ui frontend architecture §4.1.

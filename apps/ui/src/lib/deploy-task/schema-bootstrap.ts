@@ -247,7 +247,7 @@ async function migrateDeployTaskTableShape(
       when source->>'kind' = 'docker' then '{"kind":"direct"}'::jsonb
       when source->>'kind' = 'database' then '{"kind":"direct"}'::jsonb
       when source->>'kind' = 'template' then '{"kind":"template"}'::jsonb
-      else '{"kind":"ai","runtimeProvider":"devbox","skill":"brain-github-deploy"}'::jsonb
+      else '{"kind":"ai","runtimeProvider":"devbox","skill":"sealos-deploy"}'::jsonb
     end
     where runner is null
   `);

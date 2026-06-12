@@ -233,7 +233,7 @@ function deploymentTaskForRequest(
         runner: {
           kind: "ai",
           runtimeProvider: "devbox",
-          skill: "brain-github-deploy",
+          skill: "sealos-deploy",
         },
         source: {
           kind: "github",

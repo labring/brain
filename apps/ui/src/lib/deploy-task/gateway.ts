@@ -427,8 +427,8 @@ function buildGatewayPrompt(task: DeployTaskRow): string {
     "Work in /home/devbox/project.",
     ...gatewaySourcePromptLines(task),
     "",
-    "Run the brain-github-deploy skill to completion:",
-    "/brain-github-deploy using /home/devbox/project as the deployment workspace.",
+    "Run the sealos-deploy skill to completion:",
+    "/sealos-deploy using /home/devbox/project as the deployment workspace.",
     "",
     "Proceed automatically through all phases without stopping to ask for confirmation or input.",
     "Do not replace the skill workflow with your own ad-hoc deployment format.",
@@ -453,7 +453,7 @@ function buildGatewayPrompt(task: DeployTaskRow): string {
 function buildGatewayRepairPrompt(task: DeployTaskRow): string {
   return [
     "The previous turn completed, but required Sealos deployment output files were missing or empty.",
-    "Fix this now by running /brain-github-deploy to completion in /home/devbox/project.",
+    "Fix this now by running /sealos-deploy to completion in /home/devbox/project.",
     "Do not ask a question and do not stop after a prose answer.",
     "Required files:",
     "- /home/devbox/project/.sealos/deployment-output.json",

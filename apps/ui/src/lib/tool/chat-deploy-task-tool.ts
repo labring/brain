@@ -62,7 +62,7 @@ function defaultRunnerForSource(
       return {
         kind: "ai",
         runtimeProvider: "devbox",
-        skill: "brain-github-deploy",
+        skill: "sealos-deploy",
       };
     case "template":
       return { kind: "template" };
