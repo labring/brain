@@ -18,6 +18,13 @@ import { useProjectExplorer } from "./project-explorer.context";
 import type { ProjectExplorerProject } from "./project-explorer.types";
 import { formatCreatedAt, toDate } from "./project-explorer.utils";
 
+export function isProjectDeleteVerificationMatch(
+  verification: string,
+  displayName: string
+): boolean {
+  return displayName !== "" && verification.trim() === displayName;
+}
+
 export function ProjectExplorerListItem({
   className,
   project,
@@ -30,7 +37,8 @@ export function ProjectExplorerListItem({
   const canRename = actions.onProjectRename != null;
   const canDelete = actions.onProjectDelete != null;
   const showRowMenu = canRename || canDelete;
-  const projectResourceName = project.resourceName ?? project.name;
+  const projectId = project.id;
+  const showProjectId = projectId !== "" && projectId !== project.name;
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -95,20 +103,21 @@ export function ProjectExplorerListItem({
   }, [actions, project, renameDraft]);
 
   const submitDelete = useCallback(async () => {
-    if (
-      !actions.onProjectDelete ||
-      deleteVerification !== projectResourceName
-    ) {
+    const onProjectDelete = actions.onProjectDelete;
+    if (!onProjectDelete) {
+      return;
+    }
+    if (!isProjectDeleteVerificationMatch(deleteVerification, project.name)) {
       return;
     }
     setDeleteBusy(true);
     try {
-      await actions.onProjectDelete(project);
+      await onProjectDelete(project);
       setDeleteOpen(false);
     } finally {
       setDeleteBusy(false);
     }
-  }, [actions, deleteVerification, project, projectResourceName]);
+  }, [actions, deleteVerification, project]);
 
   return (
     <li
@@ -286,23 +295,27 @@ export function ProjectExplorerListItem({
               <span className="font-medium text-foreground">
                 {project.name}
               </span>{" "}
-              (<span className="font-mono">{projectResourceName}</span>) from
-              the cluster. This cannot be undone.
+              from the cluster.{" "}
+              {showProjectId ? (
+                <>
+                  Project ID: <span className="font-mono">{projectId}</span>.{" "}
+                </>
+              ) : null}
+              This cannot be undone.
             </AppDialog.Description>
             <AppDialog.Field>
               <p className="select-text text-sm/5 text-zinc-400">
                 Type{" "}
-                <span className="font-mono text-zinc-100">
-                  {projectResourceName}
+                <span className="font-medium text-zinc-100">
+                  {project.name}
                 </span>{" "}
                 to confirm.
               </p>
               <AppDialog.Input
-                aria-label={`Type ${projectResourceName} to confirm.`}
+                aria-label={`Type ${project.name} to confirm.`}
                 autoComplete="off"
-                className="font-mono"
                 onChange={(event) => setDeleteVerification(event.target.value)}
-                placeholder={projectResourceName}
+                placeholder={project.name}
                 type="text"
                 value={deleteVerification}
               />
@@ -311,7 +324,12 @@ export function ProjectExplorerListItem({
           <AppDialog.Footer>
             <AppDialog.Cancel disabled={deleteBusy}>Cancel</AppDialog.Cancel>
             <AppDialog.DestructiveAction
-              disabled={deleteVerification !== projectResourceName}
+              disabled={
+                !isProjectDeleteVerificationMatch(
+                  deleteVerification,
+                  project.name
+                )
+              }
               loading={deleteBusy}
               loadingLabel="Deleting"
               onClick={(e) => {
