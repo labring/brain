@@ -20,7 +20,17 @@ function managedResourceItems(url: URL) {
   if (kind === "instances") {
     return [{ metadata: { name: "template-memos" } }];
   }
-  return [{ metadata: { name: "data-template-memos-0" } }];
+  const names: Record<string, string> = {
+    clusters: "template-memos-cluster",
+    deployments: "template-memos-deploy",
+    ingresses: "template-memos-ingress",
+    jobs: "template-memos-job",
+    persistentvolumeclaims: "data-template-memos-0",
+    pods: "template-memos-pod",
+    services: "template-memos-service",
+    statefulsets: "template-memos-sts",
+  };
+  return [{ metadata: { name: names[kind ?? ""] ?? "template-memos-child" } }];
 }
 
 function apDbResourceItems(url: URL) {
@@ -61,13 +71,20 @@ test("project delete guard blocks deletion when managed resources still exist", 
         ap: ["api"],
         db: ["postgres"],
         template: ["template-memos"],
+        templateClusters: ["template-memos-cluster"],
+        templateDeployments: ["template-memos-deploy"],
+        templateIngresses: ["template-memos-ingress"],
+        templateJobs: ["template-memos-job"],
+        templatePods: ["template-memos-pod"],
         templatePersistentVolumeClaims: ["data-template-memos-0"],
+        templateServices: ["template-memos-service"],
+        templateStatefulSets: ["template-memos-sts"],
       });
       return true;
     }
   );
 
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 11);
   for (const call of calls) {
     const url = new URL(call);
     assert.equal(url.searchParams.get("namespace"), "ns-a");
@@ -120,7 +137,7 @@ test("project delete guard does not double encode kubeconfig authorization", asy
     namespace: "ns-a",
   });
 
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 11);
   for (const authorization of calls) {
     assert.equal(authorization, `Bearer ${encodedKubeconfig}`);
   }
@@ -179,7 +196,7 @@ test("project delete guard surfaces downstream cleanup errors", async () => {
   );
 });
 
-test("project managed resource cleanup deletes direct DBs, direct APs, template PVCs, then template Instances", async () => {
+test("project managed resource cleanup deletes direct resources, template Instances, then labeled template children", async () => {
   const calls: string[] = [];
   const fetchImpl: typeof fetch = (url, init) => {
     calls.push(`${init?.method ?? "GET"} ${String(url)}`);
@@ -209,24 +226,35 @@ test("project managed resource cleanup deletes direct DBs, direct APs, template 
     ap: ["api"],
     db: ["postgres"],
     template: ["template-memos"],
+    templateClusters: ["template-memos-cluster"],
+    templateDeployments: ["template-memos-deploy"],
+    templateIngresses: ["template-memos-ingress"],
+    templateJobs: ["template-memos-job"],
+    templatePods: ["template-memos-pod"],
     templatePersistentVolumeClaims: ["data-template-memos-0"],
+    templateServices: ["template-memos-service"],
+    templateStatefulSets: ["template-memos-sts"],
   });
-  assert.equal(calls.length, 8);
+  assert.equal(calls.length, 22);
   assert.equal(
-    calls[4],
+    calls[11],
     "DELETE https://brain.test/api/db/v1alpha1?name=postgres&namespace=ns-a"
   );
   assert.equal(
-    calls[5],
+    calls[12],
     "DELETE https://brain.test/api/ap/v1alpha1?name=api&namespace=ns-a"
   );
   assert.equal(
-    calls[6],
-    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=persistentvolumeclaims&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
+    calls[13],
+    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=instances&name=template-memos&namespace=ns-a"
   );
   assert.equal(
-    calls[7],
-    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=instances&name=template-memos&namespace=ns-a"
+    calls[14],
+    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=jobs&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
+  );
+  assert.equal(
+    calls[21],
+    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=persistentvolumeclaims&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
   );
 });
 

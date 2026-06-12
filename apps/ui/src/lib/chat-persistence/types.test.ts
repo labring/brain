@@ -196,6 +196,23 @@ test("external assistant event persistence rejects tool messages", () => {
     true
   );
   assert.equal(
+    isAppendableAssistantEventMessage({
+      id: "deploy-card",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-github-deploy-task",
+          data: {
+            projectName: "demo",
+            repoFullName: "zjy365/demo",
+            taskId: "task-1",
+          },
+        },
+      ],
+    }),
+    true
+  );
+  assert.equal(
     isAppendableAssistantEventMessage(pendingApprovalMessage),
     false
   );

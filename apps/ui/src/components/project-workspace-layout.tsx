@@ -91,6 +91,8 @@ type AssistantClientToolSubmission =
 
 const DEPLOY_TASK_STATUS_POLL_MS = 3000;
 const DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX = "deploy-task-created-";
+const DEPLOY_TASK_FALLBACK_PROJECT_RE = /Project:\s*`([^`]+)`/;
+const DEPLOY_TASK_FALLBACK_REPO_RE = /created for \*\*([^*]+)\*\*/;
 const TERMINAL_DEPLOY_TASK_STATUSES = new Set([
   "completed",
   "failed",
@@ -116,6 +118,37 @@ interface DeployTaskStatusSnapshot {
   };
 }
 
+interface GithubDeployTaskPart {
+  data: {
+    error?: string | null;
+    events?: { message: string | null; phase: string | null; seq: number }[];
+    phase?: string;
+    projectName: string;
+    repoFullName: string;
+    status?: string;
+    taskId: string;
+  };
+  type: "data-github-deploy-task";
+}
+
+function isGithubDeployTaskPart(
+  part: UIMessage["parts"][number]
+): part is GithubDeployTaskPart {
+  if (part.type !== "data-github-deploy-task") {
+    return false;
+  }
+  const data = (part as { data?: unknown }).data;
+  if (data == null || typeof data !== "object") {
+    return false;
+  }
+  const record = data as Partial<GithubDeployTaskPart["data"]>;
+  return (
+    typeof record.projectName === "string" &&
+    typeof record.repoFullName === "string" &&
+    typeof record.taskId === "string"
+  );
+}
+
 function deployTaskChatMessage(input: {
   error?: string | null;
   events?: { message: string | null; phase: string | null; seq: number }[];
@@ -126,6 +159,18 @@ function deployTaskChatMessage(input: {
   taskId: string;
 }): UIMessage {
   const events = input.events?.slice(-6) ?? [];
+  const cardPart: GithubDeployTaskPart = {
+    data: {
+      error: input.error ?? null,
+      events,
+      phase: input.phase,
+      projectName: input.projectName,
+      repoFullName: input.repoFullName,
+      status: input.status,
+      taskId: input.taskId,
+    },
+    type: "data-github-deploy-task",
+  };
   const statusLine =
     input.status == null
       ? "Status: queued"
@@ -147,6 +192,7 @@ function deployTaskChatMessage(input: {
     id: `${DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX}${input.taskId}`,
     role: "assistant",
     parts: [
+      cardPart,
       {
         type: "text",
         text: [
@@ -167,6 +213,40 @@ function deployTaskIdFromChatMessage(message: UIMessage): string | null {
   return message.id.startsWith(DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX)
     ? message.id.slice(DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX.length)
     : null;
+}
+
+function deployTaskDetailFromChatMessage(
+  message: UIMessage
+): DeployTaskCreatedEvent["detail"] | null {
+  for (const part of message.parts) {
+    if (isGithubDeployTaskPart(part)) {
+      return {
+        projectName: part.data.projectName,
+        repoFullName: part.data.repoFullName,
+        taskId: part.data.taskId,
+      };
+    }
+  }
+
+  const taskId = deployTaskIdFromChatMessage(message);
+  if (taskId == null) {
+    return null;
+  }
+  const text = message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  const repoMatch = text.match(DEPLOY_TASK_FALLBACK_REPO_RE);
+  const projectMatch = text.match(DEPLOY_TASK_FALLBACK_PROJECT_RE);
+  if (repoMatch == null || projectMatch == null) {
+    return null;
+  }
+  const repoFullName = repoMatch[1]?.trim();
+  const projectName = projectMatch[1]?.trim();
+  if (!(repoFullName && projectName)) {
+    return null;
+  }
+  return { projectName, repoFullName, taskId };
 }
 
 function deployTaskStatusUrl(input: {
@@ -343,6 +423,10 @@ function ProjectAssistantChatSession({
   const addToolOutputRef = useRef<
     ((args: AssistantClientToolSubmission) => void | PromiseLike<void>) | null
   >(null);
+  const deployTaskAbortControllersRef = useRef<Map<string, AbortController>>(
+    new Map()
+  );
+  const trackedDeployTaskIdsRef = useRef<Set<string>>(new Set());
 
   const params = useParams<{ uid?: string }>();
   const projectId = decodeURIComponent(params.uid ?? "");
@@ -508,11 +592,8 @@ function ProjectAssistantChatSession({
   // console.log("messages", messages);
 
   addToolOutputRef.current = addToolOutput;
-  useEffect(() => {
-    const trackedTaskIds = new Set<string>();
-    const abortControllers = new Map<string, AbortController>();
-
-    const persistMessage = (message: UIMessage) => {
+  const persistDeployTaskMessage = useCallback(
+    (message: UIMessage) => {
       appendAssistantThreadMessage({
         chatId,
         message,
@@ -527,9 +608,12 @@ function ProjectAssistantChatSession({
         .catch((error: unknown) => {
           console.error("[deploy-task-chat-adapter] persist failed:", error);
         });
-    };
+    },
+    [assistantNamespaceRaw, chatId]
+  );
 
-    const upsertMessage = (message: UIMessage) => {
+  const upsertDeployTaskMessage = useCallback(
+    (message: UIMessage) => {
       setMessages((current) => {
         const index = current.findIndex((item) => item.id === message.id);
         if (index === -1) {
@@ -539,33 +623,35 @@ function ProjectAssistantChatSession({
         next[index] = message;
         return next;
       });
-      persistMessage(message);
-    };
+      persistDeployTaskMessage(message);
+    },
+    [persistDeployTaskMessage, setMessages]
+  );
 
-    const trackDeployTask = (
-      detail: DeployTaskCreatedEvent["detail"]
-    ): void => {
-      if (trackedTaskIds.has(detail.taskId)) {
+  const trackDeployTask = useCallback(
+    (detail: DeployTaskCreatedEvent["detail"]): void => {
+      if (trackedDeployTaskIdsRef.current.has(detail.taskId)) {
         return;
       }
-      trackedTaskIds.add(detail.taskId);
+      trackedDeployTaskIdsRef.current.add(detail.taskId);
       const controller = new AbortController();
-      abortControllers.set(detail.taskId, controller);
+      deployTaskAbortControllersRef.current.set(detail.taskId, controller);
 
       pollDeployTaskStatus({
         detail,
         kubeconfig,
         namespace: assistantNamespaceRaw,
         signal: controller.signal,
-        upsertMessage,
+        upsertMessage: upsertDeployTaskMessage,
       }).catch((error: unknown) => {
         logDeployTaskPollError({ error, signal: controller.signal });
       });
-    };
+    },
+    [assistantNamespaceRaw, kubeconfig, upsertDeployTaskMessage]
+  );
 
-    const showDeployTaskCreated = (
-      detail: DeployTaskCreatedEvent["detail"]
-    ) => {
+  const showDeployTaskCreated = useCallback(
+    (detail: DeployTaskCreatedEvent["detail"]) => {
       if (
         detail == null ||
         typeof detail.taskId !== "string" ||
@@ -576,10 +662,13 @@ function ProjectAssistantChatSession({
       }
 
       const message = deployTaskChatMessage(detail);
-      upsertMessage(message);
+      upsertDeployTaskMessage(message);
       trackDeployTask(detail);
-    };
+    },
+    [trackDeployTask, upsertDeployTaskMessage]
+  );
 
+  useEffect(() => {
     const onDeployTaskCreated = (event: Event) => {
       showDeployTaskCreated((event as DeployTaskCreatedEvent).detail);
     };
@@ -593,11 +682,22 @@ function ProjectAssistantChatSession({
         DEPLOY_TASK_CREATED_EVENT,
         onDeployTaskCreated
       );
-      for (const controller of abortControllers.values()) {
+      for (const controller of deployTaskAbortControllersRef.current.values()) {
         controller.abort();
       }
+      deployTaskAbortControllersRef.current.clear();
+      trackedDeployTaskIdsRef.current.clear();
     };
-  }, [assistantNamespaceRaw, chatId, kubeconfig, setMessages]);
+  }, [showDeployTaskCreated]);
+
+  useEffect(() => {
+    for (const message of messages) {
+      const detail = deployTaskDetailFromChatMessage(message);
+      if (detail != null) {
+        trackDeployTask(detail);
+      }
+    }
+  }, [messages, trackDeployTask]);
   const [input, setInput] = useState("");
   const { isAuthorized, isLoading: authLoading } = useGithubAuth();
 

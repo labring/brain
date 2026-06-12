@@ -114,6 +114,26 @@ function objectValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function providerErrorCandidates(value: unknown, depth = 0): string[] {
+  if (depth > 4) {
+    return [];
+  }
+  const direct = stringValue(value);
+  if (direct) {
+    return [direct];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => providerErrorCandidates(item, depth + 1));
+  }
+  const raw = objectValue(value);
+  if (raw == null) {
+    return [];
+  }
+  return ["error", "message", "detail", "details", "reason", "data", "body"]
+    .flatMap((key) => providerErrorCandidates(raw[key], depth + 1))
+    .filter((message) => message !== "");
+}
+
 function inputDefaultValue(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") {
     return undefined;
@@ -158,12 +178,7 @@ function templateCatalogItem(value: unknown): TemplateCatalogItem | null {
 }
 
 function providerErrorMessage(body: unknown, fallback: string) {
-  if (body != null && typeof body === "object") {
-    const error = stringValue((body as { error?: unknown }).error);
-    const message = stringValue((body as { message?: unknown }).message);
-    return error || message || fallback;
-  }
-  return fallback;
+  return providerErrorCandidates(body)[0] ?? fallback;
 }
 
 function readJsonResponse(response: Response): Promise<unknown> {

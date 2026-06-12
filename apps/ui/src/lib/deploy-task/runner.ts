@@ -12,6 +12,11 @@ import type {
 } from "@/features/deployment/database-deployer";
 import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
 import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
+import {
+  BRAIN_DEPLOYMENT_KIND_LABEL,
+  BRAIN_DEPLOYMENT_NAME_LABEL,
+  BRAIN_PROJECT_ID_LABEL,
+} from "@/lib/brain-labels";
 import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import {
   createDevbox,
@@ -30,6 +35,7 @@ import type { DevboxInfo } from "@/lib/devbox/types";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
 import { getGithubAccessToken } from "@/lib/github-oauth/connection-service";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { childResourceName } from "@/lib/project-child-resource-name";
 import { createProject, getProject } from "@/lib/project-persistence/projects";
@@ -67,6 +73,17 @@ const DEPLOY_AP_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain/ap.yaml`;
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
 const APPLY_OUTPUT_TIMEOUT_SECONDS = 120;
+const TEMPLATE_CLEANUP_KINDS = [
+  "instances",
+  "jobs",
+  "deployments",
+  "statefulsets",
+  "services",
+  "ingresses",
+  "clusters",
+  "pods",
+  "persistentvolumeclaims",
+] as const;
 
 export interface StartDeployTaskRunnerInput {
   encodedKubeconfig?: string;
@@ -130,6 +147,21 @@ function requireKubeconfig(input: StartDeployTaskRunnerInput): string {
   return kubeconfig;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function templateDeploymentLabelSelector(input: {
+  instanceName: string;
+  projectId: string;
+}): string {
+  return [
+    `${BRAIN_PROJECT_ID_LABEL}=${input.projectId}`,
+    `${BRAIN_DEPLOYMENT_KIND_LABEL}=template`,
+    `${BRAIN_DEPLOYMENT_NAME_LABEL}=${input.instanceName}`,
+  ].join(",");
+}
+
 function brainProductPath(kind: string): string {
   switch (kind) {
     case "AP":
@@ -173,6 +205,27 @@ async function applyBrainManifestWithKubeconfig(input: {
     });
   }
   return `Applied ${docs.length} Brain direct resource${docs.length === 1 ? "" : "s"}.`;
+}
+
+async function deleteTemplateResourcesBySelector(input: {
+  encodedKubeconfig: string;
+  kind: string;
+  labelSelector: string;
+  namespace: string;
+}): Promise<void> {
+  await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
+    },
+    method: "DELETE",
+    path: API_ROUTES.k8s.delete,
+    query: {
+      kind: input.kind,
+      "label-selector": input.labelSelector,
+      namespace: input.namespace,
+    },
+  });
 }
 
 async function applyDeploymentArtifact(input: {
@@ -415,31 +468,83 @@ function generateDirectArtifact(input: {
 
 async function generateTemplateArtifact(input: {
   encodedKubeconfig: string;
+  instanceName: string;
   projectId: string;
   task: DeployTaskRow;
+  templateName: string;
 }): Promise<DeploymentArtifact> {
   if (input.task.source.kind !== "template") {
     throw new Error("Template runner requires a template source.");
   }
-  const templateName = input.task.source.templateName.trim();
-  const instanceName = childResourceName(templateName, "template");
   const deployed = await deployTemplateInstance({
     args: input.task.source.args,
     encodedKubeconfig: input.encodedKubeconfig,
     extraLabels: templateDeploymentExtraLabels({
-      instanceName,
+      instanceName: input.instanceName,
       projectId: input.projectId,
-      templateName,
+      templateName: input.templateName,
     }),
-    instanceName,
-    templateName,
+    instanceName: input.instanceName,
+    templateName: input.templateName,
   });
   return {
     instanceName: deployed.instanceName,
     kind: "template-instance",
     resources: deployed.resources,
-    templateName,
+    templateName: input.templateName,
   };
+}
+
+async function cleanupFailedTemplateDeployment(input: {
+  encodedKubeconfig: string;
+  instanceName: string;
+  projectId: string;
+  task: DeployTaskRow;
+}): Promise<void> {
+  const labelSelector = templateDeploymentLabelSelector({
+    instanceName: input.instanceName,
+    projectId: input.projectId,
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.template_cleanup_started",
+    message: `Cleaning up partial template resources for ${input.instanceName}.`,
+    payload: { instanceName: input.instanceName, labelSelector },
+    phase: "plan",
+  });
+
+  const results: Array<{ error?: string; kind: string; ok: boolean }> = [];
+  for (const kind of TEMPLATE_CLEANUP_KINDS) {
+    try {
+      await deleteTemplateResourcesBySelector({
+        encodedKubeconfig: input.encodedKubeconfig,
+        kind,
+        labelSelector,
+        namespace: input.task.namespace,
+      });
+      results.push({ kind, ok: true });
+    } catch (error) {
+      results.push({ error: errorMessage(error), kind, ok: false });
+    }
+  }
+
+  const failures = results.filter((result) => !result.ok);
+  await recordDeployTaskEvent(input.task.id, {
+    kind:
+      failures.length === 0
+        ? "deployment_task.template_cleanup_completed"
+        : "deployment_task.template_cleanup_failed",
+    message:
+      failures.length === 0
+        ? "Cleaned up partial template resources."
+        : `Template cleanup completed with ${failures.length} failed kind(s).`,
+    payload: {
+      failures,
+      instanceName: input.instanceName,
+      labelSelector,
+      results,
+    },
+    phase: "plan",
+  });
 }
 
 async function getDevboxWithSecretRetry(
@@ -894,6 +999,12 @@ async function runTemplateDeploymentTask(input: {
   projectId: string;
   task: DeployTaskRow;
 }) {
+  if (input.task.source.kind !== "template") {
+    throw new Error("Template runner requires a template source.");
+  }
+  const templateName = input.task.source.templateName.trim();
+  const instanceName = childResourceName(templateName, "template");
+
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
     status: "running",
@@ -904,17 +1015,29 @@ async function runTemplateDeploymentTask(input: {
     phase: "plan",
   });
 
-  const artifact = await generateTemplateArtifact({
-    encodedKubeconfig: input.encodedKubeconfig,
-    projectId: input.projectId,
-    task: input.task,
-  });
+  try {
+    const artifact = await generateTemplateArtifact({
+      encodedKubeconfig: input.encodedKubeconfig,
+      instanceName,
+      projectId: input.projectId,
+      task: input.task,
+      templateName,
+    });
 
-  await completeTaskWithArtifact({
-    artifact,
-    kubeconfig: input.kubeconfig,
-    task: input.task,
-  });
+    await completeTaskWithArtifact({
+      artifact,
+      kubeconfig: input.kubeconfig,
+      task: input.task,
+    });
+  } catch (error) {
+    await cleanupFailedTemplateDeployment({
+      encodedKubeconfig: input.encodedKubeconfig,
+      instanceName,
+      projectId: input.projectId,
+      task: input.task,
+    });
+    throw error;
+  }
 }
 
 function aiSourceKey(task: DeployTaskRow): string {

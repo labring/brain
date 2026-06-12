@@ -9,6 +9,7 @@ import {
 const originalFetch = globalThis.fetch;
 const originalProviderUrl = process.env.TEMPLATE_PROVIDER_URL;
 const MISSING_PROVIDER_URL_RE = /TEMPLATE_PROVIDER_URL is not configured/;
+const NESTED_PROVIDER_ERROR_RE = /statefulsets\.apps "affine" is invalid/;
 
 function restoreGlobals() {
   globalThis.fetch = originalFetch;
@@ -244,4 +245,32 @@ test("deployTemplateInstance posts args and Brain labels to provider", async () 
       },
     ],
   });
+});
+
+test("deployTemplateInstance surfaces nested provider errors", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com/";
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      jsonResponse(
+        {
+          code: 500,
+          data: {
+            error: {
+              message: 'statefulsets.apps "affine" is invalid',
+            },
+          },
+        },
+        { status: 500 }
+      )
+    )) as typeof fetch;
+
+  await assert.rejects(
+    () =>
+      deployTemplateInstance({
+        encodedKubeconfig: "kubeconfig",
+        instanceName: "affine-demo",
+        templateName: "affine",
+      }),
+    NESTED_PROVIDER_ERROR_RE
+  );
 });

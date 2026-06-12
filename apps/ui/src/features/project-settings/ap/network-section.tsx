@@ -1609,7 +1609,9 @@ export function useApPublicAddressesSettingsSections({
     if (commitMode) {
       return;
     }
-    setDraftNetwork(network);
+    setDraftNetwork((current) =>
+      apNetworksEqual(current, network) ? current : network
+    );
   }, [commitMode, network]);
 
   const networkBackingKey = useMemo(

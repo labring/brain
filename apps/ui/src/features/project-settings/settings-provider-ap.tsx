@@ -28,6 +28,11 @@ import type {
 const AP_SETTINGS_FULL_VIEW = "full";
 const AP_SETTINGS_ENVIRONMENT_VIEW = "environment";
 const AP_SETTINGS_PUBLIC_ADDRESSES_VIEW = "public-addresses";
+const EMPTY_PUBLIC_ADDRESS_NETWORK: ApNetwork = {
+  privateAddress: "",
+  privatePort: 0,
+  publicAddresses: [],
+};
 
 function workloadSettingsSubtitle({
   image,
@@ -254,11 +259,7 @@ function publicAddressesSectionsHookProps({
   return {
     identityKey:
       apTarget == null ? undefined : `${apTarget.namespace}/${apTarget.name}`,
-    network: network ?? {
-      privateAddress: "",
-      privatePort: 0,
-      publicAddresses: [],
-    },
+    network: network ?? EMPTY_PUBLIC_ADDRESS_NETWORK,
     networkPlatformAddressDraftContext:
       apTarget == null
         ? undefined
