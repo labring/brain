@@ -14,6 +14,7 @@ export type {
   CanvasNodeMetricRecord,
   CanvasNodeMetricValue,
   CanvasNodeMetricValueFormat,
+  CanvasNodePlaceholderProps,
   CanvasNodeRootProps,
   CanvasNodeState,
   CanvasNodeStatus,

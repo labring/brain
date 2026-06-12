@@ -247,6 +247,11 @@
           "target": "components/canvas-node/canvas-node.card.tsx"
         },
         {
+          "path": "../../packages/ui/src/components/canvas-node/canvas-node.placeholder.tsx",
+          "type": "registry:component",
+          "target": "components/canvas-node/canvas-node.placeholder.tsx"
+        },
+        {
           "path": "../../packages/ui/src/components/canvas-node/canvas-node.connection.tsx",
           "type": "registry:component",
           "target": "components/canvas-node/canvas-node.connection.tsx"

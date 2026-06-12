@@ -319,6 +319,28 @@ export const Index: RegistryIndex = {
       import("@registry/linear/components/log-viewer/log-viewer-preview"),
   },
 
+  "linear/components/canvas-node": {
+    style: "linear",
+    group: "components",
+    name: "canvas-node",
+    title: "Canvas Node",
+    description:
+      "Shared canvas node primitives, including placeholder chrome for temporary skeleton nodes.",
+    state: "done",
+    type: "registry:preview",
+    registryDependencies: ["preview", "canvas-node"],
+    files: [
+      {
+        path: "registry/linear/components/canvas-node/canvas-node-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/canvas-node/canvas-node-preview"),
+  },
+
   "linear/components/container-node": {
     style: "linear",
     group: "components",

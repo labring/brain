@@ -588,7 +588,7 @@ A derived health tone for one Project row in the project list, computed from the
 
 ### Project Display Name
 
-The human-facing Project name shown in navigation, project chrome, and project creation forms. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
+The human-facing Project name shown in navigation, project chrome, project creation forms, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
 
 ### Project Creation Pane
 

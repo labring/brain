@@ -33,6 +33,7 @@ import {
   CanvasNodeMetricList,
   CanvasNodeMetrics,
 } from "./canvas-node.metrics";
+import { CanvasNodePlaceholder } from "./canvas-node.placeholder";
 import { CanvasNodeRoot } from "./canvas-node.root";
 import {
   CanvasNodeStatus,
@@ -56,6 +57,7 @@ export type {
   CanvasNodeMetricValue,
   CanvasNodeMetricValueFormat,
 } from "./canvas-node.metrics";
+export type { CanvasNodePlaceholderProps } from "./canvas-node.placeholder";
 export type {
   CanvasNodeActions,
   CanvasNodeConnectionSide,
@@ -91,6 +93,7 @@ export const CanvasNode = {
   Metric: CanvasNodeMetric,
   MetricList: CanvasNodeMetricList,
   Metrics: CanvasNodeMetrics,
+  Placeholder: CanvasNodePlaceholder,
   Root: CanvasNodeRoot,
   Status: CanvasNodeStatus,
   StatusDot: CanvasNodeStatusDot,
@@ -117,6 +120,7 @@ dn(CanvasNodeFooterStatus, "CanvasNode.FooterStatus");
 dn(CanvasNodeMetric, "CanvasNode.Metric");
 dn(CanvasNodeMetricList, "CanvasNode.MetricList");
 dn(CanvasNodeMetrics, "CanvasNode.Metrics");
+dn(CanvasNodePlaceholder, "CanvasNode.Placeholder");
 dn(CanvasNodeConnectionAnchor, "CanvasNode.ConnectionAnchor");
 dn(CanvasNodeCopyFeedbackScope, "CanvasNode.CopyFeedbackScope");
 dn(CanvasNodeCopyableRow, "CanvasNode.CopyableRow");
