@@ -6,6 +6,11 @@ import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 
 import { getDeploymentTaskDb } from "./db";
 import {
+  type DeploymentTaskProjection,
+  toDeploymentTaskProjection,
+} from "./projection";
+import { publishDeploymentTaskProjectionChange } from "./projection-events";
+import {
   type DeploymentTaskSource,
   type DeployTaskEventPayload,
   type DeployTaskEventRow,
@@ -292,6 +297,28 @@ export async function listDeployTasks(input: {
   return rows.map(toDeployTaskDTO);
 }
 
+export async function listDeploymentTaskProjections(input: {
+  namespace: string;
+  projectId: string;
+}): Promise<DeploymentTaskProjection[]> {
+  await ensureDeployTaskStorageSchema();
+  const rows = await getDeploymentTaskDb()
+    .select()
+    .from(deployTasks)
+    .where(
+      and(
+        eq(deployTasks.namespace, input.namespace.trim()),
+        eq(deployTasks.projectId, input.projectId.trim())
+      )
+    )
+    .orderBy(desc(deployTasks.updatedAt))
+    .limit(100);
+  return rows.flatMap((row) => {
+    const projection = toDeploymentTaskProjection(row);
+    return projection == null ? [] : [projection];
+  });
+}
+
 export async function updateDeployTaskState(
   taskId: string,
   input: {
@@ -337,7 +364,12 @@ export async function updateDeployTaskState(
     })
     .where(eq(deployTasks.id, taskId))
     .returning();
-  return task == null ? null : toDeployTaskDTO(task);
+  if (task == null) {
+    return null;
+  }
+  const dto = toDeployTaskDTO(task);
+  publishDeploymentTaskProjectionChange(dto);
+  return dto;
 }
 
 export async function updateDeployTaskCanvasProjection(
@@ -370,7 +402,12 @@ export async function updateDeployTaskCanvasProjection(
       })
       .where(eq(deployTasks.id, taskId))
       .returning();
-    return task == null ? null : toDeployTaskDTO(task);
+    if (task == null) {
+      return null;
+    }
+    const dto = toDeployTaskDTO(task);
+    publishDeploymentTaskProjectionChange(dto);
+    return dto;
   });
 }
 

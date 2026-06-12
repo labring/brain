@@ -2,6 +2,7 @@ import "server-only";
 
 import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import { resolveAuthoritativeChatNamespace } from "@/lib/chat-runtime/resolve-chat-namespace";
+import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
 
 export interface DeployTaskRequestNamespace {
   message?: string;
@@ -46,8 +47,12 @@ export function deployTaskRequestParams(request: Request): {
   namespace?: string;
 } {
   const url = new URL(request.url);
+  const headerEncodedKubeconfig = encodedKubeconfigFromRequest(request);
   return {
-    encodedKubeconfig: url.searchParams.get("encodedKubeconfig") ?? undefined,
+    encodedKubeconfig:
+      headerEncodedKubeconfig ||
+      url.searchParams.get("encodedKubeconfig") ||
+      undefined,
     namespace: url.searchParams.get("namespace") ?? undefined,
   };
 }

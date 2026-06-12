@@ -144,13 +144,27 @@ A temporary, generic Project Canvas skeleton node that represents one active Dep
 
 A Deployment Placeholder Node may have project-scoped temporary placement while visible, but durable Canvas Layout belongs to resulting resource nodes after handoff.
 
-_Avoid_: ghost node, pending AP, fake resource node.
+_Avoid_: ghost node, pending node, pending AP, fake resource node.
+
+### Deployment Task Projection
+
+A Project-scoped read-side view of one Deployment Task containing only the facts needed by project surfaces to present deployment progress and resource handoff. It is distinct from the Deployment Task record, task event log, runner transcript, and resulting AP, DB, or template workload state.
+
+Project Canvas consumes Deployment Task Projections rather than full Deployment Task records when rendering Deployment Placeholder Nodes and Deployment Handoff.
+
+_Avoid_: task list row, canvas task, placeholder source data.
 
 ### Primary Deployment Result
 
 The resulting canvas resource node that inherits the Deployment Placeholder Node's visual position when a Deployment Task produces multiple resources. AP results are primary before DB results, template-native workload results are primary only when no AP or DB result exists, and AP Public Access Nodes are never the Primary Deployment Result.
 
 _Avoid_: main ghost target, first applied YAML, primary public access.
+
+### Deployment Handoff
+
+The transition where a completed Deployment Task stops being represented by a Deployment Placeholder Node and its Primary Deployment Result appears as a normal Project Canvas resource node. Deployment Handoff may carry the placeholder's temporary position to the Primary Deployment Result when that resource has no existing Canvas Layout position.
+
+_Avoid_: completed placeholder, ghost replacement, result takeover.
 
 ### Deployment Source
 

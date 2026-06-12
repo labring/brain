@@ -1,5 +1,5 @@
 import type { Node } from "@xyflow/react";
-import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutPosition,
@@ -27,7 +27,7 @@ function sanitizeNodeIdPart(value: string): string {
 }
 
 function finitePosition(
-  position: DeployTaskDTO["canvasProjection"]["position"]
+  position: DeploymentTaskProjection["canvasProjection"]["position"]
 ): CanvasLayoutPosition | undefined {
   if (
     position == null ||
@@ -39,7 +39,7 @@ function finitePosition(
   return { x: position.x, y: position.y };
 }
 
-function completedAtMs(task: DeployTaskDTO): number | undefined {
+function completedAtMs(task: DeploymentTaskProjection): number | undefined {
   if (task.completedAt == null) {
     return undefined;
   }
@@ -47,7 +47,10 @@ function completedAtMs(task: DeployTaskDTO): number | undefined {
   return Number.isFinite(ms) ? ms : undefined;
 }
 
-function taskWithinCompletedGrace(task: DeployTaskDTO, now: Date): boolean {
+function taskWithinCompletedGrace(
+  task: DeploymentTaskProjection,
+  now: Date
+): boolean {
   const completedMs = completedAtMs(task);
   return (
     completedMs !== undefined &&
@@ -55,12 +58,12 @@ function taskWithinCompletedGrace(task: DeployTaskDTO, now: Date): boolean {
   );
 }
 
-function taskHasResultResources(task: DeployTaskDTO): boolean {
+function taskHasResultResources(task: DeploymentTaskProjection): boolean {
   return (task.artifactSummary.resources?.length ?? 0) > 0;
 }
 
 export function shouldShowDeploymentPlaceholder(
-  task: DeployTaskDTO,
+  task: DeploymentTaskProjection,
   now = new Date()
 ): boolean {
   const projectId = task.projectId?.trim();
@@ -93,7 +96,7 @@ export function deploymentPlaceholderTaskIdFromNode(
 }
 
 export function deploymentPlaceholderNodesFromTasks(
-  tasks: readonly DeployTaskDTO[] | undefined,
+  tasks: readonly DeploymentTaskProjection[] | undefined,
   now = new Date()
 ): CanvasDeploymentPlaceholderRfNode[] {
   if (tasks == null) {
@@ -140,7 +143,7 @@ type DeploymentTaskResultResourceRef =
   | DeploymentTaskTemplateNativeResultRef;
 
 function taskResultResourceRefs(
-  task: DeployTaskDTO
+  task: DeploymentTaskProjection
 ): DeploymentTaskResultResourceRef[] {
   const refs: DeploymentTaskResultResourceRef[] = [];
   for (const resource of task.artifactSummary.resources ?? []) {
@@ -178,7 +181,7 @@ function layoutHasRef(
 export function deploymentPlaceholderHandoffs(input: {
   layout?: CanvasLayoutDocument;
   nodes: readonly Node[];
-  tasks?: readonly DeployTaskDTO[];
+  tasks?: readonly DeploymentTaskProjection[];
 }): {
   byNodeId: Map<string, CanvasLayoutPosition>;
   byRef: Map<string, CanvasLayoutPosition>;
@@ -234,7 +237,7 @@ export function deploymentPlaceholderHandoffs(input: {
 
 export function shouldHideDeploymentPlaceholderForHandoff(input: {
   nodes: readonly Node[];
-  task: DeployTaskDTO;
+  task: DeploymentTaskProjection;
 }): boolean {
   const refs = taskResultResourceRefs(input.task);
   if (refs.length === 0) {

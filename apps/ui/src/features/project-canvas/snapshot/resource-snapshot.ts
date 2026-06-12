@@ -20,7 +20,7 @@ import {
   type ApEnvironmentDbReferenceSource,
   apEnvironmentDbReferenceSourcesFromDbsData,
 } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderNodesFromTasks,
@@ -37,7 +37,7 @@ export interface ProjectCanvasResourceSnapshotInput {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
   dbsData?: K8sGetResponse;
-  deployTasks?: DeployTaskDTO[];
+  deployTasks?: DeploymentTaskProjection[];
   error?: Error;
   isEmptyGraphLoading: boolean;
   kubeconfig: string;

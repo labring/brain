@@ -4,16 +4,20 @@ import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import useSWR from "swr";
 import type { CanvasLayoutDocument } from "@/features/project-canvas/layout/types";
 import {
   BRAIN_PROJECT_ID_LABEL,
   BRAIN_RESOURCE_KIND_LABEL,
 } from "@/lib/brain-labels";
 import {
-  DEPLOY_TASKS_API_PATH,
-  fetchProjectDeployTasks,
+  fetchProjectDeploymentTaskProjections,
+  streamProjectDeploymentTaskProjections,
 } from "@/lib/deploy-task/client";
+import {
+  type DeploymentTaskProjection,
+  deploymentTaskProjectionIsVisible,
+  upsertDeploymentTaskProjection,
+} from "@/lib/deploy-task/projection";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {
   type WorkloadTransientSinceByKey,
@@ -27,6 +31,7 @@ import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
+const DEPLOYMENT_PROJECTION_RECONNECT_MS = 3000;
 
 function createTransientSinceMap(): WorkloadTransientSinceByKey {
   return new Map<string, number>();
@@ -77,6 +82,13 @@ export function useProjectCanvasResourceSnapshot(options: {
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
     useState(0);
   const [isPageVisible, setIsPageVisible] = useState(true);
+  const [deployTasks, setDeployTasks] = useState<DeploymentTaskProjection[]>(
+    []
+  );
+  const [deployTasksLoading, setDeployTasksLoading] = useState(false);
+  const [deployTasksError, setDeployTasksError] = useState<Error | undefined>(
+    undefined
+  );
   const peerDbsEmpty = useCallback(
     () => apItemsFromList(dbsListRef.current).length === 0,
     []
@@ -202,40 +214,167 @@ export function useProjectCanvasResourceSnapshot(options: {
     deploymentsRefreshInterval: deploymentListRefreshInterval,
     statefulSetsRefreshInterval: statefulSetListRefreshInterval,
   });
-  const deployTasksSWRKey =
-    kubeconfig.trim() !== "" && namespace.trim() !== "" && uid.trim() !== ""
-      ? ([DEPLOY_TASKS_API_PATH, namespace, uid, kubeconfig] as const)
-      : null;
-  const {
-    data: deployTasks,
-    error: deployTasksError,
-    isLoading: deployTasksLoading,
-    mutate: mutateDeployTasks,
-  } = useSWR(
-    deployTasksSWRKey,
-    () =>
-      fetchProjectDeployTasks({
+  apsListRef.current = apsData;
+  dbsListRef.current = dbsData;
+
+  const refreshDeployTasks = useCallback(async () => {
+    if (
+      kubeconfig.trim() === "" ||
+      namespace.trim() === "" ||
+      uid.trim() === ""
+    ) {
+      setDeployTasks([]);
+      setDeployTasksLoading(false);
+      setDeployTasksError(undefined);
+      return [];
+    }
+    setDeployTasksLoading(true);
+    try {
+      const projections = await fetchProjectDeploymentTaskProjections({
         kubeconfig,
         namespace,
         projectId: uid,
-      }),
-    {
-      refreshInterval: isPageVisible ? 3000 : 0,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: true,
+      });
+      setDeployTasks(projections);
+      setDeployTasksError(undefined);
+      return projections;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      setDeployTasksError(err);
+      throw err;
+    } finally {
+      setDeployTasksLoading(false);
     }
-  );
-  apsListRef.current = apsData;
-  dbsListRef.current = dbsData;
+  }, [kubeconfig, namespace, uid]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDeployTasks([]);
+    setDeployTasksError(undefined);
+
+    if (
+      kubeconfig.trim() === "" ||
+      namespace.trim() === "" ||
+      uid.trim() === ""
+    ) {
+      setDeployTasksLoading(false);
+      return;
+    }
+
+    setDeployTasksLoading(true);
+    fetchProjectDeploymentTaskProjections({
+      kubeconfig,
+      namespace,
+      projectId: uid,
+    })
+      .then((projections) => {
+        if (cancelled) {
+          return;
+        }
+        setDeployTasks(projections);
+        setDeployTasksError(undefined);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setDeployTasksError(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDeployTasksLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [kubeconfig, namespace, uid]);
+
+  useEffect(() => {
+    if (
+      !isPageVisible ||
+      kubeconfig.trim() === "" ||
+      namespace.trim() === "" ||
+      uid.trim() === ""
+    ) {
+      return;
+    }
+
+    let reconnectTimer: number | undefined;
+    const controller = new AbortController();
+    const connect = () => {
+      streamProjectDeploymentTaskProjections({
+        kubeconfig,
+        namespace,
+        onEvent: (event) => {
+          setDeployTasksError(undefined);
+          if (event.type === "snapshot") {
+            setDeployTasks(event.projections);
+            return;
+          }
+          if (event.type === "upsert") {
+            setDeployTasks((current) =>
+              upsertDeploymentTaskProjection(current, event.projection)
+            );
+            setWorkloadReconcilePollUntil(
+              Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
+            );
+            return;
+          }
+          if (event.type === "remove") {
+            setDeployTasks((current) =>
+              current.filter((task) => task.id !== event.taskId)
+            );
+            setWorkloadReconcilePollUntil(
+              Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
+            );
+          }
+        },
+        projectId: uid,
+        signal: controller.signal,
+      }).catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setDeployTasksError(
+          error instanceof Error ? error : new Error(String(error))
+        );
+        reconnectTimer = window.setTimeout(
+          connect,
+          DEPLOYMENT_PROJECTION_RECONNECT_MS
+        );
+      });
+    };
+
+    connect();
+    return () => {
+      controller.abort();
+      if (reconnectTimer !== undefined) {
+        window.clearTimeout(reconnectTimer);
+      }
+    };
+  }, [isPageVisible, kubeconfig, namespace, uid]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setDeployTasks((current) =>
+        current.filter((task) => deploymentTaskProjectionIsVisible(task))
+      );
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const revalidate = useCallback(() => {
     return Promise.all([
       mutateAps(),
       mutateDbs(),
       mutateTemplateNative(),
-      mutateDeployTasks(),
+      refreshDeployTasks(),
     ]);
-  }, [mutateAps, mutateDbs, mutateDeployTasks, mutateTemplateNative]);
+  }, [mutateAps, mutateDbs, mutateTemplateNative, refreshDeployTasks]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(

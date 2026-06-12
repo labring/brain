@@ -9,7 +9,10 @@ import {
   resolveDeploymentTaskTarget,
   startDeployTaskRunner,
 } from "@/lib/deploy-task/runner";
-import { createDeployTask, listDeployTasks } from "@/lib/deploy-task/service";
+import {
+  createDeployTask,
+  listDeploymentTaskProjections,
+} from "@/lib/deploy-task/service";
 import { createDeployTaskInputSchema } from "@/lib/deploy-task/types";
 
 export const dynamic = "force-dynamic";
@@ -42,11 +45,14 @@ export async function GET(request: Request) {
     return jsonError("Invalid deploy task namespace", 400);
   }
   const projectId = url.searchParams.get("projectId")?.trim();
-  const tasks = await listDeployTasks({
+  if (!projectId) {
+    return NextResponse.json({ projections: [] });
+  }
+  const projections = await listDeploymentTaskProjections({
     namespace: namespaceResolved.namespace,
-    ...(projectId ? { projectId } : {}),
+    projectId,
   });
-  return NextResponse.json({ tasks });
+  return NextResponse.json({ projections });
 }
 
 export async function POST(request: Request) {
