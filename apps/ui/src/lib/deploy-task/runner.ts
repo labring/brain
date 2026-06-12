@@ -60,8 +60,9 @@ import {
 } from "./service";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
-const DEVBOX_RUNTIME_READY_TIMEOUT_MS = 60_000;
+const DEVBOX_RUNTIME_READY_TIMEOUT_MS = 10 * 60_000;
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
+const DEVBOX_RUNTIME_WAIT_EVENT_MS = 30_000;
 const DEVBOX_SECRET_READY_MAX_RETRIES = 3;
 const DEVBOX_SECRET_READY_RETRY_DELAY_MS = 2000;
 const DEVBOX_SDK_READY_MAX_RETRIES = 30;
@@ -547,6 +548,25 @@ async function cleanupFailedTemplateDeployment(input: {
   });
 }
 
+function isDevboxRuntimePendingError(error: unknown): error is DevboxApiError {
+  return (
+    error instanceof DevboxApiError &&
+    (error.status === 404 || error.status >= 500)
+  );
+}
+
+function devboxStateLabel(info: DevboxInfo | null): string {
+  if (info == null) {
+    return "unknown";
+  }
+  return (
+    [info.state.phase, info.state.status]
+      .map((value) => value.trim())
+      .filter((value) => value !== "")
+      .join("/") || "unknown"
+  );
+}
+
 async function getDevboxWithSecretRetry(
   authNamespace: string,
   name: string
@@ -569,26 +589,73 @@ async function getDevboxWithSecretRetry(
   }
 }
 
-async function waitForRunningDevbox(
-  authNamespace: string,
-  name: string
-): Promise<DevboxInfo> {
+async function waitForRunningDevbox(input: {
+  name: string;
+  namespace: string;
+  taskId?: string;
+}): Promise<DevboxInfo> {
   const startedAt = Date.now();
+  let lastInfo: DevboxInfo | null = null;
+  let lastError: unknown;
+  let lastEventAt = startedAt;
 
   while (Date.now() - startedAt < DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
-    const info = await getDevboxWithSecretRetry(authNamespace, name);
-    if (info.state.phase === "Running") {
-      return info;
+    try {
+      const info = await getDevboxWithSecretRetry(input.namespace, input.name);
+      lastInfo = info;
+      lastError = undefined;
+      if (info.state.phase === "Running") {
+        return info;
+      }
+    } catch (error) {
+      if (!isDevboxRuntimePendingError(error)) {
+        throw error;
+      }
+      lastError = error;
+    }
+
+    const now = Date.now();
+    if (
+      input.taskId != null &&
+      now - lastEventAt >= DEVBOX_RUNTIME_WAIT_EVENT_MS
+    ) {
+      lastEventAt = now;
+      const elapsedSeconds = Math.round((now - startedAt) / 1000);
+      const state = devboxStateLabel(lastInfo);
+      await updateDeployTaskState(input.taskId, {
+        runtimeName: input.name,
+        runtimeProvider: "devbox",
+        runtimeState: state,
+      });
+      await recordDeployTaskEvent(input.taskId, {
+        kind: "deployment_task.runtime_waiting",
+        message: `Still waiting for deploy Devbox runtime (${elapsedSeconds}s, state: ${state}).`,
+        payload: {
+          elapsedSeconds,
+          lastError: lastError instanceof Error ? lastError.message : null,
+          runtimeName: input.name,
+          state,
+        },
+        phase: "prepare",
+      });
     }
     await sleep(DEVBOX_RUNTIME_READY_POLL_MS);
   }
 
-  throw new Error("Timed out waiting for deploy Devbox runtime");
+  const state = devboxStateLabel(lastInfo);
+  const lastErrorMessage =
+    lastError instanceof Error ? ` Last error: ${lastError.message}` : "";
+  throw new Error(
+    `Timed out waiting for deploy Devbox runtime after ${Math.round(
+      DEVBOX_RUNTIME_READY_TIMEOUT_MS / 1000
+    )}s (last state: ${state}).${lastErrorMessage}`
+  );
 }
 
 async function ensureRunningDevbox(
   authNamespace: string,
-  name: string
+  name: string,
+  taskId?: string
 ): Promise<DevboxInfo> {
   const info = await getDevboxWithSecretRetry(authNamespace, name);
   if (info.state.phase === "Running") {
@@ -603,7 +670,11 @@ async function ensureRunningDevbox(
     }
   }
 
-  return await waitForRunningDevbox(authNamespace, name);
+  return await waitForRunningDevbox({
+    name,
+    namespace: authNamespace,
+    taskId,
+  });
 }
 
 function authenticatedRepoUrl(repoUrl: string, githubToken?: string): string {
@@ -740,7 +811,8 @@ async function ensureDeployDevbox(input: {
   if (existingRuntimeName) {
     const info = await ensureRunningDevbox(
       input.namespace,
-      existingRuntimeName
+      existingRuntimeName,
+      input.taskId
     );
     await refreshDevboxPause(input.namespace, existingRuntimeName, {
       pauseAt: getPauseAt(),
@@ -759,7 +831,11 @@ async function ensureDeployDevbox(input: {
     .items[0];
 
   if (existing != null) {
-    const info = await ensureRunningDevbox(input.namespace, existing.name);
+    const info = await ensureRunningDevbox(
+      input.namespace,
+      existing.name,
+      input.taskId
+    );
     await refreshDevboxPause(input.namespace, existing.name, {
       pauseAt: getPauseAt(),
     });
@@ -790,7 +866,11 @@ async function ensureDeployDevbox(input: {
     upstreamID,
   });
 
-  const info = await waitForRunningDevbox(input.namespace, name);
+  const info = await waitForRunningDevbox({
+    name,
+    namespace: input.namespace,
+    taskId: input.taskId,
+  });
   return { info, name };
 }
 
