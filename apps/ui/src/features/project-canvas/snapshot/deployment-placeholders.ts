@@ -1165,11 +1165,12 @@ export function deploymentProjectionPatchFromPlaceholderNode(input: {
   if (!isDeploymentPlaceholderNode(input.node)) {
     return null;
   }
-  if (input.node.data.projectionShape !== "result-preview") {
+  const placeholderNode = input.node;
+  if (placeholderNode.data.projectionShape !== "result-preview") {
     return {
       kind: "generic",
       projection: {
-        position: positionWithSource(input.node.position, input.source),
+        position: positionWithSource(placeholderNode.position, input.source),
         shape: "generic",
       },
     };
@@ -1178,27 +1179,27 @@ export function deploymentProjectionPatchFromPlaceholderNode(input: {
   const groupNodes = input.nodes.filter(
     (node): node is CanvasDeploymentPlaceholderRfNode =>
       isDeploymentPlaceholderNode(node) &&
-      node.data.taskId === input.node.data.taskId &&
+      node.data.taskId === placeholderNode.data.taskId &&
       node.data.projectionShape === "result-preview"
   );
-  const previous = groupNodes.find((node) => node.id === input.node.id);
+  const previous = groupNodes.find((node) => node.id === placeholderNode.id);
   const delta =
     previous === undefined
       ? { x: 0, y: 0 }
       : {
-          x: input.node.position.x - previous.position.x,
-          y: input.node.position.y - previous.position.y,
+          x: placeholderNode.position.x - previous.position.x,
+          y: placeholderNode.position.y - previous.position.y,
         };
   const primarySlotId =
-    input.node.data.projectionSlots?.find((slot) => slot.primary === true)
+    placeholderNode.data.projectionSlots?.find((slot) => slot.primary === true)
       ?.id ??
-    (input.node.data.primary === true ? input.node.data.slotId : undefined);
-  const slots = (input.node.data.projectionSlots ?? []).map((slot) => {
+    (placeholderNode.data.primary === true
+      ? placeholderNode.data.slotId
+      : undefined);
+  const slots = (placeholderNode.data.projectionSlots ?? []).map((slot) => {
     const node =
       groupNodes.find((candidate) => candidate.data.slotId === slot.id) ??
-      (input.node.data.slotId === slot.id
-        ? (input.node as CanvasDeploymentPlaceholderRfNode)
-        : undefined);
+      (placeholderNode.data.slotId === slot.id ? placeholderNode : undefined);
     const position = node?.position ?? slot.position ?? { x: 0, y: 0 };
     return {
       ...(slot.expectedRef === undefined
@@ -1211,7 +1212,7 @@ export function deploymentProjectionPatchFromPlaceholderNode(input: {
           y: position.y + (input.source === "user" ? delta.y : 0),
         },
         projectionSlotPositionSource({
-          anchorSource: input.node.data.projectionPositionSource,
+          anchorSource: placeholderNode.data.projectionPositionSource,
           primarySlotId,
           saveSource: input.source,
           slot,
@@ -1223,7 +1224,7 @@ export function deploymentProjectionPatchFromPlaceholderNode(input: {
   return {
     kind: "result-preview",
     projection: {
-      edges: input.node.data.projectionEdges ?? [],
+      edges: placeholderNode.data.projectionEdges ?? [],
       shape: "result-preview",
       slots,
     },

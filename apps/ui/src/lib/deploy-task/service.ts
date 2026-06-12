@@ -328,7 +328,7 @@ export async function listDeploymentTaskProjections(input: {
       and(
         eq(deployTasks.namespace, input.namespace.trim()),
         eq(deployTasks.projectId, input.projectId.trim()),
-        inArray(deployTasks.status, PROJECTABLE_DEPLOYMENT_TASK_STATUSES)
+        inArray(deployTasks.status, [...PROJECTABLE_DEPLOYMENT_TASK_STATUSES])
       )
     )
     .orderBy(desc(deployTasks.updatedAt))

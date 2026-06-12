@@ -132,6 +132,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     mutate: revalidateAps,
   } = useApsK8sList({
     kubeconfig: isApWorkload ? kubeconfig : "",
+    labelSelector: "",
     namespace,
     pollWhileEmpty: false,
     refreshInterval:

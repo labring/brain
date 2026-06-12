@@ -23,7 +23,10 @@ const DISPLAY_ENGINE_BY_KEY: Record<string, string> = {
   redis: "Redis",
 };
 
-const DATABASE_ENGINE_ICON_BY_KEY = {
+const DATABASE_ENGINE_ICON_BY_KEY: Record<
+  string,
+  Exclude<DeviconKey, "docker">
+> = {
   mongo: "mongodb",
   mongodb: "mongodb",
   mysql: "mysql",
@@ -31,7 +34,7 @@ const DATABASE_ENGINE_ICON_BY_KEY = {
   postgres: "postgresql",
   postgresql: "postgresql",
   redis: "redis",
-} as const satisfies Record<string, Exclude<DeviconKey, "docker">>;
+};
 
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
 const STATUS_TONES = new Set([

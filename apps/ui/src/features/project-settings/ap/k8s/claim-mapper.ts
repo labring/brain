@@ -1,4 +1,6 @@
+import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
+import type { ApNetworkCustomDomainDetail } from "@/features/project-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
   ApEnvVar,

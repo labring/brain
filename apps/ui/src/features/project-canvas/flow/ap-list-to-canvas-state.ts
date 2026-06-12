@@ -510,7 +510,7 @@ function publicAccessCanvasResources(
       continue;
     }
     const apName = metadataName(ap);
-    const namespace = metadataNamespace(ap) ?? options.namespaceFallback ?? "";
+    const namespace = metadataNamespace(ap) ?? options?.namespaceFallback ?? "";
     if (apName === undefined || namespace === "") {
       continue;
     }
