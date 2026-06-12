@@ -19,7 +19,7 @@ import {
   readApReplicas,
 } from "@/features/project-settings/ap/k8s/ap-spec-access";
 import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
-import { BRAIN_RESOURCE_KIND_LABEL } from "@/lib/brain-labels";
+import { BRAIN_DEPLOYMENT_KIND_LABEL } from "@/lib/brain-labels";
 
 import {
   CANVAS_CONTAINER_NODE_TYPE,
@@ -319,7 +319,7 @@ function isTemplateNativeWorkload(item: unknown): boolean {
   const labels = asRecord(asRecord(asRecord(item)?.metadata)?.labels) ?? {};
   const kind = nonEmptyString(asRecord(item)?.kind);
   return (
-    labels[BRAIN_RESOURCE_KIND_LABEL] === "template" &&
+    labels[BRAIN_DEPLOYMENT_KIND_LABEL] === "template" &&
     (kind === "Deployment" || kind === "StatefulSet")
   );
 }

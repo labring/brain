@@ -353,7 +353,7 @@ func requireBrainManagedRestoreSource(cluster *unstructured.Unstructured) error 
 	}
 	labels := cluster.GetLabels()
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		labels[orchestration.BrainResourceKindLabel] != orchestration.ResourceKindDB ||
+		labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindDB ||
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
 		return fmt.Errorf("source DB Service is not a Brain-managed DB")
 	}

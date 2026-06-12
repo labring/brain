@@ -84,7 +84,7 @@ func TestAPResponseFromDeploymentsReturnsAPList(t *testing.T) {
 				"metadata": {
 					"labels": {
 						"brain.io/project-id": "project-a",
-						"brain.io/resource-kind": "ap",
+						"brain.io/deployment-kind": "ap",
 						"cloud.sealos.io/app-deploy-manager": "web"
 					},
 					"name": "web",
@@ -133,7 +133,7 @@ func TestAPResponseFromWorkloadListsIncludesTemplateStatefulSets(t *testing.T) {
 				"metadata": {
 					"labels": {
 						"brain.io/project-id": "project-a",
-						"brain.io/resource-kind": "ap"
+						"brain.io/deployment-kind": "ap"
 					},
 					"name": "web",
 					"namespace": "ns-a"
@@ -155,7 +155,7 @@ func TestAPResponseFromWorkloadListsIncludesTemplateStatefulSets(t *testing.T) {
 				"metadata": {
 					"labels": {
 						"brain.io/project-id": "project-a",
-						"brain.io/resource-kind": "template"
+						"brain.io/deployment-kind": "template"
 					},
 					"name": "affine",
 					"namespace": "ns-a"
@@ -256,8 +256,8 @@ func TestAPDirectResourceDeleteSelectorIsScopedToAPResources(t *testing.T) {
 	selector := apDirectResourceDeleteSelector("web")
 	for _, want := range []string{
 		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue,
-		orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP,
-		orchestration.BrainAppNameLabel + "=web",
+		orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP,
+		orchestration.BrainDeploymentNameLabel + "=web",
 	} {
 		if !strings.Contains(selector, want) {
 			t.Fatalf("delete selector = %q, want %q", selector, want)
@@ -363,7 +363,7 @@ func TestAPDeploymentLabelSelectorKeepsBrainOwnership(t *testing.T) {
 	got := apDeploymentLabelSelector("brain.io/project-id=project-a")
 	for _, want := range []string{
 		"brain.io/managed-by=brain",
-		"brain.io/resource-kind=ap",
+		"brain.io/deployment-kind=ap",
 		"brain.io/project-id=project-a",
 	} {
 		if !strings.Contains(got, want) {
@@ -376,9 +376,10 @@ func TestAPOwnershipRequiresBrainLabels(t *testing.T) {
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:    "project-a",
-				orchestration.BrainResourceKindLabel: orchestration.ResourceKindAP,
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindAP,
+				orchestration.BrainDeploymentNameLabel: "web",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "web",
 		},
@@ -396,15 +397,16 @@ func TestAPOwnershipRejectsWrongResourceKind(t *testing.T) {
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:    "project-a",
-				orchestration.BrainResourceKindLabel: orchestration.ResourceKindDB,
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindDB,
+				orchestration.BrainDeploymentNameLabel: "web",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "web",
 		},
 	}
 	if err := requireBrainAPDeployment(deployment); err == nil {
-		t.Fatal("expected wrong brain.io/resource-kind label to fail ownership check")
+		t.Fatal("expected wrong brain.io/deployment-kind label to fail ownership check")
 	}
 }
 
@@ -412,9 +414,10 @@ func TestAPLikeOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:    "project-a",
-				orchestration.BrainResourceKindLabel: "template",
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainDeploymentNameLabel: "template-web",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "template-web",
 		},
@@ -426,9 +429,10 @@ func TestAPLikeOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
 	statefulSet := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:    "project-a",
-				orchestration.BrainResourceKindLabel: "template",
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainDeploymentNameLabel: "template-worker",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "template-worker",
 		},

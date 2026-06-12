@@ -350,8 +350,11 @@ func TestRenderAPPublicIngressLabelsAndBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderAPPublicIngress returned error: %v", err)
 	}
-	if got := ingress.Labels[BrainResourceKindLabel]; got != ResourceKindPublicAccessSupport {
-		t.Fatalf("%s = %q, want %s", BrainResourceKindLabel, got, ResourceKindPublicAccessSupport)
+	if got := ingress.Labels[BrainDeploymentKindLabel]; got != DeploymentKindAP {
+		t.Fatalf("%s = %q, want %s", BrainDeploymentKindLabel, got, DeploymentKindAP)
+	}
+	if got := ingress.Labels[BrainDeploymentNameLabel]; got != "web" {
+		t.Fatalf("%s = %q, want web", BrainDeploymentNameLabel, got)
 	}
 	if got := ingress.Labels[LaunchpadAppDeployManagerDomainLabel]; got == "" || got == "web.example.com" {
 		t.Fatalf("%s = %q, want stable short host key", LaunchpadAppDeployManagerDomainLabel, got)

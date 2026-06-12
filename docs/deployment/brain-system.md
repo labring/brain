@@ -99,7 +99,7 @@ Check live native resources after the Brain API has applied the product manifest
 ```bash
 kubectl -n brain-system get deploy,pod,svc,ingress,hpa,cluster -o wide
 kubectl -n brain-system get deploy,svc,ingress,hpa -l brain.io/managed-by=brain
-kubectl -n brain-system get cluster -l brain.io/resource-kind=db
+kubectl -n brain-system get cluster -l brain.io/deployment-kind=db
 kubectl -n brain-system rollout status deploy/whodb --timeout=5m
 ```
 

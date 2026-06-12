@@ -11,9 +11,6 @@ import (
 	"sealos/api/service/orchestration"
 )
 
-// APCompositeLabel is the label key used to find direct support resources for an AP instance.
-const APCompositeLabel = "brain.io/app-name"
-
 // defaultIngressHostPlaceholder is a placeholder from older generated templates.
 // It must not surface as a real connection URL.
 const defaultIngressHostPlaceholder = "placeholder.example.com"
@@ -92,6 +89,7 @@ func APWithIngressesAndServicesFromList(ap map[string]interface{}, ingresses, se
 	}
 	mergePrivateNetworkStatus(ap, statusCopy, services)
 	mergePublicNetworkStatus(ap, statusCopy)
+	mergeObservedPublicAccessStatus(statusCopy, ingresses, services)
 	out["status"] = statusCopy
 
 	return out
@@ -301,6 +299,104 @@ func removePublicNetworkStatus(status map[string]interface{}) {
 		return
 	}
 	status["network"] = networkCopy
+}
+
+func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, services []map[string]interface{}) {
+	if len(ingresses) == 0 || len(services) == 0 {
+		return
+	}
+	networkCopy := networkStatusCopy(status)
+	if len(publicAddressRowsFromValue(networkCopy["publicAddresses"])) > 0 {
+		return
+	}
+	serviceNames := make(map[string]bool, len(services))
+	servicePorts := make(map[string]map[int]bool, len(services))
+	for _, service := range services {
+		name := strings.TrimSpace(getString(service, "metadata", "name"))
+		if name == "" {
+			continue
+		}
+		serviceNames[name] = true
+		ports := make(map[int]bool)
+		for _, port := range getPorts(service) {
+			ports[port] = true
+		}
+		servicePorts[name] = ports
+	}
+	rows := observedPublicAddressRows(ingresses, serviceNames, servicePorts)
+	if len(rows) == 0 {
+		return
+	}
+	networkCopy["publicAddresses"] = rows
+	status["network"] = networkCopy
+}
+
+func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]map[int]bool) []map[string]interface{} {
+	rows := []map[string]interface{}{}
+	seen := map[string]bool{}
+	for _, ingress := range ingresses {
+		spec, _ := ingress["spec"].(map[string]interface{})
+		if spec == nil {
+			continue
+		}
+		lbHost := getLoadBalancerHost(ingress)
+		tlsHosts := getTLSHosts(spec)
+		rules, _ := spec["rules"].([]interface{})
+		for _, ruleItem := range rules {
+			rule, _ := ruleItem.(map[string]interface{})
+			if rule == nil {
+				continue
+			}
+			host := strings.TrimSpace(getString(rule, "host"))
+			if host == "" {
+				host = lbHost
+			}
+			if host == "" || isPlaceholderIngressHost(host) {
+				continue
+			}
+			paths, _ := getSlice(rule, "http", "paths")
+			for _, pathItem := range paths {
+				path, _ := pathItem.(map[string]interface{})
+				if path == nil {
+					continue
+				}
+				service, _ := getMap(path, "backend", "service")
+				serviceName := strings.TrimSpace(getString(service, "name"))
+				if !serviceNames[serviceName] {
+					continue
+				}
+				port := publicAddressBackendPort(service)
+				if port <= 0 || (len(servicePorts[serviceName]) > 0 && !servicePorts[serviceName][port]) {
+					continue
+				}
+				pathValue := strings.TrimSpace(getString(path, "path"))
+				if pathValue == "" {
+					pathValue = "/"
+				}
+				if !strings.HasPrefix(pathValue, "/") {
+					pathValue = "/" + pathValue
+				}
+				scheme := "http"
+				if tlsHosts[host] {
+					scheme = "https"
+				}
+				key := fmt.Sprintf("%s|%s|%d|%s", host, serviceName, port, pathValue)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				rows = append(rows, map[string]interface{}{
+					"host":   host,
+					"id":     "observed-" + stablePlatformAddressHostLabel(key, 12),
+					"port":   port,
+					"status": "accessible",
+					"type":   "observed",
+					"url":    fmt.Sprintf("%s://%s%s", scheme, host, pathValue),
+				})
+			}
+		}
+	}
+	return rows
 }
 
 func publicAddressRowsFromValue(value interface{}) []map[string]interface{} {
@@ -588,11 +684,11 @@ type publicAccessSupportState struct {
 }
 
 const (
-	brainResourceKindLabel          = "brain.io/resource-kind"
-	brainAppNameLabel               = "brain.io/app-name"
-	publicAddressIDLabel            = "brain.io/public-address-id"
-	publicAddressKindLabel          = "brain.io/public-address-kind"
-	publicAccessSupportResourceKind = "public-access-support"
+	brainDeploymentKindLabel = "brain.io/deployment-kind"
+	brainDeploymentNameLabel = "brain.io/deployment-name"
+	directAPDeploymentKind   = "ap"
+	publicAddressIDLabel     = "brain.io/public-address-id"
+	publicAddressKindLabel   = "brain.io/public-address-kind"
 )
 
 func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string]interface{}, ingresses, certificates, issuers []map[string]interface{}) {
@@ -704,8 +800,8 @@ func publicAccessSupportStateFromResources(apName string, ingresses, certificate
 }
 
 func isPublicAccessSupportForAP(labels map[string]string, apName string) bool {
-	return labels[brainResourceKindLabel] == publicAccessSupportResourceKind &&
-		labels[brainAppNameLabel] == apName
+	return labels[brainDeploymentKindLabel] == directAPDeploymentKind &&
+		labels[brainDeploymentNameLabel] == apName
 }
 
 func labelsOf(resource map[string]interface{}) map[string]string {
@@ -1083,6 +1179,24 @@ func getSlice(obj map[string]interface{}, keys ...string) ([]interface{}, bool) 
 			return out, ok
 		}
 		obj, _ = v.(map[string]interface{})
+	}
+	return nil, false
+}
+
+func getMap(obj map[string]interface{}, keys ...string) (map[string]interface{}, bool) {
+	for i, k := range keys {
+		if obj == nil {
+			return nil, false
+		}
+		v, _ := obj[k]
+		next, ok := v.(map[string]interface{})
+		if i == len(keys)-1 {
+			return next, ok
+		}
+		if !ok {
+			return nil, false
+		}
+		obj = next
 	}
 	return nil, false
 }

@@ -1,10 +1,9 @@
 export const BRAIN_MANAGED_BY_LABEL = "brain.io/managed-by";
 export const BRAIN_MANAGED_BY_VALUE = "brain";
 export const BRAIN_PROJECT_ID_LABEL = "brain.io/project-id";
-export const BRAIN_RESOURCE_KIND_LABEL = "brain.io/resource-kind";
-export const BRAIN_RESOURCE_NAME_LABEL = "brain.io/resource-name";
-export const BRAIN_APP_NAME_LABEL = "brain.io/app-name";
-export const BRAIN_DB_NAME_LABEL = "brain.io/db-name";
+export const BRAIN_DEPLOYMENT_KIND_LABEL = "brain.io/deployment-kind";
+export const BRAIN_DEPLOYMENT_NAME_LABEL = "brain.io/deployment-name";
+export const BRAIN_TEMPLATE_NAME_LABEL = "brain.io/template-name";
 export const BRAIN_DB_ENGINE_LABEL = "brain.io/db-engine";
 export const BRAIN_PUBLIC_ADDRESS_ID_LABEL = "brain.io/public-address-id";
 export const BRAIN_PUBLIC_ADDRESS_KIND_LABEL = "brain.io/public-address-kind";

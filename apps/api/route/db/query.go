@@ -109,7 +109,7 @@ func registerGet(grp huma.API) {
 }
 
 func dbClusterLabelSelector(extra string) string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindDB
+	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindDB
 	extra = strings.TrimSpace(extra)
 	if extra == "" {
 		return base
@@ -118,7 +118,7 @@ func dbClusterLabelSelector(extra string) string {
 }
 
 func templateDBClusterLabelSelector(extra string) string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=template"
+	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindTemplate
 	extra = strings.TrimSpace(extra)
 	if extra == "" {
 		return base

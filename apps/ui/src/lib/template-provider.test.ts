@@ -203,8 +203,9 @@ test("deployTemplateInstance posts args and Brain labels to provider", async () 
     extraLabels: {
       "brain.io/managed-by": "brain",
       "brain.io/project-id": "project-uid",
-      "brain.io/resource-kind": "template",
-      "brain.io/resource-name": "n8n",
+      "brain.io/deployment-kind": "template",
+      "brain.io/deployment-name": "n8n-demo",
+      "brain.io/template-name": "n8n",
     },
     instanceName: "n8n-demo",
     templateName: "n8n",
@@ -226,8 +227,9 @@ test("deployTemplateInstance posts args and Brain labels to provider", async () 
     extraLabels: {
       "brain.io/managed-by": "brain",
       "brain.io/project-id": "project-uid",
-      "brain.io/resource-kind": "template",
-      "brain.io/resource-name": "n8n",
+      "brain.io/deployment-kind": "template",
+      "brain.io/deployment-name": "n8n-demo",
+      "brain.io/template-name": "n8n",
     },
     name: "n8n-demo",
     template: "n8n",

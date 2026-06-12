@@ -1,7 +1,7 @@
 import { API_ROUTES } from "@workspace/api/constants";
 import {
+  BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
-  BRAIN_RESOURCE_KIND_LABEL,
 } from "@/lib/brain-labels";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 
@@ -271,7 +271,7 @@ function projectLabelSelector(projectId: string): string {
 }
 
 function templateProjectLabelSelector(projectId: string): string {
-  return `${projectLabelSelector(projectId)},${BRAIN_RESOURCE_KIND_LABEL}=template`;
+  return `${projectLabelSelector(projectId)},${BRAIN_DEPLOYMENT_KIND_LABEL}=template`;
 }
 
 export async function assertProjectHasNoManagedResources(

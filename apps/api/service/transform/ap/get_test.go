@@ -127,6 +127,76 @@ func TestAPTransformEnrichesMultipleAppListeningPortsFromService(t *testing.T) {
 	}
 }
 
+func TestAPTransformProjectsObservedPublicAccessFromIngressService(t *testing.T) {
+	out := APWithIngressesAndServicesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name":      "affine",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 3010},
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			{
+				"metadata": map[string]interface{}{
+					"name":      "affine-public",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"rules": []interface{}{
+						ingressRule("affine.example.com", "affine-svc", 3010),
+					},
+					"tls": []interface{}{
+						map[string]interface{}{
+							"hosts": []interface{}{"affine.example.com"},
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			{
+				"metadata": map[string]interface{}{
+					"name":      "affine-svc",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"port": 3010},
+					},
+				},
+			},
+		},
+	)
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	addresses := network["publicAddresses"].([]map[string]interface{})
+	if got := len(addresses); got != 1 {
+		t.Fatalf("status.network.publicAddresses count = %d, want 1", got)
+	}
+	row := addresses[0]
+	if got := row["host"]; got != "affine.example.com" {
+		t.Fatalf("observed public address host = %v, want affine.example.com", got)
+	}
+	if got := row["url"]; got != "https://affine.example.com/" {
+		t.Fatalf("observed public address url = %v, want https://affine.example.com/", got)
+	}
+	if got := row["type"]; got != "observed" {
+		t.Fatalf("observed public address type = %v, want observed", got)
+	}
+	if got := row["status"]; got != "accessible" {
+		t.Fatalf("observed public address status = %v, want accessible", got)
+	}
+}
+
 func TestAPTransformPreservesExistingPrivateNetworkAddress(t *testing.T) {
 	out := APWithIngressesAndServicesFromList(
 		map[string]interface{}{
@@ -799,10 +869,10 @@ func publicAccessIngress(apName, publicID, publicKind, host, serviceName string,
 	return map[string]interface{}{
 		"metadata": map[string]interface{}{
 			"labels": map[string]interface{}{
-				"brain.io/app-name":            apName,
+				"brain.io/deployment-kind":     "ap",
+				"brain.io/deployment-name":     apName,
 				"brain.io/public-address-id":   publicID,
 				"brain.io/public-address-kind": publicKind,
-				"brain.io/resource-kind":       "public-access-support",
 			},
 		},
 		"spec": map[string]interface{}{
@@ -828,8 +898,8 @@ func publicAccessCertificate(apName, id string, ready bool, reason string, messa
 	return map[string]interface{}{
 		"metadata": map[string]interface{}{
 			"labels": map[string]interface{}{
-				"brain.io/app-name":      apName,
-				"brain.io/resource-kind": "public-access-support",
+				"brain.io/deployment-kind": "ap",
+				"brain.io/deployment-name": apName,
 			},
 			"name": "cd-" + stablePlatformAddressHostLabel("api/"+id, 6),
 		},

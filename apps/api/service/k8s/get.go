@@ -25,6 +25,12 @@ import (
 	dbtransform "sealos/api/service/transform/db"
 )
 
+const (
+	brainDeploymentKindLabel = "brain.io/deployment-kind"
+	brainDeploymentNameLabel = "brain.io/deployment-name"
+	directAPDeploymentKind   = "ap"
+)
+
 // GetOptions holds options for Get, mimicking kubectl get flags.
 type GetOptions struct {
 	// Resource is the resource type (e.g. "pods", "po", "deployments", "deploy").
@@ -313,7 +319,7 @@ func listIngressesByComposite(restConfig *rest.Config, ap map[string]interface{}
 		return nil, err
 	}
 	gvr := schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}
-	labelSelector := aptransform.APCompositeLabel + "=" + apName
+	labelSelector := brainDeploymentKindLabel + "=" + directAPDeploymentKind + "," + brainDeploymentNameLabel + "=" + apName
 	list, err := client.Resource(gvr).Namespace(apNamespace).List(context.Background(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
@@ -416,7 +422,7 @@ func listServicesByComposite(restConfig *rest.Config, ap map[string]interface{})
 		return nil, err
 	}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}
-	labelSelector := aptransform.APCompositeLabel + "=" + apName
+	labelSelector := brainDeploymentKindLabel + "=" + directAPDeploymentKind + "," + brainDeploymentNameLabel + "=" + apName
 	list, err := client.Resource(gvr).Namespace(apNamespace).List(context.Background(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})

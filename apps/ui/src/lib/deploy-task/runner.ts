@@ -422,14 +422,16 @@ async function generateTemplateArtifact(input: {
     throw new Error("Template runner requires a template source.");
   }
   const templateName = input.task.source.templateName.trim();
+  const instanceName = childResourceName(templateName, "template");
   const deployed = await deployTemplateInstance({
     args: input.task.source.args,
     encodedKubeconfig: input.encodedKubeconfig,
     extraLabels: templateDeploymentExtraLabels({
+      instanceName,
       projectId: input.projectId,
       templateName,
     }),
-    instanceName: childResourceName(templateName, "template"),
+    instanceName,
     templateName,
   });
   return {

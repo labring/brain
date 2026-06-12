@@ -15,8 +15,8 @@ import type {
   ProjectExplorerStates,
 } from "@/features/projects/explorer/project-explorer";
 import {
+  BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
-  BRAIN_RESOURCE_KIND_LABEL,
 } from "@/lib/brain-labels";
 import {
   type BrainProjectResponse,
@@ -138,7 +138,7 @@ export function useProjectsExplorer(options: {
   // project names render as soon as the projects request resolves and dots
   // fill in when these arrive.
   const projectIdLabelExistence = BRAIN_PROJECT_ID_LABEL;
-  const templateNativeLabelSelector = `${projectIdLabelExistence},${BRAIN_RESOURCE_KIND_LABEL}=template`;
+  const templateNativeLabelSelector = `${projectIdLabelExistence},${BRAIN_DEPLOYMENT_KIND_LABEL}=template`;
   const { data: apsData } = useApsK8sList({
     kubeconfig,
     labelSelector: projectIdLabelExistence,

@@ -122,17 +122,20 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
     statefulSet?.metadata?.labels?.["brain.io/project-id"],
     "project-uid"
   );
-  assert.equal(statefulSet?.metadata?.labels?.["brain.io/resource-kind"], "ap");
   assert.equal(
-    statefulSet?.metadata?.labels?.["brain.io/app-name"],
+    statefulSet?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
+  );
+  assert.equal(
+    statefulSet?.metadata?.labels?.["brain.io/deployment-name"],
     "template-memos"
   );
   assert.equal(
-    statefulSet?.spec?.template?.metadata?.labels?.["brain.io/resource-kind"],
-    "ap"
+    statefulSet?.spec?.template?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
   );
   assert.equal(
-    statefulSet?.spec?.template?.metadata?.labels?.["brain.io/app-name"],
+    statefulSet?.spec?.template?.metadata?.labels?.["brain.io/deployment-name"],
     "template-memos"
   );
   assert.equal(
@@ -148,19 +151,19 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
       statefulSet?.spec?.volumeClaimTemplates as Array<{
         metadata?: { labels?: Record<string, string> };
       }>
-    )[0]?.metadata?.labels?.["brain.io/resource-kind"],
-    "ap"
+    )[0]?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
   );
   assert.equal(
     (
       statefulSet?.spec?.volumeClaimTemplates as Array<{
         metadata?: { labels?: Record<string, string> };
       }>
-    )[0]?.metadata?.labels?.["brain.io/app-name"],
+    )[0]?.metadata?.labels?.["brain.io/deployment-name"],
     "template-memos"
   );
   assert.equal(
-    ingress?.metadata?.labels?.["brain.io/resource-kind"],
+    ingress?.metadata?.labels?.["brain.io/deployment-kind"],
     "template"
   );
   assert.equal(ingress?.spec?.rules?.[0]?.host, "memos-host.apps.example.com");
@@ -233,14 +236,20 @@ spec:
   const service = rendered.resources.find((doc) => doc.kind === "Service");
   const ingress = rendered.resources.find((doc) => doc.kind === "Ingress");
 
-  assert.equal(service?.metadata?.labels?.["brain.io/resource-kind"], "ap");
   assert.equal(
-    service?.metadata?.labels?.["brain.io/app-name"],
+    service?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
+  );
+  assert.equal(
+    service?.metadata?.labels?.["brain.io/deployment-name"],
     "template-web"
   );
-  assert.equal(ingress?.metadata?.labels?.["brain.io/resource-kind"], "ap");
   assert.equal(
-    ingress?.metadata?.labels?.["brain.io/app-name"],
+    ingress?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
+  );
+  assert.equal(
+    ingress?.metadata?.labels?.["brain.io/deployment-name"],
     "template-web"
   );
 });
@@ -284,7 +293,7 @@ spec:
   const instance = rendered.resources.find((doc) => doc.kind === "Instance");
 
   assert.equal(
-    instance?.metadata?.labels?.["brain.io/resource-kind"],
+    instance?.metadata?.labels?.["brain.io/deployment-kind"],
     "template"
   );
   assert.equal(cluster?.metadata?.namespace, "ns-admin");
@@ -292,7 +301,10 @@ spec:
     cluster?.metadata?.labels?.["brain.io/project-id"],
     "project-uid"
   );
-  assert.equal(cluster?.metadata?.labels?.["brain.io/resource-kind"], "db");
+  assert.equal(
+    cluster?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
+  );
   assert.equal(cluster?.metadata?.labels?.["brain.io/managed-by"], "brain");
   assert.equal(
     cluster?.metadata?.labels?.["cloud.sealos.io/deploy-on-sealos"],

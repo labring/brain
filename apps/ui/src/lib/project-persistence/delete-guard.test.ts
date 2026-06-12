@@ -79,7 +79,7 @@ test("project delete guard blocks deletion when managed resources still exist", 
     } else {
       assert.equal(
         url.searchParams.get("label-selector"),
-        "brain.io/project-id=project-a,brain.io/resource-kind=template"
+        "brain.io/project-id=project-a,brain.io/deployment-kind=template"
       );
     }
   }
@@ -219,7 +219,7 @@ test("project managed resource cleanup deletes DBs, APs, template PVCs, then tem
   );
   assert.equal(
     calls[6],
-    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=persistentvolumeclaims&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fresource-kind%3Dtemplate&namespace=ns-a"
+    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=persistentvolumeclaims&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
   );
   assert.equal(
     calls[7],

@@ -153,17 +153,15 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	}
 
 	labels := mergeStringMap(
-		brainLabels(projectID, ResourceKindAP, name),
+		brainLabels(projectID, DeploymentKindAP, name),
 		map[string]string{
-			BrainAppNameLabel:              name,
 			LaunchpadAppDeployManagerLabel: name,
 			LaunchpadAppLabel:              name,
 		},
 	)
 	managerLabels := mergeStringMap(
-		brainLabels(projectID, ResourceKindAP, name),
+		brainLabels(projectID, DeploymentKindAP, name),
 		map[string]string{
-			BrainAppNameLabel:              name,
 			LaunchpadAppDeployManagerLabel: name,
 		},
 	)
@@ -868,10 +866,7 @@ func renderAPHPA(name string, namespace string, projectID string, workloadKind A
 			Kind:       "HorizontalPodAutoscaler",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: mergeStringMap(
-				brainLabels(projectID, ResourceKindAP, name),
-				map[string]string{BrainAppNameLabel: name},
-			),
+			Labels:    brainLabels(projectID, DeploymentKindAP, name),
 			Name:      name,
 			Namespace: namespace,
 		},
@@ -1062,9 +1057,8 @@ func RenderAPCustomDomainIssuer(apName, namespace, projectID, resourceName strin
 		"kind":       "Issuer",
 		"metadata": map[string]interface{}{
 			"labels": mergeStringMap(
-				brainLabels(strings.TrimSpace(projectID), ResourceKindPublicAccessSupport, resourceName),
+				brainLabels(strings.TrimSpace(projectID), DeploymentKindAP, strings.TrimSpace(apName)),
 				map[string]string{
-					BrainAppNameLabel:              strings.TrimSpace(apName),
 					LaunchpadAppDeployManagerLabel: strings.TrimSpace(apName),
 				},
 			),
@@ -1100,9 +1094,8 @@ func RenderAPCustomDomainCertificate(apName, namespace, projectID, resourceName,
 		"kind":       "Certificate",
 		"metadata": map[string]interface{}{
 			"labels": mergeStringMap(
-				brainLabels(strings.TrimSpace(projectID), ResourceKindPublicAccessSupport, resourceName),
+				brainLabels(strings.TrimSpace(projectID), DeploymentKindAP, strings.TrimSpace(apName)),
 				map[string]string{
-					BrainAppNameLabel:              strings.TrimSpace(apName),
 					LaunchpadAppDeployManagerLabel: strings.TrimSpace(apName),
 				},
 			),
@@ -1187,9 +1180,8 @@ func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, e
 	}
 	pathType := networkingv1.PathTypePrefix
 	labels := mergeStringMap(
-		brainLabels(projectID, ResourceKindPublicAccessSupport, resourceName),
+		brainLabels(projectID, DeploymentKindAP, apName),
 		map[string]string{
-			BrainAppNameLabel:                    apName,
 			"brain.io/public-address-id":         strings.TrimSpace(input.PublicID),
 			"brain.io/public-address-kind":       strings.TrimSpace(input.PublicKind),
 			LaunchpadAppDeployManagerLabel:       apName,

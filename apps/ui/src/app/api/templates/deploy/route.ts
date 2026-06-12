@@ -99,6 +99,7 @@ export async function POST(request: Request) {
       args: parsed.data.args,
       encodedKubeconfig: authorization.encodedKubeconfig,
       extraLabels: templateDeploymentExtraLabels({
+        instanceName: parsed.data.instanceName,
         projectId: parsed.data.projectId,
         templateName: parsed.data.templateName,
       }),

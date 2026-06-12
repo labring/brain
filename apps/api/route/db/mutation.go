@@ -189,7 +189,7 @@ func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 func requireBrainDBCluster(cluster unstructured.Unstructured) error {
 	labels := cluster.GetLabels()
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		labels[orchestration.BrainResourceKindLabel] != orchestration.ResourceKindDB ||
+		labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindDB ||
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
 		return errors.New("cluster is not a Brain-managed DB")
 	}
@@ -202,8 +202,8 @@ func requireBrainDBLikeCluster(cluster unstructured.Unstructured) error {
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
 		return errors.New("cluster is not a Brain-managed workload")
 	}
-	resourceKind := labels[orchestration.BrainResourceKindLabel]
-	if resourceKind != orchestration.ResourceKindDB && resourceKind != "template" {
+	deploymentKind := labels[orchestration.BrainDeploymentKindLabel]
+	if deploymentKind != orchestration.DeploymentKindDB && deploymentKind != orchestration.DeploymentKindTemplate {
 		return errors.New("cluster is not a Brain-managed DB-like workload")
 	}
 	return nil
@@ -1355,7 +1355,7 @@ func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace st
 	if err := requireBrainDBLikeCluster(current); err != nil {
 		return apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, name)
 	}
-	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDBNameLabel + "=" + name
+	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindDB + "," + orchestration.BrainDeploymentNameLabel + "=" + name
 	for _, resource := range []string{"services", "opsrequests", "configmaps", "secrets"} {
 		_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
 			LabelSelector: selector,

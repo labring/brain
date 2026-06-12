@@ -1,14 +1,13 @@
 package orchestration
 
 const (
-	BrainManagedByLabel    = "brain.io/managed-by"
-	BrainManagedByValue    = "brain"
-	BrainProjectIDLabel    = "brain.io/project-id"
-	BrainResourceKindLabel = "brain.io/resource-kind"
-	BrainResourceNameLabel = "brain.io/resource-name"
-	BrainAppNameLabel      = "brain.io/app-name"
-	BrainDBNameLabel       = "brain.io/db-name"
-	BrainDBEngineLabel     = "brain.io/db-engine"
+	BrainManagedByLabel      = "brain.io/managed-by"
+	BrainManagedByValue      = "brain"
+	BrainProjectIDLabel      = "brain.io/project-id"
+	BrainDeploymentKindLabel = "brain.io/deployment-kind"
+	BrainDeploymentNameLabel = "brain.io/deployment-name"
+	BrainTemplateNameLabel   = "brain.io/template-name"
+	BrainDBEngineLabel       = "brain.io/db-engine"
 
 	APDesiredNetworkAnnotation    = "brain.io/ap-desired-network"
 	APConfigMapChecksumAnnotation = "brain.io/ap-config-checksum"
@@ -18,9 +17,9 @@ const (
 	APRestartRequestAnnotation    = "brain.io/ap-restart-request"
 	APRoutingDomainLabel          = "region"
 
-	ResourceKindAP                  = "ap"
-	ResourceKindDB                  = "db"
-	ResourceKindPublicAccessSupport = "public-access-support"
+	DeploymentKindAP       = "ap"
+	DeploymentKindDB       = "db"
+	DeploymentKindTemplate = "template"
 
 	LaunchpadAppDeployManagerLabel                = "cloud.sealos.io/app-deploy-manager"
 	LaunchpadAppDeployManagerDomainLabel          = "cloud.sealos.io/app-deploy-manager-domain"
@@ -49,11 +48,11 @@ func mergeStringMap(maps ...map[string]string) map[string]string {
 	return out
 }
 
-func brainLabels(projectID, resourceKind, resourceName string) map[string]string {
+func brainLabels(projectID, deploymentKind, deploymentName string) map[string]string {
 	return map[string]string{
-		BrainManagedByLabel:    BrainManagedByValue,
-		BrainProjectIDLabel:    projectID,
-		BrainResourceKindLabel: resourceKind,
-		BrainResourceNameLabel: resourceName,
+		BrainManagedByLabel:      BrainManagedByValue,
+		BrainProjectIDLabel:      projectID,
+		BrainDeploymentKindLabel: deploymentKind,
+		BrainDeploymentNameLabel: deploymentName,
 	}
 }

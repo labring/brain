@@ -6,6 +6,7 @@ import { templateDeploymentExtraLabels } from "./labels";
 
 test("template deploy extra labels include Brain project ownership labels only", () => {
   const labels = templateDeploymentExtraLabels({
+    instanceName: "n8n-demo",
     projectId: "project-uid",
     templateName: "n8n",
   });
@@ -13,8 +14,9 @@ test("template deploy extra labels include Brain project ownership labels only",
   assert.deepEqual(labels, {
     "brain.io/managed-by": "brain",
     "brain.io/project-id": "project-uid",
-    "brain.io/resource-kind": "template",
-    "brain.io/resource-name": "n8n",
+    "brain.io/deployment-kind": "template",
+    "brain.io/deployment-name": "n8n-demo",
+    "brain.io/template-name": "n8n",
   });
   assert.equal(LAUNCHPAD_TEMPLATE_SOURCE_LABEL in labels, false);
 });

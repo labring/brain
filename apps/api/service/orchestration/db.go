@@ -249,10 +249,9 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 		componentSpec["resources"] = componentResources
 	}
 	labels := mergeStringMap(
-		brainLabels(projectID, ResourceKindDB, name),
+		brainLabels(projectID, DeploymentKindDB, name),
 		map[string]string{
 			BrainDBEngineLabel:               engine,
-			BrainDBNameLabel:                 name,
 			DBProviderClusterDefinitionLabel: profile.ClusterDefinition,
 			DBProviderClusterVersionLabel:    version,
 			DBProviderCRLabel:                name,

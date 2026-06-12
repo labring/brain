@@ -263,7 +263,7 @@ func apRuntimeObjects(resources *orchestration.APResources) []runtime.Object {
 func requireBrainAPDeployment(deployment appsv1.Deployment) error {
 	labels := deployment.GetLabels()
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		labels[orchestration.BrainResourceKindLabel] != orchestration.ResourceKindAP ||
+		labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindAP ||
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
 		return errors.New("deployment is not a Brain-managed AP")
 	}
@@ -276,8 +276,8 @@ func requireBrainAPLikeDeployment(deployment appsv1.Deployment) error {
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
 		return errors.New("deployment is not a Brain-managed workload")
 	}
-	resourceKind := labels[orchestration.BrainResourceKindLabel]
-	if resourceKind != orchestration.ResourceKindAP && resourceKind != "template" {
+	deploymentKind := labels[orchestration.BrainDeploymentKindLabel]
+	if deploymentKind != orchestration.DeploymentKindAP && deploymentKind != orchestration.DeploymentKindTemplate {
 		return errors.New("deployment is not a Brain-managed AP-like workload")
 	}
 	return nil
@@ -1381,7 +1381,7 @@ func patchAPStatefulSetPVCStorage(ctx context.Context, restConfig *rest.Config, 
 		return err
 	}
 	var pvcs corev1.PersistentVolumeClaimList
-	for _, selector := range apLikeWorkloadLabelSelectors(orchestration.BrainResourceNameLabel + "=" + workload.Name()) {
+	for _, selector := range apLikeWorkloadLabelSelectors(orchestration.BrainDeploymentNameLabel + "=" + workload.Name()) {
 		next, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).List(ctx, metav1.ListOptions{
 			LabelSelector: selector,
 		})
@@ -1696,7 +1696,7 @@ func apPublicRoutingSupportSelectors(name string) []string {
 }
 
 func apPublicRoutingSupportSelector(name string) string {
-	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainAppNameLabel + "=" + name + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindPublicAccessSupport
+	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP + "," + orchestration.BrainDeploymentNameLabel + "=" + name
 }
 
 func apNetworkIngressStateFromPatch(raw json.RawMessage) (map[string]interface{}, string, bool) {
@@ -1959,7 +1959,7 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 }
 
 func apDirectResourceDeleteSelector(name string) string {
-	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainResourceKindLabel + "=" + orchestration.ResourceKindAP + "," + orchestration.BrainAppNameLabel + "=" + name
+	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP + "," + orchestration.BrainDeploymentNameLabel + "=" + name
 }
 
 func registerRestart(grp huma.API) {

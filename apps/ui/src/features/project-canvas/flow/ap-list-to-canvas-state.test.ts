@@ -383,7 +383,7 @@ test("Template native workloads map Brain template Deployment and StatefulSet re
             kind: "StatefulSet",
             metadata: {
               labels: {
-                "brain.io/resource-kind": "template",
+                "brain.io/deployment-kind": "template",
               },
               name: "memos",
               namespace: "ns-admin",
@@ -457,7 +457,7 @@ test("Template native workloads omit items already represented by AP-like list",
             kind: "StatefulSet",
             metadata: {
               labels: {
-                "brain.io/resource-kind": "template",
+                "brain.io/deployment-kind": "template",
               },
               name: "affine",
               namespace: "ns-admin",

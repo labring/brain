@@ -6,8 +6,8 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasLayoutDocument } from "@/features/project-canvas/layout/types";
 import {
+  BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
-  BRAIN_RESOURCE_KIND_LABEL,
 } from "@/lib/brain-labels";
 import {
   fetchProjectDeploymentTaskProjections,
@@ -67,7 +67,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     [uid]
   );
   const templateNativeLabelSelector = useMemo(
-    () => `${labelSelector},${BRAIN_RESOURCE_KIND_LABEL}=template`,
+    () => `${labelSelector},${BRAIN_DEPLOYMENT_KIND_LABEL}=template`,
     [labelSelector]
   );
 

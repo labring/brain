@@ -1,11 +1,11 @@
 import YAML from "yaml";
 import {
-  BRAIN_APP_NAME_LABEL,
+  BRAIN_DEPLOYMENT_KIND_LABEL,
+  BRAIN_DEPLOYMENT_NAME_LABEL,
   BRAIN_MANAGED_BY_LABEL,
   BRAIN_MANAGED_BY_VALUE,
   BRAIN_PROJECT_ID_LABEL,
-  BRAIN_RESOURCE_KIND_LABEL,
-  BRAIN_RESOURCE_NAME_LABEL,
+  BRAIN_TEMPLATE_NAME_LABEL,
   LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL,
   LAUNCHPAD_TEMPLATE_SOURCE_LABEL,
 } from "@/lib/brain-labels";
@@ -732,25 +732,32 @@ function templateResourceClassifications(
   return classifications;
 }
 
-function applyTemplateApLabels(
+function applyTemplateProviderLabels(
   labels: Record<string, string>,
   input: RenderTemplateDeploymentInput,
-  objectName: string,
   classification: TemplateResourceClassification
 ) {
   if (classification.resourceKind !== "ap") {
     return;
   }
-  labels[BRAIN_APP_NAME_LABEL] =
-    classification.appName ?? objectName ?? input.instanceName;
   labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] =
     labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] ?? input.instanceName;
+}
+
+function applyBrainDeploymentLabels(
+  labels: Record<string, string>,
+  input: RenderTemplateDeploymentInput
+) {
+  labels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
+  labels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
+  labels[BRAIN_DEPLOYMENT_KIND_LABEL] = "template";
+  labels[BRAIN_DEPLOYMENT_NAME_LABEL] = input.instanceName;
+  labels[BRAIN_TEMPLATE_NAME_LABEL] = input.templateName;
 }
 
 function applyPodTemplateLabels(
   object: TemplateK8sObject,
   input: RenderTemplateDeploymentInput,
-  objectName: string,
   classification: TemplateResourceClassification
 ) {
   const templateLabels = asRecord(
@@ -760,16 +767,13 @@ function applyPodTemplateLabels(
     return;
   }
   const labels = templateLabels as Record<string, string>;
-  labels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
-  labels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
-  labels[BRAIN_RESOURCE_KIND_LABEL] = classification.resourceKind;
-  applyTemplateApLabels(labels, input, objectName, classification);
+  applyBrainDeploymentLabels(labels, input);
+  applyTemplateProviderLabels(labels, input, classification);
 }
 
 function applyVolumeClaimTemplateLabels(
   object: TemplateK8sObject,
   input: RenderTemplateDeploymentInput,
-  objectName: string,
   classification: TemplateResourceClassification
 ) {
   const volumeClaimTemplates = asRecord(object.spec)?.volumeClaimTemplates;
@@ -787,10 +791,8 @@ function applyVolumeClaimTemplateLabels(
     }
     const claimLabels = metadata.labels as Record<string, string>;
     claimLabels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
-    claimLabels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
-    claimLabels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
-    claimLabels[BRAIN_RESOURCE_KIND_LABEL] = classification.resourceKind;
-    applyTemplateApLabels(claimLabels, input, objectName, classification);
+    applyBrainDeploymentLabels(claimLabels, input);
+    applyTemplateProviderLabels(claimLabels, input, classification);
   }
 }
 
@@ -805,19 +807,15 @@ function applyResourceLabels(
   }
   const labels = ensureLabels(meta);
   labels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
-  labels[BRAIN_PROJECT_ID_LABEL] = input.projectId;
-  labels[BRAIN_MANAGED_BY_LABEL] = BRAIN_MANAGED_BY_VALUE;
-  labels[BRAIN_RESOURCE_KIND_LABEL] = classification.resourceKind;
-  labels[BRAIN_RESOURCE_NAME_LABEL] = input.templateName;
-  const objectName = meta.name ?? input.instanceName;
-  applyTemplateApLabels(labels, input, objectName, classification);
+  applyBrainDeploymentLabels(labels, input);
+  applyTemplateProviderLabels(labels, input, classification);
   if (object.kind === "App") {
     labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] =
       labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] ?? input.instanceName;
   }
 
-  applyPodTemplateLabels(object, input, objectName, classification);
-  applyVolumeClaimTemplateLabels(object, input, objectName, classification);
+  applyPodTemplateLabels(object, input, classification);
+  applyVolumeClaimTemplateLabels(object, input, classification);
   normalizeRenderedResource(object);
 }
 

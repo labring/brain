@@ -240,10 +240,11 @@ func restoreTestCluster(name string) *unstructured.Unstructured {
 		"kind":       "Cluster",
 		"metadata": map[string]interface{}{
 			"labels": map[string]interface{}{
-				orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
-				orchestration.BrainDBEngineLabel:     "postgresql",
-				orchestration.BrainProjectIDLabel:    "project-a",
-				orchestration.BrainResourceKindLabel: orchestration.ResourceKindDB,
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindDB,
+				orchestration.BrainDeploymentNameLabel: name,
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainDBEngineLabel:       "postgresql",
+				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			"name":      name,
 			"namespace": "database-system",
@@ -287,10 +288,11 @@ func restoreTestCluster(name string) *unstructured.Unstructured {
 		},
 	}}
 	cluster.SetLabels(map[string]string{
-		orchestration.BrainManagedByLabel:    orchestration.BrainManagedByValue,
-		orchestration.BrainDBEngineLabel:     "postgresql",
-		orchestration.BrainProjectIDLabel:    "project-a",
-		orchestration.BrainResourceKindLabel: orchestration.ResourceKindDB,
+		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindDB,
+		orchestration.BrainDeploymentNameLabel: name,
+		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+		orchestration.BrainDBEngineLabel:       "postgresql",
+		orchestration.BrainProjectIDLabel:      "project-a",
 	})
 	return cluster
 }
