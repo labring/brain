@@ -16,6 +16,7 @@ import {
 } from "@/features/project-canvas/layout/layout-node-equality";
 import { canvasLayoutNodeFromNode } from "@/features/project-canvas/layout/merge";
 import { createCanvasLayoutNodeSaveScheduler } from "@/features/project-canvas/layout/scheduler";
+import type { CanvasLayoutDocument, PlacementCommand } from "./types";
 
 const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
 
@@ -70,6 +71,14 @@ export function useProjectCanvasLayout(options: {
   const inFlightNodesCanonicalSignatureRef = useRef("");
   const lastSavedNodesCanonicalSignatureRef = useRef("");
   const lastSavedNodesSignatureRef = useRef("");
+  const rememberSavedLayout = useCallback(
+    (nodes: CanvasLayoutDocument["nodes"]) => {
+      lastSavedNodesSignatureRef.current = canvasLayoutNodesSignature(nodes);
+      lastSavedNodesCanonicalSignatureRef.current =
+        canvasLayoutNodesCanonicalSignature(nodes);
+    },
+    []
+  );
   const saveNodes = useCallback(
     async (
       nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"],
@@ -101,11 +110,7 @@ export function useProjectCanvasLayout(options: {
           nodes,
           projectId,
         });
-        lastSavedNodesSignatureRef.current = canvasLayoutNodesSignature(
-          next.nodes
-        );
-        lastSavedNodesCanonicalSignatureRef.current =
-          canvasLayoutNodesCanonicalSignature(next.nodes);
+        rememberSavedLayout(next.nodes);
         await mutate(next, { revalidate: false });
       } catch {
         toast.error(
@@ -122,7 +127,28 @@ export function useProjectCanvasLayout(options: {
         }
       }
     },
-    [enabled, kubeconfig, mutate, namespace, projectId]
+    [enabled, kubeconfig, mutate, namespace, projectId, rememberSavedLayout]
+  );
+  const savePlacementCommands = useCallback(
+    async (
+      commands: PlacementCommand[],
+      options?: { expectedVersion?: number }
+    ) => {
+      if (!enabled || commands.length === 0) {
+        return;
+      }
+      const next = await patchProjectCanvasLayoutNodes({
+        commands,
+        expectedVersion: options?.expectedVersion,
+        kubeconfig,
+        namespace,
+        nodes: [],
+        projectId,
+      });
+      rememberSavedLayout(next.nodes);
+      await mutate(next, { revalidate: false });
+    },
+    [enabled, kubeconfig, mutate, namespace, projectId, rememberSavedLayout]
   );
   const saveFirstPlacementNodes = useCallback(
     (nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]) =>
@@ -145,11 +171,11 @@ export function useProjectCanvasLayout(options: {
   useEffect(() => () => scheduler.cancel(), [scheduler]);
 
   const scheduleNodeLayoutSave = useCallback(
-    (node: Node) => {
+    (node: Node, options?: Parameters<typeof canvasLayoutNodeFromNode>[1]) => {
       if (!enabled) {
         return;
       }
-      const layoutNode = canvasLayoutNodeFromNode(node);
+      const layoutNode = canvasLayoutNodeFromNode(node, options);
       if (layoutNode !== undefined) {
         scheduler.schedule(layoutNode);
       }
@@ -163,6 +189,7 @@ export function useProjectCanvasLayout(options: {
     layoutReady: !(enabled && isLoading) || error != null,
     saveFirstPlacementNodes,
     saveLayoutNodes: saveNodes,
+    savePlacementCommands,
     scheduleNodeLayoutSave,
     scheduleNodePositionSave: scheduleNodeLayoutSave,
   };

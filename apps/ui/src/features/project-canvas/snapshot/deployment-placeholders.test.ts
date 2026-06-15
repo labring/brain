@@ -6,7 +6,7 @@ import type {
   CanvasDeploymentPlaceholderNodeData,
   CanvasDeploymentPlaceholderRfNode,
 } from "../nodes/types";
-import { deploymentProjectionPatchFromPlaceholderNode } from "./deployment-placeholders";
+import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "./deployment-placeholders";
 
 const AP_SLOT = {
   expectedRef: {
@@ -71,27 +71,39 @@ test("projection patch preserves user source for a preview primary anchored by a
       slotId: PUBLIC_ACCESS_SLOT.id,
     }),
   ];
+  const primaryNode = nodes[0];
+  assert.ok(primaryNode);
 
-  const patch = deploymentProjectionPatchFromPlaceholderNode({
-    node: nodes[0],
+  const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
+    node: primaryNode,
     nodes,
     source: "generated",
   });
 
-  assert.equal(patch?.kind, "result-preview");
   assert.deepEqual(
-    patch?.projection.slots?.map((slot) => ({
-      id: slot.id,
-      position: slot.position,
+    placementNodes.map((node) => ({
+      owner: node.owner,
+      position: node.position,
+      source: node.source,
     })),
     [
       {
-        id: AP_SLOT.id,
-        position: { source: "user", x: 680, y: 280 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 680, y: 280 },
+        source: "user",
       },
       {
-        id: PUBLIC_ACCESS_SLOT.id,
-        position: { source: "generated", x: 340, y: 280 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: PUBLIC_ACCESS_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 340, y: 280 },
+        source: "generated",
       },
     ]
   );
@@ -109,31 +121,43 @@ test("projection patch moves every preview slot when a result placeholder is dra
       slotId: PUBLIC_ACCESS_SLOT.id,
     }),
   ];
+  const primaryNode = nodes[0];
+  assert.ok(primaryNode);
   const movedAp = {
-    ...nodes[0],
+    ...primaryNode,
     position: { x: 780, y: 320 },
   };
 
-  const patch = deploymentProjectionPatchFromPlaceholderNode({
+  const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
     node: movedAp,
     nodes,
     source: "user",
   });
 
-  assert.equal(patch?.kind, "result-preview");
   assert.deepEqual(
-    patch?.projection.slots?.map((slot) => ({
-      id: slot.id,
-      position: slot.position,
+    placementNodes.map((node) => ({
+      owner: node.owner,
+      position: node.position,
+      source: node.source,
     })),
     [
       {
-        id: AP_SLOT.id,
-        position: { source: "user", x: 780, y: 320 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 780, y: 320 },
+        source: "user",
       },
       {
-        id: PUBLIC_ACCESS_SLOT.id,
-        position: { source: "user", x: 440, y: 320 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: PUBLIC_ACCESS_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 440, y: 320 },
+        source: "user",
       },
     ]
   );

@@ -1,4 +1,5 @@
 export type CanvasLayoutResourceKind = "AP" | "DB" | "PublicAccess";
+export type CanvasPlacementSource = "generated" | "user";
 
 export interface CanvasLayoutResourceRef {
   kind: CanvasLayoutResourceKind;
@@ -6,19 +7,61 @@ export interface CanvasLayoutResourceRef {
   namespace: string;
 }
 
+export type CanvasPlacementOwner =
+  | { kind: "resource"; ref: CanvasLayoutResourceRef }
+  | { kind: "deploymentProjection"; slotId: string; taskId: string };
+
 export interface CanvasLayoutPosition {
   x: number;
   y: number;
 }
 
-export interface CanvasLayoutNode {
+interface CanvasLayoutNodeBase {
   expanded?: boolean;
   lastSeenUid?: string;
   orphanedAt?: string;
+  owner?: CanvasPlacementOwner;
   position: CanvasLayoutPosition;
-  ref: CanvasLayoutResourceRef;
+  source?: CanvasPlacementSource;
   stackOrder?: number;
 }
+
+export interface CanvasResourceLayoutNode extends CanvasLayoutNodeBase {
+  ref: CanvasLayoutResourceRef;
+}
+
+export interface CanvasDeploymentProjectionLayoutNode
+  extends CanvasLayoutNodeBase {
+  owner: Extract<CanvasPlacementOwner, { kind: "deploymentProjection" }>;
+  ref?: never;
+}
+
+export type CanvasLayoutNode =
+  | CanvasDeploymentProjectionLayoutNode
+  | CanvasResourceLayoutNode;
+
+export type PlacementCommand =
+  | {
+      kind: "create";
+      owner: CanvasPlacementOwner;
+      position: CanvasLayoutPosition;
+      source: CanvasPlacementSource;
+    }
+  | {
+      kind: "move";
+      owner: CanvasPlacementOwner;
+      position: CanvasLayoutPosition;
+      source: CanvasPlacementSource;
+    }
+  | {
+      fromOwner: CanvasPlacementOwner;
+      kind: "rekey";
+      toOwner: CanvasPlacementOwner;
+    }
+  | {
+      kind: "delete";
+      owner: CanvasPlacementOwner;
+    };
 
 export interface CanvasLayoutDocument {
   namespace: string;
@@ -29,6 +72,8 @@ export interface CanvasLayoutDocument {
 }
 
 export interface CanvasLayoutPatch {
+  commands?: PlacementCommand[];
+  expectedVersion?: number;
   intent?: "first-placement" | "layout";
   nodes: CanvasLayoutNode[];
   projectNameSnapshot?: string;

@@ -7,6 +7,7 @@ import {
 } from "@/features/project-canvas/layout/contract";
 import { CanvasLayoutValidationError } from "@/features/project-canvas/layout/patch";
 import {
+  CanvasLayoutRevisionConflictError,
   loadProjectCanvasLayout,
   patchProjectCanvasLayout,
 } from "@/features/project-canvas/layout/repository";
@@ -106,6 +107,9 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     return (
       validationError(error) ??
+      (error instanceof CanvasLayoutRevisionConflictError
+        ? jsonError("Canvas layout revision conflict.", 409)
+        : null) ??
       jsonError("Canvas layout persistence is unavailable.", 503)
     );
   }

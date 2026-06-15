@@ -31,11 +31,18 @@ import {
   singleNodeFootprint,
 } from "./placement-geometry";
 import { PlacementOccupancy } from "./placement-occupancy";
+import {
+  canvasLayoutNodeKey,
+  canvasLayoutNodeResourceRef,
+  canvasPlacementOwnerFromNode,
+  canvasPlacementOwnerKey,
+} from "./placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
   CanvasLayoutPosition,
   CanvasLayoutResourceRef,
+  CanvasPlacementOwner,
 } from "./types";
 
 const GLOBAL_BLOCK_COLUMNS = 3;
@@ -61,6 +68,7 @@ export interface PlaceCanvasNodesResult {
 interface PlacementCandidate {
   index: number;
   node: Node;
+  owner: CanvasPlacementOwner | undefined;
   ref: CanvasLayoutResourceRef | undefined;
   sortKey: string;
 }
@@ -195,9 +203,16 @@ function nodeWithGeneratedPosition(
 
 function layoutNodeFromPlacedNode(
   node: Node,
-  ref: CanvasLayoutResourceRef,
+  owner: CanvasPlacementOwner,
   position: CanvasLayoutPosition
 ): CanvasLayoutNode {
+  if (owner.kind === "deploymentProjection") {
+    return {
+      owner,
+      position: { x: position.x, y: position.y },
+      source: GENERATED_POSITION_SOURCE,
+    };
+  }
   const data = asRecord(node.data);
   const layout = asRecord(data?.layout);
   const expanded =
@@ -206,8 +221,10 @@ function layoutNodeFromPlacedNode(
   return {
     expanded,
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
+    owner,
     position: { x: position.x, y: position.y },
-    ref,
+    ref: owner.ref,
+    source: GENERATED_POSITION_SOURCE,
   };
 }
 
@@ -696,10 +713,12 @@ function placeCandidateAt(
     candidate.node,
     position
   );
-  if (candidate.ref !== undefined) {
-    positionByRef.set(canvasResourceKey(candidate.ref), position);
+  if (candidate.owner !== undefined) {
+    if (candidate.ref !== undefined) {
+      positionByRef.set(canvasResourceKey(candidate.ref), position);
+    }
     placedLayoutNodes.push(
-      layoutNodeFromPlacedNode(candidate.node, candidate.ref, position)
+      layoutNodeFromPlacedNode(candidate.node, candidate.owner, position)
     );
   }
 }
@@ -893,11 +912,55 @@ function savedPositionByRef(
   layout: CanvasLayoutDocument | undefined
 ): Map<string, CanvasLayoutPosition> {
   return new Map(
+    (layout?.nodes ?? []).flatMap((node) => {
+      const ref = canvasLayoutNodeResourceRef(node);
+      return ref === undefined
+        ? []
+        : [[canvasResourceKey(ref), node.position] as const];
+    })
+  );
+}
+
+function savedPositionByOwner(
+  layout: CanvasLayoutDocument | undefined
+): Map<string, CanvasLayoutPosition> {
+  return new Map(
     (layout?.nodes ?? []).map((node) => [
-      canvasResourceKey(node.ref),
+      canvasLayoutNodeKey(node),
       node.position,
     ])
   );
+}
+
+function occupancyLayoutNodes(input: {
+  layout: CanvasLayoutDocument | undefined;
+  nodes: readonly Node[];
+}): CanvasLayoutNode[] {
+  const renderedOwnerKeys = new Set(
+    input.nodes.flatMap((node) => {
+      const owner = canvasPlacementOwnerFromNode(node);
+      return owner === undefined ? [] : [canvasPlacementOwnerKey(owner)];
+    })
+  );
+  return (input.layout?.nodes ?? []).filter((node) => {
+    if (canvasLayoutNodeResourceRef(node) !== undefined) {
+      return true;
+    }
+    return renderedOwnerKeys.has(canvasLayoutNodeKey(node));
+  });
+}
+
+function placementCandidateKey(input: {
+  owner: CanvasPlacementOwner | undefined;
+  ref: CanvasLayoutResourceRef | undefined;
+}): string | undefined {
+  if (input.owner !== undefined) {
+    return canvasPlacementOwnerKey(input.owner);
+  }
+  if (input.ref !== undefined) {
+    return canvasResourceKey(input.ref);
+  }
+  return undefined;
 }
 
 export function placeCanvasNodesWithLayout({
@@ -908,10 +971,12 @@ export function placeCanvasNodesWithLayout({
   nodes,
 }: PlaceCanvasNodesOptions): PlaceCanvasNodesResult {
   const savedByRef = savedPositionByRef(layout);
+  const savedByOwner = savedPositionByOwner(layout);
   const positionByRef = new Map(savedByRef);
   const anchorIndex = createPlacementAnchorIndex(connections);
+  const occupiedLayoutNodes = occupancyLayoutNodes({ layout, nodes });
   const occupancy = new PlacementOccupancy(
-    (layout?.nodes ?? []).map((node) =>
+    occupiedLayoutNodes.map((node) =>
       rectFromPosition(node.position, layoutNodeFootprintHeight(node))
     )
   );
@@ -921,8 +986,9 @@ export function placeCanvasNodesWithLayout({
 
   placedNodes.forEach((node, index) => {
     const ref = canvasResourceIdentityFromNode(node);
-    const key = ref === undefined ? undefined : canvasResourceKey(ref);
-    const savedPosition = key === undefined ? undefined : savedByRef.get(key);
+    const owner = canvasPlacementOwnerFromNode(node);
+    const key = placementCandidateKey({ owner, ref });
+    const savedPosition = key === undefined ? undefined : savedByOwner.get(key);
     if (savedPosition !== undefined) {
       placedNodes[index] = nodeWithPosition(node, savedPosition);
       return;
@@ -938,6 +1004,7 @@ export function placeCanvasNodesWithLayout({
     placementCandidates.push({
       index,
       node,
+      owner,
       ref,
       sortKey: key ?? `Unknown:${index}:${node.id}`,
     });

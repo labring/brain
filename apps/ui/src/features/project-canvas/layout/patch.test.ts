@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { applyCanvasLayoutPatch, CanvasLayoutValidationError } from "./patch";
-import type { CanvasLayoutDocument, CanvasLayoutNode } from "./types";
+import type {
+  CanvasDeploymentProjectionLayoutNode,
+  CanvasLayoutDocument,
+  CanvasLayoutNode,
+} from "./types";
 
 function node(
   name: string,
@@ -13,6 +17,18 @@ function node(
     position: { x: 0, y: 0 },
     ref: { kind: "AP", name, namespace: "default" },
     ...(stackOrder === undefined ? {} : { stackOrder }),
+    ...extra,
+  };
+}
+
+function deploymentNode(
+  taskId: string,
+  slotId: string,
+  extra?: Partial<Omit<CanvasDeploymentProjectionLayoutNode, "owner">>
+): CanvasLayoutNode {
+  return {
+    owner: { kind: "deploymentProjection", slotId, taskId },
+    position: { x: 0, y: 0 },
     ...extra,
   };
 }
@@ -34,7 +50,7 @@ test("canvas layout patch normalizes explicit stack order ranks before storage",
 
   assert.deepEqual(
     result.nodes.map((item) => ({
-      name: item.ref.name,
+      name: item.ref?.name,
       stackOrder: item.stackOrder,
     })),
     [
@@ -65,7 +81,7 @@ test("first placement patch inserts missing nodes without overwriting saved posi
 
   assert.deepEqual(
     result.nodes.map((item) => ({
-      name: item.ref.name,
+      name: item.ref?.name,
       position: item.position,
     })),
     [
@@ -95,4 +111,90 @@ test("first placement patch inserts missing layout nodes", () => {
   });
 
   assert.deepEqual(result.nodes[0]?.position, { x: 340, y: 0 });
+});
+
+test("placement command rekeys deployment placement to resource owner", () => {
+  const result = applyCanvasLayoutPatch(
+    layout([
+      deploymentNode("task-1", "AP:default:api", {
+        position: { x: 680, y: 280 },
+        source: "user",
+      }),
+    ]),
+    {
+      commands: [
+        {
+          fromOwner: {
+            kind: "deploymentProjection",
+            slotId: "AP:default:api",
+            taskId: "task-1",
+          },
+          kind: "rekey",
+          toOwner: {
+            kind: "resource",
+            ref: { kind: "AP", name: "api", namespace: "default" },
+          },
+        },
+      ],
+      nodes: [],
+    }
+  );
+
+  assert.deepEqual(result.nodes, [
+    {
+      owner: {
+        kind: "resource",
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
+      position: { x: 680, y: 280 },
+      ref: { kind: "AP", name: "api", namespace: "default" },
+      source: "user",
+    },
+  ]);
+});
+
+test("placement command consumes deployment placement when resource exists", () => {
+  const result = applyCanvasLayoutPatch(
+    layout([
+      node("api", undefined, { position: { x: 120, y: 80 } }),
+      deploymentNode("task-1", "AP:default:api", {
+        position: { x: 680, y: 280 },
+      }),
+    ]),
+    {
+      commands: [
+        {
+          fromOwner: {
+            kind: "deploymentProjection",
+            slotId: "AP:default:api",
+            taskId: "task-1",
+          },
+          kind: "rekey",
+          toOwner: {
+            kind: "resource",
+            ref: { kind: "AP", name: "api", namespace: "default" },
+          },
+        },
+      ],
+      nodes: [],
+    }
+  );
+
+  assert.deepEqual(
+    result.nodes.map((item) => ({
+      owner: item.owner,
+      position: item.position,
+      ref: item.ref,
+    })),
+    [
+      {
+        owner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
+        },
+        position: { x: 120, y: 80 },
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
+    ]
+  );
 });

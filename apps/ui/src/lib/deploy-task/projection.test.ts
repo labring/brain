@@ -41,17 +41,17 @@ test("deployment task projection includes active project tasks", () => {
   });
 });
 
-test("deployment task projection excludes non-projectable tasks", () => {
-  assert.equal(
-    toDeploymentTaskProjection(
-      deploymentTaskSource({
-        completedAt: NOW,
-        status: "failed",
-      }),
-      NOW
-    ),
-    null
+test("deployment task projection includes terminal cleanup projections", () => {
+  const failed = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      completedAt: NOW,
+      status: "failed",
+    }),
+    NOW
   );
+  assert.ok(failed);
+  assert.equal(deploymentTaskProjectionIsVisible(failed, NOW), false);
+
   assert.equal(
     toDeploymentTaskProjection(
       deploymentTaskSource({
@@ -84,7 +84,7 @@ test("completed deployment task projection stays visible only during handoff gra
     NOW
   );
 
-  assert.notEqual(projection, null);
+  assert.ok(projection);
   assert.equal(deploymentTaskProjectionIsVisible(projection, NOW), true);
   assert.equal(
     deploymentTaskProjectionIsVisible(
@@ -103,8 +103,8 @@ test("upserting deployment task projections keeps existing order", () => {
     deploymentTaskSource({ id: "task-2" }),
     NOW
   );
-  assert.notEqual(first, null);
-  assert.notEqual(second, null);
+  assert.ok(first);
+  assert.ok(second);
 
   assert.deepEqual(upsertDeploymentTaskProjection([first], second), [
     second,
@@ -113,14 +113,14 @@ test("upserting deployment task projections keeps existing order", () => {
   assert.deepEqual(
     upsertDeploymentTaskProjection([first, second], {
       ...second,
-      phase: "running",
+      phase: "apply",
       status: "running",
     }),
     [
       first,
       {
         ...second,
-        phase: "running",
+        phase: "apply",
         status: "running",
       },
     ]

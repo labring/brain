@@ -1,5 +1,12 @@
-import { canvasResourceKey } from "../nodes/resource-identity";
 import { cleanupCanvasLayoutDocument } from "./cleanup";
+import {
+  canvasLayoutNodeFromOwner,
+  canvasLayoutNodeKey,
+  canvasPlacementOwnerFromLayoutNode,
+  canvasPlacementOwnerKey,
+  canvasPlacementOwnersEqual,
+  resourcePlacementOwner,
+} from "./placement-owner";
 import {
   canvasStackOrderValue,
   normalizeCanvasLayoutStackOrders,
@@ -9,6 +16,8 @@ import type {
   CanvasLayoutNode,
   CanvasLayoutPatch,
   CanvasLayoutResourceRef,
+  CanvasPlacementOwner,
+  PlacementCommand,
 } from "./types";
 
 export interface ApplyCanvasLayoutPatchOptions {
@@ -72,6 +81,26 @@ function normalizeRef(ref: CanvasLayoutResourceRef): CanvasLayoutResourceRef {
   };
 }
 
+function normalizeOwner(owner: CanvasPlacementOwner): CanvasPlacementOwner {
+  if (owner.kind === "resource") {
+    return resourcePlacementOwner(normalizeRef(owner.ref));
+  }
+  return {
+    kind: "deploymentProjection",
+    slotId: assertNonEmpty(owner.slotId, "deployment projection slot ID"),
+    taskId: assertNonEmpty(owner.taskId, "deployment task ID"),
+  };
+}
+
+function normalizeSource(
+  value: CanvasLayoutNode["source"]
+): CanvasLayoutNode["source"] {
+  if (value === undefined || value === "generated" || value === "user") {
+    return value;
+  }
+  throw new CanvasLayoutValidationError("source must be generated or user.");
+}
+
 function normalizeNode(node: CanvasLayoutNode): CanvasLayoutNode {
   const x = node.position.x;
   const y = node.position.y;
@@ -81,12 +110,33 @@ function normalizeNode(node: CanvasLayoutNode): CanvasLayoutNode {
   const lastSeenUid = optionalTrimmed(node.lastSeenUid);
   const orphanedAt = normalizeOptionalTimestamp(node.orphanedAt, "orphanedAt");
   const stackOrder = normalizeOptionalStackOrder(node.stackOrder);
+  const source = normalizeSource(node.source);
+  const owner = normalizeOwner(canvasPlacementOwnerFromLayoutNode(node));
+  if (owner.kind === "deploymentProjection") {
+    return {
+      ...(node.expanded === undefined ? {} : { expanded: node.expanded }),
+      ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
+      ...(orphanedAt === undefined ? {} : { orphanedAt }),
+      owner,
+      position: { x, y },
+      ...(source === undefined ? {} : { source }),
+      ...(stackOrder === undefined ? {} : { stackOrder }),
+    };
+  }
+  const ref = normalizeRef(node.ref ?? owner.ref);
+  if (!canvasPlacementOwnersEqual(owner, resourcePlacementOwner(ref))) {
+    throw new CanvasLayoutValidationError(
+      "resource owner must match node ref."
+    );
+  }
   return {
     ...(node.expanded === undefined ? {} : { expanded: node.expanded }),
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
     ...(orphanedAt === undefined ? {} : { orphanedAt }),
+    owner,
     position: { x, y },
-    ref: normalizeRef(node.ref),
+    ref,
+    ...(source === undefined ? {} : { source }),
     ...(stackOrder === undefined ? {} : { stackOrder }),
   };
 }
@@ -97,7 +147,7 @@ function upsertNormalizedNode(
   node: CanvasLayoutNode
 ): void {
   const normalized = normalizeNode(node);
-  const key = canvasResourceKey(normalized.ref);
+  const key = canvasLayoutNodeKey(normalized);
   if (!nodesByRef.has(key)) {
     order.push(key);
   }
@@ -110,12 +160,106 @@ function insertFirstPlacementNode(
   node: CanvasLayoutNode
 ): boolean {
   const normalized = normalizeNode(node);
-  const key = canvasResourceKey(normalized.ref);
+  const key = canvasLayoutNodeKey(normalized);
   if (nodesByRef.has(key)) {
     return false;
   }
   order.push(key);
   nodesByRef.set(key, normalized);
+  return true;
+}
+
+function applyPlacementCommand(
+  nodesByRef: Map<string, CanvasLayoutNode>,
+  order: string[],
+  command: PlacementCommand
+): boolean {
+  if (command.kind === "create") {
+    return insertFirstPlacementNode(
+      nodesByRef,
+      order,
+      canvasLayoutNodeFromOwner({
+        owner: command.owner,
+        position: command.position,
+        source: command.source,
+      })
+    );
+  }
+
+  if (command.kind === "move") {
+    const normalized = normalizeNode(
+      canvasLayoutNodeFromOwner({
+        owner: command.owner,
+        position: command.position,
+        source: command.source,
+      })
+    );
+    const key = canvasLayoutNodeKey(normalized);
+    const existing = nodesByRef.get(key);
+    if (existing === undefined) {
+      order.push(key);
+      nodesByRef.set(key, normalized);
+      return true;
+    }
+    nodesByRef.set(key, {
+      ...existing,
+      position: normalized.position,
+      source: normalized.source,
+    });
+    return true;
+  }
+
+  if (command.kind === "delete") {
+    const key = canvasPlacementOwnerKey(normalizeOwner(command.owner));
+    if (!nodesByRef.has(key)) {
+      return false;
+    }
+    nodesByRef.delete(key);
+    const index = order.indexOf(key);
+    if (index !== -1) {
+      order.splice(index, 1);
+    }
+    return true;
+  }
+
+  const fromOwner = normalizeOwner(command.fromOwner);
+  const toOwner = normalizeOwner(command.toOwner);
+  const fromKey = canvasPlacementOwnerKey(fromOwner);
+  const toKey = canvasPlacementOwnerKey(toOwner);
+  const fromNode = nodesByRef.get(fromKey);
+  if (fromNode === undefined) {
+    return false;
+  }
+  if (nodesByRef.has(toKey)) {
+    nodesByRef.delete(fromKey);
+    const fromIndex = order.indexOf(fromKey);
+    if (fromIndex !== -1) {
+      order.splice(fromIndex, 1);
+    }
+    return true;
+  }
+  const rekeyed = normalizeNode({
+    ...canvasLayoutNodeFromOwner({
+      owner: toOwner,
+      position: fromNode.position,
+      source: fromNode.source,
+    }),
+    ...(fromNode.expanded === undefined ? {} : { expanded: fromNode.expanded }),
+    ...(fromNode.lastSeenUid === undefined
+      ? {}
+      : { lastSeenUid: fromNode.lastSeenUid }),
+    ...(fromNode.stackOrder === undefined
+      ? {}
+      : { stackOrder: fromNode.stackOrder }),
+  });
+  nodesByRef.delete(fromKey);
+  nodesByRef.set(toKey, rekeyed);
+  const fromIndex = order.indexOf(fromKey);
+  if (fromIndex === -1) {
+    order.push(toKey);
+  } else {
+    order[fromIndex] = toKey;
+  }
   return true;
 }
 
@@ -129,6 +273,12 @@ export function applyCanvasLayoutPatch(
 
   for (const node of existing.nodes) {
     upsertNormalizedNode(nextByRef, order, node);
+  }
+
+  let commandChanged = false;
+  for (const command of patch.commands ?? []) {
+    commandChanged =
+      applyPlacementCommand(nextByRef, order, command) || commandChanged;
   }
 
   let firstPlacementInserted = false;
@@ -145,6 +295,7 @@ export function applyCanvasLayoutPatch(
   if (
     patch.intent === "first-placement" &&
     !firstPlacementInserted &&
+    !commandChanged &&
     patch.projectNameSnapshot === undefined
   ) {
     return cleanupCanvasLayoutDocument(existing, options);

@@ -11,11 +11,19 @@ import {
 import { cleanupCanvasLayoutDocument } from "./cleanup";
 import { parseCanvasLayoutDocument } from "./contract";
 import { applyCanvasLayoutPatch, CanvasLayoutValidationError } from "./patch";
+import { canvasPlacementOwnerFromLayoutNode } from "./placement-owner";
 import type { CanvasLayoutDocument, CanvasLayoutPatch } from "./types";
 
 export interface ProjectCanvasLayoutKey {
   namespace: string;
   projectId: string;
+}
+
+export class CanvasLayoutRevisionConflictError extends Error {
+  constructor() {
+    super("Canvas layout revision conflict.");
+    this.name = "CanvasLayoutRevisionConflictError";
+  }
 }
 
 function emptyLayoutDocument(
@@ -58,7 +66,12 @@ function normalizeNodeForProject(
   key: ProjectCanvasLayoutKey,
   node: CanvasLayoutPatch["nodes"][number]
 ) {
-  const namespace = node.ref.namespace.trim();
+  const owner = canvasPlacementOwnerFromLayoutNode(node);
+  if (owner.kind === "deploymentProjection") {
+    return node;
+  }
+
+  const namespace = owner.ref.namespace.trim();
   if (namespace !== key.namespace) {
     throw new CanvasLayoutValidationError(
       "node namespace must match layout namespace."
@@ -67,8 +80,15 @@ function normalizeNodeForProject(
 
   return {
     ...node,
+    owner: {
+      kind: "resource" as const,
+      ref: {
+        ...owner.ref,
+        namespace,
+      },
+    },
     ref: {
-      ...node.ref,
+      ...(node.ref ?? owner.ref),
       namespace,
     },
   };
@@ -133,6 +153,12 @@ export function patchProjectCanvasLayout(
       row === undefined
         ? emptyLayoutDocument(key)
         : rowToDocument(row, { now });
+    if (
+      patch.expectedVersion !== undefined &&
+      patch.expectedVersion !== existing.version
+    ) {
+      throw new CanvasLayoutRevisionConflictError();
+    }
     const next = applyCanvasLayoutPatch(
       existing,
       normalizePatchForProject(key, patch),

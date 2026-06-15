@@ -74,8 +74,13 @@ test("merge returns first-placement layout nodes without rewriting loaded layout
   assert.deepEqual(result.placedLayoutNodes, [
     {
       expanded: false,
+      owner: {
+        kind: "resource",
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
       position: { x: 0, y: 0 },
       ref: { kind: "AP", name: "api", namespace: "default" },
+      source: "generated",
     },
   ]);
 });
@@ -231,7 +236,7 @@ test("merge brings meaningful orphan returns to the front", () => {
 
   assert.deepEqual(
     result.layout?.nodes.map((node) => ({
-      name: node.ref.name,
+      name: node.ref?.name,
       stackOrder: node.stackOrder,
     })),
     [
@@ -277,6 +282,10 @@ test("merge treats same-name different-UID returns as fresh for stack order", ()
 
   assert.deepEqual(result.layout?.nodes[0], {
     lastSeenUid: "new-api-uid",
+    owner: {
+      kind: "resource",
+      ref: { kind: "AP", name: "api", namespace: "default" },
+    },
     position: { x: 48, y: 64 },
     ref: { kind: "AP", name: "api", namespace: "default" },
     stackOrder: 3,

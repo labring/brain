@@ -2,7 +2,6 @@
 
 import { Canvas } from "@workspace/ui/components/canvas/canvas";
 import { Spinner } from "@workspace/ui/components/spinner";
-import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,8 +14,7 @@ import {
 import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
 import {
-  deploymentPlaceholderTaskIdFromNode,
-  deploymentProjectionPatchFromPlaceholderNode,
+  deploymentProjectionPlacementNodesFromPlaceholderNode,
   isDeploymentPlaceholderNode,
 } from "@/features/project-canvas/snapshot/deployment-placeholders";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
@@ -30,7 +28,6 @@ import {
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
-import { patchDeployTaskCanvasProjection } from "@/lib/deploy-task/client";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 export default function ProjectIdPage() {
@@ -63,42 +60,16 @@ export default function ProjectIdPage() {
     namespace,
     uid,
   });
-  const saveDeploymentPlaceholderPosition = useCallback(
-    async (
-      node: Node,
-      nodes: readonly Node[],
-      mode: "replace" | "set-if-empty",
-      source: "generated" | "user"
-    ) => {
-      const taskId = deploymentPlaceholderTaskIdFromNode(node);
-      const patch = deploymentProjectionPatchFromPlaceholderNode({
-        node,
-        nodes,
-        source,
-      });
-      if (
-        taskId === undefined ||
-        patch === null ||
-        kubeconfig.trim() === "" ||
-        namespace.trim() === ""
-      ) {
-        return;
-      }
-      await patchDeployTaskCanvasProjection({
-        kubeconfig,
-        namespace,
-        taskId,
-        update: {
-          mode,
-          projection: patch.projection,
-        },
-      });
-      refresh().catch(() => undefined);
-    },
-    [kubeconfig, namespace, refresh]
-  );
   useEffect(() => {
     if (resourceSnapshotLoading || layoutIntent == null) {
+      return;
+    }
+    if (layoutIntent.kind === "placement-commands") {
+      projectCanvasLayout
+        .savePlacementCommands(layoutIntent.commands, {
+          expectedVersion: layoutIntent.expectedVersion,
+        })
+        .catch(() => undefined);
       return;
     }
     const save =
@@ -110,32 +81,8 @@ export default function ProjectIdPage() {
     layoutIntent,
     projectCanvasLayout.saveFirstPlacementNodes,
     projectCanvasLayout.saveLayoutNodes,
+    projectCanvasLayout.savePlacementCommands,
     resourceSnapshotLoading,
-  ]);
-  useEffect(() => {
-    if (resourceSnapshotLoading) {
-      return;
-    }
-    const savedTaskIds = new Set<string>();
-    for (const node of canvasState.nodes) {
-      if (
-        isDeploymentPlaceholderNode(node) &&
-        node.data.hasProjectionPosition !== true &&
-        !savedTaskIds.has(node.data.taskId)
-      ) {
-        savedTaskIds.add(node.data.taskId);
-        saveDeploymentPlaceholderPosition(
-          node,
-          canvasState.nodes,
-          "set-if-empty",
-          "generated"
-        ).catch(() => undefined);
-      }
-    }
-  }, [
-    canvasState.nodes,
-    resourceSnapshotLoading,
-    saveDeploymentPlaceholderPosition,
   ]);
   const beginPendingApDbReferences = useCallback(
     (references: readonly PendingApDbCanvasReference[]) => {
@@ -174,15 +121,20 @@ export default function ProjectIdPage() {
     onNodeExpansionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodePositionChange: (node) => {
       if (isDeploymentPlaceholderNode(node)) {
-        saveDeploymentPlaceholderPosition(
-          node,
-          canvasState.nodes,
-          "replace",
-          "user"
-        ).catch(() => undefined);
+        const placementNodes =
+          deploymentProjectionPlacementNodesFromPlaceholderNode({
+            node,
+            nodes: canvasState.nodes,
+            source: "user",
+          });
+        if (placementNodes.length > 0) {
+          projectCanvasLayout
+            .saveLayoutNodes(placementNodes)
+            .catch(() => undefined);
+        }
         return;
       }
-      projectCanvasLayout.scheduleNodeLayoutSave(node);
+      projectCanvasLayout.scheduleNodeLayoutSave(node, { source: "user" });
     },
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onPendingApDbReferencesStart: beginPendingApDbReferences,

@@ -72,7 +72,7 @@ test("canvas layout document normalizes legacy EntryPoint refs to PublicAccess",
     version: 1,
   });
 
-  assert.equal(parsed.nodes[0]?.ref.kind, "PublicAccess");
+  assert.equal(parsed.nodes[0]?.ref?.kind, "PublicAccess");
 });
 
 test("canvas layout patch rejects malformed stack order", () => {

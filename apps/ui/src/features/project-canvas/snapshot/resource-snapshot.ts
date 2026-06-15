@@ -15,6 +15,7 @@ import { mergeCanvasLayoutWithDetectedNodes } from "@/features/project-canvas/la
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
+  PlacementCommand,
 } from "@/features/project-canvas/layout/types";
 import {
   type ApEnvironmentDbReferenceSource,
@@ -26,6 +27,7 @@ import {
   deploymentPlaceholderNodesFromTasks,
   deploymentPlaceholderPendingResultKeys,
   deploymentPreviewEdgesFromTasks,
+  deploymentProjectionPlacementCommands,
   isDeploymentPlaceholderPendingResultNode,
   shouldHideDeploymentPlaceholderForHandoff,
 } from "./deployment-placeholders";
@@ -33,7 +35,12 @@ import { projectCanvasFrameState } from "./project-canvas-page-state";
 
 export type ProjectCanvasLayoutIntent =
   | { kind: "first-placement"; nodes: CanvasLayoutNode[] }
-  | { kind: "merge"; nodes: CanvasLayoutNode[] };
+  | { kind: "merge"; nodes: CanvasLayoutNode[] }
+  | {
+      commands: PlacementCommand[];
+      expectedVersion: number;
+      kind: "placement-commands";
+    };
 
 export interface ProjectCanvasResourceSnapshotInput {
   apsData?: K8sGetResponse;
@@ -184,6 +191,11 @@ export function buildProjectCanvasResourceSnapshot({
   };
   const layoutIntent = layoutIntentFromMerge({
     changed: merge.changed,
+    commands: deploymentProjectionPlacementCommands({
+      layout: canvasLayout,
+      nodes: rawDetectedNodes,
+      tasks: deployTasks,
+    }),
     layout: merge.layout,
     placedLayoutNodes: merge.placedLayoutNodes,
   });
@@ -204,9 +216,17 @@ export function buildProjectCanvasResourceSnapshot({
 
 function layoutIntentFromMerge(input: {
   changed: boolean;
+  commands: PlacementCommand[];
   layout: CanvasLayoutDocument | undefined;
   placedLayoutNodes: CanvasLayoutNode[];
 }): ProjectCanvasLayoutIntent | null {
+  if (input.commands.length > 0 && input.layout !== undefined) {
+    return {
+      commands: input.commands,
+      expectedVersion: input.layout.version,
+      kind: "placement-commands",
+    };
+  }
   if (input.placedLayoutNodes.length > 0) {
     return { kind: "first-placement", nodes: input.placedLayoutNodes };
   }

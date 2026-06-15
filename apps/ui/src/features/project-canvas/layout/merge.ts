@@ -19,6 +19,10 @@ import {
 } from "./node-stack-order";
 import { placeCanvasNodesWithLayout } from "./placement";
 import {
+  canvasLayoutNodeResourceRef,
+  canvasPlacementOwnerFromNode,
+} from "./placement-owner";
+import {
   CANVAS_STACK_ORDER_RETURN_STABILITY_MS,
   canvasStackOrderValue,
   nextExplicitCanvasStackOrder,
@@ -27,6 +31,7 @@ import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
   CanvasLayoutPosition,
+  CanvasPlacementSource,
 } from "./types";
 
 export interface CanvasLayoutMergeResult {
@@ -113,21 +118,32 @@ function withCanvasLayoutPosition(
 }
 
 export function canvasLayoutNodeFromNode(
-  node: Node
+  node: Node,
+  options?: { source?: CanvasPlacementSource }
 ): CanvasLayoutNode | undefined {
-  const ref = canvasResourceIdentityFromNode(node);
+  const owner = canvasPlacementOwnerFromNode(node);
   const position = finitePosition(node.position);
-  if (ref === undefined || position === undefined) {
+  if (owner === undefined || position === undefined) {
     return undefined;
   }
+  if (owner.kind === "deploymentProjection") {
+    return {
+      owner,
+      position,
+      ...(options?.source === undefined ? {} : { source: options.source }),
+    };
+  }
+  const ref = owner.ref;
   const expanded = canvasLayoutExpandedFromNode(node) ?? false;
   const lastSeenUid = canvasResourceLastSeenUidFromNode(node);
   const stackOrder = canvasNodeStackOrder(node);
   return {
     expanded,
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
+    owner,
     position,
     ref,
+    ...(options?.source === undefined ? {} : { source: options.source }),
     ...(stackOrder === undefined ? {} : { stackOrder }),
   };
 }
@@ -194,9 +210,14 @@ function restoredLayoutNodeFromDetectedNode(
 ): CanvasLayoutNode {
   const lastSeenUid =
     canvasResourceLastSeenUidFromNode(detected) ?? saved.lastSeenUid;
+  const ref = canvasLayoutNodeResourceRef(saved);
+  if (ref === undefined) {
+    return cloneCanvasLayoutNode(saved);
+  }
   const restored: CanvasLayoutNode = {
+    owner: { kind: "resource", ref: { ...ref } },
     position: { x: saved.position.x, y: saved.position.y },
-    ref: { ...saved.ref },
+    ref: { ...ref },
   };
   if (saved.expanded !== undefined) {
     restored.expanded = saved.expanded;
@@ -250,7 +271,10 @@ export function mergeCanvasLayoutWithDetectedNodes({
   let nextFreshStackOrder = nextExplicitCanvasStackOrder(cleanedLayout.nodes);
   const layoutByRef = new Map<string, CanvasLayoutNode>();
   for (const item of cleanedLayout.nodes) {
-    layoutByRef.set(canvasResourceKey(item.ref), item);
+    const ref = canvasLayoutNodeResourceRef(item);
+    if (ref !== undefined) {
+      layoutByRef.set(canvasResourceKey(ref), item);
+    }
   }
 
   const nextLayoutByRef = new Map<string, CanvasLayoutNode>();
@@ -284,7 +308,11 @@ export function mergeCanvasLayoutWithDetectedNodes({
 
   const nextLayout = cloneCanvasLayoutDocument(cleanedLayout);
   nextLayout.nodes = cleanedLayout.nodes.map((item) => {
-    const key = canvasResourceKey(item.ref);
+    const ref = canvasLayoutNodeResourceRef(item);
+    if (ref === undefined) {
+      return item;
+    }
+    const key = canvasResourceKey(ref);
     const live = nextLayoutByRef.get(key);
     if (live !== undefined) {
       return live;

@@ -173,8 +173,13 @@ test("returns newly placed layout nodes for first placement persistence", () => 
   assert.deepEqual(result.placedLayoutNodes, [
     {
       expanded: false,
+      owner: {
+        kind: "resource",
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
       position: { x: 0, y: 0 },
       ref: { kind: "AP", name: "api", namespace: "default" },
+      source: "generated",
     },
   ]);
 });
@@ -193,8 +198,13 @@ test("includes last seen UID in first-placement layout nodes", () => {
   assert.deepEqual(result.placedLayoutNodes[0], {
     expanded: false,
     lastSeenUid: "api-uid",
+    owner: {
+      kind: "resource",
+      ref: { kind: "AP", name: "api", namespace: "default" },
+    },
     position: { x: 0, y: 0 },
     ref: { kind: "AP", name: "api", namespace: "default" },
+    source: "generated",
   });
 });
 
@@ -426,8 +436,8 @@ test("returns placement group layout nodes for AP and PublicAccess first placeme
 
   assert.deepEqual(
     result.placedLayoutNodes.map((node) => ({
-      kind: node.ref.kind,
-      name: node.ref.name,
+      kind: node.ref?.kind,
+      name: node.ref?.name,
       position: node.position,
     })),
     [
