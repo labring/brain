@@ -24,13 +24,15 @@ import {
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
-  deploymentPlaceholderNodesFromTasks,
   deploymentPlaceholderPendingResultKeys,
-  deploymentPreviewEdgesFromTasks,
-  deploymentProjectionPlacementCommands,
   isDeploymentPlaceholderPendingResultNode,
+} from "./deployment-placeholder-handoff";
+import {
+  deploymentPlaceholderNodesFromTasks,
   shouldHideDeploymentPlaceholderForHandoff,
-} from "./deployment-placeholders";
+} from "./deployment-placeholder-nodes";
+import { deploymentProjectionPlacementCommands } from "./deployment-placement-commands";
+import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 
 export type ProjectCanvasLayoutIntent =

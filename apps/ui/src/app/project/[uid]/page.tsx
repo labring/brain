@@ -15,10 +15,8 @@ import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/
 import { resourcePlacementOwner } from "@/features/project-canvas/layout/placement-owner";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
-import {
-  deploymentProjectionPlacementNodesFromPlaceholderNode,
-  isDeploymentPlaceholderNode,
-} from "@/features/project-canvas/snapshot/deployment-placeholders";
+import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
+import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
