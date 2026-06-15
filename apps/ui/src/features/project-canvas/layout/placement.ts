@@ -552,7 +552,7 @@ function deploymentPreviewGroupInfo(
   const relativeX = relative?.x;
   const relativeY = relative?.y;
   if (
-    data?.projectionShape !== "result-preview" ||
+    !Array.isArray(data?.projectionSlots) ||
     typeof groupId !== "string" ||
     !Number.isFinite(relativeX) ||
     !Number.isFinite(relativeY)

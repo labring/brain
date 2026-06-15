@@ -34,8 +34,8 @@ const PROJECTION_SLOTS = [AP_SLOT, PUBLIC_ACCESS_SLOT] as const;
 
 function resultPreviewNode(input: {
   anchorSource?: CanvasDeploymentPlaceholderNodeData["projectionPlacementSource"];
+  anchor?: boolean;
   position: CanvasDeploymentPlaceholderRfNode["position"];
-  primary?: boolean;
   slotId: (typeof PROJECTION_SLOTS)[number]["id"];
 }): CanvasDeploymentPlaceholderRfNode {
   const slot = PROJECTION_SLOTS.find((item) => item.id === input.slotId);
@@ -46,12 +46,14 @@ function resultPreviewNode(input: {
         : { expectedRef: slot.expectedRef }),
       groupId: "task-1",
       hasProjectionPlacement: false,
-      ...(input.primary === undefined ? {} : { primary: input.primary }),
+      ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
       ...(input.anchorSource === undefined
         ? {}
         : { projectionPlacementSource: input.anchorSource }),
-      projectionShape: "result-preview",
-      projectionSlots: [...PROJECTION_SLOTS],
+      projectionSlots: PROJECTION_SLOTS.map((projectionSlot) => ({
+        ...projectionSlot,
+        ...(projectionSlot.id === AP_SLOT.id ? { anchor: true } : {}),
+      })),
       slotId: input.slotId,
       taskId: "task-1",
     },
@@ -61,12 +63,12 @@ function resultPreviewNode(input: {
   };
 }
 
-test("projection patch preserves user source for a preview primary anchored by a moved generic placeholder", () => {
+test("projection patch preserves user source for a slot group anchored by the unknown slot", () => {
   const nodes = [
     resultPreviewNode({
+      anchor: true,
       anchorSource: "user",
       position: { x: 680, y: 280 },
-      primary: true,
       slotId: AP_SLOT.id,
     }),
     resultPreviewNode({
@@ -75,11 +77,11 @@ test("projection patch preserves user source for a preview primary anchored by a
       slotId: PUBLIC_ACCESS_SLOT.id,
     }),
   ];
-  const primaryNode = nodes[0];
-  assert.ok(primaryNode);
+  const anchorNode = nodes[0];
+  assert.ok(anchorNode);
 
   const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
-    node: primaryNode,
+    node: anchorNode,
     nodes,
     source: "generated",
   });
@@ -116,8 +118,8 @@ test("projection patch preserves user source for a preview primary anchored by a
 test("projection patch moves every preview slot when a result placeholder is dragged", () => {
   const nodes = [
     resultPreviewNode({
+      anchor: true,
       position: { x: 680, y: 280 },
-      primary: true,
       slotId: AP_SLOT.id,
     }),
     resultPreviewNode({
@@ -125,10 +127,10 @@ test("projection patch moves every preview slot when a result placeholder is dra
       slotId: PUBLIC_ACCESS_SLOT.id,
     }),
   ];
-  const primaryNode = nodes[0];
-  assert.ok(primaryNode);
+  const anchorNode = nodes[0];
+  assert.ok(anchorNode);
   const movedAp = {
-    ...primaryNode,
+    ...anchorNode,
     position: { x: 780, y: 320 },
   };
 
@@ -176,7 +178,7 @@ test("preview edges stay scoped to placeholders from their own deployment task",
           slotIndex === 0
             ? { kind: "AP", name: "api", namespace: "default" }
             : { kind: "DB", name: "postgres", namespace: "default" },
-        projectionShape: "result-preview",
+        projectionSlots: slotIds.map((id) => ({ id })),
         slotId,
         taskId,
       },

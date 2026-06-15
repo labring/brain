@@ -14,6 +14,7 @@ import {
   placeCanvasNodes,
   placeCanvasNodesWithLayout,
 } from "./placement";
+import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "./placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
@@ -75,6 +76,7 @@ function deploymentPlaceholderNode(
   return {
     data: {
       hasProjectionPlacement: true,
+      slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
       taskId: name,
     },
     id: `deployment-placeholder-${name}`,
@@ -94,7 +96,7 @@ function deploymentResultPlaceholderNode(
       groupId: name,
       hasProjectionPlacement: false,
       projectionRelativePlacement: relativePosition,
-      projectionShape: "result-preview",
+      projectionSlots: [{ id: slotId }],
       slotId,
       taskId: name,
     },

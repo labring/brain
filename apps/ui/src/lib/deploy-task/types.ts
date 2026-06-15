@@ -147,9 +147,9 @@ const deploymentTaskCanvasProjectionExpectedRefSchema = z.object({
 });
 
 const deploymentTaskCanvasProjectionSlotSchema = z.object({
+  anchor: z.boolean().optional(),
   expectedRef: deploymentTaskCanvasProjectionExpectedRefSchema.optional(),
   id: z.string().trim().min(1),
-  primary: z.boolean().optional(),
 });
 
 const deploymentTaskCanvasProjectionEdgeSchema = z.object({
@@ -169,7 +169,6 @@ export const deploymentTaskCanvasProjectionSchema = z.object({
   resultMappings: z
     .array(deploymentTaskCanvasProjectionResultMappingSchema)
     .optional(),
-  shape: z.enum(["generic", "result-preview"]).optional(),
   slots: z.array(deploymentTaskCanvasProjectionSlotSchema).optional(),
 }) satisfies z.ZodType<DeploymentTaskCanvasProjection>;
 

@@ -59,7 +59,7 @@ All placement changes from Projection Reconciliation should be applied as revisi
 28. As a product engineer, I want placement commands applied transactionally with layout revision checks, so that concurrent clients do not overwrite each other.
 29. As a product engineer, I want revision conflicts to reload and rerun reconciliation, so that the latest layout always wins over stale placement commands.
 30. As a product engineer, I want old Canvas Layout resource nodes to migrate into resource placement owners, so that existing projects keep their saved positions.
-31. As a product engineer, I want old deployment projection position fields to be treated as compatibility input only during migration, so that new code does not keep writing two position systems.
+31. As a product engineer, I want old deployment projection position fields removed during migration, so that new code does not keep writing two position systems.
 32. As a product engineer, I want slot identities to be stable and task-scoped, so that SSE refreshes and resource list refreshes rebuild the same canvas projection.
 33. As a product engineer, I want projection edges scoped by task and slot, so that two deployments expecting the same resource identity do not cross-wire.
 34. As a product engineer, I want behavior tests around mismatch scenarios, so that projection incompleteness is handled as normal product behavior.
@@ -73,7 +73,7 @@ All placement changes from Projection Reconciliation should be applied as revisi
 
 - Canvas Placement Owner is the stable identity for a persisted position. Rendered React Flow node ids are not placement identities.
 
-- Deployment Task Projection must not own canvas positions. Remove new writes to projection-level position fields and slot-level position fields. Existing fields may be read only as migration or compatibility input until fully removed.
+- Deployment Task Projection must not own canvas positions. Remove projection-level position fields and slot-level position fields instead of keeping compatibility reads.
 
 - Use a unified Deployment Projection Slot model. Do not keep generic placeholder and result preview as separate projection shapes in the long-term model.
 
@@ -103,7 +103,7 @@ type DeploymentTaskProjection = {
 type DeploymentProjectionSlot = {
   id: string;
   expectedRef?: CanvasResourceRef;
-  primary?: boolean;
+  anchor?: boolean;
   evidence?: string[];
 };
 
@@ -117,9 +117,9 @@ type DeploymentResultMapping = {
 
 - Concrete slot identity is derived from the anticipated result reference. The global placement owner combines task identity and slot identity, so two tasks can safely use the same concrete slot id without colliding.
 
-- Primary result rules remain: explicit primary wins; otherwise AP before DB; DB before TemplateNative; AP Public Access is never primary.
+- Slot group anchor rules remain local to layout: explicit anchor wins; otherwise AP before DB; DB before TemplateNative; AP Public Access is never the anchor.
 
-- Unknown slot refinement consumes the unknown slot. When structured evidence appears, the unknown slot placement should rekey to the primary concrete slot placement, preserving `source: "user"` if the user moved it.
+- Unknown slot refinement consumes the unknown slot. When structured evidence appears, the unknown slot placement should rekey to the anchor concrete slot placement, preserving `source: "user"` if the user moved it.
 
 - Secondary concrete slots get generated placements as a Deployment Projection Slot Group, respecting Canvas Placement Occupancy and existing placements.
 
@@ -173,7 +173,6 @@ type PlacementCommand =
   - Projection Reconciler: pure decision module that computes Projection Match, Deployment Handoff, Projection Slot Expiry, and First Canvas Placement commands.
   - Placement algorithm adapter: computes generated positions for owners lacking placement, including Deployment Projection Slot Groups.
   - Canvas Render Model adapter: turns canvas items plus resolved placements into React Flow nodes and edges.
-  - Compatibility adapter: reads old resource layout nodes and old deployment projection positions during migration, but does not preserve old writes as the long-term contract.
 
 - Current Pending Database Binding Intent behavior stays separate. Pending AP-to-DB edges from AP environment drafts are not Deployment Projection Slots and do not participate in Deployment Handoff.
 
@@ -182,11 +181,11 @@ type PlacementCommand =
 - Viewport follow remains session-local. It may follow generated or newly rekeyed placement, but it must not define shared Canvas Layout.
 
 - Migration should be staged:
-  - Introduce owner-based Canvas Layout model with compatibility reads from existing resource node layout.
+  - Introduce owner-based Canvas Layout model and migrate existing resource node layout into owner placements.
   - Add Projection Reconciler and command applier under tests.
   - Stop writing deployment positions to Deployment Task Projection.
   - Derive placeholder nodes from projection slots plus Canvas Layout placements.
-  - Remove old shape and position fields after compatibility is no longer needed.
+  - Remove old shape and projection-position fields rather than keeping compatibility branches.
 
 ## Testing Decisions
 
@@ -213,7 +212,7 @@ type PlacementCommand =
 - Required behavior test matrix:
   - Existing resource layout migrates to resource placement owner.
   - Unknown deployment slot renders one placeholder when task is active.
-  - Unknown slot placement rekeys to primary concrete slot when evidence arrives.
+  - Unknown slot placement rekeys to the anchor concrete slot when evidence arrives.
   - Concrete AP slot exact matches AP resource and handoff rekeys placement.
   - Concrete DB slot exact matches DB resource and handoff rekeys placement.
   - PublicAccess slot exact matches AP Public Access node and handoff rekeys placement.
@@ -256,7 +255,7 @@ type PlacementCommand =
 
 - Resource state is authoritative. Projection state helps the canvas present deployment progress and preserve placement, but it must never force resources to match projection.
 
-- The riskiest implementation area is migration from old Canvas Layout and Deployment Task Projection position fields. Prefer compatibility adapters and behavior tests over big-bang rewrites.
+- The riskiest implementation area is keeping old Canvas Layout or Deployment Task Projection position semantics alive by accident. Prefer explicit migration steps and behavior tests over compatibility branches.
 
 - The second riskiest area is concurrency. The implementation should favor pure reconciliation plus revision-checked command application over effects that patch placement opportunistically.
 

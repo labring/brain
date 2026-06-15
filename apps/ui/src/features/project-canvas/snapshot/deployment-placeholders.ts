@@ -121,7 +121,7 @@ function deploymentProjectionPlacement(input: {
   };
 }
 
-function genericProjectionPlacement(input: {
+function unknownSlotProjectionPlacement(input: {
   layout?: CanvasLayoutDocument;
   task: DeploymentTaskProjection;
 }): DeploymentProjectionPlacement | undefined {
@@ -241,16 +241,6 @@ function taskResultResourceRefs(
   return refs;
 }
 
-function primaryResultRef(
-  refs: readonly DeploymentTaskResultResourceRef[]
-): DeploymentTaskResultResourceRef | undefined {
-  return (
-    refs.find((ref) => ref.kind === "AP") ??
-    refs.find((ref) => ref.kind === "DB") ??
-    refs.find((ref) => ref.kind === "TemplateNative")
-  );
-}
-
 function layoutHasRef(
   layout: CanvasLayoutDocument | undefined,
   ref: CanvasLayoutResourceRef
@@ -328,6 +318,16 @@ export function isDeploymentPlaceholderNode(
   node: Node | undefined
 ): node is CanvasDeploymentPlaceholderRfNode {
   return node?.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE;
+}
+
+function hasProjectionSlotGroup(
+  data: CanvasDeploymentPlaceholderNodeData
+): data is CanvasDeploymentPlaceholderNodeData & {
+  projectionSlots: NonNullable<
+    CanvasDeploymentPlaceholderNodeData["projectionSlots"]
+  >;
+} {
+  return Array.isArray(data.projectionSlots) && data.projectionSlots.length > 0;
 }
 
 export function deploymentPlaceholderTaskIdFromNode(
@@ -585,9 +585,9 @@ function deploymentResultPreview(
   return explicitPreview(task) ?? derivedPreview(task);
 }
 
-function primarySlot(slots: readonly DeploymentTaskCanvasProjectionSlot[]) {
+function anchorSlot(slots: readonly DeploymentTaskCanvasProjectionSlot[]) {
   return (
-    slots.find((slot) => slot.primary === true) ??
+    slots.find((slot) => slot.anchor === true) ??
     slots.find((slot) => slot.expectedRef?.kind === "AP") ??
     slots.find((slot) => slot.expectedRef?.kind === "DB") ??
     slots[0]
@@ -597,26 +597,26 @@ function primarySlot(slots: readonly DeploymentTaskCanvasProjectionSlot[]) {
 function relativeSlotPositions(
   slots: readonly DeploymentTaskCanvasProjectionSlot[]
 ): Map<string, CanvasLayoutPosition> {
-  const primary = primarySlot(slots);
-  const primaryId = primary?.id;
-  const publicAccessForPrimary = slots.find(
+  const anchor = anchorSlot(slots);
+  const anchorId = anchor?.id;
+  const publicAccessForAnchor = slots.find(
     (slot) =>
       slot.expectedRef?.kind === "PublicAccess" &&
-      primary?.expectedRef?.kind === "AP" &&
-      slot.expectedRef.namespace === primary.expectedRef.namespace &&
-      slot.expectedRef.name === primary.expectedRef.name
+      anchor?.expectedRef?.kind === "AP" &&
+      slot.expectedRef.namespace === anchor.expectedRef.namespace &&
+      slot.expectedRef.name === anchor.expectedRef.name
   );
-  const primaryX =
-    publicAccessForPrimary === undefined ? 0 : PUBLIC_ACCESS_AP_LEFT_OFFSET;
+  const anchorX =
+    publicAccessForAnchor === undefined ? 0 : PUBLIC_ACCESS_AP_LEFT_OFFSET;
   const positions = new Map<string, CanvasLayoutPosition>();
-  if (publicAccessForPrimary !== undefined) {
-    positions.set(publicAccessForPrimary.id, { x: 0, y: 0 });
+  if (publicAccessForAnchor !== undefined) {
+    positions.set(publicAccessForAnchor.id, { x: 0, y: 0 });
   }
-  if (primaryId !== undefined) {
-    positions.set(primaryId, { x: primaryX, y: 0 });
+  if (anchorId !== undefined) {
+    positions.set(anchorId, { x: anchorX, y: 0 });
   }
 
-  let column = publicAccessForPrimary === undefined ? 1 : 2;
+  let column = publicAccessForAnchor === undefined ? 1 : 2;
   let row = 0;
   for (const slot of slots) {
     if (positions.has(slot.id)) {
@@ -679,25 +679,25 @@ function materializedSlotOrigin(input: {
   slots: readonly DeploymentTaskCanvasProjectionSlot[];
   task: DeploymentTaskProjection;
 }): CanvasLayoutPosition {
-  const primary = primarySlot(input.slots);
-  const genericPosition = genericProjectionPlacement({
+  const anchor = anchorSlot(input.slots);
+  const unknownSlotPosition = unknownSlotProjectionPlacement({
     layout: input.layout,
     task: input.task,
   })?.position;
-  const primaryRelative =
-    primary === undefined ? undefined : input.relative.get(primary.id);
-  const primaryPosition =
-    primary === undefined
+  const anchorRelative =
+    anchor === undefined ? undefined : input.relative.get(anchor.id);
+  const anchorPosition =
+    anchor === undefined
       ? undefined
       : slotProjectionPlacement({
           layout: input.layout,
-          slot: primary,
+          slot: anchor,
           task: input.task,
         })?.position;
-  if (primaryPosition !== undefined && primaryRelative !== undefined) {
+  if (anchorPosition !== undefined && anchorRelative !== undefined) {
     return {
-      x: primaryPosition.x - primaryRelative.x,
-      y: primaryPosition.y - primaryRelative.y,
+      x: anchorPosition.x - anchorRelative.x,
+      y: anchorPosition.y - anchorRelative.y,
     };
   }
 
@@ -716,10 +716,10 @@ function materializedSlotOrigin(input: {
     }
   }
 
-  if (genericPosition !== undefined && primaryRelative !== undefined) {
+  if (unknownSlotPosition !== undefined && anchorRelative !== undefined) {
     return {
-      x: genericPosition.x - primaryRelative.x,
-      y: genericPosition.y - primaryRelative.y,
+      x: unknownSlotPosition.x - anchorRelative.x,
+      y: unknownSlotPosition.y - anchorRelative.y,
     };
   }
 
@@ -737,12 +737,12 @@ export function shouldShowDeploymentPlaceholder(
   return deploymentTaskProjectionIsVisible(task, now);
 }
 
-function genericDeploymentPlaceholderNode(
+function unknownSlotPlaceholderNode(
   task: DeploymentTaskProjection,
   index: number,
   layout?: CanvasLayoutDocument
 ): CanvasDeploymentPlaceholderRfNode {
-  const placement = genericProjectionPlacement({ layout, task });
+  const placement = unknownSlotProjectionPlacement({ layout, task });
   return {
     data: {
       groupId: task.id,
@@ -750,7 +750,6 @@ function genericDeploymentPlaceholderNode(
       ...(placement?.source === undefined
         ? {}
         : { projectionPlacementSource: placement.source }),
-      projectionShape: "generic",
       slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
       taskId: task.id,
     },
@@ -774,8 +773,8 @@ function resultPreviewPlaceholderNodes(input: {
     slots: input.preview.slots,
     task: input.task,
   });
-  const primary = primarySlot(input.preview.slots);
-  const genericPlacement = genericProjectionPlacement({
+  const anchor = anchorSlot(input.preview.slots);
+  const unknownSlotPlacement = unknownSlotProjectionPlacement({
     layout: input.layout,
     task: input.task,
   });
@@ -796,20 +795,19 @@ function resultPreviewPlaceholderNodes(input: {
     const position = positions.get(slot.id) ?? { x: 0, y: 0 };
     const projectionPlacementSource =
       placement?.source ??
-      (slot.id === primary?.id ? genericPlacement?.source : undefined);
+      (slot.id === anchor?.id ? unknownSlotPlacement?.source : undefined);
     const data: CanvasDeploymentPlaceholderNodeData = {
       ...(slot.expectedRef === undefined
         ? {}
         : { expectedRef: slot.expectedRef }),
+      anchor: slot.anchor === true || anchor?.id === slot.id,
       groupId: input.task.id,
       hasProjectionPlacement: saved.has(slot.id),
-      primary: slot.primary === true || primary?.id === slot.id,
       projectionEdges: input.preview.edges,
       ...(projectionPlacementSource === undefined
         ? {}
         : { projectionPlacementSource }),
       projectionRelativePlacement: relative.get(slot.id) ?? { x: 0, y: 0 },
-      projectionShape: "result-preview",
       projectionSlots: input.preview.slots.map((item) => {
         const itemPlacement = slotProjectionPlacement({
           layout: input.layout,
@@ -832,7 +830,7 @@ function resultPreviewPlaceholderNodes(input: {
                   y: itemPlacement.position.y,
                 },
               }),
-          ...(item.primary === undefined ? {} : { primary: item.primary }),
+          ...(item.anchor === undefined ? {} : { anchor: item.anchor }),
         };
       }),
       slotId: slot.id,
@@ -873,7 +871,7 @@ export function deploymentPlaceholderNodesFromTasks(
         task,
       });
     }
-    return [genericDeploymentPlaceholderNode(task, index, options?.layout)];
+    return [unknownSlotPlaceholderNode(task, index, options?.layout)];
   });
 }
 
@@ -898,16 +896,7 @@ export function deploymentPlaceholderHandoffs(input: {
         preview,
         task,
       });
-      continue;
     }
-
-    addGenericHandoff({
-      byNodeId,
-      byRef,
-      layout: input.layout,
-      nodes: input.nodes,
-      task,
-    });
   }
   return { byNodeId, byRef };
 }
@@ -945,12 +934,26 @@ function addPreviewHandoffs(input: {
   preview: DeploymentResultPreview;
   task: DeploymentTaskProjection;
 }): void {
+  const materialized = materializedSlotPositions({
+    layout: input.layout,
+    slots: input.preview.slots,
+    task: input.task,
+  });
+  const unknownSlotPlacement = unknownSlotProjectionPlacement({
+    layout: input.layout,
+    task: input.task,
+  });
   for (const slot of input.preview.slots) {
-    const position = slotProjectionPlacement({
+    const slotPlacement = slotProjectionPlacement({
       layout: input.layout,
       slot,
       task: input.task,
-    })?.position;
+    });
+    const position =
+      slotPlacement?.position ??
+      (unknownSlotPlacement === undefined
+        ? undefined
+        : materialized.positions.get(slot.id));
     const expectedRef = resultRefForSlot({ slot, task: input.task });
     if (position === undefined || expectedRef === undefined) {
       continue;
@@ -966,31 +969,6 @@ function addPreviewHandoffs(input: {
   }
 }
 
-function addGenericHandoff(input: {
-  byNodeId: Map<string, CanvasLayoutPosition>;
-  byRef: Map<string, CanvasLayoutPosition>;
-  layout?: CanvasLayoutDocument;
-  nodes: readonly Node[];
-  task: DeploymentTaskProjection;
-}): void {
-  const position = genericProjectionPlacement({
-    layout: input.layout,
-    task: input.task,
-  })?.position;
-  const primary = primaryResultRef(taskResultResourceRefs(input.task));
-  if (position === undefined || primary === undefined) {
-    return;
-  }
-  addResultRefHandoff({
-    byNodeId: input.byNodeId,
-    byRef: input.byRef,
-    layout: input.layout,
-    nodes: input.nodes,
-    position,
-    ref: primary,
-  });
-}
-
 export function deploymentPlaceholderPendingResultKeys(input: {
   layout?: CanvasLayoutDocument;
   nodes?: readonly Node[];
@@ -1003,21 +981,13 @@ export function deploymentPlaceholderPendingResultKeys(input: {
   const templates = new Set<string>();
   for (const task of input.tasks ?? []) {
     const preview = deploymentResultPreview(task);
-    if (preview !== undefined) {
-      addPreviewPendingResultKeys({
-        layout: input.layout,
-        nodes: input.nodes,
-        preview,
-        refs,
-        task,
-        templates,
-      });
+    if (preview === undefined) {
       continue;
     }
-
-    addGenericPendingResultKey({
+    addPreviewPendingResultKeys({
       layout: input.layout,
       nodes: input.nodes,
+      preview,
       refs,
       task,
       templates,
@@ -1075,34 +1045,6 @@ function addPreviewPendingResultKeys(input: {
   }
 }
 
-function addGenericPendingResultKey(input: {
-  layout?: CanvasLayoutDocument;
-  nodes?: readonly Node[];
-  refs: Set<string>;
-  task: DeploymentTaskProjection;
-  templates: Set<string>;
-}): void {
-  if (
-    genericProjectionPlacement({
-      layout: input.layout,
-      task: input.task,
-    }) !== undefined
-  ) {
-    return;
-  }
-  const primary = primaryResultRef(taskResultResourceRefs(input.task));
-  if (primary === undefined) {
-    return;
-  }
-  addPendingResultKey({
-    layout: input.layout,
-    nodes: input.nodes,
-    ref: primary,
-    refs: input.refs,
-    templates: input.templates,
-  });
-}
-
 export function isDeploymentPlaceholderPendingResultNode(input: {
   keys: ReturnType<typeof deploymentPlaceholderPendingResultKeys>;
   node: Node;
@@ -1120,7 +1062,7 @@ export function shouldHideDeploymentPlaceholderForHandoff(input: {
   node: CanvasDeploymentPlaceholderRfNode;
   nodes: readonly Node[];
 }): boolean {
-  if (input.node.data.projectionShape === "result-preview") {
+  if (hasProjectionSlotGroup(input.node.data)) {
     const expectedRef = expectedRefToResultRef(input.node.data.expectedRef);
     return (
       expectedRef !== undefined &&
@@ -1323,7 +1265,7 @@ function projectionPlacementNode(input: {
 
 function projectionSlotPlacementSource(input: {
   anchorSource: CanvasDeploymentPlaceholderNodeData["projectionPlacementSource"];
-  primarySlotId: string | undefined;
+  anchorSlotId: string | undefined;
   saveSource: CanvasPlacementSource;
   slot: NonNullable<
     CanvasDeploymentPlaceholderNodeData["projectionSlots"]
@@ -1332,7 +1274,7 @@ function projectionSlotPlacementSource(input: {
   if (input.saveSource === "user") {
     return "user";
   }
-  return input.anchorSource === "user" && input.slot.id === input.primarySlotId
+  return input.anchorSource === "user" && input.slot.id === input.anchorSlotId
     ? "user"
     : "generated";
 }
@@ -1346,7 +1288,7 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
     return [];
   }
   const placeholderNode = input.node;
-  if (placeholderNode.data.projectionShape !== "result-preview") {
+  if (!hasProjectionSlotGroup(placeholderNode.data)) {
     return [
       projectionPlacementNode({
         position: placeholderNode.position,
@@ -1361,7 +1303,7 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
     (node): node is CanvasDeploymentPlaceholderRfNode =>
       isDeploymentPlaceholderNode(node) &&
       node.data.taskId === placeholderNode.data.taskId &&
-      node.data.projectionShape === "result-preview"
+      hasProjectionSlotGroup(node.data)
   );
   const previous = groupNodes.find((node) => node.id === placeholderNode.id);
   const delta =
@@ -1371,13 +1313,13 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
           x: placeholderNode.position.x - previous.position.x,
           y: placeholderNode.position.y - previous.position.y,
         };
-  const primarySlotId =
-    placeholderNode.data.projectionSlots?.find((slot) => slot.primary === true)
+  const anchorSlotId =
+    placeholderNode.data.projectionSlots.find((slot) => slot.anchor === true)
       ?.id ??
-    (placeholderNode.data.primary === true
+    (placeholderNode.data.anchor === true
       ? placeholderNode.data.slotId
       : undefined);
-  return (placeholderNode.data.projectionSlots ?? []).map((slot) => {
+  return placeholderNode.data.projectionSlots.map((slot) => {
     const node =
       groupNodes.find((candidate) => candidate.data.slotId === slot.id) ??
       (placeholderNode.data.slotId === slot.id ? placeholderNode : undefined);
@@ -1390,7 +1332,7 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
       slotId: slot.id,
       source: projectionSlotPlacementSource({
         anchorSource: placeholderNode.data.projectionPlacementSource,
-        primarySlotId,
+        anchorSlotId,
         saveSource: input.source,
         slot,
       }),
@@ -1446,8 +1388,8 @@ function addUnknownSlotRefinementCommands(input: {
   seen: Set<string>;
   task: DeploymentTaskProjection;
 }): void {
-  const primary = primarySlot(input.preview.slots);
-  if (primary === undefined) {
+  const anchor = anchorSlot(input.preview.slots);
+  if (anchor === undefined) {
     return;
   }
   const fromOwner = deploymentProjectionPlacementOwner({
@@ -1459,7 +1401,7 @@ function addUnknownSlotRefinementCommands(input: {
     return;
   }
   const toOwner = projectionSlotPlacementOwner({
-    id: primary.id,
+    id: anchor.id,
     taskId: input.task.id,
   });
   addCommandOnce(input.commands, input.seen, {
@@ -1524,7 +1466,7 @@ function addSlotHandoffOrExpiryCommand(input: {
   }
 }
 
-function addGenericExpiryCommand(input: {
+function addUnknownSlotExpiryCommand(input: {
   commands: PlacementCommand[];
   layout?: CanvasLayoutDocument;
   seen: Set<string>;
@@ -1560,7 +1502,7 @@ export function deploymentProjectionPlacementCommands(input: {
   for (const task of input.tasks ?? []) {
     const preview = deploymentResultPreview(task);
     if (preview === undefined) {
-      addGenericExpiryCommand({
+      addUnknownSlotExpiryCommand({
         commands,
         layout: input.layout,
         now,

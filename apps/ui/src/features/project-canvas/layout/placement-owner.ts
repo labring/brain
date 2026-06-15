@@ -86,11 +86,12 @@ export function canvasPlacementOwnerFromNode(
   }
   const data = asRecord(node.data);
   const taskId = nonEmptyString(data?.taskId);
-  if (taskId === undefined) {
+  const slotId = nonEmptyString(data?.slotId);
+  if (taskId === undefined || slotId === undefined) {
     return undefined;
   }
   return deploymentProjectionPlacementOwner({
-    slotId: nonEmptyString(data?.slotId) ?? DEPLOYMENT_UNKNOWN_SLOT_ID,
+    slotId,
     taskId,
   });
 }

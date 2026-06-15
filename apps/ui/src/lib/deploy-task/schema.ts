@@ -56,9 +56,9 @@ export interface DeploymentTaskCanvasProjectionExpectedRef {
 }
 
 export interface DeploymentTaskCanvasProjectionSlot {
+  anchor?: boolean;
   expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
   id: string;
-  primary?: boolean;
 }
 
 export interface DeploymentTaskCanvasProjectionEdge {
@@ -76,7 +76,6 @@ export interface DeploymentTaskCanvasProjectionResultMapping {
 export interface DeploymentTaskCanvasProjection {
   edges?: DeploymentTaskCanvasProjectionEdge[];
   resultMappings?: DeploymentTaskCanvasProjectionResultMapping[];
-  shape?: "generic" | "result-preview";
   slots?: DeploymentTaskCanvasProjectionSlot[];
 }
 

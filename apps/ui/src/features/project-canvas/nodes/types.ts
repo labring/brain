@@ -112,19 +112,18 @@ export type CanvasEntryRfNode = Node<
 
 export interface CanvasDeploymentPlaceholderNodeData
   extends Record<string, unknown> {
+  anchor?: boolean;
   expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
   groupId?: string;
   hasProjectionPlacement?: boolean;
-  primary?: boolean;
   projectionEdges?: DeploymentTaskCanvasProjectionEdge[];
   projectionPlacementSource?: CanvasPlacementSource;
   projectionRelativePlacement?: { x: number; y: number };
-  projectionShape?: "generic" | "result-preview";
   projectionSlots?: {
+    anchor?: boolean;
     expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
     id: string;
     position?: CanvasLayoutPosition & { source?: CanvasPlacementSource };
-    primary?: boolean;
   }[];
   slotId?: string;
   taskId: string;

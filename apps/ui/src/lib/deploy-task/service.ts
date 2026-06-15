@@ -51,8 +51,7 @@ function shouldSkipSetIfEmptyCanvasProjection(input: {
   return (
     (input.existing.slots?.length ?? 0) > 0 ||
     (input.existing.edges?.length ?? 0) > 0 ||
-    (input.existing.resultMappings?.length ?? 0) > 0 ||
-    input.existing.shape !== undefined
+    (input.existing.resultMappings?.length ?? 0) > 0
   );
 }
 
