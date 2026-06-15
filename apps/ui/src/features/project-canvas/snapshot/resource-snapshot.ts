@@ -51,7 +51,9 @@ export interface ProjectCanvasResourceSnapshotInput {
   error?: Error;
   isEmptyGraphLoading: boolean;
   kubeconfig: string;
+  layoutCommands?: PlacementCommand[];
   namespace: string;
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
   templateNativeData?: {
     deployments?: K8sGetResponse;
     statefulSets?: K8sGetResponse;
@@ -76,7 +78,9 @@ export function buildProjectCanvasResourceSnapshot({
   error,
   isEmptyGraphLoading,
   kubeconfig,
+  layoutCommands,
   namespace,
+  retainedLayoutOwnerKeys,
   templateNativeData = EMPTY_TEMPLATE_NATIVE_DATA,
 }: ProjectCanvasResourceSnapshotInput): ProjectCanvasResourceSnapshot {
   const apEnvironmentDbReferenceSources =
@@ -164,6 +168,7 @@ export function buildProjectCanvasResourceSnapshot({
         initialPositionByRef: initialPositions.byRef,
         layout: canvasLayout,
         nodes: [...detectedNodes, ...deploymentPlaceholderNodes],
+        retainedLayoutOwnerKeys,
       })
     : {
         changed: false,
@@ -192,11 +197,14 @@ export function buildProjectCanvasResourceSnapshot({
   };
   const layoutIntent = layoutIntentFromMerge({
     changed: merge.changed,
-    commands: deploymentProjectionPlacementCommands({
-      layout: canvasLayout,
-      nodes: rawDetectedNodes,
-      tasks: deployTasks,
-    }),
+    commands: [
+      ...(layoutCommands ?? []),
+      ...deploymentProjectionPlacementCommands({
+        layout: canvasLayout,
+        nodes: rawDetectedNodes,
+        tasks: deployTasks,
+      }),
+    ],
     layout: merge.layout,
     placedLayoutNodes: merge.placedLayoutNodes,
   });

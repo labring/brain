@@ -196,7 +196,7 @@ test("merge lets explicit Canvas Node Stack Order render above default layers", 
   );
 });
 
-test("merge restores stack order for brief orphan returns", () => {
+test("merge strips legacy orphan timestamp from restored layout nodes", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -221,7 +221,7 @@ test("merge restores stack order for brief orphan returns", () => {
   assert.equal(result.nodes[0]?.zIndex, 0);
 });
 
-test("merge brings meaningful orphan returns to the front", () => {
+test("merge does not treat legacy orphan timestamp as a fronting signal", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
@@ -245,18 +245,19 @@ test("merge brings meaningful orphan returns to the front", () => {
   assert.deepEqual(
     result.layout?.nodes.map((node) => ({
       name: layoutResourceName(node),
+      orphanedAt: node.orphanedAt,
       stackOrder: node.stackOrder,
     })),
     [
-      { name: "postgres", stackOrder: 2 },
-      { name: "api", stackOrder: 3 },
+      { name: "postgres", orphanedAt: undefined, stackOrder: 2 },
+      { name: "api", orphanedAt: undefined, stackOrder: 1 },
     ]
   );
   assert.deepEqual(
     result.nodes.map((node) => ({ id: node.id, zIndex: node.zIndex })),
     [
-      { id: "db-postgres", zIndex: 0 },
-      { id: "ap-api", zIndex: 1 },
+      { id: "db-postgres", zIndex: 1 },
+      { id: "ap-api", zIndex: 0 },
     ]
   );
 });
@@ -267,7 +268,6 @@ test("merge treats same-name different-UID returns as fresh for stack order", ()
     nodes: [
       layoutResourceNode("AP", "api", {
         lastSeenUid: "old-api-uid",
-        orphanedAt: "2026-05-22T10:00:00.000Z",
         position: { x: 48, y: 64 },
         stackOrder: 1,
       }),

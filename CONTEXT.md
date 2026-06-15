@@ -494,9 +494,15 @@ Canvas Node Expansion State affects Canvas Node Footprint when the expansion sta
 
 ### Canvas Placement Occupancy
 
-The set of Canvas Node Footprints treated as unavailable while Incremental Canvas Placement assigns Generated Canvas Positions. Canvas Placement Occupancy includes existing Canvas Layout nodes and Generated Canvas Positions already assigned in the same placement pass.
+The set of Canvas Node Footprints treated as unavailable while Incremental Canvas Placement assigns Generated Canvas Positions. Canvas Placement Occupancy includes rendered existing Canvas Layout nodes and Generated Canvas Positions already assigned in the same placement pass.
 
-Recently orphaned Canvas Layout nodes may remain in Canvas Placement Occupancy during their retention window. Expired orphaned layout nodes do not reserve placement space.
+Recently missing resource placements may remain in Canvas Placement Occupancy during Missing Canvas Placement Grace. Stale missing placements do not reserve placement space.
+
+### Missing Canvas Placement Grace
+
+A short session-local period during which a Canvas Layout placement for a resource that is absent from the current Project Canvas Resource Snapshot may still reserve placement space. Missing Canvas Placement Grace protects against transient resource discovery gaps; it is not a persisted retention window.
+
+After Missing Canvas Placement Grace ends, or after explicit resource deletion succeeds, the resource's Canvas Layout placement may be removed.
 
 ### Global Canvas Placement Block
 

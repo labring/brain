@@ -58,6 +58,7 @@ export interface PlaceCanvasNodesOptions {
   initialPositionByRef?: ReadonlyMap<string, CanvasLayoutPosition>;
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
 }
 
 export interface PlaceCanvasNodesResult {
@@ -934,6 +935,7 @@ function savedPositionByOwner(
 function occupancyLayoutNodes(input: {
   layout: CanvasLayoutDocument | undefined;
   nodes: readonly Node[];
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
 }): CanvasLayoutNode[] {
   const renderedOwnerKeys = new Set(
     input.nodes.flatMap((node) => {
@@ -942,10 +944,11 @@ function occupancyLayoutNodes(input: {
     })
   );
   return (input.layout?.nodes ?? []).filter((node) => {
-    if (canvasLayoutNodeResourceRef(node) !== undefined) {
+    const ownerKey = canvasLayoutNodeKey(node);
+    if (renderedOwnerKeys.has(ownerKey)) {
       return true;
     }
-    return renderedOwnerKeys.has(canvasLayoutNodeKey(node));
+    return input.retainedLayoutOwnerKeys?.has(ownerKey) === true;
   });
 }
 
@@ -968,12 +971,17 @@ export function placeCanvasNodesWithLayout({
   initialPositionByRef,
   layout,
   nodes,
+  retainedLayoutOwnerKeys,
 }: PlaceCanvasNodesOptions): PlaceCanvasNodesResult {
   const savedByRef = savedPositionByRef(layout);
   const savedByOwner = savedPositionByOwner(layout);
   const positionByRef = new Map(savedByRef);
   const anchorIndex = createPlacementAnchorIndex(connections);
-  const occupiedLayoutNodes = occupancyLayoutNodes({ layout, nodes });
+  const occupiedLayoutNodes = occupancyLayoutNodes({
+    layout,
+    nodes,
+    retainedLayoutOwnerKeys,
+  });
   const occupancy = new PlacementOccupancy(
     occupiedLayoutNodes.map((node) =>
       rectFromPosition(node.position, layoutNodeFootprintHeight(node))

@@ -14,7 +14,10 @@ import {
   placeCanvasNodes,
   placeCanvasNodesWithLayout,
 } from "./placement";
-import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "./placement-owner";
+import {
+  canvasLayoutNodeKey,
+  DEPLOYMENT_UNKNOWN_SLOT_ID,
+} from "./placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
@@ -138,6 +141,24 @@ test("places an unplaced AP at the fallback grid origin", () => {
 });
 
 test("places an unanchored node after saved layout when shape remains acceptable", () => {
+  const saved = layoutResourceNode("AP", "saved-api", { x: 0, y: 0 });
+  const layout: CanvasLayoutDocument = {
+    namespace: "default",
+    nodes: [saved],
+    projectId: "project-uid",
+    version: 1,
+  };
+
+  const [node] = placeCanvasNodes({
+    layout,
+    nodes: [apNode("new-api")],
+    retainedLayoutOwnerKeys: new Set([canvasLayoutNodeKey(saved)]),
+  });
+
+  assert.deepEqual(node?.position, { x: 340, y: 0 });
+});
+
+test("does not reserve missing saved layout nodes outside local grace", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [layoutResourceNode("AP", "saved-api", { x: 0, y: 0 })],
@@ -150,7 +171,7 @@ test("places an unanchored node after saved layout when shape remains acceptable
     nodes: [apNode("new-api")],
   });
 
-  assert.deepEqual(node?.position, { x: 340, y: 0 });
+  assert.deepEqual(node?.position, { x: 0, y: 0 });
 });
 
 test("treats placed deployment placeholders as placement occupancy", () => {
@@ -277,12 +298,14 @@ test("anchors an unplaced PublicAccess to the left side of a saved AP", () => {
 });
 
 test("uses AABB rectangles from saved and same-run placed nodes during row-major global placement", () => {
+  const savedOrigin = layoutResourceNode("AP", "saved-origin", { x: 0, y: 0 });
+  const savedOverlap = layoutResourceNode("DB", "saved-overlap", {
+    x: 300,
+    y: 0,
+  });
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      layoutResourceNode("AP", "saved-origin", { x: 0, y: 0 }),
-      layoutResourceNode("DB", "saved-overlap", { x: 300, y: 0 }),
-    ],
+    nodes: [savedOrigin, savedOverlap],
     projectId: "project-uid",
     version: 1,
   };
@@ -290,6 +313,10 @@ test("uses AABB rectangles from saved and same-run placed nodes during row-major
   const nodes = placeCanvasNodes({
     layout,
     nodes: [apNode("a-api"), apNode("b-api")],
+    retainedLayoutOwnerKeys: new Set([
+      canvasLayoutNodeKey(savedOrigin),
+      canvasLayoutNodeKey(savedOverlap),
+    ]),
   });
   const positions = positionById(nodes);
 
@@ -298,13 +325,12 @@ test("uses AABB rectangles from saved and same-run placed nodes during row-major
 });
 
 test("wraps unanchored global placement before the canvas becomes too wide", () => {
+  const first = layoutResourceNode("AP", "first", { x: 0, y: 0 });
+  const second = layoutResourceNode("AP", "second", { x: 340, y: 0 });
+  const third = layoutResourceNode("AP", "third", { x: 680, y: 0 });
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      layoutResourceNode("AP", "first", { x: 0, y: 0 }),
-      layoutResourceNode("AP", "second", { x: 340, y: 0 }),
-      layoutResourceNode("AP", "third", { x: 680, y: 0 }),
-    ],
+    nodes: [first, second, third],
     projectId: "project-uid",
     version: 1,
   };
@@ -312,6 +338,11 @@ test("wraps unanchored global placement before the canvas becomes too wide", () 
   const [node] = placeCanvasNodes({
     layout,
     nodes: [dbNode("postgres")],
+    retainedLayoutOwnerKeys: new Set([
+      canvasLayoutNodeKey(first),
+      canvasLayoutNodeKey(second),
+      canvasLayoutNodeKey(third),
+    ]),
   });
 
   assert.deepEqual(node?.position, { x: 0, y: 280 });

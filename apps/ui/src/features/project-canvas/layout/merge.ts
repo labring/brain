@@ -23,7 +23,6 @@ import {
   canvasPlacementOwnerFromNode,
 } from "./placement-owner";
 import {
-  CANVAS_STACK_ORDER_RETURN_STABILITY_MS,
   canvasStackOrderValue,
   nextExplicitCanvasStackOrder,
 } from "./stack-order";
@@ -48,6 +47,7 @@ export interface CanvasLayoutMergeOptions {
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
   now?: Date;
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -146,17 +146,6 @@ export function canvasLayoutNodeFromNode(
   };
 }
 
-function isMeaningfulOrphanReturn(saved: CanvasLayoutNode, now: Date): boolean {
-  if (saved.orphanedAt === undefined) {
-    return false;
-  }
-  const orphanedAtMs = Date.parse(saved.orphanedAt);
-  return (
-    Number.isFinite(orphanedAtMs) &&
-    now.getTime() - orphanedAtMs > CANVAS_STACK_ORDER_RETURN_STABILITY_MS
-  );
-}
-
 function hasDifferentDetectedUid(
   saved: CanvasLayoutNode,
   detected: Node
@@ -173,13 +162,9 @@ function hasDifferentDetectedUid(
 
 function shouldBringRestoredLayoutNodeToFront(
   saved: CanvasLayoutNode,
-  detected: Node,
-  now: Date
+  detected: Node
 ): boolean {
-  return (
-    isMeaningfulOrphanReturn(saved, now) ||
-    hasDifferentDetectedUid(saved, detected)
-  );
+  return hasDifferentDetectedUid(saved, detected);
 }
 
 function layoutDocumentsEqual(
@@ -228,17 +213,6 @@ function restoredLayoutNodeFromDetectedNode(
   return restored;
 }
 
-function orphanedLayoutNode(
-  node: CanvasLayoutNode,
-  orphanedAt: string
-): CanvasLayoutNode {
-  const orphan = cloneCanvasLayoutNode(node);
-  if (orphan.orphanedAt === undefined) {
-    orphan.orphanedAt = orphanedAt;
-  }
-  return orphan;
-}
-
 export function mergeCanvasLayoutWithDetectedNodes({
   connections,
   initialPositionByNodeId,
@@ -246,6 +220,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
   layout,
   nodes,
   now = new Date(),
+  retainedLayoutOwnerKeys,
 }: CanvasLayoutMergeOptions): CanvasLayoutMergeResult {
   if (layout === undefined) {
     const placed = placeCanvasNodesWithLayout({
@@ -254,6 +229,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
       initialPositionByRef,
       layout,
       nodes,
+      retainedLayoutOwnerKeys,
     });
     return {
       changed: false,
@@ -263,7 +239,6 @@ export function mergeCanvasLayoutWithDetectedNodes({
     };
   }
 
-  const nowIso = now.toISOString();
   const cleanedLayout = cleanupCanvasLayoutDocument(layout, { now });
   let nextFreshStackOrder = nextExplicitCanvasStackOrder(cleanedLayout.nodes);
   const layoutByRef = new Map<string, CanvasLayoutNode>();
@@ -288,7 +263,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
     }
 
     const restored = restoredLayoutNodeFromDetectedNode(saved, node);
-    if (shouldBringRestoredLayoutNodeToFront(saved, node, now)) {
+    if (shouldBringRestoredLayoutNodeToFront(saved, node)) {
       restored.stackOrder = nextFreshStackOrder;
       nextFreshStackOrder += 1;
     }
@@ -314,7 +289,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
     if (live !== undefined) {
       return live;
     }
-    return orphanedLayoutNode(item, nowIso);
+    return cloneCanvasLayoutNode(item);
   });
 
   const placed = placeCanvasNodesWithLayout({
@@ -323,6 +298,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
     initialPositionByRef,
     layout: cleanedLayout,
     nodes: renderedNodes,
+    retainedLayoutOwnerKeys,
   });
   return {
     changed: !layoutDocumentsEqual(layout, nextLayout),

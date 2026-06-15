@@ -12,6 +12,8 @@ import {
   removePendingApDbCanvasReferences,
 } from "@/features/project-canvas/flow/pending-connections";
 import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
+import { resourcePlacementOwner } from "@/features/project-canvas/layout/placement-owner";
+import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
 import {
   deploymentProjectionPlacementNodesFromPlaceholderNode,
@@ -112,6 +114,18 @@ export default function ProjectIdPage() {
       ? canvasState.edges
       : [...canvasState.edges, ...pendingEdges];
   }, [canvasState.edges, canvasState.nodes, pendingApDbReferences]);
+  const deleteResourceLayoutRefs = useCallback(
+    (refs: readonly CanvasLayoutResourceRef[]) => {
+      const commands = refs.map((ref) => ({
+        kind: "delete" as const,
+        owner: resourcePlacementOwner(ref),
+      }));
+      projectCanvasLayout
+        .savePlacementCommands(commands)
+        .catch(() => undefined);
+    },
+    [projectCanvasLayout.savePlacementCommands]
+  );
 
   const workbench = useProjectCanvas(canvasState.nodes, {
     apEnvironmentDbReferenceSources,
@@ -138,6 +152,7 @@ export default function ProjectIdPage() {
     },
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onPendingApDbReferencesStart: beginPendingApDbReferences,
+    onResourceLayoutDelete: deleteResourceLayoutRefs,
     projectId: uid,
     refreshWorkloadLists: refresh,
     selectionReady: !isEmptyGraphLoading,
