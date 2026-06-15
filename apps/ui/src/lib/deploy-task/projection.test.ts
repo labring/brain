@@ -97,6 +97,42 @@ test("completed deployment task projection stays visible only during handoff gra
   );
 });
 
+test("completed deployment task projection stays visible during grace with explicit slots", () => {
+  const completedAt = NOW.toISOString();
+  const projection = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      canvasProjection: {
+        slots: [
+          {
+            expectedRef: {
+              kind: "AP",
+              name: "api",
+              namespace: "default",
+            },
+            id: "AP:default:api",
+          },
+        ],
+      },
+      completedAt,
+      phase: "completed",
+      status: "completed",
+    }),
+    NOW
+  );
+
+  assert.ok(projection);
+  assert.equal(deploymentTaskProjectionIsVisible(projection, NOW), true);
+  assert.equal(
+    deploymentTaskProjectionIsVisible(
+      projection,
+      new Date(
+        NOW.getTime() + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS + 1
+      )
+    ),
+    false
+  );
+});
+
 test("deployment task projection exposes explicit result mappings", () => {
   assert.deepEqual(
     toDeploymentTaskProjection(

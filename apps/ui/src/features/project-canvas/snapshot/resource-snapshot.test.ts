@@ -747,6 +747,102 @@ test("resource snapshot rekeys deployment slot placement through explicit result
   });
 });
 
+test("resource snapshot connects preview edges through explicit result mapping", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api-live", namespace: "default" },
+          spec: { input: {} },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: "AP:default:api-draft",
+        }),
+      ],
+      projectId: "project-uid",
+      version: 9,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          edges: [
+            {
+              evidence: "ap-env-raw-source-reference",
+              sourceSlotId: "AP:default:api-draft",
+              targetSlotId: "DB:default:postgres",
+            },
+          ],
+          slots: [
+            {
+              anchor: true,
+              expectedRef: {
+                kind: "AP",
+                name: "api-draft",
+                namespace: "default",
+              },
+              id: "AP:default:api-draft",
+            },
+            {
+              expectedRef: {
+                kind: "DB",
+                name: "postgres",
+                namespace: "default",
+              },
+              id: "DB:default:postgres",
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        resultMappings: [
+          {
+            actualRef: {
+              kind: "AP",
+              name: "api-live",
+              namespace: "default",
+            },
+            slotId: "AP:default:api-draft",
+          },
+        ],
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      } as DeploymentTaskProjection,
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.edges.map((edge) => ({
+      data: edge.data,
+      source: edge.source,
+      target: edge.target,
+    })),
+    [
+      {
+        data: {
+          evidence: "ap-env-raw-source-reference",
+          kind: "deploymentPreview",
+        },
+        source: "ap-api-live",
+        target: "deployment-result-placeholder-task-1-DB:default:postgres",
+      },
+    ]
+  );
+});
+
 test("resource snapshot consumes deployment slot when AP layout already exists", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {

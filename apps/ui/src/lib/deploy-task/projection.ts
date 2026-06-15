@@ -95,11 +95,18 @@ function dateMs(value: Date | string | null): number | undefined {
   return Number.isFinite(ms) ? ms : undefined;
 }
 
-function taskHasResultResources(task: DeploymentTaskProjectionSource): boolean {
+function taskHasResultResources(
+  task: Pick<DeploymentTaskProjectionSource, "artifactSummary">
+): boolean {
   return (task.artifactSummary.resources?.length ?? 0) > 0;
 }
 
-function taskHasProjectionFacts(task: DeploymentTaskProjectionSource): boolean {
+function taskHasProjectionFacts(
+  task: Pick<
+    DeploymentTaskProjectionSource,
+    "artifactSummary" | "canvasProjection"
+  >
+): boolean {
   return (
     taskHasResultResources(task) ||
     (task.artifactSummary.resourceYamls?.length ?? 0) > 0 ||
@@ -128,7 +135,7 @@ export function deploymentTaskProjectionIsVisible(
   const completedMs = dateMs(projection.completedAt);
   return (
     completedMs !== undefined &&
-    (projection.artifactSummary.resources?.length ?? 0) > 0 &&
+    taskHasProjectionFacts(projection) &&
     now.getTime() - completedMs <= DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS
   );
 }

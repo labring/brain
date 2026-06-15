@@ -1129,12 +1129,15 @@ function nodeIdForSlot(input: {
   liveNodeByExpectedRef: ReadonlyMap<string, Node>;
   placeholderByTaskSlotId: ReadonlyMap<string, Node>;
   slot: DeploymentTaskCanvasProjectionSlot | undefined;
-  taskId: string;
+  task: DeploymentTaskProjection;
 }): string | undefined {
   if (input.slot === undefined) {
     return undefined;
   }
-  const expectedRef = input.slot.expectedRef;
+  const expectedRef = resultRefForSlot({
+    slot: input.slot,
+    task: input.task,
+  });
   if (expectedRef !== undefined) {
     const liveNode = input.liveNodeByExpectedRef.get(
       expectedRefKey(expectedRef)
@@ -1144,7 +1147,7 @@ function nodeIdForSlot(input: {
     }
   }
   return input.placeholderByTaskSlotId.get(
-    deploymentSlotOwnerKey(input.taskId, input.slot.id)
+    deploymentSlotOwnerKey(input.task.id, input.slot.id)
   )?.id;
 }
 
@@ -1212,19 +1215,19 @@ function deploymentPreviewEdgeForTask(input: {
   liveNodeByExpectedRef: ReadonlyMap<string, Node>;
   placeholderByTaskSlotId: ReadonlyMap<string, Node>;
   slotsById: ReadonlyMap<string, DeploymentTaskCanvasProjectionSlot>;
-  taskId: string;
+  task: DeploymentTaskProjection;
 }): Edge | undefined {
   const source = nodeIdForSlot({
     liveNodeByExpectedRef: input.liveNodeByExpectedRef,
     placeholderByTaskSlotId: input.placeholderByTaskSlotId,
     slot: input.slotsById.get(input.edge.sourceSlotId),
-    taskId: input.taskId,
+    task: input.task,
   });
   const target = nodeIdForSlot({
     liveNodeByExpectedRef: input.liveNodeByExpectedRef,
     placeholderByTaskSlotId: input.placeholderByTaskSlotId,
     slot: input.slotsById.get(input.edge.targetSlotId),
-    taskId: input.taskId,
+    task: input.task,
   });
   if (
     source === undefined ||
@@ -1236,7 +1239,7 @@ function deploymentPreviewEdgeForTask(input: {
   return {
     animated: true,
     data: { evidence: input.edge.evidence, kind: "deploymentPreview" },
-    id: `deployment-preview-${sanitizeNodeIdPart(input.taskId)}-${sanitizeNodeIdPart(input.edge.id ?? `${input.edge.sourceSlotId}-${input.edge.targetSlotId}`)}`,
+    id: `deployment-preview-${sanitizeNodeIdPart(input.task.id)}-${sanitizeNodeIdPart(input.edge.id ?? `${input.edge.sourceSlotId}-${input.edge.targetSlotId}`)}`,
     source,
     style: {
       opacity: 0.62,
@@ -1252,7 +1255,7 @@ function deploymentPreviewEdgesForTask(input: {
   liveNodeByExpectedRef: ReadonlyMap<string, Node>;
   placeholderByTaskSlotId: ReadonlyMap<string, Node>;
   preview: DeploymentResultPreview;
-  taskId: string;
+  task: DeploymentTaskProjection;
 }): Edge[] {
   const slotsById = new Map(input.preview.slots.map((slot) => [slot.id, slot]));
   return input.preview.edges.flatMap((edge) => {
@@ -1262,7 +1265,7 @@ function deploymentPreviewEdgesForTask(input: {
       liveNodeByExpectedRef: input.liveNodeByExpectedRef,
       placeholderByTaskSlotId: input.placeholderByTaskSlotId,
       slotsById,
-      taskId: input.taskId,
+      task: input.task,
     });
     return previewEdge === undefined ? [] : [previewEdge];
   });
@@ -1290,7 +1293,7 @@ export function deploymentPreviewEdgesFromTasks(input: {
         liveNodeByExpectedRef,
         placeholderByTaskSlotId,
         preview,
-        taskId: task.id,
+        task,
       })
     );
   }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Node } from "@xyflow/react";
 
+import { DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS } from "@/lib/deploy-task/projection";
 import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
 import type {
   CanvasDeploymentPlaceholderNodeData,
@@ -9,6 +10,7 @@ import type {
 } from "../nodes/types";
 import {
   deploymentPreviewEdgesFromTasks,
+  deploymentProjectionPlacementCommands,
   deploymentProjectionPlacementNodesFromPlaceholderNode,
 } from "./deployment-placeholders";
 
@@ -277,6 +279,68 @@ test("preview edges stay scoped to placeholders from their own deployment task",
         id: "deployment-preview-task-2-ap-db",
         source: "task-2-AP:default:api",
         target: "task-2-DB:default:postgres",
+      },
+    ]
+  );
+});
+
+test("completed explicit projection slots keep placement during handoff grace", () => {
+  const now = new Date("2026-06-11T10:00:00.000Z");
+  const layout = {
+    namespace: "default",
+    nodes: [
+      {
+        owner: {
+          kind: "deploymentProjection" as const,
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 680, y: 280 },
+      },
+    ],
+    projectId: "project-uid",
+    version: 1,
+  };
+  const task = {
+    artifactSummary: {},
+    canvasProjection: {
+      slots: [AP_SLOT],
+    },
+    completedAt: now.toISOString(),
+    id: "task-1",
+    namespace: "default",
+    phase: "completed" as const,
+    projectId: "project-uid",
+    status: "completed" as const,
+    updatedAt: now.toISOString(),
+  };
+
+  assert.deepEqual(
+    deploymentProjectionPlacementCommands({
+      layout,
+      nodes: [],
+      now,
+      tasks: [task],
+    }),
+    []
+  );
+  assert.deepEqual(
+    deploymentProjectionPlacementCommands({
+      layout,
+      nodes: [],
+      now: new Date(
+        now.getTime() + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS + 1
+      ),
+      tasks: [task],
+    }),
+    [
+      {
+        kind: "delete",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
       },
     ]
   );
