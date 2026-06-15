@@ -8,7 +8,8 @@ import { canvasResourceIdentityFromNode } from "../nodes/resource-identity";
 import { isDeploymentPlaceholderNode } from "./deployment-placeholder-nodes";
 import {
   type DeploymentResultPreview,
-  deploymentResultPreview,
+  type DeploymentTaskResultPreview,
+  deploymentResultPreviewsFromTasks,
   deploymentSlotOwnerKey,
   expectedRefKey,
   resultRefForSlot,
@@ -165,6 +166,7 @@ function deploymentPreviewEdgesForTask(input: {
 export function deploymentPreviewEdgesFromTasks(input: {
   existingEdges?: readonly Edge[];
   nodes: readonly Node[];
+  previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
 }): Edge[] {
   const { liveNodeByExpectedRef, placeholderByTaskSlotId } =
@@ -173,11 +175,9 @@ export function deploymentPreviewEdgesFromTasks(input: {
     (input.existingEdges ?? []).map((edge) => `${edge.source}->${edge.target}`)
   );
   const edges: Edge[] = [];
-  for (const task of input.tasks ?? []) {
-    const preview = deploymentResultPreview(task);
-    if (preview === undefined) {
-      continue;
-    }
+  const previews =
+    input.previews ?? deploymentResultPreviewsFromTasks(input.tasks);
+  for (const { preview, task } of previews) {
     edges.push(
       ...deploymentPreviewEdgesForTask({
         existingPairs,

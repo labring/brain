@@ -33,6 +33,7 @@ import {
 } from "./deployment-placeholder-nodes";
 import { deploymentProjectionPlacementCommands } from "./deployment-placement-commands";
 import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
+import { deploymentResultPreviewsFromTasks } from "./deployment-projection-model";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 
 export type ProjectCanvasLayoutIntent =
@@ -119,9 +120,12 @@ export function buildProjectCanvasResourceSnapshot({
     ...publicAccessBlock.nodes,
     ...templateNativeBlock.nodes,
   ];
+  const deploymentResultPreviews =
+    deploymentResultPreviewsFromTasks(deployTasks);
   const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
     layout: canvasLayout,
     nodes: rawDetectedNodes,
+    previews: deploymentResultPreviews,
     tasks: deployTasks,
   });
   const detectedNodes = rawDetectedNodes.filter(
@@ -139,6 +143,7 @@ export function buildProjectCanvasResourceSnapshot({
     {
       layout: canvasLayout,
       nodes: rawDetectedNodes,
+      previews: deploymentResultPreviews,
     }
   ).filter((node) => {
     if (!deployTaskById.has(node.data.taskId)) {
@@ -153,6 +158,7 @@ export function buildProjectCanvasResourceSnapshot({
   const initialPositions = deploymentPlaceholderHandoffs({
     layout: canvasLayout,
     nodes: detectedNodes,
+    previews: deploymentResultPreviews,
     tasks: deployTasks,
   });
   const detectedConnections = canvasLayoutReady
@@ -188,6 +194,7 @@ export function buildProjectCanvasResourceSnapshot({
     ? deploymentPreviewEdgesFromTasks({
         existingEdges: edges,
         nodes: merge.nodes,
+        previews: deploymentResultPreviews,
         tasks: deployTasks,
       })
     : [];
@@ -204,6 +211,7 @@ export function buildProjectCanvasResourceSnapshot({
       ...deploymentProjectionPlacementCommands({
         layout: canvasLayout,
         nodes: rawDetectedNodes,
+        previews: deploymentResultPreviews,
         tasks: deployTasks,
       }),
     ],

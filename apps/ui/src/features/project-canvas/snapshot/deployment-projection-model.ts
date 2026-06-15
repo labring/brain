@@ -56,6 +56,11 @@ export interface DeploymentResultPreview {
   slots: DeploymentTaskCanvasProjectionSlot[];
 }
 
+export interface DeploymentTaskResultPreview {
+  preview: DeploymentResultPreview;
+  task: DeploymentTaskProjection;
+}
+
 export interface DeploymentProjectionPlacement {
   persisted: boolean;
   position: CanvasLayoutPosition;
@@ -567,6 +572,23 @@ export function deploymentResultPreview(
   task: DeploymentTaskProjection
 ): DeploymentResultPreview | undefined {
   return explicitPreview(task) ?? derivedPreview(task);
+}
+
+export function deploymentResultPreviewsFromTasks(
+  tasks: readonly DeploymentTaskProjection[] | undefined
+): DeploymentTaskResultPreview[] {
+  return (tasks ?? []).flatMap((task) => {
+    const preview = deploymentResultPreview(task);
+    return preview === undefined ? [] : [{ preview, task }];
+  });
+}
+
+export function deploymentResultPreviewByTaskId(
+  previews: readonly DeploymentTaskResultPreview[] | undefined
+): Map<string, DeploymentResultPreview> {
+  return new Map(
+    (previews ?? []).map(({ preview, task }) => [task.id, preview])
+  );
 }
 
 export function anchorSlot(

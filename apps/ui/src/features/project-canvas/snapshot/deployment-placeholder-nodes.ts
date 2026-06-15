@@ -11,7 +11,9 @@ import type {
 import {
   anchorSlot,
   type DeploymentResultPreview,
-  deploymentResultPreview,
+  type DeploymentTaskResultPreview,
+  deploymentResultPreviewByTaskId,
+  deploymentResultPreviewsFromTasks,
   expectedRefToResultRef,
   materializedSlotPositions,
   resultRefForSlot,
@@ -169,16 +171,20 @@ export function deploymentPlaceholderNodesFromTasks(
     layout?: CanvasLayoutDocument;
     nodes?: readonly Node[];
     now?: Date;
+    previews?: readonly DeploymentTaskResultPreview[];
   }
 ): CanvasDeploymentPlaceholderRfNode[] {
   if (tasks == null) {
     return [];
   }
+  const previewByTaskId = deploymentResultPreviewByTaskId(
+    options?.previews ?? deploymentResultPreviewsFromTasks(tasks)
+  );
   return tasks.flatMap((task, index) => {
     if (!shouldShowDeploymentPlaceholder(task, options?.now)) {
       return [];
     }
-    const preview = deploymentResultPreview(task);
+    const preview = previewByTaskId.get(task.id);
     if (preview !== undefined) {
       return resultPreviewPlaceholderNodes({
         layout: options?.layout,

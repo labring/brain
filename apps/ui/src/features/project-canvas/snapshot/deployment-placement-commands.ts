@@ -23,7 +23,9 @@ import {
 import {
   anchorSlot,
   type DeploymentResultPreview,
-  deploymentResultPreview,
+  type DeploymentTaskResultPreview,
+  deploymentResultPreviewByTaskId,
+  deploymentResultPreviewsFromTasks,
   layoutNodeByOwner,
   layoutRefForSlot,
   materializedSlotPositions,
@@ -309,14 +311,19 @@ export function deploymentProjectionPlacementCommands(input: {
   layout?: CanvasLayoutDocument;
   nodes: readonly Node[];
   now?: Date;
+  previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
 }): PlacementCommand[] {
   const commands: PlacementCommand[] = [];
   const seen = new Set<string>();
   const now = input.now ?? new Date();
+  const tasks = input.tasks ?? input.previews?.map(({ task }) => task) ?? [];
+  const previewByTaskId = deploymentResultPreviewByTaskId(
+    input.previews ?? deploymentResultPreviewsFromTasks(tasks)
+  );
 
-  for (const task of input.tasks ?? []) {
-    const preview = deploymentResultPreview(task);
+  for (const task of tasks) {
+    const preview = previewByTaskId.get(task.id);
     if (preview === undefined) {
       addUnknownSlotExpiryCommand({
         commands,

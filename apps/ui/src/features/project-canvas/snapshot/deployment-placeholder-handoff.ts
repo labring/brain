@@ -10,8 +10,9 @@ import {
 } from "../nodes/resource-identity";
 import {
   type DeploymentResultPreview,
+  type DeploymentTaskResultPreview,
   type DeploymentTaskResultResourceRef,
-  deploymentResultPreview,
+  deploymentResultPreviewsFromTasks,
   layoutHasRef,
   materializedSlotPositions,
   nodesByRef,
@@ -26,6 +27,7 @@ import {
 export function deploymentPlaceholderHandoffs(input: {
   layout?: CanvasLayoutDocument;
   nodes: readonly Node[];
+  previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
 }): {
   byNodeId: Map<string, CanvasLayoutPosition>;
@@ -33,18 +35,17 @@ export function deploymentPlaceholderHandoffs(input: {
 } {
   const byNodeId = new Map<string, CanvasLayoutPosition>();
   const byRef = new Map<string, CanvasLayoutPosition>();
-  for (const task of input.tasks ?? []) {
-    const preview = deploymentResultPreview(task);
-    if (preview !== undefined) {
-      addPreviewHandoffs({
-        byNodeId,
-        byRef,
-        layout: input.layout,
-        nodes: input.nodes,
-        preview,
-        task,
-      });
-    }
+  const previews =
+    input.previews ?? deploymentResultPreviewsFromTasks(input.tasks);
+  for (const { preview, task } of previews) {
+    addPreviewHandoffs({
+      byNodeId,
+      byRef,
+      layout: input.layout,
+      nodes: input.nodes,
+      preview,
+      task,
+    });
   }
   return { byNodeId, byRef };
 }
@@ -120,6 +121,7 @@ function addPreviewHandoffs(input: {
 export function deploymentPlaceholderPendingResultKeys(input: {
   layout?: CanvasLayoutDocument;
   nodes?: readonly Node[];
+  previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
 }): {
   refs: Set<string>;
@@ -127,11 +129,9 @@ export function deploymentPlaceholderPendingResultKeys(input: {
 } {
   const refs = new Set<string>();
   const templates = new Set<string>();
-  for (const task of input.tasks ?? []) {
-    const preview = deploymentResultPreview(task);
-    if (preview === undefined) {
-      continue;
-    }
+  const previews =
+    input.previews ?? deploymentResultPreviewsFromTasks(input.tasks);
+  for (const { preview, task } of previews) {
     addPreviewPendingResultKeys({
       layout: input.layout,
       nodes: input.nodes,
