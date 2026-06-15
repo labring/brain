@@ -1,18 +1,11 @@
 "use client";
 
-import {
-  useApLifecycleOperations,
-  useDbLifecycleOperations,
-} from "@workspace/api/hooks";
 import type {
-  CanvasMeta,
   CanvasReactFlowProps,
   CanvasSelectedNode,
 } from "@workspace/ui/components/canvas/canvas.types";
-import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-node/canvas-node";
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type {
-  DatabaseNodeCopyConnectionHandler,
   DatabaseNodeLifecycleActionKey,
   DatabaseNodeQuickActionKey,
   DatabaseNodeTogglePublicConnectionHandler,
@@ -27,11 +20,6 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { projectCanvasFlowNodeTypes } from "@/features/project-canvas/canvas-store";
-import {
-  canvasNodeGeometryFromNode,
-  selectCanvasAnchorPair,
-} from "@/features/project-canvas/flow/anchor-pair";
 import { isProjectCanvasConnectionSupported } from "@/features/project-canvas/flow/connection-command";
 import { createProjectCanvasConnectionLine } from "@/features/project-canvas/flow/connection-line";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
@@ -39,7 +27,6 @@ import {
   connectionFromProjectCanvasConnectEndGesture,
   connectionHandleFromConnectStartParams,
   type ProjectCanvasConnectionHandle,
-  projectCanvasInteractionProps,
 } from "@/features/project-canvas/flow/interaction";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import {
@@ -58,12 +45,8 @@ import type {
   CanvasContainerNodeData,
   CanvasDatabaseNodeData,
   CanvasNodeLayoutState,
-  CanvasNodeSettingsAccess,
 } from "@/features/project-canvas/nodes/types";
-import {
-  createProjectCanvasSurfaceRenderModel,
-  type ProjectCanvasSideRenderModel,
-} from "@/features/project-canvas/surface/rendering-adapter";
+import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import {
   findCanvasNodeForProjectTarget,
   projectApTargetFromNode,
@@ -73,9 +56,26 @@ import {
   projectTargetExistsOnCanvas,
 } from "@/features/project-canvas/surface/selection";
 import {
+  canvasNodeSettingsAccess,
+  connectionOriginFromHandle,
+  createProjectCanvasMeta,
+  type ProjectCanvasConnectionOrigin,
+  sideRenderModelHasViewportFocusSession,
+  viewportFocusNodeIdFromSideRenderModel,
+} from "@/features/project-canvas/workbench/canvas-meta";
+import {
   type ProjectCanvasCommandPlan,
   planProjectCanvasCommand,
 } from "@/features/project-canvas/workbench/command-model";
+import {
+  createPendingApDbReferenceMutationStartHandler,
+  dbReferenceIntentDataForContainerNode,
+  type PendingAddDbDsnReferenceIntent,
+  type PendingApDbReferenceDraftRegistration,
+  pendingApDbCanvasReferencesFromDraftReferences,
+  pendingApDbReferenceDraftKey,
+  pendingApDbReferenceDraftSignature,
+} from "@/features/project-canvas/workbench/database-binding-intents";
 import {
   canvasSelectionForRestoredDbService,
   DB_RESTORE_CANVAS_FOCUS_TIMEOUT_MS,
@@ -88,12 +88,14 @@ import {
   type ProjectCanvasDbDeleteTarget,
   ProjectCanvasDeleteDialogs,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
+import {
+  resourceLayoutRefsForApDelete,
+  resourceLayoutRefsForDbDelete,
+  useProjectCanvasResourceActions,
+} from "@/features/project-canvas/workbench/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
-import type {
-  ApSettingsAddDbDsnReferenceIntent,
-  ApSettingsPendingDbReference,
-} from "@/features/project-settings/ap/ap-settings-sections";
+import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
 import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import { useSettingsLeaveGuardController } from "@/features/project-settings/settings-leave-guard-controller";
 import type {
@@ -124,204 +126,8 @@ export interface UseProjectCanvasOptions {
   selectionReady?: boolean;
 }
 
-interface PendingAddDbDsnReferenceIntent
-  extends ApSettingsAddDbDsnReferenceIntent {
-  apNodeId: string;
-}
-
-interface ProjectCanvasConnectionOrigin {
-  nodeId: string;
-  side: CanvasNodeConnectionSide;
-}
-
-const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
-  "bottom",
-  "left",
-  "right",
-  "top",
-]);
 const EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES: ApEnvironmentDbReferenceSource[] =
   [];
-export const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
-
-function viewportFocusNodeIdFromSideRenderModel(
-  side: ProjectCanvasSideRenderModel
-): string | null {
-  if (side?.kind !== "resource") {
-    return null;
-  }
-
-  if (
-    side.content.kind === "settings" &&
-    side.content.target.target.kind === "AP" &&
-    side.content.target.view === "public-addresses"
-  ) {
-    return side.content.entryNode?.id ?? null;
-  }
-
-  if (side.content.kind === "settings") {
-    return side.content.node?.id ?? null;
-  }
-
-  return side.content.node.id;
-}
-
-function sideRenderModelHasViewportFocusSession(
-  side: ProjectCanvasSideRenderModel
-): boolean {
-  return side?.kind === "resource";
-}
-
-function connectionOriginFromHandle(
-  handle: ProjectCanvasConnectionHandle | null
-): ProjectCanvasConnectionOrigin | null {
-  if (
-    handle?.nodeId == null ||
-    handle.id == null ||
-    !CANVAS_NODE_CONNECTION_SIDES.has(handle.id)
-  ) {
-    return null;
-  }
-
-  return {
-    nodeId: handle.nodeId,
-    side: handle.id as CanvasNodeConnectionSide,
-  };
-}
-
-function dbReferenceIntentDataForContainerNode({
-  intent,
-  nodeId,
-  onConsumed,
-}: {
-  intent: PendingAddDbDsnReferenceIntent | null;
-  nodeId: string;
-  onConsumed: (id: string) => void;
-}): Pick<
-  CanvasContainerNodeData,
-  "addDbDsnReferenceIntent" | "onAddDbDsnReferenceIntentConsumed"
-> {
-  if (intent?.apNodeId !== nodeId) {
-    return {};
-  }
-
-  return {
-    addDbDsnReferenceIntent: {
-      dbName: intent.dbName,
-      dbNamespace: intent.dbNamespace,
-      id: intent.id,
-    },
-    onAddDbDsnReferenceIntentConsumed: onConsumed,
-  };
-}
-
-function createPendingApDbReferenceMutationStartHandler({
-  apName,
-  apNamespace,
-  onBeforeStart,
-  onPendingApDbReferencesStart,
-}: {
-  apName: string;
-  apNamespace: string;
-  onBeforeStart?: () => void;
-  onPendingApDbReferencesStart:
-    | UseProjectCanvasOptions["onPendingApDbReferencesStart"]
-    | undefined;
-}): CanvasContainerNodeData["onAddDbDsnReferenceMutationStart"] {
-  if (
-    onPendingApDbReferencesStart === undefined ||
-    apName === "" ||
-    apNamespace === ""
-  ) {
-    return undefined;
-  }
-
-  return (references) => {
-    onBeforeStart?.();
-    return onPendingApDbReferencesStart(
-      references.map((reference) => ({
-        id: reference.id,
-        source: {
-          kind: "AP",
-          name: apName,
-          namespace: apNamespace,
-        },
-        target: {
-          kind: "DB",
-          name: reference.dbName,
-          namespace: reference.dbNamespace,
-        },
-      }))
-    );
-  };
-}
-
-function pendingApDbReferenceDraftKey({
-  apName,
-  apNamespace,
-}: {
-  apName: string;
-  apNamespace: string;
-}): string {
-  return `${apNamespace}/${apName}`;
-}
-
-function pendingApDbCanvasReferenceId({
-  apName,
-  apNamespace,
-  dbName,
-  dbNamespace,
-}: {
-  apName: string;
-  apNamespace: string;
-  dbName: string;
-  dbNamespace: string;
-}): string {
-  return `draft:${apNamespace}/${apName}->${dbNamespace}/${dbName}`;
-}
-
-function pendingApDbCanvasReferencesFromDraftReferences({
-  apName,
-  apNamespace,
-  references,
-}: {
-  apName: string;
-  apNamespace: string;
-  references: readonly ApSettingsPendingDbReference[];
-}): PendingApDbCanvasReference[] {
-  if (apName === "" || apNamespace === "") {
-    return [];
-  }
-  return references.map((reference) => ({
-    id: pendingApDbCanvasReferenceId({
-      apName,
-      apNamespace,
-      dbName: reference.dbName,
-      dbNamespace: reference.dbNamespace,
-    }),
-    source: {
-      kind: "AP",
-      name: apName,
-      namespace: apNamespace,
-    },
-    target: {
-      kind: "DB",
-      name: reference.dbName,
-      namespace: reference.dbNamespace,
-    },
-  }));
-}
-
-function canvasNodeSettingsAccess({
-  readOnly,
-}: {
-  readOnly: boolean;
-}): CanvasNodeSettingsAccess | undefined {
-  if (!readOnly) {
-    return undefined;
-  }
-  return { readOnly: true };
-}
 
 function commandPlanHasSelection(
   plan: ProjectCanvasCommandPlan
@@ -349,30 +155,6 @@ interface ProjectCanvasCommandPlanAdapters {
     reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
   ) => void;
   writeSelection: (selection: ProjectCanvasSelection | null) => void;
-}
-
-interface PendingApDbReferenceDraftRegistration {
-  cleanup?: () => void;
-  signature: string;
-}
-
-function pendingApDbReferenceDraftSignature(
-  references: readonly PendingApDbCanvasReference[]
-): string {
-  return references
-    .map((reference) =>
-      [
-        reference.id,
-        reference.source.kind,
-        reference.source.namespace,
-        reference.source.name,
-        reference.target.kind,
-        reference.target.namespace,
-        reference.target.name,
-      ].join(":")
-    )
-    .sort()
-    .join("|");
 }
 
 function applyCommandFeedback(plan: ProjectCanvasCommandPlan) {
@@ -539,16 +321,28 @@ export function useProjectCanvas(
     useState<ProjectCanvasApDeleteTarget | null>(null);
   const [pendingDbDeleteTarget, setPendingDbDeleteTarget] =
     useState<ProjectCanvasDbDeleteTarget | null>(null);
+  const refreshWorkloadLists = options?.refreshWorkloadLists;
 
+  const {
+    apLifecycle,
+    copyDatabaseConnection,
+    dbLifecycle,
+    refreshAfterResourceAction,
+    runResourceAction,
+    toggleDatabasePublicAccess,
+  } = useProjectCanvasResourceActions({
+    kubeconfig: options?.kubeconfig,
+    readOnly,
+    refreshWorkloadLists,
+    routingDomain,
+  });
   const {
     authReady: apAuthReady,
     deleteWorkload,
     pauseWorkload,
     restartWorkload,
     startWorkload,
-  } = useApLifecycleOperations({
-    kubeconfig: readOnly ? undefined : options?.kubeconfig,
-  });
+  } = apLifecycle;
   const {
     authReady: dbAuthReady,
     clearPublicAccessPendingTarget,
@@ -558,12 +352,8 @@ export function useProjectCanvas(
     restartWorkload: restartDbWorkload,
     startWorkload: startDbWorkload,
     stopWorkload: stopDbWorkload,
-    togglePublicAccess,
-  } = useDbLifecycleOperations({
-    kubeconfig: readOnly ? undefined : options?.kubeconfig,
-  });
+  } = dbLifecycle;
 
-  const refreshWorkloadLists = options?.refreshWorkloadLists;
   const onPendingApDbReferencesStart = options?.onPendingApDbReferencesStart;
   const onNodeExpansionChange = options?.onNodeExpansionChange;
   const onNodePositionChange = options?.onNodePositionChange;
@@ -593,13 +383,6 @@ export function useProjectCanvas(
   const apEnvironmentDbReferenceSources =
     options?.apEnvironmentDbReferenceSources ??
     EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES;
-  const afterLifecycle = useCallback(async () => {
-    try {
-      await refreshWorkloadLists?.();
-    } catch {
-      // ignore refresh failures; list will reconcile on next poll
-    }
-  }, [refreshWorkloadLists]);
 
   const handleAddDbDsnReferenceIntentConsumed = useCallback((id: string) => {
     setPendingAddDbDsnReferenceIntent((current) =>
@@ -673,49 +456,6 @@ export function useProjectCanvas(
       }
       draftByApKey.clear();
       pendingDbReferencesChangeHandlerByApKey.current.clear();
-    },
-    []
-  );
-
-  const runMutationThenRefresh = useCallback(
-    (
-      mutation: () => Promise<unknown>,
-      copy: { loading: string; success: string },
-      options?: { onSettled?: () => void; onSuccess?: () => void }
-    ) => {
-      toast.promise(
-        (async (): Promise<void> => {
-          try {
-            await mutation();
-            options?.onSuccess?.();
-            await afterLifecycle();
-          } finally {
-            options?.onSettled?.();
-          }
-        })(),
-        {
-          error: (err) =>
-            err instanceof Error ? err.message : "Operation failed",
-          loading: copy.loading,
-          success: copy.success,
-        }
-      );
-    },
-    [afterLifecycle]
-  );
-
-  const copyDatabaseConnection = useCallback<DatabaseNodeCopyConnectionHandler>(
-    async (connection) => {
-      const value = connection.value;
-      if (!value || typeof navigator === "undefined" || !navigator.clipboard) {
-        return;
-      }
-
-      try {
-        await navigator.clipboard.writeText(value);
-      } catch {
-        // Copy feedback is handled by the row; clipboard failures should not break canvas interactions.
-      }
     },
     []
   );
@@ -840,11 +580,12 @@ export function useProjectCanvas(
         | DatabaseNodeTogglePublicConnectionHandler
         | undefined = canTogglePublicAccess
         ? (_connection, _index, nextEnabled) => {
-            runMutationThenRefresh(
+            runResourceAction(
               () =>
-                togglePublicAccess(workload, nextEnabled, {
+                toggleDatabasePublicAccess({
                   metadata: data.metadata,
-                  routingDomain,
+                  nextEnabled,
+                  workload,
                 }),
               {
                 loading: nextEnabled
@@ -866,7 +607,7 @@ export function useProjectCanvas(
         copy: { loading: string; success: string }
       ) => ({
         loading: isDbLifecycleLoading(workload, action),
-        onClick: () => runMutationThenRefresh(mutation, copy),
+        onClick: () => runResourceAction(mutation, copy),
       });
       const displayName = data.states.name || name;
       const target = projectDbTargetFromNode(node);
@@ -951,13 +692,12 @@ export function useProjectCanvas(
       getPublicAccessPendingTarget,
       isDbLifecycleLoading,
       restartDbWorkload,
-      runMutationThenRefresh,
+      runResourceAction,
       readOnly,
-      routingDomain,
       startDbWorkload,
       stackOrderedRawNodes,
       stopDbWorkload,
-      togglePublicAccess,
+      toggleDatabasePublicAccess,
     ]
   );
 
@@ -1044,21 +784,21 @@ export function useProjectCanvas(
             },
             restart: {
               onClick: () =>
-                runMutationThenRefresh(() => restartWorkload(ref), {
+                runResourceAction(() => restartWorkload(ref), {
                   loading: `Restarting "${displayName}"...`,
                   success: `Restarted "${displayName}"`,
                 }),
             },
             start: {
               onClick: () =>
-                runMutationThenRefresh(() => startWorkload(ref), {
+                runResourceAction(() => startWorkload(ref), {
                   loading: `Starting "${displayName}"...`,
                   success: `Started "${displayName}"`,
                 }),
             },
             stop: {
               onClick: () =>
-                runMutationThenRefresh(() => pauseWorkload(ref), {
+                runResourceAction(() => pauseWorkload(ref), {
                   loading: `Stopping "${displayName}"...`,
                   success: `Stop requested for "${displayName}"`,
                 }),
@@ -1082,7 +822,7 @@ export function useProjectCanvas(
           dbDsnReferenceSources: apEnvironmentDbReferenceSources,
           onAddDbDsnReferenceMutationStart,
           onPendingDbReferencesChange,
-          onWorkloadMutation: afterLifecycle,
+          onWorkloadMutation: refreshAfterResourceAction,
           settingsAccess,
           actions: {
             ...(data.actions ?? {}),
@@ -1094,7 +834,6 @@ export function useProjectCanvas(
     },
     [
       apAuthReady,
-      afterLifecycle,
       apEnvironmentDbReferenceSources,
       executeCommandPlan,
       handleAddDbDsnReferenceIntentConsumed,
@@ -1103,8 +842,9 @@ export function useProjectCanvas(
       pendingDbReferencesChangeHandlerForAp,
       pauseWorkload,
       readOnly,
+      refreshAfterResourceAction,
       restartWorkload,
-      runMutationThenRefresh,
+      runResourceAction,
       startWorkload,
       stackOrderedRawNodes,
     ]
@@ -1184,7 +924,7 @@ export function useProjectCanvas(
     }
     const target = pendingApDeleteTarget;
     setPendingApDeleteTarget(null);
-    runMutationThenRefresh(
+    runResourceAction(
       () => deleteWorkload({ name: target.name, namespace: target.namespace }),
       {
         loading: `Deleting "${target.displayName}"...`,
@@ -1192,25 +932,16 @@ export function useProjectCanvas(
       },
       {
         onSuccess: () =>
-          options?.onResourceLayoutDelete?.([
-            {
-              kind: "AP",
-              name: target.name,
-              namespace: target.namespace,
-            },
-            {
-              kind: "PublicAccess",
-              name: target.name,
-              namespace: target.namespace,
-            },
-          ]),
+          options?.onResourceLayoutDelete?.(
+            resourceLayoutRefsForApDelete(target)
+          ),
       }
     );
   }, [
     deleteWorkload,
     options?.onResourceLayoutDelete,
     pendingApDeleteTarget,
-    runMutationThenRefresh,
+    runResourceAction,
   ]);
   const confirmPendingDbDelete = useCallback(() => {
     if (pendingDbDeleteTarget == null) {
@@ -1218,7 +949,7 @@ export function useProjectCanvas(
     }
     const target = pendingDbDeleteTarget;
     setPendingDbDeleteTarget(null);
-    runMutationThenRefresh(
+    runResourceAction(
       () =>
         deleteDbWorkload({
           name: target.name,
@@ -1230,20 +961,16 @@ export function useProjectCanvas(
       },
       {
         onSuccess: () =>
-          options?.onResourceLayoutDelete?.([
-            {
-              kind: "DB",
-              name: target.name,
-              namespace: target.namespace,
-            },
-          ]),
+          options?.onResourceLayoutDelete?.(
+            resourceLayoutRefsForDbDelete(target)
+          ),
       }
     );
   }, [
     deleteDbWorkload,
     options?.onResourceLayoutDelete,
     pendingDbDeleteTarget,
-    runMutationThenRefresh,
+    runResourceAction,
   ]);
   const resourceDeleteDialog = createElement(ProjectCanvasDeleteDialogs, {
     apTarget: pendingApDeleteTarget,
@@ -1453,70 +1180,25 @@ export function useProjectCanvas(
   const closeResourcePane = closeSideSurface;
   const closeResourceLogsSurface = closeMainSurface;
 
-  const meta = useMemo<CanvasMeta>(
-    () => ({
-      edgeAnchorResolver: ({
-        dragging,
-        previousPair,
-        sourceNode,
-        targetNode,
-      }) =>
-        selectCanvasAnchorPair({
-          dragging,
-          previousPair,
-          source: canvasNodeGeometryFromNode(sourceNode),
-          target: canvasNodeGeometryFromNode(targetNode),
-        }),
-      nodeTypes: projectCanvasFlowNodeTypes,
-      reactFlowProps: {
-        ...projectCanvasInteractionProps({
-          isValidConnection: isValidCanvasConnection,
-          onConnect: handleConnect,
-          onConnectEnd: handleConnectEnd,
-          onConnectStart: handleConnectStart,
-          readOnly,
-        }),
-        className: connectionGestureActive
-          ? "project-canvas-connection-active"
-          : undefined,
-        connectionLineComponent: readOnly
-          ? undefined
-          : projectCanvasConnectionLine,
-        onNodeClick: (_, node: Node) => {
-          executeCommandPlan(
-            planProjectCanvasCommand({
-              intent: { kind: "nodeClick", node },
-              nodes,
-              readOnly,
-            })
-          );
-        },
-        onNodeDragStart: (_, node: Node) => {
-          frontCanvasNode(node, { persist: false });
-        },
-        onEdgeClick: (_, edge: Edge) => {
-          focusCanvasSelection({
-            edgeId: edge.id,
-            kind: "edge",
-          });
-        },
-        onNodeDragStop: (_, node: Node) => {
-          if (!readOnly) {
-            onNodePositionChange?.(
-              frontCanvasNode(node, { persist: false }) ?? node
-            );
-          }
-        },
-        onPaneClick: () => clearSelection(),
-      },
-      viewportFocus: {
-        active: viewportFocusActive,
-        maxZoom: 1.05,
-        minZoom: 0.85,
-        nodeId: viewportFocusNodeId,
-        rightInset: PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET,
-      },
-    }),
+  const meta = useMemo(
+    () =>
+      createProjectCanvasMeta({
+        clearSelection,
+        connectionGestureActive,
+        executeCommandPlan,
+        focusCanvasSelection,
+        frontCanvasNode,
+        handleConnect,
+        handleConnectEnd,
+        handleConnectStart,
+        isValidCanvasConnection,
+        nodes,
+        onNodePositionChange,
+        projectCanvasConnectionLine,
+        readOnly,
+        viewportFocusActive,
+        viewportFocusNodeId,
+      }),
     [
       clearSelection,
       connectionGestureActive,

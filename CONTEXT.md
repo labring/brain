@@ -364,6 +364,18 @@ A canvas edge that represents an established runtime dependency between resource
 
 Canvas Connections are derived from saved resource state. Removing Database Binding evidence in an unsaved AP Environment draft does not remove or hide the established AP-to-DB Canvas Connection before the AP environment update succeeds.
 
+### Resource Action
+
+A user-triggered command that changes an existing AP or DB resource state, such as start, stop, restart, delete, or toggling DB public access. A Resource Action belongs to the target resource rather than to the Project Canvas, Side Pane, Main Action Surface, Project Assistant Pane, or other surface that launched it.
+
+_Avoid_: Canvas Action, node action.
+
+### Resource Surface Intent
+
+A user-triggered intent to open a resource-focused project surface for an existing AP or DB resource, such as Resource Logs, AP Terminal, DB Terminal, DB Access, or a Settings View. A Resource Surface Intent belongs to project surface orchestration rather than to the resource lifecycle.
+
+_Avoid_: Canvas Action, node action, Resource Action when no resource state changes.
+
 ### Main Action Surface
 
 A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.

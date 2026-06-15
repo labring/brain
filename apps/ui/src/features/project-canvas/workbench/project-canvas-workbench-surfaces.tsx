@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
 import { DockerDeploymentPane } from "@/features/deployment/docker-deployment-pane";
@@ -15,27 +16,46 @@ import {
 } from "@/features/project-canvas/panels/project-canvas-side-pane-slot";
 import { WorkloadLogsPane } from "@/features/project-canvas/panels/workload-logs-panel";
 import { WorkloadTerminalPane } from "@/features/project-canvas/panels/workload-terminal-panel";
-import type { ProjectCanvasSideRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
-import type { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
+import type {
+  ProjectCanvasSideRenderModel,
+  ProjectCanvasSurfaceRenderModel,
+} from "@/features/project-canvas/surface/rendering-adapter";
+import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 
-type ProjectCanvasWorkbenchState = ReturnType<typeof useProjectCanvas>;
+export interface ProjectCanvasSurfaceHostActions {
+  closeDrawerSurface: () => void;
+  closeMainSurface: () => void;
+  closeResourceLogsSurface: () => void;
+  closeResourcePane: () => void;
+  onDbServiceRestoreAccepted: (target: {
+    name: string;
+    namespace: string;
+  }) => void;
+  registerSettingsLeaveGuard: SettingsLeaveGuardRegistration;
+  repairSide: (entry: ProjectSideSurfaceEntry | null) => void;
+}
 
-export interface ProjectCanvasWorkbenchSurfacesProps {
+export interface ProjectCanvasSurfaceHostProps {
+  actions: ProjectCanvasSurfaceHostActions;
+  dialogs?: ReactNode;
   kubeconfig: string;
   namespace: string;
   projectId: string;
   refreshWorkloadLists: () => Promise<unknown>;
-  workbench: ProjectCanvasWorkbenchState;
+  surfaceModel: ProjectCanvasSurfaceRenderModel;
 }
 
-export function ProjectCanvasWorkbenchSurfaces({
+export function ProjectCanvasSurfaceHost({
+  actions,
+  dialogs,
   kubeconfig,
   namespace,
   projectId,
   refreshWorkloadLists,
-  workbench,
-}: ProjectCanvasWorkbenchSurfacesProps) {
-  const { drawer, main, side } = workbench.surfaceRenderModel;
+  surfaceModel,
+}: ProjectCanvasSurfaceHostProps) {
+  const { drawer, main, side } = surfaceModel;
 
   const canvasSidePaneEntry = canvasSidePaneEntryFromRenderModel(side);
   const sideResourceContent = side?.kind === "resource" ? side.content : null;
@@ -48,7 +68,7 @@ export function ProjectCanvasWorkbenchSurfaces({
           <DatabaseDeploymentPane
             kubeconfig={kubeconfig}
             namespace={namespace}
-            onClose={workbench.closeResourcePane}
+            onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
           />
@@ -57,7 +77,7 @@ export function ProjectCanvasWorkbenchSurfaces({
           <DockerDeploymentPane
             kubeconfig={kubeconfig}
             namespace={namespace}
-            onClose={workbench.closeResourcePane}
+            onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
           />
@@ -67,7 +87,7 @@ export function ProjectCanvasWorkbenchSurfaces({
           <GitHubDeploymentPane
             kubeconfig={kubeconfig}
             namespace={namespace}
-            onClose={workbench.closeResourcePane}
+            onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
           />
@@ -76,20 +96,20 @@ export function ProjectCanvasWorkbenchSurfaces({
           <ProjectCanvasResourcePane
             content={sideResourceContent}
             kubeconfig={kubeconfig}
-            onClose={workbench.closeResourcePane}
-            onRepairSideEntry={workbench.repairSide}
-            onSettingsLeaveGuardChange={workbench.registerSettingsLeaveGuard}
+            onClose={actions.closeResourcePane}
+            onRepairSideEntry={actions.repairSide}
+            onSettingsLeaveGuardChange={actions.registerSettingsLeaveGuard}
             onUpdated={refreshWorkloadLists}
           />
         }
         skillsWorkflowPane={
-          <SealosSkillsWorkflowPane onClose={workbench.closeResourcePane} />
+          <SealosSkillsWorkflowPane onClose={actions.closeResourcePane} />
         }
         templateDeploymentPane={
           <TemplateDeploymentPane
             kubeconfig={kubeconfig}
             namespace={namespace}
-            onClose={workbench.closeResourcePane}
+            onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
           />
@@ -99,37 +119,36 @@ export function ProjectCanvasWorkbenchSurfaces({
         kubeconfig={kubeconfig}
         model={dbAccessMain}
         namespace={namespace}
-        onClose={workbench.closeMainSurface}
-        onDbServiceRestoreAccepted={workbench.onDbServiceRestoreAccepted}
+        onClose={actions.closeMainSurface}
+        onDbServiceRestoreAccepted={actions.onDbServiceRestoreAccepted}
         projectId={projectId}
         refreshProjectCanvas={refreshWorkloadLists}
       />
       {main?.kind === "apLogs" ? (
         <WorkloadLogsPane
           node={main.node}
-          onClose={workbench.closeResourceLogsSurface}
+          onClose={actions.closeResourceLogsSurface}
         />
       ) : null}
       {main?.kind === "dbLogs" ? (
         <DatabaseLogsPane
           kubeconfig={kubeconfig}
           node={main.node}
-          onClose={workbench.closeResourceLogsSurface}
+          onClose={actions.closeResourceLogsSurface}
           open
         />
       ) : null}
-      {workbench.settingsLeaveGuardDialog}
-      {workbench.resourceDeleteDialog}
+      {dialogs}
       {drawer?.kind === "apTerminal" ? (
         <WorkloadTerminalPane
           node={drawer.node}
-          onClose={workbench.closeDrawerSurface}
+          onClose={actions.closeDrawerSurface}
         />
       ) : null}
       {drawer?.kind === "dbTerminal" ? (
         <DatabaseTerminalPane
           node={drawer.node}
-          onClose={workbench.closeDrawerSurface}
+          onClose={actions.closeDrawerSurface}
           projectId={projectId}
         />
       ) : null}

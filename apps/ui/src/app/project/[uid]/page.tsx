@@ -4,27 +4,10 @@ import { Canvas } from "@workspace/ui/components/canvas/canvas";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  addPendingApDbCanvasReferences,
-  type PendingApDbCanvasReference,
-  pendingApDbCanvasConnectionEdges,
-  removePendingApDbCanvasReferences,
-} from "@/features/project-canvas/flow/pending-connections";
-import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
-import { resourcePlacementOwner } from "@/features/project-canvas/layout/placement-owner";
-import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
-import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
-import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
-import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
-import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
-import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
+import { useMemo } from "react";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
-import { ProjectCanvasWorkbenchSurfaces } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
-import {
-  PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET,
-  useProjectCanvas,
-} from "@/features/project-canvas/workbench/use-project-canvas";
+import { ProjectCanvasSurfaceHost } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
+import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
@@ -35,131 +18,11 @@ export default function ProjectIdPage() {
   const uid = decodeURIComponent(params.uid ?? "");
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
-  const [pendingApDbReferences, setPendingApDbReferences] = useState<
-    PendingApDbCanvasReference[]
-  >([]);
-  const projectCanvasLayout = useProjectCanvasLayout({
-    enabled: kubeconfig.trim() !== "",
+  const projectCanvas = useProjectCanvasModule({
     kubeconfig,
     namespace,
     projectId: uid,
   });
-
-  const {
-    apEnvironmentDbReferenceSources,
-    canvasState,
-    frameState,
-    isEmptyGraphLoading,
-    isLoading: resourceSnapshotLoading,
-    layoutIntent,
-    refresh,
-  } = useProjectCanvasResourceSnapshot({
-    canvasLayout: projectCanvasLayout.layout,
-    canvasLayoutReady: projectCanvasLayout.layoutReady,
-    kubeconfig,
-    namespace,
-    uid,
-  });
-  useEffect(() => {
-    if (resourceSnapshotLoading || layoutIntent == null) {
-      return;
-    }
-    if (layoutIntent.kind === "placement-commands") {
-      projectCanvasLayout
-        .savePlacementCommands(layoutIntent.commands, {
-          expectedVersion: layoutIntent.expectedVersion,
-        })
-        .catch(() => undefined);
-      return;
-    }
-    const save =
-      layoutIntent.kind === "first-placement"
-        ? projectCanvasLayout.saveFirstPlacementNodes
-        : projectCanvasLayout.saveLayoutNodes;
-    save(layoutIntent.nodes).catch(() => undefined);
-  }, [
-    layoutIntent,
-    projectCanvasLayout.saveFirstPlacementNodes,
-    projectCanvasLayout.saveLayoutNodes,
-    projectCanvasLayout.savePlacementCommands,
-    resourceSnapshotLoading,
-  ]);
-  const beginPendingApDbReferences = useCallback(
-    (references: readonly PendingApDbCanvasReference[]) => {
-      const referenceIds = references.map((reference) => reference.id);
-      setPendingApDbReferences((current) =>
-        addPendingApDbCanvasReferences(current, references)
-      );
-      return () => {
-        setPendingApDbReferences((current) =>
-          removePendingApDbCanvasReferences(current, referenceIds)
-        );
-      };
-    },
-    []
-  );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset pending edges when the canvas route scope changes.
-  useEffect(() => {
-    setPendingApDbReferences([]);
-  }, [namespace, uid]);
-  const canvasEdges = useMemo(() => {
-    const pendingEdges = pendingApDbCanvasConnectionEdges({
-      existingEdges: canvasState.edges,
-      nodes: canvasState.nodes,
-      pendingReferences: pendingApDbReferences,
-    });
-    return pendingEdges.length === 0
-      ? canvasState.edges
-      : [...canvasState.edges, ...pendingEdges];
-  }, [canvasState.edges, canvasState.nodes, pendingApDbReferences]);
-  const deleteResourceLayoutRefs = useCallback(
-    (refs: readonly CanvasLayoutResourceRef[]) => {
-      const commands = refs.map((ref) => ({
-        kind: "delete" as const,
-        owner: resourcePlacementOwner(ref),
-      }));
-      projectCanvasLayout
-        .savePlacementCommands(commands)
-        .catch(() => undefined);
-    },
-    [projectCanvasLayout.savePlacementCommands]
-  );
-
-  const workbench = useProjectCanvas(canvasState.nodes, {
-    apEnvironmentDbReferenceSources,
-    edges: canvasEdges,
-    kubeconfig,
-    namespace,
-    onNodeExpansionChange: projectCanvasLayout.scheduleNodeLayoutSave,
-    onNodePositionChange: (node) => {
-      if (isDeploymentPlaceholderNode(node)) {
-        const placementNodes =
-          deploymentProjectionPlacementNodesFromPlaceholderNode({
-            node,
-            nodes: canvasState.nodes,
-            source: "user",
-          });
-        if (placementNodes.length > 0) {
-          projectCanvasLayout
-            .saveLayoutNodes(placementNodes)
-            .catch(() => undefined);
-        }
-        return;
-      }
-      projectCanvasLayout.scheduleNodeLayoutSave(node, { source: "user" });
-    },
-    onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
-    onPendingApDbReferencesStart: beginPendingApDbReferences,
-    onResourceLayoutDelete: deleteResourceLayoutRefs,
-    projectId: uid,
-    refreshWorkloadLists: refresh,
-    selectionReady: !isEmptyGraphLoading,
-  });
-  const selectedTelemetryTarget = useMemo(
-    () => telemetryTargetFromCanvasNode(workbench.selectedNode),
-    [workbench.selectedNode]
-  );
-  const { openDrawerSurface, openMainSurface, openSideSurface } = workbench;
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
@@ -170,60 +33,28 @@ export default function ProjectIdPage() {
         if (surfaceIntent == null) {
           return { status: "ignored" as const };
         }
-        if (surfaceIntent.slot === "drawer") {
-          openDrawerSurface(surfaceIntent.entry);
-          return { status: "handled" as const };
-        }
-        if (surfaceIntent.slot === "main") {
-          openMainSurface(surfaceIntent.entry);
-          return { status: "handled" as const };
-        }
-        openSideSurface(surfaceIntent.entry);
+        projectCanvas.actions.openSurfaceIntent(surfaceIntent);
         return { status: "handled" as const };
       },
     }),
-    [openDrawerSurface, openMainSurface, openSideSurface, uid]
+    [projectCanvas.actions.openSurfaceIntent, uid]
   );
   useProjectSidePaneSurface(projectCanvasSidePaneSurface);
-  const meta = useMemo(
-    () => ({
-      ...workbench.meta,
-      openingFitView: {
-        key: `${namespace}:${uid}`,
-      },
-      viewportFollow: {
-        isFollowTarget: isCanvasNodeGeneratedPosition,
-        key: `${namespace}:${uid}`,
-      },
-    }),
-    [workbench.meta, namespace, uid]
-  );
-  const canvasViewportInset =
-    workbench.surfaceRenderModel.side == null
-      ? 0
-      : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET;
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      {frameState.renderCanvas && (
+      {projectCanvas.canvas.frameState.renderCanvas && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <WorkloadTelemetryProvider
             kubeconfig={kubeconfig}
-            selectedTarget={selectedTelemetryTarget}
+            selectedTarget={projectCanvas.canvas.selectedTelemetryTarget}
           >
             <Canvas.Root
               key={`${namespace}:${uid}`}
-              meta={meta}
-              state={{
-                ...canvasState,
-                connectionOrigin: workbench.connectionOrigin,
-                edges: canvasEdges,
-                nodes: workbench.nodes,
-                selectedEdge: workbench.selectedEdge,
-                selectedNode: workbench.selectedNode,
-              }}
+              meta={projectCanvas.canvas.meta}
+              state={projectCanvas.canvas.state}
             >
               <div className="relative min-h-0 flex-1">
-                {frameState.overlay === "loading" ? (
+                {projectCanvas.canvas.frameState.overlay === "loading" ? (
                   <div
                     aria-live="polite"
                     className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[min(100%-2rem,20rem)]"
@@ -241,8 +72,8 @@ export default function ProjectIdPage() {
                     </div>
                   </div>
                 ) : null}
-                {frameState.overlay === "error" ||
-                frameState.overlay === "empty" ? (
+                {projectCanvas.canvas.frameState.overlay === "error" ||
+                projectCanvas.canvas.frameState.overlay === "empty" ? (
                   <div
                     aria-live="polite"
                     className="pointer-events-none absolute top-6 left-1/2 z-10 -translate-x-1/2"
@@ -251,7 +82,7 @@ export default function ProjectIdPage() {
                   >
                     <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-md">
                       <span className="font-medium text-foreground text-sm">
-                        {frameState.overlay === "error"
+                        {projectCanvas.canvas.frameState.overlay === "error"
                           ? "Workloads unavailable"
                           : "No workloads"}
                       </span>
@@ -259,14 +90,22 @@ export default function ProjectIdPage() {
                   </div>
                 ) : null}
                 <Canvas.Flow>
-                  <Canvas.MiniMap rightInset={canvasViewportInset} />
-                  <Canvas.Controls rightInset={canvasViewportInset} />
-                  <ProjectCanvasWorkbenchSurfaces
+                  <Canvas.MiniMap
+                    rightInset={projectCanvas.canvas.viewportInset}
+                  />
+                  <Canvas.Controls
+                    rightInset={projectCanvas.canvas.viewportInset}
+                  />
+                  <ProjectCanvasSurfaceHost
+                    actions={projectCanvas.surfaces.actions}
+                    dialogs={projectCanvas.surfaces.dialogs}
                     kubeconfig={kubeconfig}
                     namespace={namespace}
                     projectId={uid}
-                    refreshWorkloadLists={refresh}
-                    workbench={workbench}
+                    refreshWorkloadLists={
+                      projectCanvas.surfaces.refreshWorkloadLists
+                    }
+                    surfaceModel={projectCanvas.surfaces.model}
                   />
                 </Canvas.Flow>
               </div>
