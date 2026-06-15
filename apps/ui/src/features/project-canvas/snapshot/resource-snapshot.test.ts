@@ -5,9 +5,44 @@ import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+  CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import type { CanvasLayoutDocument } from "../layout/types";
+import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import type {
+  CanvasLayoutDocument,
+  CanvasLayoutNode,
+  CanvasLayoutResourceKind,
+} from "../layout/types";
 import { buildProjectCanvasResourceSnapshot } from "./resource-snapshot";
+
+function layoutResourceNode(
+  kind: CanvasLayoutResourceKind,
+  name: string,
+  position: CanvasLayoutNode["position"]
+): CanvasLayoutNode {
+  return {
+    owner: {
+      kind: "resource",
+      ref: { kind, name, namespace: "default" },
+    },
+    position,
+  };
+}
+
+function deploymentProjectionLayoutNode(input: {
+  position: CanvasLayoutNode["position"];
+  slotId: string;
+  taskId?: string;
+}): CanvasLayoutNode {
+  return {
+    owner: {
+      kind: "deploymentProjection",
+      slotId: input.slotId,
+      taskId: input.taskId ?? "task-1",
+    },
+    position: input.position,
+  };
+}
 
 test("resource snapshot derives canvas state and AP Environment DB Reference Sources", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
@@ -110,7 +145,6 @@ test("resource snapshot emits first-placement intent before merge intent", () =>
           ref: { kind: "AP", name: "api", namespace: "default" },
         },
         position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
         source: "generated",
       },
     ],
@@ -175,7 +209,7 @@ test("resource snapshot projects active deploy tasks as placeholder nodes", () =
   assert.equal(snapshot.frameState.overlay, "none");
 });
 
-test("resource snapshot hands placeholder position to primary AP result", () => {
+test("resource snapshot hands deployment placement to primary AP result", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
       items: [
@@ -188,7 +222,12 @@ test("resource snapshot hands placeholder position to primary AP result", () => 
     },
     canvasLayout: {
       namespace: "default",
-      nodes: [],
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: "AP:default:api",
+        }),
+      ],
       projectId: "project-uid",
       version: 1,
     },
@@ -214,7 +253,6 @@ test("resource snapshot hands placeholder position to primary AP result", () => 
                 namespace: "default",
               },
               id: "AP:default:api",
-              position: { x: 680, y: 280 },
               primary: true,
             },
           ],
@@ -248,19 +286,22 @@ test("resource snapshot hands placeholder position to primary AP result", () => 
     ]
   );
   assert.deepEqual(snapshot.layoutIntent, {
-    kind: "first-placement",
-    nodes: [
+    commands: [
       {
-        expanded: false,
-        owner: {
+        fromOwner: {
+          kind: "deploymentProjection",
+          slotId: "AP:default:api",
+          taskId: "task-1",
+        },
+        kind: "rekey",
+        toOwner: {
           kind: "resource",
           ref: { kind: "AP", name: "api", namespace: "default" },
         },
-        position: { x: 680, y: 280 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-        source: "generated",
       },
     ],
+    expectedVersion: 1,
+    kind: "placement-commands",
   });
 });
 
@@ -346,6 +387,92 @@ test("resource snapshot rekeys deployment slot placement to matching AP result",
   });
 });
 
+test("resource snapshot rekeys deployment slot placement through explicit result mapping", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api-live", namespace: "default" },
+          spec: { input: {} },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: "AP:default:api-draft",
+        }),
+      ],
+      projectId: "project-uid",
+      version: 9,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          slots: [
+            {
+              expectedRef: {
+                kind: "AP",
+                name: "api-draft",
+                namespace: "default",
+              },
+              id: "AP:default:api-draft",
+              primary: true,
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        resultMappings: [
+          {
+            actualRef: {
+              kind: "AP",
+              name: "api-live",
+              namespace: "default",
+            },
+            slotId: "AP:default:api-draft",
+          },
+        ],
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      } as DeploymentTaskProjection,
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(snapshot.canvasState.nodes[0]?.position, {
+    x: 680,
+    y: 280,
+  });
+  assert.deepEqual(snapshot.layoutIntent, {
+    commands: [
+      {
+        fromOwner: {
+          kind: "deploymentProjection",
+          slotId: "AP:default:api-draft",
+          taskId: "task-1",
+        },
+        kind: "rekey",
+        toOwner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api-live", namespace: "default" },
+        },
+      },
+    ],
+    expectedVersion: 9,
+    kind: "placement-commands",
+  });
+});
+
 test("resource snapshot consumes deployment slot when AP layout already exists", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
@@ -360,10 +487,7 @@ test("resource snapshot consumes deployment slot when AP layout already exists",
     canvasLayout: {
       namespace: "default",
       nodes: [
-        {
-          position: { x: 120, y: 80 },
-          ref: { kind: "AP", name: "api", namespace: "default" },
-        },
+        layoutResourceNode("AP", "api", { x: 120, y: 80 }),
         {
           owner: {
             kind: "deploymentProjection",
@@ -426,7 +550,7 @@ test("resource snapshot consumes deployment slot when AP layout already exists",
   });
 });
 
-test("resource snapshot keeps placeholder path until projection position is recorded", () => {
+test("resource snapshot renders live result before projection placement is recorded", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
       items: [
@@ -478,9 +602,9 @@ test("resource snapshot keeps placeholder path until projection position is reco
     })),
     [
       {
-        id: "deployment-result-placeholder-task-1-AP:default:api",
+        id: "ap-api",
         position: { x: 0, y: 0 },
-        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+        type: CANVAS_CONTAINER_NODE_TYPE,
       },
     ]
   );
@@ -488,16 +612,127 @@ test("resource snapshot keeps placeholder path until projection position is reco
     kind: "first-placement",
     nodes: [
       {
+        expanded: false,
         owner: {
-          kind: "deploymentProjection",
-          slotId: "AP:default:api",
-          taskId: "task-1",
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
         },
         position: { x: 0, y: 0 },
         source: "generated",
       },
     ],
   });
+});
+
+test("resource snapshot does not keep template support resources as placeholders after canvas results appear", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "wordpress-nblvip", namespace: "default" },
+          spec: {
+            input: {
+              network: {
+                platformAddresses: [{ id: "pa_wordpress", port: 80 }],
+              },
+            },
+          },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    dbsData: {
+      items: [
+        {
+          metadata: {
+            name: "wordpress-nblvip-mysql",
+            namespace: "default",
+          },
+          spec: { engine: "apecloud-mysql" },
+          status: { phase: "Creating" },
+        },
+      ],
+    },
+    deployTasks: [
+      {
+        artifactSummary: {
+          resources: [
+            {
+              apiVersion: "template.sealos.io",
+              kind: "instance",
+              name: "wordpress-template",
+              namespace: "default",
+            },
+            {
+              apiVersion: "template.sealos.io",
+              kind: "app",
+              name: "wordpress-nblvip",
+              namespace: "default",
+            },
+            {
+              apiVersion: "template.sealos.io",
+              kind: "cluster",
+              name: "wordpress-nblvip-mysql",
+              namespace: "default",
+            },
+            {
+              apiVersion: "template.sealos.io",
+              kind: "service",
+              name: "wordpress-nblvip",
+              namespace: "default",
+            },
+            {
+              apiVersion: "template.sealos.io",
+              kind: "ingress",
+              name: "wordpress-nblvip",
+              namespace: "default",
+            },
+            {
+              apiVersion: "template.sealos.io",
+              kind: "secret",
+              name: "wordpress-nblvip-mysql",
+              namespace: "default",
+            },
+          ],
+        },
+        canvasProjection: {},
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+    })),
+    [
+      { id: "ap-wordpress-nblvip", type: CANVAS_CONTAINER_NODE_TYPE },
+      { id: "db-wordpress-nblvip-mysql", type: CANVAS_DATABASE_NODE_TYPE },
+      { id: "entry-wordpress-nblvip", type: CANVAS_ENTRY_NODE_TYPE },
+    ]
+  );
+  assert.equal(
+    snapshot.canvasState.nodes.some(
+      (node) => node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE
+    ),
+    false
+  );
 });
 
 test("resource snapshot previews AP public access as related result placeholders", () => {
@@ -592,7 +827,12 @@ test("resource snapshot keeps unresolved result slots beside handed-off results"
     },
     canvasLayout: {
       namespace: "default",
-      nodes: [],
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: "AP:default:api",
+        }),
+      ],
       projectId: "project-uid",
       version: 1,
     },
@@ -616,7 +856,6 @@ test("resource snapshot keeps unresolved result slots beside handed-off results"
                 namespace: "default",
               },
               id: "AP:default:api",
-              position: { x: 680, y: 280 },
               primary: true,
             },
             {
@@ -695,10 +934,11 @@ test("resource snapshot does not let placeholder handoff override saved resource
     canvasLayout: {
       namespace: "default",
       nodes: [
-        {
-          position: { x: 120, y: 80 },
-          ref: { kind: "AP", name: "api", namespace: "default" },
-        },
+        layoutResourceNode("AP", "api", { x: 120, y: 80 }),
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: "AP:default:api",
+        }),
       ],
       projectId: "project-uid",
       version: 1,
@@ -715,7 +955,7 @@ test("resource snapshot does not let placeholder handoff override saved resource
             },
           ],
         },
-        canvasProjection: { position: { x: 680, y: 280 } },
+        canvasProjection: {},
         completedAt: "2026-06-11T10:00:00.000Z",
         id: "task-1",
         namespace: "default",
@@ -731,5 +971,18 @@ test("resource snapshot does not let placeholder handoff override saved resource
   });
 
   assert.deepEqual(snapshot.canvasState.nodes[0]?.position, { x: 120, y: 80 });
-  assert.equal(snapshot.layoutIntent, null);
+  assert.deepEqual(snapshot.layoutIntent, {
+    commands: [
+      {
+        kind: "delete",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: "AP:default:api",
+          taskId: "task-1",
+        },
+      },
+    ],
+    expectedVersion: 1,
+    kind: "placement-commands",
+  });
 });

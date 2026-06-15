@@ -20,20 +20,19 @@ interface CanvasLayoutNodeBase {
   expanded?: boolean;
   lastSeenUid?: string;
   orphanedAt?: string;
-  owner?: CanvasPlacementOwner;
+  owner: CanvasPlacementOwner;
   position: CanvasLayoutPosition;
   source?: CanvasPlacementSource;
   stackOrder?: number;
 }
 
 export interface CanvasResourceLayoutNode extends CanvasLayoutNodeBase {
-  ref: CanvasLayoutResourceRef;
+  owner: Extract<CanvasPlacementOwner, { kind: "resource" }>;
 }
 
 export interface CanvasDeploymentProjectionLayoutNode
   extends CanvasLayoutNodeBase {
   owner: Extract<CanvasPlacementOwner, { kind: "deploymentProjection" }>;
-  ref?: never;
 }
 
 export type CanvasLayoutNode =

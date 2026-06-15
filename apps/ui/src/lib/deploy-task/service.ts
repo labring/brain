@@ -51,28 +51,9 @@ function shouldSkipSetIfEmptyCanvasProjection(input: {
   return (
     (input.existing.slots?.length ?? 0) > 0 ||
     (input.existing.edges?.length ?? 0) > 0 ||
+    (input.existing.resultMappings?.length ?? 0) > 0 ||
     input.existing.shape !== undefined
   );
-}
-
-function projectionWithoutPlacement(
-  projection: DeploymentTaskCanvasProjection
-): DeploymentTaskCanvasProjection {
-  return {
-    ...(projection.edges === undefined ? {} : { edges: projection.edges }),
-    ...(projection.shape === undefined ? {} : { shape: projection.shape }),
-    ...(projection.slots === undefined
-      ? {}
-      : {
-          slots: projection.slots.map((slot) => ({
-            ...(slot.expectedRef === undefined
-              ? {}
-              : { expectedRef: slot.expectedRef }),
-            id: slot.id,
-            ...(slot.primary === undefined ? {} : { primary: slot.primary }),
-          })),
-        }),
-  };
 }
 
 function compactOptional(value: string | undefined): string | null {
@@ -426,7 +407,7 @@ export async function updateDeployTaskCanvasProjection(
       return null;
     }
     const mode = input.mode ?? "replace";
-    const incomingProjection = projectionWithoutPlacement(input.projection);
+    const incomingProjection = input.projection;
     if (
       mode === "set-if-empty" &&
       shouldSkipSetIfEmptyCanvasProjection({

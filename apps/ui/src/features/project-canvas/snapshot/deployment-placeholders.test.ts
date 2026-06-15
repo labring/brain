@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Node } from "@xyflow/react";
 
 import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
 import type {
   CanvasDeploymentPlaceholderNodeData,
   CanvasDeploymentPlaceholderRfNode,
 } from "../nodes/types";
-import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "./deployment-placeholders";
+import {
+  deploymentPreviewEdgesFromTasks,
+  deploymentProjectionPlacementNodesFromPlaceholderNode,
+} from "./deployment-placeholders";
 
 const AP_SLOT = {
   expectedRef: {
@@ -29,7 +33,7 @@ const PUBLIC_ACCESS_SLOT = {
 const PROJECTION_SLOTS = [AP_SLOT, PUBLIC_ACCESS_SLOT] as const;
 
 function resultPreviewNode(input: {
-  anchorSource?: CanvasDeploymentPlaceholderNodeData["projectionPositionSource"];
+  anchorSource?: CanvasDeploymentPlaceholderNodeData["projectionPlacementSource"];
   position: CanvasDeploymentPlaceholderRfNode["position"];
   primary?: boolean;
   slotId: (typeof PROJECTION_SLOTS)[number]["id"];
@@ -41,11 +45,11 @@ function resultPreviewNode(input: {
         ? {}
         : { expectedRef: slot.expectedRef }),
       groupId: "task-1",
-      hasProjectionPosition: false,
+      hasProjectionPlacement: false,
       ...(input.primary === undefined ? {} : { primary: input.primary }),
       ...(input.anchorSource === undefined
         ? {}
-        : { projectionPositionSource: input.anchorSource }),
+        : { projectionPlacementSource: input.anchorSource }),
       projectionShape: "result-preview",
       projectionSlots: [...PROJECTION_SLOTS],
       slotId: input.slotId,
@@ -158,6 +162,83 @@ test("projection patch moves every preview slot when a result placeholder is dra
         },
         position: { x: 440, y: 320 },
         source: "user",
+      },
+    ]
+  );
+});
+
+test("preview edges stay scoped to placeholders from their own deployment task", () => {
+  const slotIds = ["AP:default:api", "DB:default:postgres"] as const;
+  const nodes: Node[] = ["task-1", "task-2"].flatMap((taskId, taskIndex) =>
+    slotIds.map((slotId, slotIndex) => ({
+      data: {
+        expectedRef:
+          slotIndex === 0
+            ? { kind: "AP", name: "api", namespace: "default" }
+            : { kind: "DB", name: "postgres", namespace: "default" },
+        projectionShape: "result-preview",
+        slotId,
+        taskId,
+      },
+      id: `${taskId}-${slotId}`,
+      position: { x: taskIndex * 340, y: slotIndex * 280 },
+      type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+    }))
+  );
+
+  const edges = deploymentPreviewEdgesFromTasks({
+    nodes,
+    tasks: ["task-1", "task-2"].map((taskId) => ({
+      artifactSummary: {},
+      canvasProjection: {
+        edges: [
+          {
+            id: "ap-db",
+            sourceSlotId: "AP:default:api",
+            targetSlotId: "DB:default:postgres",
+          },
+        ],
+        slots: [
+          {
+            expectedRef: { kind: "AP", name: "api", namespace: "default" },
+            id: "AP:default:api",
+          },
+          {
+            expectedRef: {
+              kind: "DB",
+              name: "postgres",
+              namespace: "default",
+            },
+            id: "DB:default:postgres",
+          },
+        ],
+      },
+      completedAt: null,
+      id: taskId,
+      namespace: "default",
+      phase: "apply",
+      projectId: "project-uid",
+      status: "applying",
+      updatedAt: "2026-06-11T10:00:00.000Z",
+    })),
+  });
+
+  assert.deepEqual(
+    edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+    })),
+    [
+      {
+        id: "deployment-preview-task-1-ap-db",
+        source: "task-1-AP:default:api",
+        target: "task-1-DB:default:postgres",
+      },
+      {
+        id: "deployment-preview-task-2-ap-db",
+        source: "task-2-AP:default:api",
+        target: "task-2-DB:default:postgres",
       },
     ]
   );

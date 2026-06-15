@@ -123,19 +123,16 @@ function normalizeNode(node: CanvasLayoutNode): CanvasLayoutNode {
       ...(stackOrder === undefined ? {} : { stackOrder }),
     };
   }
-  const ref = normalizeRef(node.ref ?? owner.ref);
-  if (!canvasPlacementOwnersEqual(owner, resourcePlacementOwner(ref))) {
-    throw new CanvasLayoutValidationError(
-      "resource owner must match node ref."
-    );
+  const resourceOwner = resourcePlacementOwner(normalizeRef(owner.ref));
+  if (!canvasPlacementOwnersEqual(owner, resourceOwner)) {
+    throw new CanvasLayoutValidationError("resource owner is invalid.");
   }
   return {
     ...(node.expanded === undefined ? {} : { expanded: node.expanded }),
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
     ...(orphanedAt === undefined ? {} : { orphanedAt }),
-    owner,
+    owner: resourceOwner,
     position: { x, y },
-    ref,
     ...(source === undefined ? {} : { source }),
     ...(stackOrder === undefined ? {} : { stackOrder }),
   };

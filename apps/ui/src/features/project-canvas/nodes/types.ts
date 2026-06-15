@@ -23,9 +23,11 @@ import type { DbSettingsData } from "@/features/project-settings/db/db-settings-
 import type {
   DeploymentTaskCanvasProjectionEdge,
   DeploymentTaskCanvasProjectionExpectedRef,
-  DeploymentTaskCanvasProjectionPosition,
-  DeploymentTaskCanvasProjectionPositionSource,
 } from "@/lib/deploy-task/types";
+import type {
+  CanvasLayoutPosition,
+  CanvasPlacementSource,
+} from "../layout/types";
 
 // `Node`'s second type parameter must match the node type constants in ./constants.
 // biome-ignore lint/style/useImportType: value required for `typeof` in `CanvasContainerRfNode`
@@ -112,16 +114,16 @@ export interface CanvasDeploymentPlaceholderNodeData
   extends Record<string, unknown> {
   expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
   groupId?: string;
-  hasProjectionPosition?: boolean;
+  hasProjectionPlacement?: boolean;
   primary?: boolean;
   projectionEdges?: DeploymentTaskCanvasProjectionEdge[];
-  projectionPositionSource?: DeploymentTaskCanvasProjectionPositionSource;
-  projectionRelativePosition?: { x: number; y: number };
+  projectionPlacementSource?: CanvasPlacementSource;
+  projectionRelativePlacement?: { x: number; y: number };
   projectionShape?: "generic" | "result-preview";
   projectionSlots?: {
     expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
     id: string;
-    position?: DeploymentTaskCanvasProjectionPosition;
+    position?: CanvasLayoutPosition & { source?: CanvasPlacementSource };
     primary?: boolean;
   }[];
   slotId?: string;

@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { resourcePlacementOwner } from "./placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
-  CanvasLayoutResourceRef,
   CanvasPlacementOwner,
 } from "./types";
 
@@ -43,20 +41,12 @@ const canvasPlacementOwnerSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-function refsEqual(
-  a: CanvasLayoutResourceRef,
-  b: CanvasLayoutResourceRef
-): boolean {
-  return a.kind === b.kind && a.name === b.name && a.namespace === b.namespace;
-}
-
 interface ParsedCanvasLayoutNodeInput {
   expanded?: boolean;
   lastSeenUid?: string;
   orphanedAt?: string;
-  owner?: CanvasPlacementOwner;
+  owner: CanvasPlacementOwner;
   position: { x: number; y: number };
-  ref?: CanvasLayoutResourceRef;
   source?: "generated" | "user";
   stackOrder?: number;
 }
@@ -78,14 +68,9 @@ function normalizedResourceLayoutNode(
   input: ParsedCanvasLayoutNodeInput,
   owner: Extract<CanvasPlacementOwner, { kind: "resource" }>
 ): CanvasLayoutNode {
-  const ref = input.ref ?? owner.ref;
-  if (!refsEqual(ref, owner.ref)) {
-    throw new Error("Canvas layout resource owner must match node ref.");
-  }
   return {
     ...normalizedLayoutNodeBase(input),
     owner,
-    ref,
   };
 }
 
@@ -93,9 +78,6 @@ function normalizedDeploymentProjectionLayoutNode(
   input: ParsedCanvasLayoutNodeInput,
   owner: Extract<CanvasPlacementOwner, { kind: "deploymentProjection" }>
 ): CanvasLayoutNode {
-  if (input.ref !== undefined) {
-    throw new Error("Deployment projection placement nodes cannot carry ref.");
-  }
   return {
     ...normalizedLayoutNodeBase(input),
     owner: {
@@ -109,12 +91,7 @@ function normalizedDeploymentProjectionLayoutNode(
 function normalizedCanvasLayoutNode(
   input: ParsedCanvasLayoutNodeInput
 ): CanvasLayoutNode {
-  const owner =
-    input.owner ??
-    (input.ref === undefined ? undefined : resourcePlacementOwner(input.ref));
-  if (owner === undefined) {
-    throw new Error("Canvas layout node owner is required.");
-  }
+  const owner = input.owner;
   if (owner.kind === "resource") {
     return normalizedResourceLayoutNode(input, owner);
   }
@@ -135,7 +112,24 @@ export const canvasLayoutNodeSchema = z
     source: z.enum(["generated", "user"]).optional(),
     stackOrder: finiteInteger.optional(),
   })
-  .transform(normalizedCanvasLayoutNode);
+  .transform((input, ctx) => {
+    const owner =
+      input.owner ??
+      (input.ref === undefined
+        ? undefined
+        : ({ kind: "resource", ref: input.ref } as const));
+    if (owner === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Expected a canvas placement owner.",
+      });
+      return z.NEVER;
+    }
+    return normalizedCanvasLayoutNode({
+      ...input,
+      owner,
+    });
+  });
 
 const placementCommandSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -206,9 +200,7 @@ export function assertCanvasLayoutPatchMatchesOwner(
 ): void {
   for (const node of input.nodes) {
     const namespace =
-      node.owner?.kind === "resource"
-        ? node.owner.ref.namespace
-        : node.ref?.namespace;
+      node.owner.kind === "resource" ? node.owner.ref.namespace : undefined;
     if (namespace !== undefined && namespace !== input.namespace) {
       throw new Error(
         "Canvas layout node namespace must match layout namespace."

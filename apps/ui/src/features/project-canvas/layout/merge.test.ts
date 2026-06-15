@@ -9,7 +9,12 @@ import {
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import { mergeCanvasLayoutWithDetectedNodes } from "./merge";
-import type { CanvasLayoutDocument } from "./types";
+import type {
+  CanvasLayoutDocument,
+  CanvasLayoutNode,
+  CanvasLayoutResourceKind,
+  CanvasResourceLayoutNode,
+} from "./types";
 
 function apNode(name: string, uid?: string): Node {
   return {
@@ -55,6 +60,25 @@ function entryNode(name: string, apRef = "api"): Node {
   };
 }
 
+function layoutResourceNode(
+  kind: CanvasLayoutResourceKind,
+  name: string,
+  extra?: Partial<Omit<CanvasResourceLayoutNode, "owner">>
+): CanvasLayoutNode {
+  return {
+    owner: {
+      kind: "resource",
+      ref: { kind, name, namespace: "default" },
+    },
+    position: { x: 0, y: 0 },
+    ...extra,
+  };
+}
+
+function layoutResourceName(node: CanvasLayoutNode): string | undefined {
+  return node.owner.kind === "resource" ? node.owner.ref.name : undefined;
+}
+
 test("merge returns first-placement layout nodes without rewriting loaded layout", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
@@ -79,7 +103,6 @@ test("merge returns first-placement layout nodes without rewriting loaded layout
         ref: { kind: "AP", name: "api", namespace: "default" },
       },
       position: { x: 0, y: 0 },
-      ref: { kind: "AP", name: "api", namespace: "default" },
       source: "generated",
     },
   ]);
@@ -105,11 +128,10 @@ test("merge reuses nodes that already carry the resolved layout state", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
+      layoutResourceNode("AP", "api", {
         expanded: false,
         position: { x: 999, y: 999 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-      },
+      }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -155,13 +177,7 @@ test("merge does not persist first placements when layout is unavailable", () =>
 test("merge lets explicit Canvas Node Stack Order render above default layers", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-        stackOrder: 0,
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "api", { stackOrder: 0 })],
     projectId: "project-uid",
     version: 1,
   };
@@ -184,13 +200,11 @@ test("merge restores stack order for brief orphan returns", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
+      layoutResourceNode("AP", "api", {
         lastSeenUid: "api-uid",
         orphanedAt: "2026-05-22T10:00:00.000Z",
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
         stackOrder: 4,
-      },
+      }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -211,18 +225,12 @@ test("merge brings meaningful orphan returns to the front", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "DB", name: "postgres", namespace: "default" },
-        stackOrder: 2,
-      },
-      {
+      layoutResourceNode("DB", "postgres", { stackOrder: 2 }),
+      layoutResourceNode("AP", "api", {
         lastSeenUid: "api-uid",
         orphanedAt: "2026-05-22T10:00:00.000Z",
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
         stackOrder: 1,
-      },
+      }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -236,7 +244,7 @@ test("merge brings meaningful orphan returns to the front", () => {
 
   assert.deepEqual(
     result.layout?.nodes.map((node) => ({
-      name: node.ref?.name,
+      name: layoutResourceName(node),
       stackOrder: node.stackOrder,
     })),
     [
@@ -257,18 +265,13 @@ test("merge treats same-name different-UID returns as fresh for stack order", ()
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
+      layoutResourceNode("AP", "api", {
         lastSeenUid: "old-api-uid",
         orphanedAt: "2026-05-22T10:00:00.000Z",
         position: { x: 48, y: 64 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
         stackOrder: 1,
-      },
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "DB", name: "postgres", namespace: "default" },
-        stackOrder: 2,
-      },
+      }),
+      layoutResourceNode("DB", "postgres", { stackOrder: 2 }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -287,7 +290,6 @@ test("merge treats same-name different-UID returns as fresh for stack order", ()
       ref: { kind: "AP", name: "api", namespace: "default" },
     },
     position: { x: 48, y: 64 },
-    ref: { kind: "AP", name: "api", namespace: "default" },
     stackOrder: 3,
   });
 });

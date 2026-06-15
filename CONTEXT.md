@@ -138,59 +138,61 @@ _Avoid_: GitHub task, deploy job, deployment request.
 
 A Deployment Task is owned by the deployment domain, not by the Project Assistant Pane or any Chat thread. Chat may create, inspect, or explain a Deployment Task through tools, but the task's lifecycle, events, artifacts, and runner transcript remain deployment records.
 
+### Deployment Projection Slot
+
+A task-local Project Canvas slot within one Deployment Task Projection. An unknown Deployment Projection Slot represents deployment progress before structured result evidence exists; a concrete slot may carry the anticipated result identity used for Deployment Handoff, but it is not a Canvas Resource Identity.
+
+An unknown Deployment Projection Slot uses a stable unknown slot identity within its Deployment Task. A concrete Deployment Projection Slot uses an identity derived from its anticipated result reference, while the Canvas Placement Owner combines that slot identity with the Deployment Task identity.
+
+Deployment Projection Slots are only for anticipated results that can become Project Canvas resource nodes. Template support objects may provide Deployment Projection Evidence, but they are not Deployment Projection Slots.
+
+_Avoid_: generic placeholder identity, result-only slot, pending resource identity, fake Canvas Resource Identity, one slot per applied Kubernetes object.
+
 ### Deployment Placeholder Node
 
-A temporary, generic Project Canvas skeleton node that represents one active Deployment Task expected to add resources to its resolved Deployment Target Project. It is a task projection, not an AP, DB, AP Public Access Node, template workload, Settings Owner, resource action target, or Canvas Connection endpoint.
+A temporary Project Canvas skeleton node rendered for a Deployment Projection Slot that does not have a live resource node. It is a task projection, not an AP, DB, AP Public Access Node, template workload, Settings Owner, resource action target, or Canvas Connection endpoint.
 
-A Deployment Placeholder Node may have project-scoped temporary placement while visible, but durable Canvas Layout belongs to resulting resource nodes after handoff.
+_Avoid_: ghost node, pending node, pending AP, pending DB, fake resource node.
 
-_Avoid_: ghost node, pending node, pending AP, fake resource node.
+### Deployment Projection Placement
 
-### Deployment Placeholder Placement
-
-The project-scoped temporary visual position of a Deployment Placeholder Node before Deployment Handoff. It is distinct from Canvas Layout, and it may become the visual position inherited by the Primary Deployment Result.
+The project-scoped temporary visual position owned by a Deployment Projection Slot before Deployment Handoff. Deployment Projection Placement is a Canvas Layout placement owned by the deployment projection, and it may be rekeyed to a resulting resource when handoff occurs.
 
 _Avoid_: pending node layout, fake resource layout, viewport placement.
 
-### Deployment Result Preview Placement
+### Deployment Projection Slot Group
 
-The project-scoped temporary visual arrangement of a Deployment Result Preview. Deployment Result Preview Placement is chosen for the preview group as one footprint and then expanded into per-slot positions for Deployment Handoff.
+The visual group formed by the Deployment Projection Slots for one Deployment Task Projection. Moving one Deployment Placeholder Node moves the slot group by default; individual slot placement is not part of the default projection interaction.
 
-When a generic Deployment Placeholder Node upgrades into a Deployment Result Preview, the generic placeholder position anchors the preview's primary slot unless preserving that anchor would conflict with existing canvas occupancy.
+_Avoid_: result preview shape, independent pending node placement, result auto-layout.
 
-Deployment Result Preview Placement distinguishes system-generated positions from user-chosen positions so Deployment Handoff can preserve intentional placement.
+### Deployment Projection Evidence
 
-Moving a Deployment Result Placeholder Node moves its Deployment Result Preview group by default; individual slot placement is not part of the default projection interaction.
+Structured deployment facts that justify concrete Deployment Projection Slots or Deployment Preview Edges, such as generated manifests, artifact summaries, template previews, AP public access intent, or AP-to-DB relationship fields. Natural-language task text and broad task type are not Deployment Projection Evidence.
 
-_Avoid_: independent pending node placement, result auto-layout.
+_Avoid_: guessed canvas, prompt-derived resource graph, task-type inference.
 
-### Deployment Result Preview
+### Projection Reconciliation
 
-A Project Canvas projection of a Deployment Task's anticipated canvas results once the task has enough evidence to describe their shape. A Deployment Result Preview may contain one or more Deployment Result Placeholder Nodes and Deployment Preview Edges, and it replaces the generic Deployment Placeholder Node for that Deployment Task.
+The Project Canvas process that compares Deployment Projection Slots with actual resource state. Projection Reconciliation treats resource state as authoritative and uses Deployment Projection Slots only as advisory handoff candidates.
 
-Deployment Result Preview evidence must come from structured deployment facts such as generated manifests, artifact summaries, template previews, or AP/DB relationship fields; natural-language task text and broad task type are not enough.
+_Avoid_: forcing resources to match projection, fuzzy result matching.
 
-Viewport follow for a Deployment Result Preview targets the preview group rather than only the primary slot.
+### Projection Match
 
-_Avoid_: pending resource graph, fake resources, guessed canvas.
+An explicit correspondence between one Deployment Projection Slot and one actual resource. A Projection Match requires either exact anticipated resource identity or structured expected-to-actual result mapping.
 
-### Deployment Result Slot
+_Avoid_: fuzzy matching, created-time matching, count-based matching.
 
-A task-local identity for one anticipated canvas result within a Deployment Result Preview. A Deployment Result Slot may carry the anticipated result identity used for Deployment Handoff, but it is not a Canvas Resource Identity.
+### Projection Slot Expiry
 
-_Avoid_: pending resource identity, fake Canvas Resource Identity.
+The removal of an unmatched Deployment Projection Slot after it can no longer reasonably hand off to a resource. Active Deployment Tasks keep unmatched slots visible; completed tasks keep them only for a reconciliation grace window; failed or cancelled tasks do not keep unmatched slots.
 
-### Deployment Result Placeholder Node
-
-A temporary Project Canvas skeleton node for one Deployment Result Slot within a Deployment Result Preview. It is not an AP, DB, AP Public Access Node, template workload, Settings Owner, or resource action target.
-
-A Deployment Result Placeholder Node is used only for an anticipated result that does not already have a live canvas node or Canvas Layout position.
-
-_Avoid_: pending AP, pending DB, fake resource node.
+_Avoid_: permanent missing-resource placeholder, completed placeholder.
 
 ### Deployment Preview Edge
 
-A temporary visual relationship between Deployment Result Placeholder Nodes in one Deployment Result Preview. It is not a Canvas Connection and does not represent an established runtime dependency.
+A temporary visual relationship between Deployment Projection Slots in one Deployment Task Projection. It is not a Canvas Connection and does not represent an established runtime dependency.
 
 Deployment Preview Edges require explicit preview evidence, such as generated AP-to-DB reference intent, template-declared dependency, or AP-to-Public-Access presentation relationship. Sharing one Deployment Task is not enough to create a Deployment Preview Edge.
 
@@ -198,7 +200,7 @@ _Avoid_: pending connection, fake edge, draft Canvas Connection.
 
 ### Deployment Task Projection
 
-A Project-scoped read-side view of one Deployment Task containing only the facts needed by project surfaces to present deployment progress and resource handoff. It is distinct from the Deployment Task record, task event log, runner transcript, and resulting AP, DB, or template workload state.
+A Project-scoped read-side view of one Deployment Task containing only the facts needed by project surfaces to present deployment progress and resource handoff. It contains one or more Deployment Projection Slots and Deployment Preview Edges, but it does not own Canvas Layout positions.
 
 Project Canvas consumes Deployment Task Projections rather than full Deployment Task records when rendering Deployment Placeholder Nodes and Deployment Handoff.
 
@@ -206,15 +208,15 @@ _Avoid_: task list row, canvas task, placeholder source data.
 
 ### Primary Deployment Result
 
-The resulting canvas resource node that inherits the Deployment Placeholder Node's visual position when a Deployment Task produces multiple resources. AP results are primary before DB results, template-native workload results are primary only when no AP or DB result exists, and AP Public Access Nodes are never the Primary Deployment Result.
+The resulting canvas resource node that inherits the primary Deployment Projection Slot's visual position when a Deployment Task produces multiple resources. AP results are primary before DB results, template-native workload results are primary only when no AP or DB result exists, and AP Public Access Nodes are never the Primary Deployment Result.
 
 _Avoid_: main ghost target, first applied YAML, primary public access.
 
 ### Deployment Handoff
 
-The transition where a completed Deployment Task stops being represented by a Deployment Placeholder Node and its Primary Deployment Result appears as a normal Project Canvas resource node. Deployment Handoff may carry the placeholder's temporary position to the Primary Deployment Result when that resource has no existing Canvas Layout position.
+The transition where a concrete Deployment Projection Slot stops being represented by a Deployment Placeholder Node and its matching result appears as a normal Project Canvas resource node. Deployment Handoff may rekey the slot's Deployment Projection Placement to the resulting resource when that resource has no existing Canvas Layout position.
 
-When a Deployment Result Preview has multiple result slots, Deployment Handoff may complete per slot while unresolved slots remain visible as Deployment Result Placeholder Nodes.
+Deployment Handoff may complete per slot while unresolved slots remain visible as Deployment Placeholder Nodes.
 
 _Avoid_: completed placeholder, ghost replacement, result takeover.
 
@@ -436,17 +438,31 @@ A canvas node that represents an AP workload. The name is retained as a product/
 
 ### Canvas Layout
 
-A Project-scoped visual arrangement of the canvas, shared by everyone who opens that Project.
+A Project-scoped visual arrangement of the canvas, shared by everyone who opens that Project. Canvas Layout is the authoritative Canvas Placement Store: it is made of placements keyed by Canvas Placement Owners rather than by rendered node instances.
+
+### Canvas Placement Owner
+
+The stable Project Canvas identity that owns one visual placement. A Canvas Placement Owner may be a real resource or a Deployment Task projection, but a deployment-owned placement does not make the projection a resource.
+
+A Project has one authoritative Canvas Placement Store, so resource placements and Deployment Projection Placements belong to the same Canvas Layout rather than separate stores.
 
 ### Generated Canvas Position
 
-A deterministic placement proposed for a canvas node that does not yet have a Canvas Layout position. Once accepted by Incremental Canvas Placement, it becomes part of Canvas Layout for that node.
+A deterministic placement proposed for a canvas item whose Canvas Placement Owner does not yet have a Canvas Layout position. Once accepted by Incremental Canvas Placement, it becomes part of Canvas Layout for that owner.
 
 _Avoid_: recalculating a Generated Canvas Position for a node that already has a Canvas Layout position.
 
+### First Canvas Placement
+
+The first persisted Canvas Layout position for a Canvas Placement Owner. First Canvas Placement is used only when neither a resource-owned placement nor an inheritable deployment-owned placement already exists.
+
+### User Canvas Placement
+
+A Canvas Layout position created or changed by a user moving a canvas item. User Canvas Placement is authoritative over generated placement and should not be reinterpreted by Projection Reconciliation or Incremental Canvas Placement.
+
 ### Incremental Canvas Placement
 
-A canvas placement rule that assigns positions only to canvas nodes without a Canvas Layout position. It preserves existing Canvas Layout positions and does not reinterpret user-arranged canvas structure when resources appear, disappear, or reconcile.
+A canvas placement rule that assigns positions only to Canvas Placement Owners without a Canvas Layout position. It preserves existing Canvas Layout positions and does not reinterpret user-arranged canvas structure when resources appear, disappear, or reconcile.
 
 When Incremental Canvas Placement accepts a Generated Canvas Position, the placement save is scoped to the newly placed node or Canvas Placement Group rather than rewriting unrelated Canvas Layout nodes.
 
@@ -572,9 +588,9 @@ A right-side canvas surface opened from a selected AP or DB node to inspect or c
 
 ### Project Canvas Resource Snapshot
 
-The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP Public Access Node, and template-native workload list state plus the current Canvas Layout.
+The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP Public Access Node, template-native workload list state, Deployment Task Projections, and the current Canvas Layout.
 
-A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, empty/loading/error frame state, resource refresh policy, and Canvas Layout save intent such as first placement or layout merge. It may include Deployment Placeholder Nodes from active Deployment Task records, but it does not own Canvas Layout persistence; it emits layout intent for the Canvas Layout save pipeline to persist.
+A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, Deployment Placeholder Nodes, empty/loading/error frame state, and resource refresh policy. It may request Canvas Layout changes such as First Canvas Placement or Deployment Handoff, but it does not own Canvas Layout persistence.
 
 Downstream Project Canvas modules should consume canvas-ready resource facts from a Project Canvas Resource Snapshot rather than raw AP, DB, AP Public Access Node, or workload list payloads. For example, DB reference sources for AP Environment References are Project Canvas Resource Snapshot facts, while the raw DB list payload remains internal implementation detail.
 

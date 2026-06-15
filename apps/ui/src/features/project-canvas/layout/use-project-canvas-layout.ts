@@ -20,6 +20,13 @@ import type { CanvasLayoutDocument, PlacementCommand } from "./types";
 
 const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
 
+function isCanvasLayoutRevisionConflictError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.toLowerCase().includes("revision conflict")
+  );
+}
+
 export function useProjectCanvasLayout(options: {
   enabled?: boolean;
   kubeconfig: string;
@@ -137,16 +144,29 @@ export function useProjectCanvasLayout(options: {
       if (!enabled || commands.length === 0) {
         return;
       }
-      const next = await patchProjectCanvasLayoutNodes({
-        commands,
-        expectedVersion: options?.expectedVersion,
-        kubeconfig,
-        namespace,
-        nodes: [],
-        projectId,
-      });
-      rememberSavedLayout(next.nodes);
-      await mutate(next, { revalidate: false });
+      try {
+        const next = await patchProjectCanvasLayoutNodes({
+          commands,
+          expectedVersion: options?.expectedVersion,
+          kubeconfig,
+          namespace,
+          nodes: [],
+          projectId,
+        });
+        rememberSavedLayout(next.nodes);
+        await mutate(next, { revalidate: false });
+      } catch (error) {
+        if (!isCanvasLayoutRevisionConflictError(error)) {
+          throw error;
+        }
+        const latest = await fetchProjectCanvasLayout({
+          kubeconfig,
+          namespace,
+          projectId,
+        });
+        rememberSavedLayout(latest.nodes);
+        await mutate(latest, { revalidate: false });
+      }
     },
     [enabled, kubeconfig, mutate, namespace, projectId, rememberSavedLayout]
   );

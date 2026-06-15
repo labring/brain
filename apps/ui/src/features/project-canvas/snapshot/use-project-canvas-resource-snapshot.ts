@@ -217,6 +217,21 @@ export function useProjectCanvasResourceSnapshot(options: {
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
 
+  const refreshWorkloadResources = useCallback(
+    () => Promise.all([mutateAps(), mutateDbs(), mutateTemplateNative()]),
+    [mutateAps, mutateDbs, mutateTemplateNative]
+  );
+  const refreshWorkloadResourcesRef = useRef(refreshWorkloadResources);
+  useEffect(() => {
+    refreshWorkloadResourcesRef.current = refreshWorkloadResources;
+  }, [refreshWorkloadResources]);
+  const requestWorkloadReconciliation = useCallback(() => {
+    setWorkloadReconcilePollUntil(
+      Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
+    );
+    refreshWorkloadResourcesRef.current().catch(() => undefined);
+  }, []);
+
   const refreshDeployTasks = useCallback(async () => {
     if (
       kubeconfig.trim() === "" ||
@@ -313,24 +328,23 @@ export function useProjectCanvasResourceSnapshot(options: {
           setDeployTasksError(undefined);
           if (event.type === "snapshot") {
             setDeployTasks(event.projections);
+            if (event.projections.length > 0) {
+              requestWorkloadReconciliation();
+            }
             return;
           }
           if (event.type === "upsert") {
             setDeployTasks((current) =>
               upsertDeploymentTaskProjection(current, event.projection)
             );
-            setWorkloadReconcilePollUntil(
-              Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
-            );
+            requestWorkloadReconciliation();
             return;
           }
           if (event.type === "remove") {
             setDeployTasks((current) =>
               current.filter((task) => task.id !== event.taskId)
             );
-            setWorkloadReconcilePollUntil(
-              Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
-            );
+            requestWorkloadReconciliation();
           }
         },
         projectId: uid,
@@ -356,7 +370,13 @@ export function useProjectCanvasResourceSnapshot(options: {
         window.clearTimeout(reconnectTimer);
       }
     };
-  }, [isPageVisible, kubeconfig, namespace, uid]);
+  }, [
+    isPageVisible,
+    kubeconfig,
+    namespace,
+    requestWorkloadReconciliation,
+    uid,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -368,13 +388,8 @@ export function useProjectCanvasResourceSnapshot(options: {
   }, []);
 
   const revalidate = useCallback(() => {
-    return Promise.all([
-      mutateAps(),
-      mutateDbs(),
-      mutateTemplateNative(),
-      refreshDeployTasks(),
-    ]);
-  }, [mutateAps, mutateDbs, mutateTemplateNative, refreshDeployTasks]);
+    return Promise.all([refreshWorkloadResources(), refreshDeployTasks()]);
+  }, [refreshDeployTasks, refreshWorkloadResources]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(

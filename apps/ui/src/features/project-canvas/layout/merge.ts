@@ -133,7 +133,6 @@ export function canvasLayoutNodeFromNode(
       ...(options?.source === undefined ? {} : { source: options.source }),
     };
   }
-  const ref = owner.ref;
   const expanded = canvasLayoutExpandedFromNode(node) ?? false;
   const lastSeenUid = canvasResourceLastSeenUidFromNode(node);
   const stackOrder = canvasNodeStackOrder(node);
@@ -142,7 +141,6 @@ export function canvasLayoutNodeFromNode(
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
     owner,
     position,
-    ref,
     ...(options?.source === undefined ? {} : { source: options.source }),
     ...(stackOrder === undefined ? {} : { stackOrder }),
   };
@@ -217,7 +215,6 @@ function restoredLayoutNodeFromDetectedNode(
   const restored: CanvasLayoutNode = {
     owner: { kind: "resource", ref: { ...ref } },
     position: { x: saved.position.x, y: saved.position.y },
-    ref: { ...ref },
   };
   if (saved.expanded !== undefined) {
     restored.expanded = saved.expanded;

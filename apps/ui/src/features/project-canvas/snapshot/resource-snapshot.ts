@@ -115,6 +115,7 @@ export function buildProjectCanvasResourceSnapshot({
   ];
   const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
     layout: canvasLayout,
+    nodes: rawDetectedNodes,
     tasks: deployTasks,
   });
   const detectedNodes = rawDetectedNodes.filter(

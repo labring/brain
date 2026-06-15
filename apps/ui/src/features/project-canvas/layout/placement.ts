@@ -135,7 +135,7 @@ function isPlacedDeploymentPlaceholderNode(node: Node): boolean {
   const data = asRecord(node.data);
   return (
     node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE &&
-    data?.hasProjectionPosition === true &&
+    data?.hasProjectionPlacement === true &&
     hasFinitePosition(node)
   );
 }
@@ -223,7 +223,6 @@ function layoutNodeFromPlacedNode(
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
     owner,
     position: { x: position.x, y: position.y },
-    ref: owner.ref,
     source: GENERATED_POSITION_SOURCE,
   };
 }
@@ -548,7 +547,7 @@ function deploymentPreviewGroupInfo(
   candidate: PlacementCandidate
 ): { groupId: string; relativePosition: CanvasLayoutPosition } | undefined {
   const data = asRecord(candidate.node.data);
-  const relative = asRecord(data?.projectionRelativePosition);
+  const relative = asRecord(data?.projectionRelativePlacement);
   const groupId = data?.groupId;
   const relativeX = relative?.x;
   const relativeY = relative?.y;

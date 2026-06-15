@@ -18,8 +18,7 @@ export type {
   DeploymentTaskCanvasProjection,
   DeploymentTaskCanvasProjectionEdge,
   DeploymentTaskCanvasProjectionExpectedRef,
-  DeploymentTaskCanvasProjectionPosition,
-  DeploymentTaskCanvasProjectionPositionSource,
+  DeploymentTaskCanvasProjectionResultMapping,
   DeploymentTaskCanvasProjectionSlot,
   DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
@@ -141,12 +140,6 @@ export const submitDeployTaskInputSchema = z.object({
 
 export type SubmitDeployTaskInput = z.infer<typeof submitDeployTaskInputSchema>;
 
-const deploymentTaskCanvasProjectionPositionSchema = z.object({
-  source: z.enum(["generated", "user"]).optional(),
-  x: z.number().finite(),
-  y: z.number().finite(),
-});
-
 const deploymentTaskCanvasProjectionExpectedRefSchema = z.object({
   kind: z.enum(["AP", "DB", "PublicAccess", "TemplateNative"]),
   name: z.string().trim().min(1),
@@ -156,7 +149,6 @@ const deploymentTaskCanvasProjectionExpectedRefSchema = z.object({
 const deploymentTaskCanvasProjectionSlotSchema = z.object({
   expectedRef: deploymentTaskCanvasProjectionExpectedRefSchema.optional(),
   id: z.string().trim().min(1),
-  position: deploymentTaskCanvasProjectionPositionSchema.optional(),
   primary: z.boolean().optional(),
 });
 
@@ -167,9 +159,16 @@ const deploymentTaskCanvasProjectionEdgeSchema = z.object({
   targetSlotId: z.string().trim().min(1),
 });
 
+const deploymentTaskCanvasProjectionResultMappingSchema = z.object({
+  actualRef: deploymentTaskCanvasProjectionExpectedRefSchema,
+  slotId: z.string().trim().min(1),
+});
+
 export const deploymentTaskCanvasProjectionSchema = z.object({
   edges: z.array(deploymentTaskCanvasProjectionEdgeSchema).optional(),
-  position: deploymentTaskCanvasProjectionPositionSchema.optional(),
+  resultMappings: z
+    .array(deploymentTaskCanvasProjectionResultMappingSchema)
+    .optional(),
   shape: z.enum(["generic", "result-preview"]).optional(),
   slots: z.array(deploymentTaskCanvasProjectionSlotSchema).optional(),
 }) satisfies z.ZodType<DeploymentTaskCanvasProjection>;

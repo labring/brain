@@ -55,6 +55,13 @@ function rowToDocument(
   );
 }
 
+function rowNodesNeedOwnerMigration(
+  row: ProjectCanvasLayoutRow,
+  document: CanvasLayoutDocument
+): boolean {
+  return JSON.stringify(row.nodes) !== JSON.stringify(document.nodes);
+}
+
 function whereLayoutKey(key: ProjectCanvasLayoutKey) {
   return and(
     eq(projectCanvasLayouts.namespace, key.namespace),
@@ -87,10 +94,6 @@ function normalizeNodeForProject(
         namespace,
       },
     },
-    ref: {
-      ...(node.ref ?? owner.ref),
-      namespace,
-    },
   };
 }
 
@@ -113,9 +116,17 @@ export async function loadProjectCanvasLayout(
     .from(projectCanvasLayouts)
     .where(whereLayoutKey(key))
     .limit(1);
-  return row === undefined
-    ? emptyLayoutDocument(key)
-    : rowToDocument(row, { now });
+  if (row === undefined) {
+    return emptyLayoutDocument(key);
+  }
+  const document = rowToDocument(row, { now });
+  if (rowNodesNeedOwnerMigration(row, document)) {
+    await getProjectDb()
+      .update(projectCanvasLayouts)
+      .set({ nodes: document.nodes })
+      .where(whereLayoutKey(key));
+  }
+  return document;
 }
 
 export function patchProjectCanvasLayout(

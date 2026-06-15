@@ -14,7 +14,11 @@ import {
   placeCanvasNodes,
   placeCanvasNodesWithLayout,
 } from "./placement";
-import type { CanvasLayoutDocument } from "./types";
+import type {
+  CanvasLayoutDocument,
+  CanvasLayoutNode,
+  CanvasLayoutResourceKind,
+} from "./types";
 
 function apNode(name: string, uid?: string): Node {
   return {
@@ -70,7 +74,7 @@ function deploymentPlaceholderNode(
 ): Node {
   return {
     data: {
-      hasProjectionPosition: true,
+      hasProjectionPlacement: true,
       taskId: name,
     },
     id: `deployment-placeholder-${name}`,
@@ -88,8 +92,8 @@ function deploymentResultPlaceholderNode(
   return {
     data: {
       groupId: name,
-      hasProjectionPosition: false,
-      projectionRelativePosition: relativePosition,
+      hasProjectionPlacement: false,
+      projectionRelativePlacement: relativePosition,
       projectionShape: "result-preview",
       slotId,
       taskId: name,
@@ -104,6 +108,24 @@ function positionById(nodes: readonly Node[]): Map<string, Node["position"]> {
   return new Map(nodes.map((node) => [node.id, node.position]));
 }
 
+function layoutResourceNode(
+  kind: CanvasLayoutResourceKind,
+  name: string,
+  position: Node["position"]
+): CanvasLayoutNode {
+  return {
+    owner: {
+      kind: "resource",
+      ref: { kind, name, namespace: "default" },
+    },
+    position,
+  };
+}
+
+function layoutResourceRef(node: CanvasLayoutNode) {
+  return node.owner.kind === "resource" ? node.owner.ref : undefined;
+}
+
 test("places an unplaced AP at the fallback grid origin", () => {
   const [node] = placeCanvasNodes({
     layout: undefined,
@@ -116,12 +138,7 @@ test("places an unplaced AP at the fallback grid origin", () => {
 test("places an unanchored node after saved layout when shape remains acceptable", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "saved-api", namespace: "default" },
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "saved-api", { x: 0, y: 0 })],
     projectId: "project-uid",
     version: 1,
   };
@@ -178,7 +195,6 @@ test("returns newly placed layout nodes for first placement persistence", () => 
         ref: { kind: "AP", name: "api", namespace: "default" },
       },
       position: { x: 0, y: 0 },
-      ref: { kind: "AP", name: "api", namespace: "default" },
       source: "generated",
     },
   ]);
@@ -203,7 +219,6 @@ test("includes last seen UID in first-placement layout nodes", () => {
       ref: { kind: "AP", name: "api", namespace: "default" },
     },
     position: { x: 0, y: 0 },
-    ref: { kind: "AP", name: "api", namespace: "default" },
     source: "generated",
   });
 });
@@ -211,12 +226,7 @@ test("includes last seen UID in first-placement layout nodes", () => {
 test("keeps saved layout positions for detected nodes", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 512, y: 144 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "api", { x: 512, y: 144 })],
     projectId: "project-uid",
     version: 1,
   };
@@ -232,12 +242,7 @@ test("keeps saved layout positions for detected nodes", () => {
 test("marks only in-memory generated positions as viewport follow targets", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 512, y: 144 },
-        ref: { kind: "AP", name: "saved-api", namespace: "default" },
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "saved-api", { x: 512, y: 144 })],
     projectId: "project-uid",
     version: 1,
   };
@@ -255,12 +260,7 @@ test("marks only in-memory generated positions as viewport follow targets", () =
 test("anchors an unplaced PublicAccess to the left side of a saved AP", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 680, y: 280 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "api", { x: 680, y: 280 })],
     projectId: "project-uid",
     version: 1,
   };
@@ -278,14 +278,8 @@ test("uses AABB rectangles from saved and same-run placed nodes during row-major
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "saved-origin", namespace: "default" },
-      },
-      {
-        position: { x: 300, y: 0 },
-        ref: { kind: "DB", name: "saved-overlap", namespace: "default" },
-      },
+      layoutResourceNode("AP", "saved-origin", { x: 0, y: 0 }),
+      layoutResourceNode("DB", "saved-overlap", { x: 300, y: 0 }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -305,18 +299,9 @@ test("wraps unanchored global placement before the canvas becomes too wide", () 
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "first", namespace: "default" },
-      },
-      {
-        position: { x: 340, y: 0 },
-        ref: { kind: "AP", name: "second", namespace: "default" },
-      },
-      {
-        position: { x: 680, y: 0 },
-        ref: { kind: "AP", name: "third", namespace: "default" },
-      },
+      layoutResourceNode("AP", "first", { x: 0, y: 0 }),
+      layoutResourceNode("AP", "second", { x: 340, y: 0 }),
+      layoutResourceNode("AP", "third", { x: 680, y: 0 }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -376,12 +361,7 @@ test("places deployment result placeholders as one preview footprint", () => {
 test("includes anchored PublicAccess in same-pass placement occupancy", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 340, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "api", { x: 340, y: 0 })],
     projectId: "project-uid",
     version: 1,
   };
@@ -400,14 +380,8 @@ test("moves anchored PublicAccess through local slots to avoid saved occupancy",
   const layout: CanvasLayoutDocument = {
     namespace: "default",
     nodes: [
-      {
-        position: { x: 340, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-      },
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "DB", name: "postgres", namespace: "default" },
-      },
+      layoutResourceNode("AP", "api", { x: 340, y: 0 }),
+      layoutResourceNode("DB", "postgres", { x: 0, y: 0 }),
     ],
     projectId: "project-uid",
     version: 1,
@@ -436,8 +410,8 @@ test("returns placement group layout nodes for AP and PublicAccess first placeme
 
   assert.deepEqual(
     result.placedLayoutNodes.map((node) => ({
-      kind: node.ref?.kind,
-      name: node.ref?.name,
+      kind: layoutResourceRef(node)?.kind,
+      name: layoutResourceRef(node)?.name,
       position: node.position,
     })),
     [
@@ -450,12 +424,7 @@ test("returns placement group layout nodes for AP and PublicAccess first placeme
 test("anchors new DB nodes to connected AP nodes before global placement", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
-    nodes: [
-      {
-        position: { x: 0, y: 0 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
-      },
-    ],
+    nodes: [layoutResourceNode("AP", "api", { x: 0, y: 0 })],
     projectId: "project-uid",
     version: 1,
   };

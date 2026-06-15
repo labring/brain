@@ -11,8 +11,11 @@ const validPatch = {
   namespace: "default",
   nodes: [
     {
+      owner: {
+        kind: "resource",
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
       position: { x: 0, y: 0 },
-      ref: { kind: "AP", name: "api", namespace: "default" },
       stackOrder: 12,
     },
   ],
@@ -59,20 +62,58 @@ test("canvas layout document accepts projectId", () => {
   );
 });
 
-test("canvas layout document normalizes legacy EntryPoint refs to PublicAccess", () => {
-  const parsed = parseCanvasLayoutDocument({
-    namespace: "default",
-    nodes: [
+test("canvas layout document migrates ref-only legacy nodes to resource owners", () => {
+  assert.deepEqual(
+    parseCanvasLayoutDocument({
+      namespace: "default",
+      nodes: [
+        {
+          expanded: true,
+          lastSeenUid: "ap-uid",
+          position: { x: 10, y: 20 },
+          ref: { kind: "AP", name: "api", namespace: "default" },
+          stackOrder: 3,
+        },
+      ],
+      projectId: "project-uid",
+      version: 1,
+    }).nodes,
+    [
       {
+        expanded: true,
+        lastSeenUid: "ap-uid",
+        owner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
+        },
         position: { x: 10, y: 20 },
-        ref: { kind: "EntryPoint", name: "api", namespace: "default" },
+        stackOrder: 3,
       },
-    ],
-    projectId: "project-uid",
-    version: 1,
-  });
+    ]
+  );
+});
 
-  assert.equal(parsed.nodes[0]?.ref?.kind, "PublicAccess");
+test("canvas layout document migrates legacy EntryPoint refs to PublicAccess owners", () => {
+  assert.deepEqual(
+    parseCanvasLayoutDocument({
+      namespace: "default",
+      nodes: [
+        {
+          owner: {
+            kind: "resource",
+            ref: { kind: "EntryPoint", name: "api", namespace: "default" },
+          },
+          position: { x: 10, y: 20 },
+        },
+      ],
+      projectId: "project-uid",
+      version: 1,
+    }).nodes[0]?.owner,
+    {
+      kind: "resource",
+      ref: { kind: "PublicAccess", name: "api", namespace: "default" },
+    }
+  );
 });
 
 test("canvas layout patch rejects malformed stack order", () => {

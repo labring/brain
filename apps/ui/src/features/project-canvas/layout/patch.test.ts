@@ -6,19 +6,27 @@ import type {
   CanvasDeploymentProjectionLayoutNode,
   CanvasLayoutDocument,
   CanvasLayoutNode,
+  CanvasResourceLayoutNode,
 } from "./types";
 
 function node(
   name: string,
   stackOrder?: number,
-  extra?: Partial<CanvasLayoutNode>
+  extra?: Partial<Omit<CanvasResourceLayoutNode, "owner">>
 ): CanvasLayoutNode {
   return {
+    owner: {
+      kind: "resource",
+      ref: { kind: "AP", name, namespace: "default" },
+    },
     position: { x: 0, y: 0 },
-    ref: { kind: "AP", name, namespace: "default" },
     ...(stackOrder === undefined ? {} : { stackOrder }),
     ...extra,
   };
+}
+
+function resourceName(item: CanvasLayoutNode): string | undefined {
+  return item.owner.kind === "resource" ? item.owner.ref.name : undefined;
 }
 
 function deploymentNode(
@@ -50,7 +58,7 @@ test("canvas layout patch normalizes explicit stack order ranks before storage",
 
   assert.deepEqual(
     result.nodes.map((item) => ({
-      name: item.ref?.name,
+      name: resourceName(item),
       stackOrder: item.stackOrder,
     })),
     [
@@ -81,7 +89,7 @@ test("first placement patch inserts missing nodes without overwriting saved posi
 
   assert.deepEqual(
     result.nodes.map((item) => ({
-      name: item.ref?.name,
+      name: resourceName(item),
       position: item.position,
     })),
     [
@@ -147,7 +155,6 @@ test("placement command rekeys deployment placement to resource owner", () => {
         ref: { kind: "AP", name: "api", namespace: "default" },
       },
       position: { x: 680, y: 280 },
-      ref: { kind: "AP", name: "api", namespace: "default" },
       source: "user",
     },
   ]);
@@ -184,7 +191,6 @@ test("placement command consumes deployment placement when resource exists", () 
     result.nodes.map((item) => ({
       owner: item.owner,
       position: item.position,
-      ref: item.ref,
     })),
     [
       {
@@ -193,7 +199,6 @@ test("placement command consumes deployment placement when resource exists", () 
           ref: { kind: "AP", name: "api", namespace: "default" },
         },
         position: { x: 120, y: 80 },
-        ref: { kind: "AP", name: "api", namespace: "default" },
       },
     ]
   );

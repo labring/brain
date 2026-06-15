@@ -1,5 +1,6 @@
 import type {
   DeploymentTaskCanvasProjection,
+  DeploymentTaskCanvasProjectionResultMapping,
   DeployTaskArtifactSummary,
   DeployTaskPhase,
   DeployTaskStatus,
@@ -39,6 +40,7 @@ export interface DeploymentTaskProjection {
   namespace: string;
   phase: DeployTaskPhase;
   projectId: string;
+  resultMappings?: DeploymentTaskCanvasProjectionResultMapping[];
   status: DeploymentTaskProjectionStatus;
   updatedAt: string;
 }
@@ -103,7 +105,7 @@ function taskHasProjectionFacts(task: DeploymentTaskProjectionSource): boolean {
     (task.artifactSummary.resourceYamls?.length ?? 0) > 0 ||
     (task.canvasProjection.slots?.length ?? 0) > 0 ||
     (task.canvasProjection.edges?.length ?? 0) > 0 ||
-    task.canvasProjection.position !== undefined
+    (task.canvasProjection.resultMappings?.length ?? 0) > 0
   );
 }
 
@@ -152,6 +154,9 @@ export function toDeploymentTaskProjection(
     namespace: task.namespace,
     phase: task.phase,
     projectId,
+    ...((task.canvasProjection.resultMappings?.length ?? 0) === 0
+      ? {}
+      : { resultMappings: task.canvasProjection.resultMappings }),
     status: task.status,
     updatedAt: dateIso(task.updatedAt) ?? new Date(0).toISOString(),
   };

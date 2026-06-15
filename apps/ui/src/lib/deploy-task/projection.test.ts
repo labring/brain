@@ -97,6 +97,38 @@ test("completed deployment task projection stays visible only during handoff gra
   );
 });
 
+test("deployment task projection exposes explicit result mappings", () => {
+  assert.deepEqual(
+    toDeploymentTaskProjection(
+      deploymentTaskSource({
+        canvasProjection: {
+          resultMappings: [
+            {
+              actualRef: {
+                kind: "AP",
+                name: "api-live",
+                namespace: "default",
+              },
+              slotId: "AP:default:api-draft",
+            },
+          ],
+        },
+      }),
+      NOW
+    )?.resultMappings,
+    [
+      {
+        actualRef: {
+          kind: "AP",
+          name: "api-live",
+          namespace: "default",
+        },
+        slotId: "AP:default:api-draft",
+      },
+    ]
+  );
+});
+
 test("upserting deployment task projections keeps existing order", () => {
   const first = toDeploymentTaskProjection(deploymentTaskSource(), NOW);
   const second = toDeploymentTaskProjection(

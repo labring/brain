@@ -28,14 +28,14 @@ export function canvasResourceRefKey(ref: CanvasLayoutResourceRef): string {
 
 export function resourcePlacementOwner(
   ref: CanvasLayoutResourceRef
-): CanvasPlacementOwner {
+): Extract<CanvasPlacementOwner, { kind: "resource" }> {
   return { kind: "resource", ref };
 }
 
 export function deploymentProjectionPlacementOwner(input: {
   slotId: string;
   taskId: string;
-}): CanvasPlacementOwner {
+}): Extract<CanvasPlacementOwner, { kind: "deploymentProjection" }> {
   return {
     kind: "deploymentProjection",
     slotId: input.slotId,
@@ -60,13 +60,7 @@ export function canvasPlacementOwnersEqual(
 export function canvasPlacementOwnerFromLayoutNode(
   node: CanvasLayoutNode
 ): CanvasPlacementOwner {
-  if (node.owner !== undefined) {
-    return node.owner;
-  }
-  if (node.ref === undefined) {
-    throw new Error("Canvas layout node owner is required.");
-  }
-  return resourcePlacementOwner(node.ref);
+  return node.owner;
 }
 
 export function canvasLayoutNodeKey(node: CanvasLayoutNode): string {
@@ -110,7 +104,6 @@ export function canvasLayoutNodeFromOwner(input: {
     return {
       owner: input.owner,
       position: input.position,
-      ref: input.owner.ref,
       ...(input.source === undefined ? {} : { source: input.source }),
     };
   }

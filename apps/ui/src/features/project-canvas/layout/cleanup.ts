@@ -9,22 +9,20 @@ export interface CanvasLayoutCleanupOptions {
 export function cloneCanvasLayoutNode(
   node: CanvasLayoutNode
 ): CanvasLayoutNode {
-  const clone: Partial<CanvasLayoutNode> = {
-    position: { x: node.position.x, y: node.position.y },
-  };
-  if (node.owner !== undefined) {
-    clone.owner =
-      node.owner.kind === "resource"
-        ? { kind: "resource", ref: { ...node.owner.ref } }
-        : {
+  const clone: CanvasLayoutNode =
+    node.owner.kind === "resource"
+      ? {
+          owner: { kind: "resource", ref: { ...node.owner.ref } },
+          position: { x: node.position.x, y: node.position.y },
+        }
+      : {
+          owner: {
             kind: "deploymentProjection",
             slotId: node.owner.slotId,
             taskId: node.owner.taskId,
-          };
-  }
-  if (node.ref !== undefined) {
-    clone.ref = { ...node.ref };
-  }
+          },
+          position: { x: node.position.x, y: node.position.y },
+        };
   if (node.expanded !== undefined) {
     clone.expanded = node.expanded;
   }
@@ -40,7 +38,7 @@ export function cloneCanvasLayoutNode(
   if (node.stackOrder !== undefined) {
     clone.stackOrder = node.stackOrder;
   }
-  return clone as CanvasLayoutNode;
+  return clone;
 }
 
 export function cloneCanvasLayoutDocument(
