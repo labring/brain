@@ -38,6 +38,19 @@ export interface ApSettingsDraftCommitMeta
   baseDraft: ApSettingsDraft;
 }
 
+export type ApSettingsDraftDomain =
+  | "environment"
+  | "launch"
+  | "network"
+  | "resources";
+
+export const AP_SETTINGS_DRAFT_DOMAINS = [
+  "environment",
+  "launch",
+  "resources",
+  "network",
+] as const satisfies readonly ApSettingsDraftDomain[];
+
 function stringArrayDraftsEqual(
   a: readonly string[] | undefined,
   b: readonly string[] | undefined
@@ -111,6 +124,16 @@ export function apSettingsDraftIsDirty(
   original: ApSettingsDraft,
   draft: ApSettingsDraft
 ): boolean {
+  return AP_SETTINGS_DRAFT_DOMAINS.some((domain) =>
+    apSettingsDraftDomainIsDirty(domain, original, draft)
+  );
+}
+
+export function apSettingsDraftDomainIsDirty(
+  domain: ApSettingsDraftDomain,
+  original: ApSettingsDraft,
+  draft: ApSettingsDraft
+): boolean {
   const originalEnvRawSource = canonicalApEnvRawSource({
     env: original.env,
     envRawSource: original.envRawSource,
@@ -119,17 +142,60 @@ export function apSettingsDraftIsDirty(
     env: draft.env,
     envRawSource: draft.envRawSource,
   });
-  return (
-    draft.image.trim() !== original.image.trim() ||
-    !stringArrayDraftsEqual(draft.command, original.command) ||
-    !stringArrayDraftsEqual(draft.args, original.args) ||
-    !configMapMountDraftsEqual(draft.configMaps, original.configMaps) ||
-    !storageMountDraftsEqual(draft.storage, original.storage) ||
-    !apEnvRowsEqual([...draft.env], [...original.env]) ||
-    draftEnvRawSource !== originalEnvRawSource ||
-    apDraftResourcesDirty(original, draft) ||
-    !apNetworksEqual(original.network, draft.network)
-  );
+
+  switch (domain) {
+    case "environment":
+      return (
+        !apEnvRowsEqual([...draft.env], [...original.env]) ||
+        draftEnvRawSource !== originalEnvRawSource
+      );
+    case "launch":
+      return (
+        draft.image.trim() !== original.image.trim() ||
+        !stringArrayDraftsEqual(draft.command, original.command) ||
+        !stringArrayDraftsEqual(draft.args, original.args) ||
+        !configMapMountDraftsEqual(draft.configMaps, original.configMaps) ||
+        !storageMountDraftsEqual(draft.storage, original.storage)
+      );
+    case "network":
+      return !apNetworksEqual(original.network, draft.network);
+    case "resources":
+      return apDraftResourcesDirty(original, draft);
+    default:
+      return domain satisfies never;
+  }
+}
+
+export function mergeApSettingsDraftDomains({
+  dirtyDomains,
+  draft,
+  latest,
+}: {
+  base: ApSettingsDraft;
+  dirtyDomains: readonly ApSettingsDraftDomain[];
+  draft: ApSettingsDraft;
+  latest: ApSettingsDraft;
+}): ApSettingsDraft {
+  const dirty = new Set(dirtyDomains);
+  const environment = dirty.has("environment") ? draft : latest;
+  const launch = dirty.has("launch") ? draft : latest;
+  const network = dirty.has("network") ? draft : latest;
+  const resources = dirty.has("resources") ? draft : latest;
+
+  return apSettingsDraftFromValues({
+    args: launch.args,
+    command: launch.command,
+    configMaps: launch.configMaps,
+    cpuCores: resources.cpuCores,
+    env: environment.env,
+    envRawSource: environment.envRawSource,
+    image: launch.image,
+    memoryMib: resources.memoryMib,
+    network: network.network,
+    replicaStrategy: resources.replicaStrategy,
+    storage: launch.storage,
+    workloadKind: latest.workloadKind,
+  });
 }
 
 export function apSettingsDraftBackingKey(draft: ApSettingsDraft) {

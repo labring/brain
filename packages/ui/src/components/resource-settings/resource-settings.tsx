@@ -57,10 +57,10 @@ export function ResourceSettingsInset({
 }
 
 export function ResourceSettingsDraftFooter({
-  backingResourceChanged,
   canSubmit,
   cancelAriaLabel = "Discard settings changes",
   className,
+  conflictMessage,
   dirty,
   onCancel,
   onKeepEditing,
@@ -75,9 +75,9 @@ export function ResourceSettingsDraftFooter({
   unsavedMessage = "Unsaved changes",
   ...props
 }: ComponentPropsWithoutRef<"footer"> & {
-  backingResourceChanged: boolean;
   canSubmit: boolean;
   cancelAriaLabel?: string;
+  conflictMessage?: string | null;
   dirty: boolean;
   onCancel: () => void;
   onKeepEditing: () => void;
@@ -96,21 +96,13 @@ export function ResourceSettingsDraftFooter({
       className={cn("flex shrink-0 flex-col gap-2", className)}
       {...props}
     >
-      {backingResourceChanged ? (
+      {conflictMessage == null ? null : (
         <div
           className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-2.5 py-2 text-xs text-yellow-500 leading-4"
           role="status"
         >
-          <span className="min-w-0 truncate">Backing resource changed.</span>
+          <span className="min-w-0 truncate">{conflictMessage}</span>
           <div className="flex shrink-0 items-center gap-1">
-            <AppButton
-              className="h-7 px-2 text-xs"
-              onClick={onReload}
-              type="button"
-              variant="quiet"
-            >
-              Reload
-            </AppButton>
             <AppButton
               className="h-7 px-2 text-xs"
               onClick={onKeepEditing}
@@ -119,9 +111,17 @@ export function ResourceSettingsDraftFooter({
             >
               Keep editing
             </AppButton>
+            <AppButton
+              className="h-7 px-2 text-xs"
+              onClick={onReload}
+              type="button"
+              variant="quiet"
+            >
+              Reload latest
+            </AppButton>
           </div>
         </div>
-      ) : null}
+      )}
       {saveFailureMessage == null ? null : (
         <p className="text-destructive text-xs leading-4" role="alert">
           {saveFailureMessage}
