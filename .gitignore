@@ -51,6 +51,7 @@ skills-lock.json
 packages/crossplane/public/service/ap/templates/.venv-sync/
 
 main
+apps/api/api
 
 .sandcastle
 CONTEXT.md

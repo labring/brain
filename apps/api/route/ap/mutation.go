@@ -375,28 +375,7 @@ func apAppListeningPortsFromNetwork(network map[string]interface{}) []orchestrat
 }
 
 func apPlatformAddressesFromNetwork(network map[string]interface{}) []orchestration.APPlatformAddressRequest {
-	rows, ok := network["platformAddresses"].([]interface{})
-	if !ok || len(rows) == 0 {
-		return nil
-	}
-	out := make([]orchestration.APPlatformAddressRequest, 0, len(rows))
-	for _, row := range rows {
-		item, _ := row.(map[string]interface{})
-		if item == nil {
-			continue
-		}
-		id := stringFromMap(item, "id")
-		port := int32FromMap(item, "port")
-		if id == "" {
-			continue
-		}
-		out = append(out, orchestration.APPlatformAddressRequest{
-			DomainPrefix: stringFromMap(item, "domainPrefix"),
-			ID:           id,
-			Port:         port,
-		})
-	}
-	return out
+	return orchestration.APPlatformAddressRequestsFromNetwork(network)
 }
 
 func normalizeAPPublicNetworkIntent(obj *unstructured.Unstructured, namespace string) {
@@ -424,29 +403,7 @@ func normalizeAPPublicNetworkIntent(obj *unstructured.Unstructured, namespace st
 }
 
 func apCustomDomainsFromNetwork(network map[string]interface{}) []orchestration.APCustomDomainRequest {
-	rows, ok := network["customDomains"].([]interface{})
-	if !ok || len(rows) == 0 {
-		return nil
-	}
-	out := make([]orchestration.APCustomDomainRequest, 0, len(rows))
-	for _, row := range rows {
-		item, _ := row.(map[string]interface{})
-		if item == nil {
-			continue
-		}
-		id := stringFromMap(item, "id")
-		domain := stringFromMap(item, "domain")
-		platformAddressID := stringFromMap(item, "platformAddressId")
-		if id == "" || domain == "" || platformAddressID == "" {
-			continue
-		}
-		out = append(out, orchestration.APCustomDomainRequest{
-			Domain:            domain,
-			ID:                id,
-			PlatformAddressID: platformAddressID,
-		})
-	}
-	return out
+	return orchestration.APCustomDomainRequestsFromNetwork(network, apPlatformAddressesFromNetwork(network))
 }
 
 func envVarsFromValue(value interface{}) []corev1.EnvVar {
@@ -892,10 +849,6 @@ func recordAPImageVersion(ctx context.Context, ap map[string]interface{}, source
 	})
 }
 
-func applyAPPauseState(deployment *appsv1.Deployment, paused *bool) {
-	applyAPResourcesPauseState(&orchestration.APResources{Deployment: deployment}, paused)
-}
-
 func applyAPResourcesPauseState(resources *orchestration.APResources, paused *bool) {
 	if resources == nil || paused == nil {
 		return
@@ -994,10 +947,6 @@ func mergeStringAnnotations(base map[string]string, overlays ...map[string]strin
 		}
 	}
 	return out
-}
-
-func apRenderInputFromDeploymentPatch(current appsv1.Deployment, raw json.RawMessage) (orchestration.APResourcesInput, *bool, error) {
-	return apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, raw, nil)
 }
 
 func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, currentConfigMaps []orchestration.APConfigMapMount) (orchestration.APResourcesInput, *bool, error) {
@@ -1206,18 +1155,6 @@ func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, cur
 		StartupProbe:     startupProbe,
 		WorkloadKind:     workloadKind,
 	}, paused, nil
-}
-
-func desiredAPNetworkFromDeployment(deployment appsv1.Deployment) map[string]interface{} {
-	raw := strings.TrimSpace(deployment.Annotations[orchestration.APDesiredNetworkAnnotation])
-	if raw == "" {
-		return nil
-	}
-	var network map[string]interface{}
-	if err := json.Unmarshal([]byte(raw), &network); err != nil {
-		return nil
-	}
-	return network
 }
 
 func desiredAPNetworkFromWorkload(workload apWorkload) map[string]interface{} {
@@ -1546,149 +1483,6 @@ func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config,
 	return k8ssvc.ApplyObjects(restConfig, objects, namespace)
 }
 
-func apDeploymentPatchFromProductPatch(raw json.RawMessage, name string) []byte {
-	var patch map[string]interface{}
-	if err := json.Unmarshal(raw, &patch); err != nil {
-		return raw
-	}
-	spec, _ := patch["spec"].(map[string]interface{})
-	deploymentPatch := map[string]interface{}{}
-	templatePatch := map[string]interface{}{}
-	metadataPatch := map[string]interface{}{}
-	annotationsPatch := map[string]interface{}{}
-	labelsPatch := map[string]interface{}{}
-	paused := false
-	hasPaused := false
-
-	if value, ok := spec["paused"].(bool); ok {
-		paused = value
-		hasPaused = true
-		annotationsPatch[orchestration.LaunchpadPauseAnnotation] = map[bool]string{true: "true", false: "false"}[paused]
-		if paused {
-			deploymentPatch["replicas"] = 0
-		} else {
-			deploymentPatch["replicas"] = 1
-		}
-	}
-	containerPatch := map[string]interface{}{"name": name}
-	if input, _ := spec["input"].(map[string]interface{}); input != nil {
-		if image := stringFromMap(input, "image"); image != "" {
-			containerPatch["image"] = image
-		}
-		if policy := stringFromMap(input, "imagePullPolicy"); policy != "" {
-			containerPatch["imagePullPolicy"] = policy
-		}
-		if env, ok := input["env"].([]interface{}); ok {
-			containerPatch["env"] = env
-		}
-		if value, found := input["envRawSource"]; found {
-			annotationsPatch[orchestration.APEnvRawSourceAnnotation] = toString(value)
-		}
-		if network, _ := input["network"].(map[string]interface{}); network != nil {
-			annotationsPatch[orchestration.APDesiredNetworkAnnotation] = networkJSONFromMap(network)
-			if appListeningPorts := apAppListeningPortsFromNetwork(network); len(appListeningPorts) > 0 {
-				ports := make([]interface{}, 0, len(appListeningPorts))
-				for _, port := range appListeningPorts {
-					ports = append(ports, map[string]interface{}{
-						"containerPort": port.Port,
-						"name":          orchestration.APPortName(port.Port),
-						"protocol":      "TCP",
-					})
-				}
-				containerPatch["ports"] = ports
-			}
-		}
-	}
-	if metadata, _ := patch["metadata"].(map[string]interface{}); metadata != nil {
-		if labels, _ := metadata["labels"].(map[string]interface{}); labels != nil {
-			if region := stringFromMap(labels, orchestration.APRoutingDomainLabel); region != "" {
-				labelsPatch[orchestration.APRoutingDomainLabel] = region
-			}
-		}
-	}
-	if resources := apContainerResourcesFromProductSpec(spec); len(resources) > 0 {
-		containerPatch["resources"] = resources
-	}
-	if len(containerPatch) > 1 {
-		templatePatch["spec"] = map[string]interface{}{
-			"containers": []interface{}{containerPatch},
-		}
-	}
-	if resourceSpec, _ := spec["resource"].(map[string]interface{}); resourceSpec != nil {
-		if replicas := apReplicasFromResourceSpec(resourceSpec); replicas > 0 && !(hasPaused && paused) {
-			deploymentPatch["replicas"] = replicas
-		}
-	}
-	if len(annotationsPatch) > 0 {
-		metadataPatch["annotations"] = annotationsPatch
-	}
-	if len(labelsPatch) > 0 {
-		metadataPatch["labels"] = labelsPatch
-	}
-	if len(templatePatch) > 0 {
-		deploymentPatch["template"] = templatePatch
-	}
-	out := map[string]interface{}{"spec": deploymentPatch}
-	if len(metadataPatch) > 0 {
-		out["metadata"] = metadataPatch
-	}
-	bytes, err := json.Marshal(out)
-	if err != nil {
-		return raw
-	}
-	return bytes
-}
-
-func syncAPPublicIngressesFromPatch(restConfig *rest.Config, cfg *clientcmdapi.Config, name, namespace string, raw json.RawMessage) error {
-	network, routingDomain, changed := apNetworkIngressStateFromPatch(raw)
-	if !changed {
-		return nil
-	}
-	workload, err := currentAPWorkload(cfg, namespace, name)
-	if err != nil {
-		return err
-	}
-	if network == nil {
-		network = desiredAPNetworkFromWorkload(*workload)
-	}
-	if routingDomain == "" {
-		routingDomain = strings.TrimSpace(workload.Labels()[orchestration.APRoutingDomainLabel])
-	}
-	obj := unstructured.Unstructured{Object: map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"labels":    map[string]interface{}{orchestration.APRoutingDomainLabel: routingDomain},
-			"name":      name,
-			"namespace": namespace,
-		},
-		"spec": map[string]interface{}{
-			"projectId": workload.Labels()[orchestration.BrainProjectIDLabel],
-			"input": map[string]interface{}{
-				"network": network,
-			},
-		},
-	}}
-	normalizeAPPublicNetworkIntent(&obj, namespace)
-	objects, err := apPublicIngressesFromObject(obj, namespace)
-	if err != nil {
-		return err
-	}
-	for _, selector := range apPublicRoutingSupportSelectors(name) {
-		for _, resource := range []string{"ingresses", "certificates", "issuers"} {
-			if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
-				LabelSelector: selector,
-				Namespace:     namespace,
-				Resource:      resource,
-			}); err != nil && !apierrors.IsNotFound(err) && !k8ssvc.IsUnknownResourceError(err, resource) {
-				return err
-			}
-		}
-	}
-	if len(objects) == 0 {
-		return nil
-	}
-	return k8ssvc.ApplyObjects(restConfig, objects, namespace)
-}
-
 func apPublicRoutingSupportSelectors(name string) []string {
 	return []string{
 		apPublicRoutingSupportSelector(name),
@@ -1697,76 +1491,6 @@ func apPublicRoutingSupportSelectors(name string) []string {
 
 func apPublicRoutingSupportSelector(name string) string {
 	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP + "," + orchestration.BrainDeploymentNameLabel + "=" + name
-}
-
-func apNetworkIngressStateFromPatch(raw json.RawMessage) (map[string]interface{}, string, bool) {
-	var patch map[string]interface{}
-	if err := json.Unmarshal(raw, &patch); err != nil {
-		return nil, "", false
-	}
-	changed := false
-	var network map[string]interface{}
-	spec, _ := patch["spec"].(map[string]interface{})
-	if input, _ := spec["input"].(map[string]interface{}); input != nil {
-		if value, _ := input["network"].(map[string]interface{}); value != nil {
-			network = value
-			changed = true
-		}
-	}
-	routingDomain := ""
-	if metadata, _ := patch["metadata"].(map[string]interface{}); metadata != nil {
-		if labels, _ := metadata["labels"].(map[string]interface{}); labels != nil {
-			if region := stringFromMap(labels, orchestration.APRoutingDomainLabel); region != "" {
-				routingDomain = region
-				changed = true
-			}
-		}
-	}
-	return network, routingDomain, changed
-}
-
-func desiredAPNetworkFromUnstructured(obj unstructured.Unstructured) map[string]interface{} {
-	raw := strings.TrimSpace(obj.GetAnnotations()[orchestration.APDesiredNetworkAnnotation])
-	if raw == "" {
-		return nil
-	}
-	var network map[string]interface{}
-	if err := json.Unmarshal([]byte(raw), &network); err != nil {
-		return nil
-	}
-	return network
-}
-
-func apServicePatchFromProductPatch(raw json.RawMessage) []byte {
-	var patch map[string]interface{}
-	if err := json.Unmarshal(raw, &patch); err != nil {
-		return nil
-	}
-	spec, _ := patch["spec"].(map[string]interface{})
-	input, _ := spec["input"].(map[string]interface{})
-	network, _ := input["network"].(map[string]interface{})
-	appListeningPorts := apAppListeningPortsFromNetwork(network)
-	if len(appListeningPorts) == 0 {
-		return nil
-	}
-	ports := make([]interface{}, 0, len(appListeningPorts))
-	for _, port := range appListeningPorts {
-		ports = append(ports, map[string]interface{}{
-			"name":       orchestration.APPortName(port.Port),
-			"port":       port.Port,
-			"protocol":   "TCP",
-			"targetPort": port.Port,
-		})
-	}
-	bytes, err := json.Marshal(map[string]interface{}{
-		"spec": map[string]interface{}{
-			"ports": ports,
-		},
-	})
-	if err != nil {
-		return nil
-	}
-	return bytes
 }
 
 func apReplicasFromResourceSpec(resourceSpec map[string]interface{}) int32 {

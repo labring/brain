@@ -916,6 +916,9 @@ type APPlatformAddressRequest struct {
 
 type APCustomDomainRequest struct {
 	Domain            string
+	DNSStatus         string
+	DNSTarget         string
+	DNSVerifiedAt     string
 	ID                string
 	PlatformAddressID string
 }
@@ -1128,6 +1131,10 @@ func stableLowercaseLetters(source string, length int) string {
 		out = append(out, shortNameAlphabet[sum[i%len(sum)]%byte(len(shortNameAlphabet))])
 	}
 	return string(out)
+}
+
+func APStableLowercaseLetters(source string, length int) string {
+	return stableLowercaseLetters(source, length)
 }
 
 func PlatformAddressHost(namespace string, name string, id string, domainPrefix string, domain string) string {

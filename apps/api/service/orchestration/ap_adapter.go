@@ -365,10 +365,11 @@ func apNetworkStatusFromDesiredNetwork(name, namespace string, labels map[string
 			fallbackPort = container.Ports[0].ContainerPort
 		}
 	}
-	appListeningPorts, err := NormalizeAPAppListeningPortsFromNetwork(network, fallbackPort)
-	if err != nil || len(appListeningPorts) == 0 {
+	intent, err := APNetworkIntentFromMap(network, fallbackPort)
+	if err != nil || len(intent.AppListeningPorts) == 0 {
 		return nil
 	}
+	appListeningPorts := intent.AppListeningPorts
 	status := map[string]interface{}{}
 	privatePort := appListeningPorts[0].Port
 	status["privatePort"] = privatePort
@@ -384,15 +385,24 @@ func apNetworkStatusFromDesiredNetwork(name, namespace string, labels map[string
 		privateRows = append(privateRows, row)
 	}
 	status["appListeningPorts"] = privateRows
-	publicAddresses := apPublicAddressStatusRows(name, namespace, labels, network, APAppListeningPortSet(appListeningPorts))
+	publicAddresses := ProjectAPPublicAddresses(APPublicAddressProjectionInput{
+		APName:        name,
+		Intent:        intent,
+		Namespace:     namespace,
+		RoutingDomain: labels[APRoutingDomainLabel],
+	})
 	if len(publicAddresses) > 0 {
-		status["publicAddresses"] = publicAddresses
+		rows := make([]interface{}, 0, len(publicAddresses))
+		for _, row := range publicAddresses {
+			rows = append(rows, row)
+		}
+		status["publicAddresses"] = rows
 	}
 	return status
 }
 
 func apPrivateAddress(name, namespace string, value interface{}) string {
-	privatePort, ok := int32FromInterface(value)
+	privatePort, ok := APPortFromInterface(value)
 	if !ok || privatePort <= 0 || namespace == "" || name == "" {
 		return ""
 	}
@@ -401,10 +411,6 @@ func apPrivateAddress(name, namespace string, value interface{}) string {
 		return fmt.Sprintf("http://%s.%s.svc.cluster.local", serviceName, namespace)
 	}
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", serviceName, namespace, privatePort)
-}
-
-func int32FromInterface(value interface{}) (int32, bool) {
-	return APPortFromInterface(value)
 }
 
 func apAppListeningPortsFromContainerPorts(ports []corev1.ContainerPort) []APAppListeningPort {
@@ -418,127 +424,6 @@ func apAppListeningPortsFromContainerPorts(ports []corev1.ContainerPort) []APApp
 		out = append(out, APAppListeningPort{Port: port.ContainerPort})
 	}
 	return out
-}
-
-func apPublicAddressStatusRows(name, namespace string, labels map[string]string, network map[string]interface{}, appListeningPortSet map[int32]bool) []interface{} {
-	platformRows := apPlatformAddressRows(network["platformAddresses"])
-	if len(platformRows) == 0 {
-		return nil
-	}
-	platformsByID := make(map[string]map[string]interface{}, len(platformRows))
-	for _, row := range platformRows {
-		id, _ := row["id"].(string)
-		if id != "" {
-			platformsByID[id] = row
-		}
-	}
-
-	promotedPlatformIDs := map[string]bool{}
-	out := []interface{}{}
-	for _, row := range apCustomDomainRows(network["customDomains"], platformsByID, appListeningPortSet) {
-		platformID, _ := row["platformAddressId"].(string)
-		if platformID != "" {
-			promotedPlatformIDs[platformID] = true
-		}
-		out = append(out, row)
-	}
-	for _, row := range platformRows {
-		id, _ := row["id"].(string)
-		if promotedPlatformIDs[id] {
-			continue
-		}
-		domainPrefix, _ := row["domainPrefix"].(string)
-		host := PlatformAddressHost(namespace, name, id, domainPrefix, labels[APRoutingDomainLabel])
-		if host != "" {
-			row["host"] = host
-			row["url"] = fmt.Sprintf("https://%s/", host)
-		}
-		if apPublicAddressTargetPortMissing(row, appListeningPortSet) {
-			row["reason"] = "target-port-missing"
-			row["status"] = "blocked"
-		} else {
-			row["status"] = "progressing"
-		}
-		row["type"] = "platform"
-		out = append(out, row)
-	}
-	return out
-}
-
-func apPlatformAddressRows(value interface{}) []map[string]interface{} {
-	rows, ok := value.([]interface{})
-	if !ok || len(rows) == 0 {
-		return nil
-	}
-	out := make([]map[string]interface{}, 0, len(rows))
-	for _, item := range rows {
-		row, _ := item.(map[string]interface{})
-		if row == nil {
-			continue
-		}
-		id, _ := row["id"].(string)
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		outRow := map[string]interface{}{
-			"id":   id,
-			"port": row["port"],
-		}
-		if domainPrefix, ok := row["domainPrefix"].(string); ok && strings.TrimSpace(domainPrefix) != "" {
-			outRow["domainPrefix"] = strings.TrimSpace(domainPrefix)
-		}
-		out = append(out, outRow)
-	}
-	return out
-}
-
-func apCustomDomainRows(value interface{}, platformsByID map[string]map[string]interface{}, appListeningPortSet map[int32]bool) []map[string]interface{} {
-	rows, ok := value.([]interface{})
-	if !ok || len(rows) == 0 {
-		return nil
-	}
-	out := make([]map[string]interface{}, 0, len(rows))
-	for _, item := range rows {
-		row, _ := item.(map[string]interface{})
-		if row == nil {
-			continue
-		}
-		id, _ := row["id"].(string)
-		domain, _ := row["domain"].(string)
-		platformID, _ := row["platformAddressId"].(string)
-		id = strings.TrimSpace(id)
-		domain = strings.Trim(strings.ToLower(strings.TrimSpace(domain)), ".")
-		platformID = strings.TrimSpace(platformID)
-		platform := platformsByID[platformID]
-		if id == "" || domain == "" || platform == nil {
-			continue
-		}
-		outRow := map[string]interface{}{
-			"host":              domain,
-			"id":                id,
-			"platformAddressId": platformID,
-			"port":              platform["port"],
-			"type":              "custom",
-			"url":               fmt.Sprintf("https://%s/", domain),
-		}
-		if apPublicAddressTargetPortMissing(outRow, appListeningPortSet) {
-			outRow["reason"] = "target-port-missing"
-			outRow["status"] = "blocked"
-		} else {
-			outRow["status"] = "pending"
-		}
-		out = append(out, outRow)
-	}
-	return out
-}
-
-func apPublicAddressTargetPortMissing(row map[string]interface{}, appListeningPortSet map[int32]bool) bool {
-	if len(appListeningPortSet) == 0 {
-		return false
-	}
-	port, ok := APPortFromInterface(row["port"])
-	return !ok || !appListeningPortSet[port]
 }
 
 func apConfigMapsFromPod(apName string, container corev1.Container, volumes []corev1.Volume) []interface{} {

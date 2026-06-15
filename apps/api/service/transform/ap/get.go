@@ -1,10 +1,8 @@
 package ap
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -14,12 +12,6 @@ import (
 // defaultIngressHostPlaceholder is a placeholder from older generated templates.
 // It must not surface as a real connection URL.
 const defaultIngressHostPlaceholder = "placeholder.example.com"
-
-var platformAddressIDPattern = regexp.MustCompile(`^pa_[a-z0-9]{6,32}$`)
-var platformAddressDomainPrefixPattern = regexp.MustCompile(`^[a-z]{6}$`)
-var customDomainBindingIDPattern = regexp.MustCompile(`^cd_[a-z0-9]{6,32}$`)
-
-const platformAddressHostAlphabet = "abcdefghijklmnopqrstuvwxyz"
 
 func isPlaceholderIngressHost(host string) bool {
 	h := strings.TrimSpace(strings.ToLower(host))
@@ -212,56 +204,40 @@ func privateNetworkAddressForPort(services []map[string]interface{}, namespace s
 	return ""
 }
 
-type platformAddressRequest struct {
-	domainPrefix string
-	id           string
-	port         int
-}
-
-type customDomainRequest struct {
-	domain            string
-	dnsStatus         string
-	dnsTarget         string
-	dnsVerifiedAt     string
-	id                string
-	platformAddressID string
-}
-
 func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]interface{}) {
-	platformAddresses := apPlatformAddressRequests(ap)
+	intent := apNetworkIntent(ap)
+	platformAddresses := intent.PlatformAddresses
 	if len(platformAddresses) == 0 {
 		removePublicNetworkStatus(status)
 		return
 	}
-	customDomains := apCustomDomainRequests(ap, platformAddresses)
-	appListeningPortSet := apAppListeningPortSet(ap)
+	customDomains := intent.CustomDomains
 	networkCopy := networkStatusCopy(status)
 	if _, exists := networkCopy["publicAddresses"]; exists {
 		publicAddresses := publicAddressRowsForIntent(
 			publicAddressRowsFromValue(networkCopy["publicAddresses"]),
-			platformAddresses,
-			customDomains,
+			intent,
 		)
 		seenIDs, promotedPlatformAddressIDs := publicAddressMergeState(publicAddresses)
 		for _, customDomain := range customDomains {
-			if seenIDs[customDomain.id] {
-				promotedPlatformAddressIDs[customDomain.platformAddressID] = true
+			if seenIDs[customDomain.ID] {
+				promotedPlatformAddressIDs[customDomain.PlatformAddressID] = true
 				continue
 			}
-			row := pendingCustomDomainRow(ap, platformAddresses, customDomain, appListeningPortSet)
+			row := pendingCustomDomainRow(ap, intent, customDomain)
 			if row == nil {
 				continue
 			}
 			publicAddresses = append(publicAddresses, row)
-			seenIDs[customDomain.id] = true
-			promotedPlatformAddressIDs[customDomain.platformAddressID] = true
+			seenIDs[customDomain.ID] = true
+			promotedPlatformAddressIDs[customDomain.PlatformAddressID] = true
 		}
 		publicAddresses = hidePromotedPlatformAddressRows(publicAddresses, promotedPlatformAddressIDs)
 		for _, address := range platformAddresses {
-			if seenIDs[address.id] || promotedPlatformAddressIDs[address.id] {
+			if seenIDs[address.ID] || promotedPlatformAddressIDs[address.ID] {
 				continue
 			}
-			publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, address, appListeningPortSet))
+			publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, intent, address))
 		}
 		networkCopy["publicAddresses"] = canonicalPublicAddressRows(publicAddresses)
 		status["network"] = networkCopy
@@ -271,18 +247,18 @@ func mergePublicNetworkStatus(ap map[string]interface{}, status map[string]inter
 	promotedPlatformAddressIDs := make(map[string]bool)
 	publicAddresses := make([]map[string]interface{}, 0, len(platformAddresses)+len(customDomains))
 	for _, customDomain := range customDomains {
-		row := pendingCustomDomainRow(ap, platformAddresses, customDomain, appListeningPortSet)
+		row := pendingCustomDomainRow(ap, intent, customDomain)
 		if row == nil {
 			continue
 		}
 		publicAddresses = append(publicAddresses, row)
-		promotedPlatformAddressIDs[customDomain.platformAddressID] = true
+		promotedPlatformAddressIDs[customDomain.PlatformAddressID] = true
 	}
 	for _, address := range platformAddresses {
-		if promotedPlatformAddressIDs[address.id] {
+		if promotedPlatformAddressIDs[address.ID] {
 			continue
 		}
-		publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, address, appListeningPortSet))
+		publicAddresses = append(publicAddresses, pendingPublicAddressRow(ap, intent, address))
 	}
 	networkCopy["publicAddresses"] = canonicalPublicAddressRows(publicAddresses)
 	status["network"] = networkCopy
@@ -422,11 +398,11 @@ func publicAddressRowsFromValue(value interface{}) []map[string]interface{} {
 	}
 }
 
-func publicAddressRowsForIntent(rows []map[string]interface{}, platformAddresses []platformAddressRequest, customDomains []customDomainRequest) []map[string]interface{} {
+func publicAddressRowsForIntent(rows []map[string]interface{}, intent orchestration.APNetworkIntent) []map[string]interface{} {
 	if len(rows) == 0 {
 		return rows
 	}
-	intentIDs := publicAddressIntentIDs(platformAddresses, customDomains)
+	intentIDs := orchestration.APPublicAddressIntentIDs(intent)
 	out := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
 		id, _ := row["id"].(string)
@@ -439,24 +415,30 @@ func publicAddressRowsForIntent(rows []map[string]interface{}, platformAddresses
 	return out
 }
 
-func publicAddressIntentIDs(platformAddresses []platformAddressRequest, customDomains []customDomainRequest) map[string]bool {
-	ids := make(map[string]bool, len(platformAddresses)+len(customDomains))
-	for _, address := range platformAddresses {
-		ids[address.id] = true
+func apNetworkIntent(ap map[string]interface{}) orchestration.APNetworkIntent {
+	network := apInputNetwork(ap)
+	if network == nil {
+		return orchestration.APNetworkIntent{}
 	}
-	for _, domain := range customDomains {
-		ids[domain.id] = true
+	intent := orchestration.APNetworkIntent{
+		PlatformAddresses: orchestration.APPlatformAddressRequestsFromNetwork(network),
 	}
-	return ids
+	intent.CustomDomains = orchestration.APCustomDomainRequestsFromNetwork(network, intent.PlatformAddresses)
+	for _, port := range apAppListeningPorts(ap) {
+		if orchestration.IsValidAPPort(int32(port)) {
+			intent.AppListeningPorts = append(intent.AppListeningPorts, orchestration.APAppListeningPort{Port: int32(port)})
+		}
+	}
+	return intent
 }
 
-func apAppListeningPortSet(ap map[string]interface{}) map[int]bool {
-	ports := apAppListeningPorts(ap)
-	out := make(map[int]bool, len(ports))
-	for _, port := range ports {
-		out[port] = true
+func apPublicAddressProjectionInput(ap map[string]interface{}, intent orchestration.APNetworkIntent) orchestration.APPublicAddressProjectionInput {
+	return orchestration.APPublicAddressProjectionInput{
+		APName:        getString(ap, "metadata", "name"),
+		Intent:        intent,
+		Namespace:     getString(ap, "metadata", "namespace"),
+		RoutingDomain: apRoutingDomain(ap),
 	}
-	return out
 }
 
 func copyPublicAddressRow(row map[string]interface{}) map[string]interface{} {
@@ -477,7 +459,7 @@ func publicAddressMergeState(rows []map[string]interface{}) (map[string]bool, ma
 		}
 		platformAddressID, _ := row["platformAddressId"].(string)
 		platformAddressID = strings.TrimSpace(platformAddressID)
-		if platformAddressIDPattern.MatchString(platformAddressID) {
+		if orchestration.IsValidAPPlatformAddressID(platformAddressID) {
 			promotedPlatformAddressIDs[platformAddressID] = true
 		}
 	}
@@ -519,162 +501,20 @@ func canonicalPublicAddressRows(rows []map[string]interface{}) []map[string]inte
 	return rows
 }
 
-func pendingPublicAddressRow(ap map[string]interface{}, address platformAddressRequest, appListeningPortSet map[int]bool) map[string]interface{} {
-	row := map[string]interface{}{
-		"id":   address.id,
-		"port": address.port,
-		"type": "platform",
-	}
-	host := platformAddressHost(
-		getString(ap, "metadata", "namespace"),
-		getString(ap, "metadata", "name"),
-		address.id,
-		address.domainPrefix,
-		apRoutingDomain(ap),
-	)
-	if host == "" {
-		if publicAddressTargetPortMissing(address.port, appListeningPortSet) {
-			row["reason"] = "target-port-missing"
-			row["status"] = "blocked"
-		} else {
-			row["status"] = "progressing"
-		}
-		return row
-	}
-	row["host"] = host
-	row["url"] = fmt.Sprintf("https://%s/", host)
-	if publicAddressTargetPortMissing(address.port, appListeningPortSet) {
-		row["reason"] = "target-port-missing"
-		row["status"] = "blocked"
-	} else {
-		row["status"] = "progressing"
-	}
-	return row
+func pendingPublicAddressRow(ap map[string]interface{}, intent orchestration.APNetworkIntent, address orchestration.APPlatformAddressRequest) map[string]interface{} {
+	return orchestration.APPublicAddressRowForPlatform(apPublicAddressProjectionInput(ap, intent), address)
 }
 
 func pendingCustomDomainRow(
 	ap map[string]interface{},
-	platformAddresses []platformAddressRequest,
-	customDomain customDomainRequest,
-	appListeningPortSet map[int]bool,
+	intent orchestration.APNetworkIntent,
+	customDomain orchestration.APCustomDomainRequest,
 ) map[string]interface{} {
-	target, ok := platformAddressRequestByID(platformAddresses, customDomain.platformAddressID)
+	row, ok := orchestration.APPublicAddressRowForCustomDomain(apPublicAddressProjectionInput(ap, intent), customDomain)
 	if !ok {
 		return nil
 	}
-	row := map[string]interface{}{
-		"host":              customDomain.domain,
-		"id":                customDomain.id,
-		"platformAddressId": customDomain.platformAddressID,
-		"port":              target.port,
-		"type":              "custom",
-		"url":               fmt.Sprintf("https://%s/", customDomain.domain),
-	}
-	cnameTarget := platformAddressHost(
-		getString(ap, "metadata", "namespace"),
-		getString(ap, "metadata", "name"),
-		customDomain.platformAddressID,
-		target.domainPrefix,
-		apRoutingDomain(ap),
-	)
-	if cnameTarget != "" {
-		row["cnameTarget"] = cnameTarget
-	}
-	if publicAddressTargetPortMissing(target.port, appListeningPortSet) {
-		row["reason"] = "target-port-missing"
-		row["status"] = "blocked"
-	} else {
-		row["status"] = "verifying"
-	}
 	return row
-}
-
-func publicAddressTargetPortMissing(port int, appListeningPortSet map[int]bool) bool {
-	if len(appListeningPortSet) == 0 {
-		return false
-	}
-	return !appListeningPortSet[port]
-}
-
-func platformAddressRequestByID(addresses []platformAddressRequest, id string) (platformAddressRequest, bool) {
-	for _, address := range addresses {
-		if address.id == id {
-			return address, true
-		}
-	}
-	return platformAddressRequest{}, false
-}
-
-func apPlatformAddressRequests(ap map[string]interface{}) []platformAddressRequest {
-	network := apInputNetwork(ap)
-	if network == nil {
-		return nil
-	}
-	raw, _ := network["platformAddresses"].([]interface{})
-	if len(raw) == 0 {
-		return nil
-	}
-	addresses := make([]platformAddressRequest, 0, len(raw))
-	for _, item := range raw {
-		address, _ := item.(map[string]interface{})
-		if address == nil {
-			continue
-		}
-		id, _ := address["id"].(string)
-		id = strings.TrimSpace(id)
-		port, ok := privatePortFromValue(address["port"])
-		if !platformAddressIDPattern.MatchString(id) || !ok {
-			continue
-		}
-		domainPrefix, _ := address["domainPrefix"].(string)
-		addresses = append(addresses, platformAddressRequest{
-			domainPrefix: strings.TrimSpace(strings.ToLower(domainPrefix)),
-			id:           id,
-			port:         port,
-		})
-	}
-	return addresses
-}
-
-func apCustomDomainRequests(ap map[string]interface{}, platformAddresses []platformAddressRequest) []customDomainRequest {
-	network := apInputNetwork(ap)
-	if network == nil {
-		return nil
-	}
-	raw, _ := network["customDomains"].([]interface{})
-	if len(raw) == 0 {
-		return nil
-	}
-	platformAddressIDs := platformAddressIDSet(platformAddresses)
-	customDomains := make([]customDomainRequest, 0, len(raw))
-	for _, item := range raw {
-		customDomain, _ := item.(map[string]interface{})
-		if customDomain == nil {
-			continue
-		}
-		id, _ := customDomain["id"].(string)
-		id = strings.TrimSpace(id)
-		domain, _ := customDomain["domain"].(string)
-		domain = strings.Trim(strings.ToLower(strings.TrimSpace(domain)), ".")
-		platformAddressID, _ := customDomain["platformAddressId"].(string)
-		platformAddressID = strings.TrimSpace(platformAddressID)
-		if !customDomainBindingIDPattern.MatchString(id) || domain == "" || !platformAddressIDs[platformAddressID] {
-			continue
-		}
-		dns, _ := customDomain["dns"].(map[string]interface{})
-		dnsStatus := strings.TrimSpace(strings.ToLower(getString(dns, "status")))
-		dnsTarget := strings.TrimSpace(getString(dns, "target"))
-		dnsVerifiedAt := strings.TrimSpace(getString(dns, "verifiedAt"))
-		customDomains = append(customDomains, customDomainRequest{
-			domain:            domain,
-			dnsStatus:         dnsStatus,
-			dnsTarget:         dnsTarget,
-			dnsVerifiedAt:     dnsVerifiedAt,
-			id:                id,
-			platformAddressID: platformAddressID,
-		})
-	}
-	return customDomains
 }
 
 type publicAccessSupportState struct {
@@ -692,12 +532,12 @@ const (
 )
 
 func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string]interface{}, ingresses, certificates, issuers []map[string]interface{}) {
-	platformAddresses := apPlatformAddressRequests(ap)
+	intent := apNetworkIntent(ap)
+	platformAddresses := intent.PlatformAddresses
 	if len(platformAddresses) == 0 {
 		return
 	}
-	customDomains := apCustomDomainRequests(ap, platformAddresses)
-	appListeningPortSet := apAppListeningPortSet(ap)
+	customDomains := intent.CustomDomains
 	networkCopy := networkStatusCopy(status)
 	publicAddresses := publicAddressRowsFromValue(networkCopy["publicAddresses"])
 	if len(publicAddresses) == 0 {
@@ -721,21 +561,21 @@ func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string
 	promotedPlatformAddressIDs := make(map[string]bool, len(customDomains))
 
 	for _, customDomain := range customDomains {
-		target, ok := platformAddressRequestByID(platformAddresses, customDomain.platformAddressID)
+		target, ok := orchestration.APPlatformAddressRequestByID(platformAddresses, customDomain.PlatformAddressID)
 		if !ok {
 			continue
 		}
-		row := rowsByID[customDomain.id]
+		row := rowsByID[customDomain.ID]
 		if row == nil {
-			row = pendingCustomDomainRow(ap, platformAddresses, customDomain, appListeningPortSet)
+			row = pendingCustomDomainRow(ap, intent, customDomain)
 			if row == nil {
 				continue
 			}
 			publicAddresses = append(publicAddresses, row)
-			rowsByID[customDomain.id] = row
+			rowsByID[customDomain.ID] = row
 		}
-		projectCustomDomainSupportHealth(row, ap, namespace, serviceName, target, customDomain, appListeningPortSet, support)
-		promotedPlatformAddressIDs[customDomain.platformAddressID] = true
+		projectCustomDomainSupportHealth(row, ap, namespace, serviceName, target, customDomain, intent, support)
+		promotedPlatformAddressIDs[customDomain.PlatformAddressID] = true
 	}
 
 	publicAddresses = hidePromotedPlatformAddressRows(publicAddresses, promotedPlatformAddressIDs)
@@ -748,16 +588,16 @@ func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string
 	}
 
 	for _, address := range platformAddresses {
-		if promotedPlatformAddressIDs[address.id] {
+		if promotedPlatformAddressIDs[address.ID] {
 			continue
 		}
-		row := rowsByID[address.id]
+		row := rowsByID[address.ID]
 		if row == nil {
-			row = pendingPublicAddressRow(ap, address, appListeningPortSet)
+			row = pendingPublicAddressRow(ap, intent, address)
 			publicAddresses = append(publicAddresses, row)
-			rowsByID[address.id] = row
+			rowsByID[address.ID] = row
 		}
-		projectPlatformAddressSupportHealth(row, ap, namespace, serviceName, address, appListeningPortSet, support)
+		projectPlatformAddressSupportHealth(row, ap, namespace, serviceName, address, intent, support)
 	}
 
 	networkCopy["publicAddresses"] = canonicalPublicAddressRows(publicAddresses)
@@ -816,22 +656,22 @@ func labelsOf(resource map[string]interface{}) map[string]string {
 	return out
 }
 
-func projectPlatformAddressSupportHealth(row, ap map[string]interface{}, namespace, serviceName string, address platformAddressRequest, appListeningPortSet map[int]bool, support publicAccessSupportState) {
-	host := platformAddressHost(namespace, getString(ap, "metadata", "name"), address.id, address.domainPrefix, apRoutingDomain(ap))
-	row["id"] = address.id
-	row["port"] = address.port
+func projectPlatformAddressSupportHealth(row, ap map[string]interface{}, namespace, serviceName string, address orchestration.APPlatformAddressRequest, intent orchestration.APNetworkIntent, support publicAccessSupportState) {
+	host := orchestration.PlatformAddressHost(namespace, getString(ap, "metadata", "name"), address.ID, address.DomainPrefix, apRoutingDomain(ap))
+	row["id"] = address.ID
+	row["port"] = int(address.Port)
 	row["type"] = "platform"
 	if host != "" {
 		row["host"] = host
 		row["url"] = fmt.Sprintf("https://%s/", host)
 	}
-	if publicAddressTargetPortMissing(address.port, appListeningPortSet) {
+	if orchestration.APPublicAddressTargetPortMissing(address.Port, intent.AppListeningPorts) {
 		row["reason"] = "target-port-missing"
 		row["status"] = "blocked"
 		return
 	}
 	delete(row, "reason")
-	if publicAddressIngressMatches(support.platformIngresses[address.id], host, serviceName, address.port) {
+	if publicAddressIngressMatches(support.platformIngresses[address.ID], host, serviceName, int(address.Port)) {
 		row["status"] = "accessible"
 		return
 	}
@@ -843,29 +683,29 @@ func projectCustomDomainSupportHealth(
 	ap map[string]interface{},
 	namespace string,
 	serviceName string,
-	target platformAddressRequest,
-	customDomain customDomainRequest,
-	appListeningPortSet map[int]bool,
+	target orchestration.APPlatformAddressRequest,
+	customDomain orchestration.APCustomDomainRequest,
+	intent orchestration.APNetworkIntent,
 	support publicAccessSupportState,
 ) {
-	row["host"] = customDomain.domain
-	row["id"] = customDomain.id
-	row["platformAddressId"] = customDomain.platformAddressID
-	row["port"] = target.port
+	row["host"] = customDomain.Domain
+	row["id"] = customDomain.ID
+	row["platformAddressId"] = customDomain.PlatformAddressID
+	row["port"] = int(target.Port)
 	row["type"] = "custom"
-	row["url"] = fmt.Sprintf("https://%s/", customDomain.domain)
-	cnameTarget := platformAddressHost(namespace, getString(ap, "metadata", "name"), customDomain.platformAddressID, target.domainPrefix, apRoutingDomain(ap))
+	row["url"] = fmt.Sprintf("https://%s/", customDomain.Domain)
+	cnameTarget := orchestration.PlatformAddressHost(namespace, getString(ap, "metadata", "name"), customDomain.PlatformAddressID, target.DomainPrefix, apRoutingDomain(ap))
 	if cnameTarget != "" {
 		row["cnameTarget"] = cnameTarget
 	}
 	dnsDetail := customDomainDNSDetail(customDomain, cnameTarget)
-	certName := orchestration.APCustomDomainTLSResourceName(getString(ap, "metadata", "name"), customDomain.id)
+	certName := orchestration.APCustomDomainTLSResourceName(getString(ap, "metadata", "name"), customDomain.ID)
 	certificateDetail := certificateHealthDetail(support.certificates[certName])
-	routingDetail := routingHealthDetail(support.customIngresses[customDomain.id], customDomain.domain, serviceName, target.port)
+	routingDetail := routingHealthDetail(support.customIngresses[customDomain.ID], customDomain.Domain, serviceName, int(target.Port))
 	row["dns"] = dnsDetail
 	row["certificate"] = certificateDetail
 	row["routing"] = routingDetail
-	if publicAddressTargetPortMissing(target.port, appListeningPortSet) {
+	if orchestration.APPublicAddressTargetPortMissing(target.Port, intent.AppListeningPorts) {
 		row["reason"] = "target-port-missing"
 		row["status"] = "blocked"
 		return
@@ -883,22 +723,22 @@ func projectCustomDomainSupportHealth(
 	row["status"] = "verifying"
 }
 
-func customDomainDNSDetail(customDomain customDomainRequest, cnameTarget string) map[string]interface{} {
-	status := customDomain.dnsStatus
+func customDomainDNSDetail(customDomain orchestration.APCustomDomainRequest, cnameTarget string) map[string]interface{} {
+	status := customDomain.DNSStatus
 	if status == "" {
 		status = "verifying"
 	}
 	detail := map[string]interface{}{"status": status}
-	if customDomain.dnsTarget != "" {
-		detail["target"] = customDomain.dnsTarget
+	if customDomain.DNSTarget != "" {
+		detail["target"] = customDomain.DNSTarget
 	}
-	if customDomain.dnsVerifiedAt != "" {
-		detail["verifiedAt"] = customDomain.dnsVerifiedAt
+	if customDomain.DNSVerifiedAt != "" {
+		detail["verifiedAt"] = customDomain.DNSVerifiedAt
 	}
-	if cnameTarget != "" && customDomain.dnsTarget != "" && !strings.EqualFold(customDomain.dnsTarget, cnameTarget) {
+	if cnameTarget != "" && customDomain.DNSTarget != "" && !strings.EqualFold(customDomain.DNSTarget, cnameTarget) {
 		detail["status"] = "failed"
 		detail["reason"] = "cname-target-mismatch"
-		detail["message"] = fmt.Sprintf("CNAME target %s does not match %s.", customDomain.dnsTarget, cnameTarget)
+		detail["message"] = fmt.Sprintf("CNAME target %s does not match %s.", customDomain.DNSTarget, cnameTarget)
 	}
 	return detail
 }
@@ -1008,43 +848,12 @@ func firstDetailFailureReason(details ...map[string]interface{}) string {
 	return "public-access-health-failed"
 }
 
-func platformAddressIDSet(addresses []platformAddressRequest) map[string]bool {
-	ids := make(map[string]bool, len(addresses))
-	for _, address := range addresses {
-		ids[address.id] = true
-	}
-	return ids
-}
-
 func apRoutingDomain(ap map[string]interface{}) string {
-	return strings.TrimSpace(getString(ap, "metadata", "labels", "region"))
-}
-
-func platformAddressHost(namespace string, name string, id string, domainPrefix string, domain string) string {
-	namespace = strings.TrimSpace(namespace)
-	name = strings.TrimSpace(name)
-	id = strings.TrimSpace(id)
-	domain = strings.TrimSpace(domain)
-	if namespace == "" || name == "" || !platformAddressIDPattern.MatchString(id) || domain == "" {
-		return ""
-	}
-	label := strings.TrimSpace(strings.ToLower(domainPrefix))
-	if !platformAddressDomainPrefixPattern.MatchString(label) {
-		label = stablePlatformAddressHostLabel(fmt.Sprintf("%s/%s/%s", namespace, name, id), 6)
-	}
-	return fmt.Sprintf("%s.%s", label, domain)
+	return strings.TrimSpace(getString(ap, "metadata", "labels", orchestration.APRoutingDomainLabel))
 }
 
 func stablePlatformAddressHostLabel(source string, length int) string {
-	if length <= 0 {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(strings.TrimSpace(source)))
-	out := make([]byte, 0, length)
-	for i := 0; len(out) < length; i++ {
-		out = append(out, platformAddressHostAlphabet[sum[i%len(sum)]%byte(len(platformAddressHostAlphabet))])
-	}
-	return string(out)
+	return orchestration.APStableLowercaseLetters(source, length)
 }
 
 func privatePortFromValue(value interface{}) (int, bool) {

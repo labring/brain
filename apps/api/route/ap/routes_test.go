@@ -462,57 +462,7 @@ func TestAPStrictOwnershipRejectsManagedTemplateWorkloads(t *testing.T) {
 	}
 }
 
-func TestAPDeploymentPatchFromProductPatch(t *testing.T) {
-	raw := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true,"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"envRawSource":"\n# app\nFEATURE_FLAG=true\n","network":{"privatePort":8080,"platformAddresses":[{"id":"pa_abc123","port":8080}]}},"resource":{"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":3}}}}}`)
-	patch := apDeploymentPatchFromProductPatch(raw, "web")
-	var out map[string]interface{}
-	if err := json.Unmarshal(patch, &out); err != nil {
-		t.Fatalf("unmarshal patch: %v", err)
-	}
-	metadata := out["metadata"].(map[string]interface{})
-	annotations := metadata["annotations"].(map[string]interface{})
-	if got := annotations["brain.io/ap-desired-network"]; got == "" {
-		t.Fatalf("desired network annotation should be patched")
-	}
-	if got := annotations["brain.io/ap-env-raw-source"]; got != "\n# app\nFEATURE_FLAG=true\n" {
-		t.Fatalf("env raw source annotation = %v, want raw source", got)
-	}
-	labels := metadata["labels"].(map[string]interface{})
-	if got := labels["region"]; got != "apps.example.com" {
-		t.Fatalf("region label = %v, want apps.example.com", got)
-	}
-	spec := out["spec"].(map[string]interface{})
-	if got := spec["replicas"]; got != float64(0) {
-		t.Fatalf("replicas = %v, want 0", got)
-	}
-	if got := annotations["deploy.cloud.sealos.io/pause"]; got != "true" {
-		t.Fatalf("pause annotation = %v, want true", got)
-	}
-	template := spec["template"].(map[string]interface{})
-	templateSpec := template["spec"].(map[string]interface{})
-	containers := templateSpec["containers"].([]interface{})
-	container := containers[0].(map[string]interface{})
-	if got := container["image"]; got != "nginx:1.28" {
-		t.Fatalf("image = %v, want nginx:1.28", got)
-	}
-	env := container["env"].([]interface{})
-	envRow := env[0].(map[string]interface{})
-	if got := envRow["name"]; got != "FEATURE_FLAG" {
-		t.Fatalf("env name = %v, want FEATURE_FLAG", got)
-	}
-	ports := container["ports"].([]interface{})
-	port := ports[0].(map[string]interface{})
-	if got := port["containerPort"]; got != float64(8080) {
-		t.Fatalf("containerPort = %v, want 8080", got)
-	}
-	resources := container["resources"].(map[string]interface{})
-	limits := resources["limits"].(map[string]interface{})
-	if got := limits["cpu"]; got != "500m" {
-		t.Fatalf("cpu limit = %v, want 500m", got)
-	}
-}
-
-func TestAPRenderInputFromDeploymentPatchPreservesValueFromAndProbes(t *testing.T) {
+func TestAPRenderInputFromWorkloadPatchPreservesValueFromAndProbes(t *testing.T) {
 	replicas := int32(1)
 	current := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -551,9 +501,9 @@ func TestAPRenderInputFromDeploymentPatchPreservesValueFromAndProbes(t *testing.
 			}
 		}
 	}`)
-	got, _, err := apRenderInputFromDeploymentPatch(current, patch)
+	got, _, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, patch, nil)
 	if err != nil {
-		t.Fatalf("apRenderInputFromDeploymentPatch returned error: %v", err)
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
 	}
 	if got.Env[0].ValueFrom == nil || got.Env[0].ValueFrom.SecretKeyRef == nil {
 		t.Fatalf("env valueFrom was not preserved: %#v", got.Env[0])
@@ -805,25 +755,7 @@ func TestAPInputReferencesGeneratedImagePullSecret(t *testing.T) {
 	}
 }
 
-func TestAPServicePatchFromProductPatch(t *testing.T) {
-	raw := json.RawMessage(`{"spec":{"input":{"network":{"privatePort":8080}}}}`)
-	patch := apServicePatchFromProductPatch(raw)
-	var out map[string]interface{}
-	if err := json.Unmarshal(patch, &out); err != nil {
-		t.Fatalf("unmarshal patch: %v", err)
-	}
-	spec := out["spec"].(map[string]interface{})
-	ports := spec["ports"].([]interface{})
-	port := ports[0].(map[string]interface{})
-	if got := port["port"]; got != float64(8080) {
-		t.Fatalf("service port = %v, want 8080", got)
-	}
-	if got := port["targetPort"]; got != float64(8080) {
-		t.Fatalf("service targetPort = %v, want 8080", got)
-	}
-}
-
-func TestApplyAPPauseStateAllowsZeroReplicasOnUpdate(t *testing.T) {
+func TestApplyAPResourcesPauseStateAllowsZeroReplicasOnUpdate(t *testing.T) {
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{}},
@@ -831,7 +763,7 @@ func TestApplyAPPauseStateAllowsZeroReplicasOnUpdate(t *testing.T) {
 	}
 
 	paused := true
-	applyAPPauseState(deployment, &paused)
+	applyAPResourcesPauseState(&orchestration.APResources{Deployment: deployment}, &paused)
 
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
 		t.Fatalf("replicas = %v, want 0", deployment.Spec.Replicas)
@@ -841,7 +773,7 @@ func TestApplyAPPauseStateAllowsZeroReplicasOnUpdate(t *testing.T) {
 	}
 
 	paused = false
-	applyAPPauseState(deployment, &paused)
+	applyAPResourcesPauseState(&orchestration.APResources{Deployment: deployment}, &paused)
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 1 {
 		t.Fatalf("resume replicas = %v, want 1", deployment.Spec.Replicas)
 	}
@@ -875,15 +807,15 @@ func TestPausedElasticAPSkipsHPAOnUpdate(t *testing.T) {
 		},
 	}
 
-	renderInput, paused, err := apRenderInputFromDeploymentPatch(current, json.RawMessage(`{"spec":{"paused":true}}`))
+	renderInput, paused, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"paused":true}}`), nil)
 	if err != nil {
-		t.Fatalf("apRenderInputFromDeploymentPatch returned error: %v", err)
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
 	}
 	resources, err := orchestration.RenderAPResources(renderInput)
 	if err != nil {
 		t.Fatalf("RenderAPResources returned error: %v", err)
 	}
-	applyAPPauseState(resources.Deployment, paused)
+	applyAPResourcesPauseState(&orchestration.APResources{Deployment: resources.Deployment}, paused)
 	if paused != nil && *paused {
 		resources.HPA = nil
 	}
@@ -895,7 +827,7 @@ func TestPausedElasticAPSkipsHPAOnUpdate(t *testing.T) {
 	}
 }
 
-func TestAPRenderInputFromDeploymentPatchMergesProductPatchIntoCurrentState(t *testing.T) {
+func TestAPRenderInputFromWorkloadPatchMergesProductPatchIntoCurrentState(t *testing.T) {
 	replicas := int32(1)
 	current := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -937,9 +869,9 @@ func TestAPRenderInputFromDeploymentPatchMergesProductPatchIntoCurrentState(t *t
 	}
 
 	patch := json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"envRawSource":"\n# app\nFEATURE_FLAG=true\n","network":{"privatePort":8080,"platformAddresses":[{"id":"pa_new123","port":8080}]}},"resource":{"requests":{"cpu":"250m","memory":"256Mi"},"limits":{"cpu":"500m","memory":"512Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":2}}}}}`)
-	got, paused, err := apRenderInputFromDeploymentPatch(current, patch)
+	got, paused, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, patch, nil)
 	if err != nil {
-		t.Fatalf("apRenderInputFromDeploymentPatch returned error: %v", err)
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
 	}
 	if paused != nil {
 		t.Fatalf("paused = %v, want nil", *paused)
@@ -985,7 +917,7 @@ func TestAPRenderInputFromDeploymentPatchMergesProductPatchIntoCurrentState(t *t
 	}
 }
 
-func TestAPRenderInputFromDeploymentPatchAcceptsElasticReplicaStrategy(t *testing.T) {
+func TestAPRenderInputFromWorkloadPatchAcceptsElasticReplicaStrategy(t *testing.T) {
 	replicas := int32(1)
 	current := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1011,9 +943,9 @@ func TestAPRenderInputFromDeploymentPatchAcceptsElasticReplicaStrategy(t *testin
 	}
 
 	patch := json.RawMessage(`{"spec":{"resource":{"replicaStrategy":{"type":"elastic","fixed":{"replicas":2},"elastic":{"minReplicas":2,"maxReplicas":8,"target":{"metric":"cpu","type":"utilization","utilizationPercent":75}}}}}}`)
-	got, _, err := apRenderInputFromDeploymentPatch(current, patch)
+	got, _, err := apRenderInputFromWorkloadPatch(apWorkload{Deployment: &current}, patch, nil)
 	if err != nil {
-		t.Fatalf("apRenderInputFromDeploymentPatch returned error: %v", err)
+		t.Fatalf("apRenderInputFromWorkloadPatch returned error: %v", err)
 	}
 	if got.ReplicaStrategy == nil || got.ReplicaStrategy.Type != "elastic" {
 		t.Fatalf("replica strategy = %#v, want elastic", got.ReplicaStrategy)
