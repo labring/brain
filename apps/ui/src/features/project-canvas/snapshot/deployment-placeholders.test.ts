@@ -9,10 +9,10 @@ import type {
   CanvasDeploymentPlaceholderRfNode,
 } from "../nodes/types";
 import {
-  deploymentPreviewEdgesFromTasks,
   deploymentProjectionPlacementCommands,
   deploymentProjectionPlacementNodesFromPlaceholderNode,
-} from "./deployment-placeholders";
+} from "./deployment-placement-commands";
+import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
 
 const AP_SLOT = {
   expectedRef: {

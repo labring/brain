@@ -24,13 +24,17 @@ import {
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
-  deploymentPlaceholderNodesFromTasks,
   deploymentPlaceholderPendingResultKeys,
-  deploymentPreviewEdgesFromTasks,
-  deploymentProjectionPlacementCommands,
   isDeploymentPlaceholderPendingResultNode,
+} from "./deployment-placeholder-handoff";
+import {
+  deploymentPlaceholderNodesFromTasks,
   shouldHideDeploymentPlaceholderForHandoff,
-} from "./deployment-placeholders";
+} from "./deployment-placeholder-nodes";
+import { deploymentProjectionPlacementCommands } from "./deployment-placement-commands";
+import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
+import { createDeploymentProjectionContext } from "./deployment-projection-context";
+import { deploymentResultPreviewsFromTasks } from "./deployment-projection-model";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 
 export type ProjectCanvasLayoutIntent =
@@ -117,10 +121,16 @@ export function buildProjectCanvasResourceSnapshot({
     ...publicAccessBlock.nodes,
     ...templateNativeBlock.nodes,
   ];
-  const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
+  const deploymentResultPreviews =
+    deploymentResultPreviewsFromTasks(deployTasks);
+  const rawDeploymentProjectionContext = createDeploymentProjectionContext({
     layout: canvasLayout,
     nodes: rawDetectedNodes,
+    previews: deploymentResultPreviews,
     tasks: deployTasks,
+  });
+  const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
+    context: rawDeploymentProjectionContext,
   });
   const detectedNodes = rawDetectedNodes.filter(
     (node) =>
@@ -135,23 +145,19 @@ export function buildProjectCanvasResourceSnapshot({
   const deploymentPlaceholderNodes = deploymentPlaceholderNodesFromTasks(
     deployTasks,
     {
-      layout: canvasLayout,
-      nodes: rawDetectedNodes,
+      context: rawDeploymentProjectionContext,
     }
   ).filter((node) => {
     if (!deployTaskById.has(node.data.taskId)) {
       return true;
     }
     return !shouldHideDeploymentPlaceholderForHandoff({
-      layout: canvasLayout,
+      context: rawDeploymentProjectionContext,
       node,
-      nodes: rawDetectedNodes,
     });
   });
   const initialPositions = deploymentPlaceholderHandoffs({
-    layout: canvasLayout,
-    nodes: detectedNodes,
-    tasks: deployTasks,
+    context: rawDeploymentProjectionContext,
   });
   const detectedConnections = canvasLayoutReady
     ? detectCanvasConnections({
@@ -182,11 +188,16 @@ export function buildProjectCanvasResourceSnapshot({
         merge.nodes
       )
     : [];
+  const mergedDeploymentProjectionContext = createDeploymentProjectionContext({
+    layout: canvasLayout,
+    nodes: merge.nodes,
+    previews: deploymentResultPreviews,
+    tasks: deployTasks,
+  });
   const deploymentPreviewEdges = canvasLayoutReady
     ? deploymentPreviewEdgesFromTasks({
+        context: mergedDeploymentProjectionContext,
         existingEdges: edges,
-        nodes: merge.nodes,
-        tasks: deployTasks,
       })
     : [];
   const canvasState: CanvasState = {
@@ -200,9 +211,7 @@ export function buildProjectCanvasResourceSnapshot({
     commands: [
       ...(layoutCommands ?? []),
       ...deploymentProjectionPlacementCommands({
-        layout: canvasLayout,
-        nodes: rawDetectedNodes,
-        tasks: deployTasks,
+        context: rawDeploymentProjectionContext,
       }),
     ],
     layout: merge.layout,
