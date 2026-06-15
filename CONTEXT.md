@@ -12,12 +12,6 @@ A reusable UI component eligible for the Component Registry. A Registry Componen
 
 _Avoid_: Product Surface Registry, Pane Registry, Flow Registry.
 
-### Product Tooltip
-
-A transient, non-interactive hint used by the product design system for compact controls or labels. Product Tooltip does not include browser title hints, chart data callouts, or editor/autocomplete overlays.
-
-_Avoid_: All tooltip, native title tooltip, chart tooltip.
-
 ### AP Public Access Node
 
 An AP Public Access Node is a presentation-only Project Canvas node derived from an AP's Public Addresses. It is not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
@@ -40,37 +34,19 @@ An externally reachable URL/domain alias for an AP that declares a target port. 
 
 ### Platform Address
 
-A system-assigned Public Address that the platform can create without user DNS or certificate setup; in v1, users request one by choosing an App Listening Port, not by providing a host or URL. A Platform Address may be promoted into the CNAME target for a Custom Domain Binding, after which its host remains the binding target rather than the primary displayed Public Address.
+A system-assigned Public Address that the platform can create without user DNS or certificate setup. Users request one by choosing an App Listening Port rather than providing a host or URL; its host may be pending until the platform allocates it. A Platform Address may be promoted into the CNAME target for a Custom Domain Binding, after which its host remains the binding target rather than the primary displayed Public Address.
 
 Platform Address health is based on whether the AP's platform routing support matches the AP's Public Address intent and target App Listening Port. It does not require a separately reported load balancer address before the Platform Address can be considered accessible.
 
-### Requested Platform Address
-
-A v1 Platform Address desired entry in AP `spec.input.network.platformAddresses[]`. It has a stable Platform Address ID and target App Listening Port, but no platform-allocated host or URL yet.
-
-### Allocated Platform Address
-
-A Platform Address whose host and URL have been assigned by the platform and published through AP observed network state.
-
-### Reachable Public Address
-
-A Public Address whose allocated host resolves and successfully routes external traffic to the target App Listening Port. Business-level HTTP errors from the workload do not make the Public Address unreachable; a missing target App Listening Port, DNS failure, TLS/connectivity failure, or routing to the wrong backend does.
-
 ### AP Public Access Health
 
-An AP-owned read-side assessment of each Public Address's public routing readiness and reachability. It is routing health rather than application response monitoring: workload HTTP 404 or 500 responses do not make a Public Address unhealthy.
+An AP-owned read-side assessment of each Public Address's public routing readiness and reachability, using routing states such as `progressing`, `verifying`, `accessible`, and `blocked`. It is routing health rather than application response monitoring: workload HTTP 404 or 500 responses do not make a Public Address unhealthy.
 
 AP Settings and the AP Public Access Node may present AP Public Access Health, but it does not belong to a separate EntryPoint, AP Public Access Node, or independent public access resource.
 
 An AP with no Public Address intent has no AP Public Access Health entries; this is absence of public access, not a blocked or unconfigured health state.
 
 _Avoid_: EntryPoint health, AP Public Access Node health, standalone public access monitor.
-
-### AP Public Access Health Status
-
-The AP-owned public routing health state for a Public Address: `progressing`, `verifying`, `accessible`, or `blocked`. `Pending` is legacy-compatible wording, not the canonical health status.
-
-_Avoid_: Pending Public Address health, EntryPoint status, node status.
 
 ### Custom Domain
 
@@ -84,7 +60,7 @@ The public routing boundary within which one Custom Domain can belong to only on
 
 ### AP (Application)
 
-A Brain product resource and API view that represents an application workload. `apiVersion: brain.io/direct`, `kind: AP` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders AP desired state into underlying Kubernetes resources such as Deployment or StatefulSet, Service, optional Ingress, HPA, Secret, and ConfigMap. AP owns compute, App Listening Ports, Private Addresses, and Platform Address allocation requests.
+A Brain product resource that represents an application workload. AP owns the application's desired compute, environment, App Listening Ports, Private Addresses, and Platform Address allocation requests.
 
 ### AP Settings
 
@@ -108,24 +84,6 @@ The resource whose desired configuration is edited by a settings surface. AP and
 
 _Avoid_: EntryPoint Settings Owner, Public Access Node Settings Owner.
 
-### AP Environment Settings Focus
-
-A Settings View that presents only the Environment Variables section for one AP. It is used for AP environment-specific work, including authoring Database Bindings, and is not a separate Database Binding surface.
-
-_Avoid_: Database Binding Pane, AP-DB Binding Pane.
-
-### AP Deployments Pane
-
-A Canvas Resource Pane surface for one existing AP that presents image update controls and retained AP image versions for rollback. It is distinct from Docker Deployment Settings, which are creation-time choices before an AP exists.
-
-_Avoid_: AP Deployment Pane, Image & Entrypoint.
-
-### AP Workload Events
-
-A read-only Canvas Resource Pane opened from a Container Node to inspect recent workload lifecycle events for one AP, such as scheduling, startup, image pull, and health check events.
-
-_Avoid_: AP node events.
-
 ### Docker Deployment Settings
 
 The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
@@ -144,7 +102,7 @@ A task-local Project Canvas slot within one Deployment Task Projection. An unkno
 
 An unknown Deployment Projection Slot uses a stable unknown slot identity within its Deployment Task. A concrete Deployment Projection Slot uses an identity derived from its anticipated result reference, while the Canvas Placement Owner combines that slot identity with the Deployment Task identity.
 
-Deployment Projection Slots are only for anticipated results that can become Project Canvas resource nodes. Template support objects may provide Deployment Projection Evidence, but they are not Deployment Projection Slots.
+Deployment Projection Slots are only for anticipated results that can become Project Canvas resource nodes. Template support objects may inform deployment progress, but they are not Deployment Projection Slots.
 
 _Avoid_: generic placeholder identity, result-only slot, pending resource identity, fake Canvas Resource Identity, one slot per applied Kubernetes object.
 
@@ -160,41 +118,11 @@ The project-scoped temporary visual position owned by a Deployment Projection Sl
 
 _Avoid_: pending node layout, fake resource layout, viewport placement.
 
-### Deployment Projection Slot Group
-
-The visual group formed by the Deployment Projection Slots for one Deployment Task Projection. Each Deployment Projection Slot keeps its own Deployment Projection Placement, and moving one Deployment Placeholder Node changes only that slot's placement by default.
-
-_Avoid_: result preview shape, fake resource group, result auto-layout.
-
-### Deployment Projection Evidence
-
-Structured deployment facts that justify concrete Deployment Projection Slots or Deployment Preview Edges, such as generated manifests, artifact summaries, template previews, AP public access intent, or AP-to-DB relationship fields. Natural-language task text and broad task type are not Deployment Projection Evidence.
-
-_Avoid_: guessed canvas, prompt-derived resource graph, task-type inference.
-
-### Projection Reconciliation
-
-The Project Canvas process that compares Deployment Projection Slots with actual resource state. Projection Reconciliation treats resource state as authoritative and uses Deployment Projection Slots only as advisory handoff candidates.
-
-_Avoid_: forcing resources to match projection, fuzzy result matching.
-
-### Projection Match
-
-An explicit correspondence between one Deployment Projection Slot and one actual resource. A Projection Match requires either exact anticipated resource identity or structured expected-to-actual result mapping.
-
-_Avoid_: fuzzy matching, created-time matching, count-based matching.
-
-### Projection Slot Expiry
-
-The removal of an unmatched Deployment Projection Slot after it can no longer reasonably hand off to a resource. Active Deployment Tasks keep unmatched slots visible; completed tasks keep them only for a reconciliation grace window; failed or cancelled tasks do not keep unmatched slots.
-
-_Avoid_: permanent missing-resource placeholder, completed placeholder.
-
 ### Deployment Preview Edge
 
 A temporary visual relationship between Deployment Projection Slots in one Deployment Task Projection. It is not a Canvas Connection and does not represent an established runtime dependency.
 
-Deployment Preview Edges require explicit preview evidence, such as generated AP-to-DB reference intent, template-declared dependency, or AP-to-Public-Access presentation relationship. Sharing one Deployment Task is not enough to create a Deployment Preview Edge.
+Deployment Preview Edges require explicit preview facts, such as generated AP-to-DB reference intent, template-declared dependency, or AP-to-Public-Access presentation relationship. Sharing one Deployment Task is not enough to create a Deployment Preview Edge.
 
 _Avoid_: pending connection, fake edge, draft Canvas Connection.
 
@@ -205,12 +133,6 @@ A Project-scoped read-side view of one Deployment Task containing only the facts
 Project Canvas consumes Deployment Task Projections rather than full Deployment Task records when rendering Deployment Placeholder Nodes and Deployment Handoff.
 
 _Avoid_: task list row, canvas task, placeholder source data.
-
-### Primary Deployment Result
-
-The resulting canvas resource node that inherits the primary Deployment Projection Slot's visual position when a Deployment Task produces multiple resources. AP results are primary before DB results, template-native workload results are primary only when no AP or DB result exists, and AP Public Access Nodes are never the Primary Deployment Result.
-
-_Avoid_: main ghost target, first applied YAML, primary public access.
 
 ### Deployment Handoff
 
@@ -244,32 +166,6 @@ A product resource description produced or selected by a Deployment Task for app
 
 _Avoid_: task output, generated file.
 
-### Docker Deployment Target
-
-The source-specific wording for the Deployment Target used with Docker Deployment Settings.
-
-### GitHub Deployment Target
-
-The source-specific wording for the Deployment Target used with a GitHub repository Deployment Source.
-
-### Public Access Panel
-
-A narrow UI surface opened from an AP Public Access Node selection that presents the associated AP's Public Addresses. It is scoped to public access and is not the full AP Settings surface.
-
-The panel is a Settings View for the associated AP's Public Addresses, even though it opens from a presentation-only canvas node.
-
-The panel can open for an AP Public Access Node before allocated routing data exists, because the user's public access intent belongs to the associated AP's Public Addresses. It includes Platform Address rows and Custom Domain rows, and does not present the AP's Private Address.
-
-Edits made from the panel use the same Settings Draft confirmation model as AP Settings.
-
-The panel title is anchored on the associated AP name, even when no Public Address has allocated host data yet.
-
-After the last Public Address is removed, the panel may remain open as an AP-bound Public Addresses settings surface even though the AP Public Access Node disappears from the canvas.
-
-The panel closes when the associated AP no longer exists.
-
-When no Public Addresses remain, the panel shows an empty state and still allows adding a Public Address. Public Address behavior in this panel matches AP Settings Public Address behavior.
-
 ### AP Replica Strategy
 
 The AP configuration choice for how many workload replicas should run: either a fixed user-selected count or Elastic Scaling within user-selected bounds.
@@ -284,7 +180,7 @@ An AP Replica Strategy where the platform automatically adjusts AP replicas betw
 
 ### DB (Database)
 
-A Brain product resource and API view that represents a managed database workload available to APs in the same Project. `apiVersion: brain.io/direct`, `kind: DB` is a product manifest accepted by the Brain Go API, not a Kubernetes API resource or CRD. The Go API renders DB desired state into underlying KubeBlocks and Kubernetes resources such as Cluster, Service, credentials, backup resources, and lifecycle OpsRequests.
+A Brain product resource that represents a managed database workload available to APs in the same Project.
 
 ### DB Service
 
@@ -292,19 +188,15 @@ The user-facing database service represented by one DB resource and one database
 
 ### DB Service Backup
 
-A named recovery point for an entire DB Service, optionally annotated with a short description. The backup name is the backup's user-visible identity, while the description is non-identifying context. A DB Service Backup is either manual or automatic; automatic DB Service Backups are created by the DB Service Backup Policy. A DB Service Backup belongs to the DB Service rather than to one Logical Database, schema, table, collection, or key inside it. Deleting a DB Service Backup removes that recovery point, not the source DB Service or any DB Service already restored from it.
-
-When shown as a recovery point, a DB Service Backup's time represents when the recovery point was started or created, not when the backup job completed.
-
-Manual DB Service Backup creation requires the source DB Service to be running. DB Service Restore requires the selected DB Service Backup to be completed, and backup deletion is unavailable while the backup is still in progress.
+A named recovery point for an entire DB Service. A DB Service Backup may be manual or automatic, belongs to the DB Service rather than to one Logical Database or object inside it, and can be used for DB Service Restore after it completes. Deleting a DB Service Backup removes only that recovery point, not the source DB Service or any DB Service restored from it.
 
 ### DB Service Backup Policy
 
-The automatic backup rule for one DB Service. A DB Service has at most one current DB Service Backup Policy; the policy is distinct from the DB Service Backups it creates, may run hourly, daily, or weekly using the user's local time, and retains backups for a selected number of days. Disabling the policy stops future automatic backups but does not delete existing DB Service Backups.
+The automatic backup rule for one DB Service. A DB Service has at most one current DB Service Backup Policy; the policy is distinct from the DB Service Backups it creates and defines their schedule and retention. Disabling the policy stops future automatic backups but does not delete existing DB Service Backups.
 
 ### DB Service Restore
 
-The act of creating a new DB Service from a DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project Canvas and namespace as the source DB Service. After the restored DB Service appears, it becomes the user's next Project Canvas focus. The restored DB Service inherits the source DB Service's database settings unless the product explicitly offers restore-time overrides.
+A non-destructive workflow that creates a new DB Service from a completed DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project and becomes the user's next Project Canvas focus.
 
 ### Logical Database
 
@@ -314,10 +206,6 @@ An engine-level database namespace exposed inside one DB Service, such as a Post
 
 The creation-time choices for a new DB before the DB exists, including database engine, instance preset, and replica count. DB Deployment Settings are independent of entry path: they may create a DB together with a new Project or add a DB to an existing Project.
 
-### DB Deployment Target
-
-The Project relationship selected for a DB before creation. A DB Deployment Target is either a new Project being created in the same flow or an existing Project that will own the new DB.
-
 ### DB Instance Preset
 
 A user-facing resource-size choice for DB Deployment Settings. Each DB Instance Preset maps to one DB quota value; avoid exposing internal SKU-like labels such as `db.mysql.small` as the primary UI language.
@@ -325,10 +213,6 @@ A user-facing resource-size choice for DB Deployment Settings. Each DB Instance 
 ### DB Settings
 
 The primary UI surface for viewing and editing an existing DB's desired configuration after it has been created.
-
-### DB Configuration Draft
-
-A DB-specific Settings Draft retained as legacy wording.
 
 ### Settings Draft
 
@@ -342,19 +226,9 @@ A runtime dependency where an AP is configured to consume one DB's connection cr
 
 ### Pending Database Binding Intent
 
-An unsaved AP Environment draft intent to create a Database Binding by adding one or more AP Environment References to a DB Service. A Pending Database Binding Intent may be visualized on the Project Canvas as a pending AP-to-DB edge, but it is not a Canvas Connection until the AP environment is updated and the relationship can be detected from saved AP and DB resource state.
+An unsaved AP Environment draft intent to create or update a Database Binding by adding one or more AP Environment References to a DB Service. A Pending Database Binding Intent may be visualized on the Project Canvas as a pending AP-to-DB edge, but it is not a Canvas Connection until saved AP and DB resource state contains binding evidence.
 
-A Pending Database Binding Intent is derived from explicit AP Environment References in the current AP Environment draft. Ordinary user-authored DSN strings do not create a Pending Database Binding Intent, even if they happen to equal a DB Service's current DSN; after update, exact saved DSN evidence may still produce an established Canvas Connection.
-
-A Pending Database Binding Intent remains while the current AP Environment draft still contains explicit AP Environment References to the DB Service. It ends when those references are removed from the draft, the Settings Draft is discarded, the user leaves the AP or Project scope, or a successful update lets saved resource state produce the established Canvas Connection. A failed update does not end the intent because the AP Environment draft still exists.
-
-An AP-to-DB Connecting Edge is only a shortcut for opening AP Environment Settings and inserting an AP Environment Reference. Users may also create the same Pending Database Binding Intent directly in the AP Environment editor by authoring an AP Environment Reference.
-
-Multiple AP Environment References from one AP Environment draft to the same DB Service collapse into one Pending Database Binding Intent. References from the same AP Environment draft to different DB Services are separate Pending Database Binding Intents.
-
-A Pending Database Binding Intent does not require a duplicate pending canvas edge when an established AP-to-DB Canvas Connection for the same AP and DB Service already exists.
-
-When an AP Environment Raw Source draft is temporarily invalid while the user is editing, it does not redefine Pending Database Binding Intents. The last valid draft-derived intents remain until the draft becomes valid again, the Settings Draft is discarded, or the user leaves the AP or Project scope.
+A Pending Database Binding Intent is derived from explicit AP Environment References, not from ordinary user-authored DSN strings. Multiple AP Environment References from one AP Environment draft to the same DB Service collapse into one Pending Database Binding Intent, and an AP-to-DB Connecting Edge is only a shortcut for creating the same intent in AP Environment Settings.
 
 _Avoid_: Pending edge, hidden binding record, inferred string binding.
 
@@ -364,33 +238,11 @@ The canonical AP environment editing model: the complete set of AP environment e
 
 _Avoid_: Hidden binding metadata, editor-only environment language.
 
-### AP Environment Structured View
-
-The preferred default presentation of the AP Environment Raw Source. It recognizes direct values, AP Environment References, composed values, and Database Binding evidence while preserving the underlying raw environment entries; listed values are masked by default and revealed only through explicit user action.
-
-### Reference
-
-A DB Service selected in the AP Environment editor as a source for inserting or recognizing DB-backed environment entries. A Reference is editing context, not saved product state by itself, and is not an independent property of an AP environment row.
-
-_Avoid_: Binding record, hidden binding state.
-
-### AP Environment DB Reference Source
-
-The AP Environment Settings fact that describes one DB Service as a source for AP Environment References, including its DB Service identity, engine, available DSN values, and Secret-backed primitive fields such as host, port, username, and password.
-
-AP Environment DB Reference Sources are derived from DB resource state. They let AP Environment Settings present Database Binding choices and recognize saved DB-derived environment values without exposing the raw DB list payload to Project Canvas Workbench.
-
-AP Environment DB Reference Source is not a Database Binding and is not a Canvas Connection. A Database Binding exists only after AP environment state is saved and can be detected from saved AP and DB resource state; a Canvas Connection is the rendered edge derived from that saved evidence.
-
 ### AP Environment Reference
 
 A product-level expression in the AP Environment Raw Source that points at a DB Service-provided environment value. An AP Environment Reference is resolved before runtime into ordinary AP environment entries, while the user-facing raw source may retain the reference expression.
 
 _Avoid_: UI-only token, hidden binding metadata.
-
-### AP Environment Resolved Value
-
-The value produced by resolving an AP Environment Reference or ordinary AP environment entry for user inspection. AP Environment Resolved Values are requested explicitly and are not the default list presentation.
 
 ### DB Connection DSN
 
@@ -398,21 +250,11 @@ A complete connection string for one DB Service, including the credentials neede
 
 _Avoid_: Address-only DSN, credential-free DATABASE_URL.
 
-### AP Environment Composed Value
-
-An AP environment value that refers to another AP environment variable at runtime. The referenced variable remains an ordinary AP environment entry in the AP Environment Raw Source.
-
-_Avoid_: AP Environment Reference Token, AP Environment Helper Variable.
-
 ### DB Access
 
 A resource workflow for inspecting, and when the product enables it editing, one DB Service's objects and data without exposing its connection credentials. DB Access is distinct from DB Settings: DB Settings changes a DB's desired configuration, while DB Access works with the Logical Databases and objects exposed by that DB Service.
 
 _Avoid_: Data Browser, database browser.
-
-### DB Access Session
-
-One active DB Access browsing session for a single DB Service. A DB Access Session keeps object selection and open object tabs while browsing multiple Logical Databases within that DB Service, while closing DB Access or switching to a different DB Service starts a separate session.
 
 ### DB Terminal
 
@@ -429,8 +271,6 @@ _Avoid_: AP Console, console.
 ### Session Drawer
 
 A bottom temporary project surface for one interactive resource session, such as an AP Terminal or DB Terminal. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
-
-Within one project surface, Session Drawer is single-active. A Session Drawer may coexist with a Side Pane or Main Action Surface, and it remains pinned to its session target rather than following canvas selection.
 
 ### Container Node
 
@@ -458,7 +298,7 @@ The first persisted Canvas Layout position for a Canvas Placement Owner. First C
 
 ### User Canvas Placement
 
-A Canvas Layout position created or changed by a user moving a canvas item. User Canvas Placement is authoritative over generated placement and should not be reinterpreted by Projection Reconciliation or Incremental Canvas Placement.
+A Canvas Layout position created or changed by a user moving a canvas item. User Canvas Placement is authoritative over generated placement, Deployment Handoff, and Incremental Canvas Placement.
 
 ### Incremental Canvas Placement
 
@@ -474,49 +314,11 @@ An existing canvas node or relationship fact used as the local reference for pla
 
 Incremental Canvas Placement prefers Canvas Placement Anchors that reflect resource relationships before using global open canvas space.
 
-### Canvas Placement Anchor Strength
-
-The relative priority of possible Canvas Placement Anchors when a node has more than one meaningful local reference. User-initiated workflow context is stronger than passively discovered resource relationships.
-
-Incremental Canvas Placement may evaluate more than one Canvas Placement Anchor in strength order before using Global Canvas Placement Blocks.
-
-### Canvas Placement Direction Preference
-
-A preferred side or nearby pattern for placing a canvas node around a Canvas Placement Anchor. Direction preferences make resource relationships easier to read, but they do not permit canvas node overlap.
-
-_Avoid_: treating a Canvas Placement Direction Preference as a hard coordinate.
-
-### Canvas Node Footprint
-
-The stable placement rectangle reserved for a canvas node when checking whether Generated Canvas Positions overlap. A Canvas Node Footprint is based on node type and layout-relevant presentation state rather than on transient DOM measurement.
-
-Canvas Node Expansion State affects Canvas Node Footprint when the expansion state is saved or otherwise explicit in the current canvas state.
-
-### Canvas Placement Occupancy
-
-The set of Canvas Node Footprints treated as unavailable while Incremental Canvas Placement assigns Generated Canvas Positions. Canvas Placement Occupancy includes rendered existing Canvas Layout nodes and Generated Canvas Positions already assigned in the same placement pass.
-
-Recently missing resource placements may remain in Canvas Placement Occupancy during Missing Canvas Placement Grace. Stale missing placements do not reserve placement space.
-
-### Missing Canvas Placement Grace
-
-A short session-local period during which a Canvas Layout placement for a resource that is absent from the current Project Canvas Resource Snapshot may still reserve placement space. Missing Canvas Placement Grace protects against transient resource discovery gaps; it is not a persisted retention window.
-
-After Missing Canvas Placement Grace ends, or after explicit resource deletion succeeds, the resource's Canvas Layout placement may be removed.
-
-### Global Canvas Placement Block
-
-A bounded group of candidate positions used when Incremental Canvas Placement cannot find a Canvas Placement Anchor for a new node. Global Canvas Placement Blocks expand around the existing canvas structure in a deterministic order instead of filling arbitrary holes or growing indefinitely in one direction.
-
-### Anchor-Local Canvas Placement Block
-
-A bounded group of candidate positions around a Canvas Placement Anchor. Anchor-Local Canvas Placement Blocks use Canvas Placement Direction Preferences to order nearby candidates while still respecting Canvas Placement Occupancy.
-
 ### Canvas Placement Group
 
 A set of new canvas nodes that Incremental Canvas Placement positions together because they come from one user workflow or have direct resource relationship evidence. A Canvas Placement Group is not defined merely by appearing in the same resource refresh.
 
-Canvas Placement Groups are evaluated against Canvas Placement Occupancy as a whole so related new nodes remain near one another when they first appear.
+Canvas Placement Groups are evaluated together so related new nodes remain near one another when they first appear.
 
 An AP with desired Public Address intent and its AP Public Access Node form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the AP Public Access Node is a presentation node for AP-owned public access rather than an independent resource.
 
@@ -540,26 +342,6 @@ The Project Canvas interaction mode for browsing the canvas by moving the viewpo
 
 Canvas Hand Mode preserves the current canvas selection and active project surfaces, and does not change Canvas Layout. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
 
-### Canvas MiniMap
-
-A Project Canvas navigation aid that shows the relationship between the current viewport and the overall Canvas Layout.
-
-Canvas MiniMap changes only the current viewport. It does not select resources, open project surfaces, move canvas nodes, or create Canvas Connections.
-
-### Canvas Viewport Control
-
-A Project Canvas control that changes the current user's canvas viewport, such as fitting the visible graph or adjusting zoom.
-
-Canvas Viewport Controls are not persisted in Canvas Layout and do not affect other users' view of the Project Canvas.
-
-### Canvas Navigation Chrome
-
-The normally hidden, transient Project Canvas navigation UI around the graph, including Canvas MiniMap and Canvas Viewport Controls.
-
-Canvas Navigation Chrome appears during canvas navigation or node movement and briefly remains visible after the interaction ends. It is session-local and does not change Canvas Layout.
-
-Pointer hover alone is not canvas navigation and does not reveal Canvas Navigation Chrome. Resource selection, resource inspection, or Connecting Edge gestures do not reveal Canvas Navigation Chrome. Keyboard shortcuts for canvas interaction or viewport changes do reveal Canvas Navigation Chrome. Programmatic viewport movement does not reveal Canvas Navigation Chrome. Once revealed by canvas navigation or node movement, direct pointer or keyboard focus interaction with Canvas Navigation Chrome keeps it visible and visible to the user. When hidden, Canvas Navigation Chrome does not participate in canvas interaction, and no separate persistent mode indicator replaces it. Open project surfaces such as Side Pane, Main Action Surface, or Session Drawer do not suppress Canvas Navigation Chrome.
-
 ### Canvas Resource Identity
 
 The product identity of a canvas node's backing AP, DB, or AP Public Access Node surface. Canvas Resource Identity is keyed by `kind`, `namespace`, and `name`, which keeps Canvas Layout stable across short reconciliation gaps.
@@ -567,12 +349,6 @@ The product identity of a canvas node's backing AP, DB, or AP Public Access Node
 For AP and DB nodes, `name` is the product resource name and also the primary underlying workload or Cluster name used by the Brain renderer. For AP Public Access Nodes, `name` is the associated AP name: the node represents that AP's Public Addresses surface, including pending allocation state.
 
 Underlying Kubernetes UID is retained separately as the last-seen entity identity where available so the UI can detect when a same-named AP workload or DB Cluster is meaningfully new. AP Public Access Nodes use AP-bound identity and observed public access facts rather than their own Kubernetes UID.
-
-### AP-bound Surface Key
-
-The public access selection identity used by URL state and the Canvas Resource Pane. An AP-bound Surface Key is stable for `{ namespace, apName }` and selects the AP's Public Addresses surface, whether allocated routing data already exists or is still pending.
-
-The AP-bound Surface Key is not the same thing as the Canvas Layout resource key. Canvas Layout uses Canvas Resource Identity. URL and pane selection may derive an AP-bound Surface Key from the same AP Public Access Node facts, but the two keys are not interchangeable.
 
 ### Canvas Node Expansion State
 
@@ -588,57 +364,15 @@ A canvas edge that represents an established runtime dependency between resource
 
 Canvas Connections are derived from saved resource state. Removing Database Binding evidence in an unsaved AP Environment draft does not remove or hide the established AP-to-DB Canvas Connection before the AP environment update succeeds.
 
-### Canvas Resource Pane
-
-A right-side canvas surface opened from a selected AP or DB node to inspect or change resource-scoped details such as settings, metrics, or history. It is distinct from the project assistant chat pane.
-
-### Project Canvas Resource Snapshot
-
-The Project-scoped resource facts used to render one Project Canvas, derived from AP, DB, AP Public Access Node, template-native workload list state, Deployment Task Projections, and the current Canvas Layout.
-
-A Project Canvas Resource Snapshot determines Canvas nodes, Canvas Connections, Deployment Placeholder Nodes, empty/loading/error frame state, and resource refresh policy. It may request Canvas Layout changes such as First Canvas Placement or Deployment Handoff, but it does not own Canvas Layout persistence.
-
-Downstream Project Canvas modules should consume canvas-ready resource facts from a Project Canvas Resource Snapshot rather than raw AP, DB, AP Public Access Node, or workload list payloads. For example, DB reference sources for AP Environment References are Project Canvas Resource Snapshot facts, while the raw DB list payload remains internal implementation detail.
-
-Project Canvas Resource Snapshot is distinct from Workload Telemetry Snapshot: resource snapshot data determines whether resources and Canvas Connections exist, while telemetry snapshot data only decorates already-known AP and DB nodes with current usage metrics.
-
-### Project Canvas Workbench
-
-The client-side module that owns Project Canvas presentation and Project Canvas-specific interactions for one Project surface, including canvas node decoration, Canvas Resource Pane rendering, Main Action Surface and Session Drawer rendering for canvas-triggered resource work, Canvas Connection gestures, and Canvas Node Stack Order behavior.
-
-Project Canvas Workbench consumes project-level surface state but does not own the Project Surface model itself. Project Surface slots such as Side Pane, Main Action Surface, and Session Drawer remain project-level concepts so assistant chat, toolbar actions, and future project surfaces can open them without depending on canvas-specific selection behavior.
-
-### Project Canvas Command Model
-
-The Project Canvas Workbench decision model that turns canvas-originated user intents into workbench-level command plans. Inputs include selected canvas nodes, node quick actions, Connecting Edges, read-only state, and current Canvas Resource Identity facts.
-
-A Project Canvas Command Model plan may request a Canvas selection change, Side Pane opening, Main Action Surface opening, Session Drawer opening, Canvas Node Stack Order change, pending Database Binding intent, or discard/feedback reason.
-
-The Project Canvas Command Model does not execute Kubernetes lifecycle mutations directly. Lifecycle mutation adapters handle authentication, K8s calls, toast feedback, and workload list refresh after a command plan has selected the relevant resource action.
-
 ### Main Action Surface
 
 A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.
 
-Within one project surface, a Main Action Surface is single-active: opening one Main Action Surface replaces the currently open Main Action Surface instead of stacking multiple main-area surfaces.
-
-A Main Action Surface usually takes focus over the Side Pane in the same project surface rather than presenting both as competing focused work surfaces.
-
-A Main Action Surface follows the project main area's available width when the Project Assistant Pane is opened or closed.
-
 ### Side Pane
 
-A non-modal, right-side temporary surface opened over the project main area to host focused project work. Side Panes share the same chrome and close behavior while their contents differ by purpose, such as Project creation, GitHub deployment, or Canvas Resource details.
+A non-modal, temporary project surface used for focused project work such as resource inspection, settings, or deployment flows.
 
 A Side Pane is distinct from the Project Assistant Pane: the Project Assistant Pane is a persistent layout region for chat, while a Side Pane is a temporary surface triggered by a user action or assistant action.
-
-Within one project surface, Side Pane is single-active: opening one Side Pane replaces the currently open Side Pane instead of stacking multiple Side Panes.
-
-Different project surfaces may place a Side Pane differently. A canvas-oriented surface may overlay the Side Pane above the canvas, while a list-oriented surface may reserve layout space for the Side Pane. Placement does not change the Side Pane's shared chrome, close behavior, or single-active semantics.
-
-A Side Pane is scoped to the currently visible project surface. Project Assistant Pane controls can open or replace the current surface's active Side Pane, but they do not own a separate assistant-specific Side Pane stack.
-
-When a Side Pane contains unsaved user edits, closing it, replacing it with another Side Pane, or opening a focused Main Action Surface that hides it must first resolve the edit state. The user can stay on the current Side Pane, discard the edits, or save successfully before the Side Pane closes, is replaced, or is hidden by the focused surface.
 
 ### Project Assistant Pane
 
@@ -654,7 +388,7 @@ A normalized time-series representation of workload resource usage for AP and DB
 
 ### Resource Logs
 
-A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs cover both AP and DB Service resources, default to the most recent hour, refresh only from explicit user/query changes, and are for recent/historical observation rather than an interactive command surface like the AP Terminal or DB Terminal.
+A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs are for recent or historical observation, not for interactive commands like AP Terminal or DB Terminal.
 
 ### Project Aggregate Status
 
@@ -663,12 +397,6 @@ A derived health tone for one Project row in the project list, computed from the
 ### Project Display Name
 
 The human-facing Project name shown in navigation, project chrome, project creation forms, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
-
-### Project Creation Pane
-
-A non-modal right-side surface anchored in the project main pane for entering a new Project's initial user-facing identity and choosing how to create it before the Project product record exists. It is distinct from the Canvas Resource Pane and may coexist with the project assistant chat pane.
-
-The Project Creation Pane may also open in a source-specific entry path. In a GitHub direct creation path, the user starts at GitHub repository selection rather than the general creation picker; the Project Display Name is derived from the selected repository and de-duplicated within the namespace. In a Docker direct creation path, the Project Display Name is derived from the Docker image repository name and de-duplicated within the namespace.
 
 ### Custom Domain Binding
 

@@ -4,11 +4,11 @@ Project Canvas uses one authoritative Canvas Layout as the Canvas Placement Stor
 
 Deployment projection is modeled as one or more Deployment Projection Slots. A task with unknown result shape has one stable unknown slot; once structured evidence exists, concrete slots replace or expand that unknown slot. Generic placeholder and result preview are not separate projection shapes: both are renderings of the same slot model. A Deployment Placeholder Node is only the temporary canvas rendering for an unmatched slot, not an AP, DB, AP Public Access Node, template workload, resource action target, or Canvas Connection endpoint.
 
-Projection Reconciliation compares Deployment Projection Slots with actual resource state. Resource state is authoritative and projection state is advisory. A Deployment Handoff happens only when a slot has a Projection Match: either exact anticipated resource identity or an explicit expected-to-actual mapping from deployment results. Fuzzy matching, creation-time matching, count-based matching, and natural-language inference are not valid handoff evidence.
+The projection-to-resource reconciliation step compares Deployment Projection Slots with actual resource state. Resource state is authoritative and projection state is advisory. A Deployment Handoff happens only when a slot has a match: either exact anticipated resource identity or an explicit expected-to-actual mapping from deployment results. Fuzzy matching, creation-time matching, count-based matching, and natural-language inference are not valid handoff evidence.
 
 When handoff occurs and the resource has no placement, Canvas Layout rekeys the deployment projection slot placement to the resource owner. If the resource already has a placement, the resource placement wins and the projection placement is consumed. Handoff may complete per slot; unmatched slots remain visible while the task is active, remain for a completed reconciliation grace window, and are removed when the task fails, is cancelled, or expires after completion.
 
-Placement changes from Projection Reconciliation should be applied as revision-checked Canvas Layout transactions rather than independent best-effort patches. User Canvas Placement is authoritative: generated placement, projection refinement, and handoff must not overwrite a user-arranged resource placement.
+Placement changes from projection-to-resource reconciliation should be applied as revision-checked Canvas Layout transactions rather than independent best-effort patches. User Canvas Placement is authoritative: generated placement, projection refinement, and handoff must not overwrite a user-arranged resource placement.
 
 ## Considered Options
 
