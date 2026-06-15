@@ -1,22 +1,33 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
+import {
+  AP_SETTINGS_DRAFT_DOMAINS,
+  apSettingsDraftDomainIsDirty,
+  apSettingsDraftIsDirty,
+  mergeApSettingsDraftDomains,
+} from "@/features/project-settings/ap/ap-settings-draft";
 import type { ApSettingsDraft } from "@/features/project-settings/ap/ap-settings-sections";
-import { apSettingsDraftIsDirty } from "@/features/project-settings/ap/ap-settings-sections";
 import {
   commitSettingsDraftBackingState,
   createSettingsDraftBackingState,
   failSettingsDraftSave,
   keepEditingSettingsDraftBackingState,
+  prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
   syncSettingsDraftBackingState,
 } from "@/features/project-settings/ap/lib/settings-draft-backing";
-import type { DatabaseSettingsDraft } from "@/features/project-settings/db/db-settings-draft";
-import { dbSettingsDraftIsDirty } from "@/features/project-settings/db/db-settings-draft";
+import {
+  DATABASE_SETTINGS_DRAFT_DOMAINS,
+  type DatabaseSettingsDraft,
+  dbSettingsDraftDomainIsDirty,
+  dbSettingsDraftIsDirty,
+  mergeDbSettingsDraftDomains,
+} from "@/features/project-settings/db/db-settings-draft";
 
 const DRAFT_AVAILABLE_RE = /draft is still available/;
+const DATABASE_CONFIGURATION_CHANGED_RE = /Database configuration changed/;
 
-test("DB settings dirty draft survives backing refresh until the user reloads", () => {
+test("DB settings dirty draft detects overlapping submit conflicts", () => {
   const base: DatabaseSettingsDraft = {
     cpuLimitCores: 1,
     exposeNodePort: false,
@@ -36,21 +47,36 @@ test("DB settings dirty draft survives backing refresh until the user reloads", 
   });
 
   assert.equal(refreshed.draft, undefined);
-  assert.equal(refreshed.state.resourceChanged, true);
+  assert.equal(refreshed.state.submitConflictMessage, null);
   assert.deepEqual(refreshed.state.base, base);
   assert.deepEqual(refreshed.state.latest, latest);
 
-  const kept = keepEditingSettingsDraftBackingState(refreshed.state);
-  assert.equal(kept.resourceChanged, false);
+  const prepared = prepareSettingsDraftSubmit(refreshed.state, {
+    conflictMessage:
+      "Database configuration changed since you started editing.",
+    domains: DATABASE_SETTINGS_DRAFT_DOMAINS,
+    draft,
+    isDomainDirty: dbSettingsDraftDomainIsDirty,
+    mergeDraft: mergeDbSettingsDraftDomains,
+  });
+
+  assert.equal(prepared.status, "conflict");
+  assert.match(
+    prepared.state.submitConflictMessage ?? "",
+    DATABASE_CONFIGURATION_CHANGED_RE
+  );
+
+  const kept = keepEditingSettingsDraftBackingState(prepared.state);
+  assert.equal(kept.submitConflictMessage, null);
   assert.deepEqual(kept.base, base);
 
   const reloaded = reloadSettingsDraftBackingState(refreshed.state);
   assert.deepEqual(reloaded.draft, latest);
   assert.deepEqual(reloaded.state.base, latest);
-  assert.equal(reloaded.state.resourceChanged, false);
+  assert.equal(reloaded.state.submitConflictMessage, null);
 });
 
-test("AP settings clean draft follows backing refresh while dirty draft preserves save failures", () => {
+test("AP settings clean draft follows refresh and dirty draft merges unrelated latest changes", () => {
   const base: ApSettingsDraft = {
     cpuCores: 1,
     env: [{ name: "DATABASE_URL", value: "postgres://old" }],
@@ -74,7 +100,7 @@ test("AP settings clean draft follows backing refresh while dirty draft preserve
 
   assert.deepEqual(cleanRefresh.draft, latest);
   assert.deepEqual(cleanRefresh.state.base, latest);
-  assert.equal(cleanRefresh.state.resourceChanged, false);
+  assert.equal(cleanRefresh.state.submitConflictMessage, null);
 
   const dirtyDraft = {
     ...latest,
@@ -92,19 +118,35 @@ test("AP settings clean draft follows backing refresh while dirty draft preserve
   });
 
   assert.equal(dirtyRefresh.draft, undefined);
-  assert.equal(dirtyRefresh.state.resourceChanged, true);
+  assert.equal(dirtyRefresh.state.submitConflictMessage, null);
   assert.deepEqual(dirtyRefresh.state.base, latest);
 
+  const prepared = prepareSettingsDraftSubmit(dirtyRefresh.state, {
+    conflictMessage: "AP configuration changed since you started editing.",
+    domains: AP_SETTINGS_DRAFT_DOMAINS,
+    draft: dirtyDraft,
+    isDomainDirty: apSettingsDraftDomainIsDirty,
+    mergeDraft: mergeApSettingsDraftDomains,
+  });
+
+  assert.equal(prepared.status, "ready");
+  assert.deepEqual(prepared.base, externallyChanged);
+  assert.deepEqual(prepared.draft, {
+    ...externallyChanged,
+    envRawSource: "DATABASE_URL=postgres://latest",
+    image: "ghcr.io/acme/api:user-edit",
+  });
+
   const failed = failSettingsDraftSave(
-    dirtyRefresh.state,
+    prepared.state,
     new Error("API 409: resource was modified"),
     "Could not save settings."
   );
-  assert.equal(failed.resourceChanged, true);
+  assert.equal(failed.submitConflictMessage, null);
   assert.deepEqual(failed.base, latest);
   assert.match(failed.saveFailureMessage ?? "", DRAFT_AVAILABLE_RE);
 
-  const committed = commitSettingsDraftBackingState(failed, dirtyDraft);
-  assert.deepEqual(committed.base, dirtyDraft);
+  const committed = commitSettingsDraftBackingState(failed, prepared.draft);
+  assert.deepEqual(committed.base, prepared.draft);
   assert.equal(committed.saveFailureMessage, null);
 });

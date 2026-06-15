@@ -35,6 +35,7 @@ import {
   createSettingsDraftBackingState,
   failSettingsDraftSave,
   keepEditingSettingsDraftBackingState,
+  prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
   syncSettingsDraftBackingState,
 } from "@/features/project-settings/ap/lib/settings-draft-backing";
@@ -45,20 +46,26 @@ import type {
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import {
   buildDbSettingsPatch,
+  DATABASE_SETTINGS_DRAFT_DOMAINS,
   type DatabaseSettingsDraft,
   type DatabaseSettingsPatch,
   DB_SETTINGS_CPU_LIMIT_CORES,
   DB_SETTINGS_MEMORY_LIMIT_GIB,
   DB_SETTINGS_REPLICA_COUNT,
   DB_SETTINGS_STORAGE_GIB,
+  dbSettingsDraftDomainIsDirty,
   dbSettingsDraftFromNodeData,
   dbSettingsDraftIsDirty,
+  mergeDbSettingsDraftDomains,
   normalizeDbSettingsCpuLimitCores,
   normalizeDbSettingsMemoryLimitGi,
   normalizeDbSettingsReplicas,
   normalizeDbSettingsStorageGi,
 } from "./db-settings-draft";
 import type { DbSettingsData } from "./db-settings-types";
+
+const DB_SETTINGS_SUBMIT_CONFLICT_MESSAGE =
+  "Database configuration changed since you started editing.";
 
 interface DatabaseSettingsPaneProps {
   data: DbSettingsData;
@@ -335,8 +342,8 @@ function DatabaseSettingsConnectionAddressList({
 }
 
 function DatabaseSettingsFooter({
-  backingResourceChanged,
   canUpdate,
+  conflictMessage,
   dirty,
   onCancel,
   onKeepEditing,
@@ -345,8 +352,8 @@ function DatabaseSettingsFooter({
   saveFailureMessage,
   updating,
 }: {
-  backingResourceChanged: boolean;
   canUpdate: boolean;
+  conflictMessage?: string | null;
   dirty: boolean;
   onCancel: () => void;
   onKeepEditing: () => void;
@@ -357,10 +364,10 @@ function DatabaseSettingsFooter({
 }) {
   return (
     <ResourceSettingsDraftFooter
-      backingResourceChanged={backingResourceChanged}
       cancelAriaLabel="Discard database configuration changes"
       canSubmit={canUpdate}
       className="p-2.5"
+      conflictMessage={conflictMessage}
       dirty={dirty}
       onCancel={onCancel}
       onKeepEditing={onKeepEditing}
@@ -505,16 +512,38 @@ export function useDatabaseSettingsSections({
   const controlsDisabled = !canEdit || updating;
 
   const saveSettingsDraft = useCallback(async () => {
-    const patch = pendingPatch;
-    if (!canEdit || patch === null || onSubmitPatch == null) {
+    if (!canEdit || pendingPatch === null || onSubmitPatch == null) {
       throw new Error("Database settings draft cannot be saved yet.");
+    }
+    const prepared = prepareSettingsDraftSubmit(backingState, {
+      conflictMessage: DB_SETTINGS_SUBMIT_CONFLICT_MESSAGE,
+      domains: DATABASE_SETTINGS_DRAFT_DOMAINS,
+      draft,
+      isDomainDirty: dbSettingsDraftDomainIsDirty,
+      mergeDraft: mergeDbSettingsDraftDomains,
+    });
+    setBackingState(prepared.state);
+    if (prepared.status === "conflict") {
+      throw new Error(DB_SETTINGS_SUBMIT_CONFLICT_MESSAGE);
+    }
+    const patch = buildDbSettingsPatch(prepared.base, prepared.draft, {
+      metadata: data.metadata,
+      routingDomain,
+    });
+    if (patch === null) {
+      setDraft(prepared.draft);
+      setBackingState((current) =>
+        commitSettingsDraftBackingState(current, prepared.draft)
+      );
+      return;
     }
     setBackingState((current) => ({ ...current, saveFailureMessage: null }));
     try {
       await onSubmitPatch(patch);
       setBackingState((current) =>
-        commitSettingsDraftBackingState(current, draft)
+        commitSettingsDraftBackingState(current, prepared.draft)
       );
+      setDraft(prepared.draft);
       toast.success("Database settings updated.");
       await onUpdated?.();
     } catch (error) {
@@ -532,7 +561,16 @@ export function useDatabaseSettingsSections({
       );
       throw error;
     }
-  }, [canEdit, draft, onSubmitPatch, onUpdated, pendingPatch]);
+  }, [
+    backingState,
+    canEdit,
+    data.metadata,
+    draft,
+    onSubmitPatch,
+    onUpdated,
+    pendingPatch,
+    routingDomain,
+  ]);
 
   const handleUpdate = useCallback(() => {
     saveSettingsDraft().catch(() => {
@@ -568,8 +606,8 @@ export function useDatabaseSettingsSections({
   return {
     footer: readOnly ? null : (
       <DatabaseSettingsFooter
-        backingResourceChanged={backingState.resourceChanged}
         canUpdate={canUpdate}
+        conflictMessage={backingState.submitConflictMessage}
         dirty={dirty}
         onCancel={handleReloadDraft}
         onKeepEditing={handleKeepEditingDraft}

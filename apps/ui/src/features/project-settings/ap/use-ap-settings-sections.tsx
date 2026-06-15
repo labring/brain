@@ -61,13 +61,16 @@ import {
   resourceQuotasDirty,
 } from "./ap-replica-strategy-section";
 import {
+  AP_SETTINGS_DRAFT_DOMAINS,
   type ApSettingsDraft,
   type ApSettingsDraftCommitMeta,
   apSettingsDraftBackingKey,
+  apSettingsDraftDomainIsDirty,
   apSettingsDraftFromValues,
   apSettingsDraftIsDirty,
   createDraftRowKey,
   createDraftRowKeys,
+  mergeApSettingsDraftDomains,
 } from "./ap-settings-draft";
 import type {
   ApSettingsControlledQuotaProps,
@@ -117,6 +120,7 @@ import {
   createSettingsDraftBackingState,
   failSettingsDraftSave,
   keepEditingSettingsDraftBackingState,
+  prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
   syncSettingsDraftBackingState,
 } from "./lib/settings-draft-backing";
@@ -134,6 +138,9 @@ import {
   normalizeStorageDraftRows,
   StorageSettingsContent,
 } from "./workload-sections";
+
+const AP_SETTINGS_SUBMIT_CONFLICT_MESSAGE =
+  "AP configuration changed since you started editing.";
 
 export interface ApSettingsSectionsProps {
   /**
@@ -1302,8 +1309,20 @@ export function useApSettingsSections({
       image: settingsDraft.image.trim(),
       storage: normalizeStorageDraftRows(settingsDraft.storage),
     };
+    const prepared = prepareSettingsDraftSubmit(settingsBackingState, {
+      conflictMessage: AP_SETTINGS_SUBMIT_CONFLICT_MESSAGE,
+      domains: AP_SETTINGS_DRAFT_DOMAINS,
+      draft,
+      isDomainDirty: apSettingsDraftDomainIsDirty,
+      mergeDraft: mergeApSettingsDraftDomains,
+    });
+    setSettingsBackingState(prepared.state);
+    if (prepared.status === "conflict") {
+      throw new Error(AP_SETTINGS_SUBMIT_CONFLICT_MESSAGE);
+    }
+    const commitDraft = prepared.draft;
     const meta: ApSettingsDraftCommitMeta = {
-      baseDraft: settingsBaseDraft,
+      baseDraft: prepared.base,
     };
     setSettingsSavePending(true);
     setSettingsBackingState((current) => ({
@@ -1311,19 +1330,23 @@ export function useApSettingsSections({
       saveFailureMessage: null,
     }));
     try {
-      await onSettingsDraftCommit(draft, meta);
+      await onSettingsDraftCommit(commitDraft, meta);
       setSettingsBackingState((current) =>
-        commitSettingsDraftBackingState(current, draft)
+        commitSettingsDraftBackingState(current, commitDraft)
       );
+      const committedRawSource = canonicalApEnvRawSource({
+        env: commitDraft.env,
+        envRawSource: commitDraft.envRawSource,
+      });
       setEnvDraft(
-        envDraftRowsFromRawSource(result.envRawSource).map((row, index) => {
+        envDraftRowsFromRawSource(committedRawSource).map((row, index) => {
           const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
           return intentId == null
             ? row
             : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
         })
       );
-      setEnvRawSourceDraft(result.envRawSource);
+      setEnvRawSourceDraft(committedRawSource);
     } catch (error) {
       setSettingsBackingState((current) =>
         failSettingsDraftSave(current, error, "Could not save settings.")
@@ -1338,7 +1361,7 @@ export function useApSettingsSections({
     envDraft,
     envRawSourceDraft,
     onSettingsDraftCommit,
-    settingsBaseDraft,
+    settingsBackingState,
     settingsDraft,
   ]);
 
@@ -1622,8 +1645,8 @@ export function useApSettingsSections({
   return {
     footer: settingsCommitMode ? (
       <ApSettingsDraftFooter
-        backingResourceChanged={settingsBackingState.resourceChanged}
         canSave={canSaveSettings}
+        conflictMessage={settingsBackingState.submitConflictMessage}
         dirty={panelDraftDirty}
         discardAriaLabel="Discard AP Settings changes"
         onCancel={resetSettingsDraft}

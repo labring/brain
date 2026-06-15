@@ -50,6 +50,13 @@ export interface DatabaseSettingsDraft {
   storageSizeGi: number;
 }
 
+export type DatabaseSettingsDraftDomain = "access" | "resources";
+
+export const DATABASE_SETTINGS_DRAFT_DOMAINS = [
+  "resources",
+  "access",
+] as const satisfies readonly DatabaseSettingsDraftDomain[];
+
 export interface DatabaseSettingsPatch {
   metadata?: {
     labels: {
@@ -230,15 +237,59 @@ export function dbSettingsDraftIsDirty(
   original: DatabaseSettingsDraft,
   draft: DatabaseSettingsDraft
 ): boolean {
+  return DATABASE_SETTINGS_DRAFT_DOMAINS.some((domain) =>
+    dbSettingsDraftDomainIsDirty(domain, original, draft)
+  );
+}
+
+export function dbSettingsDraftDomainIsDirty(
+  domain: DatabaseSettingsDraftDomain,
+  original: DatabaseSettingsDraft,
+  draft: DatabaseSettingsDraft
+): boolean {
   const normalizedOriginal = normalizeDraft(original);
   const normalizedDraft = normalizeDraft(draft);
-  return (
-    normalizedOriginal.cpuLimitCores !== normalizedDraft.cpuLimitCores ||
-    normalizedOriginal.exposeNodePort !== normalizedDraft.exposeNodePort ||
-    normalizedOriginal.memoryLimitGi !== normalizedDraft.memoryLimitGi ||
-    normalizedOriginal.replicas !== normalizedDraft.replicas ||
-    normalizedOriginal.storageSizeGi !== normalizedDraft.storageSizeGi
-  );
+
+  switch (domain) {
+    case "access":
+      return (
+        normalizedOriginal.exposeNodePort !== normalizedDraft.exposeNodePort
+      );
+    case "resources":
+      return (
+        normalizedOriginal.cpuLimitCores !== normalizedDraft.cpuLimitCores ||
+        normalizedOriginal.memoryLimitGi !== normalizedDraft.memoryLimitGi ||
+        normalizedOriginal.replicas !== normalizedDraft.replicas ||
+        normalizedOriginal.storageSizeGi !== normalizedDraft.storageSizeGi
+      );
+    default:
+      return domain satisfies never;
+  }
+}
+
+export function mergeDbSettingsDraftDomains({
+  dirtyDomains,
+  draft,
+  latest,
+}: {
+  base: DatabaseSettingsDraft;
+  dirtyDomains: readonly DatabaseSettingsDraftDomain[];
+  draft: DatabaseSettingsDraft;
+  latest: DatabaseSettingsDraft;
+}): DatabaseSettingsDraft {
+  const dirty = new Set(dirtyDomains);
+  return {
+    ...latest,
+    ...(dirty.has("access") ? { exposeNodePort: draft.exposeNodePort } : {}),
+    ...(dirty.has("resources")
+      ? {
+          cpuLimitCores: draft.cpuLimitCores,
+          memoryLimitGi: draft.memoryLimitGi,
+          replicas: draft.replicas,
+          storageSizeGi: draft.storageSizeGi,
+        }
+      : {}),
+  };
 }
 
 export function buildDbSettingsPatch(

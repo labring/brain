@@ -294,8 +294,8 @@ export function StorageSettingsContent({
 }
 
 export function ApSettingsDraftFooter({
-  backingResourceChanged,
   canSave,
+  conflictMessage,
   dirty,
   discardAriaLabel = "Discard settings changes",
   onCancel,
@@ -308,8 +308,8 @@ export function ApSettingsDraftFooter({
   submitLabel,
   unsavedMessage,
 }: {
-  backingResourceChanged: boolean;
   canSave: boolean;
+  conflictMessage?: string | null;
   dirty: boolean;
   discardAriaLabel?: string;
   onCancel: () => void;
@@ -324,10 +324,10 @@ export function ApSettingsDraftFooter({
 }) {
   return (
     <ResourceSettingsDraftFooter
-      backingResourceChanged={backingResourceChanged}
       cancelAriaLabel={discardAriaLabel}
       canSubmit={canSave}
       className="p-2.5"
+      conflictMessage={conflictMessage}
       data-slot="ap-settings-draft-actions"
       dirty={dirty}
       onCancel={onCancel}

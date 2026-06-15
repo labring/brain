@@ -1,16 +1,29 @@
 export interface SettingsDraftBackingState<TDraft> {
   base: TDraft;
+  baseKey: string;
   identityKey?: string;
   latest: TDraft;
   latestKey: string;
-  resourceChanged: boolean;
   saveFailureMessage: string | null;
+  submitConflictMessage: string | null;
 }
 
 export interface SettingsDraftBackingSyncResult<TDraft> {
   draft?: TDraft;
   state: SettingsDraftBackingState<TDraft>;
 }
+
+export type SettingsDraftSubmitResult<TDraft> =
+  | {
+      base: TDraft;
+      draft: TDraft;
+      state: SettingsDraftBackingState<TDraft>;
+      status: "ready";
+    }
+  | {
+      state: SettingsDraftBackingState<TDraft>;
+      status: "conflict";
+    };
 
 const DRAFT_AVAILABLE_MESSAGE = "Your draft is still available.";
 
@@ -21,11 +34,12 @@ export function createSettingsDraftBackingState<TDraft>(
 ): SettingsDraftBackingState<TDraft> {
   return {
     base: backing,
+    baseKey: backingKey,
     identityKey,
     latest: backing,
     latestKey: backingKey,
-    resourceChanged: false,
     saveFailureMessage: null,
+    submitConflictMessage: null,
   };
 }
 
@@ -65,7 +79,6 @@ export function syncSettingsDraftBackingState<TDraft>(
         identityKey: options.identityKey ?? state.identityKey,
         latest: options.backing,
         latestKey: options.backingKey,
-        resourceChanged: true,
         saveFailureMessage: null,
       },
     };
@@ -102,8 +115,9 @@ export function reloadSettingsDraftBackingState<TDraft>(
     state: {
       ...state,
       base: state.latest,
-      resourceChanged: false,
+      baseKey: state.latestKey,
       saveFailureMessage: null,
+      submitConflictMessage: null,
     },
   };
 }
@@ -113,7 +127,7 @@ export function keepEditingSettingsDraftBackingState<TDraft>(
 ): SettingsDraftBackingState<TDraft> {
   return {
     ...state,
-    resourceChanged: false,
+    submitConflictMessage: null,
   };
 }
 
@@ -124,9 +138,79 @@ export function commitSettingsDraftBackingState<TDraft>(
   return {
     ...state,
     base: draft,
+    baseKey: state.latestKey,
     latest: draft,
-    resourceChanged: false,
     saveFailureMessage: null,
+    submitConflictMessage: null,
+  };
+}
+
+export function prepareSettingsDraftSubmit<TDraft, TDomain extends string>(
+  state: SettingsDraftBackingState<TDraft>,
+  options: {
+    conflictMessage: string;
+    domains: readonly TDomain[];
+    draft: TDraft;
+    isDomainDirty: (domain: TDomain, base: TDraft, draft: TDraft) => boolean;
+    mergeDraft: (input: {
+      base: TDraft;
+      dirtyDomains: readonly TDomain[];
+      draft: TDraft;
+      latest: TDraft;
+    }) => TDraft;
+  }
+): SettingsDraftSubmitResult<TDraft> {
+  const dirtyDomains = options.domains.filter((domain) =>
+    options.isDomainDirty(domain, state.base, options.draft)
+  );
+
+  if (state.baseKey === state.latestKey || dirtyDomains.length === 0) {
+    return {
+      base: state.base,
+      draft: options.draft,
+      state: {
+        ...state,
+        saveFailureMessage: null,
+        submitConflictMessage: null,
+      },
+      status: "ready",
+    };
+  }
+
+  const changedDomains = options.domains.filter((domain) =>
+    options.isDomainDirty(domain, state.base, state.latest)
+  );
+  const changedDomainSet = new Set(changedDomains);
+  const hasConflict = dirtyDomains.some((domain) =>
+    changedDomainSet.has(domain)
+  );
+
+  if (hasConflict) {
+    return {
+      state: {
+        ...state,
+        saveFailureMessage: null,
+        submitConflictMessage: options.conflictMessage,
+      },
+      status: "conflict",
+    };
+  }
+
+  const mergedDraft = options.mergeDraft({
+    base: state.base,
+    dirtyDomains,
+    draft: options.draft,
+    latest: state.latest,
+  });
+  return {
+    base: state.latest,
+    draft: mergedDraft,
+    state: {
+      ...state,
+      saveFailureMessage: null,
+      submitConflictMessage: null,
+    },
+    status: "ready",
   };
 }
 
@@ -148,5 +232,6 @@ export function failSettingsDraftSave<TDraft>(
   return {
     ...state,
     saveFailureMessage: settingsDraftSaveFailureMessage(error, fallbackMessage),
+    submitConflictMessage: null,
   };
 }

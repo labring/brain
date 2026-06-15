@@ -52,6 +52,7 @@ import {
   createSettingsDraftBackingState,
   failSettingsDraftSave,
   keepEditingSettingsDraftBackingState,
+  prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
   syncSettingsDraftBackingState,
 } from "./lib/settings-draft-backing";
@@ -67,6 +68,9 @@ interface NetworkSettingsSectionProps {
 }
 
 const PUBLIC_ADDRESS_VISIBLE_COUNT = 3;
+const PUBLIC_ADDRESS_DRAFT_DOMAINS = ["network"] as const;
+const PUBLIC_ADDRESS_SUBMIT_CONFLICT_MESSAGE =
+  "Public Address configuration changed since you started editing.";
 
 function canMutateNetworkDraft({
   onNetworkChange,
@@ -1700,18 +1704,30 @@ export function useApPublicAddressesSettingsSections({
       throw new Error("Public Address draft cannot be saved yet.");
     }
     const draft = draftNetwork;
+    const prepared = prepareSettingsDraftSubmit(networkBackingState, {
+      conflictMessage: PUBLIC_ADDRESS_SUBMIT_CONFLICT_MESSAGE,
+      domains: PUBLIC_ADDRESS_DRAFT_DOMAINS,
+      draft,
+      isDomainDirty: (_domain, base, next) => !apNetworksEqual(base, next),
+      mergeDraft: ({ draft: next }) => next,
+    });
+    setNetworkBackingState(prepared.state);
+    if (prepared.status === "conflict") {
+      throw new Error(PUBLIC_ADDRESS_SUBMIT_CONFLICT_MESSAGE);
+    }
     setSavePending(true);
     setNetworkBackingState((current) => ({
       ...current,
       saveFailureMessage: null,
     }));
     try {
-      await onNetworkDraftCommit(draft, {
-        baseNetwork: networkBackingState.base,
+      await onNetworkDraftCommit(prepared.draft, {
+        baseNetwork: prepared.base,
       });
       setNetworkBackingState((current) =>
-        commitSettingsDraftBackingState(current, draft)
+        commitSettingsDraftBackingState(current, prepared.draft)
       );
+      setDraftNetwork(prepared.draft);
     } catch (error) {
       setNetworkBackingState((current) =>
         failSettingsDraftSave(
@@ -1724,7 +1740,7 @@ export function useApPublicAddressesSettingsSections({
     } finally {
       setSavePending(false);
     }
-  }, [canSave, draftNetwork, networkBackingState.base, onNetworkDraftCommit]);
+  }, [canSave, draftNetwork, networkBackingState, onNetworkDraftCommit]);
 
   const handleSaveNetworkDraft = useCallback(async () => {
     try {
@@ -1814,8 +1830,8 @@ export function useApPublicAddressesSettingsSections({
   return {
     footer: commitMode ? (
       <ApSettingsDraftFooter
-        backingResourceChanged={networkBackingState.resourceChanged}
         canSave={canSave}
+        conflictMessage={networkBackingState.submitConflictMessage}
         dirty={networkDirty}
         discardAriaLabel="Discard Public Address changes"
         onCancel={resetNetworkDraft}
