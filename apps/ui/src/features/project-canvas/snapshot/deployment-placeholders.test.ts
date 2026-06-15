@@ -115,7 +115,7 @@ test("projection patch preserves user source for a slot group anchored by the un
   );
 });
 
-test("projection patch moves every preview slot when a result placeholder is dragged", () => {
+test("projection patch moves only the dragged preview slot", () => {
   const nodes = [
     resultPreviewNode({
       anchor: true,
@@ -156,13 +156,49 @@ test("projection patch moves every preview slot when a result placeholder is dra
         position: { x: 780, y: 320 },
         source: "user",
       },
+    ]
+  );
+});
+
+test("projection patch preserves sibling preview slots when PublicAccess is dragged", () => {
+  const nodes = [
+    resultPreviewNode({
+      anchor: true,
+      position: { x: 680, y: 280 },
+      slotId: AP_SLOT.id,
+    }),
+    resultPreviewNode({
+      position: { x: 340, y: 280 },
+      slotId: PUBLIC_ACCESS_SLOT.id,
+    }),
+  ];
+  const publicAccessNode = nodes[1];
+  assert.ok(publicAccessNode);
+  const movedPublicAccess = {
+    ...publicAccessNode,
+    position: { x: 120, y: 640 },
+  };
+
+  const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
+    node: movedPublicAccess,
+    nodes,
+    source: "user",
+  });
+
+  assert.deepEqual(
+    placementNodes.map((node) => ({
+      owner: node.owner,
+      position: node.position,
+      source: node.source,
+    })),
+    [
       {
         owner: {
           kind: "deploymentProjection",
           slotId: PUBLIC_ACCESS_SLOT.id,
           taskId: "task-1",
         },
-        position: { x: 440, y: 320 },
+        position: { x: 120, y: 640 },
         source: "user",
       },
     ]

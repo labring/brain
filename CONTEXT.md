@@ -162,9 +162,9 @@ _Avoid_: pending node layout, fake resource layout, viewport placement.
 
 ### Deployment Projection Slot Group
 
-The visual group formed by the Deployment Projection Slots for one Deployment Task Projection. Moving one Deployment Placeholder Node moves the slot group by default; individual slot placement is not part of the default projection interaction.
+The visual group formed by the Deployment Projection Slots for one Deployment Task Projection. Each Deployment Projection Slot keeps its own Deployment Projection Placement, and moving one Deployment Placeholder Node changes only that slot's placement by default.
 
-_Avoid_: result preview shape, independent pending node placement, result auto-layout.
+_Avoid_: result preview shape, fake resource group, result auto-layout.
 
 ### Deployment Projection Evidence
 
@@ -520,7 +520,7 @@ Canvas Placement Groups are evaluated against Canvas Placement Occupancy as a wh
 
 An AP with desired Public Address intent and its AP Public Access Node form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the AP Public Access Node is a presentation node for AP-owned public access rather than an independent resource.
 
-After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes.
+After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes. During Deployment Handoff, Canvas Placement Group membership does not override existing per-slot Deployment Projection Placements.
 
 ### Canvas Viewport Focus
 

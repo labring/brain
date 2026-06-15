@@ -527,6 +527,13 @@ function isReferencedPlacementCandidate(
   return candidate.ref !== undefined;
 }
 
+function initialPositionForCandidate(
+  candidate: PlacementCandidate & { ref: CanvasLayoutResourceRef },
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined
+): CanvasLayoutPosition | undefined {
+  return initialPositionByRef?.get(canvasResourceKey(candidate.ref));
+}
+
 function apPublicAccessPositionFromGroupOrigin(origin: CanvasLayoutPosition): {
   ap: CanvasLayoutPosition;
   publicAccess: CanvasLayoutPosition;
@@ -630,7 +637,8 @@ function deploymentPreviewGroupUnits(
 
 function apPublicAccessGroupUnits(
   candidates: readonly PlacementCandidate[],
-  groupedIndexes: Set<number>
+  groupedIndexes: Set<number>,
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined
 ): PlacementUnit[] {
   const apCandidatesByKey = new Map<
     string,
@@ -665,6 +673,13 @@ function apPublicAccessGroupUnits(
     if (publicAccess === undefined) {
       continue;
     }
+    if (
+      initialPositionForCandidate(ap, initialPositionByRef) !== undefined ||
+      initialPositionForCandidate(publicAccess, initialPositionByRef) !==
+        undefined
+    ) {
+      continue;
+    }
     groupedIndexes.add(ap.index);
     groupedIndexes.add(publicAccess.index);
     units.push({
@@ -684,13 +699,18 @@ function apPublicAccessGroupUnits(
 }
 
 function buildPlacementUnits(
-  candidates: readonly PlacementCandidate[]
+  candidates: readonly PlacementCandidate[],
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined
 ): PlacementUnit[] {
   const previewGroups = deploymentPreviewGroupUnits(candidates);
   const groupedIndexes = previewGroups.groupedIndexes;
   const units: PlacementUnit[] = [
     ...previewGroups.units,
-    ...apPublicAccessGroupUnits(candidates, groupedIndexes),
+    ...apPublicAccessGroupUnits(
+      candidates,
+      groupedIndexes,
+      initialPositionByRef
+    ),
   ];
   for (const candidate of candidates) {
     if (groupedIndexes.has(candidate.index)) {
@@ -1017,7 +1037,10 @@ export function placeCanvasNodesWithLayout({
     });
   });
 
-  for (const unit of buildPlacementUnits(placementCandidates)) {
+  for (const unit of buildPlacementUnits(
+    placementCandidates,
+    initialPositionByRef
+  )) {
     const footprint = placementUnitFootprint(unit);
     const placement = placementForUnit(
       unit,

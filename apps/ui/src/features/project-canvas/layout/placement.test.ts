@@ -359,6 +359,41 @@ test("places a new AP and PublicAccess as one combined footprint", () => {
   assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: 0 });
 });
 
+test("preserves independent handoff positions for new AP and PublicAccess nodes", () => {
+  const result = placeCanvasNodesWithLayout({
+    initialPositionByRef: new Map([
+      ["AP:default:api", { x: 680, y: 280 }],
+      ["PublicAccess:default:api", { x: 120, y: 640 }],
+    ]),
+    layout: {
+      namespace: "default",
+      nodes: [],
+      projectId: "project-uid",
+      version: 1,
+    },
+    nodes: [entryNode("api-entry", "api"), apNode("api")],
+  });
+  const positions = positionById(result.nodes);
+
+  assert.deepEqual(positions.get("ap-api"), { x: 680, y: 280 });
+  assert.deepEqual(positions.get("entry-api-entry"), { x: 120, y: 640 });
+  assert.deepEqual(
+    result.placedLayoutNodes.map((node) => ({
+      kind: layoutResourceRef(node)?.kind,
+      name: layoutResourceRef(node)?.name,
+      position: node.position,
+    })),
+    [
+      { kind: "AP", name: "api", position: { x: 680, y: 280 } },
+      {
+        kind: "PublicAccess",
+        name: "api",
+        position: { x: 120, y: 640 },
+      },
+    ]
+  );
+});
+
 test("places deployment result placeholders as one preview footprint", () => {
   const nodes = placeCanvasNodes({
     layout: undefined,

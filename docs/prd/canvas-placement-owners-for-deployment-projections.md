@@ -35,7 +35,7 @@ All placement changes from Projection Reconciliation should be applied as revisi
 4. As a Project Canvas user, I want AP Public Access placeholders to hand off only when their matching public access node exists, so that public access does not steal another resource's placement.
 5. As a Project Canvas user, I want a real resource with an existing saved placement to keep that placement, so that deployment reconciliation never overrides my arranged canvas.
 6. As a Project Canvas user, I want dragging a deployment placeholder to affect the placement inherited by the matching real resource, so that my manual arrangement before handoff matters.
-7. As a Project Canvas user, I want dragging one placeholder in a deployment slot group to move the group by default, so that related anticipated results stay visually coherent.
+7. As a Project Canvas user, I want dragging one placeholder in a deployment slot group to move only that placeholder's slot placement, so that each anticipated result can hand off at the position I arranged.
 8. As a Project Canvas user, I want deployment placeholders to disappear when a task fails or is cancelled, so that the canvas does not show resources that will not arrive.
 9. As a Project Canvas user, I want completed deployments to keep unmatched placeholders briefly while resource lists reconcile, so that a successful deployment does not flicker between placeholder and empty canvas.
 10. As a Project Canvas user, I want unmatched placeholders to expire after the reconciliation grace window, so that the canvas does not permanently show missing resources.
@@ -121,7 +121,7 @@ type DeploymentResultMapping = {
 
 - Unknown slot refinement consumes the unknown slot. When structured evidence appears, the unknown slot placement should rekey to the anchor concrete slot placement, preserving `source: "user"` if the user moved it.
 
-- Secondary concrete slots get generated placements as a Deployment Projection Slot Group, respecting Canvas Placement Occupancy and existing placements.
+- Secondary concrete slots get generated placements as a Deployment Projection Slot Group, respecting Canvas Placement Occupancy and existing placements. Later user movement updates only the moved slot's Deployment Projection Placement.
 
 - Deployment Projection Evidence can include generated manifests, artifact summaries, template previews, AP public access intent, AP-to-DB relationship fields, or explicit expected result contracts. Natural-language task text and broad task type are not evidence.
 

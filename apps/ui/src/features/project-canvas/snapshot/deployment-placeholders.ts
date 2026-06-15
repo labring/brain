@@ -306,6 +306,27 @@ function resultRefHasSavedLayout(
   return ref.kind !== "TemplateNative" && layoutHasRef(layout, ref);
 }
 
+function resourceLayoutPosition(input: {
+  layout?: CanvasLayoutDocument;
+  ref: CanvasLayoutResourceRef;
+}): CanvasLayoutPosition | undefined {
+  const node = layoutNodeByOwner(input.layout).get(resourceOwnerKey(input.ref));
+  return node === undefined
+    ? undefined
+    : { x: node.position.x, y: node.position.y };
+}
+
+function savedResourcePositionForSlot(input: {
+  layout?: CanvasLayoutDocument;
+  slot: DeploymentTaskCanvasProjectionSlot;
+  task: DeploymentTaskProjection;
+}): CanvasLayoutPosition | undefined {
+  const ref = layoutRefForSlot(input);
+  return ref === undefined
+    ? undefined
+    : resourceLayoutPosition({ layout: input.layout, ref });
+}
+
 function projectionSlotNodeId(taskId: string, slotId: string): string {
   return `deployment-result-placeholder-${sanitizeNodeIdPart(taskId)}-${sanitizeNodeIdPart(slotId)}`;
 }
@@ -686,6 +707,14 @@ function materializedSlotOrigin(input: {
   })?.position;
   const anchorRelative =
     anchor === undefined ? undefined : input.relative.get(anchor.id);
+  const anchorResourcePosition =
+    anchor === undefined
+      ? undefined
+      : savedResourcePositionForSlot({
+          layout: input.layout,
+          slot: anchor,
+          task: input.task,
+        });
   const anchorPosition =
     anchor === undefined
       ? undefined
@@ -694,11 +723,32 @@ function materializedSlotOrigin(input: {
           slot: anchor,
           task: input.task,
         })?.position;
+  if (anchorResourcePosition !== undefined && anchorRelative !== undefined) {
+    return {
+      x: anchorResourcePosition.x - anchorRelative.x,
+      y: anchorResourcePosition.y - anchorRelative.y,
+    };
+  }
   if (anchorPosition !== undefined && anchorRelative !== undefined) {
     return {
       x: anchorPosition.x - anchorRelative.x,
       y: anchorPosition.y - anchorRelative.y,
     };
+  }
+
+  for (const slot of input.slots) {
+    const resourcePosition = savedResourcePositionForSlot({
+      layout: input.layout,
+      slot,
+      task: input.task,
+    });
+    const slotRelative = input.relative.get(slot.id);
+    if (resourcePosition !== undefined && slotRelative !== undefined) {
+      return {
+        x: resourcePosition.x - slotRelative.x,
+        y: resourcePosition.y - slotRelative.y,
+      };
+    }
   }
 
   for (const slot of input.slots) {
@@ -1299,20 +1349,26 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
     ];
   }
 
+  if (input.source === "user") {
+    const slotId = placeholderNode.data.slotId;
+    return slotId === undefined
+      ? []
+      : [
+          projectionPlacementNode({
+            position: placeholderNode.position,
+            slotId,
+            source: input.source,
+            taskId: placeholderNode.data.taskId,
+          }),
+        ];
+  }
+
   const groupNodes = input.nodes.filter(
     (node): node is CanvasDeploymentPlaceholderRfNode =>
       isDeploymentPlaceholderNode(node) &&
       node.data.taskId === placeholderNode.data.taskId &&
       hasProjectionSlotGroup(node.data)
   );
-  const previous = groupNodes.find((node) => node.id === placeholderNode.id);
-  const delta =
-    previous === undefined
-      ? { x: 0, y: 0 }
-      : {
-          x: placeholderNode.position.x - previous.position.x,
-          y: placeholderNode.position.y - previous.position.y,
-        };
   const anchorSlotId =
     placeholderNode.data.projectionSlots.find((slot) => slot.anchor === true)
       ?.id ??
@@ -1325,10 +1381,7 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
       (placeholderNode.data.slotId === slot.id ? placeholderNode : undefined);
     const position = node?.position ?? slot.position ?? { x: 0, y: 0 };
     return projectionPlacementNode({
-      position: {
-        x: position.x + (input.source === "user" ? delta.x : 0),
-        y: position.y + (input.source === "user" ? delta.y : 0),
-      },
+      position,
       slotId: slot.id,
       source: projectionSlotPlacementSource({
         anchorSource: placeholderNode.data.projectionPlacementSource,
@@ -1409,6 +1462,33 @@ function addUnknownSlotRefinementCommands(input: {
     kind: "rekey",
     toOwner,
   });
+  const materialized = materializedSlotPositions({
+    layout: input.layout,
+    slots: input.preview.slots,
+    task: input.task,
+  });
+  for (const slot of input.preview.slots) {
+    if (slot.id === anchor.id) {
+      continue;
+    }
+    const owner = projectionSlotPlacementOwner({
+      id: slot.id,
+      taskId: input.task.id,
+    });
+    if (hasLayoutOwner(input.layout, canvasPlacementOwnerKey(owner))) {
+      continue;
+    }
+    const position = materialized.positions.get(slot.id);
+    if (position === undefined) {
+      continue;
+    }
+    addCommandOnce(input.commands, input.seen, {
+      kind: "create",
+      owner,
+      position,
+      source: "generated",
+    });
+  }
 }
 
 function addSlotHandoffOrExpiryCommand(input: {

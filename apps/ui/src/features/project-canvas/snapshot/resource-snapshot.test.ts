@@ -389,6 +389,114 @@ test("resource snapshot materializes unknown deployment slot placement before AP
   });
 });
 
+test("resource snapshot refines unknown deployment placement into the full slot group", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+        }),
+      ],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          edges: [
+            {
+              evidence: "ap-env-raw-source-reference",
+              sourceSlotId: "AP:default:api",
+              targetSlotId: "DB:default:postgres",
+            },
+          ],
+          slots: [
+            {
+              anchor: true,
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "AP:default:api",
+            },
+            {
+              expectedRef: {
+                kind: "DB",
+                name: "postgres",
+                namespace: "default",
+              },
+              id: "DB:default:postgres",
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "deployment-result-placeholder-task-1-AP:default:api",
+        position: { x: 680, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+      {
+        id: "deployment-result-placeholder-task-1-DB:default:postgres",
+        position: { x: 1020, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
+  assert.deepEqual(snapshot.layoutIntent, {
+    commands: [
+      {
+        fromOwner: {
+          kind: "deploymentProjection",
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+          taskId: "task-1",
+        },
+        kind: "rekey",
+        toOwner: {
+          kind: "deploymentProjection",
+          slotId: "AP:default:api",
+          taskId: "task-1",
+        },
+      },
+      {
+        kind: "create",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: "DB:default:postgres",
+          taskId: "task-1",
+        },
+        position: { x: 1020, y: 280 },
+        source: "generated",
+      },
+    ],
+    expectedVersion: 1,
+    kind: "placement-commands",
+  });
+});
+
 test("resource snapshot rekeys deployment slot placement to matching AP result", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
@@ -468,6 +576,89 @@ test("resource snapshot rekeys deployment slot placement to matching AP result",
     expectedVersion: 7,
     kind: "placement-commands",
   });
+});
+
+test("resource snapshot keeps unresolved result slots beside handed-off resource layout", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default" },
+          spec: { input: {} },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [layoutResourceNode("AP", "api", { x: 680, y: 280 })],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          edges: [
+            {
+              evidence: "ap-env-raw-source-reference",
+              sourceSlotId: "AP:default:api",
+              targetSlotId: "DB:default:postgres",
+            },
+          ],
+          slots: [
+            {
+              anchor: true,
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "AP:default:api",
+            },
+            {
+              expectedRef: {
+                kind: "DB",
+                name: "postgres",
+                namespace: "default",
+              },
+              id: "DB:default:postgres",
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "ap-api",
+        position: { x: 680, y: 280 },
+        type: CANVAS_CONTAINER_NODE_TYPE,
+      },
+      {
+        id: "deployment-result-placeholder-task-1-DB:default:postgres",
+        position: { x: 1020, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
 });
 
 test("resource snapshot rekeys deployment slot placement through explicit result mapping", () => {
@@ -894,6 +1085,230 @@ spec:
       },
     ]
   );
+});
+
+test("resource snapshot refines unknown deployment placement into AP public access group", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+        }),
+      ],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {
+          resourceYamls: [
+            `
+apiVersion: brain.io/direct
+kind: AP
+metadata:
+  name: api
+  namespace: default
+spec:
+  input:
+    network:
+      platformAddresses:
+        - https://api.example.test
+`,
+          ],
+        },
+        canvasProjection: {},
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "deployment-result-placeholder-task-1-AP:default:api",
+        position: { x: 680, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+      {
+        id: "deployment-result-placeholder-task-1-PublicAccess:default:api",
+        position: { x: 340, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
+  assert.deepEqual(snapshot.layoutIntent, {
+    commands: [
+      {
+        fromOwner: {
+          kind: "deploymentProjection",
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+          taskId: "task-1",
+        },
+        kind: "rekey",
+        toOwner: {
+          kind: "deploymentProjection",
+          slotId: "AP:default:api",
+          taskId: "task-1",
+        },
+      },
+      {
+        kind: "create",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: "PublicAccess:default:api",
+          taskId: "task-1",
+        },
+        position: { x: 340, y: 280 },
+        source: "generated",
+      },
+    ],
+    expectedVersion: 1,
+    kind: "placement-commands",
+  });
+});
+
+test("resource snapshot preserves independent AP public access slot handoff positions", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default" },
+          spec: {
+            input: {
+              network: {
+                platformAddresses: [{ id: "pa_abc123", port: 80 }],
+              },
+            },
+          },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: "AP:default:api",
+        }),
+        deploymentProjectionLayoutNode({
+          position: { x: 120, y: 640 },
+          slotId: "PublicAccess:default:api",
+        }),
+      ],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          edges: [
+            {
+              evidence: "ap-public-access-intent",
+              sourceSlotId: "PublicAccess:default:api",
+              targetSlotId: "AP:default:api",
+            },
+          ],
+          slots: [
+            {
+              anchor: true,
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "AP:default:api",
+            },
+            {
+              expectedRef: {
+                kind: "PublicAccess",
+                name: "api",
+                namespace: "default",
+              },
+              id: "PublicAccess:default:api",
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "ap-api",
+        position: { x: 680, y: 280 },
+        type: CANVAS_CONTAINER_NODE_TYPE,
+      },
+      {
+        id: "entry-api",
+        position: { x: 120, y: 640 },
+        type: CANVAS_ENTRY_NODE_TYPE,
+      },
+    ]
+  );
+  assert.deepEqual(snapshot.layoutIntent, {
+    commands: [
+      {
+        fromOwner: {
+          kind: "deploymentProjection",
+          slotId: "AP:default:api",
+          taskId: "task-1",
+        },
+        kind: "rekey",
+        toOwner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
+        },
+      },
+      {
+        fromOwner: {
+          kind: "deploymentProjection",
+          slotId: "PublicAccess:default:api",
+          taskId: "task-1",
+        },
+        kind: "rekey",
+        toOwner: {
+          kind: "resource",
+          ref: { kind: "PublicAccess", name: "api", namespace: "default" },
+        },
+      },
+    ],
+    expectedVersion: 1,
+    kind: "placement-commands",
+  });
 });
 
 test("resource snapshot keeps unresolved result slots beside handed-off results", () => {
