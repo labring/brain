@@ -18,6 +18,10 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
+import {
+  deployTaskDisplayEvents,
+  summarizeDeployTaskError,
+} from "@/lib/deploy-task/event-display";
 
 import { ChatTool } from "./chat.tool";
 import { ChatToolGroup, type ChatToolPart } from "./chat.tool-group";
@@ -99,7 +103,8 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
   const status = data.status ?? "queued";
   const tone = deployStatusTone(data.status);
   const StatusIcon = tone.icon;
-  const events = data.events?.slice(-6) ?? [];
+  const events = deployTaskDisplayEvents(data.events, 3);
+  const summarizedError = summarizeDeployTaskError(data.error);
   const shouldOpenByDefault =
     ACTIVE_DEPLOY_STATUSES.has(status) || Boolean(data.error);
   const [userTouched, setUserTouched] = useState(false);
@@ -213,9 +218,9 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
                 </ol>
               </div>
             ) : null}
-            {data.error ? (
+            {summarizedError ? (
               <p className="rounded-md border border-destructive/35 bg-destructive/10 p-2 text-destructive text-xs">
-                {data.error}
+                {summarizedError}
               </p>
             ) : null}
             <div className="inline-flex min-w-0 items-center gap-1 text-muted-foreground text-xs">

@@ -47,6 +47,7 @@ import {
   prepareBrainManifestArtifact,
   prepareDeployTaskArtifacts,
 } from "./artifacts";
+import { deployTaskFailureSummary } from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
   getCodexGatewayContextFromDevboxInfo,
@@ -1389,7 +1390,8 @@ export async function startDeployTaskRunner(
     });
     await recordDeployTaskEvent(task.id, {
       kind: "deployment_task.failed",
-      message,
+      message: deployTaskFailureSummary(error),
+      payload: { error: message },
     });
     throw error;
   }

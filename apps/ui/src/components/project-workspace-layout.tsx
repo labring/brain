@@ -55,6 +55,10 @@ import {
   pendingDeployTaskCreatedEvents,
 } from "@/lib/deploy-task/browser-events";
 import {
+  deployTaskDisplayEvents,
+  summarizeDeployTaskError,
+} from "@/lib/deploy-task/event-display";
+import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
   runNavigateAppTool,
@@ -158,7 +162,7 @@ function deployTaskChatMessage(input: {
   status?: string;
   taskId: string;
 }): UIMessage {
-  const events = input.events?.slice(-6) ?? [];
+  const events = deployTaskDisplayEvents(input.events, 3);
   const cardPart: GithubDeployTaskPart = {
     data: {
       error: input.error ?? null,
@@ -175,18 +179,18 @@ function deployTaskChatMessage(input: {
     input.status == null
       ? "Status: queued"
       : `Status: ${input.status}${input.phase ? ` (${input.phase})` : ""}`;
+  const latestEvent = events.at(-1);
   const eventLines =
-    events.length === 0
+    latestEvent == null
       ? []
       : [
           "",
-          "Recent events:",
-          ...events.map((event) => {
-            const phase = event.phase ? ` [${event.phase}]` : "";
-            return `- #${event.seq}${phase} ${event.message ?? "No details"}`;
-          }),
+          `Latest event: #${latestEvent.seq}${
+            latestEvent.phase ? ` [${latestEvent.phase}]` : ""
+          } ${latestEvent.message ?? "No details"}`,
         ];
-  const errorLines = input.error ? ["", `Error: ${input.error}`] : [];
+  const summarizedError = summarizeDeployTaskError(input.error);
+  const errorLines = summarizedError ? ["", `Error: ${summarizedError}`] : [];
 
   return {
     id: `${DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX}${input.taskId}`,
