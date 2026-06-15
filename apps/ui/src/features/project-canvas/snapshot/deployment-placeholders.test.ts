@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Node } from "@xyflow/react";
 
+import { DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS } from "@/lib/deploy-task/projection";
 import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
 import type {
   CanvasDeploymentPlaceholderNodeData,
   CanvasDeploymentPlaceholderRfNode,
 } from "../nodes/types";
-import { deploymentProjectionPatchFromPlaceholderNode } from "./deployment-placeholders";
+import {
+  deploymentPreviewEdgesFromTasks,
+  deploymentProjectionPlacementCommands,
+  deploymentProjectionPlacementNodesFromPlaceholderNode,
+} from "./deployment-placeholders";
 
 const AP_SLOT = {
   expectedRef: {
@@ -29,9 +35,9 @@ const PUBLIC_ACCESS_SLOT = {
 const PROJECTION_SLOTS = [AP_SLOT, PUBLIC_ACCESS_SLOT] as const;
 
 function resultPreviewNode(input: {
-  anchorSource?: CanvasDeploymentPlaceholderNodeData["projectionPositionSource"];
+  anchorSource?: CanvasDeploymentPlaceholderNodeData["projectionPlacementSource"];
+  anchor?: boolean;
   position: CanvasDeploymentPlaceholderRfNode["position"];
-  primary?: boolean;
   slotId: (typeof PROJECTION_SLOTS)[number]["id"];
 }): CanvasDeploymentPlaceholderRfNode {
   const slot = PROJECTION_SLOTS.find((item) => item.id === input.slotId);
@@ -41,13 +47,15 @@ function resultPreviewNode(input: {
         ? {}
         : { expectedRef: slot.expectedRef }),
       groupId: "task-1",
-      hasProjectionPosition: false,
-      ...(input.primary === undefined ? {} : { primary: input.primary }),
+      hasProjectionPlacement: false,
+      ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
       ...(input.anchorSource === undefined
         ? {}
-        : { projectionPositionSource: input.anchorSource }),
-      projectionShape: "result-preview",
-      projectionSlots: [...PROJECTION_SLOTS],
+        : { projectionPlacementSource: input.anchorSource }),
+      projectionSlots: PROJECTION_SLOTS.map((projectionSlot) => ({
+        ...projectionSlot,
+        ...(projectionSlot.id === AP_SLOT.id ? { anchor: true } : {}),
+      })),
       slotId: input.slotId,
       taskId: "task-1",
     },
@@ -57,12 +65,12 @@ function resultPreviewNode(input: {
   };
 }
 
-test("projection patch preserves user source for a preview primary anchored by a moved generic placeholder", () => {
+test("projection patch preserves user source for a slot group anchored by the unknown slot", () => {
   const nodes = [
     resultPreviewNode({
+      anchor: true,
       anchorSource: "user",
       position: { x: 680, y: 280 },
-      primary: true,
       slotId: AP_SLOT.id,
     }),
     resultPreviewNode({
@@ -71,37 +79,49 @@ test("projection patch preserves user source for a preview primary anchored by a
       slotId: PUBLIC_ACCESS_SLOT.id,
     }),
   ];
+  const anchorNode = nodes[0];
+  assert.ok(anchorNode);
 
-  const patch = deploymentProjectionPatchFromPlaceholderNode({
-    node: nodes[0],
+  const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
+    node: anchorNode,
     nodes,
     source: "generated",
   });
 
-  assert.equal(patch?.kind, "result-preview");
   assert.deepEqual(
-    patch?.projection.slots?.map((slot) => ({
-      id: slot.id,
-      position: slot.position,
+    placementNodes.map((node) => ({
+      owner: node.owner,
+      position: node.position,
+      source: node.source,
     })),
     [
       {
-        id: AP_SLOT.id,
-        position: { source: "user", x: 680, y: 280 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 680, y: 280 },
+        source: "user",
       },
       {
-        id: PUBLIC_ACCESS_SLOT.id,
-        position: { source: "generated", x: 340, y: 280 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: PUBLIC_ACCESS_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 340, y: 280 },
+        source: "generated",
       },
     ]
   );
 });
 
-test("projection patch moves every preview slot when a result placeholder is dragged", () => {
+test("projection patch moves only the dragged preview slot", () => {
   const nodes = [
     resultPreviewNode({
+      anchor: true,
       position: { x: 680, y: 280 },
-      primary: true,
       slotId: AP_SLOT.id,
     }),
     resultPreviewNode({
@@ -109,31 +129,218 @@ test("projection patch moves every preview slot when a result placeholder is dra
       slotId: PUBLIC_ACCESS_SLOT.id,
     }),
   ];
+  const anchorNode = nodes[0];
+  assert.ok(anchorNode);
   const movedAp = {
-    ...nodes[0],
+    ...anchorNode,
     position: { x: 780, y: 320 },
   };
 
-  const patch = deploymentProjectionPatchFromPlaceholderNode({
+  const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
     node: movedAp,
     nodes,
     source: "user",
   });
 
-  assert.equal(patch?.kind, "result-preview");
   assert.deepEqual(
-    patch?.projection.slots?.map((slot) => ({
-      id: slot.id,
-      position: slot.position,
+    placementNodes.map((node) => ({
+      owner: node.owner,
+      position: node.position,
+      source: node.source,
     })),
     [
       {
-        id: AP_SLOT.id,
-        position: { source: "user", x: 780, y: 320 },
+        owner: {
+          kind: "deploymentProjection",
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 780, y: 320 },
+        source: "user",
+      },
+    ]
+  );
+});
+
+test("projection patch preserves sibling preview slots when PublicAccess is dragged", () => {
+  const nodes = [
+    resultPreviewNode({
+      anchor: true,
+      position: { x: 680, y: 280 },
+      slotId: AP_SLOT.id,
+    }),
+    resultPreviewNode({
+      position: { x: 340, y: 280 },
+      slotId: PUBLIC_ACCESS_SLOT.id,
+    }),
+  ];
+  const publicAccessNode = nodes[1];
+  assert.ok(publicAccessNode);
+  const movedPublicAccess = {
+    ...publicAccessNode,
+    position: { x: 120, y: 640 },
+  };
+
+  const placementNodes = deploymentProjectionPlacementNodesFromPlaceholderNode({
+    node: movedPublicAccess,
+    nodes,
+    source: "user",
+  });
+
+  assert.deepEqual(
+    placementNodes.map((node) => ({
+      owner: node.owner,
+      position: node.position,
+      source: node.source,
+    })),
+    [
+      {
+        owner: {
+          kind: "deploymentProjection",
+          slotId: PUBLIC_ACCESS_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 120, y: 640 },
+        source: "user",
+      },
+    ]
+  );
+});
+
+test("preview edges stay scoped to placeholders from their own deployment task", () => {
+  const slotIds = ["AP:default:api", "DB:default:postgres"] as const;
+  const nodes: Node[] = ["task-1", "task-2"].flatMap((taskId, taskIndex) =>
+    slotIds.map((slotId, slotIndex) => ({
+      data: {
+        expectedRef:
+          slotIndex === 0
+            ? { kind: "AP", name: "api", namespace: "default" }
+            : { kind: "DB", name: "postgres", namespace: "default" },
+        projectionSlots: slotIds.map((id) => ({ id })),
+        slotId,
+        taskId,
+      },
+      id: `${taskId}-${slotId}`,
+      position: { x: taskIndex * 340, y: slotIndex * 280 },
+      type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+    }))
+  );
+
+  const edges = deploymentPreviewEdgesFromTasks({
+    nodes,
+    tasks: ["task-1", "task-2"].map((taskId) => ({
+      artifactSummary: {},
+      canvasProjection: {
+        edges: [
+          {
+            id: "ap-db",
+            sourceSlotId: "AP:default:api",
+            targetSlotId: "DB:default:postgres",
+          },
+        ],
+        slots: [
+          {
+            expectedRef: { kind: "AP", name: "api", namespace: "default" },
+            id: "AP:default:api",
+          },
+          {
+            expectedRef: {
+              kind: "DB",
+              name: "postgres",
+              namespace: "default",
+            },
+            id: "DB:default:postgres",
+          },
+        ],
+      },
+      completedAt: null,
+      id: taskId,
+      namespace: "default",
+      phase: "apply",
+      projectId: "project-uid",
+      status: "applying",
+      updatedAt: "2026-06-11T10:00:00.000Z",
+    })),
+  });
+
+  assert.deepEqual(
+    edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+    })),
+    [
+      {
+        id: "deployment-preview-task-1-ap-db",
+        source: "task-1-AP:default:api",
+        target: "task-1-DB:default:postgres",
       },
       {
-        id: PUBLIC_ACCESS_SLOT.id,
-        position: { source: "user", x: 440, y: 320 },
+        id: "deployment-preview-task-2-ap-db",
+        source: "task-2-AP:default:api",
+        target: "task-2-DB:default:postgres",
+      },
+    ]
+  );
+});
+
+test("completed explicit projection slots keep placement during handoff grace", () => {
+  const now = new Date("2026-06-11T10:00:00.000Z");
+  const layout = {
+    namespace: "default",
+    nodes: [
+      {
+        owner: {
+          kind: "deploymentProjection" as const,
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
+        position: { x: 680, y: 280 },
+      },
+    ],
+    projectId: "project-uid",
+    version: 1,
+  };
+  const task = {
+    artifactSummary: {},
+    canvasProjection: {
+      slots: [AP_SLOT],
+    },
+    completedAt: now.toISOString(),
+    id: "task-1",
+    namespace: "default",
+    phase: "completed" as const,
+    projectId: "project-uid",
+    status: "completed" as const,
+    updatedAt: now.toISOString(),
+  };
+
+  assert.deepEqual(
+    deploymentProjectionPlacementCommands({
+      layout,
+      nodes: [],
+      now,
+      tasks: [task],
+    }),
+    []
+  );
+  assert.deepEqual(
+    deploymentProjectionPlacementCommands({
+      layout,
+      nodes: [],
+      now: new Date(
+        now.getTime() + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS + 1
+      ),
+      tasks: [task],
+    }),
+    [
+      {
+        kind: "delete",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: AP_SLOT.id,
+          taskId: "task-1",
+        },
       },
     ]
   );

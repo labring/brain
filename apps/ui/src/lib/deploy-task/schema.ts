@@ -49,14 +49,6 @@ export interface DeployTaskArtifactSummary {
   resourceYamls?: string[];
 }
 
-export type DeploymentTaskCanvasProjectionPositionSource = "generated" | "user";
-
-export interface DeploymentTaskCanvasProjectionPosition {
-  source?: DeploymentTaskCanvasProjectionPositionSource;
-  x: number;
-  y: number;
-}
-
 export interface DeploymentTaskCanvasProjectionExpectedRef {
   kind: "AP" | "DB" | "PublicAccess" | "TemplateNative";
   name: string;
@@ -64,10 +56,9 @@ export interface DeploymentTaskCanvasProjectionExpectedRef {
 }
 
 export interface DeploymentTaskCanvasProjectionSlot {
+  anchor?: boolean;
   expectedRef?: DeploymentTaskCanvasProjectionExpectedRef;
   id: string;
-  position?: DeploymentTaskCanvasProjectionPosition;
-  primary?: boolean;
 }
 
 export interface DeploymentTaskCanvasProjectionEdge {
@@ -77,10 +68,14 @@ export interface DeploymentTaskCanvasProjectionEdge {
   targetSlotId: string;
 }
 
+export interface DeploymentTaskCanvasProjectionResultMapping {
+  actualRef: DeploymentTaskCanvasProjectionExpectedRef;
+  slotId: string;
+}
+
 export interface DeploymentTaskCanvasProjection {
   edges?: DeploymentTaskCanvasProjectionEdge[];
-  position?: DeploymentTaskCanvasProjectionPosition;
-  shape?: "generic" | "result-preview";
+  resultMappings?: DeploymentTaskCanvasProjectionResultMapping[];
   slots?: DeploymentTaskCanvasProjectionSlot[];
 }
 

@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createCanvasLayoutNodeSaveScheduler } from "./scheduler";
-import type { CanvasLayoutNode } from "./types";
+import type { CanvasLayoutNode, CanvasResourceLayoutNode } from "./types";
 
 function layoutNode(
-  overrides: Partial<CanvasLayoutNode> = {}
+  overrides: Partial<Omit<CanvasResourceLayoutNode, "owner">> = {}
 ): CanvasLayoutNode {
   return {
     expanded: false,
+    owner: {
+      kind: "resource",
+      ref: { kind: "AP", name: "api", namespace: "default" },
+    },
     position: { x: 10, y: 20 },
-    ref: { kind: "AP", name: "api", namespace: "default" },
     ...overrides,
   };
 }

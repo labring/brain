@@ -40,21 +40,19 @@ import type {
 const MAX_DEPLOY_EVENTS = 200;
 const MAX_DEPLOY_MESSAGES = 200;
 
-function canvasProjectionHasSlotPosition(
-  projection: DeploymentTaskCanvasProjection
-): boolean {
-  return projection.slots?.some((slot) => slot.position !== undefined) === true;
-}
-
 function shouldSkipSetIfEmptyCanvasProjection(input: {
   existing: DeploymentTaskCanvasProjection;
   incoming: DeploymentTaskCanvasProjection;
 }): boolean {
   const incomingHasSlots = (input.incoming.slots?.length ?? 0) > 0;
   if (incomingHasSlots) {
-    return canvasProjectionHasSlotPosition(input.existing);
+    return (input.existing.slots?.length ?? 0) > 0;
   }
-  return input.existing.position !== undefined;
+  return (
+    (input.existing.slots?.length ?? 0) > 0 ||
+    (input.existing.edges?.length ?? 0) > 0 ||
+    (input.existing.resultMappings?.length ?? 0) > 0
+  );
 }
 
 function compactOptional(value: string | undefined): string | null {
@@ -408,11 +406,12 @@ export async function updateDeployTaskCanvasProjection(
       return null;
     }
     const mode = input.mode ?? "replace";
+    const incomingProjection = input.projection;
     if (
       mode === "set-if-empty" &&
       shouldSkipSetIfEmptyCanvasProjection({
         existing: existing.canvasProjection,
-        incoming: input.projection,
+        incoming: incomingProjection,
       })
     ) {
       return toDeployTaskDTO(existing);
@@ -420,7 +419,7 @@ export async function updateDeployTaskCanvasProjection(
     const [task] = await tx
       .update(deployTasks)
       .set({
-        canvasProjection: input.projection,
+        canvasProjection: incomingProjection,
         updatedAt: new Date(),
       })
       .where(eq(deployTasks.id, taskId))

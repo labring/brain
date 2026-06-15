@@ -49,6 +49,7 @@ import {
   canvasNodeStackOrder,
   nodeWithCanvasStackOrder,
 } from "@/features/project-canvas/layout/node-stack-order";
+import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
@@ -114,6 +115,7 @@ export interface UseProjectCanvasOptions {
   onPendingApDbReferencesStart?: (
     references: readonly PendingApDbCanvasReference[]
   ) => (() => void) | undefined;
+  onResourceLayoutDelete?: (refs: readonly CanvasLayoutResourceRef[]) => void;
   projectId?: string;
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
@@ -679,12 +681,13 @@ export function useProjectCanvas(
     (
       mutation: () => Promise<unknown>,
       copy: { loading: string; success: string },
-      options?: { onSettled?: () => void }
+      options?: { onSettled?: () => void; onSuccess?: () => void }
     ) => {
       toast.promise(
         (async (): Promise<void> => {
           try {
             await mutation();
+            options?.onSuccess?.();
             await afterLifecycle();
           } finally {
             options?.onSettled?.();
@@ -1186,9 +1189,29 @@ export function useProjectCanvas(
       {
         loading: `Deleting "${target.displayName}"...`,
         success: `Deleted "${target.displayName}"`,
+      },
+      {
+        onSuccess: () =>
+          options?.onResourceLayoutDelete?.([
+            {
+              kind: "AP",
+              name: target.name,
+              namespace: target.namespace,
+            },
+            {
+              kind: "PublicAccess",
+              name: target.name,
+              namespace: target.namespace,
+            },
+          ]),
       }
     );
-  }, [deleteWorkload, pendingApDeleteTarget, runMutationThenRefresh]);
+  }, [
+    deleteWorkload,
+    options?.onResourceLayoutDelete,
+    pendingApDeleteTarget,
+    runMutationThenRefresh,
+  ]);
   const confirmPendingDbDelete = useCallback(() => {
     if (pendingDbDeleteTarget == null) {
       return;
@@ -1204,9 +1227,24 @@ export function useProjectCanvas(
       {
         loading: `Deleting "${target.displayName}"...`,
         success: `Deleted "${target.displayName}"`,
+      },
+      {
+        onSuccess: () =>
+          options?.onResourceLayoutDelete?.([
+            {
+              kind: "DB",
+              name: target.name,
+              namespace: target.namespace,
+            },
+          ]),
       }
     );
-  }, [deleteDbWorkload, pendingDbDeleteTarget, runMutationThenRefresh]);
+  }, [
+    deleteDbWorkload,
+    options?.onResourceLayoutDelete,
+    pendingDbDeleteTarget,
+    runMutationThenRefresh,
+  ]);
   const resourceDeleteDialog = createElement(ProjectCanvasDeleteDialogs, {
     apTarget: pendingApDeleteTarget,
     dbTarget: pendingDbDeleteTarget,

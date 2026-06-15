@@ -1,4 +1,4 @@
-# 0025 Use Deployment-Scoped Brain Labels
+# Use Deployment-Scoped Brain Labels
 
 ## Status
 

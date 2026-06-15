@@ -19,7 +19,7 @@ Submit-time CNAME verification lives in the Next.js backend that serves AP Setti
 
 Custom Domain Ingress and certificate resources are public access support resources owned by the AP direct orchestration path. Platform Domain Ingress continues to use the platform wildcard certificate, while Custom Domain Bindings require per-domain certificates. AP status derives each binding from AP desired network state and any observed public access support state the API chooses to project.
 
-The AP product view is the projection boundary for Public Address health. AP list and get responses should aggregate AP-owned public access support resources into AP public access status, while the AP Public Access Node, AP Settings, and Public Access Panel consume the AP status rather than monitoring those support resources independently.
+The AP product view is the projection boundary for Public Address health. AP list and get responses should aggregate AP-owned public access support resources into AP public access status, while AP-owned public access surfaces consume the AP status rather than monitoring those support resources independently.
 
 Public Address health matches support resources by Public Address identity first: Platform Address IDs identify platform routing support, and Custom Domain Binding IDs identify custom-domain routing and certificate support. Hosts and domains are health evidence and display values, not the primary identity.
 

@@ -31,11 +31,18 @@ import {
   singleNodeFootprint,
 } from "./placement-geometry";
 import { PlacementOccupancy } from "./placement-occupancy";
+import {
+  canvasLayoutNodeKey,
+  canvasLayoutNodeResourceRef,
+  canvasPlacementOwnerFromNode,
+  canvasPlacementOwnerKey,
+} from "./placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
   CanvasLayoutPosition,
   CanvasLayoutResourceRef,
+  CanvasPlacementOwner,
 } from "./types";
 
 const GLOBAL_BLOCK_COLUMNS = 3;
@@ -51,6 +58,7 @@ export interface PlaceCanvasNodesOptions {
   initialPositionByRef?: ReadonlyMap<string, CanvasLayoutPosition>;
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
 }
 
 export interface PlaceCanvasNodesResult {
@@ -61,6 +69,7 @@ export interface PlaceCanvasNodesResult {
 interface PlacementCandidate {
   index: number;
   node: Node;
+  owner: CanvasPlacementOwner | undefined;
   ref: CanvasLayoutResourceRef | undefined;
   sortKey: string;
 }
@@ -127,7 +136,7 @@ function isPlacedDeploymentPlaceholderNode(node: Node): boolean {
   const data = asRecord(node.data);
   return (
     node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE &&
-    data?.hasProjectionPosition === true &&
+    data?.hasProjectionPlacement === true &&
     hasFinitePosition(node)
   );
 }
@@ -195,9 +204,16 @@ function nodeWithGeneratedPosition(
 
 function layoutNodeFromPlacedNode(
   node: Node,
-  ref: CanvasLayoutResourceRef,
+  owner: CanvasPlacementOwner,
   position: CanvasLayoutPosition
 ): CanvasLayoutNode {
+  if (owner.kind === "deploymentProjection") {
+    return {
+      owner,
+      position: { x: position.x, y: position.y },
+      source: GENERATED_POSITION_SOURCE,
+    };
+  }
   const data = asRecord(node.data);
   const layout = asRecord(data?.layout);
   const expanded =
@@ -206,8 +222,9 @@ function layoutNodeFromPlacedNode(
   return {
     expanded,
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
+    owner,
     position: { x: position.x, y: position.y },
-    ref,
+    source: GENERATED_POSITION_SOURCE,
   };
 }
 
@@ -510,6 +527,13 @@ function isReferencedPlacementCandidate(
   return candidate.ref !== undefined;
 }
 
+function initialPositionForCandidate(
+  candidate: PlacementCandidate & { ref: CanvasLayoutResourceRef },
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined
+): CanvasLayoutPosition | undefined {
+  return initialPositionByRef?.get(canvasResourceKey(candidate.ref));
+}
+
 function apPublicAccessPositionFromGroupOrigin(origin: CanvasLayoutPosition): {
   ap: CanvasLayoutPosition;
   publicAccess: CanvasLayoutPosition;
@@ -531,12 +555,12 @@ function deploymentPreviewGroupInfo(
   candidate: PlacementCandidate
 ): { groupId: string; relativePosition: CanvasLayoutPosition } | undefined {
   const data = asRecord(candidate.node.data);
-  const relative = asRecord(data?.projectionRelativePosition);
+  const relative = asRecord(data?.projectionRelativePlacement);
   const groupId = data?.groupId;
   const relativeX = relative?.x;
   const relativeY = relative?.y;
   if (
-    data?.projectionShape !== "result-preview" ||
+    !Array.isArray(data?.projectionSlots) ||
     typeof groupId !== "string" ||
     !Number.isFinite(relativeX) ||
     !Number.isFinite(relativeY)
@@ -613,7 +637,8 @@ function deploymentPreviewGroupUnits(
 
 function apPublicAccessGroupUnits(
   candidates: readonly PlacementCandidate[],
-  groupedIndexes: Set<number>
+  groupedIndexes: Set<number>,
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined
 ): PlacementUnit[] {
   const apCandidatesByKey = new Map<
     string,
@@ -648,6 +673,13 @@ function apPublicAccessGroupUnits(
     if (publicAccess === undefined) {
       continue;
     }
+    if (
+      initialPositionForCandidate(ap, initialPositionByRef) !== undefined ||
+      initialPositionForCandidate(publicAccess, initialPositionByRef) !==
+        undefined
+    ) {
+      continue;
+    }
     groupedIndexes.add(ap.index);
     groupedIndexes.add(publicAccess.index);
     units.push({
@@ -667,13 +699,18 @@ function apPublicAccessGroupUnits(
 }
 
 function buildPlacementUnits(
-  candidates: readonly PlacementCandidate[]
+  candidates: readonly PlacementCandidate[],
+  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined
 ): PlacementUnit[] {
   const previewGroups = deploymentPreviewGroupUnits(candidates);
   const groupedIndexes = previewGroups.groupedIndexes;
   const units: PlacementUnit[] = [
     ...previewGroups.units,
-    ...apPublicAccessGroupUnits(candidates, groupedIndexes),
+    ...apPublicAccessGroupUnits(
+      candidates,
+      groupedIndexes,
+      initialPositionByRef
+    ),
   ];
   for (const candidate of candidates) {
     if (groupedIndexes.has(candidate.index)) {
@@ -696,10 +733,12 @@ function placeCandidateAt(
     candidate.node,
     position
   );
-  if (candidate.ref !== undefined) {
-    positionByRef.set(canvasResourceKey(candidate.ref), position);
+  if (candidate.owner !== undefined) {
+    if (candidate.ref !== undefined) {
+      positionByRef.set(canvasResourceKey(candidate.ref), position);
+    }
     placedLayoutNodes.push(
-      layoutNodeFromPlacedNode(candidate.node, candidate.ref, position)
+      layoutNodeFromPlacedNode(candidate.node, candidate.owner, position)
     );
   }
 }
@@ -893,11 +932,57 @@ function savedPositionByRef(
   layout: CanvasLayoutDocument | undefined
 ): Map<string, CanvasLayoutPosition> {
   return new Map(
+    (layout?.nodes ?? []).flatMap((node) => {
+      const ref = canvasLayoutNodeResourceRef(node);
+      return ref === undefined
+        ? []
+        : [[canvasResourceKey(ref), node.position] as const];
+    })
+  );
+}
+
+function savedPositionByOwner(
+  layout: CanvasLayoutDocument | undefined
+): Map<string, CanvasLayoutPosition> {
+  return new Map(
     (layout?.nodes ?? []).map((node) => [
-      canvasResourceKey(node.ref),
+      canvasLayoutNodeKey(node),
       node.position,
     ])
   );
+}
+
+function occupancyLayoutNodes(input: {
+  layout: CanvasLayoutDocument | undefined;
+  nodes: readonly Node[];
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
+}): CanvasLayoutNode[] {
+  const renderedOwnerKeys = new Set(
+    input.nodes.flatMap((node) => {
+      const owner = canvasPlacementOwnerFromNode(node);
+      return owner === undefined ? [] : [canvasPlacementOwnerKey(owner)];
+    })
+  );
+  return (input.layout?.nodes ?? []).filter((node) => {
+    const ownerKey = canvasLayoutNodeKey(node);
+    if (renderedOwnerKeys.has(ownerKey)) {
+      return true;
+    }
+    return input.retainedLayoutOwnerKeys?.has(ownerKey) === true;
+  });
+}
+
+function placementCandidateKey(input: {
+  owner: CanvasPlacementOwner | undefined;
+  ref: CanvasLayoutResourceRef | undefined;
+}): string | undefined {
+  if (input.owner !== undefined) {
+    return canvasPlacementOwnerKey(input.owner);
+  }
+  if (input.ref !== undefined) {
+    return canvasResourceKey(input.ref);
+  }
+  return undefined;
 }
 
 export function placeCanvasNodesWithLayout({
@@ -906,12 +991,19 @@ export function placeCanvasNodesWithLayout({
   initialPositionByRef,
   layout,
   nodes,
+  retainedLayoutOwnerKeys,
 }: PlaceCanvasNodesOptions): PlaceCanvasNodesResult {
   const savedByRef = savedPositionByRef(layout);
+  const savedByOwner = savedPositionByOwner(layout);
   const positionByRef = new Map(savedByRef);
   const anchorIndex = createPlacementAnchorIndex(connections);
+  const occupiedLayoutNodes = occupancyLayoutNodes({
+    layout,
+    nodes,
+    retainedLayoutOwnerKeys,
+  });
   const occupancy = new PlacementOccupancy(
-    (layout?.nodes ?? []).map((node) =>
+    occupiedLayoutNodes.map((node) =>
       rectFromPosition(node.position, layoutNodeFootprintHeight(node))
     )
   );
@@ -921,8 +1013,9 @@ export function placeCanvasNodesWithLayout({
 
   placedNodes.forEach((node, index) => {
     const ref = canvasResourceIdentityFromNode(node);
-    const key = ref === undefined ? undefined : canvasResourceKey(ref);
-    const savedPosition = key === undefined ? undefined : savedByRef.get(key);
+    const owner = canvasPlacementOwnerFromNode(node);
+    const key = placementCandidateKey({ owner, ref });
+    const savedPosition = key === undefined ? undefined : savedByOwner.get(key);
     if (savedPosition !== undefined) {
       placedNodes[index] = nodeWithPosition(node, savedPosition);
       return;
@@ -938,12 +1031,16 @@ export function placeCanvasNodesWithLayout({
     placementCandidates.push({
       index,
       node,
+      owner,
       ref,
       sortKey: key ?? `Unknown:${index}:${node.id}`,
     });
   });
 
-  for (const unit of buildPlacementUnits(placementCandidates)) {
+  for (const unit of buildPlacementUnits(
+    placementCandidates,
+    initialPositionByRef
+  )) {
     const footprint = placementUnitFootprint(unit);
     const placement = placementForUnit(
       unit,

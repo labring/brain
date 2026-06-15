@@ -4,6 +4,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import type { ComponentProps, ReactNode } from "react";
 
 import { Skeleton } from "../skeleton";
+import { CanvasNodeConnectionAnchor } from "./canvas-node.connection";
 import { CanvasNodeDragStateFrame } from "./canvas-node.drag-frame";
 import { CanvasNodeFrame } from "./canvas-node.frame";
 import { CanvasNodeSurface } from "./canvas-node.surface";
@@ -27,6 +28,7 @@ export function CanvasNodePlaceholder({
 
   return (
     <CanvasNodeFrame className={className}>
+      <CanvasNodeConnectionAnchor />
       <CanvasNodeDragStateFrame>
         <CanvasNodeSurface
           className={cn("justify-center p-3", surfaceClassName)}

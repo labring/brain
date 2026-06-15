@@ -4,7 +4,14 @@ import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CanvasLayoutDocument } from "@/features/project-canvas/layout/types";
+import {
+  CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
+  resolveMissingResourceLayoutGrace,
+} from "@/features/project-canvas/layout/missing-resource-grace";
+import type {
+  CanvasLayoutDocument,
+  PlacementCommand,
+} from "@/features/project-canvas/layout/types";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
@@ -35,6 +42,36 @@ const DEPLOYMENT_PROJECTION_RECONNECT_MS = 3000;
 
 function createTransientSinceMap(): WorkloadTransientSinceByKey {
   return new Map<string, number>();
+}
+
+function emptyMissingResourceLayoutGraceResult(): ReturnType<
+  typeof resolveMissingResourceLayoutGrace
+> {
+  return {
+    deleteCommands: [],
+    nextMissingSinceByOwnerKey: new Map(),
+    retainedLayoutOwnerKeys: new Set(),
+  };
+}
+
+function nextMissingResourceGraceDelayMs(
+  missingSinceByOwnerKey: ReadonlyMap<string, number>,
+  retainedOwnerKeys: ReadonlySet<string>,
+  nowMs: number
+): number | undefined {
+  let nextDelay: number | undefined;
+  for (const ownerKey of retainedOwnerKeys) {
+    const firstMissingAt = missingSinceByOwnerKey.get(ownerKey);
+    if (firstMissingAt === undefined) {
+      continue;
+    }
+    const delay = Math.max(
+      0,
+      firstMissingAt + CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS - nowMs
+    );
+    nextDelay = nextDelay === undefined ? delay : Math.min(nextDelay, delay);
+  }
+  return nextDelay;
 }
 
 export function useProjectCanvasResourceSnapshot(options: {
@@ -77,6 +114,8 @@ export function useProjectCanvasResourceSnapshot(options: {
   const dbTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const deploymentTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const statefulSetTransientSinceByKeyRef = useRef(createTransientSinceMap());
+  const missingLayoutSinceByOwnerKeyRef = useRef(new Map<string, number>());
+  const [, setMissingLayoutGraceTick] = useState(0);
   const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
     useState(0);
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
@@ -175,6 +214,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     dbTransientSinceByKeyRef.current.clear();
     deploymentTransientSinceByKeyRef.current.clear();
     statefulSetTransientSinceByKeyRef.current.clear();
+    missingLayoutSinceByOwnerKeyRef.current.clear();
   }, [labelSelector]);
 
   const {
@@ -216,6 +256,21 @@ export function useProjectCanvasResourceSnapshot(options: {
   });
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
+
+  const refreshWorkloadResources = useCallback(
+    () => Promise.all([mutateAps(), mutateDbs(), mutateTemplateNative()]),
+    [mutateAps, mutateDbs, mutateTemplateNative]
+  );
+  const refreshWorkloadResourcesRef = useRef(refreshWorkloadResources);
+  useEffect(() => {
+    refreshWorkloadResourcesRef.current = refreshWorkloadResources;
+  }, [refreshWorkloadResources]);
+  const requestWorkloadReconciliation = useCallback(() => {
+    setWorkloadReconcilePollUntil(
+      Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
+    );
+    refreshWorkloadResourcesRef.current().catch(() => undefined);
+  }, []);
 
   const refreshDeployTasks = useCallback(async () => {
     if (
@@ -313,24 +368,23 @@ export function useProjectCanvasResourceSnapshot(options: {
           setDeployTasksError(undefined);
           if (event.type === "snapshot") {
             setDeployTasks(event.projections);
+            if (event.projections.length > 0) {
+              requestWorkloadReconciliation();
+            }
             return;
           }
           if (event.type === "upsert") {
             setDeployTasks((current) =>
               upsertDeploymentTaskProjection(current, event.projection)
             );
-            setWorkloadReconcilePollUntil(
-              Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
-            );
+            requestWorkloadReconciliation();
             return;
           }
           if (event.type === "remove") {
             setDeployTasks((current) =>
               current.filter((task) => task.id !== event.taskId)
             );
-            setWorkloadReconcilePollUntil(
-              Date.now() + WORKLOAD_RECONCILE_POLL_WINDOW_MS
-            );
+            requestWorkloadReconciliation();
           }
         },
         projectId: uid,
@@ -356,7 +410,13 @@ export function useProjectCanvasResourceSnapshot(options: {
         window.clearTimeout(reconnectTimer);
       }
     };
-  }, [isPageVisible, kubeconfig, namespace, uid]);
+  }, [
+    isPageVisible,
+    kubeconfig,
+    namespace,
+    requestWorkloadReconciliation,
+    uid,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -368,13 +428,8 @@ export function useProjectCanvasResourceSnapshot(options: {
   }, []);
 
   const revalidate = useCallback(() => {
-    return Promise.all([
-      mutateAps(),
-      mutateDbs(),
-      mutateTemplateNative(),
-      refreshDeployTasks(),
-    ]);
-  }, [mutateAps, mutateDbs, mutateTemplateNative, refreshDeployTasks]);
+    return Promise.all([refreshWorkloadResources(), refreshDeployTasks()]);
+  }, [refreshDeployTasks, refreshWorkloadResources]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(
@@ -406,7 +461,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   const isLoading =
     apsLoading || dbsLoading || templateNativeLoading || deployTasksLoading;
 
-  const snapshot = useMemo(
+  const baseSnapshot = useMemo(
     () =>
       buildProjectCanvasResourceSnapshot({
         apsData,
@@ -428,6 +483,76 @@ export function useProjectCanvasResourceSnapshot(options: {
       deployTasks,
       error,
       kubeconfig,
+      namespace,
+      templateNativeData,
+    ]
+  );
+  const missingResourceLayoutGraceReady =
+    canvasLayoutReady &&
+    canvasLayout !== undefined &&
+    apsData !== undefined &&
+    dbsData !== undefined &&
+    apsError == null &&
+    dbsError == null &&
+    !apsLoading &&
+    !dbsLoading;
+  const missingResourceLayoutGrace = missingResourceLayoutGraceReady
+    ? resolveMissingResourceLayoutGrace({
+        layout: canvasLayout,
+        nodes: baseSnapshot.canvasState.nodes,
+        nowMs: Date.now(),
+        previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
+      })
+    : emptyMissingResourceLayoutGraceResult();
+  useEffect(() => {
+    if (!missingResourceLayoutGraceReady) {
+      return;
+    }
+    missingLayoutSinceByOwnerKeyRef.current =
+      missingResourceLayoutGrace.nextMissingSinceByOwnerKey;
+    const nextDelay = nextMissingResourceGraceDelayMs(
+      missingResourceLayoutGrace.nextMissingSinceByOwnerKey,
+      missingResourceLayoutGrace.retainedLayoutOwnerKeys,
+      Date.now()
+    );
+    if (nextDelay === undefined) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setMissingLayoutGraceTick((tick) => tick + 1),
+      nextDelay + 25
+    );
+    return () => window.clearTimeout(timer);
+  }, [missingResourceLayoutGrace, missingResourceLayoutGraceReady]);
+  const missingLayoutCommands: PlacementCommand[] =
+    missingResourceLayoutGrace.deleteCommands;
+  const snapshot = useMemo(
+    () =>
+      buildProjectCanvasResourceSnapshot({
+        apsData,
+        canvasLayout,
+        canvasLayoutReady,
+        dbsData,
+        deployTasks,
+        error,
+        isEmptyGraphLoading: false,
+        kubeconfig,
+        layoutCommands: missingLayoutCommands,
+        namespace,
+        retainedLayoutOwnerKeys:
+          missingResourceLayoutGrace.retainedLayoutOwnerKeys,
+        templateNativeData,
+      }),
+    [
+      apsData,
+      canvasLayout,
+      canvasLayoutReady,
+      dbsData,
+      deployTasks,
+      error,
+      kubeconfig,
+      missingLayoutCommands,
+      missingResourceLayoutGrace.retainedLayoutOwnerKeys,
       namespace,
       templateNativeData,
     ]

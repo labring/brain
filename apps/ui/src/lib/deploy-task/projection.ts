@@ -1,5 +1,6 @@
 import type {
   DeploymentTaskCanvasProjection,
+  DeploymentTaskCanvasProjectionResultMapping,
   DeployTaskArtifactSummary,
   DeployTaskPhase,
   DeployTaskStatus,
@@ -17,6 +18,8 @@ export const ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUSES = [
 export const PROJECTABLE_DEPLOYMENT_TASK_STATUSES = [
   ...ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUSES,
   "completed",
+  "failed",
+  "cancelled",
 ] as const satisfies readonly DeployTaskStatus[];
 
 export type DeploymentTaskProjectionStatus =
@@ -37,6 +40,7 @@ export interface DeploymentTaskProjection {
   namespace: string;
   phase: DeployTaskPhase;
   projectId: string;
+  resultMappings?: DeploymentTaskCanvasProjectionResultMapping[];
   status: DeploymentTaskProjectionStatus;
   updatedAt: string;
 }
@@ -91,8 +95,25 @@ function dateMs(value: Date | string | null): number | undefined {
   return Number.isFinite(ms) ? ms : undefined;
 }
 
-function taskHasResultResources(task: DeploymentTaskProjectionSource): boolean {
+function taskHasResultResources(
+  task: Pick<DeploymentTaskProjectionSource, "artifactSummary">
+): boolean {
   return (task.artifactSummary.resources?.length ?? 0) > 0;
+}
+
+function taskHasProjectionFacts(
+  task: Pick<
+    DeploymentTaskProjectionSource,
+    "artifactSummary" | "canvasProjection"
+  >
+): boolean {
+  return (
+    taskHasResultResources(task) ||
+    (task.artifactSummary.resourceYamls?.length ?? 0) > 0 ||
+    (task.canvasProjection.slots?.length ?? 0) > 0 ||
+    (task.canvasProjection.edges?.length ?? 0) > 0 ||
+    (task.canvasProjection.resultMappings?.length ?? 0) > 0
+  );
 }
 
 export function isDeploymentTaskProjectionStatus(
@@ -114,14 +135,14 @@ export function deploymentTaskProjectionIsVisible(
   const completedMs = dateMs(projection.completedAt);
   return (
     completedMs !== undefined &&
-    (projection.artifactSummary.resources?.length ?? 0) > 0 &&
+    taskHasProjectionFacts(projection) &&
     now.getTime() - completedMs <= DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS
   );
 }
 
 export function toDeploymentTaskProjection(
   task: DeploymentTaskProjectionSource,
-  now = new Date()
+  _now = new Date()
 ): DeploymentTaskProjection | null {
   const projectId = task.projectId?.trim();
   if (!projectId) {
@@ -140,15 +161,18 @@ export function toDeploymentTaskProjection(
     namespace: task.namespace,
     phase: task.phase,
     projectId,
+    ...((task.canvasProjection.resultMappings?.length ?? 0) === 0
+      ? {}
+      : { resultMappings: task.canvasProjection.resultMappings }),
     status: task.status,
     updatedAt: dateIso(task.updatedAt) ?? new Date(0).toISOString(),
   };
 
-  if (task.status === "completed" && !taskHasResultResources(task)) {
+  if (task.status === "completed" && !taskHasProjectionFacts(task)) {
     return null;
   }
 
-  return deploymentTaskProjectionIsVisible(projection, now) ? projection : null;
+  return projection;
 }
 
 export function upsertDeploymentTaskProjection(

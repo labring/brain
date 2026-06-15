@@ -1,23 +1,26 @@
-import { canvasResourceKey } from "../nodes/resource-identity";
+import {
+  canvasLayoutNodeKey,
+  canvasLayoutNodeResourceRef,
+} from "./placement-owner";
 import type { CanvasLayoutNode } from "./types";
-
-export function canvasLayoutNodeKey(node: CanvasLayoutNode): string {
-  return canvasResourceKey(node.ref);
-}
 
 export function canvasLayoutNodesEqual(
   a: CanvasLayoutNode,
   b: CanvasLayoutNode
 ): boolean {
+  const aRef = canvasLayoutNodeResourceRef(a);
+  const bRef = canvasLayoutNodeResourceRef(b);
   return (
     a.expanded === b.expanded &&
     a.lastSeenUid === b.lastSeenUid &&
+    canvasLayoutNodeKey(a) === canvasLayoutNodeKey(b) &&
     a.orphanedAt === b.orphanedAt &&
     a.position.x === b.position.x &&
     a.position.y === b.position.y &&
-    a.ref.kind === b.ref.kind &&
-    a.ref.name === b.ref.name &&
-    a.ref.namespace === b.ref.namespace &&
+    aRef?.kind === bRef?.kind &&
+    aRef?.name === bRef?.name &&
+    aRef?.namespace === bRef?.namespace &&
+    a.source === b.source &&
     a.stackOrder === b.stackOrder
   );
 }
@@ -59,9 +62,11 @@ function canvasLayoutNodeSignatureWithOptions(
   return JSON.stringify({
     expanded: node.expanded ?? null,
     lastSeenUid: node.lastSeenUid ?? null,
+    owner: canvasLayoutNodeKey(node),
     orphanedAt: canvasLayoutNodeOrphanedAtSignature(node, options),
     position: node.position,
-    ref: node.ref,
+    ref: canvasLayoutNodeResourceRef(node) ?? null,
+    source: node.source ?? null,
     stackOrder: node.stackOrder ?? null,
   });
 }

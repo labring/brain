@@ -19,7 +19,10 @@ import {
 } from "./node-stack-order";
 import { placeCanvasNodesWithLayout } from "./placement";
 import {
-  CANVAS_STACK_ORDER_RETURN_STABILITY_MS,
+  canvasLayoutNodeResourceRef,
+  canvasPlacementOwnerFromNode,
+} from "./placement-owner";
+import {
   canvasStackOrderValue,
   nextExplicitCanvasStackOrder,
 } from "./stack-order";
@@ -27,6 +30,7 @@ import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
   CanvasLayoutPosition,
+  CanvasPlacementSource,
 } from "./types";
 
 export interface CanvasLayoutMergeResult {
@@ -43,6 +47,7 @@ export interface CanvasLayoutMergeOptions {
   layout: CanvasLayoutDocument | undefined;
   nodes: Node[];
   now?: Date;
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -113,12 +118,20 @@ function withCanvasLayoutPosition(
 }
 
 export function canvasLayoutNodeFromNode(
-  node: Node
+  node: Node,
+  options?: { source?: CanvasPlacementSource }
 ): CanvasLayoutNode | undefined {
-  const ref = canvasResourceIdentityFromNode(node);
+  const owner = canvasPlacementOwnerFromNode(node);
   const position = finitePosition(node.position);
-  if (ref === undefined || position === undefined) {
+  if (owner === undefined || position === undefined) {
     return undefined;
+  }
+  if (owner.kind === "deploymentProjection") {
+    return {
+      owner,
+      position,
+      ...(options?.source === undefined ? {} : { source: options.source }),
+    };
   }
   const expanded = canvasLayoutExpandedFromNode(node) ?? false;
   const lastSeenUid = canvasResourceLastSeenUidFromNode(node);
@@ -126,21 +139,11 @@ export function canvasLayoutNodeFromNode(
   return {
     expanded,
     ...(lastSeenUid === undefined ? {} : { lastSeenUid }),
+    owner,
     position,
-    ref,
+    ...(options?.source === undefined ? {} : { source: options.source }),
     ...(stackOrder === undefined ? {} : { stackOrder }),
   };
-}
-
-function isMeaningfulOrphanReturn(saved: CanvasLayoutNode, now: Date): boolean {
-  if (saved.orphanedAt === undefined) {
-    return false;
-  }
-  const orphanedAtMs = Date.parse(saved.orphanedAt);
-  return (
-    Number.isFinite(orphanedAtMs) &&
-    now.getTime() - orphanedAtMs > CANVAS_STACK_ORDER_RETURN_STABILITY_MS
-  );
 }
 
 function hasDifferentDetectedUid(
@@ -159,13 +162,9 @@ function hasDifferentDetectedUid(
 
 function shouldBringRestoredLayoutNodeToFront(
   saved: CanvasLayoutNode,
-  detected: Node,
-  now: Date
+  detected: Node
 ): boolean {
-  return (
-    isMeaningfulOrphanReturn(saved, now) ||
-    hasDifferentDetectedUid(saved, detected)
-  );
+  return hasDifferentDetectedUid(saved, detected);
 }
 
 function layoutDocumentsEqual(
@@ -194,9 +193,13 @@ function restoredLayoutNodeFromDetectedNode(
 ): CanvasLayoutNode {
   const lastSeenUid =
     canvasResourceLastSeenUidFromNode(detected) ?? saved.lastSeenUid;
+  const ref = canvasLayoutNodeResourceRef(saved);
+  if (ref === undefined) {
+    return cloneCanvasLayoutNode(saved);
+  }
   const restored: CanvasLayoutNode = {
+    owner: { kind: "resource", ref: { ...ref } },
     position: { x: saved.position.x, y: saved.position.y },
-    ref: { ...saved.ref },
   };
   if (saved.expanded !== undefined) {
     restored.expanded = saved.expanded;
@@ -210,17 +213,6 @@ function restoredLayoutNodeFromDetectedNode(
   return restored;
 }
 
-function orphanedLayoutNode(
-  node: CanvasLayoutNode,
-  orphanedAt: string
-): CanvasLayoutNode {
-  const orphan = cloneCanvasLayoutNode(node);
-  if (orphan.orphanedAt === undefined) {
-    orphan.orphanedAt = orphanedAt;
-  }
-  return orphan;
-}
-
 export function mergeCanvasLayoutWithDetectedNodes({
   connections,
   initialPositionByNodeId,
@@ -228,6 +220,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
   layout,
   nodes,
   now = new Date(),
+  retainedLayoutOwnerKeys,
 }: CanvasLayoutMergeOptions): CanvasLayoutMergeResult {
   if (layout === undefined) {
     const placed = placeCanvasNodesWithLayout({
@@ -236,6 +229,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
       initialPositionByRef,
       layout,
       nodes,
+      retainedLayoutOwnerKeys,
     });
     return {
       changed: false,
@@ -245,12 +239,14 @@ export function mergeCanvasLayoutWithDetectedNodes({
     };
   }
 
-  const nowIso = now.toISOString();
   const cleanedLayout = cleanupCanvasLayoutDocument(layout, { now });
   let nextFreshStackOrder = nextExplicitCanvasStackOrder(cleanedLayout.nodes);
   const layoutByRef = new Map<string, CanvasLayoutNode>();
   for (const item of cleanedLayout.nodes) {
-    layoutByRef.set(canvasResourceKey(item.ref), item);
+    const ref = canvasLayoutNodeResourceRef(item);
+    if (ref !== undefined) {
+      layoutByRef.set(canvasResourceKey(ref), item);
+    }
   }
 
   const nextLayoutByRef = new Map<string, CanvasLayoutNode>();
@@ -267,7 +263,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
     }
 
     const restored = restoredLayoutNodeFromDetectedNode(saved, node);
-    if (shouldBringRestoredLayoutNodeToFront(saved, node, now)) {
+    if (shouldBringRestoredLayoutNodeToFront(saved, node)) {
       restored.stackOrder = nextFreshStackOrder;
       nextFreshStackOrder += 1;
     }
@@ -284,12 +280,16 @@ export function mergeCanvasLayoutWithDetectedNodes({
 
   const nextLayout = cloneCanvasLayoutDocument(cleanedLayout);
   nextLayout.nodes = cleanedLayout.nodes.map((item) => {
-    const key = canvasResourceKey(item.ref);
+    const ref = canvasLayoutNodeResourceRef(item);
+    if (ref === undefined) {
+      return item;
+    }
+    const key = canvasResourceKey(ref);
     const live = nextLayoutByRef.get(key);
     if (live !== undefined) {
       return live;
     }
-    return orphanedLayoutNode(item, nowIso);
+    return cloneCanvasLayoutNode(item);
   });
 
   const placed = placeCanvasNodesWithLayout({
@@ -298,6 +298,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
     initialPositionByRef,
     layout: cleanedLayout,
     nodes: renderedNodes,
+    retainedLayoutOwnerKeys,
   });
   return {
     changed: !layoutDocumentsEqual(layout, nextLayout),

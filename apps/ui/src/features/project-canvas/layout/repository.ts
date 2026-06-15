@@ -11,11 +11,19 @@ import {
 import { cleanupCanvasLayoutDocument } from "./cleanup";
 import { parseCanvasLayoutDocument } from "./contract";
 import { applyCanvasLayoutPatch, CanvasLayoutValidationError } from "./patch";
+import { canvasPlacementOwnerFromLayoutNode } from "./placement-owner";
 import type { CanvasLayoutDocument, CanvasLayoutPatch } from "./types";
 
 export interface ProjectCanvasLayoutKey {
   namespace: string;
   projectId: string;
+}
+
+export class CanvasLayoutRevisionConflictError extends Error {
+  constructor() {
+    super("Canvas layout revision conflict.");
+    this.name = "CanvasLayoutRevisionConflictError";
+  }
 }
 
 function emptyLayoutDocument(
@@ -47,6 +55,13 @@ function rowToDocument(
   );
 }
 
+function rowNodesNeedOwnerMigration(
+  row: ProjectCanvasLayoutRow,
+  document: CanvasLayoutDocument
+): boolean {
+  return JSON.stringify(row.nodes) !== JSON.stringify(document.nodes);
+}
+
 function whereLayoutKey(key: ProjectCanvasLayoutKey) {
   return and(
     eq(projectCanvasLayouts.namespace, key.namespace),
@@ -58,7 +73,12 @@ function normalizeNodeForProject(
   key: ProjectCanvasLayoutKey,
   node: CanvasLayoutPatch["nodes"][number]
 ) {
-  const namespace = node.ref.namespace.trim();
+  const owner = canvasPlacementOwnerFromLayoutNode(node);
+  if (owner.kind === "deploymentProjection") {
+    return node;
+  }
+
+  const namespace = owner.ref.namespace.trim();
   if (namespace !== key.namespace) {
     throw new CanvasLayoutValidationError(
       "node namespace must match layout namespace."
@@ -67,9 +87,12 @@ function normalizeNodeForProject(
 
   return {
     ...node,
-    ref: {
-      ...node.ref,
-      namespace,
+    owner: {
+      kind: "resource" as const,
+      ref: {
+        ...owner.ref,
+        namespace,
+      },
     },
   };
 }
@@ -93,9 +116,17 @@ export async function loadProjectCanvasLayout(
     .from(projectCanvasLayouts)
     .where(whereLayoutKey(key))
     .limit(1);
-  return row === undefined
-    ? emptyLayoutDocument(key)
-    : rowToDocument(row, { now });
+  if (row === undefined) {
+    return emptyLayoutDocument(key);
+  }
+  const document = rowToDocument(row, { now });
+  if (rowNodesNeedOwnerMigration(row, document)) {
+    await getProjectDb()
+      .update(projectCanvasLayouts)
+      .set({ nodes: document.nodes })
+      .where(whereLayoutKey(key));
+  }
+  return document;
 }
 
 export function patchProjectCanvasLayout(
@@ -133,6 +164,12 @@ export function patchProjectCanvasLayout(
       row === undefined
         ? emptyLayoutDocument(key)
         : rowToDocument(row, { now });
+    if (
+      patch.expectedVersion !== undefined &&
+      patch.expectedVersion !== existing.version
+    ) {
+      throw new CanvasLayoutRevisionConflictError();
+    }
     const next = applyCanvasLayoutPatch(
       existing,
       normalizePatchForProject(key, patch),

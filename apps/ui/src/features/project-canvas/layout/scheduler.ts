@@ -1,7 +1,5 @@
-import {
-  canvasLayoutNodeKey,
-  canvasLayoutNodesEqual,
-} from "./layout-node-equality";
+import { canvasLayoutNodesEqual } from "./layout-node-equality";
+import { canvasLayoutNodeKey } from "./placement-owner";
 import type { CanvasLayoutNode } from "./types";
 
 interface TimerApi {

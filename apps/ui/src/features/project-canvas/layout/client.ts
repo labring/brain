@@ -3,7 +3,11 @@ import {
   type CanvasLayoutPatchRequest,
   parseCanvasLayoutDocument,
 } from "./contract";
-import type { CanvasLayoutDocument, CanvasLayoutNode } from "./types";
+import type {
+  CanvasLayoutDocument,
+  CanvasLayoutNode,
+  PlacementCommand,
+} from "./types";
 
 export const PROJECT_CANVAS_LAYOUT_API_PATH = "/api/project-canvas/layout";
 
@@ -46,6 +50,8 @@ export async function fetchProjectCanvasLayout(input: {
 }
 
 export async function patchProjectCanvasLayoutNodes(input: {
+  commands?: PlacementCommand[];
+  expectedVersion?: number;
   intent?: CanvasLayoutPatchRequest["intent"];
   kubeconfig: string;
   namespace: string;
@@ -53,6 +59,10 @@ export async function patchProjectCanvasLayoutNodes(input: {
   projectId: string;
 }): Promise<CanvasLayoutDocument> {
   const body: CanvasLayoutPatchRequest = {
+    ...(input.commands === undefined ? {} : { commands: input.commands }),
+    ...(input.expectedVersion === undefined
+      ? {}
+      : { expectedVersion: input.expectedVersion }),
     ...(input.intent === undefined ? {} : { intent: input.intent }),
     namespace: input.namespace,
     nodes: input.nodes,
