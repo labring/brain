@@ -1334,6 +1334,7 @@ export function useApSettingsSections({
       setSettingsBackingState((current) =>
         commitSettingsDraftBackingState(current, commitDraft)
       );
+      applySettingsDraftToLocalState(commitDraft);
       const committedRawSource = canonicalApEnvRawSource({
         env: commitDraft.env,
         envRawSource: commitDraft.envRawSource,
@@ -1357,6 +1358,7 @@ export function useApSettingsSections({
     }
   }, [
     canSaveSettings,
+    applySettingsDraftToLocalState,
     dbDsnReferenceSources,
     envDraft,
     envRawSourceDraft,
