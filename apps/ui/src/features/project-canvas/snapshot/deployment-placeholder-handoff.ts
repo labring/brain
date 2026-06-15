@@ -1,5 +1,6 @@
 import type { Node } from "@xyflow/react";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutPosition,
@@ -9,40 +10,46 @@ import {
   canvasResourceKey,
 } from "../nodes/resource-identity";
 import {
+  createDeploymentProjectionContext,
+  type DeploymentProjectionContext,
+  deploymentProjectionPlacementFromContext,
+  layoutHasRefInDeploymentProjectionContext,
+  resultRefHasLiveNodeInDeploymentProjectionContext,
+} from "./deployment-projection-context";
+import {
   type DeploymentResultPreview,
   type DeploymentTaskResultPreview,
   type DeploymentTaskResultResourceRef,
-  deploymentResultPreviewsFromTasks,
-  layoutHasRef,
   materializedSlotPositions,
-  nodesByRef,
-  nodesByTemplateKey,
   resultRefForSlot,
-  resultRefHasLiveNode,
-  slotProjectionPlacement,
   templateNodeKeyFromNode,
-  unknownSlotProjectionPlacement,
 } from "./deployment-projection-model";
 
 export function deploymentPlaceholderHandoffs(input: {
   layout?: CanvasLayoutDocument;
-  nodes: readonly Node[];
+  nodes?: readonly Node[];
   previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
+  context?: DeploymentProjectionContext;
 }): {
   byNodeId: Map<string, CanvasLayoutPosition>;
   byRef: Map<string, CanvasLayoutPosition>;
 } {
   const byNodeId = new Map<string, CanvasLayoutPosition>();
   const byRef = new Map<string, CanvasLayoutPosition>();
-  const previews =
-    input.previews ?? deploymentResultPreviewsFromTasks(input.tasks);
-  for (const { preview, task } of previews) {
+  const context =
+    input.context ??
+    createDeploymentProjectionContext({
+      layout: input.layout,
+      nodes: input.nodes,
+      previews: input.previews,
+      tasks: input.tasks,
+    });
+  for (const { preview, task } of context.previews) {
     addPreviewHandoffs({
       byNodeId,
       byRef,
-      layout: input.layout,
-      nodes: input.nodes,
+      context,
       preview,
       task,
     });
@@ -53,13 +60,12 @@ export function deploymentPlaceholderHandoffs(input: {
 function addResultRefHandoff(input: {
   byNodeId: Map<string, CanvasLayoutPosition>;
   byRef: Map<string, CanvasLayoutPosition>;
-  layout?: CanvasLayoutDocument;
-  nodes: readonly Node[];
+  context: DeploymentProjectionContext;
   position: CanvasLayoutPosition;
   ref: DeploymentTaskResultResourceRef;
 }): void {
   if (input.ref.kind === "TemplateNative") {
-    const node = nodesByTemplateKey(input.nodes).get(
+    const node = input.context.liveTemplateNodeByKey.get(
       `${input.ref.namespace}/${input.ref.name}`
     );
     if (node !== undefined) {
@@ -67,10 +73,12 @@ function addResultRefHandoff(input: {
     }
     return;
   }
-  if (layoutHasRef(input.layout, input.ref)) {
+  if (layoutHasRefInDeploymentProjectionContext(input.context, input.ref)) {
     return;
   }
-  if (nodesByRef(input.nodes).has(canvasResourceKey(input.ref))) {
+  if (
+    resultRefHasLiveNodeInDeploymentProjectionContext(input.context, input.ref)
+  ) {
     input.byRef.set(canvasResourceKey(input.ref), input.position);
   }
 }
@@ -78,26 +86,30 @@ function addResultRefHandoff(input: {
 function addPreviewHandoffs(input: {
   byNodeId: Map<string, CanvasLayoutPosition>;
   byRef: Map<string, CanvasLayoutPosition>;
-  layout?: CanvasLayoutDocument;
-  nodes: readonly Node[];
+  context: DeploymentProjectionContext;
   preview: DeploymentResultPreview;
   task: DeploymentTaskProjection;
 }): void {
   const materialized = materializedSlotPositions({
-    layout: input.layout,
+    layout: input.context.layout,
     slots: input.preview.slots,
     task: input.task,
   });
-  const unknownSlotPlacement = unknownSlotProjectionPlacement({
-    layout: input.layout,
-    task: input.task,
-  });
+  const unknownSlotPlacement = deploymentProjectionPlacementFromContext(
+    input.context,
+    {
+      slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+      taskId: input.task.id,
+    }
+  );
   for (const slot of input.preview.slots) {
-    const slotPlacement = slotProjectionPlacement({
-      layout: input.layout,
-      slot,
-      task: input.task,
-    });
+    const slotPlacement = deploymentProjectionPlacementFromContext(
+      input.context,
+      {
+        slotId: slot.id,
+        taskId: input.task.id,
+      }
+    );
     const position =
       slotPlacement?.position ??
       (unknownSlotPlacement === undefined
@@ -110,8 +122,7 @@ function addPreviewHandoffs(input: {
     addResultRefHandoff({
       byNodeId: input.byNodeId,
       byRef: input.byRef,
-      layout: input.layout,
-      nodes: input.nodes,
+      context: input.context,
       position,
       ref: expectedRef,
     });
@@ -123,18 +134,24 @@ export function deploymentPlaceholderPendingResultKeys(input: {
   nodes?: readonly Node[];
   previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
+  context?: DeploymentProjectionContext;
 }): {
   refs: Set<string>;
   templates: Set<string>;
 } {
   const refs = new Set<string>();
   const templates = new Set<string>();
-  const previews =
-    input.previews ?? deploymentResultPreviewsFromTasks(input.tasks);
-  for (const { preview, task } of previews) {
-    addPreviewPendingResultKeys({
+  const context =
+    input.context ??
+    createDeploymentProjectionContext({
       layout: input.layout,
       nodes: input.nodes,
+      previews: input.previews,
+      tasks: input.tasks,
+    });
+  for (const { preview, task } of context.previews) {
+    addPreviewPendingResultKeys({
+      context,
       preview,
       refs,
       task,
@@ -145,27 +162,27 @@ export function deploymentPlaceholderPendingResultKeys(input: {
 }
 
 function addPendingResultKey(input: {
-  layout?: CanvasLayoutDocument;
-  nodes?: readonly Node[];
+  context: DeploymentProjectionContext;
   ref: DeploymentTaskResultResourceRef;
   refs: Set<string>;
   templates: Set<string>;
 }): void {
-  if (resultRefHasLiveNode(input.ref, input.nodes ?? [])) {
+  if (
+    resultRefHasLiveNodeInDeploymentProjectionContext(input.context, input.ref)
+  ) {
     return;
   }
   if (input.ref.kind === "TemplateNative") {
     input.templates.add(`${input.ref.namespace}/${input.ref.name}`);
     return;
   }
-  if (!layoutHasRef(input.layout, input.ref)) {
+  if (!layoutHasRefInDeploymentProjectionContext(input.context, input.ref)) {
     input.refs.add(canvasResourceKey(input.ref));
   }
 }
 
 function addPreviewPendingResultKeys(input: {
-  layout?: CanvasLayoutDocument;
-  nodes?: readonly Node[];
+  context: DeploymentProjectionContext;
   preview: DeploymentResultPreview;
   refs: Set<string>;
   task: DeploymentTaskProjection;
@@ -175,17 +192,15 @@ function addPreviewPendingResultKeys(input: {
     const expectedRef = resultRefForSlot({ slot, task: input.task });
     if (
       expectedRef === undefined ||
-      slotProjectionPlacement({
-        layout: input.layout,
-        slot,
-        task: input.task,
+      deploymentProjectionPlacementFromContext(input.context, {
+        slotId: slot.id,
+        taskId: input.task.id,
       }) !== undefined
     ) {
       continue;
     }
     addPendingResultKey({
-      layout: input.layout,
-      nodes: input.nodes,
+      context: input.context,
       ref: expectedRef,
       refs: input.refs,
       templates: input.templates,

@@ -305,7 +305,7 @@ test("resource snapshot hands deployment slot placement to AP result", () => {
   });
 });
 
-test("resource snapshot materializes unknown deployment slot placement before AP handoff", () => {
+test("resource snapshot hands unknown deployment slot directly to AP result", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
       items: [
@@ -378,10 +378,125 @@ test("resource snapshot materializes unknown deployment slot placement before AP
         },
         kind: "rekey",
         toOwner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
+        },
+      },
+    ],
+    expectedVersion: 1,
+    kind: "placement-commands",
+  });
+});
+
+test("resource snapshot refines unknown placement to live anchor and unresolved slots atomically", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default" },
+          spec: { input: {} },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        deploymentProjectionLayoutNode({
+          position: { x: 680, y: 280 },
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+        }),
+      ],
+      projectId: "project-uid",
+      version: 1,
+    },
+    deployTasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          edges: [
+            {
+              evidence: "ap-env-raw-source-reference",
+              sourceSlotId: "AP:default:api",
+              targetSlotId: "DB:default:postgres",
+            },
+          ],
+          slots: [
+            {
+              anchor: true,
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "AP:default:api",
+            },
+            {
+              expectedRef: {
+                kind: "DB",
+                name: "postgres",
+                namespace: "default",
+              },
+              id: "DB:default:postgres",
+            },
+          ],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    snapshot.canvasState.nodes.map((node) => ({
+      id: node.id,
+      position: node.position,
+      type: node.type,
+    })),
+    [
+      {
+        id: "ap-api",
+        position: { x: 680, y: 280 },
+        type: CANVAS_CONTAINER_NODE_TYPE,
+      },
+      {
+        id: "deployment-result-placeholder-task-1-DB:default:postgres",
+        position: { x: 1020, y: 280 },
+        type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+      },
+    ]
+  );
+  assert.deepEqual(snapshot.layoutIntent, {
+    commands: [
+      {
+        fromOwner: {
           kind: "deploymentProjection",
-          slotId: "AP:default:api",
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
           taskId: "task-1",
         },
+        kind: "rekey",
+        toOwner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
+        },
+      },
+      {
+        kind: "create",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: "DB:default:postgres",
+          taskId: "task-1",
+        },
+        position: { x: 1020, y: 280 },
+        source: "generated",
       },
     ],
     expectedVersion: 1,

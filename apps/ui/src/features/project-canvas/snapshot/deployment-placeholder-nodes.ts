@@ -9,20 +9,21 @@ import type {
   CanvasDeploymentPlaceholderRfNode,
 } from "../nodes/types";
 import {
+  createDeploymentProjectionContext,
+  type DeploymentProjectionContext,
+  deploymentProjectionPlacementFromContext,
+  resultRefHasLiveNodeInDeploymentProjectionContext,
+  resultRefHasSavedLayoutInDeploymentProjectionContext,
+} from "./deployment-projection-context";
+import {
   anchorSlot,
   type DeploymentResultPreview,
   type DeploymentTaskResultPreview,
-  deploymentResultPreviewByTaskId,
-  deploymentResultPreviewsFromTasks,
   expectedRefToResultRef,
   materializedSlotPositions,
   resultRefForSlot,
-  resultRefHasLiveNode,
-  resultRefHasSavedLayout,
   sanitizeNodeIdPart,
   shouldShowDeploymentPlaceholder,
-  slotProjectionPlacement,
-  unknownSlotProjectionPlacement,
 } from "./deployment-projection-model";
 
 function projectionSlotNodeId(taskId: string, slotId: string): string {
@@ -58,9 +59,12 @@ export function deploymentPlaceholderTaskIdFromNode(
 function unknownSlotPlaceholderNode(
   task: DeploymentTaskProjection,
   index: number,
-  layout?: CanvasLayoutDocument
+  context: DeploymentProjectionContext
 ): CanvasDeploymentPlaceholderRfNode {
-  const placement = unknownSlotProjectionPlacement({ layout, task });
+  const placement = deploymentProjectionPlacementFromContext(context, {
+    slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+    taskId: task.id,
+  });
   return {
     data: {
       groupId: task.id,
@@ -81,32 +85,39 @@ function unknownSlotPlaceholderNode(
 }
 
 function resultPreviewPlaceholderNodes(input: {
-  layout?: CanvasLayoutDocument;
-  nodes?: readonly Node[];
+  context: DeploymentProjectionContext;
   task: DeploymentTaskProjection;
   preview: DeploymentResultPreview;
 }): CanvasDeploymentPlaceholderRfNode[] {
   const { positions, relative, saved } = materializedSlotPositions({
-    layout: input.layout,
+    layout: input.context.layout,
     slots: input.preview.slots,
     task: input.task,
   });
   const anchor = anchorSlot(input.preview.slots);
-  const unknownSlotPlacement = unknownSlotProjectionPlacement({
-    layout: input.layout,
-    task: input.task,
-  });
+  const unknownSlotPlacement = deploymentProjectionPlacementFromContext(
+    input.context,
+    {
+      slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+      taskId: input.task.id,
+    }
+  );
   return input.preview.slots.flatMap((slot) => {
-    const placement = slotProjectionPlacement({
-      layout: input.layout,
-      slot,
-      task: input.task,
+    const placement = deploymentProjectionPlacementFromContext(input.context, {
+      slotId: slot.id,
+      taskId: input.task.id,
     });
     const expectedResultRef = resultRefForSlot({ slot, task: input.task });
     if (
       expectedResultRef !== undefined &&
-      (resultRefHasSavedLayout(expectedResultRef, input.layout) ||
-        resultRefHasLiveNode(expectedResultRef, input.nodes ?? []))
+      (resultRefHasSavedLayoutInDeploymentProjectionContext(
+        input.context,
+        expectedResultRef
+      ) ||
+        resultRefHasLiveNodeInDeploymentProjectionContext(
+          input.context,
+          expectedResultRef
+        ))
     ) {
       return [];
     }
@@ -127,11 +138,13 @@ function resultPreviewPlaceholderNodes(input: {
         : { projectionPlacementSource }),
       projectionRelativePlacement: relative.get(slot.id) ?? { x: 0, y: 0 },
       projectionSlots: input.preview.slots.map((item) => {
-        const itemPlacement = slotProjectionPlacement({
-          layout: input.layout,
-          slot: item,
-          task: input.task,
-        });
+        const itemPlacement = deploymentProjectionPlacementFromContext(
+          input.context,
+          {
+            slotId: item.id,
+            taskId: input.task.id,
+          }
+        );
         return {
           ...(item.expectedRef === undefined
             ? {}
@@ -172,43 +185,61 @@ export function deploymentPlaceholderNodesFromTasks(
     nodes?: readonly Node[];
     now?: Date;
     previews?: readonly DeploymentTaskResultPreview[];
+    context?: DeploymentProjectionContext;
   }
 ): CanvasDeploymentPlaceholderRfNode[] {
   if (tasks == null) {
     return [];
   }
-  const previewByTaskId = deploymentResultPreviewByTaskId(
-    options?.previews ?? deploymentResultPreviewsFromTasks(tasks)
-  );
+  const context =
+    options?.context ??
+    createDeploymentProjectionContext({
+      layout: options?.layout,
+      nodes: options?.nodes,
+      previews: options?.previews,
+      tasks,
+    });
   return tasks.flatMap((task, index) => {
     if (!shouldShowDeploymentPlaceholder(task, options?.now)) {
       return [];
     }
-    const preview = previewByTaskId.get(task.id);
+    const preview = context.previewByTaskId.get(task.id);
     if (preview !== undefined) {
       return resultPreviewPlaceholderNodes({
-        layout: options?.layout,
-        nodes: options?.nodes,
+        context,
         preview,
         task,
       });
     }
-    return [unknownSlotPlaceholderNode(task, index, options?.layout)];
+    return [unknownSlotPlaceholderNode(task, index, context)];
   });
 }
 
 export function shouldHideDeploymentPlaceholderForHandoff(input: {
+  context?: DeploymentProjectionContext;
   layout?: CanvasLayoutDocument;
   node: CanvasDeploymentPlaceholderRfNode;
-  nodes: readonly Node[];
+  nodes?: readonly Node[];
 }): boolean {
   if (hasProjectionSlotGroup(input.node.data)) {
+    const context =
+      input.context ??
+      createDeploymentProjectionContext({
+        layout: input.layout,
+        nodes: input.nodes,
+      });
     const expectedRef = expectedRefToResultRef(input.node.data.expectedRef);
     return (
       expectedRef !== undefined &&
-      (resultRefHasSavedLayout(expectedRef, input.layout) ||
+      (resultRefHasSavedLayoutInDeploymentProjectionContext(
+        context,
+        expectedRef
+      ) ||
         (input.node.data.hasProjectionPlacement === true &&
-          resultRefHasLiveNode(expectedRef, input.nodes)))
+          resultRefHasLiveNodeInDeploymentProjectionContext(
+            context,
+            expectedRef
+          )))
     );
   }
 

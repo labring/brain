@@ -12,6 +12,7 @@ import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
   CanvasLayoutPosition,
+  CanvasPlacementOwner,
   CanvasPlacementSource,
   PlacementCommand,
 } from "../layout/types";
@@ -21,17 +22,18 @@ import {
   isDeploymentPlaceholderNode,
 } from "./deployment-placeholder-nodes";
 import {
+  createDeploymentProjectionContext,
+  type DeploymentProjectionContext,
+  resultRefHasLiveNodeInDeploymentProjectionContext,
+  resultRefHasSavedLayoutInDeploymentProjectionContext,
+} from "./deployment-projection-context";
+import {
   anchorSlot,
   type DeploymentResultPreview,
   type DeploymentTaskResultPreview,
-  deploymentResultPreviewByTaskId,
-  deploymentResultPreviewsFromTasks,
-  layoutNodeByOwner,
   layoutRefForSlot,
   materializedSlotPositions,
-  resourceOwnerKey,
   resultRefForSlot,
-  resultRefHasLiveNode,
   shouldShowDeploymentPlaceholder,
 } from "./deployment-projection-model";
 
@@ -132,13 +134,6 @@ export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
   });
 }
 
-function hasLayoutOwner(
-  layout: CanvasLayoutDocument | undefined,
-  ownerKey: string
-): boolean {
-  return layoutNodeByOwner(layout).has(ownerKey);
-}
-
 function projectionSlotPlacementOwner(slot: {
   id: string;
   taskId: string;
@@ -149,20 +144,108 @@ function projectionSlotPlacementOwner(slot: {
   });
 }
 
-function addCommandOnce(
-  commands: PlacementCommand[],
-  seen: Set<string>,
-  command: PlacementCommand
-): void {
-  const key =
-    command.kind === "rekey"
-      ? `${command.kind}:${canvasPlacementOwnerKey(command.fromOwner)}:${canvasPlacementOwnerKey(command.toOwner)}`
-      : `${command.kind}:${canvasPlacementOwnerKey(command.owner)}`;
-  if (seen.has(key)) {
-    return;
+class PlacementCommandDraft {
+  private readonly commands: PlacementCommand[] = [];
+  private readonly nodesByOwner: Map<string, CanvasLayoutNode>;
+  private readonly seen = new Set<string>();
+
+  constructor(context: DeploymentProjectionContext) {
+    this.nodesByOwner = new Map(context.layoutByOwner);
   }
-  seen.add(key);
-  commands.push(command);
+
+  hasOwner(owner: CanvasPlacementOwner): boolean {
+    return this.nodesByOwner.has(canvasPlacementOwnerKey(owner));
+  }
+
+  create(input: {
+    owner: CanvasPlacementOwner;
+    position: CanvasLayoutPosition;
+    source: CanvasPlacementSource;
+  }): void {
+    const key = canvasPlacementOwnerKey(input.owner);
+    if (this.nodesByOwner.has(key)) {
+      return;
+    }
+    if (
+      !this.addCommand({
+        kind: "create",
+        owner: input.owner,
+        position: input.position,
+        source: input.source,
+      })
+    ) {
+      return;
+    }
+    this.nodesByOwner.set(
+      key,
+      canvasLayoutNodeFromOwner({
+        owner: input.owner,
+        position: input.position,
+        source: input.source,
+      })
+    );
+  }
+
+  delete(owner: CanvasPlacementOwner): void {
+    const key = canvasPlacementOwnerKey(owner);
+    if (!this.nodesByOwner.has(key)) {
+      return;
+    }
+    if (!this.addCommand({ kind: "delete", owner })) {
+      return;
+    }
+    this.nodesByOwner.delete(key);
+  }
+
+  rekey(fromOwner: CanvasPlacementOwner, toOwner: CanvasPlacementOwner): void {
+    const fromKey = canvasPlacementOwnerKey(fromOwner);
+    const toKey = canvasPlacementOwnerKey(toOwner);
+    const fromNode = this.nodesByOwner.get(fromKey);
+    if (fromNode === undefined) {
+      return;
+    }
+    if (this.nodesByOwner.has(toKey)) {
+      this.delete(fromOwner);
+      return;
+    }
+    if (!this.addCommand({ fromOwner, kind: "rekey", toOwner })) {
+      return;
+    }
+    this.nodesByOwner.delete(fromKey);
+    this.nodesByOwner.set(toKey, {
+      ...canvasLayoutNodeFromOwner({
+        owner: toOwner,
+        position: fromNode.position,
+        source: fromNode.source,
+      }),
+      ...(fromNode.expanded === undefined
+        ? {}
+        : { expanded: fromNode.expanded }),
+      ...(fromNode.lastSeenUid === undefined
+        ? {}
+        : { lastSeenUid: fromNode.lastSeenUid }),
+      ...(fromNode.stackOrder === undefined
+        ? {}
+        : { stackOrder: fromNode.stackOrder }),
+    });
+  }
+
+  toCommands(): PlacementCommand[] {
+    return this.commands;
+  }
+
+  private addCommand(command: PlacementCommand): boolean {
+    const key =
+      command.kind === "rekey"
+        ? `${command.kind}:${canvasPlacementOwnerKey(command.fromOwner)}:${canvasPlacementOwnerKey(command.toOwner)}`
+        : `${command.kind}:${canvasPlacementOwnerKey(command.owner)}`;
+    if (this.seen.has(key)) {
+      return false;
+    }
+    this.seen.add(key);
+    this.commands.push(command);
+    return true;
+  }
 }
 
 function projectionSlotIsVisible(
@@ -172,11 +255,57 @@ function projectionSlotIsVisible(
   return shouldShowDeploymentPlaceholder(task, now);
 }
 
+function resourceOwnerForSlotResult(input: {
+  context: DeploymentProjectionContext;
+  slot: DeploymentTaskCanvasProjectionSlot;
+  task: DeploymentTaskProjection;
+}): ReturnType<typeof resourcePlacementOwner> | undefined {
+  const layoutRef = layoutRefForSlot({
+    slot: input.slot,
+    task: input.task,
+  });
+  const resultRef = resultRefForSlot({
+    slot: input.slot,
+    task: input.task,
+  });
+  if (layoutRef === undefined || resultRef === undefined) {
+    return undefined;
+  }
+  if (
+    !(
+      resultRefHasLiveNodeInDeploymentProjectionContext(
+        input.context,
+        resultRef
+      ) ||
+      resultRefHasSavedLayoutInDeploymentProjectionContext(
+        input.context,
+        resultRef
+      )
+    )
+  ) {
+    return undefined;
+  }
+  return resourcePlacementOwner(layoutRef);
+}
+
+function visiblePlacementOwnerForSlot(input: {
+  context: DeploymentProjectionContext;
+  slot: DeploymentTaskCanvasProjectionSlot;
+  task: DeploymentTaskProjection;
+}): CanvasPlacementOwner {
+  return (
+    resourceOwnerForSlotResult(input) ??
+    projectionSlotPlacementOwner({
+      id: input.slot.id,
+      taskId: input.task.id,
+    })
+  );
+}
+
 function addUnknownSlotRefinementCommands(input: {
-  commands: PlacementCommand[];
-  layout?: CanvasLayoutDocument;
+  context: DeploymentProjectionContext;
+  draft: PlacementCommandDraft;
   preview: DeploymentResultPreview;
-  seen: Set<string>;
   task: DeploymentTaskProjection;
 }): void {
   const anchor = anchorSlot(input.preview.slots);
@@ -187,21 +316,19 @@ function addUnknownSlotRefinementCommands(input: {
     slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
     taskId: input.task.id,
   });
-  const fromKey = canvasPlacementOwnerKey(fromOwner);
-  if (!hasLayoutOwner(input.layout, fromKey)) {
+  if (!input.draft.hasOwner(fromOwner)) {
     return;
   }
-  const toOwner = projectionSlotPlacementOwner({
-    id: anchor.id,
-    taskId: input.task.id,
-  });
-  addCommandOnce(input.commands, input.seen, {
+  input.draft.rekey(
     fromOwner,
-    kind: "rekey",
-    toOwner,
-  });
+    visiblePlacementOwnerForSlot({
+      context: input.context,
+      slot: anchor,
+      task: input.task,
+    })
+  );
   const materialized = materializedSlotPositions({
-    layout: input.layout,
+    layout: input.context.layout,
     slots: input.preview.slots,
     task: input.task,
   });
@@ -209,19 +336,19 @@ function addUnknownSlotRefinementCommands(input: {
     if (slot.id === anchor.id) {
       continue;
     }
-    const owner = projectionSlotPlacementOwner({
-      id: slot.id,
-      taskId: input.task.id,
+    const owner = visiblePlacementOwnerForSlot({
+      context: input.context,
+      slot,
+      task: input.task,
     });
-    if (hasLayoutOwner(input.layout, canvasPlacementOwnerKey(owner))) {
+    if (input.draft.hasOwner(owner)) {
       continue;
     }
     const position = materialized.positions.get(slot.id);
     if (position === undefined) {
       continue;
     }
-    addCommandOnce(input.commands, input.seen, {
-      kind: "create",
+    input.draft.create({
       owner,
       position,
       source: "generated",
@@ -230,10 +357,8 @@ function addUnknownSlotRefinementCommands(input: {
 }
 
 function addSlotHandoffOrExpiryCommand(input: {
-  commands: PlacementCommand[];
-  layout?: CanvasLayoutDocument;
-  nodes: readonly Node[];
-  seen: Set<string>;
+  context: DeploymentProjectionContext;
+  draft: PlacementCommandDraft;
   slot: DeploymentTaskCanvasProjectionSlot;
   task: DeploymentTaskProjection;
   now: Date;
@@ -242,52 +367,27 @@ function addSlotHandoffOrExpiryCommand(input: {
     id: input.slot.id,
     taskId: input.task.id,
   });
-  const slotOwnerKey = canvasPlacementOwnerKey(slotOwner);
-  if (!hasLayoutOwner(input.layout, slotOwnerKey)) {
+  if (!input.draft.hasOwner(slotOwner)) {
     return;
   }
 
-  const expectedRef = layoutRefForSlot({
+  const resourceOwner = resourceOwnerForSlotResult({
+    context: input.context,
     slot: input.slot,
     task: input.task,
   });
-  const expectedResultRef = resultRefForSlot({
-    slot: input.slot,
-    task: input.task,
-  });
-  if (
-    expectedRef !== undefined &&
-    expectedResultRef !== undefined &&
-    resultRefHasLiveNode(expectedResultRef, input.nodes)
-  ) {
-    const resourceOwner = resourcePlacementOwner(expectedRef);
-    if (hasLayoutOwner(input.layout, resourceOwnerKey(expectedRef))) {
-      addCommandOnce(input.commands, input.seen, {
-        kind: "delete",
-        owner: slotOwner,
-      });
-      return;
-    }
-    addCommandOnce(input.commands, input.seen, {
-      fromOwner: slotOwner,
-      kind: "rekey",
-      toOwner: resourceOwner,
-    });
+  if (resourceOwner !== undefined) {
+    input.draft.rekey(slotOwner, resourceOwner);
     return;
   }
 
   if (!projectionSlotIsVisible(input.task, input.now)) {
-    addCommandOnce(input.commands, input.seen, {
-      kind: "delete",
-      owner: slotOwner,
-    });
+    input.draft.delete(slotOwner);
   }
 }
 
 function addUnknownSlotExpiryCommand(input: {
-  commands: PlacementCommand[];
-  layout?: CanvasLayoutDocument;
-  seen: Set<string>;
+  draft: PlacementCommandDraft;
   task: DeploymentTaskProjection;
   now: Date;
 }): void {
@@ -298,62 +398,55 @@ function addUnknownSlotExpiryCommand(input: {
     slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
     taskId: input.task.id,
   });
-  if (!hasLayoutOwner(input.layout, canvasPlacementOwnerKey(owner))) {
-    return;
-  }
-  addCommandOnce(input.commands, input.seen, {
-    kind: "delete",
-    owner,
-  });
+  input.draft.delete(owner);
 }
 
 export function deploymentProjectionPlacementCommands(input: {
+  context?: DeploymentProjectionContext;
   layout?: CanvasLayoutDocument;
-  nodes: readonly Node[];
+  nodes?: readonly Node[];
   now?: Date;
   previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
 }): PlacementCommand[] {
-  const commands: PlacementCommand[] = [];
-  const seen = new Set<string>();
   const now = input.now ?? new Date();
-  const tasks = input.tasks ?? input.previews?.map(({ task }) => task) ?? [];
-  const previewByTaskId = deploymentResultPreviewByTaskId(
-    input.previews ?? deploymentResultPreviewsFromTasks(tasks)
-  );
+  const context =
+    input.context ??
+    createDeploymentProjectionContext({
+      layout: input.layout,
+      nodes: input.nodes,
+      previews: input.previews,
+      tasks: input.tasks,
+    });
+  const draft = new PlacementCommandDraft(context);
 
-  for (const task of tasks) {
-    const preview = previewByTaskId.get(task.id);
+  for (const task of context.tasks) {
+    const preview = context.previewByTaskId.get(task.id);
     if (preview === undefined) {
       addUnknownSlotExpiryCommand({
-        commands,
-        layout: input.layout,
+        draft,
         now,
-        seen,
         task,
       });
       continue;
     }
 
     addUnknownSlotRefinementCommands({
-      commands,
-      layout: input.layout,
+      context,
+      draft,
       preview,
-      seen,
       task,
     });
     for (const slot of preview.slots) {
       addSlotHandoffOrExpiryCommand({
-        commands,
-        layout: input.layout,
-        nodes: input.nodes,
+        context,
+        draft,
         now,
-        seen,
         slot,
         task,
       });
     }
   }
 
-  return commands;
+  return draft.toCommands();
 }
