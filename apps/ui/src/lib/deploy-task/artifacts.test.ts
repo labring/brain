@@ -5,12 +5,20 @@ import YAML from "yaml";
 import {
   type DeployTaskArtifactContext,
   prepareDeployTaskArtifacts,
+  prepareSealosTemplateArtifact,
+  sealosTemplateArtifactSummary,
 } from "./artifacts";
 
 const UNSUPPORTED_ARTIFACT_REGEX = /Unsupported deploy artifact/;
 const MISSING_PROJECT_NAME_REGEX = /without a Project name/;
 const UNSUPPORTED_AP_SCHEMA_REGEX = /spec\.input\.image/;
 const FAILED_DEPLOYMENT_OUTPUT_REGEX = /Build failed/;
+const FAILED_BUILD_RESULT_REGEX = /Image build failed/;
+const IMAGE_MISMATCH_REGEX = /workload image does not match/;
+const RENDERED_INSTANCE_REGEX = /kind: Instance/;
+const RENDERED_HOST_REGEX = /host: demo.cloud.sealos.io/;
+const UNSUPPORTED_TEMPLATE_KIND_REGEX =
+  /blocked Kubernetes kind ClusterRoleBinding/;
 
 function task(
   overrides: Partial<DeployTaskArtifactContext> = {}
@@ -154,5 +162,249 @@ metadata:
         task: task({ projectName: null }),
       }),
     MISSING_PROJECT_NAME_REGEX
+  );
+});
+
+test("prepareSealosTemplateArtifact renders native Sealos template outputs", () => {
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: {
+      image: {
+        digest: "sha256:abc123",
+        image_ref: "registry.example.com/demo/web@sha256:abc123",
+      },
+      kubernetes: {
+        job: "build-demo",
+        namespace: "tenant-a",
+        pod: "build-demo-pod",
+      },
+      mode: "kaniko",
+      status: "succeeded",
+    },
+    deliveryManifest: {
+      app: { name: "demo-web" },
+      outputs: {
+        buildResult: ".sealos/build-result.json",
+        template: ".sealos/template/index.yaml",
+      },
+    },
+    routingDomain: "cloud.sealos.io",
+    task: task(),
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  title: Demo Web
+  templateType: inline
+  defaults:
+    app_host:
+      type: string
+      value: demo
+    app_name:
+      type: string
+      value: demo-web
+  inputs:
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  selector:
+    matchLabels:
+      app: \${{ defaults.app_name }}
+  template:
+    metadata:
+      labels:
+        app: \${{ defaults.app_name }}
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web@sha256:abc123
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  rules:
+    - host: \${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}
+`,
+  });
+
+  assert.equal(artifact.kind, "sealos-template");
+  assert.equal(artifact.templateName, "demo-web");
+  assert.equal(artifact.instanceName, "demo-project");
+  assert.equal(artifact.rendered.resources[0]?.kind, "Instance");
+
+  const summary = sealosTemplateArtifactSummary({ artifact });
+  assert.equal(summary.resources?.length, 3);
+  assert.match(summary.resourceYamls?.[0] ?? "", RENDERED_INSTANCE_REGEX);
+  assert.match(summary.resourceYamls?.[0] ?? "", RENDERED_HOST_REGEX);
+  assert.equal(
+    (
+      summary.artifacts?.[0] as {
+        build?: { image?: string | null };
+      }
+    ).build?.image,
+    "registry.example.com/demo/web@sha256:abc123"
+  );
+});
+
+test("prepareSealosTemplateArtifact rejects failed image builds", () => {
+  assert.throws(
+    () =>
+      prepareSealosTemplateArtifact({
+        buildResult: {
+          error: { message: "Image build failed" },
+          status: "failed",
+        },
+        deliveryManifest: {},
+        task: task(),
+        templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-web
+`,
+      }),
+    FAILED_BUILD_RESULT_REGEX
+  );
+});
+
+test("prepareSealosTemplateArtifact allows namespaced runtime support resources", () => {
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: {
+      status: "skipped",
+    },
+    deliveryManifest: {},
+    task: task(),
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-web
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: e30=
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-web-init
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: busybox
+          command: ["true"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: demo-web-sync
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sync
+              image: busybox
+              command: ["true"]
+`,
+  });
+
+  assert.deepEqual(
+    artifact.rendered.resources.map((resource) => resource.kind),
+    ["Instance", "Secret", "Job", "CronJob"]
+  );
+});
+
+test("prepareSealosTemplateArtifact rejects cluster permission template resource kinds", () => {
+  assert.throws(
+    () =>
+      prepareSealosTemplateArtifact({
+        buildResult: {
+          status: "skipped",
+        },
+        deliveryManifest: {},
+        task: task(),
+        templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-admin
+`,
+      }),
+    UNSUPPORTED_TEMPLATE_KIND_REGEX
+  );
+});
+
+test("prepareSealosTemplateArtifact requires workload images to match build result", () => {
+  assert.throws(
+    () =>
+      prepareSealosTemplateArtifact({
+        buildResult: {
+          image: {
+            image_ref: "registry.example.com/demo/web@sha256:good",
+          },
+          status: "succeeded",
+        },
+        deliveryManifest: {},
+        task: task(),
+        templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+spec:
+  selector:
+    matchLabels:
+      app: demo-web
+  template:
+    metadata:
+      labels:
+        app: demo-web
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web:mutable
+`,
+      }),
+    IMAGE_MISMATCH_REGEX
   );
 });

@@ -37,6 +37,9 @@ export interface DevboxInfo {
     url?: string | null;
   } | null;
   name: string;
+  network?: {
+    uniqueID?: string | null;
+  } | null;
   state: DevboxState;
 }
 

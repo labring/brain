@@ -49,6 +49,7 @@ const CLUSTER_SCOPED_KINDS = new Set([
 
 export interface RenderTemplateDeploymentInput {
   args?: Record<string, string>;
+  certSecretName?: string;
   instanceName: string;
   namespace: string;
   projectId: string;
@@ -830,6 +831,115 @@ function dumpObject(object: TemplateK8sObject): string {
   return YAML.stringify(object).trimEnd();
 }
 
+function normalizeTemplateDefaultValue(value: unknown): TemplateDefaultValue {
+  const record = asRecord(value);
+  if (record != null && "value" in record) {
+    return {
+      ...(typeof record.type === "string" && record.type.trim()
+        ? { type: record.type.trim() }
+        : {}),
+      value: String(record.value ?? ""),
+    };
+  }
+  return { value: String(value ?? "") };
+}
+
+function normalizeTemplateDefaults(
+  value: unknown
+): Record<string, TemplateDefaultValue> {
+  const record = asRecord(value) ?? {};
+  return Object.fromEntries(
+    Object.entries(record).map(([key, item]) => [
+      key,
+      normalizeTemplateDefaultValue(item),
+    ])
+  );
+}
+
+function templateInputFromRecord(
+  key: string,
+  input: Record<string, unknown>
+): TemplateSourceInput {
+  return {
+    ...(typeof input.default === "string" || typeof input.default === "number"
+      ? { default: String(input.default) }
+      : {}),
+    ...(typeof input.description === "string"
+      ? { description: input.description }
+      : {}),
+    key,
+    ...(typeof input.label === "string" ? { label: input.label } : {}),
+    ...(Array.isArray(input.options)
+      ? {
+          options: input.options.filter(
+            (option): option is string => typeof option === "string"
+          ),
+        }
+      : {}),
+    ...(typeof input.required === "boolean"
+      ? { required: input.required }
+      : {}),
+    ...(typeof input.type === "string" ? { type: input.type } : {}),
+  };
+}
+
+function normalizeTemplateInputs(value: unknown): TemplateSourceInput[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      const record = asRecord(item);
+      const key = requiredString(record?.key);
+      return key ? [templateInputFromRecord(key, record ?? {})] : [];
+    });
+  }
+
+  const record = asRecord(value) ?? {};
+  return Object.entries(record).map(([key, item]) =>
+    templateInputFromRecord(key, asRecord(item) ?? {})
+  );
+}
+
+function templateSourceFromInlineYaml(yaml: string): {
+  source: TemplateSourcePayload;
+  templateName: string;
+} {
+  const docs = parseRenderedObjects(yaml);
+  const [template, ...resources] = docs;
+  if (template == null) {
+    throw new Error("Sealos template artifact is empty.");
+  }
+  if (
+    template.apiVersion !== "app.sealos.io/v1" ||
+    template.kind !== "Template"
+  ) {
+    throw new Error(
+      "Sealos template artifact must start with app.sealos.io/v1 Template."
+    );
+  }
+  if (resources.length === 0) {
+    throw new Error(
+      "Sealos template artifact must include workload resources."
+    );
+  }
+
+  const templateName = objectMetadataName(template);
+  if (templateName === "") {
+    throw new Error("Sealos template artifact is missing metadata.name.");
+  }
+  const spec = asRecord(template.spec) ?? {};
+  return {
+    source: {
+      appYaml: resources.map(dumpObject).join("\n---\n"),
+      source: {
+        ...spec,
+        defaults: normalizeTemplateDefaults(spec.defaults),
+        inputs: normalizeTemplateInputs(spec.inputs),
+      },
+      templateYaml: template,
+    },
+    templateName,
+  };
+}
+
 export function generateTemplateInstanceOwnerReference(
   instanceName: string,
   uid: string
@@ -895,6 +1005,9 @@ export function renderTemplateDeployment(
     defaults,
     inputs,
     ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
+    ...(input.certSecretName?.trim()
+      ? { SEALOS_CERT_SECRET_NAME: input.certSecretName.trim() }
+      : {}),
     SEALOS_NAMESPACE: input.namespace,
   };
   const instance = templateInstanceObject(input.source, input.instanceName);
@@ -942,4 +1055,18 @@ export function renderTemplateDeployment(
     instanceYaml: dumpObject(instanceResource),
     resources,
   };
+}
+
+export function renderTemplateDeploymentFromYaml(
+  input: Omit<RenderTemplateDeploymentInput, "source" | "templateName"> & {
+    templateYaml: string;
+    templateName?: string;
+  }
+): RenderedTemplateDeployment {
+  const source = templateSourceFromInlineYaml(input.templateYaml);
+  return renderTemplateDeployment({
+    ...input,
+    source: source.source,
+    templateName: input.templateName?.trim() || source.templateName,
+  });
 }

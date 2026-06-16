@@ -39,21 +39,24 @@ import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { childResourceName } from "@/lib/project-child-resource-name";
 import { createProject, getProject } from "@/lib/project-persistence/projects";
+import { applyRenderedTemplateDeployment } from "@/lib/template-k8s-apply";
 import { deployTemplateInstance } from "@/lib/template-provider-core";
 
 import {
   type DeploymentArtifact,
-  type DeployTaskPreparedArtifacts,
   prepareBrainManifestArtifact,
-  prepareDeployTaskArtifacts,
+  prepareSealosTemplateArtifact,
+  sealosTemplateArtifactSummary,
 } from "./artifacts";
+import { buildRuntimeContract } from "./build-runtime-contract";
 import { deployTaskFailureSummary } from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
   getCodexGatewayContextFromDevboxInfo,
   runDeployTaskGateway,
 } from "./gateway";
-import type { DeployTaskRow } from "./schema";
+import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
+import type { DeployTaskArtifactSummary, DeployTaskRow } from "./schema";
 import {
   getDeployTaskById,
   recordDeployTaskEvent,
@@ -61,7 +64,6 @@ import {
 } from "./service";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
-const DEVBOX_RUNTIME_READY_TIMEOUT_MS = 10 * 60_000;
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
 const DEVBOX_RUNTIME_WAIT_EVENT_MS = 30_000;
 const DEVBOX_SECRET_READY_MAX_RETRIES = 3;
@@ -70,11 +72,12 @@ const DEVBOX_SDK_READY_MAX_RETRIES = 30;
 const DEVBOX_SDK_READY_RETRY_DELAY_MS = 2000;
 const DEVBOX_DEFAULT_MAX_DURATION_MINUTES = 300;
 const DEPLOY_WORKSPACE_DIR = "/home/devbox/project";
-const DEPLOY_OUTPUT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/deployment-output.json`;
-const DEPLOY_AP_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain/ap.yaml`;
+const DEPLOY_DELIVERY_MANIFEST_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/delivery-manifest.json`;
+const DEPLOY_BUILD_RESULT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-result.json`;
+const DEPLOY_BUILD_RUNTIME_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-runtime.json`;
+const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/index.yaml`;
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
-const APPLY_OUTPUT_TIMEOUT_SECONDS = 120;
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
   "jobs",
@@ -151,6 +154,61 @@ function requireKubeconfig(input: StartDeployTaskRunnerInput): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function nestedStringValue(
+  value: unknown,
+  path: readonly string[]
+): string | null {
+  let current: unknown = value;
+  for (const key of path) {
+    const record = objectValue(current);
+    if (record == null) {
+      return null;
+    }
+    current = record[key];
+  }
+  return stringValue(current);
+}
+
+function requiredObjectValue(
+  output: Record<string, unknown>,
+  key: string
+): Record<string, unknown> {
+  const value = objectValue(output[key]);
+  if (value == null) {
+    throw new Error(`Deploy output did not include ${key}.`);
+  }
+  return value;
+}
+
+function requiredStringValue(
+  output: Record<string, unknown>,
+  key: string
+): string {
+  const value = stringValue(output[key]);
+  if (value == null) {
+    throw new Error(`Deploy output did not include ${key}.`);
+  }
+  return value;
+}
+
+function sealosCertSecretName(): string | undefined {
+  return (
+    compactEnvValue(process.env.SEALOS_CERT_SECRET_NAME) ??
+    compactEnvValue(process.env.SEALOS_CERT_SECRET) ??
+    undefined
+  );
 }
 
 function templateDeploymentLabelSelector(input: {
@@ -230,12 +288,33 @@ async function deleteTemplateResourcesBySelector(input: {
   });
 }
 
+async function getDevboxNetworkIdFromKubernetes(input: {
+  encodedKubeconfig: string;
+  name: string;
+  namespace: string;
+}): Promise<string | null> {
+  const result = await fetcher<unknown>({
+    base: ApiUrl(),
+    header: {
+      Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
+    },
+    method: "GET",
+    path: API_ROUTES.k8s.get,
+    query: {
+      kind: "devboxes",
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+  return nestedStringValue(result, ["status", "network", "uniqueID"]);
+}
+
 async function applyDeploymentArtifact(input: {
   artifact: DeploymentArtifact;
   kubeconfig: string;
   task: DeployTaskRow;
 }): Promise<{
-  artifactSummary: Record<string, unknown>;
+  artifactSummary: DeployTaskArtifactSummary;
   notes: string;
 }> {
   if (input.artifact.kind === "template-instance") {
@@ -250,6 +329,22 @@ async function applyDeploymentArtifact(input: {
         })),
       },
       notes: `Deployed template instance ${input.artifact.instanceName}.`,
+    };
+  }
+
+  if (input.artifact.kind === "sealos-template") {
+    const applied = await applyRenderedTemplateDeployment({
+      encodedKubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      rendered: input.artifact.rendered,
+    });
+    return {
+      artifactSummary: sealosTemplateArtifactSummary({
+        appliedResources: applied.resources,
+        artifact: input.artifact,
+        notes: `Deployed Sealos template ${applied.instanceName}.`,
+      }),
+      notes: `Deployed Sealos template ${applied.instanceName}.`,
     };
   }
 
@@ -601,7 +696,7 @@ async function waitForRunningDevbox(input: {
   let lastError: unknown;
   let lastEventAt = startedAt;
 
-  while (Date.now() - startedAt < DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
+  while (Date.now() - startedAt < DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
     try {
       const info = await getDevboxWithSecretRetry(input.namespace, input.name);
       lastInfo = info;
@@ -649,7 +744,7 @@ async function waitForRunningDevbox(input: {
     lastError instanceof Error ? ` Last error: ${lastError.message}` : "";
   throw new Error(
     `Timed out waiting for deploy Devbox runtime after ${Math.round(
-      DEVBOX_RUNTIME_READY_TIMEOUT_MS / 1000
+      DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS / 1000
     )}s (last state: ${state}).${lastErrorMessage}`
   );
 }
@@ -728,14 +823,36 @@ function prepareWorkspaceOutputCommand(): string {
   return [
     "set -euo pipefail",
     `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
-    'mkdir -p "$workspace_dir/.sealos/brain"',
-    'rm -f "$workspace_dir/.sealos/deployment-output.json"',
-    'rm -f "$workspace_dir/.sealos/brain/ap.yaml"',
+    'mkdir -p "$workspace_dir/.sealos/template"',
+    'rm -f "$workspace_dir/.sealos/delivery-manifest.json"',
+    'rm -f "$workspace_dir/.sealos/build-result.json"',
+    `rm -f ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)}`,
+    'rm -f "$workspace_dir/.sealos/template/index.yaml"',
     "if id devbox >/dev/null 2>&1; then",
     '  if [ "$(id -u)" = "0" ]; then',
     '    chown -R devbox:devbox "$workspace_dir/.sealos"',
     "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
     '    sudo chown -R devbox:devbox "$workspace_dir/.sealos"',
+    "  fi",
+    "fi",
+  ].join("\n");
+}
+
+function writeBuildRuntimeContractCommand(
+  contract: Record<string, unknown>
+): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'mkdir -p "$workspace_dir/.sealos"',
+    `cat > ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)} <<'EOF'`,
+    JSON.stringify(contract, null, 2),
+    "EOF",
+    "if id devbox >/dev/null 2>&1; then",
+    '  if [ "$(id -u)" = "0" ]; then',
+    `    chown devbox:devbox ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)}`,
+    "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+    `    sudo chown devbox:devbox ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)}`,
     "  fi",
     "fi",
   ].join("\n");
@@ -747,7 +864,7 @@ function prepareEmptyWorkspaceCommand(): string {
     `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
     'mkdir -p "$workspace_dir"',
     'find "$workspace_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
-    'mkdir -p "$workspace_dir/.sealos/brain"',
+    'mkdir -p "$workspace_dir/.sealos/template"',
     "if id devbox >/dev/null 2>&1; then",
     '  if [ "$(id -u)" = "0" ]; then',
     '    chown -R devbox:devbox "$workspace_dir"',
@@ -767,7 +884,7 @@ function installSkillsCommand(): string {
     'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
     "if command -v npx >/dev/null 2>&1; then",
     '  cd "$workspace_dir"',
-    "  timeout 120 npx --yes skills add https://github.com/zjy365/sealos-skills/tree/sandbox-skill-lite -y",
+    "  timeout 120 npx --yes skills add https://github.com/zjy365/sealos-skills/tree/sandbox-skill-lite-preview -y",
     "else",
     "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
     "  exit 1",
@@ -783,22 +900,13 @@ function installSkillsCommand(): string {
 function readDeployOutputCommand(): string {
   return [
     "set -euo pipefail",
-    `output_path=${shellQuote(DEPLOY_OUTPUT_PATH)}`,
-    `ap_yaml_path=${shellQuote(DEPLOY_AP_YAML_PATH)}`,
-    'test -f "$output_path"',
-    'test -f "$ap_yaml_path"',
-    "OUTPUT_PATH=\"$output_path\" AP_YAML_PATH=\"$ap_yaml_path\" node -e \"const fs=require('fs'); const output=JSON.parse(fs.readFileSync(process.env.OUTPUT_PATH,'utf8')); const apYaml=fs.readFileSync(process.env.AP_YAML_PATH,'utf8'); process.stdout.write(JSON.stringify({deploymentOutput: output, resourceYamls: [apYaml]}));\"",
-  ].join("\n");
-}
-
-function applyYamlCommand(): string {
-  return [
-    "set -euo pipefail",
-    "tmpfile=$(mktemp)",
-    'cleanup() { rm -f "$tmpfile"; }',
-    "trap cleanup EXIT",
-    'cat > "$tmpfile"',
-    'kubectl apply -f "$tmpfile"',
+    `manifest_path=${shellQuote(DEPLOY_DELIVERY_MANIFEST_PATH)}`,
+    `build_result_path=${shellQuote(DEPLOY_BUILD_RESULT_PATH)}`,
+    `template_path=${shellQuote(DEPLOY_TEMPLATE_YAML_PATH)}`,
+    'test -f "$manifest_path"',
+    'test -f "$build_result_path"',
+    'test -f "$template_path"',
+    "MANIFEST_PATH=\"$manifest_path\" BUILD_RESULT_PATH=\"$build_result_path\" TEMPLATE_PATH=\"$template_path\" node -e \"const fs=require('fs'); const deliveryManifest=JSON.parse(fs.readFileSync(process.env.MANIFEST_PATH,'utf8')); const buildResult=JSON.parse(fs.readFileSync(process.env.BUILD_RESULT_PATH,'utf8')); const templateYaml=fs.readFileSync(process.env.TEMPLATE_PATH,'utf8'); process.stdout.write(JSON.stringify({deliveryManifest, buildResult, templateYaml}));\"",
   ].join("\n");
 }
 
@@ -930,25 +1038,6 @@ async function readDeployOutput(input: {
     : null;
 }
 
-async function applyDeployYaml(input: {
-  namespace: string;
-  runtimeName: string;
-  yaml: string;
-}): Promise<string> {
-  const result = (
-    await execDevbox(input.namespace, input.runtimeName, {
-      command: ["bash", "-lc", applyYamlCommand()],
-      stdin: input.yaml,
-      timeoutSeconds: APPLY_OUTPUT_TIMEOUT_SECONDS,
-    })
-  ).data;
-
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr.trim() || result.stdout.trim());
-  }
-  return result.stdout.trim();
-}
-
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   kubeconfig: string;
@@ -986,58 +1075,6 @@ async function completeTaskWithArtifact(input: {
     kind: "deployment_task.completed",
     message: "Deployment task completed.",
     payload: applied.artifactSummary,
-    phase: "completed",
-  });
-}
-
-async function completeGithubAiTaskWithDevboxApply(input: {
-  artifact: DeploymentArtifact;
-  outputJson: Record<string, unknown>;
-  prepared: DeployTaskPreparedArtifacts;
-  runtimeName: string;
-  task: DeployTaskRow;
-}) {
-  await updateDeployTaskState(input.task.id, {
-    artifactSummary: {
-      artifacts: [input.artifact],
-      outputJson: input.outputJson,
-      resources: input.prepared.resources,
-      resourceYamls: [input.prepared.yaml],
-    },
-    phase: "apply",
-    status: "applying",
-  });
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deployment_task.apply_started",
-    message: "Applying generated Brain direct resources in deploy Devbox.",
-    payload: { resources: input.prepared.resources },
-    phase: "apply",
-  });
-
-  const applyOutput = await applyDeployYaml({
-    namespace: input.task.namespace,
-    runtimeName: input.runtimeName,
-    yaml: input.prepared.yaml,
-  });
-
-  await updateDeployTaskState(input.task.id, {
-    artifactSummary: {
-      artifacts: [input.artifact],
-      notes: applyOutput,
-      outputJson: input.outputJson,
-      resources: input.prepared.resources,
-      resourceYamls: [input.prepared.yaml],
-    },
-    phase: "completed",
-    status: "completed",
-  });
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deployment_task.completed",
-    message: "Deployment task completed.",
-    payload: {
-      applyOutput,
-      resources: input.prepared.resources,
-    },
     phase: "completed",
   });
 }
@@ -1134,6 +1171,7 @@ function aiSourceKey(task: DeployTaskRow): string {
 }
 
 async function runAiDeploymentTask(input: {
+  encodedKubeconfig: string;
   kubeconfig: string;
   task: DeployTaskRow;
 }) {
@@ -1218,6 +1256,59 @@ async function runAiDeploymentTask(input: {
     timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
   });
 
+  const runtimeInfoForBuild = await getDevboxWithSecretRetry(
+    input.task.namespace,
+    runtime.name
+  );
+  const apiNetworkId = runtimeInfoForBuild.network?.uniqueID?.trim() || null;
+  const kubernetesNetworkId =
+    apiNetworkId ??
+    (await getDevboxNetworkIdFromKubernetes({
+      encodedKubeconfig: input.encodedKubeconfig,
+      name: runtime.name,
+      namespace: input.task.namespace,
+    }));
+  const buildRuntime = buildRuntimeContract({
+    devbox: runtimeInfoForBuild,
+    networkId: kubernetesNetworkId,
+  });
+  if (buildRuntime == null && input.task.source.kind === "github") {
+    await updateDeployTaskState(input.task.id, {
+      artifactSummary: {
+        notes:
+          "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+      },
+      phase: "prepare",
+      status: "blocked",
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.build_runtime_unavailable",
+      message:
+        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+      payload: { runtimeName: runtime.name },
+      phase: "prepare",
+    });
+    return;
+  }
+  if (buildRuntime != null) {
+    await execOrThrow({
+      command: writeBuildRuntimeContractCommand(buildRuntime),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.build_runtime_ready",
+      message: "Build runtime contract is ready.",
+      payload: {
+        devboxName: runtime.name,
+        networkSource: apiNetworkId == null ? "kubernetes" : "devbox-api",
+        s3Endpoint: buildRuntime.s3Endpoint,
+      },
+      phase: "prepare",
+    });
+  }
+
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.skill_install_started",
     message: "Installing deploy skills into workspace.",
@@ -1301,47 +1392,44 @@ async function runAiDeploymentTask(input: {
     return;
   }
 
-  const prepared = prepareDeployTaskArtifacts({
-    output: finalDeployOutput,
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: requiredObjectValue(finalDeployOutput, "buildResult"),
+    certSecretName: sealosCertSecretName(),
+    deliveryManifest: requiredObjectValue(
+      finalDeployOutput,
+      "deliveryManifest"
+    ),
+    routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
     task: input.task,
+    templateYaml: requiredStringValue(finalDeployOutput, "templateYaml"),
   });
-  const artifact: DeploymentArtifact = {
-    kind: "brain-manifest",
-    yaml: prepared.yaml,
-  };
+  const summary = sealosTemplateArtifactSummary({ artifact });
   await updateDeployTaskState(input.task.id, {
-    artifactSummary: {
-      artifacts: [artifact],
-      outputJson: finalDeployOutput,
-      resources: prepared.resources,
-      resourceYamls: [prepared.yaml],
-    },
+    artifactSummary: summary,
     phase: "generate-artifacts",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.artifacts_generated",
-    message: "Generated deployment artifacts.",
-    payload: { resources: prepared.resources },
+    message: "Generated Sealos template deployment artifact.",
+    payload: { resources: summary.resources },
     phase: "generate-artifacts",
   });
 
-  if (input.task.source.kind === "github") {
-    await completeGithubAiTaskWithDevboxApply({
+  try {
+    await completeTaskWithArtifact({
       artifact,
-      outputJson: finalDeployOutput,
-      prepared,
-      runtimeName: runtime.name,
+      kubeconfig: input.kubeconfig,
       task: input.task,
     });
-    return;
+  } catch (error) {
+    await cleanupFailedTemplateDeployment({
+      encodedKubeconfig: input.encodedKubeconfig,
+      instanceName: artifact.instanceName,
+      projectId: input.task.projectId ?? artifact.instanceName,
+      task: input.task,
+    });
+    throw error;
   }
-
-  await completeTaskWithArtifact({
-    artifact,
-    kubeconfig: input.kubeconfig,
-    outputJson: finalDeployOutput,
-    task: input.task,
-  });
 }
 
 export async function startDeployTaskRunner(
@@ -1375,6 +1463,7 @@ export async function startDeployTaskRunner(
         break;
       case "ai":
         await runAiDeploymentTask({
+          encodedKubeconfig: input.encodedKubeconfig ?? "",
           kubeconfig,
           task: resolvedTask,
         });

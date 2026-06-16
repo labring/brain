@@ -36,7 +36,10 @@ export type DeployTaskPhase =
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
 export interface DeployTaskArtifactSummary {
+  appliedResources?: unknown[];
   artifacts?: unknown[];
+  buildResult?: unknown;
+  deliveryManifest?: unknown;
   entrypointYaml?: string;
   notes?: string;
   outputJson?: unknown;

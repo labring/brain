@@ -1,10 +1,34 @@
 import YAML from "yaml";
 
 import { joinKubeYamlDocuments } from "@/lib/render-yaml-template";
+import {
+  type RenderedTemplateDeployment,
+  renderTemplateDeploymentFromYaml,
+} from "@/lib/template-renderer";
+
+import type { DeployTaskArtifactSummary } from "./schema";
 
 const SUPPORTED_API_VERSION = "brain.io/direct";
 const SUPPORTED_KINDS = new Set(["AP", "DB"]);
 const BRAIN_PROJECT_ID_LABEL = "brain.io/project-id";
+const SEALOS_TEMPLATE_BUILD_REQUIRED_KINDS = new Set([
+  "CronJob",
+  "DaemonSet",
+  "Deployment",
+  "StatefulSet",
+]);
+const SEALOS_TEMPLATE_BLOCKED_KINDS = new Set([
+  "APIService",
+  "ClusterRole",
+  "ClusterRoleBinding",
+  "CustomResourceDefinition",
+  "MutatingWebhookConfiguration",
+  "Namespace",
+  "Node",
+  "PersistentVolume",
+  "StorageClass",
+  "ValidatingWebhookConfiguration",
+]);
 
 export interface DeployTaskApplyResourceSummary {
   apiVersion: string;
@@ -40,8 +64,27 @@ export interface DeploymentTemplateInstanceArtifact {
   templateName: string;
 }
 
+export interface DeploymentSealosTemplateArtifact {
+  build: DeploymentSealosTemplateBuildSummary;
+  instanceName: string;
+  kind: "sealos-template";
+  rendered: RenderedTemplateDeployment;
+  templateName: string;
+}
+
+export interface DeploymentSealosTemplateBuildSummary {
+  digest: string | null;
+  image: string | null;
+  job: string | null;
+  mode: string | null;
+  namespace: string | null;
+  pod: string | null;
+  status: string | null;
+}
+
 export type DeploymentArtifact =
   | DeploymentBrainManifestArtifact
+  | DeploymentSealosTemplateArtifact
   | DeploymentTemplateInstanceArtifact;
 
 function stringArrayValue(value: unknown): string[] {
@@ -70,6 +113,15 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function stringRecordValue(value: unknown): Record<string, string> {
+  const record = objectValue(value) ?? {};
+  return Object.fromEntries(
+    Object.entries(record).flatMap(([key, item]) =>
+      typeof item === "string" ? [[key, item]] : []
+    )
+  );
 }
 
 function ensureDeploymentOutputSucceeded(output: Record<string, unknown>) {
@@ -224,4 +276,215 @@ export function prepareBrainManifestArtifact(input: {
     output,
     task: input.task,
   });
+}
+
+function ensureBuildResultSucceeded(buildResult: Record<string, unknown>) {
+  const status = stringValue(buildResult.status);
+  if (status === "succeeded" || status === "skipped") {
+    return;
+  }
+  const error = objectValue(buildResult.error);
+  throw new Error(
+    stringValue(error?.message) ??
+      `Sealos build result did not succeed (${status ?? "missing status"}).`
+  );
+}
+
+function buildResultImage(buildResult: Record<string, unknown>): string | null {
+  const image = objectValue(buildResult.image);
+  return (
+    stringValue(image?.image_ref) ??
+    stringValue(image?.reference) ??
+    stringValue(image?.ref)
+  );
+}
+
+function buildResultDigest(
+  buildResult: Record<string, unknown>
+): string | null {
+  const image = objectValue(buildResult.image);
+  return stringValue(image?.digest);
+}
+
+function buildResultKubernetes(buildResult: Record<string, unknown>) {
+  const kubernetes = objectValue(buildResult.kubernetes);
+  if (kubernetes == null) {
+    return null;
+  }
+  return {
+    job: stringValue(kubernetes.job),
+    namespace: stringValue(kubernetes.namespace),
+    pod: stringValue(kubernetes.pod),
+  };
+}
+
+function buildSummary(
+  buildResult: Record<string, unknown>
+): DeploymentSealosTemplateBuildSummary {
+  const kubernetes = buildResultKubernetes(buildResult);
+  return {
+    digest: buildResultDigest(buildResult),
+    image: buildResultImage(buildResult),
+    job: kubernetes?.job ?? null,
+    mode: stringValue(buildResult.mode),
+    namespace: kubernetes?.namespace ?? null,
+    pod: kubernetes?.pod ?? null,
+    status: stringValue(buildResult.status),
+  };
+}
+
+function deploymentResourceSummary(resource: {
+  apiVersion?: string;
+  kind?: string;
+  metadata?: { name?: string; namespace?: string };
+}): DeployTaskApplyResourceSummary | null {
+  const name = resource.metadata?.name?.trim();
+  const namespace = resource.metadata?.namespace?.trim();
+  if (!(name && namespace)) {
+    return null;
+  }
+  return {
+    apiVersion: resource.apiVersion?.trim() ?? "",
+    kind: resource.kind?.trim() ?? "",
+    name,
+    namespace,
+  };
+}
+
+function collectRenderedImages(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectRenderedImages);
+  }
+  const record = objectValue(value);
+  if (record == null) {
+    return [];
+  }
+  return [
+    ...(typeof record.image === "string" && record.image.trim()
+      ? [record.image.trim()]
+      : []),
+    ...Object.entries(record).flatMap(([key, item]) =>
+      key === "image" ? [] : collectRenderedImages(item)
+    ),
+  ];
+}
+
+function assertSupportedSealosTemplateResources(
+  rendered: RenderedTemplateDeployment
+) {
+  for (const resource of rendered.resources) {
+    const kind = resource.kind?.trim();
+    if (!kind) {
+      throw new Error(
+        "Sealos template output includes Kubernetes resource with missing kind."
+      );
+    }
+    if (SEALOS_TEMPLATE_BLOCKED_KINDS.has(kind)) {
+      throw new Error(
+        `Sealos template output includes blocked Kubernetes kind ${kind}.`
+      );
+    }
+  }
+}
+
+function assertSealosTemplateBuildBinding(input: {
+  build: DeploymentSealosTemplateBuildSummary;
+  rendered: RenderedTemplateDeployment;
+}) {
+  if (input.build.status === "skipped") {
+    return;
+  }
+  const images = input.rendered.resources
+    .filter((resource) =>
+      SEALOS_TEMPLATE_BUILD_REQUIRED_KINDS.has(resource.kind?.trim() ?? "")
+    )
+    .flatMap(collectRenderedImages);
+  if (images.length === 0) {
+    return;
+  }
+  const buildImage = input.build.image;
+  if (buildImage == null) {
+    throw new Error("Sealos build result is missing image.image_ref.");
+  }
+  if (!images.includes(buildImage)) {
+    throw new Error(
+      "Sealos template workload image does not match the succeeded build image."
+    );
+  }
+}
+
+export function prepareSealosTemplateArtifact(input: {
+  buildResult: Record<string, unknown>;
+  certSecretName?: string;
+  deliveryManifest: Record<string, unknown>;
+  routingDomain?: string;
+  task: DeployTaskArtifactContext;
+  templateYaml: string;
+}): DeploymentSealosTemplateArtifact {
+  const projectName = input.task.projectName?.trim();
+  if (!projectName) {
+    throw new Error(
+      "Sealos template output cannot be applied without a Project name."
+    );
+  }
+  ensureBuildResultSucceeded(input.buildResult);
+  const build = buildSummary(input.buildResult);
+
+  const rendered = renderTemplateDeploymentFromYaml({
+    args: stringRecordValue(input.deliveryManifest.args),
+    certSecretName: input.certSecretName,
+    instanceName: projectName,
+    namespace: input.task.namespace,
+    projectId: input.task.projectId ?? projectName,
+    projectName,
+    routingDomain: input.routingDomain,
+    templateYaml: input.templateYaml,
+  });
+  assertSupportedSealosTemplateResources(rendered);
+  assertSealosTemplateBuildBinding({ build, rendered });
+  const templateDoc = YAML.parseAllDocuments(input.templateYaml)[0]?.toJS() as
+    | { metadata?: { name?: string } }
+    | null
+    | undefined;
+  const templateName = templateDoc?.metadata?.name?.trim() || projectName;
+  return {
+    build,
+    instanceName: rendered.instanceName,
+    kind: "sealos-template",
+    rendered,
+    templateName,
+  };
+}
+
+export function sealosTemplateArtifactSummary(input: {
+  appliedResources?: { name: string; resourceType: string; uid: string }[];
+  artifact: DeploymentSealosTemplateArtifact;
+  notes?: string;
+}): DeployTaskArtifactSummary {
+  const renderedYaml = joinKubeYamlDocuments([
+    input.artifact.rendered.instanceYaml,
+    ...input.artifact.rendered.dependentYamls,
+  ]);
+  const resources = input.artifact.rendered.resources
+    .map(deploymentResourceSummary)
+    .filter(
+      (resource): resource is DeployTaskApplyResourceSummary => resource != null
+    );
+  return {
+    artifacts: [
+      {
+        build: input.artifact.build,
+        instanceName: input.artifact.instanceName,
+        kind: input.artifact.kind,
+        templateName: input.artifact.templateName,
+      },
+    ],
+    ...(input.appliedResources === undefined
+      ? {}
+      : { appliedResources: input.appliedResources }),
+    ...(input.notes === undefined ? {} : { notes: input.notes }),
+    buildResult: input.artifact.build,
+    resources,
+    resourceYamls: [renderedYaml],
+  };
 }

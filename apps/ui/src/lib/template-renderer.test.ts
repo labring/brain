@@ -6,6 +6,7 @@ import {
   addTemplateInstanceOwnerReferences,
   generateTemplateInstanceOwnerReference,
   renderTemplateDeployment,
+  renderTemplateDeploymentFromYaml,
 } from "./template-renderer";
 
 const source = {
@@ -91,6 +92,7 @@ spec:
 const SINGLE_LINE_PARAMETER_RE =
   /Template parameter "storage" must be a single line/;
 const NUMBER_PARAMETER_RE = /Template parameter "storage" must be a number/;
+const TEMPLATE_SECRET_NAME_RE = /secretName: wildcard-cert/;
 
 test("renderTemplateDeployment injects Brain labels into rendered resources", () => {
   const rendered = renderTemplateDeployment({
@@ -482,4 +484,64 @@ test("renderTemplateDeployment validates input type and option declarations", ()
       }),
     NUMBER_PARAMETER_RE
   );
+});
+
+test("renderTemplateDeploymentFromYaml renders inline Sealos Template documents", () => {
+  const rendered = renderTemplateDeploymentFromYaml({
+    certSecretName: "wildcard-cert",
+    instanceName: "template-inline",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    routingDomain: "apps.example.com",
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: inline-web
+spec:
+  title: Inline Web
+  templateType: inline
+  defaults:
+    app_host:
+      type: string
+      value: inline
+    app_name:
+      type: string
+      value: inline-web
+  inputs:
+    storage:
+      type: number
+      default: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  ports:
+    - port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  rules:
+    - host: \${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}
+  tls:
+    - secretName: \${{ SEALOS_CERT_SECRET_NAME }}
+`,
+  });
+
+  const instance = YAML.parse(rendered.instanceYaml);
+  const service = rendered.resources.find((doc) => doc.kind === "Service");
+  const ingressYaml = rendered.dependentYamls.find((raw) =>
+    raw.includes("kind: Ingress")
+  );
+
+  assert.equal(instance.kind, "Instance");
+  assert.equal(instance.metadata.name, "template-inline");
+  assert.equal(service?.metadata?.name, "template-inline");
+  assert.match(ingressYaml ?? "", TEMPLATE_SECRET_NAME_RE);
 });
