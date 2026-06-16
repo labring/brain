@@ -54,14 +54,42 @@ function GithubPanel() {
               return;
             }
             if (creatorActions.onGithubConfirm) {
-              creatorActions.onGithubConfirm(
+              return creatorActions.onGithubConfirm(
                 repo,
                 projectDisplayName,
                 projectDescription
               );
+            }
+            return githubActions.onDeploy?.(repo);
+          },
+        }
+      : {}),
+    ...(creatorActions.onTemplateConfirm != null ||
+    githubActions.onDeployTemplate != null
+      ? {
+          onDeployTemplate: (
+            input: Parameters<
+              NonNullable<typeof githubActions.onDeployTemplate>
+            >[0]
+          ) => {
+            const projectDisplayName = creatorStates.projectDisplayName.trim();
+            const projectDescription = creatorStates.projectDescription.trim();
+            const displayNameError =
+              creatorActions.validateProjectDisplayName(projectDisplayName);
+            const descriptionError =
+              creatorActions.validateProjectDescription(projectDescription);
+            if (displayNameError != null || descriptionError != null) {
               return;
             }
-            githubActions.onDeploy?.(repo);
+            if (creatorActions.onTemplateConfirm) {
+              return creatorActions.onTemplateConfirm(
+                input.settings,
+                input.template,
+                projectDisplayName,
+                projectDescription
+              );
+            }
+            return githubActions.onDeployTemplate?.(input);
           },
         }
       : {}),

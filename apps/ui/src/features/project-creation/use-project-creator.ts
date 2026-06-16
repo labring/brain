@@ -31,6 +31,10 @@ import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
+import {
+  findTemplateForGithubRepo,
+  templateCanDeployWithDefaults,
+} from "../deployment/github-template-match";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
 const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
@@ -66,7 +70,9 @@ export function projectCreatorIntegrationState(input: {
 } {
   return {
     githubEnabled: input.open && input.activeSource === "github",
-    templateEnabled: input.open && input.activeSource === "template",
+    templateEnabled:
+      input.open &&
+      (input.activeSource === "template" || input.activeSource === "github"),
   };
 }
 
@@ -393,12 +399,64 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     }
   }, [disconnectGithubAuth, mutateGithubRepos]);
 
+  const handleGithubTemplateDeploy = useCallback(
+    async (input: {
+      repo: GithubDeployerRepo;
+      settings: TemplateDeploymentSettings;
+      template: (typeof templateCatalog.templates)[number];
+    }) => {
+      const matchedTemplate = findTemplateForGithubRepo({
+        repo: input.repo,
+        templates: templateCatalog.templates,
+      });
+      if (
+        matchedTemplate?.name !== input.template.name ||
+        matchedTemplate.name !== input.settings.templateName ||
+        !templateCanDeployWithDefaults(matchedTemplate)
+      ) {
+        toast.error("Template recommendation is no longer valid.");
+        return;
+      }
+      const displayName = deriveGithubProjectDisplayName({
+        existingProjectDisplayNames: existingProjects.map(
+          (project) => project.name
+        ),
+        repository: input.repo,
+      });
+      await applyWithBusyState(async () => {
+        const outcome = await runDeployment({
+          args: input.settings.args,
+          kind: "template",
+          target: newProjectDeploymentTarget(displayName),
+          templateName: input.settings.templateName,
+        });
+        if (outcome.kind !== "template") {
+          return;
+        }
+        toast.success(outcome.taskMessage);
+        setLastConfirmedKind(
+          `template:${input.template.name}:${outcome.projectName}`
+        );
+        dispatchCreationPaneState({ type: "close" });
+        await onProjectCreated?.(outcome.projectId);
+      });
+    },
+    [
+      applyWithBusyState,
+      existingProjects,
+      onProjectCreated,
+      runDeployment,
+      templateCatalog.templates,
+    ]
+  );
+
   const githubDeployer = useMemo(
     () => ({
       actions: {
         onAuthorize: initiateGithubAuth,
         onDisconnect: handleGithubDisconnect,
         onDeploy: handleGithubDeploy,
+        onDeployTemplate: handleGithubTemplateDeploy,
       },
       states: {
         deployedRepo: null,
@@ -409,6 +467,8 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           mutateGithubRepos().catch(() => undefined);
         },
         repos: githubRepos,
+        templateOptionsLoading: templateCatalog.isLoading,
+        templateOptions: templateCatalog.templates,
       },
     }),
     [
@@ -418,8 +478,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       githubAuthorized,
       handleGithubDisconnect,
       handleGithubDeploy,
+      handleGithubTemplateDeploy,
       initiateGithubAuth,
       mutateGithubRepos,
+      templateCatalog.isLoading,
+      templateCatalog.templates,
     ]
   );
 

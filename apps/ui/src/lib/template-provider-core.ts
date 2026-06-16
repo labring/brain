@@ -15,6 +15,7 @@ export interface TemplateCatalogItem {
   icon: string;
   name: string;
   readme: string;
+  sourceRepos: string[];
   title: string;
 }
 
@@ -62,9 +63,16 @@ interface ProviderTemplateItem {
   args?: unknown;
   category?: unknown;
   description?: unknown;
+  githubRepo?: unknown;
+  githubRepos?: unknown;
+  gitRepo?: unknown;
   icon?: unknown;
   name?: unknown;
   readme?: unknown;
+  repositoryUrl?: unknown;
+  repoUrl?: unknown;
+  sourceRepo?: unknown;
+  sourceRepos?: unknown;
   title?: unknown;
 }
 
@@ -106,6 +114,16 @@ function stringArrayValue(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function stringOrStringArrayValues(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return stringArrayValue(value)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -157,6 +175,20 @@ function templateInputs(value: unknown): TemplateCatalogInput[] {
   }));
 }
 
+function templateSourceRepos(item: ProviderTemplateItem): string[] {
+  return [
+    item.sourceRepos,
+    item.githubRepos,
+    item.sourceRepo,
+    item.githubRepo,
+    item.repoUrl,
+    item.repositoryUrl,
+    item.gitRepo,
+  ]
+    .flatMap(stringOrStringArrayValues)
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
 function templateCatalogItem(value: unknown): TemplateCatalogItem | null {
   if (value == null || typeof value !== "object") {
     return null;
@@ -173,6 +205,7 @@ function templateCatalogItem(value: unknown): TemplateCatalogItem | null {
     icon: stringValue(item.icon),
     name,
     readme: stringValue(item.readme),
+    sourceRepos: templateSourceRepos(item),
     title: stringValue(item.title) || name,
   };
 }

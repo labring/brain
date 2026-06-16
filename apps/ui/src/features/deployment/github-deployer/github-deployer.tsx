@@ -33,7 +33,7 @@ const GIT_SUFFIX_RE = /\.git$/i;
 const INITIAL_REPO_LIMIT = 4;
 const REPO_LIMIT_STEP = 4;
 
-function githubUrlToRepo(input: string): GithubDeployerRepo | null {
+export function githubUrlToRepo(input: string): GithubDeployerRepo | null {
   const raw = input.trim();
   if (raw === "") {
     return null;
@@ -52,12 +52,12 @@ function githubUrlToRepo(input: string): GithubDeployerRepo | null {
     return null;
   }
 
-  const [owner, repoSegment] = url.pathname
+  const [owner, repoSegment, extraPath] = url.pathname
     .split("/")
     .map((part) => part.trim())
     .filter(Boolean);
   const repo = repoSegment?.replace(GIT_SUFFIX_RE, "");
-  if (!(owner && repo)) {
+  if (!(owner && repo) || extraPath != null) {
     return null;
   }
 
@@ -160,12 +160,19 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
 
 function GithubDeployerUrlInput({ className }: { className?: string }) {
   const {
-    actions: { onDeploy },
-    states: { deployedRepo, isLoading },
+    actions: { onAuthorize, onDeploy, onDeployTemplate },
+    requestDeploy,
+    states: { deployedRepo, isAuthorized, isLoading, templateOptionsLoading },
   } = useGithubDeployer();
   const [repoUrl, setRepoUrl] = useState("");
   const parsedRepo = useMemo(() => githubUrlToRepo(repoUrl), [repoUrl]);
   const showInvalid = repoUrl.trim() !== "" && !parsedRepo;
+  const isTemplateMatchingPending = Boolean(
+    onDeployTemplate && templateOptionsLoading
+  );
+  const canDeploy = Boolean(
+    isAuthorized && parsedRepo && onDeploy && !isTemplateMatchingPending
+  );
 
   if (deployedRepo) {
     return null;
@@ -196,10 +203,10 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
         <AppButton
           className="min-w-24 rounded-lg bg-white/5 text-primary hover:bg-input"
           data-slot="github-deployer-url-deploy"
-          disabled={!(parsedRepo && onDeploy) || isLoading}
+          disabled={!canDeploy || isLoading}
           onClick={() => {
-            if (parsedRepo && onDeploy) {
-              onDeploy(parsedRepo);
+            if (canDeploy && parsedRepo) {
+              requestDeploy(parsedRepo);
             }
           }}
           type="button"
@@ -217,6 +224,31 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
           Enter a GitHub repository URL.
         </p>
       ) : null}
+      {isAuthorized ? null : (
+        <div
+          className="flex min-w-0 items-center gap-3 rounded-md bg-input/30 px-3 py-2 text-muted-foreground text-sm"
+          data-slot="github-deployer-url-auth-required"
+        >
+          <ShieldCheck
+            aria-hidden
+            className="size-4 shrink-0"
+            strokeWidth={2}
+          />
+          <span className="min-w-0 flex-1">
+            Authorize GitHub before deploying from a repository URL.
+          </span>
+          <Button
+            className="h-8 shrink-0 rounded-lg bg-white/5 text-primary hover:bg-input"
+            data-slot="github-deployer-url-authorize"
+            disabled={isLoading || !onAuthorize}
+            onClick={onAuthorize}
+            type="button"
+            variant="ghost"
+          >
+            Authorize
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -231,13 +263,23 @@ function repoDescription(repo: GithubDeployerRepo): string {
 
 function GithubRepoCard({
   featured,
-  onDeploy,
   repo,
 }: {
   featured: boolean;
-  onDeploy?: (repo: GithubDeployerRepo) => void;
   repo: GithubDeployerRepo;
 }) {
+  const {
+    actions: { onDeploy, onDeployTemplate },
+    requestDeploy,
+    states: { templateOptionsLoading },
+  } = useGithubDeployer();
+  const isTemplateMatchingPending = Boolean(
+    onDeployTemplate && templateOptionsLoading
+  );
+  const canDeploy = Boolean(
+    (onDeploy || onDeployTemplate) && !isTemplateMatchingPending
+  );
+
   return (
     <article
       className={cn(
@@ -268,8 +310,12 @@ function GithubRepoCard({
           featured && "text-primary"
         )}
         data-slot="github-deployer-repo-deploy"
-        disabled={!onDeploy}
-        onClick={() => onDeploy?.(repo)}
+        disabled={!canDeploy}
+        onClick={() => {
+          if (canDeploy) {
+            requestDeploy(repo);
+          }
+        }}
         type="button"
         variant="secondary"
       >
@@ -282,7 +328,7 @@ function GithubRepoCard({
 
 function GithubDeployerRepoSelect({ className }: { className?: string }) {
   const {
-    actions: { onDeploy, onDisconnect },
+    actions: { onDisconnect },
     states: {
       isAuthorized,
       deployedRepo,
@@ -412,12 +458,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       {!(errorMessage || isLoading) && visibleRepos.length > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">
           {visibleRepos.map((repo, index) => (
-            <GithubRepoCard
-              featured={index === 0}
-              key={repo.id}
-              onDeploy={onDeploy}
-              repo={repo}
-            />
+            <GithubRepoCard featured={index === 0} key={repo.id} repo={repo} />
           ))}
         </div>
       ) : null}
@@ -480,7 +521,7 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
       {...props}
     >
       <DeploymentSettings.Section
-        description="Deploy directly from a GitHub repository URL."
+        description="Authorize GitHub before deploying from a repository URL."
         icon={<Link2 aria-hidden className="size-4" />}
         title="Repository URL"
       >

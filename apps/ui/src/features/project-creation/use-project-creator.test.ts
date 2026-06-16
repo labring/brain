@@ -30,12 +30,12 @@ test("project creator integrations are disabled on the general method picker", (
   );
 });
 
-test("project creator enables only the selected optional integration", () => {
+test("project creator enables the selected optional integration", () => {
   assert.deepEqual(
     projectCreatorIntegrationState({ activeSource: "github", open: true }),
     {
       githubEnabled: true,
-      templateEnabled: false,
+      templateEnabled: true,
     }
   );
   assert.deepEqual(
