@@ -1,7 +1,7 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { Button } from "@workspace/ui/components/button";
 import { Preview, PreviewWrapper } from "@workspace/ui/components/preview";
 import { Download, Globe2, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +12,7 @@ export default function AppDialogPreview() {
       <Preview title="Confirmation">
         <div className="flex justify-center">
           <AppDialog.Root>
-            <AppDialog.Trigger render={<Button variant="destructive" />}>
+            <AppDialog.Trigger render={<AppButton variant="danger" />}>
               Delete project
             </AppDialog.Trigger>
             <AppDialog.Content>
@@ -44,7 +44,7 @@ export default function AppDialogPreview() {
       <Preview title="Form">
         <div className="flex justify-center">
           <AppDialog.Root>
-            <AppDialog.Trigger render={<Button variant="outline" />}>
+            <AppDialog.Trigger render={<AppButton variant="secondary" />}>
               Bind custom domain
             </AppDialog.Trigger>
             <AppDialog.Content>
@@ -102,7 +102,7 @@ function LoadingDialogSample() {
           }
         }}
       >
-        <AppDialog.Trigger render={<Button variant="outline" />}>
+        <AppDialog.Trigger render={<AppButton variant="secondary" />}>
           Export data
         </AppDialog.Trigger>
         <AppDialog.Content>

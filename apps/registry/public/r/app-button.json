@@ -2,13 +2,9 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "app-button",
   "title": "App Button",
-  "description": "SealAI product button style layer for non-icon actions",
-  "dependencies": [
-    "class-variance-authority"
-  ],
-  "registryDependencies": [
-    "button"
-  ],
+  "description": "SealAI product button for non-icon actions. Use this instead of primitive Button in product surfaces",
+  "dependencies": ["class-variance-authority"],
+  "registryDependencies": ["button"],
   "files": [
     {
       "path": "../../packages/ui/src/components/app-button.tsx",

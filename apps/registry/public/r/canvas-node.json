@@ -3,12 +3,8 @@
   "name": "canvas-node",
   "title": "Canvas Node",
   "description": "Shared canvas node chrome with frame, surface, layout, status, drag, expand, connector, copyable-row, metrics, actions, and card primitives",
-  "dependencies": [
-    "lucide-react"
-  ],
-  "registryDependencies": [
-    "button"
-  ],
+  "dependencies": ["lucide-react"],
+  "registryDependencies": ["button"],
   "files": [
     {
       "path": "../../packages/ui/src/components/canvas-node/canvas-node.types.ts",
@@ -60,7 +56,7 @@
     },
     {
       "path": "../../packages/ui/src/components/canvas-node/canvas-node.placeholder.tsx",
-      "content": "\"use client\";\n\nimport { cn } from \"@workspace/ui/lib/utils\";\nimport type { ComponentProps, ReactNode } from \"react\";\n\nimport { Skeleton } from \"../skeleton\";\nimport { CanvasNodeDragStateFrame } from \"./canvas-node.drag-frame\";\nimport { CanvasNodeFrame } from \"./canvas-node.frame\";\nimport { CanvasNodeSurface } from \"./canvas-node.surface\";\n\nexport interface CanvasNodePlaceholderProps\n  extends Omit<ComponentProps<\"article\">, \"children\" | \"className\"> {\n  children?: ReactNode;\n  className?: string;\n  \"data-slot\"?: never;\n  surfaceClassName?: string;\n}\n\nexport function CanvasNodePlaceholder({\n  children,\n  className,\n  role = \"status\",\n  surfaceClassName,\n  ...props\n}: CanvasNodePlaceholderProps) {\n  const { \"data-slot\": _dataSlot, ...surfaceProps } = props;\n\n  return (\n    <CanvasNodeFrame className={className}>\n      <CanvasNodeDragStateFrame>\n        <CanvasNodeSurface\n          className={cn(\"justify-center p-3\", surfaceClassName)}\n          role={role}\n          {...surfaceProps}\n        >\n          {children ?? <CanvasNodePlaceholderSkeleton />}\n        </CanvasNodeSurface>\n      </CanvasNodeDragStateFrame>\n    </CanvasNodeFrame>\n  );\n}\n\nfunction CanvasNodePlaceholderSkeleton() {\n  return (\n    <div\n      className=\"flex items-center gap-3\"\n      data-slot=\"canvas-node-placeholder\"\n    >\n      <Skeleton className=\"size-9 shrink-0 rounded-md bg-input\" />\n      <div className=\"min-w-0 flex-1 space-y-2\">\n        <Skeleton className=\"h-3 w-32 max-w-full bg-input\" />\n        <Skeleton className=\"h-2.5 w-44 max-w-full bg-input\" />\n      </div>\n    </div>\n  );\n}\n",
+      "content": "\"use client\";\n\nimport { cn } from \"@workspace/ui/lib/utils\";\nimport type { ComponentProps, ReactNode } from \"react\";\n\nimport { Skeleton } from \"../skeleton\";\nimport { CanvasNodeConnectionAnchor } from \"./canvas-node.connection\";\nimport { CanvasNodeDragStateFrame } from \"./canvas-node.drag-frame\";\nimport { CanvasNodeFrame } from \"./canvas-node.frame\";\nimport { CanvasNodeSurface } from \"./canvas-node.surface\";\n\nexport interface CanvasNodePlaceholderProps\n  extends Omit<ComponentProps<\"article\">, \"children\" | \"className\"> {\n  children?: ReactNode;\n  className?: string;\n  \"data-slot\"?: never;\n  surfaceClassName?: string;\n}\n\nexport function CanvasNodePlaceholder({\n  children,\n  className,\n  role = \"status\",\n  surfaceClassName,\n  ...props\n}: CanvasNodePlaceholderProps) {\n  const { \"data-slot\": _dataSlot, ...surfaceProps } = props;\n\n  return (\n    <CanvasNodeFrame className={className}>\n      <CanvasNodeConnectionAnchor />\n      <CanvasNodeDragStateFrame>\n        <CanvasNodeSurface\n          className={cn(\"justify-center p-3\", surfaceClassName)}\n          role={role}\n          {...surfaceProps}\n        >\n          {children ?? <CanvasNodePlaceholderSkeleton />}\n        </CanvasNodeSurface>\n      </CanvasNodeDragStateFrame>\n    </CanvasNodeFrame>\n  );\n}\n\nfunction CanvasNodePlaceholderSkeleton() {\n  return (\n    <div\n      className=\"flex items-center gap-3\"\n      data-slot=\"canvas-node-placeholder\"\n    >\n      <Skeleton className=\"size-9 shrink-0 rounded-md bg-input\" />\n      <div className=\"min-w-0 flex-1 space-y-2\">\n        <Skeleton className=\"h-3 w-32 max-w-full bg-input\" />\n        <Skeleton className=\"h-2.5 w-44 max-w-full bg-input\" />\n      </div>\n    </div>\n  );\n}\n",
       "type": "registry:component",
       "target": "components/canvas-node/canvas-node.placeholder.tsx"
     },

@@ -2,10 +2,8 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "app-input",
   "title": "App Input",
-  "description": "SealAI product input style layer for pane and settings forms",
-  "registryDependencies": [
-    "input"
-  ],
+  "description": "SealAI product single-line input for panes and settings forms. Use this instead of primitive Input in product surfaces",
+  "registryDependencies": ["input"],
   "files": [
     {
       "path": "../../packages/ui/src/components/app-input.tsx",

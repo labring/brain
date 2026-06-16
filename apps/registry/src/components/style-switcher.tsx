@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import {
   registryStyleBrandUrl,
+  registryStyleDisplayName,
   useRegistryStyle,
 } from "@/context/registry-style-context";
 
@@ -105,6 +106,7 @@ export function StyleSwitcher({
   }
 
   const active = selectedStyle || styles[0];
+  const activeLabel = registryStyleDisplayName(active);
 
   return (
     <SidebarMenu className={cn(className)}>
@@ -120,9 +122,9 @@ export function StyleSwitcher({
           >
             <StyleBrandIcon key={active} style={active} />
             <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium capitalize">{active}</span>
+              <span className="truncate font-medium">{activeLabel}</span>
               <span className="truncate text-sidebar-foreground/60 text-xs">
-                Registry style
+                Product components
               </span>
             </div>
             <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
@@ -148,7 +150,7 @@ export function StyleSwitcher({
                     value={style}
                   >
                     <StyleBrandIcon key={style} style={style} />
-                    <span className="capitalize">{style}</span>
+                    <span>{registryStyleDisplayName(style)}</span>
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>

@@ -110,7 +110,7 @@ export const Index: RegistryIndex = {
     name: "app-icon-button",
     title: "App Icon Button",
     description:
-      "SealAI product icon-only button style layer with shared size and variant semantics.",
+      "SealAI product icon-only button with shared size and variant semantics. Use this instead of the shared primitive Button for icon-only product actions.",
     state: "coding",
     type: "registry:preview",
     registryDependencies: ["preview", "app-icon-button", "button"],
@@ -144,7 +144,7 @@ export const Index: RegistryIndex = {
     name: "app-button",
     title: "App Button",
     description:
-      "SealAI product button style layer for non-icon actions, built on the shared primitive Button.",
+      "SealAI product button for non-icon actions. Use this instead of the shared primitive Button in product surfaces.",
     state: "coding",
     type: "registry:preview",
     registryDependencies: ["preview", "app-button", "button"],
@@ -176,7 +176,7 @@ export const Index: RegistryIndex = {
     name: "app-input",
     title: "App Input",
     description:
-      "SealAI product input style layer for pane and settings forms, built on the shared primitive Input.",
+      "SealAI product single-line input for panes and settings forms. Use this instead of the shared primitive Input in product surfaces.",
     state: "coding",
     type: "registry:preview",
     registryDependencies: ["preview", "app-input", "input"],
@@ -200,6 +200,38 @@ export const Index: RegistryIndex = {
     ],
     load: () =>
       import("@registry/linear/components/app-input/app-input-preview"),
+  },
+
+  "linear/components/app-textarea": {
+    style: "linear",
+    group: "components",
+    name: "app-textarea",
+    title: "App Textarea",
+    description:
+      "SealAI product multi-line input for forms and source editors. Use this instead of the shared primitive Textarea in product surfaces.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-textarea", "textarea"],
+    files: [
+      {
+        path: "registry/linear/components/app-textarea/app-textarea-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-textarea.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/textarea.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/app-textarea/app-textarea-preview"),
   },
 
   "linear/components/app-input-field": {
@@ -265,7 +297,7 @@ export const Index: RegistryIndex = {
       "Dark product dialog compound component for confirmations, forms, and loading actions.",
     state: "done",
     type: "registry:preview",
-    registryDependencies: ["preview", "app-dialog", "button"],
+    registryDependencies: ["preview", "app-dialog", "app-button"],
     files: [
       {
         path: "registry/linear/components/app-dialog/app-dialog-preview.tsx",
@@ -538,104 +570,5 @@ export const Index: RegistryIndex = {
     ],
     load: () =>
       import("@registry/linear/components/metrics-chart/metrics-chart-preview"),
-  },
-
-  "shadcn/components/accordion": {
-    style: "shadcn",
-    group: "components",
-    name: "accordion",
-    title: "Accordion",
-    description: "Collapsible sections for FAQs and structured content",
-    state: "designing",
-    type: "registry:preview",
-    registryDependencies: ["preview", "accordion", "button", "card"],
-    files: [
-      {
-        path: "registry/shadcn/components/accordion-example.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      previewUiFile,
-    ],
-    load: () => import("@registry/shadcn/components/accordion-example"),
-  },
-  "shadcn/components/alert-dialog": {
-    style: "shadcn",
-    group: "components",
-    name: "alert-dialog",
-    title: "Alert Dialog",
-    description: "Modal confirmations and destructive actions",
-    state: "reviewing",
-    type: "registry:preview",
-    registryDependencies: ["preview", "alert-dialog", "button", "dialog"],
-    files: [
-      {
-        path: "registry/shadcn/components/alert-dialog-example/v0/alert-dialog-example-v0.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      {
-        path: "registry/shadcn/components/alert-dialog-example/v1/alert-dialog-example-v1.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      previewUiFile,
-    ],
-    variants: [
-      {
-        id: "v0",
-        load: () =>
-          import(
-            "@registry/shadcn/components/alert-dialog-example/v0/alert-dialog-example-v0"
-          ),
-        title: "v0",
-      },
-      {
-        id: "v1",
-        load: () =>
-          import(
-            "@registry/shadcn/components/alert-dialog-example/v1/alert-dialog-example-v1"
-          ),
-        title: "v1",
-      },
-    ],
-  },
-  "shadcn/components/alert": {
-    style: "shadcn",
-    group: "components",
-    name: "alert",
-    title: "Alert",
-    description: "Status messages with optional icons and actions",
-    state: "coding",
-    type: "registry:preview",
-    registryDependencies: ["preview", "alert", "badge", "button"],
-    files: [
-      {
-        path: "registry/shadcn/components/alert-example.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      previewUiFile,
-    ],
-    load: () => import("@registry/shadcn/components/alert-example"),
-  },
-  "shadcn/components/avatar": {
-    style: "shadcn",
-    group: "components",
-    name: "avatar",
-    title: "Avatar",
-    description: "User images, fallbacks, badges, and stacked groups",
-    state: "done",
-    type: "registry:preview",
-    registryDependencies: ["preview", "avatar", "button", "empty"],
-    files: [
-      {
-        path: "registry/shadcn/components/avatar-example.tsx",
-        type: "registry:preview",
-        target: "",
-      },
-      previewUiFile,
-    ],
-    load: () => import("@registry/shadcn/components/avatar-example"),
   },
 };
