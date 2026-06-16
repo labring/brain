@@ -54,7 +54,7 @@ interface CodexGatewaySessionResponse {
   state: CodexGatewayState;
 }
 
-interface GatewayContext {
+export interface GatewayContext {
   authToken: string | null;
   url: string;
 }

@@ -52,9 +52,11 @@ import { buildRuntimeContract } from "./build-runtime-contract";
 import { deployTaskFailureSummary } from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
+  type GatewayContext,
   getCodexGatewayContextFromDevboxInfo,
   runDeployTaskGateway,
 } from "./gateway";
+import { deployOutputProgressSummary } from "./output-progress";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
 import type { DeployTaskArtifactSummary, DeployTaskRow } from "./schema";
 import {
@@ -78,6 +80,7 @@ const DEPLOY_BUILD_RUNTIME_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-runtime
 const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/index.yaml`;
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
+const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
   "jobs",
@@ -897,16 +900,40 @@ function installSkillsCommand(): string {
   ].join("\n");
 }
 
-function readDeployOutputCommand(): string {
+function deployOutputReadScript(): string {
+  return [
+    "const fs = require('fs');",
+    "const readJson = (path) => fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : null;",
+    "const readText = (path) => fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : null;",
+    "const deliveryManifest = readJson(process.env.MANIFEST_PATH);",
+    "const buildResult = readJson(process.env.BUILD_RESULT_PATH);",
+    "const templateYaml = readText(process.env.TEMPLATE_PATH);",
+    "const output = {};",
+    "if (deliveryManifest != null) output.deliveryManifest = deliveryManifest;",
+    "if (buildResult != null) output.buildResult = buildResult;",
+    "if (typeof templateYaml === 'string' && templateYaml.trim()) output.templateYaml = templateYaml;",
+    "process.stdout.write(JSON.stringify(output));",
+  ].join(" ");
+}
+
+function readDeployOutputCommand(input?: { allowPartial?: boolean }): string {
+  const requiredFileChecks =
+    input?.allowPartial === true
+      ? []
+      : [
+          'test -f "$manifest_path"',
+          'test -f "$build_result_path"',
+          'test -f "$template_path"',
+        ];
   return [
     "set -euo pipefail",
     `manifest_path=${shellQuote(DEPLOY_DELIVERY_MANIFEST_PATH)}`,
     `build_result_path=${shellQuote(DEPLOY_BUILD_RESULT_PATH)}`,
     `template_path=${shellQuote(DEPLOY_TEMPLATE_YAML_PATH)}`,
-    'test -f "$manifest_path"',
-    'test -f "$build_result_path"',
-    'test -f "$template_path"',
-    "MANIFEST_PATH=\"$manifest_path\" BUILD_RESULT_PATH=\"$build_result_path\" TEMPLATE_PATH=\"$template_path\" node -e \"const fs=require('fs'); const deliveryManifest=JSON.parse(fs.readFileSync(process.env.MANIFEST_PATH,'utf8')); const buildResult=JSON.parse(fs.readFileSync(process.env.BUILD_RESULT_PATH,'utf8')); const templateYaml=fs.readFileSync(process.env.TEMPLATE_PATH,'utf8'); process.stdout.write(JSON.stringify({deliveryManifest, buildResult, templateYaml}));\"",
+    ...requiredFileChecks,
+    `MANIFEST_PATH="$manifest_path" BUILD_RESULT_PATH="$build_result_path" TEMPLATE_PATH="$template_path" node -e ${shellQuote(
+      deployOutputReadScript()
+    )}`,
   ].join("\n");
 }
 
@@ -1018,12 +1045,17 @@ async function execOrThrow(input: {
 }
 
 async function readDeployOutput(input: {
+  allowPartial?: boolean;
   namespace: string;
   runtimeName: string;
 }): Promise<Record<string, unknown> | null> {
   const result = (
     await execDevbox(input.namespace, input.runtimeName, {
-      command: ["bash", "-lc", readDeployOutputCommand()],
+      command: [
+        "bash",
+        "-lc",
+        readDeployOutputCommand({ allowPartial: input.allowPartial }),
+      ],
       timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
     })
   ).data;
@@ -1033,9 +1065,125 @@ async function readDeployOutput(input: {
   }
 
   const parsed = JSON.parse(result.stdout) as unknown;
-  return parsed != null && typeof parsed === "object"
-    ? (parsed as Record<string, unknown>)
-    : null;
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const output = parsed as Record<string, unknown>;
+  return Object.keys(output).length === 0 ? null : output;
+}
+
+async function recordDeployOutputProgress(input: {
+  summary: Record<string, unknown>;
+  taskId: string;
+}): Promise<string> {
+  const complete = input.summary.complete === true;
+  await recordDeployTaskEvent(input.taskId, {
+    kind: complete
+      ? "deployment_task.output_ready"
+      : "deployment_task.output_partial",
+    message: complete
+      ? "Deployment output files are ready."
+      : "Deployment output files are partially available.",
+    payload: input.summary,
+    phase: "generate-artifacts",
+  });
+  return JSON.stringify(input.summary);
+}
+
+async function recordDeployOutputProgressIfPresent(input: {
+  output: Record<string, unknown> | null;
+  seenSignatures?: Set<string>;
+  taskId: string;
+}): Promise<void> {
+  const summary = deployOutputProgressSummary(input.output);
+  if (summary == null) {
+    return;
+  }
+  const signature = JSON.stringify(summary);
+  if (input.seenSignatures?.has(signature)) {
+    return;
+  }
+  input.seenSignatures?.add(signature);
+  await recordDeployOutputProgress({
+    summary,
+    taskId: input.taskId,
+  });
+}
+
+async function monitorDeployOutputProgress(input: {
+  namespace: string;
+  runtimeName: string;
+  seenSignatures: Set<string>;
+  stop: Promise<void>;
+  taskId: string;
+}): Promise<void> {
+  while (true) {
+    try {
+      const output = await readDeployOutput({
+        allowPartial: true,
+        namespace: input.namespace,
+        runtimeName: input.runtimeName,
+      });
+      const summary = deployOutputProgressSummary(output);
+      if (summary != null) {
+        const signature = JSON.stringify(summary);
+        if (!input.seenSignatures.has(signature)) {
+          input.seenSignatures.add(signature);
+          await recordDeployOutputProgress({
+            summary,
+            taskId: input.taskId,
+          });
+        }
+        if (summary.complete === true) {
+          return;
+        }
+      }
+    } catch {
+      // Progress polling is best-effort; the gateway turn remains authoritative.
+    }
+
+    const nextTick = sleep(DEPLOY_OUTPUT_PROGRESS_POLL_MS);
+    const shouldStop = await Promise.race([
+      input.stop.then(() => true),
+      nextTick.then(() => false),
+    ]);
+    if (shouldStop) {
+      return;
+    }
+  }
+}
+
+async function runDeployTaskGatewayWithOutputProgress(input: {
+  context: GatewayContext;
+  namespace: string;
+  repairOutput?: boolean;
+  runtimeName: string;
+  seenSignatures: Set<string>;
+  task: DeployTaskRow;
+}): Promise<void> {
+  let stopMonitor!: () => void;
+  const stop = new Promise<void>((resolve) => {
+    stopMonitor = resolve;
+  });
+  const monitor = monitorDeployOutputProgress({
+    namespace: input.namespace,
+    runtimeName: input.runtimeName,
+    seenSignatures: input.seenSignatures,
+    stop,
+    taskId: input.task.id,
+  });
+
+  try {
+    await runDeployTaskGateway({
+      context: input.context,
+      repairOutput: input.repairOutput,
+      task: input.task,
+    });
+  } finally {
+    stopMonitor();
+    await monitor;
+  }
 }
 
 async function completeTaskWithArtifact(input: {
@@ -1333,6 +1481,7 @@ async function runAiDeploymentTask(input: {
   );
   const gatewayContext =
     getCodexGatewayContextFromDevboxInfo(latestRuntimeInfo);
+  const outputProgressSignatures = new Set<string>();
 
   if (gatewayContext == null) {
     await updateDeployTaskState(input.task.id, {
@@ -1348,14 +1497,22 @@ async function runAiDeploymentTask(input: {
     return;
   }
 
-  await runDeployTaskGateway({
+  await runDeployTaskGatewayWithOutputProgress({
     context: gatewayContext,
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+    seenSignatures: outputProgressSignatures,
     task: input.task,
   });
 
   const deployOutput = await readDeployOutput({
     namespace: input.task.namespace,
     runtimeName: runtime.name,
+  });
+  await recordDeployOutputProgressIfPresent({
+    output: deployOutput,
+    seenSignatures: outputProgressSignatures,
+    taskId: input.task.id,
   });
   let finalDeployOutput = deployOutput;
   if (finalDeployOutput == null) {
@@ -1365,14 +1522,22 @@ async function runAiDeploymentTask(input: {
         "Codex gateway completed without deployment output; requesting a repair turn.",
       phase: "generate-artifacts",
     });
-    await runDeployTaskGateway({
+    await runDeployTaskGatewayWithOutputProgress({
       context: gatewayContext,
+      namespace: input.task.namespace,
       repairOutput: true,
+      runtimeName: runtime.name,
+      seenSignatures: outputProgressSignatures,
       task: input.task,
     });
     finalDeployOutput = await readDeployOutput({
       namespace: input.task.namespace,
       runtimeName: runtime.name,
+    });
+    await recordDeployOutputProgressIfPresent({
+      output: finalDeployOutput,
+      seenSignatures: outputProgressSignatures,
+      taskId: input.task.id,
     });
   }
 
