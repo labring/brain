@@ -31,6 +31,7 @@ import {
   type ApNetworkPublicAddress,
   type ApNetworkPublicAddressDraft,
   type ApNetworkVisibleDomainRows,
+  type ApNetworkVisiblePublicAddressRow,
   addedAppListeningPorts,
   apNetworksEqual,
   appListeningPortsFromNetwork,
@@ -1064,15 +1065,16 @@ interface DomainListSectionProps {
   ) => void | Promise<void>;
   onBindAddress: (
     rowKey: string,
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     customDomain?: ApNetworkCustomDomain
   ) => void | Promise<void>;
   onCancelAddPublicAddress: () => void;
   onCancelBindAddress: (rowKey: string) => void;
   onCollapsePublicAddresses: () => void;
-  onDeletePublicAddress: (index: number) => void | Promise<void>;
+  onDeletePublicAddress: (
+    row: ApNetworkVisiblePublicAddressRow
+  ) => void | Promise<void>;
   onOpenAddPublicAddress: () => void;
   onOpenBindAddress: (rowKey: string) => void;
   onShowAllPublicAddresses: () => void;
@@ -1082,7 +1084,7 @@ interface DomainListSectionProps {
   showAllPublicAddresses: boolean;
   verify?: ApCustomDomainCnameVerifier;
   visibleDomainRows: ApNetworkVisibleDomainRows;
-  visiblePublicAddresses: ApNetworkPublicAddress[];
+  visiblePublicAddressRows: ApNetworkVisiblePublicAddressRow[];
 }
 
 function DomainListSection({
@@ -1105,13 +1107,13 @@ function DomainListSection({
   showAllPublicAddresses,
   verify,
   visibleDomainRows,
-  visiblePublicAddresses,
+  visiblePublicAddressRows,
 }: DomainListSectionProps) {
   const noDomains =
-    visibleDomainRows.publicAddresses.length === 0 &&
+    visibleDomainRows.publicAddressRows.length === 0 &&
     visibleDomainRows.customDomains.length === 0;
   const hasPublicAddressOverflow =
-    visibleDomainRows.publicAddresses.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
+    visibleDomainRows.publicAddressRows.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
 
   return (
     <NetworkCard title="Domain List">
@@ -1156,8 +1158,9 @@ function DomainListSection({
                 readOnly={readOnly}
               />
             ))}
-            {visiblePublicAddresses.map((address, index) => {
-              const key = publicAddressKey(address, index);
+            {visiblePublicAddressRows.map((row) => {
+              const { address } = row;
+              const key = publicAddressKey(address, row.publicAddressIndex);
               return expandedCnameRowKeys.has(key) ? (
                 <PublicAddressEditForm
                   address={address}
@@ -1168,8 +1171,10 @@ function DomainListSection({
                       ? (submittedAddress, port, customDomain) =>
                           onBindAddress(
                             key,
-                            submittedAddress,
-                            index,
+                            {
+                              ...row,
+                              address: submittedAddress,
+                            },
                             port,
                             customDomain
                           )
@@ -1186,7 +1191,7 @@ function DomainListSection({
                   }
                   onDelete={
                     canMutateNetwork
-                      ? () => onDeletePublicAddress(index)
+                      ? () => onDeletePublicAddress(row)
                       : undefined
                   }
                   readOnly={readOnly}
@@ -1238,15 +1243,17 @@ export function NetworkSettingsSection({
     useState<DeletePortDialogTarget | null>(null);
   const visibleDomains = visibleDomainRows(network);
   const canMutateNetwork = controller.canMutate;
-  const visiblePublicAddresses = showAllPublicAddresses
-    ? visibleDomains.publicAddresses
-    : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
+  const visiblePublicAddressRows = showAllPublicAddresses
+    ? visibleDomains.publicAddressRows
+    : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
 
   useEffect(() => {
-    if (visibleDomains.publicAddresses.length <= PUBLIC_ADDRESS_VISIBLE_COUNT) {
+    if (
+      visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
+    ) {
       setShowAllPublicAddresses(false);
     }
-  }, [visibleDomains.publicAddresses.length]);
+  }, [visibleDomains.publicAddressRows.length]);
 
   const handleCancelAddPublicAddress = () => {
     setAddPublicAddressOpen(false);
@@ -1284,8 +1291,10 @@ export function NetworkSettingsSection({
     await controller.addPublicAddress(address, customDomain);
   };
 
-  const handleDeletePublicAddress = async (index: number) => {
-    await controller.deletePublicAddress(index);
+  const handleDeletePublicAddress = async (
+    row: ApNetworkVisiblePublicAddressRow
+  ) => {
+    await controller.deletePublicAddress(row);
   };
 
   const handleOpenBindAddress = (rowKey: string) => {
@@ -1302,12 +1311,11 @@ export function NetworkSettingsSection({
 
   const handleBindCustomDomain = async (
     rowKey: string,
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     domain?: ApNetworkCustomDomain
   ) => {
-    await controller.bindCustomDomain(address, index, port, domain);
+    await controller.bindCustomDomain(row, port, domain);
     handleCancelBindAddress(rowKey);
   };
 
@@ -1382,7 +1390,7 @@ export function NetworkSettingsSection({
         showAllPublicAddresses={showAllPublicAddresses}
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
-        visiblePublicAddresses={visiblePublicAddresses}
+        visiblePublicAddressRows={visiblePublicAddressRows}
       />
       <DeletePortDialog
         onConfirm={handleConfirmDeleteAppListeningPort}
@@ -1470,9 +1478,9 @@ export function useApPublicAddressesSettingsSections({
 
   const networkForRender = commitMode ? draftNetwork : network;
   const visibleDomains = visibleDomainRows(networkForRender);
-  const visiblePublicAddresses = showAllPublicAddresses
-    ? visibleDomains.publicAddresses
-    : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
+  const visiblePublicAddressRows = showAllPublicAddresses
+    ? visibleDomains.publicAddressRows
+    : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
   const networkDirty = publicAddressNetworkDirty(
     networkBackingState.base,
     draftNetwork
@@ -1480,10 +1488,12 @@ export function useApPublicAddressesSettingsSections({
   const canSave = commitMode && networkDirty && !savePending;
 
   useEffect(() => {
-    if (visibleDomains.publicAddresses.length <= PUBLIC_ADDRESS_VISIBLE_COUNT) {
+    if (
+      visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
+    ) {
       setShowAllPublicAddresses(false);
     }
-  }, [visibleDomains.publicAddresses.length]);
+  }, [visibleDomains.publicAddressRows.length]);
 
   const resetNetworkDraft = useCallback(() => {
     applyNetworkDraftToLocalState(networkBackingState.base);
@@ -1602,12 +1612,11 @@ export function useApPublicAddressesSettingsSections({
 
   const handleBindCustomDomain = async (
     rowKey: string,
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     domain?: ApNetworkCustomDomain
   ) => {
-    await controller.bindCustomDomain(address, index, port, domain);
+    await controller.bindCustomDomain(row, port, domain);
     handleCancelBindAddress(rowKey);
   };
 
@@ -1652,7 +1661,7 @@ export function useApPublicAddressesSettingsSections({
               showAllPublicAddresses={showAllPublicAddresses}
               verify={onCustomDomainCnameVerify}
               visibleDomainRows={visibleDomains}
-              visiblePublicAddresses={visiblePublicAddresses}
+              visiblePublicAddressRows={visiblePublicAddressRows}
             />
             {portNotice == null ? null : (
               <p className="text-muted-foreground text-sm" role="status">

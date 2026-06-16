@@ -4,15 +4,14 @@ import { useCallback, useMemo } from "react";
 import {
   type ApNetwork,
   type ApNetworkCustomDomain,
-  type ApNetworkPublicAddress,
   type ApNetworkPublicAddressDraft,
+  type ApNetworkVisiblePublicAddressRow,
   apNetworkAfterDeletePublicAddress,
   apNetworkAfterEditPublicAddress,
   apNetworkAfterUnbindCustomDomain,
   apNetworkWithAddedPublicAddress,
   networkWithAppListeningPort,
   networkWithoutAppListeningPort,
-  visibleDomainRows,
 } from "./ap-network-model";
 
 export interface ApNetworkDraftController {
@@ -22,14 +21,15 @@ export interface ApNetworkDraftController {
     customDomain?: ApNetworkCustomDomain
   ) => void | Promise<void>;
   bindCustomDomain: (
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     customDomain?: ApNetworkCustomDomain
   ) => void | Promise<void>;
   canMutate: boolean;
   deleteAppListeningPort: (port: number) => void | Promise<void>;
-  deletePublicAddress: (index: number) => void | Promise<void>;
+  deletePublicAddress: (
+    row: ApNetworkVisiblePublicAddressRow
+  ) => void | Promise<void>;
   network: ApNetwork;
   unbindCustomDomain: (domain: ApNetworkCustomDomain) => void | Promise<void>;
 }
@@ -71,28 +71,22 @@ export function useApNetworkDraftController({
           })
         ),
       bindCustomDomain: (
-        address: ApNetworkPublicAddress,
-        index: number,
+        row: ApNetworkVisiblePublicAddressRow,
         port: number,
         customDomain?: ApNetworkCustomDomain
       ) =>
         commitNetwork(
           apNetworkAfterEditPublicAddress(network, {
             customDomain,
-            platformAddress: address,
-            platformAddressIndex: index,
+            publicAddress: row,
             port,
           })
         ),
       canMutate,
       deleteAppListeningPort: (port: number) =>
         commitNetwork(networkWithoutAppListeningPort(network, port)),
-      deletePublicAddress: (index: number) => {
-        const target = visibleDomainRows(network).publicAddresses[index];
-        return commitNetwork(
-          apNetworkAfterDeletePublicAddress(network, target, index)
-        );
-      },
+      deletePublicAddress: (row: ApNetworkVisiblePublicAddressRow) =>
+        commitNetwork(apNetworkAfterDeletePublicAddress(network, row)),
       network,
       unbindCustomDomain: (domain: ApNetworkCustomDomain) =>
         commitNetwork(apNetworkAfterUnbindCustomDomain(network, domain)),

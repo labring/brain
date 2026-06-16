@@ -275,9 +275,20 @@ export function publicAddressDisplayName(address: ApNetworkPublicAddress) {
   );
 }
 
+export function publicAddressIdValue(address: ApNetworkPublicAddress): string {
+  return address.id?.trim() || address.platformAddressId?.trim() || "";
+}
+
+export interface ApNetworkPublicAddressTarget {
+  address: ApNetworkPublicAddress;
+  publicAddressIndex: number;
+}
+
+export type ApNetworkVisiblePublicAddressRow = ApNetworkPublicAddressTarget;
+
 export interface ApNetworkVisibleDomainRows {
   customDomains: ApNetworkCustomDomain[];
-  publicAddresses: ApNetworkPublicAddress[];
+  publicAddressRows: ApNetworkVisiblePublicAddressRow[];
 }
 
 export function visibleDomainRows(
@@ -285,47 +296,43 @@ export function visibleDomainRows(
 ): ApNetworkVisibleDomainRows {
   const customDomains = network.customDomains ?? [];
   const boundPlatformAddressIds = new Set(
-    customDomains.map((domain) => domain.platformAddressId.trim())
+    customDomains
+      .map((domain) => domain.platformAddressId.trim())
+      .filter((id) => id !== "")
   );
   return {
     customDomains,
-    publicAddresses: network.publicAddresses.filter(
-      (address) => !boundPlatformAddressIds.has(address.id?.trim() ?? "")
-    ),
+    publicAddressRows: network.publicAddresses.flatMap((address, index) => {
+      const addressId = publicAddressIdValue(address);
+      return addressId !== "" && boundPlatformAddressIds.has(addressId)
+        ? []
+        : [{ address, publicAddressIndex: index }];
+    }),
   };
-}
-
-export function publicAddressIdValue(address: ApNetworkPublicAddress): string {
-  return address.id?.trim() || address.platformAddressId?.trim() || "";
 }
 
 export function isPublicAddressMutationTarget(
   address: ApNetworkPublicAddress,
   index: number,
-  target: ApNetworkPublicAddress,
-  targetIndex: number
+  target: ApNetworkPublicAddressTarget
 ): boolean {
-  const targetId = publicAddressIdValue(target);
+  const targetId = publicAddressIdValue(target.address);
   if (targetId !== "") {
     return publicAddressIdValue(address) === targetId;
   }
-  return address === target || index === targetIndex;
+  return address === target.address || index === target.publicAddressIndex;
 }
 
 export function isPublicAddressDeleteTarget(
   address: ApNetworkPublicAddress,
   index: number,
-  target: ApNetworkPublicAddress | undefined,
-  targetIndex: number
+  target: ApNetworkPublicAddressTarget
 ): boolean {
-  if (target == null) {
-    return index === targetIndex;
-  }
-  const targetId = publicAddressIdValue(target);
+  const targetId = publicAddressIdValue(target.address);
   if (targetId !== "") {
     return publicAddressIdValue(address) === targetId;
   }
-  return address === target || index === targetIndex;
+  return address === target.address || index === target.publicAddressIndex;
 }
 
 export function apNetworkAfterUnbindCustomDomain(
@@ -345,8 +352,7 @@ export function apNetworkAfterEditPublicAddress(
   network: ApNetwork,
   draft: {
     customDomain?: ApNetworkCustomDomain;
-    platformAddress: ApNetworkPublicAddress;
-    platformAddressIndex: number;
+    publicAddress: ApNetworkPublicAddressTarget;
     port: number;
   }
 ): ApNetwork {
@@ -360,12 +366,7 @@ export function apNetworkAfterEditPublicAddress(
             { ...draft.customDomain, targetPort: draft.port },
           ],
     publicAddresses: network.publicAddresses.map((address, index) =>
-      isPublicAddressMutationTarget(
-        address,
-        index,
-        draft.platformAddress,
-        draft.platformAddressIndex
-      )
+      isPublicAddressMutationTarget(address, index, draft.publicAddress)
         ? { ...address, port: draft.port }
         : address
     ),
@@ -377,8 +378,7 @@ export function apNetworkAfterBindCustomDomain(
   network: ApNetwork,
   draft: {
     customDomain: ApNetworkCustomDomain;
-    platformAddress: ApNetworkPublicAddress;
-    platformAddressIndex: number;
+    publicAddress: ApNetworkPublicAddressTarget;
     port: number;
   }
 ): ApNetwork {
@@ -387,14 +387,13 @@ export function apNetworkAfterBindCustomDomain(
 
 export function apNetworkAfterDeletePublicAddress(
   network: ApNetwork,
-  target: ApNetworkPublicAddress | undefined,
-  targetIndex: number
+  target: ApNetworkPublicAddressTarget
 ): ApNetwork {
   return {
     ...network,
     publicAddresses: network.publicAddresses.filter(
       (address, itemIndex) =>
-        !isPublicAddressDeleteTarget(address, itemIndex, target, targetIndex)
+        !isPublicAddressDeleteTarget(address, itemIndex, target)
     ),
   };
 }

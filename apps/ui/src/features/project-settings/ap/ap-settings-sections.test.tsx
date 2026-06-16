@@ -4,6 +4,10 @@ import { test } from "node:test";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import {
+  apNetworkAfterDeletePublicAddress,
+  visibleDomainRows,
+} from "./ap-network-model";
 import type {
   ApEnvVar,
   ApReplicaStrategy,
@@ -697,15 +701,17 @@ test("AP settings pane binds Custom Domains and retargets the Platform Address p
         status: "verified",
         targetPort: 8080,
       },
-      platformAddress: {
-        host: "api.example.com",
-        id: "pa_abc123",
-        port: 8080,
-        status: "accessible",
-        type: "platform",
-        url: "https://api.example.com/",
+      publicAddress: {
+        address: {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+        publicAddressIndex: 0,
       },
-      platformAddressIndex: 0,
       port: 9000,
     }
   );
@@ -749,15 +755,17 @@ test("AP settings pane edits Public Address ports without binding Custom Domains
       ],
     },
     {
-      platformAddress: {
-        host: "api.example.com",
-        id: "pa_abc123",
-        port: 8080,
-        status: "accessible",
-        type: "platform",
-        url: "https://api.example.com/",
+      publicAddress: {
+        address: {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+        publicAddressIndex: 0,
       },
-      platformAddressIndex: 0,
       port: 9000,
     }
   );
@@ -779,6 +787,44 @@ test("AP settings pane edits Public Address ports without binding Custom Domains
       privateAddress: "http://api-service.default.svc:8080",
     },
     { port: 9000 },
+  ]);
+});
+
+test("AP network visible Public Address mutations use raw indexes after hidden Custom Domains", () => {
+  const network = {
+    customDomains: [
+      {
+        domain: "www.example.com",
+        id: "cd_def456",
+        platformAddressId: "pa_hidden",
+      },
+    ],
+    privatePort: 80,
+    publicAddresses: [
+      { id: "pa_hidden", port: 80 },
+      { host: "pending.example.com", port: 80 },
+      { host: "later.example.com", port: 80 },
+    ],
+  };
+  const visibleRows = visibleDomainRows(network).publicAddressRows;
+
+  assert.equal(visibleRows.length, 2);
+  assert.equal(visibleRows[0]?.publicAddressIndex, 1);
+
+  const edited = apNetworkAfterEditPublicAddress(network, {
+    publicAddress: visibleRows[0],
+    port: 9000,
+  });
+  assert.deepEqual(edited.publicAddresses, [
+    { id: "pa_hidden", port: 80 },
+    { host: "pending.example.com", port: 9000 },
+    { host: "later.example.com", port: 80 },
+  ]);
+
+  const deleted = apNetworkAfterDeletePublicAddress(network, visibleRows[0]);
+  assert.deepEqual(deleted.publicAddresses, [
+    { id: "pa_hidden", port: 80 },
+    { host: "later.example.com", port: 80 },
   ]);
 });
 
