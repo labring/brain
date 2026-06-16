@@ -22,6 +22,19 @@ import { formatCreatedAt, toDate } from "./project-explorer.utils";
 
 const PROJECT_DESCRIPTION_MAX_LENGTH = 256;
 
+function projectExplorerItemRowClassName(
+  hasDescription: boolean,
+  interactive: boolean
+) {
+  return cn(
+    "project-explorer-item-row min-w-0 rounded-xl bg-transparent px-[18px] pt-2.5 transition-colors",
+    hasDescription
+      ? "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 pb-[18px]"
+      : "flex items-center gap-2 pb-2.5",
+    interactive && "cursor-pointer"
+  );
+}
+
 export function isProjectDeleteVerificationMatch(
   verification: string,
   displayName: string
@@ -143,25 +156,29 @@ export function ProjectExplorerListItem({
     }
   }, [actions, deleteVerification, project]);
 
+  const hasDescription = description !== "";
+  const rowClassName = projectExplorerItemRowClassName(
+    hasDescription,
+    interactive
+  );
+
   return (
     <li
       className={cn("rounded-xl", className)}
       data-slot="project-explorer-item"
     >
-      <div
-        className={cn(
-          "project-explorer-item-row flex min-w-0 items-start gap-2 rounded-xl bg-transparent px-2.5 py-2.5 transition-colors",
-          interactive && "cursor-pointer"
-        )}
-      >
+      <div className={rowClassName}>
         <CanvasNodeStatusDot
-          className="mt-[3px]"
+          className={hasDescription ? "self-center" : undefined}
           size="small"
           status={{ label: "", visualTone: project.status }}
         />
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col gap-1 text-start",
+            "min-w-0 text-start",
+            hasDescription
+              ? "col-start-2 row-start-1 self-center"
+              : "flex flex-1 flex-col gap-1",
             interactive && "cursor-pointer"
           )}
           {...(interactive
@@ -184,11 +201,6 @@ export function ProjectExplorerListItem({
               {formatCreatedAt(project.createdAt)}
             </time>
           </div>
-          {description === "" ? null : (
-            <p className="min-w-0 truncate text-muted-foreground text-sm leading-5">
-              {description}
-            </p>
-          )}
         </div>
         {showRowMenu ? (
           <DropdownMenu>
@@ -233,6 +245,11 @@ export function ProjectExplorerListItem({
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
+        ) : null}
+        {hasDescription ? (
+          <p className="col-span-full row-start-2 min-w-0 truncate text-muted-foreground text-sm leading-5">
+            {description}
+          </p>
         ) : null}
       </div>
 
