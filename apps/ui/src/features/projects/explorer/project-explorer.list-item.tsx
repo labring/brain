@@ -3,6 +3,7 @@
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
+import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { CanvasNodeStatusDot } from "@workspace/ui/components/canvas-node/canvas-node.status";
 import {
   DropdownMenu,
@@ -10,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
+import { Field, FieldError, FieldLabel } from "@workspace/ui/components/field";
 import { cn } from "@workspace/ui/lib/utils";
 import { EllipsisVertical, SquarePen, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
@@ -17,6 +19,21 @@ import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
 import { useProjectExplorer } from "./project-explorer.context";
 import type { ProjectExplorerProject } from "./project-explorer.types";
 import { formatCreatedAt, toDate } from "./project-explorer.utils";
+
+const PROJECT_DESCRIPTION_MAX_LENGTH = 256;
+
+function projectExplorerItemRowClassName(
+  hasDescription: boolean,
+  interactive: boolean
+) {
+  return cn(
+    "project-explorer-item-row min-w-0 rounded-xl bg-transparent px-[18px] pt-2.5 transition-colors",
+    hasDescription
+      ? "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 pb-[18px]"
+      : "flex items-center gap-2 pb-2.5",
+    interactive && "cursor-pointer"
+  );
+}
 
 export function isProjectDeleteVerificationMatch(
   verification: string,
@@ -34,26 +51,31 @@ export function ProjectExplorerListItem({
 }) {
   const { actions } = useProjectExplorer();
   const interactive = actions.onProjectClick != null;
-  const canRename = actions.onProjectRename != null;
+  const canEdit = actions.onProjectUpdate != null;
   const canDelete = actions.onProjectDelete != null;
-  const showRowMenu = canRename || canDelete;
+  const showRowMenu = canEdit || canDelete;
   const projectId = project.id;
   const showProjectId = projectId !== "" && projectId !== project.name;
+  const description = project.description?.trim() ?? "";
 
-  const [renameOpen, setRenameOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [renameDraft, setRenameDraft] = useState(project.name);
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [renameBusy, setRenameBusy] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState(project.name);
+  const [descriptionDraft, setDescriptionDraft] = useState(description);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteVerification, setDeleteVerification] = useState("");
 
   useEffect(() => {
-    if (renameOpen) {
-      setRenameDraft(project.name);
-      setRenameError(null);
+    if (editOpen) {
+      setDisplayNameDraft(project.name);
+      setDescriptionDraft(description);
+      setEditError(null);
+      setDescriptionError(null);
     }
-  }, [renameOpen, project.name]);
+  }, [description, editOpen, project.name]);
   useEffect(() => {
     if (deleteOpen) {
       setDeleteVerification("");
@@ -79,28 +101,43 @@ export function ProjectExplorerListItem({
     [handleRowActivate]
   );
 
-  const submitRename = useCallback(async () => {
-    const next = renameDraft.trim();
-    if (next === "" || next === project.name) {
-      setRenameOpen(false);
+  const submitEdit = useCallback(async () => {
+    const displayName = displayNameDraft.trim();
+    const nextDescription = descriptionDraft.trim();
+    if (displayName === "") {
+      setEditError("Project name is required.");
       return;
     }
-    if (!actions.onProjectRename) {
+    if (nextDescription.length > PROJECT_DESCRIPTION_MAX_LENGTH) {
+      setDescriptionError(
+        "Project description must be 256 characters or fewer."
+      );
       return;
     }
-    setRenameBusy(true);
-    setRenameError(null);
+    if (displayName === project.name && nextDescription === description) {
+      setEditOpen(false);
+      return;
+    }
+    if (!actions.onProjectUpdate) {
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    setDescriptionError(null);
     try {
-      await actions.onProjectRename(project, next);
-      setRenameOpen(false);
+      await actions.onProjectUpdate(project, {
+        description: nextDescription,
+        displayName,
+      });
+      setEditOpen(false);
     } catch (error) {
-      setRenameError(
-        error instanceof Error ? error.message : "Project rename failed."
+      setEditError(
+        error instanceof Error ? error.message : "Project update failed."
       );
     } finally {
-      setRenameBusy(false);
+      setEditBusy(false);
     }
-  }, [actions, project, renameDraft]);
+  }, [actions, description, descriptionDraft, displayNameDraft, project]);
 
   const submitDelete = useCallback(async () => {
     const onProjectDelete = actions.onProjectDelete;
@@ -119,24 +156,29 @@ export function ProjectExplorerListItem({
     }
   }, [actions, deleteVerification, project]);
 
+  const hasDescription = description !== "";
+  const rowClassName = projectExplorerItemRowClassName(
+    hasDescription,
+    interactive
+  );
+
   return (
     <li
       className={cn("rounded-xl", className)}
       data-slot="project-explorer-item"
     >
-      <div
-        className={cn(
-          "project-explorer-item-row flex min-w-0 items-center gap-2 rounded-xl bg-transparent p-2.5 transition-colors",
-          interactive && "cursor-pointer"
-        )}
-      >
+      <div className={rowClassName}>
         <CanvasNodeStatusDot
+          className={hasDescription ? "self-center" : undefined}
           size="small"
           status={{ label: "", visualTone: project.status }}
         />
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-row items-baseline justify-between gap-3 text-start",
+            "min-w-0 text-start",
+            hasDescription
+              ? "col-start-2 row-start-1 self-center"
+              : "flex flex-1 flex-col gap-1",
             interactive && "cursor-pointer"
           )}
           {...(interactive
@@ -148,15 +190,17 @@ export function ProjectExplorerListItem({
               }
             : {})}
         >
-          <span className="min-w-0 truncate font-medium text-foreground text-sm">
-            {project.name}
-          </span>
-          <time
-            className="shrink-0 text-muted-foreground text-xs tabular-nums"
-            dateTime={iso}
-          >
-            {formatCreatedAt(project.createdAt)}
-          </time>
+          <div className="flex min-w-0 items-baseline justify-between gap-3">
+            <span className="min-w-0 truncate font-medium text-foreground text-sm">
+              {project.name}
+            </span>
+            <time
+              className="shrink-0 text-muted-foreground text-xs tabular-nums"
+              dateTime={iso}
+            >
+              {formatCreatedAt(project.createdAt)}
+            </time>
+          </div>
         </div>
         {showRowMenu ? (
           <DropdownMenu>
@@ -180,13 +224,13 @@ export function ProjectExplorerListItem({
               side="right"
               sideOffset={14}
             >
-              {canRename ? (
+              {canEdit ? (
                 <DropdownMenuItem
                   className="project-explorer-action-menu-item h-7 cursor-pointer rounded-md px-2 py-0 font-normal text-foreground text-sm leading-none hover:bg-input hover:text-foreground focus:bg-input focus:text-foreground"
-                  onClick={() => setRenameOpen(true)}
+                  onClick={() => setEditOpen(true)}
                 >
                   <SquarePen aria-hidden className="size-4" />
-                  Rename
+                  Edit
                 </DropdownMenuItem>
               ) : null}
               {canDelete ? (
@@ -202,68 +246,112 @@ export function ProjectExplorerListItem({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        {hasDescription ? (
+          <p className="col-span-full row-start-2 min-w-0 truncate text-muted-foreground text-sm leading-5">
+            {description}
+          </p>
+        ) : null}
       </div>
 
       <AppDialog.Root
         onOpenChange={(nextOpen) => {
-          if (renameBusy && !nextOpen) {
+          if (editBusy && !nextOpen) {
             return;
           }
-          setRenameOpen(nextOpen);
+          setEditOpen(nextOpen);
         }}
-        open={renameOpen}
+        open={editOpen}
       >
         <AppDialog.Content
-          data-slot="project-explorer-rename-dialog"
+          data-slot="project-explorer-edit-dialog"
           onClick={(e) => e.stopPropagation()}
         >
           <AppDialog.Header>
             <AppDialog.Icon>
               <SquarePen aria-hidden />
             </AppDialog.Icon>
-            <AppDialog.Title>Rename project</AppDialog.Title>
+            <AppDialog.Title>Edit project</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>
-              Update the project display name
+              Update project details
             </AppDialog.Description>
             <AppInputField
               autoComplete="off"
-              error={renameError}
-              id={`project-rename-${project.id}`}
+              error={editError}
+              id={`project-edit-name-${project.id}`}
               label="Name"
               onChange={(e) => {
-                setRenameDraft(e.target.value);
-                if (renameError) {
-                  setRenameError(null);
+                setDisplayNameDraft(e.target.value);
+                if (editError) {
+                  setEditError(null);
                 }
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  submitRename().catch(() => undefined);
+                  submitEdit().catch(() => undefined);
                 }
               }}
-              value={renameDraft}
+              value={displayNameDraft}
             />
+            <Field
+              className="gap-2"
+              data-slot="project-explorer-description-field"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <FieldLabel
+                  className="text-foreground leading-5"
+                  htmlFor={`project-edit-description-${project.id}`}
+                >
+                  Description
+                </FieldLabel>
+                <span className="text-[11px] text-muted-foreground leading-4">
+                  {`${descriptionDraft.length}/${PROJECT_DESCRIPTION_MAX_LENGTH}`}
+                </span>
+              </div>
+              <AppTextarea
+                aria-invalid={descriptionError === null ? undefined : true}
+                className="min-h-9 resize-none border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+                id={`project-edit-description-${project.id}`}
+                maxLength={PROJECT_DESCRIPTION_MAX_LENGTH + 1}
+                onChange={(event) => {
+                  setDescriptionDraft(event.currentTarget.value);
+                  if (descriptionError) {
+                    setDescriptionError(null);
+                  }
+                }}
+                placeholder="Optional project context"
+                rows={1}
+                value={descriptionDraft}
+              />
+              {descriptionError === null ? null : (
+                <FieldError className="text-xs leading-4" role="alert">
+                  {descriptionError}
+                </FieldError>
+              )}
+            </Field>
           </AppDialog.Body>
           <AppDialog.Footer>
             <AppDialog.Cancel
               className="bg-input/30 hover:bg-input"
-              disabled={renameBusy}
+              disabled={editBusy}
             >
               Cancel
             </AppDialog.Cancel>
             <AppDialog.Action
               className="bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
               disabled={
-                renameBusy ||
-                renameDraft.trim() === "" ||
-                renameDraft.trim() === project.name
+                editBusy ||
+                displayNameDraft.trim() === "" ||
+                descriptionDraft.trim().length >
+                  PROJECT_DESCRIPTION_MAX_LENGTH ||
+                (displayNameDraft.trim() === project.name &&
+                  descriptionDraft.trim() === description)
               }
-              loading={renameBusy}
+              loading={editBusy}
               loadingLabel="Saving"
-              onClick={() => submitRename().catch(() => undefined)}
+              onClick={() => submitEdit().catch(() => undefined)}
               type="button"
             >
               Save

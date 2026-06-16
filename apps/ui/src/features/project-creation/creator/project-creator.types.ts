@@ -5,6 +5,7 @@ import type {
 import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
 import type {
   GithubDeployerActions,
+  GithubDeployerRepo,
   GithubDeployerStates,
 } from "@/features/deployment/github-deployer/github-deployer.types";
 import type {
@@ -42,26 +43,34 @@ export interface ProjectCreatorActions {
   deriveDockerProjectDisplayName?: (imageRef: string) => string;
   onDatabaseConfirm?: (
     settings: DatabaseDeploymentSettings,
-    projectDisplayName: string
+    projectDisplayName: string,
+    projectDescription: string
   ) => void | Promise<void>;
   onDockerConfirm?: (
     settings: DockerDeploymentSettings,
-    projectDisplayName: string
+    projectDisplayName: string,
+    projectDescription: string
   ) => void | Promise<void>;
   onGithubConfirm?: (
-    url: string,
-    projectDisplayName: string
+    repo: GithubDeployerRepo,
+    projectDisplayName: string,
+    projectDescription: string
   ) => void | Promise<void>;
   onTemplateConfirm?: (
     settings: TemplateDeploymentSettings,
     choice: ProjectCreatorTemplateChoice,
-    projectDisplayName: string
+    projectDisplayName: string,
+    projectDescription: string
   ) => void | Promise<void>;
 }
 
 export interface ProjectCreatorStates {
   /** When true after validation, disables Docker/DB Confirm and shows applying UI. */
   confirmApplying: boolean;
+  /** Optional user-facing Project Description entered before choosing a creation source. */
+  projectDescription: string;
+  /** Field-level validation message for the Project Description entry. */
+  projectDescriptionError: string | null;
   /** User-facing Project Display Name entered before choosing a creation source. */
   projectDisplayName: string;
   /** Field-level validation message for the Project Display Name entry. */
@@ -79,7 +88,9 @@ export interface ProjectCreatorValue {
   actions: {
     pick: (kind: ProjectCreatorSourceKind) => void;
     reset: () => void;
+    setProjectDescription: (value: string) => void;
     setProjectDisplayName: (value: string) => void;
+    validateProjectDescription: (value?: string) => string | null;
     validateProjectDisplayName: (value?: string) => string | null;
   } & ProjectCreatorActions;
   meta: {

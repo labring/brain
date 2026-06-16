@@ -17,6 +17,10 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { SettingsLeaveGuardHandle } from "../settings-leave-guard";
 import {
+  type ApNetworkDraftController,
+  useApNetworkDraftController,
+} from "./ap-network-draft";
+import {
   type ApCustomDomainCnameVerificationResult,
   type ApCustomDomainCnameVerifier,
   type ApNetwork,
@@ -25,14 +29,17 @@ import {
   type ApNetworkCustomDomainDetail,
   type ApNetworkPlatformAddressDraftContext,
   type ApNetworkPublicAddress,
+  type ApNetworkPublicAddressDraft,
+  type ApNetworkVisibleDomainRows,
+  type ApNetworkVisiblePublicAddressRow,
   addedAppListeningPorts,
   apNetworksEqual,
   appListeningPortsFromNetwork,
-  networkWithAppListeningPort,
-  networkWithoutAppListeningPort,
   publicAddressDefaultPort,
   publicAddressDisplayName,
   publicAddressesTargetingPort,
+  publicAddressIdValue,
+  visibleDomainRows,
 } from "./ap-network-model";
 import { apNetworkDraftBackingKey } from "./ap-settings-draft";
 import type {
@@ -59,10 +66,8 @@ import {
 import { ApSettingsDraftFooter } from "./workload-sections";
 
 interface NetworkSettingsSectionProps {
-  network: ApNetwork;
+  controller: ApNetworkDraftController;
   onCustomDomainCnameVerify?: ApCustomDomainCnameVerifier;
-  onNetworkChange?: (network: ApNetwork) => void | Promise<void>;
-  onNetworkDraftChange?: (network: ApNetwork) => void;
   platformAddressDraftContext?: ApNetworkPlatformAddressDraftContext;
   readOnly: boolean;
 }
@@ -71,17 +76,6 @@ const PUBLIC_ADDRESS_VISIBLE_COUNT = 3;
 const PUBLIC_ADDRESS_DRAFT_DOMAINS = ["network"] as const;
 const PUBLIC_ADDRESS_SUBMIT_CONFLICT_MESSAGE =
   "Public Address configuration changed since you started editing.";
-
-function canMutateNetworkDraft({
-  onNetworkChange,
-  onNetworkDraftChange,
-  readOnly,
-}: Pick<
-  NetworkSettingsSectionProps,
-  "onNetworkChange" | "onNetworkDraftChange" | "readOnly"
->): boolean {
-  return !readOnly && (onNetworkDraftChange != null || onNetworkChange != null);
-}
 
 function publicAddressValue(address: ApNetworkPublicAddress): string {
   return address.url?.trim() || address.host?.trim() || "";
@@ -234,7 +228,7 @@ function customDomainKey(domain: ApNetworkCustomDomain, index: number): string {
 function platformAddressDraftFromPort(
   port: number,
   platformAddressDraftContext?: ApNetworkPlatformAddressDraftContext
-): PublicAddressDraft {
+): ApNetworkPublicAddressDraft {
   const id = generatePlatformAddressId();
   const domainPrefix = generatePlatformAddressDomainPrefix();
   const endpoint = platformAddressEndpoint({
@@ -252,19 +246,6 @@ function platformAddressDraftFromPort(
     status: "progressing",
     type: "platform",
   };
-}
-
-function isPublicAddressDeleteTarget(
-  address: ApNetworkPublicAddress,
-  index: number,
-  target: ApNetworkPublicAddress | undefined,
-  targetIndex: number
-): boolean {
-  const targetId = target?.id?.trim();
-  if (targetId == null || targetId === "") {
-    return index === targetIndex;
-  }
-  return address.id?.trim() === targetId;
 }
 
 interface PublicAddressRowProps {
@@ -485,114 +466,6 @@ function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
 
 function normalizeCustomDomainDraft(value: string): string {
   return value.trim().toLowerCase().replace(/\.+$/g, "");
-}
-
-interface VisibleDomainRows {
-  customDomains: ApNetworkCustomDomain[];
-  publicAddresses: ApNetworkPublicAddress[];
-}
-
-function visibleDomainRows(network: ApNetwork): VisibleDomainRows {
-  const customDomains = network.customDomains ?? [];
-  const boundPlatformAddressIds = new Set(
-    customDomains.map((domain) => domain.platformAddressId.trim())
-  );
-  return {
-    customDomains,
-    publicAddresses: network.publicAddresses.filter(
-      (address) => !boundPlatformAddressIds.has(address.id?.trim() ?? "")
-    ),
-  };
-}
-
-export function apNetworkAfterUnbindCustomDomain(
-  network: ApNetwork,
-  target: Pick<ApNetworkCustomDomain, "id">
-): ApNetwork {
-  const targetId = target.id.trim();
-  return {
-    ...network,
-    customDomains: (network.customDomains ?? []).filter(
-      (domain) => domain.id.trim() !== targetId
-    ),
-  };
-}
-
-function publicAddressIdValue(address: ApNetworkPublicAddress): string {
-  return address.id?.trim() || address.platformAddressId?.trim() || "";
-}
-
-function isPublicAddressMutationTarget(
-  address: ApNetworkPublicAddress,
-  index: number,
-  target: ApNetworkPublicAddress,
-  targetIndex: number
-): boolean {
-  const targetId = publicAddressIdValue(target);
-  if (targetId !== "") {
-    return publicAddressIdValue(address) === targetId;
-  }
-  return address === target || index === targetIndex;
-}
-
-export function apNetworkAfterBindCustomDomain(
-  network: ApNetwork,
-  draft: {
-    customDomain: ApNetworkCustomDomain;
-    platformAddress: ApNetworkPublicAddress;
-    platformAddressIndex: number;
-    port: number;
-  }
-): ApNetwork {
-  return apNetworkAfterEditPublicAddress(network, draft);
-}
-
-export function apNetworkAfterEditPublicAddress(
-  network: ApNetwork,
-  draft: {
-    customDomain?: ApNetworkCustomDomain;
-    platformAddress: ApNetworkPublicAddress;
-    platformAddressIndex: number;
-    port: number;
-  }
-): ApNetwork {
-  const next = {
-    ...network,
-    customDomains:
-      draft.customDomain == null
-        ? network.customDomains
-        : [
-            ...(network.customDomains ?? []),
-            { ...draft.customDomain, targetPort: draft.port },
-          ],
-    publicAddresses: network.publicAddresses.map((address, index) =>
-      isPublicAddressMutationTarget(
-        address,
-        index,
-        draft.platformAddress,
-        draft.platformAddressIndex
-      )
-        ? { ...address, port: draft.port }
-        : address
-    ),
-  };
-  return networkWithAppListeningPort(next, draft.port);
-}
-
-async function commitNetworkChange(
-  network: ApNetwork,
-  options: Pick<
-    NetworkSettingsSectionProps,
-    "onNetworkChange" | "onNetworkDraftChange"
-  >
-) {
-  if (options.onNetworkDraftChange != null) {
-    options.onNetworkDraftChange(network);
-    return;
-  }
-  if (options.onNetworkChange != null) {
-    await options.onNetworkChange(network);
-  }
 }
 
 interface NetworkCardProps {
@@ -852,16 +725,11 @@ function AddAppListeningPortForm({
   );
 }
 
-interface PublicAddressDraft extends ApNetworkPublicAddress {
-  id: string;
-  port: number;
-}
-
 interface AddPublicAddressFormProps {
   defaultPort: number;
   onCancel: () => void;
   onSubmit?: (
-    address: PublicAddressDraft,
+    address: ApNetworkPublicAddressDraft,
     customDomain?: ApNetworkCustomDomain
   ) => void | Promise<void>;
   platformAddressDraftContext?: ApNetworkPlatformAddressDraftContext;
@@ -1186,46 +1054,27 @@ function AddPublicAddressForm({
   );
 }
 
-interface AddPublicAddressDraft {
-  customDomain?: ApNetworkCustomDomain;
-  publicAddress: PublicAddressDraft;
-}
-
-function networkWithAddedPublicAddressDraft(
-  network: ApNetwork,
-  draft: AddPublicAddressDraft
-): ApNetwork {
-  const next = {
-    ...network,
-    customDomains:
-      draft.customDomain == null
-        ? network.customDomains
-        : [...(network.customDomains ?? []), draft.customDomain],
-    publicAddresses: [...network.publicAddresses, draft.publicAddress],
-  };
-  return networkWithAppListeningPort(next, draft.publicAddress.port);
-}
-
 interface DomainListSectionProps {
   addOpen: boolean;
   canMutateNetwork: boolean;
   defaultPort: number;
   expandedCnameRowKeys: ReadonlySet<string>;
   onAddPublicAddress: (
-    address: PublicAddressDraft,
+    address: ApNetworkPublicAddressDraft,
     customDomain?: ApNetworkCustomDomain
   ) => void | Promise<void>;
   onBindAddress: (
     rowKey: string,
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     customDomain?: ApNetworkCustomDomain
   ) => void | Promise<void>;
   onCancelAddPublicAddress: () => void;
   onCancelBindAddress: (rowKey: string) => void;
   onCollapsePublicAddresses: () => void;
-  onDeletePublicAddress: (index: number) => void | Promise<void>;
+  onDeletePublicAddress: (
+    row: ApNetworkVisiblePublicAddressRow
+  ) => void | Promise<void>;
   onOpenAddPublicAddress: () => void;
   onOpenBindAddress: (rowKey: string) => void;
   onShowAllPublicAddresses: () => void;
@@ -1234,8 +1083,8 @@ interface DomainListSectionProps {
   readOnly: boolean;
   showAllPublicAddresses: boolean;
   verify?: ApCustomDomainCnameVerifier;
-  visibleDomainRows: VisibleDomainRows;
-  visiblePublicAddresses: ApNetworkPublicAddress[];
+  visibleDomainRows: ApNetworkVisibleDomainRows;
+  visiblePublicAddressRows: ApNetworkVisiblePublicAddressRow[];
 }
 
 function DomainListSection({
@@ -1258,13 +1107,13 @@ function DomainListSection({
   showAllPublicAddresses,
   verify,
   visibleDomainRows,
-  visiblePublicAddresses,
+  visiblePublicAddressRows,
 }: DomainListSectionProps) {
   const noDomains =
-    visibleDomainRows.publicAddresses.length === 0 &&
+    visibleDomainRows.publicAddressRows.length === 0 &&
     visibleDomainRows.customDomains.length === 0;
   const hasPublicAddressOverflow =
-    visibleDomainRows.publicAddresses.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
+    visibleDomainRows.publicAddressRows.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
 
   return (
     <NetworkCard title="Domain List">
@@ -1309,8 +1158,9 @@ function DomainListSection({
                 readOnly={readOnly}
               />
             ))}
-            {visiblePublicAddresses.map((address, index) => {
-              const key = publicAddressKey(address, index);
+            {visiblePublicAddressRows.map((row) => {
+              const { address } = row;
+              const key = publicAddressKey(address, row.publicAddressIndex);
               return expandedCnameRowKeys.has(key) ? (
                 <PublicAddressEditForm
                   address={address}
@@ -1321,8 +1171,10 @@ function DomainListSection({
                       ? (submittedAddress, port, customDomain) =>
                           onBindAddress(
                             key,
-                            submittedAddress,
-                            index,
+                            {
+                              ...row,
+                              address: submittedAddress,
+                            },
                             port,
                             customDomain
                           )
@@ -1339,7 +1191,7 @@ function DomainListSection({
                   }
                   onDelete={
                     canMutateNetwork
-                      ? () => onDeletePublicAddress(index)
+                      ? () => onDeletePublicAddress(row)
                       : undefined
                   }
                   readOnly={readOnly}
@@ -1374,13 +1226,12 @@ function DomainListSection({
 }
 
 export function NetworkSettingsSection({
-  network,
+  controller,
   onCustomDomainCnameVerify,
   platformAddressDraftContext,
-  onNetworkDraftChange,
-  onNetworkChange,
   readOnly,
 }: NetworkSettingsSectionProps) {
+  const { network } = controller;
   const appListeningPorts = appListeningPortsFromNetwork(network);
   const [addPortOpen, setAddPortOpen] = useState(false);
   const [addPublicAddressOpen, setAddPublicAddressOpen] = useState(false);
@@ -1391,37 +1242,29 @@ export function NetworkSettingsSection({
   const [deletePortTarget, setDeletePortTarget] =
     useState<DeletePortDialogTarget | null>(null);
   const visibleDomains = visibleDomainRows(network);
-  const canMutateNetwork = canMutateNetworkDraft({
-    onNetworkChange,
-    onNetworkDraftChange,
-    readOnly,
-  });
-  const visiblePublicAddresses = showAllPublicAddresses
-    ? visibleDomains.publicAddresses
-    : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
+  const canMutateNetwork = controller.canMutate;
+  const visiblePublicAddressRows = showAllPublicAddresses
+    ? visibleDomains.publicAddressRows
+    : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
 
   useEffect(() => {
-    if (visibleDomains.publicAddresses.length <= PUBLIC_ADDRESS_VISIBLE_COUNT) {
+    if (
+      visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
+    ) {
       setShowAllPublicAddresses(false);
     }
-  }, [visibleDomains.publicAddresses.length]);
+  }, [visibleDomains.publicAddressRows.length]);
 
   const handleCancelAddPublicAddress = () => {
     setAddPublicAddressOpen(false);
   };
 
   const handleAddAppListeningPort = async (port: number) => {
-    await commitNetworkChange(networkWithAppListeningPort(network, port), {
-      onNetworkChange,
-      onNetworkDraftChange,
-    });
+    await controller.addAppListeningPort(port);
   };
 
   const commitDeleteAppListeningPort = async (port: number) => {
-    await commitNetworkChange(networkWithoutAppListeningPort(network, port), {
-      onNetworkChange,
-      onNetworkDraftChange,
-    });
+    await controller.deleteAppListeningPort(port);
   };
 
   const handleDeleteAppListeningPort = async (port: number) => {
@@ -1442,28 +1285,16 @@ export function NetworkSettingsSection({
   };
 
   const handleAddPublicAddress = async (
-    address: PublicAddressDraft,
+    address: ApNetworkPublicAddressDraft,
     customDomain?: ApNetworkCustomDomain
   ) => {
-    await commitNetworkChange(
-      networkWithAddedPublicAddressDraft(network, {
-        customDomain,
-        publicAddress: address,
-      }),
-      { onNetworkChange, onNetworkDraftChange }
-    );
+    await controller.addPublicAddress(address, customDomain);
   };
 
-  const handleDeletePublicAddress = async (index: number) => {
-    const target = visibleDomains.publicAddresses[index];
-    const publicAddresses = network.publicAddresses.filter(
-      (address, itemIndex) =>
-        !isPublicAddressDeleteTarget(address, itemIndex, target, index)
-    );
-    await commitNetworkChange(
-      { ...network, publicAddresses },
-      { onNetworkChange, onNetworkDraftChange }
-    );
+  const handleDeletePublicAddress = async (
+    row: ApNetworkVisiblePublicAddressRow
+  ) => {
+    await controller.deletePublicAddress(row);
   };
 
   const handleOpenBindAddress = (rowKey: string) => {
@@ -1480,28 +1311,16 @@ export function NetworkSettingsSection({
 
   const handleBindCustomDomain = async (
     rowKey: string,
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     domain?: ApNetworkCustomDomain
   ) => {
-    await commitNetworkChange(
-      apNetworkAfterEditPublicAddress(network, {
-        customDomain: domain,
-        platformAddress: address,
-        platformAddressIndex: index,
-        port,
-      }),
-      { onNetworkChange, onNetworkDraftChange }
-    );
+    await controller.bindCustomDomain(row, port, domain);
     handleCancelBindAddress(rowKey);
   };
 
   const handleUnbindCustomDomain = async (domain: ApNetworkCustomDomain) => {
-    await commitNetworkChange(
-      apNetworkAfterUnbindCustomDomain(network, domain),
-      { onNetworkChange, onNetworkDraftChange }
-    );
+    await controller.unbindCustomDomain(domain);
   };
 
   return (
@@ -1571,7 +1390,7 @@ export function NetworkSettingsSection({
         showAllPublicAddresses={showAllPublicAddresses}
         verify={onCustomDomainCnameVerify}
         visibleDomainRows={visibleDomains}
-        visiblePublicAddresses={visiblePublicAddresses}
+        visiblePublicAddressRows={visiblePublicAddressRows}
       />
       <DeletePortDialog
         onConfirm={handleConfirmDeleteAppListeningPort}
@@ -1659,21 +1478,22 @@ export function useApPublicAddressesSettingsSections({
 
   const networkForRender = commitMode ? draftNetwork : network;
   const visibleDomains = visibleDomainRows(networkForRender);
-  const visiblePublicAddresses = showAllPublicAddresses
-    ? visibleDomains.publicAddresses
-    : visibleDomains.publicAddresses.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
+  const visiblePublicAddressRows = showAllPublicAddresses
+    ? visibleDomains.publicAddressRows
+    : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
   const networkDirty = publicAddressNetworkDirty(
     networkBackingState.base,
     draftNetwork
   );
   const canSave = commitMode && networkDirty && !savePending;
-  const canMutateNetwork = commitMode;
 
   useEffect(() => {
-    if (visibleDomains.publicAddresses.length <= PUBLIC_ADDRESS_VISIBLE_COUNT) {
+    if (
+      visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
+    ) {
       setShowAllPublicAddresses(false);
     }
-  }, [visibleDomains.publicAddresses.length]);
+  }, [visibleDomains.publicAddressRows.length]);
 
   const resetNetworkDraft = useCallback(() => {
     applyNetworkDraftToLocalState(networkBackingState.base);
@@ -1760,6 +1580,12 @@ export function useApPublicAddressesSettingsSections({
     },
     [networkForRender]
   );
+  const controller = useApNetworkDraftController({
+    network: networkForRender,
+    onNetworkChange: commitMode ? applyPublicAddressDraftNetwork : undefined,
+    readOnly,
+  });
+  const canMutateNetwork = controller.canMutate;
 
   const leaveGuard: SettingsLeaveGuardHandle | null =
     commitMode && networkDirty
@@ -1771,27 +1597,6 @@ export function useApPublicAddressesSettingsSections({
           scope: "publicAddresses",
         }
       : null;
-
-  const handleAddPublicAddress = (
-    address: PublicAddressDraft,
-    customDomain?: ApNetworkCustomDomain
-  ) => {
-    applyPublicAddressDraftNetwork(
-      networkWithAddedPublicAddressDraft(networkForRender, {
-        customDomain,
-        publicAddress: address,
-      })
-    );
-  };
-
-  const handleDeletePublicAddress = (index: number) => {
-    const target = visibleDomains.publicAddresses[index];
-    const publicAddresses = networkForRender.publicAddresses.filter(
-      (address, itemIndex) =>
-        !isPublicAddressDeleteTarget(address, itemIndex, target, index)
-    );
-    setDraftNetwork({ ...networkForRender, publicAddresses });
-  };
 
   const handleOpenBindAddress = (rowKey: string) => {
     setExpandedCnameRowKeys((current) => new Set(current).add(rowKey));
@@ -1805,26 +1610,14 @@ export function useApPublicAddressesSettingsSections({
     });
   };
 
-  const handleBindCustomDomain = (
+  const handleBindCustomDomain = async (
     rowKey: string,
-    address: ApNetworkPublicAddress,
-    index: number,
+    row: ApNetworkVisiblePublicAddressRow,
     port: number,
     domain?: ApNetworkCustomDomain
   ) => {
-    applyPublicAddressDraftNetwork(
-      apNetworkAfterEditPublicAddress(networkForRender, {
-        customDomain: domain,
-        platformAddress: address,
-        platformAddressIndex: index,
-        port,
-      })
-    );
+    await controller.bindCustomDomain(row, port, domain);
     handleCancelBindAddress(rowKey);
-  };
-
-  const handleUnbindCustomDomain = (domain: ApNetworkCustomDomain) => {
-    setDraftNetwork(apNetworkAfterUnbindCustomDomain(networkForRender, domain));
   };
 
   return {
@@ -1853,22 +1646,22 @@ export function useApPublicAddressesSettingsSections({
               canMutateNetwork={canMutateNetwork}
               defaultPort={networkForRender.privatePort}
               expandedCnameRowKeys={expandedCnameRowKeys}
-              onAddPublicAddress={handleAddPublicAddress}
+              onAddPublicAddress={controller.addPublicAddress}
               onBindAddress={handleBindCustomDomain}
               onCancelAddPublicAddress={() => setAddOpen(false)}
               onCancelBindAddress={handleCancelBindAddress}
               onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
-              onDeletePublicAddress={handleDeletePublicAddress}
+              onDeletePublicAddress={controller.deletePublicAddress}
               onOpenAddPublicAddress={() => setAddOpen(true)}
               onOpenBindAddress={handleOpenBindAddress}
               onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
-              onUnbindCustomDomain={handleUnbindCustomDomain}
+              onUnbindCustomDomain={controller.unbindCustomDomain}
               platformAddressDraftContext={networkPlatformAddressDraftContext}
               readOnly={readOnly}
               showAllPublicAddresses={showAllPublicAddresses}
               verify={onCustomDomainCnameVerify}
               visibleDomainRows={visibleDomains}
-              visiblePublicAddresses={visiblePublicAddresses}
+              visiblePublicAddressRows={visiblePublicAddressRows}
             />
             {portNotice == null ? null : (
               <p className="text-muted-foreground text-sm" role="status">

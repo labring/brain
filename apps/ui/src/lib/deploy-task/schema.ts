@@ -131,6 +131,7 @@ export type DeploymentTaskSource =
 
 export type DeploymentTaskTarget =
   | {
+      description?: string;
       displayName: string;
       kind: "newProject";
     }

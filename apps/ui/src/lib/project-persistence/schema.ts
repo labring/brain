@@ -22,6 +22,7 @@ export const projects = ns.table(
     namespace: text("namespace").notNull(),
     id: text("id").notNull(),
     displayName: text("display_name").notNull(),
+    description: text("description").notNull().default(""),
     updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
       .defaultNow()
       .notNull(),

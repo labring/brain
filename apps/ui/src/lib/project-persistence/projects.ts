@@ -6,9 +6,11 @@ import { and, eq } from "drizzle-orm";
 
 import { getProjectDb } from "./db";
 import { type ProjectRow, projects } from "./schema";
+import { ensureProjectStorageSchema } from "./schema-bootstrap";
 
 export interface BrainProject {
   createdAt: string;
+  description: string;
   displayName: string;
   id: string;
   namespace: string;
@@ -16,11 +18,13 @@ export interface BrainProject {
 }
 
 export interface CreateProjectInput {
+  description?: string;
   displayName: string;
   namespace: string;
 }
 
-export interface RenameProjectInput {
+export interface UpdateProjectInput {
+  description?: string;
   displayName: string;
   id: string;
   namespace: string;
@@ -44,6 +48,7 @@ export class ProjectPersistenceError extends Error {
 function rowToProject(row: ProjectRow): BrainProject {
   return {
     createdAt: row.createdAt.toISOString(),
+    description: row.description,
     displayName: row.displayName,
     id: row.id,
     namespace: row.namespace,
@@ -55,6 +60,17 @@ function normalizeDisplayName(displayName: string): string {
   const normalized = displayName.trim();
   if (normalized === "") {
     throw new ProjectPersistenceError("invalid", "Project name is required.");
+  }
+  return normalized;
+}
+
+function normalizeDescription(description: string | undefined): string {
+  const normalized = description?.trim() ?? "";
+  if (normalized.length > 256) {
+    throw new ProjectPersistenceError(
+      "invalid",
+      "Project description must be 256 characters or fewer."
+    );
   }
   return normalized;
 }
@@ -73,6 +89,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export async function listProjects(namespace: string): Promise<BrainProject[]> {
+  await ensureProjectStorageSchema();
   const rows = await getProjectDb()
     .select()
     .from(projects)
@@ -85,6 +102,7 @@ export async function getProject(
   namespace: string,
   id: string
 ): Promise<BrainProject | null> {
+  await ensureProjectStorageSchema();
   const [row] = await getProjectDb()
     .select()
     .from(projects)
@@ -96,15 +114,18 @@ export async function getProject(
 export async function createProject(
   input: CreateProjectInput
 ): Promise<BrainProject> {
+  await ensureProjectStorageSchema();
   const now = new Date();
   const id = randomUUID();
   const displayName = normalizeDisplayName(input.displayName);
+  const description = normalizeDescription(input.description);
 
   try {
     const [row] = await getProjectDb()
       .insert(projects)
       .values({
         createdAt: now,
+        description,
         displayName,
         id,
         namespace: input.namespace,
@@ -129,14 +150,24 @@ export async function createProject(
   }
 }
 
-export async function renameProject(
-  input: RenameProjectInput
+export async function updateProject(
+  input: UpdateProjectInput
 ): Promise<BrainProject> {
+  await ensureProjectStorageSchema();
   const displayName = normalizeDisplayName(input.displayName);
+  const description =
+    input.description === undefined
+      ? undefined
+      : normalizeDescription(input.description);
   try {
+    const nextValues = {
+      ...(description === undefined ? {} : { description }),
+      displayName,
+      updatedAt: new Date(),
+    };
     const [row] = await getProjectDb()
       .update(projects)
-      .set({ displayName, updatedAt: new Date() })
+      .set(nextValues)
       .where(whereProject(input.namespace, input.id))
       .returning();
     if (row === undefined) {
@@ -158,6 +189,7 @@ export async function renameProject(
 }
 
 export async function deleteProject(input: DeleteProjectInput): Promise<void> {
+  await ensureProjectStorageSchema();
   const [row] = await getProjectDb()
     .delete(projects)
     .where(whereProject(input.namespace, input.id))

@@ -1,6 +1,11 @@
 "use client";
 
 /** biome-ignore lint/performance/noBarrelFile: AP Settings keeps this compatibility facade while implementation is split into provider-local modules. */
+export {
+  apNetworkAfterBindCustomDomain,
+  apNetworkAfterEditPublicAddress,
+  apNetworkAfterUnbindCustomDomain,
+} from "./ap-network-model";
 export { resourceQuotaReplicaPatchFromDraft } from "./ap-replica-strategy-section";
 export { apSettingsDraftIsDirty } from "./ap-settings-draft";
 export type {
@@ -21,6 +26,7 @@ export type {
   ApNetworkCustomDomainDetail,
   ApNetworkPlatformAddressDraftContext,
   ApNetworkPublicAddress,
+  ApNetworkPublicAddressDraft,
   ApPublicAddressesSettingsDraftCommitMeta,
   ApPublicAddressesSettingsSectionsProps,
   ApReplicaStrategy,
@@ -43,10 +49,5 @@ export {
   envRawSourceDraftWithAddReferenceIntent,
   pendingDbReferencesFromEnvRawSourceDraft,
 } from "./environment-section";
-export {
-  apNetworkAfterBindCustomDomain,
-  apNetworkAfterEditPublicAddress,
-  apNetworkAfterUnbindCustomDomain,
-  useApPublicAddressesSettingsSections,
-} from "./network-section";
+export { useApPublicAddressesSettingsSections } from "./network-section";
 export { useApSettingsSections } from "./use-ap-settings-sections";

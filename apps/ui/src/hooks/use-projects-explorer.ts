@@ -212,9 +212,13 @@ export function useProjectsExplorer(options: {
     openAssistantPane();
   }, [onNewProjectOverride]);
 
-  const onProjectRename = useCallback(
-    async (p: ProjectExplorerProject, newDisplayName: string) => {
-      const displayName = newDisplayName.trim();
+  const onProjectUpdate = useCallback(
+    async (
+      p: ProjectExplorerProject,
+      next: { description: string; displayName: string }
+    ) => {
+      const displayName = next.displayName.trim();
+      const description = next.description.trim();
       if (!hasKubeconfig) {
         toast.error("Credentials are not ready yet.");
         throw new Error("not ready");
@@ -232,15 +236,16 @@ export function useProjectsExplorer(options: {
           method: "PATCH",
           header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
           body: {
+            description,
             displayName,
             id: p.id,
             namespace: ns,
           },
         });
         await mutate();
-        toast.success(`Project renamed to "${result.project.displayName}".`);
+        toast.success(`Updated "${result.project.displayName}".`);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Rename failed";
+        const msg = e instanceof Error ? e.message : "Project update failed";
         toast.error(msg);
         throw e;
       }
@@ -285,9 +290,9 @@ export function useProjectsExplorer(options: {
       onNewProject,
       onProjectClick,
       onProjectDelete,
-      onProjectRename,
+      onProjectUpdate,
     }),
-    [onNewProject, onProjectClick, onProjectDelete, onProjectRename]
+    [onNewProject, onProjectClick, onProjectDelete, onProjectUpdate]
   );
 
   const data = useMemo(

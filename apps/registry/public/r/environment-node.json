@@ -3,14 +3,8 @@
   "name": "environment-node",
   "title": "Environment Node",
   "description": "Development environment canvas node with launch command, lifecycle actions, quick actions, runtime icons, and footer metrics",
-  "dependencies": [
-    "lucide-react"
-  ],
-  "registryDependencies": [
-    "button",
-    "canvas-node",
-    "dropdown-menu"
-  ],
+  "dependencies": ["lucide-react"],
+  "registryDependencies": ["button", "canvas-node", "dropdown-menu"],
   "files": [
     {
       "path": "../../packages/ui/src/assets/runtime-icons/types.ts",

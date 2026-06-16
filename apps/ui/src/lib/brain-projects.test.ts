@@ -10,10 +10,12 @@ import {
 function project(
   id: string,
   displayName: string,
-  createdAt = "2026-01-01T00:00:00.000Z"
+  createdAt = "2026-01-01T00:00:00.000Z",
+  description = ""
 ): BrainProject {
   return {
     createdAt,
+    description,
     displayName,
     id,
     namespace: "ns",
@@ -36,10 +38,13 @@ describe("Brain projects", () => {
 
   test("maps Brain DB projects into explorer projects", () => {
     assert.deepEqual(
-      brainProjectsToExplorerProjects({ projects: [project("p1", "Demo")] }),
+      brainProjectsToExplorerProjects({
+        projects: [project("p1", "Demo", undefined, "Orders API")],
+      }),
       [
         {
           createdAt: "2026-01-01T00:00:00.000Z",
+          description: "Orders API",
           id: "p1",
           name: "Demo",
           resourceName: "p1",

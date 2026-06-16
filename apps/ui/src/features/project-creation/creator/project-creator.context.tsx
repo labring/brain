@@ -40,6 +40,7 @@ const DEFAULT_DATABASE_OPTIONS: ProjectCreatorDatabaseChoice[] = [
   { engine: "mongodb", id: "mongodb", label: "MongoDB" },
   { engine: "redis", id: "redis", label: "Redis" },
 ];
+const PROJECT_DESCRIPTION_MAX_LENGTH = 256;
 
 export interface ProjectCreatorRootProps {
   actions?: ProjectCreatorActions;
@@ -94,6 +95,10 @@ export function ProjectCreatorRoot({
   const [projectDisplayNameError, setProjectDisplayNameError] = useState<
     string | null
   >(null);
+  const [projectDescription, setProjectDescriptionState] = useState("");
+  const [projectDescriptionError, setProjectDescriptionError] = useState<
+    string | null
+  >(null);
   const reset = useCallback(() => setStep(initialStep), [initialStep]);
 
   useEffect(() => {
@@ -126,6 +131,16 @@ export function ProjectCreatorRoot({
     [existingDisplayNameSet]
   );
 
+  const validateProjectDescription = useCallback(
+    (value: string): string | null => {
+      if (value.trim().length > PROJECT_DESCRIPTION_MAX_LENGTH) {
+        return "Project description must be 256 characters or fewer.";
+      }
+      return null;
+    },
+    []
+  );
+
   const setProjectDisplayName = useCallback(
     (value: string) => {
       setProjectDisplayNameState(value);
@@ -134,6 +149,16 @@ export function ProjectCreatorRoot({
       );
     },
     [validateProjectDisplayName]
+  );
+
+  const setProjectDescription = useCallback(
+    (value: string) => {
+      setProjectDescriptionState(value);
+      setProjectDescriptionError((current) =>
+        current == null ? null : validateProjectDescription(value)
+      );
+    },
+    [validateProjectDescription]
   );
 
   const validateAndSetProjectDisplayNameError = useCallback(
@@ -145,15 +170,32 @@ export function ProjectCreatorRoot({
     [projectDisplayName, validateProjectDisplayName]
   );
 
+  const validateAndSetProjectDescriptionError = useCallback(
+    (value?: string): string | null => {
+      const error = validateProjectDescription(value ?? projectDescription);
+      setProjectDescriptionError(error);
+      return error;
+    },
+    [projectDescription, validateProjectDescription]
+  );
+
   const pick = useCallback(
     (kind: ProjectCreatorSourceKind) => {
-      const error = validateAndSetProjectDisplayNameError(projectDisplayName);
-      if (error != null) {
+      const displayNameError =
+        validateAndSetProjectDisplayNameError(projectDisplayName);
+      const descriptionError =
+        validateAndSetProjectDescriptionError(projectDescription);
+      if (displayNameError != null || descriptionError != null) {
         return;
       }
       setStep(kind);
     },
-    [projectDisplayName, validateAndSetProjectDisplayNameError]
+    [
+      projectDescription,
+      projectDisplayName,
+      validateAndSetProjectDescriptionError,
+      validateAndSetProjectDisplayNameError,
+    ]
   );
 
   useEffect(() => {
@@ -163,6 +205,14 @@ export function ProjectCreatorRoot({
       );
     }
   }, [projectDisplayName, projectDisplayNameError, validateProjectDisplayName]);
+
+  useEffect(() => {
+    if (projectDescriptionError != null) {
+      setProjectDescriptionError(
+        validateProjectDescription(projectDescription)
+      );
+    }
+  }, [projectDescription, projectDescriptionError, validateProjectDescription]);
 
   const dbOptions = useMemo(
     () =>
@@ -178,12 +228,16 @@ export function ProjectCreatorRoot({
         confirmApplying,
         projectDisplayName,
         projectDisplayNameError,
+        projectDescription,
+        projectDescriptionError,
         step,
       },
       actions: {
         pick,
         reset,
+        setProjectDescription,
         setProjectDisplayName,
+        validateProjectDescription: validateAndSetProjectDescriptionError,
         validateProjectDisplayName: validateAndSetProjectDisplayNameError,
         deriveDatabaseProjectDisplayName:
           actionsProp?.deriveDatabaseProjectDisplayName,
@@ -217,9 +271,13 @@ export function ProjectCreatorRoot({
       githubDeployerProp,
       projectDisplayName,
       projectDisplayNameError,
+      projectDescription,
+      projectDescriptionError,
+      setProjectDescription,
       setProjectDisplayName,
       templateDirect,
       templateOptions,
+      validateAndSetProjectDescriptionError,
       validateAndSetProjectDisplayNameError,
     ]
   );
@@ -231,4 +289,8 @@ export function ProjectCreatorRoot({
   );
 }
 
-export { DEFAULT_DATABASE_OPTIONS, ProjectCreatorContext };
+export {
+  DEFAULT_DATABASE_OPTIONS,
+  PROJECT_DESCRIPTION_MAX_LENGTH,
+  ProjectCreatorContext,
+};

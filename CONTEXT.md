@@ -12,6 +12,12 @@ A reusable UI component eligible for the Component Registry. A Registry Componen
 
 _Avoid_: Product Surface Registry, Pane Registry, Flow Registry.
 
+### Project Description
+
+A user-maintained optional Project summary that explains the Project's purpose or context. A Project Description may be authored when the Project is created or maintained later; an empty Project Description means the user has not described the Project.
+
+_Avoid_: Deployment description, source description, generated summary.
+
 ### AP Public Access Node
 
 An AP Public Access Node is a presentation-only Project Canvas node derived from an AP's Public Addresses. It is not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
@@ -65,6 +71,12 @@ A Brain product resource that represents an application workload. AP owns the ap
 ### AP Settings
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
+
+### AP Network Settings
+
+The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings. Private Addresses and Public Addresses are two views of the same AP Network Settings: Public Address changes may add App Listening Ports as part of the same Settings Draft.
+
+AP Network Settings may appear inside the full AP Settings surface or a narrower Settings View, but they remain one AP Settings Draft domain rather than settings owned by an AP Public Access Node.
 
 ### Settings View
 

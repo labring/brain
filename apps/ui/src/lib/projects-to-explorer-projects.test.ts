@@ -6,6 +6,7 @@ import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import {
   isProjectDisplayNameTaken,
   normalizeProjectDisplayName,
+  projectDescription,
   projectDisplayName,
   projectItemsFromK8sGetResponse,
   projectsListToExplorerProjects,
@@ -42,6 +43,19 @@ test("projectDisplayName falls back to legacy title", () => {
       },
     }),
     "Legacy API"
+  );
+});
+
+test("projectDescription reads non-empty annotation", () => {
+  assert.equal(
+    projectDescription({
+      metadata: {
+        annotations: {
+          description: "Handles order traffic.",
+        },
+      },
+    }),
+    "Handles order traffic."
   );
 });
 

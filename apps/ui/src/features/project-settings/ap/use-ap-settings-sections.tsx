@@ -30,6 +30,7 @@ import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
 } from "../settings-leave-guard";
+import { useApNetworkDraftController } from "./ap-network-draft";
 import type {
   ApCustomDomainCnameVerifier,
   ApNetwork,
@@ -141,6 +142,10 @@ import {
 
 const AP_SETTINGS_SUBMIT_CONFLICT_MESSAGE =
   "AP configuration changed since you started editing.";
+const EMPTY_AP_NETWORK: ApNetwork = {
+  privatePort: 80,
+  publicAddresses: [],
+};
 
 export interface ApSettingsSectionsProps {
   /**
@@ -591,6 +596,22 @@ export function useApSettingsSections({
   const activeDraftNetwork = settingsCommitMode
     ? draftNetwork
     : (draftNetwork ?? network);
+  const applyNetworkDraft = useCallback(
+    (next: ApNetwork) => {
+      if (settingsCommitMode) {
+        setDraftNetwork(next);
+        return;
+      }
+      return onNetworkChange?.(next);
+    },
+    [onNetworkChange, settingsCommitMode]
+  );
+  const networkController = useApNetworkDraftController({
+    network: activeDraftNetwork ?? EMPTY_AP_NETWORK,
+    onNetworkChange:
+      activeDraftNetwork == null || readOnly ? undefined : applyNetworkDraft,
+    readOnly,
+  });
   const settingsDraftNetwork = activeDraftNetwork;
   const committedReplicaStrategy = useMemo(
     () =>
@@ -1628,12 +1649,8 @@ export function useApSettingsSections({
     sections.push({
       content: (
         <NetworkSettingsSection
-          network={networkForRender}
+          controller={networkController}
           onCustomDomainCnameVerify={onCustomDomainCnameVerify}
-          onNetworkChange={settingsCommitMode ? undefined : onNetworkChange}
-          onNetworkDraftChange={
-            settingsCommitMode ? setDraftNetwork : undefined
-          }
           platformAddressDraftContext={networkPlatformAddressDraftContext}
           readOnly={readOnly}
         />

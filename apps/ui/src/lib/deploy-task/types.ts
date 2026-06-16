@@ -90,6 +90,7 @@ export const deploymentTaskSourceSchema = z.discriminatedUnion("kind", [
 
 export const deploymentTaskTargetSchema = z.discriminatedUnion("kind", [
   z.object({
+    description: z.string().trim().max(256).optional(),
     displayName: z.string().trim().min(1).max(256),
     kind: z.literal("newProject"),
   }),

@@ -7,7 +7,7 @@
       "name": "app-icon-button",
       "type": "registry:ui",
       "title": "App Icon Button",
-      "description": "SealAI product icon-only button style layer",
+      "description": "SealAI product icon-only button. Use this instead of primitive Button for icon-only product actions",
       "dependencies": ["class-variance-authority"],
       "registryDependencies": ["button"],
       "files": [
@@ -22,7 +22,7 @@
       "name": "app-button",
       "type": "registry:ui",
       "title": "App Button",
-      "description": "SealAI product button style layer for non-icon actions",
+      "description": "SealAI product button for non-icon actions. Use this instead of primitive Button in product surfaces",
       "dependencies": ["class-variance-authority"],
       "registryDependencies": ["button"],
       "files": [
@@ -37,13 +37,27 @@
       "name": "app-input",
       "type": "registry:ui",
       "title": "App Input",
-      "description": "SealAI product input style layer for pane and settings forms",
+      "description": "SealAI product single-line input for panes and settings forms. Use this instead of primitive Input in product surfaces",
       "registryDependencies": ["input"],
       "files": [
         {
           "path": "../../packages/ui/src/components/app-input.tsx",
           "type": "registry:component",
           "target": "components/app-input.tsx"
+        }
+      ]
+    },
+    {
+      "name": "app-textarea",
+      "type": "registry:ui",
+      "title": "App Textarea",
+      "description": "SealAI product multi-line input for forms and source editors. Use this instead of primitive Textarea in product surfaces",
+      "registryDependencies": ["textarea"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-textarea.tsx",
+          "type": "registry:component",
+          "target": "components/app-textarea.tsx"
         }
       ]
     },
@@ -123,7 +137,7 @@
       "name": "app-dialog",
       "type": "registry:ui",
       "title": "App Dialog",
-      "description": "Dark compound dialog component for confirmations, form modals, and loading actions",
+      "description": "SealAI product compound dialog for confirmations, form modals, and loading actions. Use this instead of raw dialog primitives in product surfaces",
       "dependencies": ["lucide-react"],
       "registryDependencies": ["dialog", "input", "label"],
       "files": [
@@ -140,11 +154,7 @@
       "title": "Container Node",
       "description": "AP workload canvas node composed with shared Canvas Node chrome, Root/Content state, lifecycle actions, quick actions, footer metrics, and expansion behavior",
       "dependencies": ["lucide-react"],
-      "registryDependencies": [
-        "canvas-node",
-        "button",
-        "dropdown-menu"
-      ],
+      "registryDependencies": ["canvas-node", "button", "dropdown-menu"],
       "files": [
         {
           "path": "../../packages/ui/src/components/container-node/container-node.types.ts",

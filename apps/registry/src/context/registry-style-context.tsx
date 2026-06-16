@@ -98,6 +98,13 @@ export function useRegistryStyle(): RegistryStyleContextValue {
   return ctx;
 }
 
+export function registryStyleDisplayName(style: string): string {
+  if (style === "linear") {
+    return "SealAI";
+  }
+  return style;
+}
+
 /** `public/registry/{style}/brand.jpg` */
 export function registryStyleBrandUrl(style: string): string {
   const enc = encodeURIComponent(style);

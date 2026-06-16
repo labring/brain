@@ -12,6 +12,11 @@ export interface ApNetworkPublicAddress {
   url?: string;
 }
 
+export interface ApNetworkPublicAddressDraft extends ApNetworkPublicAddress {
+  id: string;
+  port: number;
+}
+
 export interface ApNetworkCustomDomainDetail {
   message?: string;
   reason?: string;
@@ -268,4 +273,145 @@ export function publicAddressDisplayName(address: ApNetworkPublicAddress) {
     address.id?.trim() ||
     `Port ${address.port}`
   );
+}
+
+export function publicAddressIdValue(address: ApNetworkPublicAddress): string {
+  return address.id?.trim() || address.platformAddressId?.trim() || "";
+}
+
+export interface ApNetworkPublicAddressTarget {
+  address: ApNetworkPublicAddress;
+  publicAddressIndex: number;
+}
+
+export type ApNetworkVisiblePublicAddressRow = ApNetworkPublicAddressTarget;
+
+export interface ApNetworkVisibleDomainRows {
+  customDomains: ApNetworkCustomDomain[];
+  publicAddressRows: ApNetworkVisiblePublicAddressRow[];
+}
+
+export function visibleDomainRows(
+  network: ApNetwork
+): ApNetworkVisibleDomainRows {
+  const customDomains = network.customDomains ?? [];
+  const boundPlatformAddressIds = new Set(
+    customDomains
+      .map((domain) => domain.platformAddressId.trim())
+      .filter((id) => id !== "")
+  );
+  return {
+    customDomains,
+    publicAddressRows: network.publicAddresses.flatMap((address, index) => {
+      const addressId = publicAddressIdValue(address);
+      return addressId !== "" && boundPlatformAddressIds.has(addressId)
+        ? []
+        : [{ address, publicAddressIndex: index }];
+    }),
+  };
+}
+
+export function isPublicAddressMutationTarget(
+  address: ApNetworkPublicAddress,
+  index: number,
+  target: ApNetworkPublicAddressTarget
+): boolean {
+  const targetId = publicAddressIdValue(target.address);
+  if (targetId !== "") {
+    return publicAddressIdValue(address) === targetId;
+  }
+  return address === target.address || index === target.publicAddressIndex;
+}
+
+export function isPublicAddressDeleteTarget(
+  address: ApNetworkPublicAddress,
+  index: number,
+  target: ApNetworkPublicAddressTarget
+): boolean {
+  const targetId = publicAddressIdValue(target.address);
+  if (targetId !== "") {
+    return publicAddressIdValue(address) === targetId;
+  }
+  return address === target.address || index === target.publicAddressIndex;
+}
+
+export function apNetworkAfterUnbindCustomDomain(
+  network: ApNetwork,
+  target: Pick<ApNetworkCustomDomain, "id">
+): ApNetwork {
+  const targetId = target.id.trim();
+  return {
+    ...network,
+    customDomains: (network.customDomains ?? []).filter(
+      (domain) => domain.id.trim() !== targetId
+    ),
+  };
+}
+
+export function apNetworkAfterEditPublicAddress(
+  network: ApNetwork,
+  draft: {
+    customDomain?: ApNetworkCustomDomain;
+    publicAddress: ApNetworkPublicAddressTarget;
+    port: number;
+  }
+): ApNetwork {
+  const next = {
+    ...network,
+    customDomains:
+      draft.customDomain == null
+        ? network.customDomains
+        : [
+            ...(network.customDomains ?? []),
+            { ...draft.customDomain, targetPort: draft.port },
+          ],
+    publicAddresses: network.publicAddresses.map((address, index) =>
+      isPublicAddressMutationTarget(address, index, draft.publicAddress)
+        ? { ...address, port: draft.port }
+        : address
+    ),
+  };
+  return networkWithAppListeningPort(next, draft.port);
+}
+
+export function apNetworkAfterBindCustomDomain(
+  network: ApNetwork,
+  draft: {
+    customDomain: ApNetworkCustomDomain;
+    publicAddress: ApNetworkPublicAddressTarget;
+    port: number;
+  }
+): ApNetwork {
+  return apNetworkAfterEditPublicAddress(network, draft);
+}
+
+export function apNetworkAfterDeletePublicAddress(
+  network: ApNetwork,
+  target: ApNetworkPublicAddressTarget
+): ApNetwork {
+  return {
+    ...network,
+    publicAddresses: network.publicAddresses.filter(
+      (address, itemIndex) =>
+        !isPublicAddressDeleteTarget(address, itemIndex, target)
+    ),
+  };
+}
+
+export function apNetworkWithAddedPublicAddress(
+  network: ApNetwork,
+  draft: {
+    customDomain?: ApNetworkCustomDomain;
+    publicAddress: ApNetworkPublicAddressDraft;
+  }
+): ApNetwork {
+  const next = {
+    ...network,
+    customDomains:
+      draft.customDomain == null
+        ? network.customDomains
+        : [...(network.customDomains ?? []), draft.customDomain],
+    publicAddresses: [...network.publicAddresses, draft.publicAddress],
+  };
+  return networkWithAppListeningPort(next, draft.publicAddress.port);
 }
