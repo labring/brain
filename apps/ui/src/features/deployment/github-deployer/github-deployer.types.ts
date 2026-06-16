@@ -1,3 +1,8 @@
+import type {
+  TemplateDeploymentChoice,
+  TemplateDeploymentSettings,
+} from "../template-deployer";
+
 export interface GithubDeployerRepo {
   description?: string | null;
   fullName?: string;
@@ -39,6 +44,8 @@ export interface GithubDeployerStates {
   /** Retry repository list loading after an error. */
   repoRetry?: () => void;
   repos: readonly GithubDeployerRepo[];
+  templateOptions?: readonly TemplateDeploymentChoice[];
+  templateOptionsLoading?: boolean;
 }
 
 /**
@@ -49,19 +56,27 @@ export interface GithubDeployerActions {
   /** Invoked when the user clicks “Authorize GitHub”. Omit or leave unset to show a disabled control. */
   onAuthorize?: () => void;
   /** Invoked when Deploy is pressed with the selected repo. */
-  onDeploy?: (repo: GithubDeployerRepo) => void;
+  onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
+  /** Invoked when the user accepts a matched app-store template recommendation. */
+  onDeployTemplate?: (input: {
+    repo: GithubDeployerRepo;
+    settings: TemplateDeploymentSettings;
+    template: TemplateDeploymentChoice;
+  }) => void | Promise<void>;
   /** Invoked when the user disconnects the current server-side GitHub credential. */
   onDisconnect?: () => void;
 }
 
 export interface GithubDeployerResolvedActions {
   onAuthorize?: () => void;
-  onDeploy?: (repo: GithubDeployerRepo) => void;
+  onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
+  onDeployTemplate?: GithubDeployerActions["onDeployTemplate"];
   onDisconnect?: () => void;
 }
 
 export interface GithubDeployerValue {
   actions: GithubDeployerResolvedActions;
+  requestDeploy: (repo: GithubDeployerRepo) => void;
   selectedRepoId: string;
   setSelectedRepoId: (id: string) => void;
   states: GithubDeployerStates;

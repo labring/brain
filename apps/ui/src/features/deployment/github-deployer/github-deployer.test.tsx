@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { GithubDeployer } from "./github-deployer";
+import { GithubDeployer, githubUrlToRepo } from "./github-deployer";
 
 const noop = () => undefined;
 const URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
 const URL_PLACEHOLDER_RE = /https:\/\/github.com\/owner\/repo/;
+const URL_AUTH_REQUIRED_RE = /data-slot="github-deployer-url-auth-required"/;
 const AUTH_BUTTON_RE = /aria-label="Authorize GitHub"/;
 const AUTHORIZED_RE = /data-slot="github-deployer-authorized"/;
 const DISCONNECT_BUTTON_RE = /aria-label="Disconnect GitHub"/;
@@ -22,6 +23,8 @@ const REPO_EMPTY_RE = /data-slot="github-deployer-repo-empty"/;
 const REPO_ERROR_RE = /data-slot="github-deployer-repo-error"/;
 const VIEW_MORE_RE = /data-slot="github-deployer-view-more"/;
 const BAD_CREDENTIALS_RE = /bad credentials/;
+const DISABLED_DEPLOY_RE =
+  /data-slot="github-deployer-repo-card"[\s\S]*?<button[^>]*disabled=""/;
 
 test("GithubDeployer shows URL input and authorization when unauthenticated", () => {
   const html = renderToStaticMarkup(
@@ -39,6 +42,7 @@ test("GithubDeployer shows URL input and authorization when unauthenticated", ()
   assert.doesNotMatch(html, HEADER_SUBTITLE_RE);
   assert.match(html, URL_INPUT_RE);
   assert.match(html, URL_PLACEHOLDER_RE);
+  assert.match(html, URL_AUTH_REQUIRED_RE);
   assert.match(html, AUTH_BUTTON_RE);
   assert.doesNotMatch(html, REPO_SELECT_RE);
 });
@@ -57,6 +61,7 @@ test("GithubDeployer keeps URL input while showing authorized repo choices", () 
   );
 
   assert.match(html, URL_INPUT_RE);
+  assert.doesNotMatch(html, URL_AUTH_REQUIRED_RE);
   assert.match(html, AUTHORIZED_RE);
   assert.match(html, DISCONNECT_BUTTON_RE);
   assert.match(html, REPO_SELECT_RE);
@@ -84,6 +89,40 @@ test("GithubDeployer shows view more for long repository lists", () => {
   );
 
   assert.match(html, VIEW_MORE_RE);
+});
+
+test("GithubDeployer waits for template matching before repository deploy", () => {
+  const html = renderToStaticMarkup(
+    <GithubDeployer.Root
+      actions={{ onDeploy: noop, onDeployTemplate: noop }}
+      states={{
+        isAuthorized: true,
+        repos: [{ fullName: "sealai/example", id: "1", name: "example" }],
+        templateOptionsLoading: true,
+      }}
+    >
+      <GithubDeployer.Shell />
+    </GithubDeployer.Root>
+  );
+
+  assert.match(html, DISABLED_DEPLOY_RE);
+});
+
+test("githubUrlToRepo rejects GitHub URLs that are not repository roots", () => {
+  assert.equal(
+    githubUrlToRepo("https://github.com/sealai/example/tree/main"),
+    null
+  );
+  assert.equal(
+    githubUrlToRepo("https://github.com/sealai/example/blob/main/README.md"),
+    null
+  );
+  assert.deepEqual(githubUrlToRepo("https://github.com/sealai/example.git"), {
+    fullName: "sealai/example",
+    id: "github-url:sealai/example",
+    name: "example",
+    url: "https://github.com/sealai/example",
+  });
 });
 
 test("GithubDeployer shows authorized empty repository state", () => {

@@ -43,6 +43,7 @@ export interface TemplateDeploymentChoice {
   description: string;
   icon?: string;
   name: string;
+  sourceRepos?: string[];
   title: string;
 }
 

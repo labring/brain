@@ -51,6 +51,7 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
           icon: "https://example.com/icon.png",
           name: "memos",
           readme: "https://example.com/readme.md",
+          sourceRepos: ["https://github.com/usememos/memos"],
         },
       ])
     );
@@ -78,6 +79,7 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
       icon: "https://example.com/icon.png",
       name: "memos",
       readme: "https://example.com/readme.md",
+      sourceRepos: ["https://github.com/usememos/memos"],
       title: "memos",
     },
   ]);

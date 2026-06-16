@@ -5,9 +5,14 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
 import type {
+  GithubDeployerActions,
   GithubDeployerRepo,
   GithubDeployerStates,
 } from "@/features/deployment/github-deployer/github-deployer.types";
+import {
+  findTemplateForGithubRepo,
+  templateCanDeployWithDefaults,
+} from "@/features/deployment/github-template-match";
 
 import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
 import {
@@ -17,6 +22,7 @@ import {
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
+import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 
 const GITHUB_MARK_PATH =
@@ -56,6 +62,7 @@ export function GitHubDeploymentPane({
     mutate: mutateRepos,
     repos,
   } = useGithubRepos({ isAuthorized, namespace });
+  const templateCatalog = useTemplateCatalog({ enabled: true });
   const deploymentAdapters = useMemo(
     () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
     [kubeconfig, namespace]
@@ -71,6 +78,8 @@ export function GitHubDeploymentPane({
         mutateRepos().catch(() => undefined);
       },
       repos,
+      templateOptionsLoading: templateCatalog.isLoading,
+      templateOptions: templateCatalog.templates,
     }),
     [
       authLoading,
@@ -80,6 +89,8 @@ export function GitHubDeploymentPane({
       repos,
       reposError,
       reposLoading,
+      templateCatalog.isLoading,
+      templateCatalog.templates,
     ]
   );
 
@@ -136,6 +147,68 @@ export function GitHubDeploymentPane({
     ]
   );
 
+  const handleDeployTemplate = useCallback<
+    NonNullable<GithubDeployerActions["onDeployTemplate"]>
+  >(
+    async ({ repo, settings, template }) => {
+      const matchedTemplate = findTemplateForGithubRepo({
+        repo,
+        templates: templateCatalog.templates,
+      });
+      if (
+        matchedTemplate?.name !== template.name ||
+        matchedTemplate.name !== settings.templateName ||
+        !templateCanDeployWithDefaults(matchedTemplate)
+      ) {
+        toast.error("Template recommendation is no longer valid.");
+        return;
+      }
+      setDeploying(true);
+      try {
+        const outcome = await runDeploymentTargetPipeline({
+          adapters: deploymentAdapters,
+          credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
+          namespace,
+          request: {
+            args: settings.args,
+            kind: "template",
+            target: existingProjectDeploymentTarget({
+              projectName: currentProject.resourceName,
+              projectId: projectIdTrimmed,
+            }),
+            templateName: settings.templateName,
+          },
+        });
+        if (outcome.kind !== "template") {
+          return;
+        }
+        toast.success(outcome.taskMessage);
+        if (onDeployed != null) {
+          onDeployed().catch(() => undefined);
+        }
+        onClose();
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not create deploy task."
+        );
+      } finally {
+        setDeploying(false);
+      }
+    },
+    [
+      currentProject.resourceName,
+      deploymentAdapters,
+      kubeconfig,
+      namespace,
+      onClose,
+      onDeployed,
+      projectIdTrimmed,
+      templateCatalog.templates,
+    ]
+  );
+
   const handleDisconnect = useCallback(async () => {
     try {
       await disconnectGithubAuth();
@@ -153,8 +226,9 @@ export function GitHubDeploymentPane({
       onAuthorize: initiateGithubAuth,
       onDisconnect: handleDisconnect,
       onDeploy: handleDeploy,
+      onDeployTemplate: handleDeployTemplate,
     }),
-    [handleDeploy, handleDisconnect, initiateGithubAuth]
+    [handleDeploy, handleDeployTemplate, handleDisconnect, initiateGithubAuth]
   );
 
   return (
