@@ -9,6 +9,7 @@ export type {
   ApNetworkCustomDomainDetail,
   ApNetworkPlatformAddressDraftContext,
   ApNetworkPublicAddress,
+  ApNetworkPublicAddressDraft,
 } from "./ap-network-model";
 export type {
   ApCpuElasticReplicaTarget,

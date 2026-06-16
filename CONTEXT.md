@@ -66,6 +66,12 @@ A Brain product resource that represents an application workload. AP owns the ap
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
 
+### AP Network Settings
+
+The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings. Private Addresses and Public Addresses are two views of the same AP Network Settings: Public Address changes may add App Listening Ports as part of the same Settings Draft.
+
+AP Network Settings may appear inside the full AP Settings surface or a narrower Settings View, but they remain one AP Settings Draft domain rather than settings owned by an AP Public Access Node.
+
 ### Settings View
 
 A settings entry point that presents one named subset of a resource's settings surface, containing one or more settings sections rather than necessarily showing the full settings surface. It remains part of that resource's settings surface and uses the same Settings Draft confirmation model as the full surface.
