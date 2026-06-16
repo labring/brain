@@ -4,6 +4,7 @@ import type { VisualTone } from "./project-aggregate-status";
 
 export interface BrainProject {
   createdAt: string;
+  description: string;
   displayName: string;
   id: string;
   namespace: string;
@@ -46,6 +47,7 @@ export function brainProjectsToExplorerProjects(
     const status = statusByProjectId?.get(project.id);
     return {
       createdAt: project.createdAt,
+      description: project.description,
       id: project.id,
       name: project.displayName,
       resourceName: project.id,

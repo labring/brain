@@ -233,14 +233,16 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         }),
       onDockerConfirm: async (
         settings: DockerDeploymentSettings,
-        projectDisplayName
+        projectDisplayName,
+        projectDescription
       ) => {
         const displayName = projectDisplayName.trim();
+        const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             kind: "docker",
             settings,
-            target: newProjectDeploymentTarget(displayName),
+            target: newProjectDeploymentTarget(displayName, description),
           });
           if (outcome.kind !== "docker") {
             return;
@@ -257,14 +259,16 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       },
       onDatabaseConfirm: async (
         settings: DatabaseDeploymentSettings,
-        projectDisplayName
+        projectDisplayName,
+        projectDescription
       ) => {
         const displayName = projectDisplayName.trim();
+        const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             kind: "database",
             settings,
-            target: newProjectDeploymentTarget(displayName),
+            target: newProjectDeploymentTarget(displayName, description),
           });
           if (outcome.kind !== "database") {
             return;
@@ -282,14 +286,16 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       onTemplateConfirm: async (
         settings: TemplateDeploymentSettings,
         choice,
-        projectDisplayName
+        projectDisplayName,
+        projectDescription
       ) => {
         const displayName = projectDisplayName.trim();
+        const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             args: settings.args,
             kind: "template",
-            target: newProjectDeploymentTarget(displayName),
+            target: newProjectDeploymentTarget(displayName, description),
             templateName: settings.templateName,
           });
           if (outcome.kind !== "template") {
@@ -300,6 +306,37 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           );
           setLastConfirmedKind(
             `template:${choice.name}:${outcome.projectName}`
+          );
+          dispatchCreationPaneState({ type: "close" });
+          await onProjectCreated?.(outcome.projectId);
+        });
+      },
+      onGithubConfirm: async (
+        repo: GithubDeployerRepo,
+        projectDisplayName,
+        projectDescription
+      ) => {
+        const displayName = projectDisplayName.trim();
+        const description = projectDescription.trim();
+        await applyWithBusyState(async () => {
+          const outcome = await runDeployment({
+            kind: "github",
+            repository: repo,
+            target: newProjectDeploymentTarget(displayName, description),
+          });
+          if (outcome.kind !== "github") {
+            return;
+          }
+          toast.success(outcome.taskMessage);
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectName: outcome.projectName,
+              repoFullName: outcome.sourceLabel,
+              taskId: outcome.taskId,
+            });
+          }
+          setLastConfirmedKind(
+            `github:${outcome.sourceLabel}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
           await onProjectCreated?.(outcome.projectId);

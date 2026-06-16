@@ -12,6 +12,12 @@ A reusable UI component eligible for the Component Registry. A Registry Componen
 
 _Avoid_: Product Surface Registry, Pane Registry, Flow Registry.
 
+### Project Description
+
+A user-maintained optional Project summary that explains the Project's purpose or context. A Project Description may be authored when the Project is created or maintained later; an empty Project Description means the user has not described the Project.
+
+_Avoid_: Deployment description, source description, generated summary.
+
 ### AP Public Access Node
 
 An AP Public Access Node is a presentation-only Project Canvas node derived from an AP's Public Addresses. It is not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.

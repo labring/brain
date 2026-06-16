@@ -5,10 +5,15 @@ import {
   ProjectSourceGithubIcon,
 } from "@workspace/ui/assets/project-source-icons";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
+import { AppTextarea } from "@workspace/ui/components/app-textarea";
+import { Field, FieldError, FieldLabel } from "@workspace/ui/components/field";
 import { cn } from "@workspace/ui/lib/utils";
 import { Blocks, Database } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
-import { useProjectCreator } from "./project-creator.context";
+import {
+  PROJECT_DESCRIPTION_MAX_LENGTH,
+  useProjectCreator,
+} from "./project-creator.context";
 import {
   DEFAULT_PROJECT_CREATOR_SOURCES,
   PROJECT_CREATOR_SOURCE_LABEL,
@@ -65,6 +70,57 @@ export function ProjectCreatorProjectNameField() {
   );
 }
 
+export function ProjectCreatorProjectDescriptionField() {
+  const { actions, states } = useProjectCreator(
+    "ProjectCreator.ProjectDescriptionField"
+  );
+  const descriptionLength = states.projectDescription.length;
+
+  return (
+    <Field className="gap-2" data-slot="project-creator-description-field">
+      <div className="flex items-center justify-between gap-2">
+        <FieldLabel
+          className="text-foreground leading-5"
+          htmlFor="project-creator-description"
+        >
+          Description
+        </FieldLabel>
+        <span className="text-[11px] text-muted-foreground leading-4">
+          {`${descriptionLength}/${PROJECT_DESCRIPTION_MAX_LENGTH}`}
+        </span>
+      </div>
+      <AppTextarea
+        aria-invalid={
+          states.projectDescriptionError === null ? undefined : true
+        }
+        className="min-h-9 resize-none border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+        id="project-creator-description"
+        maxLength={PROJECT_DESCRIPTION_MAX_LENGTH + 1}
+        onChange={(event) =>
+          actions.setProjectDescription(event.currentTarget.value)
+        }
+        placeholder="Optional project context"
+        rows={1}
+        value={states.projectDescription}
+      />
+      {states.projectDescriptionError === null ? null : (
+        <FieldError className="text-xs leading-4" role="alert">
+          {states.projectDescriptionError}
+        </FieldError>
+      )}
+    </Field>
+  );
+}
+
+function ProjectCreatorProjectDetailsFields() {
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <ProjectCreatorProjectNameField />
+      <ProjectCreatorProjectDescriptionField />
+    </div>
+  );
+}
+
 export function ProjectCreatorOptionPicker({
   className,
 }: {
@@ -77,7 +133,7 @@ export function ProjectCreatorOptionPicker({
       className={cn("flex min-w-0 flex-col gap-4", className)}
       data-slot="project-creator-option-picker"
     >
-      <ProjectCreatorProjectNameField />
+      <ProjectCreatorProjectDetailsFields />
       <div className="flex min-w-0 flex-col gap-3">
         <p className="font-medium text-foreground text-sm leading-5">
           Scenario

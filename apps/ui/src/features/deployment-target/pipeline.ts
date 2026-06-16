@@ -13,6 +13,7 @@ import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
 
 export type DeploymentTarget =
   | {
+      description?: string;
       displayName: string;
       kind: "newProject";
     }
@@ -86,9 +87,15 @@ export interface DeploymentTargetPipelineOutcome {
 }
 
 export function newProjectDeploymentTarget(
-  displayName: string
+  displayName: string,
+  description?: string
 ): DeploymentTarget {
-  return { displayName, kind: "newProject" };
+  const normalizedDescription = description?.trim();
+  return {
+    displayName,
+    ...(normalizedDescription ? { description: normalizedDescription } : {}),
+    kind: "newProject",
+  };
 }
 
 export function existingProjectDeploymentTarget(input: {
@@ -163,6 +170,9 @@ function normalizeTarget(
     throw new Error(displayNameError);
   }
   return {
+    ...(target.description?.trim()
+      ? { description: target.description.trim() }
+      : {}),
     displayName,
     kind: "newProject",
   };

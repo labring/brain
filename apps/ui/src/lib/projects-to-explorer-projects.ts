@@ -3,8 +3,9 @@ import type { ProjectExplorerProject } from "@/features/projects/explorer/projec
 
 import type { VisualTone } from "./project-aggregate-status";
 
-/** Key on `metadata.annotations` for the UI display name (merge-patched on rename). */
+/** Key on `metadata.annotations` for the UI display name in legacy Project CR rows. */
 export const PROJECT_DISPLAY_NAME_ANNOTATION_KEY = "displayName";
+export const PROJECT_DESCRIPTION_ANNOTATION_KEY = "description";
 
 /** Legacy project-list item shape kept for old parser tests and transition helpers. */
 export interface ProjectListItem {
@@ -58,6 +59,14 @@ export function projectDisplayName(item: ProjectListItem): string | undefined {
   return undefined;
 }
 
+export function projectDescription(item: ProjectListItem): string | undefined {
+  const fromAnnotation =
+    item.metadata?.annotations?.[PROJECT_DESCRIPTION_ANNOTATION_KEY]?.trim();
+  return fromAnnotation && fromAnnotation.length > 0
+    ? fromAnnotation
+    : undefined;
+}
+
 export function normalizeProjectDisplayName(name: string): string {
   return name.trim().toLowerCase();
 }
@@ -78,6 +87,58 @@ export function isProjectDisplayNameTaken(
   );
 }
 
+function projectResourceName(
+  meta: ProjectListItem["metadata"]
+): string | undefined {
+  return typeof meta?.name === "string" && meta.name !== ""
+    ? meta.name
+    : undefined;
+}
+
+function projectRowName(input: {
+  displayName: string | undefined;
+  id: string;
+  resourceName: string | undefined;
+}): string {
+  return (
+    input.displayName ??
+    input.resourceName ??
+    (input.id === "" ? undefined : input.id) ??
+    "Untitled"
+  );
+}
+
+function projectListItemToExplorerProject(
+  item: ProjectListItem,
+  index: number,
+  statusByProjectId?: ReadonlyMap<string, VisualTone>
+): ProjectExplorerProject {
+  const meta = item.metadata ?? {};
+  const id = meta.uid ?? meta.name ?? `project-${index}`;
+  const resourceName = projectResourceName(meta);
+  const displayName = projectDisplayName(item);
+  const description = projectDescription(item);
+  const status = statusByProjectId?.get(id);
+  const project: ProjectExplorerProject = {
+    createdAt: meta.creationTimestamp ?? "",
+    id,
+    name: projectRowName({ displayName, id, resourceName }),
+  };
+  if (description !== undefined) {
+    project.description = description;
+  }
+  if (resourceName !== undefined) {
+    project.resourceName = resourceName;
+  }
+  if (status !== undefined) {
+    project.status = status;
+  }
+  if (item.spec?.public !== null && item.spec?.public !== undefined) {
+    project.public = item.spec.public;
+  }
+  return project;
+}
+
 /**
  * Maps a Project list (or unknown k8s get / SWR `data` payload) into
  * {@link ProjectExplorerProject} rows for {@link ProjectExplorer}.
@@ -94,32 +155,7 @@ export function projectsListToExplorerProjects(
   if (!items) {
     return [];
   }
-  return items.map((item, index) => {
-    const meta = item.metadata ?? {};
-    const id = meta.uid ?? meta.name ?? `project-${index}`;
-    const resourceName =
-      typeof meta.name === "string" && meta.name !== "" ? meta.name : undefined;
-    const displayName = projectDisplayName(item);
-    let name =
-      displayName ??
-      resourceName ??
-      (typeof id === "string" && id !== "" ? id : undefined);
-    if (!name || name === "") {
-      name = "Untitled";
-    }
-    const createdAt = meta.creationTimestamp ?? "";
-    const specPublic = item.spec?.public;
-    const status = statusByProjectId?.get(id);
-    const base: ProjectExplorerProject = {
-      id,
-      name,
-      createdAt,
-      ...(resourceName === undefined ? {} : { resourceName }),
-      ...(status === undefined ? {} : { status }),
-    };
-    if (specPublic === null || specPublic === undefined) {
-      return base;
-    }
-    return { ...base, public: specPublic };
-  });
+  return items.map((item, index) =>
+    projectListItemToExplorerProject(item, index, statusByProjectId)
+  );
 }

@@ -19,7 +19,11 @@ function filterProjectsByQuery(
   if (q === "") {
     return projects;
   }
-  return projects.filter((p) => p.name.toLowerCase().includes(q));
+  return projects.filter(
+    (p) =>
+      p.name.toLowerCase().includes(q) ||
+      (p.description?.toLowerCase().includes(q) ?? false)
+  );
 }
 
 export function ProjectExplorerList({ className }: { className?: string }) {

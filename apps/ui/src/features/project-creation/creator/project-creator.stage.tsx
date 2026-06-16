@@ -7,6 +7,7 @@ import {
   type DockerDeploymentSettings,
 } from "@/features/deployment/docker-deployer";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
+import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
 import {
   TemplateDeployer,
   type TemplateDeploymentSettings,
@@ -24,7 +25,9 @@ import type {
 
 function GithubPanel() {
   const {
+    actions: creatorActions,
     meta: { githubDeployer },
+    states: creatorStates,
   } = useProjectCreator();
 
   const states = githubDeployer?.states ?? {
@@ -33,7 +36,36 @@ function GithubPanel() {
     isLoading: false,
     repos: [] as const,
   };
-  const actions = githubDeployer?.actions ?? {};
+  const githubActions = githubDeployer?.actions ?? {};
+  const canDeploy =
+    creatorActions.onGithubConfirm != null || githubActions.onDeploy != null;
+  const actions = {
+    ...githubActions,
+    ...(canDeploy
+      ? {
+          onDeploy: (repo: GithubDeployerRepo) => {
+            const projectDisplayName = creatorStates.projectDisplayName.trim();
+            const projectDescription = creatorStates.projectDescription.trim();
+            const displayNameError =
+              creatorActions.validateProjectDisplayName(projectDisplayName);
+            const descriptionError =
+              creatorActions.validateProjectDescription(projectDescription);
+            if (displayNameError != null || descriptionError != null) {
+              return;
+            }
+            if (creatorActions.onGithubConfirm) {
+              creatorActions.onGithubConfirm(
+                repo,
+                projectDisplayName,
+                projectDescription
+              );
+              return;
+            }
+            githubActions.onDeploy?.(repo);
+          },
+        }
+      : {}),
+  };
 
   return (
     <div
@@ -89,11 +121,18 @@ function DockerPanel() {
         }
         onDeploy={(settings) => {
           const projectDisplayName = states.projectDisplayName.trim();
+          const projectDescription = states.projectDescription.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
-          if (error != null) {
+          const descriptionError =
+            actions.validateProjectDescription(projectDescription);
+          if (error != null || descriptionError != null) {
             return;
           }
-          actions.onDockerConfirm?.(settings, projectDisplayName);
+          actions.onDockerConfirm?.(
+            settings,
+            projectDisplayName,
+            projectDescription
+          );
         }}
         onSettingsChange={updateDockerImage}
       />
@@ -127,11 +166,20 @@ function DatabasePanel({
               choice.engine.trim() ||
               "Database Project"
             : states.projectDisplayName.trim();
+          const projectDescription = meta.databaseDirect
+            ? ""
+            : states.projectDescription.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
-          if (error != null) {
+          const descriptionError =
+            actions.validateProjectDescription(projectDescription);
+          if (error != null || descriptionError != null) {
             return;
           }
-          actions.onDatabaseConfirm?.(settings, projectDisplayName);
+          actions.onDatabaseConfirm?.(
+            settings,
+            projectDisplayName,
+            projectDescription
+          );
         }}
       />
     </div>
@@ -162,11 +210,21 @@ function TemplatePanel() {
           const projectDisplayName = meta.templateDirect
             ? choice.title.trim() || choice.name.trim() || "Template Project"
             : states.projectDisplayName.trim();
+          const projectDescription = meta.templateDirect
+            ? ""
+            : states.projectDescription.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
-          if (error != null) {
+          const descriptionError =
+            actions.validateProjectDescription(projectDescription);
+          if (error != null || descriptionError != null) {
             return;
           }
-          actions.onTemplateConfirm?.(settings, choice, projectDisplayName);
+          actions.onTemplateConfirm?.(
+            settings,
+            choice,
+            projectDisplayName,
+            projectDescription
+          );
         }}
         onSettingsChange={(_settings, choice) => {
           setTemplateTitle(choice?.title ?? "");

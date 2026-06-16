@@ -347,6 +347,7 @@ export async function resolveDeploymentTaskTarget(
 
   if (task.target.kind === "newProject") {
     const project = await createProject({
+      description: task.target.description,
       displayName: task.target.displayName,
       namespace: task.namespace,
     });

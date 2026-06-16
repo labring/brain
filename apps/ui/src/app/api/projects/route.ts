@@ -10,7 +10,7 @@ import {
   deleteProject,
   listProjects,
   ProjectPersistenceError,
-  renameProject,
+  updateProject,
 } from "@/lib/project-persistence/projects";
 import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
 import {
@@ -22,11 +22,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const boundedString = z.string().trim().min(1).max(256);
+const optionalDescription = z.string().trim().max(256).optional();
 const createProjectRequestSchema = z.object({
+  description: optionalDescription,
   displayName: boundedString,
   namespace: boundedString,
 });
-const renameProjectRequestSchema = z.object({
+const updateProjectRequestSchema = z.object({
+  description: optionalDescription,
   displayName: boundedString,
   id: boundedString,
   namespace: boundedString,
@@ -127,12 +130,12 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body = renameProjectRequestSchema.parse(await request.json());
+    const body = updateProjectRequestSchema.parse(await request.json());
     const authorization = await authorizeNamespace(request, body.namespace);
     if (authorization.denied !== null) {
       return authorization.denied;
     }
-    return NextResponse.json({ project: await renameProject(body) });
+    return NextResponse.json({ project: await updateProject(body) });
   } catch (error) {
     return (
       validationError(error) ??

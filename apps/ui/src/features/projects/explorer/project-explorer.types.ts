@@ -2,6 +2,8 @@ import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas
 
 export interface ProjectExplorerProject {
   createdAt: Date | string;
+  /** Optional user-maintained Project summary. */
+  description?: string;
   id: string;
   /** Display name (preferred: `metadata.annotations.displayName`, else legacy `spec.title`). */
   name: string;
@@ -40,13 +42,10 @@ export interface ProjectExplorerActions {
   onNewProject?: () => void;
   onProjectClick?: (project: ProjectExplorerProject) => void;
   onProjectDelete?: (project: ProjectExplorerProject) => void | Promise<void>;
-  /**
-   * Display rename; typically merge-PATCH `metadata.annotations.displayName` while
-   * keeping `metadata.name` ({@link ProjectExplorerProject.resourceName}).
-   */
-  onProjectRename?: (
+  /** Updates editable Project details while keeping the stable Project ID. */
+  onProjectUpdate?: (
     project: ProjectExplorerProject,
-    newDisplayName: string
+    next: { description: string; displayName: string }
   ) => void | Promise<void>;
 }
 

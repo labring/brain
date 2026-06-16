@@ -62,7 +62,10 @@ test("Deployment Target pipeline creates a Docker Deployment Task for a new Proj
         env: [],
         image: "ghcr.io/acme/api:1.2",
       },
-      target: newProjectDeploymentTarget("API Project"),
+      target: newProjectDeploymentTarget(
+        "API Project",
+        "Handles order traffic."
+      ),
     },
   });
 
@@ -78,6 +81,7 @@ test("Deployment Target pipeline creates a Docker Deployment Task for a new Proj
       },
     },
     target: {
+      description: "Handles order traffic.",
       displayName: "API Project",
       kind: "newProject",
     },

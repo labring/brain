@@ -32,6 +32,7 @@ const OTHER_NAMESPACE_KUBECONFIG = kubeconfig("other-ns", "caller");
 
 const PROJECT: BrainProject = {
   createdAt: "",
+  description: "",
   displayName: "Project",
   id: "project-uid",
   namespace: "ns-admin",

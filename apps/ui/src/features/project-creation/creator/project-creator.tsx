@@ -8,6 +8,7 @@ import {
 import { ProjectCreatorShell } from "./project-creator.layout";
 import {
   ProjectCreatorOptionPicker,
+  ProjectCreatorProjectDescriptionField,
   ProjectCreatorProjectNameField,
 } from "./project-creator.pick";
 import { ProjectCreatorStage } from "./project-creator.stage";
@@ -30,6 +31,7 @@ export { PROJECT_CREATOR_SOURCE_LABEL } from "./project-creator.types";
 export const ProjectCreator = Object.assign(ProjectCreatorShell, {
   Context: ProjectCreatorContext,
   OptionPicker: ProjectCreatorOptionPicker,
+  ProjectDescriptionField: ProjectCreatorProjectDescriptionField,
   ProjectNameField: ProjectCreatorProjectNameField,
   Root: ProjectCreatorRoot,
   Shell: ProjectCreatorShell,
@@ -46,6 +48,10 @@ dn(ProjectCreatorRoot, "ProjectCreator.Root");
 dn(ProjectCreatorShell, "ProjectCreator.Shell");
 dn(ProjectCreatorTrail, "ProjectCreator.Trail");
 dn(ProjectCreatorOptionPicker, "ProjectCreator.OptionPicker");
+dn(
+  ProjectCreatorProjectDescriptionField,
+  "ProjectCreator.ProjectDescriptionField"
+);
 dn(ProjectCreatorProjectNameField, "ProjectCreator.ProjectNameField");
 dn(ProjectCreatorStage, "ProjectCreator.Stage");
 dn(ProjectCreatorVariant1, "ProjectCreator.Variant1");
