@@ -422,6 +422,26 @@ A derived health tone for one Project row in the project list, computed from the
 
 The human-facing Project name shown in navigation, project chrome, project creation forms, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
 
+### Pinned Project
+
+A current-user navigation preference that marks one Project for prominent access from product navigation. Pinned Projects are a small user-curated shortcut set, not a complete Project list; each entry points to Project ID and is not a shared Project property, Project Aggregate Status, recent Project, or workload lifecycle state.
+
+_Avoid_: Favorite Project, starred Project, recent Project, sidebar Project.
+
+### Last Viewed Unpinned Project Shortcut
+
+A current-user navigation memory for the most recently opened unpinned Project in a namespace. It can remain visible while the user navigates to Pinned Projects or non-Project sidebar destinations, but it is not a Pinned Project, complete recent-project list, shared Project property, Project Aggregate Status, or workload lifecycle state.
+
+When the Last Viewed Unpinned Project becomes a Pinned Project, it leaves this shortcut slot rather than falling back to an older Project.
+
+_Avoid_: Current Project Shortcut, auto-pinned Project, recent Project, temporary Pinned Project, last viewed Pinned Project.
+
+### Project Shortcut Icon
+
+A presentation-only icon shown on a Project navigation shortcut. It may use a representative workload inside the Project as its visual source, but it is not Project identity, Project Aggregate Status, a persisted Project field, or a workload lifecycle state.
+
+_Avoid_: Project identity icon, Project status icon, workload status icon.
+
 ### Custom Domain Binding
 
 The relationship that attaches a Custom Domain to an AP by promoting one Platform Address as the CNAME target. The AP owns the user's binding intent and public access health; the AP Public Access Node only presents that AP-owned public access state on the canvas.

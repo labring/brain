@@ -30,6 +30,10 @@ export function ProjectExplorerList({ className }: { className?: string }) {
   const { searchQuery, states } = useProjectExplorer();
   const { projects, empty } = states;
   const filteredProjects = filterProjectsByQuery(projects, searchQuery);
+  const listClassName = cn(
+    "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+    className
+  );
 
   if (projects.length === 0) {
     const title = empty?.title?.trim() || DEFAULT_EMPTY_TITLE;
@@ -39,7 +43,7 @@ export function ProjectExplorerList({ className }: { className?: string }) {
         : empty.description.trim() || null;
 
     return (
-      <div className={cn(className)} data-slot="project-explorer-list">
+      <div className={listClassName} data-slot="project-explorer-list">
         <div
           className="flex flex-col items-center justify-center rounded-xl px-4 py-10 text-center"
           data-slot="project-explorer-empty"
@@ -57,7 +61,7 @@ export function ProjectExplorerList({ className }: { className?: string }) {
 
   if (filteredProjects.length === 0) {
     return (
-      <div className={cn(className)} data-slot="project-explorer-list">
+      <div className={listClassName} data-slot="project-explorer-list">
         <div
           className="flex flex-col items-center justify-center rounded-xl px-4 py-10 text-center"
           data-slot="project-explorer-filter-empty"
@@ -74,7 +78,7 @@ export function ProjectExplorerList({ className }: { className?: string }) {
   }
 
   return (
-    <div className={cn(className)} data-slot="project-explorer-list">
+    <div className={listClassName} data-slot="project-explorer-list">
       <ul className="flex flex-col gap-2.5">
         {filteredProjects.map((project) => (
           <ProjectExplorerListItem key={project.id} project={project} />
