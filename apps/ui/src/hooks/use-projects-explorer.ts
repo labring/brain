@@ -5,7 +5,7 @@ import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { useTemplateNativeWorkloads } from "@/features/project-canvas/snapshot/use-template-native-workloads";
@@ -14,6 +14,8 @@ import type {
   ProjectExplorerProject,
   ProjectExplorerStates,
 } from "@/features/projects/explorer/project-explorer";
+import { usePinnedProjects } from "@/hooks/use-pinned-projects";
+import { useProjectShortcutIconPreload } from "@/hooks/use-project-shortcut-icon-preload";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
@@ -29,6 +31,7 @@ import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
 } from "@/lib/project-aggregate-status";
+import { projectShortcutIconKeysFromWorkloads } from "@/lib/project-shortcut-icons";
 import { openAssistantPane } from "@/store/layout-store";
 
 /**
@@ -112,6 +115,12 @@ export function useProjectsExplorer(options: {
   const ns = options.ns;
   const onNewProjectOverride = options.onNewProject;
   const hasKubeconfig = kubeconfig !== "";
+  const {
+    limit: pinnedProjectLimit,
+    pinnedProjectIds,
+    prunePinnedProjects,
+    togglePinnedProject,
+  } = usePinnedProjects({ kubeconfig, namespace: ns });
 
   const projectsQuery = useMemo(() => ({ namespace: ns }), [ns]);
 
@@ -176,10 +185,29 @@ export function useProjectsExplorer(options: {
     ]);
   }, [apsData, dbsData, templateNativeData]);
 
+  const projectShortcutIconKeys = useMemo(
+    () =>
+      projectShortcutIconKeysFromWorkloads({
+        aps: apsData,
+        dbs: dbsData,
+      }),
+    [apsData, dbsData]
+  );
+  useProjectShortcutIconPreload(projectShortcutIconKeys);
+
   const projects = useMemo<ProjectExplorerProject[]>(
     () => brainProjectsToExplorerProjects(rawProjects, statusByProjectId),
     [rawProjects, statusByProjectId]
   );
+
+  useEffect(() => {
+    if (rawProjects === undefined) {
+      return;
+    }
+    prunePinnedProjects(projects.map((project) => project.id)).catch(
+      () => undefined
+    );
+  }, [projects, prunePinnedProjects, rawProjects]);
 
   const states = useMemo(
     (): ProjectExplorerStates => ({
@@ -192,9 +220,18 @@ export function useProjectsExplorer(options: {
             },
           }
         : {}),
+      pinnedProjectIds,
+      pinnedProjectLimit,
+      projectShortcutIconKeys,
       projects,
     }),
-    [projects, projectsError]
+    [
+      pinnedProjectIds,
+      pinnedProjectLimit,
+      projectShortcutIconKeys,
+      projects,
+      projectsError,
+    ]
   );
 
   const onProjectClick = useCallback(
@@ -285,14 +322,44 @@ export function useProjectsExplorer(options: {
     [hasKubeconfig, kubeconfig, mutate, ns, pathname, router]
   );
 
+  const onProjectPinToggle = useCallback(
+    async (p: ProjectExplorerProject) => {
+      if (!hasKubeconfig) {
+        toast.error("Credentials are not ready yet.");
+        return;
+      }
+
+      try {
+        const result = await togglePinnedProject(p.id);
+        if (result.status === "added") {
+          toast.success(`Pinned "${p.name}".`);
+        } else if (result.status === "removed") {
+          toast.success(`Unpinned "${p.name}".`);
+        } else if (result.status === "limit-reached") {
+          toast.error(`You can pin up to ${pinnedProjectLimit} projects.`);
+        }
+      } catch {
+        toast.error("Project shortcuts could not be updated.");
+      }
+    },
+    [hasKubeconfig, pinnedProjectLimit, togglePinnedProject]
+  );
+
   const actions = useMemo(
     (): ProjectExplorerActions => ({
       onNewProject,
       onProjectClick,
       onProjectDelete,
+      onProjectPinToggle,
       onProjectUpdate,
     }),
-    [onNewProject, onProjectClick, onProjectDelete, onProjectUpdate]
+    [
+      onNewProject,
+      onProjectClick,
+      onProjectDelete,
+      onProjectPinToggle,
+      onProjectUpdate,
+    ]
   );
 
   const data = useMemo(

@@ -70,6 +70,28 @@ export const projectCanvasLayouts = ns.table(
   ]
 );
 
+/** Namespace-scoped Project navigation preferences. */
+export const projectNavigationPreferences = ns.table(
+  "project_navigation_preferences",
+  {
+    namespace: text("namespace").notNull(),
+    pinnedProjectIds: jsonb("pinned_project_ids").notNull().$type<string[]>(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.namespace],
+      name: "project_navigation_preferences_pk",
+    }),
+    index("project_navigation_preferences_updated_at_idx").on(table.updatedAt),
+  ]
+);
+
 /** AP image version history, used by the workload History panel. */
 export const apImageVersions = ns.table(
   "ap_image_versions",
@@ -100,4 +122,6 @@ export const apImageVersions = ns.table(
 
 export type ProjectRow = typeof projects.$inferSelect;
 export type ProjectCanvasLayoutRow = typeof projectCanvasLayouts.$inferSelect;
+export type ProjectNavigationPreferencesRow =
+  typeof projectNavigationPreferences.$inferSelect;
 export type APImageVersionRow = typeof apImageVersions.$inferSelect;

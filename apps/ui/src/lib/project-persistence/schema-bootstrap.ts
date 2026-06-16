@@ -18,6 +18,10 @@ function qualifiedTable(schemaName: string, tableName: string): string {
 
 async function ensureProjectTables(pool: Pool): Promise<void> {
   const projects = qualifiedTable(PROJECT_DB_SCHEMA, "projects");
+  const projectNavigationPreferences = qualifiedTable(
+    PROJECT_DB_SCHEMA,
+    "project_navigation_preferences"
+  );
 
   await pool.query(`
     create schema if not exists ${quoteIdentifier(PROJECT_DB_SCHEMA)};
@@ -36,6 +40,17 @@ async function ensureProjectTables(pool: Pool): Promise<void> {
       on ${projects} (namespace, display_name);
     create index if not exists projects_updated_at_idx
       on ${projects} (updated_at);
+
+    create table if not exists ${projectNavigationPreferences} (
+      namespace text not null,
+      pinned_project_ids jsonb not null default '[]'::jsonb,
+      updated_at timestamp with time zone not null default now(),
+      created_at timestamp with time zone not null default now(),
+      constraint project_navigation_preferences_pk primary key (namespace)
+    );
+
+    create index if not exists project_navigation_preferences_updated_at_idx
+      on ${projectNavigationPreferences} (updated_at);
   `);
 }
 

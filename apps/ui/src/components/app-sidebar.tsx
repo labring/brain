@@ -1,7 +1,5 @@
 "use client";
 
-import { apItemsFromList } from "@workspace/api/lib/ap-list";
-import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { brainV2LogoSrc } from "@workspace/ui/assets/brand";
 import {
   type DeviconKey,
@@ -25,132 +23,18 @@ import { useAtomValue } from "jotai";
 import { LayoutGrid, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createProjectSidebarShortcutItems } from "@/components/app-sidebar.shortcuts";
+import { useLastViewedProject } from "@/hooks/use-last-viewed-project";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
-import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-
-interface WorkloadShortcutCandidate {
-  createdAt: string;
-  iconKey: DeviconKey;
-  name: string;
-  projectId: string;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() !== ""
-    ? value.trim()
-    : undefined;
-}
-
-function metadataRecord(value: unknown): Record<string, unknown> {
-  return asRecord(asRecord(value)?.metadata) ?? {};
-}
-
-function metadataName(value: unknown): string {
-  return nonEmptyString(metadataRecord(value).name) ?? "";
-}
-
-function metadataCreationTimestamp(value: unknown): string {
-  return nonEmptyString(metadataRecord(value).creationTimestamp) ?? "";
-}
-
-function projectIdFromResource(value: unknown): string | undefined {
-  const labels = asRecord(metadataRecord(value).labels);
-  return nonEmptyString(labels?.[BRAIN_PROJECT_ID_LABEL]);
-}
-
-function databaseIconKeyFromSpec(spec: Record<string, unknown>): DeviconKey {
-  const engine = nonEmptyString(spec.engine)?.toLowerCase();
-  if (engine && engine in devicons && engine !== "docker") {
-    return engine as DeviconKey;
-  }
-
-  return "docker";
-}
-
-function compareWorkloadCandidates(
-  a: WorkloadShortcutCandidate,
-  b: WorkloadShortcutCandidate
-): number {
-  const aTime = Date.parse(a.createdAt);
-  const bTime = Date.parse(b.createdAt);
-  const aValid = Number.isFinite(aTime);
-  const bValid = Number.isFinite(bTime);
-
-  if (aValid && bValid && aTime !== bTime) {
-    return aTime - bTime;
-  }
-  if (aValid !== bValid) {
-    return aValid ? -1 : 1;
-  }
-  return a.name.localeCompare(b.name);
-}
-
-function selectedApByProject(
-  data: K8sGetResponse | undefined
-): Map<string, WorkloadShortcutCandidate> {
-  const result = new Map<string, WorkloadShortcutCandidate>();
-
-  for (const item of apItemsFromList(data)) {
-    const projectId = projectIdFromResource(item);
-    if (projectId === undefined) {
-      continue;
-    }
-
-    const candidate: WorkloadShortcutCandidate = {
-      createdAt: metadataCreationTimestamp(item),
-      iconKey: "docker",
-      name: metadataName(item),
-      projectId,
-    };
-    const current = result.get(projectId);
-    if (
-      current === undefined ||
-      compareWorkloadCandidates(candidate, current) < 0
-    ) {
-      result.set(projectId, candidate);
-    }
-  }
-
-  return result;
-}
-
-function selectedDbByProject(
-  data: K8sGetResponse | undefined
-): Map<string, WorkloadShortcutCandidate> {
-  const result = new Map<string, WorkloadShortcutCandidate>();
-
-  for (const item of apItemsFromList(data)) {
-    const projectId = projectIdFromResource(item);
-    if (projectId === undefined) {
-      continue;
-    }
-
-    const spec = asRecord(asRecord(item)?.spec) ?? {};
-    const candidate: WorkloadShortcutCandidate = {
-      createdAt: metadataCreationTimestamp(item),
-      iconKey: databaseIconKeyFromSpec(spec),
-      name: metadataName(item),
-      projectId,
-    };
-    const current = result.get(projectId);
-    if (
-      current === undefined ||
-      compareWorkloadCandidates(candidate, current) < 0
-    ) {
-      result.set(projectId, candidate);
-    }
-  }
-
-  return result;
-}
 
 function projectIdFromPathname(pathname: string): string | undefined {
   const prefix = "/project/";
@@ -196,6 +80,7 @@ function ProjectShortcutIcon({
 
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
+const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const UPGRADE_USAGE_ROWS = [
   ["CPU", "0.0/0"],
@@ -314,14 +199,58 @@ export default function AppSidebar() {
   const namespace = useAtomValue(namespaceAtom);
   const currentProjectId = projectIdFromPathname(pathname);
   const projectsActive = pathname === "/project";
+  const { lastViewedProjectId, setLastViewedProject } =
+    useLastViewedProject(namespace);
+  const handledProjectRouteId = useRef<string | undefined>(undefined);
 
-  const { data, states } = useProjectsExplorer({
+  const { states } = useProjectsExplorer({
     kubeconfig,
     ns: namespace,
   });
 
-  const apByProject = useMemo(() => selectedApByProject(data.aps), [data.aps]);
-  const dbByProject = useMemo(() => selectedDbByProject(data.dbs), [data.dbs]);
+  const pinnedProjectIds = states.pinnedProjectIds ?? EMPTY_PROJECT_IDS;
+  const projectShortcutIconKeys = states.projectShortcutIconKeys;
+  const projectShortcutItems = useMemo(
+    () =>
+      createProjectSidebarShortcutItems({
+        lastViewedProjectId,
+        pinnedProjectIds,
+        projects: states.projects,
+      }),
+    [lastViewedProjectId, pinnedProjectIds, states.projects]
+  );
+
+  useEffect(() => {
+    if (currentProjectId === undefined) {
+      handledProjectRouteId.current = undefined;
+      return;
+    }
+    if (handledProjectRouteId.current === currentProjectId) {
+      return;
+    }
+    if (!states.projects.some((project) => project.id === currentProjectId)) {
+      return;
+    }
+
+    handledProjectRouteId.current = currentProjectId;
+    if (!pinnedProjectIds.includes(currentProjectId)) {
+      setLastViewedProject(currentProjectId);
+    }
+  }, [
+    currentProjectId,
+    pinnedProjectIds,
+    setLastViewedProject,
+    states.projects,
+  ]);
+
+  useEffect(() => {
+    if (
+      lastViewedProjectId !== undefined &&
+      pinnedProjectIds.includes(lastViewedProjectId)
+    ) {
+      setLastViewedProject(undefined);
+    }
+  }, [lastViewedProjectId, pinnedProjectIds, setLastViewedProject]);
 
   return (
     <aside
@@ -339,7 +268,7 @@ export default function AppSidebar() {
 
         <nav
           aria-label="Project shortcuts"
-          className="flex min-h-0 w-9 flex-1 flex-col gap-1.5 overflow-y-auto"
+          className="flex min-h-0 w-9 flex-1 flex-col gap-1.5"
         >
           <AppSidebarLinkButton
             active={projectsActive}
@@ -350,26 +279,33 @@ export default function AppSidebar() {
             <LayoutGrid aria-hidden className="size-4" strokeWidth={1.33} />
           </AppSidebarLinkButton>
 
-          {states.projects.map((project) => {
-            const ap = apByProject.get(project.id);
-            const db =
-              ap === undefined ? dbByProject.get(project.id) : undefined;
-            const shortcut = ap ?? db;
-            const iconKey = shortcut?.iconKey ?? "docker";
-            const active = currentProjectId === project.id;
+          <div
+            className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto"
+            data-slot="app-sidebar-project-shortcuts"
+          >
+            {projectShortcutItems.map((item) => {
+              const { project } = item;
+              const iconKey =
+                projectShortcutIconKeys?.get(project.id) ?? "docker";
+              const active = currentProjectId === project.id;
+              const ariaLabel =
+                item.kind === "lastViewed"
+                  ? `Last viewed unpinned project: ${project.name}`
+                  : `Pinned project: ${project.name}`;
 
-            return (
-              <AppSidebarLinkButton
-                active={active}
-                aria-label={project.name}
-                href={`/project/${encodeURIComponent(project.id)}`}
-                key={project.id}
-                tooltip={project.name}
-              >
-                <ProjectShortcutIcon active={active} iconKey={iconKey} />
-              </AppSidebarLinkButton>
-            );
-          })}
+              return (
+                <AppSidebarLinkButton
+                  active={active}
+                  aria-label={ariaLabel}
+                  href={`/project/${encodeURIComponent(project.id)}`}
+                  key={`${item.kind}:${project.id}`}
+                  tooltip={project.name}
+                >
+                  <ProjectShortcutIcon active={active} iconKey={iconKey} />
+                </AppSidebarLinkButton>
+              );
+            })}
+          </div>
         </nav>
 
         <AppSidebarUpgrade />

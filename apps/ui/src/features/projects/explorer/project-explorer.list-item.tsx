@@ -12,8 +12,13 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Field, FieldError, FieldLabel } from "@workspace/ui/components/field";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { EllipsisVertical, SquarePen, Trash2 } from "lucide-react";
+import { EllipsisVertical, Pin, PinOff, SquarePen, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
 
 import { useProjectExplorer } from "./project-explorer.context";
@@ -21,16 +26,12 @@ import type { ProjectExplorerProject } from "./project-explorer.types";
 import { formatCreatedAt, toDate } from "./project-explorer.utils";
 
 const PROJECT_DESCRIPTION_MAX_LENGTH = 256;
+const PROJECT_DESCRIPTION_EMPTY_ACCESSIBLE_LABEL = "No project description";
+const PROJECT_DESCRIPTION_EMPTY_LABEL = "-";
 
-function projectExplorerItemRowClassName(
-  hasDescription: boolean,
-  interactive: boolean
-) {
+function projectExplorerItemRowClassName(interactive: boolean) {
   return cn(
-    "project-explorer-item-row min-w-0 rounded-xl bg-transparent px-[18px] pt-2.5 transition-colors",
-    hasDescription
-      ? "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 pb-[18px]"
-      : "flex items-center gap-2 pb-2.5",
+    "project-explorer-item-row grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-xl bg-transparent px-[18px] pt-2.5 pb-[18px] transition-colors",
     interactive && "cursor-pointer"
   );
 }
@@ -42,6 +43,190 @@ export function isProjectDeleteVerificationMatch(
   return displayName !== "" && verification.trim() === displayName;
 }
 
+function projectPinActionLabel(projectName: string, pinned: boolean): string {
+  return pinned ? `Unpin ${projectName}` : `Pin ${projectName}`;
+}
+
+function projectPinTooltip({
+  limit,
+  limitReached,
+  pinned,
+}: {
+  limit: number;
+  limitReached: boolean;
+  pinned: boolean;
+}): string {
+  if (limitReached) {
+    return `You can pin up to ${limit} projects.`;
+  }
+  return pinned ? "Unpin project" : "Pin project";
+}
+
+function ProjectExplorerPinAction({
+  limit,
+  limitReached,
+  onToggle,
+  pinned,
+  projectName,
+}: {
+  limit: number;
+  limitReached: boolean;
+  onToggle: () => void;
+  pinned: boolean;
+  projectName: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <AppIconButton
+            aria-label={projectPinActionLabel(projectName, pinned)}
+            aria-pressed={pinned}
+            className="text-muted-foreground hover:text-foreground"
+            disabled={limitReached}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            size="lg"
+            type="button"
+            variant="quiet"
+          >
+            {pinned ? (
+              <PinOff aria-hidden className="size-4" />
+            ) : (
+              <Pin aria-hidden className="size-4" />
+            )}
+          </AppIconButton>
+        }
+      />
+      <TooltipContent side="right">
+        {projectPinTooltip({ limit, limitReached, pinned })}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ProjectExplorerRowMenu({
+  canDelete,
+  canEdit,
+  onDelete,
+  onEdit,
+  projectName,
+}: {
+  canDelete: boolean;
+  canEdit: boolean;
+  onDelete: () => void;
+  onEdit: () => void;
+  projectName: string;
+}) {
+  if (!(canEdit || canDelete)) {
+    return null;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <AppIconButton
+            aria-label={`Actions for ${projectName}`}
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            size="lg"
+            type="button"
+            variant="quiet"
+          >
+            <EllipsisVertical aria-hidden className="size-4" />
+          </AppIconButton>
+        }
+      />
+      <DropdownMenuContent
+        align="start"
+        className="w-38 min-w-38 rounded-md border border-border bg-input/30 p-1 text-foreground shadow-none ring-0! backdrop-blur-xl"
+        onClick={(event) => event.stopPropagation()}
+        side="right"
+        sideOffset={14}
+      >
+        {canEdit ? (
+          <DropdownMenuItem
+            className="project-explorer-action-menu-item h-7 cursor-pointer rounded-md px-2 py-0 font-normal text-foreground text-sm leading-none hover:bg-input hover:text-foreground focus:bg-input focus:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation();
+              onEdit();
+            }}
+          >
+            <SquarePen aria-hidden className="size-4" />
+            Edit
+          </DropdownMenuItem>
+        ) : null}
+        {canDelete ? (
+          <DropdownMenuItem
+            className="project-explorer-action-menu-item h-7 cursor-pointer rounded-md px-2 py-0 font-normal text-foreground text-sm leading-none hover:bg-input hover:text-foreground focus:bg-input focus:text-foreground"
+            data-tone="destructive"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2 aria-hidden className="size-4" />
+            Delete
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ProjectExplorerRowActions({
+  canDelete,
+  canEdit,
+  canTogglePin,
+  limit,
+  limitReached,
+  onDelete,
+  onEdit,
+  onTogglePin,
+  pinned,
+  projectName,
+}: {
+  canDelete: boolean;
+  canEdit: boolean;
+  canTogglePin: boolean;
+  limit: number;
+  limitReached: boolean;
+  onDelete: () => void;
+  onEdit: () => void;
+  onTogglePin: () => void;
+  pinned: boolean;
+  projectName: string;
+}) {
+  if (!(canTogglePin || canEdit || canDelete)) {
+    return null;
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {canTogglePin ? (
+        <ProjectExplorerPinAction
+          limit={limit}
+          limitReached={limitReached}
+          onToggle={onTogglePin}
+          pinned={pinned}
+          projectName={projectName}
+        />
+      ) : null}
+      <ProjectExplorerRowMenu
+        canDelete={canDelete}
+        canEdit={canEdit}
+        onDelete={onDelete}
+        onEdit={onEdit}
+        projectName={projectName}
+      />
+    </div>
+  );
+}
+
 export function ProjectExplorerListItem({
   className,
   project,
@@ -49,11 +234,17 @@ export function ProjectExplorerListItem({
   className?: string;
   project: ProjectExplorerProject;
 }) {
-  const { actions } = useProjectExplorer();
+  const { actions, states } = useProjectExplorer();
   const interactive = actions.onProjectClick != null;
   const canEdit = actions.onProjectUpdate != null;
   const canDelete = actions.onProjectDelete != null;
-  const showRowMenu = canEdit || canDelete;
+  const canTogglePin = actions.onProjectPinToggle != null;
+  const pinnedProjectIds = states.pinnedProjectIds ?? [];
+  const pinnedProjectLimit =
+    states.pinnedProjectLimit ?? Number.POSITIVE_INFINITY;
+  const pinned = pinnedProjectIds.includes(project.id);
+  const pinLimitReached =
+    !pinned && pinnedProjectIds.length >= pinnedProjectLimit;
   const projectId = project.id;
   const showProjectId = projectId !== "" && projectId !== project.name;
   const description = project.description?.trim() ?? "";
@@ -156,11 +347,15 @@ export function ProjectExplorerListItem({
     }
   }, [actions, deleteVerification, project]);
 
+  const togglePin = useCallback(() => {
+    if (!actions.onProjectPinToggle || pinLimitReached) {
+      return;
+    }
+    actions.onProjectPinToggle(project);
+  }, [actions, pinLimitReached, project]);
+
   const hasDescription = description !== "";
-  const rowClassName = projectExplorerItemRowClassName(
-    hasDescription,
-    interactive
-  );
+  const rowClassName = projectExplorerItemRowClassName(interactive);
 
   return (
     <li
@@ -169,16 +364,13 @@ export function ProjectExplorerListItem({
     >
       <div className={rowClassName}>
         <CanvasNodeStatusDot
-          className={hasDescription ? "self-center" : undefined}
+          className="self-center"
           size="small"
           status={{ label: "", visualTone: project.status }}
         />
         <div
           className={cn(
-            "min-w-0 text-start",
-            hasDescription
-              ? "col-start-2 row-start-1 self-center"
-              : "flex flex-1 flex-col gap-1",
+            "col-start-2 row-start-1 min-w-0 self-center text-start",
             interactive && "cursor-pointer"
           )}
           {...(interactive
@@ -202,55 +394,37 @@ export function ProjectExplorerListItem({
             </time>
           </div>
         </div>
-        {showRowMenu ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <AppIconButton
-                  aria-label={`Actions for ${project.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  size="lg"
-                  type="button"
-                  variant="quiet"
-                >
-                  <EllipsisVertical aria-hidden className="size-4" />
-                </AppIconButton>
-              }
-            />
-            <DropdownMenuContent
-              align="start"
-              className="w-38 min-w-38 rounded-md border border-border bg-input/30 p-1 text-foreground shadow-none ring-0! backdrop-blur-xl"
-              side="right"
-              sideOffset={14}
-            >
-              {canEdit ? (
-                <DropdownMenuItem
-                  className="project-explorer-action-menu-item h-7 cursor-pointer rounded-md px-2 py-0 font-normal text-foreground text-sm leading-none hover:bg-input hover:text-foreground focus:bg-input focus:text-foreground"
-                  onClick={() => setEditOpen(true)}
-                >
-                  <SquarePen aria-hidden className="size-4" />
-                  Edit
-                </DropdownMenuItem>
-              ) : null}
-              {canDelete ? (
-                <DropdownMenuItem
-                  className="project-explorer-action-menu-item h-7 cursor-pointer rounded-md px-2 py-0 font-normal text-foreground text-sm leading-none hover:bg-input hover:text-foreground focus:bg-input focus:text-foreground"
-                  data-tone="destructive"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash2 aria-hidden className="size-4" />
-                  Delete
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        {hasDescription ? (
-          <p className="col-span-full row-start-2 min-w-0 truncate text-muted-foreground text-sm leading-5">
-            {description}
-          </p>
-        ) : null}
+        <ProjectExplorerRowActions
+          canDelete={canDelete}
+          canEdit={canEdit}
+          canTogglePin={canTogglePin}
+          limit={pinnedProjectLimit}
+          limitReached={pinLimitReached}
+          onDelete={() => setDeleteOpen(true)}
+          onEdit={() => setEditOpen(true)}
+          onTogglePin={togglePin}
+          pinned={pinned}
+          projectName={project.name}
+        />
+        <p
+          className={cn(
+            "col-span-full row-start-2 min-w-0 truncate text-sm leading-5",
+            hasDescription
+              ? "text-muted-foreground"
+              : "text-muted-foreground/45"
+          )}
+        >
+          {hasDescription ? (
+            description
+          ) : (
+            <>
+              <span aria-hidden>{PROJECT_DESCRIPTION_EMPTY_LABEL}</span>
+              <span className="sr-only">
+                {PROJECT_DESCRIPTION_EMPTY_ACCESSIBLE_LABEL}
+              </span>
+            </>
+          )}
+        </p>
       </div>
 
       <AppDialog.Root

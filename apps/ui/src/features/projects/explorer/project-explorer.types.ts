@@ -1,4 +1,5 @@
 import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas-node/canvas-node.types";
+import type { ProjectShortcutIconKeyMap } from "@/lib/project-shortcut-icons";
 
 export interface ProjectExplorerProject {
   createdAt: Date | string;
@@ -33,6 +34,12 @@ export interface ProjectExplorerStates {
    * Set `title` / `description` to customize; strings default when omitted.
    */
   empty?: ProjectExplorerEmptyState;
+  /** Namespace-scoped Pinned Project IDs, ordered by pin time. */
+  pinnedProjectIds?: readonly string[];
+  /** Maximum number of Pinned Projects allowed in product navigation. */
+  pinnedProjectLimit?: number;
+  /** Presentation-only Project Shortcut Icon keys, prepared from Project workloads. */
+  projectShortcutIconKeys?: ProjectShortcutIconKeyMap;
   projects: ProjectExplorerProject[];
 }
 
@@ -42,6 +49,9 @@ export interface ProjectExplorerActions {
   onNewProject?: () => void;
   onProjectClick?: (project: ProjectExplorerProject) => void;
   onProjectDelete?: (project: ProjectExplorerProject) => void | Promise<void>;
+  onProjectPinToggle?: (
+    project: ProjectExplorerProject
+  ) => void | Promise<void>;
   /** Updates editable Project details while keeping the stable Project ID. */
   onProjectUpdate?: (
     project: ProjectExplorerProject,
