@@ -3,13 +3,6 @@
   "extends": ["ultracite/biome/core"],
   "overrides": [
     {
-      // New plugin submodule is validated by its own repository; do not lint vendored contents here.
-      "includes": ["brain-sandbox-skills", "brain-sandbox-skills/**"],
-      "assist": { "enabled": false },
-      "formatter": { "enabled": false },
-      "linter": { "enabled": false }
-    },
-    {
       // Compound-component dot-notation per apps/ui frontend architecture §4.1.
       "includes": ["apps/ui/src/features/**/*.tsx", "apps/ui/src/app/**/*.tsx"],
       "linter": {
