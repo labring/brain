@@ -27,7 +27,6 @@ import {
   isProjectDisplayNameTaken,
 } from "@/lib/brain-projects";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
-import { MAX_PINNED_PROJECTS } from "@/lib/pinned-projects";
 import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
@@ -116,8 +115,12 @@ export function useProjectsExplorer(options: {
   const ns = options.ns;
   const onNewProjectOverride = options.onNewProject;
   const hasKubeconfig = kubeconfig !== "";
-  const { pinnedProjectIds, prunePinnedProjects, togglePinnedProject } =
-    usePinnedProjects({ kubeconfig, namespace: ns });
+  const {
+    limit: pinnedProjectLimit,
+    pinnedProjectIds,
+    prunePinnedProjects,
+    togglePinnedProject,
+  } = usePinnedProjects({ kubeconfig, namespace: ns });
 
   const projectsQuery = useMemo(() => ({ namespace: ns }), [ns]);
 
@@ -218,11 +221,17 @@ export function useProjectsExplorer(options: {
           }
         : {}),
       pinnedProjectIds,
-      pinnedProjectLimit: MAX_PINNED_PROJECTS,
+      pinnedProjectLimit,
       projectShortcutIconKeys,
       projects,
     }),
-    [pinnedProjectIds, projectShortcutIconKeys, projects, projectsError]
+    [
+      pinnedProjectIds,
+      pinnedProjectLimit,
+      projectShortcutIconKeys,
+      projects,
+      projectsError,
+    ]
   );
 
   const onProjectClick = useCallback(
@@ -327,13 +336,13 @@ export function useProjectsExplorer(options: {
         } else if (result.status === "removed") {
           toast.success(`Unpinned "${p.name}".`);
         } else if (result.status === "limit-reached") {
-          toast.error(`You can pin up to ${MAX_PINNED_PROJECTS} projects.`);
+          toast.error(`You can pin up to ${pinnedProjectLimit} projects.`);
         }
       } catch {
         toast.error("Project shortcuts could not be updated.");
       }
     },
-    [hasKubeconfig, togglePinnedProject]
+    [hasKubeconfig, pinnedProjectLimit, togglePinnedProject]
   );
 
   const actions = useMemo(

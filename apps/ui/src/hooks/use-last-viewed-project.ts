@@ -3,6 +3,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 import {
+  LAST_VIEWED_PROJECT_STORAGE_PREFIX,
   lastViewedProjectStorageKey,
   normalizeLastViewedProjectId,
 } from "@/lib/project-navigation-memory";
@@ -54,7 +55,7 @@ function subscribeLastViewedProjectId(onStoreChange: () => void): () => void {
   const onStorage = (event: StorageEvent) => {
     if (
       event.key == null ||
-      event.key.startsWith("sealai:last-viewed-project:")
+      event.key.startsWith(LAST_VIEWED_PROJECT_STORAGE_PREFIX)
     ) {
       onStoreChange();
     }

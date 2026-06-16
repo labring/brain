@@ -12,7 +12,6 @@ interface WorkloadShortcutCandidate {
   createdAt: string;
   iconKey: DeviconKey;
   name: string;
-  projectId: string;
 }
 
 export type ProjectShortcutIconKeyMap = ReadonlyMap<string, DeviconKey>;
@@ -88,7 +87,6 @@ function selectedApByProject(
       createdAt: metadataCreationTimestamp(item),
       iconKey: "docker",
       name: metadataName(item),
-      projectId,
     };
     const current = result.get(projectId);
     if (
@@ -118,7 +116,6 @@ function selectedDbByProject(
       createdAt: metadataCreationTimestamp(item),
       iconKey: databaseIconKeyFromSpec(spec),
       name: metadataName(item),
-      projectId,
     };
     const current = result.get(projectId);
     if (
