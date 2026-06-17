@@ -770,7 +770,7 @@ async function waitForRequiredResultCards(input: {
   >();
 
   while (Date.now() - startedAt <= timeoutMs) {
-    let allRunning = true;
+    let requiredCardsRunning = true;
 
     for (const card of input.cards) {
       const observed = await observeResultCardReadiness({
@@ -781,10 +781,12 @@ async function waitForRequiredResultCards(input: {
       latestStatus = observed.latestStatus;
       latestStatusByCard.set(card.id, observed.latestStatus);
       statusByCard.set(card.id, observed.status);
-      allRunning = allRunning && observed.running;
+      if (card.required) {
+        requiredCardsRunning = requiredCardsRunning && observed.running;
+      }
     }
 
-    if (allRunning) {
+    if (requiredCardsRunning) {
       const snapshot = await getDeployTaskTimelineSnapshot(input.taskId);
       if (
         snapshot == null ||
