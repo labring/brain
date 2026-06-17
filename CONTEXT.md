@@ -334,6 +334,8 @@ Canvas Placement Groups are evaluated together so related new nodes remain near 
 
 An AP with desired Public Address intent and its AP Public Access Node form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the AP Public Access Node is a presentation node for AP-owned public access rather than an independent resource.
 
+Deployment Projection Slots from one Deployment Task may be presented near one another while placement is generated, but that preview relationship is not a Canvas Placement Group; each slot owns its own Deployment Projection Placement.
+
 After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes. During Deployment Handoff, Canvas Placement Group membership does not override existing per-slot Deployment Projection Placements.
 
 ### Canvas Viewport Focus
