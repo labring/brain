@@ -7,6 +7,9 @@ import type {
   DeploymentTaskProjectionStreamServerEvent,
 } from "./projection";
 import type {
+  DeploymentTaskTimelineSnapshotDTO,
+  DeploymentTaskTimelineStreamEvent,
+  DeploymentTaskTimelineStreamServerEvent,
   DeployTaskDTO,
   UpdateDeployTaskCanvasProjectionInput,
 } from "./types";
@@ -96,6 +99,119 @@ function flushSseEventBlocks(input: {
       }
       input.onEvent(event);
     }
+  }
+}
+
+function deployTaskTimelineApiPath(taskId: string): string {
+  return `${DEPLOY_TASKS_API_PATH}/${encodeURIComponent(taskId)}/timeline`;
+}
+
+function deployTaskTimelineStreamApiPath(taskId: string): string {
+  return `${deployTaskTimelineApiPath(taskId)}/stream`;
+}
+
+function flushTimelineSseEventBlocks(input: {
+  buffer: string;
+  onEvent: (event: DeploymentTaskTimelineStreamEvent) => void;
+}): string {
+  let buffer = input.buffer;
+  while (true) {
+    const match = buffer.match(SSE_BLOCK_SEPARATOR_REGEX);
+    if (match?.index == null) {
+      return buffer;
+    }
+
+    const block = buffer.slice(0, match.index);
+    buffer = buffer.slice(match.index + match[0].length);
+    const dataText = parseSseEventBlock(block);
+    if (dataText) {
+      const event = JSON.parse(
+        dataText
+      ) as DeploymentTaskTimelineStreamServerEvent;
+      if (event.type === "error") {
+        throw new Error(event.message || "Deployment task timeline failed.");
+      }
+      input.onEvent(event);
+    }
+  }
+}
+
+export async function fetchDeploymentTaskTimeline(input: {
+  kubeconfig: string;
+  namespace: string;
+  taskId: string;
+}): Promise<DeploymentTaskTimelineSnapshotDTO> {
+  const url = new URL(
+    deployTaskTimelineApiPath(input.taskId),
+    window.location.origin
+  );
+  url.searchParams.set("namespace", input.namespace);
+  return await jsonOrError<DeploymentTaskTimelineSnapshotDTO>(
+    await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Authorization: kubeconfigBearerHeader(input.kubeconfig),
+      },
+      method: "GET",
+    })
+  );
+}
+
+export async function streamDeploymentTaskTimeline(input: {
+  kubeconfig: string;
+  namespace: string;
+  onEvent: (event: DeploymentTaskTimelineStreamEvent) => void;
+  signal: AbortSignal;
+  taskId: string;
+}): Promise<void> {
+  const url = new URL(
+    deployTaskTimelineStreamApiPath(input.taskId),
+    window.location.origin
+  );
+  url.searchParams.set("namespace", input.namespace);
+
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      Accept: "text/event-stream",
+      Authorization: kubeconfigBearerHeader(input.kubeconfig),
+    },
+    signal: input.signal,
+  });
+  if (!response.ok || response.body == null) {
+    throw new Error(
+      `Deployment task timeline stream returned ${response.status}.`
+    );
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (!input.signal.aborted) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value == null) {
+        continue;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      buffer = flushTimelineSseEventBlocks({
+        buffer,
+        onEvent: input.onEvent,
+      });
+    }
+    buffer += decoder.decode();
+    flushTimelineSseEventBlocks({
+      buffer,
+      onEvent: input.onEvent,
+    });
+    if (!input.signal.aborted) {
+      throw new Error("Deployment task timeline stream closed.");
+    }
+  } finally {
+    reader.releaseLock();
   }
 }
 

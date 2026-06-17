@@ -51,6 +51,19 @@ function projectIdEntry(
   return projectId == null ? null : { kind, projectId };
 }
 
+function deploymentTaskTimelineEntry(
+  parts: readonly string[]
+): ProjectSideSurfaceEntry | null {
+  if (parts.length !== 3) {
+    return null;
+  }
+  const projectId = decodePart(parts[1]);
+  const taskId = decodePart(parts[2]);
+  return projectId == null || taskId == null
+    ? null
+    : { kind: "deploymentTaskTimeline", projectId, taskId };
+}
+
 function targetFromParts(parts: readonly string[]) {
   return parseProjectTarget(parts.join(":"));
 }
@@ -116,6 +129,8 @@ export function serializeProjectSideSurfaceEntry(
       return serializeTargetEntry("ap-metrics", entry.target);
     case "databaseDeployment":
       return `database-deployment:${encodePart(entry.projectId)}`;
+    case "deploymentTaskTimeline":
+      return `deployment-task-timeline:${encodePart(entry.projectId)}:${encodePart(entry.taskId)}`;
     case "dbMetrics":
       return serializeTargetEntry("db-metrics", entry.target);
     case "dockerDeployment":
@@ -210,6 +225,8 @@ export function parseProjectSideSurfaceEntry(
   switch (parts[0]) {
     case "database-deployment":
       return projectIdEntry("databaseDeployment", parts);
+    case "deployment-task-timeline":
+      return deploymentTaskTimelineEntry(parts);
     case "docker-deployment":
       return projectIdEntry("dockerDeployment", parts);
     case "github-deployment":

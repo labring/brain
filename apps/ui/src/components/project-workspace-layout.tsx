@@ -135,6 +135,10 @@ interface GithubDeployTaskPart {
   type: "data-github-deploy-task";
 }
 
+type GithubDeployTaskCreatedDetail = DeployTaskCreatedEvent["detail"] & {
+  repoFullName: string;
+};
+
 function isGithubDeployTaskPart(
   part: UIMessage["parts"][number]
 ): part is GithubDeployTaskPart {
@@ -221,7 +225,7 @@ function deployTaskIdFromChatMessage(message: UIMessage): string | null {
 
 function deployTaskDetailFromChatMessage(
   message: UIMessage
-): DeployTaskCreatedEvent["detail"] | null {
+): GithubDeployTaskCreatedDetail | null {
   for (const part of message.parts) {
     if (isGithubDeployTaskPart(part)) {
       return {
@@ -321,7 +325,7 @@ function repoFullNameForDeployTask(
 }
 
 async function pollDeployTaskStatus(input: {
-  detail: DeployTaskCreatedEvent["detail"];
+  detail: GithubDeployTaskCreatedDetail;
   kubeconfig: string;
   namespace: string;
   signal: AbortSignal;
@@ -633,7 +637,7 @@ function ProjectAssistantChatSession({
   );
 
   const trackDeployTask = useCallback(
-    (detail: DeployTaskCreatedEvent["detail"]): void => {
+    (detail: GithubDeployTaskCreatedDetail): void => {
       if (trackedDeployTaskIdsRef.current.has(detail.taskId)) {
         return;
       }
@@ -665,9 +669,13 @@ function ProjectAssistantChatSession({
         return;
       }
 
-      const message = deployTaskChatMessage(detail);
+      const githubDetail: GithubDeployTaskCreatedDetail = {
+        ...detail,
+        repoFullName: detail.repoFullName,
+      };
+      const message = deployTaskChatMessage(githubDetail);
       upsertDeployTaskMessage(message);
-      trackDeployTask(detail);
+      trackDeployTask(githubDetail);
     },
     [trackDeployTask, upsertDeployTaskMessage]
   );

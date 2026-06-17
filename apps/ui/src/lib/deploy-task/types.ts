@@ -13,6 +13,7 @@ import type {
   DeployTaskPhase,
   DeployTaskStatus,
 } from "./schema";
+import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 export type {
   DeploymentTaskCanvasProjection,
@@ -208,6 +209,7 @@ export interface DeployTaskDTO {
   startedAt: string | null;
   status: DeployTaskStatus;
   target: DeploymentTaskTarget;
+  timelineSnapshot: DeploymentTaskTimelineSnapshot | null;
   updatedAt: string;
 }
 
@@ -234,3 +236,26 @@ export interface DeployTaskSnapshotDTO {
   messages: DeployTaskMessageDTO[];
   task: DeployTaskDTO;
 }
+
+export interface DeploymentTaskTimelineSnapshotDTO {
+  events: DeployTaskEventDTO[];
+  task: DeployTaskDTO;
+  timeline: DeploymentTaskTimelineSnapshot;
+}
+
+export type DeploymentTaskTimelineStreamEvent =
+  | {
+      snapshot: DeploymentTaskTimelineSnapshotDTO;
+      type: "snapshot";
+    }
+  | {
+      snapshot: DeploymentTaskTimelineSnapshotDTO;
+      type: "update";
+    };
+
+export type DeploymentTaskTimelineStreamServerEvent =
+  | DeploymentTaskTimelineStreamEvent
+  | {
+      message: string;
+      type: "error";
+    };

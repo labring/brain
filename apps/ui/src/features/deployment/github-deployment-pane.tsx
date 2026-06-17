@@ -116,8 +116,11 @@ export function GitHubDeploymentPane({
         }
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
+            projectId: outcome.projectId,
             projectName: outcome.projectName,
             repoFullName: outcome.sourceLabel,
+            sourceKind: "github",
+            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }

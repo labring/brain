@@ -9,6 +9,8 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+import type { DeploymentTaskTimelineSnapshot } from "./timeline";
+
 export const DEPLOYMENT_TASK_DB_SCHEMA = "sealai_deployment";
 
 export const ns = pgSchema(DEPLOYMENT_TASK_DB_SCHEMA);
@@ -191,6 +193,9 @@ export const deployTasks = ns.table(
       .notNull()
       .$type<DeploymentTaskCanvasProjection>()
       .default({}),
+    timelineSnapshot: jsonb(
+      "timeline_snapshot"
+    ).$type<DeploymentTaskTimelineSnapshot | null>(),
     blockingInputs: jsonb("blocking_inputs")
       .notNull()
       .$type<DeployTaskBlockingInput[]>()

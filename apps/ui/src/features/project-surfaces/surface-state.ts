@@ -23,6 +23,7 @@ export type ProjectResourceSidePaneEntry =
 
 export type ProjectGlobalSidePaneEntry =
   | { kind: "databaseDeployment"; projectId: string }
+  | { kind: "deploymentTaskTimeline"; projectId: string; taskId: string }
   | { kind: "dockerDeployment"; projectId: string }
   | { kind: "githubDeployment"; projectId: string }
   | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode }

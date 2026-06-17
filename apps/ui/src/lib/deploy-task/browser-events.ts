@@ -5,8 +5,11 @@ const DEPLOY_TASK_CREATED_PENDING_KEY =
   "sealai:deploy-task-created:pending" as const;
 
 export interface DeployTaskCreatedEventDetail {
+  projectId?: string | null;
   projectName: string;
-  repoFullName: string;
+  repoFullName?: string;
+  sourceKind?: "database" | "docker" | "github" | "prompt" | "template";
+  sourceLabel?: string;
   taskId: string;
 }
 
@@ -27,8 +30,6 @@ function readPendingDeployTaskCreatedEvents(): DeployTaskCreatedEventDetail[] {
         item != null &&
         typeof item === "object" &&
         typeof (item as DeployTaskCreatedEventDetail).projectName ===
-          "string" &&
-        typeof (item as DeployTaskCreatedEventDetail).repoFullName ===
           "string" &&
         typeof (item as DeployTaskCreatedEventDetail).taskId === "string"
     );

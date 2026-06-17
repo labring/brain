@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 export type ProjectCanvasSidePaneEntry =
   | { kind: "databaseDeployment" }
+  | { kind: "deploymentTaskTimeline" }
   | { kind: "dockerDeployment" }
   | { kind: "githubDeployment" }
   | { kind: "projectCreation" }
@@ -15,6 +16,7 @@ export type ProjectCanvasSidePaneEntry =
 
 export function ProjectCanvasSidePaneSlot({
   databaseDeploymentPane,
+  deploymentTaskTimelinePane,
   dockerDeploymentPane,
   entry,
   githubDeploymentPane,
@@ -24,6 +26,7 @@ export function ProjectCanvasSidePaneSlot({
   templateDeploymentPane,
 }: {
   databaseDeploymentPane?: ReactNode;
+  deploymentTaskTimelinePane?: ReactNode;
   dockerDeploymentPane?: ReactNode;
   entry: ProjectCanvasSidePaneEntry;
   githubDeploymentPane: ReactNode;
@@ -36,6 +39,8 @@ export function ProjectCanvasSidePaneSlot({
 
   if (entry?.kind === "databaseDeployment") {
     pane = databaseDeploymentPane;
+  } else if (entry?.kind === "deploymentTaskTimeline") {
+    pane = deploymentTaskTimelinePane;
   } else if (entry?.kind === "dockerDeployment") {
     pane = dockerDeploymentPane;
   } else if (entry?.kind === "githubDeployment") {
