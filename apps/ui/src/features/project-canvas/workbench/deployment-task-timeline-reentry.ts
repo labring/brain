@@ -31,18 +31,24 @@ export function selectDeploymentTaskTimelineReentry(input: {
   dismissedTaskIds: ReadonlySet<string>;
   tasks: readonly DeploymentTaskProjection[];
 }): DeploymentTaskTimelineReentry | null {
-  const candidates = input.tasks
-    .flatMap((task) => {
-      if (
-        task.id === input.activeTaskId ||
-        input.dismissedTaskIds.has(task.id)
-      ) {
-        return [];
-      }
-      const label = reentryLabel(task);
-      return label == null ? [] : [{ label, task }];
-    })
-    .sort((a, b) => taskUpdatedAtMs(b.task) - taskUpdatedAtMs(a.task));
+  let selected: DeploymentTaskTimelineReentry | null = null;
+  let selectedUpdatedAt = Number.NEGATIVE_INFINITY;
 
-  return candidates[0] ?? null;
+  for (const task of input.tasks) {
+    if (task.id === input.activeTaskId || input.dismissedTaskIds.has(task.id)) {
+      continue;
+    }
+    const label = reentryLabel(task);
+    if (label == null) {
+      continue;
+    }
+
+    const updatedAt = taskUpdatedAtMs(task);
+    if (selected == null || updatedAt > selectedUpdatedAt) {
+      selected = { label, task };
+      selectedUpdatedAt = updatedAt;
+    }
+  }
+
+  return selected;
 }
