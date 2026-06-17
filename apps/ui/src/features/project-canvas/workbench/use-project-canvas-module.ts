@@ -4,7 +4,14 @@ import type {
   CanvasMeta,
   CanvasState,
 } from "@workspace/ui/components/canvas/canvas.types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createElement,
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   addPendingApDbCanvasReferences,
   type PendingApDbCanvasReference,
@@ -324,8 +331,16 @@ export function useProjectCanvasModule({
     surfaces: {
       actions: surfaceActions,
       dialogs: [
-        workbench.settingsLeaveGuardDialog,
-        workbench.resourceDeleteDialog,
+        createElement(
+          Fragment,
+          { key: "settings-leave-guard" },
+          workbench.settingsLeaveGuardDialog
+        ),
+        createElement(
+          Fragment,
+          { key: "resource-delete" },
+          workbench.resourceDeleteDialog
+        ),
       ],
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,
