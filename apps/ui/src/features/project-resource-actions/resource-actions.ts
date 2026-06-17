@@ -11,12 +11,12 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 
-export interface ProjectCanvasResourceActionCopy {
+export interface ProjectResourceActionCopy {
   loading: string;
   success: string;
 }
 
-export interface RunProjectCanvasResourceActionOptions {
+export interface RunProjectResourceActionOptions {
   onSettled?: () => void;
   onSuccess?: () => void;
 }
@@ -46,7 +46,7 @@ export function resourceLayoutRefsForDbDelete(target: DbLifecycleWorkloadRef) {
   ];
 }
 
-export function useProjectCanvasResourceActions({
+export function useProjectResourceActions({
   kubeconfig,
   readOnly,
   refreshWorkloadLists,
@@ -75,8 +75,8 @@ export function useProjectCanvasResourceActions({
   const runResourceAction = useCallback(
     (
       mutation: () => Promise<unknown>,
-      copy: ProjectCanvasResourceActionCopy,
-      options?: RunProjectCanvasResourceActionOptions
+      copy: ProjectResourceActionCopy,
+      options?: RunProjectResourceActionOptions
     ) => {
       toast.promise(
         (async (): Promise<void> => {
@@ -141,3 +141,7 @@ export function useProjectCanvasResourceActions({
     toggleDatabasePublicAccess,
   };
 }
+
+export type ProjectResourceActions = ReturnType<
+  typeof useProjectResourceActions
+>;
