@@ -38,7 +38,6 @@ import {
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
-  appendAssistantThreadMessage,
   createAssistantThread,
   fetchAssistantSession,
   fetchAssistantThreadMessages,
@@ -50,16 +49,9 @@ import type {
   AssistantThreadDTO,
 } from "@/lib/chat-persistence/types";
 import {
-  acknowledgePendingDeployTaskCreatedEvent,
-  DEPLOY_TASK_CREATED_EVENT,
-  type DeployTaskCreatedEvent,
+  type DeployTaskCreatedEventDetail,
   dispatchDeployTaskCreatedEvent,
-  pendingDeployTaskCreatedEvents,
 } from "@/lib/deploy-task/browser-events";
-import {
-  deployTaskDisplayEvents,
-  summarizeDeployTaskError,
-} from "@/lib/deploy-task/event-display";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -95,101 +87,9 @@ type AssistantClientToolSubmission =
       output: OpenProjectSurfaceToolOutput;
     };
 
-const DEPLOY_TASK_STATUS_POLL_MS = 3000;
-const DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX = "deploy-task-created-";
-const DEPLOY_TASK_FALLBACK_PROJECT_RE = /Project:\s*`([^`]+)`/;
-const DEPLOY_TASK_FALLBACK_SOURCE_RE = /created for \*\*([^*]+)\*\*/;
-const TERMINAL_DEPLOY_TASK_STATUSES = new Set([
-  "completed",
-  "failed",
-  "cancelled",
-]);
-
 type DeployTaskSourceKind = NonNullable<
-  DeployTaskCreatedEvent["detail"]["sourceKind"]
+  DeployTaskCreatedEventDetail["sourceKind"]
 >;
-
-interface DeployTaskStatusSnapshot {
-  events?: {
-    message: string | null;
-    phase: string | null;
-    seq: number;
-  }[];
-  task?: {
-    error?: string | null;
-    phase?: string;
-    source?: {
-      kind?: string;
-      repo?: {
-        fullName?: string;
-      };
-      settings?: Record<string, unknown>;
-      templateName?: string;
-    };
-    status?: string;
-  };
-}
-
-interface DeployTaskPart {
-  data: {
-    error?: string | null;
-    events?: { message: string | null; phase: string | null; seq: number }[];
-    phase?: string;
-    projectName: string;
-    repoFullName?: string;
-    sourceKind?: DeployTaskSourceKind;
-    sourceLabel?: string;
-    status?: string;
-    taskId: string;
-  };
-  type: "data-deploy-task";
-}
-
-interface GithubDeployTaskPart {
-  data: DeployTaskPart["data"] & {
-    repoFullName: string;
-  };
-  type: "data-github-deploy-task";
-}
-
-type DeployTaskCreatedDetail = DeployTaskCreatedEvent["detail"] & {
-  projectName: string;
-  taskId: string;
-};
-
-function isDeployTaskPart(
-  part: UIMessage["parts"][number]
-): part is DeployTaskPart {
-  if (part.type !== "data-deploy-task") {
-    return false;
-  }
-  const data = (part as { data?: unknown }).data;
-  if (data == null || typeof data !== "object") {
-    return false;
-  }
-  const record = data as Partial<DeployTaskPart["data"]>;
-  return (
-    typeof record.projectName === "string" && typeof record.taskId === "string"
-  );
-}
-
-function isGithubDeployTaskPart(
-  part: UIMessage["parts"][number]
-): part is GithubDeployTaskPart {
-  if (part.type !== "data-github-deploy-task") {
-    return false;
-  }
-  const data = (part as { data?: unknown }).data;
-  if (data == null || typeof data !== "object") {
-    return false;
-  }
-  const record = data as Partial<GithubDeployTaskPart["data"]>;
-  return (
-    typeof record.projectName === "string" &&
-    typeof record.repoFullName === "string" &&
-    typeof record.taskId === "string"
-  );
-}
 
 function deployTaskSourceKindFromValue(
   value: unknown
@@ -201,263 +101,6 @@ function deployTaskSourceKindFromValue(
     value === "template"
     ? value
     : undefined;
-}
-
-function deployTaskSourceName(sourceKind: DeployTaskSourceKind | undefined) {
-  switch (sourceKind) {
-    case "database":
-      return "Database";
-    case "docker":
-      return "Docker";
-    case "github":
-      return "GitHub";
-    case "prompt":
-      return "AI";
-    case "template":
-      return "Template";
-    case undefined:
-      return "Deployment";
-    default:
-      return sourceKind satisfies never;
-  }
-}
-
-function deployTaskSourceLabel(
-  detail: Pick<
-    DeployTaskCreatedDetail,
-    "repoFullName" | "sourceKind" | "sourceLabel"
-  >
-): string {
-  return (
-    detail.sourceLabel?.trim() ||
-    detail.repoFullName?.trim() ||
-    deployTaskSourceName(detail.sourceKind)
-  );
-}
-
-function deployTaskChatMessage(input: {
-  error?: string | null;
-  events?: { message: string | null; phase: string | null; seq: number }[];
-  phase?: string;
-  projectName: string;
-  repoFullName?: string;
-  sourceKind?: DeployTaskSourceKind;
-  sourceLabel?: string;
-  status?: string;
-  taskId: string;
-}): UIMessage {
-  const events = deployTaskDisplayEvents(input.events, 3);
-  const sourceKind =
-    input.sourceKind ?? (input.repoFullName == null ? undefined : "github");
-  const sourceLabel = deployTaskSourceLabel({ ...input, sourceKind });
-  const sourceName = deployTaskSourceName(sourceKind);
-  const createdLine =
-    sourceKind == null
-      ? `Deployment task **${input.taskId}** has been created for **${sourceLabel}**.`
-      : `${sourceName} deployment task **${input.taskId}** has been created for **${sourceLabel}**.`;
-  const cardPart: DeployTaskPart = {
-    data: {
-      error: input.error ?? null,
-      events,
-      phase: input.phase,
-      projectName: input.projectName,
-      repoFullName: input.repoFullName,
-      sourceKind,
-      sourceLabel,
-      status: input.status,
-      taskId: input.taskId,
-    },
-    type: "data-deploy-task",
-  };
-  const statusLine =
-    input.status == null
-      ? "Status: queued"
-      : `Status: ${input.status}${input.phase ? ` (${input.phase})` : ""}`;
-  const latestEvent = events.at(-1);
-  const eventLines =
-    latestEvent == null
-      ? []
-      : [
-          "",
-          `Latest event: #${latestEvent.seq}${
-            latestEvent.phase ? ` [${latestEvent.phase}]` : ""
-          } ${latestEvent.message ?? "No details"}`,
-        ];
-  const summarizedError = summarizeDeployTaskError(input.error);
-  const errorLines = summarizedError ? ["", `Error: ${summarizedError}`] : [];
-
-  return {
-    id: `${DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX}${input.taskId}`,
-    role: "assistant",
-    parts: [
-      cardPart,
-      {
-        type: "text",
-        text: [
-          createdLine,
-          "",
-          `Project: \`${input.projectName}\``,
-          "",
-          statusLine,
-          ...eventLines,
-          ...errorLines,
-        ].join("\n"),
-      },
-    ],
-  };
-}
-
-function deployTaskIdFromChatMessage(message: UIMessage): string | null {
-  return message.id.startsWith(DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX)
-    ? message.id.slice(DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX.length)
-    : null;
-}
-
-function deployTaskDetailFromChatMessage(
-  message: UIMessage
-): DeployTaskCreatedDetail | null {
-  for (const part of message.parts) {
-    if (isDeployTaskPart(part)) {
-      return {
-        projectName: part.data.projectName,
-        repoFullName: part.data.repoFullName,
-        sourceKind: part.data.sourceKind,
-        sourceLabel: part.data.sourceLabel,
-        taskId: part.data.taskId,
-      };
-    }
-    if (isGithubDeployTaskPart(part)) {
-      return {
-        projectName: part.data.projectName,
-        repoFullName: part.data.repoFullName,
-        sourceKind: "github",
-        sourceLabel: part.data.repoFullName,
-        taskId: part.data.taskId,
-      };
-    }
-  }
-
-  const taskId = deployTaskIdFromChatMessage(message);
-  if (taskId == null) {
-    return null;
-  }
-  const text = message.parts
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-  const sourceMatch = text.match(DEPLOY_TASK_FALLBACK_SOURCE_RE);
-  const projectMatch = text.match(DEPLOY_TASK_FALLBACK_PROJECT_RE);
-  if (sourceMatch == null || projectMatch == null) {
-    return null;
-  }
-  const sourceLabel = sourceMatch[1]?.trim();
-  const projectName = projectMatch[1]?.trim();
-  if (!(sourceLabel && projectName)) {
-    return null;
-  }
-  return { projectName, sourceLabel, taskId };
-}
-
-function deployTaskStatusUrl(input: {
-  kubeconfig: string;
-  namespace: string;
-  taskId: string;
-}): string {
-  const params = new URLSearchParams({
-    encodedKubeconfig: encodeURIComponent(input.kubeconfig),
-    namespace: input.namespace,
-  });
-  return `/api/deploy-tasks/${encodeURIComponent(input.taskId)}?${params.toString()}`;
-}
-
-async function fetchDeployTaskStatusSnapshot(input: {
-  kubeconfig: string;
-  namespace: string;
-  signal: AbortSignal;
-  taskId: string;
-}): Promise<DeployTaskStatusSnapshot> {
-  const response = await fetch(deployTaskStatusUrl(input), {
-    cache: "no-store",
-    signal: input.signal,
-  });
-  if (!response.ok) {
-    throw new Error(`Deploy task status returned ${response.status}`);
-  }
-  return (await response.json()) as DeployTaskStatusSnapshot;
-}
-
-function deployTaskIsTerminal(snapshot: DeployTaskStatusSnapshot): boolean {
-  return (
-    snapshot.task?.status != null &&
-    TERMINAL_DEPLOY_TASK_STATUSES.has(snapshot.task.status)
-  );
-}
-
-function waitForDeployTaskPollDelay(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, DEPLOY_TASK_STATUS_POLL_MS);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true }
-    );
-  });
-}
-
-function logDeployTaskPollError(input: {
-  error: unknown;
-  signal: AbortSignal;
-}) {
-  if (!input.signal.aborted) {
-    console.error("[deploy-task-chat-adapter] poll failed:", input.error);
-  }
-}
-
-function sourceLabelForDeployTaskSnapshot(
-  snapshot: DeployTaskStatusSnapshot,
-  fallback: DeployTaskCreatedDetail
-): string {
-  const source = snapshot.task?.source;
-  switch (source?.kind) {
-    case "database":
-      return fallback.sourceLabel?.trim() || "database";
-    case "docker": {
-      const image = source.settings?.image;
-      return typeof image === "string" && image.trim()
-        ? image.trim()
-        : fallback.sourceLabel?.trim() || "Docker image";
-    }
-    case "github":
-      return (
-        source.repo?.fullName?.trim() ||
-        fallback.repoFullName?.trim() ||
-        fallback.sourceLabel?.trim() ||
-        "GitHub repository"
-      );
-    case "prompt":
-      return fallback.sourceLabel?.trim() || "AI prompt";
-    case "template":
-      return (
-        source.templateName?.trim() ||
-        fallback.sourceLabel?.trim() ||
-        "template"
-      );
-    default:
-      return deployTaskSourceLabel(fallback);
-  }
-}
-
-function sourceKindForDeployTaskSnapshot(
-  snapshot: DeployTaskStatusSnapshot,
-  fallback: DeployTaskCreatedDetail
-): DeployTaskSourceKind | undefined {
-  return (
-    deployTaskSourceKindFromValue(snapshot.task?.source?.kind) ??
-    fallback.sourceKind
-  );
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -495,7 +138,7 @@ function sourceLabelFromTaskSource(
 
 function deployTaskDetailFromCreateToolPart(
   part: UIMessage["parts"][number]
-): DeployTaskCreatedDetail | null {
+): DeployTaskCreatedEventDetail | null {
   if (
     !isToolUIPart(part) ||
     part.type !== "tool-createDeployTask" ||
@@ -525,44 +168,6 @@ function deployTaskDetailFromCreateToolPart(
     sourceLabel,
     taskId,
   };
-}
-
-async function pollDeployTaskStatus(input: {
-  detail: DeployTaskCreatedDetail;
-  kubeconfig: string;
-  namespace: string;
-  signal: AbortSignal;
-  upsertMessage: (message: UIMessage) => void;
-}) {
-  while (!input.signal.aborted) {
-    try {
-      const snapshot = await fetchDeployTaskStatusSnapshot({
-        kubeconfig: input.kubeconfig,
-        namespace: input.namespace,
-        signal: input.signal,
-        taskId: input.detail.taskId,
-      });
-      input.upsertMessage(
-        deployTaskChatMessage({
-          ...input.detail,
-          error: snapshot.task?.error ?? null,
-          events: snapshot.events,
-          phase: snapshot.task?.phase,
-          sourceKind: sourceKindForDeployTaskSnapshot(snapshot, input.detail),
-          sourceLabel: sourceLabelForDeployTaskSnapshot(snapshot, input.detail),
-          status: snapshot.task?.status,
-        })
-      );
-
-      if (deployTaskIsTerminal(snapshot)) {
-        return;
-      }
-    } catch (error) {
-      logDeployTaskPollError({ error, signal: input.signal });
-    }
-
-    await waitForDeployTaskPollDelay(input.signal);
-  }
 }
 
 function buildAssistantContextPayload(
@@ -632,10 +237,6 @@ function ProjectAssistantChatSession({
   const addToolOutputRef = useRef<
     ((args: AssistantClientToolSubmission) => void | PromiseLike<void>) | null
   >(null);
-  const deployTaskAbortControllersRef = useRef<Map<string, AbortController>>(
-    new Map()
-  );
-  const trackedDeployTaskIdsRef = useRef<Set<string>>(new Set());
   const bridgedToolDeployTaskIdsRef = useRef<Set<string>>(new Set());
 
   const params = useParams<{ uid?: string }>();
@@ -711,7 +312,6 @@ function ProjectAssistantChatSession({
     addToolApprovalResponse,
     messages,
     sendMessage,
-    setMessages,
     status,
     stop,
     addToolOutput,
@@ -800,116 +400,6 @@ function ProjectAssistantChatSession({
   });
 
   addToolOutputRef.current = addToolOutput;
-  const persistDeployTaskMessage = useCallback(
-    (message: UIMessage) => {
-      appendAssistantThreadMessage({
-        chatId,
-        message,
-        namespace: assistantNamespaceRaw,
-      })
-        .then((result) => {
-          const taskId = deployTaskIdFromChatMessage(message);
-          if (result?.ok && taskId != null) {
-            acknowledgePendingDeployTaskCreatedEvent(taskId);
-          }
-        })
-        .catch((error: unknown) => {
-          console.error("[deploy-task-chat-adapter] persist failed:", error);
-        });
-    },
-    [assistantNamespaceRaw, chatId]
-  );
-
-  const upsertDeployTaskMessage = useCallback(
-    (message: UIMessage) => {
-      setMessages((current) => {
-        const index = current.findIndex((item) => item.id === message.id);
-        if (index === -1) {
-          return [...current, message];
-        }
-        const next = [...current];
-        next[index] = message;
-        return next;
-      });
-      persistDeployTaskMessage(message);
-    },
-    [persistDeployTaskMessage, setMessages]
-  );
-
-  const trackDeployTask = useCallback(
-    (detail: DeployTaskCreatedDetail): void => {
-      if (trackedDeployTaskIdsRef.current.has(detail.taskId)) {
-        return;
-      }
-      trackedDeployTaskIdsRef.current.add(detail.taskId);
-      const controller = new AbortController();
-      deployTaskAbortControllersRef.current.set(detail.taskId, controller);
-
-      pollDeployTaskStatus({
-        detail,
-        kubeconfig,
-        namespace: assistantNamespaceRaw,
-        signal: controller.signal,
-        upsertMessage: upsertDeployTaskMessage,
-      }).catch((error: unknown) => {
-        logDeployTaskPollError({ error, signal: controller.signal });
-      });
-    },
-    [assistantNamespaceRaw, kubeconfig, upsertDeployTaskMessage]
-  );
-
-  const showDeployTaskCreated = useCallback(
-    (detail: DeployTaskCreatedEvent["detail"]) => {
-      if (
-        detail == null ||
-        typeof detail.taskId !== "string" ||
-        typeof detail.projectName !== "string"
-      ) {
-        return;
-      }
-
-      const deployTaskDetail: DeployTaskCreatedDetail = {
-        ...detail,
-        sourceKind: deployTaskSourceKindFromValue(detail.sourceKind),
-      };
-      const message = deployTaskChatMessage(deployTaskDetail);
-      upsertDeployTaskMessage(message);
-      trackDeployTask(deployTaskDetail);
-    },
-    [trackDeployTask, upsertDeployTaskMessage]
-  );
-
-  useEffect(() => {
-    const onDeployTaskCreated = (event: Event) => {
-      showDeployTaskCreated((event as DeployTaskCreatedEvent).detail);
-    };
-
-    for (const pending of pendingDeployTaskCreatedEvents()) {
-      showDeployTaskCreated(pending);
-    }
-    window.addEventListener(DEPLOY_TASK_CREATED_EVENT, onDeployTaskCreated);
-    return () => {
-      window.removeEventListener(
-        DEPLOY_TASK_CREATED_EVENT,
-        onDeployTaskCreated
-      );
-      for (const controller of deployTaskAbortControllersRef.current.values()) {
-        controller.abort();
-      }
-      deployTaskAbortControllersRef.current.clear();
-      trackedDeployTaskIdsRef.current.clear();
-      bridgedToolDeployTaskIdsRef.current.clear();
-    };
-  }, [showDeployTaskCreated]);
-
-  useEffect(() => {
-    for (const message of messages) {
-      const detail = deployTaskDetailFromChatMessage(message);
-      if (detail != null) {
-        trackDeployTask(detail);
-      }
-    }
-  }, [messages, trackDeployTask]);
 
   useEffect(() => {
     const currentProjectId = projectId.trim();

@@ -12,7 +12,7 @@ const DEMO_PROJECT_RE = /Demo Project/;
 const DATABASE_PLAN_EVENT_RE = /Prepared database deployment plan\./;
 const TEXT_FALLBACK_RE = /Deployment task task-1 was created\./;
 
-test("chat renders generic deployment task cards for non-GitHub sources", () => {
+test("chat hides legacy deployment task progress messages", () => {
   const message: UIMessage = {
     id: "deploy-task-created-task-1",
     role: "assistant",
@@ -43,10 +43,10 @@ test("chat renders generic deployment task cards for non-GitHub sources", () => 
 
   const html = renderToStaticMarkup(renderChatMessageParts({ message }));
 
-  assert.match(html, DEPLOY_TASK_CARD_RE);
-  assert.match(html, DATABASE_DEPLOY_RE);
-  assert.match(html, POSTGRESQL_RE);
-  assert.match(html, DEMO_PROJECT_RE);
-  assert.match(html, DATABASE_PLAN_EVENT_RE);
+  assert.doesNotMatch(html, DEPLOY_TASK_CARD_RE);
+  assert.doesNotMatch(html, DATABASE_DEPLOY_RE);
+  assert.doesNotMatch(html, POSTGRESQL_RE);
+  assert.doesNotMatch(html, DEMO_PROJECT_RE);
+  assert.doesNotMatch(html, DATABASE_PLAN_EVENT_RE);
   assert.doesNotMatch(html, TEXT_FALLBACK_RE);
 });
