@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   appendCardEvent,
   appendStepEvent,
+  applyResultResourceTimeout,
   createDeploymentTaskTimeline,
   declareTimelineSteps,
   deploymentTimelineResultReadinessReached,
@@ -197,6 +198,99 @@ test("required result cards determine deployment result readiness", () => {
   });
 
   assert.equal(deploymentTimelineResultReadinessReached(running), true);
+});
+
+test("optional result card timeout records warning without failing the timeline", () => {
+  const timeline = upsertResultResourceCard(
+    declareTimelineSteps(
+      createDeploymentTaskTimeline({
+        status: "applying",
+        taskId: "task-1",
+        updatedAt: NOW,
+      }),
+      {
+        steps: [{ id: "create-resources", label: "Create resources" }],
+        updatedAt: NOW,
+      }
+    ),
+    {
+      card: {
+        id: "PublicAccess:default:api:pa_api",
+        required: false,
+        resultRef: {
+          apName: "api",
+          id: "pa_api",
+          kind: "PublicAccess",
+          namespace: "default",
+        },
+        status: "creating",
+        title: "Public access",
+      },
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+
+  const timedOut = applyResultResourceTimeout(timeline, {
+    cardId: "PublicAccess:default:api:pa_api",
+    lastObservedStatus: "progressing",
+    stepId: "create-resources",
+    updatedAt: "2026-06-17T10:00:05.000Z",
+  });
+
+  const card = timedOut.steps[0]?.resultCards?.[0];
+  assert.equal(timedOut.status, "applying");
+  assert.equal(card?.status, "unknown");
+  assert.equal(card?.latestStatusText, "progressing");
+  assert.deepEqual(card?.events[0], {
+    createdAt: "2026-06-17T10:00:05.000Z",
+    dedupeKey: "PublicAccess:default:api:pa_api:timeout",
+    id: "PublicAccess:default:api:pa_api:timeout",
+    message: "Result resource timed out while optional: progressing.",
+    reason: "ResourceReadinessTimeout",
+    severity: "warning",
+    source: "resource-observer",
+  });
+});
+
+test("required result card timeout fails the timeline with last observed status", () => {
+  const timeline = upsertResultResourceCard(
+    declareTimelineSteps(
+      createDeploymentTaskTimeline({
+        status: "applying",
+        taskId: "task-1",
+        updatedAt: NOW,
+      }),
+      {
+        steps: [{ id: "create-resources", label: "Create resources" }],
+        updatedAt: NOW,
+      }
+    ),
+    {
+      card: {
+        id: "DB:default:postgres",
+        required: true,
+        resultRef: { kind: "DB", name: "postgres", namespace: "default" },
+        status: "creating",
+        title: "postgres",
+      },
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+
+  const timedOut = applyResultResourceTimeout(timeline, {
+    cardId: "DB:default:postgres",
+    lastObservedStatus: "Creating",
+    stepId: "create-resources",
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+
+  const card = timedOut.steps[0]?.resultCards?.[0];
+  assert.equal(timedOut.status, "failed");
+  assert.equal(card?.status, "failed");
+  assert.equal(card?.latestStatusText, "Creating");
+  assert.equal(card?.events[0]?.severity, "error");
 });
 
 test("marking a step updates only the matching runner step", () => {

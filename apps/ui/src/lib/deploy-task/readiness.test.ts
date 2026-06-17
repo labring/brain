@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { apWorkloadReadinessFromProductView } from "./readiness";
+import {
+  apWorkloadReadinessFromProductView,
+  dbServiceReadinessFromProductView,
+  publicAccessReadinessFromProductView,
+  templateWorkloadReadinessFromProductView,
+} from "./readiness";
 
 test("AP workload readiness reaches running from workload replicas", () => {
   assert.deepEqual(
@@ -71,5 +76,70 @@ test("AP workload readiness maps unavailable workload states without route healt
       latestStatusText: "Pending, 0/1 replicas ready",
       status: "creating",
     }
+  );
+});
+
+test("DB Service readiness reaches running from product phase", () => {
+  assert.deepEqual(
+    dbServiceReadinessFromProductView({
+      metadata: { name: "postgres", namespace: "default" },
+      status: { phase: "Running" },
+    }),
+    {
+      eventMessage: "DB Service is Running.",
+      latestStatusText: "Running",
+      status: "running",
+    }
+  );
+});
+
+test("template workload readiness reaches running from rollout replicas", () => {
+  assert.deepEqual(
+    templateWorkloadReadinessFromProductView({
+      kind: "Deployment",
+      metadata: { name: "wordpress", namespace: "default" },
+      status: {
+        readyReplicas: 2,
+        replicas: 2,
+      },
+    }),
+    {
+      eventMessage: "Template workload has 2/2 ready replicas.",
+      latestStatusText: "2/2 replicas ready",
+      status: "running",
+    }
+  );
+});
+
+test("Public Address readiness reaches running from accessible route health", () => {
+  assert.deepEqual(
+    publicAccessReadinessFromProductView({
+      host: "api.example.com",
+      status: "accessible",
+    }),
+    {
+      eventMessage: "Public Address is accessible.",
+      latestStatusText: "accessible",
+      status: "running",
+    }
+  );
+});
+
+test("result readiness maps blocked and failed states consistently", () => {
+  assert.equal(
+    dbServiceReadinessFromProductView({
+      status: { phase: "Blocked" },
+    }).status,
+    "blocked"
+  );
+  assert.equal(
+    templateWorkloadReadinessFromProductView({
+      status: { phase: "Failed", readyReplicas: 0, replicas: 1 },
+    }).status,
+    "failed"
+  );
+  assert.equal(
+    publicAccessReadinessFromProductView({ status: "blocked" }).status,
+    "blocked"
   );
 });

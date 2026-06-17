@@ -49,10 +49,7 @@ import {
   sealosTemplateArtifactSummary,
 } from "./artifacts";
 import { buildRuntimeContract } from "./build-runtime-contract";
-import {
-  applyApReadinessToResultCard,
-  apResultResourceCardsFromArtifactSummary,
-} from "./direct-timeline";
+import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
 import { deployTaskFailureSummary } from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
@@ -61,7 +58,12 @@ import {
   runDeployTaskGateway,
 } from "./gateway";
 import { deployOutputProgressSummary } from "./output-progress";
-import { apWorkloadReadinessFromProductView } from "./readiness";
+import {
+  apWorkloadReadinessFromProductView,
+  dbServiceReadinessFromProductView,
+  publicAccessReadinessFromProductView,
+  templateWorkloadReadinessFromProductView,
+} from "./readiness";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
 import type { DeployTaskArtifactSummary, DeployTaskRow } from "./schema";
 import {
@@ -74,6 +76,7 @@ import {
 import {
   appendCardEvent,
   appendStepEvent,
+  applyResultResourceTimeout,
   type DeploymentResultResourceCard,
   deploymentTimelineResultReadinessReached,
   markTimelineStep,
@@ -465,7 +468,82 @@ async function fetchApProductView(input: {
   });
 }
 
-async function upsertApTimelineCard(input: {
+async function fetchDbProductView(input: {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+}): Promise<unknown> {
+  return await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    },
+    method: "GET",
+    path: API_ROUTES.db.root,
+    query: {
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+}
+
+function templateWorkloadK8sKind(kind: string): string {
+  switch (kind) {
+    case "CronJob":
+      return "cronjobs";
+    case "DaemonSet":
+      return "daemonsets";
+    case "Deployment":
+      return "deployments";
+    case "StatefulSet":
+      return "statefulsets";
+    default:
+      return kind.toLowerCase();
+  }
+}
+
+async function fetchTemplateWorkloadProductView(input: {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  workloadKind: string;
+}): Promise<unknown> {
+  return await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    },
+    method: "GET",
+    path: API_ROUTES.k8s.get,
+    query: {
+      kind: templateWorkloadK8sKind(input.workloadKind),
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+}
+
+function publicAddressViewFromAp(input: {
+  ap: unknown;
+  publicAddressId: string;
+}): unknown {
+  const status = objectValue(objectValue(input.ap)?.status);
+  const network = objectValue(status?.network);
+  const publicAddresses = Array.isArray(network?.publicAddresses)
+    ? network.publicAddresses
+    : [];
+  return (
+    publicAddresses.find((address) => {
+      const record = objectValue(address);
+      return (
+        stringValue(record?.id) === input.publicAddressId ||
+        stringValue(record?.host) === input.publicAddressId
+      );
+    }) ?? { status: "unknown" }
+  );
+}
+
+async function upsertResultTimelineCard(input: {
   card: DeploymentResultResourceCard;
   eventMessage: string;
   eventReason: string;
@@ -508,7 +586,7 @@ async function upsertApTimelineCard(input: {
   });
 }
 
-function apReadinessEventSeverity(
+function readinessEventSeverity(
   status: ReturnType<typeof apWorkloadReadinessFromProductView>["status"]
 ): "info" | "success" | "warning" | "error" {
   if (status === "running") {
@@ -523,7 +601,50 @@ function apReadinessEventSeverity(
   return "info";
 }
 
-function isApReadinessTerminalError(error: unknown): boolean {
+function applyReadinessToResultCard(
+  card: DeploymentResultResourceCard,
+  readiness: ReturnType<typeof apWorkloadReadinessFromProductView>
+): DeploymentResultResourceCard {
+  return {
+    ...card,
+    latestStatusText: readiness.latestStatusText,
+    status: readiness.status,
+  };
+}
+
+function resultReadinessEventReason(
+  card: DeploymentResultResourceCard
+): string {
+  switch (card.resultRef.kind) {
+    case "AP":
+      return "APWorkloadReadiness";
+    case "DB":
+      return "DBServiceReadiness";
+    case "PublicAccess":
+      return "PublicAddressReadiness";
+    case "TemplateWorkload":
+      return "TemplateWorkloadReadiness";
+    default:
+      return card.resultRef satisfies never;
+  }
+}
+
+function resultReadinessLabel(card: DeploymentResultResourceCard): string {
+  switch (card.resultRef.kind) {
+    case "AP":
+      return `AP ${card.resultRef.name}`;
+    case "DB":
+      return `DB Service ${card.resultRef.name}`;
+    case "PublicAccess":
+      return `Public Address ${card.resultRef.id}`;
+    case "TemplateWorkload":
+      return `${card.resultRef.workloadKind} ${card.resultRef.name}`;
+    default:
+      return card.resultRef satisfies never;
+  }
+}
+
+function isResultReadinessTerminalError(error: unknown): boolean {
   return (
     error instanceof Error &&
     (error.message.includes("failed readiness") ||
@@ -531,77 +652,135 @@ function isApReadinessTerminalError(error: unknown): boolean {
   );
 }
 
-function waitingForApObservationStatus(error: unknown): string {
+function waitingForResultObservationStatus(
+  card: DeploymentResultResourceCard,
+  error: unknown
+): string {
   return error instanceof Error
-    ? `Waiting for AP workload observation: ${error.message}`
-    : "Waiting for AP workload observation.";
+    ? `Waiting for ${resultReadinessLabel(card)} observation: ${error.message}`
+    : `Waiting for ${resultReadinessLabel(card)} observation.`;
 }
 
-async function observeApResultCardReadiness(input: {
+async function resultCardReadiness(input: {
+  card: DeploymentResultResourceCard;
+  kubeconfig: string;
+}): Promise<ReturnType<typeof apWorkloadReadinessFromProductView>> {
+  const { resultRef } = input.card;
+  switch (resultRef.kind) {
+    case "AP": {
+      const ap = await fetchApProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.name,
+        namespace: resultRef.namespace,
+      });
+      return apWorkloadReadinessFromProductView(ap);
+    }
+    case "DB": {
+      const db = await fetchDbProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.name,
+        namespace: resultRef.namespace,
+      });
+      return dbServiceReadinessFromProductView(db);
+    }
+    case "PublicAccess": {
+      const ap = await fetchApProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.apName,
+        namespace: resultRef.namespace,
+      });
+      return publicAccessReadinessFromProductView(
+        publicAddressViewFromAp({
+          ap,
+          publicAddressId: resultRef.id,
+        })
+      );
+    }
+    case "TemplateWorkload": {
+      const workload = await fetchTemplateWorkloadProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.name,
+        namespace: resultRef.namespace,
+        workloadKind: resultRef.workloadKind,
+      });
+      return templateWorkloadReadinessFromProductView(workload);
+    }
+    default:
+      return resultRef satisfies never;
+  }
+}
+
+async function observeResultCardReadiness(input: {
   card: DeploymentResultResourceCard;
   kubeconfig: string;
   taskId: string;
-}): Promise<{ latestStatus: string; running: boolean }> {
-  if (input.card.resultRef.kind !== "AP") {
-    return { latestStatus: "not an AP result card", running: true };
-  }
-
+}): Promise<{
+  latestStatus: string;
+  running: boolean;
+  status: DeploymentResultResourceCard["status"];
+}> {
   try {
-    const ap = await fetchApProductView({
-      kubeconfig: input.kubeconfig,
-      name: input.card.resultRef.name,
-      namespace: input.card.resultRef.namespace,
-    });
-    const readiness = apWorkloadReadinessFromProductView(ap);
-    const nextCard = applyApReadinessToResultCard(input.card, readiness);
-    await upsertApTimelineCard({
+    const readiness = await resultCardReadiness(input);
+    const nextCard = applyReadinessToResultCard(input.card, readiness);
+    await upsertResultTimelineCard({
       card: nextCard,
       eventMessage: readiness.eventMessage,
-      eventReason: "APWorkloadReadiness",
-      eventSeverity: apReadinessEventSeverity(readiness.status),
+      eventReason: resultReadinessEventReason(input.card),
+      eventSeverity: readinessEventSeverity(readiness.status),
       taskId: input.taskId,
     });
 
-    if (readiness.status === "failed") {
-      throw new Error(`AP ${input.card.resultRef.name} failed readiness.`);
+    if (input.card.required && readiness.status === "failed") {
+      throw new Error(`${resultReadinessLabel(input.card)} failed readiness.`);
     }
-    if (readiness.status === "blocked") {
-      throw new Error(`AP ${input.card.resultRef.name} readiness is blocked.`);
+    if (input.card.required && readiness.status === "blocked") {
+      throw new Error(
+        `${resultReadinessLabel(input.card)} readiness is blocked.`
+      );
     }
     return {
       latestStatus: readiness.latestStatusText,
-      running: readiness.status === "running",
+      running: !input.card.required || readiness.status === "running",
+      status: readiness.status,
     };
   } catch (error) {
-    if (isApReadinessTerminalError(error)) {
+    if (isResultReadinessTerminalError(error)) {
       throw error;
     }
     return {
-      latestStatus: waitingForApObservationStatus(error),
-      running: false,
+      latestStatus: waitingForResultObservationStatus(input.card, error),
+      running: !input.card.required,
+      status: "unknown",
     };
   }
 }
 
-async function waitForRequiredApResultCards(input: {
+async function waitForRequiredResultCards(input: {
   cards: DeploymentResultResourceCard[];
   kubeconfig: string;
   taskId: string;
 }) {
   const startedAt = Date.now();
   const timeoutMs = directApReadinessTimeoutMs();
-  let latestStatus = "waiting for AP workload observation";
+  let latestStatus = "waiting for required result resource observation";
+  const latestStatusByCard = new Map<string, string>();
+  const statusByCard = new Map<
+    string,
+    DeploymentResultResourceCard["status"]
+  >();
 
   while (Date.now() - startedAt <= timeoutMs) {
     let allRunning = true;
 
     for (const card of input.cards) {
-      const observed = await observeApResultCardReadiness({
+      const observed = await observeResultCardReadiness({
         card,
         kubeconfig: input.kubeconfig,
         taskId: input.taskId,
       });
       latestStatus = observed.latestStatus;
+      latestStatusByCard.set(card.id, observed.latestStatus);
+      statusByCard.set(card.id, observed.status);
       allRunning = allRunning && observed.running;
     }
 
@@ -618,8 +797,35 @@ async function waitForRequiredApResultCards(input: {
     await sleep(DIRECT_AP_READINESS_POLL_MS);
   }
 
+  const now = new Date().toISOString();
+  const unresolvedCards = input.cards.filter(
+    (card) => (statusByCard.get(card.id) ?? card.status) !== "running"
+  );
+  for (const card of unresolvedCards) {
+    await updateDeployTaskTimeline(input.taskId, {
+      event: {
+        kind: "deployment_task.result_resource_timeout",
+        message: `${resultReadinessLabel(card)} did not reach readiness before timeout.`,
+        phase: "apply",
+        payload: {
+          cardId: card.id,
+          lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
+          required: card.required,
+          resultRef: card.resultRef,
+        },
+      },
+      update: (timeline) =>
+        applyResultResourceTimeout(timeline, {
+          cardId: card.id,
+          lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
+          stepId: "create-resources",
+          updatedAt: now,
+        }),
+    });
+  }
+
   throw new Error(
-    `Timed out waiting for AP workload readiness (${latestStatus}).`
+    `Timed out waiting for required result resource readiness (${latestStatus}).`
   );
 }
 
@@ -1482,21 +1688,21 @@ async function completeTaskWithArtifact(input: {
     status: "applying",
   });
 
-  const apCards = apResultResourceCardsFromArtifactSummary(
+  const resultCards = resultResourceCardsFromArtifactSummary(
     applied.artifactSummary
   );
-  for (const card of apCards) {
-    await upsertApTimelineCard({
+  for (const card of resultCards) {
+    await upsertResultTimelineCard({
       card,
-      eventMessage: `AP result resource ${card.title} was created.`,
+      eventMessage: `${resultReadinessLabel(card)} result resource was created.`,
       eventReason: "ResultResourceKnown",
       taskId: input.task.id,
     });
   }
 
-  if (apCards.length > 0) {
-    await waitForRequiredApResultCards({
-      cards: apCards,
+  if (resultCards.some((card) => card.required)) {
+    await waitForRequiredResultCards({
+      cards: resultCards,
       kubeconfig: input.kubeconfig,
       taskId: input.task.id,
     });

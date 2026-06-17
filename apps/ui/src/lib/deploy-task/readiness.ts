@@ -72,3 +72,151 @@ export function apWorkloadReadinessFromProductView(
     status: "creating",
   };
 }
+
+export function dbServiceReadinessFromProductView(
+  db: unknown
+): DeploymentResultReadiness {
+  const status = objectValue(objectValue(db)?.status);
+  const phaseRaw = stringValue(status?.phase) ?? "Unknown";
+  const phase = normalizePhase(phaseRaw);
+
+  if (phase === "running") {
+    return {
+      eventMessage: "DB Service is Running.",
+      latestStatusText: phaseRaw,
+      status: "running",
+    };
+  }
+
+  if (phase === "failed" || phase === "error") {
+    return {
+      eventMessage: "DB Service failed before reaching Running.",
+      latestStatusText: phaseRaw,
+      status: "failed",
+    };
+  }
+
+  if (phase === "blocked") {
+    return {
+      eventMessage: "DB Service is blocked before reaching Running.",
+      latestStatusText: phaseRaw,
+      status: "blocked",
+    };
+  }
+
+  if (phase === "unknown") {
+    return {
+      eventMessage: "DB Service state is unknown.",
+      latestStatusText: phaseRaw,
+      status: "unknown",
+    };
+  }
+
+  return {
+    eventMessage: `DB Service is ${phaseRaw}.`,
+    latestStatusText: phaseRaw,
+    status: "creating",
+  };
+}
+
+export function templateWorkloadReadinessFromProductView(
+  workload: unknown
+): DeploymentResultReadiness {
+  const status = objectValue(objectValue(workload)?.status);
+  const phaseRaw = stringValue(status?.phase) ?? "Progressing";
+  const phase = normalizePhase(phaseRaw);
+  const readyReplicas =
+    numberValue(status?.readyReplicas) ??
+    numberValue(status?.availableReplicas) ??
+    0;
+  const replicas = Math.max(numberValue(status?.replicas) ?? 1, 1);
+  const latestStatusText = `${phaseRaw}, ${readyReplicas}/${replicas} replicas ready`;
+
+  if (readyReplicas >= replicas) {
+    return {
+      eventMessage: `Template workload has ${readyReplicas}/${replicas} ready replicas.`,
+      latestStatusText: `${readyReplicas}/${replicas} replicas ready`,
+      status: "running",
+    };
+  }
+
+  if (phase === "failed" || phase === "error") {
+    return {
+      eventMessage: "Template workload failed before reaching ready replicas.",
+      latestStatusText,
+      status: "failed",
+    };
+  }
+
+  if (phase === "blocked") {
+    return {
+      eventMessage: `Template workload is blocked with ${readyReplicas}/${replicas} ready replicas.`,
+      latestStatusText,
+      status: "blocked",
+    };
+  }
+
+  if (phase === "unknown") {
+    return {
+      eventMessage: `Template workload state is unknown with ${readyReplicas}/${replicas} ready replicas.`,
+      latestStatusText,
+      status: "unknown",
+    };
+  }
+
+  return {
+    eventMessage: `Template workload is ${phaseRaw} with ${readyReplicas}/${replicas} ready replicas.`,
+    latestStatusText,
+    status: "creating",
+  };
+}
+
+export function publicAccessReadinessFromProductView(
+  publicAddress: unknown
+): DeploymentResultReadiness {
+  const record = objectValue(publicAddress);
+  const statusRaw =
+    stringValue(record?.status) ??
+    stringValue(record?.state) ??
+    stringValue(record?.phase) ??
+    "unknown";
+  const status = normalizePhase(statusRaw);
+
+  if (status === "accessible" || status === "ready" || status === "running") {
+    return {
+      eventMessage: "Public Address is accessible.",
+      latestStatusText: statusRaw,
+      status: "running",
+    };
+  }
+
+  if (status === "blocked") {
+    return {
+      eventMessage: "Public Address is blocked.",
+      latestStatusText: statusRaw,
+      status: "blocked",
+    };
+  }
+
+  if (status === "failed" || status === "error") {
+    return {
+      eventMessage: "Public Address failed before becoming accessible.",
+      latestStatusText: statusRaw,
+      status: "failed",
+    };
+  }
+
+  if (status === "unknown") {
+    return {
+      eventMessage: "Public Address state is unknown.",
+      latestStatusText: statusRaw,
+      status: "unknown",
+    };
+  }
+
+  return {
+    eventMessage: `Public Address is ${statusRaw}.`,
+    latestStatusText: statusRaw,
+    status: "creating",
+  };
+}

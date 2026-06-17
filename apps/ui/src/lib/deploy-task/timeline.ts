@@ -338,6 +338,56 @@ export function updateTimelineStatus(
   return bumpRevision({ ...timeline, status: input.status }, input.updatedAt);
 }
 
+export function applyResultResourceTimeout(
+  timeline: DeploymentTaskTimelineSnapshot,
+  input: {
+    cardId: string;
+    lastObservedStatus: string;
+    stepId: string;
+    updatedAt: string;
+  }
+): DeploymentTaskTimelineSnapshot {
+  let requiredTimeout = false;
+  const nextSteps = timeline.steps.map((step) => {
+    if (step.id !== input.stepId) {
+      return step;
+    }
+    return {
+      ...step,
+      resultCards: (step.resultCards ?? []).map((card) => {
+        if (card.id !== input.cardId) {
+          return card;
+        }
+        requiredTimeout = card.required;
+        const timeoutScope = card.required ? "required" : "optional";
+        return {
+          ...card,
+          events: appendDedupeEvent(card.events, {
+            createdAt: input.updatedAt,
+            dedupeKey: `${card.id}:timeout`,
+            id: `${card.id}:timeout`,
+            message: `Result resource timed out while ${timeoutScope}: ${input.lastObservedStatus}.`,
+            reason: "ResourceReadinessTimeout",
+            severity: card.required ? "error" : "warning",
+            source: "resource-observer",
+          }),
+          latestStatusText: input.lastObservedStatus,
+          status: card.required ? "failed" : "unknown",
+        };
+      }),
+    };
+  });
+
+  return bumpRevision(
+    {
+      ...timeline,
+      status: requiredTimeout ? "failed" : timeline.status,
+      steps: nextSteps,
+    },
+    input.updatedAt
+  );
+}
+
 export function deploymentTimelineResultReadinessReached(
   timeline: DeploymentTaskTimelineSnapshot
 ): boolean {
