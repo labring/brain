@@ -1,17 +1,25 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
+import { createDbServiceBackupFetchTransport } from "./db-service-backup-transport";
 import {
-  createDbServiceBackup,
   suggestedDbServiceBackupName,
   validateDbServiceBackupForm,
-} from "./BackupServiceSurface";
+} from "./db-service-backup-workflow";
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
+
+function transport() {
+  return createDbServiceBackupFetchTransport({
+    kubeconfig: " kube config\n",
+    name: "orders-db",
+    namespace: "database-system",
+  });
+}
 
 test("manual backup form validates name and description before submit", () => {
   assert.deepEqual(validateDbServiceBackupForm({ backupName: "" }), {
@@ -57,7 +65,6 @@ test("manual backup create posts name description and namespace with kubeconfig 
   let capturedUrl = "";
   let capturedAuth: string | null = null;
   let capturedBody: unknown;
-  let refreshCount = 0;
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     capturedUrl = String(input);
@@ -69,15 +76,9 @@ test("manual backup create posts name description and namespace with kubeconfig 
     });
   }) as typeof fetch;
 
-  const response = await createDbServiceBackup({
+  const response = await transport().createBackup({
     backupName: "orders-before-migration",
     description: "Before invoice migration",
-    kubeconfig: " kube config\n",
-    name: "orders-db",
-    namespace: "database-system",
-    onAccepted: () => {
-      refreshCount += 1;
-    },
   });
 
   assert.equal(capturedUrl, "/api/db/v1alpha1/backup");
@@ -91,7 +92,6 @@ test("manual backup create posts name description and namespace with kubeconfig 
   assert.deepEqual(response, {
     metadata: { name: "orders-before-migration" },
   });
-  assert.equal(refreshCount, 1);
 });
 
 test("manual backup create omits empty description", async () => {
@@ -103,12 +103,13 @@ test("manual backup create omits empty description", async () => {
     return Response.json({});
   }) as typeof fetch;
 
-  await createDbServiceBackup({
-    backupName: "orders-before-migration",
-    description: "   ",
+  await createDbServiceBackupFetchTransport({
     kubeconfig: "kube",
     name: "orders-db",
     namespace: "database-system",
+  }).createBackup({
+    backupName: "orders-before-migration",
+    description: "   ",
   });
 
   assert.deepEqual(capturedBody, {
