@@ -442,6 +442,8 @@ function buildGatewayPrompt(task: DeployTaskRow): string {
     "- /home/devbox/project/.sealos/template/index.yaml",
     "",
     "The final YAML must be an app.sealos.io/v1 Template multi-document artifact, not a Brain AP YAML.",
+    'When the image build succeeds, write /home/devbox/project/.sealos/build-result.json with status "succeeded", image.image_ref, and image.digest.',
+    'Use only these build-result status values: "succeeded", "failed", or "skipped".',
     'If the image build fails, write /home/devbox/project/.sealos/build-result.json with status "failed" and an actionable error field.',
     "Before ending, verify with: test -s /home/devbox/project/.sealos/delivery-manifest.json && test -s /home/devbox/project/.sealos/build-result.json && test -s /home/devbox/project/.sealos/template/index.yaml",
     "",
@@ -464,6 +466,8 @@ function buildGatewayRepairPrompt(task: DeployTaskRow): string {
     "- /home/devbox/project/.sealos/build-result.json",
     "- /home/devbox/project/.sealos/template/index.yaml",
     "The final YAML must be an app.sealos.io/v1 Template multi-document artifact, not a Brain AP YAML.",
+    'When the image build succeeds, write build-result.json with status "succeeded", image.image_ref, and image.digest.',
+    'Use only these build-result status values: "succeeded", "failed", or "skipped".',
     'If deployment cannot succeed, write build-result.json with status "failed" and an actionable error field.',
     task.projectName
       ? `Use this project id in generated AP/DB specs as spec.projectId: ${task.projectName}`

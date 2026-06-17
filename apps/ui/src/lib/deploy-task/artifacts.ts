@@ -80,6 +80,7 @@ export interface DeploymentSealosTemplateBuildSummary {
   namespace: string | null;
   pod: string | null;
   status: string | null;
+  statusRaw?: string | null;
 }
 
 export type DeploymentArtifact =
@@ -278,10 +279,63 @@ export function prepareBrainManifestArtifact(input: {
   });
 }
 
-function ensureBuildResultSucceeded(buildResult: Record<string, unknown>) {
+const BUILD_RESULT_FAILURE_STATUSES = new Set([
+  "canceled",
+  "cancelled",
+  "error",
+  "failed",
+  "failure",
+]);
+
+const BUILD_RESULT_RUNNING_STATUSES = new Set([
+  "building",
+  "in_progress",
+  "pending",
+  "queued",
+  "running",
+]);
+
+const BUILD_RESULT_SUCCESS_STATUSES = new Set([
+  "complete",
+  "completed",
+  "done",
+  "ok",
+  "passed",
+  "success",
+  "successful",
+  "succeeded",
+]);
+
+function normalizeBuildResultStatus(status: string | null): string | null {
+  if (status == null) {
+    return null;
+  }
+  const normalized = status
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (BUILD_RESULT_SUCCESS_STATUSES.has(normalized)) {
+    return "succeeded";
+  }
+  if (normalized === "skipped") {
+    return "skipped";
+  }
+  if (BUILD_RESULT_FAILURE_STATUSES.has(normalized)) {
+    return "failed";
+  }
+  if (BUILD_RESULT_RUNNING_STATUSES.has(normalized)) {
+    return "running";
+  }
+  return normalized;
+}
+
+function assertBuildResultNotExplicitlyFailed(
+  buildResult: Record<string, unknown>
+) {
   const status = stringValue(buildResult.status);
-  if (status === "succeeded" || status === "skipped") {
-    return;
+  const normalizedStatus = normalizeBuildResultStatus(status);
+  if (normalizedStatus !== "failed" && normalizedStatus !== "running") {
+    return normalizedStatus;
   }
   const error = objectValue(buildResult.error);
   throw new Error(
@@ -322,6 +376,8 @@ function buildSummary(
   buildResult: Record<string, unknown>
 ): DeploymentSealosTemplateBuildSummary {
   const kubernetes = buildResultKubernetes(buildResult);
+  const status = stringValue(buildResult.status);
+  const normalizedStatus = normalizeBuildResultStatus(status);
   return {
     digest: buildResultDigest(buildResult),
     image: buildResultImage(buildResult),
@@ -329,7 +385,8 @@ function buildSummary(
     mode: stringValue(buildResult.mode),
     namespace: kubernetes?.namespace ?? null,
     pod: kubernetes?.pod ?? null,
-    status: stringValue(buildResult.status),
+    status: normalizedStatus,
+    ...(status === normalizedStatus ? {} : { statusRaw: status }),
   };
 }
 
@@ -406,6 +463,9 @@ function assertSealosTemplateBuildBinding(input: {
   if (buildImage == null) {
     throw new Error("Sealos build result is missing image.image_ref.");
   }
+  if (input.build.digest == null) {
+    throw new Error("Sealos build result is missing image.digest.");
+  }
   if (!images.includes(buildImage)) {
     throw new Error(
       "Sealos template workload image does not match the succeeded build image."
@@ -427,7 +487,7 @@ export function prepareSealosTemplateArtifact(input: {
       "Sealos template output cannot be applied without a Project name."
     );
   }
-  ensureBuildResultSucceeded(input.buildResult);
+  assertBuildResultNotExplicitlyFailed(input.buildResult);
   const build = buildSummary(input.buildResult);
 
   const rendered = renderTemplateDeploymentFromYaml({

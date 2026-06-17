@@ -15,6 +15,7 @@ const UNSUPPORTED_AP_SCHEMA_REGEX = /spec\.input\.image/;
 const FAILED_DEPLOYMENT_OUTPUT_REGEX = /Build failed/;
 const FAILED_BUILD_RESULT_REGEX = /Image build failed/;
 const IMAGE_MISMATCH_REGEX = /workload image does not match/;
+const MISSING_BUILD_DIGEST_REGEX = /missing image\.digest/;
 const RENDERED_INSTANCE_REGEX = /kind: Instance/;
 const RENDERED_HOST_REGEX = /host: demo.cloud.sealos.io/;
 const UNSUPPORTED_TEMPLATE_KIND_REGEX =
@@ -252,6 +253,48 @@ spec:
   );
 });
 
+test("prepareSealosTemplateArtifact uses build evidence over success spelling", () => {
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: {
+      image: {
+        digest: "sha256:abc123",
+        image_ref: "registry.example.com/demo/web@sha256:abc123",
+      },
+      status: "success",
+    },
+    deliveryManifest: {},
+    task: task(),
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+spec:
+  selector:
+    matchLabels:
+      app: demo-web
+  template:
+    metadata:
+      labels:
+        app: demo-web
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web@sha256:abc123
+`,
+  });
+
+  assert.equal(artifact.build.status, "succeeded");
+  assert.equal(artifact.build.statusRaw, "success");
+});
+
 test("prepareSealosTemplateArtifact rejects failed image builds", () => {
   assert.throws(
     () =>
@@ -277,6 +320,48 @@ metadata:
 `,
       }),
     FAILED_BUILD_RESULT_REGEX
+  );
+});
+
+test("prepareSealosTemplateArtifact requires build digest for workload images", () => {
+  assert.throws(
+    () =>
+      prepareSealosTemplateArtifact({
+        buildResult: {
+          image: {
+            image_ref: "registry.example.com/demo/web@sha256:abc123",
+          },
+          status: "succ",
+        },
+        deliveryManifest: {},
+        task: task(),
+        templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+spec:
+  selector:
+    matchLabels:
+      app: demo-web
+  template:
+    metadata:
+      labels:
+        app: demo-web
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web@sha256:abc123
+`,
+      }),
+    MISSING_BUILD_DIGEST_REGEX
   );
 });
 
@@ -373,6 +458,7 @@ test("prepareSealosTemplateArtifact requires workload images to match build resu
       prepareSealosTemplateArtifact({
         buildResult: {
           image: {
+            digest: "sha256:good",
             image_ref: "registry.example.com/demo/web@sha256:good",
           },
           status: "succeeded",
