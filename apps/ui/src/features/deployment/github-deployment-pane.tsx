@@ -114,6 +114,8 @@ export function GitHubDeploymentPane({
         if (outcome.kind !== "github") {
           return;
         }
+        toast.success(outcome.taskMessage);
+        onClose();
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
@@ -124,11 +126,9 @@ export function GitHubDeploymentPane({
             taskId: outcome.taskId,
           });
         }
-        toast.success(outcome.taskMessage);
         if (onDeployed != null) {
           onDeployed().catch(() => undefined);
         }
-        onClose();
       } catch (error) {
         toast.error(
           error instanceof Error

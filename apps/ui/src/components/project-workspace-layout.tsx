@@ -597,8 +597,6 @@ function ProjectAssistantChatSession({
     },
   });
 
-  // console.log("messages", messages);
-
   addToolOutputRef.current = addToolOutput;
   const persistDeployTaskMessage = useCallback(
     (message: UIMessage) => {

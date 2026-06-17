@@ -63,6 +63,7 @@ export function TemplateDeploymentPane({
           return;
         }
         toast.success(outcome.taskMessage);
+        onClose();
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
@@ -75,7 +76,6 @@ export function TemplateDeploymentPane({
         if (onDeployed != null) {
           onDeployed().catch(() => undefined);
         }
-        onClose();
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Could not deploy template."
