@@ -1,4 +1,8 @@
-import type { DeploymentTaskRunner, DeployTaskStatus } from "./schema";
+import type {
+  DeploymentTaskRunner,
+  DeploymentTaskSource,
+  DeployTaskStatus,
+} from "./schema";
 import {
   createDeploymentTaskTimelineForRunner,
   type DeploymentTaskTimelineSnapshot,
@@ -7,6 +11,7 @@ import {
 export interface DeploymentTaskTimelineTaskRecord {
   id: string;
   runner: DeploymentTaskRunner;
+  source?: DeploymentTaskSource;
   status: DeployTaskStatus;
   timelineSnapshot: DeploymentTaskTimelineSnapshot | null;
   updatedAt: Date | string;
@@ -25,6 +30,7 @@ export function deploymentTaskTimelineFromTaskRecord(
 
   return createDeploymentTaskTimelineForRunner({
     runner: task.runner,
+    source: task.source,
     status: task.status,
     taskId: task.id,
     updatedAt: isoDate(task.updatedAt),

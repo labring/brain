@@ -1789,6 +1789,14 @@ async function runTemplateDeploymentTask(input: {
   const templateName = input.task.source.templateName.trim();
   const instanceName = childResourceName(templateName, "template");
 
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.template_preparation_started",
+    eventMessage: "Preparing template deployment.",
+    phase: "plan",
+    status: "running",
+    stepId: "prepare-template",
+    taskId: input.task.id,
+  });
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
     status: "running",
@@ -1806,6 +1814,14 @@ async function runTemplateDeploymentTask(input: {
       projectId: input.projectId,
       task: input.task,
       templateName,
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.template_preparation_completed",
+      eventMessage: "Template deployment is ready.",
+      phase: "generate-artifacts",
+      status: "completed",
+      stepId: "prepare-template",
+      taskId: input.task.id,
     });
 
     await completeTaskWithArtifact({
@@ -1835,6 +1851,18 @@ function aiSourceKey(task: DeployTaskRow): string {
   }
 }
 
+function aiAnalyzeSourceMessage(task: DeployTaskRow): string {
+  return task.source.kind === "github"
+    ? "Analyzing repository."
+    : "Analyzing deployment request.";
+}
+
+function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
+  return task.source.kind === "github"
+    ? "Repository analysis is complete."
+    : "Deployment request analysis is complete.";
+}
+
 async function runAiDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -1853,10 +1881,13 @@ async function runAiDeploymentTask(input: {
     phase: "prepare",
     status: "running",
   });
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deployment_task.prepare_started",
-    message: "Preparing deploy runtime.",
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.prepare_started",
+    eventMessage: "Preparing deploy runtime.",
     phase: "prepare",
+    status: "running",
+    stepId: "prepare-workspace",
+    taskId: input.task.id,
   });
 
   const githubToken =
@@ -1953,6 +1984,15 @@ async function runAiDeploymentTask(input: {
       payload: { runtimeName: runtime.name },
       phase: "prepare",
     });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.build_runtime_unavailable",
+      eventMessage:
+        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+      phase: "prepare",
+      status: "blocked",
+      stepId: "prepare-workspace",
+      taskId: input.task.id,
+    });
     return;
   }
   if (buildRuntime != null) {
@@ -1991,6 +2031,14 @@ async function runAiDeploymentTask(input: {
     message: "Deployment workspace is ready.",
     phase: "prepare",
   });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.workspace_ready",
+    eventMessage: "Deployment workspace is ready.",
+    phase: "prepare",
+    status: "completed",
+    stepId: "prepare-workspace",
+    taskId: input.task.id,
+  });
 
   const latestRuntimeInfo = await getDevboxWithSecretRetry(
     input.task.namespace,
@@ -2011,15 +2059,48 @@ async function runAiDeploymentTask(input: {
         "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
       phase: "plan",
     });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.gateway_unavailable",
+      eventMessage:
+        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
+      phase: "plan",
+      status: "blocked",
+      stepId: "analyze-source",
+      taskId: input.task.id,
+    });
     return;
   }
 
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.source_analysis_started",
+    eventMessage: aiAnalyzeSourceMessage(input.task),
+    phase: "plan",
+    status: "running",
+    stepId: "analyze-source",
+    taskId: input.task.id,
+  });
   await runDeployTaskGatewayWithOutputProgress({
     context: gatewayContext,
     namespace: input.task.namespace,
     runtimeName: runtime.name,
     seenSignatures: outputProgressSignatures,
     task: input.task,
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.source_analysis_completed",
+    eventMessage: aiAnalyzeSourceCompletedMessage(input.task),
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "analyze-source",
+    taskId: input.task.id,
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.deployment_generation_started",
+    eventMessage: "Generating deployment artifacts.",
+    phase: "generate-artifacts",
+    status: "running",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
   });
 
   const deployOutput = await readDeployOutput({
@@ -2038,6 +2119,15 @@ async function runAiDeploymentTask(input: {
       message:
         "Codex gateway completed without deployment output; requesting a repair turn.",
       phase: "generate-artifacts",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.output_repair_started",
+      eventMessage:
+        "Codex gateway completed without deployment output; requesting a repair turn.",
+      phase: "generate-artifacts",
+      status: "running",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
     });
     await runDeployTaskGatewayWithOutputProgress({
       context: gatewayContext,
@@ -2071,6 +2161,14 @@ async function runAiDeploymentTask(input: {
       message: "Codex gateway completed without deployment output.",
       phase: "generate-artifacts",
     });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.output_missing",
+      eventMessage: "Codex gateway completed without deployment output.",
+      phase: "generate-artifacts",
+      status: "blocked",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
+    });
     return;
   }
 
@@ -2095,6 +2193,14 @@ async function runAiDeploymentTask(input: {
     message: "Generated Sealos template deployment artifact.",
     payload: { resources: summary.resources },
     phase: "generate-artifacts",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.artifacts_generated",
+    eventMessage: "Generated Sealos template deployment artifact.",
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
   });
 
   try {

@@ -11,10 +11,15 @@ import type { ChatAddToolApproveResponseFunction, UIMessage } from "ai";
 import { isToolUIPart } from "ai";
 import {
   AlertCircleIcon,
+  BotIcon,
+  BoxIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  DatabaseIcon,
   GitBranchIcon,
   Loader2Icon,
+  PackageIcon,
+  SparklesIcon,
   XCircleIcon,
 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
@@ -40,6 +45,25 @@ interface GithubDeployTaskData {
   taskId: string;
 }
 
+type DeployTaskSourceKind =
+  | "database"
+  | "docker"
+  | "github"
+  | "prompt"
+  | "template";
+
+interface DeployTaskData {
+  error?: string | null;
+  events?: { message: string | null; phase: string | null; seq: number }[];
+  phase?: string;
+  projectName: string;
+  repoFullName?: string;
+  sourceKind?: DeployTaskSourceKind;
+  sourceLabel?: string;
+  status?: string;
+  taskId: string;
+}
+
 function isGithubDeployTaskPart(part: Part): part is Part & {
   data: GithubDeployTaskData;
   type: "data-github-deploy-task";
@@ -59,8 +83,27 @@ function isGithubDeployTaskPart(part: Part): part is Part & {
   );
 }
 
-function messageHasGithubDeployTaskPart(parts: Part[]): boolean {
-  return parts.some(isGithubDeployTaskPart);
+function isDeployTaskPart(part: Part): part is Part & {
+  data: DeployTaskData;
+  type: "data-deploy-task";
+} {
+  if (part.type !== "data-deploy-task") {
+    return false;
+  }
+  const data = (part as { data?: unknown }).data;
+  if (data == null || typeof data !== "object") {
+    return false;
+  }
+  const record = data as Partial<DeployTaskData>;
+  return (
+    typeof record.projectName === "string" && typeof record.taskId === "string"
+  );
+}
+
+function messageHasDeployTaskPart(parts: Part[]): boolean {
+  return parts.some(
+    (part) => isDeployTaskPart(part) || isGithubDeployTaskPart(part)
+  );
 }
 
 function deployStatusTone(status: string | undefined) {
@@ -99,12 +142,75 @@ function deployStatusTone(status: string | undefined) {
   }
 }
 
-function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
+function deployTaskSourceKind(
+  data: DeployTaskData
+): DeployTaskSourceKind | undefined {
+  if (data.sourceKind != null) {
+    return data.sourceKind;
+  }
+  return data.repoFullName == null ? undefined : "github";
+}
+
+function deployTaskSourceName(
+  sourceKind: DeployTaskSourceKind | undefined
+): string {
+  switch (sourceKind) {
+    case "database":
+      return "Database";
+    case "docker":
+      return "Docker";
+    case "github":
+      return "GitHub";
+    case "prompt":
+      return "AI";
+    case "template":
+      return "Template";
+    case undefined:
+      return "Deployment";
+    default:
+      return sourceKind satisfies never;
+  }
+}
+
+function deployTaskSourceLabel(data: DeployTaskData): string {
+  return (
+    data.sourceLabel ??
+    data.repoFullName ??
+    deployTaskSourceName(deployTaskSourceKind(data))
+  );
+}
+
+function deployTaskSourceIcon(sourceKind: DeployTaskSourceKind | undefined) {
+  switch (sourceKind) {
+    case "database":
+      return DatabaseIcon;
+    case "docker":
+      return BoxIcon;
+    case "github":
+      return GitBranchIcon;
+    case "prompt":
+      return SparklesIcon;
+    case "template":
+      return PackageIcon;
+    case undefined:
+      return BotIcon;
+    default:
+      return sourceKind satisfies never;
+  }
+}
+
+function DeployTaskCard({ data }: { data: DeployTaskData }) {
   const status = data.status ?? "queued";
   const tone = deployStatusTone(data.status);
   const StatusIcon = tone.icon;
   const events = deployTaskDisplayEvents(data.events, 3);
   const summarizedError = summarizeDeployTaskError(data.error);
+  const sourceKind = deployTaskSourceKind(data);
+  const SourceIcon = deployTaskSourceIcon(sourceKind);
+  const sourceName = deployTaskSourceName(sourceKind);
+  const sourceLabel = deployTaskSourceLabel(data);
+  const cardTitle =
+    sourceKind == null ? "Deployment Task" : `${sourceName} Deploy`;
   const shouldOpenByDefault =
     ACTIVE_DEPLOY_STATUSES.has(status) || Boolean(data.error);
   const [userTouched, setUserTouched] = useState(false);
@@ -117,7 +223,7 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
   }, [shouldOpenByDefault, userTouched]);
 
   return (
-    <div className="w-full min-w-0" data-slot="chat-github-deploy-task-card">
+    <div className="w-full min-w-0" data-slot="chat-deploy-task-card">
       <Task
         onOpenChange={(next) => {
           setUserTouched(true);
@@ -127,16 +233,13 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
       >
         <TaskTrigger
           className="rounded-lg border-border bg-input/20 px-3 py-2 hover:bg-input/30"
-          title={`GitHub deploy ${status}`}
+          title={`${sourceName} deploy ${status}`}
         >
-          <GitBranchIcon
-            aria-hidden
-            className="size-4 shrink-0 text-foreground"
-          />
+          <SourceIcon aria-hidden className="size-4 shrink-0 text-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate font-medium text-foreground text-sm">
-                GitHub Deploy
+                {cardTitle}
               </p>
               <span
                 className={cn(
@@ -155,7 +258,7 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
               </span>
             </div>
             <p className="mt-0.5 truncate text-muted-foreground text-xs">
-              {data.repoFullName} · {data.projectName}
+              {sourceLabel} · {data.projectName}
             </p>
           </div>
           <ChevronDownIcon
@@ -167,9 +270,9 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
           <div className="space-y-3 rounded-lg border border-border bg-background/45 p-3">
             <div className="grid gap-2 text-xs sm:grid-cols-2">
               <div className="min-w-0">
-                <p className="text-muted-foreground">Repository</p>
+                <p className="text-muted-foreground">Source</p>
                 <p className="truncate font-medium text-foreground">
-                  {data.repoFullName}
+                  {sourceLabel}
                 </p>
               </div>
               <div className="min-w-0">
@@ -224,7 +327,7 @@ function GithubDeployTaskCard({ data }: { data: GithubDeployTaskData }) {
               </p>
             ) : null}
             <div className="inline-flex min-w-0 items-center gap-1 text-muted-foreground text-xs">
-              <GitBranchIcon aria-hidden className="size-3.5 shrink-0" />
+              <SourceIcon aria-hidden className="size-3.5 shrink-0" />
               <span className="truncate">Updated by task polling</span>
             </div>
           </div>
@@ -300,7 +403,7 @@ export function renderChatMessageParts({
 }): ReactNode[] {
   const out: ReactNode[] = [];
   const parts = message.parts;
-  const hideTextFallback = messageHasGithubDeployTaskPart(parts);
+  const hideTextFallback = messageHasDeployTaskPart(parts);
   let i = 0;
 
   while (i < parts.length) {
@@ -332,11 +435,11 @@ export function renderChatMessageParts({
       continue;
     }
 
-    if (isGithubDeployTaskPart(part)) {
+    if (isDeployTaskPart(part) || isGithubDeployTaskPart(part)) {
       out.push(
-        <GithubDeployTaskCard
+        <DeployTaskCard
           data={part.data}
-          key={`${message.id}-p-${i}-github-deploy-task`}
+          key={`${message.id}-p-${i}-deploy-task`}
         />
       );
       i += 1;

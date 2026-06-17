@@ -206,6 +206,7 @@ export async function createDeployTask(
   const now = new Date();
   const timelineSnapshot = createDeploymentTaskTimelineForRunner({
     runner: input.runner,
+    source: input.source,
     status: "queued",
     taskId: id,
     updatedAt: now.toISOString(),

@@ -6,6 +6,7 @@ import {
   appendStepEvent,
   applyResultResourceTimeout,
   createDeploymentTaskTimeline,
+  createDeploymentTaskTimelineForRunner,
   declareTimelineSteps,
   deploymentTimelineResultReadinessReached,
   deploymentTimelineStepsForRunner,
@@ -20,6 +21,33 @@ test("direct deployment runner declares stable user-facing timeline steps", () =
     { id: "validate-settings", label: "Validate settings", order: 0 },
     { id: "create-resources", label: "Create resources", order: 1 },
   ]);
+});
+
+test("AI deployment timelines use source-specific analysis language", () => {
+  const githubTimeline = createDeploymentTaskTimelineForRunner({
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    source: {
+      kind: "github",
+      repo: {
+        fullName: "acme/api",
+        name: "api",
+        url: "https://github.com/acme/api",
+      },
+    },
+    status: "queued",
+    taskId: "github-task",
+    updatedAt: NOW,
+  });
+  const promptTimeline = createDeploymentTaskTimelineForRunner({
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    source: { kind: "prompt", text: "Deploy a small API" },
+    status: "queued",
+    taskId: "prompt-task",
+    updatedAt: NOW,
+  });
+
+  assert.equal(githubTimeline.steps[1]?.label, "Analyze repository");
+  assert.equal(promptTimeline.steps[1]?.label, "Analyze request");
 });
 
 test("deployment task timeline preserves runner-defined step order and revision metadata", () => {

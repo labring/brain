@@ -1,4 +1,8 @@
-import type { DeploymentTaskRunner, DeployTaskStatus } from "./schema";
+import type {
+  DeploymentTaskRunner,
+  DeploymentTaskSource,
+  DeployTaskStatus,
+} from "./schema";
 
 export type DeploymentTimelineStepStatus =
   | "pending"
@@ -101,7 +105,8 @@ export function createDeploymentTaskTimeline(input: {
 }
 
 export function deploymentTimelineStepsForRunner(
-  runner: DeploymentTaskRunner
+  runner: DeploymentTaskRunner,
+  source?: DeploymentTaskSource
 ): TimelineStepDeclaration[] {
   switch (runner.kind) {
     case "direct":
@@ -117,7 +122,14 @@ export function deploymentTimelineStepsForRunner(
     case "ai":
       return [
         { id: "prepare-workspace", label: "Prepare workspace", order: 0 },
-        { id: "analyze-repository", label: "Analyze repository", order: 1 },
+        {
+          id: "analyze-source",
+          label:
+            source?.kind === "prompt"
+              ? "Analyze request"
+              : "Analyze repository",
+          order: 1,
+        },
         { id: "generate-deployment", label: "Generate deployment", order: 2 },
         { id: "create-resources", label: "Create resources", order: 3 },
       ];
@@ -128,6 +140,7 @@ export function deploymentTimelineStepsForRunner(
 
 export function createDeploymentTaskTimelineForRunner(input: {
   runner: DeploymentTaskRunner;
+  source?: DeploymentTaskSource;
   status: DeployTaskStatus;
   taskId: string;
   updatedAt: string;
@@ -139,7 +152,7 @@ export function createDeploymentTaskTimelineForRunner(input: {
       updatedAt: input.updatedAt,
     }),
     {
-      steps: deploymentTimelineStepsForRunner(input.runner),
+      steps: deploymentTimelineStepsForRunner(input.runner, input.source),
       updatedAt: input.updatedAt,
     }
   );
@@ -360,6 +373,9 @@ export function applyResultResourceTimeout(
         }
         requiredTimeout = card.required;
         const timeoutScope = card.required ? "required" : "optional";
+        const status: DeploymentResultResourceCardStatus = card.required
+          ? "failed"
+          : "unknown";
         return {
           ...card,
           events: appendDedupeEvent(card.events, {
@@ -372,7 +388,7 @@ export function applyResultResourceTimeout(
             source: "resource-observer",
           }),
           latestStatusText: input.lastObservedStatus,
-          status: card.required ? "failed" : "unknown",
+          status,
         };
       }),
     };

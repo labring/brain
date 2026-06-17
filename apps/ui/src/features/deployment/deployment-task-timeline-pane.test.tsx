@@ -11,6 +11,8 @@ const API_RE = /api/;
 const RUNNING_RE = /running/;
 const REQUIRED_RE = /Required/;
 const AP_READY_EVENT_RE = /AP workload has 1\/1 ready replicas\./;
+const ANALYZE_REQUEST_RE = /Analyze request/;
+const SKIPPED_RE = /skipped/;
 
 test("deployment task timeline pane renders ordered steps, AP card, statuses, and grouped events", () => {
   const html = renderToStaticMarkup(
@@ -107,4 +109,61 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
   assert.match(html, RUNNING_RE);
   assert.match(html, REQUIRED_RE);
   assert.match(html, AP_READY_EVENT_RE);
+});
+
+test("deployment task timeline pane renders skipped runner steps", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      snapshot={{
+        events: [],
+        task: {
+          artifactSummary: {},
+          blockingInputs: [],
+          canvasProjection: {},
+          completedAt: null,
+          createdAt: "2026-06-17T10:00:00.000Z",
+          createdFrom: "ui",
+          error: null,
+          gatewaySessionId: null,
+          gatewayTurnId: null,
+          gatewayUrl: null,
+          id: "task-2",
+          namespace: "default",
+          phase: "generate-artifacts",
+          previewUrl: null,
+          projectId: "project-1",
+          projectName: "Project 1",
+          resultUrl: null,
+          runner: { kind: "ai", runtimeProvider: "devbox" },
+          runtimeName: null,
+          runtimeProvider: null,
+          runtimeState: null,
+          source: { kind: "prompt", text: "Deploy a tiny app" },
+          startedAt: null,
+          status: "running",
+          target: { kind: "existingProject", projectId: "project-1" },
+          timelineSnapshot: null,
+          updatedAt: "2026-06-17T10:00:01.000Z",
+        },
+        timeline: {
+          revision: 2,
+          status: "running",
+          steps: [
+            {
+              events: [],
+              id: "analyze-source",
+              label: "Analyze request",
+              order: 1,
+              status: "skipped",
+            },
+          ],
+          taskId: "task-2",
+          updatedAt: "2026-06-17T10:00:01.000Z",
+        },
+      }}
+    />
+  );
+
+  assert.match(html, ANALYZE_REQUEST_RE);
+  assert.match(html, SKIPPED_RE);
 });
