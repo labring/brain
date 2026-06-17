@@ -6,6 +6,7 @@ import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
+import { ProjectCanvasDeploymentTaskTimelineReentryAffordance } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry-affordance";
 import { ProjectCanvasSurfaceHost } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
@@ -54,6 +55,16 @@ export default function ProjectIdPage() {
               state={projectCanvas.canvas.state}
             >
               <div className="relative min-h-0 flex-1">
+                <ProjectCanvasDeploymentTaskTimelineReentryAffordance
+                  className="absolute top-4 left-4 z-20 max-w-[min(calc(100%-2rem),28rem)]"
+                  onDismiss={
+                    projectCanvas.actions.dismissDeploymentTaskTimelineReentry
+                  }
+                  onOpen={
+                    projectCanvas.actions.openDeploymentTaskTimelineReentry
+                  }
+                  reentry={projectCanvas.canvas.deploymentTaskTimelineReentry}
+                />
                 {projectCanvas.canvas.frameState.overlay === "loading" ? (
                   <div
                     aria-live="polite"

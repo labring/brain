@@ -12,9 +12,11 @@ import {
 export function useDeploymentTaskTimelineOpener({
   openSideSurface,
   projectId,
+  shouldOpenTask,
 }: {
   openSideSurface: (entry: ProjectSideSurfaceEntry) => void;
   projectId?: string;
+  shouldOpenTask?: (taskId: string) => boolean;
 }) {
   const openDeploymentTaskTimeline = useCallback(
     (detail: DeployTaskCreatedEvent["detail"]) => {
@@ -28,6 +30,10 @@ export function useDeploymentTaskTimelineOpener({
       ) {
         return;
       }
+      if (shouldOpenTask?.(detail.taskId) === false) {
+        acknowledgePendingDeployTaskCreatedEvent(detail.taskId);
+        return;
+      }
       openSideSurface({
         kind: "deploymentTaskTimeline",
         projectId: currentProjectId,
@@ -35,7 +41,7 @@ export function useDeploymentTaskTimelineOpener({
       });
       acknowledgePendingDeployTaskCreatedEvent(detail.taskId);
     },
-    [openSideSurface, projectId]
+    [openSideSurface, projectId, shouldOpenTask]
   );
 
   useEffect(() => {

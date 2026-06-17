@@ -2,7 +2,7 @@
 
 import type { CanvasSelectedNode } from "@workspace/ui/components/canvas/canvas.types";
 import type { Edge, Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
@@ -129,7 +129,7 @@ export function useProjectCanvas(
   const selected = workbenchRoute.canvasSelection;
   const surfaceState = workbenchRoute.surfaces;
   const writeSelection = workbenchRoute.writeCanvasSelection;
-  const openSideSurface = workbenchRoute.openSide;
+  const openSideRoute = workbenchRoute.openSide;
   const openMainSurface = workbenchRoute.openMain;
   const openDrawerSurface = workbenchRoute.openDrawer;
   const repairSide = workbenchRoute.repairSide;
@@ -138,10 +138,36 @@ export function useProjectCanvas(
   const closeDrawerRoute = workbenchRoute.closeDrawer;
   const clearCanvasFocus = workbenchRoute.clearCanvasFocus;
   const focusCanvasSelection = workbenchRoute.focusCanvasSelection;
+  const [
+    manuallyClosedDeploymentTaskTimelineTaskIds,
+    setManuallyClosedDeploymentTaskTimelineTaskIds,
+  ] = useState<ReadonlySet<string>>(() => new Set());
+  const openSideSurface = useCallback(
+    (entry: ProjectSideSurfaceEntry) => {
+      if (entry.kind === "deploymentTaskTimeline") {
+        setManuallyClosedDeploymentTaskTimelineTaskIds((current) => {
+          if (!current.has(entry.taskId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(entry.taskId);
+          return next;
+        });
+      }
+      openSideRoute(entry);
+    },
+    [openSideRoute]
+  );
+  const shouldAutoOpenDeploymentTaskTimeline = useCallback(
+    (taskId: string) =>
+      !manuallyClosedDeploymentTaskTimelineTaskIds.has(taskId),
+    [manuallyClosedDeploymentTaskTimelineTaskIds]
+  );
 
   useDeploymentTaskTimelineOpener({
     openSideSurface,
     projectId: options?.projectId,
+    shouldOpenTask: shouldAutoOpenDeploymentTaskTimeline,
   });
 
   const resourceActions = useProjectResourceActions({
@@ -275,8 +301,17 @@ export function useProjectCanvas(
   });
 
   const closeSideSurface = useCallback(() => {
+    const side = surfaceState.side;
+    if (side?.kind === "deploymentTaskTimeline") {
+      setManuallyClosedDeploymentTaskTimelineTaskIds((current) => {
+        if (current.has(side.taskId)) {
+          return current;
+        }
+        return new Set(current).add(side.taskId);
+      });
+    }
     closeSideRoute();
-  }, [closeSideRoute]);
+  }, [closeSideRoute, surfaceState.side]);
 
   const closeMainSurface = useCallback(() => {
     closeMainRoute();

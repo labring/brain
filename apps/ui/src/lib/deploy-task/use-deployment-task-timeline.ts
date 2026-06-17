@@ -6,6 +6,7 @@ import {
   fetchDeploymentTaskTimeline,
   streamDeploymentTaskTimeline,
 } from "./client";
+import { applyDeploymentTaskTimelineSnapshot } from "./timeline-client-state";
 import type { DeploymentTaskTimelineSnapshotDTO } from "./types";
 
 const STREAM_RECONNECT_DELAY_MS = 1500;
@@ -55,7 +56,9 @@ async function loadInitialTimeline(input: {
       taskId: input.taskId,
     });
     if (!input.signal.aborted) {
-      input.setters.setData(snapshot);
+      input.setters.setData((current) =>
+        applyDeploymentTaskTimelineSnapshot(current, snapshot)
+      );
     }
   } catch (error) {
     if (!input.signal.aborted) {
@@ -84,7 +87,9 @@ async function streamTimelineUntilAbort(input: {
         kubeconfig: input.kubeconfig,
         namespace: input.namespace,
         onEvent: (event) => {
-          input.setters.setData(event.snapshot);
+          input.setters.setData((current) =>
+            applyDeploymentTaskTimelineSnapshot(current, event.snapshot)
+          );
           input.setters.setError(null);
         },
         signal: input.signal,

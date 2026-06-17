@@ -210,6 +210,56 @@ test("resource snapshot projects active deploy tasks as placeholder nodes", () =
   assert.equal(snapshot.frameState.overlay, "none");
 });
 
+test("resource snapshot ignores deployment timeline result cards as canvas projection evidence", () => {
+  const timelineOnlyTask: DeploymentTaskProjection & {
+    timelineSnapshot: unknown;
+  } = {
+    artifactSummary: {},
+    canvasProjection: {},
+    completedAt: "2026-06-17T10:00:00.000Z",
+    id: "task-1",
+    namespace: "default",
+    phase: "completed",
+    projectId: "project-uid",
+    status: "completed",
+    timelineSnapshot: {
+      revision: 3,
+      status: "completed",
+      steps: [
+        {
+          events: [],
+          id: "create-resources",
+          label: "Create resources",
+          order: 1,
+          resultCards: [
+            {
+              events: [],
+              id: "AP:default:api",
+              required: true,
+              resultRef: { kind: "AP", name: "api", namespace: "default" },
+              status: "running",
+              title: "api",
+            },
+          ],
+          status: "completed",
+        },
+      ],
+      taskId: "task-1",
+      updatedAt: "2026-06-17T10:00:00.000Z",
+    },
+    updatedAt: "2026-06-17T10:00:00.000Z",
+  };
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    deployTasks: [timelineOnlyTask],
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  assert.deepEqual(snapshot.canvasState.nodes, []);
+  assert.equal(snapshot.layoutIntent, null);
+});
+
 test("resource snapshot hands deployment slot placement to AP result", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {

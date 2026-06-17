@@ -20,6 +20,7 @@ import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/feature
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
+import { selectDeploymentTaskTimelineReentry } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
@@ -36,6 +37,10 @@ export function useProjectCanvasModule({
   const [pendingApDbReferences, setPendingApDbReferences] = useState<
     PendingApDbCanvasReference[]
   >([]);
+  const [
+    dismissedDeploymentTaskTimelineReentryTaskIds,
+    setDismissedDeploymentTaskTimelineReentryTaskIds,
+  ] = useState<ReadonlySet<string>>(() => new Set());
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     kubeconfig,
@@ -46,6 +51,7 @@ export function useProjectCanvasModule({
   const {
     apEnvironmentDbReferenceSources,
     canvasState,
+    deploymentTaskProjections,
     frameState,
     isEmptyGraphLoading,
     isLoading: resourceSnapshotLoading,
@@ -99,9 +105,10 @@ export function useProjectCanvasModule({
     []
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset pending edges when the canvas route scope changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset route-scoped transient UI state when the canvas route scope changes.
   useEffect(() => {
     setPendingApDbReferences([]);
+    setDismissedDeploymentTaskTimelineReentryTaskIds(new Set());
   }, [namespace, projectId]);
 
   const canvasEdges = useMemo(() => {
@@ -169,6 +176,52 @@ export function useProjectCanvasModule({
     refreshWorkloadLists: refresh,
     selectionReady: !isEmptyGraphLoading,
   });
+  const activeDeploymentTaskTimelineTaskId = useMemo(() => {
+    const side = workbench.surfaceRenderModel.side;
+    return side?.kind === "global" &&
+      side.entry.kind === "deploymentTaskTimeline"
+      ? side.entry.taskId
+      : null;
+  }, [workbench.surfaceRenderModel.side]);
+  const deploymentTaskTimelineReentry = useMemo(
+    () =>
+      selectDeploymentTaskTimelineReentry({
+        activeTaskId: activeDeploymentTaskTimelineTaskId,
+        dismissedTaskIds: dismissedDeploymentTaskTimelineReentryTaskIds,
+        tasks: deploymentTaskProjections,
+      }),
+    [
+      activeDeploymentTaskTimelineTaskId,
+      deploymentTaskProjections,
+      dismissedDeploymentTaskTimelineReentryTaskIds,
+    ]
+  );
+  const openDeploymentTaskTimelineReentry = useCallback(
+    (taskId: string) => {
+      setDismissedDeploymentTaskTimelineReentryTaskIds((current) => {
+        if (!current.has(taskId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(taskId);
+        return next;
+      });
+      workbench.openSideSurface({
+        kind: "deploymentTaskTimeline",
+        projectId,
+        taskId,
+      });
+    },
+    [projectId, workbench.openSideSurface]
+  );
+  const dismissDeploymentTaskTimelineReentry = useCallback((taskId: string) => {
+    setDismissedDeploymentTaskTimelineReentryTaskIds((current) => {
+      if (current.has(taskId)) {
+        return current;
+      }
+      return new Set(current).add(taskId);
+    });
+  }, []);
 
   const openingKey = `${namespace}:${projectId}`;
   const meta = useMemo<CanvasMeta>(
@@ -256,9 +309,12 @@ export function useProjectCanvasModule({
 
   return {
     actions: {
+      dismissDeploymentTaskTimelineReentry,
       openSurfaceIntent,
+      openDeploymentTaskTimelineReentry,
     },
     canvas: {
+      deploymentTaskTimelineReentry,
       frameState,
       meta,
       selectedTelemetryTarget,
