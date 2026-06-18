@@ -19,7 +19,6 @@ import {
   anchorSlot,
   type DeploymentResultPreview,
   type DeploymentTaskResultPreview,
-  expectedRefToResultRef,
   materializedSlotPositions,
   resultRefForSlot,
   sanitizeNodeIdPart,
@@ -215,30 +214,40 @@ export function deploymentPlaceholderNodesFromTasks(
   });
 }
 
-export function shouldHideDeploymentPlaceholderForHandoff(input: {
-  context?: DeploymentProjectionContext;
-  layout?: CanvasLayoutDocument;
+function resultRefForPlaceholderHandoff(input: {
+  context: DeploymentProjectionContext;
   node: CanvasDeploymentPlaceholderRfNode;
-  nodes?: readonly Node[];
+}) {
+  const slotId = input.node.data.slotId;
+  if (slotId === undefined) {
+    return undefined;
+  }
+
+  const preview = input.context.previews.find(
+    ({ task }) => task.id === input.node.data.taskId
+  );
+  const slot = preview?.preview.slots.find((item) => item.id === slotId);
+  return preview === undefined || slot === undefined
+    ? undefined
+    : resultRefForSlot({ slot, task: preview.task });
+}
+
+export function shouldHideDeploymentPlaceholderForHandoff(input: {
+  context: DeploymentProjectionContext;
+  node: CanvasDeploymentPlaceholderRfNode;
 }): boolean {
   if (hasProjectionSlotGroup(input.node.data)) {
-    const context =
-      input.context ??
-      createDeploymentProjectionContext({
-        layout: input.layout,
-        nodes: input.nodes,
-      });
-    const expectedRef = expectedRefToResultRef(input.node.data.expectedRef);
+    const resultRef = resultRefForPlaceholderHandoff(input);
     return (
-      expectedRef !== undefined &&
+      resultRef !== undefined &&
       (resultRefHasSavedLayoutInDeploymentProjectionContext(
-        context,
-        expectedRef
+        input.context,
+        resultRef
       ) ||
         (input.node.data.hasProjectionPlacement === true &&
           resultRefHasLiveNodeInDeploymentProjectionContext(
-            context,
-            expectedRef
+            input.context,
+            resultRef
           )))
     );
   }

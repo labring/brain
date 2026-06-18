@@ -3,16 +3,21 @@ import { test } from "node:test";
 import type { Node } from "@xyflow/react";
 
 import { DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS } from "@/lib/deploy-task/projection";
-import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
+import {
+  CANVAS_CONTAINER_NODE_TYPE,
+  CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+} from "../nodes/constants";
 import type {
   CanvasDeploymentPlaceholderNodeData,
   CanvasDeploymentPlaceholderRfNode,
 } from "../nodes/types";
+import { shouldHideDeploymentPlaceholderForHandoff } from "./deployment-placeholder-nodes";
 import {
   deploymentProjectionPlacementCommands,
   deploymentProjectionPlacementNodesFromPlaceholderNode,
 } from "./deployment-placement-commands";
 import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
+import { createDeploymentProjectionContext } from "./deployment-projection-context";
 
 const AP_SLOT = {
   expectedRef: {
@@ -37,6 +42,7 @@ const PROJECTION_SLOTS = [AP_SLOT, PUBLIC_ACCESS_SLOT] as const;
 function resultPreviewNode(input: {
   anchorSource?: CanvasDeploymentPlaceholderNodeData["projectionPlacementSource"];
   anchor?: boolean;
+  hasProjectionPlacement?: boolean;
   position: CanvasDeploymentPlaceholderRfNode["position"];
   slotId: (typeof PROJECTION_SLOTS)[number]["id"];
 }): CanvasDeploymentPlaceholderRfNode {
@@ -47,7 +53,7 @@ function resultPreviewNode(input: {
         ? {}
         : { expectedRef: slot.expectedRef }),
       groupId: "task-1",
-      hasProjectionPlacement: false,
+      hasProjectionPlacement: input.hasProjectionPlacement ?? false,
       ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
       ...(input.anchorSource === undefined
         ? {}
@@ -64,6 +70,60 @@ function resultPreviewNode(input: {
     type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
   };
 }
+
+test("handoff hiding uses actual result refs instead of placeholder expected refs", () => {
+  const node = resultPreviewNode({
+    anchor: true,
+    hasProjectionPlacement: true,
+    position: { x: 680, y: 280 },
+    slotId: AP_SLOT.id,
+  });
+  const liveActualNode: Node = {
+    data: {
+      states: {
+        image: "ghcr.io/acme/api:v2",
+        name: "api-v2",
+        namespace: "default",
+      },
+    },
+    id: "ap-api-v2",
+    position: { x: 680, y: 280 },
+    type: CANVAS_CONTAINER_NODE_TYPE,
+  };
+  const context = createDeploymentProjectionContext({
+    nodes: [liveActualNode],
+    tasks: [
+      {
+        artifactSummary: {},
+        canvasProjection: {
+          slots: [AP_SLOT],
+        },
+        completedAt: null,
+        id: "task-1",
+        namespace: "default",
+        phase: "apply",
+        projectId: "project-uid",
+        resultMappings: [
+          {
+            actualRef: {
+              kind: "AP",
+              name: "api-v2",
+              namespace: "default",
+            },
+            slotId: AP_SLOT.id,
+          },
+        ],
+        status: "applying",
+        updatedAt: "2026-06-11T10:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.equal(
+    shouldHideDeploymentPlaceholderForHandoff({ context, node }),
+    true
+  );
+});
 
 test("projection patch preserves user source for a slot group anchored by the unknown slot", () => {
   const nodes = [
