@@ -12,6 +12,7 @@ const PROJECT_CREATION_RE = /Project creation/;
 const RESOURCE_SETTINGS_RE = /Resource settings/;
 const SKILLS_WORKFLOW_RE = /Skills workflow/;
 const TEMPLATE_DEPLOYMENT_RE = /Template deployment/;
+const TIMELINE_RE = /Deployment timeline/;
 
 function renderSlot(
   entry: Parameters<typeof ProjectCanvasSidePaneSlot>[0]["entry"]
@@ -23,6 +24,11 @@ function renderSlot(
         "aside",
         null,
         "Database deployment"
+      ),
+      deploymentTaskTimelinePane: createElement(
+        "aside",
+        null,
+        "Deployment timeline"
       ),
       dockerDeploymentPane: createElement("aside", null, "Docker deployment"),
       githubDeploymentPane: createElement("aside", null, "GitHub deployment"),
@@ -72,6 +78,14 @@ test("canvas side pane slot can render template deployment entries", () => {
   const html = renderSlot({ kind: "templateDeployment" });
 
   assert.match(html, TEMPLATE_DEPLOYMENT_RE);
+  assert.doesNotMatch(html, GITHUB_DEPLOYMENT_RE);
+  assert.doesNotMatch(html, RESOURCE_SETTINGS_RE);
+});
+
+test("canvas side pane slot can render deployment task timeline entries", () => {
+  const html = renderSlot({ kind: "deploymentTaskTimeline" });
+
+  assert.match(html, TIMELINE_RE);
   assert.doesNotMatch(html, GITHUB_DEPLOYMENT_RE);
   assert.doesNotMatch(html, RESOURCE_SETTINGS_RE);
 });

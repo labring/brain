@@ -205,6 +205,7 @@ function sideRenderModel({
     case "settings":
       return settingsPaneModel(nodes, entry);
     case "databaseDeployment":
+    case "deploymentTaskTimeline":
     case "dockerDeployment":
     case "githubDeployment":
     case "projectCreation":

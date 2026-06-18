@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
@@ -49,6 +49,7 @@ import {
   sealosTemplateArtifactSummary,
 } from "./artifacts";
 import { buildRuntimeContract } from "./build-runtime-contract";
+import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
 import { deployTaskFailureSummary } from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
@@ -57,13 +58,38 @@ import {
   runDeployTaskGateway,
 } from "./gateway";
 import { deployOutputProgressSummary } from "./output-progress";
+import {
+  apWorkloadReadinessFromProductView,
+  dbServiceReadinessFromProductView,
+  publicAccessReadinessFromProductView,
+  templateWorkloadReadinessFromProductView,
+} from "./readiness";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
-import type { DeployTaskArtifactSummary, DeployTaskRow } from "./schema";
+import type {
+  DeployTaskArtifactSummary,
+  DeployTaskEventPayload,
+  DeployTaskRow,
+} from "./schema";
 import {
   getDeployTaskById,
+  getDeployTaskTimelineSnapshot,
   recordDeployTaskEvent,
   updateDeployTaskState,
+  updateDeployTaskTimeline,
 } from "./service";
+import {
+  appendCardEvent,
+  appendStepEvent,
+  applyDeploymentOutputProgressToTimeline,
+  applyResultResourceTimeout,
+  type DeploymentResultResourceCard,
+  deploymentTimelineFailureStepId,
+  deploymentTimelineResultReadinessReached,
+  markTimelineStep,
+  updateTimelineStatus,
+  upsertResultResourceCard,
+} from "./timeline";
+import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
@@ -81,6 +107,8 @@ const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/inde
 const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
 const READ_OUTPUT_TIMEOUT_SECONDS = 30;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
+const DIRECT_AP_READINESS_POLL_MS = 5000;
+const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
   "jobs",
@@ -157,6 +185,13 @@ function requireKubeconfig(input: StartDeployTaskRunnerInput): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function directApReadinessTimeoutMs(): number {
+  const configured = Number(process.env.DIRECT_AP_READINESS_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS;
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -367,6 +402,486 @@ async function applyDeploymentArtifact(input: {
     },
     notes,
   };
+}
+
+function timelineEvent(input: {
+  dedupeKey?: string;
+  message: string;
+  reason?: string;
+  severity?: "info" | "success" | "warning" | "error";
+  source?: "runner" | "resource-observer" | "kubernetes-event" | "health-check";
+}) {
+  return {
+    createdAt: new Date().toISOString(),
+    dedupeKey: input.dedupeKey,
+    id: randomUUID(),
+    message: input.message,
+    reason: input.reason,
+    severity: input.severity,
+    source: input.source,
+  };
+}
+
+async function markTimelineStepWithEvent(input: {
+  eventKind: string;
+  eventMessage: string;
+  eventPayload?: DeployTaskEventPayload;
+  eventReason?: string;
+  eventSeverity?: "info" | "success" | "warning" | "error";
+  phase: DeployTaskRow["phase"];
+  status: Parameters<typeof markTimelineStep>[1]["status"];
+  stepId: string;
+  taskId: string;
+  timelineStatus?: DeployTaskRow["status"];
+}) {
+  const now = new Date().toISOString();
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind: input.eventKind,
+      message: input.eventMessage,
+      payload: input.eventPayload,
+      phase: input.phase,
+    },
+    update: (timeline) =>
+      appendStepEvent(
+        markTimelineStep(
+          input.timelineStatus == null
+            ? timeline
+            : updateTimelineStatus(timeline, {
+                status: input.timelineStatus,
+                updatedAt: now,
+              }),
+          {
+            status: input.status,
+            stepId: input.stepId,
+            updatedAt: now,
+          }
+        ),
+        {
+          event: timelineEvent({
+            dedupeKey: input.eventKind,
+            message: input.eventMessage,
+            reason: input.eventReason,
+            severity: input.eventSeverity,
+            source: "runner",
+          }),
+          stepId: input.stepId,
+          updatedAt: now,
+        }
+      ),
+  });
+}
+
+async function markDeployTaskFailureTimeline(input: {
+  errorMessage: string;
+  failureMessage: string;
+  task: DeployTaskRow;
+}): Promise<boolean> {
+  const timeline = deploymentTaskTimelineFromTaskRecord(input.task);
+  const stepId = deploymentTimelineFailureStepId({
+    phase: input.task.phase,
+    runner: input.task.runner,
+    timeline,
+  });
+  if (stepId == null) {
+    return false;
+  }
+
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.failed",
+    eventMessage: input.failureMessage,
+    eventPayload: { error: input.errorMessage },
+    eventReason: "DeploymentTaskFailed",
+    eventSeverity: "error",
+    phase: input.task.phase,
+    status: "failed",
+    stepId,
+    taskId: input.task.id,
+    timelineStatus: "failed",
+  });
+  return true;
+}
+
+async function fetchApProductView(input: {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+}): Promise<unknown> {
+  return await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    },
+    method: "GET",
+    path: API_ROUTES.ap.root,
+    query: {
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+}
+
+async function fetchDbProductView(input: {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+}): Promise<unknown> {
+  return await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    },
+    method: "GET",
+    path: API_ROUTES.db.root,
+    query: {
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+}
+
+function templateWorkloadK8sKind(kind: string): string {
+  switch (kind) {
+    case "CronJob":
+      return "cronjobs";
+    case "DaemonSet":
+      return "daemonsets";
+    case "Deployment":
+      return "deployments";
+    case "StatefulSet":
+      return "statefulsets";
+    default:
+      return kind.toLowerCase();
+  }
+}
+
+async function fetchTemplateWorkloadProductView(input: {
+  kubeconfig: string;
+  name: string;
+  namespace: string;
+  workloadKind: string;
+}): Promise<unknown> {
+  return await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    },
+    method: "GET",
+    path: API_ROUTES.k8s.get,
+    query: {
+      kind: templateWorkloadK8sKind(input.workloadKind),
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+}
+
+function publicAddressViewFromAp(input: {
+  ap: unknown;
+  publicAddressId: string;
+}): unknown {
+  const status = objectValue(objectValue(input.ap)?.status);
+  const network = objectValue(status?.network);
+  const publicAddresses = Array.isArray(network?.publicAddresses)
+    ? network.publicAddresses
+    : [];
+  return (
+    publicAddresses.find((address) => {
+      const record = objectValue(address);
+      return (
+        stringValue(record?.id) === input.publicAddressId ||
+        stringValue(record?.host) === input.publicAddressId
+      );
+    }) ?? { status: "unknown" }
+  );
+}
+
+async function upsertResultTimelineCard(input: {
+  card: DeploymentResultResourceCard;
+  eventMessage: string;
+  eventReason: string;
+  eventSeverity?: "info" | "success" | "warning" | "error";
+  taskId: string;
+}) {
+  const now = new Date().toISOString();
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind: "deployment_task.result_resource_observed",
+      message: input.eventMessage,
+      phase: "apply",
+      payload: {
+        cardId: input.card.id,
+        latestStatusText: input.card.latestStatusText,
+        resultRef: input.card.resultRef,
+        status: input.card.status,
+      },
+    },
+    update: (timeline) =>
+      appendCardEvent(
+        upsertResultResourceCard(timeline, {
+          card: input.card,
+          stepId: "create-resources",
+          updatedAt: now,
+        }),
+        {
+          cardId: input.card.id,
+          event: timelineEvent({
+            dedupeKey: `${input.card.id}:${input.card.status}:${input.card.latestStatusText ?? ""}`,
+            message: input.eventMessage,
+            reason: input.eventReason,
+            severity: input.eventSeverity,
+            source: "resource-observer",
+          }),
+          stepId: "create-resources",
+          updatedAt: now,
+        }
+      ),
+  });
+}
+
+function readinessEventSeverity(
+  status: ReturnType<typeof apWorkloadReadinessFromProductView>["status"]
+): "info" | "success" | "warning" | "error" {
+  if (status === "running") {
+    return "success";
+  }
+  if (status === "failed") {
+    return "error";
+  }
+  if (status === "blocked") {
+    return "warning";
+  }
+  return "info";
+}
+
+function applyReadinessToResultCard(
+  card: DeploymentResultResourceCard,
+  readiness: ReturnType<typeof apWorkloadReadinessFromProductView>
+): DeploymentResultResourceCard {
+  return {
+    ...card,
+    latestStatusText: readiness.latestStatusText,
+    status: readiness.status,
+  };
+}
+
+function resultReadinessEventReason(
+  card: DeploymentResultResourceCard
+): string {
+  switch (card.resultRef.kind) {
+    case "AP":
+      return "APWorkloadReadiness";
+    case "DB":
+      return "DBServiceReadiness";
+    case "PublicAccess":
+      return "PublicAddressReadiness";
+    case "TemplateWorkload":
+      return "TemplateWorkloadReadiness";
+    default:
+      return card.resultRef satisfies never;
+  }
+}
+
+function resultReadinessLabel(card: DeploymentResultResourceCard): string {
+  switch (card.resultRef.kind) {
+    case "AP":
+      return `AP ${card.resultRef.name}`;
+    case "DB":
+      return `DB Service ${card.resultRef.name}`;
+    case "PublicAccess":
+      return `Public Address ${card.resultRef.id}`;
+    case "TemplateWorkload":
+      return `${card.resultRef.workloadKind} ${card.resultRef.name}`;
+    default:
+      return card.resultRef satisfies never;
+  }
+}
+
+function isResultReadinessTerminalError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.includes("failed readiness") ||
+      error.message.includes("readiness is blocked"))
+  );
+}
+
+function waitingForResultObservationStatus(
+  card: DeploymentResultResourceCard,
+  error: unknown
+): string {
+  return error instanceof Error
+    ? `Waiting for ${resultReadinessLabel(card)} observation: ${error.message}`
+    : `Waiting for ${resultReadinessLabel(card)} observation.`;
+}
+
+async function resultCardReadiness(input: {
+  card: DeploymentResultResourceCard;
+  kubeconfig: string;
+}): Promise<ReturnType<typeof apWorkloadReadinessFromProductView>> {
+  const { resultRef } = input.card;
+  switch (resultRef.kind) {
+    case "AP": {
+      const ap = await fetchApProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.name,
+        namespace: resultRef.namespace,
+      });
+      return apWorkloadReadinessFromProductView(ap);
+    }
+    case "DB": {
+      const db = await fetchDbProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.name,
+        namespace: resultRef.namespace,
+      });
+      return dbServiceReadinessFromProductView(db);
+    }
+    case "PublicAccess": {
+      const ap = await fetchApProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.apName,
+        namespace: resultRef.namespace,
+      });
+      return publicAccessReadinessFromProductView(
+        publicAddressViewFromAp({
+          ap,
+          publicAddressId: resultRef.id,
+        })
+      );
+    }
+    case "TemplateWorkload": {
+      const workload = await fetchTemplateWorkloadProductView({
+        kubeconfig: input.kubeconfig,
+        name: resultRef.name,
+        namespace: resultRef.namespace,
+        workloadKind: resultRef.workloadKind,
+      });
+      return templateWorkloadReadinessFromProductView(workload);
+    }
+    default:
+      return resultRef satisfies never;
+  }
+}
+
+async function observeResultCardReadiness(input: {
+  card: DeploymentResultResourceCard;
+  kubeconfig: string;
+  taskId: string;
+}): Promise<{
+  latestStatus: string;
+  running: boolean;
+  status: DeploymentResultResourceCard["status"];
+}> {
+  try {
+    const readiness = await resultCardReadiness(input);
+    const nextCard = applyReadinessToResultCard(input.card, readiness);
+    await upsertResultTimelineCard({
+      card: nextCard,
+      eventMessage: readiness.eventMessage,
+      eventReason: resultReadinessEventReason(input.card),
+      eventSeverity: readinessEventSeverity(readiness.status),
+      taskId: input.taskId,
+    });
+
+    if (input.card.required && readiness.status === "failed") {
+      throw new Error(`${resultReadinessLabel(input.card)} failed readiness.`);
+    }
+    if (input.card.required && readiness.status === "blocked") {
+      throw new Error(
+        `${resultReadinessLabel(input.card)} readiness is blocked.`
+      );
+    }
+    return {
+      latestStatus: readiness.latestStatusText,
+      running: !input.card.required || readiness.status === "running",
+      status: readiness.status,
+    };
+  } catch (error) {
+    if (isResultReadinessTerminalError(error)) {
+      throw error;
+    }
+    return {
+      latestStatus: waitingForResultObservationStatus(input.card, error),
+      running: !input.card.required,
+      status: "unknown",
+    };
+  }
+}
+
+async function waitForRequiredResultCards(input: {
+  cards: DeploymentResultResourceCard[];
+  kubeconfig: string;
+  taskId: string;
+}) {
+  const startedAt = Date.now();
+  const timeoutMs = directApReadinessTimeoutMs();
+  let latestStatus = "waiting for required result resource observation";
+  const latestStatusByCard = new Map<string, string>();
+  const statusByCard = new Map<
+    string,
+    DeploymentResultResourceCard["status"]
+  >();
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    let requiredCardsRunning = true;
+
+    for (const card of input.cards) {
+      const observed = await observeResultCardReadiness({
+        card,
+        kubeconfig: input.kubeconfig,
+        taskId: input.taskId,
+      });
+      latestStatus = observed.latestStatus;
+      latestStatusByCard.set(card.id, observed.latestStatus);
+      statusByCard.set(card.id, observed.status);
+      if (card.required) {
+        requiredCardsRunning = requiredCardsRunning && observed.running;
+      }
+    }
+
+    if (requiredCardsRunning) {
+      const snapshot = await getDeployTaskTimelineSnapshot(input.taskId);
+      if (
+        snapshot == null ||
+        deploymentTimelineResultReadinessReached(snapshot.timeline)
+      ) {
+        return;
+      }
+    }
+
+    await sleep(DIRECT_AP_READINESS_POLL_MS);
+  }
+
+  const now = new Date().toISOString();
+  const unresolvedCards = input.cards.filter(
+    (card) => (statusByCard.get(card.id) ?? card.status) !== "running"
+  );
+  for (const card of unresolvedCards) {
+    await updateDeployTaskTimeline(input.taskId, {
+      event: {
+        kind: "deployment_task.result_resource_timeout",
+        message: `${resultReadinessLabel(card)} did not reach readiness before timeout.`,
+        phase: "apply",
+        payload: {
+          cardId: card.id,
+          lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
+          required: card.required,
+          resultRef: card.resultRef,
+        },
+      },
+      update: (timeline) =>
+        applyResultResourceTimeout(timeline, {
+          cardId: card.id,
+          lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
+          stepId: "create-resources",
+          updatedAt: now,
+        }),
+    });
+  }
+
+  throw new Error(
+    `Timed out waiting for required result resource readiness (${latestStatus}).`
+  );
 }
 
 function codexGatewayEnv(): Record<string, string> {
@@ -1078,17 +1593,35 @@ async function recordDeployOutputProgress(input: {
   taskId: string;
 }): Promise<string> {
   const complete = input.summary.complete === true;
-  await recordDeployTaskEvent(input.taskId, {
-    kind: complete
-      ? "deployment_task.output_ready"
-      : "deployment_task.output_partial",
-    message: complete
-      ? "Deployment output files are ready."
-      : "Deployment output files are partially available.",
-    payload: input.summary,
-    phase: "generate-artifacts",
+  const kind = complete
+    ? "deployment_task.output_ready"
+    : "deployment_task.output_partial";
+  const message = complete
+    ? "Deployment output files are ready."
+    : "Deployment output files are partially available.";
+  const signature = JSON.stringify(input.summary);
+  const now = new Date().toISOString();
+
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind,
+      message,
+      payload: input.summary,
+      phase: "generate-artifacts",
+    },
+    update: (timeline) =>
+      applyDeploymentOutputProgressToTimeline(timeline, {
+        complete,
+        event: timelineEvent({
+          dedupeKey: `${kind}:${signature}`,
+          message,
+          severity: complete ? "success" : "info",
+          source: "runner",
+        }),
+        updatedAt: now,
+      }),
   });
-  return JSON.stringify(input.summary);
+  return signature;
 }
 
 async function recordDeployOutputProgressIfPresent(input: {
@@ -1186,6 +1719,23 @@ async function runDeployTaskGatewayWithOutputProgress(input: {
   }
 }
 
+async function markDeploymentGenerationStartedIfNeeded(input: {
+  seenOutputProgress: Set<string>;
+  taskId: string;
+}) {
+  if (input.seenOutputProgress.size > 0) {
+    return;
+  }
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.deployment_generation_started",
+    eventMessage: "Generating deployment artifacts.",
+    phase: "generate-artifacts",
+    status: "running",
+    stepId: "generate-deployment",
+    taskId: input.taskId,
+  });
+}
+
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   kubeconfig: string;
@@ -1200,6 +1750,14 @@ async function completeTaskWithArtifact(input: {
     kind: "deployment_task.apply_started",
     message: "Applying deployment artifacts.",
     phase: "apply",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.apply_started",
+    eventMessage: "Applying deployment artifacts.",
+    phase: "apply",
+    status: "running",
+    stepId: "create-resources",
+    taskId: input.task.id,
   });
 
   const applied = await applyDeploymentArtifact({
@@ -1216,13 +1774,46 @@ async function completeTaskWithArtifact(input: {
         ? {}
         : { outputJson: input.outputJson }),
     },
+    phase: "apply",
+    status: "applying",
+  });
+
+  const resultCards = resultResourceCardsFromArtifactSummary(
+    applied.artifactSummary
+  );
+  for (const card of resultCards) {
+    await upsertResultTimelineCard({
+      card,
+      eventMessage: `${resultReadinessLabel(card)} result resource was created.`,
+      eventReason: "ResultResourceKnown",
+      taskId: input.task.id,
+    });
+  }
+
+  if (resultCards.some((card) => card.required)) {
+    await waitForRequiredResultCards({
+      cards: resultCards,
+      kubeconfig: input.kubeconfig,
+      taskId: input.task.id,
+    });
+  }
+
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.result_readiness_reached",
+    eventMessage: "Required deployment result resources are running.",
+    phase: "completed",
+    status: "completed",
+    stepId: "create-resources",
+    taskId: input.task.id,
+  });
+  await updateDeployTaskState(input.task.id, {
     phase: "completed",
     status: "completed",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.completed",
     message: "Deployment task completed.",
-    payload: applied.artifactSummary,
+    payload: { artifactSummary: applied.artifactSummary },
     phase: "completed",
   });
 }
@@ -1232,6 +1823,14 @@ async function runDirectDeploymentTask(input: {
   projectName: string;
   task: DeployTaskRow;
 }) {
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.direct_validation_started",
+    eventMessage: "Validating direct deployment settings.",
+    phase: "plan",
+    status: "running",
+    stepId: "validate-settings",
+    taskId: input.task.id,
+  });
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
     status: "running",
@@ -1251,6 +1850,14 @@ async function runDirectDeploymentTask(input: {
     kind: "deployment_task.artifacts_generated",
     message: "Generated deployment artifacts.",
     phase: "generate-artifacts",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.direct_validation_completed",
+    eventMessage: "Direct deployment settings are ready.",
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "validate-settings",
+    taskId: input.task.id,
   });
 
   await completeTaskWithArtifact({
@@ -1272,6 +1879,14 @@ async function runTemplateDeploymentTask(input: {
   const templateName = input.task.source.templateName.trim();
   const instanceName = childResourceName(templateName, "template");
 
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.template_preparation_started",
+    eventMessage: "Preparing template deployment.",
+    phase: "plan",
+    status: "running",
+    stepId: "prepare-template",
+    taskId: input.task.id,
+  });
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
     status: "running",
@@ -1289,6 +1904,14 @@ async function runTemplateDeploymentTask(input: {
       projectId: input.projectId,
       task: input.task,
       templateName,
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.template_preparation_completed",
+      eventMessage: "Template deployment is ready.",
+      phase: "generate-artifacts",
+      status: "completed",
+      stepId: "prepare-template",
+      taskId: input.task.id,
     });
 
     await completeTaskWithArtifact({
@@ -1318,6 +1941,18 @@ function aiSourceKey(task: DeployTaskRow): string {
   }
 }
 
+function aiAnalyzeSourceMessage(task: DeployTaskRow): string {
+  return task.source.kind === "github"
+    ? "Analyzing repository."
+    : "Analyzing deployment request.";
+}
+
+function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
+  return task.source.kind === "github"
+    ? "Repository analysis is complete."
+    : "Deployment request analysis is complete.";
+}
+
 async function runAiDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -1336,10 +1971,13 @@ async function runAiDeploymentTask(input: {
     phase: "prepare",
     status: "running",
   });
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deployment_task.prepare_started",
-    message: "Preparing deploy runtime.",
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.prepare_started",
+    eventMessage: "Preparing deploy runtime.",
     phase: "prepare",
+    status: "running",
+    stepId: "prepare-workspace",
+    taskId: input.task.id,
   });
 
   const githubToken =
@@ -1436,6 +2074,15 @@ async function runAiDeploymentTask(input: {
       payload: { runtimeName: runtime.name },
       phase: "prepare",
     });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.build_runtime_unavailable",
+      eventMessage:
+        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+      phase: "prepare",
+      status: "blocked",
+      stepId: "prepare-workspace",
+      taskId: input.task.id,
+    });
     return;
   }
   if (buildRuntime != null) {
@@ -1474,6 +2121,14 @@ async function runAiDeploymentTask(input: {
     message: "Deployment workspace is ready.",
     phase: "prepare",
   });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.workspace_ready",
+    eventMessage: "Deployment workspace is ready.",
+    phase: "prepare",
+    status: "completed",
+    stepId: "prepare-workspace",
+    taskId: input.task.id,
+  });
 
   const latestRuntimeInfo = await getDevboxWithSecretRetry(
     input.task.namespace,
@@ -1494,15 +2149,44 @@ async function runAiDeploymentTask(input: {
         "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
       phase: "plan",
     });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.gateway_unavailable",
+      eventMessage:
+        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
+      phase: "plan",
+      status: "blocked",
+      stepId: "analyze-source",
+      taskId: input.task.id,
+    });
     return;
   }
 
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.source_analysis_started",
+    eventMessage: aiAnalyzeSourceMessage(input.task),
+    phase: "plan",
+    status: "running",
+    stepId: "analyze-source",
+    taskId: input.task.id,
+  });
   await runDeployTaskGatewayWithOutputProgress({
     context: gatewayContext,
     namespace: input.task.namespace,
     runtimeName: runtime.name,
     seenSignatures: outputProgressSignatures,
     task: input.task,
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.source_analysis_completed",
+    eventMessage: aiAnalyzeSourceCompletedMessage(input.task),
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "analyze-source",
+    taskId: input.task.id,
+  });
+  await markDeploymentGenerationStartedIfNeeded({
+    seenOutputProgress: outputProgressSignatures,
+    taskId: input.task.id,
   });
 
   const deployOutput = await readDeployOutput({
@@ -1521,6 +2205,15 @@ async function runAiDeploymentTask(input: {
       message:
         "Codex gateway completed without deployment output; requesting a repair turn.",
       phase: "generate-artifacts",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.output_repair_started",
+      eventMessage:
+        "Codex gateway completed without deployment output; requesting a repair turn.",
+      phase: "generate-artifacts",
+      status: "running",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
     });
     await runDeployTaskGatewayWithOutputProgress({
       context: gatewayContext,
@@ -1554,6 +2247,14 @@ async function runAiDeploymentTask(input: {
       message: "Codex gateway completed without deployment output.",
       phase: "generate-artifacts",
     });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.output_missing",
+      eventMessage: "Codex gateway completed without deployment output.",
+      phase: "generate-artifacts",
+      status: "blocked",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
+    });
     return;
   }
 
@@ -1578,6 +2279,14 @@ async function runAiDeploymentTask(input: {
     message: "Generated Sealos template deployment artifact.",
     payload: { resources: summary.resources },
     phase: "generate-artifacts",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.artifacts_generated",
+    eventMessage: "Generated Sealos template deployment artifact.",
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
   });
 
   try {
@@ -1639,15 +2348,25 @@ export async function startDeployTaskRunner(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failureMessage = deployTaskFailureSummary(error);
+    const latestTask = (await getDeployTaskById(task.id)) ?? task;
+    const recordedFailureEvent = await markDeployTaskFailureTimeline({
+      errorMessage: message,
+      failureMessage,
+      task: latestTask,
+    });
     await updateDeployTaskState(task.id, {
       error: message,
       status: "failed",
     });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deployment_task.failed",
-      message: deployTaskFailureSummary(error),
-      payload: { error: message },
-    });
+    if (!recordedFailureEvent) {
+      await recordDeployTaskEvent(task.id, {
+        kind: "deployment_task.failed",
+        message: failureMessage,
+        payload: { error: message },
+        phase: latestTask.phase,
+      });
+    }
     throw error;
   }
 }

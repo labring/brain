@@ -18,17 +18,19 @@ export type ProjectCanvasCommandIntent =
 export interface PlanProjectCanvasCommandOptions {
   intent: ProjectCanvasCommandIntent;
   nodes: readonly Node[];
+  projectId?: string;
   readOnly: boolean;
 }
 
 export function planProjectCanvasCommand({
   intent,
   nodes,
+  projectId,
   readOnly,
 }: PlanProjectCanvasCommandOptions): ProjectCanvasCommandPlan {
   switch (intent.kind) {
     case "containerQuickAction":
-      return planResourceSurfaceIntent(intent);
+      return planResourceSurfaceIntent(intent, { projectId });
     case "connectingEdge":
       return planDatabaseBindingIntent({
         connection: intent.connection,
@@ -36,9 +38,9 @@ export function planProjectCanvasCommand({
         readOnly,
       });
     case "databaseQuickAction":
-      return planResourceSurfaceIntent(intent);
+      return planResourceSurfaceIntent(intent, { projectId });
     case "nodeClick":
-      return planResourceSurfaceIntent(intent);
+      return planResourceSurfaceIntent(intent, { projectId });
     default:
       return intent satisfies never;
   }

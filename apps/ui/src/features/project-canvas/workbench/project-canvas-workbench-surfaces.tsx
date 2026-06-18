@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
+import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
 import { DockerDeploymentPane } from "@/features/deployment/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/features/deployment/github-deployment-pane";
 import { TemplateDeploymentPane } from "@/features/deployment/template-deployment-pane";
@@ -58,6 +59,10 @@ export function ProjectCanvasSurfaceHost({
   const { drawer, main, side } = surfaceModel;
 
   const canvasSidePaneEntry = canvasSidePaneEntryFromRenderModel(side);
+  const deploymentTaskTimelineEntry =
+    side?.kind === "global" && side.entry.kind === "deploymentTaskTimeline"
+      ? side.entry
+      : null;
   const sideResourceContent = side?.kind === "resource" ? side.content : null;
   const dbAccessMain = main?.kind === "dbAccess" ? main : null;
 
@@ -72,6 +77,16 @@ export function ProjectCanvasSurfaceHost({
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
           />
+        }
+        deploymentTaskTimelinePane={
+          deploymentTaskTimelineEntry == null ? null : (
+            <DeploymentTaskTimelinePane
+              kubeconfig={kubeconfig}
+              namespace={namespace}
+              onClose={actions.closeResourcePane}
+              taskId={deploymentTaskTimelineEntry.taskId}
+            />
+          )
         }
         dockerDeploymentPane={
           <DockerDeploymentPane
@@ -168,6 +183,8 @@ function canvasSidePaneEntryFromRenderModel(
   switch (side.entry.kind) {
     case "databaseDeployment":
       return { kind: "databaseDeployment" };
+    case "deploymentTaskTimeline":
+      return { kind: "deploymentTaskTimeline" };
     case "dockerDeployment":
       return { kind: "dockerDeployment" };
     case "githubDeployment":

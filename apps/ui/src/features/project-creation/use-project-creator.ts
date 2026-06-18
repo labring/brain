@@ -256,6 +256,12 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(
             `Created deployment task for project "${displayName}".`
           );
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectId: outcome.projectId,
+              taskId: outcome.taskId,
+            });
+          }
           setLastConfirmedKind(
             `docker:${settings.image}:${outcome.projectName}`
           );
@@ -282,6 +288,12 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(
             `Created deployment task for project "${displayName}".`
           );
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectId: outcome.projectId,
+              taskId: outcome.taskId,
+            });
+          }
           setLastConfirmedKind(
             `database:${settings.databaseId}:${outcome.projectName}`
           );
@@ -310,6 +322,12 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(
             `Created deployment task for project "${displayName}".`
           );
+          if (outcome.taskId != null) {
+            dispatchDeployTaskCreatedEvent({
+              projectId: outcome.projectId,
+              taskId: outcome.taskId,
+            });
+          }
           setLastConfirmedKind(
             `template:${choice.name}:${outcome.projectName}`
           );
@@ -336,8 +354,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(outcome.taskMessage);
           if (outcome.taskId != null) {
             dispatchDeployTaskCreatedEvent({
-              projectName: outcome.projectName,
-              repoFullName: outcome.sourceLabel,
+              projectId: outcome.projectId,
               taskId: outcome.taskId,
             });
           }
@@ -372,8 +389,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         toast.success(outcome.taskMessage);
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
-            projectName: outcome.projectName,
-            repoFullName: outcome.sourceLabel,
+            projectId: outcome.projectId,
             taskId: outcome.taskId,
           });
         }
@@ -434,6 +450,12 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           return;
         }
         toast.success(outcome.taskMessage);
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectId: outcome.projectId,
+            taskId: outcome.taskId,
+          });
+        }
         setLastConfirmedKind(
           `template:${input.template.name}:${outcome.projectName}`
         );

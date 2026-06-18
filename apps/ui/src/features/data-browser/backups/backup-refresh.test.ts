@@ -1,21 +1,30 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
+import { createDbServiceBackupFetchTransport } from "./db-service-backup-transport";
 import {
   DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS,
-  deleteDbServiceBackup,
-  fetchDbServiceBackupProductResource,
-  submitDbServiceBackupRestore,
   suggestedRestoredDbServiceName,
-  updateDbServiceBackupPolicy,
   validateRestoredDbServiceName,
-} from "./BackupServiceSurface";
+} from "./db-service-backup-workflow";
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
+
+function transport({
+  kubeconfig = " kube config\n",
+}: {
+  kubeconfig?: string;
+} = {}) {
+  return createDbServiceBackupFetchTransport({
+    kubeconfig,
+    name: "orders-db",
+    namespace: "database-system",
+  });
+}
 
 test("DB Service backup active refresh interval is three seconds", () => {
   assert.equal(DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS, 3000);
@@ -36,11 +45,7 @@ test("manual backup refresh fetches the DB product resource with kubeconfig auth
     );
   }) as typeof fetch;
 
-  const response = await fetchDbServiceBackupProductResource({
-    kubeconfig: " kube config\n",
-    name: "orders-db",
-    namespace: "database-system",
-  });
+  const response = await transport().refreshDbService();
 
   assert.equal(
     capturedUrl,
@@ -67,12 +72,9 @@ test("restore submit posts the completed backup and restored DB Service name", a
     });
   }) as typeof fetch;
 
-  const response = await submitDbServiceBackupRestore({
+  const response = await transport().restoreBackup({
     backupName: "orders-manual-20260609",
     backupNamespace: "database-system",
-    kubeconfig: " kube config\n",
-    name: "orders-db",
-    namespace: "database-system",
     restoredName: "orders-restore",
   });
 
@@ -102,12 +104,9 @@ test("restore submit reports API conflict detail", async () => {
     )) as typeof fetch;
 
   await assert.rejects(
-    submitDbServiceBackupRestore({
+    transport({ kubeconfig: "kubeconfig" }).restoreBackup({
       backupName: "orders-manual-20260609",
       backupNamespace: "database-system",
-      kubeconfig: "kubeconfig",
-      name: "orders-db",
-      namespace: "database-system",
       restoredName: "orders-restore",
     }),
     /DB Service name already exists/
@@ -165,11 +164,8 @@ test("DB Service backup delete posts selected backup and kubeconfig auth", async
     );
   }) as typeof fetch;
 
-  const response = await deleteDbServiceBackup({
+  const response = await transport().deleteBackup({
     backupName: "orders-manual-20260609",
-    kubeconfig: " kube config\n",
-    name: "orders-db",
-    namespace: "database-system",
   });
 
   assert.equal(capturedUrl, "/api/db/v1alpha1/backup");
@@ -200,11 +196,8 @@ test("DB Service backup delete reports API conflict detail", async () => {
     )) as typeof fetch;
 
   await assert.rejects(
-    deleteDbServiceBackup({
+    transport({ kubeconfig: "kubeconfig" }).deleteBackup({
       backupName: "orders-running",
-      kubeconfig: "kubeconfig",
-      name: "orders-db",
-      namespace: "database-system",
     }),
     /DB Service Backup is not deletable/
   );
@@ -236,12 +229,9 @@ test("DB Service backup policy update posts kubeconfig auth and policy payload",
     );
   }) as typeof fetch;
 
-  const response = await updateDbServiceBackupPolicy({
+  const response = await transport().updatePolicy({
     cronExpression: "15 8 * * *",
     enabled: true,
-    kubeconfig: " kube config\n",
-    name: "orders-db",
-    namespace: "database-system",
     retentionDays: 7,
   });
 
@@ -290,11 +280,8 @@ test("DB Service backup policy disable preserves existing backup rows in returne
     );
   }) as typeof fetch;
 
-  const response = await updateDbServiceBackupPolicy({
+  const response = await transport({ kubeconfig: "kube" }).updatePolicy({
     enabled: false,
-    kubeconfig: "kube",
-    name: "orders-db",
-    namespace: "database-system",
   });
 
   assert.deepEqual(capturedBody, {

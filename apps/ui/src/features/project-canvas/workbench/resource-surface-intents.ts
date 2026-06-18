@@ -2,6 +2,7 @@ import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/conta
 import type { DatabaseNodeQuickActionKey } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
 import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "@/features/project-canvas/nodes/constants";
+import type { CanvasDeploymentPlaceholderRfNode } from "@/features/project-canvas/nodes/types";
 import {
   defaultProjectSideSurfaceForNode,
   drawerSurfaceForApTerminal,
@@ -38,6 +39,10 @@ export type ProjectCanvasResourceSurfaceIntent =
     }
   | { kind: "nodeClick"; node: Node };
 
+export interface ProjectCanvasResourceSurfaceIntentOptions {
+  projectId?: string;
+}
+
 function planWithSurface(
   surface: ProjectCanvasCommandSurfacePlan | null,
   selection: ProjectCanvasSelection | null
@@ -63,11 +68,53 @@ function drawerSurfacePlan(
   return { entry, slot: "drawer" };
 }
 
-function planNodeClick(node: Node): ProjectCanvasCommandPlan {
-  if (node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE) {
-    return {
-      stackOrder: { kind: "bringNodeToFront", nodeId: node.id },
-    };
+function isDeploymentPlaceholderNode(
+  node: Node
+): node is CanvasDeploymentPlaceholderRfNode {
+  return node.type === CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE;
+}
+
+function nonEmptyId(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed == null || trimmed === "" ? null : trimmed;
+}
+
+function planDeploymentPlaceholderNodeClick({
+  node,
+  projectId,
+}: {
+  node: CanvasDeploymentPlaceholderRfNode;
+  projectId?: string;
+}): ProjectCanvasCommandPlan {
+  const stackOrder = { kind: "bringNodeToFront" as const, nodeId: node.id };
+  const timelineProjectId = nonEmptyId(projectId);
+  const taskId = nonEmptyId(node.data.taskId);
+  if (timelineProjectId == null || taskId == null) {
+    return { stackOrder };
+  }
+
+  return {
+    stackOrder,
+    surface: {
+      entry: {
+        kind: "deploymentTaskTimeline",
+        projectId: timelineProjectId,
+        taskId,
+      },
+      slot: "side",
+    },
+  };
+}
+
+function planNodeClick(
+  node: Node,
+  options?: ProjectCanvasResourceSurfaceIntentOptions
+): ProjectCanvasCommandPlan {
+  if (isDeploymentPlaceholderNode(node)) {
+    return planDeploymentPlaceholderNodeClick({
+      node,
+      projectId: options?.projectId,
+    });
   }
   return {
     ...planWithSurface(
@@ -162,7 +209,8 @@ function planDatabaseQuickAction({
 }
 
 export function planResourceSurfaceIntent(
-  intent: ProjectCanvasResourceSurfaceIntent
+  intent: ProjectCanvasResourceSurfaceIntent,
+  options?: ProjectCanvasResourceSurfaceIntentOptions
 ): ProjectCanvasCommandPlan {
   switch (intent.kind) {
     case "containerQuickAction":
@@ -170,7 +218,7 @@ export function planResourceSurfaceIntent(
     case "databaseQuickAction":
       return planDatabaseQuickAction(intent);
     case "nodeClick":
-      return planNodeClick(intent.node);
+      return planNodeClick(intent.node, options);
     default:
       return intent satisfies never;
   }

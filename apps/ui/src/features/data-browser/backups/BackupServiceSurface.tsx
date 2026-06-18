@@ -2,7 +2,6 @@
 
 import {
   backupPolicyFormFromBackend,
-  backupPolicyFormToBackend,
   backupPolicyFormWithFrequency,
   DB_SERVICE_BACKUP_POLICY_FREQUENCY_CHOICES,
   DB_SERVICE_BACKUP_RETENTION_DAY_CHOICES,
@@ -11,12 +10,7 @@ import {
   type DbServiceBackupPolicyFrequency,
   validateDbServiceBackupPolicyRetentionDays,
 } from "@data-browser/backups/backup-policy-schedule";
-import {
-  adaptDbServiceBackups,
-  type DbServiceBackupSummary,
-  dbServiceBackupNeedsRefresh,
-  isDbServiceBackupSupportedEngine,
-} from "@data-browser/backups/backup-summary";
+import type { DbServiceBackupSummary } from "@data-browser/backups/backup-summary";
 import { DbAccessConfirmationDialog } from "@data-browser/components/shared/DbAccessDialogs";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import { AppButton } from "@workspace/ui/components/app-button";
@@ -47,19 +41,19 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
+import {
+  type DbServiceBackupFormErrors,
+  type DbServiceBackupFormValues,
+  suggestedDbServiceBackupName,
+  suggestedRestoredDbServiceName,
+  validateDbServiceBackupForm,
+  validateRestoredDbServiceName,
+} from "./db-service-backup-workflow";
+import { useDbServiceBackupWorkflow } from "./use-db-service-backup-workflow";
 
-export const DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS = 3000;
-const DB_PRODUCT_ROUTE = "/api/db/v1alpha1";
-const DB_BACKUP_ROUTE = `${DB_PRODUCT_ROUTE}/backup`;
-const DB_RESTORE_ROUTE = `${DB_PRODUCT_ROUTE}/restore`;
-const BACKUP_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const BACKUP_DESCRIPTION_MAX_LENGTH = 120;
-const DB_SERVICE_NAME_PATTERN = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 const TIME_FIELD_BOUNDS = {
   hour: { max: 23, min: 0 },
   minute: { max: 59, min: 0 },
@@ -81,142 +75,7 @@ const DB_SERVICE_BACKUP_WEEKDAY_SELECT_LABELS = [
   "Friday",
   "Saturday",
 ] as const;
-
-function padDatePart(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function localBackupTimestamp(now: Date): string {
-  return [
-    now.getFullYear(),
-    padDatePart(now.getMonth() + 1),
-    padDatePart(now.getDate()),
-    "-",
-    padDatePart(now.getHours()),
-    padDatePart(now.getMinutes()),
-    padDatePart(now.getSeconds()),
-  ].join("");
-}
-
-function dnsNameBase({
-  fallback,
-  requireLetterStart = false,
-  value,
-}: {
-  fallback: string;
-  requireLetterStart?: boolean;
-  value: string;
-}): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const base = normalized === "" ? fallback : normalized;
-  return requireLetterStart && !/^[a-z]/.test(base)
-    ? `${fallback}-${base}`.replace(/-+/g, "-").replace(/^-+|-+$/g, "")
-    : base;
-}
-
-function dnsNameWithSuffix({
-  fallback,
-  requireLetterStart = false,
-  suffix,
-  value,
-}: {
-  fallback: string;
-  requireLetterStart?: boolean;
-  suffix: string;
-  value: string;
-}): string {
-  const base = dnsNameBase({ fallback, requireLetterStart, value });
-  const maxBaseLength = Math.max(1, 63 - suffix.length);
-  const trimmedBase = base.slice(0, maxBaseLength).replace(/-+$/g, "");
-  const safeBase =
-    trimmedBase === "" || (requireLetterStart && !/^[a-z]/.test(trimmedBase))
-      ? fallback
-      : trimmedBase;
-  return `${safeBase}${suffix}`.slice(0, 63).replace(/-+$/g, "");
-}
-
-export function suggestedDbServiceBackupName(
-  sourceName: string,
-  now = new Date()
-): string {
-  return dnsNameWithSuffix({
-    fallback: "db",
-    suffix: `-manual-${localBackupTimestamp(now)}`,
-    value: sourceName,
-  });
-}
-
-export function suggestedRestoredDbServiceName(
-  sourceName: string,
-  existingNames: readonly string[] = []
-): string {
-  const existing = new Set(existingNames.map((name) => name.trim()));
-  const candidate = dnsNameWithSuffix({
-    fallback: "db",
-    requireLetterStart: true,
-    suffix: "-restore",
-    value: sourceName,
-  });
-  if (!existing.has(candidate)) {
-    return candidate;
-  }
-
-  for (let index = 2; index < 1000; index += 1) {
-    const suffix = `-${index}`;
-    const next = `${candidate.slice(0, 63 - suffix.length).replace(/-+$/g, "")}${suffix}`;
-    if (!existing.has(next)) {
-      return next;
-    }
-  }
-  return candidate;
-}
-
-export interface DbServiceBackupFormValues {
-  backupName: string;
-  description?: string;
-}
-
-export type DbServiceBackupFormErrors = Partial<
-  Record<keyof DbServiceBackupFormValues, string>
->;
-
-type DbServiceBackupRequest = DbServiceBackupFormValues & {
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-  onAccepted?: () => void | Promise<void>;
-};
-type DbServiceBackupBodyInput = Pick<
-  DbServiceBackupRequest,
-  "backupName" | "description" | "name" | "namespace"
->;
-type BackupSurfaceState = "loading" | "ready" | "refreshing";
-
-export function validateDbServiceBackupForm({
-  backupName,
-  description = "",
-}: DbServiceBackupFormValues): DbServiceBackupFormErrors {
-  const errors: DbServiceBackupFormErrors = {};
-  const trimmedName = backupName.trim();
-  if (trimmedName === "") {
-    errors.backupName = "Backup Name is required.";
-  } else if (
-    trimmedName.length > 63 ||
-    !BACKUP_NAME_PATTERN.test(trimmedName)
-  ) {
-    errors.backupName =
-      "Backup Name must use lowercase letters, numbers, and hyphens, and start and end with a letter or number.";
-  }
-  if ([...description.trim()].length > BACKUP_DESCRIPTION_MAX_LENGTH) {
-    errors.description = "Description must be 120 characters or fewer.";
-  }
-  return errors;
-}
+const BACKUP_DESCRIPTION_MAX_LENGTH = 120;
 
 function removeFormError(
   errors: DbServiceBackupFormErrors,
@@ -228,296 +87,6 @@ function removeFormError(
   const next = { ...errors };
   delete next[key];
   return next;
-}
-
-function buildCreateBackupBody({
-  backupName,
-  description = "",
-  name,
-  namespace,
-}: DbServiceBackupBodyInput): Record<string, string> {
-  const trimmedDescription = description.trim();
-  return {
-    backupName: backupName.trim(),
-    ...(trimmedDescription === "" ? {} : { description: trimmedDescription }),
-    name,
-    namespace,
-  };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value != null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function productResourceBody(
-  data: unknown
-): Record<string, unknown> | undefined {
-  const root = asRecord(data);
-  if (root === undefined) {
-    return undefined;
-  }
-  return asRecord(root.data) ?? root;
-}
-
-function statusBackupsFromProductResource(
-  data: unknown
-): unknown[] | undefined {
-  const root = productResourceBody(data);
-  if (root === undefined) {
-    return undefined;
-  }
-
-  const singleStatus = asRecord(root.status);
-  if (Array.isArray(singleStatus?.backups)) {
-    return singleStatus.backups;
-  }
-  return undefined;
-}
-
-function specBackupPolicyFromProductResource(
-  data: unknown
-): DbServiceBackupPolicyBackend | undefined {
-  const root = productResourceBody(data);
-  const spec = asRecord(root?.spec);
-  const backupPolicy = asRecord(spec?.backupPolicy);
-  return backupPolicy === undefined
-    ? undefined
-    : (backupPolicy as DbServiceBackupPolicyBackend);
-}
-
-function stringField(
-  data: Record<string, unknown> | undefined,
-  key: string
-): string {
-  const value = data?.[key];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function backupSurfaceState({
-  isLoading,
-  needsRefresh,
-}: {
-  isLoading: boolean;
-  needsRefresh: boolean;
-}): BackupSurfaceState {
-  if (isLoading) {
-    return "loading";
-  }
-  if (needsRefresh) {
-    return "refreshing";
-  }
-  return "ready";
-}
-
-async function responseErrorMessage(
-  response: Response,
-  fallback: string
-): Promise<string> {
-  const text = await response.text();
-  const trimmed = text.trim();
-  if (trimmed === "") {
-    return fallback;
-  }
-  try {
-    const body = asRecord(JSON.parse(trimmed));
-    return (
-      stringField(body, "detail") ||
-      stringField(body, "message") ||
-      stringField(body, "title") ||
-      fallback
-    );
-  } catch {
-    return trimmed;
-  }
-}
-
-export async function createDbServiceBackup({
-  kubeconfig,
-  onAccepted,
-  ...request
-}: DbServiceBackupRequest): Promise<unknown> {
-  const response = await fetch(DB_BACKUP_ROUTE, {
-    body: JSON.stringify(buildCreateBackupBody(request)),
-    headers: {
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(
-      await responseErrorMessage(
-        response,
-        `DB Service backup creation failed with status ${response.status}`
-      )
-    );
-  }
-  const data = await response.json();
-  await onAccepted?.();
-  return data;
-}
-
-export async function fetchDbServiceBackupProductResource({
-  kubeconfig,
-  name,
-  namespace,
-}: {
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-}): Promise<unknown> {
-  const query = new URLSearchParams({
-    name,
-    namespace,
-  });
-  const response = await fetch(`${DB_PRODUCT_ROUTE}?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
-    },
-    method: "GET",
-  });
-  if (!response.ok) {
-    throw new Error(
-      await responseErrorMessage(
-        response,
-        `DB Service backup refresh failed with status ${response.status}`
-      )
-    );
-  }
-  return response.json();
-}
-
-export async function deleteDbServiceBackup({
-  backupName,
-  kubeconfig,
-  name,
-  namespace,
-}: {
-  backupName: string;
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-}): Promise<unknown> {
-  const response = await fetch(DB_BACKUP_ROUTE, {
-    body: JSON.stringify({
-      backupName,
-      name,
-      namespace,
-    }),
-    headers: {
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
-      "Content-Type": "application/json",
-    },
-    method: "DELETE",
-  });
-  if (!response.ok) {
-    throw new Error(
-      await responseErrorMessage(
-        response,
-        `DB Service backup deletion failed with status ${response.status}`
-      )
-    );
-  }
-  return response.json();
-}
-
-export function validateRestoredDbServiceName(
-  name: string,
-  existingNames: readonly string[] = []
-): string | null {
-  const trimmed = name.trim();
-  if (trimmed === "") {
-    return "DB Service name is required.";
-  }
-  if (trimmed.length > 63 || !DB_SERVICE_NAME_PATTERN.test(trimmed)) {
-    return "Use lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.";
-  }
-  if (existingNames.some((existing) => existing.trim() === trimmed)) {
-    return "A DB Service with this name already exists.";
-  }
-  return null;
-}
-
-export async function submitDbServiceBackupRestore({
-  backupName,
-  backupNamespace,
-  kubeconfig,
-  name,
-  namespace,
-  restoredName,
-}: {
-  backupName: string;
-  backupNamespace: string;
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-  restoredName: string;
-}): Promise<unknown> {
-  const response = await fetch(DB_RESTORE_ROUTE, {
-    body: JSON.stringify({
-      backupName,
-      backupNamespace,
-      name,
-      namespace,
-      restoredName: restoredName.trim(),
-    }),
-    headers: {
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(
-      await responseErrorMessage(
-        response,
-        `DB Service restore failed with status ${response.status}`
-      )
-    );
-  }
-  return response.json();
-}
-
-export async function updateDbServiceBackupPolicy({
-  cronExpression,
-  enabled,
-  kubeconfig,
-  name,
-  namespace,
-  retentionDays,
-}: {
-  cronExpression?: string;
-  enabled: boolean;
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-  retentionDays?: number;
-}): Promise<unknown> {
-  const response = await fetch(`${DB_PRODUCT_ROUTE}/backup/policy`, {
-    body: JSON.stringify({
-      ...(cronExpression === undefined ? {} : { cronExpression }),
-      enabled,
-      name,
-      namespace,
-      ...(retentionDays === undefined ? {} : { retentionDays }),
-    }),
-    headers: {
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig.trim())}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(
-      await responseErrorMessage(
-        response,
-        `DB Service backup policy update failed with status ${response.status}`
-      )
-    );
-  }
-  return response.json();
 }
 
 function formatDateTime(value: string | undefined): string {
@@ -788,10 +357,6 @@ function BackupRowsList({
   );
 }
 
-function isDbServiceRunning(phase: string | undefined): boolean {
-  return phase?.trim().toLowerCase() === "running";
-}
-
 function BackupCreationForm({
   createDefaultBackupName,
   disabled,
@@ -835,12 +400,6 @@ function BackupCreationForm({
         setDescription("");
       }
     );
-    toast.promise(submission, {
-      error: (error) =>
-        error instanceof Error ? error.message : "Failed to create backup.",
-      loading: `Requesting backup ${trimmedName}...`,
-      success: `Backup request accepted for ${trimmedName}.`,
-    });
     submission.catch(() => undefined);
   };
 
@@ -961,17 +520,22 @@ function BackupCreationForm({
 function RestoreBackupModal({
   backup,
   existingNames,
+  isSubmitting,
   onOpenChange,
-  onSuccess,
+  onRestore,
+  sourceName,
 }: {
   backup: DbServiceBackupSummary | null;
   existingNames: readonly string[];
+  isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: (restoredName: string) => void;
+  onRestore: (
+    backup: DbServiceBackupSummary,
+    restoredName: string
+  ) => Promise<void>;
+  sourceName: string;
 }) {
-  const runtime = useDbAccessRuntime();
   const [restoredName, setRestoredName] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const validationError =
     backup === null
       ? null
@@ -980,14 +544,10 @@ function RestoreBackupModal({
   useEffect(() => {
     if (backup !== null) {
       setRestoredName(
-        suggestedRestoredDbServiceName(
-          runtime.databaseWorkloadName,
-          existingNames
-        )
+        suggestedRestoredDbServiceName(sourceName, existingNames)
       );
-      setIsSubmitting(false);
     }
-  }, [backup, existingNames, runtime.databaseWorkloadName]);
+  }, [backup, existingNames, sourceName]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -995,33 +555,14 @@ function RestoreBackupModal({
       return;
     }
 
-    setIsSubmitting(true);
     const trimmedRestoredName = restoredName.trim();
-    const submission = submitDbServiceBackupRestore({
-      backupName: backup.name,
-      backupNamespace: backup.namespace,
-      kubeconfig: runtime.kubeconfig,
-      name: runtime.databaseWorkloadName,
-      namespace: runtime.databaseWorkloadNamespace,
-      restoredName: trimmedRestoredName,
-    }).then(() => {
-      onSuccess(trimmedRestoredName);
+    const submission = onRestore(backup, trimmedRestoredName).then(() => {
       onOpenChange(false);
-    });
-    toast.promise(submission, {
-      error: (error) =>
-        error instanceof Error
-          ? error.message
-          : "DB Service backup restore failed.",
-      loading: `Restoring DB Service ${trimmedRestoredName}...`,
-      success: "Restore request accepted.",
     });
     try {
       await submission;
     } catch {
       // Error feedback is handled by the global toast.
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -1128,23 +669,23 @@ function parseBoundedInteger(
 
 function BackupPolicyForm({
   initialPolicy,
+  isSaving,
   onPolicyEnabledChange,
-  onPolicySaved,
-  onPolicySavingChange,
+  onSavePolicy,
   policyEnabled,
 }: {
   initialPolicy: DbServiceBackupPolicyBackend | undefined;
+  isSaving: boolean;
   onPolicyEnabledChange: (enabled: boolean) => void;
-  onPolicySaved: (data: unknown) => void;
-  onPolicySavingChange: (isSaving: boolean) => void;
+  onSavePolicy: (
+    form: DbServiceBackupPolicyForm
+  ) => Promise<DbServiceBackupPolicyBackend | undefined>;
   policyEnabled: boolean;
 }) {
-  const runtime = useDbAccessRuntime();
   const [form, setForm] = useState<DbServiceBackupPolicyForm>(() => ({
     ...backupPolicyFormFromBackend(initialPolicy),
     enabled: policyEnabled,
   }));
-  const [isSaving, setIsSaving] = useState(false);
   const retention = validateDbServiceBackupPolicyRetentionDays(
     form.retentionDays
   );
@@ -1164,17 +705,6 @@ function BackupPolicyForm({
     );
   }, [policyEnabled]);
 
-  useEffect(() => {
-    onPolicySavingChange(isSaving);
-  }, [isSaving, onPolicySavingChange]);
-
-  useEffect(
-    () => () => {
-      onPolicySavingChange(false);
-    },
-    [onPolicySavingChange]
-  );
-
   const resetPolicy = useCallback(() => {
     const nextForm = backupPolicyFormFromBackend(initialPolicy);
     setForm(nextForm);
@@ -1182,49 +712,17 @@ function BackupPolicyForm({
   }, [initialPolicy, onPolicyEnabledChange]);
 
   const savePolicy = useCallback(async () => {
-    setIsSaving(true);
-    const save = (async () => {
-      const backend = backupPolicyFormToBackend(form);
-      const updated = await updateDbServiceBackupPolicy({
-        cronExpression: backend.cronExpression,
-        enabled: form.enabled,
-        kubeconfig: runtime.kubeconfig,
-        name: runtime.databaseWorkloadName,
-        namespace: runtime.databaseWorkloadNamespace,
-        retentionDays: form.enabled ? form.retentionDays : undefined,
-      });
-      onPolicySaved(updated);
-      const nextForm = backupPolicyFormFromBackend(
-        specBackupPolicyFromProductResource(updated)
-      );
+    const save = onSavePolicy(form).then((updatedPolicy) => {
+      const nextForm = backupPolicyFormFromBackend(updatedPolicy);
       setForm(nextForm);
       onPolicyEnabledChange(nextForm.enabled);
-    })();
-    toast.promise(save, {
-      error: (saveError) =>
-        saveError instanceof Error
-          ? saveError.message
-          : "Failed to update backup policy.",
-      loading: "Saving backup policy...",
-      success: form.enabled
-        ? "Backup policy saved."
-        : "Backup policy disabled.",
     });
     try {
       await save;
     } catch {
       // Error feedback is handled by the global toast.
-    } finally {
-      setIsSaving(false);
     }
-  }, [
-    form,
-    onPolicyEnabledChange,
-    onPolicySaved,
-    runtime.databaseWorkloadName,
-    runtime.databaseWorkloadNamespace,
-    runtime.kubeconfig,
-  ]);
+  }, [form, onPolicyEnabledChange, onSavePolicy]);
   const setFrequency = useCallback(
     (frequency: DbServiceBackupPolicyFrequency) => {
       setForm((current) => backupPolicyFormWithFrequency(current, frequency));
@@ -1582,23 +1080,26 @@ function BackupMethodPanel({
   createDefaultBackupName,
   currentPolicy,
   isCreating,
+  isPolicySaving,
   onCreateBackup,
-  onPolicySaved,
+  onSavePolicy,
 }: {
   createDisabled: boolean;
   createDisabledReason?: string;
   createDefaultBackupName: () => string;
   currentPolicy: DbServiceBackupPolicyBackend | undefined;
   isCreating: boolean;
+  isPolicySaving: boolean;
   onCreateBackup: (values: DbServiceBackupFormValues) => Promise<void>;
-  onPolicySaved: (data: unknown) => void;
+  onSavePolicy: (
+    form: DbServiceBackupPolicyForm
+  ) => Promise<DbServiceBackupPolicyBackend | undefined>;
 }) {
   const initialPolicyEnabled = currentPolicy?.enabled === true;
   const [mode, setMode] = useState<BackupMethodMode>(() =>
     initialPolicyEnabled ? "policy" : "manual"
   );
   const [policyEnabled, setPolicyEnabled] = useState(initialPolicyEnabled);
-  const [isPolicySaving, setIsPolicySaving] = useState(false);
 
   useEffect(() => {
     const nextPolicyEnabled = currentPolicy?.enabled === true;
@@ -1645,9 +1146,9 @@ function BackupMethodPanel({
         ) : (
           <BackupPolicyForm
             initialPolicy={currentPolicy}
+            isSaving={isPolicySaving}
             onPolicyEnabledChange={setPolicyEnabled}
-            onPolicySaved={onPolicySaved}
-            onPolicySavingChange={setIsPolicySaving}
+            onSavePolicy={onSavePolicy}
             policyEnabled={policyEnabled}
           />
         )}
@@ -1658,29 +1159,11 @@ function BackupMethodPanel({
 
 export function BackupServiceSurface() {
   const runtime = useDbAccessRuntime();
-  const [refreshData, setRefreshData] = useState<unknown>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const lastRefreshErrorRef = useRef<string | null>(null);
+  const { commands, state } = useDbServiceBackupWorkflow({ runtime });
   const [restoreBackup, setRestoreBackup] =
     useState<DbServiceBackupSummary | null>(null);
   const [selectedDeleteBackup, setSelectedDeleteBackup] =
     useState<DbServiceBackupSummary | null>(null);
-  const [deletedBackupNames, setDeletedBackupNames] = useState<
-    ReadonlySet<string>
-  >(new Set());
-  const currentPolicy =
-    specBackupPolicyFromProductResource(refreshData) ?? runtime.backupPolicy;
-  const summaries = useMemo(() => {
-    const refreshedBackups = statusBackupsFromProductResource(refreshData);
-    return adaptDbServiceBackups({
-      backups: refreshedBackups ?? runtime.backups,
-      source: runtime.dbService,
-    }).filter((backup) => !deletedBackupNames.has(backup.name));
-  }, [deletedBackupNames, refreshData, runtime.backups, runtime.dbService]);
-  const needsRefresh = dbServiceBackupNeedsRefresh(summaries);
-  const surfaceState = backupSurfaceState({ isLoading, needsRefresh });
   const deleteVerificationLabel =
     selectedDeleteBackup === null
       ? undefined
@@ -1689,63 +1172,6 @@ export function BackupServiceSurface() {
     selectedDeleteBackup === null
       ? ""
       : `Delete Backup Name ${selectedDeleteBackup.name}. Only this recovery point will be removed; the source DB Service ${runtime.databaseWorkloadNamespace}/${runtime.databaseWorkloadName} and any restored DB Services remain unchanged.`;
-  const refresh = useCallback(async () => {
-    if (!isDbServiceBackupSupportedEngine(runtime.engine)) {
-      return;
-    }
-    setIsLoading(true);
-    try {
-      setRefreshData(
-        await fetchDbServiceBackupProductResource({
-          kubeconfig: runtime.kubeconfig,
-          name: runtime.databaseWorkloadName,
-          namespace: runtime.databaseWorkloadNamespace,
-        })
-      );
-      setDeletedBackupNames(new Set());
-      lastRefreshErrorRef.current = null;
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to refresh backups.";
-      if (lastRefreshErrorRef.current !== message) {
-        lastRefreshErrorRef.current = message;
-        toast.error(message);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [
-    runtime.databaseWorkloadName,
-    runtime.databaseWorkloadNamespace,
-    runtime.engine,
-    runtime.kubeconfig,
-  ]);
-  const running = isDbServiceRunning(runtime.dbServicePhase);
-  const createDisabledReason = running
-    ? undefined
-    : `Manual backup creation requires the source DB Service to be Running. Current state: ${runtime.dbServicePhase ?? "Unknown"}.`;
-  const createBackup = useCallback(
-    async (values: DbServiceBackupFormValues) => {
-      setIsCreating(true);
-      try {
-        await createDbServiceBackup({
-          ...values,
-          kubeconfig: runtime.kubeconfig,
-          name: runtime.databaseWorkloadName,
-          namespace: runtime.databaseWorkloadNamespace,
-          onAccepted: refresh,
-        });
-      } finally {
-        setIsCreating(false);
-      }
-    },
-    [
-      refresh,
-      runtime.databaseWorkloadName,
-      runtime.databaseWorkloadNamespace,
-      runtime.kubeconfig,
-    ]
-  );
   const createDefaultBackupName = useCallback(
     () => suggestedDbServiceBackupName(runtime.databaseWorkloadName),
     [runtime.databaseWorkloadName]
@@ -1760,117 +1186,56 @@ export function BackupServiceSurface() {
     if (selectedDeleteBackup === null) {
       return;
     }
-    setIsDeleting(true);
-    const backupName = selectedDeleteBackup.name;
-    const deletion = (async () => {
-      await deleteDbServiceBackup({
-        backupName,
-        kubeconfig: runtime.kubeconfig,
-        name: runtime.databaseWorkloadName,
-        namespace: runtime.databaseWorkloadNamespace,
-      });
-      setDeletedBackupNames((previous) => {
-        const next = new Set(previous);
-        next.add(backupName);
-        return next;
-      });
-      setSelectedDeleteBackup(null);
-      await refresh();
-    })();
-    toast.promise(deletion, {
-      error: (error) =>
-        error instanceof Error ? error.message : "Failed to delete backup.",
-      loading: `Deleting backup ${backupName}...`,
-      success: `Deleted backup ${backupName}.`,
-    });
     try {
-      await deletion;
+      await commands.deleteBackup(selectedDeleteBackup);
+      setSelectedDeleteBackup(null);
     } catch {
       // Error feedback is handled by the global toast.
-    } finally {
-      setIsDeleting(false);
     }
-  }, [
-    refresh,
-    runtime.databaseWorkloadName,
-    runtime.databaseWorkloadNamespace,
-    runtime.kubeconfig,
-    selectedDeleteBackup,
-  ]);
-  const existingDbServiceNames = useMemo(
-    () => [runtime.databaseWorkloadName],
-    [runtime.databaseWorkloadName]
-  );
-  const handleRestoreSuccess = useCallback(
-    (restoredName: string) => {
-      setRestoreBackup(null);
-      if (runtime.onDbServiceRestoreAccepted === undefined) {
-        runtime.refreshProjectCanvas?.().catch(() => undefined);
-      } else {
-        runtime.onDbServiceRestoreAccepted({
-          name: restoredName,
-          namespace: runtime.databaseWorkloadNamespace,
-        });
-      }
-      refresh().catch(() => undefined);
-    },
-    [
-      refresh,
-      runtime.databaseWorkloadNamespace,
-      runtime.onDbServiceRestoreAccepted,
-      runtime.refreshProjectCanvas,
-    ]
-  );
+  }, [commands, selectedDeleteBackup]);
 
-  useEffect(() => {
-    if (!needsRefresh) {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      refresh().catch(() => undefined);
-    }, DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS);
-    return () => window.clearInterval(interval);
-  }, [needsRefresh, refresh]);
-
-  if (!isDbServiceBackupSupportedEngine(runtime.engine)) {
+  if (!state.supported) {
     return <UnsupportedBackupSurface />;
   }
 
   return (
     <section
-      aria-busy={isLoading || undefined}
+      aria-busy={state.isRefreshing || undefined}
       className="@container/backup-surface flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2.5 px-3 pb-3"
       data-qa-db-service-key={`${runtime.projectId}:${runtime.databaseWorkloadNamespace}:${runtime.databaseWorkloadName}`}
       data-qa-module="database"
       data-qa-object="backup-surface"
-      data-qa-state={surfaceState}
+      data-qa-state={state.status}
       data-testid="database.backup.surface"
     >
       <BackupMethodPanel
         createDefaultBackupName={createDefaultBackupName}
-        createDisabled={!running}
-        createDisabledReason={createDisabledReason}
-        currentPolicy={currentPolicy}
-        isCreating={isCreating}
-        onCreateBackup={createBackup}
-        onPolicySaved={setRefreshData}
+        createDisabled={!state.canCreateManualBackup}
+        createDisabledReason={state.manualBackupDisabledReason}
+        currentPolicy={state.policy}
+        isCreating={state.isCreating}
+        isPolicySaving={state.isPolicySaving}
+        onCreateBackup={commands.createBackup}
+        onSavePolicy={commands.updatePolicy}
       />
 
       <BackupRowsList
-        backups={summaries}
-        isDeleting={isDeleting}
+        backups={state.backups}
+        isDeleting={state.isDeleting}
         onRequestDelete={requestDeleteBackup}
         onRestore={setRestoreBackup}
       />
       <RestoreBackupModal
         backup={restoreBackup}
-        existingNames={existingDbServiceNames}
+        existingNames={state.existingDbServiceNames}
+        isSubmitting={state.isRestoring}
         onOpenChange={(open) => {
           if (!open) {
             setRestoreBackup(null);
           }
         }}
-        onSuccess={handleRestoreSuccess}
+        onRestore={commands.restoreBackup}
+        sourceName={runtime.databaseWorkloadName}
       />
       <DbAccessConfirmationDialog
         cancelText="Cancel"
@@ -1879,7 +1244,7 @@ export function BackupServiceSurface() {
         isOpen={selectedDeleteBackup !== null}
         message={deleteConfirmationMessage}
         onClose={() => {
-          if (!isDeleting) {
+          if (!state.isDeleting) {
             setSelectedDeleteBackup(null);
           }
         }}

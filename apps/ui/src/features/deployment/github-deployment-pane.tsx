@@ -114,18 +114,17 @@ export function GitHubDeploymentPane({
         if (outcome.kind !== "github") {
           return;
         }
+        toast.success(outcome.taskMessage);
+        onClose();
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
-            projectName: outcome.projectName,
-            repoFullName: outcome.sourceLabel,
+            projectId: outcome.projectId,
             taskId: outcome.taskId,
           });
         }
-        toast.success(outcome.taskMessage);
         if (onDeployed != null) {
           onDeployed().catch(() => undefined);
         }
-        onClose();
       } catch (error) {
         toast.error(
           error instanceof Error
@@ -183,10 +182,16 @@ export function GitHubDeploymentPane({
           return;
         }
         toast.success(outcome.taskMessage);
+        onClose();
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectId: outcome.projectId,
+            taskId: outcome.taskId,
+          });
+        }
         if (onDeployed != null) {
           onDeployed().catch(() => undefined);
         }
-        onClose();
       } catch (error) {
         toast.error(
           error instanceof Error

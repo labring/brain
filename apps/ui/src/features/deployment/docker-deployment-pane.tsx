@@ -14,6 +14,7 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
+import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 
 export function DockerDeploymentPane({
   kubeconfig,
@@ -61,10 +62,16 @@ export function DockerDeploymentPane({
           return;
         }
         toast.success(outcome.taskMessage);
+        onClose();
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectId: outcome.projectId,
+            taskId: outcome.taskId,
+          });
+        }
         if (onDeployed != null) {
           onDeployed().catch(() => undefined);
         }
-        onClose();
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Could not deploy Docker AP."

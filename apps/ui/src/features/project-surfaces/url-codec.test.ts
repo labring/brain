@@ -126,6 +126,21 @@ test("project surface URL codec preserves template deployment side entries", () 
   });
 });
 
+test("project surface URL codec preserves deployment task timeline side entries", () => {
+  const parsed = parseProjectSurfaceUrlState({
+    side: "deployment-task-timeline:project%3Aalpha:task%3Aone",
+  });
+
+  assert.deepEqual(parsed.side, {
+    kind: "deploymentTaskTimeline",
+    projectId: "project:alpha",
+    taskId: "task:one",
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    side: "deployment-task-timeline:project%3Aalpha:task%3Aone",
+  });
+});
+
 test("project surface URL codec preserves template direct project creation", () => {
   const parsed = parseProjectSurfaceUrlState({
     side: "project-creation:templateDirect",

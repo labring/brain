@@ -68,6 +68,12 @@ The public routing boundary within which one Custom Domain can belong to only on
 
 A Brain product resource that represents an application workload. AP owns the application's desired compute, environment, App Listening Ports, Private Addresses, and Platform Address allocation requests.
 
+### AP Workload Readiness
+
+The condition where an AP's application workload has enough running replicas to satisfy its AP Replica Strategy. AP Workload Readiness is distinct from AP Public Access Health; public routing may still be progressing after the workload is ready.
+
+_Avoid_: AP Public Access Health, Public Address readiness, route readiness.
+
 ### AP Settings
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
@@ -154,6 +160,52 @@ Deployment Handoff may complete per slot while unresolved slots remain visible a
 
 _Avoid_: completed placeholder, ghost replacement, result takeover.
 
+### Deployment Result Readiness
+
+The condition where the user-visible result resources of a Deployment Task have become healthy enough for the task to be considered complete. Deployment Result Readiness is distinct from applying Deployment Artifacts; support objects may explain progress, but they do not by themselves define task completion.
+
+_Avoid_: apply complete, resource created, manifest applied.
+
+### Deployment Result Resource
+
+A user-visible Project result that a Deployment Task creates or changes, such as an AP, DB, AP-owned Public Address, or template-visible workload. Support objects may explain a Deployment Result Resource's progress, but they are not Deployment Result Resources.
+
+_Avoid_: applied object, Kubernetes object, support resource, raw manifest resource.
+
+### Deployment Timeline Step
+
+A runner-defined user-facing step in a Deployment Task Timeline. A Deployment Timeline Step may summarize multiple runner or backend execution phases; it does not need to match Deployment Task phase one-to-one.
+
+A Deployment Runner should keep Deployment Timeline Step identity stable during a task run, even when the step status, events, or result details change.
+
+_Avoid_: backend phase, runner phase, task status, fixed global timeline phase.
+
+### Deployment Task Timeline
+
+The user-facing progress view for one Deployment Task. A Deployment Task Timeline is made of runner-defined Deployment Timeline Steps and may include Deployment Result Resource Cards once the task has known result resources.
+
+A Deployment Task Timeline belongs to the Deployment Task rather than to a browser session or Assistant Chat transcript.
+
+_Avoid_: assistant chat transcript, backend event log, fixed deploy progress bar.
+
+### Deployment Result Resource Card
+
+A Deployment Task Timeline section for one Deployment Result Resource, presenting that resource's status and events within the task's progress. It is not a separate Deployment Task or a card for every applied Kubernetes object.
+
+A Deployment Result Resource Card is based on known Deployment Result Resource evidence, not on speculative canvas projection alone.
+
+Deployment Result Resource Cards use a shared task-facing status vocabulary, while their events may retain resource-specific detail.
+
+On a Deployment Result Resource Card, blocked means the task can still proceed after an external action or changed condition; failed means the current task run has ended for that resource.
+
+Deployment Result Resource Card events are grouped by the resource they explain, not primarily by the system that observed or emitted them.
+
+Required Deployment Result Resource Cards determine whether Deployment Result Readiness has been reached; optional cards may continue to show progress or warnings without blocking task completion.
+
+A Deployment Result Resource Card is not a Project Canvas node, Deployment Projection Slot, or Deployment Placeholder Node.
+
+_Avoid_: Kubernetes object card, manifest card, task row, deployment placeholder card, canvas node.
+
 ### Deployment Source
 
 The user-provided origin or intent for a Deployment Task, such as a GitHub repository, Docker image, database choice, application template, or natural-language deployment prompt. A Deployment Source describes what should be deployed, not where it should land.
@@ -170,7 +222,7 @@ _Avoid_: GitHub Deployment Target, Docker Deployment Target, project selector.
 
 The execution strategy for one Deployment Task. Direct and template runners use already-structured Deployment Sources, while an AI Runner interprets less-structured sources such as repositories or natural-language prompts.
 
-_Avoid_: task type, deploy engine.
+_Avoid_: deterministic runner, task type, deploy engine.
 
 ### Deployment Artifact
 
@@ -208,7 +260,7 @@ The automatic backup rule for one DB Service. A DB Service has at most one curre
 
 ### DB Service Restore
 
-A non-destructive workflow that creates a new DB Service from a completed DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project and becomes the user's next Project Canvas focus.
+A non-destructive workflow that creates a new DB Service from a completed DB Service Backup. A DB Service Restore does not overwrite or roll back the source DB Service; the restored DB Service appears in the same Project, must have a DB Service name that is unique within that Project and namespace, and becomes the user's next Project Canvas focus.
 
 ### Logical Database
 
@@ -333,6 +385,8 @@ A set of new canvas nodes that Incremental Canvas Placement positions together b
 Canvas Placement Groups are evaluated together so related new nodes remain near one another when they first appear.
 
 An AP with desired Public Address intent and its AP Public Access Node form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the AP Public Access Node is a presentation node for AP-owned public access rather than an independent resource.
+
+Deployment Projection Slots from one Deployment Task may be presented near one another while placement is generated, but that preview relationship is not a Canvas Placement Group; each slot owns its own Deployment Projection Placement.
 
 After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes. During Deployment Handoff, Canvas Placement Group membership does not override existing per-slot Deployment Projection Placements.
 

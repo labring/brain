@@ -24,10 +24,18 @@ import {
   deployTasks,
 } from "./schema";
 import { ensureDeployTaskStorageSchema } from "./schema-bootstrap";
+import {
+  createDeploymentTaskTimelineForRunner,
+  type DeploymentTaskTimelineUpdate,
+  updateTimelineStatus,
+} from "./timeline";
+import { publishDeploymentTaskTimelineChange } from "./timeline-events";
+import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
 
 import type {
   CreateDeployTaskInput,
   DeploymentTaskCanvasProjection,
+  DeploymentTaskTimelineSnapshotDTO,
   DeployTaskDTO,
   DeployTaskEventDTO,
   DeployTaskEventInput,
@@ -119,6 +127,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     startedAt: nowIso(row.startedAt),
     status: row.status,
     target: row.target,
+    timelineSnapshot: row.timelineSnapshot,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -195,6 +204,13 @@ export async function createDeployTask(
   await ensureDeployTaskStorageSchema();
   const id = generateId();
   const now = new Date();
+  const timelineSnapshot = createDeploymentTaskTimelineForRunner({
+    runner: input.runner,
+    source: input.source,
+    status: "queued",
+    taskId: id,
+    updatedAt: now.toISOString(),
+  });
   const [task] = await getDeploymentTaskDb()
     .insert(deployTasks)
     .values({
@@ -209,6 +225,7 @@ export async function createDeployTask(
       source: input.source,
       status: "queued",
       target: input.target,
+      timelineSnapshot,
       updatedAt: now,
     })
     .returning();
@@ -296,6 +313,57 @@ export async function getDeployTaskSnapshot(
   };
 }
 
+async function recentDeployTaskEvents(
+  taskId: string
+): Promise<DeployTaskEventDTO[]> {
+  const events = await getDeploymentTaskDb()
+    .select()
+    .from(deployTaskEvents)
+    .where(eq(deployTaskEvents.taskId, taskId))
+    .orderBy(desc(deployTaskEvents.seq))
+    .limit(MAX_DEPLOY_EVENTS);
+  return events.reverse().map(toDeployTaskEventDTO);
+}
+
+export async function getDeployTaskTimelineSnapshot(
+  taskId: string,
+  namespace?: string
+): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
+  await ensureDeployTaskStorageSchema();
+  const filters = [eq(deployTasks.id, taskId)];
+  if (namespace?.trim()) {
+    filters.push(eq(deployTasks.namespace, namespace.trim()));
+  }
+
+  const [task] = await getDeploymentTaskDb()
+    .select()
+    .from(deployTasks)
+    .where(and(...filters))
+    .limit(1);
+  if (task == null) {
+    return null;
+  }
+
+  return {
+    events: await recentDeployTaskEvents(taskId),
+    task: toDeployTaskDTO(task),
+    timeline: deploymentTaskTimelineFromTaskRecord(task),
+  };
+}
+
+async function publishDeploymentTaskTimelineForTask(input: {
+  namespace: string;
+  taskId: string;
+}) {
+  const snapshot = await getDeployTaskTimelineSnapshot(
+    input.taskId,
+    input.namespace
+  );
+  if (snapshot != null) {
+    publishDeploymentTaskTimelineChange(snapshot);
+  }
+}
+
 export async function listDeployTasks(input: {
   namespace: string;
   projectId?: string;
@@ -360,34 +428,124 @@ export async function updateDeployTaskState(
   }
 ): Promise<DeployTaskDTO | null> {
   await ensureDeployTaskStorageSchema();
-  const now = new Date();
-  const isTerminal =
-    input.status === "completed" ||
-    input.status === "failed" ||
-    input.status === "cancelled";
-  const isActive =
-    input.status === "queued" ||
-    input.status === "running" ||
-    input.status === "blocked" ||
-    input.status === "applying";
-  const [task] = await getDeploymentTaskDb()
-    .update(deployTasks)
-    .set({
-      ...input,
-      ...(input.status === "running" ? { startedAt: now } : {}),
-      ...(isTerminal ? { completedAt: now } : {}),
-      ...(isActive ? { completedAt: null } : {}),
-      heartbeatAt: now,
-      updatedAt: now,
-    })
-    .where(eq(deployTasks.id, taskId))
-    .returning();
-  if (task == null) {
+  const dto = await getDeploymentTaskDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
+    const [existing] = await tx
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, taskId))
+      .limit(1);
+    if (existing == null) {
+      return null;
+    }
+
+    const now = new Date();
+    const isTerminal =
+      input.status === "completed" ||
+      input.status === "failed" ||
+      input.status === "cancelled";
+    const isActive =
+      input.status === "queued" ||
+      input.status === "running" ||
+      input.status === "blocked" ||
+      input.status === "applying";
+    const timelineSnapshot =
+      input.status == null
+        ? existing.timelineSnapshot
+        : updateTimelineStatus(deploymentTaskTimelineFromTaskRecord(existing), {
+            status: input.status,
+            updatedAt: now.toISOString(),
+          });
+    const [task] = await tx
+      .update(deployTasks)
+      .set({
+        ...input,
+        ...(input.status === "running" ? { startedAt: now } : {}),
+        ...(isTerminal ? { completedAt: now } : {}),
+        ...(isActive ? { completedAt: null } : {}),
+        heartbeatAt: now,
+        timelineSnapshot,
+        updatedAt: now,
+      })
+      .where(eq(deployTasks.id, taskId))
+      .returning();
+    return task == null ? null : toDeployTaskDTO(task);
+  });
+  if (dto == null) {
     return null;
   }
-  const dto = toDeployTaskDTO(task);
   publishDeploymentTaskProjectionChange(dto);
+  await publishDeploymentTaskTimelineForTask({
+    namespace: dto.namespace,
+    taskId: dto.id,
+  });
   return dto;
+}
+
+export async function updateDeployTaskTimeline(
+  taskId: string,
+  input: {
+    event?: DeployTaskEventInput;
+    update: DeploymentTaskTimelineUpdate;
+  }
+): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
+  await ensureDeployTaskStorageSchema();
+  const result = await getDeploymentTaskDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
+    const [existing] = await tx
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, taskId))
+      .limit(1);
+    if (existing == null) {
+      return null;
+    }
+
+    const nextTimeline = input.update(
+      deploymentTaskTimelineFromTaskRecord(existing)
+    );
+
+    if (input.event != null) {
+      const [row] = await tx
+        .select({ value: max(deployTaskEvents.seq) })
+        .from(deployTaskEvents)
+        .where(eq(deployTaskEvents.taskId, taskId));
+      const seq = (row?.value ?? 0) + 1;
+      await tx.insert(deployTaskEvents).values({
+        kind: input.event.kind,
+        message: compactOptional(input.event.message),
+        payload: input.event.payload ?? {},
+        phase: input.event.phase ?? null,
+        seq,
+        taskId,
+      });
+    }
+
+    const now = new Date();
+    const [task] = await tx
+      .update(deployTasks)
+      .set({
+        heartbeatAt: now,
+        ...(input.event?.phase == null ? {} : { phase: input.event.phase }),
+        timelineSnapshot: nextTimeline,
+        updatedAt: now,
+      })
+      .where(eq(deployTasks.id, taskId))
+      .returning();
+    return task == null ? null : toDeployTaskDTO(task);
+  });
+
+  if (result == null) {
+    return null;
+  }
+  const snapshot = await getDeployTaskTimelineSnapshot(
+    result.id,
+    result.namespace
+  );
+  if (snapshot != null) {
+    publishDeploymentTaskTimelineChange(snapshot);
+  }
+  return snapshot;
 }
 
 export async function updateDeployTaskCanvasProjection(

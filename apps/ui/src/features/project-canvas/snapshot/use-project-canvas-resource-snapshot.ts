@@ -84,6 +84,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   /** Project UID from the route (decoded). */
   uid: string;
 }): ProjectCanvasResourceSnapshot & {
+  deploymentTaskProjections: DeploymentTaskProjection[];
   error: Error | undefined;
   /** True only during initial discovery while the graph is still empty. */
   isEmptyGraphLoading: boolean;
@@ -124,6 +125,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   const [deployTasks, setDeployTasks] = useState<DeploymentTaskProjection[]>(
     []
   );
+  const [, setDeploymentProjectionVisibilityTick] = useState(0);
   const [deployTasksLoading, setDeployTasksLoading] = useState(false);
   const [deployTasksError, setDeployTasksError] = useState<Error | undefined>(
     undefined
@@ -420,12 +422,13 @@ export function useProjectCanvasResourceSnapshot(options: {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setDeployTasks((current) =>
-        current.filter((task) => deploymentTaskProjectionIsVisible(task))
-      );
+      setDeploymentProjectionVisibilityTick((tick) => tick + 1);
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
+  const canvasDeployTasks = deployTasks.filter((task) =>
+    deploymentTaskProjectionIsVisible(task)
+  );
 
   const revalidate = useCallback(() => {
     return Promise.all([refreshWorkloadResources(), refreshDeployTasks()]);
@@ -468,7 +471,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         canvasLayout,
         canvasLayoutReady,
         dbsData,
-        deployTasks,
+        deployTasks: canvasDeployTasks,
         error,
         isEmptyGraphLoading: false,
         kubeconfig,
@@ -479,8 +482,8 @@ export function useProjectCanvasResourceSnapshot(options: {
       apsData,
       canvasLayout,
       canvasLayoutReady,
+      canvasDeployTasks,
       dbsData,
-      deployTasks,
       error,
       kubeconfig,
       namespace,
@@ -533,7 +536,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         canvasLayout,
         canvasLayoutReady,
         dbsData,
-        deployTasks,
+        deployTasks: canvasDeployTasks,
         error,
         isEmptyGraphLoading: false,
         kubeconfig,
@@ -547,8 +550,8 @@ export function useProjectCanvasResourceSnapshot(options: {
       apsData,
       canvasLayout,
       canvasLayoutReady,
+      canvasDeployTasks,
       dbsData,
-      deployTasks,
       error,
       kubeconfig,
       missingLayoutCommands,
@@ -606,6 +609,7 @@ export function useProjectCanvasResourceSnapshot(options: {
 
   return {
     ...snapshot,
+    deploymentTaskProjections: deployTasks,
     error,
     frameState,
     isEmptyGraphLoading,
