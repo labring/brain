@@ -1,5 +1,6 @@
 "use client";
 
+import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import { fetcher } from "@workspace/api/fetch";
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
@@ -115,6 +116,10 @@ export function useProjectsExplorer(options: {
   const ns = options.ns;
   const onNewProjectOverride = options.onNewProject;
   const hasKubeconfig = kubeconfig !== "";
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
   const {
     limit: pinnedProjectLimit,
     pinnedProjectIds,
@@ -130,7 +135,7 @@ export function useProjectsExplorer(options: {
     mutate,
   } = useSWR(
     hasKubeconfig && ns !== ""
-      ? (["/api/projects", projectsQuery, kubeconfig] as const)
+      ? (["/api/projects", projectsQuery, credentialKey] as const)
       : null,
     () =>
       fetcher<BrainProjectsResponse>({

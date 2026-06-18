@@ -1,5 +1,6 @@
 "use client";
 
+import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import type { Node } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
@@ -41,13 +42,17 @@ export function useProjectCanvasLayout(options: {
     kubeconfig !== "" &&
     namespace !== "" &&
     projectId !== "";
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
 
   const swrKey = enabled
     ? ([
         PROJECT_CANVAS_LAYOUT_API_PATH,
         namespace,
         projectId,
-        kubeconfig,
+        credentialKey,
       ] as const)
     : null;
   const { data, error, isLoading, mutate } = useSWR(

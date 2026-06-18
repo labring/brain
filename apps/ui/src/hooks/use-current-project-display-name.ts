@@ -1,5 +1,6 @@
 "use client";
 
+import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import { fetcher } from "@workspace/api/fetch";
 import { useMemo } from "react";
 import useSWR from "swr";
@@ -18,10 +19,14 @@ export function useCurrentProjectDisplayName(options: {
   const enabled = kubeconfig !== "" && projectId !== "";
 
   const projectsQuery = useMemo(() => ({ namespace }), [namespace]);
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
 
   const { data, error, isLoading } = useSWR(
     enabled && namespace !== ""
-      ? (["/api/projects", projectsQuery, kubeconfig] as const)
+      ? (["/api/projects", projectsQuery, credentialKey] as const)
       : null,
     () =>
       fetcher<BrainProjectsResponse>({

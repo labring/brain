@@ -1,5 +1,6 @@
 "use client";
 
+import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import { fetcher } from "@workspace/api/fetch";
 import { useCallback, useMemo } from "react";
 import useSWR from "swr";
@@ -51,12 +52,20 @@ export function usePinnedProjects(input: {
   const namespace = input.namespace.trim();
   const kubeconfig = input.kubeconfig.trim();
   const enabled = namespace !== "" && kubeconfig !== "";
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
   const swrKey = useMemo(
     () =>
       enabled
-        ? ([PROJECT_NAVIGATION_PREFERENCES_API, namespace, kubeconfig] as const)
+        ? ([
+            PROJECT_NAVIGATION_PREFERENCES_API,
+            namespace,
+            credentialKey,
+          ] as const)
         : null,
-    [enabled, kubeconfig, namespace]
+    [credentialKey, enabled, namespace]
   );
   const { data, mutate } = useSWR(
     swrKey,

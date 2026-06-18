@@ -2,6 +2,10 @@
 
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigBearerHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { type FetcherOptions, fetcher } from "../fetch";
 import { ApiUrl } from "../utils";
 
@@ -49,7 +53,7 @@ export function buildWorkloadLogsRequest(options: {
 }): WorkloadLogsFetchRequest {
   return {
     header: {
-      Authorization: `Bearer ${encodeURIComponent(options.kubeconfig)}`,
+      Authorization: kubeconfigBearerHeader(options.kubeconfig),
     },
     method: "GET",
     path: API_ROUTES.telemetry.logs,
@@ -87,6 +91,7 @@ export function useWorkloadLogs(options: {
   } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const hasKubeconfig = kubeconfig.trim() !== "";
+  const credentialKey = kubeconfigCredentialKey(kubeconfig);
   const hasTarget =
     target !== null &&
     target.name.trim() !== "" &&
@@ -101,6 +106,7 @@ export function useWorkloadLogs(options: {
         limit ?? null,
         trimmedSearch ?? "",
         windowKey,
+        credentialKey,
       ] as const)
     : null;
 

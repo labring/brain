@@ -3,6 +3,10 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigAuthHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { fetcher } from "../fetch";
 import { apItemsFromList } from "../lib/ap-list";
 import {
@@ -55,10 +59,12 @@ export function useK8sNamespacedList(options: UseK8sNamespacedListOptions) {
   const peerEmpty = options.peerEmpty;
   const kubeconfig = options.kubeconfig ?? "";
 
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
   const authHeader = useMemo(
-    (): Record<string, string> => ({
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-    }),
+    (): Record<string, string> => kubeconfigAuthHeader(kubeconfig),
     [kubeconfig]
   );
 
@@ -75,7 +81,7 @@ export function useK8sNamespacedList(options: UseK8sNamespacedListOptions) {
   const hasKubeconfig = kubeconfig.trim() !== "";
 
   const swrKey = hasKubeconfig
-    ? ([API_ROUTES.k8s.get, getParams] as const)
+    ? ([API_ROUTES.k8s.get, getParams, credentialKey] as const)
     : null;
 
   return useSWR(

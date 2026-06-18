@@ -1,15 +1,12 @@
+import {
+  headerSafeEncodedKubeconfig as sharedHeaderSafeEncodedKubeconfig,
+  kubeconfigBearerHeader as sharedKubeconfigBearerHeader,
+} from "@workspace/api/credential-key";
+
 export function headerSafeEncodedKubeconfig(kubeconfig: string): string {
-  const trimmed = kubeconfig.trim();
-  if (trimmed === "") {
-    return "";
-  }
-  try {
-    return encodeURIComponent(decodeURIComponent(trimmed));
-  } catch {
-    return encodeURIComponent(trimmed);
-  }
+  return sharedHeaderSafeEncodedKubeconfig(kubeconfig);
 }
 
 export function kubeconfigBearerHeader(kubeconfig: string): string {
-  return `Bearer ${headerSafeEncodedKubeconfig(kubeconfig)}`;
+  return sharedKubeconfigBearerHeader(kubeconfig);
 }

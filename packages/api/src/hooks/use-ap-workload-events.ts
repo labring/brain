@@ -2,6 +2,10 @@
 
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigBearerHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { type FetcherOptions, fetcher } from "../fetch";
 import { ApiUrl } from "../utils";
 
@@ -43,7 +47,7 @@ export function buildAPWorkloadEventsRequest(options: {
 }): APWorkloadEventsFetchRequest {
   return {
     header: {
-      Authorization: `Bearer ${encodeURIComponent(options.kubeconfig)}`,
+      Authorization: kubeconfigBearerHeader(options.kubeconfig),
     },
     method: "GET",
     path: API_ROUTES.ap.events,
@@ -66,13 +70,14 @@ export function useAPWorkloadEvents(options: {
   const { enabled = true, limit, refreshInterval = 10_000, target } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const hasKubeconfig = kubeconfig.trim() !== "";
+  const credentialKey = kubeconfigCredentialKey(kubeconfig);
   const hasTarget =
     target !== null &&
     target.name.trim() !== "" &&
     target.namespace.trim() !== "";
   const shouldFetch = enabled && hasKubeconfig && hasTarget;
   const swrKey = shouldFetch
-    ? ([API_ROUTES.ap.events, target, limit ?? null] as const)
+    ? ([API_ROUTES.ap.events, target, limit ?? null, credentialKey] as const)
     : null;
 
   return useSWR(

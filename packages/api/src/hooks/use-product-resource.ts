@@ -3,6 +3,10 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigAuthHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { fetcher } from "../fetch";
 import { type K8sGetResponse, k8sGetResponseSchema } from "../schemas/k8s-get";
 import { ApiUrl } from "../utils";
@@ -27,10 +31,12 @@ export function useBrainProductResource(
   const { kind, name, namespace } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const refreshInterval = options.refreshInterval ?? 0;
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
   const authHeader = useMemo(
-    (): Record<string, string> => ({
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-    }),
+    (): Record<string, string> => kubeconfigAuthHeader(kubeconfig),
     [kubeconfig]
   );
   const query = useMemo(() => {
@@ -44,7 +50,7 @@ export function useBrainProductResource(
   const route = productRoute(kind);
   const swrKey =
     kubeconfig.trim() !== "" && query != null
-      ? ([route, query] as const)
+      ? ([route, query, credentialKey] as const)
       : null;
 
   return useSWR(

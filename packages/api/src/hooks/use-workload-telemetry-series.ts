@@ -2,6 +2,10 @@
 
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigBearerHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { type FetcherOptions, fetcher } from "../fetch";
 import { ApiUrl } from "../utils";
 
@@ -55,7 +59,7 @@ export function buildWorkloadTelemetrySeriesRequest(options: {
       target: options.target,
     },
     header: {
-      Authorization: `Bearer ${encodeURIComponent(options.kubeconfig)}`,
+      Authorization: kubeconfigBearerHeader(options.kubeconfig),
     },
     method: "POST",
     path: API_ROUTES.telemetry.metricsSeries,
@@ -80,9 +84,15 @@ export function useWorkloadTelemetrySeries(options: {
   } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const hasKubeconfig = kubeconfig.trim() !== "";
+  const credentialKey = kubeconfigCredentialKey(kubeconfig);
   const shouldFetch = enabled && hasKubeconfig && target !== null;
   const swrKey = shouldFetch
-    ? ([API_ROUTES.telemetry.metricsSeries, target, windowKey] as const)
+    ? ([
+        API_ROUTES.telemetry.metricsSeries,
+        target,
+        windowKey,
+        credentialKey,
+      ] as const)
     : null;
 
   return useSWR(

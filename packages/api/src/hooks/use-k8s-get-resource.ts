@@ -3,6 +3,10 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigAuthHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { fetcher } from "../fetch";
 import {
   type K8sGetResponse,
@@ -32,10 +36,12 @@ export function useK8sGetResource(options: UseK8sGetResourceOptions) {
   const kubeconfig = options.kubeconfig ?? "";
   const refreshInterval = options.refreshInterval ?? 0;
 
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
   const authHeader = useMemo(
-    (): Record<string, string> => ({
-      Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-    }),
+    (): Record<string, string> => kubeconfigAuthHeader(kubeconfig),
     [kubeconfig]
   );
 
@@ -56,7 +62,7 @@ export function useK8sGetResource(options: UseK8sGetResourceOptions) {
       return null;
     }
     if (hasKubeconfig) {
-      return [API_ROUTES.k8s.get, getParams] as const;
+      return [API_ROUTES.k8s.get, getParams, credentialKey] as const;
     }
     return null;
   })();

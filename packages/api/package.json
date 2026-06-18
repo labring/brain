@@ -27,6 +27,7 @@
   "exports": {
     "./api.actions": "./src/api.actions.ts",
     "./constants": "./src/constants.ts",
+    "./credential-key": "./src/credential-key.ts",
     "./fetch": "./src/fetch.ts",
     "./hooks": "./src/hooks/index.ts",
     "./lib/ap-list": "./src/lib/ap-list.ts",

@@ -3,6 +3,10 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { API_ROUTES } from "../constants";
+import {
+  kubeconfigAuthHeader,
+  kubeconfigCredentialKey,
+} from "../credential-key";
 import { fetcher } from "../fetch";
 import { ApiUrl } from "../utils";
 
@@ -29,7 +33,7 @@ export interface APImageVersionTarget {
 }
 
 function authHeader(kubeconfig: string): Record<string, string> {
-  return { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` };
+  return kubeconfigAuthHeader(kubeconfig);
 }
 
 function versionQuery(target: APImageVersionTarget) {
@@ -45,13 +49,17 @@ export function useAPImageVersions(target: APImageVersionTarget) {
   const name = target.name.trim();
   const namespace = target.namespace.trim();
   const kubeconfig = target.kubeconfig ?? "";
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
   const query = useMemo(
     () => versionQuery({ name, namespace }),
     [name, namespace]
   );
   const swrKey =
     kubeconfig.trim() !== "" && query != null
-      ? ([API_ROUTES.ap.versions, query] as const)
+      ? ([API_ROUTES.ap.versions, query, credentialKey] as const)
       : null;
 
   return useSWR(
