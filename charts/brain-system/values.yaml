@@ -102,7 +102,6 @@ ui:
       port: 3000
   env:
     API_URL: ""
-    NEXT_PUBLIC_API_URL: ""
     NEXT_PUBLIC_APP_URL: ""
     DATABASE_URL: ""
     GITHUB_OAUTH_CLIENT_ID: ""
@@ -118,7 +117,7 @@ ui:
     DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""
     DEVBOX_JWT_SIGNING_KEY: ""
-    DEVBOX_RUNTIME_IMAGE: "ghcr.io/labring-actions/devbox-base-images/sandbox-v1:2026-6-stable-zh-cn-amd64"
+    DEVBOX_RUNTIME_IMAGE: ""
     DEVBOX_ARCHIVE_AFTER_PAUSE_TIME: "24h"
     DEVBOX_JWT_TTL_SECONDS: "14400"
   resources:

@@ -96,6 +96,8 @@ async function createDeployTaskTables(pool: Pool): Promise<void> {
       gateway_session_id text,
       gateway_thread_id text,
       gateway_turn_id text,
+      gateway_state_snapshot jsonb,
+      failure_details jsonb,
       artifact_summary jsonb not null default '{}'::jsonb,
       canvas_projection jsonb not null default '{}'::jsonb,
       timeline_snapshot jsonb,
@@ -160,6 +162,8 @@ async function migrateDeployTaskTableShape(
     alter table ${deployTasks} add column if not exists created_from text not null default 'api';
     alter table ${deployTasks} add column if not exists canvas_projection jsonb not null default '{}'::jsonb;
     alter table ${deployTasks} add column if not exists timeline_snapshot jsonb;
+    alter table ${deployTasks} add column if not exists gateway_state_snapshot jsonb;
+    alter table ${deployTasks} add column if not exists failure_details jsonb;
   `);
 
   const columns = await tableColumns(pool, schemaName, "deploy_tasks");
@@ -347,6 +351,8 @@ async function copyLegacyDeployTaskRows(pool: Pool): Promise<void> {
       gateway_session_id,
       gateway_thread_id,
       gateway_turn_id,
+      gateway_state_snapshot,
+      failure_details,
       artifact_summary,
       canvas_projection,
       timeline_snapshot,
@@ -379,6 +385,8 @@ async function copyLegacyDeployTaskRows(pool: Pool): Promise<void> {
       gateway_session_id,
       gateway_thread_id,
       gateway_turn_id,
+      gateway_state_snapshot,
+      failure_details,
       artifact_summary,
       coalesce(canvas_projection, '{}'::jsonb),
       timeline_snapshot,

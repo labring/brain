@@ -33,7 +33,6 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
 - `ui.env.API_URL`
 - `ui.env.NEXT_PUBLIC_APP_URL`
-- `ui.env.NEXT_PUBLIC_API_URL`
 - `ui.env.DATABASE_URL`
 - GitHub OAuth values (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_CREDENTIAL_ENCRYPTION_KEY`)
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
@@ -42,7 +41,9 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 
 `api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
 
-`ui.env.NEXT_PUBLIC_APP_URL` and `ui.env.NEXT_PUBLIC_API_URL` are client-visible values. Keep them aligned with the Docker build args for the UI image, because browser bundles inline `NEXT_PUBLIC_*` values during `next build`.
+`ui.env.API_URL` is the public API origin used by the UI server and browser terminal WebSockets.
+
+`ui.env.NEXT_PUBLIC_APP_URL` is a client-visible value. Keep it aligned with the Docker build arg for the UI image, because browser bundles inline `NEXT_PUBLIC_*` values during `next build`.
 
 Install or upgrade:
 

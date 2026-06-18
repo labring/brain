@@ -21,6 +21,8 @@ function deployTask(overrides: Partial<DeployTaskDTO> = {}): DeployTaskDTO {
     createdFrom: "ui",
     error: null,
     gatewaySessionId: null,
+    failureDetails: null,
+    gatewayStateSnapshot: null,
     gatewayTurnId: null,
     gatewayUrl: null,
     id: "task-1",

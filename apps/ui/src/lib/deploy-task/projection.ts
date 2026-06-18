@@ -1,3 +1,4 @@
+import { publicDeployTaskArtifactSummary } from "./public-artifact-summary";
 import type {
   DeploymentTaskCanvasProjection,
   DeploymentTaskCanvasProjectionResultMapping,
@@ -292,8 +293,9 @@ export function toDeploymentTaskProjection(
   }
 
   const completedAt = dateIso(task.completedAt);
+  const artifactSummary = publicDeployTaskArtifactSummary(task.artifactSummary);
   const projection: DeploymentTaskProjection = {
-    artifactSummary: task.artifactSummary,
+    artifactSummary,
     canvasProjection: task.canvasProjection,
     completedAt,
     display: deploymentTaskDisplaySummary(task),

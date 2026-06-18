@@ -156,7 +156,33 @@ export function createDeployTaskTools(options: {
       }
       const task = await submitDeployTaskInput(input.taskId, {
         values: input.values,
+      }).catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          error.message === "Deploy task is not waiting for input."
+        ) {
+          return "not-waiting" as const;
+        }
+        throw error;
       });
+      if (task === "not-waiting") {
+        return {
+          ok: false,
+          error: "Deploy task is not waiting for input.",
+        };
+      }
+      if (task != null) {
+        startDeployTaskRunner({
+          encodedKubeconfig: encodeURIComponent(options.kubeconfig),
+          submittedInputValues: input.values,
+          taskId: input.taskId,
+        }).catch((error: unknown) => {
+          console.error(
+            "[chat-deploy-task] runner input resume failed:",
+            error
+          );
+        });
+      }
       return task == null
         ? { ok: false, error: "Deploy task not found." }
         : { ok: true, task };

@@ -43,7 +43,10 @@ import { applyRenderedTemplateDeployment } from "@/lib/template-k8s-apply";
 import { deployTemplateInstance } from "@/lib/template-provider-core";
 
 import {
+  blockingInputsFromDeploymentPlan,
+  createSealosTemplateDeploymentPlan,
   type DeploymentArtifact,
+  deployTaskStringRecordValue,
   prepareBrainManifestArtifact,
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
@@ -123,6 +126,7 @@ const TEMPLATE_CLEANUP_KINDS = [
 
 export interface StartDeployTaskRunnerInput {
   encodedKubeconfig?: string;
+  submittedInputValues?: Record<string, unknown>;
   taskId: string;
 }
 
@@ -931,6 +935,26 @@ type ResolvableDeploymentTaskTarget = Pick<
   "id" | "namespace" | "projectId" | "projectName" | "target"
 >;
 
+function deployFailureDetails(input: {
+  error: unknown;
+  phase: DeployTaskRow["phase"];
+  source: string;
+  task: DeployTaskRow;
+}): Record<string, unknown> {
+  return {
+    errorMessage:
+      input.error instanceof Error ? input.error.message : String(input.error),
+    errorName: input.error instanceof Error ? input.error.name : null,
+    phase: input.phase,
+    projectId: input.task.projectId,
+    projectName: input.task.projectName,
+    runner: input.task.runner,
+    source: input.source,
+    taskId: input.task.id,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export async function resolveDeploymentTaskTarget(
   task: ResolvableDeploymentTaskTarget
 ): Promise<{
@@ -1738,6 +1762,7 @@ async function markDeploymentGenerationStartedIfNeeded(input: {
 
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
+  artifactSummaryExtras?: Partial<DeployTaskArtifactSummary>;
   kubeconfig: string;
   outputJson?: Record<string, unknown>;
   task: DeployTaskRow;
@@ -1760,15 +1785,41 @@ async function completeTaskWithArtifact(input: {
     taskId: input.task.id,
   });
 
-  const applied = await applyDeploymentArtifact({
-    artifact: input.artifact,
-    kubeconfig: input.kubeconfig,
-    task: input.task,
-  });
+  let applied: Awaited<ReturnType<typeof applyDeploymentArtifact>>;
+  try {
+    applied = await applyDeploymentArtifact({
+      artifact: input.artifact,
+      kubeconfig: input.kubeconfig,
+      task: input.task,
+    });
+  } catch (error) {
+    await updateDeployTaskState(input.task.id, {
+      failureDetails: {
+        ...deployFailureDetails({
+          error,
+          phase: "apply",
+          source: "applyDeploymentArtifact",
+          task: input.task,
+        }),
+        artifactKind: input.artifact.kind,
+        resourceCount:
+          "resources" in input.artifact &&
+          Array.isArray(input.artifact.resources)
+            ? input.artifact.resources.length
+            : undefined,
+        templateName:
+          input.artifact.kind === "sealos-template"
+            ? input.artifact.templateName
+            : undefined,
+      },
+    });
+    throw error;
+  }
 
   await updateDeployTaskState(input.task.id, {
     artifactSummary: {
       ...applied.artifactSummary,
+      ...(input.artifactSummaryExtras ?? {}),
       notes: applied.notes,
       ...(input.outputJson === undefined
         ? {}
@@ -1815,6 +1866,229 @@ async function completeTaskWithArtifact(input: {
     message: "Deployment task completed.",
     payload: { artifactSummary: applied.artifactSummary },
     phase: "completed",
+  });
+}
+
+function submittedInputStringValues(
+  value: Record<string, unknown> | undefined
+): Record<string, string> {
+  if (value == null) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => {
+      if (typeof item === "string") {
+        return [[key, item]];
+      }
+      if (typeof item === "number" || typeof item === "boolean") {
+        return [[key, String(item)]];
+      }
+      return [];
+    })
+  );
+}
+
+function deploymentPlanArgsFromTask(
+  task: DeployTaskRow
+): Record<string, string> {
+  const args = task.artifactSummary.deploymentPlan?.args;
+  return args == null ? {} : { ...args };
+}
+
+function outputJsonFromArtifactSummary(
+  task: DeployTaskRow
+): Record<string, unknown> | null {
+  const output = task.artifactSummary.outputJson;
+  return output != null && typeof output === "object" && !Array.isArray(output)
+    ? (output as Record<string, unknown>)
+    : null;
+}
+
+async function blockForDeploymentInputs(input: {
+  deploymentPlan: ReturnType<typeof createSealosTemplateDeploymentPlan>;
+  summary: DeployTaskArtifactSummary;
+  task: DeployTaskRow;
+}) {
+  const blockingInputs = blockingInputsFromDeploymentPlan(input.deploymentPlan);
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: input.summary,
+    blockingInputs,
+    phase: "configure",
+    status: "blocked",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.input_required",
+    eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
+    eventPayload: {
+      inputKeys: blockingInputs.map((item) => item.key ?? item.id),
+    },
+    eventSeverity: "warning",
+    phase: "configure",
+    status: "blocked",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
+    timelineStatus: "blocked",
+  });
+}
+
+async function blockForMissingAiDeploymentOutput(task: DeployTaskRow) {
+  await updateDeployTaskState(task.id, {
+    artifactSummary: {
+      notes: "Codex gateway completed without deployment output.",
+    },
+    phase: "generate-artifacts",
+    status: "blocked",
+  });
+  await recordDeployTaskEvent(task.id, {
+    kind: "deployment_task.output_missing",
+    message: "Codex gateway completed without deployment output.",
+    phase: "generate-artifacts",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.output_missing",
+    eventMessage: "Codex gateway completed without deployment output.",
+    phase: "generate-artifacts",
+    status: "blocked",
+    stepId: "generate-deployment",
+    taskId: task.id,
+  });
+}
+
+async function applyAiDeploymentFromPreparedOutput(input: {
+  args: Record<string, string>;
+  encodedKubeconfig: string;
+  kubeconfig: string;
+  outputJson: Record<string, unknown>;
+  task: DeployTaskRow;
+}) {
+  let artifact: DeploymentArtifact;
+  try {
+    artifact = prepareSealosTemplateArtifact({
+      args: input.args,
+      buildResult: requiredObjectValue(input.outputJson, "buildResult"),
+      certSecretName: sealosCertSecretName(),
+      deliveryManifest: requiredObjectValue(
+        input.outputJson,
+        "deliveryManifest"
+      ),
+      routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+      task: input.task,
+      templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
+    });
+  } catch (error) {
+    const plan = input.task.artifactSummary.deploymentPlan;
+    if (plan != null) {
+      await updateDeployTaskState(input.task.id, {
+        blockingInputs: blockingInputsFromDeploymentPlan(plan),
+        phase: "configure",
+        status: "blocked",
+      });
+    }
+    throw error;
+  }
+  const deploymentPlan =
+    input.task.artifactSummary.deploymentPlan == null
+      ? undefined
+      : {
+          ...input.task.artifactSummary.deploymentPlan,
+          args: input.args,
+        };
+  const summary = {
+    ...sealosTemplateArtifactSummary({ artifact }),
+    ...(deploymentPlan == null ? {} : { deploymentPlan }),
+    outputJson: input.outputJson,
+  };
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: summary,
+    blockingInputs: [],
+    phase: "configure",
+    status: "running",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.input_ready",
+    eventMessage: "Deployment configuration is ready.",
+    eventSeverity: "success",
+    phase: "configure",
+    status: "completed",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
+    timelineStatus: "running",
+  });
+
+  try {
+    await completeTaskWithArtifact({
+      artifact,
+      artifactSummaryExtras:
+        deploymentPlan == null ? undefined : { deploymentPlan },
+      kubeconfig: input.kubeconfig,
+      outputJson: input.outputJson,
+      task: input.task,
+    });
+  } catch (error) {
+    await cleanupFailedTemplateDeployment({
+      encodedKubeconfig: input.encodedKubeconfig,
+      instanceName: artifact.instanceName,
+      projectId: input.task.projectId ?? artifact.instanceName,
+      task: input.task,
+    });
+    throw error;
+  }
+}
+
+async function applyGeneratedAiDeployOutput(input: {
+  encodedKubeconfig: string;
+  kubeconfig: string;
+  output: Record<string, unknown>;
+  task: DeployTaskRow;
+}) {
+  const deliveryManifest = requiredObjectValue(
+    input.output,
+    "deliveryManifest"
+  );
+  const deploymentPlan = createSealosTemplateDeploymentPlan({
+    deliveryManifest,
+    templateYaml: requiredStringValue(input.output, "templateYaml"),
+  });
+  const buildResult = requiredObjectValue(input.output, "buildResult");
+  const baseSummary: DeployTaskArtifactSummary = {
+    buildResult,
+    deliveryManifest,
+    deploymentPlan,
+    outputJson: input.output,
+  };
+  if ((deploymentPlan.missingInputKeys?.length ?? 0) > 0) {
+    await updateDeployTaskState(input.task.id, {
+      artifactSummary: baseSummary,
+      phase: "generate-artifacts",
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.artifacts_generated",
+      message: "Generated Sealos template deployment artifact.",
+      payload: { requiredInputs: deploymentPlan.missingInputKeys },
+      phase: "generate-artifacts",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.artifacts_generated",
+      eventMessage: "Generated Sealos template deployment artifact.",
+      phase: "generate-artifacts",
+      status: "completed",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
+    });
+    await blockForDeploymentInputs({
+      deploymentPlan,
+      summary: baseSummary,
+      task: input.task,
+    });
+    return;
+  }
+
+  await applyAiDeploymentFromPreparedOutput({
+    args: deployTaskStringRecordValue(deliveryManifest.args),
+    encodedKubeconfig: input.encodedKubeconfig,
+    kubeconfig: input.kubeconfig,
+    outputJson: input.output,
+    task: input.task,
   });
 }
 
@@ -2235,75 +2509,16 @@ async function runAiDeploymentTask(input: {
   }
 
   if (finalDeployOutput == null) {
-    await updateDeployTaskState(input.task.id, {
-      artifactSummary: {
-        notes: "Codex gateway completed without deployment output.",
-      },
-      phase: "generate-artifacts",
-      status: "blocked",
-    });
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.output_missing",
-      message: "Codex gateway completed without deployment output.",
-      phase: "generate-artifacts",
-    });
-    await markTimelineStepWithEvent({
-      eventKind: "deployment_task.output_missing",
-      eventMessage: "Codex gateway completed without deployment output.",
-      phase: "generate-artifacts",
-      status: "blocked",
-      stepId: "generate-deployment",
-      taskId: input.task.id,
-    });
+    await blockForMissingAiDeploymentOutput(input.task);
     return;
   }
 
-  const artifact = prepareSealosTemplateArtifact({
-    buildResult: requiredObjectValue(finalDeployOutput, "buildResult"),
-    certSecretName: sealosCertSecretName(),
-    deliveryManifest: requiredObjectValue(
-      finalDeployOutput,
-      "deliveryManifest"
-    ),
-    routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+  await applyGeneratedAiDeployOutput({
+    encodedKubeconfig: input.encodedKubeconfig,
+    kubeconfig: input.kubeconfig,
+    output: finalDeployOutput,
     task: input.task,
-    templateYaml: requiredStringValue(finalDeployOutput, "templateYaml"),
   });
-  const summary = sealosTemplateArtifactSummary({ artifact });
-  await updateDeployTaskState(input.task.id, {
-    artifactSummary: summary,
-    phase: "generate-artifacts",
-  });
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deployment_task.artifacts_generated",
-    message: "Generated Sealos template deployment artifact.",
-    payload: { resources: summary.resources },
-    phase: "generate-artifacts",
-  });
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.artifacts_generated",
-    eventMessage: "Generated Sealos template deployment artifact.",
-    phase: "generate-artifacts",
-    status: "completed",
-    stepId: "generate-deployment",
-    taskId: input.task.id,
-  });
-
-  try {
-    await completeTaskWithArtifact({
-      artifact,
-      kubeconfig: input.kubeconfig,
-      task: input.task,
-    });
-  } catch (error) {
-    await cleanupFailedTemplateDeployment({
-      encodedKubeconfig: input.encodedKubeconfig,
-      instanceName: artifact.instanceName,
-      projectId: input.task.projectId ?? artifact.instanceName,
-      task: input.task,
-    });
-    throw error;
-  }
 }
 
 export async function startDeployTaskRunner(
@@ -2318,6 +2533,32 @@ export async function startDeployTaskRunner(
     const kubeconfig = requireKubeconfig(input);
     const target = await resolveDeploymentTaskTarget(task);
     const resolvedTask = (await getDeployTaskById(task.id)) ?? task;
+    const submittedInputValues = submittedInputStringValues(
+      input.submittedInputValues
+    );
+    if (
+      Object.keys(submittedInputValues).length > 0 &&
+      resolvedTask.runner.kind === "ai"
+    ) {
+      const outputJson = outputJsonFromArtifactSummary(resolvedTask);
+      if (outputJson == null) {
+        throw new Error("Deploy task has no generated deployment output.");
+      }
+      await applyAiDeploymentFromPreparedOutput({
+        args: {
+          ...deployTaskStringRecordValue(
+            requiredObjectValue(outputJson, "deliveryManifest").args
+          ),
+          ...deploymentPlanArgsFromTask(resolvedTask),
+          ...submittedInputValues,
+        },
+        encodedKubeconfig: input.encodedKubeconfig ?? "",
+        kubeconfig,
+        outputJson,
+        task: resolvedTask,
+      });
+      return;
+    }
 
     switch (resolvedTask.runner.kind) {
       case "direct":
@@ -2357,6 +2598,15 @@ export async function startDeployTaskRunner(
     });
     await updateDeployTaskState(task.id, {
       error: message,
+      failureDetails: {
+        ...deployFailureDetails({
+          error,
+          phase: latestTask.phase,
+          source: "startDeployTaskRunner",
+          task: latestTask,
+        }),
+        failureMessage,
+      },
       status: "failed",
     });
     if (!recordedFailureEvent) {

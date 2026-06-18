@@ -545,3 +545,40 @@ spec:
   assert.equal(service?.metadata?.name, "template-inline");
   assert.match(ingressYaml ?? "", TEMPLATE_SECRET_NAME_RE);
 });
+
+test("renderTemplateDeploymentFromYaml skips inactive conditional required inputs", () => {
+  const rendered = renderTemplateDeploymentFromYaml({
+    args: { auth_enabled: "false" },
+    instanceName: "conditional-web",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: conditional-web
+spec:
+  title: Conditional Web
+  templateType: inline
+  inputs:
+    auth_enabled:
+      type: boolean
+      default: "false"
+    auth_secret:
+      required: true
+      type: secret
+      if: inputs.auth_enabled == "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: conditional-web
+spec:
+  ports:
+    - port: 80
+`,
+  });
+
+  assert.ok(rendered.resources.some((doc) => doc.kind === "Service"));
+});

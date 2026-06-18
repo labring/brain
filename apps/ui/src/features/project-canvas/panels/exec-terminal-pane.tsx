@@ -263,7 +263,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
       term.open(mount);
       fit.fit();
 
-      socket = new WebSocket(workloadTerminalWebSocketUrl());
+      socket = new WebSocket(await workloadTerminalWebSocketUrl());
 
       socket.addEventListener("open", () => {
         socket?.send(

@@ -53,8 +53,9 @@ export function GithubDeployerRoot({
     repo: GithubDeployerRepo;
     template: NonNullable<GithubDeployerStates["templateOptions"]>[number];
   } | null>(null);
-  const [recommendationSubmitting, setRecommendationSubmitting] =
-    useState(false);
+  const [recommendationSubmitting, setRecommendationSubmitting] = useState<
+    "github" | "template" | null
+  >(null);
 
   useEffect(() => {
     setSelectedRepoId((prev) => {
@@ -119,10 +120,10 @@ export function GithubDeployerRoot({
     "this repository";
   const deployPendingRecommendation = useCallback(
     async (mode: "github" | "template") => {
-      if (pendingRecommendation == null || recommendationSubmitting) {
+      if (pendingRecommendation == null || recommendationSubmitting != null) {
         return;
       }
-      setRecommendationSubmitting(true);
+      setRecommendationSubmitting(mode);
       try {
         if (mode === "github") {
           await resolvedActions.onDeploy?.(pendingRecommendation.repo);
@@ -138,11 +139,13 @@ export function GithubDeployerRoot({
         }
         setPendingRecommendation(null);
       } finally {
-        setRecommendationSubmitting(false);
+        setRecommendationSubmitting(null);
       }
     },
     [pendingRecommendation, recommendationSubmitting, resolvedActions]
   );
+
+  const recommendationActionDisabled = recommendationSubmitting != null;
 
   return (
     <GithubDeployerContext.Provider value={value}>
@@ -171,8 +174,12 @@ export function GithubDeployerRoot({
           </AppDialog.Body>
           <AppDialog.Footer>
             <AppDialog.Action
-              disabled={states.isLoading || resolvedActions.onDeploy == null}
-              loading={recommendationSubmitting}
+              disabled={
+                states.isLoading ||
+                recommendationActionDisabled ||
+                resolvedActions.onDeploy == null
+              }
+              loading={recommendationSubmitting === "github"}
               onClick={() => {
                 deployPendingRecommendation("github").catch(() => undefined);
               }}
@@ -180,8 +187,8 @@ export function GithubDeployerRoot({
               Continue with GitHub
             </AppDialog.Action>
             <AppDialog.Action
-              disabled={states.isLoading}
-              loading={recommendationSubmitting}
+              disabled={states.isLoading || recommendationActionDisabled}
+              loading={recommendationSubmitting === "template"}
               onClick={() => {
                 deployPendingRecommendation("template").catch(() => undefined);
               }}

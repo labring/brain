@@ -48,6 +48,8 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 
 `api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
 
+`ui.env.API_URL` is the public API origin used by the UI server and browser terminal WebSockets.
+
 Install or upgrade:
 
 ```bash

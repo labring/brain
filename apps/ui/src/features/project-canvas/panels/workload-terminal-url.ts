@@ -1,20 +1,35 @@
 import { API_ROUTES } from "@workspace/api/constants";
 
-const LOCALHOST_PORT_PATTERN = /:\d+$/;
+const TERMINAL_URL_CONFIG_PATH = "/api/project-canvas/terminal-url";
 
-function apiOrigin(): string {
-  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (configured) {
-    return configured;
-  }
-  if (typeof window !== "undefined") {
-    return window.location.origin.replace(LOCALHOST_PORT_PATTERN, ":9000");
-  }
-  return "http://localhost:9000";
+interface TerminalUrlConfig {
+  webSocketUrl?: unknown;
 }
 
-export function workloadTerminalWebSocketUrl(): string {
-  const url = new URL(API_ROUTES.k8s.exec, apiOrigin());
+function fallbackWebSocketUrl(): string {
+  const base =
+    typeof window === "undefined"
+      ? "http://localhost:3000"
+      : window.location.origin;
+  const url = new URL(API_ROUTES.k8s.exec, base);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.href;
+}
+
+export async function workloadTerminalWebSocketUrl(): Promise<string> {
+  try {
+    const response = await fetch(TERMINAL_URL_CONFIG_PATH, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return fallbackWebSocketUrl();
+    }
+    const config = (await response.json()) as TerminalUrlConfig;
+    if (typeof config.webSocketUrl === "string" && config.webSocketUrl !== "") {
+      return config.webSocketUrl;
+    }
+  } catch {
+    return fallbackWebSocketUrl();
+  }
+  return fallbackWebSocketUrl();
 }

@@ -148,6 +148,45 @@ test("completed deployment task projection stays visible only during handoff gra
   );
 });
 
+test("deployment task projection redacts generated template internals", () => {
+  const projection = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        deliveryManifest: { args: { api_key: "secret", mode: "demo" } },
+        deploymentPlan: {
+          args: { api_key: "secret", mode: "demo" },
+          inputs: [
+            {
+              key: "api_key",
+              required: true,
+              sensitive: true,
+              type: "secret",
+            },
+            {
+              key: "mode",
+              required: false,
+              type: "string",
+            },
+          ],
+          kind: "sealos-template",
+          templateName: "demo",
+        },
+        outputJson: { templateYaml: "raw" },
+        resourceYamls: ["secret: api_key"],
+      },
+    }),
+    NOW
+  );
+
+  assert.ok(projection);
+  assert.equal(projection.artifactSummary.deliveryManifest, undefined);
+  assert.equal(projection.artifactSummary.outputJson, undefined);
+  assert.equal(projection.artifactSummary.resourceYamls, undefined);
+  assert.deepEqual(projection.artifactSummary.deploymentPlan?.args, {
+    mode: "demo",
+  });
+});
+
 test("completed deployment task projection stays visible during grace with explicit slots", () => {
   const completedAt = NOW.toISOString();
   const projection = toDeploymentTaskProjection(

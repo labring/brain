@@ -12,8 +12,11 @@ import {
 } from "./projection";
 import { publishDeploymentTaskProjectionChange } from "./projection-events";
 import {
+  publicDeployTaskArtifactSummary,
+  publicDeployTaskEventPayload,
+} from "./public-artifact-summary";
+import {
   type DeploymentTaskSource,
-  type DeployTaskEventPayload,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
   type DeployTaskPhase,
@@ -102,14 +105,16 @@ function nowIso(value: Date | null): string | null {
 
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
   return {
-    artifactSummary: row.artifactSummary,
+    artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary),
     blockingInputs: row.blockingInputs,
     canvasProjection: row.canvasProjection,
     completedAt: nowIso(row.completedAt),
     createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
     error: row.error,
+    failureDetails: row.failureDetails,
     gatewaySessionId: row.gatewaySessionId,
+    gatewayStateSnapshot: row.gatewayStateSnapshot,
     gatewayTurnId: row.gatewayTurnId,
     gatewayUrl: row.gatewayUrl,
     id: row.id,
@@ -139,7 +144,7 @@ export function toDeployTaskEventDTO(
     createdAt: row.createdAt.toISOString(),
     kind: row.kind,
     message: row.message,
-    payload: row.payload,
+    payload: publicDeployTaskEventPayload(row.payload),
     phase: row.phase,
     seq: row.seq,
     taskId: row.taskId,
@@ -409,9 +414,12 @@ export async function updateDeployTaskState(
   taskId: string,
   input: {
     artifactSummary?: DeployTaskRow["artifactSummary"];
+    blockingInputs?: DeployTaskRow["blockingInputs"];
     completedAt?: Date | null;
     error?: string | null;
+    failureDetails?: DeployTaskRow["failureDetails"];
     gatewaySessionId?: string | null;
+    gatewayStateSnapshot?: DeployTaskRow["gatewayStateSnapshot"];
     gatewayThreadId?: string | null;
     gatewayTurnId?: string | null;
     gatewayUrl?: string | null;
@@ -463,6 +471,9 @@ export async function updateDeployTaskState(
         ...(input.status === "running" ? { startedAt: now } : {}),
         ...(isTerminal ? { completedAt: now } : {}),
         ...(isActive ? { completedAt: null } : {}),
+        ...(input.status === "completed" || isActive
+          ? { error: null, failureDetails: null }
+          : {}),
         heartbeatAt: now,
         timelineSnapshot,
         updatedAt: now,
@@ -624,20 +635,29 @@ export async function submitDeployTaskInput(
   taskId: string,
   input: SubmitDeployTaskInput
 ): Promise<DeployTaskDTO | null> {
-  await appendDeployTaskMessage({
-    parts: [
-      {
-        text: JSON.stringify(input.values, null, 2),
-        type: "text",
-      },
-    ],
-    role: "user",
-    taskId,
-  });
+  const existing = await getDeployTaskById(taskId);
+  if (existing == null) {
+    return null;
+  }
+  const hasPendingInputs =
+    existing.blockingInputs.length > 0 ||
+    (existing.artifactSummary.deploymentPlan?.missingInputKeys?.length ?? 0) >
+      0;
+  const isWaitingForInput =
+    existing.phase === "configure" &&
+    (existing.status === "blocked" || existing.status === "failed") &&
+    hasPendingInputs;
+  if (!isWaitingForInput) {
+    throw new Error("Deploy task is not waiting for input.");
+  }
+  const submittedKeys = Object.keys(input.values);
   await recordDeployTaskEvent(taskId, {
     kind: "deploy_task.input_submitted",
     message: "Additional deploy input submitted.",
-    payload: input.values as DeployTaskEventPayload,
+    payload: {
+      inputKeys: submittedKeys,
+      redacted: true,
+    },
     phase: "configure",
   });
   return await updateDeployTaskState(taskId, {

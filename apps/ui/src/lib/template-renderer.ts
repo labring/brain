@@ -90,11 +90,13 @@ export interface TemplateInstanceOwnerReference {
   uid: string;
 }
 
-interface EvaluationContext {
+export interface TemplateEvaluationContext {
   defaults: Record<string, string>;
   inputs: Record<string, string>;
   [key: string]: unknown;
 }
+
+type EvaluationContext = TemplateEvaluationContext;
 
 interface TemplateApWorkloadInfo {
   name: string;
@@ -216,18 +218,18 @@ function evaluateExpression(
   return expressionValue(expression, context);
 }
 
-function evaluateCondition(
+export function evaluateTemplateCondition(
   expression: string,
   context: EvaluationContext
 ): boolean {
   const trimmed = expression.trim();
   const orParts = trimmed.split(OR_SPLIT_RE);
   if (orParts.length > 1) {
-    return orParts.some((part) => evaluateCondition(part, context));
+    return orParts.some((part) => evaluateTemplateCondition(part, context));
   }
   const andParts = trimmed.split(AND_SPLIT_RE);
   if (andParts.length > 1) {
-    return andParts.every((part) => evaluateCondition(part, context));
+    return andParts.every((part) => evaluateTemplateCondition(part, context));
   }
   const comparison = trimmed.match(COMPARISON_RE);
   if (comparison) {
@@ -237,6 +239,8 @@ function evaluateCondition(
   }
   return Boolean(evaluateExpression(trimmed, context));
 }
+
+const evaluateCondition = evaluateTemplateCondition;
 
 // Sealos template condition blocks support nested if/elif/else/endif markers.
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mirrors the provider parser to preserve template semantics.
@@ -336,10 +340,26 @@ function flattenDefaults(
 
 function resolvedInputs(
   inputs: TemplateSourceInput[] | undefined,
-  args: Record<string, string> | undefined
+  args: Record<string, string> | undefined,
+  defaults: Record<string, string> = {}
 ): Record<string, string> {
   const out: Record<string, string> = {};
+  const candidates = Object.fromEntries(
+    (inputs ?? []).map((input) => [
+      input.key,
+      args?.[input.key] ?? input.default ?? "",
+    ])
+  );
   for (const input of inputs ?? []) {
+    if (
+      input.if?.trim() &&
+      !evaluateTemplateCondition(input.if, {
+        defaults,
+        inputs: candidates,
+      })
+    ) {
+      continue;
+    }
     const provided = args?.[input.key];
     let value: string | undefined;
     if (provided !== undefined && provided !== "") {
@@ -354,6 +374,7 @@ function resolvedInputs(
     }
     validateTemplateInputValue(input, value);
     out[input.key] = value;
+    candidates[input.key] = value;
   }
   return out;
 }
@@ -867,6 +888,7 @@ function templateInputFromRecord(
     ...(typeof input.description === "string"
       ? { description: input.description }
       : {}),
+    ...(typeof input.if === "string" ? { if: input.if } : {}),
     key,
     ...(typeof input.label === "string" ? { label: input.label } : {}),
     ...(Array.isArray(input.options)
@@ -898,7 +920,7 @@ function normalizeTemplateInputs(value: unknown): TemplateSourceInput[] {
   );
 }
 
-function templateSourceFromInlineYaml(yaml: string): {
+export function templateSourceFromInlineYaml(yaml: string): {
   source: TemplateSourcePayload;
   templateName: string;
 } {
@@ -998,7 +1020,11 @@ export function renderTemplateDeployment(
     ...flattenDefaults(input.source.source.defaults, baseContext),
     app_name: input.instanceName,
   };
-  const inputs = resolvedInputs(input.source.source.inputs, input.args);
+  const inputs = resolvedInputs(
+    input.source.source.inputs,
+    input.args,
+    defaults
+  );
   const routingDomain = input.routingDomain?.trim();
   const context: EvaluationContext = {
     ...input.source.source,

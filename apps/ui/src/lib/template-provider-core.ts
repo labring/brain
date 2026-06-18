@@ -35,6 +35,7 @@ export interface TemplateDefaultValue {
 export interface TemplateSourceInput {
   default?: string;
   description?: string;
+  if?: string;
   key: string;
   label?: string;
   options?: string[];

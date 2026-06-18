@@ -43,3 +43,14 @@ test("template resource names normalize unsafe template names", () => {
   assert.equal(name.length <= 63, true);
   assert.match(name, NORMALIZED_TEMPLATE_NAME);
 });
+
+test("template resource names do not start with digits for UUID-like names", () => {
+  const name = childResourceName(
+    "7512770d-fe30-4e65-adf2-ab5eaea1f67e",
+    "template"
+  );
+
+  assert.match(name, DNS_1035_LABEL);
+  assert.equal(name.startsWith("app-7512770d"), true);
+  assert.equal(name.length <= 63, true);
+});

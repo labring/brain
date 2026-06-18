@@ -83,6 +83,57 @@ function objectStringValue(
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+const SENSITIVE_KEY_REGEX =
+  /(authorization|bearer|credential|dockerconfig|password|secret|token|api[_-]?key)/i;
+const BEARER_TOKEN_REGEX = /Bearer\s+[A-Za-z0-9._~+/=-]+/g;
+
+function redactGatewaySnapshot(value: unknown, depth = 0): unknown {
+  if (depth > 8) {
+    return "[MaxDepth]";
+  }
+  if (typeof value === "string") {
+    return value.replace(BEARER_TOKEN_REGEX, "Bearer [REDACTED]");
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactGatewaySnapshot(item, depth + 1));
+  }
+  if (value != null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        SENSITIVE_KEY_REGEX.test(key)
+          ? "[REDACTED]"
+          : redactGatewaySnapshot(item, depth + 1),
+      ])
+    );
+  }
+  return value;
+}
+
+function gatewayStateSnapshot(input: {
+  sessionId: string;
+  state: Partial<CodexGatewayState>;
+}): Record<string, unknown> {
+  return {
+    activeTurn: Boolean(input.state.activeTurn),
+    currentTurnId: input.state.currentTurnId ?? null,
+    cwd: typeof input.state.cwd === "string" ? input.state.cwd : null,
+    lastTurnStatus: input.state.lastTurnStatus ?? null,
+    ready: Boolean(input.state.ready),
+    recentEvents: Array.isArray(input.state.recentEvents)
+      ? redactGatewaySnapshot(input.state.recentEvents)
+      : [],
+    selectedModel: input.state.selectedModel ?? null,
+    sessionId: input.sessionId,
+    startedAt: input.state.startedAt ?? null,
+    threadId: input.state.threadId ?? null,
+    transcript: Array.isArray(input.state.transcript)
+      ? redactGatewaySnapshot(input.state.transcript)
+      : [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function getCodexGatewayContextFromDevboxInfo(
   info?: DevboxInfo | null
 ): GatewayContext | null {
@@ -270,6 +321,7 @@ async function projectGatewayState(input: {
   await updateDeployTaskState(input.taskId, {
     gatewayThreadId: input.state.threadId ?? null,
     gatewayTurnId: input.state.currentTurnId ?? null,
+    gatewayStateSnapshot: gatewayStateSnapshot(input),
     status: "running",
   });
 
@@ -333,6 +385,10 @@ async function persistGatewayStateEvent(input: {
   await updateDeployTaskState(input.taskId, {
     gatewayThreadId: state.threadId ?? null,
     gatewayTurnId: state.currentTurnId ?? null,
+    gatewayStateSnapshot: gatewayStateSnapshot({
+      sessionId: input.sessionId,
+      state,
+    }),
     status: "running",
   });
   await recordDeployTaskEvent(input.taskId, {

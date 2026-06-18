@@ -9,6 +9,10 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+import type {
+  TemplateDefaultValue,
+  TemplateSourceInput,
+} from "@/lib/template-provider-core";
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 export const DEPLOYMENT_TASK_DB_SCHEMA = "sealai_deployment";
@@ -42,6 +46,7 @@ export interface DeployTaskArtifactSummary {
   artifacts?: unknown[];
   buildResult?: unknown;
   deliveryManifest?: unknown;
+  deploymentPlan?: DeploymentTaskDeploymentPlan;
   entrypointYaml?: string;
   notes?: string;
   outputJson?: unknown;
@@ -52,6 +57,19 @@ export interface DeployTaskArtifactSummary {
     namespace: string;
   }[];
   resourceYamls?: string[];
+}
+
+export interface DeploymentTaskDeploymentPlanInput extends TemplateSourceInput {
+  sensitive?: boolean;
+}
+
+export interface DeploymentTaskDeploymentPlan {
+  args?: Record<string, string>;
+  defaults?: Record<string, TemplateDefaultValue>;
+  inputs: DeploymentTaskDeploymentPlanInput[];
+  kind: "sealos-template";
+  missingInputKeys?: string[];
+  templateName: string;
 }
 
 export interface DeploymentTaskCanvasProjectionExpectedRef {
@@ -85,15 +103,24 @@ export interface DeploymentTaskCanvasProjection {
 }
 
 export interface DeployTaskBlockingInput {
+  defaultValue?: string;
+  description?: string;
   id: string;
+  key?: string;
   label: string;
+  options?: string[];
   required: boolean;
+  sensitive?: boolean;
   type: "confirmation" | "env" | "secret" | "text";
+  valueType?: string;
 }
 
 export interface DeployTaskEventPayload {
   [key: string]: unknown;
 }
+
+export type DeployTaskFailureDetails = Record<string, unknown>;
+export type DeployTaskGatewayStateSnapshot = Record<string, unknown>;
 
 export interface DeploymentTaskGithubSource {
   branch?: string;
@@ -185,6 +212,12 @@ export const deployTasks = ns.table(
     gatewaySessionId: text("gateway_session_id"),
     gatewayThreadId: text("gateway_thread_id"),
     gatewayTurnId: text("gateway_turn_id"),
+    gatewayStateSnapshot: jsonb(
+      "gateway_state_snapshot"
+    ).$type<DeployTaskGatewayStateSnapshot | null>(),
+    failureDetails: jsonb(
+      "failure_details"
+    ).$type<DeployTaskFailureDetails | null>(),
     artifactSummary: jsonb("artifact_summary")
       .notNull()
       .$type<DeployTaskArtifactSummary>()

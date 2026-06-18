@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { resolveDeployTaskRequestNamespace } from "@/lib/deploy-task/api-auth";
+import { startDeployTaskRunner } from "@/lib/deploy-task/runner";
 import {
   getDeployTaskSnapshot,
   submitDeployTaskInput,
@@ -59,10 +60,28 @@ export async function POST(request: Request, context: RouteContext) {
 
   const task = await submitDeployTaskInput(taskId, {
     values: parsed.data.values,
+  }).catch((error: unknown) => {
+    if (
+      error instanceof Error &&
+      error.message === "Deploy task is not waiting for input."
+    ) {
+      return "not-waiting" as const;
+    }
+    throw error;
   });
+  if (task === "not-waiting") {
+    return jsonError("Deploy task is not waiting for input", 409);
+  }
   if (task == null) {
     return jsonError("Deploy task not found", 404);
   }
+  startDeployTaskRunner({
+    encodedKubeconfig: parsed.data.encodedKubeconfig,
+    submittedInputValues: parsed.data.values,
+    taskId,
+  }).catch((error: unknown) => {
+    console.error("[deploy-tasks] runner input resume failed:", error);
+  });
   const snapshot = await getDeployTaskSnapshot(
     taskId,
     namespaceResolved.namespace
