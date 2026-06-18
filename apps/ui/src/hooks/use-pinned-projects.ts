@@ -69,10 +69,10 @@ export function usePinnedProjects(input: {
   );
   const { data, mutate } = useSWR(
     swrKey,
-    ([path, keyNamespace, keyKubeconfig]) =>
+    ([path, keyNamespace]) =>
       fetcher<ProjectNavigationPreferencesResponse>({
         base: window.location.origin,
-        header: { Authorization: kubeconfigBearerHeader(keyKubeconfig) },
+        header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
         path,
         query: { namespace: keyNamespace },
       }),
