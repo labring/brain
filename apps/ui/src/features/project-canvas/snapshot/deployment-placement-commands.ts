@@ -24,13 +24,14 @@ import {
 import {
   createDeploymentProjectionContext,
   type DeploymentProjectionContext,
+  nodeForResultRefInDeploymentProjectionContext,
   resultRefHasLiveNodeInDeploymentProjectionContext,
   resultRefHasSavedLayoutInDeploymentProjectionContext,
 } from "./deployment-projection-context";
 import {
-  anchorSlot,
   type DeploymentResultPreview,
   type DeploymentTaskResultPreview,
+  deploymentSlotOwnerKey,
   layoutRefForSlot,
   materializedSlotPositions,
   resultRefForSlot,
@@ -155,6 +156,10 @@ class PlacementCommandDraft {
 
   hasOwner(owner: CanvasPlacementOwner): boolean {
     return this.nodesByOwner.has(canvasPlacementOwnerKey(owner));
+  }
+
+  node(owner: CanvasPlacementOwner): CanvasLayoutNode | undefined {
+    return this.nodesByOwner.get(canvasPlacementOwnerKey(owner));
   }
 
   create(input: {
@@ -308,34 +313,21 @@ function addUnknownSlotRefinementCommands(input: {
   preview: DeploymentResultPreview;
   task: DeploymentTaskProjection;
 }): void {
-  const anchor = anchorSlot(input.preview.slots);
-  if (anchor === undefined) {
-    return;
-  }
   const fromOwner = deploymentProjectionPlacementOwner({
     slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
     taskId: input.task.id,
   });
-  if (!input.draft.hasOwner(fromOwner)) {
+  const unknownNode = input.draft.node(fromOwner);
+  if (unknownNode === undefined) {
     return;
   }
-  input.draft.rekey(
-    fromOwner,
-    visiblePlacementOwnerForSlot({
-      context: input.context,
-      slot: anchor,
-      task: input.task,
-    })
-  );
+  const source = unknownNode.source ?? "generated";
   const materialized = materializedSlotPositions({
     layout: input.context.layout,
     slots: input.preview.slots,
     task: input.task,
   });
   for (const slot of input.preview.slots) {
-    if (slot.id === anchor.id) {
-      continue;
-    }
     const owner = visiblePlacementOwnerForSlot({
       context: input.context,
       slot,
@@ -344,16 +336,28 @@ function addUnknownSlotRefinementCommands(input: {
     if (input.draft.hasOwner(owner)) {
       continue;
     }
-    const position = materialized.positions.get(slot.id);
+    const resultRef = resultRefForSlot({ slot, task: input.task });
+    const position =
+      (resultRef === undefined
+        ? undefined
+        : nodeForResultRefInDeploymentProjectionContext(
+            input.context,
+            resultRef
+          )?.position) ??
+      input.context.placeholderByTaskSlotId.get(
+        deploymentSlotOwnerKey(input.task.id, slot.id)
+      )?.position ??
+      materialized.positions.get(slot.id);
     if (position === undefined) {
       continue;
     }
     input.draft.create({
       owner,
       position,
-      source: "generated",
+      source,
     });
   }
+  input.draft.delete(fromOwner);
 }
 
 function addSlotHandoffOrExpiryCommand(input: {

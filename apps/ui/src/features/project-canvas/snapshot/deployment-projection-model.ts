@@ -607,38 +607,101 @@ function relativeSlotPositions(
 ): Map<string, CanvasLayoutPosition> {
   const anchor = anchorSlot(slots);
   const anchorId = anchor?.id;
-  const publicAccessForAnchor = slots.find(
-    (slot) =>
-      slot.expectedRef?.kind === "PublicAccess" &&
-      anchor?.expectedRef?.kind === "AP" &&
-      slot.expectedRef.namespace === anchor.expectedRef.namespace &&
-      slot.expectedRef.name === anchor.expectedRef.name
-  );
-  const anchorX =
-    publicAccessForAnchor === undefined ? 0 : PUBLIC_ACCESS_AP_LEFT_OFFSET;
   const positions = new Map<string, CanvasLayoutPosition>();
-  if (publicAccessForAnchor !== undefined) {
-    positions.set(publicAccessForAnchor.id, { x: 0, y: 0 });
-  }
-  if (anchorId !== undefined) {
-    positions.set(anchorId, { x: anchorX, y: 0 });
+
+  const publicAccessByApKey = new Map<
+    string,
+    DeploymentTaskCanvasProjectionSlot
+  >();
+  for (const slot of slots) {
+    if (slot.expectedRef?.kind !== "PublicAccess") {
+      continue;
+    }
+    publicAccessByApKey.set(
+      `${slot.expectedRef.namespace}/${slot.expectedRef.name}`,
+      slot
+    );
   }
 
-  let column = publicAccessForAnchor === undefined ? 1 : 2;
+  const apKey = (slot: DeploymentTaskCanvasProjectionSlot) =>
+    slot.expectedRef?.kind === "AP"
+      ? `${slot.expectedRef.namespace}/${slot.expectedRef.name}`
+      : undefined;
+  const owningApForPublicAccess = (slot: DeploymentTaskCanvasProjectionSlot) =>
+    slot.expectedRef?.kind === "PublicAccess"
+      ? slots.find(
+          (candidate) =>
+            candidate.expectedRef?.kind === "AP" &&
+            candidate.expectedRef.namespace === slot.expectedRef?.namespace &&
+            candidate.expectedRef.name === slot.expectedRef.name
+        )
+      : undefined;
+
+  const placeApPair = (
+    apSlot: DeploymentTaskCanvasProjectionSlot,
+    origin: CanvasLayoutPosition
+  ) => {
+    const key = apKey(apSlot);
+    const publicAccess =
+      key === undefined ? undefined : publicAccessByApKey.get(key);
+    if (publicAccess !== undefined) {
+      positions.set(publicAccess.id, origin);
+      positions.set(apSlot.id, {
+        x: origin.x + PUBLIC_ACCESS_AP_LEFT_OFFSET,
+        y: origin.y,
+      });
+      return true;
+    }
+    positions.set(apSlot.id, origin);
+    return false;
+  };
+
+  const anchorPaOwner =
+    anchor?.expectedRef?.kind === "PublicAccess"
+      ? owningApForPublicAccess(anchor)
+      : undefined;
+  let initialColumn = anchorId === undefined ? 0 : 1;
+  if (anchorPaOwner !== undefined) {
+    placeApPair(anchorPaOwner, { x: 0, y: 0 });
+    initialColumn = 2;
+  } else if (anchor?.expectedRef?.kind === "AP") {
+    initialColumn = placeApPair(anchor, { x: 0, y: 0 }) ? 2 : 1;
+  } else if (anchorId !== undefined) {
+    positions.set(anchorId, { x: 0, y: 0 });
+  }
+
+  let column = initialColumn;
   let row = 0;
+  let bandWidth = 1;
+  const nextCell = (width: number): CanvasLayoutPosition => {
+    const position = { x: column * COLUMN_STEP, y: row * ROW_STEP };
+    bandWidth = Math.max(bandWidth, width);
+    row += 1;
+    if (row >= 2) {
+      row = 0;
+      column += bandWidth;
+      bandWidth = 1;
+    }
+    return position;
+  };
+
   for (const slot of slots) {
     if (positions.has(slot.id)) {
       continue;
     }
-    positions.set(slot.id, {
-      x: column * COLUMN_STEP,
-      y: row * ROW_STEP,
-    });
-    row += 1;
-    if (row >= 2) {
-      row = 0;
-      column += 1;
+    if (slot.expectedRef?.kind === "AP") {
+      const hasPublicAccess = placeApPair(slot, nextCell(2));
+      if (!hasPublicAccess) {
+        continue;
+      }
+      continue;
     }
+    const owningAp = owningApForPublicAccess(slot);
+    if (owningAp !== undefined) {
+      placeApPair(owningAp, nextCell(2));
+      continue;
+    }
+    positions.set(slot.id, nextCell(1));
   }
   return positions;
 }
@@ -754,10 +817,7 @@ function materializedSlotOrigin(input: {
   }
 
   if (unknownSlotPosition !== undefined && anchorRelative !== undefined) {
-    return {
-      x: unknownSlotPosition.x - anchorRelative.x,
-      y: unknownSlotPosition.y - anchorRelative.y,
-    };
+    return unknownSlotPosition;
   }
 
   return { x: 0, y: 0 };

@@ -124,6 +124,20 @@ Deployment Projection Slots are only for anticipated results that can become Pro
 
 _Avoid_: generic placeholder identity, result-only slot, pending resource identity, fake Canvas Resource Identity, one slot per applied Kubernetes object.
 
+### Deployment Projection Footprint
+
+The visual group of currently visible Deployment Projection Slots for one Deployment Task Projection. A Deployment Projection Footprint may include AP, DB, AP Public Access Node, and template-visible workload slots from the same task; it is not limited to an AP-and-Public-access pair.
+
+An unknown Deployment Projection Slot may represent the Deployment Projection Footprint's visual origin before concrete slots are known. When concrete Deployment Projection Slots become known, the unknown slot's placement is consumed into concrete slot placements rather than remaining as a separate placement.
+
+Within a Deployment Projection Footprint, each AP Public Access Node slot remains visually paired with its owning AP slot; this pairing is independent of which slot anchors the whole footprint.
+
+An AP Public Access Node Deployment Projection Slot has its own Deployment Projection Placement. When it has no placement yet, its initial generated placement may be derived from its owning AP's resource or projection placement.
+
+AP-to-Public-access pairing guides generated placement; it does not override separately user-arranged placements.
+
+_Avoid_: AP PublicAccess group, result pair, placeholder cluster.
+
 ### Deployment Placeholder Node
 
 A temporary Project Canvas skeleton node rendered for a Deployment Projection Slot that does not have a live resource node. It is a task projection, not an AP, DB, AP Public Access Node, template workload, Settings Owner, resource action target, or Canvas Connection endpoint.
@@ -133,6 +147,12 @@ _Avoid_: ghost node, pending node, pending AP, pending DB, fake resource node.
 ### Deployment Projection Placement
 
 The project-scoped temporary visual position owned by a Deployment Projection Slot before Deployment Handoff. Deployment Projection Placement is a Canvas Layout placement owned by the deployment projection, and it may be rekeyed to a resulting resource when handoff occurs.
+
+A user-arranged Deployment Projection Placement represents the user's intended visual position for that Deployment Task Projection until Deployment Handoff; it should not be displaced by automatic footprint avoidance.
+
+A generated Deployment Projection Placement is system-proposed and may be refined by later projection evidence until a user arranges it.
+
+After concrete Deployment Projection Slots are known, arranging one concrete slot expresses intent for that slot only, not for the whole Deployment Projection Footprint.
 
 _Avoid_: pending node layout, fake resource layout, viewport placement.
 
@@ -157,6 +177,10 @@ _Avoid_: task list row, canvas task, placeholder source data.
 The transition where a concrete Deployment Projection Slot stops being represented by a Deployment Placeholder Node and its matching result appears as a normal Project Canvas resource node. Deployment Handoff may rekey the slot's Deployment Projection Placement to the resulting resource when that resource has no existing Canvas Layout position.
 
 Deployment Handoff may complete per slot while unresolved slots remain visible as Deployment Placeholder Nodes.
+
+After Deployment Handoff, the resulting resource's placement is no longer arranged by the remaining Deployment Projection Footprint.
+
+When a user-arranged Deployment Projection Placement is handed off, the resulting resource inherits that user placement intent.
 
 _Avoid_: completed placeholder, ghost replacement, result takeover.
 

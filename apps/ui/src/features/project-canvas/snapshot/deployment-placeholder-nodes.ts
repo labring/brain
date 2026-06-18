@@ -122,8 +122,7 @@ function resultPreviewPlaceholderNodes(input: {
     }
     const position = positions.get(slot.id) ?? { x: 0, y: 0 };
     const projectionPlacementSource =
-      placement?.source ??
-      (slot.id === anchor?.id ? unknownSlotPlacement?.source : undefined);
+      placement?.source ?? unknownSlotPlacement?.source;
     const data: CanvasDeploymentPlaceholderNodeData = {
       ...(slot.expectedRef === undefined
         ? {}
