@@ -99,7 +99,7 @@ const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
 const DEVBOX_RUNTIME_WAIT_EVENT_MS = 30_000;
 const DEVBOX_SECRET_READY_MAX_RETRIES = 3;
 const DEVBOX_SECRET_READY_RETRY_DELAY_MS = 2000;
-const DEVBOX_SDK_READY_MAX_RETRIES = 30;
+const DEVBOX_SDK_READY_MAX_RETRIES = 90;
 const DEVBOX_SDK_READY_RETRY_DELAY_MS = 2000;
 const DEVBOX_DEFAULT_MAX_DURATION_MINUTES = 300;
 const DEPLOY_WORKSPACE_DIR = "/home/devbox/project";
@@ -922,11 +922,17 @@ function isDevboxSecretPendingError(error: unknown): error is DevboxApiError {
 }
 
 function isDevboxSdkPendingError(error: unknown): error is DevboxApiError {
+  if (!(error instanceof DevboxApiError) || error.status < 500) {
+    return false;
+  }
+
+  const message = error.message;
   return (
-    error instanceof DevboxApiError &&
-    error.status >= 500 &&
-    error.message.includes("sdk server") &&
-    error.message.includes("is not reachable yet")
+    (message.includes("sdk server") &&
+      message.includes("is not reachable yet")) ||
+    (message.includes("exec command failed") &&
+      message.includes(":9757") &&
+      message.includes("connect: connection refused"))
   );
 }
 
