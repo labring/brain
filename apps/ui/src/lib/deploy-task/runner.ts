@@ -65,7 +65,11 @@ import {
   templateWorkloadReadinessFromProductView,
 } from "./readiness";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
-import type { DeployTaskArtifactSummary, DeployTaskRow } from "./schema";
+import type {
+  DeployTaskArtifactSummary,
+  DeployTaskEventPayload,
+  DeployTaskRow,
+} from "./schema";
 import {
   getDeployTaskById,
   getDeployTaskTimelineSnapshot,
@@ -78,10 +82,13 @@ import {
   appendStepEvent,
   applyResultResourceTimeout,
   type DeploymentResultResourceCard,
+  deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   markTimelineStep,
+  updateTimelineStatus,
   upsertResultResourceCard,
 } from "./timeline";
+import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
@@ -417,29 +424,44 @@ function timelineEvent(input: {
 async function markTimelineStepWithEvent(input: {
   eventKind: string;
   eventMessage: string;
+  eventPayload?: DeployTaskEventPayload;
+  eventReason?: string;
+  eventSeverity?: "info" | "success" | "warning" | "error";
   phase: DeployTaskRow["phase"];
   status: Parameters<typeof markTimelineStep>[1]["status"];
   stepId: string;
   taskId: string;
+  timelineStatus?: DeployTaskRow["status"];
 }) {
   const now = new Date().toISOString();
   await updateDeployTaskTimeline(input.taskId, {
     event: {
       kind: input.eventKind,
       message: input.eventMessage,
+      payload: input.eventPayload,
       phase: input.phase,
     },
     update: (timeline) =>
       appendStepEvent(
-        markTimelineStep(timeline, {
-          status: input.status,
-          stepId: input.stepId,
-          updatedAt: now,
-        }),
+        markTimelineStep(
+          input.timelineStatus == null
+            ? timeline
+            : updateTimelineStatus(timeline, {
+                status: input.timelineStatus,
+                updatedAt: now,
+              }),
+          {
+            status: input.status,
+            stepId: input.stepId,
+            updatedAt: now,
+          }
+        ),
         {
           event: timelineEvent({
             dedupeKey: input.eventKind,
             message: input.eventMessage,
+            reason: input.eventReason,
+            severity: input.eventSeverity,
             source: "runner",
           }),
           stepId: input.stepId,
@@ -447,6 +469,36 @@ async function markTimelineStepWithEvent(input: {
         }
       ),
   });
+}
+
+async function markDeployTaskFailureTimeline(input: {
+  errorMessage: string;
+  failureMessage: string;
+  task: DeployTaskRow;
+}): Promise<boolean> {
+  const timeline = deploymentTaskTimelineFromTaskRecord(input.task);
+  const stepId = deploymentTimelineFailureStepId({
+    phase: input.task.phase,
+    runner: input.task.runner,
+    timeline,
+  });
+  if (stepId == null) {
+    return false;
+  }
+
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.failed",
+    eventMessage: input.failureMessage,
+    eventPayload: { error: input.errorMessage },
+    eventReason: "DeploymentTaskFailed",
+    eventSeverity: "error",
+    phase: input.task.phase,
+    status: "failed",
+    stepId,
+    taskId: input.task.id,
+    timelineStatus: "failed",
+  });
+  return true;
 }
 
 async function fetchApProductView(input: {
@@ -2264,15 +2316,25 @@ export async function startDeployTaskRunner(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failureMessage = deployTaskFailureSummary(error);
+    const latestTask = (await getDeployTaskById(task.id)) ?? task;
+    const recordedFailureEvent = await markDeployTaskFailureTimeline({
+      errorMessage: message,
+      failureMessage,
+      task: latestTask,
+    });
     await updateDeployTaskState(task.id, {
       error: message,
       status: "failed",
     });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deployment_task.failed",
-      message: deployTaskFailureSummary(error),
-      payload: { error: message },
-    });
+    if (!recordedFailureEvent) {
+      await recordDeployTaskEvent(task.id, {
+        kind: "deployment_task.failed",
+        message: failureMessage,
+        payload: { error: message },
+        phase: latestTask.phase,
+      });
+    }
     throw error;
   }
 }

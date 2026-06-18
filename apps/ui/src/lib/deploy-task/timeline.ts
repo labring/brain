@@ -1,6 +1,7 @@
 import type {
   DeploymentTaskRunner,
   DeploymentTaskSource,
+  DeployTaskPhase,
   DeployTaskStatus,
 } from "./schema";
 
@@ -135,6 +136,56 @@ export function deploymentTimelineStepsForRunner(
       ];
     default:
       return runner satisfies never;
+  }
+}
+
+export function deploymentTimelineFailureStepId(input: {
+  phase: DeployTaskPhase;
+  runner: DeploymentTaskRunner;
+  timeline: DeploymentTaskTimelineSnapshot;
+}): string | null {
+  const runningStep = [...input.timeline.steps]
+    .sort((a, b) => a.order - b.order)
+    .find((step) => step.status === "running");
+  if (runningStep != null) {
+    return runningStep.id;
+  }
+
+  switch (input.phase) {
+    case "prepare":
+      return input.runner.kind === "ai" ? "prepare-workspace" : null;
+    case "plan":
+      switch (input.runner.kind) {
+        case "direct":
+          return "validate-settings";
+        case "template":
+          return "prepare-template";
+        case "ai":
+          return "analyze-source";
+        default:
+          return input.runner satisfies never;
+      }
+    case "generate-artifacts":
+      switch (input.runner.kind) {
+        case "direct":
+          return "validate-settings";
+        case "template":
+          return "prepare-template";
+        case "ai":
+          return "generate-deployment";
+        default:
+          return input.runner satisfies never;
+      }
+    case "apply":
+    case "verify":
+      return "create-resources";
+    case "queued":
+    case "resolve-target":
+    case "configure":
+    case "completed":
+      return null;
+    default:
+      return input.phase satisfies never;
   }
 }
 

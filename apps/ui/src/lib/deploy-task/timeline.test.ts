@@ -8,6 +8,7 @@ import {
   createDeploymentTaskTimeline,
   createDeploymentTaskTimelineForRunner,
   declareTimelineSteps,
+  deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   deploymentTimelineStepsForRunner,
   markTimelineStep,
@@ -48,6 +49,88 @@ test("AI deployment timelines use source-specific analysis language", () => {
 
   assert.equal(githubTimeline.steps[1]?.label, "Analyze repository");
   assert.equal(promptTimeline.steps[1]?.label, "Analyze request");
+});
+
+test("deployment task failure step prefers the currently running timeline step", () => {
+  const runner = { kind: "ai", runtimeProvider: "devbox" } as const;
+  const timeline = createDeploymentTaskTimelineForRunner({
+    runner,
+    source: {
+      kind: "github",
+      repo: {
+        fullName: "acme/api",
+        name: "api",
+        url: "https://github.com/acme/api",
+      },
+    },
+    status: "running",
+    taskId: "task-1",
+    updatedAt: NOW,
+  });
+  const preparing = markTimelineStep(timeline, {
+    status: "running",
+    stepId: "prepare-workspace",
+    updatedAt: "2026-06-17T10:00:01.000Z",
+  });
+
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "plan",
+      runner,
+      timeline: preparing,
+    }),
+    "prepare-workspace"
+  );
+});
+
+test("deployment task failure step falls back to the runner step for the current phase", () => {
+  const aiRunner = { kind: "ai", runtimeProvider: "devbox" } as const;
+  const aiTimeline = createDeploymentTaskTimelineForRunner({
+    runner: aiRunner,
+    status: "running",
+    taskId: "ai-task",
+    updatedAt: NOW,
+  });
+
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "prepare",
+      runner: aiRunner,
+      timeline: aiTimeline,
+    }),
+    "prepare-workspace"
+  );
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "generate-artifacts",
+      runner: aiRunner,
+      timeline: aiTimeline,
+    }),
+    "generate-deployment"
+  );
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "resolve-target",
+      runner: aiRunner,
+      timeline: aiTimeline,
+    }),
+    null
+  );
+
+  const templateRunner = { kind: "template" } as const;
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "generate-artifacts",
+      runner: templateRunner,
+      timeline: createDeploymentTaskTimelineForRunner({
+        runner: templateRunner,
+        status: "running",
+        taskId: "template-task",
+        updatedAt: NOW,
+      }),
+    }),
+    "prepare-template"
+  );
 });
 
 test("deployment task timeline preserves runner-defined step order and revision metadata", () => {
