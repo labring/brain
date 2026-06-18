@@ -3,24 +3,12 @@
 import { MessageResponse } from "@workspace/ui/components/ai-elements/message";
 import type { ChatAddToolApproveResponseFunction, UIMessage } from "ai";
 import { isToolUIPart } from "ai";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { ChatTool } from "./chat.tool";
 import { ChatToolGroup, type ChatToolPart } from "./chat.tool-group";
 
 type Part = UIMessage["parts"][number];
-
-const DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX = "deploy-task-created-";
-
-function isDeployTaskPart(part: Part): boolean {
-  return (
-    part.type === "data-deploy-task" || part.type === "data-github-deploy-task"
-  );
-}
-
-function isLegacyDeployTaskMessage(message: UIMessage): boolean {
-  return message.id.startsWith(DEPLOY_TASK_CHAT_MESSAGE_ID_PREFIX);
-}
 
 /** AI SDK step boundary; do not render and do not break tool-run grouping. */
 function isStepBoundaryPart(part: Part): boolean {
@@ -88,7 +76,6 @@ export function renderChatMessageParts({
 }): ReactNode[] {
   const out: ReactNode[] = [];
   const parts = message.parts;
-  const hideLegacyDeployTaskText = isLegacyDeployTaskMessage(message);
   let i = 0;
 
   while (i < parts.length) {
@@ -120,19 +107,12 @@ export function renderChatMessageParts({
       continue;
     }
 
-    if (isDeployTaskPart(part)) {
-      i += 1;
-      continue;
-    }
-
     if (part.type === "text") {
-      if (!hideLegacyDeployTaskText) {
-        out.push(
-          <Fragment key={`${message.id}-p-${i}-text`}>
-            <MessageResponse>{part.text}</MessageResponse>
-          </Fragment>
-        );
-      }
+      out.push(
+        <MessageResponse key={`${message.id}-p-${i}-text`}>
+          {part.text}
+        </MessageResponse>
+      );
       i += 1;
       continue;
     }

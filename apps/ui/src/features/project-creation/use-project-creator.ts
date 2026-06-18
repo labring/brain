@@ -259,9 +259,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.taskId != null) {
             dispatchDeployTaskCreatedEvent({
               projectId: outcome.projectId,
-              projectName: outcome.projectName,
-              sourceKind: "docker",
-              sourceLabel: outcome.sourceLabel,
               taskId: outcome.taskId,
             });
           }
@@ -294,9 +291,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.taskId != null) {
             dispatchDeployTaskCreatedEvent({
               projectId: outcome.projectId,
-              projectName: outcome.projectName,
-              sourceKind: "database",
-              sourceLabel: outcome.sourceLabel,
               taskId: outcome.taskId,
             });
           }
@@ -331,9 +325,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.taskId != null) {
             dispatchDeployTaskCreatedEvent({
               projectId: outcome.projectId,
-              projectName: outcome.projectName,
-              sourceKind: "template",
-              sourceLabel: outcome.sourceLabel,
               taskId: outcome.taskId,
             });
           }
@@ -364,10 +355,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           if (outcome.taskId != null) {
             dispatchDeployTaskCreatedEvent({
               projectId: outcome.projectId,
-              projectName: outcome.projectName,
-              repoFullName: outcome.sourceLabel,
-              sourceKind: "github",
-              sourceLabel: outcome.sourceLabel,
               taskId: outcome.taskId,
             });
           }
@@ -403,10 +390,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
-            projectName: outcome.projectName,
-            repoFullName: outcome.sourceLabel,
-            sourceKind: "github",
-            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }
@@ -470,9 +453,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
-            projectName: outcome.projectName,
-            sourceKind: "template",
-            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }

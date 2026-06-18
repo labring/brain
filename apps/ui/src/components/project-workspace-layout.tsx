@@ -48,10 +48,7 @@ import type {
   AssistantSessionPayload,
   AssistantThreadDTO,
 } from "@/lib/chat-persistence/types";
-import {
-  type DeployTaskCreatedEventDetail,
-  dispatchDeployTaskCreatedEvent,
-} from "@/lib/deploy-task/browser-events";
+import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -87,22 +84,6 @@ type AssistantClientToolSubmission =
       output: OpenProjectSurfaceToolOutput;
     };
 
-type DeployTaskSourceKind = NonNullable<
-  DeployTaskCreatedEventDetail["sourceKind"]
->;
-
-function deployTaskSourceKindFromValue(
-  value: unknown
-): DeployTaskSourceKind | undefined {
-  return value === "database" ||
-    value === "docker" ||
-    value === "github" ||
-    value === "prompt" ||
-    value === "template"
-    ? value
-    : undefined;
-}
-
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -113,32 +94,9 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function sourceLabelFromTaskSource(
-  source: Record<string, unknown>
-): string | undefined {
-  switch (source.kind) {
-    case "database":
-      return "database";
-    case "docker": {
-      const settings = recordValue(source.settings);
-      return stringValue(settings?.image) ?? "Docker image";
-    }
-    case "github": {
-      const repo = recordValue(source.repo);
-      return stringValue(repo?.fullName) ?? "GitHub repository";
-    }
-    case "prompt":
-      return "AI prompt";
-    case "template":
-      return stringValue(source.templateName) ?? "template";
-    default:
-      return undefined;
-  }
-}
-
 function deployTaskDetailFromCreateToolPart(
   part: UIMessage["parts"][number]
-): DeployTaskCreatedEventDetail | null {
+): { projectId: string; taskId: string } | null {
   if (
     !isToolUIPart(part) ||
     part.type !== "tool-createDeployTask" ||
@@ -153,19 +111,12 @@ function deployTaskDetailFromCreateToolPart(
   }
   const task = recordValue(output.task);
   const taskId = stringValue(task?.id);
-  const projectName = stringValue(task?.projectName);
-  if (taskId == null || projectName == null) {
+  const projectId = stringValue(task?.projectId);
+  if (projectId == null || taskId == null) {
     return null;
   }
-  const source = recordValue(task?.source);
-  const sourceKind = deployTaskSourceKindFromValue(source?.kind);
-  const sourceLabel =
-    source == null ? undefined : sourceLabelFromTaskSource(source);
   return {
-    projectId: stringValue(task?.projectId),
-    projectName,
-    sourceKind,
-    sourceLabel,
+    projectId,
     taskId,
   };
 }

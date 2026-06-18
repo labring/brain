@@ -68,9 +68,6 @@ export function DatabaseDeploymentPane({
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
-            projectName: outcome.projectName,
-            sourceKind: "database",
-            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }

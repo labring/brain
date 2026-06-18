@@ -67,9 +67,6 @@ export function TemplateDeploymentPane({
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
-            projectName: outcome.projectName,
-            sourceKind: "template",
-            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }

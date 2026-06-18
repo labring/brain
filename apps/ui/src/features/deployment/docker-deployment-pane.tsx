@@ -66,9 +66,6 @@ export function DockerDeploymentPane({
         if (outcome.taskId != null) {
           dispatchDeployTaskCreatedEvent({
             projectId: outcome.projectId,
-            projectName: outcome.projectName,
-            sourceKind: "docker",
-            sourceLabel: outcome.sourceLabel,
             taskId: outcome.taskId,
           });
         }

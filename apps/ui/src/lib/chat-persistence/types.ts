@@ -101,9 +101,7 @@ export function isAssistantApprovalResponseMessage(
 export function isAppendableAssistantEventMessage(message: UIMessage): boolean {
   return (
     message.role === "assistant" &&
-    message.parts.every(
-      (part) => part.type === "text" || part.type.startsWith("data-")
-    )
+    message.parts.every((part) => part.type === "text")
   );
 }
 
