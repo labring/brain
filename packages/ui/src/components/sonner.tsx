@@ -48,7 +48,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast:
-            "cn-toast min-w-0 !items-start !gap-2.5 border-t-[0.5px] border-l-[0.5px] !p-2.5 !shadow-[0px_2px_4px_0px_rgba(8,10,17,0.25),inset_-1px_-1px_4px_0px_rgba(8,10,17,0.25)] backdrop-blur-lg",
+            "cn-toast min-w-0 !items-start !gap-2.5 border-t-[0.5px] border-l-[0.5px] !p-2.5 !shadow-[0px_2px_4px_0px_rgba(8,10,17,0.25),inset_-1px_-1px_4px_0px_rgba(8,10,17,0.25)] backdrop-blur-lg [&:not(:has([data-description]))_[data-content]]:min-h-9 [&:not(:has([data-description]))_[data-content]]:justify-center",
           title:
             "min-w-0 break-words !text-sm !font-normal !leading-5 !text-primary",
           description:
