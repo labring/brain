@@ -222,7 +222,7 @@ _Avoid_: GitHub Deployment Target, Docker Deployment Target, project selector.
 
 The execution strategy for one Deployment Task. Direct and template runners use already-structured Deployment Sources, while an AI Runner interprets less-structured sources such as repositories or natural-language prompts.
 
-_Avoid_: task type, deploy engine.
+_Avoid_: deterministic runner, task type, deploy engine.
 
 ### Deployment Artifact
 

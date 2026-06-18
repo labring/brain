@@ -12,26 +12,17 @@ import {
   submitDeployTaskInput,
 } from "@/lib/deploy-task/service";
 import {
-  type DeploymentTaskRunner,
-  type DeploymentTaskSource,
   type DeploymentTaskTarget,
-  deploymentTaskRunnerSchema,
-  deploymentTaskSourceSchema,
-  deploymentTaskTargetSchema,
   submitDeployTaskInputSchema,
 } from "@/lib/deploy-task/types";
+import {
+  createDeployTaskToolInputSchema,
+  defaultRunnerForSource,
+} from "@/lib/tool/chat-deploy-task-input";
 import {
   chatToolIntentionField,
   logChatToolIntention,
 } from "@/lib/tool/chat-tool-intention";
-
-const createDeployTaskToolInputSchema = z.object({
-  intention: chatToolIntentionField,
-  prompt: z.string().trim().max(4000).optional(),
-  runner: deploymentTaskRunnerSchema.optional(),
-  source: deploymentTaskSourceSchema,
-  target: deploymentTaskTargetSchema.optional(),
-});
 
 const getDeployTaskStatusToolInputSchema = z.object({
   intention: chatToolIntentionField,
@@ -49,27 +40,6 @@ const cancelDeployTaskToolInputSchema = z.object({
   intention: chatToolIntentionField,
   taskId: z.string().trim().min(1),
 });
-
-function defaultRunnerForSource(
-  source: DeploymentTaskSource
-): DeploymentTaskRunner {
-  switch (source.kind) {
-    case "database":
-    case "docker":
-      return { kind: "direct" };
-    case "github":
-    case "prompt":
-      return {
-        kind: "ai",
-        runtimeProvider: "devbox",
-        skill: "sealos-deploy",
-      };
-    case "template":
-      return { kind: "template" };
-    default:
-      return source satisfies never;
-  }
-}
 
 function defaultTargetFromContext(options: {
   assistantContext?: {
@@ -109,7 +79,8 @@ export function createDeployTaskTools(options: {
     description: [
       "Create a long-running Deployment Task in SealAI.",
       "Use this when the user asks to deploy from GitHub, a Docker image, a database, a template, or a prompt.",
-      "The task resolves or creates its target Project, runs the selected runner, applies artifacts, and reports progress separately.",
+      "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
+      "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",
       "If the user is already inside a Project, omit target to deploy into the current Project; otherwise provide a newProject target.",
     ].join(" "),
     inputSchema: createDeployTaskToolInputSchema,
@@ -128,7 +99,7 @@ export function createDeployTaskTools(options: {
         createdFrom: "chat",
         namespace,
         prompt: input.prompt,
-        runner: input.runner ?? defaultRunnerForSource(input.source),
+        runner: defaultRunnerForSource(input.source),
         source: input.source,
         target,
       });
@@ -139,6 +110,7 @@ export function createDeployTaskTools(options: {
         projectName: task.projectName,
         target,
       });
+      const snapshot = await getDeployTaskSnapshot(task.id, namespace);
       startDeployTaskRunner({
         encodedKubeconfig: encodeURIComponent(options.kubeconfig),
         taskId: task.id,
@@ -147,10 +119,12 @@ export function createDeployTaskTools(options: {
       });
       return {
         ok: true,
-        task: {
+        task: snapshot?.task ?? {
           ...task,
+          phase: "resolve-target",
           projectId: resolved.projectId,
           projectName: resolved.projectName,
+          status: "running",
         },
         taskUrl: `/deploy-tasks/${task.id}`,
       };
