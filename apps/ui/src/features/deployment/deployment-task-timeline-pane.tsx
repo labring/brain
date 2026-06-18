@@ -1,22 +1,30 @@
 "use client";
 
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@workspace/ui/components/collapsible";
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Circle,
   Clock3,
   LoaderCircle,
   PackageCheck,
   XCircle,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
+  DeploymentResultResourceRef,
   DeploymentTaskTimelineSnapshot,
   DeploymentTimelineEvent,
+  DeploymentTimelineEventSeverity,
   DeploymentTimelineStep,
   DeploymentTimelineStepStatus,
 } from "@/lib/deploy-task/timeline";
@@ -101,10 +109,30 @@ function EmptyState({ children }: { children: ReactNode }) {
   );
 }
 
+function eventSeverityTone(
+  severity: DeploymentTimelineEventSeverity | undefined
+): string {
+  switch (severity) {
+    case "success":
+      return "bg-emerald-400";
+    case "warning":
+      return "bg-amber-400";
+    case "error":
+      return "bg-destructive";
+    case "info":
+    case undefined:
+      return "bg-muted-foreground/60";
+    default:
+      return severity satisfies never;
+  }
+}
+
 function TimelineEventList({
   events,
+  showSeverity = false,
 }: {
   events: readonly DeploymentTimelineEvent[];
+  showSeverity?: boolean;
 }) {
   if (events.length === 0) {
     return null;
@@ -113,9 +141,23 @@ function TimelineEventList({
     <ol className="flex flex-col gap-1.5">
       {events.map((event) => (
         <li
-          className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 text-sm"
+          className={cn(
+            "grid gap-2 text-sm",
+            showSeverity
+              ? "grid-cols-[0.5rem_5rem_minmax(0,1fr)]"
+              : "grid-cols-[5rem_minmax(0,1fr)]"
+          )}
           key={event.id}
         >
+          {showSeverity ? (
+            <span
+              aria-hidden
+              className={cn(
+                "mt-2 size-1.5 rounded-full",
+                eventSeverityTone(event.severity)
+              )}
+            />
+          ) : null}
           <span className="truncate text-muted-foreground text-xs leading-5">
             {event.createdAt}
           </span>
@@ -128,31 +170,118 @@ function TimelineEventList({
   );
 }
 
+function resultResourceKindLabel(ref: DeploymentResultResourceRef): string {
+  switch (ref.kind) {
+    case "AP":
+      return "AP";
+    case "DB":
+      return "DB";
+    case "PublicAccess":
+      return "Public access";
+    case "TemplateWorkload":
+      return ref.workloadKind || "Workload";
+    default:
+      return ref satisfies never;
+  }
+}
+
+function defaultResourceCardOpen(
+  status: DeploymentResultResourceCardStatus
+): boolean {
+  return status !== "running";
+}
+
+function useResourceCardOpen(status: DeploymentResultResourceCardStatus) {
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const [autoOpen, setAutoOpen] = useState(() =>
+    defaultResourceCardOpen(status)
+  );
+
+  useEffect(() => {
+    if (manualOpen !== null) {
+      return;
+    }
+    if (defaultResourceCardOpen(status)) {
+      setAutoOpen(true);
+    }
+  }, [manualOpen, status]);
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setManualOpen(nextOpen);
+  }, []);
+
+  return {
+    onOpenChange: handleOpenChange,
+    open: manualOpen ?? autoOpen,
+  };
+}
+
 function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
+  const { onOpenChange, open } = useResourceCardOpen(card.status);
+  const latestEvent = card.events.at(-1);
+  const kindLabel = resultResourceKindLabel(card.resultRef);
+
   return (
-    <article
-      className="rounded-md border bg-background px-3 py-3"
+    <Collapsible
+      className={cn(
+        "overflow-hidden rounded-lg border border-border bg-input/30 transition-colors",
+        open && "bg-input/40"
+      )}
       data-slot="deployment-result-resource-card"
+      onOpenChange={onOpenChange}
+      open={open}
     >
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-medium text-sm" title={card.title}>
-            {card.title}
+      <CollapsibleTrigger
+        className="group/resource-card flex w-full cursor-pointer flex-col gap-2 px-3 py-3 text-left outline-none transition-colors hover:bg-input/25 focus-visible:ring-2 focus-visible:ring-ring/30"
+        type="button"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div
+              className="truncate font-medium text-foreground text-sm leading-5"
+              title={card.title}
+            >
+              {card.title}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs leading-4">
+              <span>{kindLabel}</span>
+              <span>{card.required ? "Required" : "Optional"}</span>
+              {card.latestStatusText == null ? null : (
+                <span className="min-w-0 truncate">
+                  {card.latestStatusText}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs">
-            <span>{card.resultRef.kind}</span>
-            <span>{card.required ? "Required" : "Optional"}</span>
-            {card.latestStatusText == null ? null : (
-              <span className="min-w-0 truncate">{card.latestStatusText}</span>
-            )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <StatusPill status={card.status} />
+            <ChevronDown
+              aria-hidden
+              className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open/resource-card:rotate-180"
+            />
           </div>
         </div>
-        <StatusPill status={card.status} />
-      </div>
-      <div className="mt-3">
-        <TimelineEventList events={card.events} />
-      </div>
-    </article>
+        {latestEvent == null ? null : (
+          <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-2 text-sm">
+            <span className="truncate text-muted-foreground text-xs leading-5">
+              {latestEvent.createdAt}
+            </span>
+            <span className="min-w-0 truncate text-foreground leading-5">
+              {latestEvent.message}
+            </span>
+          </div>
+        )}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-border/70 border-t px-3 py-3 outline-none">
+        {card.events.length === 0 ? (
+          <p className="text-muted-foreground text-sm leading-5">
+            No resource events recorded yet.
+          </p>
+        ) : (
+          <TimelineEventList events={card.events} showSeverity />
+        )}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

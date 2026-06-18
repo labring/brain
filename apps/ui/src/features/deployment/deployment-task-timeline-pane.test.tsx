@@ -10,7 +10,12 @@ const RESULT_CARD_SLOT_RE = /data-slot="deployment-result-resource-card"/;
 const API_RE = /api/;
 const RUNNING_RE = /running/;
 const REQUIRED_RE = /Required/;
+const OPTIONAL_RE = /Optional/;
 const AP_READY_EVENT_RE = /AP workload has 1\/1 ready replicas\./;
+const PUBLIC_ACCESS_LABEL_RE = /Public access/;
+const PUBLIC_ACCESS_ENUM_RE = /PublicAccess/;
+const PUBLIC_ADDRESS_ACCESSIBLE_RE = /Public Address is accessible\./;
+const RESOURCE_CARD_COLLAPSED_RE = /aria-expanded="false"/;
 const ANALYZE_REQUEST_RE = /Analyze request/;
 const SKIPPED_RE = /skipped/;
 
@@ -81,6 +86,28 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
                   status: "running",
                   title: "api",
                 },
+                {
+                  events: [
+                    {
+                      createdAt: "2026-06-17T10:00:04.000Z",
+                      id: "evt-4",
+                      message: "Public Address is accessible.",
+                      severity: "success",
+                      source: "resource-observer",
+                    },
+                  ],
+                  id: "PublicAccess:default:api:pa_api",
+                  latestStatusText: "accessible",
+                  required: false,
+                  resultRef: {
+                    apName: "api",
+                    id: "pa_api",
+                    kind: "PublicAccess",
+                    namespace: "default",
+                  },
+                  status: "running",
+                  title: "Public access",
+                },
               ],
               status: "running",
             },
@@ -108,7 +135,12 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
   assert.match(html, API_RE);
   assert.match(html, RUNNING_RE);
   assert.match(html, REQUIRED_RE);
+  assert.match(html, OPTIONAL_RE);
   assert.match(html, AP_READY_EVENT_RE);
+  assert.match(html, PUBLIC_ACCESS_LABEL_RE);
+  assert.doesNotMatch(html, PUBLIC_ACCESS_ENUM_RE);
+  assert.match(html, PUBLIC_ADDRESS_ACCESSIBLE_RE);
+  assert.match(html, RESOURCE_CARD_COLLAPSED_RE);
 });
 
 test("deployment task timeline pane renders skipped runner steps", () => {
