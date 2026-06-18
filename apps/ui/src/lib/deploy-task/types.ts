@@ -22,6 +22,8 @@ export type {
   DeploymentTaskCanvasProjectionResultMapping,
   DeploymentTaskCanvasProjectionSlot,
   DeploymentTaskCreatedFrom,
+  DeploymentTaskDeploymentPlan,
+  DeploymentTaskDeploymentPlanInput,
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeploymentTaskTarget,

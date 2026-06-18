@@ -13,7 +13,6 @@ import {
 import { publishDeploymentTaskProjectionChange } from "./projection-events";
 import {
   type DeploymentTaskSource,
-  type DeployTaskEventPayload,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
   type DeployTaskPhase,
@@ -409,6 +408,7 @@ export async function updateDeployTaskState(
   taskId: string,
   input: {
     artifactSummary?: DeployTaskRow["artifactSummary"];
+    blockingInputs?: DeployTaskRow["blockingInputs"];
     completedAt?: Date | null;
     error?: string | null;
     gatewaySessionId?: string | null;
@@ -624,23 +624,18 @@ export async function submitDeployTaskInput(
   taskId: string,
   input: SubmitDeployTaskInput
 ): Promise<DeployTaskDTO | null> {
-  await appendDeployTaskMessage({
-    parts: [
-      {
-        text: JSON.stringify(input.values, null, 2),
-        type: "text",
-      },
-    ],
-    role: "user",
-    taskId,
-  });
+  const submittedKeys = Object.keys(input.values);
   await recordDeployTaskEvent(taskId, {
     kind: "deploy_task.input_submitted",
     message: "Additional deploy input submitted.",
-    payload: input.values as DeployTaskEventPayload,
+    payload: {
+      inputKeys: submittedKeys,
+      redacted: true,
+    },
     phase: "configure",
   });
   return await updateDeployTaskState(taskId, {
+    blockingInputs: [],
     phase: "configure",
     status: "queued",
   });

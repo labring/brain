@@ -1,10 +1,20 @@
 "use client";
 
+import { Button } from "@workspace/ui/components/button";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
+import { Input } from "@workspace/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select";
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -15,9 +25,17 @@ import {
   Clock3,
   LoaderCircle,
   PackageCheck,
+  Send,
   XCircle,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
@@ -28,7 +46,11 @@ import type {
   DeploymentTimelineStep,
   DeploymentTimelineStepStatus,
 } from "@/lib/deploy-task/timeline";
-import type { DeploymentTaskTimelineSnapshotDTO } from "@/lib/deploy-task/types";
+import type {
+  DeploymentTaskDeploymentPlan,
+  DeploymentTaskDeploymentPlanInput,
+  DeploymentTaskTimelineSnapshotDTO,
+} from "@/lib/deploy-task/types";
 import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
 
 interface DeploymentTaskTimelinePaneProps {
@@ -37,6 +59,10 @@ interface DeploymentTaskTimelinePaneProps {
   onClose: () => void;
   taskId: string;
 }
+
+const INPUT_CONDITION_OR_RE = /\s+\|\|\s+/;
+const INPUT_CONDITION_AND_RE = /\s+&&\s+/;
+const INPUT_CONDITION_COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 
 function statusTone(
   status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
@@ -315,6 +341,302 @@ function TimelineStepItem({ step }: { step: DeploymentTimelineStep }) {
   );
 }
 
+function inputInitialValue(input: DeploymentTaskDeploymentPlanInput): string {
+  return input.default ?? "";
+}
+
+function conditionValue(
+  expression: string,
+  values: Record<string, string>
+): unknown {
+  const trimmed = expression.trim();
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  if (trimmed === "true") {
+    return true;
+  }
+  if (trimmed === "false") {
+    return false;
+  }
+  if (trimmed.startsWith("inputs.")) {
+    return values[trimmed.slice("inputs.".length)] ?? "";
+  }
+  return values[trimmed] ?? "";
+}
+
+function evaluateInputCondition(
+  condition: string | undefined,
+  values: Record<string, string>
+): boolean {
+  const trimmed = condition?.trim();
+  if (!trimmed) {
+    return true;
+  }
+  const orParts = trimmed.split(INPUT_CONDITION_OR_RE);
+  if (orParts.length > 1) {
+    return orParts.some((part) => evaluateInputCondition(part, values));
+  }
+  const andParts = trimmed.split(INPUT_CONDITION_AND_RE);
+  if (andParts.length > 1) {
+    return andParts.every((part) => evaluateInputCondition(part, values));
+  }
+  const comparison = trimmed.match(INPUT_CONDITION_COMPARISON_RE);
+  if (comparison) {
+    const left = conditionValue(comparison[1] ?? "", values);
+    const right = conditionValue(comparison[3] ?? "", values);
+    return comparison[2]?.includes("!") ? left !== right : left === right;
+  }
+  return Boolean(conditionValue(trimmed, values));
+}
+
+function visiblePlanInputs(
+  plan: DeploymentTaskDeploymentPlan,
+  values: Record<string, string>
+): DeploymentTaskDeploymentPlanInput[] {
+  return plan.inputs.filter((input) =>
+    evaluateInputCondition(input.if, values)
+  );
+}
+
+function deploymentInputControlType(input: DeploymentTaskDeploymentPlanInput) {
+  const type = input.type?.trim().toLowerCase();
+  if ((input.options?.length ?? 0) > 0 || type === "choice") {
+    return "choice";
+  }
+  if (type === "boolean") {
+    return "boolean";
+  }
+  if (input.sensitive) {
+    return "password";
+  }
+  if (type === "number") {
+    return "number";
+  }
+  return "text";
+}
+
+function DeploymentInputControl({
+  controlType,
+  input,
+  onChange,
+  value,
+}: {
+  controlType: "boolean" | "choice" | "number" | "password" | "text";
+  input: DeploymentTaskDeploymentPlanInput;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const controlId = `deployment-input-${input.key}`;
+  if (controlType === "choice") {
+    return (
+      <Select onValueChange={onChange} value={value}>
+        <SelectTrigger className="h-9" id={controlId}>
+          <SelectValue placeholder="Select value" />
+        </SelectTrigger>
+        <SelectContent>
+          {(input.options ?? []).map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+  if (controlType === "boolean") {
+    return (
+      <div className="flex h-9 items-center gap-2">
+        <Checkbox
+          checked={value === "true"}
+          id={controlId}
+          onCheckedChange={(checked) =>
+            onChange(checked === true ? "true" : "false")
+          }
+        />
+        <span className="text-muted-foreground text-xs">
+          {value === "true" ? "Enabled" : "Disabled"}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <Input
+      autoComplete={controlType === "password" ? "off" : undefined}
+      id={`deployment-input-${input.key}`}
+      onChange={(event) => onChange(event.currentTarget.value)}
+      required={input.required}
+      type={controlType}
+      value={value}
+    />
+  );
+}
+
+function DeploymentInputField({
+  input,
+  onChange,
+  value,
+}: {
+  input: DeploymentTaskDeploymentPlanInput;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const label = input.label?.trim() || input.key;
+  const description = input.description?.trim();
+  const controlType = deploymentInputControlType(input);
+  return (
+    <div className="flex flex-col gap-1.5 text-sm">
+      <label
+        className="flex items-center gap-1 font-medium text-foreground"
+        htmlFor={`deployment-input-${input.key}`}
+      >
+        {label}
+        {input.required ? (
+          <span className="text-destructive" title="Required">
+            *
+          </span>
+        ) : null}
+      </label>
+      {description ? (
+        <span className="text-muted-foreground text-xs leading-4">
+          {description}
+        </span>
+      ) : null}
+      <DeploymentInputControl
+        controlType={controlType}
+        input={input}
+        onChange={onChange}
+        value={value}
+      />
+    </div>
+  );
+}
+
+function DeploymentConfigurationForm({
+  kubeconfig,
+  namespace,
+  snapshot,
+}: {
+  kubeconfig: string;
+  namespace: string;
+  snapshot: DeploymentTaskTimelineSnapshotDTO;
+}) {
+  const plan = snapshot.task.artifactSummary.deploymentPlan;
+  const showForm =
+    plan != null &&
+    snapshot.task.status === "blocked" &&
+    snapshot.task.phase === "configure";
+  const [values, setValues] = useState<Record<string, string>>({});
+  const inputs = useMemo(
+    () => (plan == null ? [] : visiblePlanInputs(plan, values)),
+    [plan, values]
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (plan == null) {
+      setValues({});
+      return;
+    }
+    const initialValues = Object.fromEntries(
+      plan.inputs.map((input) => [
+        input.key,
+        plan.args?.[input.key] ?? inputInitialValue(input),
+      ])
+    );
+    setValues(
+      Object.fromEntries(
+        visiblePlanInputs(plan, initialValues).map((input) => [
+          input.key,
+          initialValues[input.key] ?? "",
+        ])
+      )
+    );
+  }, [plan]);
+
+  if (!showForm || plan == null || inputs.length === 0) {
+    return null;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(
+        `/api/deploy-tasks/${encodeURIComponent(snapshot.task.id)}/input`,
+        {
+          body: JSON.stringify({
+            encodedKubeconfig: kubeconfig,
+            namespace,
+            values,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }
+      );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? "Failed to submit deployment input.");
+      }
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Failed to submit deployment input."
+      );
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3"
+      onSubmit={submit}
+    >
+      <div className="mb-3">
+        <h3 className="font-medium text-sm">Deployment configuration</h3>
+        <p className="mt-1 text-muted-foreground text-xs leading-4">
+          Required template values are missing. Submit them to continue this
+          deployment.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        {inputs.map((input) => (
+          <DeploymentInputField
+            input={input}
+            key={input.key}
+            onChange={(nextValue) =>
+              setValues((current) => ({
+                ...current,
+                [input.key]: nextValue,
+              }))
+            }
+            value={values[input.key] ?? ""}
+          />
+        ))}
+      </div>
+      {error == null ? null : (
+        <p className="mt-3 text-destructive text-xs leading-4">{error}</p>
+      )}
+      <Button className="mt-3 w-full" disabled={isSubmitting} type="submit">
+        {isSubmitting ? (
+          <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+        ) : (
+          <Send aria-hidden className="size-3.5" />
+        )}
+        Continue deployment
+      </Button>
+    </form>
+  );
+}
+
 function orderedSteps(
   timeline: DeploymentTaskTimelineSnapshot
 ): DeploymentTimelineStep[] {
@@ -322,8 +644,12 @@ function orderedSteps(
 }
 
 export function DeploymentTaskTimelinePaneContent({
+  kubeconfig,
+  namespace,
   snapshot,
 }: {
+  kubeconfig: string;
+  namespace: string;
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
   const steps = orderedSteps(snapshot.timeline);
@@ -332,6 +658,11 @@ export function DeploymentTaskTimelinePaneContent({
   }
   return (
     <div className="flex flex-col" data-slot="deployment-task-timeline">
+      <DeploymentConfigurationForm
+        kubeconfig={kubeconfig}
+        namespace={namespace}
+        snapshot={snapshot}
+      />
       {steps.map((step) => (
         <TimelineStepItem key={step.id} step={step} />
       ))}
@@ -379,7 +710,11 @@ export function DeploymentTaskTimelinePane({
       {timeline.data == null ? (
         <EmptyState>Loading deployment timeline.</EmptyState>
       ) : (
-        <DeploymentTaskTimelinePaneContent snapshot={timeline.data} />
+        <DeploymentTaskTimelinePaneContent
+          kubeconfig={kubeconfig}
+          namespace={namespace}
+          snapshot={timeline.data}
+        />
       )}
     </SidePane>
   );

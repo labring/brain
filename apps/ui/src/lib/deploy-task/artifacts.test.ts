@@ -3,6 +3,8 @@ import { test } from "node:test";
 import YAML from "yaml";
 
 import {
+  blockingInputsFromDeploymentPlan,
+  createSealosTemplateDeploymentPlan,
   type DeployTaskArtifactContext,
   prepareDeployTaskArtifacts,
   prepareSealosTemplateArtifact,
@@ -20,6 +22,47 @@ const RENDERED_INSTANCE_REGEX = /kind: Instance/;
 const RENDERED_HOST_REGEX = /host: demo.cloud.sealos.io/;
 const UNSUPPORTED_TEMPLATE_KIND_REGEX =
   /blocked Kubernetes kind ClusterRoleBinding/;
+
+const TEMPLATE_WITH_REQUIRED_INPUT = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: ai-gateway
+spec:
+  title: AI Gateway
+  templateType: inline
+  inputs:
+    ai_gateway_api_key:
+      label: AI Gateway API key
+      description: API key for the gateway
+      required: true
+      type: secret
+    enable_cache:
+      label: Enable cache
+      required: false
+      type: boolean
+      default: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-gateway
+spec:
+  selector:
+    matchLabels:
+      app: ai-gateway
+  template:
+    metadata:
+      labels:
+        app: ai-gateway
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web@sha256:abc123
+          env:
+            - name: AI_GATEWAY_API_KEY
+              value: \${{ inputs.ai_gateway_api_key }}
+`;
 
 function task(
   overrides: Partial<DeployTaskArtifactContext> = {}
@@ -251,6 +294,31 @@ spec:
     ).build?.image,
     "registry.example.com/demo/web@sha256:abc123"
   );
+});
+
+test("createSealosTemplateDeploymentPlan reports missing required inputs", () => {
+  const plan = createSealosTemplateDeploymentPlan({
+    deliveryManifest: { args: {} },
+    templateYaml: TEMPLATE_WITH_REQUIRED_INPUT,
+  });
+
+  assert.deepEqual(plan.missingInputKeys, ["ai_gateway_api_key"]);
+  assert.equal(plan.inputs.length, 2);
+  assert.equal(plan.inputs[0]?.sensitive, true);
+
+  const blockingInputs = blockingInputsFromDeploymentPlan(plan);
+  assert.deepEqual(blockingInputs, [
+    {
+      description: "API key for the gateway",
+      id: "ai_gateway_api_key",
+      key: "ai_gateway_api_key",
+      label: "AI Gateway API key",
+      required: true,
+      sensitive: true,
+      type: "secret",
+      valueType: "secret",
+    },
+  ]);
 });
 
 test("prepareSealosTemplateArtifact uses build evidence over success spelling", () => {

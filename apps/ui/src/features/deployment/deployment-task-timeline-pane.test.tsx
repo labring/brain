@@ -18,10 +18,15 @@ const PUBLIC_ADDRESS_ACCESSIBLE_RE = /Public Address is accessible\./;
 const RESOURCE_CARD_COLLAPSED_RE = /aria-expanded="false"/;
 const ANALYZE_REQUEST_RE = /Analyze request/;
 const SKIPPED_RE = /skipped/;
+const DEPLOYMENT_CONFIGURATION_RE = /Deployment configuration/;
+const AI_GATEWAY_KEY_RE = /AI Gateway API key/;
+const CONTINUE_DEPLOYMENT_RE = /Continue deployment/;
 
 test("deployment task timeline pane renders ordered steps, AP card, statuses, and grouped events", () => {
   const html = renderToStaticMarkup(
     <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
       snapshot={{
         events: [],
         task: {
@@ -146,6 +151,8 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
 test("deployment task timeline pane renders skipped runner steps", () => {
   const html = renderToStaticMarkup(
     <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
       snapshot={{
         events: [],
         task: {
@@ -198,4 +205,87 @@ test("deployment task timeline pane renders skipped runner steps", () => {
 
   assert.match(html, ANALYZE_REQUEST_RE);
   assert.match(html, SKIPPED_RE);
+});
+
+test("deployment task timeline pane renders template input form when blocked", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      snapshot={{
+        events: [],
+        task: {
+          artifactSummary: {
+            deploymentPlan: {
+              inputs: [
+                {
+                  description: "API key for the gateway",
+                  key: "ai_gateway_api_key",
+                  label: "AI Gateway API key",
+                  required: true,
+                  sensitive: true,
+                  type: "secret",
+                },
+              ],
+              kind: "sealos-template",
+              missingInputKeys: ["ai_gateway_api_key"],
+              templateName: "ai-gateway",
+            },
+          },
+          blockingInputs: [
+            {
+              id: "ai_gateway_api_key",
+              label: "AI Gateway API key",
+              required: true,
+              type: "secret",
+            },
+          ],
+          canvasProjection: {},
+          completedAt: null,
+          createdAt: "2026-06-17T10:00:00.000Z",
+          createdFrom: "ui",
+          error: null,
+          gatewaySessionId: null,
+          gatewayTurnId: null,
+          gatewayUrl: null,
+          id: "task-3",
+          namespace: "default",
+          phase: "configure",
+          previewUrl: null,
+          projectId: "project-1",
+          projectName: "Project 1",
+          resultUrl: null,
+          runner: { kind: "ai", runtimeProvider: "devbox" },
+          runtimeName: null,
+          runtimeProvider: null,
+          runtimeState: null,
+          source: { kind: "prompt", text: "Deploy" },
+          startedAt: null,
+          status: "blocked",
+          target: { kind: "existingProject", projectId: "project-1" },
+          timelineSnapshot: null,
+          updatedAt: "2026-06-17T10:00:01.000Z",
+        },
+        timeline: {
+          revision: 1,
+          status: "blocked",
+          steps: [
+            {
+              events: [],
+              id: "generate-deployment",
+              label: "Generate deployment",
+              order: 2,
+              status: "blocked",
+            },
+          ],
+          taskId: "task-3",
+          updatedAt: "2026-06-17T10:00:01.000Z",
+        },
+      }}
+    />
+  );
+
+  assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
+  assert.match(html, AI_GATEWAY_KEY_RE);
+  assert.match(html, CONTINUE_DEPLOYMENT_RE);
 });
