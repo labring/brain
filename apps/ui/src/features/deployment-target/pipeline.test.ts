@@ -18,9 +18,7 @@ function testAdapters(overrides?: {
       return Promise.resolve({
         message: "Deployment task task-1 queued.",
         projectId:
-          input.target.kind === "existingProject"
-            ? input.target.projectId
-            : "project-uid",
+          input.target.kind === "existingProject" ? null : "project-uid",
         projectName:
           input.target.kind === "existingProject"
             ? (input.target.projectName ?? input.target.projectId)

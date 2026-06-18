@@ -79,7 +79,7 @@ export interface DeploymentTargetPipelineOutcome {
   createdProject: boolean;
   displayName?: string;
   kind: DeploymentTargetPipelineRequest["kind"];
-  projectId?: string;
+  projectId: string;
   projectName: string;
   sourceLabel: string;
   taskId: string | null;
@@ -290,11 +290,13 @@ export async function runDeploymentTargetPipeline(
     namespace: options.namespace,
     target,
   });
+  const projectId =
+    task.projectId?.trim() ||
+    (target.kind === "existingProject" ? target.projectId.trim() : "");
   const projectName =
     task.projectName?.trim() ||
     (target.kind === "existingProject" ? target.projectName?.trim() : "") ||
-    task.projectId?.trim() ||
-    "";
+    projectId;
 
   return {
     createdProject: target.kind === "newProject",
@@ -302,7 +304,7 @@ export async function runDeploymentTargetPipeline(
       ? { displayName: target.displayName }
       : {}),
     kind: options.request.kind,
-    ...(task.projectId?.trim() ? { projectId: task.projectId.trim() } : {}),
+    projectId,
     projectName,
     sourceLabel: sourceLabel(taskInput.source),
     taskId: task.taskId,
