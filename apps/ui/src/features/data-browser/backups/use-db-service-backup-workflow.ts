@@ -23,6 +23,7 @@ import {
   deriveDbServiceBackupWorkflowState,
   validateRestoredDbServiceName,
 } from "./db-service-backup-workflow";
+import { requestDbServiceBackupDelete } from "./db-service-delete-request";
 import { requestDbServiceRestore } from "./db-service-restore-request";
 
 export interface DbServiceBackupWorkflowNotifier {
@@ -163,15 +164,18 @@ export function useDbServiceBackupWorkflow({
       assertCanDeleteDbServiceBackup(backup);
       setIsDeleting(true);
       const backupName = backup.name;
-      const deletion = (async () => {
-        await activeTransport.deleteBackup({ backupName });
-        setOptimisticallyDeletedBackupNames((previous) => {
-          const next = new Set(previous);
-          next.add(backupName);
-          return next;
-        });
-        await refresh();
-      })();
+      const deletion = requestDbServiceBackupDelete({
+        backupName,
+        markBackupDeleted: (deletedBackupName) => {
+          setOptimisticallyDeletedBackupNames((previous) => {
+            const next = new Set(previous);
+            next.add(deletedBackupName);
+            return next;
+          });
+        },
+        refreshBackups: refresh,
+        transport: activeTransport,
+      });
       notifier.promise(deletion, {
         error: (error) => errorMessage(error, "Failed to delete backup."),
         loading: `Deleting backup ${backupName}...`,
