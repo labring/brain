@@ -26,9 +26,6 @@ export async function register() {
       await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
     }
   } catch (error) {
-    if (process.env.NODE_ENV === "production") {
-      throw error;
-    }
     console.warn(
       "[instrumentation] skipped app Postgres schema bootstrap:",
       error
