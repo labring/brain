@@ -315,6 +315,32 @@ export const Index: RegistryIndex = {
       import("@registry/linear/components/app-dialog/app-dialog-preview"),
   },
 
+  "linear/components/toaster": {
+    style: "linear",
+    group: "components",
+    name: "toaster",
+    title: "Toaster",
+    description:
+      "Global toast presentation for transient product feedback: status icons, copy wrapping, async states, and dismissal.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-button"],
+    files: [
+      {
+        path: "registry/linear/components/toaster/toaster-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/sonner.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () => import("@registry/linear/components/toaster/toaster-preview"),
+  },
+
   "linear/components/log-viewer": {
     style: "linear",
     group: "components",
