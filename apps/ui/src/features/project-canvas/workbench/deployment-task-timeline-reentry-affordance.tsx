@@ -1,5 +1,6 @@
 "use client";
 
+import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Tooltip,
@@ -12,7 +13,6 @@ import {
   ChevronDown,
   Code2,
   Database,
-  ImageIcon,
   MessageSquareText,
   X,
 } from "lucide-react";
@@ -64,7 +64,7 @@ function SourceKindIcon({
     case "database":
       return <Database aria-hidden className="size-3.5" />;
     case "docker":
-      return <ImageIcon aria-hidden className="size-3.5" />;
+      return <ProjectSourceDockerIcon aria-hidden className="size-3.5" />;
     case "github":
       return <Code2 aria-hidden className="size-3.5" />;
     case "prompt":
@@ -188,7 +188,7 @@ function DeploymentTaskDockTask({
       className={cn(
         "group/dock-task flex min-w-0 items-center gap-1 rounded-lg border transition-colors",
         "h-10 w-max min-w-36 max-w-[12.5rem] border-white/15 bg-zinc-900/85 px-1.5 py-1 shadow-[0_1px_3px_rgba(0,0,0,0.22)] focus-within:border-white/20 focus-within:bg-zinc-900 hover:border-white/20 hover:bg-zinc-900 max-sm:w-full max-sm:max-w-full",
-        item.active && "border-blue-300/35 bg-blue-400/10"
+        item.active && "bg-input"
       )}
       data-active={item.active ? "true" : "false"}
       data-slot="deployment-task-dock-task"
@@ -205,7 +205,7 @@ function DeploymentTaskDockTask({
       >
         <span
           aria-hidden
-          className="flex size-4 shrink-0 items-center justify-center rounded-md text-blue-200 opacity-85"
+          className="flex size-4 shrink-0 items-center justify-center rounded-md text-white"
           title={sourceLabel}
         >
           <SourceKindIcon kind={display.sourceKind} />
