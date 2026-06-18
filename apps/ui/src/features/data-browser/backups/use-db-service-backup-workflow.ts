@@ -23,6 +23,7 @@ import {
   deriveDbServiceBackupWorkflowState,
   validateRestoredDbServiceName,
 } from "./db-service-backup-workflow";
+import { requestDbServiceRestore } from "./db-service-restore-request";
 
 export interface DbServiceBackupWorkflowNotifier {
   error(message: string): void;
@@ -198,22 +199,13 @@ export function useDbServiceBackupWorkflow({
       }
 
       setIsRestoring(true);
-      const restore = (async () => {
-        await activeTransport.restoreBackup({
-          backupName: backup.name,
-          backupNamespace: backup.namespace,
-          restoredName: trimmedRestoredName,
-        });
-        if (runtime.onDbServiceRestoreAccepted === undefined) {
-          runtime.refreshProjectCanvas?.().catch(() => undefined);
-        } else {
-          runtime.onDbServiceRestoreAccepted({
-            name: trimmedRestoredName,
-            namespace: runtime.databaseWorkloadNamespace,
-          });
-        }
-        await refresh();
-      })();
+      const restore = requestDbServiceRestore({
+        backup,
+        refreshBackups: refresh,
+        restoredName: trimmedRestoredName,
+        runtime,
+        transport: activeTransport,
+      });
       notifier.promise(restore, {
         error: (error) =>
           errorMessage(error, "DB Service backup restore failed."),
