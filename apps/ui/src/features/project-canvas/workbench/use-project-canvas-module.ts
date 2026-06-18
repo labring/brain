@@ -27,7 +27,7 @@ import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/feature
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
-import { selectDeploymentTaskTimelineReentry } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
+import { selectDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
@@ -45,9 +45,9 @@ export function useProjectCanvasModule({
     PendingApDbCanvasReference[]
   >([]);
   const [
-    dismissedDeploymentTaskTimelineReentryTaskIds,
-    setDismissedDeploymentTaskTimelineReentryTaskIds,
-  ] = useState<ReadonlySet<string>>(() => new Set());
+    dismissedDeploymentTaskUpdatedAtById,
+    setDismissedDeploymentTaskUpdatedAtById,
+  ] = useState<ReadonlyMap<string, string>>(() => new Map());
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     kubeconfig,
@@ -115,7 +115,7 @@ export function useProjectCanvasModule({
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset route-scoped transient UI state when the canvas route scope changes.
   useEffect(() => {
     setPendingApDbReferences([]);
-    setDismissedDeploymentTaskTimelineReentryTaskIds(new Set());
+    setDismissedDeploymentTaskUpdatedAtById(new Map());
   }, [namespace, projectId]);
 
   const canvasEdges = useMemo(() => {
@@ -190,26 +190,26 @@ export function useProjectCanvasModule({
       ? side.entry.taskId
       : null;
   }, [workbench.surfaceRenderModel.side]);
-  const deploymentTaskTimelineReentry = useMemo(
+  const deploymentTaskDock = useMemo(
     () =>
-      selectDeploymentTaskTimelineReentry({
+      selectDeploymentTaskDock({
         activeTaskId: activeDeploymentTaskTimelineTaskId,
-        dismissedTaskIds: dismissedDeploymentTaskTimelineReentryTaskIds,
+        dismissedTaskUpdatedAtById: dismissedDeploymentTaskUpdatedAtById,
         tasks: deploymentTaskProjections,
       }),
     [
       activeDeploymentTaskTimelineTaskId,
       deploymentTaskProjections,
-      dismissedDeploymentTaskTimelineReentryTaskIds,
+      dismissedDeploymentTaskUpdatedAtById,
     ]
   );
-  const openDeploymentTaskTimelineReentry = useCallback(
+  const openDeploymentTaskDockTask = useCallback(
     (taskId: string) => {
-      setDismissedDeploymentTaskTimelineReentryTaskIds((current) => {
+      setDismissedDeploymentTaskUpdatedAtById((current) => {
         if (!current.has(taskId)) {
           return current;
         }
-        const next = new Set(current);
+        const next = new Map(current);
         next.delete(taskId);
         return next;
       });
@@ -221,14 +221,23 @@ export function useProjectCanvasModule({
     },
     [projectId, workbench.openSideSurface]
   );
-  const dismissDeploymentTaskTimelineReentry = useCallback((taskId: string) => {
-    setDismissedDeploymentTaskTimelineReentryTaskIds((current) => {
-      if (current.has(taskId)) {
-        return current;
+  const dismissDeploymentTaskDockTask = useCallback(
+    (taskId: string) => {
+      const task = deploymentTaskProjections.find((item) => item.id === taskId);
+      if (task == null) {
+        return;
       }
-      return new Set(current).add(taskId);
-    });
-  }, []);
+      setDismissedDeploymentTaskUpdatedAtById((current) => {
+        if (current.get(taskId) === task.updatedAt) {
+          return current;
+        }
+        const next = new Map(current);
+        next.set(taskId, task.updatedAt);
+        return next;
+      });
+    },
+    [deploymentTaskProjections]
+  );
 
   const openingKey = `${namespace}:${projectId}`;
   const meta = useMemo<CanvasMeta>(
@@ -316,12 +325,12 @@ export function useProjectCanvasModule({
 
   return {
     actions: {
-      dismissDeploymentTaskTimelineReentry,
+      dismissDeploymentTaskDockTask,
       openSurfaceIntent,
-      openDeploymentTaskTimelineReentry,
+      openDeploymentTaskDockTask,
     },
     canvas: {
-      deploymentTaskTimelineReentry,
+      deploymentTaskDock,
       frameState,
       meta,
       selectedTelemetryTarget,

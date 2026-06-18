@@ -21,6 +21,7 @@ function deploymentTaskSource(
     namespace: "default",
     phase: "queued",
     projectId: "project-uid",
+    source: { kind: "docker", settings: { image: "nginx:latest" } },
     status: "queued",
     updatedAt: NOW,
     ...overrides,
@@ -32,6 +33,11 @@ test("deployment task projection includes active project tasks", () => {
     artifactSummary: {},
     canvasProjection: {},
     completedAt: null,
+    display: {
+      resultSummary: "Result pending",
+      sourceKind: "docker",
+      sourceSummary: "nginx:latest",
+    },
     id: "task-1",
     namespace: "default",
     phase: "queued",
@@ -39,6 +45,51 @@ test("deployment task projection includes active project tasks", () => {
     status: "queued",
     updatedAt: "2026-06-11T10:00:00.000Z",
   });
+});
+
+test("deployment task projection summarizes source and result resources", () => {
+  assert.deepEqual(
+    toDeploymentTaskProjection(
+      deploymentTaskSource({
+        artifactSummary: {
+          resources: [
+            {
+              apiVersion: "brain.io/direct",
+              kind: "DB",
+              name: "postgres",
+              namespace: "default",
+            },
+          ],
+        },
+        canvasProjection: {
+          slots: [
+            {
+              expectedRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              id: "slot-api",
+            },
+          ],
+        },
+        source: {
+          kind: "github",
+          repo: {
+            fullName: "seal/api",
+            name: "api",
+            url: "https://github.com/seal/api",
+          },
+        },
+      }),
+      NOW
+    )?.display,
+    {
+      resultSummary: "AP api + DB postgres",
+      sourceKind: "github",
+      sourceSummary: "seal/api",
+    }
+  );
 });
 
 test("deployment task projection includes terminal cleanup projections", () => {

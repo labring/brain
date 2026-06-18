@@ -1,6 +1,7 @@
 import type {
   DeploymentTaskCanvasProjection,
   DeploymentTaskCanvasProjectionResultMapping,
+  DeploymentTaskSource,
   DeployTaskArtifactSummary,
   DeployTaskPhase,
   DeployTaskStatus,
@@ -32,10 +33,17 @@ const PROJECTABLE_DEPLOYMENT_TASK_STATUS_SET = new Set<DeployTaskStatus>(
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES
 );
 
+export interface DeploymentTaskDisplaySummary {
+  resultSummary: string;
+  sourceKind: DeploymentTaskSource["kind"];
+  sourceSummary: string;
+}
+
 export interface DeploymentTaskProjection {
   artifactSummary: DeployTaskArtifactSummary;
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: string | null;
+  display?: DeploymentTaskDisplaySummary;
   id: string;
   namespace: string;
   phase: DeployTaskPhase;
@@ -76,9 +84,14 @@ interface DeploymentTaskProjectionSource {
   namespace: string;
   phase: DeployTaskPhase;
   projectId: string | null;
+  source: DeploymentTaskSource;
   status: DeployTaskStatus;
   updatedAt: Date | string;
 }
+
+const MAX_SOURCE_SUMMARY_LENGTH = 48;
+const MAX_RESULT_NAME_LENGTH = 28;
+const RESULT_PENDING_SUMMARY = "Result pending";
 
 function dateIso(value: Date | string | null): string | null {
   if (value == null) {
@@ -93,6 +106,132 @@ function dateMs(value: Date | string | null): number | undefined {
   }
   const ms = typeof value === "string" ? Date.parse(value) : value.getTime();
   return Number.isFinite(ms) ? ms : undefined;
+}
+
+function compactSummaryText(value: unknown, fallback: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text === "" ? fallback : text;
+}
+
+function truncateSummary(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function sourceSummary(source: DeploymentTaskSource): string {
+  switch (source.kind) {
+    case "database":
+      return `${compactSummaryText(
+        source.settings.databaseId,
+        "Database"
+      )} database`;
+    case "docker":
+      return truncateSummary(
+        compactSummaryText(source.settings.image, "Docker image"),
+        MAX_SOURCE_SUMMARY_LENGTH
+      );
+    case "github":
+      return truncateSummary(source.repo.fullName, MAX_SOURCE_SUMMARY_LENGTH);
+    case "prompt":
+      return truncateSummary(
+        source.text ? `Prompt: ${source.text}` : "AI prompt",
+        MAX_SOURCE_SUMMARY_LENGTH
+      );
+    case "template":
+      return truncateSummary(source.templateName, MAX_SOURCE_SUMMARY_LENGTH);
+    default:
+      return source satisfies never;
+  }
+}
+
+function resultKindLabel(kind: string): string {
+  switch (kind) {
+    case "AP":
+      return "AP";
+    case "DB":
+      return "DB";
+    case "PublicAccess":
+      return "Public access";
+    case "TemplateNative":
+      return "Template workload";
+    default:
+      return kind;
+  }
+}
+
+function resultRefKey(ref: { kind: string; name: string; namespace: string }) {
+  return `${ref.kind}\0${ref.namespace}\0${ref.name}`;
+}
+
+function compactResultRef(ref: { kind: string; name: string }): string {
+  return `${resultKindLabel(ref.kind)} ${truncateSummary(
+    ref.name,
+    MAX_RESULT_NAME_LENGTH
+  )}`;
+}
+
+function resultSummary(input: {
+  artifactSummary: DeployTaskArtifactSummary;
+  canvasProjection: DeploymentTaskCanvasProjection;
+}): string {
+  const refs: { kind: string; name: string; namespace: string }[] = [];
+  const seen = new Set<string>();
+  const addRef = (ref: { kind: string; name: string; namespace: string }) => {
+    const name = ref.name.trim();
+    const namespace = ref.namespace.trim();
+    const kind = ref.kind.trim();
+    if (!(kind && name && namespace)) {
+      return;
+    }
+    const normalized = { kind, name, namespace };
+    const key = resultRefKey(normalized);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    refs.push(normalized);
+  };
+
+  for (const mapping of input.canvasProjection.resultMappings ?? []) {
+    addRef(mapping.actualRef);
+  }
+  for (const slot of input.canvasProjection.slots ?? []) {
+    if (slot.expectedRef != null) {
+      addRef(slot.expectedRef);
+    }
+  }
+  for (const resource of input.artifactSummary.resources ?? []) {
+    addRef(resource);
+  }
+
+  if (refs.length === 0) {
+    return RESULT_PENDING_SUMMARY;
+  }
+
+  const visible = refs.slice(0, 2).map(compactResultRef);
+  const remaining = refs.length - visible.length;
+  return remaining > 0
+    ? `${visible.join(" + ")} +${remaining}`
+    : visible.join(" + ");
+}
+
+function deploymentTaskDisplaySummary(
+  task: Pick<
+    DeploymentTaskProjectionSource,
+    "artifactSummary" | "canvasProjection" | "source"
+  >
+): DeploymentTaskDisplaySummary {
+  return {
+    resultSummary: resultSummary({
+      artifactSummary: task.artifactSummary,
+      canvasProjection: task.canvasProjection,
+    }),
+    sourceKind: task.source.kind,
+    sourceSummary: sourceSummary(task.source),
+  };
 }
 
 function taskHasResultResources(
@@ -157,6 +296,7 @@ export function toDeploymentTaskProjection(
     artifactSummary: task.artifactSummary,
     canvasProjection: task.canvasProjection,
     completedAt,
+    display: deploymentTaskDisplaySummary(task),
     id: task.id,
     namespace: task.namespace,
     phase: task.phase,

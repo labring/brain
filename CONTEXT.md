@@ -188,6 +188,18 @@ A Deployment Task Timeline belongs to the Deployment Task rather than to a brows
 
 _Avoid_: assistant chat transcript, backend event log, fixed deploy progress bar.
 
+### Deployment Task Dock
+
+A Project Canvas affordance that presents the current Project's visible Deployment Task Projections so users can notice active or attention-needed deployment work and re-enter each task's Deployment Task Timeline. It is not deployment history, a task list row, a Project Canvas node, or an Assistant Chat transcript.
+
+_Avoid_: canvas task list, deployment history list, task center, chat task status.
+
+### Deployment Task Display Summary
+
+A compact user-facing description of a Deployment Task used on project surfaces where full task detail would be too heavy. It summarizes the Deployment Source and known or anticipated result resources; it is not the full source record, the Deployment Task Timeline, or the Deployment Task identity.
+
+_Avoid_: task id label, source blob, timeline summary, generated title.
+
 ### Deployment Result Resource Card
 
 A Deployment Task Timeline section for one Deployment Result Resource, presenting that resource's status and events within the task's progress. It is not a separate Deployment Task or a card for every applied Kubernetes object.
