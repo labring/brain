@@ -130,38 +130,74 @@ test("deployment task dock exposes desktop and mobile collapsed counts", () => {
   assert.equal(dock.mobileHiddenCount, 3);
 });
 
-test("deployment task dock shows completed tasks only during projection grace", () => {
+test("deployment task dock does not show completed tasks during projection grace", () => {
   const completedAt = NOW.toISOString();
+  const completedTask = task({
+    artifactSummary: {
+      resources: [
+        {
+          apiVersion: "brain.io/direct",
+          kind: "AP",
+          name: "api",
+          namespace: "default",
+        },
+      ],
+    },
+    completedAt,
+    id: "task-completed",
+    phase: "completed",
+    status: "completed",
+  });
   const duringGrace = selectDeploymentTaskDock({
     activeTaskId: null,
     dismissedTaskUpdatedAtById: new Map(),
     now: NOW,
-    tasks: [
-      task({
-        artifactSummary: {
-          resources: [
-            {
-              apiVersion: "brain.io/direct",
-              kind: "AP",
-              name: "api",
-              namespace: "default",
-            },
-          ],
-        },
-        completedAt,
-        id: "task-completed",
-        phase: "completed",
-        status: "completed",
-      }),
-    ],
+    tasks: [completedTask],
   });
-  assert.equal(duringGrace.tasks.length, 1);
+  assert.equal(duringGrace.tasks.length, 0);
 
   const afterGrace = selectDeploymentTaskDock({
     activeTaskId: null,
     dismissedTaskUpdatedAtById: new Map(),
     now: new Date("2026-06-17T10:06:00.000Z"),
-    tasks: duringGrace.tasks.map((item) => item.task),
+    tasks: [completedTask],
   });
   assert.equal(afterGrace.tasks.length, 0);
+});
+
+test("deployment task dock shows completed tasks only as current-session notices", () => {
+  const completedTask = task({
+    artifactSummary: {
+      resources: [
+        {
+          apiVersion: "brain.io/direct",
+          kind: "AP",
+          name: "api",
+          namespace: "default",
+        },
+      ],
+    },
+    completedAt: NOW.toISOString(),
+    id: "task-completed",
+    phase: "completed",
+    status: "completed",
+  });
+
+  const withoutNotice = selectDeploymentTaskDock({
+    activeTaskId: null,
+    dismissedTaskUpdatedAtById: new Map(),
+    now: NOW,
+    tasks: [completedTask],
+  });
+  assert.equal(withoutNotice.tasks.length, 0);
+
+  const withNotice = selectDeploymentTaskDock({
+    activeTaskId: null,
+    completedNoticeTaskIds: new Set(["task-completed"]),
+    dismissedTaskUpdatedAtById: new Map(),
+    now: NOW,
+    tasks: [completedTask],
+  });
+  assert.equal(withNotice.tasks.length, 1);
+  assert.equal(withNotice.tasks[0]?.task.id, "task-completed");
 });

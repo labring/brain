@@ -10,6 +10,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -27,10 +28,52 @@ import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/feature
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
-import { selectDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
+import {
+  deploymentTaskDockDismissalsStorageKey,
+  readBrowserDeploymentTaskDockDismissals,
+  writeBrowserDeploymentTaskDockDismissals,
+} from "@/features/project-canvas/workbench/deployment-task-dock-dismissals";
+import {
+  DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS,
+  selectDeploymentTaskDock,
+} from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
+import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+
+const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
+  DeploymentTaskProjection["status"]
+>(["applying", "blocked", "queued", "running"]);
+
+function deploymentTaskCanStartCompletionNotice(
+  previousStatus: DeploymentTaskProjection["status"] | undefined
+): boolean {
+  return (
+    previousStatus !== undefined &&
+    DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES.has(previousStatus)
+  );
+}
+
+function currentPageVisible(): boolean {
+  return typeof document === "undefined" ? true : !document.hidden;
+}
+
+function pruneExpiredCompletionNotices(
+  notices: ReadonlyMap<string, number>,
+  now: number
+): ReadonlyMap<string, number> {
+  let changed = false;
+  const next = new Map<string, number>();
+  for (const [taskId, expiresAt] of notices) {
+    if (expiresAt <= now) {
+      changed = true;
+      continue;
+    }
+    next.set(taskId, expiresAt);
+  }
+  return changed ? next : notices;
+}
 
 export function useProjectCanvasModule({
   kubeconfig,
@@ -47,7 +90,20 @@ export function useProjectCanvasModule({
   const [
     dismissedDeploymentTaskUpdatedAtById,
     setDismissedDeploymentTaskUpdatedAtById,
-  ] = useState<ReadonlyMap<string, string>>(() => new Map());
+  ] = useState<ReadonlyMap<string, string>>(() =>
+    readBrowserDeploymentTaskDockDismissals({ namespace, projectId })
+  );
+  const deploymentTaskDockDismissalsKey = useMemo(
+    () => deploymentTaskDockDismissalsStorageKey({ namespace, projectId }),
+    [namespace, projectId]
+  );
+  const previousDeploymentTaskStatusByIdRef = useRef<
+    ReadonlyMap<string, DeploymentTaskProjection["status"]>
+  >(new Map());
+  const [
+    completedNoticeExpiresAtByTaskId,
+    setCompletedNoticeExpiresAtByTaskId,
+  ] = useState<ReadonlyMap<string, number>>(() => new Map());
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     kubeconfig,
@@ -112,11 +168,102 @@ export function useProjectCanvasModule({
     []
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset route-scoped transient UI state when the canvas route scope changes.
   useEffect(() => {
     setPendingApDbReferences([]);
-    setDismissedDeploymentTaskUpdatedAtById(new Map());
+    setDismissedDeploymentTaskUpdatedAtById(
+      readBrowserDeploymentTaskDockDismissals({ namespace, projectId })
+    );
+    setCompletedNoticeExpiresAtByTaskId(new Map());
+    previousDeploymentTaskStatusByIdRef.current = new Map();
   }, [namespace, projectId]);
+
+  useEffect(() => {
+    const previousStatusById = previousDeploymentTaskStatusByIdRef.current;
+    const nextStatusById = new Map<
+      string,
+      DeploymentTaskProjection["status"]
+    >();
+    const completedNoticeTaskIds: string[] = [];
+    for (const task of deploymentTaskProjections) {
+      nextStatusById.set(task.id, task.status);
+      if (
+        task.status === "completed" &&
+        deploymentTaskCanStartCompletionNotice(previousStatusById.get(task.id))
+      ) {
+        completedNoticeTaskIds.push(task.id);
+      }
+    }
+    previousDeploymentTaskStatusByIdRef.current = nextStatusById;
+    if (completedNoticeTaskIds.length === 0 || !currentPageVisible()) {
+      return;
+    }
+
+    const expiresAt = Date.now() + DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS;
+    setCompletedNoticeExpiresAtByTaskId((current) => {
+      const next = new Map(current);
+      for (const taskId of completedNoticeTaskIds) {
+        next.set(taskId, expiresAt);
+      }
+      return next;
+    });
+  }, [deploymentTaskProjections]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      completedNoticeExpiresAtByTaskId.size === 0
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+    const pruned = pruneExpiredCompletionNotices(
+      completedNoticeExpiresAtByTaskId,
+      now
+    );
+    if (pruned !== completedNoticeExpiresAtByTaskId) {
+      setCompletedNoticeExpiresAtByTaskId(pruned);
+      return;
+    }
+
+    let nextDelay: number | undefined;
+    for (const expiresAt of completedNoticeExpiresAtByTaskId.values()) {
+      const delay = Math.max(0, expiresAt - now);
+      nextDelay = nextDelay === undefined ? delay : Math.min(nextDelay, delay);
+    }
+    if (nextDelay === undefined) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setCompletedNoticeExpiresAtByTaskId((current) =>
+        pruneExpiredCompletionNotices(current, Date.now())
+      );
+    }, nextDelay + 25);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [completedNoticeExpiresAtByTaskId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== deploymentTaskDockDismissalsKey) {
+        return;
+      }
+      setDismissedDeploymentTaskUpdatedAtById(
+        readBrowserDeploymentTaskDockDismissals({ namespace, projectId })
+      );
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [deploymentTaskDockDismissalsKey, namespace, projectId]);
 
   const canvasEdges = useMemo(() => {
     const pendingEdges = pendingApDbCanvasConnectionEdges({
@@ -190,29 +337,33 @@ export function useProjectCanvasModule({
       ? side.entry.taskId
       : null;
   }, [workbench.surfaceRenderModel.side]);
+  const completedNoticeTaskIds = useMemo(() => {
+    const now = Date.now();
+    const taskIds = new Set<string>();
+    for (const [taskId, expiresAt] of completedNoticeExpiresAtByTaskId) {
+      if (expiresAt > now) {
+        taskIds.add(taskId);
+      }
+    }
+    return taskIds;
+  }, [completedNoticeExpiresAtByTaskId]);
   const deploymentTaskDock = useMemo(
     () =>
       selectDeploymentTaskDock({
         activeTaskId: activeDeploymentTaskTimelineTaskId,
+        completedNoticeTaskIds,
         dismissedTaskUpdatedAtById: dismissedDeploymentTaskUpdatedAtById,
         tasks: deploymentTaskProjections,
       }),
     [
       activeDeploymentTaskTimelineTaskId,
+      completedNoticeTaskIds,
       deploymentTaskProjections,
       dismissedDeploymentTaskUpdatedAtById,
     ]
   );
   const openDeploymentTaskDockTask = useCallback(
     (taskId: string) => {
-      setDismissedDeploymentTaskUpdatedAtById((current) => {
-        if (!current.has(taskId)) {
-          return current;
-        }
-        const next = new Map(current);
-        next.delete(taskId);
-        return next;
-      });
       workbench.openSideSurface({
         kind: "deploymentTaskTimeline",
         projectId,
@@ -233,10 +384,23 @@ export function useProjectCanvasModule({
         }
         const next = new Map(current);
         next.set(taskId, task.updatedAt);
+        writeBrowserDeploymentTaskDockDismissals({
+          dismissedTaskUpdatedAtById: next,
+          namespace,
+          projectId,
+        });
+        return next;
+      });
+      setCompletedNoticeExpiresAtByTaskId((current) => {
+        if (!current.has(taskId)) {
+          return current;
+        }
+        const next = new Map(current);
+        next.delete(taskId);
         return next;
       });
     },
-    [deploymentTaskProjections]
+    [deploymentTaskProjections, namespace, projectId]
   );
 
   const openingKey = `${namespace}:${projectId}`;

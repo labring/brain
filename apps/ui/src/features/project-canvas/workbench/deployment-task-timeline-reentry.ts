@@ -5,6 +5,7 @@ import {
 
 export const DEPLOYMENT_TASK_DOCK_DESKTOP_LIMIT = 3;
 export const DEPLOYMENT_TASK_DOCK_MOBILE_LIMIT = 1;
+export const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS = 6000;
 
 export interface DeploymentTaskDockItem {
   active: boolean;
@@ -47,6 +48,7 @@ function taskDismissedAtCurrentVersion(input: {
 
 function shouldIncludeDockTask(input: {
   active: boolean;
+  completedNoticeTaskIds: ReadonlySet<string>;
   dismissedTaskUpdatedAt: string | undefined;
   now: Date;
   task: DeploymentTaskProjection;
@@ -68,6 +70,9 @@ function shouldIncludeDockTask(input: {
   if (input.task.status === "failed") {
     return true;
   }
+  if (input.task.status === "completed") {
+    return input.completedNoticeTaskIds.has(input.task.id);
+  }
   return deploymentTaskProjectionIsVisible(input.task, input.now);
 }
 
@@ -86,16 +91,19 @@ function sortedDockItems(
 
 export function selectDeploymentTaskDock(input: {
   activeTaskId: string | null;
+  completedNoticeTaskIds?: ReadonlySet<string>;
   dismissedTaskUpdatedAtById: ReadonlyMap<string, string>;
   now?: Date;
   tasks: readonly DeploymentTaskProjection[];
 }): DeploymentTaskDockModel {
+  const completedNoticeTaskIds = input.completedNoticeTaskIds ?? new Set();
   const now = input.now ?? new Date();
   const tasks = sortedDockItems(
     input.tasks.flatMap((task) => {
       const active = task.id === input.activeTaskId;
       return shouldIncludeDockTask({
         active,
+        completedNoticeTaskIds,
         dismissedTaskUpdatedAt: input.dismissedTaskUpdatedAtById.get(task.id),
         now,
         task,

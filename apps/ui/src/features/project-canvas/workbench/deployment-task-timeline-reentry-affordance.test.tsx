@@ -12,6 +12,9 @@ const DISMISS_LABEL_RE = /Dismiss deployment task reminder/;
 const SOURCE_RE = /nginx:latest/;
 const RESULT_RE = /AP api/;
 const DESKTOP_MORE_RE = /\+1/;
+const DESKTOP_MORE_LABEL_RE = /Show 1 more deployment tasks/;
+const EXPANDED_LIST_SLOT_RE = /data-slot="deployment-task-dock-list"/;
+const EXPANDED_LIST_HEADING_RE = />Deployment tasks</;
 
 function task(overrides: Partial<DeploymentTaskProjection>) {
   return {
@@ -66,7 +69,10 @@ test("deployment task dock renders tasks as direct timeline entries", () => {
   assert.match(html, RESULT_RE);
   assert.match(html, DISMISS_LABEL_RE);
   assert.match(html, DESKTOP_MORE_RE);
+  assert.match(html, DESKTOP_MORE_LABEL_RE);
   assert.doesNotMatch(html, OPEN_BUTTON_RE);
+  assert.doesNotMatch(html, EXPANDED_LIST_SLOT_RE);
+  assert.doesNotMatch(html, EXPANDED_LIST_HEADING_RE);
 });
 
 test("deployment task dock is absent without tasks", () => {

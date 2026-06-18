@@ -192,7 +192,19 @@ _Avoid_: assistant chat transcript, backend event log, fixed deploy progress bar
 
 A Project Canvas affordance that presents the current Project's visible Deployment Task Projections so users can notice active or attention-needed deployment work and re-enter each task's Deployment Task Timeline. It is not deployment history, a task list row, a Project Canvas node, or an Assistant Chat transcript.
 
+A failed Deployment Task may remain attention-needed after its run ends until its current dock reminder is dismissed.
+
+A successfully completed Deployment Task is not attention-needed merely because its projection remains available for Project Canvas handoff.
+
+A successfully completed Deployment Task may briefly remain in the Deployment Task Dock as a current-session completion notice when the user observes it finish. This completion notice is not restored from Project bootstrap and is not deployment history.
+
 _Avoid_: canvas task list, deployment history list, task center, chat task status.
+
+### Deployment Task Dock Dismissal
+
+A personal user acknowledgement of one Deployment Task Projection version in the Deployment Task Dock. It suppresses that task's dock reminder for that user until the projection changes; it is not shared Project state, task cancellation, task completion, task deletion, deployment history archival, or timeline deletion.
+
+_Avoid_: close task, archive deployment, delete task, mark complete.
 
 ### Deployment Task Display Summary
 
