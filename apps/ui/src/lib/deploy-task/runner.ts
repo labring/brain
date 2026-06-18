@@ -922,11 +922,17 @@ function isDevboxSecretPendingError(error: unknown): error is DevboxApiError {
 }
 
 function isDevboxSdkPendingError(error: unknown): error is DevboxApiError {
+  if (!(error instanceof DevboxApiError) || error.status < 500) {
+    return false;
+  }
+
+  const message = error.message;
   return (
-    error instanceof DevboxApiError &&
-    error.status >= 500 &&
-    error.message.includes("sdk server") &&
-    error.message.includes("is not reachable yet")
+    (message.includes("sdk server") &&
+      message.includes("is not reachable yet")) ||
+    (message.includes("exec command failed") &&
+      message.includes(":9757") &&
+      message.includes("connect: connection refused"))
   );
 }
 
