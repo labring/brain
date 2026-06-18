@@ -350,6 +350,7 @@ export function useProjectCanvas(
         isValidCanvasConnection: connectionGesture.isValidCanvasConnection,
         nodes,
         onNodePositionChange: options?.onNodePositionChange,
+        projectId: options?.projectId,
         projectCanvasConnectionLine:
           connectionGesture.projectCanvasConnectionLine,
         readOnly,
@@ -369,6 +370,7 @@ export function useProjectCanvas(
       frontCanvasNode,
       nodes,
       options?.onNodePositionChange,
+      options?.projectId,
       readOnly,
       viewportFocusActive,
       viewportFocusNodeId,

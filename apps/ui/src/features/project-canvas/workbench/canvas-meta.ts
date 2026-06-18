@@ -100,6 +100,7 @@ export function createProjectCanvasMeta({
   isValidCanvasConnection,
   nodes,
   onNodePositionChange,
+  projectId,
   projectCanvasConnectionLine,
   readOnly,
   viewportFocusActive,
@@ -123,6 +124,7 @@ export function createProjectCanvasMeta({
   >;
   nodes: Node[];
   onNodePositionChange?: (node: Node) => void;
+  projectId?: string;
   projectCanvasConnectionLine: CanvasReactFlowProps["connectionLineComponent"];
   readOnly: boolean;
   viewportFocusActive: boolean;
@@ -162,6 +164,7 @@ export function createProjectCanvasMeta({
           planProjectCanvasCommand({
             intent: { kind: "nodeClick", node },
             nodes,
+            projectId,
             readOnly,
           })
         );

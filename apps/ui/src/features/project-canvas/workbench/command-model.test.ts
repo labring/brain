@@ -6,6 +6,7 @@ import type { Connection, Node } from "@xyflow/react";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
+  CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import { planProjectCanvasCommand } from "./command-model";
@@ -53,6 +54,15 @@ const entryNode = {
   type: CANVAS_ENTRY_NODE_TYPE,
 } satisfies Node;
 
+const deploymentPlaceholderNode = {
+  data: {
+    taskId: "task-123",
+  },
+  id: "deployment-placeholder-task-123",
+  position: { x: 960, y: 0 },
+  type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+} satisfies Node;
+
 test("node click plans selection, default Side Pane, and stack order", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
@@ -82,6 +92,47 @@ test("node click plans selection, default Side Pane, and stack order", () => {
           },
         },
         slot: "side",
+      },
+    }
+  );
+});
+
+test("Deployment Placeholder node click opens the task timeline without selection", () => {
+  assert.deepEqual(
+    planProjectCanvasCommand({
+      intent: { kind: "nodeClick", node: deploymentPlaceholderNode },
+      nodes: [deploymentPlaceholderNode],
+      projectId: "project-123",
+      readOnly: false,
+    }),
+    {
+      stackOrder: {
+        kind: "bringNodeToFront",
+        nodeId: "deployment-placeholder-task-123",
+      },
+      surface: {
+        entry: {
+          kind: "deploymentTaskTimeline",
+          projectId: "project-123",
+          taskId: "task-123",
+        },
+        slot: "side",
+      },
+    }
+  );
+});
+
+test("Deployment Placeholder node click keeps old behavior without project context", () => {
+  assert.deepEqual(
+    planProjectCanvasCommand({
+      intent: { kind: "nodeClick", node: deploymentPlaceholderNode },
+      nodes: [deploymentPlaceholderNode],
+      readOnly: false,
+    }),
+    {
+      stackOrder: {
+        kind: "bringNodeToFront",
+        nodeId: "deployment-placeholder-task-123",
       },
     }
   );
