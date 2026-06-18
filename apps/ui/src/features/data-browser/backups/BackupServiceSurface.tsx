@@ -11,7 +11,6 @@ import {
   validateDbServiceBackupPolicyRetentionDays,
 } from "@data-browser/backups/backup-policy-schedule";
 import type { DbServiceBackupSummary } from "@data-browser/backups/backup-summary";
-import { DbAccessConfirmationDialog } from "@data-browser/components/shared/DbAccessDialogs";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
@@ -666,6 +665,99 @@ function RestoreBackupModal({
   );
 }
 
+function DeleteBackupModal({
+  backup,
+  isDeleting,
+  onConfirm,
+  onOpenChange,
+  sourceName,
+  sourceNamespace,
+}: {
+  backup: DbServiceBackupSummary | null;
+  isDeleting: boolean;
+  onConfirm: () => Promise<void>;
+  onOpenChange: (open: boolean) => void;
+  sourceName: string;
+  sourceNamespace: string;
+}) {
+  const [verificationValue, setVerificationValue] = useState("");
+
+  useEffect(() => {
+    if (backup !== null) {
+      setVerificationValue("");
+    }
+  }, [backup]);
+
+  if (backup === null) {
+    return null;
+  }
+
+  const confirmDisabled = isDeleting || verificationValue !== backup.name;
+
+  return (
+    <AppDialog.Root
+      onOpenChange={(open) => {
+        if (isDeleting && !open) {
+          return;
+        }
+        onOpenChange(open);
+      }}
+      open
+    >
+      <AppDialog.Content data-slot="db-service-backup-delete-dialog">
+        <AppDialog.Header>
+          <AppDialog.WarningIcon />
+          <AppDialog.Title>{"Delete DB Service Backup?"}</AppDialog.Title>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <AppDialog.Description>
+            {"This will delete "}
+            <span className="font-medium text-foreground">{backup.name}</span>
+            {
+              ". Only this recovery point will be removed; the source DB Service "
+            }
+            <span className="font-mono text-foreground">
+              {sourceNamespace}/{sourceName}
+            </span>{" "}
+            {"and any restored DB Services remain unchanged."}
+          </AppDialog.Description>
+          <AppDialog.Field>
+            <p className="select-text text-sm/5 text-zinc-400">
+              {"Type "}
+              <span className="font-mono text-zinc-100">{backup.name}</span>
+              {" to confirm."}
+            </p>
+            <AppDialog.Input
+              aria-label={`Type ${backup.name} to confirm.`}
+              autoComplete="off"
+              className="font-mono"
+              disabled={isDeleting}
+              onChange={(event) => setVerificationValue(event.target.value)}
+              placeholder={backup.name}
+              type="text"
+              value={verificationValue}
+            />
+          </AppDialog.Field>
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel disabled={isDeleting}>{"Cancel"}</AppDialog.Cancel>
+          <AppDialog.DestructiveAction
+            disabled={confirmDisabled}
+            loading={isDeleting}
+            loadingLabel="Deleting"
+            onClick={() => {
+              onConfirm().catch(() => undefined);
+            }}
+            type="button"
+          >
+            {"Delete"}
+          </AppDialog.DestructiveAction>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
+  );
+}
+
 function policyFrequencyLabel(
   frequency: DbServiceBackupPolicyFrequency
 ): string {
@@ -1197,14 +1289,6 @@ export function BackupServiceSurface() {
     useState<DbServiceBackupSummary | null>(null);
   const [selectedDeleteBackup, setSelectedDeleteBackup] =
     useState<DbServiceBackupSummary | null>(null);
-  const deleteVerificationLabel =
-    selectedDeleteBackup === null
-      ? undefined
-      : `Type ${selectedDeleteBackup.name} to confirm.`;
-  const deleteConfirmationMessage =
-    selectedDeleteBackup === null
-      ? ""
-      : `Delete Backup Name ${selectedDeleteBackup.name}. Only this recovery point will be removed; the source DB Service ${runtime.databaseWorkloadNamespace}/${runtime.databaseWorkloadName} and any restored DB Services remain unchanged.`;
   const createDefaultBackupName = useCallback(
     () => suggestedDbServiceBackupName(runtime.databaseWorkloadName),
     [runtime.databaseWorkloadName]
@@ -1272,21 +1356,17 @@ export function BackupServiceSurface() {
         onRestore={commands.restoreBackup}
         sourceName={runtime.databaseWorkloadName}
       />
-      <DbAccessConfirmationDialog
-        cancelText="Cancel"
-        confirmText="Delete"
-        isDestructive
-        isOpen={selectedDeleteBackup !== null}
-        message={deleteConfirmationMessage}
-        onClose={() => {
-          if (!state.isDeleting) {
+      <DeleteBackupModal
+        backup={selectedDeleteBackup}
+        isDeleting={state.isDeleting}
+        onConfirm={confirmDeleteBackup}
+        onOpenChange={(open) => {
+          if (!(state.isDeleting || open)) {
             setSelectedDeleteBackup(null);
           }
         }}
-        onConfirm={confirmDeleteBackup}
-        title="Delete DB Service Backup"
-        verificationLabel={deleteVerificationLabel}
-        verificationText={selectedDeleteBackup?.name}
+        sourceName={runtime.databaseWorkloadName}
+        sourceNamespace={runtime.databaseWorkloadNamespace}
       />
     </section>
   );
