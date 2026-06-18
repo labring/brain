@@ -73,11 +73,11 @@ export function ProjectExplorerSearchField({
     >
       <Search
         aria-hidden
-        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-4 -translate-y-1/2 text-muted-foreground"
       />
       <AppInput
         aria-label="Search projects"
-        className="pl-9 shadow-xs"
+        className="bg-input/30 pl-9 shadow-xs backdrop-blur-lg"
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder={placeholder}
         type="search"
