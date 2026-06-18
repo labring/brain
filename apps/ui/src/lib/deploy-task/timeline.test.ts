@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   appendCardEvent,
   appendStepEvent,
+  applyDeploymentOutputProgressToTimeline,
   applyResultResourceTimeout,
   createDeploymentTaskTimeline,
   createDeploymentTaskTimelineForRunner,
@@ -251,6 +252,96 @@ test("deployment task timeline groups step and card events with stable dedupe", 
   assert.equal(
     withCardEvent.steps[0]?.resultCards?.[0]?.events[0]?.message,
     "AP workload is progressing."
+  );
+});
+
+test("deployment output progress belongs to the AI deployment generation step", () => {
+  const timeline = createDeploymentTaskTimelineForRunner({
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    source: {
+      kind: "github",
+      repo: {
+        fullName: "acme/api",
+        name: "api",
+        url: "https://github.com/acme/api",
+      },
+    },
+    status: "running",
+    taskId: "task-1",
+    updatedAt: NOW,
+  });
+
+  const withBuildOutput = applyDeploymentOutputProgressToTimeline(timeline, {
+    complete: false,
+    event: {
+      createdAt: "2026-06-17T10:00:01.000Z",
+      dedupeKey: "deployment_task.output_partial:build",
+      id: "evt-1",
+      message: "Deployment output files are partially available.",
+      source: "runner",
+    },
+    updatedAt: "2026-06-17T10:00:01.000Z",
+  });
+  const withManifestOutput = applyDeploymentOutputProgressToTimeline(
+    withBuildOutput,
+    {
+      complete: false,
+      event: {
+        createdAt: "2026-06-17T10:00:02.000Z",
+        dedupeKey: "deployment_task.output_partial:manifest",
+        id: "evt-2",
+        message: "Deployment output files are partially available.",
+        source: "runner",
+      },
+      updatedAt: "2026-06-17T10:00:02.000Z",
+    }
+  );
+  const withDuplicateManifestOutput = applyDeploymentOutputProgressToTimeline(
+    withManifestOutput,
+    {
+      complete: false,
+      event: {
+        createdAt: "2026-06-17T10:00:03.000Z",
+        dedupeKey: "deployment_task.output_partial:manifest",
+        id: "evt-3",
+        message: "Deployment output files are partially available.",
+        source: "runner",
+      },
+      updatedAt: "2026-06-17T10:00:03.000Z",
+    }
+  );
+  const withReadyOutput = applyDeploymentOutputProgressToTimeline(
+    withDuplicateManifestOutput,
+    {
+      complete: true,
+      event: {
+        createdAt: "2026-06-17T10:00:04.000Z",
+        dedupeKey: "deployment_task.output_ready:ready",
+        id: "evt-4",
+        message: "Deployment output files are ready.",
+        source: "runner",
+      },
+      updatedAt: "2026-06-17T10:00:04.000Z",
+    }
+  );
+
+  const generationStep = withReadyOutput.steps.find(
+    (step) => step.id === "generate-deployment"
+  );
+
+  assert.equal(generationStep?.status, "completed");
+  assert.deepEqual(
+    generationStep?.events.map((event) => event.dedupeKey),
+    [
+      "deployment_task.output_partial:build",
+      "deployment_task.output_partial:manifest",
+      "deployment_task.output_ready:ready",
+    ]
+  );
+  assert.equal(
+    withReadyOutput.steps.find((step) => step.id === "analyze-source")?.events
+      .length,
+    0
   );
 });
 

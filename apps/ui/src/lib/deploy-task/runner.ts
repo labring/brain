@@ -80,6 +80,7 @@ import {
 import {
   appendCardEvent,
   appendStepEvent,
+  applyDeploymentOutputProgressToTimeline,
   applyResultResourceTimeout,
   type DeploymentResultResourceCard,
   deploymentTimelineFailureStepId,
@@ -1592,17 +1593,35 @@ async function recordDeployOutputProgress(input: {
   taskId: string;
 }): Promise<string> {
   const complete = input.summary.complete === true;
-  await recordDeployTaskEvent(input.taskId, {
-    kind: complete
-      ? "deployment_task.output_ready"
-      : "deployment_task.output_partial",
-    message: complete
-      ? "Deployment output files are ready."
-      : "Deployment output files are partially available.",
-    payload: input.summary,
-    phase: "generate-artifacts",
+  const kind = complete
+    ? "deployment_task.output_ready"
+    : "deployment_task.output_partial";
+  const message = complete
+    ? "Deployment output files are ready."
+    : "Deployment output files are partially available.";
+  const signature = JSON.stringify(input.summary);
+  const now = new Date().toISOString();
+
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind,
+      message,
+      payload: input.summary,
+      phase: "generate-artifacts",
+    },
+    update: (timeline) =>
+      applyDeploymentOutputProgressToTimeline(timeline, {
+        complete,
+        event: timelineEvent({
+          dedupeKey: `${kind}:${signature}`,
+          message,
+          severity: complete ? "success" : "info",
+          source: "runner",
+        }),
+        updatedAt: now,
+      }),
   });
-  return JSON.stringify(input.summary);
+  return signature;
 }
 
 async function recordDeployOutputProgressIfPresent(input: {
@@ -1698,6 +1717,23 @@ async function runDeployTaskGatewayWithOutputProgress(input: {
     stopMonitor();
     await monitor;
   }
+}
+
+async function markDeploymentGenerationStartedIfNeeded(input: {
+  seenOutputProgress: Set<string>;
+  taskId: string;
+}) {
+  if (input.seenOutputProgress.size > 0) {
+    return;
+  }
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.deployment_generation_started",
+    eventMessage: "Generating deployment artifacts.",
+    phase: "generate-artifacts",
+    status: "running",
+    stepId: "generate-deployment",
+    taskId: input.taskId,
+  });
 }
 
 async function completeTaskWithArtifact(input: {
@@ -2148,12 +2184,8 @@ async function runAiDeploymentTask(input: {
     stepId: "analyze-source",
     taskId: input.task.id,
   });
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.deployment_generation_started",
-    eventMessage: "Generating deployment artifacts.",
-    phase: "generate-artifacts",
-    status: "running",
-    stepId: "generate-deployment",
+  await markDeploymentGenerationStartedIfNeeded({
+    seenOutputProgress: outputProgressSignatures,
     taskId: input.task.id,
   });
 

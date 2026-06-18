@@ -316,6 +316,28 @@ export function appendStepEvent(
   );
 }
 
+export function applyDeploymentOutputProgressToTimeline(
+  timeline: DeploymentTaskTimelineSnapshot,
+  input: {
+    complete: boolean;
+    event: DeploymentTimelineEvent;
+    updatedAt: string;
+  }
+): DeploymentTaskTimelineSnapshot {
+  return appendStepEvent(
+    markTimelineStep(timeline, {
+      status: input.complete ? "completed" : "running",
+      stepId: "generate-deployment",
+      updatedAt: input.updatedAt,
+    }),
+    {
+      event: input.event,
+      stepId: "generate-deployment",
+      updatedAt: input.updatedAt,
+    }
+  );
+}
+
 export function upsertResultResourceCard(
   timeline: DeploymentTaskTimelineSnapshot,
   input: {

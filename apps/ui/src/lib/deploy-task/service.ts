@@ -526,6 +526,7 @@ export async function updateDeployTaskTimeline(
       .update(deployTasks)
       .set({
         heartbeatAt: now,
+        ...(input.event?.phase == null ? {} : { phase: input.event.phase }),
         timelineSnapshot: nextTimeline,
         updatedAt: now,
       })
