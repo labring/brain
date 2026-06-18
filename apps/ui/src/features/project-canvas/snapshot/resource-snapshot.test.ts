@@ -355,7 +355,7 @@ test("resource snapshot hands deployment slot placement to AP result", () => {
   });
 });
 
-test("resource snapshot hands unknown deployment slot directly to AP result", () => {
+test("resource snapshot consumes unknown deployment placement into AP result", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
       items: [
@@ -421,15 +421,20 @@ test("resource snapshot hands unknown deployment slot directly to AP result", ()
   assert.deepEqual(snapshot.layoutIntent, {
     commands: [
       {
-        fromOwner: {
+        kind: "create",
+        owner: {
+          kind: "resource",
+          ref: { kind: "AP", name: "api", namespace: "default" },
+        },
+        position: { x: 680, y: 280 },
+        source: "generated",
+      },
+      {
+        kind: "delete",
+        owner: {
           kind: "deploymentProjection",
           slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
           taskId: "task-1",
-        },
-        kind: "rekey",
-        toOwner: {
-          kind: "resource",
-          ref: { kind: "AP", name: "api", namespace: "default" },
         },
       },
     ],
@@ -438,7 +443,7 @@ test("resource snapshot hands unknown deployment slot directly to AP result", ()
   });
 });
 
-test("resource snapshot refines unknown placement to live anchor and unresolved slots atomically", () => {
+test("resource snapshot consumes unknown placement into live result and unresolved slots atomically", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {
       items: [
@@ -527,16 +532,13 @@ test("resource snapshot refines unknown placement to live anchor and unresolved 
   assert.deepEqual(snapshot.layoutIntent, {
     commands: [
       {
-        fromOwner: {
-          kind: "deploymentProjection",
-          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
-          taskId: "task-1",
-        },
-        kind: "rekey",
-        toOwner: {
+        kind: "create",
+        owner: {
           kind: "resource",
           ref: { kind: "AP", name: "api", namespace: "default" },
         },
+        position: { x: 680, y: 280 },
+        source: "generated",
       },
       {
         kind: "create",
@@ -547,6 +549,14 @@ test("resource snapshot refines unknown placement to live anchor and unresolved 
         },
         position: { x: 1020, y: 280 },
         source: "generated",
+      },
+      {
+        kind: "delete",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+          taskId: "task-1",
+        },
       },
     ],
     expectedVersion: 1,
@@ -634,17 +644,14 @@ test("resource snapshot refines unknown deployment placement into the full slot 
   assert.deepEqual(snapshot.layoutIntent, {
     commands: [
       {
-        fromOwner: {
-          kind: "deploymentProjection",
-          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
-          taskId: "task-1",
-        },
-        kind: "rekey",
-        toOwner: {
+        kind: "create",
+        owner: {
           kind: "deploymentProjection",
           slotId: "AP:default:api",
           taskId: "task-1",
         },
+        position: { x: 680, y: 280 },
+        source: "generated",
       },
       {
         kind: "create",
@@ -655,6 +662,14 @@ test("resource snapshot refines unknown deployment placement into the full slot 
         },
         position: { x: 1020, y: 280 },
         source: "generated",
+      },
+      {
+        kind: "delete",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+          taskId: "task-1",
+        },
       },
     ],
     expectedVersion: 1,
@@ -1403,12 +1418,12 @@ spec:
     [
       {
         id: "deployment-result-placeholder-task-1-AP:default:api",
-        position: { x: 680, y: 280 },
+        position: { x: 1020, y: 280 },
         type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
       },
       {
         id: "deployment-result-placeholder-task-1-PublicAccess:default:api",
-        position: { x: 340, y: 280 },
+        position: { x: 680, y: 280 },
         type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
       },
     ]
@@ -1416,17 +1431,14 @@ spec:
   assert.deepEqual(snapshot.layoutIntent, {
     commands: [
       {
-        fromOwner: {
-          kind: "deploymentProjection",
-          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
-          taskId: "task-1",
-        },
-        kind: "rekey",
-        toOwner: {
+        kind: "create",
+        owner: {
           kind: "deploymentProjection",
           slotId: "AP:default:api",
           taskId: "task-1",
         },
+        position: { x: 1020, y: 280 },
+        source: "generated",
       },
       {
         kind: "create",
@@ -1435,8 +1447,16 @@ spec:
           slotId: "PublicAccess:default:api",
           taskId: "task-1",
         },
-        position: { x: 340, y: 280 },
+        position: { x: 680, y: 280 },
         source: "generated",
+      },
+      {
+        kind: "delete",
+        owner: {
+          kind: "deploymentProjection",
+          slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
+          taskId: "task-1",
+        },
       },
     ],
     expectedVersion: 1,

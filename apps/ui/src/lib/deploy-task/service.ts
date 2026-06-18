@@ -549,6 +549,7 @@ export async function updateDeployTaskTimeline(
   if (result == null) {
     return null;
   }
+  publishDeploymentTaskProjectionChange(result);
   const snapshot = await getDeployTaskTimelineSnapshot(
     result.id,
     result.namespace

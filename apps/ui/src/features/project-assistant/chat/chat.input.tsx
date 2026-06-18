@@ -5,7 +5,7 @@ import {
   AppIconButton,
   type AppIconButtonProps,
 } from "@workspace/ui/components/app-icon-button";
-import { Button, buttonVariants } from "@workspace/ui/components/button";
+import { buttonVariants } from "@workspace/ui/components/button";
 import {
   Popover,
   PopoverContent,
@@ -13,7 +13,7 @@ import {
 } from "@workspace/ui/components/popover";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
-import { ArrowUp, Database, Square, Wrench } from "lucide-react";
+import { Database, Send, Square, Wrench } from "lucide-react";
 import { type ComponentProps, useEffect, useLayoutEffect, useRef } from "react";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
 
@@ -465,25 +465,21 @@ export function ChatComposerSend({
   const sendDisabled = !(responding || value.trim());
 
   return (
-    <Button
+    <AppIconButton
+      aria-label={responding ? "Stop response" : "Send message"}
       className={cn(
-        "rounded-xl border transition-all duration-100",
-        sendDisabled
-          ? "cursor-not-allowed bg-transparent text-foreground hover:bg-transparent"
-          : "cursor-pointer border-border bg-input text-foreground hover:bg-input hover:brightness-120",
+        "shrink-0 transition-all duration-100",
+        sendDisabled ? "cursor-not-allowed" : "cursor-pointer",
         className
       )}
       disabled={sendDisabled}
       onClick={onPrimaryAction}
-      size="icon"
+      size="lg"
       type="button"
+      variant="primary"
     >
-      {responding ? (
-        <Square className="size-4" />
-      ) : (
-        <ArrowUp className="size-4" />
-      )}
-    </Button>
+      {responding ? <Square className="size-4" /> : <Send className="size-4" />}
+    </AppIconButton>
   );
 }
 

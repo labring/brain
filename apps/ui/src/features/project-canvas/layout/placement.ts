@@ -207,6 +207,9 @@ function placementForDeploymentProjectionFootprint(
           x: firstCandidate.node.position.x - relative.x,
           y: firstCandidate.node.position.y - relative.y,
         };
+  if (initialOrigin !== undefined && projection.source === "user") {
+    return initialOrigin;
+  }
   if (
     initialOrigin !== undefined &&
     occupancy.isFootprintOpen(projection.footprint, initialOrigin)

@@ -15,6 +15,7 @@ import type {
   CanvasLayoutPosition,
   CanvasLayoutResourceRef,
   CanvasPlacementOwner,
+  CanvasPlacementSource,
 } from "./types";
 
 export interface PlacementCandidate {
@@ -37,6 +38,7 @@ export interface DeploymentProjectionFootprintCandidate {
   footprint: PlacementFootprint;
   relativePositions: Map<number, CanvasLayoutPosition>;
   sortKey: string;
+  source?: CanvasPlacementSource;
 }
 
 export type PlacementUnit =
@@ -139,9 +141,13 @@ function initialPositionForCandidate(
   return initialPositionByRef?.get(canvasResourceKey(candidate.ref));
 }
 
-function deploymentProjectionFootprintInfo(
-  candidate: PlacementCandidate
-): { groupId: string; relativePosition: CanvasLayoutPosition } | undefined {
+function deploymentProjectionFootprintInfo(candidate: PlacementCandidate):
+  | {
+      groupId: string;
+      relativePosition: CanvasLayoutPosition;
+      source?: CanvasPlacementSource;
+    }
+  | undefined {
   const data = asRecord(candidate.node.data);
   const relative = asRecord(data?.projectionRelativePlacement);
   const groupId = data?.groupId;
@@ -158,6 +164,10 @@ function deploymentProjectionFootprintInfo(
   return {
     groupId,
     relativePosition: { x: relativeX as number, y: relativeY as number },
+    ...(data?.projectionPlacementSource === "user" ||
+    data?.projectionPlacementSource === "generated"
+      ? { source: data.projectionPlacementSource }
+      : {}),
   };
 }
 
@@ -183,6 +193,7 @@ function deploymentProjectionFootprintUnits(
     string,
     Map<number, CanvasLayoutPosition>
   >();
+  const sourceByTask = new Map<string, CanvasPlacementSource>();
   for (const candidate of candidates) {
     const projection = deploymentProjectionFootprintInfo(candidate);
     if (projection === undefined) {
@@ -196,6 +207,11 @@ function deploymentProjectionFootprintUnits(
       new Map<number, CanvasLayoutPosition>();
     relativePositions.set(candidate.index, projection.relativePosition);
     relativePositionsByTask.set(projection.groupId, relativePositions);
+    if (projection.source === "user") {
+      sourceByTask.set(projection.groupId, "user");
+    } else if (!sourceByTask.has(projection.groupId)) {
+      sourceByTask.set(projection.groupId, projection.source ?? "generated");
+    }
   }
 
   const groupedIndexes = new Set<number>();
@@ -204,6 +220,7 @@ function deploymentProjectionFootprintUnits(
     const relativePositions =
       relativePositionsByTask.get(taskId) ??
       new Map<number, CanvasLayoutPosition>();
+    const source = sourceByTask.get(taskId);
     for (const candidate of taskCandidates) {
       groupedIndexes.add(candidate.index);
     }
@@ -216,6 +233,7 @@ function deploymentProjectionFootprintUnits(
           relativePositions
         ),
         relativePositions,
+        ...(source === undefined ? {} : { source }),
         sortKey: `DeploymentProjection:${taskId}`,
       },
     });

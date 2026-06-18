@@ -211,7 +211,7 @@ export function buildProjectCanvasResourceSnapshot({
     commands: [
       ...(layoutCommands ?? []),
       ...deploymentProjectionPlacementCommands({
-        context: rawDeploymentProjectionContext,
+        context: mergedDeploymentProjectionContext,
       }),
     ],
     layout: merge.layout,
