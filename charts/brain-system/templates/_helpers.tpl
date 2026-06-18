@@ -102,6 +102,25 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{- printf "%s.%s" (include "brain-system.platformAddressPrefix" .) .region -}}
 {{- end -}}
 
+{{- define "brain-system.firstPlatformAddressHost" -}}
+{{- $addresses := default (list) .platformAddresses -}}
+{{- if gt (len $addresses) 0 -}}
+{{- $address := first $addresses -}}
+{{- include "brain-system.platformAddressHost" (dict "namespace" .namespace "name" .name "id" $address.id "region" .region "domainPrefix" $address.domainPrefix) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "brain-system.publicUrl" -}}
+{{- $host := include "brain-system.firstPlatformAddressHost" . -}}
+{{- if $host -}}
+{{- printf "https://%s" $host -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "brain-system.databaseSecretName" -}}
+{{- printf "%s-conn-credential" .Values.database.name -}}
+{{- end -}}
+
 {{- define "brain-system.publicIngressName" -}}
 {{- printf "%s-platform-%s" .name .id | lower | replace "_" "-" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -121,15 +140,51 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{- toJson (dict "fixed" (dict "replicas" .replicas) "type" "fixed") -}}
 {{- end -}}
 
-{{- define "brain-system.appEnv" -}}
-{{- range $key, $value := .env }}
+{{- define "brain-system.databaseEnv" -}}
+{{- $secretName := include "brain-system.databaseSecretName" .root -}}
+{{- $database := default "postgres" .root.Values.database.database -}}
+{{- $serviceName := printf "%s-postgresql.%s.svc" .root.Values.database.name .root.Release.Namespace -}}
+- name: PGUSER
+  valueFrom:
+    secretKeyRef:
+      name: {{ $secretName | quote }}
+      key: username
+- name: PGPASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ $secretName | quote }}
+      key: password
+- name: PGHOST
+  value: {{ $serviceName | quote }}
+- name: PGPORT
+  value: "5432"
+- name: PGDATABASE
+  value: {{ $database | quote }}
+- name: DATABASE_URL
+  value: {{ printf "postgresql://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/%s" $database | quote }}
+{{- end -}}
+
+{{- define "brain-system.appEnv" }}
+{{- $component := .component -}}
+{{- $root := .root -}}
+{{ range $key, $value := .env }}
+{{ if and $root.Values.database.enabled (eq $key "DATABASE_URL") (eq (toString $value) "") }}
+{{ include "brain-system.databaseEnv" (dict "root" $root) }}
+{{ else if and (eq $component "ui") (eq $key "API_URL") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ include "brain-system.publicUrl" (dict "namespace" $root.Release.Namespace "name" $root.Values.api.name "platformAddresses" $root.Values.api.platformAddresses "region" $root.Values.global.region) | quote }}
+{{ else if and (eq $component "ui") (eq $key "NEXT_PUBLIC_APP_URL") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ include "brain-system.publicUrl" (dict "namespace" $root.Release.Namespace "name" $root.Values.ui.name "platformAddresses" $root.Values.ui.platformAddresses "region" $root.Values.global.region) | quote }}
+{{ else }}
 - name: {{ $key }}
   value: {{ $value | quote }}
-{{- end }}
-{{- range $key, $value := .staticEnv }}
+{{ end }}
+{{ end }}
+{{ range $key, $value := .staticEnv }}
 - name: {{ $key }}
   value: {{ $value | quote }}
-{{- end }}
+{{ end }}
 {{- end -}}
 
 {{- define "brain-system.dbProfile" -}}

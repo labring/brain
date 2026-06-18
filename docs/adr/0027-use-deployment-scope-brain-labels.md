@@ -86,6 +86,51 @@ relationships inside a deployment scope:
 AP Public Access is still an AP-derived product view. It is not a standalone
 Brain deployment and does not require a separate `deployment-kind` value.
 
+## Current Implementation Context
+
+Brain label handling is intentionally controlled. Product callers should not
+expect arbitrary user-provided `metadata.labels` to pass through to rendered
+runtime resources.
+
+Direct AP rendering reads only the `region` label from the input manifest. It
+uses that value as the routing domain compatibility label when public access is
+created. Other user-provided AP labels are not part of the direct AP render
+contract.
+
+Direct DB rendering does not read user-provided `metadata.labels` from the DB
+product manifest. The DB renderer replaces labels with Brain ownership labels
+and KubeBlocks/provider compatibility labels.
+
+Template deployment requests do not accept an arbitrary labels field. The
+template deploy API derives one fixed `extraLabels` map from `projectId`,
+`instanceName`, and `templateName`. The template provider applies that map to
+the rendered template result, and Brain's local template renderer also applies
+the same deployment-scoped labels to rendered resources, pod templates, and
+volume claim templates.
+
+`TemplateNative` is not a Kubernetes label value, public resource type, or
+deployment kind. It is an internal canvas/deployment projection kind for native
+workloads produced by a template deployment.
+
+## Label Syntax and Value Safety
+
+Brain labels still have to satisfy Kubernetes label syntax:
+
+- Label key names are at most 63 characters and may include an optional DNS
+  subdomain prefix separated by `/`.
+- Label values are at most 63 characters.
+- Non-empty label values must begin and end with an alphanumeric character and
+  may contain alphanumerics, `-`, `_`, and `.`.
+
+The `region` routing label follows the non-empty Kubernetes label value subset:
+it is only written when the value is non-empty, no longer than 63 characters,
+and matches the Kubernetes label value character rules.
+
+Do not put long hostnames directly into labels. Direct AP public ingress uses a
+stable short compatibility label for
+`cloud.sealos.io/app-deploy-manager-domain` and stores the full host in the
+`cloud.sealos.io/app-deploy-manager-domain-host` annotation.
+
 ## Query Rules
 
 Direct AP list/read scopes by:

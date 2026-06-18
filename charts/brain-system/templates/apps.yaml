@@ -48,7 +48,7 @@ spec:
           imagePullPolicy: {{ $cfg.imagePullPolicy }}
           {{- if or $env $staticEnv }}
           env:
-            {{- include "brain-system.appEnv" (dict "env" $env "staticEnv" $staticEnv) | nindent 12 }}
+            {{- include "brain-system.appEnv" (dict "component" $component "env" $env "root" $root "staticEnv" $staticEnv) | nindent 12 }}
           {{- end }}
           ports:
             - containerPort: {{ $cfg.port }}

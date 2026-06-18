@@ -39,8 +39,6 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - `global.region`
 - `projectId`
 - `api.env.SEALOS_DESKTOP_URL`
-- `ui.env.API_URL`
-- `ui.env.DATABASE_URL`
 - GitHub OAuth values
 - assistant model values
 - Devbox runtime values
@@ -48,7 +46,7 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 
 `api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
 
-`ui.env.API_URL` is the public API origin used by the UI server and browser terminal WebSockets.
+When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret.
 
 Install or upgrade:
 
@@ -58,24 +56,6 @@ helm upgrade --install brain-system charts/brain-system \
   --create-namespace \
   -f /tmp/brain-system.values.yaml
 ```
-
-## First Database Install
-
-The DB renderer creates a KubeBlocks Cluster named `brain-pg`. KubeBlocks generates the connection credential secret used to assemble `ui.env.DATABASE_URL`.
-
-For a brand-new cluster, deploy without UI first:
-
-```bash
-helm upgrade --install brain-system charts/brain-system \
-  -n brain-system \
-  --create-namespace \
-  -f /tmp/brain-system.values.yaml \
-  --set ui.enabled=false
-
-kubectl -n brain-system get secret brain-pg-conn-credential -o yaml
-```
-
-Fill `ui.env.DATABASE_URL`, then run the normal install command again without `--set ui.enabled=false`.
 
 ## Verify
 
