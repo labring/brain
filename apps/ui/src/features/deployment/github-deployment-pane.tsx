@@ -186,10 +186,19 @@ export function GitHubDeploymentPane({
           return;
         }
         toast.success(outcome.taskMessage);
+        onClose();
+        if (outcome.taskId != null) {
+          dispatchDeployTaskCreatedEvent({
+            projectId: outcome.projectId,
+            projectName: outcome.projectName,
+            sourceKind: "template",
+            sourceLabel: outcome.sourceLabel,
+            taskId: outcome.taskId,
+          });
+        }
         if (onDeployed != null) {
           onDeployed().catch(() => undefined);
         }
-        onClose();
       } catch (error) {
         toast.error(
           error instanceof Error
