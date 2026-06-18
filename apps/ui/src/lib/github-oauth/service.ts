@@ -19,7 +19,7 @@ import { generatePKCE } from "./pkce";
 import { GITHUB_OAUTH_SCOPES, parseOAuthNamespaceParam } from "./types";
 import {
   buildCallbackUri,
-  buildOAuthSuccessRedirectUrl,
+  buildOAuthPopupCompleteUrl,
   getCallbackBaseUrl,
 } from "./urls";
 
@@ -137,7 +137,7 @@ export async function handleProviderError(
   const baseUrl = getCallbackBaseUrl(request);
   const { returnPath } = await readCallbackCookies();
   const response = NextResponse.redirect(
-    buildOAuthSuccessRedirectUrl(baseUrl, returnPath)
+    buildOAuthPopupCompleteUrl(baseUrl, returnPath)
   );
   clearOAuthCookies(response);
   return response;
@@ -188,7 +188,7 @@ export async function completeAuthorization(
     token: data.access_token,
   });
   const response = NextResponse.redirect(
-    buildOAuthSuccessRedirectUrl(baseUrl, returnPath)
+    buildOAuthPopupCompleteUrl(baseUrl, returnPath)
   );
   clearOAuthCookies(response);
   return response;

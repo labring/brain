@@ -12,6 +12,12 @@ export const GHCR_CRED_TOKEN_KEY = "githubToken" as const;
 /** Must match the GitHub OAuth app's registered callback URL. */
 export const GITHUB_OAUTH_CALLBACK_PATH = "/api/callback/github" as const;
 
+/** Same-origin page opened after the OAuth callback finishes in a popup. */
+export const GITHUB_OAUTH_COMPLETE_PATH = "/github/oauth-complete" as const;
+
+/** Browser event sent from the OAuth popup back to the opener. */
+export const GITHUB_OAUTH_COMPLETE_MESSAGE = "github-oauth-complete" as const;
+
 /** OAuth scopes requested when initiating the authorize flow. */
 export const GITHUB_OAUTH_SCOPES = "repo read:packages write:packages" as const;
 

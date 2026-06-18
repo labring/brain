@@ -1,6 +1,10 @@
 import "server-only";
 
-import { GITHUB_OAUTH_CALLBACK_PATH, parseOAuthReturnPathParam } from "./types";
+import {
+  GITHUB_OAUTH_CALLBACK_PATH,
+  GITHUB_OAUTH_COMPLETE_PATH,
+  parseOAuthReturnPathParam,
+} from "./types";
 
 const TRAILING_SLASH_RE = /\/+$/;
 
@@ -87,4 +91,21 @@ export function buildOAuthSuccessRedirectUrl(
     return `${stripTrailingSlash(baseUrl)}${returnPath}`;
   }
   return envDefaultRedirectUrl(baseUrl);
+}
+
+export function buildOAuthPopupCompleteUrl(
+  baseUrl: string,
+  storedReturnRaw: string | undefined
+): string {
+  const doneUrl = new URL(
+    GITHUB_OAUTH_COMPLETE_PATH,
+    `${stripTrailingSlash(baseUrl)}/`
+  );
+  const returnPath = storedReturnRaw
+    ? parseOAuthReturnPathParam(storedReturnRaw)
+    : null;
+  if (returnPath) {
+    doneUrl.searchParams.set("next", returnPath);
+  }
+  return doneUrl.toString();
 }

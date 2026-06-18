@@ -6,9 +6,22 @@ import useSWR from "swr";
 
 import {
   GITHUB_OAUTH_CALLBACK_PATH,
+  GITHUB_OAUTH_COMPLETE_MESSAGE,
   parseOAuthNamespaceParam,
+  parseOAuthReturnPathParam,
 } from "@/lib/github-oauth/types";
 import { namespaceAtom } from "@/store/auth-store";
+
+const OAUTH_POPUP_NAME = "brain-github-oauth";
+const OAUTH_POPUP_FEATURES = [
+  "popup=yes",
+  "width=520",
+  "height=720",
+  "resizable=yes",
+  "scrollbars=yes",
+  "noopener=no",
+  "noreferrer=no",
+].join(",");
 
 interface GithubConnectionResponse {
   connection: {
@@ -55,6 +68,24 @@ async function deleteConnection(namespace: string): Promise<void> {
   }
 }
 
+function centeredPopupFeatures(): string {
+  const width = 520;
+  const height = 720;
+  const left = Math.max(
+    0,
+    Math.round(window.screenX + (window.outerWidth - width) / 2)
+  );
+  const top = Math.max(
+    0,
+    Math.round(window.screenY + (window.outerHeight - height) / 2)
+  );
+  return `${OAUTH_POPUP_FEATURES},left=${left},top=${top}`;
+}
+
+function sameOriginPath(raw: unknown): string | null {
+  return typeof raw === "string" ? parseOAuthReturnPathParam(raw) : null;
+}
+
 export function useGithubAuth(options?: {
   enabled?: boolean;
 }): UseGithubAuthResult {
@@ -88,8 +119,57 @@ export function useGithubAuth(options?: {
     if (normalizedNamespace) {
       url.searchParams.set("namespace", normalizedNamespace);
     }
-    window.location.assign(`${url.pathname}${url.search}`);
-  }, [namespace]);
+    const popup = window.open(
+      `${url.pathname}${url.search}`,
+      OAUTH_POPUP_NAME,
+      centeredPopupFeatures()
+    );
+    if (!popup) {
+      window.location.assign(`${url.pathname}${url.search}`);
+      return;
+    }
+    popup.focus();
+
+    let closePoll: number | undefined;
+    const cleanup = () => {
+      window.removeEventListener("message", handleMessage);
+      if (closePoll !== undefined) {
+        window.clearInterval(closePoll);
+      }
+    };
+    const refreshConnection = () => {
+      mutate().catch(() => undefined);
+    };
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      if (
+        typeof event.data !== "object" ||
+        event.data == null ||
+        event.data.type !== GITHUB_OAUTH_COMPLETE_MESSAGE
+      ) {
+        return;
+      }
+      cleanup();
+      const returnPath = sameOriginPath(event.data.returnPath);
+      if (
+        returnPath &&
+        returnPath !== `${window.location.pathname}${window.location.search}`
+      ) {
+        window.history.replaceState(null, "", returnPath);
+      }
+      refreshConnection();
+    };
+
+    window.addEventListener("message", handleMessage);
+    closePoll = window.setInterval(() => {
+      if (popup.closed) {
+        cleanup();
+        refreshConnection();
+      }
+    }, 1000);
+  }, [mutate, namespace]);
 
   const disconnectGithubAuth = useCallback(async () => {
     if (!canCheck) {
