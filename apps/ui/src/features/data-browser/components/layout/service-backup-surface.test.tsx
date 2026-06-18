@@ -97,6 +97,18 @@ function assertDangerIconButton(html: string, ...attributePatterns: string[]) {
   );
 }
 
+function assertQuietIconButton(html: string, ...attributePatterns: string[]) {
+  const attributeLookaheads = attributePatterns
+    .map((pattern) => `(?=[^>]*${pattern})`)
+    .join("");
+  assert.match(
+    html,
+    new RegExp(
+      `<button${attributeLookaheads}(?=[^>]*data-size="md")(?=[^>]*data-slot="tooltip-trigger")(?=[^>]*data-variant="quiet")[^>]*>`
+    )
+  );
+}
+
 function elementClassName(
   html: string,
   tagName: string,
@@ -186,6 +198,13 @@ test("DB Service root renders a service-level Backup tab without close controls"
   assert.match(html, /data-qa-object="backup-row-description"/);
   assert.match(html, /data-qa-object="backup-row-time"/);
   assert.match(html, /data-qa-object="backup-row-type"/);
+  assert.match(html, /aria-label="Refresh Backup List"/);
+  assert.match(html, /data-testid="database\.backup\.refresh-button"/);
+  assertQuietIconButton(
+    html,
+    'data-testid="database\\.backup\\.refresh-button"',
+    'data-qa-action="refresh"'
+  );
   assert.match(html, />Manual</);
   assert.match(html, />Automatic</);
   assert.match(html, />Completed</);

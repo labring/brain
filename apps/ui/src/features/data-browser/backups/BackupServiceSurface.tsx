@@ -31,6 +31,7 @@ import {
   CloudUpload,
   LayoutList,
   Loader2,
+  RefreshCw,
   RotateCcw,
   Save,
   Trash2,
@@ -221,12 +222,16 @@ function UnsupportedBackupSurface() {
 function BackupRowsList({
   backups,
   isDeleting,
+  isRefreshing,
   onRequestDelete,
+  onRefresh,
   onRestore,
 }: {
   backups: DbServiceBackupSummary[];
   isDeleting: boolean;
+  isRefreshing: boolean;
   onRequestDelete: (backup: DbServiceBackupSummary) => void;
+  onRefresh: () => void;
   onRestore: (backup: DbServiceBackupSummary) => void;
 }) {
   return (
@@ -243,6 +248,34 @@ function BackupRowsList({
             {"Backup List"}
           </h3>
         </div>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <AppIconButton
+                aria-label="Refresh Backup List"
+                data-qa-action="refresh"
+                data-qa-disabled-reason={
+                  isRefreshing ? "refreshing" : undefined
+                }
+                data-qa-module="database"
+                data-qa-object="backup-list"
+                data-qa-state={isRefreshing ? "refreshing" : "ready"}
+                data-testid="database.backup.refresh-button"
+                disabled={isRefreshing}
+                onClick={onRefresh}
+                size="md"
+                type="button"
+                variant="quiet"
+              >
+                <RefreshCw
+                  aria-hidden
+                  className={cn("size-4", isRefreshing && "animate-spin")}
+                />
+              </AppIconButton>
+            }
+          />
+          <TooltipContent>{"Refresh"}</TooltipContent>
+        </Tooltip>
       </div>
 
       {backups.length === 0 ? (
@@ -1222,6 +1255,8 @@ export function BackupServiceSurface() {
       <BackupRowsList
         backups={state.backups}
         isDeleting={state.isDeleting}
+        isRefreshing={state.isRefreshing}
+        onRefresh={commands.refresh}
         onRequestDelete={requestDeleteBackup}
         onRestore={setRestoreBackup}
       />
