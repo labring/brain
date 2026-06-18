@@ -42,13 +42,6 @@ const ICON: Record<
   template: Blocks,
 };
 
-const ICON_CLASS: Record<ProjectCreatorSourceKind, string> = {
-  github: "text-foreground",
-  "docker-image": "text-blue-400",
-  database: "text-muted-foreground",
-  template: "text-blue-400",
-};
-
 export function ProjectCreatorProjectNameField() {
   const { actions, states } = useProjectCreator(
     "ProjectCreator.ProjectNameField"
@@ -152,7 +145,7 @@ export function ProjectCreatorOptionPicker({
                 <span className="flex min-w-0 items-center gap-2">
                   <Icon
                     aria-hidden
-                    className={cn("size-4 shrink-0", ICON_CLASS[id])}
+                    className="size-4 shrink-0 text-foreground"
                   />
                   <span className="truncate font-medium text-foreground text-sm leading-5">
                     {PROJECT_CREATOR_SOURCE_LABEL[id]}
