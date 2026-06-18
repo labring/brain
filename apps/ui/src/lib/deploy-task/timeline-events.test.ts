@@ -31,6 +31,8 @@ test("deployment task timeline events publish only to the matching task", () => 
       createdFrom: "ui",
       error: null,
       gatewaySessionId: null,
+      failureDetails: null,
+      gatewayStateSnapshot: null,
       gatewayTurnId: null,
       gatewayUrl: null,
       id: "task-1",

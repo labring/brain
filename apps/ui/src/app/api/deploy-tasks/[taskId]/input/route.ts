@@ -60,7 +60,18 @@ export async function POST(request: Request, context: RouteContext) {
 
   const task = await submitDeployTaskInput(taskId, {
     values: parsed.data.values,
+  }).catch((error: unknown) => {
+    if (
+      error instanceof Error &&
+      error.message === "Deploy task is not waiting for input."
+    ) {
+      return "not-waiting" as const;
+    }
+    throw error;
   });
+  if (task === "not-waiting") {
+    return jsonError("Deploy task is not waiting for input", 409);
+  }
   if (task == null) {
     return jsonError("Deploy task not found", 404);
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppInput } from "@workspace/ui/components/app-input";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
@@ -7,7 +8,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
-import { Input } from "@workspace/ui/components/input";
 import {
   Select,
   SelectContent,
@@ -50,8 +50,10 @@ import type {
   DeploymentTaskDeploymentPlan,
   DeploymentTaskDeploymentPlanInput,
   DeploymentTaskTimelineSnapshotDTO,
+  DeployTaskBlockingInput,
 } from "@/lib/deploy-task/types";
 import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
+import { DeploymentSettings } from "./deployment-settings";
 
 interface DeploymentTaskTimelinePaneProps {
   kubeconfig: string;
@@ -59,10 +61,6 @@ interface DeploymentTaskTimelinePaneProps {
   onClose: () => void;
   taskId: string;
 }
-
-const INPUT_CONDITION_OR_RE = /\s+\|\|\s+/;
-const INPUT_CONDITION_AND_RE = /\s+&&\s+/;
-const INPUT_CONDITION_COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 
 function statusTone(
   status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
@@ -311,7 +309,13 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
   );
 }
 
-function TimelineStepItem({ step }: { step: DeploymentTimelineStep }) {
+function TimelineStepItem({
+  children,
+  step,
+}: {
+  children?: ReactNode;
+  step: DeploymentTimelineStep;
+}) {
   const cards = step.resultCards ?? [];
   return (
     <section className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3">
@@ -336,6 +340,7 @@ function TimelineStepItem({ step }: { step: DeploymentTimelineStep }) {
             ))}
           </div>
         )}
+        {children == null ? null : <div className="mt-3">{children}</div>}
       </div>
     </section>
   );
@@ -345,61 +350,43 @@ function inputInitialValue(input: DeploymentTaskDeploymentPlanInput): string {
   return input.default ?? "";
 }
 
-function conditionValue(
-  expression: string,
-  values: Record<string, string>
-): unknown {
-  const trimmed = expression.trim();
+function inputKey(input: DeployTaskBlockingInput): string {
+  return input.key ?? input.id;
+}
+
+function blockingPlanInputs({
+  blockingInputs,
+  plan,
+}: {
+  blockingInputs: readonly DeployTaskBlockingInput[];
+  plan: DeploymentTaskDeploymentPlan | undefined;
+}): DeploymentTaskDeploymentPlanInput[] {
   if (
-    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+    blockingInputs.length === 0 &&
+    (plan?.missingInputKeys?.length ?? 0) > 0
   ) {
-    return trimmed.slice(1, -1);
+    const missing = new Set(plan?.missingInputKeys ?? []);
+    return (plan?.inputs ?? []).filter((input) => missing.has(input.key));
   }
-  if (trimmed === "true") {
-    return true;
-  }
-  if (trimmed === "false") {
-    return false;
-  }
-  if (trimmed.startsWith("inputs.")) {
-    return values[trimmed.slice("inputs.".length)] ?? "";
-  }
-  return values[trimmed] ?? "";
-}
-
-function evaluateInputCondition(
-  condition: string | undefined,
-  values: Record<string, string>
-): boolean {
-  const trimmed = condition?.trim();
-  if (!trimmed) {
-    return true;
-  }
-  const orParts = trimmed.split(INPUT_CONDITION_OR_RE);
-  if (orParts.length > 1) {
-    return orParts.some((part) => evaluateInputCondition(part, values));
-  }
-  const andParts = trimmed.split(INPUT_CONDITION_AND_RE);
-  if (andParts.length > 1) {
-    return andParts.every((part) => evaluateInputCondition(part, values));
-  }
-  const comparison = trimmed.match(INPUT_CONDITION_COMPARISON_RE);
-  if (comparison) {
-    const left = conditionValue(comparison[1] ?? "", values);
-    const right = conditionValue(comparison[3] ?? "", values);
-    return comparison[2]?.includes("!") ? left !== right : left === right;
-  }
-  return Boolean(conditionValue(trimmed, values));
-}
-
-function visiblePlanInputs(
-  plan: DeploymentTaskDeploymentPlan,
-  values: Record<string, string>
-): DeploymentTaskDeploymentPlanInput[] {
-  return plan.inputs.filter((input) =>
-    evaluateInputCondition(input.if, values)
+  const planInputs = new Map(
+    (plan?.inputs ?? []).map((input) => [input.key, input])
   );
+  return blockingInputs.map((input) => {
+    const key = inputKey(input);
+    const planInput = planInputs.get(key);
+    return {
+      default: input.defaultValue ?? planInput?.default,
+      description: input.description ?? planInput?.description,
+      if: planInput?.if,
+      key,
+      label: input.label || planInput?.label || key,
+      options: input.options ?? planInput?.options,
+      required: input.required,
+      sensitive:
+        input.sensitive ?? planInput?.sensitive ?? input.type === "secret",
+      type: input.valueType ?? planInput?.type ?? input.type,
+    };
+  });
 }
 
 function deploymentInputControlType(input: DeploymentTaskDeploymentPlanInput) {
@@ -419,6 +406,37 @@ function deploymentInputControlType(input: DeploymentTaskDeploymentPlanInput) {
   return "text";
 }
 
+function deploymentInputFormValues({
+  fallbackValues,
+  formData,
+  inputs,
+}: {
+  fallbackValues: Record<string, string>;
+  formData: FormData;
+  inputs: readonly DeploymentTaskDeploymentPlanInput[];
+}): Record<string, string> {
+  return Object.fromEntries(
+    inputs.map((input) => {
+      const formValue = formData.get(input.key);
+      return [
+        input.key,
+        typeof formValue === "string"
+          ? formValue
+          : (fallbackValues[input.key] ?? ""),
+      ];
+    })
+  );
+}
+
+function missingRequiredDeploymentInputs(
+  inputs: readonly DeploymentTaskDeploymentPlanInput[],
+  values: Record<string, string>
+): DeploymentTaskDeploymentPlanInput[] {
+  return inputs.filter(
+    (input) => input.required && (values[input.key] ?? "").trim() === ""
+  );
+}
+
 function DeploymentInputControl({
   controlType,
   input,
@@ -433,40 +451,47 @@ function DeploymentInputControl({
   const controlId = `deployment-input-${input.key}`;
   if (controlType === "choice") {
     return (
-      <Select onValueChange={onChange} value={value}>
-        <SelectTrigger className="h-9" id={controlId}>
-          <SelectValue placeholder="Select value" />
-        </SelectTrigger>
-        <SelectContent>
-          {(input.options ?? []).map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <>
+        <input name={input.key} type="hidden" value={value} />
+        <Select onValueChange={onChange} value={value}>
+          <SelectTrigger className="h-9" id={controlId}>
+            <SelectValue placeholder="Select value" />
+          </SelectTrigger>
+          <SelectContent>
+            {(input.options ?? []).map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </>
     );
   }
   if (controlType === "boolean") {
     return (
-      <div className="flex h-9 items-center gap-2">
-        <Checkbox
-          checked={value === "true"}
-          id={controlId}
-          onCheckedChange={(checked) =>
-            onChange(checked === true ? "true" : "false")
-          }
-        />
-        <span className="text-muted-foreground text-xs">
-          {value === "true" ? "Enabled" : "Disabled"}
-        </span>
-      </div>
+      <>
+        <input name={input.key} type="hidden" value={value} />
+        <div className="flex h-9 items-center gap-2">
+          <Checkbox
+            checked={value === "true"}
+            id={controlId}
+            onCheckedChange={(checked) =>
+              onChange(checked === true ? "true" : "false")
+            }
+          />
+          <span className="text-muted-foreground text-xs">
+            {value === "true" ? "Enabled" : "Disabled"}
+          </span>
+        </div>
+      </>
     );
   }
   return (
-    <Input
+    <AppInput
       autoComplete={controlType === "password" ? "off" : undefined}
       id={`deployment-input-${input.key}`}
+      name={input.key}
       onChange={(event) => onChange(event.currentTarget.value)}
       required={input.required}
       type={controlType}
@@ -490,7 +515,7 @@ function DeploymentInputField({
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <label
-        className="flex items-center gap-1 font-medium text-foreground"
+        className="flex items-center gap-1 font-medium text-foreground text-sm leading-5"
         htmlFor={`deployment-input-${input.key}`}
       >
         {label}
@@ -501,7 +526,7 @@ function DeploymentInputField({
         ) : null}
       </label>
       {description ? (
-        <span className="text-muted-foreground text-xs leading-4">
+        <span className="text-muted-foreground text-sm leading-5">
           {description}
         </span>
       ) : null}
@@ -525,45 +550,62 @@ function DeploymentConfigurationForm({
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
   const plan = snapshot.task.artifactSummary.deploymentPlan;
+  const hasBlockingInputs =
+    snapshot.task.blockingInputs.length > 0 ||
+    (plan?.missingInputKeys?.length ?? 0) > 0;
   const showForm =
-    plan != null &&
-    snapshot.task.status === "blocked" &&
-    snapshot.task.phase === "configure";
+    (snapshot.task.status === "blocked" || snapshot.task.status === "failed") &&
+    snapshot.task.phase === "configure" &&
+    hasBlockingInputs;
   const [values, setValues] = useState<Record<string, string>>({});
   const inputs = useMemo(
-    () => (plan == null ? [] : visiblePlanInputs(plan, values)),
-    [plan, values]
+    () =>
+      blockingPlanInputs({
+        blockingInputs: snapshot.task.blockingInputs,
+        plan,
+      }),
+    [plan, snapshot.task.blockingInputs]
   );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (plan == null) {
+    if (!showForm) {
       setValues({});
       return;
     }
     const initialValues = Object.fromEntries(
-      plan.inputs.map((input) => [
+      inputs.map((input) => [
         input.key,
-        plan.args?.[input.key] ?? inputInitialValue(input),
+        plan?.args?.[input.key] ?? inputInitialValue(input),
       ])
     );
-    setValues(
-      Object.fromEntries(
-        visiblePlanInputs(plan, initialValues).map((input) => [
-          input.key,
-          initialValues[input.key] ?? "",
-        ])
-      )
-    );
-  }, [plan]);
+    setValues(initialValues);
+  }, [inputs, plan, showForm]);
 
-  if (!showForm || plan == null || inputs.length === 0) {
+  if (!showForm || inputs.length === 0) {
     return null;
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submittedValues = deploymentInputFormValues({
+      fallbackValues: values,
+      formData: new FormData(event.currentTarget),
+      inputs,
+    });
+    const missingRequiredInputs = missingRequiredDeploymentInputs(
+      inputs,
+      submittedValues
+    );
+    if (missingRequiredInputs.length > 0) {
+      setError(
+        `Fill required values: ${missingRequiredInputs
+          .map((input) => input.label?.trim() || input.key)
+          .join(", ")}.`
+      );
+      return;
+    }
     setError(null);
     setIsSubmitting(true);
     try {
@@ -573,7 +615,7 @@ function DeploymentConfigurationForm({
           body: JSON.stringify({
             encodedKubeconfig: kubeconfig,
             namespace,
-            values,
+            values: submittedValues,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -597,35 +639,35 @@ function DeploymentConfigurationForm({
 
   return (
     <form
-      className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3"
+      className="flex min-w-0 flex-col gap-3"
+      data-slot="deployment-configuration-form"
       onSubmit={submit}
     >
-      <div className="mb-3">
-        <h3 className="font-medium text-sm">Deployment configuration</h3>
-        <p className="mt-1 text-muted-foreground text-xs leading-4">
-          Required template values are missing. Submit them to continue this
-          deployment.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3">
-        {inputs.map((input) => (
-          <DeploymentInputField
-            input={input}
-            key={input.key}
-            onChange={(nextValue) =>
-              setValues((current) => ({
-                ...current,
-                [input.key]: nextValue,
-              }))
-            }
-            value={values[input.key] ?? ""}
-          />
-        ))}
-      </div>
+      <DeploymentSettings.Section
+        description="Required template values are missing. Submit them to continue this deployment."
+        icon={<AlertTriangle aria-hidden className="size-4" />}
+        title="Deployment configuration"
+      >
+        <div className="flex flex-col gap-3">
+          {inputs.map((input) => (
+            <DeploymentInputField
+              input={input}
+              key={input.key}
+              onChange={(nextValue) =>
+                setValues((current) => ({
+                  ...current,
+                  [input.key]: nextValue,
+                }))
+              }
+              value={values[input.key] ?? ""}
+            />
+          ))}
+        </div>
+      </DeploymentSettings.Section>
       {error == null ? null : (
         <p className="mt-3 text-destructive text-xs leading-4">{error}</p>
       )}
-      <Button className="mt-3 w-full" disabled={isSubmitting} type="submit">
+      <Button className="w-full" disabled={isSubmitting} type="submit">
         {isSubmitting ? (
           <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
         ) : (
@@ -643,6 +685,16 @@ function orderedSteps(
   return [...timeline.steps].sort((a, b) => a.order - b.order);
 }
 
+function deploymentConfigurationStepId(
+  steps: readonly DeploymentTimelineStep[]
+): string | null {
+  return (
+    steps.find((step) => step.status === "blocked")?.id ??
+    steps.at(-1)?.id ??
+    null
+  );
+}
+
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
@@ -656,15 +708,19 @@ export function DeploymentTaskTimelinePaneContent({
   if (steps.length === 0) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
+  const configurationStepId = deploymentConfigurationStepId(steps);
   return (
     <div className="flex flex-col" data-slot="deployment-task-timeline">
-      <DeploymentConfigurationForm
-        kubeconfig={kubeconfig}
-        namespace={namespace}
-        snapshot={snapshot}
-      />
       {steps.map((step) => (
-        <TimelineStepItem key={step.id} step={step} />
+        <TimelineStepItem key={step.id} step={step}>
+          {step.id === configurationStepId ? (
+            <DeploymentConfigurationForm
+              kubeconfig={kubeconfig}
+              namespace={namespace}
+              snapshot={snapshot}
+            />
+          ) : null}
+        </TimelineStepItem>
       ))}
     </div>
   );

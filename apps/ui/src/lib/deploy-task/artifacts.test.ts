@@ -22,6 +22,9 @@ const RENDERED_INSTANCE_REGEX = /kind: Instance/;
 const RENDERED_HOST_REGEX = /host: demo.cloud.sealos.io/;
 const UNSUPPORTED_TEMPLATE_KIND_REGEX =
   /blocked Kubernetes kind ClusterRoleBinding/;
+const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
+const DEMO_WEB_TEMPLATE_INSTANCE_REGEX = /^demo-web-[a-z]{6}$/;
+const GITHUB_TEMPLATE_INSTANCE_REGEX = /^seakills-site-[a-z]{6}$/;
 
 const TEMPLATE_WITH_REQUIRED_INPUT = `
 apiVersion: app.sealos.io/v1
@@ -279,7 +282,7 @@ spec:
 
   assert.equal(artifact.kind, "sealos-template");
   assert.equal(artifact.templateName, "demo-web");
-  assert.equal(artifact.instanceName, "demo-project");
+  assert.match(artifact.instanceName, DEMO_WEB_TEMPLATE_INSTANCE_REGEX);
   assert.equal(artifact.rendered.resources[0]?.kind, "Instance");
 
   const summary = sealosTemplateArtifactSummary({ artifact });
@@ -294,6 +297,109 @@ spec:
     ).build?.image,
     "registry.example.com/demo/web@sha256:abc123"
   );
+});
+
+test("prepareSealosTemplateArtifact names GitHub template resources from template identity", () => {
+  const projectId = "7512770d-fe30-4e65-adf2-ab5eaea1f67e";
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: {
+      image: {
+        digest: "sha256:abc123",
+        image_ref: "ghcr.io/zjy365/seakills-site@sha256:abc123",
+      },
+      status: "succeeded",
+    },
+    deliveryManifest: {
+      app: { name: "seakills-site" },
+    },
+    task: task({
+      projectId,
+      projectName: projectId,
+    }),
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: seakills-site
+spec:
+  templateType: inline
+  defaults:
+    app_name:
+      type: string
+      value: seakills-site
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  selector:
+    matchLabels:
+      app: \${{ defaults.app_name }}
+  template:
+    metadata:
+      labels:
+        app: \${{ defaults.app_name }}
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/zjy365/seakills-site@sha256:abc123
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  selector:
+    app: \${{ defaults.app_name }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  rules:
+    - host: demo.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: \${{ defaults.app_name }}
+                port:
+                  number: 3000
+`,
+  });
+
+  assert.match(artifact.instanceName, GITHUB_TEMPLATE_INSTANCE_REGEX);
+  assert.notEqual(artifact.instanceName, projectId);
+  assert.match(artifact.instanceName, DNS_1035_LABEL);
+  for (const resource of artifact.rendered.resources) {
+    assert.notEqual(resource.metadata?.name, projectId);
+    if (resource.kind !== "Instance") {
+      assert.equal(resource.metadata?.name, artifact.instanceName);
+    }
+  }
+  const ingress = artifact.rendered.resources.find(
+    (resource) => resource.kind === "Ingress"
+  );
+  const backendServiceName = (
+    ingress?.spec?.rules as
+      | Array<{
+          http?: {
+            paths?: Array<{
+              backend?: { service?: { name?: string } };
+            }>;
+          };
+        }>
+      | undefined
+  )?.[0]?.http?.paths?.[0]?.backend?.service?.name;
+  assert.equal(backendServiceName, artifact.instanceName);
 });
 
 test("createSealosTemplateDeploymentPlan reports missing required inputs", () => {
@@ -557,6 +663,94 @@ spec:
       containers:
         - name: web
           image: registry.example.com/demo/web:mutable
+`,
+      }),
+    IMAGE_MISMATCH_REGEX
+  );
+});
+
+test("prepareSealosTemplateArtifact accepts digest references for built images", () => {
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: {
+      image: {
+        digest: "sha256:abc123",
+        image_ref: "registry.example.com/demo/web:prepare-abc123",
+      },
+      status: "succeeded",
+    },
+    deliveryManifest: {},
+    task: task(),
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+spec:
+  selector:
+    matchLabels:
+      app: demo-web
+  template:
+    metadata:
+      labels:
+        app: demo-web
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web@sha256:abc123
+`,
+  });
+
+  assert.equal(
+    artifact.build.image,
+    "registry.example.com/demo/web:prepare-abc123"
+  );
+  assert.equal(artifact.build.digest, "sha256:abc123");
+});
+
+test("prepareSealosTemplateArtifact rejects mismatched digest references", () => {
+  assert.throws(
+    () =>
+      prepareSealosTemplateArtifact({
+        buildResult: {
+          image: {
+            digest: "sha256:good",
+            image_ref: "registry.example.com/demo/web:prepare-good",
+          },
+          status: "succeeded",
+        },
+        deliveryManifest: {},
+        task: task(),
+        templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo-web
+spec:
+  templateType: inline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+spec:
+  selector:
+    matchLabels:
+      app: demo-web
+  template:
+    metadata:
+      labels:
+        app: demo-web
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/demo/web@sha256:bad
 `,
       }),
     IMAGE_MISMATCH_REGEX

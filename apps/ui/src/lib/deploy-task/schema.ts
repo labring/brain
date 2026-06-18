@@ -119,6 +119,9 @@ export interface DeployTaskEventPayload {
   [key: string]: unknown;
 }
 
+export type DeployTaskFailureDetails = Record<string, unknown>;
+export type DeployTaskGatewayStateSnapshot = Record<string, unknown>;
+
 export interface DeploymentTaskGithubSource {
   branch?: string;
   kind: "github";
@@ -209,6 +212,12 @@ export const deployTasks = ns.table(
     gatewaySessionId: text("gateway_session_id"),
     gatewayThreadId: text("gateway_thread_id"),
     gatewayTurnId: text("gateway_turn_id"),
+    gatewayStateSnapshot: jsonb(
+      "gateway_state_snapshot"
+    ).$type<DeployTaskGatewayStateSnapshot | null>(),
+    failureDetails: jsonb(
+      "failure_details"
+    ).$type<DeployTaskFailureDetails | null>(),
     artifactSummary: jsonb("artifact_summary")
       .notNull()
       .$type<DeployTaskArtifactSummary>()

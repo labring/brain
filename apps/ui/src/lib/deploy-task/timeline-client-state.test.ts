@@ -21,6 +21,8 @@ function snapshot(input: {
       createdFrom: "ui",
       error: null,
       gatewaySessionId: null,
+      failureDetails: null,
+      gatewayStateSnapshot: null,
       gatewayTurnId: null,
       gatewayUrl: null,
       id: taskId,

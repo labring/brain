@@ -935,6 +935,26 @@ type ResolvableDeploymentTaskTarget = Pick<
   "id" | "namespace" | "projectId" | "projectName" | "target"
 >;
 
+function deployFailureDetails(input: {
+  error: unknown;
+  phase: DeployTaskRow["phase"];
+  source: string;
+  task: DeployTaskRow;
+}): Record<string, unknown> {
+  return {
+    errorMessage:
+      input.error instanceof Error ? input.error.message : String(input.error),
+    errorName: input.error instanceof Error ? input.error.name : null,
+    phase: input.phase,
+    projectId: input.task.projectId,
+    projectName: input.task.projectName,
+    runner: input.task.runner,
+    source: input.source,
+    taskId: input.task.id,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export async function resolveDeploymentTaskTarget(
   task: ResolvableDeploymentTaskTarget
 ): Promise<{
@@ -1765,11 +1785,36 @@ async function completeTaskWithArtifact(input: {
     taskId: input.task.id,
   });
 
-  const applied = await applyDeploymentArtifact({
-    artifact: input.artifact,
-    kubeconfig: input.kubeconfig,
-    task: input.task,
-  });
+  let applied: Awaited<ReturnType<typeof applyDeploymentArtifact>>;
+  try {
+    applied = await applyDeploymentArtifact({
+      artifact: input.artifact,
+      kubeconfig: input.kubeconfig,
+      task: input.task,
+    });
+  } catch (error) {
+    await updateDeployTaskState(input.task.id, {
+      failureDetails: {
+        ...deployFailureDetails({
+          error,
+          phase: "apply",
+          source: "applyDeploymentArtifact",
+          task: input.task,
+        }),
+        artifactKind: input.artifact.kind,
+        resourceCount:
+          "resources" in input.artifact &&
+          Array.isArray(input.artifact.resources)
+            ? input.artifact.resources.length
+            : undefined,
+        templateName:
+          input.artifact.kind === "sealos-template"
+            ? input.artifact.templateName
+            : undefined,
+      },
+    });
+    throw error;
+  }
 
   await updateDeployTaskState(input.task.id, {
     artifactSummary: {
@@ -1916,17 +1961,41 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   outputJson: Record<string, unknown>;
   task: DeployTaskRow;
 }) {
-  const artifact = prepareSealosTemplateArtifact({
-    args: input.args,
-    buildResult: requiredObjectValue(input.outputJson, "buildResult"),
-    certSecretName: sealosCertSecretName(),
-    deliveryManifest: requiredObjectValue(input.outputJson, "deliveryManifest"),
-    routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
-    task: input.task,
-    templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
-  });
+  let artifact: DeploymentArtifact;
+  try {
+    artifact = prepareSealosTemplateArtifact({
+      args: input.args,
+      buildResult: requiredObjectValue(input.outputJson, "buildResult"),
+      certSecretName: sealosCertSecretName(),
+      deliveryManifest: requiredObjectValue(
+        input.outputJson,
+        "deliveryManifest"
+      ),
+      routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+      task: input.task,
+      templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
+    });
+  } catch (error) {
+    const plan = input.task.artifactSummary.deploymentPlan;
+    if (plan != null) {
+      await updateDeployTaskState(input.task.id, {
+        blockingInputs: blockingInputsFromDeploymentPlan(plan),
+        phase: "configure",
+        status: "blocked",
+      });
+    }
+    throw error;
+  }
+  const deploymentPlan =
+    input.task.artifactSummary.deploymentPlan == null
+      ? undefined
+      : {
+          ...input.task.artifactSummary.deploymentPlan,
+          args: input.args,
+        };
   const summary = {
     ...sealosTemplateArtifactSummary({ artifact }),
+    ...(deploymentPlan == null ? {} : { deploymentPlan }),
     outputJson: input.outputJson,
   };
   await updateDeployTaskState(input.task.id, {
@@ -1949,9 +2018,8 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   try {
     await completeTaskWithArtifact({
       artifact,
-      artifactSummaryExtras: {
-        deploymentPlan: input.task.artifactSummary.deploymentPlan,
-      },
+      artifactSummaryExtras:
+        deploymentPlan == null ? undefined : { deploymentPlan },
       kubeconfig: input.kubeconfig,
       outputJson: input.outputJson,
       task: input.task,
@@ -2530,6 +2598,15 @@ export async function startDeployTaskRunner(
     });
     await updateDeployTaskState(task.id, {
       error: message,
+      failureDetails: {
+        ...deployFailureDetails({
+          error,
+          phase: latestTask.phase,
+          source: "startDeployTaskRunner",
+          task: latestTask,
+        }),
+        failureMessage,
+      },
       status: "failed",
     });
     if (!recordedFailureEvent) {

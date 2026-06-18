@@ -21,6 +21,18 @@ const SKIPPED_RE = /skipped/;
 const DEPLOYMENT_CONFIGURATION_RE = /Deployment configuration/;
 const AI_GATEWAY_KEY_RE = /AI Gateway API key/;
 const CONTINUE_DEPLOYMENT_RE = /Continue deployment/;
+const FIRECRAWL_API_KEY_RE = /FIRECRAWL_API_KEY/;
+const FIRECRAWL_API_KEY_DESCRIPTION_RE = /FIRECRAWL API KEY\./;
+const FIRECRAWL_API_KEY_INPUT_NAME_RE = /name="FIRECRAWL_API_KEY"/;
+const DEPLOYMENT_SETTINGS_STYLE_RE =
+  /rounded-lg border border-border bg-input\/30/;
+const AMBER_FORM_BACKGROUND_RE = /bg-amber-500\/10/;
+const DEPLOYMENT_CONFIGURATION_FORM_RE =
+  /<form[^>]*data-slot="deployment-configuration-form"[^>]*>(.*?)<\/form>/;
+
+function deploymentConfigurationFormHtml(html: string): string {
+  return html.match(DEPLOYMENT_CONFIGURATION_FORM_RE)?.[1] ?? "";
+}
 
 test("deployment task timeline pane renders ordered steps, AP card, statuses, and grouped events", () => {
   const html = renderToStaticMarkup(
@@ -38,6 +50,8 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
           createdFrom: "ui",
           error: null,
           gatewaySessionId: null,
+          failureDetails: null,
+          gatewayStateSnapshot: null,
           gatewayTurnId: null,
           gatewayUrl: null,
           id: "task-1",
@@ -164,6 +178,8 @@ test("deployment task timeline pane renders skipped runner steps", () => {
           createdFrom: "ui",
           error: null,
           gatewaySessionId: null,
+          failureDetails: null,
+          gatewayStateSnapshot: null,
           gatewayTurnId: null,
           gatewayUrl: null,
           id: "task-2",
@@ -246,6 +262,8 @@ test("deployment task timeline pane renders template input form when blocked", (
           createdFrom: "ui",
           error: null,
           gatewaySessionId: null,
+          failureDetails: null,
+          gatewayStateSnapshot: null,
           gatewayTurnId: null,
           gatewayUrl: null,
           id: "task-3",
@@ -288,4 +306,185 @@ test("deployment task timeline pane renders template input form when blocked", (
   assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
   assert.match(html, AI_GATEWAY_KEY_RE);
   assert.match(html, CONTINUE_DEPLOYMENT_RE);
+  assert.match(html, DEPLOYMENT_SETTINGS_STYLE_RE);
+  assert.doesNotMatch(
+    deploymentConfigurationFormHtml(html),
+    AMBER_FORM_BACKGROUND_RE
+  );
+  assert.ok(
+    html.indexOf("Generate deployment") <
+      html.indexOf("Deployment configuration")
+  );
+});
+
+test("deployment task timeline pane restores form from blocking inputs after refresh", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      snapshot={{
+        events: [],
+        task: {
+          artifactSummary: {
+            deploymentPlan: {
+              inputs: [],
+              kind: "sealos-template",
+              missingInputKeys: ["firecrawl_api_key"],
+              templateName: "open-lovable",
+            },
+          },
+          blockingInputs: [
+            {
+              description: "FIRECRAWL API KEY.",
+              id: "firecrawl_api_key",
+              key: "FIRECRAWL_API_KEY",
+              label: "FIRECRAWL_API_KEY",
+              required: true,
+              sensitive: true,
+              type: "secret",
+            },
+          ],
+          canvasProjection: {},
+          completedAt: null,
+          createdAt: "2026-06-17T10:00:00.000Z",
+          createdFrom: "ui",
+          error: null,
+          gatewaySessionId: null,
+          failureDetails: null,
+          gatewayStateSnapshot: null,
+          gatewayTurnId: null,
+          gatewayUrl: null,
+          id: "task-4",
+          namespace: "default",
+          phase: "configure",
+          previewUrl: null,
+          projectId: "project-1",
+          projectName: "Project 1",
+          resultUrl: null,
+          runner: { kind: "ai", runtimeProvider: "devbox" },
+          runtimeName: null,
+          runtimeProvider: null,
+          runtimeState: null,
+          source: {
+            kind: "github",
+            repo: {
+              fullName: "zjy/open-lovable",
+              name: "open-lovable",
+              url: "https://github.com/zjy/open-lovable",
+            },
+          },
+          startedAt: null,
+          status: "blocked",
+          target: { kind: "existingProject", projectId: "project-1" },
+          timelineSnapshot: null,
+          updatedAt: "2026-06-17T10:00:01.000Z",
+        },
+        timeline: {
+          revision: 1,
+          status: "blocked",
+          steps: [
+            {
+              events: [],
+              id: "generate-deployment",
+              label: "Generate deployment",
+              order: 2,
+              status: "blocked",
+            },
+          ],
+          taskId: "task-4",
+          updatedAt: "2026-06-17T10:00:01.000Z",
+        },
+      }}
+    />
+  );
+
+  assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
+  assert.match(html, FIRECRAWL_API_KEY_RE);
+  assert.match(html, FIRECRAWL_API_KEY_DESCRIPTION_RE);
+  assert.match(html, FIRECRAWL_API_KEY_INPUT_NAME_RE);
+});
+
+test("deployment task timeline pane restores form for failed configure tasks", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      snapshot={{
+        events: [],
+        task: {
+          artifactSummary: {
+            deploymentPlan: {
+              inputs: [
+                {
+                  description: "FIRECRAWL API KEY.",
+                  key: "FIRECRAWL_API_KEY",
+                  required: true,
+                  sensitive: true,
+                  type: "string",
+                },
+              ],
+              kind: "sealos-template",
+              missingInputKeys: ["FIRECRAWL_API_KEY"],
+              templateName: "open-lovable",
+            },
+          },
+          blockingInputs: [],
+          canvasProjection: {},
+          completedAt: "2026-06-18T07:32:22.281Z",
+          createdAt: "2026-06-17T10:00:00.000Z",
+          createdFrom: "ui",
+          error:
+            "Sealos template workload image does not match the succeeded build image.",
+          failureDetails: null,
+          gatewaySessionId: null,
+          gatewayStateSnapshot: null,
+          gatewayTurnId: null,
+          gatewayUrl: null,
+          id: "task-5",
+          namespace: "default",
+          phase: "configure",
+          previewUrl: null,
+          projectId: "project-1",
+          projectName: "Project 1",
+          resultUrl: null,
+          runner: { kind: "ai", runtimeProvider: "devbox" },
+          runtimeName: null,
+          runtimeProvider: null,
+          runtimeState: null,
+          source: {
+            kind: "github",
+            repo: {
+              fullName: "zjy/open-lovable",
+              name: "open-lovable",
+              url: "https://github.com/zjy/open-lovable",
+            },
+          },
+          startedAt: null,
+          status: "failed",
+          target: { kind: "existingProject", projectId: "project-1" },
+          timelineSnapshot: null,
+          updatedAt: "2026-06-18T07:32:22.614Z",
+        },
+        timeline: {
+          revision: 1,
+          status: "failed",
+          steps: [
+            {
+              events: [],
+              id: "generate-deployment",
+              label: "Generate deployment",
+              order: 2,
+              status: "blocked",
+            },
+          ],
+          taskId: "task-5",
+          updatedAt: "2026-06-18T07:32:22.614Z",
+        },
+      }}
+    />
+  );
+
+  assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
+  assert.match(html, FIRECRAWL_API_KEY_RE);
+  assert.match(html, FIRECRAWL_API_KEY_DESCRIPTION_RE);
 });

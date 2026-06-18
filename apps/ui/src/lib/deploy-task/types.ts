@@ -9,6 +9,8 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
   DeployTaskEventPayload,
+  DeployTaskFailureDetails,
+  DeployTaskGatewayStateSnapshot,
   DeployTaskMessageRow,
   DeployTaskPhase,
   DeployTaskStatus,
@@ -31,6 +33,8 @@ export type {
   DeployTaskBlockingInput,
   DeployTaskEventPayload,
   DeployTaskEventRow,
+  DeployTaskFailureDetails,
+  DeployTaskGatewayStateSnapshot,
   DeployTaskMessageRow,
   DeployTaskPhase,
   DeployTaskRow,
@@ -193,7 +197,9 @@ export interface DeployTaskDTO {
   createdAt: string;
   createdFrom: DeploymentTaskCreatedFrom;
   error: string | null;
+  failureDetails: DeployTaskFailureDetails | null;
   gatewaySessionId: string | null;
+  gatewayStateSnapshot: DeployTaskGatewayStateSnapshot | null;
   gatewayTurnId: string | null;
   gatewayUrl: string | null;
   id: string;

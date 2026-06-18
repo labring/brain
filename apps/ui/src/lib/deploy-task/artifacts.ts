@@ -1,5 +1,6 @@
 import YAML from "yaml";
 
+import { childResourceName } from "@/lib/project-child-resource-name";
 import { joinKubeYamlDocuments } from "@/lib/render-yaml-template";
 import {
   evaluateTemplateCondition,
@@ -130,6 +131,26 @@ function stringRecordValue(value: unknown): Record<string, string> {
     Object.entries(record).flatMap(([key, item]) =>
       typeof item === "string" ? [[key, item]] : []
     )
+  );
+}
+
+function templateNameFromYaml(templateYaml: string): string | null {
+  const templateDoc = YAML.parseAllDocuments(templateYaml)[0]?.toJS() as
+    | { metadata?: { name?: string } }
+    | null
+    | undefined;
+  return templateDoc?.metadata?.name?.trim() || null;
+}
+
+function templateInstanceName(input: {
+  deliveryManifest: Record<string, unknown>;
+  projectName: string;
+  templateName: string;
+}): string {
+  const manifestApp = objectValue(input.deliveryManifest.app);
+  return childResourceName(
+    stringValue(manifestApp?.name) ?? input.templateName ?? input.projectName,
+    "template"
   );
 }
 
@@ -440,6 +461,17 @@ function collectRenderedImages(value: unknown): string[] {
   ];
 }
 
+function renderedImageMatchesBuild(input: {
+  buildDigest: string;
+  buildImage: string;
+  renderedImage: string;
+}): boolean {
+  return (
+    input.renderedImage === input.buildImage ||
+    input.renderedImage.includes(`@${input.buildDigest}`)
+  );
+}
+
 function assertSupportedSealosTemplateResources(
   rendered: RenderedTemplateDeployment
 ) {
@@ -480,7 +512,16 @@ function assertSealosTemplateBuildBinding(input: {
   if (input.build.digest == null) {
     throw new Error("Sealos build result is missing image.digest.");
   }
-  if (!images.includes(buildImage)) {
+  const buildDigest = input.build.digest;
+  if (
+    !images.some((renderedImage) =>
+      renderedImageMatchesBuild({
+        buildDigest,
+        buildImage,
+        renderedImage,
+      })
+    )
+  ) {
     throw new Error(
       "Sealos template workload image does not match the succeeded build image."
     );
@@ -625,6 +666,12 @@ export function prepareSealosTemplateArtifact(input: {
   }
   assertBuildResultNotExplicitlyFailed(input.buildResult);
   const build = buildSummary(input.buildResult);
+  const templateName = templateNameFromYaml(input.templateYaml) ?? projectName;
+  const instanceName = templateInstanceName({
+    deliveryManifest: input.deliveryManifest,
+    projectName,
+    templateName,
+  });
 
   const rendered = renderTemplateDeploymentFromYaml({
     args: {
@@ -632,7 +679,7 @@ export function prepareSealosTemplateArtifact(input: {
       ...(input.args ?? {}),
     },
     certSecretName: input.certSecretName,
-    instanceName: projectName,
+    instanceName,
     namespace: input.task.namespace,
     projectId: input.task.projectId ?? projectName,
     projectName,
@@ -641,11 +688,6 @@ export function prepareSealosTemplateArtifact(input: {
   });
   assertSupportedSealosTemplateResources(rendered);
   assertSealosTemplateBuildBinding({ build, rendered });
-  const templateDoc = YAML.parseAllDocuments(input.templateYaml)[0]?.toJS() as
-    | { metadata?: { name?: string } }
-    | null
-    | undefined;
-  const templateName = templateDoc?.metadata?.name?.trim() || projectName;
   return {
     build,
     instanceName: rendered.instanceName,

@@ -344,12 +344,18 @@ function resolvedInputs(
   defaults: Record<string, string> = {}
 ): Record<string, string> {
   const out: Record<string, string> = {};
+  const candidates = Object.fromEntries(
+    (inputs ?? []).map((input) => [
+      input.key,
+      args?.[input.key] ?? input.default ?? "",
+    ])
+  );
   for (const input of inputs ?? []) {
     if (
       input.if?.trim() &&
       !evaluateTemplateCondition(input.if, {
         defaults,
-        inputs: out,
+        inputs: candidates,
       })
     ) {
       continue;
@@ -368,6 +374,7 @@ function resolvedInputs(
     }
     validateTemplateInputValue(input, value);
     out[input.key] = value;
+    candidates[input.key] = value;
   }
   return out;
 }
