@@ -8,8 +8,10 @@ import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-ide
 import { ApSettingsProvider } from "./settings-provider-ap";
 import { DbSettingsProvider } from "./settings-provider-db";
 import type {
+  SettingsLaunchContext,
   SettingsProvider,
-  SettingsSourceContext,
+  SettingsReadModelHints,
+  SettingsSessionEvents,
   SettingsViewModel,
 } from "./settings-types";
 
@@ -57,21 +59,27 @@ function settingsChromeModelsEqual(
 export function SettingsHost({
   entry,
   kubeconfig,
+  launchContext,
   onClose,
+  onLaunchContextConsumed,
   onRepairSideEntry,
   onSettingsLeaveGuardChange,
   onUpdated,
+  readModelHints,
   readOnly = false,
-  sourceContext,
+  sessionEvents,
 }: {
   entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>;
   kubeconfig?: string;
+  launchContext?: SettingsLaunchContext;
   onClose: () => void;
+  onLaunchContextConsumed?: () => void;
   onRepairSideEntry?: (entry: ProjectSideSurfaceEntry | null) => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
+  readModelHints?: SettingsReadModelHints;
   readOnly?: boolean;
-  sourceContext: SettingsSourceContext;
+  sessionEvents?: SettingsSessionEvents;
 }) {
   const Provider = settingsProviderForEntry(entry);
   const entryKey = settingsEntryKey(entry);
@@ -141,12 +149,15 @@ export function SettingsHost({
     >
       <Provider
         kubeconfig={kubeconfig}
+        launchContext={launchContext}
         onClose={onClose}
+        onLaunchContextConsumed={onLaunchContextConsumed}
         onModelChange={setModel}
         onRepairSideEntry={onRepairSideEntry}
         onUpdated={onUpdated}
+        readModelHints={readModelHints}
         readOnly={readOnly}
-        sourceContext={sourceContext}
+        sessionEvents={sessionEvents}
         target={entry.target}
         view={entry.view}
       />

@@ -388,9 +388,21 @@ A bottom temporary project surface for one interactive resource session, such as
 
 The Project-scoped read-side boundary that Project surfaces use to interpret current resource presentation facts and session-local launch context. Project Runtime is not the Project Canvas, a Settings Owner, or the source of editable AP or DB desired configuration.
 
+### Settings Launch Context
+
+Session-local Project Runtime memory that describes how one Project surface entry was opened. Settings Launch Context may carry launch source and transient bridge intent for the current browser session, but it is not route state, a Project surface entry, Canvas Layout, or editable Settings backing.
+
+Settings Launch Context carries temporary intent, not caller-owned behavior. When the current browser session ends or the matching surface entry is no longer active, the launch context may disappear without changing the restored Settings Owner or Settings View.
+
+A Settings Launch Context belongs to one active Project surface slot and one full settings entry identity, including the Settings View when a view is selected.
+
+Route restoration may create a current-session launch source for the restored entry, but it does not restore transient bridge intent.
+
 ### Project Resource Read Model
 
 The app-owned Project Runtime view of current AP, DB, AP Public Access Node, and template-native workload presentation facts. The Project Resource Read Model is read-side presentation knowledge, not raw resource truth, Canvas Layout, Settings Draft state, or a resource action command bus.
+
+It may provide Settings display hints and relationship indexes, but those read-side hints do not identify the Settings Owner and are not editable Settings backing or Settings Launch Context.
 
 ### Container Node
 

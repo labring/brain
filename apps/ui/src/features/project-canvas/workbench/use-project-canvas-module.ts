@@ -39,6 +39,7 @@ import {
 } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
+import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 
@@ -450,6 +451,7 @@ export function useProjectCanvasModule({
       closeMainSurface: workbench.closeMainSurface,
       closeResourceLogsSurface: workbench.closeResourceLogsSurface,
       closeResourcePane: workbench.closeResourcePane,
+      consumeSettingsLaunchContext: workbench.consumeSettingsLaunchContext,
       onDbServiceRestoreAccepted: workbench.onDbServiceRestoreAccepted,
       registerSettingsLeaveGuard: workbench.registerSettingsLeaveGuard,
       repairSide: workbench.repairSide,
@@ -459,6 +461,7 @@ export function useProjectCanvasModule({
       workbench.closeMainSurface,
       workbench.closeResourceLogsSurface,
       workbench.closeResourcePane,
+      workbench.consumeSettingsLaunchContext,
       workbench.onDbServiceRestoreAccepted,
       workbench.registerSettingsLeaveGuard,
       workbench.repairSide,
@@ -466,7 +469,10 @@ export function useProjectCanvasModule({
   );
 
   const openSurfaceIntent = useCallback(
-    (intent: ProjectSurfaceIntent) => {
+    (
+      intent: ProjectSurfaceIntent,
+      launchSource: SettingsLaunchSource = "toolbar"
+    ) => {
       if (intent.slot === "drawer") {
         workbench.openDrawerSurface(intent.entry);
         return;
@@ -475,7 +481,7 @@ export function useProjectCanvasModule({
         workbench.openMainSurface(intent.entry);
         return;
       }
-      workbench.openSideSurface(intent.entry);
+      workbench.openSideSurface(intent.entry, undefined, launchSource);
     },
     [
       workbench.openDrawerSurface,
@@ -520,6 +526,9 @@ export function useProjectCanvasModule({
       ],
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,
+      settingsLaunchContext: workbench.settingsLaunchContext,
+      settingsReadModelHints: workbench.settingsReadModelHints,
+      settingsSessionEvents: workbench.settingsSessionEvents,
     },
   };
 }

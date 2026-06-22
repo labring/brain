@@ -2,19 +2,34 @@
 
 import type { LucideIcon } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
-import type { ApSettingsSourceData } from "@/features/project-settings/ap/ap-settings-context";
-import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+import type { SettingsLaunchContext } from "@/features/project-runtime/settings-launch-context";
+import type {
+  ApSettingsConfirmedAddDbDsnReference,
+  ApSettingsPendingDbReference,
+} from "@/features/project-settings/ap/ap-settings-sections";
+import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import type { SettingsLeaveGuardHandle } from "@/features/project-settings/settings-leave-guard";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
 
-export type SettingsSourceContext =
-  | {
-      apData?: ApSettingsSourceData;
-      databaseData?: DbSettingsData;
-      kind: "canvas";
-    }
-  | undefined;
+export type { SettingsLaunchContext } from "@/features/project-runtime/settings-launch-context";
+
+export interface SettingsReadModelHints {
+  ap?: {
+    dbDsnReferenceSources?: ApEnvDbDsnSource[];
+  };
+}
+
+export interface SettingsSessionEvents {
+  ap?: {
+    onAddDbDsnReferenceMutationStart?: (
+      references: readonly ApSettingsConfirmedAddDbDsnReference[]
+    ) => (() => void) | undefined;
+    onPendingDbReferencesChange?: (
+      references: readonly ApSettingsPendingDbReference[]
+    ) => void;
+  };
+}
 
 export interface SettingsRenderedSection {
   actions?: ReactNode;
@@ -38,12 +53,15 @@ export interface SettingsViewModel {
 
 export interface SettingsProviderProps {
   kubeconfig?: string;
+  launchContext?: SettingsLaunchContext;
   onClose: () => void;
+  onLaunchContextConsumed?: () => void;
   onModelChange: (model: SettingsViewModel | null) => void;
   onRepairSideEntry?: (entry: ProjectSideSurfaceEntry | null) => void;
   onUpdated?: () => Promise<unknown>;
+  readModelHints?: SettingsReadModelHints;
   readOnly: boolean;
-  sourceContext: SettingsSourceContext;
+  sessionEvents?: SettingsSessionEvents;
   target: SettingsOwnerTarget;
   view?: string;
 }

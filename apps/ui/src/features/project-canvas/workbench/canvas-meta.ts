@@ -13,7 +13,6 @@ import {
   type ProjectCanvasConnectionHandle,
   projectCanvasInteractionProps,
 } from "@/features/project-canvas/flow/interaction";
-import type { CanvasNodeSettingsAccess } from "@/features/project-canvas/nodes/types";
 import type { ProjectCanvasSideRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { planProjectCanvasCommand } from "@/features/project-canvas/workbench/command-model";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
@@ -75,17 +74,6 @@ export function connectionOriginFromHandle(
     nodeId: handle.nodeId,
     side: handle.id as CanvasNodeConnectionSide,
   };
-}
-
-export function canvasNodeSettingsAccess({
-  readOnly,
-}: {
-  readOnly: boolean;
-}): CanvasNodeSettingsAccess | undefined {
-  if (!readOnly) {
-    return undefined;
-  }
-  return { readOnly: true };
 }
 
 export function createProjectCanvasMeta({

@@ -1,9 +1,12 @@
 "use client";
 
-import { useDbSettingsOperations, useDbsK8sList } from "@workspace/api/hooks";
-import { apItemsFromList } from "@workspace/api/lib/ap-list";
+import {
+  useBrainProductResource,
+  useDbSettingsOperations,
+} from "@workspace/api/hooks";
 import { Database } from "lucide-react";
 import { useCallback, useEffect, useMemo } from "react";
+import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
 import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
 import { useDatabaseSettingsSections } from "@/features/project-settings/db/db-settings-sections";
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
@@ -37,39 +40,14 @@ function DatabaseSettingsIcon({ iconUrl }: { iconUrl?: string }) {
   return <Database aria-hidden className="size-4 shrink-0 text-blue-400" />;
 }
 
-function metadataRecord(resource: unknown): Record<string, unknown> {
-  if (resource == null || typeof resource !== "object") {
-    return {};
-  }
-  const metadata = (resource as Record<string, unknown>).metadata;
-  return metadata != null && typeof metadata === "object"
-    ? (metadata as Record<string, unknown>)
-    : {};
-}
-
-function resourceMatchesDbTarget(resource: unknown, target: ProjectDbTarget) {
-  const metadata = metadataRecord(resource);
-  const name = typeof metadata.name === "string" ? metadata.name : "";
-  const namespace =
-    typeof metadata.namespace === "string" ? metadata.namespace : "";
-  const uid = typeof metadata.uid === "string" ? metadata.uid : undefined;
-  return (
-    name === target.name &&
-    (namespace === "" || namespace === target.namespace) &&
-    (target.observedUid == null || uid == null || target.observedUid === uid)
-  );
-}
-
-export function dbDataFromList(
-  data: ReturnType<typeof useDbsK8sList>["data"],
+export function dbSettingsDataFromExactResource(
+  data: ReturnType<typeof useBrainProductResource>["data"],
   target: ProjectDbTarget | null
 ): DbSettingsData | null {
   if (target == null) {
     return null;
   }
-  const resource = apItemsFromList(data).find((item) =>
-    resourceMatchesDbTarget(item, target)
-  );
+  const resource = k8sGetClaimBody(data);
   return resource == null
     ? null
     : dbResourceToSettingsData(resource, {
@@ -105,22 +83,21 @@ export function DbSettingsProvider({
   onRepairSideEntry,
   onUpdated,
   readOnly,
-  sourceContext,
   target,
   view,
 }: SettingsProviderProps) {
   const resolvedView = resolvedDbSettingsView(view);
   const dbTarget = target.kind === "DB" ? target : null;
-  const dbsList = useDbsK8sList({
+  const dbResource = useBrainProductResource({
+    kind: "DB",
     kubeconfig: dbTarget == null ? "" : (kubeconfig ?? ""),
-    labelSelector: "",
-    namespace: dbTarget?.namespace,
+    name: dbTarget?.name ?? "",
+    namespace: dbTarget?.namespace ?? "",
   });
-  const listData = useMemo(
-    () => dbDataFromList(dbsList.data, dbTarget),
-    [dbTarget, dbsList.data]
+  const data = useMemo(
+    () => dbSettingsDataFromExactResource(dbResource.data, dbTarget),
+    [dbResource.data, dbTarget]
   );
-  const data = sourceContext?.databaseData ?? listData ?? undefined;
   const settingsReadOnly = data?.settingsAccess?.readOnly === true;
   const effectiveReadOnly = readOnly || settingsReadOnly;
   const routingDomain = useMemo(
@@ -201,7 +178,7 @@ export function DbSettingsProvider({
     }
 
     if (data == null) {
-      const loading = dbsList.isLoading || dbsList.isValidating;
+      const loading = dbResource.isLoading || dbResource.isValidating;
       return {
         closeAriaLabel: "Close database settings",
         icon: <DatabaseSettingsIcon />,
@@ -238,8 +215,8 @@ export function DbSettingsProvider({
     };
   }, [
     data,
-    dbsList.isLoading,
-    dbsList.isValidating,
+    dbResource.isLoading,
+    dbResource.isValidating,
     resolvedView,
     sectionsModel,
     target,

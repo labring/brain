@@ -6,9 +6,13 @@ import type {
   ProjectCanvasApResourcePaneKind,
   ProjectCanvasResourcePaneRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import { apSettingsSourceDataFromUnknown } from "@/features/project-settings/ap/ap-settings-context";
 import { SettingsHost } from "@/features/project-settings/settings-host";
 import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
+import type {
+  SettingsLaunchContext,
+  SettingsReadModelHints,
+  SettingsSessionEvents,
+} from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { WorkloadResourcePane } from "./workload-resource-pane";
@@ -30,20 +34,28 @@ export interface ProjectCanvasResourcePaneContentProps {
   content: ProjectCanvasResourcePaneRenderModel | null | undefined;
   kubeconfig?: string;
   onClose: () => void;
+  onLaunchContextConsumed?: () => void;
   onRepairSideEntry?: (entry: ProjectSideSurfaceEntry | null) => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
   readOnly?: boolean;
+  settingsLaunchContext?: SettingsLaunchContext;
+  settingsReadModelHints?: SettingsReadModelHints;
+  settingsSessionEvents?: SettingsSessionEvents;
 }
 
 export function renderProjectCanvasResourcePaneContent({
   content,
   kubeconfig,
   onClose,
+  onLaunchContextConsumed,
   onRepairSideEntry,
   onSettingsLeaveGuardChange,
   onUpdated,
   readOnly = false,
+  settingsLaunchContext,
+  settingsReadModelHints,
+  settingsSessionEvents,
 }: ProjectCanvasResourcePaneContentProps): ReactNode {
   if (
     content?.kind === "apEvents" ||
@@ -75,16 +87,15 @@ export function renderProjectCanvasResourcePaneContent({
       <SettingsHost
         entry={content.target}
         kubeconfig={kubeconfig}
+        launchContext={settingsLaunchContext}
         onClose={onClose}
+        onLaunchContextConsumed={onLaunchContextConsumed}
         onRepairSideEntry={onRepairSideEntry}
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
         onUpdated={onUpdated}
+        readModelHints={settingsReadModelHints}
         readOnly={readOnly}
-        sourceContext={{
-          apData: apSettingsSourceDataFromUnknown(content.node?.data),
-          databaseData: content.databaseData,
-          kind: "canvas",
-        }}
+        sessionEvents={settingsSessionEvents}
       />
     );
   }

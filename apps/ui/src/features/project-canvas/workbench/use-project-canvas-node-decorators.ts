@@ -7,7 +7,7 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import {
@@ -23,15 +23,12 @@ import {
   projectApTargetFromNode,
   projectDbTargetFromNode,
 } from "@/features/project-canvas/surface/selection";
-import { canvasNodeSettingsAccess } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   type ProjectCanvasCommandPlan,
   planProjectCanvasCommand,
 } from "@/features/project-canvas/workbench/command-model";
 import {
   createPendingApDbReferenceMutationStartHandler,
-  dbReferenceIntentDataForContainerNode,
-  type PendingAddDbDsnReferenceIntent,
   type PendingApDbReferenceDraftRegistration,
   pendingApDbCanvasReferencesFromDraftReferences,
   pendingApDbReferenceDraftKey,
@@ -48,10 +45,6 @@ import {
   selectProjectRuntimeNodeModel,
 } from "@/features/project-runtime/resource-models";
 import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
-import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-
-const EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES: ApEnvironmentDbReferenceSource[] =
-  [];
 
 type NodeDecorator = (node: Node) => Node;
 
@@ -154,7 +147,6 @@ function decorateProjectRuntimeNodeModels({
 }
 
 export function useProjectCanvasNodeDecorators({
-  apEnvironmentDbReferenceSources,
   executeCommandPlan,
   nodes,
   onNodeExpansionChange,
@@ -165,7 +157,6 @@ export function useProjectCanvasNodeDecorators({
   resourceActions,
   runtimeNodeModels,
 }: {
-  apEnvironmentDbReferenceSources?: ApEnvironmentDbReferenceSource[];
   executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
   nodes: Node[];
   onNodeExpansionChange?: (node: Node) => void;
@@ -178,21 +169,17 @@ export function useProjectCanvasNodeDecorators({
   resourceActions: ProjectResourceActions;
   runtimeNodeModels?: ProjectRuntimeNodeModels;
 }) {
-  const addDbDsnReferenceIntentCounter = useRef(0);
   const pendingApDbReferenceDraftByApKey = useRef<
     Map<string, PendingApDbReferenceDraftRegistration>
   >(new Map());
   const pendingDbReferencesChangeHandlerByApKey = useRef<
     Map<string, (references: readonly ApSettingsPendingDbReference[]) => void>
   >(new Map());
-  const [pendingAddDbDsnReferenceIntent, setPendingAddDbDsnReferenceIntent] =
-    useState<PendingAddDbDsnReferenceIntent | null>(null);
 
   const {
     apLifecycle,
     copyDatabaseConnection,
     dbLifecycle,
-    refreshAfterResourceAction,
     runResourceAction,
     toggleDatabasePublicAccess,
   } = resourceActions;
@@ -212,25 +199,11 @@ export function useProjectCanvasNodeDecorators({
     stopWorkload: stopDbWorkload,
   } = dbLifecycle;
 
-  const resolvedApEnvironmentDbReferenceSources =
-    apEnvironmentDbReferenceSources ??
-    EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES;
-
-  const handleAddDbDsnReferenceIntentConsumed = useCallback((id: string) => {
-    setPendingAddDbDsnReferenceIntent((current) =>
-      current?.id === id ? null : current
-    );
-  }, []);
-
   const startPendingDbReference = useCallback(
     (
-      reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
+      _reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
     ) => {
-      addDbDsnReferenceIntentCounter.current += 1;
-      setPendingAddDbDsnReferenceIntent({
-        ...reference,
-        id: `ap-db-${addDbDsnReferenceIntentCounter.current}`,
-      });
+      /* Settings Launch Context carries this intent. */
     },
     []
   );
@@ -295,6 +268,34 @@ export function useProjectCanvasNodeDecorators({
       return handler;
     },
     []
+  );
+  const apSettingsSessionEventsForAp = useCallback(
+    ({ name, namespace }: { name: string; namespace: string }) => {
+      const apName = name.trim();
+      const apNamespace = namespace.trim();
+      return {
+        onAddDbDsnReferenceMutationStart:
+          createPendingApDbReferenceMutationStartHandler({
+            apName,
+            apNamespace,
+            onBeforeStart: () => {
+              const draftByApKey = pendingApDbReferenceDraftByApKey.current;
+              const draftKey = pendingApDbReferenceDraftKey({
+                apName,
+                apNamespace,
+              });
+              draftByApKey.get(draftKey)?.cleanup?.();
+              draftByApKey.delete(draftKey);
+            },
+            onPendingApDbReferencesStart,
+          }),
+        onPendingDbReferencesChange: pendingDbReferencesChangeHandlerForAp({
+          apName,
+          apNamespace,
+        }),
+      };
+    },
+    [onPendingApDbReferencesStart, pendingDbReferencesChangeHandlerForAp]
   );
 
   useEffect(
@@ -425,9 +426,6 @@ export function useProjectCanvasNodeDecorators({
             },
           },
           connections,
-          settingsAccess: canvasNodeSettingsAccess({
-            readOnly,
-          }),
         },
       };
     },
@@ -461,46 +459,12 @@ export function useProjectCanvasNodeDecorators({
         apAuthReady && states.kind === "AP" && ns !== "" && name !== "";
 
       const hasSurfaceActions = target != null;
-      const dbReferenceIntentData = dbReferenceIntentDataForContainerNode({
-        intent: pendingAddDbDsnReferenceIntent,
-        nodeId: node.id,
-        onConsumed: handleAddDbDsnReferenceIntentConsumed,
-      });
-      const onPendingDbReferencesChange = pendingDbReferencesChangeHandlerForAp(
-        {
-          apName: name,
-          apNamespace: ns,
-        }
-      );
-      const settingsAccess = canvasNodeSettingsAccess({
-        readOnly,
-      });
-      const onAddDbDsnReferenceMutationStart =
-        createPendingApDbReferenceMutationStartHandler({
-          apName: name,
-          apNamespace: ns,
-          onBeforeStart: () => {
-            const draftByApKey = pendingApDbReferenceDraftByApKey.current;
-            const draftKey = pendingApDbReferenceDraftKey({
-              apName: name,
-              apNamespace: ns,
-            });
-            draftByApKey.get(draftKey)?.cleanup?.();
-            draftByApKey.delete(draftKey);
-          },
-          onPendingApDbReferencesStart,
-        });
 
       if (!(hasSurfaceActions || isApLifecycle)) {
         return {
           ...node,
           data: {
             ...data,
-            dbDsnReferenceSources: resolvedApEnvironmentDbReferenceSources,
-            ...dbReferenceIntentData,
-            onAddDbDsnReferenceMutationStart,
-            onPendingDbReferencesChange,
-            settingsAccess,
           },
         };
       }
@@ -566,12 +530,6 @@ export function useProjectCanvasNodeDecorators({
         ...node,
         data: {
           ...data,
-          ...dbReferenceIntentData,
-          dbDsnReferenceSources: resolvedApEnvironmentDbReferenceSources,
-          onAddDbDsnReferenceMutationStart,
-          onPendingDbReferencesChange,
-          onWorkloadMutation: refreshAfterResourceAction,
-          settingsAccess,
           actions: {
             ...(data.actions ?? {}),
             ...(lifecycleActions === undefined ? {} : { lifecycleActions }),
@@ -583,16 +541,10 @@ export function useProjectCanvasNodeDecorators({
     [
       apAuthReady,
       executeCommandPlan,
-      handleAddDbDsnReferenceIntentConsumed,
       nodes,
-      onPendingApDbReferencesStart,
       pauseWorkload,
-      pendingAddDbDsnReferenceIntent,
-      pendingDbReferencesChangeHandlerForAp,
       readOnly,
-      refreshAfterResourceAction,
       requestApDelete,
-      resolvedApEnvironmentDbReferenceSources,
       restartWorkload,
       runResourceAction,
       startWorkload,
@@ -659,6 +611,7 @@ export function useProjectCanvasNodeDecorators({
   );
 
   return {
+    apSettingsSessionEventsForAp,
     nodes: decoratedNodes,
     runtimeNodeModels: decoratedRuntimeNodeModels,
     startPendingDbReference,

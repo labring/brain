@@ -35,7 +35,7 @@ export default function ProjectIdPage() {
         if (surfaceIntent == null) {
           return { status: "ignored" as const };
         }
-        projectCanvas.actions.openSurfaceIntent(surfaceIntent);
+        projectCanvas.actions.openSurfaceIntent(surfaceIntent, "assistant");
         return { status: "handled" as const };
       },
     }),
@@ -117,6 +117,15 @@ export default function ProjectIdPage() {
                       projectId={uid}
                       refreshWorkloadLists={
                         projectCanvas.surfaces.refreshWorkloadLists
+                      }
+                      settingsLaunchContext={
+                        projectCanvas.surfaces.settingsLaunchContext
+                      }
+                      settingsReadModelHints={
+                        projectCanvas.surfaces.settingsReadModelHints
+                      }
+                      settingsSessionEvents={
+                        projectCanvas.surfaces.settingsSessionEvents
                       }
                       surfaceModel={projectCanvas.surfaces.model}
                     />

@@ -22,6 +22,11 @@ import type {
   ProjectCanvasSurfaceRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
 import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
+import type {
+  SettingsLaunchContext,
+  SettingsReadModelHints,
+  SettingsSessionEvents,
+} from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 
 export interface ProjectCanvasSurfaceHostActions {
@@ -29,6 +34,7 @@ export interface ProjectCanvasSurfaceHostActions {
   closeMainSurface: () => void;
   closeResourceLogsSurface: () => void;
   closeResourcePane: () => void;
+  consumeSettingsLaunchContext: () => void;
   onDbServiceRestoreAccepted: (target: {
     name: string;
     namespace: string;
@@ -44,6 +50,9 @@ export interface ProjectCanvasSurfaceHostProps {
   namespace: string;
   projectId: string;
   refreshWorkloadLists: () => Promise<unknown>;
+  settingsLaunchContext?: SettingsLaunchContext;
+  settingsReadModelHints?: SettingsReadModelHints;
+  settingsSessionEvents?: SettingsSessionEvents;
   surfaceModel: ProjectCanvasSurfaceRenderModel;
 }
 
@@ -54,6 +63,9 @@ export function ProjectCanvasSurfaceHost({
   namespace,
   projectId,
   refreshWorkloadLists,
+  settingsLaunchContext,
+  settingsReadModelHints,
+  settingsSessionEvents,
   surfaceModel,
 }: ProjectCanvasSurfaceHostProps) {
   const { drawer, main, side } = surfaceModel;
@@ -112,9 +124,13 @@ export function ProjectCanvasSurfaceHost({
             content={sideResourceContent}
             kubeconfig={kubeconfig}
             onClose={actions.closeResourcePane}
+            onLaunchContextConsumed={actions.consumeSettingsLaunchContext}
             onRepairSideEntry={actions.repairSide}
             onSettingsLeaveGuardChange={actions.registerSettingsLeaveGuard}
             onUpdated={refreshWorkloadLists}
+            settingsLaunchContext={settingsLaunchContext}
+            settingsReadModelHints={settingsReadModelHints}
+            settingsSessionEvents={settingsSessionEvents}
           />
         }
         skillsWorkflowPane={

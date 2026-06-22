@@ -13,12 +13,6 @@ import type {
   EntryNodeTarget,
 } from "@workspace/ui/components/entry-node/entry-node";
 import type { Node } from "@xyflow/react";
-import type {
-  ApSettingsAddDbDsnReferenceIntent,
-  ApSettingsConfirmedAddDbDsnReference,
-  ApSettingsPendingDbReference,
-} from "@/features/project-settings/ap/ap-settings-sections";
-import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
 import type {
   DeploymentTaskCanvasProjectionEdge,
@@ -45,25 +39,10 @@ export interface CanvasNodeLayoutState {
   positionSource?: "generated";
 }
 
-export interface CanvasNodeSettingsAccess {
-  readOnly?: boolean;
-}
-
 export interface CanvasContainerNodeData extends Record<string, unknown> {
   actions?: ContainerNodeActions;
-  addDbDsnReferenceIntent?: ApSettingsAddDbDsnReferenceIntent | null;
-  dbDsnReferenceSources?: ApEnvDbDsnSource[];
   layout?: CanvasNodeLayoutState;
-  onAddDbDsnReferenceIntentConsumed?: (id: string) => void;
-  onAddDbDsnReferenceMutationStart?: (
-    references: readonly ApSettingsConfirmedAddDbDsnReference[]
-  ) => (() => void) | undefined;
-  onPendingDbReferencesChange?: (
-    references: readonly ApSettingsPendingDbReference[]
-  ) => void;
-  onWorkloadMutation?: () => Promise<unknown>;
   resourceKind?: "ap" | "template";
-  settingsAccess?: CanvasNodeSettingsAccess;
   states: ContainerNodeStates;
 }
 
@@ -80,7 +59,6 @@ export interface CanvasDatabaseWorkloadRef {
 export interface CanvasDatabaseNodeData extends DbSettingsData {
   actions?: DatabaseNodeActions;
   layout?: CanvasNodeLayoutState;
-  settingsAccess?: CanvasNodeSettingsAccess;
   states: DatabaseNodeStates;
   workload: CanvasDatabaseWorkloadRef;
 }
