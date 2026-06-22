@@ -1,0 +1,491 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { projectRuntimeFactsFromResources } from "./resource-facts";
+import { projectRuntimeNodeModelsFromFacts } from "./resource-models";
+import { createProjectRuntimeStore } from "./resource-store";
+
+test("Project Runtime parses AP resources into app-owned read-side facts", () => {
+  const rawAp = {
+    metadata: {
+      name: "api",
+      namespace: "default",
+      uid: "ap-uid",
+    },
+    spec: {
+      input: {
+        image: "nginx:1.27",
+      },
+      resource: {
+        replicas: 2,
+      },
+    },
+    status: {
+      phase: "Running",
+    },
+  };
+
+  const facts = projectRuntimeFactsFromResources({
+    apsData: { items: [rawAp] },
+    namespace: "default",
+  });
+
+  assert.deepEqual(facts.apFacts, [
+    {
+      displayName: "api",
+      key: "AP:default:api",
+      observedUid: "ap-uid",
+      ref: { kind: "AP", name: "api", namespace: "default" },
+      replicaSummary: { replicas: 2 },
+      status: { label: "Running", tone: "running" },
+      workload: { image: "nginx:1.27", kind: "AP" },
+    },
+  ]);
+  assert.equal("states" in facts.apFacts[0], false);
+  assert.equal("resource" in facts.apFacts[0], false);
+  assert.equal("raw" in facts.apFacts[0], false);
+});
+
+test("Project Runtime parses DB resources into app-owned read-side facts", () => {
+  const rawDb = {
+    metadata: {
+      labels: { region: "192.168.12.53.nip.io" },
+      name: "postgres",
+      namespace: "default",
+      uid: "db-uid",
+    },
+    spec: {
+      engine: "postgresql",
+      exposeNodePort: true,
+      replicas: 3,
+    },
+    status: {
+      clusterVersionRef: "postgresql-15.4.0",
+      connectionStringPrivate: "postgres://private",
+      connectionStringPublic: "postgres://public",
+      effectiveResources: {
+        cpuLimit: "1000m",
+        memoryLimit: "2Gi",
+        storageSize: "20Gi",
+      },
+      phase: "Running",
+    },
+  };
+
+  const facts = projectRuntimeFactsFromResources({
+    dbsData: { items: [rawDb] },
+    namespace: "default",
+  });
+
+  assert.deepEqual(facts.dbFacts, [
+    {
+      capacitySummary: {
+        cpu: "1000m",
+        memory: "2Gi",
+        storage: "20Gi",
+      },
+      connectionSummary: {
+        private: { value: "postgres://private" },
+        public: { enabled: true, value: "postgres://public" },
+      },
+      displayName: "postgres",
+      engine: { displayName: "PostgreSQL", key: "postgresql" },
+      key: "DB:default:postgres",
+      observedUid: "db-uid",
+      ref: { kind: "DB", name: "postgres", namespace: "default" },
+      status: { label: "Running", tone: "running" },
+      version: "15.4",
+    },
+  ]);
+  assert.equal("desired" in facts.dbFacts[0], false);
+  assert.equal("metadata" in facts.dbFacts[0], false);
+  assert.equal("states" in facts.dbFacts[0], false);
+  assert.equal("connections" in facts.dbFacts[0], false);
+});
+
+test("Project Runtime parses AP Public Access as AP-bound read-side facts", () => {
+  const rawAp = {
+    metadata: {
+      name: "api",
+      namespace: "default",
+      uid: "ap-uid",
+    },
+    spec: {
+      input: {
+        network: {
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+          privatePort: 8080,
+        },
+      },
+    },
+    status: {
+      network: {
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            id: "pa_abc123",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      },
+    },
+  };
+
+  const facts = projectRuntimeFactsFromResources({
+    apsData: { items: [rawAp] },
+    namespace: "default",
+  });
+
+  assert.deepEqual(facts.publicAccessFacts, [
+    {
+      accessDomain: { label: "Access domain", value: "api.example.com" },
+      apRef: { kind: "AP", name: "api", namespace: "default" },
+      displayName: "api",
+      key: "PublicAccess:default:api",
+      observedUid: "ap-uid",
+      ref: { kind: "PublicAccess", name: "api", namespace: "default" },
+      targets: [
+        {
+          id: "pa_abc123",
+          label: "Platform Address",
+          port: 8080,
+          status: { label: "Accessible", tone: "accessible" },
+          type: "platform",
+          value: "https://api.example.com/",
+        },
+      ],
+    },
+  ]);
+  assert.equal("settingsOwner" in facts.publicAccessFacts[0], false);
+  assert.equal("resource" in facts.publicAccessFacts[0], false);
+});
+
+test("Project Runtime parses template-native workloads separately from AP facts", () => {
+  const rawStatefulSet = {
+    apiVersion: "apps/v1",
+    kind: "StatefulSet",
+    metadata: {
+      labels: {
+        "brain.io/deployment-kind": "template",
+      },
+      name: "memos",
+      namespace: "ns-admin",
+      uid: "sts-uid",
+    },
+    spec: {
+      replicas: 1,
+      template: {
+        spec: {
+          containers: [
+            {
+              image: "ghcr.io/usememos/memos:latest",
+              name: "main",
+            },
+          ],
+        },
+      },
+    },
+    status: {
+      readyReplicas: 1,
+      replicas: 1,
+    },
+  };
+
+  const facts = projectRuntimeFactsFromResources({
+    namespace: "ns-admin",
+    templateNativeData: { statefulSets: { items: [rawStatefulSet] } },
+  });
+
+  assert.deepEqual(facts.templateNativeWorkloadFacts, [
+    {
+      displayName: "memos",
+      key: "TemplateNativeWorkload:ns-admin:StatefulSet:memos",
+      observedUid: "sts-uid",
+      ref: {
+        kind: "TemplateNativeWorkload",
+        name: "memos",
+        namespace: "ns-admin",
+        workloadKind: "StatefulSet",
+      },
+      replicaSummary: { replicas: 1 },
+      status: { label: "Running", tone: "running" },
+      workload: {
+        image: "ghcr.io/usememos/memos:latest",
+        kind: "StatefulSet",
+      },
+    },
+  ]);
+  assert.deepEqual(facts.apFacts, []);
+  assert.equal("apRef" in facts.templateNativeWorkloadFacts[0], false);
+  assert.equal("settingsOwner" in facts.templateNativeWorkloadFacts[0], false);
+  assert.equal(
+    "lifecycleActions" in facts.templateNativeWorkloadFacts[0],
+    false
+  );
+});
+
+test("Project Runtime commits one AP update without notifying unrelated models or rebuilding shell topology", () => {
+  const store = createProjectRuntimeStore();
+  store.commitResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "api-uid" },
+          spec: { input: { image: "nginx" }, resource: { replicas: 1 } },
+          status: { phase: "Running" },
+        },
+        {
+          metadata: { name: "worker", namespace: "default", uid: "worker-uid" },
+          spec: { input: { image: "worker" }, resource: { replicas: 1 } },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  const apiKey = "AP:default:api";
+  const workerKey = "AP:default:worker";
+  const apiBefore = store.selectApFact(apiKey);
+  const workerBefore = store.selectApFact(workerKey);
+  const shellNodesBefore = store.selectShellNodes();
+  const apiNotifications: unknown[] = [];
+  const workerNotifications: unknown[] = [];
+  store.subscribeApFact(apiKey, (fact) => apiNotifications.push(fact));
+  store.subscribeApFact(workerKey, (fact) => workerNotifications.push(fact));
+
+  store.commitResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "api-uid" },
+          spec: { input: { image: "nginx" }, resource: { replicas: 1 } },
+          status: { phase: "Updating" },
+        },
+        {
+          metadata: { name: "worker", namespace: "default", uid: "worker-uid" },
+          spec: { input: { image: "worker" }, resource: { replicas: 1 } },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  const apiAfter = store.selectApFact(apiKey);
+  assert.notEqual(apiAfter, apiBefore);
+  assert.deepEqual(apiAfter?.status, { label: "Updating", tone: "updating" });
+  assert.equal(store.selectApFact(workerKey), workerBefore);
+  assert.equal(store.selectShellNodes(), shellNodesBefore);
+  assert.deepEqual(apiNotifications, [apiAfter]);
+  assert.deepEqual(workerNotifications, []);
+});
+
+test("Project Runtime commits one DB update without notifying unrelated DB models or rebuilding shell topology", () => {
+  const store = createProjectRuntimeStore();
+  store.commitResources({
+    dbsData: {
+      items: [
+        {
+          metadata: { name: "postgres", namespace: "default", uid: "pg-uid" },
+          spec: { engine: "postgresql" },
+          status: { phase: "Running" },
+        },
+        {
+          metadata: { name: "redis", namespace: "default", uid: "redis-uid" },
+          spec: { engine: "redis" },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  const postgresKey = "DB:default:postgres";
+  const redisKey = "DB:default:redis";
+  const postgresBefore = store.selectDbFact(postgresKey);
+  const redisBefore = store.selectDbFact(redisKey);
+  const shellNodesBefore = store.selectShellNodes();
+  const postgresNotifications: unknown[] = [];
+  const redisNotifications: unknown[] = [];
+  store.subscribeDbFact(postgresKey, (fact) =>
+    postgresNotifications.push(fact)
+  );
+  store.subscribeDbFact(redisKey, (fact) => redisNotifications.push(fact));
+
+  store.commitResources({
+    dbsData: {
+      items: [
+        {
+          metadata: { name: "postgres", namespace: "default", uid: "pg-uid" },
+          spec: { engine: "postgresql" },
+          status: { phase: "Updating" },
+        },
+        {
+          metadata: { name: "redis", namespace: "default", uid: "redis-uid" },
+          spec: { engine: "redis" },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  const postgresAfter = store.selectDbFact(postgresKey);
+  assert.notEqual(postgresAfter, postgresBefore);
+  assert.deepEqual(postgresAfter?.status, {
+    label: "Updating",
+    tone: "updating",
+  });
+  assert.equal(store.selectDbFact(redisKey), redisBefore);
+  assert.equal(store.selectShellNodes(), shellNodesBefore);
+  assert.deepEqual(postgresNotifications, [postgresAfter]);
+  assert.deepEqual(redisNotifications, []);
+});
+
+test("Project Runtime commits one AP Public Access update without notifying unrelated public access models or rebuilding shell topology", () => {
+  const store = createProjectRuntimeStore();
+  const apWithPublicAddress = (name: string, status: string) => ({
+    metadata: { name, namespace: "default", uid: `${name}-uid` },
+    spec: {
+      input: {
+        network: {
+          platformAddresses: [{ id: `pa_${name}`, port: 8080 }],
+        },
+      },
+    },
+    status: {
+      network: {
+        publicAddresses: [
+          {
+            host: `${name}.example.com`,
+            id: `pa_${name}`,
+            port: 8080,
+            status,
+            type: "platform",
+            url: `https://${name}.example.com/`,
+          },
+        ],
+      },
+      phase: "Running",
+    },
+  });
+  store.commitResources({
+    apsData: {
+      items: [
+        apWithPublicAddress("api", "progressing"),
+        apWithPublicAddress("web", "accessible"),
+      ],
+    },
+    namespace: "default",
+  });
+
+  const apiKey = "PublicAccess:default:api";
+  const webKey = "PublicAccess:default:web";
+  const apiBefore = store.selectPublicAccessFact(apiKey);
+  const webBefore = store.selectPublicAccessFact(webKey);
+  const shellNodesBefore = store.selectShellNodes();
+  const apiNotifications: unknown[] = [];
+  const webNotifications: unknown[] = [];
+  store.subscribePublicAccessFact(apiKey, (fact) =>
+    apiNotifications.push(fact)
+  );
+  store.subscribePublicAccessFact(webKey, (fact) =>
+    webNotifications.push(fact)
+  );
+
+  store.commitResources({
+    apsData: {
+      items: [
+        apWithPublicAddress("api", "accessible"),
+        apWithPublicAddress("web", "accessible"),
+      ],
+    },
+    namespace: "default",
+  });
+
+  const apiAfter = store.selectPublicAccessFact(apiKey);
+  assert.notEqual(apiAfter, apiBefore);
+  assert.deepEqual(apiAfter?.targets[0]?.status, {
+    label: "Accessible",
+    tone: "accessible",
+  });
+  assert.equal(store.selectPublicAccessFact(webKey), webBefore);
+  assert.equal(store.selectShellNodes(), shellNodesBefore);
+  assert.deepEqual(apiNotifications, [apiAfter]);
+  assert.deepEqual(webNotifications, []);
+});
+
+test("Project Runtime adapts per-node models to shared UI props outside read-side facts", () => {
+  const facts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "api-uid" },
+          spec: { input: { image: "nginx" }, resource: { replicas: 2 } },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    dbsData: {
+      items: [
+        {
+          metadata: { name: "postgres", namespace: "default", uid: "pg-uid" },
+          spec: { engine: "postgresql", exposeNodePort: true },
+          status: {
+            connectionStringPrivate: "postgres://private",
+            phase: "Running",
+          },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  const models = projectRuntimeNodeModelsFromFacts(facts);
+
+  assert.deepEqual(models.containerModelsByKey.get("AP:default:api"), {
+    resourceKind: "ap",
+    states: {
+      image: "nginx",
+      kind: "AP",
+      name: "api",
+      namespace: "default",
+      replicas: 2,
+      status: { label: "Running", tone: "running" },
+      uid: "api-uid",
+    },
+  });
+  assert.deepEqual(models.databaseModelsByKey.get("DB:default:postgres"), {
+    connections: [
+      {
+        id: "private",
+        kind: "private",
+        label: "Private connection",
+        value: "postgres://private",
+      },
+      {
+        id: "public",
+        kind: "public",
+        label: "Public connection",
+        publicAccess: { enabled: true },
+      },
+    ],
+    states: {
+      displayEngine: "PostgreSQL",
+      engineKey: "postgresql",
+      metrics: {},
+      name: "postgres",
+      status: { label: "Running", tone: "running" },
+      uid: "pg-uid",
+    },
+    uid: "pg-uid",
+    workload: { name: "postgres", namespace: "default" },
+  });
+  assert.equal("states" in facts.apFacts[0], false);
+  assert.equal("connections" in facts.dbFacts[0], false);
+});

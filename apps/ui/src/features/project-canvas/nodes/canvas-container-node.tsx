@@ -11,7 +11,8 @@ import {
   shouldSubscribeWorkloadTelemetry,
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
-import type { CanvasContainerRfNode } from "./types";
+import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
+import type { CanvasContainerNodeData, CanvasContainerRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 
 export const CanvasContainerNode = memo(function CanvasContainerNode({
@@ -22,14 +23,16 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   positionAbsoluteY,
   type,
 }: NodeProps<CanvasContainerRfNode>) {
-  const { actions = {}, states } = data;
+  const model =
+    useProjectRuntimeNodeModel<CanvasContainerNodeData>(data) ?? data;
+  const { actions = {}, states } = model;
   const { name, namespace } = states;
   const telemetryTarget = useMemo(
     () =>
-      data.resourceKind === "template"
+      model.resourceKind === "template"
         ? null
         : containerTelemetryTargetFromStates({ name, namespace }),
-    [data.resourceKind, name, namespace]
+    [model.resourceKind, name, namespace]
   );
   const { state } = useCanvas();
   const edge = state.selectedEdge;

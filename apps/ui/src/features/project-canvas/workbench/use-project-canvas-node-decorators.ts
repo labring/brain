@@ -42,6 +42,7 @@ import type {
   ProjectCanvasDbDeleteTarget,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
 import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
+import { projectRuntimeShellLookupFromNodeData } from "@/features/project-runtime/resource-models";
 import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
 import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 
@@ -521,6 +522,11 @@ export function useProjectCanvasNodeDecorators({
     () =>
       nodes.map((node): Node => {
         const layoutNode = decorateLayoutNode(node);
+        if (
+          projectRuntimeShellLookupFromNodeData(layoutNode.data) !== undefined
+        ) {
+          return layoutNode;
+        }
 
         if (layoutNode.type === CANVAS_DATABASE_NODE_TYPE) {
           return decorateDatabaseNode(layoutNode);

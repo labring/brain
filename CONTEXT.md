@@ -384,6 +384,14 @@ _Avoid_: AP Console, console.
 
 A bottom temporary project surface for one interactive resource session, such as an AP Terminal or DB Terminal. A Session Drawer is distinct from a Side Pane and may remain open while the user inspects resource details in a Side Pane.
 
+### Project Runtime
+
+The Project-scoped read-side boundary that Project surfaces use to interpret current resource presentation facts and session-local launch context. Project Runtime is not the Project Canvas, a Settings Owner, or the source of editable AP or DB desired configuration.
+
+### Project Resource Read Model
+
+The app-owned Project Runtime view of current AP, DB, AP Public Access Node, and template-native workload presentation facts. The Project Resource Read Model is read-side presentation knowledge, not raw resource truth, Canvas Layout, Settings Draft state, or a resource action command bus.
+
 ### Container Node
 
 A canvas node that represents an AP workload. The name is retained as a product/UI term, but it does not mean an individual Kubernetes container.

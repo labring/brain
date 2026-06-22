@@ -2,7 +2,7 @@ import type { CanvasSelectedNode } from "@workspace/ui/components/canvas/canvas.
 import type { ContainerNodeStates } from "@workspace/ui/components/container-node/container-node";
 import type { DatabaseNodeStates } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
-
+import { projectRuntimeShellLookupFromNodeData } from "@/features/project-runtime/resource-models";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
@@ -118,6 +118,27 @@ export function telemetryTargetFromCanvasNode(
 ): WorkloadTelemetryTarget | null {
   if (node === null) {
     return null;
+  }
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node.data);
+  if (
+    runtimeLookup?.kind === "AP" &&
+    runtimeLookup.resourceRef?.kind === "AP"
+  ) {
+    return {
+      kind: "ap",
+      name: runtimeLookup.resourceRef.name,
+      namespace: runtimeLookup.resourceRef.namespace,
+    };
+  }
+  if (
+    runtimeLookup?.kind === "DB" &&
+    runtimeLookup.resourceRef?.kind === "DB"
+  ) {
+    return {
+      kind: "db",
+      name: runtimeLookup.resourceRef.name,
+      namespace: runtimeLookup.resourceRef.namespace,
+    };
   }
   if (node.type === CANVAS_CONTAINER_NODE_TYPE) {
     const data = node.data as CanvasContainerNodeData;

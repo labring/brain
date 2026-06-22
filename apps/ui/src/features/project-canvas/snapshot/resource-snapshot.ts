@@ -1,13 +1,6 @@
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import {
-  apLikeWorkloadKeysFromList,
-  apsToCanvasState,
-  dbsToCanvasState,
-  publicAccessToCanvasState,
-  templateNativeWorkloadsToCanvasState,
-} from "@/features/project-canvas/flow/ap-list-to-canvas-state";
-import {
   canvasConnectionEdgesFromDetectedConnections,
   detectCanvasConnections,
 } from "@/features/project-canvas/flow/detected-connections";
@@ -17,6 +10,12 @@ import type {
   CanvasLayoutNode,
   PlacementCommand,
 } from "@/features/project-canvas/layout/types";
+import { projectRuntimeFactsFromResources } from "@/features/project-runtime/resource-facts";
+import {
+  type ProjectRuntimeNodeModels,
+  projectRuntimeNodeModelsFromFacts,
+} from "@/features/project-runtime/resource-models";
+import { projectRuntimeShellNodesFromFacts } from "@/features/project-runtime/resource-store";
 import {
   type ApEnvironmentDbReferenceSource,
   apEnvironmentDbReferenceSourcesFromDbsData,
@@ -69,6 +68,7 @@ export interface ProjectCanvasResourceSnapshot {
   canvasState: CanvasState;
   frameState: ReturnType<typeof projectCanvasFrameState>;
   layoutIntent: ProjectCanvasLayoutIntent | null;
+  runtimeNodeModels: ProjectRuntimeNodeModels;
 }
 
 const EMPTY_TEMPLATE_NATIVE_DATA = {};
@@ -89,38 +89,14 @@ export function buildProjectCanvasResourceSnapshot({
 }: ProjectCanvasResourceSnapshotInput): ProjectCanvasResourceSnapshot {
   const apEnvironmentDbReferenceSources =
     apEnvironmentDbReferenceSourcesFromDbsData(dbsData, namespace);
-  const apBlock = apsToCanvasState(apsData, {
-    gridIndexOffset: 0,
-    namespaceFallback: namespace,
-  });
-  const dbBlock = dbsToCanvasState(dbsData, {
-    gridIndexOffset: apBlock.nodes.length,
-    namespaceFallback: namespace,
-  });
-  const publicAccessBlock = publicAccessToCanvasState(apsData, {
-    gridIndexOffset: apBlock.nodes.length + dbBlock.nodes.length,
-    namespaceFallback: namespace,
-  });
-  const apLikeWorkloadKeys = apLikeWorkloadKeysFromList(apsData, {
-    namespaceFallback: namespace,
-  });
-  const templateNativeBlock = templateNativeWorkloadsToCanvasState(
+  const runtimeFacts = projectRuntimeFactsFromResources({
+    apsData,
+    dbsData,
+    namespace,
     templateNativeData,
-    {
-      apLikeWorkloadKeys,
-      gridIndexOffset:
-        apBlock.nodes.length +
-        dbBlock.nodes.length +
-        publicAccessBlock.nodes.length,
-      namespaceFallback: namespace,
-    }
-  );
-  const rawDetectedNodes = [
-    ...apBlock.nodes,
-    ...dbBlock.nodes,
-    ...publicAccessBlock.nodes,
-    ...templateNativeBlock.nodes,
-  ];
+  });
+  const runtimeNodeModels = projectRuntimeNodeModelsFromFacts(runtimeFacts);
+  const rawDetectedNodes = projectRuntimeShellNodesFromFacts(runtimeFacts);
   const deploymentResultPreviews =
     deploymentResultPreviewsFromTasks(deployTasks);
   const rawDeploymentProjectionContext = createDeploymentProjectionContext({
@@ -201,7 +177,7 @@ export function buildProjectCanvasResourceSnapshot({
       })
     : [];
   const canvasState: CanvasState = {
-    edges: [...edges, ...deploymentPreviewEdges, ...templateNativeBlock.edges],
+    edges: [...edges, ...deploymentPreviewEdges],
     nodes: merge.nodes,
     selectedEdge: null,
     selectedNode: null,
@@ -229,6 +205,7 @@ export function buildProjectCanvasResourceSnapshot({
       nodeCount: canvasState.nodes.length,
     }),
     layoutIntent,
+    runtimeNodeModels,
   };
 }
 

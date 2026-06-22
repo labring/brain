@@ -2,6 +2,10 @@ import type { Node } from "@xyflow/react";
 import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/database-node-data";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import {
+  type ProjectRuntimeNodeModels,
+  projectRuntimeShellLookupFromNodeData,
+} from "@/features/project-runtime/resource-models";
+import {
   type ProjectDrawerSurfaceEntry,
   type ProjectGlobalSidePaneEntry,
   type ProjectMainSurfaceEntry,
@@ -119,6 +123,19 @@ function pendingTargetModel<TEntry extends ProjectCanvasPendingTargetEntry>(
   return { entry, kind: "pendingTarget", target: entry.target };
 }
 
+function databaseDataForNode(
+  node: Node | null,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+): CanvasDatabaseNodeData | null {
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node?.data);
+  if (runtimeLookup?.kind === "DB") {
+    return (
+      runtimeNodeModels?.databaseModelsByKey.get(runtimeLookup.modelKey) ?? null
+    );
+  }
+  return databaseNodeDataFromNode(node);
+}
+
 function apResourcePaneModel(
   nodes: readonly Node[],
   entry: Extract<
@@ -141,10 +158,11 @@ function dbResourcePaneModel(
   entry: Extract<
     ProjectSideSurfaceEntry,
     { kind: ProjectCanvasDbResourcePaneKind }
-  >
+  >,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const databaseData = databaseNodeDataFromNode(node);
+  const databaseData = databaseDataForNode(node, runtimeNodeModels);
   if (node == null || databaseData == null) {
     return pendingTargetModel(entry);
   }
@@ -156,11 +174,14 @@ function dbResourcePaneModel(
 
 function settingsPaneModel(
   nodes: readonly Node[],
-  entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>
+  entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
   const databaseData =
-    entry.target.kind === "DB" ? databaseNodeDataFromNode(node) : undefined;
+    entry.target.kind === "DB"
+      ? databaseDataForNode(node, runtimeNodeModels)
+      : undefined;
 
   const entryNode =
     entry.target.kind === "AP" && entry.view === "public-addresses"
@@ -185,9 +206,11 @@ function settingsPaneModel(
 
 function sideRenderModel({
   nodes,
+  runtimeNodeModels,
   surfaceState,
 }: {
   nodes: readonly Node[];
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
   surfaceState: ProjectSurfaceState;
 }): ProjectCanvasSideRenderModel {
   const entry = surfaceState.side;
@@ -201,9 +224,9 @@ function sideRenderModel({
     case "apMetrics":
       return apResourcePaneModel(nodes, entry);
     case "dbMetrics":
-      return dbResourcePaneModel(nodes, entry);
+      return dbResourcePaneModel(nodes, entry, runtimeNodeModels);
     case "settings":
-      return settingsPaneModel(nodes, entry);
+      return settingsPaneModel(nodes, entry, runtimeNodeModels);
     case "databaseDeployment":
     case "deploymentTaskTimeline":
     case "dockerDeployment":
@@ -219,10 +242,11 @@ function sideRenderModel({
 
 function dbAccessMainModel(
   nodes: readonly Node[],
-  entry: Extract<ProjectMainSurfaceEntry, { kind: "dbAccess" }>
+  entry: Extract<ProjectMainSurfaceEntry, { kind: "dbAccess" }>,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasMainRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const databaseData = databaseNodeDataFromNode(node);
+  const databaseData = databaseDataForNode(node, runtimeNodeModels);
   if (node == null || databaseData == null) {
     return pendingTargetModel(entry);
   }
@@ -250,14 +274,15 @@ function resourceLogsMainModel(
 
 function mainRenderModel(
   nodes: readonly Node[],
-  entry: ProjectMainSurfaceEntry | null
+  entry: ProjectMainSurfaceEntry | null,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasMainRenderModel {
   if (entry == null) {
     return null;
   }
   switch (entry.kind) {
     case "dbAccess":
-      return dbAccessMainModel(nodes, entry);
+      return dbAccessMainModel(nodes, entry, runtimeNodeModels);
     case "resourceLogs":
       return resourceLogsMainModel(nodes, entry);
     default:
@@ -288,14 +313,16 @@ function drawerRenderModel(
 
 export function createProjectCanvasSurfaceRenderModel({
   nodes,
+  runtimeNodeModels,
   surfaceState,
 }: {
   nodes: readonly Node[];
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
   surfaceState: ProjectSurfaceState;
 }): ProjectCanvasSurfaceRenderModel {
   return {
     drawer: drawerRenderModel(nodes, surfaceState.drawer),
-    main: mainRenderModel(nodes, surfaceState.main),
-    side: sideRenderModel({ nodes, surfaceState }),
+    main: mainRenderModel(nodes, surfaceState.main, runtimeNodeModels),
+    side: sideRenderModel({ nodes, runtimeNodeModels, surfaceState }),
   };
 }

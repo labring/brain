@@ -5,7 +5,8 @@ import { EntryNode } from "@workspace/ui/components/entry-node/entry-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo } from "react";
 
-import type { CanvasEntryRfNode } from "./types";
+import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
+import type { CanvasEntryNodeData, CanvasEntryRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 
 export const CanvasEntryNode = memo(function CanvasEntryNode({
@@ -16,7 +17,8 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
   positionAbsoluteY,
   type,
 }: NodeProps<CanvasEntryRfNode>) {
-  const { accessDomain, actions = {}, states, targets } = data;
+  const model = useProjectRuntimeNodeModel<CanvasEntryNodeData>(data) ?? data;
+  const { accessDomain, actions = {}, states, targets } = model;
   const { state } = useCanvas();
   const edge = state.selectedEdge;
   const isEndpointOfSelectedEdge =

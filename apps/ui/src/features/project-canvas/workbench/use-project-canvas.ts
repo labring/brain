@@ -27,6 +27,7 @@ import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/us
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
+import type { ProjectRuntimeNodeModels } from "@/features/project-runtime/resource-models";
 import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import { useSettingsLeaveGuardController } from "@/features/project-settings/settings-leave-guard-controller";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
@@ -48,6 +49,7 @@ export interface UseProjectCanvasOptions {
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
   refreshWorkloadLists?: () => Promise<unknown>;
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
   /** True when the resource lists have settled enough to clear stale URL selections. */
   selectionReady?: boolean;
 }
@@ -258,9 +260,10 @@ export function useProjectCanvas(
     () =>
       createProjectCanvasSurfaceRenderModel({
         nodes,
+        runtimeNodeModels: options?.runtimeNodeModels,
         surfaceState,
       }),
-    [nodes, surfaceState]
+    [nodes, options?.runtimeNodeModels, surfaceState]
   );
 
   const {
