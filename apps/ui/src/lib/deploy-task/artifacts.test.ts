@@ -20,6 +20,8 @@ const IMAGE_MISMATCH_REGEX = /workload image does not match/;
 const MISSING_BUILD_DIGEST_REGEX = /missing image\.digest/;
 const RENDERED_INSTANCE_REGEX = /kind: Instance/;
 const RENDERED_HOST_REGEX = /host: demo.cloud.sealos.io/;
+const RENDERED_GHCR_IMAGE_REGEX = /ghcr\.io\/zjy365\/seakills-site/;
+const RENDERED_PULL_SECRET_TOKEN_REGEX = /SEALOS_GITHUB_TOKEN|dockerconfigjson/;
 const UNSUPPORTED_TEMPLATE_KIND_REGEX =
   /blocked Kubernetes kind ClusterRoleBinding/;
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
@@ -400,6 +402,59 @@ spec:
       | undefined
   )?.[0]?.http?.paths?.[0]?.backend?.service?.name;
   assert.equal(backendServiceName, artifact.instanceName);
+});
+
+test("prepareSealosTemplateArtifact keeps GitHub token out of persisted artifact YAML", () => {
+  const artifact = prepareSealosTemplateArtifact({
+    buildResult: {
+      image: {
+        digest: "sha256:abc123",
+        image_ref: "ghcr.io/zjy365/seakills-site@sha256:abc123",
+      },
+      status: "succeeded",
+    },
+    deliveryManifest: {
+      app: { name: "seakills-site" },
+    },
+    task: task({
+      projectName: "g6",
+    }),
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: seakills-site
+spec:
+  templateType: inline
+  defaults:
+    app_name:
+      type: string
+      value: seakills-site
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  selector:
+    matchLabels:
+      app: \${{ defaults.app_name }}
+  template:
+    metadata:
+      labels:
+        app: \${{ defaults.app_name }}
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/zjy365/seakills-site@sha256:abc123
+`,
+  });
+
+  const summary = sealosTemplateArtifactSummary({ artifact });
+  const persistedYaml = summary.resourceYamls?.join("\n") ?? "";
+
+  assert.match(persistedYaml, RENDERED_GHCR_IMAGE_REGEX);
+  assert.doesNotMatch(persistedYaml, RENDERED_PULL_SECRET_TOKEN_REGEX);
 });
 
 test("createSealosTemplateDeploymentPlan reports missing required inputs", () => {

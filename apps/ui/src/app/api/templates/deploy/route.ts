@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { templateDeploymentExtraLabels } from "@/lib/brain-labels";
 import { getProject } from "@/lib/project-persistence/projects";
 import {
   devCredentialsFromEnv,
@@ -8,7 +9,6 @@ import {
 } from "@/lib/server-credentials";
 import { deployTemplateInstance } from "@/lib/template-provider-core";
 import { authorizeTemplateDeployIdentity } from "./auth";
-import { templateDeploymentExtraLabels } from "./labels";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

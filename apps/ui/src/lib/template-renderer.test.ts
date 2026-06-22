@@ -93,6 +93,7 @@ const SINGLE_LINE_PARAMETER_RE =
   /Template parameter "storage" must be a single line/;
 const NUMBER_PARAMETER_RE = /Template parameter "storage" must be a number/;
 const TEMPLATE_SECRET_NAME_RE = /secretName: wildcard-cert/;
+const TEMPLATE_EXPR_MARKER_RE = /\$/;
 
 test("renderTemplateDeployment injects Brain labels into rendered resources", () => {
   const rendered = renderTemplateDeployment({
@@ -544,6 +545,56 @@ spec:
   assert.equal(instance.metadata.name, "template-inline");
   assert.equal(service?.metadata?.name, "template-inline");
   assert.match(ingressYaml ?? "", TEMPLATE_SECRET_NAME_RE);
+});
+
+test("renderTemplateDeploymentFromYaml renders base64 expressions with JSON braces", () => {
+  const rendered = renderTemplateDeploymentFromYaml({
+    instanceName: "seakills-site-ayzvaa",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "g6",
+    templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: seakills-site
+spec:
+  title: Seakills Site
+  templateType: inline
+  defaults:
+    app_name:
+      type: string
+      value: seakills-site
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: \${{ defaults.app_name }}
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: \${{ base64('{"auths":{"example.io":{"auth":"' + base64('demo:token') + '"}}}') }}
+`,
+  });
+
+  const secret = rendered.resources.find((doc) => doc.kind === "Secret");
+  const typedSecret = secret as {
+    data?: Record<string, string>;
+    stringData?: Record<string, string>;
+  };
+  const encoded = typedSecret.data?.[".dockerconfigjson"];
+
+  assert.ok(encoded);
+  assert.doesNotMatch(encoded, TEMPLATE_EXPR_MARKER_RE);
+  assert.equal(typedSecret.stringData?.[".dockerconfigjson"], undefined);
+
+  const dockerConfig = JSON.parse(Buffer.from(encoded, "base64").toString());
+  assert.deepEqual(dockerConfig, {
+    auths: {
+      "example.io": {
+        auth: Buffer.from("demo:token").toString("base64"),
+      },
+    },
+  });
 });
 
 test("renderTemplateDeploymentFromYaml skips inactive conditional required inputs", () => {

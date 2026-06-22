@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { LAUNCHPAD_TEMPLATE_SOURCE_LABEL } from "@/lib/brain-labels";
-import { templateDeploymentExtraLabels } from "./labels";
+import {
+  LAUNCHPAD_TEMPLATE_SOURCE_LABEL,
+  templateDeploymentExtraLabels,
+} from "@/lib/brain-labels";
 
 test("template deploy extra labels include Brain project ownership labels only", () => {
   const labels = templateDeploymentExtraLabels({

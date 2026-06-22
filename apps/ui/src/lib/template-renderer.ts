@@ -21,16 +21,12 @@ const OWNER_REFERENCES_LABEL = "cloud.sealos.io/owner-references";
 const OWNER_REFERENCES_READY_VALUE = "ready";
 const YAML_IF_ENDIF_RE =
   /^\s*\$\{\{\s*?(if|elif|else|endif)\((.*?)\)\s*?\}\}\s*$/gm;
-const TEMPLATE_EXPR_RE = /\$\{\{\s*(.*?)\s*\}\}/g;
 const DNS_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const BRACKET_PATH_RE = /\[['"]([^'"]+)['"]\]/g;
 const NUMERIC_RE = /^-?\d+(?:\.\d+)?$/;
 const RANDOM_CALL_RE = /^random\((\d+)\)$/;
-const BASE64_CALL_RE = /^base64\((.*)\)$/;
+const BASE64_CALL_RE = /^base64\(([\s\S]*)\)$/;
 const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
-const OR_SPLIT_RE = /\s+\|\|\s+/;
-const AND_SPLIT_RE = /\s+&&\s+/;
-const CONCAT_SPLIT_RE = /\s+\+\s+/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
 const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
@@ -183,7 +179,7 @@ function expressionValue(
   const base64Match = trimmed.match(BASE64_CALL_RE);
   if (base64Match) {
     return Buffer.from(
-      String(expressionValue(base64Match[1] ?? "", context) ?? "")
+      String(evaluateExpression(base64Match[1] ?? "", context) ?? "")
     ).toString("base64");
   }
   return readPath(context, trimmed);
@@ -199,7 +195,7 @@ function evaluateExpression(
       ? evaluateExpression(ternary[2] ?? "", context)
       : evaluateExpression(ternary[3] ?? "", context);
   }
-  const orParts = expression.split(OR_SPLIT_RE);
+  const orParts = splitTopLevelOperator(expression, "||");
   if (orParts.length > 1) {
     for (const part of orParts) {
       const value = evaluateExpression(part, context);
@@ -209,7 +205,7 @@ function evaluateExpression(
     }
     return "";
   }
-  const concatParts = expression.split(CONCAT_SPLIT_RE);
+  const concatParts = splitTopLevelOperator(expression, "+");
   if (concatParts.length > 1) {
     return concatParts
       .map((part) => String(evaluateExpression(part, context) ?? ""))
@@ -223,11 +219,11 @@ export function evaluateTemplateCondition(
   context: EvaluationContext
 ): boolean {
   const trimmed = expression.trim();
-  const orParts = trimmed.split(OR_SPLIT_RE);
+  const orParts = splitTopLevelOperator(trimmed, "||");
   if (orParts.length > 1) {
     return orParts.some((part) => evaluateTemplateCondition(part, context));
   }
-  const andParts = trimmed.split(AND_SPLIT_RE);
+  const andParts = splitTopLevelOperator(trimmed, "&&");
   if (andParts.length > 1) {
     return andParts.every((part) => evaluateTemplateCondition(part, context));
   }
@@ -241,6 +237,126 @@ export function evaluateTemplateCondition(
 }
 
 const evaluateCondition = evaluateTemplateCondition;
+
+interface ExpressionScanState {
+  depth: number;
+  escaped: boolean;
+  quote: string | null;
+}
+
+function updateExpressionScanState(
+  state: ExpressionScanState,
+  char: string
+): boolean {
+  if (state.quote != null) {
+    if (state.escaped) {
+      state.escaped = false;
+      return true;
+    }
+    if (char === "\\") {
+      state.escaped = true;
+      return true;
+    }
+    if (char === state.quote) {
+      state.quote = null;
+    }
+    return true;
+  }
+  if (char === "'" || char === '"') {
+    state.quote = char;
+    return true;
+  }
+  if (char === "(") {
+    state.depth += 1;
+    return true;
+  }
+  if (char === ")") {
+    state.depth = Math.max(0, state.depth - 1);
+    return true;
+  }
+  return false;
+}
+
+function splitTopLevelOperator(expression: string, operator: string): string[] {
+  const parts: string[] = [];
+  let cursor = 0;
+  const state: ExpressionScanState = { depth: 0, escaped: false, quote: null };
+  for (let index = 0; index < expression.length; index += 1) {
+    if (updateExpressionScanState(state, expression[index] ?? "")) {
+      continue;
+    }
+    if (
+      state.depth === 0 &&
+      expression.slice(index, index + operator.length) === operator
+    ) {
+      parts.push(expression.slice(cursor, index));
+      cursor = index + operator.length;
+      index += operator.length - 1;
+    }
+  }
+  if (parts.length === 0) {
+    return [expression];
+  }
+  parts.push(expression.slice(cursor));
+  return parts;
+}
+
+function nextTemplateExpression(source: string, fromIndex: number) {
+  const start = source.indexOf("${{", fromIndex);
+  if (start === -1) {
+    return null;
+  }
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = start + 3; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote != null) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char === "}" && source[index + 1] === "}") {
+      return {
+        end: index + 2,
+        expression: source.slice(start + 3, index).trim(),
+        start,
+      };
+    }
+  }
+  return null;
+}
+
+function renderTemplateExpressions(
+  source: string,
+  context: EvaluationContext
+): string {
+  let cursor = 0;
+  let rendered = "";
+  while (cursor < source.length) {
+    const match = nextTemplateExpression(source, cursor);
+    if (match == null) {
+      rendered += source.slice(cursor);
+      break;
+    }
+    rendered += source.slice(cursor, match.start);
+    rendered += String(evaluateExpression(match.expression, context) ?? "");
+    cursor = match.end;
+  }
+  return rendered;
+}
 
 // Sealos template condition blocks support nested if/elif/else/endif markers.
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mirrors the provider parser to preserve template semantics.
@@ -317,11 +433,7 @@ function renderTemplateString(
   source: string,
   context: EvaluationContext
 ): string {
-  return parseYamlIfEndif(source, context).replace(
-    TEMPLATE_EXPR_RE,
-    (_match, expression: string) =>
-      String(evaluateExpression(expression, context) ?? "")
-  );
+  return renderTemplateExpressions(parseYamlIfEndif(source, context), context);
 }
 
 function flattenDefaults(
@@ -541,7 +653,46 @@ function normalizeServicePorts(object: TemplateK8sObject) {
   }
 }
 
+function validJsonString(value: string): boolean {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeDockerConfigJsonSecret(object: TemplateK8sObject) {
+  if (
+    object.kind !== "Secret" ||
+    object.type !== "kubernetes.io/dockerconfigjson"
+  ) {
+    return;
+  }
+  const stringData = asRecord(object.stringData);
+  const value = stringData?.[".dockerconfigjson"];
+  if (typeof value !== "string" || value === "" || validJsonString(value)) {
+    return;
+  }
+
+  const decoded = Buffer.from(value, "base64").toString("utf8");
+  if (!validJsonString(decoded)) {
+    return;
+  }
+
+  object.data = {
+    ...asRecord(object.data),
+    ".dockerconfigjson": value,
+  };
+  const nextStringData = Object.fromEntries(
+    Object.entries(stringData).filter(([key]) => key !== ".dockerconfigjson")
+  );
+  object.stringData =
+    Object.keys(nextStringData).length === 0 ? undefined : nextStringData;
+}
+
 function normalizeRenderedResource(object: TemplateK8sObject) {
+  normalizeDockerConfigJsonSecret(object);
   normalizeEnvValues(object);
   normalizeServicePorts(object);
 }

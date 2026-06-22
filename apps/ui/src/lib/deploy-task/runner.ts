@@ -5,7 +5,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
-import { templateDeploymentExtraLabels } from "@/app/api/templates/deploy/labels";
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
@@ -16,6 +15,7 @@ import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_DEPLOYMENT_NAME_LABEL,
   BRAIN_PROJECT_ID_LABEL,
+  templateDeploymentExtraLabels,
 } from "@/lib/brain-labels";
 import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import {
@@ -353,6 +353,7 @@ async function getDevboxNetworkIdFromKubernetes(input: {
 
 async function applyDeploymentArtifact(input: {
   artifact: DeploymentArtifact;
+  githubToken?: string;
   kubeconfig: string;
   task: DeployTaskRow;
 }): Promise<{
@@ -378,7 +379,17 @@ async function applyDeploymentArtifact(input: {
     const applied = await applyRenderedTemplateDeployment({
       encodedKubeconfig: input.kubeconfig,
       namespace: input.task.namespace,
+      projectId: input.task.projectId ?? input.artifact.instanceName,
+      registryAuth:
+        input.githubToken == null
+          ? undefined
+          : {
+              buildDigest: input.artifact.build.digest,
+              buildImage: input.artifact.build.image,
+              githubToken: input.githubToken,
+            },
       rendered: input.artifact.rendered,
+      templateName: input.artifact.templateName,
     });
     return {
       artifactSummary: sealosTemplateArtifactSummary({
@@ -1769,6 +1780,7 @@ async function markDeploymentGenerationStartedIfNeeded(input: {
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   artifactSummaryExtras?: Partial<DeployTaskArtifactSummary>;
+  githubToken?: string;
   kubeconfig: string;
   outputJson?: Record<string, unknown>;
   task: DeployTaskRow;
@@ -1795,6 +1807,7 @@ async function completeTaskWithArtifact(input: {
   try {
     applied = await applyDeploymentArtifact({
       artifact: input.artifact,
+      githubToken: input.githubToken,
       kubeconfig: input.kubeconfig,
       task: input.task,
     });
@@ -1963,6 +1976,7 @@ async function blockForMissingAiDeploymentOutput(task: DeployTaskRow) {
 async function applyAiDeploymentFromPreparedOutput(input: {
   args: Record<string, string>;
   encodedKubeconfig: string;
+  githubToken?: string;
   kubeconfig: string;
   outputJson: Record<string, unknown>;
   task: DeployTaskRow;
@@ -2026,6 +2040,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
       artifact,
       artifactSummaryExtras:
         deploymentPlan == null ? undefined : { deploymentPlan },
+      githubToken: input.githubToken,
       kubeconfig: input.kubeconfig,
       outputJson: input.outputJson,
       task: input.task,
@@ -2043,6 +2058,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
 
 async function applyGeneratedAiDeployOutput(input: {
   encodedKubeconfig: string;
+  githubToken?: string;
   kubeconfig: string;
   output: Record<string, unknown>;
   task: DeployTaskRow;
@@ -2092,6 +2108,7 @@ async function applyGeneratedAiDeployOutput(input: {
   await applyAiDeploymentFromPreparedOutput({
     args: deployTaskStringRecordValue(deliveryManifest.args),
     encodedKubeconfig: input.encodedKubeconfig,
+    githubToken: input.githubToken ?? undefined,
     kubeconfig: input.kubeconfig,
     outputJson: input.output,
     task: input.task,
@@ -2521,6 +2538,7 @@ async function runAiDeploymentTask(input: {
 
   await applyGeneratedAiDeployOutput({
     encodedKubeconfig: input.encodedKubeconfig,
+    githubToken: githubToken ?? undefined,
     kubeconfig: input.kubeconfig,
     output: finalDeployOutput,
     task: input.task,
@@ -2559,6 +2577,11 @@ export async function startDeployTaskRunner(
           ...submittedInputValues,
         },
         encodedKubeconfig: input.encodedKubeconfig ?? "",
+        githubToken:
+          resolvedTask.source.kind === "github"
+            ? ((await getGithubAccessToken(resolvedTask.namespace)) ??
+              undefined)
+            : undefined,
         kubeconfig,
         outputJson,
         task: resolvedTask,
