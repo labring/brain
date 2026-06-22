@@ -8,6 +8,13 @@ const AP_ENV_REFERENCE_PREFIX = "$";
 const postgresDatabaseUrlReference = `${AP_ENV_REFERENCE_PREFIX}{{postgres.DATABASE_URL}}`;
 const postgresHostReference = `${AP_ENV_REFERENCE_PREFIX}{{postgres.PG_HOST}}`;
 
+function required<T>(value: T | undefined): T {
+  if (value === undefined) {
+    assert.fail("expected value to be present");
+  }
+  return value;
+}
+
 test("Project Runtime parses AP resources into app-owned read-side facts", () => {
   const rawAp = {
     metadata: {
@@ -44,9 +51,9 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
       workload: { image: "nginx:1.27", kind: "AP" },
     },
   ]);
-  assert.equal("states" in facts.apFacts[0], false);
-  assert.equal("resource" in facts.apFacts[0], false);
-  assert.equal("raw" in facts.apFacts[0], false);
+  assert.equal("states" in required(facts.apFacts[0]), false);
+  assert.equal("resource" in required(facts.apFacts[0]), false);
+  assert.equal("raw" in required(facts.apFacts[0]), false);
 });
 
 test("Project Runtime parses DB resources into app-owned read-side facts", () => {
@@ -101,10 +108,10 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
       version: "15.4",
     },
   ]);
-  assert.equal("desired" in facts.dbFacts[0], false);
-  assert.equal("metadata" in facts.dbFacts[0], false);
-  assert.equal("states" in facts.dbFacts[0], false);
-  assert.equal("connections" in facts.dbFacts[0], false);
+  assert.equal("desired" in required(facts.dbFacts[0]), false);
+  assert.equal("metadata" in required(facts.dbFacts[0]), false);
+  assert.equal("states" in required(facts.dbFacts[0]), false);
+  assert.equal("connections" in required(facts.dbFacts[0]), false);
 });
 
 test("Project Runtime parses AP Public Access as AP-bound read-side facts", () => {
@@ -165,8 +172,8 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
       ],
     },
   ]);
-  assert.equal("settingsOwner" in facts.publicAccessFacts[0], false);
-  assert.equal("resource" in facts.publicAccessFacts[0], false);
+  assert.equal("settingsOwner" in required(facts.publicAccessFacts[0]), false);
+  assert.equal("resource" in required(facts.publicAccessFacts[0]), false);
   assert.deepEqual(facts.relationshipIndexes.publicAccessToAp, [
     {
       kind: "PublicAccessToAP",
@@ -232,10 +239,16 @@ test("Project Runtime parses template-native workloads separately from AP facts"
     },
   ]);
   assert.deepEqual(facts.apFacts, []);
-  assert.equal("apRef" in facts.templateNativeWorkloadFacts[0], false);
-  assert.equal("settingsOwner" in facts.templateNativeWorkloadFacts[0], false);
   assert.equal(
-    "lifecycleActions" in facts.templateNativeWorkloadFacts[0],
+    "apRef" in required(facts.templateNativeWorkloadFacts[0]),
+    false
+  );
+  assert.equal(
+    "settingsOwner" in required(facts.templateNativeWorkloadFacts[0]),
+    false
+  );
+  assert.equal(
+    "lifecycleActions" in required(facts.templateNativeWorkloadFacts[0]),
     false
   );
 });
@@ -307,8 +320,11 @@ test("Project Runtime derives saved AP-to-DB relationship indexes and DB referen
       ],
     },
   ]);
-  assert.equal("resource" in facts.relationshipIndexes.apToDb[0], false);
-  assert.equal("node" in facts.relationshipIndexes.apToDb[0], false);
+  assert.equal(
+    "resource" in required(facts.relationshipIndexes.apToDb[0]),
+    false
+  );
+  assert.equal("node" in required(facts.relationshipIndexes.apToDb[0]), false);
 });
 
 test("Project Runtime store exposes relationship indexes after committing resources", () => {
@@ -616,6 +632,6 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
     uid: "pg-uid",
     workload: { name: "postgres", namespace: "default" },
   });
-  assert.equal("states" in facts.apFacts[0], false);
-  assert.equal("connections" in facts.dbFacts[0], false);
+  assert.equal("states" in required(facts.apFacts[0]), false);
+  assert.equal("connections" in required(facts.dbFacts[0]), false);
 });

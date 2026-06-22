@@ -127,7 +127,10 @@ function databaseDataForNode(
   node: Node | null,
   runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): CanvasDatabaseNodeData | null {
-  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node?.data);
+  if (node == null) {
+    return null;
+  }
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node.data);
   if (runtimeLookup?.kind === "DB") {
     return (
       runtimeNodeModels?.databaseModelsByKey.get(runtimeLookup.modelKey) ?? null
@@ -140,6 +143,9 @@ function runtimeContainerNodeForNode(
   node: Node | null,
   runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): Node | null {
+  if (node == null) {
+    return null;
+  }
   const runtimeLookup = projectRuntimeShellLookupFromNodeData(node?.data);
   if (runtimeLookup?.kind !== "AP") {
     return node;

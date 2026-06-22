@@ -60,7 +60,6 @@ test("Project Canvas runtime graph applies Canvas Layout to thin resource shell 
       version: 3,
     },
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    runtimeFacts,
     shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
   });
 
@@ -103,7 +102,6 @@ test("Project Canvas runtime graph emits first-placement intent for new shell no
       version: 1,
     },
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    runtimeFacts,
     shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
   });
 
@@ -140,7 +138,6 @@ test("Project Canvas runtime graph hides resource shells until Canvas Layout is 
   const graph = projectCanvasRuntimeResourceGraph({
     canvasLayoutReady: false,
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    runtimeFacts,
     shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
   });
 
@@ -293,7 +290,6 @@ test("Project Canvas runtime graph keeps live AP public access shell topology AP
 
   const graph = projectCanvasRuntimeResourceGraph({
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    runtimeFacts,
     shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
   });
 
