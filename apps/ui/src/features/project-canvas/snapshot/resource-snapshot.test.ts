@@ -152,6 +152,68 @@ test("resource snapshot emits first-placement intent before merge intent", () =>
   });
 });
 
+test("resource snapshot applies Canvas Layout to runtime shell nodes without moving resource facts into node data", () => {
+  const snapshot = buildProjectCanvasResourceSnapshot({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "ap-uid" },
+          spec: { input: { image: "nginx:1.27" } },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    canvasLayout: {
+      namespace: "default",
+      nodes: [
+        {
+          expanded: true,
+          owner: {
+            kind: "resource",
+            ref: { kind: "AP", name: "api", namespace: "default" },
+          },
+          position: { x: 420, y: 240 },
+          stackOrder: 7,
+        },
+      ],
+      projectId: "project-uid",
+      version: 3,
+    },
+    isEmptyGraphLoading: false,
+    kubeconfig: "apiVersion: v1",
+    namespace: "default",
+  });
+
+  const [node] = snapshot.canvasState.nodes;
+  assert.equal(node?.id, "ap-api");
+  assert.deepEqual(node?.position, { x: 420, y: 240 });
+  assert.equal(node?.zIndex, 0);
+  assert.deepEqual(node?.data, {
+    layout: { expanded: true, stackOrder: 7 },
+    runtime: {
+      kind: "AP",
+      modelKey: "AP:default:api",
+      observedUid: "ap-uid",
+      placementOwnerKey: "AP:default:api",
+      resourceRef: { kind: "AP", name: "api", namespace: "default" },
+    },
+  });
+  assert.deepEqual(
+    snapshot.runtimeNodeModels.containerModelsByKey.get("AP:default:api"),
+    {
+      resourceKind: "ap",
+      states: {
+        image: "nginx:1.27",
+        kind: "AP",
+        name: "api",
+        namespace: "default",
+        status: { label: "Running", tone: "running" },
+        uid: "ap-uid",
+      },
+    }
+  );
+});
+
 test("resource snapshot hides graph facts until Canvas Layout is ready", () => {
   const snapshot = buildProjectCanvasResourceSnapshot({
     apsData: {

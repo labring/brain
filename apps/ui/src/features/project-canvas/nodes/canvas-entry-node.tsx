@@ -1,10 +1,10 @@
 "use client";
 
-import { useCanvas } from "@workspace/ui/components/canvas/canvas.use";
 import { EntryNode } from "@workspace/ui/components/entry-node/entry-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo } from "react";
 
+import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
 import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasEntryNodeData, CanvasEntryRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
@@ -19,17 +19,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
 }: NodeProps<CanvasEntryRfNode>) {
   const model = useProjectRuntimeNodeModel<CanvasEntryNodeData>(data) ?? data;
   const { accessDomain, actions = {}, states, targets } = model;
-  const { state } = useCanvas();
-  const edge = state.selectedEdge;
-  const isEndpointOfSelectedEdge =
-    edge != null && (edge.source === id || edge.target === id);
-  const selected =
-    (state.selectedNode != null && state.selectedNode.id === id) ||
-    isEndpointOfSelectedEdge;
-  const highlightedConnectionSide =
-    state.connectionOrigin?.nodeId === id
-      ? state.connectionOrigin.side
-      : undefined;
+  const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
     data,
     id,
@@ -42,7 +32,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
     <EntryNode.Root
       accessDomain={accessDomain}
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ dragging, highlightedConnectionSide, selected }}
+      interaction={{ ...interaction, dragging }}
       onCopyTarget={actions.copyTarget}
       onExpandedChange={expansion.onExpandedChange}
       states={states}

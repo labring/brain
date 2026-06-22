@@ -1,10 +1,10 @@
 "use client";
 
-import { useCanvas } from "@workspace/ui/components/canvas/canvas.use";
 import { DatabaseNode } from "@workspace/ui/components/database-node/database-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo, useMemo } from "react";
 
+import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
 import {
   databaseStatesWithTelemetry,
   databaseTelemetryTargetFromWorkload,
@@ -30,17 +30,7 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     () => databaseTelemetryTargetFromWorkload(model.workload),
     [model.workload]
   );
-  const { state } = useCanvas();
-  const edge = state.selectedEdge;
-  const isEndpointOfSelectedEdge =
-    edge != null && (edge.source === id || edge.target === id);
-  const selected =
-    (state.selectedNode != null && state.selectedNode.id === id) ||
-    isEndpointOfSelectedEdge;
-  const highlightedConnectionSide =
-    state.connectionOrigin?.nodeId === id
-      ? state.connectionOrigin.side
-      : undefined;
+  const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
     data,
     id,
@@ -50,7 +40,7 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   });
   const activeTelemetryTarget = shouldSubscribeWorkloadTelemetry({
     expanded: expansion.expanded,
-    selected,
+    selected: interaction.selected,
     sidePaneOpen: false,
   })
     ? telemetryTarget
@@ -62,7 +52,7 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     <DatabaseNode.Root
       connections={connections}
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ dragging, highlightedConnectionSide, selected }}
+      interaction={{ ...interaction, dragging }}
       lifecycleActions={actions.lifecycleActions}
       onCopyConnection={actions.copyConnection}
       onExpandedChange={expansion.onExpandedChange}
