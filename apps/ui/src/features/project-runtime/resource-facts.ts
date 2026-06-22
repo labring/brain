@@ -11,6 +11,10 @@ import {
   readApReplicas,
 } from "@/features/project-settings/ap/k8s/ap-spec-access";
 import { BRAIN_DEPLOYMENT_KIND_LABEL } from "@/lib/brain-labels";
+import {
+  type ProjectRuntimeRelationshipIndexes,
+  projectRuntimeRelationshipIndexesFromResources,
+} from "./resource-relationships";
 
 export type ProjectRuntimeResourceKind =
   | "AP"
@@ -116,6 +120,7 @@ export interface ProjectRuntimeFacts {
   apFacts: ApFact[];
   dbFacts: DbFact[];
   publicAccessFacts: PublicAccessFact[];
+  relationshipIndexes: ProjectRuntimeRelationshipIndexes;
   templateNativeWorkloadFacts: TemplateNativeWorkloadFact[];
 }
 
@@ -763,6 +768,11 @@ export function projectRuntimeFactsFromResources({
     publicAccessFacts: apItemsFromList(apsData).flatMap((ap) => {
       const fact = publicAccessFactFromAp(ap, namespace);
       return fact === undefined ? [] : [fact];
+    }),
+    relationshipIndexes: projectRuntimeRelationshipIndexesFromResources({
+      apsData,
+      dbsData,
+      namespaceFallback: namespace,
     }),
     templateNativeWorkloadFacts: templateNativeFactsFromResources({
       apsData,

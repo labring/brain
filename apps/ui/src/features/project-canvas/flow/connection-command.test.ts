@@ -39,6 +39,33 @@ const dbNode = {
   type: CANVAS_DATABASE_NODE_TYPE,
 } satisfies Node;
 
+const runtimeApShellNode = {
+  data: {
+    runtime: {
+      kind: "AP",
+      modelKey: "AP:default:api",
+      observedUid: "ap-uid",
+      resourceRef: { kind: "AP", name: "api", namespace: "default" },
+    },
+  },
+  id: "ap-api",
+  position: { x: 0, y: 0 },
+  type: CANVAS_CONTAINER_NODE_TYPE,
+} satisfies Node;
+
+const runtimeDbShellNode = {
+  data: {
+    runtime: {
+      kind: "DB",
+      modelKey: "DB:default:postgres",
+      resourceRef: { kind: "DB", name: "postgres", namespace: "default" },
+    },
+  },
+  id: "db-postgres",
+  position: { x: 320, y: 0 },
+  type: CANVAS_DATABASE_NODE_TYPE,
+} satisfies Node;
+
 const entryNode = {
   data: {
     resource: {
@@ -63,6 +90,35 @@ test("AP-to-DB Connecting Edge opens the AP Add Reference command", () => {
     classifyProjectCanvasConnectionCommand({
       connection,
       nodes: [apNode, dbNode],
+      readOnly: false,
+    }),
+    {
+      ap: {
+        name: "api",
+        namespace: "default",
+        nodeId: "ap-api",
+        uid: "ap-uid",
+      },
+      db: {
+        name: "postgres",
+        namespace: "default",
+        nodeId: "db-postgres",
+      },
+      kind: "openApDbAddReference",
+    }
+  );
+});
+
+test("AP-to-DB Connecting Edge opens from runtime shell nodes without fat node data", () => {
+  assert.deepEqual(
+    classifyProjectCanvasConnectionCommand({
+      connection: {
+        source: runtimeApShellNode.id,
+        sourceHandle: "right",
+        target: runtimeDbShellNode.id,
+        targetHandle: "left",
+      },
+      nodes: [runtimeApShellNode, runtimeDbShellNode],
       readOnly: false,
     }),
     {

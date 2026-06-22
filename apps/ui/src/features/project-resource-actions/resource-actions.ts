@@ -10,6 +10,10 @@ import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components
 import { useCallback } from "react";
 import { toast } from "sonner";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
+import type {
+  ProjectApTarget,
+  ProjectDbTarget,
+} from "@/features/project-surfaces/target-identity";
 
 export interface ProjectResourceActionCopy {
   loading: string;
@@ -19,6 +23,33 @@ export interface ProjectResourceActionCopy {
 export interface RunProjectResourceActionOptions {
   onSettled?: () => void;
   onSuccess?: () => void;
+}
+
+function cleanTargetPart(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+export function apLifecycleWorkloadRefFromTarget(
+  target: ProjectApTarget | null | undefined
+): ApLifecycleWorkloadRef | null {
+  if (target == null) {
+    return null;
+  }
+  const name = cleanTargetPart(target.name);
+  const namespace = cleanTargetPart(target.namespace);
+  return name == null || namespace == null ? null : { name, namespace };
+}
+
+export function dbLifecycleWorkloadRefFromTarget(
+  target: ProjectDbTarget | null | undefined
+): DbLifecycleWorkloadRef | null {
+  if (target == null) {
+    return null;
+  }
+  const name = cleanTargetPart(target.name);
+  const namespace = cleanTargetPart(target.namespace);
+  return name == null || namespace == null ? null : { name, namespace };
 }
 
 export function resourceLayoutRefsForApDelete(target: ApLifecycleWorkloadRef) {

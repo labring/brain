@@ -10,6 +10,7 @@ import {
   CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import { planProjectCanvasCommand } from "./command-model";
+import { projectCanvasNodeClickIntentFromNode } from "./resource-surface-intents";
 
 const apNode = {
   data: {
@@ -63,10 +64,34 @@ const deploymentPlaceholderNode = {
   type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
 } satisfies Node;
 
+const apTarget = {
+  kind: "AP",
+  name: "api",
+  namespace: "default",
+  observedUid: "ap-uid",
+} as const;
+
+const apSelection = {
+  kind: "resource",
+  target: apTarget,
+} as const;
+
+const dbTarget = {
+  kind: "DB",
+  name: "postgres",
+  namespace: "default",
+  observedUid: "db-uid",
+} as const;
+
+const dbSelection = {
+  kind: "resource",
+  target: dbTarget,
+} as const;
+
 test("node click plans selection, default Side Pane, and stack order", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { kind: "nodeClick", node: apNode },
+      intent: projectCanvasNodeClickIntentFromNode(apNode),
       nodes: [apNode],
       readOnly: false,
     }),
@@ -100,7 +125,7 @@ test("node click plans selection, default Side Pane, and stack order", () => {
 test("Deployment Placeholder node click opens the task timeline without selection", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { kind: "nodeClick", node: deploymentPlaceholderNode },
+      intent: projectCanvasNodeClickIntentFromNode(deploymentPlaceholderNode),
       nodes: [deploymentPlaceholderNode],
       projectId: "project-123",
       readOnly: false,
@@ -125,7 +150,7 @@ test("Deployment Placeholder node click opens the task timeline without selectio
 test("Deployment Placeholder node click keeps old behavior without project context", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { kind: "nodeClick", node: deploymentPlaceholderNode },
+      intent: projectCanvasNodeClickIntentFromNode(deploymentPlaceholderNode),
       nodes: [deploymentPlaceholderNode],
       readOnly: false,
     }),
@@ -141,7 +166,7 @@ test("Deployment Placeholder node click keeps old behavior without project conte
 test("PublicAccess node click opens AP-bound Public Addresses", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { kind: "nodeClick", node: entryNode },
+      intent: projectCanvasNodeClickIntentFromNode(entryNode),
       nodes: [entryNode],
       readOnly: false,
     }),
@@ -178,7 +203,8 @@ test("AP quick actions plan the matching project surface slot", () => {
       intent: {
         action: "terminal",
         kind: "containerQuickAction",
-        node: apNode,
+        selection: apSelection,
+        target: apTarget,
       },
       nodes: [apNode],
       readOnly: false,
@@ -199,7 +225,12 @@ test("AP quick actions plan the matching project surface slot", () => {
 
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { action: "logs", kind: "containerQuickAction", node: apNode },
+      intent: {
+        action: "logs",
+        kind: "containerQuickAction",
+        selection: apSelection,
+        target: apTarget,
+      },
       nodes: [apNode],
       readOnly: false,
     }).surface,
@@ -218,10 +249,42 @@ test("AP quick actions plan the matching project surface slot", () => {
   );
 });
 
+test("AP quick actions plan from typed targets without ReactFlow nodes", () => {
+  assert.deepEqual(
+    planProjectCanvasCommand({
+      intent: {
+        action: "terminal",
+        kind: "containerQuickAction",
+        selection: apSelection,
+        target: apTarget,
+      },
+      nodes: [],
+      readOnly: false,
+    }).surface,
+    {
+      entry: {
+        kind: "apTerminal",
+        target: {
+          kind: "AP",
+          name: "api",
+          namespace: "default",
+          observedUid: "ap-uid",
+        },
+      },
+      slot: "drawer",
+    }
+  );
+});
+
 test("DB quick actions plan DB Access, logs, terminal, and metrics surfaces", () => {
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { action: "dbAccess", kind: "databaseQuickAction", node: dbNode },
+      intent: {
+        action: "dbAccess",
+        kind: "databaseQuickAction",
+        selection: dbSelection,
+        target: dbTarget,
+      },
       nodes: [dbNode],
       readOnly: false,
     }).surface,
@@ -241,7 +304,12 @@ test("DB quick actions plan DB Access, logs, terminal, and metrics surfaces", ()
 
   assert.deepEqual(
     planProjectCanvasCommand({
-      intent: { action: "metrics", kind: "databaseQuickAction", node: dbNode },
+      intent: {
+        action: "metrics",
+        kind: "databaseQuickAction",
+        selection: dbSelection,
+        target: dbTarget,
+      },
       nodes: [dbNode],
       readOnly: false,
     }).surface,

@@ -31,6 +31,8 @@ export function planProjectCanvasCommand({
   switch (intent.kind) {
     case "containerQuickAction":
       return planResourceSurfaceIntent(intent, { projectId });
+    case "deploymentPlaceholderNodeClick":
+      return planResourceSurfaceIntent(intent, { projectId });
     case "connectingEdge":
       return planDatabaseBindingIntent({
         connection: intent.connection,

@@ -15,6 +15,7 @@ import {
 } from "@/features/project-canvas/flow/interaction";
 import type { ProjectCanvasSideRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { planProjectCanvasCommand } from "@/features/project-canvas/workbench/command-model";
+import { projectCanvasNodeClickIntentFromNode } from "@/features/project-canvas/workbench/resource-surface-intents";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 
 export interface ProjectCanvasConnectionOrigin {
@@ -150,7 +151,7 @@ export function createProjectCanvasMeta({
       onNodeClick: (_, node: Node) => {
         executeCommandPlan(
           planProjectCanvasCommand({
-            intent: { kind: "nodeClick", node },
+            intent: projectCanvasNodeClickIntentFromNode(node),
             nodes,
             projectId,
             readOnly,

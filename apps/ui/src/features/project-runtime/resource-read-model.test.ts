@@ -4,6 +4,10 @@ import { projectRuntimeFactsFromResources } from "./resource-facts";
 import { projectRuntimeNodeModelsFromFacts } from "./resource-models";
 import { createProjectRuntimeStore } from "./resource-store";
 
+const AP_ENV_REFERENCE_PREFIX = "$";
+const postgresDatabaseUrlReference = `${AP_ENV_REFERENCE_PREFIX}{{postgres.DATABASE_URL}}`;
+const postgresHostReference = `${AP_ENV_REFERENCE_PREFIX}{{postgres.PG_HOST}}`;
+
 test("Project Runtime parses AP resources into app-owned read-side facts", () => {
   const rawAp = {
     metadata: {
@@ -163,6 +167,13 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
   ]);
   assert.equal("settingsOwner" in facts.publicAccessFacts[0], false);
   assert.equal("resource" in facts.publicAccessFacts[0], false);
+  assert.deepEqual(facts.relationshipIndexes.publicAccessToAp, [
+    {
+      kind: "PublicAccessToAP",
+      source: { kind: "PublicAccess", name: "api", namespace: "default" },
+      target: { kind: "AP", name: "api", namespace: "default" },
+    },
+  ]);
 });
 
 test("Project Runtime parses template-native workloads separately from AP facts", () => {
@@ -227,6 +238,113 @@ test("Project Runtime parses template-native workloads separately from AP facts"
     "lifecycleActions" in facts.templateNativeWorkloadFacts[0],
     false
   );
+});
+
+test("Project Runtime derives saved AP-to-DB relationship indexes and DB reference sources", () => {
+  const facts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "ap-uid" },
+          spec: {
+            input: {
+              envRawSource: [
+                `DATABASE_URL=${postgresDatabaseUrlReference}`,
+                `PGHOST=${postgresHostReference}`,
+              ].join("\n"),
+            },
+          },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    dbsData: {
+      items: [
+        {
+          metadata: { name: "postgres", namespace: "default", uid: "db-uid" },
+          spec: { engine: "postgresql" },
+          status: {
+            connectionStringPrivate: "postgres://private",
+            variables: [
+              {
+                name: "PGHOST",
+                valueFrom: {
+                  secretKeyRef: { key: "host", name: "postgres-conn" },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  assert.deepEqual(facts.relationshipIndexes.apToDb, [
+    {
+      kind: "APToDB",
+      source: { kind: "AP", name: "api", namespace: "default" },
+      target: { kind: "DB", name: "postgres", namespace: "default" },
+    },
+  ]);
+  assert.deepEqual(facts.relationshipIndexes.apEnvironmentDbReferenceSources, [
+    {
+      engine: "postgresql",
+      name: "postgres",
+      namespace: "default",
+      primitiveSecretRefs: {
+        host: { key: "host", name: "postgres-conn" },
+      },
+      privateDsn: "postgres://private",
+      variables: [
+        {
+          name: "PGHOST",
+          type: "secret",
+          valueFrom: {
+            secretKeyRef: { key: "host", name: "postgres-conn" },
+          },
+        },
+      ],
+    },
+  ]);
+  assert.equal("resource" in facts.relationshipIndexes.apToDb[0], false);
+  assert.equal("node" in facts.relationshipIndexes.apToDb[0], false);
+});
+
+test("Project Runtime store exposes relationship indexes after committing resources", () => {
+  const store = createProjectRuntimeStore();
+
+  store.commitResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default" },
+          spec: {
+            input: {
+              envRawSource: `DATABASE_URL=${postgresDatabaseUrlReference}`,
+            },
+          },
+        },
+      ],
+    },
+    dbsData: {
+      items: [
+        {
+          metadata: { name: "postgres", namespace: "default" },
+          status: { connectionStringPrivate: "postgres://private" },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  assert.deepEqual(store.selectRelationshipIndexes().apToDb, [
+    {
+      kind: "APToDB",
+      source: { kind: "AP", name: "api", namespace: "default" },
+      target: { kind: "DB", name: "postgres", namespace: "default" },
+    },
+  ]);
 });
 
 test("Project Runtime commits one AP update without notifying unrelated models or rebuilding shell topology", () => {

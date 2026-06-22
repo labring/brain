@@ -1,8 +1,8 @@
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import {
+  type CanvasDetectedConnection,
   canvasConnectionEdgesFromDetectedConnections,
-  detectCanvasConnections,
 } from "@/features/project-canvas/flow/detected-connections";
 import { mergeCanvasLayoutWithDetectedNodes } from "@/features/project-canvas/layout/merge";
 import type {
@@ -16,10 +16,7 @@ import {
   projectRuntimeNodeModelsFromFacts,
 } from "@/features/project-runtime/resource-models";
 import { projectRuntimeShellNodesFromFacts } from "@/features/project-runtime/resource-store";
-import {
-  type ApEnvironmentDbReferenceSource,
-  apEnvironmentDbReferenceSourcesFromDbsData,
-} from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
@@ -87,14 +84,14 @@ export function buildProjectCanvasResourceSnapshot({
   retainedLayoutOwnerKeys,
   templateNativeData = EMPTY_TEMPLATE_NATIVE_DATA,
 }: ProjectCanvasResourceSnapshotInput): ProjectCanvasResourceSnapshot {
-  const apEnvironmentDbReferenceSources =
-    apEnvironmentDbReferenceSourcesFromDbsData(dbsData, namespace);
   const runtimeFacts = projectRuntimeFactsFromResources({
     apsData,
     dbsData,
     namespace,
     templateNativeData,
   });
+  const apEnvironmentDbReferenceSources =
+    runtimeFacts.relationshipIndexes.apEnvironmentDbReferenceSources;
   const runtimeNodeModels = projectRuntimeNodeModelsFromFacts(runtimeFacts);
   const rawDetectedNodes = projectRuntimeShellNodesFromFacts(runtimeFacts);
   const deploymentResultPreviews =
@@ -135,13 +132,11 @@ export function buildProjectCanvasResourceSnapshot({
   const initialPositions = deploymentPlaceholderHandoffs({
     context: rawDeploymentProjectionContext,
   });
-  const detectedConnections = canvasLayoutReady
-    ? detectCanvasConnections({
-        apEnvironmentDbReferenceSources,
-        apsData,
-        dbsData,
-        namespaceFallback: namespace,
-      })
+  const detectedConnections: CanvasDetectedConnection[] = canvasLayoutReady
+    ? [
+        ...runtimeFacts.relationshipIndexes.publicAccessToAp,
+        ...runtimeFacts.relationshipIndexes.apToDb,
+      ]
     : [];
   const merge = canvasLayoutReady
     ? mergeCanvasLayoutWithDetectedNodes({

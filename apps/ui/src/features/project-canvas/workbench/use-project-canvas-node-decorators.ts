@@ -1,5 +1,6 @@
 "use client";
 
+import type { DbLifecycleWorkloadRef } from "@workspace/api/hooks";
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type {
   DatabaseNodeLifecycleActionKey,
@@ -21,6 +22,7 @@ import type {
 } from "@/features/project-canvas/nodes/types";
 import {
   projectApTargetFromNode,
+  projectCanvasSelectionFromNode,
   projectDbTargetFromNode,
 } from "@/features/project-canvas/surface/selection";
 import {
@@ -38,7 +40,11 @@ import type {
   ProjectCanvasApDeleteTarget,
   ProjectCanvasDbDeleteTarget,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
-import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
+import {
+  apLifecycleWorkloadRefFromTarget,
+  dbLifecycleWorkloadRefFromTarget,
+  type ProjectResourceActions,
+} from "@/features/project-resource-actions/resource-actions";
 import {
   type ProjectRuntimeNodeModels,
   projectRuntimeShellLookupFromNodeData,
@@ -304,95 +310,114 @@ export function useProjectCanvasNodeDecorators({
   const decorateDatabaseNode = useCallback(
     (node: Node): Node => {
       const data = node.data as CanvasDatabaseNodeData;
-      const workload = data.workload;
-      const name = workload.name.trim();
-      const namespace = workload.namespace.trim();
-      const canTogglePublicAccess =
-        dbAuthReady && name !== "" && namespace !== "";
-      const canUseLifecycle = dbAuthReady && name !== "" && namespace !== "";
-      const publicAccessPendingTarget = getPublicAccessPendingTarget(workload);
+      const target = projectDbTargetFromNode(node);
+      const workload = dbLifecycleWorkloadRefFromTarget(target);
+      const name = workload?.name ?? "";
+      const canTogglePublicAccess = dbAuthReady && workload != null;
+      const canUseLifecycle = dbAuthReady && workload != null;
+      const publicAccessPendingTarget =
+        workload == null ? undefined : getPublicAccessPendingTarget(workload);
       const connections = resolveDatabasePublicConnections(
         data.connections,
         publicAccessPendingTarget
       );
       const togglePublicConnection:
         | DatabaseNodeTogglePublicConnectionHandler
-        | undefined = canTogglePublicAccess
-        ? (_connection, _index, nextEnabled) => {
-            runResourceAction(
-              () =>
-                toggleDatabasePublicAccess({
-                  metadata: data.metadata,
-                  nextEnabled,
-                  workload,
-                }),
-              {
-                loading: nextEnabled
-                  ? `Enabling public access for "${name}"...`
-                  : `Disabling public access for "${name}"...`,
-                success: nextEnabled
-                  ? `Enabled public access for "${name}"`
-                  : `Disabled public access for "${name}"`,
-              },
-              {
-                onSettled: () => clearPublicAccessPendingTarget(workload),
-              }
-            );
-          }
-        : undefined;
+        | undefined =
+        canTogglePublicAccess && workload != null
+          ? (_connection, _index, nextEnabled) => {
+              runResourceAction(
+                () =>
+                  toggleDatabasePublicAccess({
+                    metadata: data.metadata,
+                    nextEnabled,
+                    workload,
+                  }),
+                {
+                  loading: nextEnabled
+                    ? `Enabling public access for "${name}"...`
+                    : `Disabling public access for "${name}"...`,
+                  success: nextEnabled
+                    ? `Enabled public access for "${name}"`
+                    : `Disabled public access for "${name}"`,
+                },
+                {
+                  onSettled: () => clearPublicAccessPendingTarget(workload),
+                }
+              );
+            }
+          : undefined;
       const dbLifecycleAction = (
+        workloadRef: DbLifecycleWorkloadRef,
         action: DatabaseNodeLifecycleActionKey,
         mutation: () => Promise<unknown>,
         copy: { loading: string; success: string }
       ) => ({
-        loading: isDbLifecycleLoading(workload, action),
+        loading: isDbLifecycleLoading(workloadRef, action),
         onClick: () => runResourceAction(mutation, copy),
       });
       const displayName = data.states.name || name;
-      const target = projectDbTargetFromNode(node);
       const hasSurfaceActions = target != null;
-      const lifecycleActions = canUseLifecycle
-        ? {
-            delete: {
-              loading: isDbLifecycleLoading(workload, "delete"),
-              onClick: () =>
-                requestDbDelete({
-                  displayName,
-                  name: workload.name,
-                  namespace: workload.namespace,
-                }),
-            },
-            restart: dbLifecycleAction(
-              "restart",
-              () => restartDbWorkload(workload),
-              {
-                loading: `Restarting "${displayName}"...`,
-                success: `Restart requested for "${displayName}"`,
-              }
-            ),
-            start: dbLifecycleAction("start", () => startDbWorkload(workload), {
-              loading: `Starting "${displayName}"...`,
-              success: `Start requested for "${displayName}"`,
-            }),
-            stop: dbLifecycleAction("stop", () => stopDbWorkload(workload), {
-              loading: `Stopping "${displayName}"...`,
-              success: `Stop requested for "${displayName}"`,
-            }),
-          }
-        : undefined;
+      const lifecycleActions =
+        canUseLifecycle && workload != null
+          ? {
+              delete: {
+                loading: isDbLifecycleLoading(workload, "delete"),
+                onClick: () =>
+                  requestDbDelete({
+                    displayName,
+                    name: workload.name,
+                    namespace: workload.namespace,
+                  }),
+              },
+              restart: dbLifecycleAction(
+                workload,
+                "restart",
+                () => restartDbWorkload(workload),
+                {
+                  loading: `Restarting "${displayName}"...`,
+                  success: `Restart requested for "${displayName}"`,
+                }
+              ),
+              start: dbLifecycleAction(
+                workload,
+                "start",
+                () => startDbWorkload(workload),
+                {
+                  loading: `Starting "${displayName}"...`,
+                  success: `Start requested for "${displayName}"`,
+                }
+              ),
+              stop: dbLifecycleAction(
+                workload,
+                "stop",
+                () => stopDbWorkload(workload),
+                {
+                  loading: `Stopping "${displayName}"...`,
+                  success: `Stop requested for "${displayName}"`,
+                }
+              ),
+            }
+          : undefined;
 
       const databaseQuickAction = (action: DatabaseNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
-        onClick: hasSurfaceActions
-          ? () =>
-              executeCommandPlan(
-                planProjectCanvasCommand({
-                  intent: { action, kind: "databaseQuickAction", node },
-                  nodes,
-                  readOnly,
-                })
-              )
-          : undefined,
+        onClick:
+          target == null
+            ? undefined
+            : () =>
+                executeCommandPlan(
+                  planProjectCanvasCommand({
+                    intent: {
+                      action,
+                      kind: "databaseQuickAction",
+                      selection: projectCanvasSelectionFromNode(node),
+                      target,
+                    },
+                    nodes,
+                    readOnly,
+                  })
+                ),
       });
 
       return {
@@ -442,12 +467,12 @@ export function useProjectCanvasNodeDecorators({
     (node: Node): Node => {
       const data = node.data as CanvasContainerNodeData;
       const states = data.states;
-      const ns = states.namespace?.trim() ?? "";
-      const name = states.name.trim();
       const target = projectApTargetFromNode(node);
+      const workload = apLifecycleWorkloadRefFromTarget(target);
+      const ns = workload?.namespace ?? states.namespace?.trim() ?? "";
 
       const isApLifecycle =
-        apAuthReady && states.kind === "AP" && ns !== "" && name !== "";
+        apAuthReady && states.kind === "AP" && workload != null;
 
       const hasSurfaceActions = target != null;
 
@@ -462,17 +487,25 @@ export function useProjectCanvasNodeDecorators({
 
       const containerQuickAction = (action: ContainerNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
-        onClick: () =>
-          executeCommandPlan(
-            planProjectCanvasCommand({
-              intent: { action, kind: "containerQuickAction", node },
-              nodes,
-              readOnly,
-            })
-          ),
+        onClick:
+          target == null
+            ? undefined
+            : () =>
+                executeCommandPlan(
+                  planProjectCanvasCommand({
+                    intent: {
+                      action,
+                      kind: "containerQuickAction",
+                      selection: projectCanvasSelectionFromNode(node),
+                      target,
+                    },
+                    nodes,
+                    readOnly,
+                  })
+                ),
       });
 
-      const ref = { name: states.name, namespace: ns };
+      const ref = workload ?? { name: states.name, namespace: ns };
       const displayName = states.name;
       const lifecycleActions = isApLifecycle
         ? {

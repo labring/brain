@@ -19,6 +19,7 @@ import type {
   TemplateNativeWorkloadFact,
 } from "./resource-facts";
 import { projectRuntimeFactsFromResources } from "./resource-facts";
+import type { ProjectRuntimeRelationshipIndexes } from "./resource-relationships";
 
 type RuntimeFact =
   | ApFact
@@ -58,6 +59,7 @@ interface RuntimeMaps {
 }
 
 interface RuntimeState extends RuntimeMaps {
+  relationshipIndexes: ProjectRuntimeRelationshipIndexes;
   shellNodes: Node<ProjectRuntimeShellNodeData>[];
   shellSignature: string;
 }
@@ -184,6 +186,11 @@ function emptyState(): RuntimeState {
     apFactsByKey: new Map(),
     dbFactsByKey: new Map(),
     publicAccessFactsByKey: new Map(),
+    relationshipIndexes: {
+      apEnvironmentDbReferenceSources: [],
+      apToDb: [],
+      publicAccessToAp: [],
+    },
     shellNodes: [],
     shellSignature: "",
     templateNativeWorkloadFactsByKey: new Map(),
@@ -215,6 +222,7 @@ export interface ProjectRuntimeStore {
   selectPublicAccessFact(
     key: ProjectRuntimeFactKey
   ): PublicAccessFact | undefined;
+  selectRelationshipIndexes(): ProjectRuntimeRelationshipIndexes;
   selectShellNodes(): Node<ProjectRuntimeShellNodeData>[];
   subscribeApFact(
     key: ProjectRuntimeFactKey,
@@ -267,6 +275,7 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     const shellSignature = shellSignatureFromFacts(facts);
     return {
       ...nextMaps,
+      relationshipIndexes: facts.relationshipIndexes,
       shellNodes:
         shellSignature === state.shellSignature
           ? state.shellNodes
@@ -303,6 +312,9 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     },
     selectPublicAccessFact(key) {
       return state.publicAccessFactsByKey.get(key);
+    },
+    selectRelationshipIndexes() {
+      return state.relationshipIndexes;
     },
     selectShellNodes() {
       return state.shellNodes;
