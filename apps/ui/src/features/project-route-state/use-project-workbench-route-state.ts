@@ -95,9 +95,13 @@ export function useProjectWorkbenchRouteState(options: {
   const applyTransition = useCallback(
     (
       transition: ProjectRouteTransition<ProjectWorkbenchRouteState>,
-      history: ProjectRouteHistoryMode
+      history: ProjectRouteHistoryMode,
+      onCommitted?: () => void
     ) => {
-      const continueLeave = () => commit(transition.next, history);
+      const continueLeave = () => {
+        commit(transition.next, history);
+        onCommitted?.();
+      };
       if (transition.requiredLeave == null || requestSidePaneLeave == null) {
         continueLeave();
         return;
@@ -188,17 +192,22 @@ export function useProjectWorkbenchRouteState(options: {
   ]);
 
   const openSurface = useCallback(
-    (intent: ProjectWorkbenchSurfaceIntent) => {
-      applyTransition(planOpenProjectWorkbenchSurface(state, intent), "push");
+    (intent: ProjectWorkbenchSurfaceIntent, onCommitted?: () => void) => {
+      applyTransition(
+        planOpenProjectWorkbenchSurface(state, intent),
+        "push",
+        onCommitted
+      );
     },
     [applyTransition, state]
   );
 
   const closeSurfaceSlot = useCallback(
-    (slot: ProjectSurfaceSlot) => {
+    (slot: ProjectSurfaceSlot, onCommitted?: () => void) => {
       applyTransition(
         planCloseProjectWorkbenchSurfaceSlot(state, slot),
-        "push"
+        "push",
+        onCommitted
       );
     },
     [applyTransition, state]
@@ -207,9 +216,10 @@ export function useProjectWorkbenchRouteState(options: {
   const openSide = useCallback(
     (
       entry: ProjectSideSurfaceEntry,
-      canvasSelection?: ProjectCanvasSelection | null
+      canvasSelection?: ProjectCanvasSelection | null,
+      onCommitted?: () => void
     ) => {
-      openSurface({ canvasSelection, entry, slot: "side" });
+      openSurface({ canvasSelection, entry, slot: "side" }, onCommitted);
     },
     [openSurface]
   );
@@ -250,9 +260,12 @@ export function useProjectWorkbenchRouteState(options: {
     [openSurface]
   );
 
-  const closeSide = useCallback(() => {
-    closeSurfaceSlot("side");
-  }, [closeSurfaceSlot]);
+  const closeSide = useCallback(
+    (onCommitted?: () => void) => {
+      closeSurfaceSlot("side", onCommitted);
+    },
+    [closeSurfaceSlot]
+  );
 
   const closeMain = useCallback(() => {
     closeSurfaceSlot("main");

@@ -199,15 +199,6 @@ export function useProjectCanvasNodeDecorators({
     stopWorkload: stopDbWorkload,
   } = dbLifecycle;
 
-  const startPendingDbReference = useCallback(
-    (
-      _reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
-    ) => {
-      /* Settings Launch Context carries this intent. */
-    },
-    []
-  );
-
   const handlePendingDbReferencesChange = useCallback(
     (change: {
       apName: string;
@@ -614,6 +605,5 @@ export function useProjectCanvasNodeDecorators({
     apSettingsSessionEventsForAp,
     nodes: decoratedNodes,
     runtimeNodeModels: decoratedRuntimeNodeModels,
-    startPendingDbReference,
   };
 }

@@ -182,7 +182,10 @@ export function useProjectCanvas(
     (
       entry: ProjectSideSurfaceEntry,
       canvasSelection?: ProjectCanvasSelection | null,
-      launchSource: SettingsLaunchSource = "canvas"
+      launchSource: SettingsLaunchSource = "canvas",
+      pendingDbReference?: NonNullable<
+        ProjectCanvasCommandPlan["pendingDbReference"]
+      >
     ) => {
       if (entry.kind === "deploymentTaskTimeline") {
         setManuallyClosedDeploymentTaskTimelineTaskIds((current) => {
@@ -195,23 +198,31 @@ export function useProjectCanvas(
         });
       }
       if (entry.kind === "settings") {
-        const existing = settingsLaunchContextStore.get({
-          entry,
-          slot: "side",
-        });
-        writeSettingsLaunchContext({
-          context: {
-            launchSource,
-            ...(existing?.pendingDatabaseBindingIntent == null
-              ? {}
+        openSideRoute(entry, canvasSelection, () => {
+          const existing = settingsLaunchContextStore.get({
+            entry,
+            slot: "side",
+          });
+          const pendingDatabaseBindingIntent =
+            pendingDbReference == null
+              ? existing?.pendingDatabaseBindingIntent
               : {
-                  pendingDatabaseBindingIntent:
-                    existing.pendingDatabaseBindingIntent,
-                }),
-          },
-          entry,
-          slot: "side",
+                  dbName: pendingDbReference.dbName,
+                  dbNamespace: pendingDbReference.dbNamespace,
+                  id: `ap-db-${++pendingDatabaseBindingIntentCounter.current}`,
+                };
+          writeSettingsLaunchContext({
+            context: {
+              launchSource,
+              ...(pendingDatabaseBindingIntent == null
+                ? {}
+                : { pendingDatabaseBindingIntent }),
+            },
+            entry,
+            slot: "side",
+          });
         });
+        return;
       }
       openSideRoute(entry, canvasSelection);
     },
@@ -251,47 +262,23 @@ export function useProjectCanvas(
       runResourceAction: resourceActions.runResourceAction,
     });
 
-  const startPendingDbReferenceRef = useRef<
-    (
-      reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
-    ) => void
-  >(() => undefined);
-
   const executeCommandPlan = useCallback(
     (plan: ProjectCanvasCommandPlan) => {
-      if (
-        plan.surface?.slot === "side" &&
-        plan.surface.entry.kind === "settings"
-      ) {
-        const pending = plan.pendingDbReference;
-        writeSettingsLaunchContext({
-          context: {
-            launchSource: "canvas",
-            ...(pending == null
-              ? {}
-              : {
-                  pendingDatabaseBindingIntent: {
-                    dbName: pending.dbName,
-                    dbNamespace: pending.dbNamespace,
-                    id: `ap-db-${++pendingDatabaseBindingIntentCounter.current}`,
-                  },
-                }),
-          },
-          entry: plan.surface.entry,
-          slot: "side",
-        });
-      }
-      const run = () =>
+      const run = () => {
         executeUnguardedProjectCanvasCommandPlan(plan, {
           bringNodeToFront: bringNodeToFrontById,
           openDrawerSurface,
           openMainSurface,
           openSideSurface: (entry, selection) =>
-            openSideSurface(entry, selection, "canvas"),
-          startPendingDbReference: (reference) =>
-            startPendingDbReferenceRef.current(reference),
+            openSideSurface(
+              entry,
+              selection,
+              "canvas",
+              plan.pendingDbReference
+            ),
           writeSelection,
         });
+      };
 
       if (plan.guard?.kind === "settingsLeave") {
         requestSettingsLeave(plan.guard.action, run);
@@ -305,7 +292,6 @@ export function useProjectCanvas(
       openDrawerSurface,
       openMainSurface,
       openSideSurface,
-      writeSettingsLaunchContext,
       requestSettingsLeave,
       writeSelection,
     ]
@@ -322,7 +308,6 @@ export function useProjectCanvas(
     resourceActions,
     runtimeNodeModels: options?.runtimeNodeModels,
   });
-  startPendingDbReferenceRef.current = decorated.startPendingDbReference;
   const nodes = decorated.nodes;
   const runtimeNodeModels = decorated.runtimeNodeModels;
 
@@ -428,11 +413,15 @@ export function useProjectCanvas(
         return new Set(current).add(side.taskId);
       });
     }
-    if (side?.kind === "settings") {
+    if (side?.kind !== "settings") {
+      closeSideRoute();
+      return;
+    }
+
+    closeSideRoute(() => {
       settingsLaunchContextStore.delete({ entry: side, slot: "side" });
       bumpSettingsLaunchContextRevision();
-    }
-    closeSideRoute();
+    });
   }, [
     bumpSettingsLaunchContextRevision,
     closeSideRoute,
