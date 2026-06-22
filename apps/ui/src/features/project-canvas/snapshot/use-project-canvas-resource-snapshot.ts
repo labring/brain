@@ -3,6 +3,7 @@
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
+import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
@@ -12,6 +13,19 @@ import type {
   CanvasLayoutDocument,
   PlacementCommand,
 } from "@/features/project-canvas/layout/types";
+import {
+  type ProjectCanvasLayoutIntent,
+  projectCanvasRuntimeResourceGraph,
+} from "@/features/project-canvas/runtime/resource-graph";
+import {
+  type ProjectRuntimeFacts,
+  projectRuntimeFactsFromResources,
+} from "@/features/project-runtime/resource-facts";
+import { projectRuntimeNodeModelsFromFacts } from "@/features/project-runtime/resource-models";
+import {
+  projectRuntimeShellNodesFromFacts,
+  projectRuntimeShellSignatureFromFacts,
+} from "@/features/project-runtime/resource-store";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
@@ -30,10 +44,6 @@ import {
   type WorkloadTransientSinceByKey,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
-import {
-  buildProjectCanvasResourceSnapshot,
-  type ProjectCanvasResourceSnapshot,
-} from "./resource-snapshot";
 import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
@@ -74,6 +84,26 @@ function nextMissingResourceGraceDelayMs(
   return nextDelay;
 }
 
+interface ProjectCanvasResourceRuntimeState {
+  apEnvironmentDbReferenceSources: ProjectRuntimeFacts["relationshipIndexes"]["apEnvironmentDbReferenceSources"];
+  canvasState: CanvasState;
+  frameState: ReturnType<typeof projectCanvasFrameState>;
+  layoutIntent: ProjectCanvasLayoutIntent | null;
+  runtimeNodeModels: ReturnType<typeof projectRuntimeNodeModelsFromFacts>;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function useStableValueForSignature<T>(signature: string, create: () => T): T {
+  const cache = useRef<{ signature: string; value: T } | null>(null);
+  if (cache.current?.signature !== signature) {
+    cache.current = { signature, value: create() };
+  }
+  return cache.current.value;
+}
+
 export function useProjectCanvasResourceSnapshot(options: {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
@@ -83,7 +113,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   namespace: string;
   /** Project UID from the route (decoded). */
   uid: string;
-}): ProjectCanvasResourceSnapshot & {
+}): ProjectCanvasResourceRuntimeState & {
   deploymentTaskProjections: DeploymentTaskProjection[];
   error: Error | undefined;
   /** True only during initial discovery while the graph is still empty. */
@@ -464,30 +494,49 @@ export function useProjectCanvasResourceSnapshot(options: {
   const isLoading =
     apsLoading || dbsLoading || templateNativeLoading || deployTasksLoading;
 
-  const baseSnapshot = useMemo(
+  const runtimeFacts = useMemo(
     () =>
-      buildProjectCanvasResourceSnapshot({
+      projectRuntimeFactsFromResources({
         apsData,
-        canvasLayout,
-        canvasLayoutReady,
         dbsData,
-        deployTasks: canvasDeployTasks,
-        error,
-        isEmptyGraphLoading: false,
-        kubeconfig,
         namespace,
         templateNativeData,
       }),
+    [apsData, dbsData, namespace, templateNativeData]
+  );
+  const runtimeNodeModels = useMemo(
+    () => projectRuntimeNodeModelsFromFacts(runtimeFacts),
+    [runtimeFacts]
+  );
+  const shellSignature = projectRuntimeShellSignatureFromFacts(runtimeFacts);
+  const shellNodes = useStableValueForSignature(shellSignature, () =>
+    projectRuntimeShellNodesFromFacts(runtimeFacts)
+  );
+  const relationshipSignature = stableStringify(
+    runtimeFacts.relationshipIndexes
+  );
+  const relationshipIndexes = useStableValueForSignature(
+    relationshipSignature,
+    () => runtimeFacts.relationshipIndexes
+  );
+  const apEnvironmentDbReferenceSources =
+    relationshipIndexes.apEnvironmentDbReferenceSources;
+
+  const baseGraph = useMemo(
+    () =>
+      projectCanvasRuntimeResourceGraph({
+        canvasLayout,
+        canvasLayoutReady,
+        deployTasks: canvasDeployTasks,
+        relationshipIndexes,
+        shellNodes,
+      }),
     [
-      apsData,
       canvasLayout,
       canvasLayoutReady,
       canvasDeployTasks,
-      dbsData,
-      error,
-      kubeconfig,
-      namespace,
-      templateNativeData,
+      relationshipIndexes,
+      shellNodes,
     ]
   );
   const missingResourceLayoutGraceReady =
@@ -502,7 +551,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   const missingResourceLayoutGrace = missingResourceLayoutGraceReady
     ? resolveMissingResourceLayoutGrace({
         layout: canvasLayout,
-        nodes: baseSnapshot.canvasState.nodes,
+        nodes: baseGraph.canvasState.nodes,
         nowMs: Date.now(),
         previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
       })
@@ -529,40 +578,31 @@ export function useProjectCanvasResourceSnapshot(options: {
   }, [missingResourceLayoutGrace, missingResourceLayoutGraceReady]);
   const missingLayoutCommands: PlacementCommand[] =
     missingResourceLayoutGrace.deleteCommands;
-  const snapshot = useMemo(
+  const graph = useMemo(
     () =>
-      buildProjectCanvasResourceSnapshot({
-        apsData,
+      projectCanvasRuntimeResourceGraph({
         canvasLayout,
         canvasLayoutReady,
-        dbsData,
         deployTasks: canvasDeployTasks,
-        error,
-        isEmptyGraphLoading: false,
-        kubeconfig,
         layoutCommands: missingLayoutCommands,
-        namespace,
+        relationshipIndexes,
         retainedLayoutOwnerKeys:
           missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-        templateNativeData,
+        shellNodes,
       }),
     [
-      apsData,
       canvasLayout,
       canvasLayoutReady,
       canvasDeployTasks,
-      dbsData,
-      error,
-      kubeconfig,
+      relationshipIndexes,
       missingLayoutCommands,
       missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-      namespace,
-      templateNativeData,
+      shellNodes,
     ]
   );
   const graphEmpty =
-    snapshot.canvasState.nodes.length === 0 &&
-    snapshot.canvasState.edges.length === 0;
+    graph.canvasState.nodes.length === 0 &&
+    graph.canvasState.edges.length === 0;
 
   // Sticky: once nodes have appeared, never show the bootstrap spinner again.
   // This avoids flicker from `isValidating` oscillating between poll cycles.
@@ -592,28 +632,31 @@ export function useProjectCanvasResourceSnapshot(options: {
   const frameState = useMemo(
     () =>
       projectCanvasFrameState({
-        edgeCount: snapshot.canvasState.edges.length,
+        edgeCount: graph.canvasState.edges.length,
         error,
         isEmptyGraphLoading,
         kubeconfig,
-        nodeCount: snapshot.canvasState.nodes.length,
+        nodeCount: graph.canvasState.nodes.length,
       }),
     [
       error,
       isEmptyGraphLoading,
       kubeconfig,
-      snapshot.canvasState.edges.length,
-      snapshot.canvasState.nodes.length,
+      graph.canvasState.edges.length,
+      graph.canvasState.nodes.length,
     ]
   );
 
   return {
-    ...snapshot,
+    apEnvironmentDbReferenceSources,
+    canvasState: graph.canvasState,
     deploymentTaskProjections: deployTasks,
     error,
     frameState,
     isEmptyGraphLoading,
     isLoading,
+    layoutIntent: graph.layoutIntent,
     refresh,
+    runtimeNodeModels,
   };
 }

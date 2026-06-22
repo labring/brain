@@ -170,13 +170,17 @@ export function projectRuntimeShellNodesFromFacts(
   return nodes;
 }
 
-function shellSignatureFromFacts(facts: ProjectRuntimeFacts): string {
+export function projectRuntimeShellSignatureFromFacts(
+  facts: ProjectRuntimeFacts
+): string {
   return [
-    ...facts.apFacts.map((fact) => `AP:${fact.key}`),
-    ...facts.dbFacts.map((fact) => `DB:${fact.key}`),
-    ...facts.publicAccessFacts.map((fact) => `PublicAccess:${fact.key}`),
+    ...facts.apFacts.map((fact) => `AP:${fact.key}:${fact.observedUid ?? ""}`),
+    ...facts.dbFacts.map((fact) => `DB:${fact.key}:${fact.observedUid ?? ""}`),
+    ...facts.publicAccessFacts.map(
+      (fact) => `PublicAccess:${fact.key}:${fact.observedUid ?? ""}`
+    ),
     ...facts.templateNativeWorkloadFacts.map(
-      (fact) => `TemplateNativeWorkload:${fact.key}`
+      (fact) => `TemplateNativeWorkload:${fact.key}:${fact.observedUid ?? ""}`
     ),
   ].join("|");
 }
@@ -272,7 +276,7 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
         facts.templateNativeWorkloadFacts
       ),
     };
-    const shellSignature = shellSignatureFromFacts(facts);
+    const shellSignature = projectRuntimeShellSignatureFromFacts(facts);
     return {
       ...nextMaps,
       relationshipIndexes: facts.relationshipIndexes,

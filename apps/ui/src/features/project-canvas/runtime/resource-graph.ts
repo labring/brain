@@ -1,5 +1,5 @@
-import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
+import type { Node } from "@xyflow/react";
 import {
   type CanvasDetectedConnection,
   canvasConnectionEdgesFromDetectedConnections,
@@ -10,28 +10,22 @@ import type {
   CanvasLayoutNode,
   PlacementCommand,
 } from "@/features/project-canvas/layout/types";
-import { projectRuntimeFactsFromResources } from "@/features/project-runtime/resource-facts";
-import {
-  type ProjectRuntimeNodeModels,
-  projectRuntimeNodeModelsFromFacts,
-} from "@/features/project-runtime/resource-models";
-import { projectRuntimeShellNodesFromFacts } from "@/features/project-runtime/resource-store";
-import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+import type { ProjectRuntimeRelationshipIndexes } from "@/features/project-runtime/resource-relationships";
+import type { ProjectRuntimeShellNodeData } from "@/features/project-runtime/resource-store";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderPendingResultKeys,
   isDeploymentPlaceholderPendingResultNode,
-} from "./deployment-placeholder-handoff";
+} from "../snapshot/deployment-placeholder-handoff";
 import {
   deploymentPlaceholderNodesFromTasks,
   shouldHideDeploymentPlaceholderForHandoff,
-} from "./deployment-placeholder-nodes";
-import { deploymentProjectionPlacementCommands } from "./deployment-placement-commands";
-import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
-import { createDeploymentProjectionContext } from "./deployment-projection-context";
-import { deploymentResultPreviewsFromTasks } from "./deployment-projection-model";
-import { projectCanvasFrameState } from "./project-canvas-page-state";
+} from "../snapshot/deployment-placeholder-nodes";
+import { deploymentProjectionPlacementCommands } from "../snapshot/deployment-placement-commands";
+import { deploymentPreviewEdgesFromTasks } from "../snapshot/deployment-preview-edges";
+import { createDeploymentProjectionContext } from "../snapshot/deployment-projection-context";
+import { deploymentResultPreviewsFromTasks } from "../snapshot/deployment-projection-model";
 
 export type ProjectCanvasLayoutIntent =
   | { kind: "first-placement"; nodes: CanvasLayoutNode[] }
@@ -42,70 +36,42 @@ export type ProjectCanvasLayoutIntent =
       kind: "placement-commands";
     };
 
-export interface ProjectCanvasResourceSnapshotInput {
-  apsData?: K8sGetResponse;
+export interface ProjectCanvasRuntimeResourceGraph {
+  canvasState: CanvasState;
+  layoutIntent: ProjectCanvasLayoutIntent | null;
+}
+
+export interface ProjectCanvasRuntimeResourceGraphInput {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
-  dbsData?: K8sGetResponse;
   deployTasks?: DeploymentTaskProjection[];
-  error?: Error;
-  isEmptyGraphLoading: boolean;
-  kubeconfig: string;
   layoutCommands?: PlacementCommand[];
-  namespace: string;
+  relationshipIndexes: ProjectRuntimeRelationshipIndexes;
   retainedLayoutOwnerKeys?: ReadonlySet<string>;
-  templateNativeData?: {
-    deployments?: K8sGetResponse;
-    statefulSets?: K8sGetResponse;
-  };
+  shellNodes: Node<ProjectRuntimeShellNodeData>[];
 }
 
-export interface ProjectCanvasResourceSnapshot {
-  apEnvironmentDbReferenceSources: ApEnvironmentDbReferenceSource[];
-  canvasState: CanvasState;
-  frameState: ReturnType<typeof projectCanvasFrameState>;
-  layoutIntent: ProjectCanvasLayoutIntent | null;
-  runtimeNodeModels: ProjectRuntimeNodeModels;
-}
-
-const EMPTY_TEMPLATE_NATIVE_DATA = {};
-
-export function buildProjectCanvasResourceSnapshot({
-  apsData,
+export function projectCanvasRuntimeResourceGraph({
   canvasLayout,
   canvasLayoutReady = true,
-  dbsData,
   deployTasks,
-  error,
-  isEmptyGraphLoading,
-  kubeconfig,
   layoutCommands,
-  namespace,
+  relationshipIndexes,
   retainedLayoutOwnerKeys,
-  templateNativeData = EMPTY_TEMPLATE_NATIVE_DATA,
-}: ProjectCanvasResourceSnapshotInput): ProjectCanvasResourceSnapshot {
-  const runtimeFacts = projectRuntimeFactsFromResources({
-    apsData,
-    dbsData,
-    namespace,
-    templateNativeData,
-  });
-  const apEnvironmentDbReferenceSources =
-    runtimeFacts.relationshipIndexes.apEnvironmentDbReferenceSources;
-  const runtimeNodeModels = projectRuntimeNodeModelsFromFacts(runtimeFacts);
-  const rawDetectedNodes = projectRuntimeShellNodesFromFacts(runtimeFacts);
+  shellNodes,
+}: ProjectCanvasRuntimeResourceGraphInput): ProjectCanvasRuntimeResourceGraph {
   const deploymentResultPreviews =
     deploymentResultPreviewsFromTasks(deployTasks);
   const rawDeploymentProjectionContext = createDeploymentProjectionContext({
     layout: canvasLayout,
-    nodes: rawDetectedNodes,
+    nodes: shellNodes,
     previews: deploymentResultPreviews,
     tasks: deployTasks,
   });
   const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
     context: rawDeploymentProjectionContext,
   });
-  const detectedNodes = rawDetectedNodes.filter(
+  const detectedNodes = shellNodes.filter(
     (node) =>
       !isDeploymentPlaceholderPendingResultNode({
         keys: pendingResultKeys,
@@ -133,10 +99,7 @@ export function buildProjectCanvasResourceSnapshot({
     context: rawDeploymentProjectionContext,
   });
   const detectedConnections: CanvasDetectedConnection[] = canvasLayoutReady
-    ? [
-        ...runtimeFacts.relationshipIndexes.publicAccessToAp,
-        ...runtimeFacts.relationshipIndexes.apToDb,
-      ]
+    ? [...relationshipIndexes.publicAccessToAp, ...relationshipIndexes.apToDb]
     : [];
   const merge = canvasLayoutReady
     ? mergeCanvasLayoutWithDetectedNodes({
@@ -190,17 +153,8 @@ export function buildProjectCanvasResourceSnapshot({
   });
 
   return {
-    apEnvironmentDbReferenceSources,
     canvasState,
-    frameState: projectCanvasFrameState({
-      edgeCount: canvasState.edges.length,
-      error,
-      isEmptyGraphLoading,
-      kubeconfig,
-      nodeCount: canvasState.nodes.length,
-    }),
     layoutIntent,
-    runtimeNodeModels,
   };
 }
 
