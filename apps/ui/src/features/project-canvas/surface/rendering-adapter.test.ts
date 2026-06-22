@@ -8,6 +8,7 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
+import type { ProjectRuntimeNodeModels } from "@/features/project-runtime/resource-models";
 import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
 import { createProjectCanvasSurfaceRenderModel } from "./rendering-adapter";
 
@@ -54,6 +55,40 @@ const entryNode = {
   position: { x: 0, y: 0 },
   type: CANVAS_ENTRY_NODE_TYPE,
 } as Node;
+
+const runtimeApShellNode = {
+  data: {
+    runtime: {
+      kind: "AP",
+      modelKey: "AP:default:api",
+      resourceRef: { kind: "AP", name: "api", namespace: "default" },
+    },
+  },
+  id: "ap-api",
+  position: { x: 0, y: 0 },
+  type: CANVAS_CONTAINER_NODE_TYPE,
+} as Node;
+
+const runtimeNodeModels: ProjectRuntimeNodeModels = {
+  containerModelsByKey: new Map([
+    [
+      "AP:default:api",
+      {
+        resourceKind: "ap",
+        states: {
+          image: "nginx:1.27",
+          kind: "AP",
+          name: "api",
+          namespace: "default",
+          status: { label: "Running", tone: "running" },
+          uid: "ap-uid",
+        },
+      },
+    ],
+  ]),
+  databaseModelsByKey: new Map(),
+  entryModelsByKey: new Map(),
+};
 
 const emptyState: ProjectSurfaceState = {
   drawer: null,
@@ -103,6 +138,35 @@ test("canvas surface adapter resolves AP Environment Settings focus", () => {
   assert.equal(model.side.content.kind, "settings");
   assert.equal(model.side.content.node, apNode);
   assert.equal(model.side.content.target.view, "environment");
+});
+
+test("canvas surface adapter renders AP shell panes with runtime model data", () => {
+  const model = createProjectCanvasSurfaceRenderModel({
+    nodes: [runtimeApShellNode],
+    runtimeNodeModels,
+    surfaceState: {
+      ...emptyState,
+      side: {
+        kind: "apMetrics",
+        target: { kind: "AP", name: "api", namespace: "default" },
+      },
+    },
+  });
+
+  if (model.side?.kind !== "resource") {
+    assert.fail("expected resource side render model");
+  }
+  assert.equal(model.side.content.kind, "apMetrics");
+  assert.notEqual(model.side.content.node, runtimeApShellNode);
+  const renderData = model.side.content.node.data as {
+    runtime?: { modelKey?: string };
+    states?: { name?: string; namespace?: string };
+  };
+  const shellData = runtimeApShellNode.data as { states?: unknown };
+  assert.equal(renderData.runtime?.modelKey, "AP:default:api");
+  assert.equal(renderData.states?.name, "api");
+  assert.equal(renderData.states?.namespace, "default");
+  assert.equal(shellData.states, undefined);
 });
 
 test("canvas surface adapter resolves DB access and DB terminal independently", () => {

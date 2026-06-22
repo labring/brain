@@ -61,6 +61,7 @@ export interface DbFact {
     key?: string;
   };
   key: ProjectRuntimeFactKey;
+  metadataLabels?: Record<string, unknown>;
   observedUid?: string;
   ref: CanvasLayoutResourceRef & { kind: "DB" };
   status: ProjectRuntimeStatusSummary;
@@ -194,6 +195,13 @@ function metadataUid(resource: unknown): string | undefined {
   return nonEmptyString(metadataRecord(resource).uid);
 }
 
+function metadataLabels(
+  resource: unknown
+): Record<string, unknown> | undefined {
+  const labels = asRecord(metadataRecord(resource).labels);
+  return labels === undefined ? undefined : { ...labels };
+}
+
 export function projectRuntimeResourceKey(
   ref: Pick<CanvasLayoutResourceRef, "kind" | "name" | "namespace">
 ): ProjectRuntimeFactKey {
@@ -293,6 +301,7 @@ function dbFactFromResource(
   const ref: DbFact["ref"] = { kind: "DB", name, namespace };
   const engineKey = nonEmptyString(spec.engine);
   const capacitySummary = dbCapacitySummary(status);
+  const labels = metadataLabels(db);
   return {
     ...(capacitySummary === undefined ? {} : { capacitySummary }),
     connectionSummary: {
@@ -314,6 +323,7 @@ function dbFactFromResource(
       ...(engineKey === undefined ? {} : { key: engineKey }),
     },
     key: projectRuntimeResourceKey(ref),
+    ...(labels === undefined ? {} : { metadataLabels: labels }),
     ...(metadataUid(db) === undefined ? {} : { observedUid: metadataUid(db) }),
     ref,
     status: dbStatusSummary(status),

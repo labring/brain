@@ -499,7 +499,7 @@ export function useProjectCanvasModule({
       deploymentTaskDock,
       frameState,
       meta,
-      runtimeNodeModels,
+      runtimeNodeModels: workbench.runtimeNodeModels ?? runtimeNodeModels,
       selectedTelemetryTarget,
       state,
       viewportInset,

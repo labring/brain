@@ -15,6 +15,7 @@ import type {
   TemplateNativeWorkloadFact,
 } from "./resource-facts";
 import type {
+  ProjectRuntimeShellKind,
   ProjectRuntimeShellLookup,
   ProjectRuntimeShellNodeData,
 } from "./resource-store";
@@ -97,6 +98,9 @@ function dbConnectionsFromFact(fact: DbFact): DatabaseNodeConnection[] {
 function dbModelFromFact(fact: DbFact): CanvasDatabaseNodeData {
   return {
     connections: dbConnectionsFromFact(fact),
+    ...(fact.metadataLabels === undefined
+      ? {}
+      : { metadata: { labels: fact.metadataLabels } }),
     states: {
       displayEngine: fact.engine.displayName,
       ...(fact.engine.key === undefined ? {} : { engineKey: fact.engine.key }),
@@ -192,7 +196,27 @@ export function projectRuntimeShellLookupFromNodeData(
     data != null && typeof data === "object"
       ? (data as Partial<ProjectRuntimeShellNodeData>).runtime
       : undefined;
-  return runtime != null && typeof runtime === "object" ? runtime : undefined;
+  if (runtime == null || typeof runtime !== "object") {
+    return undefined;
+  }
+  if (!isProjectRuntimeShellKind(runtime.kind)) {
+    return undefined;
+  }
+  if (typeof runtime.modelKey !== "string" || runtime.modelKey.trim() === "") {
+    return undefined;
+  }
+  return runtime;
+}
+
+function isProjectRuntimeShellKind(
+  value: unknown
+): value is ProjectRuntimeShellKind {
+  return (
+    value === "AP" ||
+    value === "DB" ||
+    value === "PublicAccess" ||
+    value === "TemplateNativeWorkload"
+  );
 }
 
 export function selectProjectRuntimeNodeModel(
@@ -211,6 +235,6 @@ export function selectProjectRuntimeNodeModel(
     case "PublicAccess":
       return models.entryModelsByKey.get(lookup.modelKey);
     default:
-      return lookup.kind satisfies never;
+      return undefined;
   }
 }

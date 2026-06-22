@@ -136,19 +136,37 @@ function databaseDataForNode(
   return databaseNodeDataFromNode(node);
 }
 
+function runtimeContainerNodeForNode(
+  node: Node | null,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+): Node | null {
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node?.data);
+  if (runtimeLookup?.kind !== "AP") {
+    return node;
+  }
+  const containerData = runtimeNodeModels?.containerModelsByKey.get(
+    runtimeLookup.modelKey
+  );
+  return containerData === undefined
+    ? null
+    : { ...node, data: { ...node.data, ...containerData } };
+}
+
 function apResourcePaneModel(
   nodes: readonly Node[],
   entry: Extract<
     ProjectSideSurfaceEntry,
     { kind: ProjectCanvasApResourcePaneKind }
-  >
+  >,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  if (node == null) {
+  const renderNode = runtimeContainerNodeForNode(node, runtimeNodeModels);
+  if (renderNode == null) {
     return pendingTargetModel(entry);
   }
   return {
-    content: { kind: entry.kind, node, target: entry.target },
+    content: { kind: entry.kind, node: renderNode, target: entry.target },
     kind: "resource",
   };
 }
@@ -178,6 +196,10 @@ function settingsPaneModel(
   runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
+  const renderNode =
+    entry.target.kind === "AP"
+      ? runtimeContainerNodeForNode(node, runtimeNodeModels)
+      : node;
   const databaseData =
     entry.target.kind === "DB"
       ? databaseDataForNode(node, runtimeNodeModels)
@@ -197,7 +219,7 @@ function settingsPaneModel(
       ...(databaseData == null ? {} : { databaseData }),
       ...(entryNode === undefined ? {} : { entryNode }),
       kind: "settings",
-      node,
+      node: renderNode,
       target: entry,
     },
     kind: "resource",
@@ -222,7 +244,7 @@ function sideRenderModel({
     case "apEvents":
     case "apHistory":
     case "apMetrics":
-      return apResourcePaneModel(nodes, entry);
+      return apResourcePaneModel(nodes, entry, runtimeNodeModels);
     case "dbMetrics":
       return dbResourcePaneModel(nodes, entry, runtimeNodeModels);
     case "settings":
@@ -260,9 +282,14 @@ function dbAccessMainModel(
 
 function resourceLogsMainModel(
   nodes: readonly Node[],
-  entry: Extract<ProjectMainSurfaceEntry, { kind: "resourceLogs" }>
+  entry: Extract<ProjectMainSurfaceEntry, { kind: "resourceLogs" }>,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasMainRenderModel {
-  const node = findCanvasNodeForProjectTarget(nodes, entry.target);
+  const foundNode = findCanvasNodeForProjectTarget(nodes, entry.target);
+  const node =
+    entry.target.kind === "AP"
+      ? runtimeContainerNodeForNode(foundNode, runtimeNodeModels)
+      : foundNode;
   if (node == null) {
     return pendingTargetModel(entry);
   }
@@ -284,7 +311,7 @@ function mainRenderModel(
     case "dbAccess":
       return dbAccessMainModel(nodes, entry, runtimeNodeModels);
     case "resourceLogs":
-      return resourceLogsMainModel(nodes, entry);
+      return resourceLogsMainModel(nodes, entry, runtimeNodeModels);
     default:
       return entry satisfies never;
   }
@@ -292,7 +319,8 @@ function mainRenderModel(
 
 function drawerRenderModel(
   nodes: readonly Node[],
-  entry: ProjectDrawerSurfaceEntry | null
+  entry: ProjectDrawerSurfaceEntry | null,
+  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
 ): ProjectCanvasDrawerRenderModel {
   if (entry == null) {
     return null;
@@ -302,8 +330,12 @@ function drawerRenderModel(
     return pendingTargetModel(entry);
   }
   switch (entry.kind) {
-    case "apTerminal":
-      return { kind: "apTerminal", node, target: entry.target };
+    case "apTerminal": {
+      const runtimeNode = runtimeContainerNodeForNode(node, runtimeNodeModels);
+      return runtimeNode == null
+        ? pendingTargetModel(entry)
+        : { kind: "apTerminal", node: runtimeNode, target: entry.target };
+    }
     case "dbTerminal":
       return { kind: "dbTerminal", node, target: entry.target };
     default:
@@ -321,7 +353,7 @@ export function createProjectCanvasSurfaceRenderModel({
   surfaceState: ProjectSurfaceState;
 }): ProjectCanvasSurfaceRenderModel {
   return {
-    drawer: drawerRenderModel(nodes, surfaceState.drawer),
+    drawer: drawerRenderModel(nodes, surfaceState.drawer, runtimeNodeModels),
     main: mainRenderModel(nodes, surfaceState.main, runtimeNodeModels),
     side: sideRenderModel({ nodes, runtimeNodeModels, surfaceState }),
   };

@@ -240,9 +240,11 @@ export function useProjectCanvas(
     requestApDelete,
     requestDbDelete,
     resourceActions,
+    runtimeNodeModels: options?.runtimeNodeModels,
   });
   startPendingDbReferenceRef.current = decorated.startPendingDbReference;
   const nodes = decorated.nodes;
+  const runtimeNodeModels = decorated.runtimeNodeModels;
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -260,10 +262,10 @@ export function useProjectCanvas(
     () =>
       createProjectCanvasSurfaceRenderModel({
         nodes,
-        runtimeNodeModels: options?.runtimeNodeModels,
+        runtimeNodeModels,
         surfaceState,
       }),
-    [nodes, options?.runtimeNodeModels, surfaceState]
+    [nodes, runtimeNodeModels, surfaceState]
   );
 
   const {
@@ -398,6 +400,7 @@ export function useProjectCanvas(
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,
+    runtimeNodeModels,
     selected,
     selectedEdge,
     selectedNode,

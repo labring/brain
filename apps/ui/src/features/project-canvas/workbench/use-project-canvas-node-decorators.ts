@@ -42,12 +42,116 @@ import type {
   ProjectCanvasDbDeleteTarget,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
 import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
-import { projectRuntimeShellLookupFromNodeData } from "@/features/project-runtime/resource-models";
+import {
+  type ProjectRuntimeNodeModels,
+  projectRuntimeShellLookupFromNodeData,
+  selectProjectRuntimeNodeModel,
+} from "@/features/project-runtime/resource-models";
 import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
 import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 
 const EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES: ApEnvironmentDbReferenceSource[] =
   [];
+
+type NodeDecorator = (node: Node) => Node;
+
+function decorateRuntimeContainerModel({
+  decorateContainerNode,
+  node,
+  runtimeNodeModels,
+}: {
+  decorateContainerNode: NodeDecorator;
+  node: Node;
+  runtimeNodeModels: ProjectRuntimeNodeModels;
+}): [string, CanvasContainerNodeData] | null {
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node.data);
+  const model = selectProjectRuntimeNodeModel(runtimeNodeModels, runtimeLookup);
+  if (runtimeLookup === undefined || model?.resourceKind !== "ap") {
+    return null;
+  }
+
+  const decorated = decorateContainerNode({ ...node, data: model });
+  return [
+    runtimeLookup.modelKey,
+    { ...model, ...decorated.data } as CanvasContainerNodeData,
+  ];
+}
+
+function decorateRuntimeDatabaseModel({
+  decorateDatabaseNode,
+  node,
+  runtimeNodeModels,
+}: {
+  decorateDatabaseNode: NodeDecorator;
+  node: Node;
+  runtimeNodeModels: ProjectRuntimeNodeModels;
+}): [string, CanvasDatabaseNodeData] | null {
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node.data);
+  const model = selectProjectRuntimeNodeModel(runtimeNodeModels, runtimeLookup);
+  if (
+    runtimeLookup === undefined ||
+    model === undefined ||
+    !("workload" in model)
+  ) {
+    return null;
+  }
+
+  const decorated = decorateDatabaseNode({ ...node, data: model });
+  return [
+    runtimeLookup.modelKey,
+    { ...model, ...decorated.data } as CanvasDatabaseNodeData,
+  ];
+}
+
+function decorateProjectRuntimeNodeModels({
+  decorateContainerNode,
+  decorateDatabaseNode,
+  nodes,
+  runtimeNodeModels,
+}: {
+  decorateContainerNode: NodeDecorator;
+  decorateDatabaseNode: NodeDecorator;
+  nodes: readonly Node[];
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
+}): ProjectRuntimeNodeModels | undefined {
+  if (runtimeNodeModels === undefined) {
+    return undefined;
+  }
+
+  const containerModelsByKey = new Map(runtimeNodeModels.containerModelsByKey);
+  const databaseModelsByKey = new Map(runtimeNodeModels.databaseModelsByKey);
+
+  for (const node of nodes) {
+    const containerModel =
+      node.type === CANVAS_CONTAINER_NODE_TYPE
+        ? decorateRuntimeContainerModel({
+            decorateContainerNode,
+            node,
+            runtimeNodeModels,
+          })
+        : null;
+    const databaseModel =
+      node.type === CANVAS_DATABASE_NODE_TYPE
+        ? decorateRuntimeDatabaseModel({
+            decorateDatabaseNode,
+            node,
+            runtimeNodeModels,
+          })
+        : null;
+    if (containerModel !== null) {
+      containerModelsByKey.set(...containerModel);
+    }
+    if (databaseModel !== null) {
+      databaseModelsByKey.set(...databaseModel);
+    }
+  }
+
+  return {
+    containerModelsByKey,
+    databaseModelsByKey,
+    entryModelsByKey: runtimeNodeModels.entryModelsByKey,
+  };
+}
 
 export function useProjectCanvasNodeDecorators({
   apEnvironmentDbReferenceSources,
@@ -59,6 +163,7 @@ export function useProjectCanvasNodeDecorators({
   requestApDelete,
   requestDbDelete,
   resourceActions,
+  runtimeNodeModels,
 }: {
   apEnvironmentDbReferenceSources?: ApEnvironmentDbReferenceSource[];
   executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
@@ -71,6 +176,7 @@ export function useProjectCanvasNodeDecorators({
   requestApDelete: (target: ProjectCanvasApDeleteTarget) => void;
   requestDbDelete: (target: ProjectCanvasDbDeleteTarget) => void;
   resourceActions: ProjectResourceActions;
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
 }) {
   const addDbDsnReferenceIntentCounter = useRef(0);
   const pendingApDbReferenceDraftByApKey = useRef<
@@ -541,8 +647,20 @@ export function useProjectCanvasNodeDecorators({
     [decorateContainerNode, decorateDatabaseNode, decorateLayoutNode, nodes]
   );
 
+  const decoratedRuntimeNodeModels = useMemo(
+    () =>
+      decorateProjectRuntimeNodeModels({
+        decorateContainerNode,
+        decorateDatabaseNode,
+        nodes,
+        runtimeNodeModels,
+      }),
+    [decorateContainerNode, decorateDatabaseNode, nodes, runtimeNodeModels]
+  );
+
   return {
     nodes: decoratedNodes,
+    runtimeNodeModels: decoratedRuntimeNodeModels,
     startPendingDbReference,
   };
 }

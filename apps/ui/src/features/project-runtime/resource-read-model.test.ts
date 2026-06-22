@@ -90,6 +90,7 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
       displayName: "postgres",
       engine: { displayName: "PostgreSQL", key: "postgresql" },
       key: "DB:default:postgres",
+      metadataLabels: { region: "192.168.12.53.nip.io" },
       observedUid: "db-uid",
       ref: { kind: "DB", name: "postgres", namespace: "default" },
       status: { label: "Running", tone: "running" },
@@ -291,7 +292,12 @@ test("Project Runtime commits one DB update without notifying unrelated DB model
     dbsData: {
       items: [
         {
-          metadata: { name: "postgres", namespace: "default", uid: "pg-uid" },
+          metadata: {
+            labels: { region: "192.168.12.53.nip.io" },
+            name: "postgres",
+            namespace: "default",
+            uid: "pg-uid",
+          },
           spec: { engine: "postgresql" },
           status: { phase: "Running" },
         },
@@ -434,7 +440,12 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
     dbsData: {
       items: [
         {
-          metadata: { name: "postgres", namespace: "default", uid: "pg-uid" },
+          metadata: {
+            labels: { region: "192.168.12.53.nip.io" },
+            name: "postgres",
+            namespace: "default",
+            uid: "pg-uid",
+          },
           spec: { engine: "postgresql", exposeNodePort: true },
           status: {
             connectionStringPrivate: "postgres://private",
@@ -475,6 +486,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
         publicAccess: { enabled: true },
       },
     ],
+    metadata: { labels: { region: "192.168.12.53.nip.io" } },
     states: {
       displayEngine: "PostgreSQL",
       engineKey: "postgresql",
