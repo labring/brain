@@ -85,7 +85,7 @@ app.kubernetes.io/instance: {{ .name | quote }}
 
 {{- define "brain-system.platformAddressPrefix" -}}
 {{- $provided := default "" .domainPrefix | lower -}}
-{{- if regexMatch "^[a-z]{6}$" $provided -}}
+{{- if or (eq $provided "brain") (regexMatch "^[a-z]{6}$" $provided) -}}
 {{- $provided -}}
 {{- else -}}
 {{- $source := printf "%s/%s/%s" .namespace .name .id -}}

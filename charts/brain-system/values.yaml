@@ -98,6 +98,7 @@ ui:
   platformAddresses:
     - id: pa_uistaging1
       port: 3000
+      domainPrefix: brain
     - id: pa_uistaging2
       port: 3000
   env:

@@ -1,9 +1,9 @@
 "use client";
 
-import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import type { TemplateDeploymentChoice } from "@/features/deployment/template-deployer";
-import { desktopLanguageAtom } from "@/store/auth-store";
+
+const TEMPLATE_CATALOG_LANGUAGE = "en";
 
 function templatesFromBody(body: unknown): TemplateDeploymentChoice[] {
   if (body == null || typeof body !== "object" || !("templates" in body)) {
@@ -22,14 +22,9 @@ function templatesFromBody(body: unknown): TemplateDeploymentChoice[] {
     : [];
 }
 
-async function fetchTemplateCatalog(
-  language: string
-): Promise<TemplateDeploymentChoice[]> {
+async function fetchTemplateCatalog(): Promise<TemplateDeploymentChoice[]> {
   const searchParams = new URLSearchParams();
-  const normalizedLanguage = language.trim();
-  if (normalizedLanguage !== "") {
-    searchParams.set("language", normalizedLanguage);
-  }
+  searchParams.set("language", TEMPLATE_CATALOG_LANGUAGE);
   const response = await fetch(`/api/templates?${searchParams}`);
   const body = await response.json().catch(() => null);
   if (!response.ok) {
@@ -51,10 +46,9 @@ export function useTemplateCatalog(options?: { enabled?: boolean }): {
   templates: TemplateDeploymentChoice[];
 } {
   const enabled = options?.enabled ?? true;
-  const language = useAtomValue(desktopLanguageAtom);
   const { data, error, isLoading } = useSWR(
-    enabled ? (["template-catalog", language] as const) : null,
-    ([, value]) => fetchTemplateCatalog(value)
+    enabled ? (["template-catalog", TEMPLATE_CATALOG_LANGUAGE] as const) : null,
+    () => fetchTemplateCatalog()
   );
   return {
     error,

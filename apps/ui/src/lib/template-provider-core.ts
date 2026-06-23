@@ -60,20 +60,35 @@ interface ProviderTemplateInput {
   type?: unknown;
 }
 
-interface ProviderTemplateItem {
-  args?: unknown;
-  category?: unknown;
+interface ProviderLegacyTemplateItem {
+  metadata?: {
+    name?: unknown;
+  };
+  spec?: {
+    categories?: unknown;
+    description?: unknown;
+    gitRepo?: unknown;
+    icon?: unknown;
+    inputs?: unknown;
+    i18n?: unknown;
+    readme?: unknown;
+    title?: unknown;
+  };
+}
+
+interface ProviderLegacyTemplateResponse {
+  code?: unknown;
+  data?: unknown;
+  error?: unknown;
+  message?: unknown;
+}
+
+interface ProviderLegacyTemplateI18n {
   description?: unknown;
-  githubRepo?: unknown;
-  githubRepos?: unknown;
   gitRepo?: unknown;
   icon?: unknown;
   name?: unknown;
   readme?: unknown;
-  repositoryUrl?: unknown;
-  repoUrl?: unknown;
-  sourceRepo?: unknown;
-  sourceRepos?: unknown;
   title?: unknown;
 }
 
@@ -115,16 +130,6 @@ function stringArrayValue(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-function stringOrStringArrayValues(value: unknown): string[] {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  return stringArrayValue(value)
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -176,39 +181,48 @@ function templateInputs(value: unknown): TemplateCatalogInput[] {
   }));
 }
 
-function templateSourceRepos(item: ProviderTemplateItem): string[] {
-  return [
-    item.sourceRepos,
-    item.githubRepos,
-    item.sourceRepo,
-    item.githubRepo,
-    item.repoUrl,
-    item.repositoryUrl,
-    item.gitRepo,
-  ]
-    .flatMap(stringOrStringArrayValues)
-    .filter((value, index, values) => values.indexOf(value) === index);
+function templateI18nSpec(
+  value: unknown,
+  language: string
+): ProviderLegacyTemplateI18n | null {
+  const raw = objectValue(value);
+  const localized = raw?.[language];
+  return objectValue(localized) as ProviderLegacyTemplateI18n | null;
 }
 
-function templateCatalogItem(value: unknown): TemplateCatalogItem | null {
+function legacyTemplateCatalogItem(
+  value: unknown,
+  language: string
+): TemplateCatalogItem | null {
   if (value == null || typeof value !== "object") {
     return null;
   }
-  const item = value as ProviderTemplateItem;
-  const name = stringValue(item.name);
+  const item = value as ProviderLegacyTemplateItem;
+  const spec = item.spec;
+  const name = stringValue(item.metadata?.name);
   if (!name) {
     return null;
   }
+  const i18n = templateI18nSpec(spec?.i18n, language);
+  const gitRepo = stringValue(i18n?.gitRepo) || stringValue(spec?.gitRepo);
   return {
-    args: templateInputs(item.args),
-    category: stringArrayValue(item.category),
-    description: stringValue(item.description),
-    icon: stringValue(item.icon),
+    args: templateInputs(spec?.inputs),
+    category: stringArrayValue(spec?.categories),
+    description:
+      stringValue(i18n?.description) || stringValue(spec?.description),
+    icon: stringValue(i18n?.icon) || stringValue(spec?.icon),
     name,
-    readme: stringValue(item.readme),
-    sourceRepos: templateSourceRepos(item),
-    title: stringValue(item.title) || name,
+    readme: stringValue(i18n?.readme) || stringValue(spec?.readme),
+    sourceRepos: gitRepo ? [gitRepo] : [],
+    title: stringValue(i18n?.title) || stringValue(spec?.title) || name,
   };
+}
+
+function legacyTemplateListPayload(body: unknown): unknown[] {
+  const wrapped = objectValue(body) as ProviderLegacyTemplateResponse | null;
+  const data = objectValue(wrapped?.data);
+  const templates = data?.templates;
+  return Array.isArray(templates) ? templates : [];
 }
 
 function providerErrorMessage(body: unknown, fallback: string) {
@@ -283,9 +297,10 @@ function templateSourcePayload(value: unknown): TemplateSourcePayload | null {
 export async function listTemplateCatalog(input?: {
   language?: string;
 }): Promise<TemplateCatalogItem[]> {
+  const language = input?.language?.trim() || "en";
   const response = await fetch(
-    providerUrl("/api/v2alpha/templates", {
-      language: input?.language?.trim() ?? "en",
+    providerUrl("/api/listTemplate", {
+      language,
     }),
     { cache: "no-store" }
   );
@@ -293,11 +308,9 @@ export async function listTemplateCatalog(input?: {
   if (!response.ok) {
     throw new Error(providerErrorMessage(body, "Could not load templates."));
   }
-  return Array.isArray(body)
-    ? body
-        .map(templateCatalogItem)
-        .filter((item): item is TemplateCatalogItem => item != null)
-    : [];
+  return legacyTemplateListPayload(body)
+    .map((item) => legacyTemplateCatalogItem(item, language))
+    .filter((item): item is TemplateCatalogItem => item != null);
 }
 
 export async function getTemplateSource(input: {
