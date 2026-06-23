@@ -165,3 +165,23 @@ test("legacy full resource snapshot builder is not available as a runtime entry 
   );
   assert.equal(hookSource.includes("./resource-snapshot"), false);
 });
+
+test("real Project Canvas path provides runtime store instead of a whole node model map", () => {
+  const hookSource = readFileSync(
+    new URL(
+      "../project-canvas/snapshot/use-project-canvas-resource-snapshot.ts",
+      import.meta.url
+    ),
+    "utf8"
+  );
+  const pageSource = readFileSync(
+    new URL("../../app/project/[uid]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.equal(hookSource.includes("projectRuntimeNodeModelsFromFacts"), false);
+  assert.equal(hookSource.includes("runtimeNodeModels"), false);
+  assert.equal(pageSource.includes("ProjectRuntimeNodeModelsProvider"), false);
+  assert.equal(pageSource.includes("runtimeNodeModels"), false);
+  assert.equal(pageSource.includes("ProjectRuntimeStoreProvider"), true);
+});

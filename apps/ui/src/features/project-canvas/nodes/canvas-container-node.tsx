@@ -24,7 +24,8 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   type,
 }: NodeProps<CanvasContainerRfNode>) {
   const model =
-    useProjectRuntimeNodeModel<CanvasContainerNodeData>(data) ?? data;
+    useProjectRuntimeNodeModel<CanvasContainerNodeData>({ data, id, type }) ??
+    data;
   const { actions = {}, states } = model;
   const { name, namespace } = states;
   const telemetryTarget = useMemo(

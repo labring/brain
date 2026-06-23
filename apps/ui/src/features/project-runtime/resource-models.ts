@@ -157,6 +157,24 @@ function publicAccessModelFromFact(
   };
 }
 
+export function projectRuntimeNodeModelFromFact(
+  kind: ProjectRuntimeShellKind,
+  fact: ApFact | DbFact | PublicAccessFact | TemplateNativeWorkloadFact
+): ProjectRuntimeNodeModel | undefined {
+  switch (kind) {
+    case "AP":
+      return apModelFromFact(fact as ApFact);
+    case "DB":
+      return dbModelFromFact(fact as DbFact);
+    case "PublicAccess":
+      return publicAccessModelFromFact(fact as PublicAccessFact);
+    case "TemplateNativeWorkload":
+      return templateNativeModelFromFact(fact as TemplateNativeWorkloadFact);
+    default:
+      return undefined;
+  }
+}
+
 export function projectRuntimeNodeModelsFromFacts(
   facts: ProjectRuntimeFacts
 ): ProjectRuntimeNodeModels {

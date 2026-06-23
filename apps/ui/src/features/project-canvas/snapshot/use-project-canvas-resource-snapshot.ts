@@ -4,7 +4,14 @@ import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
   resolveMissingResourceLayoutGrace,
@@ -18,13 +25,8 @@ import {
   projectCanvasRuntimeResourceGraph,
 } from "@/features/project-canvas/runtime/resource-graph";
 import {
-  type ProjectRuntimeFacts,
-  projectRuntimeFactsFromResources,
-} from "@/features/project-runtime/resource-facts";
-import { projectRuntimeNodeModelsFromFacts } from "@/features/project-runtime/resource-models";
-import {
-  projectRuntimeShellNodesFromFacts,
-  projectRuntimeShellSignatureFromFacts,
+  createProjectRuntimeStore,
+  type ProjectRuntimeStore,
 } from "@/features/project-runtime/resource-store";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -85,23 +87,13 @@ function nextMissingResourceGraceDelayMs(
 }
 
 interface ProjectCanvasResourceRuntimeState {
-  apEnvironmentDbReferenceSources: ProjectRuntimeFacts["relationshipIndexes"]["apEnvironmentDbReferenceSources"];
+  apEnvironmentDbReferenceSources: ReturnType<
+    ProjectRuntimeStore["selectRelationshipIndexes"]
+  >["apEnvironmentDbReferenceSources"];
   canvasState: CanvasState;
   frameState: ReturnType<typeof projectCanvasFrameState>;
   layoutIntent: ProjectCanvasLayoutIntent | null;
-  runtimeNodeModels: ReturnType<typeof projectRuntimeNodeModelsFromFacts>;
-}
-
-function stableStringify(value: unknown): string {
-  return JSON.stringify(value);
-}
-
-function useStableValueForSignature<T>(signature: string, create: () => T): T {
-  const cache = useRef<{ signature: string; value: T } | null>(null);
-  if (cache.current?.signature !== signature) {
-    cache.current = { signature, value: create() };
-  }
-  return cache.current.value;
+  runtimeStore: ProjectRuntimeStore;
 }
 
 export function useProjectCanvasResourceSnapshot(options: {
@@ -173,6 +165,18 @@ export function useProjectCanvasResourceSnapshot(options: {
       Date.now() + WORKLOAD_DISCOVERY_POLL_WINDOW_MS
     );
   }, []);
+  const runtimeStoreKey = JSON.stringify([namespace, uid]);
+  const runtimeStoreRef = useRef<{
+    key: string;
+    store: ProjectRuntimeStore;
+  } | null>(null);
+  if (runtimeStoreRef.current?.key !== runtimeStoreKey) {
+    runtimeStoreRef.current = {
+      key: runtimeStoreKey,
+      store: createProjectRuntimeStore(),
+    };
+  }
+  const runtimeStore = runtimeStoreRef.current.store;
   const workloadListRefreshInterval = useCallback(
     (
       latestData: K8sGetResponse | undefined,
@@ -494,30 +498,23 @@ export function useProjectCanvasResourceSnapshot(options: {
   const isLoading =
     apsLoading || dbsLoading || templateNativeLoading || deployTasksLoading;
 
-  const runtimeFacts = useMemo(
-    () =>
-      projectRuntimeFactsFromResources({
-        apsData,
-        dbsData,
-        namespace,
-        templateNativeData,
-      }),
-    [apsData, dbsData, namespace, templateNativeData]
+  useEffect(() => {
+    runtimeStore.commitResources({
+      apsData,
+      dbsData,
+      namespace,
+      templateNativeData,
+    });
+  }, [apsData, dbsData, namespace, runtimeStore, templateNativeData]);
+  const shellNodes = useSyncExternalStore(
+    runtimeStore.subscribeShellNodes,
+    runtimeStore.selectShellNodes,
+    runtimeStore.selectShellNodes
   );
-  const runtimeNodeModels = useMemo(
-    () => projectRuntimeNodeModelsFromFacts(runtimeFacts),
-    [runtimeFacts]
-  );
-  const shellSignature = projectRuntimeShellSignatureFromFacts(runtimeFacts);
-  const shellNodes = useStableValueForSignature(shellSignature, () =>
-    projectRuntimeShellNodesFromFacts(runtimeFacts)
-  );
-  const relationshipSignature = stableStringify(
-    runtimeFacts.relationshipIndexes
-  );
-  const relationshipIndexes = useStableValueForSignature(
-    relationshipSignature,
-    () => runtimeFacts.relationshipIndexes
+  const relationshipIndexes = useSyncExternalStore(
+    runtimeStore.subscribeRelationshipIndexes,
+    runtimeStore.selectRelationshipIndexes,
+    runtimeStore.selectRelationshipIndexes
   );
   const apEnvironmentDbReferenceSources =
     relationshipIndexes.apEnvironmentDbReferenceSources;
@@ -657,6 +654,6 @@ export function useProjectCanvasResourceSnapshot(options: {
     isLoading,
     layoutIntent: graph.layoutIntent,
     refresh,
-    runtimeNodeModels,
+    runtimeStore,
   };
 }

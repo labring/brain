@@ -121,7 +121,7 @@ export function useProjectCanvasModule({
     isLoading: resourceSnapshotLoading,
     layoutIntent,
     refresh,
-    runtimeNodeModels,
+    runtimeStore,
   } = useProjectCanvasResourceSnapshot({
     canvasLayout: projectCanvasLayout.layout,
     canvasLayoutReady: projectCanvasLayout.layoutReady,
@@ -330,7 +330,7 @@ export function useProjectCanvasModule({
     onResourceLayoutDelete: deleteResourceLayoutRefs,
     projectId,
     refreshWorkloadLists: refresh,
-    runtimeNodeModels,
+    runtimeStore,
     selectionReady: !isEmptyGraphLoading,
   });
   const activeDeploymentTaskTimelineTaskId = useMemo(() => {
@@ -505,7 +505,8 @@ export function useProjectCanvasModule({
       deploymentTaskDock,
       frameState,
       meta,
-      runtimeNodeModels: workbench.runtimeNodeModels ?? runtimeNodeModels,
+      runtimeModelDecorators: workbench.runtimeModelDecorators,
+      runtimeStore,
       selectedTelemetryTarget,
       state,
       viewportInset,

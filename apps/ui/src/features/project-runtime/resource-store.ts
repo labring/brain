@@ -29,6 +29,7 @@ type RuntimeFact =
 type FactSubscriber<TFact extends RuntimeFact> = (
   fact: TFact | undefined
 ) => void;
+type StoreSubscriber = () => void;
 
 export type ProjectRuntimeShellKind =
   | "AP"
@@ -80,6 +81,13 @@ function stableNodeName(name: string): string {
 }
 
 function factsEqual<TFact extends RuntimeFact>(a: TFact, b: TFact): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function relationshipIndexesEqual(
+  a: ProjectRuntimeRelationshipIndexes,
+  b: ProjectRuntimeRelationshipIndexes
+): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -219,6 +227,12 @@ function notifyFactChanges<TFact extends RuntimeFact>(
   }
 }
 
+function notifyStoreSubscribers(subscribers: ReadonlySet<StoreSubscriber>) {
+  for (const subscriber of subscribers) {
+    subscriber();
+  }
+}
+
 export interface ProjectRuntimeStore {
   commitResources(input: ProjectRuntimeFactsInput): void;
   selectApFact(key: ProjectRuntimeFactKey): ApFact | undefined;
@@ -228,6 +242,9 @@ export interface ProjectRuntimeStore {
   ): PublicAccessFact | undefined;
   selectRelationshipIndexes(): ProjectRuntimeRelationshipIndexes;
   selectShellNodes(): Node<ProjectRuntimeShellNodeData>[];
+  selectTemplateNativeWorkloadFact(
+    key: ProjectRuntimeFactKey
+  ): TemplateNativeWorkloadFact | undefined;
   subscribeApFact(
     key: ProjectRuntimeFactKey,
     subscriber: FactSubscriber<ApFact>
@@ -239,6 +256,12 @@ export interface ProjectRuntimeStore {
   subscribePublicAccessFact(
     key: ProjectRuntimeFactKey,
     subscriber: FactSubscriber<PublicAccessFact>
+  ): () => void;
+  subscribeRelationshipIndexes(subscriber: StoreSubscriber): () => void;
+  subscribeShellNodes(subscriber: StoreSubscriber): () => void;
+  subscribeTemplateNativeWorkloadFact(
+    key: ProjectRuntimeFactKey,
+    subscriber: FactSubscriber<TemplateNativeWorkloadFact>
   ): () => void;
 }
 
@@ -256,6 +279,12 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     ProjectRuntimeFactKey,
     Set<FactSubscriber<PublicAccessFact>>
   >();
+  const templateNativeWorkloadSubscribers = new Map<
+    ProjectRuntimeFactKey,
+    Set<FactSubscriber<TemplateNativeWorkloadFact>>
+  >();
+  const relationshipSubscribers = new Set<StoreSubscriber>();
+  const shellSubscribers = new Set<StoreSubscriber>();
 
   function updateState(facts: ProjectRuntimeFacts): RuntimeState {
     const nextMaps: RuntimeMaps = {
@@ -277,9 +306,15 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       ),
     };
     const shellSignature = projectRuntimeShellSignatureFromFacts(facts);
+    const relationshipIndexes = relationshipIndexesEqual(
+      state.relationshipIndexes,
+      facts.relationshipIndexes
+    )
+      ? state.relationshipIndexes
+      : facts.relationshipIndexes;
     return {
       ...nextMaps,
-      relationshipIndexes: facts.relationshipIndexes,
+      relationshipIndexes,
       shellNodes:
         shellSignature === state.shellSignature
           ? state.shellNodes
@@ -307,6 +342,17 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
         state.publicAccessFactsByKey,
         publicAccessSubscribers
       );
+      notifyFactChanges(
+        previous.templateNativeWorkloadFactsByKey,
+        state.templateNativeWorkloadFactsByKey,
+        templateNativeWorkloadSubscribers
+      );
+      if (previous.relationshipIndexes !== state.relationshipIndexes) {
+        notifyStoreSubscribers(relationshipSubscribers);
+      }
+      if (previous.shellNodes !== state.shellNodes) {
+        notifyStoreSubscribers(shellSubscribers);
+      }
     },
     selectApFact(key) {
       return state.apFactsByKey.get(key);
@@ -317,11 +363,20 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     selectPublicAccessFact(key) {
       return state.publicAccessFactsByKey.get(key);
     },
+    selectTemplateNativeWorkloadFact(key) {
+      return state.templateNativeWorkloadFactsByKey.get(key);
+    },
     selectRelationshipIndexes() {
       return state.relationshipIndexes;
     },
     selectShellNodes() {
       return state.shellNodes;
+    },
+    subscribeRelationshipIndexes(subscriber) {
+      relationshipSubscribers.add(subscriber);
+      return () => {
+        relationshipSubscribers.delete(subscriber);
+      };
     },
     subscribeApFact(key, subscriber) {
       let subscribers = apSubscribers.get(key);
@@ -350,6 +405,23 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       if (subscribers === undefined) {
         subscribers = new Set();
         publicAccessSubscribers.set(key, subscribers);
+      }
+      subscribers.add(subscriber);
+      return () => {
+        subscribers?.delete(subscriber);
+      };
+    },
+    subscribeShellNodes(subscriber) {
+      shellSubscribers.add(subscriber);
+      return () => {
+        shellSubscribers.delete(subscriber);
+      };
+    },
+    subscribeTemplateNativeWorkloadFact(key, subscriber) {
+      let subscribers = templateNativeWorkloadSubscribers.get(key);
+      if (subscribers === undefined) {
+        subscribers = new Set();
+        templateNativeWorkloadSubscribers.set(key, subscribers);
       }
       subscribers.add(subscriber);
       return () => {

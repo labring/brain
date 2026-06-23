@@ -24,7 +24,8 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   type,
 }: NodeProps<CanvasDatabaseRfNode>) {
   const model =
-    useProjectRuntimeNodeModel<CanvasDatabaseNodeData>(data) ?? data;
+    useProjectRuntimeNodeModel<CanvasDatabaseNodeData>({ data, id, type }) ??
+    data;
   const { actions = {}, connections, states } = model;
   const telemetryTarget = useMemo(
     () => databaseTelemetryTargetFromWorkload(model.workload),

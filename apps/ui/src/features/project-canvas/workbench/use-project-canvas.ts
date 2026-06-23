@@ -27,7 +27,7 @@ import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/us
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
-import type { ProjectRuntimeNodeModels } from "@/features/project-runtime/resource-models";
+import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
 import {
   createSettingsLaunchContextStore,
   type SettingsLaunchContext,
@@ -59,7 +59,7 @@ export interface UseProjectCanvasOptions {
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
   refreshWorkloadLists?: () => Promise<unknown>;
-  runtimeNodeModels?: ProjectRuntimeNodeModels;
+  runtimeStore?: ProjectRuntimeStore;
   /** True when the resource lists have settled enough to clear stale URL selections. */
   selectionReady?: boolean;
 }
@@ -306,10 +306,9 @@ export function useProjectCanvas(
     requestApDelete,
     requestDbDelete,
     resourceActions,
-    runtimeNodeModels: options?.runtimeNodeModels,
   });
   const nodes = decorated.nodes;
-  const runtimeNodeModels = decorated.runtimeNodeModels;
+  const runtimeModelDecorators = decorated.runtimeModelDecorators;
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -327,10 +326,10 @@ export function useProjectCanvas(
     () =>
       createProjectCanvasSurfaceRenderModel({
         nodes,
-        runtimeNodeModels,
+        runtimeStore: options?.runtimeStore,
         surfaceState,
       }),
-    [nodes, runtimeNodeModels, surfaceState]
+    [nodes, options?.runtimeStore, surfaceState]
   );
   const activeSettingsEntry =
     surfaceState.side?.kind === "settings" ? surfaceState.side : null;
@@ -557,7 +556,7 @@ export function useProjectCanvas(
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,
-    runtimeNodeModels,
+    runtimeModelDecorators,
     selected,
     selectedEdge,
     selectedNode,

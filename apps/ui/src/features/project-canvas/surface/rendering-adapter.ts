@@ -2,9 +2,15 @@ import type { Node } from "@xyflow/react";
 import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/database-node-data";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import {
+  type ProjectRuntimeNodeModel,
   type ProjectRuntimeNodeModels,
+  projectRuntimeNodeModelFromFact,
   projectRuntimeShellLookupFromNodeData,
 } from "@/features/project-runtime/resource-models";
+import type {
+  ProjectRuntimeShellLookup,
+  ProjectRuntimeStore,
+} from "@/features/project-runtime/resource-store";
 import {
   type ProjectDrawerSurfaceEntry,
   type ProjectGlobalSidePaneEntry,
@@ -28,6 +34,10 @@ type ProjectCanvasPendingTargetEntry =
   | ProjectCanvasTargetedSideEntry
   | ProjectDrawerSurfaceEntry
   | ProjectMainSurfaceEntry;
+interface ProjectRuntimeModelReader {
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
+  runtimeStore?: ProjectRuntimeStore;
+}
 
 export type ProjectCanvasApResourcePaneKind =
   | "apEvents"
@@ -123,25 +133,85 @@ function pendingTargetModel<TEntry extends ProjectCanvasPendingTargetEntry>(
   return { entry, kind: "pendingTarget", target: entry.target };
 }
 
+function isRuntimeDatabaseModel(
+  model: ProjectRuntimeNodeModel | undefined
+): model is CanvasDatabaseNodeData {
+  return model !== undefined && "connections" in model && "workload" in model;
+}
+
 function databaseDataForNode(
   node: Node | null,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): CanvasDatabaseNodeData | null {
   if (node == null) {
     return null;
   }
   const runtimeLookup = projectRuntimeShellLookupFromNodeData(node.data);
   if (runtimeLookup?.kind === "DB") {
-    return (
-      runtimeNodeModels?.databaseModelsByKey.get(runtimeLookup.modelKey) ?? null
-    );
+    const model = runtimeModelForLookup(runtimeLookup, runtime);
+    return isRuntimeDatabaseModel(model) ? model : null;
   }
   return databaseNodeDataFromNode(node);
 }
 
+function runtimeModelForLookup(
+  lookup: ProjectRuntimeShellLookup,
+  runtime: ProjectRuntimeModelReader
+): ProjectRuntimeNodeModel | undefined {
+  if (runtime.runtimeStore !== undefined) {
+    switch (lookup.kind) {
+      case "AP": {
+        const fact = runtime.runtimeStore.selectApFact(lookup.modelKey);
+        return fact === undefined
+          ? undefined
+          : projectRuntimeNodeModelFromFact(lookup.kind, fact);
+      }
+      case "DB": {
+        const fact = runtime.runtimeStore.selectDbFact(lookup.modelKey);
+        return fact === undefined
+          ? undefined
+          : projectRuntimeNodeModelFromFact(lookup.kind, fact);
+      }
+      case "PublicAccess": {
+        const fact = runtime.runtimeStore.selectPublicAccessFact(
+          lookup.modelKey
+        );
+        return fact === undefined
+          ? undefined
+          : projectRuntimeNodeModelFromFact(lookup.kind, fact);
+      }
+      case "TemplateNativeWorkload": {
+        const fact = runtime.runtimeStore.selectTemplateNativeWorkloadFact(
+          lookup.modelKey
+        );
+        return fact === undefined
+          ? undefined
+          : projectRuntimeNodeModelFromFact(lookup.kind, fact);
+      }
+      default:
+        return undefined;
+    }
+  }
+  switch (lookup.kind) {
+    case "AP":
+    case "TemplateNativeWorkload":
+      return runtime.runtimeNodeModels?.containerModelsByKey.get(
+        lookup.modelKey
+      );
+    case "DB":
+      return runtime.runtimeNodeModels?.databaseModelsByKey.get(
+        lookup.modelKey
+      );
+    case "PublicAccess":
+      return runtime.runtimeNodeModels?.entryModelsByKey.get(lookup.modelKey);
+    default:
+      return undefined;
+  }
+}
+
 function runtimeContainerNodeForNode(
   node: Node | null,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): Node | null {
   if (node == null) {
     return null;
@@ -150,9 +220,7 @@ function runtimeContainerNodeForNode(
   if (runtimeLookup?.kind !== "AP") {
     return node;
   }
-  const containerData = runtimeNodeModels?.containerModelsByKey.get(
-    runtimeLookup.modelKey
-  );
+  const containerData = runtimeModelForLookup(runtimeLookup, runtime);
   return containerData === undefined
     ? null
     : { ...node, data: { ...node.data, ...containerData } };
@@ -164,10 +232,10 @@ function apResourcePaneModel(
     ProjectSideSurfaceEntry,
     { kind: ProjectCanvasApResourcePaneKind }
   >,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const renderNode = runtimeContainerNodeForNode(node, runtimeNodeModels);
+  const renderNode = runtimeContainerNodeForNode(node, runtime);
   if (renderNode == null) {
     return pendingTargetModel(entry);
   }
@@ -183,10 +251,10 @@ function dbResourcePaneModel(
     ProjectSideSurfaceEntry,
     { kind: ProjectCanvasDbResourcePaneKind }
   >,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const databaseData = databaseDataForNode(node, runtimeNodeModels);
+  const databaseData = databaseDataForNode(node, runtime);
   if (node == null || databaseData == null) {
     return pendingTargetModel(entry);
   }
@@ -199,17 +267,15 @@ function dbResourcePaneModel(
 function settingsPaneModel(
   nodes: readonly Node[],
   entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
   const renderNode =
     entry.target.kind === "AP"
-      ? runtimeContainerNodeForNode(node, runtimeNodeModels)
+      ? runtimeContainerNodeForNode(node, runtime)
       : node;
   const databaseData =
-    entry.target.kind === "DB"
-      ? databaseDataForNode(node, runtimeNodeModels)
-      : undefined;
+    entry.target.kind === "DB" ? databaseDataForNode(node, runtime) : undefined;
 
   const entryNode =
     entry.target.kind === "AP" && entry.view === "public-addresses"
@@ -234,11 +300,11 @@ function settingsPaneModel(
 
 function sideRenderModel({
   nodes,
-  runtimeNodeModels,
+  runtime,
   surfaceState,
 }: {
   nodes: readonly Node[];
-  runtimeNodeModels?: ProjectRuntimeNodeModels;
+  runtime: ProjectRuntimeModelReader;
   surfaceState: ProjectSurfaceState;
 }): ProjectCanvasSideRenderModel {
   const entry = surfaceState.side;
@@ -250,11 +316,11 @@ function sideRenderModel({
     case "apEvents":
     case "apHistory":
     case "apMetrics":
-      return apResourcePaneModel(nodes, entry, runtimeNodeModels);
+      return apResourcePaneModel(nodes, entry, runtime);
     case "dbMetrics":
-      return dbResourcePaneModel(nodes, entry, runtimeNodeModels);
+      return dbResourcePaneModel(nodes, entry, runtime);
     case "settings":
-      return settingsPaneModel(nodes, entry, runtimeNodeModels);
+      return settingsPaneModel(nodes, entry, runtime);
     case "databaseDeployment":
     case "deploymentTaskTimeline":
     case "dockerDeployment":
@@ -271,10 +337,10 @@ function sideRenderModel({
 function dbAccessMainModel(
   nodes: readonly Node[],
   entry: Extract<ProjectMainSurfaceEntry, { kind: "dbAccess" }>,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasMainRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const databaseData = databaseDataForNode(node, runtimeNodeModels);
+  const databaseData = databaseDataForNode(node, runtime);
   if (node == null || databaseData == null) {
     return pendingTargetModel(entry);
   }
@@ -289,12 +355,12 @@ function dbAccessMainModel(
 function resourceLogsMainModel(
   nodes: readonly Node[],
   entry: Extract<ProjectMainSurfaceEntry, { kind: "resourceLogs" }>,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasMainRenderModel {
   const foundNode = findCanvasNodeForProjectTarget(nodes, entry.target);
   const node =
     entry.target.kind === "AP"
-      ? runtimeContainerNodeForNode(foundNode, runtimeNodeModels)
+      ? runtimeContainerNodeForNode(foundNode, runtime)
       : foundNode;
   if (node == null) {
     return pendingTargetModel(entry);
@@ -308,16 +374,16 @@ function resourceLogsMainModel(
 function mainRenderModel(
   nodes: readonly Node[],
   entry: ProjectMainSurfaceEntry | null,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasMainRenderModel {
   if (entry == null) {
     return null;
   }
   switch (entry.kind) {
     case "dbAccess":
-      return dbAccessMainModel(nodes, entry, runtimeNodeModels);
+      return dbAccessMainModel(nodes, entry, runtime);
     case "resourceLogs":
-      return resourceLogsMainModel(nodes, entry, runtimeNodeModels);
+      return resourceLogsMainModel(nodes, entry, runtime);
     default:
       return entry satisfies never;
   }
@@ -326,7 +392,7 @@ function mainRenderModel(
 function drawerRenderModel(
   nodes: readonly Node[],
   entry: ProjectDrawerSurfaceEntry | null,
-  runtimeNodeModels: ProjectRuntimeNodeModels | undefined
+  runtime: ProjectRuntimeModelReader
 ): ProjectCanvasDrawerRenderModel {
   if (entry == null) {
     return null;
@@ -337,7 +403,7 @@ function drawerRenderModel(
   }
   switch (entry.kind) {
     case "apTerminal": {
-      const runtimeNode = runtimeContainerNodeForNode(node, runtimeNodeModels);
+      const runtimeNode = runtimeContainerNodeForNode(node, runtime);
       return runtimeNode == null
         ? pendingTargetModel(entry)
         : { kind: "apTerminal", node: runtimeNode, target: entry.target };
@@ -352,15 +418,18 @@ function drawerRenderModel(
 export function createProjectCanvasSurfaceRenderModel({
   nodes,
   runtimeNodeModels,
+  runtimeStore,
   surfaceState,
 }: {
   nodes: readonly Node[];
   runtimeNodeModels?: ProjectRuntimeNodeModels;
+  runtimeStore?: ProjectRuntimeStore;
   surfaceState: ProjectSurfaceState;
 }): ProjectCanvasSurfaceRenderModel {
+  const runtime = { runtimeNodeModels, runtimeStore };
   return {
-    drawer: drawerRenderModel(nodes, surfaceState.drawer, runtimeNodeModels),
-    main: mainRenderModel(nodes, surfaceState.main, runtimeNodeModels),
-    side: sideRenderModel({ nodes, runtimeNodeModels, surfaceState }),
+    drawer: drawerRenderModel(nodes, surfaceState.drawer, runtime),
+    main: mainRenderModel(nodes, surfaceState.main, runtime),
+    side: sideRenderModel({ nodes, runtime, surfaceState }),
   };
 }

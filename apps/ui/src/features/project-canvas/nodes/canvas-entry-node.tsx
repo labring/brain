@@ -17,7 +17,8 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
   positionAbsoluteY,
   type,
 }: NodeProps<CanvasEntryRfNode>) {
-  const model = useProjectRuntimeNodeModel<CanvasEntryNodeData>(data) ?? data;
+  const model =
+    useProjectRuntimeNodeModel<CanvasEntryNodeData>({ data, id, type }) ?? data;
   const { accessDomain, actions = {}, states, targets } = model;
   const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
