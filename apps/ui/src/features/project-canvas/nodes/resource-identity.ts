@@ -32,6 +32,29 @@ function nonEmptyString(value: unknown): string | undefined {
     : undefined;
 }
 
+function runtimeLookupFromData(
+  data: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  return asRecord(data?.runtime);
+}
+
+function runtimeResourceIdentityFromData(
+  data: Record<string, unknown> | undefined
+): CanvasResourceIdentity | undefined {
+  const ref = asRecord(runtimeLookupFromData(data)?.resourceRef);
+  const kind = nonEmptyString(ref?.kind);
+  if (kind !== "AP" && kind !== "DB" && kind !== "PublicAccess") {
+    return undefined;
+  }
+  return resourceIdentityFromRecord(kind, ref);
+}
+
+function runtimeObservedUidFromData(
+  data: Record<string, unknown> | undefined
+): string | undefined {
+  return nonEmptyString(runtimeLookupFromData(data)?.observedUid);
+}
+
 export function canvasResourceKey(ref: CanvasResourceIdentity): string {
   return `${ref.kind}:${ref.namespace}:${ref.name}`;
 }
@@ -67,6 +90,10 @@ export function canvasResourceIdentityFromNode(
   node: Node
 ): CanvasResourceIdentity | undefined {
   const data = asRecord(node.data);
+  const runtimeIdentity = runtimeResourceIdentityFromData(data);
+  if (runtimeIdentity !== undefined) {
+    return runtimeIdentity;
+  }
 
   switch (node.type) {
     case CANVAS_CONTAINER_NODE_TYPE:
@@ -106,6 +133,10 @@ export function canvasResourceLastSeenUidFromNode(
   node: Node
 ): string | undefined {
   const data = asRecord(node.data);
+  const runtimeObservedUid = runtimeObservedUidFromData(data);
+  if (runtimeObservedUid !== undefined) {
+    return runtimeObservedUid;
+  }
 
   switch (node.type) {
     case CANVAS_CONTAINER_NODE_TYPE:
@@ -163,6 +194,10 @@ export function apBoundSurfaceRefFromKey(
 
 export function canvasNodeSelectionKey(node: Node): string | null {
   const data = asRecord(node.data);
+  const runtimeObservedUid = runtimeObservedUidFromData(data);
+  if (runtimeObservedUid !== undefined) {
+    return runtimeObservedUid;
+  }
 
   if (node.type === CANVAS_ENTRY_NODE_TYPE) {
     const resource = asRecord(data?.resource);

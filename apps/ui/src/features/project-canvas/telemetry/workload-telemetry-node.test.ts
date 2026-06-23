@@ -1,38 +1,62 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { shouldSubscribeWorkloadTelemetry } from "./workload-telemetry-node";
+import {
+  containerMetricsWithTelemetrySnapshot,
+  databaseMetricsWithTelemetrySnapshot,
+} from "./workload-telemetry-node";
+import type { WorkloadTelemetrySnapshotState } from "./workload-telemetry-store";
 
-test("workload telemetry subscribes only for active node surfaces", () => {
-  assert.equal(
-    shouldSubscribeWorkloadTelemetry({
-      expanded: false,
-      selected: false,
-      sidePaneOpen: false,
-    }),
-    false
+const snapshot = {
+  item: {
+    metrics: {
+      cpu: { value: 64 },
+      storage: { value: 72 },
+    },
+    target: {
+      kind: "db",
+      name: "postgres",
+      namespace: "default",
+    },
+  },
+} satisfies WorkloadTelemetrySnapshotState;
+
+test("workload telemetry metrics overlay stable fallback values per metric", () => {
+  assert.deepEqual(
+    containerMetricsWithTelemetrySnapshot(
+      {
+        cpu: 12,
+        memory: 34,
+      },
+      snapshot
+    ),
+    {
+      cpu: 64,
+      memory: 34,
+    }
   );
-  assert.equal(
-    shouldSubscribeWorkloadTelemetry({
-      expanded: false,
-      selected: true,
-      sidePaneOpen: false,
-    }),
-    true
+
+  assert.deepEqual(
+    databaseMetricsWithTelemetrySnapshot(
+      {
+        cpu: 12,
+        memory: 34,
+        storage: 56,
+      },
+      snapshot
+    ),
+    {
+      cpu: 64,
+      memory: 34,
+      storage: 72,
+    }
   );
-  assert.equal(
-    shouldSubscribeWorkloadTelemetry({
-      expanded: true,
-      selected: false,
-      sidePaneOpen: false,
-    }),
-    true
-  );
-  assert.equal(
-    shouldSubscribeWorkloadTelemetry({
-      expanded: false,
-      selected: false,
-      sidePaneOpen: true,
-    }),
-    true
-  );
+});
+
+test("workload telemetry metrics keep stable fallback when snapshot has no metrics", () => {
+  const fallback = {
+    cpu: 12,
+    memory: 34,
+  };
+
+  assert.equal(containerMetricsWithTelemetrySnapshot(fallback, {}), fallback);
 });

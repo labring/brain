@@ -1,12 +1,14 @@
 "use client";
 
-import { Canvas } from "@workspace/ui/components/canvas/canvas";
-import { Spinner } from "@workspace/ui/components/spinner";
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
+import type { CSSProperties } from "react";
 import { useMemo } from "react";
-import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
-import { ProjectCanvasDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry-affordance";
+import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
+import {
+  ProjectCanvasOverlayLayer,
+  ProjectCanvasViewport,
+} from "@/features/project-canvas/workbench/project-canvas-page-shell";
 import { ProjectCanvasSurfaceHost } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
@@ -24,6 +26,17 @@ export default function ProjectIdPage() {
     namespace,
     projectId: uid,
   });
+  const canvasViewportStyle = useMemo(
+    () =>
+      ({
+        "--canvas-viewport-right-inset": `${
+          projectCanvas.surfaces.model.side == null
+            ? 0
+            : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET
+        }px`,
+      }) as CSSProperties,
+    [projectCanvas.surfaces.model.side]
+  );
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
@@ -34,7 +47,7 @@ export default function ProjectIdPage() {
         if (surfaceIntent == null) {
           return { status: "ignored" as const };
         }
-        projectCanvas.actions.openSurfaceIntent(surfaceIntent);
+        projectCanvas.actions.openSurfaceIntent(surfaceIntent, "assistant");
         return { status: "handled" as const };
       },
     }),
@@ -44,82 +57,42 @@ export default function ProjectIdPage() {
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
       {projectCanvas.canvas.frameState.renderCanvas && (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <WorkloadTelemetryProvider
+        <div
+          className="relative min-h-0 min-w-0 flex-1"
+          style={canvasViewportStyle}
+        >
+          <ProjectCanvasViewport
+            canvasKey={`${namespace}:${uid}`}
+            decorators={projectCanvas.canvas.runtimeModelDecorators}
             kubeconfig={kubeconfig}
-            selectedTarget={projectCanvas.canvas.selectedTelemetryTarget}
-          >
-            <Canvas.Root
-              key={`${namespace}:${uid}`}
-              meta={projectCanvas.canvas.meta}
-              state={projectCanvas.canvas.state}
-            >
-              <div className="relative min-h-0 flex-1">
-                <ProjectCanvasDeploymentTaskDock
-                  className="absolute top-4 left-4 z-20"
-                  dock={projectCanvas.canvas.deploymentTaskDock}
-                  onDismiss={
-                    projectCanvas.actions.dismissDeploymentTaskDockTask
-                  }
-                  onOpen={projectCanvas.actions.openDeploymentTaskDockTask}
-                />
-                {projectCanvas.canvas.frameState.overlay === "loading" ? (
-                  <div
-                    aria-live="polite"
-                    className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[min(100%-2rem,20rem)]"
-                    data-slot="project-canvas-loading-toast"
-                    role="status"
-                  >
-                    <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-md">
-                      <Spinner
-                        aria-hidden
-                        className="size-4 shrink-0 text-muted-foreground"
-                      />
-                      <span className="font-medium text-foreground text-sm">
-                        Loading workloads…
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-                {projectCanvas.canvas.frameState.overlay === "error" ||
-                projectCanvas.canvas.frameState.overlay === "empty" ? (
-                  <div
-                    aria-live="polite"
-                    className="pointer-events-none absolute top-6 left-1/2 z-10 -translate-x-1/2"
-                    data-slot="project-canvas-empty-state"
-                    role="status"
-                  >
-                    <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-md">
-                      <span className="font-medium text-foreground text-sm">
-                        {projectCanvas.canvas.frameState.overlay === "error"
-                          ? "Workloads unavailable"
-                          : "No workloads"}
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-                <Canvas.Flow>
-                  <Canvas.MiniMap
-                    rightInset={projectCanvas.canvas.viewportInset}
-                  />
-                  <Canvas.Controls
-                    rightInset={projectCanvas.canvas.viewportInset}
-                  />
-                  <ProjectCanvasSurfaceHost
-                    actions={projectCanvas.surfaces.actions}
-                    dialogs={projectCanvas.surfaces.dialogs}
-                    kubeconfig={kubeconfig}
-                    namespace={namespace}
-                    projectId={uid}
-                    refreshWorkloadLists={
-                      projectCanvas.surfaces.refreshWorkloadLists
-                    }
-                    surfaceModel={projectCanvas.surfaces.model}
-                  />
-                </Canvas.Flow>
-              </div>
-            </Canvas.Root>
-          </WorkloadTelemetryProvider>
+            meta={projectCanvas.canvas.meta}
+            runtimeStore={projectCanvas.canvas.runtimeStore}
+            state={projectCanvas.canvas.state}
+          />
+          <ProjectCanvasOverlayLayer
+            deploymentTaskDock={projectCanvas.canvas.deploymentTaskDock}
+            frameState={projectCanvas.canvas.frameState}
+            onDismissDeploymentTask={
+              projectCanvas.actions.dismissDeploymentTaskDockTask
+            }
+            onOpenDeploymentTask={
+              projectCanvas.actions.openDeploymentTaskDockTask
+            }
+          />
+          <ProjectCanvasSurfaceHost
+            actions={projectCanvas.surfaces.actions}
+            dialogs={projectCanvas.surfaces.dialogs}
+            kubeconfig={kubeconfig}
+            namespace={namespace}
+            projectId={uid}
+            refreshWorkloadLists={projectCanvas.surfaces.refreshWorkloadLists}
+            settingsLaunchContext={projectCanvas.surfaces.settingsLaunchContext}
+            settingsReadModelHints={
+              projectCanvas.surfaces.settingsReadModelHints
+            }
+            settingsSessionEvents={projectCanvas.surfaces.settingsSessionEvents}
+            surfaceModel={projectCanvas.surfaces.model}
+          />
         </div>
       )}
     </div>

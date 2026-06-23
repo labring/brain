@@ -26,8 +26,6 @@ import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-pro
 import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
 import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
-import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
-import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   deploymentTaskDockDismissalsStorageKey,
   readBrowserDeploymentTaskDockDismissals,
@@ -39,6 +37,7 @@ import {
 } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
+import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 
@@ -120,6 +119,7 @@ export function useProjectCanvasModule({
     isLoading: resourceSnapshotLoading,
     layoutIntent,
     refresh,
+    runtimeStore,
   } = useProjectCanvasResourceSnapshot({
     canvasLayout: projectCanvasLayout.layout,
     canvasLayoutReady: projectCanvasLayout.layoutReady,
@@ -328,6 +328,7 @@ export function useProjectCanvasModule({
     onResourceLayoutDelete: deleteResourceLayoutRefs,
     projectId,
     refreshWorkloadLists: refresh,
+    runtimeStore,
     selectionReady: !isEmptyGraphLoading,
   });
   const activeDeploymentTaskTimelineTaskId = useMemo(() => {
@@ -437,17 +438,13 @@ export function useProjectCanvasModule({
     ]
   );
 
-  const selectedTelemetryTarget = useMemo(
-    () => telemetryTargetFromCanvasNode(workbench.selectedNode),
-    [workbench.selectedNode]
-  );
-
   const surfaceActions = useMemo<ProjectCanvasSurfaceHostActions>(
     () => ({
       closeDrawerSurface: workbench.closeDrawerSurface,
       closeMainSurface: workbench.closeMainSurface,
       closeResourceLogsSurface: workbench.closeResourceLogsSurface,
       closeResourcePane: workbench.closeResourcePane,
+      consumeSettingsLaunchContext: workbench.consumeSettingsLaunchContext,
       onDbServiceRestoreAccepted: workbench.onDbServiceRestoreAccepted,
       registerSettingsLeaveGuard: workbench.registerSettingsLeaveGuard,
       repairSide: workbench.repairSide,
@@ -457,6 +454,7 @@ export function useProjectCanvasModule({
       workbench.closeMainSurface,
       workbench.closeResourceLogsSurface,
       workbench.closeResourcePane,
+      workbench.consumeSettingsLaunchContext,
       workbench.onDbServiceRestoreAccepted,
       workbench.registerSettingsLeaveGuard,
       workbench.repairSide,
@@ -464,7 +462,10 @@ export function useProjectCanvasModule({
   );
 
   const openSurfaceIntent = useCallback(
-    (intent: ProjectSurfaceIntent) => {
+    (
+      intent: ProjectSurfaceIntent,
+      launchSource: SettingsLaunchSource = "toolbar"
+    ) => {
       if (intent.slot === "drawer") {
         workbench.openDrawerSurface(intent.entry);
         return;
@@ -473,7 +474,7 @@ export function useProjectCanvasModule({
         workbench.openMainSurface(intent.entry);
         return;
       }
-      workbench.openSideSurface(intent.entry);
+      workbench.openSideSurface(intent.entry, undefined, launchSource);
     },
     [
       workbench.openDrawerSurface,
@@ -481,11 +482,6 @@ export function useProjectCanvasModule({
       workbench.openSideSurface,
     ]
   );
-
-  const viewportInset =
-    workbench.surfaceRenderModel.side == null
-      ? 0
-      : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET;
 
   return {
     actions: {
@@ -497,9 +493,9 @@ export function useProjectCanvasModule({
       deploymentTaskDock,
       frameState,
       meta,
-      selectedTelemetryTarget,
+      runtimeModelDecorators: workbench.runtimeModelDecorators,
+      runtimeStore,
       state,
-      viewportInset,
     },
     surfaces: {
       actions: surfaceActions,
@@ -517,6 +513,9 @@ export function useProjectCanvasModule({
       ],
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,
+      settingsLaunchContext: workbench.settingsLaunchContext,
+      settingsReadModelHints: workbench.settingsReadModelHints,
+      settingsSessionEvents: workbench.settingsSessionEvents,
     },
   };
 }

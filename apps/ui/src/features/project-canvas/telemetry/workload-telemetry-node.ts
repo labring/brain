@@ -1,17 +1,6 @@
-import type { CanvasSelectedNode } from "@workspace/ui/components/canvas/canvas.types";
 import type { ContainerNodeStates } from "@workspace/ui/components/container-node/container-node";
 import type { DatabaseNodeStates } from "@workspace/ui/components/database-node/database-node";
-import type { Node } from "@xyflow/react";
-
-import {
-  CANVAS_CONTAINER_NODE_TYPE,
-  CANVAS_DATABASE_NODE_TYPE,
-} from "../nodes/constants";
-import type {
-  CanvasContainerNodeData,
-  CanvasDatabaseNodeData,
-  CanvasDatabaseWorkloadRef,
-} from "../nodes/types";
+import type { CanvasDatabaseWorkloadRef } from "../nodes/types";
 import type {
   WorkloadTelemetrySnapshotState,
   WorkloadTelemetryTarget,
@@ -20,14 +9,6 @@ import type {
 type SnapshotMetrics = NonNullable<
   WorkloadTelemetrySnapshotState["item"]
 >["metrics"];
-
-export function shouldSubscribeWorkloadTelemetry(options: {
-  expanded: boolean;
-  selected: boolean;
-  sidePaneOpen: boolean;
-}) {
-  return options.expanded || options.selected || options.sidePaneOpen;
-}
 
 function nonEmpty(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -85,47 +66,30 @@ export function databaseTelemetryTargetFromWorkload(
   return { kind: "db", name, namespace };
 }
 
-export function containerStatesWithTelemetry(
-  states: ContainerNodeStates,
+export function containerMetricsWithTelemetrySnapshot(
+  fallbackMetrics: ContainerNodeStates["metrics"],
   snapshot: WorkloadTelemetrySnapshotState
-): ContainerNodeStates {
+): ContainerNodeStates["metrics"] {
   const metrics = snapshot.item?.metrics;
   if (metrics === undefined) {
-    return states;
+    return fallbackMetrics;
   }
   return {
-    ...states,
-    metrics: containerMetricsFromSnapshot(metrics),
+    ...fallbackMetrics,
+    ...containerMetricsFromSnapshot(metrics),
   };
 }
 
-export function databaseStatesWithTelemetry(
-  states: DatabaseNodeStates,
+export function databaseMetricsWithTelemetrySnapshot(
+  fallbackMetrics: DatabaseNodeStates["metrics"],
   snapshot: WorkloadTelemetrySnapshotState
-): DatabaseNodeStates {
+): DatabaseNodeStates["metrics"] {
   const metrics = snapshot.item?.metrics;
   if (metrics === undefined) {
-    return states;
+    return fallbackMetrics;
   }
   return {
-    ...states,
-    metrics: databaseMetricsFromSnapshot(metrics),
+    ...fallbackMetrics,
+    ...databaseMetricsFromSnapshot(metrics),
   };
-}
-
-export function telemetryTargetFromCanvasNode(
-  node: CanvasSelectedNode | Node | null
-): WorkloadTelemetryTarget | null {
-  if (node === null) {
-    return null;
-  }
-  if (node.type === CANVAS_CONTAINER_NODE_TYPE) {
-    const data = node.data as CanvasContainerNodeData;
-    return containerTelemetryTargetFromStates(data.states);
-  }
-  if (node.type === CANVAS_DATABASE_NODE_TYPE) {
-    const data = node.data as CanvasDatabaseNodeData;
-    return databaseTelemetryTargetFromWorkload(data.workload);
-  }
-  return null;
 }

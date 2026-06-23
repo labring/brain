@@ -1,18 +1,38 @@
 "use client";
 
-import { useCanvas } from "@workspace/ui/components/canvas/canvas.use";
-import { DatabaseNode } from "@workspace/ui/components/database-node/database-node";
+import {
+  DatabaseNode,
+  type DatabaseNodeStates,
+} from "@workspace/ui/components/database-node/database-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo, useMemo } from "react";
 
+import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
 import {
-  databaseStatesWithTelemetry,
+  databaseMetricsWithTelemetrySnapshot,
   databaseTelemetryTargetFromWorkload,
-  shouldSubscribeWorkloadTelemetry,
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
-import type { CanvasDatabaseRfNode } from "./types";
+import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
+import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
+import type { CanvasDatabaseNodeData, CanvasDatabaseRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
+
+function CanvasDatabaseTelemetryMetrics({
+  fallbackMetrics,
+  target,
+}: {
+  fallbackMetrics: DatabaseNodeStates["metrics"];
+  target: WorkloadTelemetryTarget | null;
+}) {
+  const telemetry = useWorkloadTelemetrySnapshot(target);
+  const metrics = databaseMetricsWithTelemetrySnapshot(
+    fallbackMetrics,
+    telemetry
+  );
+
+  return <DatabaseNode.MetricsContent metrics={metrics} />;
+}
 
 export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   data,
@@ -22,22 +42,15 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   positionAbsoluteY,
   type,
 }: NodeProps<CanvasDatabaseRfNode>) {
-  const { actions = {}, connections, states } = data;
+  const model =
+    useProjectRuntimeNodeModel<CanvasDatabaseNodeData>({ data, id, type }) ??
+    data;
+  const { actions = {}, connections, states } = model;
   const telemetryTarget = useMemo(
-    () => databaseTelemetryTargetFromWorkload(data.workload),
-    [data.workload]
+    () => databaseTelemetryTargetFromWorkload(model.workload),
+    [model.workload]
   );
-  const { state } = useCanvas();
-  const edge = state.selectedEdge;
-  const isEndpointOfSelectedEdge =
-    edge != null && (edge.source === id || edge.target === id);
-  const selected =
-    (state.selectedNode != null && state.selectedNode.id === id) ||
-    isEndpointOfSelectedEdge;
-  const highlightedConnectionSide =
-    state.connectionOrigin?.nodeId === id
-      ? state.connectionOrigin.side
-      : undefined;
+  const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
     data,
     id,
@@ -45,29 +58,27 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     positionAbsoluteY,
     type,
   });
-  const activeTelemetryTarget = shouldSubscribeWorkloadTelemetry({
-    expanded: expansion.expanded,
-    selected,
-    sidePaneOpen: false,
-  })
-    ? telemetryTarget
-    : null;
-  const telemetry = useWorkloadTelemetrySnapshot(activeTelemetryTarget);
-  const statesWithTelemetry = databaseStatesWithTelemetry(states, telemetry);
 
   return (
     <DatabaseNode.Root
       connections={connections}
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ dragging, highlightedConnectionSide, selected }}
+      interaction={{ ...interaction, dragging }}
       lifecycleActions={actions.lifecycleActions}
       onCopyConnection={actions.copyConnection}
       onExpandedChange={expansion.onExpandedChange}
       onTogglePublicConnection={actions.togglePublicConnection}
       quickActions={actions.quickActions}
-      states={statesWithTelemetry}
+      states={states}
     >
-      <DatabaseNode.Content />
+      <DatabaseNode.Content
+        metricsContent={
+          <CanvasDatabaseTelemetryMetrics
+            fallbackMetrics={states.metrics}
+            target={telemetryTarget}
+          />
+        }
+      />
     </DatabaseNode.Root>
   );
 });

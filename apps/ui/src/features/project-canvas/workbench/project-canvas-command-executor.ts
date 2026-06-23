@@ -29,9 +29,6 @@ export interface ProjectCanvasCommandPlanAdapters {
     entry: ProjectSideSurfaceEntry,
     selection?: ProjectCanvasSelection | null
   ) => void;
-  startPendingDbReference: (
-    reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
-  ) => void;
   writeSelection: (selection: ProjectCanvasSelection | null) => void;
 }
 
@@ -77,10 +74,6 @@ export function executeUnguardedProjectCanvasCommandPlan(
 
   if (plan.stackOrder?.kind === "bringNodeToFront") {
     adapters.bringNodeToFront(plan.stackOrder.nodeId);
-  }
-
-  if (plan.pendingDbReference !== undefined) {
-    adapters.startPendingDbReference(plan.pendingDbReference);
   }
 
   const selection = commandPlanHasSelection(plan) ? plan.selection : undefined;

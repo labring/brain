@@ -1,5 +1,6 @@
 "use client";
 
+import type { DbLifecycleWorkloadRef } from "@workspace/api/hooks";
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type {
   DatabaseNodeLifecycleActionKey,
@@ -7,7 +8,7 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import {
@@ -21,17 +22,15 @@ import type {
 } from "@/features/project-canvas/nodes/types";
 import {
   projectApTargetFromNode,
+  projectCanvasSelectionFromNode,
   projectDbTargetFromNode,
 } from "@/features/project-canvas/surface/selection";
-import { canvasNodeSettingsAccess } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   type ProjectCanvasCommandPlan,
   planProjectCanvasCommand,
 } from "@/features/project-canvas/workbench/command-model";
 import {
   createPendingApDbReferenceMutationStartHandler,
-  dbReferenceIntentDataForContainerNode,
-  type PendingAddDbDsnReferenceIntent,
   type PendingApDbReferenceDraftRegistration,
   pendingApDbCanvasReferencesFromDraftReferences,
   pendingApDbReferenceDraftKey,
@@ -41,15 +40,16 @@ import type {
   ProjectCanvasApDeleteTarget,
   ProjectCanvasDbDeleteTarget,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
-import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
+import {
+  apLifecycleWorkloadRefFromTarget,
+  dbLifecycleWorkloadRefFromTarget,
+  type ProjectResourceActions,
+} from "@/features/project-resource-actions/resource-actions";
+import { projectRuntimeShellLookupFromNodeData } from "@/features/project-runtime/resource-models";
+import type { ProjectRuntimeNodeModelDecorators } from "@/features/project-runtime/resource-models-react";
 import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
-import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-
-const EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES: ApEnvironmentDbReferenceSource[] =
-  [];
 
 export function useProjectCanvasNodeDecorators({
-  apEnvironmentDbReferenceSources,
   executeCommandPlan,
   nodes,
   onNodeExpansionChange,
@@ -59,7 +59,6 @@ export function useProjectCanvasNodeDecorators({
   requestDbDelete,
   resourceActions,
 }: {
-  apEnvironmentDbReferenceSources?: ApEnvironmentDbReferenceSource[];
   executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
   nodes: Node[];
   onNodeExpansionChange?: (node: Node) => void;
@@ -71,21 +70,17 @@ export function useProjectCanvasNodeDecorators({
   requestDbDelete: (target: ProjectCanvasDbDeleteTarget) => void;
   resourceActions: ProjectResourceActions;
 }) {
-  const addDbDsnReferenceIntentCounter = useRef(0);
   const pendingApDbReferenceDraftByApKey = useRef<
     Map<string, PendingApDbReferenceDraftRegistration>
   >(new Map());
   const pendingDbReferencesChangeHandlerByApKey = useRef<
     Map<string, (references: readonly ApSettingsPendingDbReference[]) => void>
   >(new Map());
-  const [pendingAddDbDsnReferenceIntent, setPendingAddDbDsnReferenceIntent] =
-    useState<PendingAddDbDsnReferenceIntent | null>(null);
 
   const {
     apLifecycle,
     copyDatabaseConnection,
     dbLifecycle,
-    refreshAfterResourceAction,
     runResourceAction,
     toggleDatabasePublicAccess,
   } = resourceActions;
@@ -104,29 +99,11 @@ export function useProjectCanvasNodeDecorators({
     startWorkload: startDbWorkload,
     stopWorkload: stopDbWorkload,
   } = dbLifecycle;
+  const nodesRef = useRef(nodes);
 
-  const resolvedApEnvironmentDbReferenceSources =
-    apEnvironmentDbReferenceSources ??
-    EMPTY_AP_ENVIRONMENT_DB_REFERENCE_SOURCES;
-
-  const handleAddDbDsnReferenceIntentConsumed = useCallback((id: string) => {
-    setPendingAddDbDsnReferenceIntent((current) =>
-      current?.id === id ? null : current
-    );
-  }, []);
-
-  const startPendingDbReference = useCallback(
-    (
-      reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
-    ) => {
-      addDbDsnReferenceIntentCounter.current += 1;
-      setPendingAddDbDsnReferenceIntent({
-        ...reference,
-        id: `ap-db-${addDbDsnReferenceIntentCounter.current}`,
-      });
-    },
-    []
-  );
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   const handlePendingDbReferencesChange = useCallback(
     (change: {
@@ -189,6 +166,42 @@ export function useProjectCanvasNodeDecorators({
     },
     []
   );
+  const apSettingsSessionEventsForAp = useCallback(
+    ({ name, namespace }: { name: string; namespace: string }) => {
+      const apName = name.trim();
+      const apNamespace = namespace.trim();
+      return {
+        onAddDbDsnReferenceMutationStart:
+          createPendingApDbReferenceMutationStartHandler({
+            apName,
+            apNamespace,
+            onBeforeStart: () => {
+              const draftByApKey = pendingApDbReferenceDraftByApKey.current;
+              const draftKey = pendingApDbReferenceDraftKey({
+                apName,
+                apNamespace,
+              });
+              draftByApKey.get(draftKey)?.cleanup?.();
+              draftByApKey.delete(draftKey);
+            },
+            onPendingApDbReferencesStart,
+          }),
+        onPendingDbReferencesChange: pendingDbReferencesChangeHandlerForAp({
+          apName,
+          apNamespace,
+        }),
+      };
+    },
+    [onPendingApDbReferencesStart, pendingDbReferencesChangeHandlerForAp]
+  );
+  const handleNodeExpansionChange = useCallback<
+    NonNullable<CanvasNodeLayoutState["onExpandedChange"]>
+  >(
+    (nextNode) => {
+      onNodeExpansionChange?.(nextNode);
+    },
+    [onNodeExpansionChange]
+  );
 
   useEffect(
     () => () => {
@@ -205,95 +218,114 @@ export function useProjectCanvasNodeDecorators({
   const decorateDatabaseNode = useCallback(
     (node: Node): Node => {
       const data = node.data as CanvasDatabaseNodeData;
-      const workload = data.workload;
-      const name = workload.name.trim();
-      const namespace = workload.namespace.trim();
-      const canTogglePublicAccess =
-        dbAuthReady && name !== "" && namespace !== "";
-      const canUseLifecycle = dbAuthReady && name !== "" && namespace !== "";
-      const publicAccessPendingTarget = getPublicAccessPendingTarget(workload);
+      const target = projectDbTargetFromNode(node);
+      const workload = dbLifecycleWorkloadRefFromTarget(target);
+      const name = workload?.name ?? "";
+      const canTogglePublicAccess = dbAuthReady && workload != null;
+      const canUseLifecycle = dbAuthReady && workload != null;
+      const publicAccessPendingTarget =
+        workload == null ? undefined : getPublicAccessPendingTarget(workload);
       const connections = resolveDatabasePublicConnections(
         data.connections,
         publicAccessPendingTarget
       );
       const togglePublicConnection:
         | DatabaseNodeTogglePublicConnectionHandler
-        | undefined = canTogglePublicAccess
-        ? (_connection, _index, nextEnabled) => {
-            runResourceAction(
-              () =>
-                toggleDatabasePublicAccess({
-                  metadata: data.metadata,
-                  nextEnabled,
-                  workload,
-                }),
-              {
-                loading: nextEnabled
-                  ? `Enabling public access for "${name}"...`
-                  : `Disabling public access for "${name}"...`,
-                success: nextEnabled
-                  ? `Enabled public access for "${name}"`
-                  : `Disabled public access for "${name}"`,
-              },
-              {
-                onSettled: () => clearPublicAccessPendingTarget(workload),
-              }
-            );
-          }
-        : undefined;
+        | undefined =
+        canTogglePublicAccess && workload != null
+          ? (_connection, _index, nextEnabled) => {
+              runResourceAction(
+                () =>
+                  toggleDatabasePublicAccess({
+                    metadata: data.metadata,
+                    nextEnabled,
+                    workload,
+                  }),
+                {
+                  loading: nextEnabled
+                    ? `Enabling public access for "${name}"...`
+                    : `Disabling public access for "${name}"...`,
+                  success: nextEnabled
+                    ? `Enabled public access for "${name}"`
+                    : `Disabled public access for "${name}"`,
+                },
+                {
+                  onSettled: () => clearPublicAccessPendingTarget(workload),
+                }
+              );
+            }
+          : undefined;
       const dbLifecycleAction = (
+        workloadRef: DbLifecycleWorkloadRef,
         action: DatabaseNodeLifecycleActionKey,
         mutation: () => Promise<unknown>,
         copy: { loading: string; success: string }
       ) => ({
-        loading: isDbLifecycleLoading(workload, action),
+        loading: isDbLifecycleLoading(workloadRef, action),
         onClick: () => runResourceAction(mutation, copy),
       });
       const displayName = data.states.name || name;
-      const target = projectDbTargetFromNode(node);
       const hasSurfaceActions = target != null;
-      const lifecycleActions = canUseLifecycle
-        ? {
-            delete: {
-              loading: isDbLifecycleLoading(workload, "delete"),
-              onClick: () =>
-                requestDbDelete({
-                  displayName,
-                  name: workload.name,
-                  namespace: workload.namespace,
-                }),
-            },
-            restart: dbLifecycleAction(
-              "restart",
-              () => restartDbWorkload(workload),
-              {
-                loading: `Restarting "${displayName}"...`,
-                success: `Restart requested for "${displayName}"`,
-              }
-            ),
-            start: dbLifecycleAction("start", () => startDbWorkload(workload), {
-              loading: `Starting "${displayName}"...`,
-              success: `Start requested for "${displayName}"`,
-            }),
-            stop: dbLifecycleAction("stop", () => stopDbWorkload(workload), {
-              loading: `Stopping "${displayName}"...`,
-              success: `Stop requested for "${displayName}"`,
-            }),
-          }
-        : undefined;
+      const lifecycleActions =
+        canUseLifecycle && workload != null
+          ? {
+              delete: {
+                loading: isDbLifecycleLoading(workload, "delete"),
+                onClick: () =>
+                  requestDbDelete({
+                    displayName,
+                    name: workload.name,
+                    namespace: workload.namespace,
+                  }),
+              },
+              restart: dbLifecycleAction(
+                workload,
+                "restart",
+                () => restartDbWorkload(workload),
+                {
+                  loading: `Restarting "${displayName}"...`,
+                  success: `Restart requested for "${displayName}"`,
+                }
+              ),
+              start: dbLifecycleAction(
+                workload,
+                "start",
+                () => startDbWorkload(workload),
+                {
+                  loading: `Starting "${displayName}"...`,
+                  success: `Start requested for "${displayName}"`,
+                }
+              ),
+              stop: dbLifecycleAction(
+                workload,
+                "stop",
+                () => stopDbWorkload(workload),
+                {
+                  loading: `Stopping "${displayName}"...`,
+                  success: `Stop requested for "${displayName}"`,
+                }
+              ),
+            }
+          : undefined;
 
       const databaseQuickAction = (action: DatabaseNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
-        onClick: hasSurfaceActions
-          ? () =>
-              executeCommandPlan(
-                planProjectCanvasCommand({
-                  intent: { action, kind: "databaseQuickAction", node },
-                  nodes,
-                  readOnly,
-                })
-              )
-          : undefined,
+        onClick:
+          target == null
+            ? undefined
+            : () =>
+                executeCommandPlan(
+                  planProjectCanvasCommand({
+                    intent: {
+                      action,
+                      kind: "databaseQuickAction",
+                      selection: projectCanvasSelectionFromNode(node),
+                      target,
+                    },
+                    nodes: nodesRef.current,
+                    readOnly,
+                  })
+                ),
       });
 
       return {
@@ -318,9 +350,6 @@ export function useProjectCanvasNodeDecorators({
             },
           },
           connections,
-          settingsAccess: canvasNodeSettingsAccess({
-            readOnly,
-          }),
         },
       };
     },
@@ -331,7 +360,6 @@ export function useProjectCanvasNodeDecorators({
       executeCommandPlan,
       getPublicAccessPendingTarget,
       isDbLifecycleLoading,
-      nodes,
       readOnly,
       requestDbDelete,
       restartDbWorkload,
@@ -346,71 +374,40 @@ export function useProjectCanvasNodeDecorators({
     (node: Node): Node => {
       const data = node.data as CanvasContainerNodeData;
       const states = data.states;
-      const ns = states.namespace?.trim() ?? "";
-      const name = states.name.trim();
       const target = projectApTargetFromNode(node);
+      const workload = apLifecycleWorkloadRefFromTarget(target);
+      const ns = workload?.namespace ?? states.namespace?.trim() ?? "";
 
       const isApLifecycle =
-        apAuthReady && states.kind === "AP" && ns !== "" && name !== "";
+        apAuthReady && states.kind === "AP" && workload != null;
 
       const hasSurfaceActions = target != null;
-      const dbReferenceIntentData = dbReferenceIntentDataForContainerNode({
-        intent: pendingAddDbDsnReferenceIntent,
-        nodeId: node.id,
-        onConsumed: handleAddDbDsnReferenceIntentConsumed,
-      });
-      const onPendingDbReferencesChange = pendingDbReferencesChangeHandlerForAp(
-        {
-          apName: name,
-          apNamespace: ns,
-        }
-      );
-      const settingsAccess = canvasNodeSettingsAccess({
-        readOnly,
-      });
-      const onAddDbDsnReferenceMutationStart =
-        createPendingApDbReferenceMutationStartHandler({
-          apName: name,
-          apNamespace: ns,
-          onBeforeStart: () => {
-            const draftByApKey = pendingApDbReferenceDraftByApKey.current;
-            const draftKey = pendingApDbReferenceDraftKey({
-              apName: name,
-              apNamespace: ns,
-            });
-            draftByApKey.get(draftKey)?.cleanup?.();
-            draftByApKey.delete(draftKey);
-          },
-          onPendingApDbReferencesStart,
-        });
 
       if (!(hasSurfaceActions || isApLifecycle)) {
-        return {
-          ...node,
-          data: {
-            ...data,
-            dbDsnReferenceSources: resolvedApEnvironmentDbReferenceSources,
-            ...dbReferenceIntentData,
-            onAddDbDsnReferenceMutationStart,
-            onPendingDbReferencesChange,
-            settingsAccess,
-          },
-        };
+        return node;
       }
 
       const containerQuickAction = (action: ContainerNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
-        onClick: () =>
-          executeCommandPlan(
-            planProjectCanvasCommand({
-              intent: { action, kind: "containerQuickAction", node },
-              nodes,
-              readOnly,
-            })
-          ),
+        onClick:
+          target == null
+            ? undefined
+            : () =>
+                executeCommandPlan(
+                  planProjectCanvasCommand({
+                    intent: {
+                      action,
+                      kind: "containerQuickAction",
+                      selection: projectCanvasSelectionFromNode(node),
+                      target,
+                    },
+                    nodes: nodesRef.current,
+                    readOnly,
+                  })
+                ),
       });
 
-      const ref = { name: states.name, namespace: ns };
+      const ref = workload ?? { name: states.name, namespace: ns };
       const displayName = states.name;
       const lifecycleActions = isApLifecycle
         ? {
@@ -459,12 +456,6 @@ export function useProjectCanvasNodeDecorators({
         ...node,
         data: {
           ...data,
-          ...dbReferenceIntentData,
-          dbDsnReferenceSources: resolvedApEnvironmentDbReferenceSources,
-          onAddDbDsnReferenceMutationStart,
-          onPendingDbReferencesChange,
-          onWorkloadMutation: refreshAfterResourceAction,
-          settingsAccess,
           actions: {
             ...(data.actions ?? {}),
             ...(lifecycleActions === undefined ? {} : { lifecycleActions }),
@@ -476,16 +467,9 @@ export function useProjectCanvasNodeDecorators({
     [
       apAuthReady,
       executeCommandPlan,
-      handleAddDbDsnReferenceIntentConsumed,
-      nodes,
-      onPendingApDbReferencesStart,
       pauseWorkload,
-      pendingAddDbDsnReferenceIntent,
-      pendingDbReferencesChangeHandlerForAp,
       readOnly,
-      refreshAfterResourceAction,
       requestApDelete,
-      resolvedApEnvironmentDbReferenceSources,
       restartWorkload,
       runResourceAction,
       startWorkload,
@@ -501,26 +485,32 @@ export function useProjectCanvasNodeDecorators({
       const data = node.data as Record<string, unknown> & {
         layout?: CanvasNodeLayoutState;
       };
+      if (data.layout?.onExpandedChange === handleNodeExpansionChange) {
+        return node;
+      }
       return {
         ...node,
         data: {
           ...data,
           layout: {
             ...(data.layout ?? {}),
-            onExpandedChange: (nextNode: Node) => {
-              onNodeExpansionChange(nextNode);
-            },
+            onExpandedChange: handleNodeExpansionChange,
           },
         },
       };
     },
-    [onNodeExpansionChange, readOnly]
+    [handleNodeExpansionChange, onNodeExpansionChange, readOnly]
   );
 
   const decoratedNodes = useMemo(
     () =>
       nodes.map((node): Node => {
         const layoutNode = decorateLayoutNode(node);
+        if (
+          projectRuntimeShellLookupFromNodeData(layoutNode.data) !== undefined
+        ) {
+          return layoutNode;
+        }
 
         if (layoutNode.type === CANVAS_DATABASE_NODE_TYPE) {
           return decorateDatabaseNode(layoutNode);
@@ -535,8 +525,23 @@ export function useProjectCanvasNodeDecorators({
     [decorateContainerNode, decorateDatabaseNode, decorateLayoutNode, nodes]
   );
 
+  const runtimeModelDecorators = useMemo<ProjectRuntimeNodeModelDecorators>(
+    () => ({
+      decorateContainerModel: ({ model, node }) => {
+        const decorated = decorateContainerNode({ ...node, data: model });
+        return { ...model, ...decorated.data } as CanvasContainerNodeData;
+      },
+      decorateDatabaseModel: ({ model, node }) => {
+        const decorated = decorateDatabaseNode({ ...node, data: model });
+        return { ...model, ...decorated.data } as CanvasDatabaseNodeData;
+      },
+    }),
+    [decorateContainerNode, decorateDatabaseNode]
+  );
+
   return {
+    apSettingsSessionEventsForAp,
     nodes: decoratedNodes,
-    startPendingDbReference,
+    runtimeModelDecorators,
   };
 }

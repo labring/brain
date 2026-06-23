@@ -3,7 +3,15 @@
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
   resolveMissingResourceLayoutGrace,
@@ -12,6 +20,14 @@ import type {
   CanvasLayoutDocument,
   PlacementCommand,
 } from "@/features/project-canvas/layout/types";
+import {
+  type ProjectCanvasLayoutIntent,
+  projectCanvasRuntimeResourceGraph,
+} from "@/features/project-canvas/runtime/resource-graph";
+import {
+  createProjectRuntimeStore,
+  type ProjectRuntimeStore,
+} from "@/features/project-runtime/resource-store";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_PROJECT_ID_LABEL,
@@ -22,7 +38,11 @@ import {
 } from "@/lib/deploy-task/client";
 import {
   type DeploymentTaskProjection,
-  deploymentTaskProjectionIsVisible,
+  type DeploymentTaskProjectionStreamEvent,
+  deploymentTaskCanvasTopologyChanged,
+  nextDeploymentTaskProjectionVisibilityChangeMs,
+  replaceDeploymentTaskProjections,
+  selectCanvasDeploymentTaskProjections,
   upsertDeploymentTaskProjection,
 } from "@/lib/deploy-task/projection";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
@@ -30,15 +50,13 @@ import {
   type WorkloadTransientSinceByKey,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
-import {
-  buildProjectCanvasResourceSnapshot,
-  type ProjectCanvasResourceSnapshot,
-} from "./resource-snapshot";
 import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
 const DEPLOYMENT_PROJECTION_RECONNECT_MS = 3000;
+const EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT =
+  emptyMissingResourceLayoutGraceResult();
 
 function createTransientSinceMap(): WorkloadTransientSinceByKey {
   return new Map<string, number>();
@@ -74,6 +92,16 @@ function nextMissingResourceGraceDelayMs(
   return nextDelay;
 }
 
+interface ProjectCanvasResourceRuntimeState {
+  apEnvironmentDbReferenceSources: ReturnType<
+    ProjectRuntimeStore["selectRelationshipIndexes"]
+  >["apEnvironmentDbReferenceSources"];
+  canvasState: CanvasState;
+  frameState: ReturnType<typeof projectCanvasFrameState>;
+  layoutIntent: ProjectCanvasLayoutIntent | null;
+  runtimeStore: ProjectRuntimeStore;
+}
+
 export function useProjectCanvasResourceSnapshot(options: {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
@@ -83,7 +111,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   namespace: string;
   /** Project UID from the route (decoded). */
   uid: string;
-}): ProjectCanvasResourceSnapshot & {
+}): ProjectCanvasResourceRuntimeState & {
   deploymentTaskProjections: DeploymentTaskProjection[];
   error: Error | undefined;
   /** True only during initial discovery while the graph is still empty. */
@@ -116,7 +144,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   const deploymentTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const statefulSetTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const missingLayoutSinceByOwnerKeyRef = useRef(new Map<string, number>());
-  const [, setMissingLayoutGraceTick] = useState(0);
+  const [missingLayoutGraceClock, setMissingLayoutGraceClock] = useState(0);
   const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
     useState(0);
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
@@ -125,11 +153,67 @@ export function useProjectCanvasResourceSnapshot(options: {
   const [deployTasks, setDeployTasks] = useState<DeploymentTaskProjection[]>(
     []
   );
-  const [, setDeploymentProjectionVisibilityTick] = useState(0);
+  const deployTasksRef = useRef<DeploymentTaskProjection[]>([]);
+  const canvasDeployTasksRef = useRef<DeploymentTaskProjection[]>([]);
+  const [
+    deploymentProjectionVisibilityNow,
+    setDeploymentProjectionVisibilityNow,
+  ] = useState(() => new Date());
   const [deployTasksLoading, setDeployTasksLoading] = useState(false);
   const [deployTasksError, setDeployTasksError] = useState<Error | undefined>(
     undefined
   );
+  const commitDeployTasks = useCallback(
+    (nextProjections: readonly DeploymentTaskProjection[]) => {
+      const current = deployTasksRef.current;
+      const next = replaceDeploymentTaskProjections(current, nextProjections);
+      if (next === current) {
+        return { canvasTopologyChanged: false };
+      }
+      const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
+        current,
+        next,
+      });
+      deployTasksRef.current = next;
+      setDeployTasks(next);
+      return { canvasTopologyChanged };
+    },
+    []
+  );
+  const commitDeployTaskUpsert = useCallback(
+    (projection: DeploymentTaskProjection) => {
+      const current = deployTasksRef.current;
+      const next = upsertDeploymentTaskProjection(current, projection);
+      if (next === current) {
+        return { canvasTopologyChanged: false };
+      }
+      const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
+        current,
+        next,
+      });
+      deployTasksRef.current = next;
+      setDeployTasks(next);
+      return { canvasTopologyChanged };
+    },
+    []
+  );
+  const commitDeployTaskRemove = useCallback((taskId: string) => {
+    const current = deployTasksRef.current;
+    const next = current.filter((task) => task.id !== taskId);
+    if (next.length === current.length) {
+      return { canvasTopologyChanged: false };
+    }
+    const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
+      current,
+      next,
+    });
+    deployTasksRef.current = next;
+    setDeployTasks(next);
+    return { canvasTopologyChanged };
+  }, []);
+  useEffect(() => {
+    deployTasksRef.current = deployTasks;
+  }, [deployTasks]);
   const peerDbsEmpty = useCallback(
     () => apItemsFromList(dbsListRef.current).length === 0,
     []
@@ -143,6 +227,18 @@ export function useProjectCanvasResourceSnapshot(options: {
       Date.now() + WORKLOAD_DISCOVERY_POLL_WINDOW_MS
     );
   }, []);
+  const runtimeStoreKey = JSON.stringify([namespace, uid]);
+  const runtimeStoreRef = useRef<{
+    key: string;
+    store: ProjectRuntimeStore;
+  } | null>(null);
+  if (runtimeStoreRef.current?.key !== runtimeStoreKey) {
+    runtimeStoreRef.current = {
+      key: runtimeStoreKey,
+      store: createProjectRuntimeStore(),
+    };
+  }
+  const runtimeStore = runtimeStoreRef.current.store;
   const workloadListRefreshInterval = useCallback(
     (
       latestData: K8sGetResponse | undefined,
@@ -273,6 +369,38 @@ export function useProjectCanvasResourceSnapshot(options: {
     );
     refreshWorkloadResourcesRef.current().catch(() => undefined);
   }, []);
+  const handleDeploymentProjectionEvent = useCallback(
+    (event: DeploymentTaskProjectionStreamEvent) => {
+      setDeployTasksError(undefined);
+      switch (event.type) {
+        case "snapshot": {
+          const result = commitDeployTasks(event.projections);
+          if (result.canvasTopologyChanged) {
+            requestWorkloadReconciliation();
+          }
+          return;
+        }
+        case "upsert":
+          if (commitDeployTaskUpsert(event.projection).canvasTopologyChanged) {
+            requestWorkloadReconciliation();
+          }
+          return;
+        case "remove":
+          if (commitDeployTaskRemove(event.taskId).canvasTopologyChanged) {
+            requestWorkloadReconciliation();
+          }
+          return;
+        default:
+          event satisfies never;
+      }
+    },
+    [
+      commitDeployTaskRemove,
+      commitDeployTaskUpsert,
+      commitDeployTasks,
+      requestWorkloadReconciliation,
+    ]
+  );
 
   const refreshDeployTasks = useCallback(async () => {
     if (
@@ -280,7 +408,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       namespace.trim() === "" ||
       uid.trim() === ""
     ) {
-      setDeployTasks([]);
+      commitDeployTasks([]);
       setDeployTasksLoading(false);
       setDeployTasksError(undefined);
       return [];
@@ -292,7 +420,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         namespace,
         projectId: uid,
       });
-      setDeployTasks(projections);
+      commitDeployTasks(projections);
       setDeployTasksError(undefined);
       return projections;
     } catch (error) {
@@ -302,11 +430,11 @@ export function useProjectCanvasResourceSnapshot(options: {
     } finally {
       setDeployTasksLoading(false);
     }
-  }, [kubeconfig, namespace, uid]);
+  }, [commitDeployTasks, kubeconfig, namespace, uid]);
 
   useEffect(() => {
     let cancelled = false;
-    setDeployTasks([]);
+    commitDeployTasks([]);
     setDeployTasksError(undefined);
 
     if (
@@ -328,7 +456,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         if (cancelled) {
           return;
         }
-        setDeployTasks(projections);
+        commitDeployTasks(projections);
         setDeployTasksError(undefined);
       })
       .catch((error: unknown) => {
@@ -348,7 +476,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     return () => {
       cancelled = true;
     };
-  }, [kubeconfig, namespace, uid]);
+  }, [commitDeployTasks, kubeconfig, namespace, uid]);
 
   useEffect(() => {
     if (
@@ -366,29 +494,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       streamProjectDeploymentTaskProjections({
         kubeconfig,
         namespace,
-        onEvent: (event) => {
-          setDeployTasksError(undefined);
-          if (event.type === "snapshot") {
-            setDeployTasks(event.projections);
-            if (event.projections.length > 0) {
-              requestWorkloadReconciliation();
-            }
-            return;
-          }
-          if (event.type === "upsert") {
-            setDeployTasks((current) =>
-              upsertDeploymentTaskProjection(current, event.projection)
-            );
-            requestWorkloadReconciliation();
-            return;
-          }
-          if (event.type === "remove") {
-            setDeployTasks((current) =>
-              current.filter((task) => task.id !== event.taskId)
-            );
-            requestWorkloadReconciliation();
-          }
-        },
+        onEvent: handleDeploymentProjectionEvent,
         projectId: uid,
         signal: controller.signal,
       }).catch((error: unknown) => {
@@ -413,22 +519,36 @@ export function useProjectCanvasResourceSnapshot(options: {
       }
     };
   }, [
+    handleDeploymentProjectionEvent,
     isPageVisible,
     kubeconfig,
     namespace,
-    requestWorkloadReconciliation,
     uid,
   ]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setDeploymentProjectionVisibilityTick((tick) => tick + 1);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const canvasDeployTasks = deployTasks.filter((task) =>
-    deploymentTaskProjectionIsVisible(task)
+    const nextDelay =
+      nextDeploymentTaskProjectionVisibilityChangeMs(deployTasks);
+    if (nextDelay === undefined) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDeploymentProjectionVisibilityNow(new Date());
+    }, nextDelay + 25);
+    return () => window.clearTimeout(timer);
+  }, [deployTasks]);
+  const canvasDeployTasks = useMemo(
+    () =>
+      selectCanvasDeploymentTaskProjections({
+        current: canvasDeployTasksRef.current,
+        now: deploymentProjectionVisibilityNow,
+        projections: deployTasks,
+      }),
+    [deploymentProjectionVisibilityNow, deployTasks]
   );
+  useEffect(() => {
+    canvasDeployTasksRef.current = canvasDeployTasks;
+  }, [canvasDeployTasks]);
 
   const revalidate = useCallback(() => {
     return Promise.all([refreshWorkloadResources(), refreshDeployTasks()]);
@@ -464,30 +584,42 @@ export function useProjectCanvasResourceSnapshot(options: {
   const isLoading =
     apsLoading || dbsLoading || templateNativeLoading || deployTasksLoading;
 
-  const baseSnapshot = useMemo(
+  useEffect(() => {
+    runtimeStore.commitResources({
+      apsData,
+      dbsData,
+      namespace,
+      templateNativeData,
+    });
+  }, [apsData, dbsData, namespace, runtimeStore, templateNativeData]);
+  const resourceTopology = useSyncExternalStore(
+    runtimeStore.subscribeResourceTopology,
+    runtimeStore.selectResourceTopology,
+    runtimeStore.selectResourceTopology
+  );
+  const relationshipIndexes = useSyncExternalStore(
+    runtimeStore.subscribeRelationshipIndexes,
+    runtimeStore.selectRelationshipIndexes,
+    runtimeStore.selectRelationshipIndexes
+  );
+  const apEnvironmentDbReferenceSources =
+    relationshipIndexes.apEnvironmentDbReferenceSources;
+
+  const baseGraph = useMemo(
     () =>
-      buildProjectCanvasResourceSnapshot({
-        apsData,
+      projectCanvasRuntimeResourceGraph({
         canvasLayout,
         canvasLayoutReady,
-        dbsData,
         deployTasks: canvasDeployTasks,
-        error,
-        isEmptyGraphLoading: false,
-        kubeconfig,
-        namespace,
-        templateNativeData,
+        relationshipIndexes,
+        resourceTopology,
       }),
     [
-      apsData,
       canvasLayout,
       canvasLayoutReady,
       canvasDeployTasks,
-      dbsData,
-      error,
-      kubeconfig,
-      namespace,
-      templateNativeData,
+      relationshipIndexes,
+      resourceTopology,
     ]
   );
   const missingResourceLayoutGraceReady =
@@ -499,14 +631,23 @@ export function useProjectCanvasResourceSnapshot(options: {
     dbsError == null &&
     !apsLoading &&
     !dbsLoading;
-  const missingResourceLayoutGrace = missingResourceLayoutGraceReady
-    ? resolveMissingResourceLayoutGrace({
-        layout: canvasLayout,
-        nodes: baseSnapshot.canvasState.nodes,
-        nowMs: Date.now(),
-        previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
-      })
-    : emptyMissingResourceLayoutGraceResult();
+  const missingResourceLayoutGrace = useMemo(() => {
+    if (!missingResourceLayoutGraceReady) {
+      return EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT;
+    }
+    const nowMs = Math.max(Date.now(), missingLayoutGraceClock);
+    return resolveMissingResourceLayoutGrace({
+      layout: canvasLayout,
+      nodes: baseGraph.canvasState.nodes,
+      nowMs,
+      previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
+    });
+  }, [
+    baseGraph.canvasState.nodes,
+    canvasLayout,
+    missingLayoutGraceClock,
+    missingResourceLayoutGraceReady,
+  ]);
   useEffect(() => {
     if (!missingResourceLayoutGraceReady) {
       return;
@@ -522,47 +663,38 @@ export function useProjectCanvasResourceSnapshot(options: {
       return;
     }
     const timer = window.setTimeout(
-      () => setMissingLayoutGraceTick((tick) => tick + 1),
+      () => setMissingLayoutGraceClock(Date.now()),
       nextDelay + 25
     );
     return () => window.clearTimeout(timer);
   }, [missingResourceLayoutGrace, missingResourceLayoutGraceReady]);
   const missingLayoutCommands: PlacementCommand[] =
     missingResourceLayoutGrace.deleteCommands;
-  const snapshot = useMemo(
+  const graph = useMemo(
     () =>
-      buildProjectCanvasResourceSnapshot({
-        apsData,
+      projectCanvasRuntimeResourceGraph({
         canvasLayout,
         canvasLayoutReady,
-        dbsData,
         deployTasks: canvasDeployTasks,
-        error,
-        isEmptyGraphLoading: false,
-        kubeconfig,
         layoutCommands: missingLayoutCommands,
-        namespace,
+        relationshipIndexes,
+        resourceTopology,
         retainedLayoutOwnerKeys:
           missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-        templateNativeData,
       }),
     [
-      apsData,
       canvasLayout,
       canvasLayoutReady,
       canvasDeployTasks,
-      dbsData,
-      error,
-      kubeconfig,
+      relationshipIndexes,
+      resourceTopology,
       missingLayoutCommands,
       missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-      namespace,
-      templateNativeData,
     ]
   );
   const graphEmpty =
-    snapshot.canvasState.nodes.length === 0 &&
-    snapshot.canvasState.edges.length === 0;
+    graph.canvasState.nodes.length === 0 &&
+    graph.canvasState.edges.length === 0;
 
   // Sticky: once nodes have appeared, never show the bootstrap spinner again.
   // This avoids flicker from `isValidating` oscillating between poll cycles.
@@ -592,28 +724,31 @@ export function useProjectCanvasResourceSnapshot(options: {
   const frameState = useMemo(
     () =>
       projectCanvasFrameState({
-        edgeCount: snapshot.canvasState.edges.length,
+        edgeCount: graph.canvasState.edges.length,
         error,
         isEmptyGraphLoading,
         kubeconfig,
-        nodeCount: snapshot.canvasState.nodes.length,
+        nodeCount: graph.canvasState.nodes.length,
       }),
     [
       error,
       isEmptyGraphLoading,
       kubeconfig,
-      snapshot.canvasState.edges.length,
-      snapshot.canvasState.nodes.length,
+      graph.canvasState.edges.length,
+      graph.canvasState.nodes.length,
     ]
   );
 
   return {
-    ...snapshot,
+    apEnvironmentDbReferenceSources,
+    canvasState: graph.canvasState,
     deploymentTaskProjections: deployTasks,
     error,
     frameState,
     isEmptyGraphLoading,
     isLoading,
+    layoutIntent: graph.layoutIntent,
     refresh,
+    runtimeStore,
   };
 }

@@ -9,9 +9,7 @@ import {
   drawerSurfaceForDbTerminal,
   mainSurfaceForDbAccess,
   mainSurfaceForResourceLogs,
-  projectApTargetFromNode,
   projectCanvasSelectionFromNode,
-  projectDbTargetFromNode,
   sideSurfaceForDatabasePane,
   sideSurfaceForWorkloadPane,
 } from "@/features/project-canvas/surface/selection";
@@ -22,6 +20,10 @@ import type {
   ProjectSideSurfaceEntry,
 } from "@/features/project-surfaces/surface-state";
 import type {
+  ProjectApTarget,
+  ProjectDbTarget,
+} from "@/features/project-surfaces/target-identity";
+import type {
   ProjectCanvasCommandPlan,
   ProjectCanvasCommandSurfacePlan,
 } from "./command-plan";
@@ -30,14 +32,26 @@ export type ProjectCanvasResourceSurfaceIntent =
   | {
       kind: "containerQuickAction";
       action: ContainerNodeQuickActionKey;
-      node: Node;
+      selection?: ProjectCanvasSelection | null;
+      target: ProjectApTarget;
     }
   | {
       kind: "databaseQuickAction";
       action: DatabaseNodeQuickActionKey;
-      node: Node;
+      selection?: ProjectCanvasSelection | null;
+      target: ProjectDbTarget;
     }
-  | { kind: "nodeClick"; node: Node };
+  | {
+      kind: "deploymentPlaceholderNodeClick";
+      nodeId: string;
+      taskId?: string;
+    }
+  | {
+      kind: "nodeClick";
+      nodeId: string;
+      selection: ProjectCanvasSelection | null;
+      surface: ProjectSideSurfaceEntry | null;
+    };
 
 export interface ProjectCanvasResourceSurfaceIntentOptions {
   projectId?: string;
@@ -79,16 +93,29 @@ function nonEmptyId(value: string | undefined): string | null {
   return trimmed == null || trimmed === "" ? null : trimmed;
 }
 
-function planDeploymentPlaceholderNodeClick({
-  node,
-  projectId,
-}: {
-  node: CanvasDeploymentPlaceholderRfNode;
-  projectId?: string;
-}): ProjectCanvasCommandPlan {
-  const stackOrder = { kind: "bringNodeToFront" as const, nodeId: node.id };
-  const timelineProjectId = nonEmptyId(projectId);
-  const taskId = nonEmptyId(node.data.taskId);
+function planNodeClick(
+  intent: Extract<ProjectCanvasResourceSurfaceIntent, { kind: "nodeClick" }>,
+  _options?: ProjectCanvasResourceSurfaceIntentOptions
+): ProjectCanvasCommandPlan {
+  return {
+    ...planWithSurface(sideSurfacePlan(intent.surface), intent.selection),
+    stackOrder: { kind: "bringNodeToFront", nodeId: intent.nodeId },
+  };
+}
+
+function planDeploymentPlaceholderNodeClick(
+  intent: Extract<
+    ProjectCanvasResourceSurfaceIntent,
+    { kind: "deploymentPlaceholderNodeClick" }
+  >,
+  options?: ProjectCanvasResourceSurfaceIntentOptions
+): ProjectCanvasCommandPlan {
+  const stackOrder = {
+    kind: "bringNodeToFront" as const,
+    nodeId: intent.nodeId,
+  };
+  const timelineProjectId = nonEmptyId(options?.projectId);
+  const taskId = nonEmptyId(intent.taskId);
   if (timelineProjectId == null || taskId == null) {
     return { stackOrder };
   }
@@ -106,63 +133,39 @@ function planDeploymentPlaceholderNodeClick({
   };
 }
 
-function planNodeClick(
-  node: Node,
-  options?: ProjectCanvasResourceSurfaceIntentOptions
-): ProjectCanvasCommandPlan {
-  if (isDeploymentPlaceholderNode(node)) {
-    return planDeploymentPlaceholderNodeClick({
-      node,
-      projectId: options?.projectId,
-    });
-  }
-  return {
-    ...planWithSurface(
-      sideSurfacePlan(defaultProjectSideSurfaceForNode(node)),
-      projectCanvasSelectionFromNode(node)
-    ),
-    stackOrder: { kind: "bringNodeToFront", nodeId: node.id },
-  };
-}
-
 function planContainerQuickAction({
   action,
-  node,
+  selection,
+  target,
 }: Extract<
   ProjectCanvasResourceSurfaceIntent,
   { kind: "containerQuickAction" }
 >): ProjectCanvasCommandPlan {
-  const target = projectApTargetFromNode(node);
-  const selection = projectCanvasSelectionFromNode(node);
-  if (target == null) {
-    return {};
-  }
-
   switch (action) {
     case "calendar":
       return planWithSurface(
         sideSurfacePlan(sideSurfaceForWorkloadPane(target, "history")),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "terminal":
       return planWithSurface(
         drawerSurfacePlan(drawerSurfaceForApTerminal(target)),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "events":
       return planWithSurface(
         sideSurfacePlan(sideSurfaceForWorkloadPane(target, "events")),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "logs":
       return planWithSurface(
         mainSurfacePlan(mainSurfaceForResourceLogs(target)),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "metrics":
       return planWithSurface(
         sideSurfacePlan(sideSurfaceForWorkloadPane(target, "metrics")),
-        selection
+        selection ?? { kind: "resource", target }
       );
     default:
       return action satisfies never;
@@ -171,37 +174,32 @@ function planContainerQuickAction({
 
 function planDatabaseQuickAction({
   action,
-  node,
+  selection,
+  target,
 }: Extract<
   ProjectCanvasResourceSurfaceIntent,
   { kind: "databaseQuickAction" }
 >): ProjectCanvasCommandPlan {
-  const target = projectDbTargetFromNode(node);
-  const selection = projectCanvasSelectionFromNode(node);
-  if (target == null) {
-    return {};
-  }
-
   switch (action) {
     case "terminal":
       return planWithSurface(
         drawerSurfacePlan(drawerSurfaceForDbTerminal(target)),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "dbAccess":
       return planWithSurface(
         mainSurfacePlan(mainSurfaceForDbAccess(target)),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "logs":
       return planWithSurface(
         mainSurfacePlan(mainSurfaceForResourceLogs(target)),
-        selection
+        selection ?? { kind: "resource", target }
       );
     case "metrics":
       return planWithSurface(
         sideSurfacePlan(sideSurfaceForDatabasePane(target, "metrics")),
-        selection
+        selection ?? { kind: "resource", target }
       );
     default:
       return action satisfies never;
@@ -215,11 +213,31 @@ export function planResourceSurfaceIntent(
   switch (intent.kind) {
     case "containerQuickAction":
       return planContainerQuickAction(intent);
+    case "deploymentPlaceholderNodeClick":
+      return planDeploymentPlaceholderNodeClick(intent, options);
     case "databaseQuickAction":
       return planDatabaseQuickAction(intent);
     case "nodeClick":
-      return planNodeClick(intent.node, options);
+      return planNodeClick(intent, options);
     default:
       return intent satisfies never;
   }
+}
+
+export function projectCanvasNodeClickIntentFromNode(
+  node: Node
+): ProjectCanvasResourceSurfaceIntent {
+  if (isDeploymentPlaceholderNode(node)) {
+    return {
+      kind: "deploymentPlaceholderNodeClick",
+      nodeId: node.id,
+      taskId: node.data.taskId,
+    };
+  }
+  return {
+    kind: "nodeClick",
+    nodeId: node.id,
+    selection: projectCanvasSelectionFromNode(node),
+    surface: defaultProjectSideSurfaceForNode(node),
+  };
 }

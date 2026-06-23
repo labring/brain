@@ -4,18 +4,12 @@ import {
   type ProjectCanvasConnectionCommand,
 } from "@/features/project-canvas/flow/connection-command";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
-import type { CanvasContainerNodeData } from "@/features/project-canvas/nodes/types";
 import type {
-  ApSettingsAddDbDsnReferenceIntent,
+  ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,
 } from "@/features/project-settings/ap/ap-settings-sections";
 import { projectApTarget } from "@/features/project-surfaces/target-identity";
 import type { ProjectCanvasCommandPlan } from "./command-plan";
-
-export interface PendingAddDbDsnReferenceIntent
-  extends ApSettingsAddDbDsnReferenceIntent {
-  apNodeId: string;
-}
 
 export interface PendingApDbReferenceDraftRegistration {
   cleanup?: () => void;
@@ -26,31 +20,9 @@ export type PendingApDbReferencesStartHandler = (
   references: readonly PendingApDbCanvasReference[]
 ) => (() => void) | undefined;
 
-export function dbReferenceIntentDataForContainerNode({
-  intent,
-  nodeId,
-  onConsumed,
-}: {
-  intent: PendingAddDbDsnReferenceIntent | null;
-  nodeId: string;
-  onConsumed: (id: string) => void;
-}): Pick<
-  CanvasContainerNodeData,
-  "addDbDsnReferenceIntent" | "onAddDbDsnReferenceIntentConsumed"
-> {
-  if (intent?.apNodeId !== nodeId) {
-    return {};
-  }
-
-  return {
-    addDbDsnReferenceIntent: {
-      dbName: intent.dbName,
-      dbNamespace: intent.dbNamespace,
-      id: intent.id,
-    },
-    onAddDbDsnReferenceIntentConsumed: onConsumed,
-  };
-}
+export type PendingApDbReferenceMutationStartHandler = (
+  references: readonly ApSettingsConfirmedAddDbDsnReference[]
+) => (() => void) | undefined;
 
 export function createPendingApDbReferenceMutationStartHandler({
   apName,
@@ -62,7 +34,7 @@ export function createPendingApDbReferenceMutationStartHandler({
   apNamespace: string;
   onBeforeStart?: () => void;
   onPendingApDbReferencesStart: PendingApDbReferencesStartHandler | undefined;
-}): CanvasContainerNodeData["onAddDbDsnReferenceMutationStart"] {
+}): PendingApDbReferenceMutationStartHandler | undefined {
   if (
     onPendingApDbReferencesStart === undefined ||
     apName === "" ||

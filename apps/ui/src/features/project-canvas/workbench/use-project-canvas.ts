@@ -5,7 +5,11 @@ import type { Edge, Node } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
-import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
+import {
+  createProjectCanvasDrawerRenderModel,
+  createProjectCanvasMainRenderModel,
+  createProjectCanvasSideRenderModel,
+} from "@/features/project-canvas/surface/rendering-adapter";
 import {
   projectSelectionNode,
   projectSelectionTargetExists,
@@ -27,8 +31,19 @@ import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/us
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
+import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
+import {
+  createSettingsLaunchContextStore,
+  type SettingsLaunchContext,
+  type SettingsLaunchSource,
+  type SettingsSurfaceEntry,
+} from "@/features/project-runtime/settings-launch-context";
 import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
 import { useSettingsLeaveGuardController } from "@/features/project-settings/settings-leave-guard-controller";
+import type {
+  SettingsReadModelHints,
+  SettingsSessionEvents,
+} from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
@@ -48,6 +63,7 @@ export interface UseProjectCanvasOptions {
   readOnly?: boolean;
   /** Refetch workload list(s) after PATCH/POST/DELETE lifecycle calls. */
   refreshWorkloadLists?: () => Promise<unknown>;
+  runtimeStore?: ProjectRuntimeStore;
   /** True when the resource lists have settled enough to clear stale URL selections. */
   selectionReady?: boolean;
 }
@@ -138,12 +154,43 @@ export function useProjectCanvas(
   const closeDrawerRoute = workbenchRoute.closeDrawer;
   const clearCanvasFocus = workbenchRoute.clearCanvasFocus;
   const focusCanvasSelection = workbenchRoute.focusCanvasSelection;
+  const settingsLaunchContextStore = useMemo(
+    () => createSettingsLaunchContextStore(),
+    []
+  );
+  const [, setSettingsLaunchContextRevision] = useState(0);
+  const pendingDatabaseBindingIntentCounter = useRef(0);
+  const bumpSettingsLaunchContextRevision = useCallback(() => {
+    setSettingsLaunchContextRevision((revision) => revision + 1);
+  }, []);
+  const writeSettingsLaunchContext = useCallback(
+    ({
+      context,
+      entry,
+      slot,
+    }: {
+      context: SettingsLaunchContext;
+      entry: SettingsSurfaceEntry;
+      slot: "side";
+    }) => {
+      settingsLaunchContextStore.set({ context, entry, slot });
+      bumpSettingsLaunchContextRevision();
+    },
+    [bumpSettingsLaunchContextRevision, settingsLaunchContextStore]
+  );
   const [
     manuallyClosedDeploymentTaskTimelineTaskIds,
     setManuallyClosedDeploymentTaskTimelineTaskIds,
   ] = useState<ReadonlySet<string>>(() => new Set());
   const openSideSurface = useCallback(
-    (entry: ProjectSideSurfaceEntry) => {
+    (
+      entry: ProjectSideSurfaceEntry,
+      canvasSelection?: ProjectCanvasSelection | null,
+      launchSource: SettingsLaunchSource = "canvas",
+      pendingDbReference?: NonNullable<
+        ProjectCanvasCommandPlan["pendingDbReference"]
+      >
+    ) => {
       if (entry.kind === "deploymentTaskTimeline") {
         setManuallyClosedDeploymentTaskTimelineTaskIds((current) => {
           if (!current.has(entry.taskId)) {
@@ -154,9 +201,36 @@ export function useProjectCanvas(
           return next;
         });
       }
-      openSideRoute(entry);
+      if (entry.kind === "settings") {
+        openSideRoute(entry, canvasSelection, () => {
+          const existing = settingsLaunchContextStore.get({
+            entry,
+            slot: "side",
+          });
+          const pendingDatabaseBindingIntent =
+            pendingDbReference == null
+              ? existing?.pendingDatabaseBindingIntent
+              : {
+                  dbName: pendingDbReference.dbName,
+                  dbNamespace: pendingDbReference.dbNamespace,
+                  id: `ap-db-${++pendingDatabaseBindingIntentCounter.current}`,
+                };
+          writeSettingsLaunchContext({
+            context: {
+              launchSource,
+              ...(pendingDatabaseBindingIntent == null
+                ? {}
+                : { pendingDatabaseBindingIntent }),
+            },
+            entry,
+            slot: "side",
+          });
+        });
+        return;
+      }
+      openSideRoute(entry, canvasSelection);
     },
-    [openSideRoute]
+    [openSideRoute, settingsLaunchContextStore, writeSettingsLaunchContext]
   );
   const shouldAutoOpenDeploymentTaskTimeline = useCallback(
     (taskId: string) =>
@@ -192,24 +266,23 @@ export function useProjectCanvas(
       runResourceAction: resourceActions.runResourceAction,
     });
 
-  const startPendingDbReferenceRef = useRef<
-    (
-      reference: NonNullable<ProjectCanvasCommandPlan["pendingDbReference"]>
-    ) => void
-  >(() => undefined);
-
   const executeCommandPlan = useCallback(
     (plan: ProjectCanvasCommandPlan) => {
-      const run = () =>
+      const run = () => {
         executeUnguardedProjectCanvasCommandPlan(plan, {
           bringNodeToFront: bringNodeToFrontById,
           openDrawerSurface,
           openMainSurface,
-          openSideSurface,
-          startPendingDbReference: (reference) =>
-            startPendingDbReferenceRef.current(reference),
+          openSideSurface: (entry, selection) =>
+            openSideSurface(
+              entry,
+              selection,
+              "canvas",
+              plan.pendingDbReference
+            ),
           writeSelection,
         });
+      };
 
       if (plan.guard?.kind === "settingsLeave") {
         requestSettingsLeave(plan.guard.action, run);
@@ -229,7 +302,6 @@ export function useProjectCanvas(
   );
 
   const decorated = useProjectCanvasNodeDecorators({
-    apEnvironmentDbReferenceSources: options?.apEnvironmentDbReferenceSources,
     executeCommandPlan,
     nodes: stackOrderedNodes,
     onNodeExpansionChange: options?.onNodeExpansionChange,
@@ -239,8 +311,8 @@ export function useProjectCanvas(
     requestDbDelete,
     resourceActions,
   });
-  startPendingDbReferenceRef.current = decorated.startPendingDbReference;
   const nodes = decorated.nodes;
+  const runtimeModelDecorators = decorated.runtimeModelDecorators;
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -254,14 +326,77 @@ export function useProjectCanvas(
         : null,
     [options?.edges, selected]
   );
-  const surfaceRenderModel = useMemo(
+  const sideSurfaceRenderModel = useMemo(
     () =>
-      createProjectCanvasSurfaceRenderModel({
+      createProjectCanvasSideRenderModel({
         nodes,
-        surfaceState,
+        runtimeStore: options?.runtimeStore,
+        surfaceState: {
+          main: surfaceState.main,
+          side: surfaceState.side,
+        },
       }),
-    [nodes, surfaceState]
+    [nodes, options?.runtimeStore, surfaceState.main, surfaceState.side]
   );
+  const mainSurfaceRenderModel = useMemo(
+    () =>
+      createProjectCanvasMainRenderModel({
+        entry: surfaceState.main,
+        nodes,
+        runtimeStore: options?.runtimeStore,
+      }),
+    [nodes, options?.runtimeStore, surfaceState.main]
+  );
+  const drawerSurfaceRenderModel = useMemo(
+    () =>
+      createProjectCanvasDrawerRenderModel({
+        entry: surfaceState.drawer,
+        nodes,
+        runtimeStore: options?.runtimeStore,
+      }),
+    [nodes, options?.runtimeStore, surfaceState.drawer]
+  );
+  const surfaceRenderModel = useMemo(
+    () => ({
+      drawer: drawerSurfaceRenderModel,
+      main: mainSurfaceRenderModel,
+      side: sideSurfaceRenderModel,
+    }),
+    [drawerSurfaceRenderModel, mainSurfaceRenderModel, sideSurfaceRenderModel]
+  );
+  const activeSettingsEntry =
+    surfaceState.side?.kind === "settings" ? surfaceState.side : null;
+
+  useEffect(() => {
+    if (activeSettingsEntry == null) {
+      return;
+    }
+    if (
+      settingsLaunchContextStore.get({
+        entry: activeSettingsEntry,
+        slot: "side",
+      }) !== undefined
+    ) {
+      return;
+    }
+    settingsLaunchContextStore.setRouteRestored({
+      entry: activeSettingsEntry,
+      slot: "side",
+    });
+    bumpSettingsLaunchContextRevision();
+  }, [
+    activeSettingsEntry,
+    bumpSettingsLaunchContextRevision,
+    settingsLaunchContextStore,
+  ]);
+
+  const activeSettingsLaunchContext =
+    activeSettingsEntry == null
+      ? undefined
+      : settingsLaunchContextStore.get({
+          entry: activeSettingsEntry,
+          slot: "side",
+        });
 
   const {
     clearRestoredDbServiceViewportFocus,
@@ -310,8 +445,21 @@ export function useProjectCanvas(
         return new Set(current).add(side.taskId);
       });
     }
-    closeSideRoute();
-  }, [closeSideRoute, surfaceState.side]);
+    if (side?.kind !== "settings") {
+      closeSideRoute();
+      return;
+    }
+
+    closeSideRoute(() => {
+      settingsLaunchContextStore.delete({ entry: side, slot: "side" });
+      bumpSettingsLaunchContextRevision();
+    });
+  }, [
+    bumpSettingsLaunchContextRevision,
+    closeSideRoute,
+    settingsLaunchContextStore,
+    surfaceState.side,
+  ]);
 
   const closeMainSurface = useCallback(() => {
     closeMainRoute();
@@ -335,6 +483,52 @@ export function useProjectCanvas(
 
   const closeResourcePane = closeSideSurface;
   const closeResourceLogsSurface = closeMainSurface;
+  const settingsReadModelHints = useMemo<SettingsReadModelHints>(
+    () => ({
+      ap: {
+        dbDsnReferenceSources: options?.apEnvironmentDbReferenceSources,
+      },
+    }),
+    [options?.apEnvironmentDbReferenceSources]
+  );
+  const settingsSessionEvents = useMemo<
+    SettingsSessionEvents | undefined
+  >(() => {
+    const side = surfaceRenderModel.side;
+    if (side?.kind !== "resource" || side.content.kind !== "settings") {
+      return undefined;
+    }
+    const target = side.content.target.target;
+    if (target.kind !== "AP") {
+      return undefined;
+    }
+    return {
+      ap: decorated.apSettingsSessionEventsForAp({
+        name: target.name,
+        namespace: target.namespace,
+      }),
+    };
+  }, [decorated, surfaceRenderModel.side]);
+  const consumeSettingsLaunchContext = useCallback(() => {
+    const entry = activeSettingsEntry;
+    if (entry == null) {
+      return;
+    }
+    const context = settingsLaunchContextStore.get({ entry, slot: "side" });
+    if (context == null || context.pendingDatabaseBindingIntent == null) {
+      return;
+    }
+    settingsLaunchContextStore.set({
+      context: { launchSource: context.launchSource },
+      entry,
+      slot: "side",
+    });
+    bumpSettingsLaunchContextRevision();
+  }, [
+    activeSettingsEntry,
+    bumpSettingsLaunchContextRevision,
+    settingsLaunchContextStore,
+  ]);
 
   const meta = useMemo(
     () =>
@@ -395,10 +589,15 @@ export function useProjectCanvas(
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,
+    runtimeModelDecorators,
     selected,
     selectedEdge,
     selectedNode,
+    settingsLaunchContext: activeSettingsLaunchContext,
     settingsLeaveGuardDialog,
+    settingsReadModelHints,
+    settingsSessionEvents,
+    consumeSettingsLaunchContext,
     surfaceRenderModel,
   };
 }

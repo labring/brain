@@ -2,11 +2,7 @@
 
 import { Router, Settings2, SquarePen } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import {
-  AP_SETTINGS_REPLICA_LIMITS,
-  type ApSettingsSourceData,
-  apSettingsStatesFromSource,
-} from "@/features/project-settings/ap/ap-settings-context";
+import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/project-settings/ap/ap-settings-context";
 import {
   type ApNetwork,
   useApPublicAddressesSettingsSections,
@@ -15,7 +11,6 @@ import {
 import { verifyCustomDomainCnameFromApi } from "@/features/project-settings/ap/custom-domain-cname-client";
 import { useApWorkloadSettings } from "@/features/project-settings/ap/hooks/use-ap-workload-settings";
 import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
-import { workloadClaimKindFromApSettingsStates } from "@/features/project-settings/ap/workload-kind";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -134,10 +129,12 @@ function apSettingsModelBase({
 }
 
 type ApWorkloadSettingsState = ReturnType<typeof useApWorkloadSettings>;
+type ApSettingsSectionsInput = Parameters<typeof useApSettingsSections>[0];
 
 interface ApSettingsSectionsHookInput {
   apTarget: ProjectApTarget | null;
   canEditAp: boolean;
+  dbDsnReferenceSources: ApSettingsSectionsInput["dbDsnReferenceSources"];
   display: ApWorkloadSettingsState["display"];
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
@@ -150,16 +147,19 @@ interface ApSettingsSectionsHookInput {
   onEnvChange: ApWorkloadSettingsState["onEnvChange"];
   onEnvResolvedValue: ApWorkloadSettingsState["onEnvResolvedValue"];
   onImageChange: ApWorkloadSettingsState["onImageChange"];
+  onLaunchContextConsumed?: () => void;
   onNetworkChange: ApWorkloadSettingsState["onNetworkChange"];
+  onPendingDbReferencesChange: ApSettingsSectionsInput["onPendingDbReferencesChange"];
   onResourceQuotasCommit: ApWorkloadSettingsState["onResourceQuotasCommit"];
   onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
+  pendingDatabaseBindingIntent: ApSettingsSectionsInput["addDbDsnReferenceIntent"];
   resolvedView: string;
-  sourceData: ApSettingsSourceData | undefined;
 }
 
 function apSettingsSectionsHookProps({
   apTarget,
   canEditAp,
+  dbDsnReferenceSources,
   display,
   draftRoutingDomain,
   effectiveReadOnly,
@@ -169,18 +169,20 @@ function apSettingsSectionsHookProps({
   ignoreQuota,
   ignoreReplicas,
   isApWorkload,
-  sourceData,
   onEnvChange,
   onEnvResolvedValue,
   onImageChange,
+  onLaunchContextConsumed,
   onNetworkChange,
+  onPendingDbReferencesChange,
   onResourceQuotasCommit,
   onSettingsDraftCommit,
+  pendingDatabaseBindingIntent,
   resolvedView,
 }: ApSettingsSectionsHookInput): Parameters<typeof useApSettingsSections>[0] {
   const metadata = apSettingsSectionMetadata(resolvedView);
   return {
-    addDbDsnReferenceIntent: sourceData?.addDbDsnReferenceIntent,
+    addDbDsnReferenceIntent: pendingDatabaseBindingIntent,
     args: display.args,
     command: display.command,
     configMaps: display.configMaps,
@@ -191,7 +193,7 @@ function apSettingsSectionsHookProps({
       step: 0.25,
       value: display.cpuCores,
     },
-    dbDsnReferenceSources: sourceData?.dbDsnReferenceSources,
+    dbDsnReferenceSources,
     env: display.env,
     envRawSource: display.envRawSource,
     envResolvedValueScope:
@@ -213,14 +215,13 @@ function apSettingsSectionsHookProps({
             namespace: apTarget.namespace,
             routingDomain: draftRoutingDomain,
           },
-    onAddDbDsnReferenceIntentConsumed:
-      sourceData?.onAddDbDsnReferenceIntentConsumed,
+    onAddDbDsnReferenceIntentConsumed: onLaunchContextConsumed,
     onCustomDomainCnameVerify: verifyCustomDomainCnameFromApi,
     onEnvChange: canEditAp ? onEnvChange : ignoreEnv,
     onEnvResolvedValue: canEditAp ? onEnvResolvedValue : undefined,
     onImageChange: canEditAp ? onImageChange : ignoreImage,
     onNetworkChange: canEditAp ? onNetworkChange : ignoreNetwork,
-    onPendingDbReferencesChange: sourceData?.onPendingDbReferencesChange,
+    onPendingDbReferencesChange,
     onResourceQuotasCommit: canEditAp ? onResourceQuotasCommit : undefined,
     onSettingsDraftCommit: canEditAp ? onSettingsDraftCommit : undefined,
     readOnly: !isApWorkload || effectiveReadOnly,
@@ -310,7 +311,6 @@ interface ApSettingsModelInput {
     ReturnType<typeof useApSettingsSections>,
     "footer" | "leaveGuard" | "sections"
   >;
-  sourceData: ApSettingsSourceData | undefined;
 }
 
 function unavailableApSettingsModel(resolvedView: string): SettingsViewModel {
@@ -482,21 +482,24 @@ function buildApSettingsModel(input: ApSettingsModelInput): SettingsViewModel {
 
 export function ApSettingsProvider({
   kubeconfig = "",
+  launchContext,
+  onLaunchContextConsumed,
   onModelChange,
   onRepairSideEntry,
   onUpdated,
+  readModelHints,
   readOnly,
-  sourceContext,
+  sessionEvents,
   target,
   view,
 }: SettingsProviderProps) {
   const resolvedView = resolvedApSettingsView(view);
   const apTarget = target.kind === "AP" ? target : null;
-  const sourceData = sourceContext?.apData;
-  const states = apSettingsStatesFromSource(sourceData);
-  const workloadKind = workloadClaimKindFromApSettingsStates(states);
-  const settingsReadOnly = sourceData?.settingsAccess?.readOnly === true;
-  const effectiveReadOnly = readOnly || settingsReadOnly;
+  const dbDsnReferenceSources = readModelHints?.ap?.dbDsnReferenceSources;
+  const effectiveReadOnly = readOnly;
+  const pendingDatabaseBindingIntent =
+    launchContext?.pendingDatabaseBindingIntent;
+  const apSessionEvents = sessionEvents?.ap;
   const {
     claimPayload,
     display,
@@ -516,13 +519,13 @@ export function ApSettingsProvider({
     onResourceQuotasCommit,
     onSettingsDraftCommit,
   } = useApWorkloadSettings({
-    dbDsnReferenceSources: sourceData?.dbDsnReferenceSources,
+    dbDsnReferenceSources,
     kubeconfig,
     name: apTarget?.name ?? "",
     namespace: apTarget?.namespace ?? "",
     onAddDbDsnReferenceMutationStart:
-      sourceData?.onAddDbDsnReferenceMutationStart,
-    onWorkloadMutation: sourceData?.onWorkloadMutation ?? onUpdated,
+      apSessionEvents?.onAddDbDsnReferenceMutationStart,
+    onWorkloadMutation: onUpdated,
     readOnly: effectiveReadOnly,
     workloadKind: "AP",
   });
@@ -533,14 +536,15 @@ export function ApSettingsProvider({
   );
   const canEditAp = isApWorkload && !effectiveReadOnly;
   const baseSubtitle = workloadSettingsSubtitle({
-    image: states?.image ?? display.image,
-    kind: workloadKind,
+    image: display.image,
+    kind: "AP",
   });
   const network = publicAddressNetworkOrNull(display.network);
   const settingsSectionsModel = useApSettingsSections(
     apSettingsSectionsHookProps({
       apTarget,
       canEditAp,
+      dbDsnReferenceSources,
       display,
       draftRoutingDomain,
       effectiveReadOnly,
@@ -550,13 +554,18 @@ export function ApSettingsProvider({
       ignoreQuota,
       ignoreReplicas,
       isApWorkload,
-      sourceData,
       onEnvChange,
       onEnvResolvedValue,
       onImageChange,
+      onLaunchContextConsumed:
+        pendingDatabaseBindingIntent == null
+          ? undefined
+          : onLaunchContextConsumed,
       onNetworkChange,
+      onPendingDbReferencesChange: apSessionEvents?.onPendingDbReferencesChange,
       onResourceQuotasCommit,
       onSettingsDraftCommit,
+      pendingDatabaseBindingIntent,
       resolvedView,
     })
   );
@@ -604,7 +613,6 @@ export function ApSettingsProvider({
       isApWorkload,
       isLoading,
       network,
-      sourceData,
       onEnvChange,
       onEnvResolvedValue,
       onImageChange,
@@ -632,7 +640,6 @@ export function ApSettingsProvider({
     isApWorkload,
     isLoading,
     network,
-    sourceData,
     onEnvChange,
     onEnvResolvedValue,
     onImageChange,

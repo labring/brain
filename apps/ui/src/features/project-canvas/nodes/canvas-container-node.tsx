@@ -1,18 +1,38 @@
 "use client";
 
-import { useCanvas } from "@workspace/ui/components/canvas/canvas.use";
-import { ContainerNode } from "@workspace/ui/components/container-node/container-node";
+import {
+  ContainerNode,
+  type ContainerNodeStates,
+} from "@workspace/ui/components/container-node/container-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo, useMemo } from "react";
 
+import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
 import {
-  containerStatesWithTelemetry,
+  containerMetricsWithTelemetrySnapshot,
   containerTelemetryTargetFromStates,
-  shouldSubscribeWorkloadTelemetry,
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
-import type { CanvasContainerRfNode } from "./types";
+import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
+import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
+import type { CanvasContainerNodeData, CanvasContainerRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
+
+function CanvasContainerTelemetryMetrics({
+  fallbackMetrics,
+  target,
+}: {
+  fallbackMetrics: ContainerNodeStates["metrics"];
+  target: WorkloadTelemetryTarget | null;
+}) {
+  const telemetry = useWorkloadTelemetrySnapshot(target);
+  const metrics = containerMetricsWithTelemetrySnapshot(
+    fallbackMetrics,
+    telemetry
+  );
+
+  return <ContainerNode.MetricsContent metrics={metrics} />;
+}
 
 export const CanvasContainerNode = memo(function CanvasContainerNode({
   data,
@@ -22,26 +42,19 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   positionAbsoluteY,
   type,
 }: NodeProps<CanvasContainerRfNode>) {
-  const { actions = {}, states } = data;
+  const model =
+    useProjectRuntimeNodeModel<CanvasContainerNodeData>({ data, id, type }) ??
+    data;
+  const { actions = {}, states } = model;
   const { name, namespace } = states;
   const telemetryTarget = useMemo(
     () =>
-      data.resourceKind === "template"
+      model.resourceKind === "template"
         ? null
         : containerTelemetryTargetFromStates({ name, namespace }),
-    [data.resourceKind, name, namespace]
+    [model.resourceKind, name, namespace]
   );
-  const { state } = useCanvas();
-  const edge = state.selectedEdge;
-  const isEndpointOfSelectedEdge =
-    edge != null && (edge.source === id || edge.target === id);
-  const selected =
-    (state.selectedNode != null && state.selectedNode.id === id) ||
-    isEndpointOfSelectedEdge;
-  const highlightedConnectionSide =
-    state.connectionOrigin?.nodeId === id
-      ? state.connectionOrigin.side
-      : undefined;
+  const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
     data,
     id,
@@ -49,26 +62,24 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
     positionAbsoluteY,
     type,
   });
-  const activeTelemetryTarget = shouldSubscribeWorkloadTelemetry({
-    expanded: expansion.expanded,
-    selected,
-    sidePaneOpen: false,
-  })
-    ? telemetryTarget
-    : null;
-  const telemetry = useWorkloadTelemetrySnapshot(activeTelemetryTarget);
-  const statesWithTelemetry = containerStatesWithTelemetry(states, telemetry);
 
   return (
     <ContainerNode.Root
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ dragging, highlightedConnectionSide, selected }}
+      interaction={{ ...interaction, dragging }}
       lifecycleActions={actions.lifecycleActions}
       onExpandedChange={expansion.onExpandedChange}
       quickActions={actions.quickActions}
-      states={statesWithTelemetry}
+      states={states}
     >
-      <ContainerNode.Content />
+      <ContainerNode.Content
+        metricsContent={
+          <CanvasContainerTelemetryMetrics
+            fallbackMetrics={states.metrics}
+            target={telemetryTarget}
+          />
+        }
+      />
     </ContainerNode.Root>
   );
 });

@@ -11,7 +11,7 @@ import {
   useDatabaseSettingsSections,
 } from "@/features/project-settings/db/db-settings-sections";
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
-import { dbDataFromList } from "./settings-provider-db";
+import { dbSettingsDataFromExactResource } from "./settings-provider-db";
 
 const noop = () => {
   /* test noop */
@@ -119,20 +119,14 @@ test("DB settings section model exposes provider-owned resource sections", () =>
   ]);
 });
 
-test("DB settings provider can resolve node data from target identity", () => {
-  const data = dbDataFromList(
+test("DB settings provider resolves exact editable resource backing from target identity", () => {
+  const data = dbSettingsDataFromExactResource(
     {
-      items: [
-        {
-          metadata: { name: "other", namespace: "default" },
-          spec: { engine: "postgresql" },
-        },
-        {
-          metadata: { name: "postgres", namespace: "default" },
-          spec: { engine: "postgresql" },
-          status: { phase: "Running" },
-        },
-      ],
+      body: {
+        metadata: { name: "postgres", namespace: "default" },
+        spec: { engine: "postgresql" },
+        status: { phase: "Running" },
+      },
     },
     { kind: "DB", name: "postgres", namespace: "default" }
   );

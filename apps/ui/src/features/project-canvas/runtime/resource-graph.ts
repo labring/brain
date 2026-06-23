@@ -1,41 +1,45 @@
-import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
+import type { Node } from "@xyflow/react";
 import {
-  apLikeWorkloadKeysFromList,
-  apsToCanvasState,
-  dbsToCanvasState,
-  publicAccessToCanvasState,
-  templateNativeWorkloadsToCanvasState,
-} from "@/features/project-canvas/flow/ap-list-to-canvas-state";
-import {
+  type CanvasDetectedConnection,
   canvasConnectionEdgesFromDetectedConnections,
-  detectCanvasConnections,
 } from "@/features/project-canvas/flow/detected-connections";
 import { mergeCanvasLayoutWithDetectedNodes } from "@/features/project-canvas/layout/merge";
+import {
+  canvasPlacementOwnerKey,
+  resourcePlacementOwner,
+} from "@/features/project-canvas/layout/placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
+  CanvasLayoutResourceRef,
   PlacementCommand,
 } from "@/features/project-canvas/layout/types";
 import {
-  type ApEnvironmentDbReferenceSource,
-  apEnvironmentDbReferenceSourcesFromDbsData,
-} from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
+  CANVAS_CONTAINER_NODE_TYPE,
+  CANVAS_DATABASE_NODE_TYPE,
+  CANVAS_ENTRY_NODE_TYPE,
+} from "@/features/project-canvas/nodes/constants";
+import type { ProjectRuntimeRelationshipIndexes } from "@/features/project-runtime/resource-relationships";
+import type {
+  ProjectRuntimeResourceTopologyItem,
+  ProjectRuntimeShellKind,
+  ProjectRuntimeShellNodeData,
+} from "@/features/project-runtime/resource-store";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderPendingResultKeys,
   isDeploymentPlaceholderPendingResultNode,
-} from "./deployment-placeholder-handoff";
+} from "../snapshot/deployment-placeholder-handoff";
 import {
   deploymentPlaceholderNodesFromTasks,
   shouldHideDeploymentPlaceholderForHandoff,
-} from "./deployment-placeholder-nodes";
-import { deploymentProjectionPlacementCommands } from "./deployment-placement-commands";
-import { deploymentPreviewEdgesFromTasks } from "./deployment-preview-edges";
-import { createDeploymentProjectionContext } from "./deployment-projection-context";
-import { deploymentResultPreviewsFromTasks } from "./deployment-projection-model";
-import { projectCanvasFrameState } from "./project-canvas-page-state";
+} from "../snapshot/deployment-placeholder-nodes";
+import { deploymentProjectionPlacementCommands } from "../snapshot/deployment-placement-commands";
+import { deploymentPreviewEdgesFromTasks } from "../snapshot/deployment-preview-edges";
+import { createDeploymentProjectionContext } from "../snapshot/deployment-projection-context";
+import { deploymentResultPreviewsFromTasks } from "../snapshot/deployment-projection-model";
 
 export type ProjectCanvasLayoutIntent =
   | { kind: "first-placement"; nodes: CanvasLayoutNode[] }
@@ -46,93 +50,140 @@ export type ProjectCanvasLayoutIntent =
       kind: "placement-commands";
     };
 
-export interface ProjectCanvasResourceSnapshotInput {
-  apsData?: K8sGetResponse;
-  canvasLayout?: CanvasLayoutDocument;
-  canvasLayoutReady?: boolean;
-  dbsData?: K8sGetResponse;
-  deployTasks?: DeploymentTaskProjection[];
-  error?: Error;
-  isEmptyGraphLoading: boolean;
-  kubeconfig: string;
-  layoutCommands?: PlacementCommand[];
-  namespace: string;
-  retainedLayoutOwnerKeys?: ReadonlySet<string>;
-  templateNativeData?: {
-    deployments?: K8sGetResponse;
-    statefulSets?: K8sGetResponse;
-  };
-}
-
-export interface ProjectCanvasResourceSnapshot {
-  apEnvironmentDbReferenceSources: ApEnvironmentDbReferenceSource[];
+export interface ProjectCanvasRuntimeResourceGraph {
   canvasState: CanvasState;
-  frameState: ReturnType<typeof projectCanvasFrameState>;
   layoutIntent: ProjectCanvasLayoutIntent | null;
 }
 
-const EMPTY_TEMPLATE_NATIVE_DATA = {};
+export interface ProjectCanvasRuntimeResourceGraphInput {
+  canvasLayout?: CanvasLayoutDocument;
+  canvasLayoutReady?: boolean;
+  deployTasks?: DeploymentTaskProjection[];
+  layoutCommands?: PlacementCommand[];
+  relationshipIndexes: ProjectRuntimeRelationshipIndexes;
+  resourceTopology: readonly ProjectRuntimeResourceTopologyItem[];
+  retainedLayoutOwnerKeys?: ReadonlySet<string>;
+}
 
-export function buildProjectCanvasResourceSnapshot({
-  apsData,
+const FALLBACK_COLUMNS = 3;
+const FALLBACK_COL_GAP = 340;
+const FALLBACK_ROW_GAP = 280;
+
+function fallbackGeneratedCanvasPosition(index: number): {
+  x: number;
+  y: number;
+} {
+  return {
+    x: (index % FALLBACK_COLUMNS) * FALLBACK_COL_GAP,
+    y: Math.floor(index / FALLBACK_COLUMNS) * FALLBACK_ROW_GAP,
+  };
+}
+
+function stableNodeName(name: string): string {
+  return name.replace(/\s+/g, "-");
+}
+
+function resourceShellData(
+  kind: Exclude<ProjectRuntimeShellKind, "TemplateNativeWorkload">,
+  key: string,
+  ref: CanvasLayoutResourceRef,
+  observedUid: string | undefined
+): ProjectRuntimeShellNodeData {
+  const owner = resourcePlacementOwner(ref);
+  return {
+    runtime: {
+      kind,
+      modelKey: key,
+      ...(observedUid === undefined ? {} : { observedUid }),
+      placementOwnerKey: canvasPlacementOwnerKey(owner),
+      resourceRef: ref,
+    },
+  };
+}
+
+export function projectCanvasRuntimeShellNodesFromResources(
+  resourceTopology: readonly ProjectRuntimeResourceTopologyItem[]
+): Node<ProjectRuntimeShellNodeData>[] {
+  return resourceTopology.map((item, index) => {
+    const position = fallbackGeneratedCanvasPosition(index);
+    switch (item.kind) {
+      case "AP":
+        return {
+          data: resourceShellData(
+            item.kind,
+            item.modelKey,
+            item.ref,
+            item.observedUid
+          ),
+          id: `ap-${stableNodeName(item.ref.name)}`,
+          position,
+          type: CANVAS_CONTAINER_NODE_TYPE,
+        };
+      case "DB":
+        return {
+          data: resourceShellData(
+            item.kind,
+            item.modelKey,
+            item.ref,
+            item.observedUid
+          ),
+          id: `db-${stableNodeName(item.ref.name)}`,
+          position,
+          type: CANVAS_DATABASE_NODE_TYPE,
+        };
+      case "PublicAccess":
+        return {
+          data: resourceShellData(
+            item.kind,
+            item.modelKey,
+            item.ref,
+            item.observedUid
+          ),
+          id: `entry-${stableNodeName(item.ref.name)}`,
+          position,
+          type: CANVAS_ENTRY_NODE_TYPE,
+        };
+      case "TemplateNativeWorkload":
+        return {
+          data: {
+            runtime: {
+              kind: item.kind,
+              modelKey: item.modelKey,
+            },
+          },
+          id: `template-${stableNodeName(item.ref.name)}`,
+          position,
+          type: CANVAS_CONTAINER_NODE_TYPE,
+        };
+      default:
+        return item satisfies never;
+    }
+  });
+}
+
+export function projectCanvasRuntimeResourceGraph({
   canvasLayout,
   canvasLayoutReady = true,
-  dbsData,
   deployTasks,
-  error,
-  isEmptyGraphLoading,
-  kubeconfig,
   layoutCommands,
-  namespace,
+  relationshipIndexes,
+  resourceTopology,
   retainedLayoutOwnerKeys,
-  templateNativeData = EMPTY_TEMPLATE_NATIVE_DATA,
-}: ProjectCanvasResourceSnapshotInput): ProjectCanvasResourceSnapshot {
-  const apEnvironmentDbReferenceSources =
-    apEnvironmentDbReferenceSourcesFromDbsData(dbsData, namespace);
-  const apBlock = apsToCanvasState(apsData, {
-    gridIndexOffset: 0,
-    namespaceFallback: namespace,
-  });
-  const dbBlock = dbsToCanvasState(dbsData, {
-    gridIndexOffset: apBlock.nodes.length,
-    namespaceFallback: namespace,
-  });
-  const publicAccessBlock = publicAccessToCanvasState(apsData, {
-    gridIndexOffset: apBlock.nodes.length + dbBlock.nodes.length,
-    namespaceFallback: namespace,
-  });
-  const apLikeWorkloadKeys = apLikeWorkloadKeysFromList(apsData, {
-    namespaceFallback: namespace,
-  });
-  const templateNativeBlock = templateNativeWorkloadsToCanvasState(
-    templateNativeData,
-    {
-      apLikeWorkloadKeys,
-      gridIndexOffset:
-        apBlock.nodes.length +
-        dbBlock.nodes.length +
-        publicAccessBlock.nodes.length,
-      namespaceFallback: namespace,
-    }
-  );
-  const rawDetectedNodes = [
-    ...apBlock.nodes,
-    ...dbBlock.nodes,
-    ...publicAccessBlock.nodes,
-    ...templateNativeBlock.nodes,
-  ];
+}: ProjectCanvasRuntimeResourceGraphInput): ProjectCanvasRuntimeResourceGraph {
+  const shellNodes =
+    projectCanvasRuntimeShellNodesFromResources(resourceTopology);
   const deploymentResultPreviews =
     deploymentResultPreviewsFromTasks(deployTasks);
   const rawDeploymentProjectionContext = createDeploymentProjectionContext({
     layout: canvasLayout,
-    nodes: rawDetectedNodes,
+    nodes: shellNodes,
     previews: deploymentResultPreviews,
     tasks: deployTasks,
   });
   const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
     context: rawDeploymentProjectionContext,
   });
-  const detectedNodes = rawDetectedNodes.filter(
+  const detectedNodes = shellNodes.filter(
     (node) =>
       !isDeploymentPlaceholderPendingResultNode({
         keys: pendingResultKeys,
@@ -159,13 +210,8 @@ export function buildProjectCanvasResourceSnapshot({
   const initialPositions = deploymentPlaceholderHandoffs({
     context: rawDeploymentProjectionContext,
   });
-  const detectedConnections = canvasLayoutReady
-    ? detectCanvasConnections({
-        apEnvironmentDbReferenceSources,
-        apsData,
-        dbsData,
-        namespaceFallback: namespace,
-      })
+  const detectedConnections: CanvasDetectedConnection[] = canvasLayoutReady
+    ? [...relationshipIndexes.publicAccessToAp, ...relationshipIndexes.apToDb]
     : [];
   const merge = canvasLayoutReady
     ? mergeCanvasLayoutWithDetectedNodes({
@@ -201,7 +247,7 @@ export function buildProjectCanvasResourceSnapshot({
       })
     : [];
   const canvasState: CanvasState = {
-    edges: [...edges, ...deploymentPreviewEdges, ...templateNativeBlock.edges],
+    edges: [...edges, ...deploymentPreviewEdges],
     nodes: merge.nodes,
     selectedEdge: null,
     selectedNode: null,
@@ -219,15 +265,7 @@ export function buildProjectCanvasResourceSnapshot({
   });
 
   return {
-    apEnvironmentDbReferenceSources,
     canvasState,
-    frameState: projectCanvasFrameState({
-      edgeCount: canvasState.edges.length,
-      error,
-      isEmptyGraphLoading,
-      kubeconfig,
-      nodeCount: canvasState.nodes.length,
-    }),
     layoutIntent,
   };
 }

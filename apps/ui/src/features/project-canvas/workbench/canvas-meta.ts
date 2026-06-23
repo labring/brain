@@ -13,9 +13,9 @@ import {
   type ProjectCanvasConnectionHandle,
   projectCanvasInteractionProps,
 } from "@/features/project-canvas/flow/interaction";
-import type { CanvasNodeSettingsAccess } from "@/features/project-canvas/nodes/types";
 import type { ProjectCanvasSideRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { planProjectCanvasCommand } from "@/features/project-canvas/workbench/command-model";
+import { projectCanvasNodeClickIntentFromNode } from "@/features/project-canvas/workbench/resource-surface-intents";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 
 export interface ProjectCanvasConnectionOrigin {
@@ -75,17 +75,6 @@ export function connectionOriginFromHandle(
     nodeId: handle.nodeId,
     side: handle.id as CanvasNodeConnectionSide,
   };
-}
-
-export function canvasNodeSettingsAccess({
-  readOnly,
-}: {
-  readOnly: boolean;
-}): CanvasNodeSettingsAccess | undefined {
-  if (!readOnly) {
-    return undefined;
-  }
-  return { readOnly: true };
 }
 
 export function createProjectCanvasMeta({
@@ -162,7 +151,7 @@ export function createProjectCanvasMeta({
       onNodeClick: (_, node: Node) => {
         executeCommandPlan(
           planProjectCanvasCommand({
-            intent: { kind: "nodeClick", node },
+            intent: projectCanvasNodeClickIntentFromNode(node),
             nodes,
             projectId,
             readOnly,
