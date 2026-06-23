@@ -74,6 +74,19 @@ const runtimeApShellNode = {
   type: CANVAS_CONTAINER_NODE_TYPE,
 } as Node;
 
+const runtimeDbShellNode = {
+  data: {
+    runtime: {
+      kind: "DB",
+      modelKey: "DB:data:pg",
+      resourceRef: { kind: "DB", name: "pg", namespace: "data" },
+    },
+  },
+  id: "db-pg",
+  position: { x: 0, y: 0 },
+  type: CANVAS_DATABASE_NODE_TYPE,
+} as Node;
+
 const runtimeNodeModels: ProjectRuntimeNodeModels = {
   containerModelsByKey: new Map([
     [
@@ -91,7 +104,21 @@ const runtimeNodeModels: ProjectRuntimeNodeModels = {
       },
     ],
   ]),
-  databaseModelsByKey: new Map(),
+  databaseModelsByKey: new Map([
+    [
+      "DB:data:pg",
+      {
+        connections: [],
+        states: {
+          displayEngine: "PostgreSQL",
+          formattedVersion: "16.4",
+          name: "pg",
+        },
+        uid: "db-uid",
+        workload: { name: "pg", namespace: "data" },
+      },
+    ],
+  ]),
   entryModelsByKey: new Map(),
 };
 
@@ -199,6 +226,81 @@ test("canvas surface adapter resolves DB access and DB terminal independently", 
   assert.equal(model.main.node, dbNode);
   assert.equal(model.main.databaseData.workload.name, "pg");
   assert.equal(model.drawer.node, dbNode);
+});
+
+test("canvas surface adapter renders DB shell surfaces with runtime model data", () => {
+  const model = createProjectCanvasSurfaceRenderModel({
+    nodes: [runtimeDbShellNode],
+    runtimeNodeModels,
+    surfaceState: {
+      drawer: {
+        kind: "dbTerminal",
+        target: { kind: "DB", name: "pg", namespace: "data" },
+      },
+      main: {
+        focusPolicy: "keepSideVisible",
+        kind: "resourceLogs",
+        target: { kind: "DB", name: "pg", namespace: "data" },
+      },
+      side: {
+        kind: "dbMetrics",
+        target: { kind: "DB", name: "pg", namespace: "data" },
+      },
+    },
+  });
+  const dbAccess = createProjectCanvasMainRenderModel({
+    entry: {
+      kind: "dbAccess",
+      target: { kind: "DB", name: "pg", namespace: "data" },
+    },
+    nodes: [runtimeDbShellNode],
+    runtimeNodeModels,
+  });
+
+  if (model.drawer?.kind !== "dbTerminal") {
+    assert.fail("expected DB terminal drawer render model");
+  }
+  if (model.main?.kind !== "dbLogs") {
+    assert.fail("expected DB logs main render model");
+  }
+  if (model.side?.kind !== "resource") {
+    assert.fail("expected DB metrics side render model");
+  }
+  if (dbAccess?.kind !== "dbAccess") {
+    assert.fail("expected DB access main render model");
+  }
+  assert.equal(model.side.content.kind, "dbMetrics");
+
+  const drawerData = model.drawer.node.data as {
+    runtime?: { modelKey?: string };
+    states?: { displayEngine?: string };
+    workload?: { name?: string; namespace?: string };
+  };
+  const logsData = model.main.node.data as {
+    states?: { displayEngine?: string };
+    workload?: { name?: string; namespace?: string };
+  };
+  const metricsData = model.side.content.node.data as {
+    states?: { displayEngine?: string };
+    workload?: { name?: string; namespace?: string };
+  };
+  const dbAccessData = dbAccess.node.data as {
+    states?: { displayEngine?: string };
+    workload?: { name?: string; namespace?: string };
+  };
+  const shellData = runtimeDbShellNode.data as { states?: unknown };
+
+  assert.equal(drawerData.runtime?.modelKey, "DB:data:pg");
+  assert.equal(drawerData.states?.displayEngine, "PostgreSQL");
+  assert.deepEqual(drawerData.workload, { name: "pg", namespace: "data" });
+  assert.equal(logsData.states?.displayEngine, "PostgreSQL");
+  assert.deepEqual(logsData.workload, { name: "pg", namespace: "data" });
+  assert.equal(metricsData.states?.displayEngine, "PostgreSQL");
+  assert.deepEqual(metricsData.workload, { name: "pg", namespace: "data" });
+  assert.equal(dbAccessData.states?.displayEngine, "PostgreSQL");
+  assert.deepEqual(dbAccessData.workload, { name: "pg", namespace: "data" });
+  assert.equal(dbAccess.databaseData.states.displayEngine, "PostgreSQL");
+  assert.equal(shellData.states, undefined);
 });
 
 test("canvas surface adapter exposes independent slot renderers", () => {

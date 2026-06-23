@@ -231,6 +231,24 @@ function runtimeContainerNodeForNode(
     : { ...node, data: { ...node.data, ...containerData } };
 }
 
+function runtimeDatabaseNodeForNode(
+  node: Node | null,
+  runtime: ProjectRuntimeModelReader
+): Node | null {
+  if (node == null) {
+    return null;
+  }
+  const runtimeLookup = projectRuntimeShellLookupFromNodeData(node.data);
+  if (runtimeLookup?.kind !== "DB") {
+    return databaseNodeDataFromNode(node) == null ? null : node;
+  }
+  const databaseData = databaseDataForNode(node, runtime);
+  if (databaseData == null) {
+    return null;
+  }
+  return { ...node, data: { ...node.data, ...databaseData } };
+}
+
 function apResourcePaneModel(
   nodes: readonly Node[],
   entry: Extract<
@@ -259,12 +277,17 @@ function dbResourcePaneModel(
   runtime: ProjectRuntimeModelReader
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const databaseData = databaseDataForNode(node, runtime);
-  if (node == null || databaseData == null) {
+  const renderNode = runtimeDatabaseNodeForNode(node, runtime);
+  if (renderNode == null) {
     return pendingTargetModel(entry);
   }
   return {
-    content: { databaseData, kind: entry.kind, node, target: entry.target },
+    content: {
+      databaseData: renderNode.data as CanvasDatabaseNodeData,
+      kind: entry.kind,
+      node: renderNode,
+      target: entry.target,
+    },
     kind: "resource",
   };
 }
@@ -275,12 +298,18 @@ function settingsPaneModel(
   runtime: ProjectRuntimeModelReader
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
+  const dbRenderNode =
+    entry.target.kind === "DB"
+      ? runtimeDatabaseNodeForNode(node, runtime)
+      : null;
   const renderNode =
     entry.target.kind === "AP"
       ? runtimeContainerNodeForNode(node, runtime)
-      : node;
+      : (dbRenderNode ?? node);
   const databaseData =
-    entry.target.kind === "DB" ? databaseDataForNode(node, runtime) : undefined;
+    dbRenderNode == null
+      ? undefined
+      : (dbRenderNode.data as CanvasDatabaseNodeData);
 
   const entryNode =
     entry.target.kind === "AP" && entry.view === "public-addresses"
@@ -345,14 +374,14 @@ function dbAccessMainModel(
   runtime: ProjectRuntimeModelReader
 ): ProjectCanvasMainRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
-  const databaseData = databaseDataForNode(node, runtime);
-  if (node == null || databaseData == null) {
+  const renderNode = runtimeDatabaseNodeForNode(node, runtime);
+  if (renderNode == null) {
     return pendingTargetModel(entry);
   }
   return {
-    databaseData,
+    databaseData: renderNode.data as CanvasDatabaseNodeData,
     kind: "dbAccess",
-    node,
+    node: renderNode,
     target: entry.target,
   };
 }
@@ -366,7 +395,7 @@ function resourceLogsMainModel(
   const node =
     entry.target.kind === "AP"
       ? runtimeContainerNodeForNode(foundNode, runtime)
-      : foundNode;
+      : runtimeDatabaseNodeForNode(foundNode, runtime);
   if (node == null) {
     return pendingTargetModel(entry);
   }
@@ -413,8 +442,12 @@ function drawerRenderModel(
         ? pendingTargetModel(entry)
         : { kind: "apTerminal", node: runtimeNode, target: entry.target };
     }
-    case "dbTerminal":
-      return { kind: "dbTerminal", node, target: entry.target };
+    case "dbTerminal": {
+      const runtimeNode = runtimeDatabaseNodeForNode(node, runtime);
+      return runtimeNode == null
+        ? pendingTargetModel(entry)
+        : { kind: "dbTerminal", node: runtimeNode, target: entry.target };
+    }
     default:
       return entry satisfies never;
   }
