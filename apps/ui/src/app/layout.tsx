@@ -1,5 +1,4 @@
 import { Geist, JetBrains_Mono } from "next/font/google";
-import Script from "next/script";
 
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Suspense } from "react";
@@ -21,6 +20,19 @@ const fontMono = JetBrains_Mono({
 const reactScanEnabled =
   process.env.NODE_ENV === "development" && process.env.REACT_SCAN === "true";
 
+const reactScanOptionsScript = `
+window.reactScan?.({
+  allowInIframe: true,
+  animationSpeed: "slow",
+  enabled: true,
+  safeArea: { bottom: 80, right: 24 },
+  showFPS: true,
+  showNotificationCount: true,
+  showToolbar: true,
+  trackUnnecessaryRenders: true,
+});
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -37,14 +49,15 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
     >
-      <body>
+      <head>
         {reactScanEnabled ? (
-          <Script
-            crossOrigin="anonymous"
-            src="https://unpkg.com/react-scan/dist/auto.global.js"
-            strategy="beforeInteractive"
-          />
+          <>
+            <script src="https://unpkg.com/react-scan/dist/auto.global.js" />
+            <script>{reactScanOptionsScript}</script>
+          </>
         ) : null}
+      </head>
+      <body>
         <JotaiProvider>
           <NuqsAdapter>
             <ThemeProvider>
