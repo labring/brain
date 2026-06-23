@@ -659,6 +659,10 @@ func requireBrainAPLikeWorkload(workload apWorkload) error {
 	return errors.New("AP workload is empty")
 }
 
+func requireBrainAPLifecycleWorkload(workload apWorkload) error {
+	return requireBrainAPLikeWorkload(workload)
+}
+
 func requireBrainAPStatefulSet(statefulSet appsv1.StatefulSet) error {
 	labels := statefulSet.GetLabels()
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||

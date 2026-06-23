@@ -209,6 +209,28 @@ func requireBrainDBLikeCluster(cluster unstructured.Unstructured) error {
 	return nil
 }
 
+func requireBrainDBLifecycleCluster(cluster unstructured.Unstructured) error {
+	return requireBrainManagedDBProductCluster(cluster)
+}
+
+func requireBrainDBUpdateCluster(cluster unstructured.Unstructured) error {
+	return requireBrainManagedDBProductCluster(cluster)
+}
+
+func requireBrainDBBackupPolicyCluster(cluster unstructured.Unstructured) error {
+	return requireBrainManagedDBProductCluster(cluster)
+}
+
+func requireBrainManagedDBProductCluster(cluster unstructured.Unstructured) error {
+	if err := requireBrainDBLikeCluster(cluster); err != nil {
+		return err
+	}
+	if _, ok := orchestration.DBEngineProfileFor(dbEngineFromCluster(cluster)); !ok {
+		return errors.New("cluster is not a supported Brain DB product")
+	}
+	return nil
+}
+
 func ensureDBCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string) error {
 	clusterJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
 		Resource:  "clusters",
@@ -551,7 +573,7 @@ func registerBackupPolicy(grp huma.API) {
 		if err := json.Unmarshal(clusterJSON, &currentCluster); err != nil {
 			return nil, huma.Error500InternalServerError("failed to decode DB for backup policy update", err)
 		}
-		if err := requireBrainDBCluster(currentCluster); err != nil {
+		if err := requireBrainDBBackupPolicyCluster(currentCluster); err != nil {
 			return nil, huma.Error404NotFound("DB not found", err)
 		}
 
@@ -821,7 +843,7 @@ func applyLifecycleDBOps(input *dbLifecycleInput, opsType string) (*dbLifecycleO
 	if err := json.Unmarshal(clusterJSON, &currentCluster); err != nil {
 		return nil, huma.Error500InternalServerError("failed to decode DB for "+strings.ToLower(opsType), err)
 	}
-	if err := requireBrainDBCluster(currentCluster); err != nil {
+	if err := requireBrainDBLifecycleCluster(currentCluster); err != nil {
 		return nil, huma.Error404NotFound("DB not found", err)
 	}
 
@@ -958,7 +980,7 @@ func registerUpdate(grp huma.API) {
 		if err := json.Unmarshal(clusterJSON, &currentCluster); err != nil {
 			return nil, huma.Error500InternalServerError("failed to decode DB for update", err)
 		}
-		if err := requireBrainDBCluster(currentCluster); err != nil {
+		if err := requireBrainDBUpdateCluster(currentCluster); err != nil {
 			return nil, huma.Error404NotFound("DB not found", err)
 		}
 
@@ -1360,6 +1382,9 @@ func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace st
 		return err
 	}
 	if err := requireBrainDBCluster(current); err != nil {
+		if templateRef, ok := templateDeploymentRefFromDBCluster(current); ok {
+			return deleteTemplateDeploymentResources(cfg, templateRef, namespace)
+		}
 		return apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, name)
 	}
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindDB + "," + orchestration.BrainDeploymentNameLabel + "=" + name
@@ -1382,4 +1407,14 @@ func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace st
 		return nil
 	}
 	return err
+}
+
+func templateDeploymentRefFromDBCluster(cluster unstructured.Unstructured) (templateDeploymentRef, bool) {
+	labels := cluster.GetLabels()
+	if labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindTemplate {
+		return templateDeploymentRef{}, false
+	}
+	name := strings.TrimSpace(labels[orchestration.BrainDeploymentNameLabel])
+	projectID := strings.TrimSpace(labels[orchestration.BrainProjectIDLabel])
+	return templateDeploymentRef{Name: name, ProjectID: projectID}, name != "" && projectID != ""
 }

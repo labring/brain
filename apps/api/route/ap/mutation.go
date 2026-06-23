@@ -739,6 +739,9 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 		return err
 	}
 	if err := requireBrainAPWorkload(*workload); err != nil {
+		if templateRef, ok := templateDeploymentRefFromAPWorkload(*workload); ok {
+			return deleteTemplateDeploymentResources(clientCfg, templateRef, namespace)
+		}
 		return apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, name)
 	}
 	selector := apDirectResourceDeleteSelector(name)
@@ -765,6 +768,16 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 
 func apDirectResourceDeleteSelector(name string) string {
 	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP + "," + orchestration.BrainDeploymentNameLabel + "=" + name
+}
+
+func templateDeploymentRefFromAPWorkload(workload apWorkload) (templateDeploymentRef, bool) {
+	labels := workload.Labels()
+	if labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindTemplate {
+		return templateDeploymentRef{}, false
+	}
+	name := strings.TrimSpace(labels[orchestration.BrainDeploymentNameLabel])
+	projectID := strings.TrimSpace(labels[orchestration.BrainProjectIDLabel])
+	return templateDeploymentRef{Name: name, ProjectID: projectID}, name != "" && projectID != ""
 }
 
 func registerRestart(grp huma.API) {
@@ -815,7 +828,7 @@ func registerRestart(grp huma.API) {
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP workload for restart", err)
 		}
-		if err := requireBrainAPWorkload(*workload); err != nil {
+		if err := requireBrainAPLifecycleWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 

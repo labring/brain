@@ -30,6 +30,12 @@ const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
 const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+const NGINX_SSL_REDIRECT_ANNOTATION =
+  "nginx.ingress.kubernetes.io/ssl-redirect";
+const NGINX_CONFIGURATION_SNIPPET_ANNOTATION =
+  "nginx.ingress.kubernetes.io/configuration-snippet";
+const FORCE_HTTPS_FORWARDED_PROTO_SNIPPET =
+  "proxy_set_header X-Forwarded-Proto https;";
 const CLUSTER_SCOPED_KINDS = new Set([
   "APIService",
   "ClusterRole",
@@ -691,9 +697,30 @@ function normalizeDockerConfigJsonSecret(object: TemplateK8sObject) {
     Object.keys(nextStringData).length === 0 ? undefined : nextStringData;
 }
 
+function normalizeHttpOnlyIngress(object: TemplateK8sObject) {
+  if (object.kind !== "Ingress") {
+    return;
+  }
+  const spec = asRecord(object.spec);
+  if (Array.isArray(spec?.tls) && spec.tls.length > 0) {
+    return;
+  }
+  const metadata = ensureMetadata(object);
+  metadata.annotations ??= {};
+  const annotations = metadata.annotations as Record<string, string>;
+  annotations[NGINX_SSL_REDIRECT_ANNOTATION] = "false";
+  if (
+    annotations[NGINX_CONFIGURATION_SNIPPET_ANNOTATION]?.trim() ===
+    FORCE_HTTPS_FORWARDED_PROTO_SNIPPET
+  ) {
+    delete annotations[NGINX_CONFIGURATION_SNIPPET_ANNOTATION];
+  }
+}
+
 function normalizeRenderedResource(object: TemplateK8sObject) {
   normalizeDockerConfigJsonSecret(object);
   normalizeEnvValues(object);
+  normalizeHttpOnlyIngress(object);
   normalizeServicePorts(object);
 }
 

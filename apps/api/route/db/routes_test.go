@@ -422,6 +422,7 @@ func TestDBLikeOwnershipAllowsManagedTemplateClusters(t *testing.T) {
 		orchestration.BrainDeploymentNameLabel: "template-pg",
 		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
 		orchestration.BrainProjectIDLabel:      "project-a",
+		"clusterdefinition.kubeblocks.io/name": "postgresql",
 	})
 
 	if err := requireBrainDBLikeCluster(cluster); err != nil {
@@ -437,10 +438,111 @@ func TestDBStrictOwnershipRejectsManagedTemplateClusters(t *testing.T) {
 		orchestration.BrainDeploymentNameLabel: "template-pg",
 		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
 		orchestration.BrainProjectIDLabel:      "project-a",
+		"clusterdefinition.kubeblocks.io/name": "postgresql",
 	})
 
 	if err := requireBrainDBCluster(cluster); err == nil {
 		t.Fatal("expected strict DB ownership to reject template cluster")
+	}
+}
+
+func TestTemplateDeploymentRefFromDBCluster(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("postgres")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+		orchestration.BrainDeploymentNameLabel: "template-postgres",
+		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:      "project-a",
+	})
+
+	ref, ok := templateDeploymentRefFromDBCluster(cluster)
+	if !ok || ref.Name != "template-postgres" || ref.ProjectID != "project-a" {
+		t.Fatalf("template deployment ref = %#v/%v, want template-postgres project-a true", ref, ok)
+	}
+}
+
+func TestDBLifecycleOwnershipAllowsManagedTemplateClusters(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("template-pg")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+		orchestration.BrainDeploymentNameLabel: "template-pg",
+		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:      "project-a",
+		"clusterdefinition.kubeblocks.io/name": "postgresql",
+	})
+
+	if err := requireBrainDBLifecycleCluster(cluster); err != nil {
+		t.Fatalf("expected managed template cluster to pass DB lifecycle ownership check: %v", err)
+	}
+}
+
+func TestDBUpdateOwnershipAllowsManagedTemplateClusters(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("affine-rvxatt-redis")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+		orchestration.BrainDeploymentNameLabel: "affine-rvxatt",
+		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:      "project-a",
+		"clusterdefinition.kubeblocks.io/name": "redis",
+	})
+
+	if err := requireBrainDBUpdateCluster(cluster); err != nil {
+		t.Fatalf("expected managed template Redis cluster to pass DB update ownership check: %v", err)
+	}
+}
+
+func TestDBUpdateOwnershipRejectsTemplateClustersWithUnsupportedEngine(t *testing.T) {
+	cluster := unstructured.Unstructured{}
+	cluster.SetName("template-support")
+	cluster.SetLabels(map[string]string{
+		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+		orchestration.BrainDeploymentNameLabel: "template-app",
+		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:      "project-a",
+		"clusterdefinition.kubeblocks.io/name": "unsupported-engine",
+	})
+
+	if err := requireBrainDBUpdateCluster(cluster); err == nil {
+		t.Fatal("expected unsupported template cluster engine to fail DB update ownership check")
+	}
+}
+
+func TestDBUpdatePlanFromTemplateRedisClusterPatchCreatesOpsRequest(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {
+			"name": "affine-rvxatt-redis",
+			"namespace": "ns-a",
+			"labels": {
+				"brain.io/deployment-kind": "template",
+				"brain.io/deployment-name": "affine-rvxatt",
+				"brain.io/managed-by": "brain",
+				"brain.io/project-id": "project-a",
+				"clusterdefinition.kubeblocks.io/name": "redis"
+			}
+		},
+		"spec": {
+			"clusterDefinitionRef": "redis",
+			"componentSpecs": [{"name": "redis", "replicas": 1}]
+		}
+	}`)
+	plan, err := dbUpdatePlanFromProductPatch([]byte(`{"spec":{"restartRequest":1}}`), cluster, "affine-rvxatt-redis", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if len(plan.OpsRequests) != 1 {
+		t.Fatalf("ops request count = %d, want 1", len(plan.OpsRequests))
+	}
+	spec := plan.OpsRequests[0].Object["spec"].(map[string]interface{})
+	if got := spec["clusterRef"]; got != "affine-rvxatt-redis" {
+		t.Fatalf("clusterRef = %v, want affine-rvxatt-redis", got)
+	}
+	if got := spec["type"]; got != "Restart" {
+		t.Fatalf("ops type = %v, want Restart", got)
 	}
 }
 
