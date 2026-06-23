@@ -39,9 +39,10 @@ import {
 import {
   type DeploymentTaskProjection,
   type DeploymentTaskProjectionStreamEvent,
-  deploymentTaskProjectionIsVisible,
+  deploymentTaskCanvasTopologyChanged,
   nextDeploymentTaskProjectionVisibilityChangeMs,
   replaceDeploymentTaskProjections,
+  selectCanvasDeploymentTaskProjections,
   upsertDeploymentTaskProjection,
 } from "@/lib/deploy-task/projection";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
@@ -54,6 +55,8 @@ import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
 const DEPLOYMENT_PROJECTION_RECONNECT_MS = 3000;
+const EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT =
+  emptyMissingResourceLayoutGraceResult();
 
 function createTransientSinceMap(): WorkloadTransientSinceByKey {
   return new Map<string, number>();
@@ -141,7 +144,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   const deploymentTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const statefulSetTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const missingLayoutSinceByOwnerKeyRef = useRef(new Map<string, number>());
-  const [, setMissingLayoutGraceTick] = useState(0);
+  const [missingLayoutGraceClock, setMissingLayoutGraceClock] = useState(0);
   const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
     useState(0);
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
@@ -151,6 +154,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     []
   );
   const deployTasksRef = useRef<DeploymentTaskProjection[]>([]);
+  const canvasDeployTasksRef = useRef<DeploymentTaskProjection[]>([]);
   const [
     deploymentProjectionVisibilityNow,
     setDeploymentProjectionVisibilityNow,
@@ -161,31 +165,35 @@ export function useProjectCanvasResourceSnapshot(options: {
   );
   const commitDeployTasks = useCallback(
     (nextProjections: readonly DeploymentTaskProjection[]) => {
-      const next = replaceDeploymentTaskProjections(
-        deployTasksRef.current,
-        nextProjections
-      );
-      if (next === deployTasksRef.current) {
-        return false;
+      const current = deployTasksRef.current;
+      const next = replaceDeploymentTaskProjections(current, nextProjections);
+      if (next === current) {
+        return { canvasTopologyChanged: false };
       }
+      const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
+        current,
+        next,
+      });
       deployTasksRef.current = next;
       setDeployTasks(next);
-      return true;
+      return { canvasTopologyChanged };
     },
     []
   );
   const commitDeployTaskUpsert = useCallback(
     (projection: DeploymentTaskProjection) => {
-      const next = upsertDeploymentTaskProjection(
-        deployTasksRef.current,
-        projection
-      );
-      if (next === deployTasksRef.current) {
-        return false;
+      const current = deployTasksRef.current;
+      const next = upsertDeploymentTaskProjection(current, projection);
+      if (next === current) {
+        return { canvasTopologyChanged: false };
       }
+      const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
+        current,
+        next,
+      });
       deployTasksRef.current = next;
       setDeployTasks(next);
-      return true;
+      return { canvasTopologyChanged };
     },
     []
   );
@@ -193,11 +201,15 @@ export function useProjectCanvasResourceSnapshot(options: {
     const current = deployTasksRef.current;
     const next = current.filter((task) => task.id !== taskId);
     if (next.length === current.length) {
-      return false;
+      return { canvasTopologyChanged: false };
     }
+    const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
+      current,
+      next,
+    });
     deployTasksRef.current = next;
     setDeployTasks(next);
-    return true;
+    return { canvasTopologyChanged };
   }, []);
   useEffect(() => {
     deployTasksRef.current = deployTasks;
@@ -362,19 +374,19 @@ export function useProjectCanvasResourceSnapshot(options: {
       setDeployTasksError(undefined);
       switch (event.type) {
         case "snapshot": {
-          const changed = commitDeployTasks(event.projections);
-          if (changed && event.projections.length > 0) {
+          const result = commitDeployTasks(event.projections);
+          if (result.canvasTopologyChanged) {
             requestWorkloadReconciliation();
           }
           return;
         }
         case "upsert":
-          if (commitDeployTaskUpsert(event.projection)) {
+          if (commitDeployTaskUpsert(event.projection).canvasTopologyChanged) {
             requestWorkloadReconciliation();
           }
           return;
         case "remove":
-          if (commitDeployTaskRemove(event.taskId)) {
+          if (commitDeployTaskRemove(event.taskId).canvasTopologyChanged) {
             requestWorkloadReconciliation();
           }
           return;
@@ -527,14 +539,16 @@ export function useProjectCanvasResourceSnapshot(options: {
   }, [deployTasks]);
   const canvasDeployTasks = useMemo(
     () =>
-      deployTasks.filter((task) =>
-        deploymentTaskProjectionIsVisible(
-          task,
-          deploymentProjectionVisibilityNow
-        )
-      ),
+      selectCanvasDeploymentTaskProjections({
+        current: canvasDeployTasksRef.current,
+        now: deploymentProjectionVisibilityNow,
+        projections: deployTasks,
+      }),
     [deploymentProjectionVisibilityNow, deployTasks]
   );
+  useEffect(() => {
+    canvasDeployTasksRef.current = canvasDeployTasks;
+  }, [canvasDeployTasks]);
 
   const revalidate = useCallback(() => {
     return Promise.all([refreshWorkloadResources(), refreshDeployTasks()]);
@@ -617,14 +631,23 @@ export function useProjectCanvasResourceSnapshot(options: {
     dbsError == null &&
     !apsLoading &&
     !dbsLoading;
-  const missingResourceLayoutGrace = missingResourceLayoutGraceReady
-    ? resolveMissingResourceLayoutGrace({
-        layout: canvasLayout,
-        nodes: baseGraph.canvasState.nodes,
-        nowMs: Date.now(),
-        previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
-      })
-    : emptyMissingResourceLayoutGraceResult();
+  const missingResourceLayoutGrace = useMemo(() => {
+    if (!missingResourceLayoutGraceReady) {
+      return EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT;
+    }
+    const nowMs = Math.max(Date.now(), missingLayoutGraceClock);
+    return resolveMissingResourceLayoutGrace({
+      layout: canvasLayout,
+      nodes: baseGraph.canvasState.nodes,
+      nowMs,
+      previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
+    });
+  }, [
+    baseGraph.canvasState.nodes,
+    canvasLayout,
+    missingLayoutGraceClock,
+    missingResourceLayoutGraceReady,
+  ]);
   useEffect(() => {
     if (!missingResourceLayoutGraceReady) {
       return;
@@ -640,7 +663,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       return;
     }
     const timer = window.setTimeout(
-      () => setMissingLayoutGraceTick((tick) => tick + 1),
+      () => setMissingLayoutGraceClock(Date.now()),
       nextDelay + 25
     );
     return () => window.clearTimeout(timer);

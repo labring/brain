@@ -54,6 +54,12 @@ export interface DeploymentTaskProjection {
   updatedAt: string;
 }
 
+export interface SelectCanvasDeploymentTaskProjectionsInput {
+  current?: readonly DeploymentTaskProjection[];
+  now?: Date;
+  projections: readonly DeploymentTaskProjection[];
+}
+
 export type DeploymentTaskProjectionStreamEvent =
   | {
       projections: DeploymentTaskProjection[];
@@ -285,6 +291,101 @@ function deploymentTaskProjectionEqual(
   b: DeploymentTaskProjection
 ): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function deploymentTaskCanvasTopologyPayload(
+  projection: DeploymentTaskProjection
+) {
+  return {
+    artifactSummary: {
+      resources: projection.artifactSummary.resources ?? [],
+      resourceYamls: projection.artifactSummary.resourceYamls ?? [],
+    },
+    canvasProjection: {
+      edges: projection.canvasProjection.edges ?? [],
+      resultMappings: projection.canvasProjection.resultMappings ?? [],
+      slots: projection.canvasProjection.slots ?? [],
+    },
+    id: projection.id,
+    namespace: projection.namespace,
+    projectId: projection.projectId,
+    resultMappings: projection.resultMappings ?? [],
+  };
+}
+
+export function deploymentTaskCanvasTopologySignature(
+  projection: DeploymentTaskProjection,
+  now = new Date()
+): string | null {
+  if (!deploymentTaskProjectionIsVisible(projection, now)) {
+    return null;
+  }
+  return JSON.stringify(deploymentTaskCanvasTopologyPayload(projection));
+}
+
+function canvasTopologySignaturesByTaskId(
+  projections: readonly DeploymentTaskProjection[],
+  now: Date
+): Map<string, string> {
+  const signatures = new Map<string, string>();
+  for (const projection of projections) {
+    const signature = deploymentTaskCanvasTopologySignature(projection, now);
+    if (signature !== null) {
+      signatures.set(projection.id, signature);
+    }
+  }
+  return signatures;
+}
+
+export function deploymentTaskCanvasTopologyChanged(input: {
+  current: readonly DeploymentTaskProjection[];
+  next: readonly DeploymentTaskProjection[];
+  now?: Date;
+}): boolean {
+  const now = input.now ?? new Date();
+  const current = canvasTopologySignaturesByTaskId(input.current, now);
+  const next = canvasTopologySignaturesByTaskId(input.next, now);
+  if (current.size !== next.size) {
+    return true;
+  }
+  for (const [taskId, signature] of next) {
+    if (current.get(taskId) !== signature) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function selectCanvasDeploymentTaskProjections({
+  current = [],
+  now = new Date(),
+  projections,
+}: SelectCanvasDeploymentTaskProjectionsInput): DeploymentTaskProjection[] {
+  const nextEntries = projections.flatMap((projection) => {
+    const signature = deploymentTaskCanvasTopologySignature(projection, now);
+    return signature === null ? [] : [{ projection, signature }];
+  });
+  const currentSignatures = canvasTopologySignaturesByTaskId(current, now);
+  const unchanged =
+    currentSignatures.size === nextEntries.length &&
+    nextEntries.every(
+      ({ projection, signature }) =>
+        currentSignatures.get(projection.id) === signature
+    );
+  if (unchanged) {
+    return current as DeploymentTaskProjection[];
+  }
+
+  const currentById = new Map(
+    current.map((projection) => [projection.id, projection])
+  );
+  return nextEntries.map(({ projection, signature }) => {
+    const existing = currentById.get(projection.id);
+    return existing !== undefined &&
+      deploymentTaskCanvasTopologySignature(existing, now) === signature
+      ? existing
+      : projection;
+  });
 }
 
 export function nextDeploymentTaskProjectionVisibilityChangeMs(

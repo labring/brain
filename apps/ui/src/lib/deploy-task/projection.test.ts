@@ -3,9 +3,12 @@ import { test } from "node:test";
 
 import {
   DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS,
+  deploymentTaskCanvasTopologyChanged,
+  deploymentTaskCanvasTopologySignature,
   deploymentTaskProjectionIsVisible,
   nextDeploymentTaskProjectionVisibilityChangeMs,
   replaceDeploymentTaskProjections,
+  selectCanvasDeploymentTaskProjections,
   toDeploymentTaskProjection,
   upsertDeploymentTaskProjection,
 } from "./projection";
@@ -302,6 +305,171 @@ test("unchanged deployment task projection snapshots keep current references", (
     current
   );
   assert.equal(upsertDeploymentTaskProjection(current, { ...second }), current);
+});
+
+test("canvas deployment task projections ignore activity-only changes", () => {
+  const current = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      canvasProjection: {
+        slots: [
+          {
+            expectedRef: {
+              kind: "AP",
+              name: "api",
+              namespace: "default",
+            },
+            id: "AP:default:api",
+          },
+        ],
+      },
+      phase: "apply",
+      status: "applying",
+    }),
+    NOW
+  );
+  assert.ok(current);
+  const currentCanvasTasks = [current];
+  const activityUpdate = {
+    ...current,
+    display: {
+      resultSummary: "AP api",
+      sourceKind: "docker" as const,
+      sourceSummary: "nginx:latest",
+    },
+    phase: "verify" as const,
+    status: "running" as const,
+    updatedAt: new Date(NOW.getTime() + 5000).toISOString(),
+  };
+
+  assert.equal(
+    deploymentTaskCanvasTopologySignature(current, NOW),
+    deploymentTaskCanvasTopologySignature(activityUpdate, NOW)
+  );
+  assert.equal(
+    deploymentTaskCanvasTopologyChanged({
+      current: currentCanvasTasks,
+      next: [activityUpdate],
+      now: NOW,
+    }),
+    false
+  );
+  assert.equal(
+    selectCanvasDeploymentTaskProjections({
+      current: currentCanvasTasks,
+      now: NOW,
+      projections: [activityUpdate],
+    }),
+    currentCanvasTasks
+  );
+});
+
+test("canvas deployment task projections change only when topology changes", () => {
+  const current = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      canvasProjection: {
+        slots: [
+          {
+            expectedRef: {
+              kind: "AP",
+              name: "api",
+              namespace: "default",
+            },
+            id: "AP:default:api",
+          },
+        ],
+      },
+      phase: "apply",
+      status: "applying",
+    }),
+    NOW
+  );
+  assert.ok(current);
+  const currentCanvasTasks = [current];
+  const topologyUpdate = {
+    ...current,
+    canvasProjection: {
+      ...current.canvasProjection,
+      slots: [
+        ...(current.canvasProjection.slots ?? []),
+        {
+          expectedRef: {
+            kind: "PublicAccess" as const,
+            name: "api",
+            namespace: "default",
+          },
+          id: "PublicAccess:default:api",
+        },
+      ],
+    },
+    phase: "verify" as const,
+    status: "running" as const,
+    updatedAt: new Date(NOW.getTime() + 5000).toISOString(),
+  };
+
+  assert.equal(
+    deploymentTaskCanvasTopologyChanged({
+      current: currentCanvasTasks,
+      next: [topologyUpdate],
+      now: NOW,
+    }),
+    true
+  );
+  assert.deepEqual(
+    selectCanvasDeploymentTaskProjections({
+      current: currentCanvasTasks,
+      now: NOW,
+      projections: [topologyUpdate],
+    }),
+    [topologyUpdate]
+  );
+});
+
+test("completed canvas deployment task projections stay stable until grace expires", () => {
+  const current = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        resources: [
+          {
+            apiVersion: "brain.io/direct",
+            kind: "AP",
+            name: "api",
+            namespace: "default",
+          },
+        ],
+      },
+      phase: "apply",
+      status: "applying",
+    }),
+    NOW
+  );
+  assert.ok(current);
+  const currentCanvasTasks = [current];
+  const completed = {
+    ...current,
+    completedAt: NOW.toISOString(),
+    phase: "completed" as const,
+    status: "completed" as const,
+    updatedAt: new Date(NOW.getTime() + 5000).toISOString(),
+  };
+
+  assert.equal(
+    selectCanvasDeploymentTaskProjections({
+      current: currentCanvasTasks,
+      now: NOW,
+      projections: [completed],
+    }),
+    currentCanvasTasks
+  );
+  assert.deepEqual(
+    selectCanvasDeploymentTaskProjections({
+      current: currentCanvasTasks,
+      now: new Date(
+        NOW.getTime() + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS + 1
+      ),
+      projections: [completed],
+    }),
+    []
+  );
 });
 
 test("deployment task projection visibility schedules only real expiry ticks", () => {
