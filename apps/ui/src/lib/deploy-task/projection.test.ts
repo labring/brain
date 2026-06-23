@@ -4,6 +4,8 @@ import { test } from "node:test";
 import {
   DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS,
   deploymentTaskProjectionIsVisible,
+  nextDeploymentTaskProjectionVisibilityChangeMs,
+  replaceDeploymentTaskProjections,
   toDeploymentTaskProjection,
   upsertDeploymentTaskProjection,
 } from "./projection";
@@ -282,5 +284,64 @@ test("upserting deployment task projections keeps existing order", () => {
         status: "running",
       },
     ]
+  );
+});
+
+test("unchanged deployment task projection snapshots keep current references", () => {
+  const first = toDeploymentTaskProjection(deploymentTaskSource(), NOW);
+  const second = toDeploymentTaskProjection(
+    deploymentTaskSource({ id: "task-2" }),
+    NOW
+  );
+  assert.ok(first);
+  assert.ok(second);
+  const current = [first, second];
+
+  assert.equal(
+    replaceDeploymentTaskProjections(current, [{ ...first }, { ...second }]),
+    current
+  );
+  assert.equal(upsertDeploymentTaskProjection(current, { ...second }), current);
+});
+
+test("deployment task projection visibility schedules only real expiry ticks", () => {
+  const active = toDeploymentTaskProjection(deploymentTaskSource(), NOW);
+  const completed = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        resources: [
+          {
+            apiVersion: "brain.io/direct",
+            kind: "AP",
+            name: "api",
+            namespace: "default",
+          },
+        ],
+      },
+      completedAt: NOW,
+      phase: "completed",
+      status: "completed",
+    }),
+    NOW
+  );
+  assert.ok(active);
+  assert.ok(completed);
+
+  assert.equal(
+    nextDeploymentTaskProjectionVisibilityChangeMs([active], NOW),
+    undefined
+  );
+  assert.equal(
+    nextDeploymentTaskProjectionVisibilityChangeMs([completed], NOW),
+    DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS
+  );
+  assert.equal(
+    nextDeploymentTaskProjectionVisibilityChangeMs(
+      [completed],
+      new Date(
+        NOW.getTime() + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS + 1
+      )
+    ),
+    undefined
   );
 });

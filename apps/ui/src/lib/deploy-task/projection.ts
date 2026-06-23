@@ -280,6 +280,55 @@ export function deploymentTaskProjectionIsVisible(
   );
 }
 
+function deploymentTaskProjectionEqual(
+  a: DeploymentTaskProjection,
+  b: DeploymentTaskProjection
+): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function nextDeploymentTaskProjectionVisibilityChangeMs(
+  projections: readonly DeploymentTaskProjection[],
+  now = new Date()
+): number | undefined {
+  const nowMs = now.getTime();
+  let nextDelay: number | undefined;
+  for (const projection of projections) {
+    if (
+      projection.status !== "completed" ||
+      !taskHasProjectionFacts(projection)
+    ) {
+      continue;
+    }
+    const completedMs = dateMs(projection.completedAt);
+    if (completedMs === undefined) {
+      continue;
+    }
+    const delay =
+      completedMs + DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS - nowMs;
+    if (delay < 0) {
+      continue;
+    }
+    nextDelay = nextDelay === undefined ? delay : Math.min(nextDelay, delay);
+  }
+  return nextDelay;
+}
+
+export function replaceDeploymentTaskProjections(
+  current: DeploymentTaskProjection[],
+  nextProjections: readonly DeploymentTaskProjection[]
+): DeploymentTaskProjection[] {
+  if (
+    current.length === nextProjections.length &&
+    current.every((projection, index) =>
+      deploymentTaskProjectionEqual(projection, nextProjections[index])
+    )
+  ) {
+    return current;
+  }
+  return [...nextProjections];
+}
+
 export function toDeploymentTaskProjection(
   task: DeploymentTaskProjectionSource,
   _now = new Date()
@@ -318,12 +367,15 @@ export function toDeploymentTaskProjection(
 }
 
 export function upsertDeploymentTaskProjection(
-  projections: readonly DeploymentTaskProjection[],
+  projections: DeploymentTaskProjection[],
   projection: DeploymentTaskProjection
 ): DeploymentTaskProjection[] {
   const index = projections.findIndex((item) => item.id === projection.id);
   if (index === -1) {
     return [projection, ...projections];
+  }
+  if (deploymentTaskProjectionEqual(projections[index], projection)) {
+    return projections;
   }
   const next = [...projections];
   next[index] = projection;

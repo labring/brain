@@ -38,7 +38,10 @@ import {
 } from "@/lib/deploy-task/client";
 import {
   type DeploymentTaskProjection,
+  type DeploymentTaskProjectionStreamEvent,
   deploymentTaskProjectionIsVisible,
+  nextDeploymentTaskProjectionVisibilityChangeMs,
+  replaceDeploymentTaskProjections,
   upsertDeploymentTaskProjection,
 } from "@/lib/deploy-task/projection";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
@@ -147,11 +150,58 @@ export function useProjectCanvasResourceSnapshot(options: {
   const [deployTasks, setDeployTasks] = useState<DeploymentTaskProjection[]>(
     []
   );
-  const [, setDeploymentProjectionVisibilityTick] = useState(0);
+  const deployTasksRef = useRef<DeploymentTaskProjection[]>([]);
+  const [
+    deploymentProjectionVisibilityNow,
+    setDeploymentProjectionVisibilityNow,
+  ] = useState(() => new Date());
   const [deployTasksLoading, setDeployTasksLoading] = useState(false);
   const [deployTasksError, setDeployTasksError] = useState<Error | undefined>(
     undefined
   );
+  const commitDeployTasks = useCallback(
+    (nextProjections: readonly DeploymentTaskProjection[]) => {
+      const next = replaceDeploymentTaskProjections(
+        deployTasksRef.current,
+        nextProjections
+      );
+      if (next === deployTasksRef.current) {
+        return false;
+      }
+      deployTasksRef.current = next;
+      setDeployTasks(next);
+      return true;
+    },
+    []
+  );
+  const commitDeployTaskUpsert = useCallback(
+    (projection: DeploymentTaskProjection) => {
+      const next = upsertDeploymentTaskProjection(
+        deployTasksRef.current,
+        projection
+      );
+      if (next === deployTasksRef.current) {
+        return false;
+      }
+      deployTasksRef.current = next;
+      setDeployTasks(next);
+      return true;
+    },
+    []
+  );
+  const commitDeployTaskRemove = useCallback((taskId: string) => {
+    const current = deployTasksRef.current;
+    const next = current.filter((task) => task.id !== taskId);
+    if (next.length === current.length) {
+      return false;
+    }
+    deployTasksRef.current = next;
+    setDeployTasks(next);
+    return true;
+  }, []);
+  useEffect(() => {
+    deployTasksRef.current = deployTasks;
+  }, [deployTasks]);
   const peerDbsEmpty = useCallback(
     () => apItemsFromList(dbsListRef.current).length === 0,
     []
@@ -307,6 +357,38 @@ export function useProjectCanvasResourceSnapshot(options: {
     );
     refreshWorkloadResourcesRef.current().catch(() => undefined);
   }, []);
+  const handleDeploymentProjectionEvent = useCallback(
+    (event: DeploymentTaskProjectionStreamEvent) => {
+      setDeployTasksError(undefined);
+      switch (event.type) {
+        case "snapshot": {
+          const changed = commitDeployTasks(event.projections);
+          if (changed && event.projections.length > 0) {
+            requestWorkloadReconciliation();
+          }
+          return;
+        }
+        case "upsert":
+          if (commitDeployTaskUpsert(event.projection)) {
+            requestWorkloadReconciliation();
+          }
+          return;
+        case "remove":
+          if (commitDeployTaskRemove(event.taskId)) {
+            requestWorkloadReconciliation();
+          }
+          return;
+        default:
+          event satisfies never;
+      }
+    },
+    [
+      commitDeployTaskRemove,
+      commitDeployTaskUpsert,
+      commitDeployTasks,
+      requestWorkloadReconciliation,
+    ]
+  );
 
   const refreshDeployTasks = useCallback(async () => {
     if (
@@ -314,7 +396,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       namespace.trim() === "" ||
       uid.trim() === ""
     ) {
-      setDeployTasks([]);
+      commitDeployTasks([]);
       setDeployTasksLoading(false);
       setDeployTasksError(undefined);
       return [];
@@ -326,7 +408,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         namespace,
         projectId: uid,
       });
-      setDeployTasks(projections);
+      commitDeployTasks(projections);
       setDeployTasksError(undefined);
       return projections;
     } catch (error) {
@@ -336,11 +418,11 @@ export function useProjectCanvasResourceSnapshot(options: {
     } finally {
       setDeployTasksLoading(false);
     }
-  }, [kubeconfig, namespace, uid]);
+  }, [commitDeployTasks, kubeconfig, namespace, uid]);
 
   useEffect(() => {
     let cancelled = false;
-    setDeployTasks([]);
+    commitDeployTasks([]);
     setDeployTasksError(undefined);
 
     if (
@@ -362,7 +444,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         if (cancelled) {
           return;
         }
-        setDeployTasks(projections);
+        commitDeployTasks(projections);
         setDeployTasksError(undefined);
       })
       .catch((error: unknown) => {
@@ -382,7 +464,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     return () => {
       cancelled = true;
     };
-  }, [kubeconfig, namespace, uid]);
+  }, [commitDeployTasks, kubeconfig, namespace, uid]);
 
   useEffect(() => {
     if (
@@ -400,29 +482,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       streamProjectDeploymentTaskProjections({
         kubeconfig,
         namespace,
-        onEvent: (event) => {
-          setDeployTasksError(undefined);
-          if (event.type === "snapshot") {
-            setDeployTasks(event.projections);
-            if (event.projections.length > 0) {
-              requestWorkloadReconciliation();
-            }
-            return;
-          }
-          if (event.type === "upsert") {
-            setDeployTasks((current) =>
-              upsertDeploymentTaskProjection(current, event.projection)
-            );
-            requestWorkloadReconciliation();
-            return;
-          }
-          if (event.type === "remove") {
-            setDeployTasks((current) =>
-              current.filter((task) => task.id !== event.taskId)
-            );
-            requestWorkloadReconciliation();
-          }
-        },
+        onEvent: handleDeploymentProjectionEvent,
         projectId: uid,
         signal: controller.signal,
       }).catch((error: unknown) => {
@@ -447,21 +507,33 @@ export function useProjectCanvasResourceSnapshot(options: {
       }
     };
   }, [
+    handleDeploymentProjectionEvent,
     isPageVisible,
     kubeconfig,
     namespace,
-    requestWorkloadReconciliation,
     uid,
   ]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setDeploymentProjectionVisibilityTick((tick) => tick + 1);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const canvasDeployTasks = deployTasks.filter((task) =>
-    deploymentTaskProjectionIsVisible(task)
+    const nextDelay =
+      nextDeploymentTaskProjectionVisibilityChangeMs(deployTasks);
+    if (nextDelay === undefined) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDeploymentProjectionVisibilityNow(new Date());
+    }, nextDelay + 25);
+    return () => window.clearTimeout(timer);
+  }, [deployTasks]);
+  const canvasDeployTasks = useMemo(
+    () =>
+      deployTasks.filter((task) =>
+        deploymentTaskProjectionIsVisible(
+          task,
+          deploymentProjectionVisibilityNow
+        )
+      ),
+    [deploymentProjectionVisibilityNow, deployTasks]
   );
 
   const revalidate = useCallback(() => {
