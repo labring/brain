@@ -35,7 +35,6 @@ export interface WorkloadTelemetrySnapshotResponse {
 
 export interface WorkloadTelemetrySnapshotState {
   item?: WorkloadTelemetrySnapshotItem;
-  refreshing: boolean;
 }
 
 type WorkloadTelemetryListener = () => void;
@@ -54,9 +53,7 @@ interface ConsumerEntry {
   target: WorkloadTelemetryTarget;
 }
 
-const EMPTY_SNAPSHOT_STATE: WorkloadTelemetrySnapshotState = {
-  refreshing: false,
-};
+const EMPTY_SNAPSHOT_STATE: WorkloadTelemetrySnapshotState = {};
 
 function targetsEqual(
   a: WorkloadTelemetryTarget,
@@ -135,8 +132,6 @@ export function createWorkloadTelemetryStore(
   const consumers = new Map<string, ConsumerEntry>();
   const cache = new Map<string, WorkloadTelemetrySnapshotItem>();
   const snapshotStates = new Map<string, WorkloadTelemetrySnapshotState>();
-  let selectedKey: string | null = null;
-  const refreshingKeys = new Set<string>();
   let refreshScheduled = false;
   let refreshInFlight: Promise<void> | null = null;
 
@@ -144,7 +139,6 @@ export function createWorkloadTelemetryStore(
     key: string
   ): WorkloadTelemetrySnapshotState => ({
     item: cache.get(key),
-    refreshing: refreshingKeys.has(key),
   });
 
   const setSnapshotState = (
@@ -152,11 +146,7 @@ export function createWorkloadTelemetryStore(
     state: WorkloadTelemetrySnapshotState
   ) => {
     const previous = snapshotStates.get(key);
-    if (
-      previous !== undefined &&
-      previous.item === state.item &&
-      previous.refreshing === state.refreshing
-    ) {
+    if (previous !== undefined && previous.item === state.item) {
       return false;
     }
     snapshotStates.set(key, state);
@@ -182,26 +172,8 @@ export function createWorkloadTelemetryStore(
     }
   };
 
-  const publishCachedStates = (targets: WorkloadTelemetryTarget[]) => {
-    for (const target of targets) {
-      const key = workloadTelemetryTargetKey(target);
-      publishSnapshotState(key, snapshotStateForKey(key));
-    }
-  };
-
   const activeTargets = () => {
-    const targets = Array.from(consumers.values()).map((entry) => entry.target);
-    if (selectedKey === null) {
-      return targets;
-    }
-    return targets.sort((a, b) => {
-      const aSelected = workloadTelemetryTargetKey(a) === selectedKey;
-      const bSelected = workloadTelemetryTargetKey(b) === selectedKey;
-      if (aSelected === bSelected) {
-        return 0;
-      }
-      return aSelected ? -1 : 1;
-    });
+    return Array.from(consumers.values()).map((entry) => entry.target);
   };
 
   const runRefresh = async () => {
@@ -210,36 +182,17 @@ export function createWorkloadTelemetryStore(
       return;
     }
 
-    const refreshingKey =
-      selectedKey === null ||
-      !targets.some(
-        (target) => workloadTelemetryTargetKey(target) === selectedKey
-      )
-        ? null
-        : selectedKey;
-    if (refreshingKey !== null) {
-      refreshingKeys.add(refreshingKey);
-      publishSnapshotState(refreshingKey, snapshotStateForKey(refreshingKey));
-    }
-
-    try {
-      const response = await options.fetchSnapshot(targets);
-      for (const item of response.items) {
-        const key = workloadTelemetryTargetKey(item.target);
-        const previous = cache.get(key);
-        cache.set(
-          key,
-          previous !== undefined && snapshotItemsEqual(previous, item)
-            ? previous
-            : item
-        );
-        publishSnapshotState(key, snapshotStateForKey(key));
-      }
-    } finally {
-      if (refreshingKey !== null) {
-        refreshingKeys.delete(refreshingKey);
-      }
-      publishCachedStates(targets);
+    const response = await options.fetchSnapshot(targets);
+    for (const item of response.items) {
+      const key = workloadTelemetryTargetKey(item.target);
+      const previous = cache.get(key);
+      cache.set(
+        key,
+        previous !== undefined && snapshotItemsEqual(previous, item)
+          ? previous
+          : item
+      );
+      publishSnapshotState(key, snapshotStateForKey(key));
     }
   };
 
@@ -279,10 +232,6 @@ export function createWorkloadTelemetryStore(
     },
 
     refresh,
-
-    setSelectedTarget(target: WorkloadTelemetryTarget | null) {
-      selectedKey = target === null ? null : workloadTelemetryTargetKey(target);
-    },
 
     subscribe(
       target: WorkloadTelemetryTarget,

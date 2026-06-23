@@ -9,6 +9,7 @@ import {
   ContainerNodeFooterContent,
   ContainerNodeHeaderContent,
   ContainerNodeImageRow,
+  ContainerNodeMetricsContent,
 } from "./container-node.content";
 import { ContainerNodeRoot } from "./container-node.root";
 
@@ -20,6 +21,7 @@ export {
   ContainerNodeFooterContent,
   ContainerNodeHeaderContent,
   ContainerNodeImageRow,
+  ContainerNodeMetricsContent,
 } from "./container-node.content";
 export { useContainerNode } from "./container-node.context";
 export { containerNodeLifecycleMenuVisibility } from "./container-node.menu-visibility";
@@ -53,6 +55,7 @@ export const ContainerNode = {
   FooterContent: ContainerNodeFooterContent,
   HeaderContent: ContainerNodeHeaderContent,
   ImageRow: ContainerNodeImageRow,
+  MetricsContent: ContainerNodeMetricsContent,
   Root: ContainerNodeRoot,
 } as const;
 
@@ -67,3 +70,4 @@ dn(ContainerNodeBodyContent, "ContainerNode.BodyContent");
 dn(ContainerNodeImageRow, "ContainerNode.ImageRow");
 dn(ContainerNodeActionBar, "ContainerNode.ActionBar");
 dn(ContainerNodeFooterContent, "ContainerNode.FooterContent");
+dn(ContainerNodeMetricsContent, "ContainerNode.MetricsContent");

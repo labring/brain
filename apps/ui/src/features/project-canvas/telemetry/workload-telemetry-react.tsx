@@ -21,9 +21,7 @@ import {
   type WorkloadTelemetryTarget,
 } from "./workload-telemetry-store";
 
-const EMPTY_SNAPSHOT_STATE: WorkloadTelemetrySnapshotState = {
-  refreshing: false,
-};
+const EMPTY_SNAPSHOT_STATE: WorkloadTelemetrySnapshotState = {};
 
 const WorkloadTelemetryContext = createContext<WorkloadTelemetryStore | null>(
   null
@@ -33,14 +31,12 @@ export interface WorkloadTelemetryProviderProps {
   children: ReactNode;
   kubeconfig: string;
   refreshIntervalMs?: number;
-  selectedTarget?: WorkloadTelemetryTarget | null;
 }
 
 export function WorkloadTelemetryProvider({
   children,
   kubeconfig,
   refreshIntervalMs = 5000,
-  selectedTarget = null,
 }: WorkloadTelemetryProviderProps) {
   const store = useMemo(
     () =>
@@ -59,25 +55,6 @@ export function WorkloadTelemetryProvider({
       }),
     [kubeconfig]
   );
-  const selectedKind = selectedTarget?.kind ?? null;
-  const selectedName = selectedTarget?.name ?? "";
-  const selectedNamespace = selectedTarget?.namespace ?? "";
-
-  useEffect(() => {
-    const nextSelectedTarget =
-      selectedKind === null
-        ? null
-        : {
-            kind: selectedKind,
-            name: selectedName,
-            namespace: selectedNamespace,
-          };
-    store.setSelectedTarget(nextSelectedTarget);
-    if (nextSelectedTarget !== null && store.hasActiveTargets()) {
-      store.refresh().catch(() => undefined);
-    }
-  }, [selectedKind, selectedName, selectedNamespace, store]);
-
   useEffect(() => {
     if (refreshIntervalMs <= 0) {
       return;

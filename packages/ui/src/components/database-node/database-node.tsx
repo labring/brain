@@ -10,6 +10,7 @@ import {
   DatabaseNodeContent,
   DatabaseNodeFooterContent,
   DatabaseNodeHeaderContent,
+  DatabaseNodeMetricsContent,
 } from "./database-node.content";
 import { DatabaseNodeRoot } from "./database-node.root";
 
@@ -58,6 +59,7 @@ export const DatabaseNode = {
   Content: DatabaseNodeContent,
   FooterContent: DatabaseNodeFooterContent,
   HeaderContent: DatabaseNodeHeaderContent,
+  MetricsContent: DatabaseNodeMetricsContent,
   Root: DatabaseNodeRoot,
 } as const;
 
@@ -73,3 +75,4 @@ dn(DatabaseNodeConnectionList, "DatabaseNode.ConnectionList");
 dn(DatabaseNodeConnectionRow, "DatabaseNode.ConnectionRow");
 dn(DatabaseNodeActionBar, "DatabaseNode.ActionBar");
 dn(DatabaseNodeFooterContent, "DatabaseNode.FooterContent");
+dn(DatabaseNodeMetricsContent, "DatabaseNode.MetricsContent");

@@ -532,6 +532,12 @@ A temporary canvas interaction created when a user drags a line between canvas n
 
 A normalized time-series representation of workload resource usage for AP and DB workloads. It is consumed by both compact canvas node summaries and detailed metrics panels.
 
+### Workload Telemetry Snapshot
+
+A latest-point summary of workload resource usage for one AP or DB workload. It is observational read-side data for compact resource presentation, not Canvas topology, Canvas Layout, Canvas Resource Identity, or resource lifecycle state.
+
+_Avoid_: metric refresh, node state, resource status.
+
 ### Resource Logs
 
 A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs are for recent or historical observation, not for interactive commands like AP Terminal or DB Terminal.

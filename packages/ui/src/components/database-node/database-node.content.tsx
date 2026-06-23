@@ -20,7 +20,7 @@ import {
   TableProperties,
   Trash2,
 } from "lucide-react";
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType, ReactNode, SVGProps } from "react";
 
 import { useDatabaseNode } from "./database-node.context";
 import { maskDatabaseConnectionString } from "./database-node.mask";
@@ -36,6 +36,7 @@ import type {
   DatabaseNodeMetricKey,
   DatabaseNodePublicConnection,
   DatabaseNodeQuickActionKey,
+  DatabaseNodeStates,
 } from "./database-node.types";
 
 const METRIC_ITEMS = [
@@ -134,7 +135,11 @@ function DatabaseNodeHeaderIcon({ iconUrl }: { iconUrl?: string }) {
   );
 }
 
-export function DatabaseNodeContent() {
+export function DatabaseNodeContent({
+  metricsContent,
+}: {
+  metricsContent?: ReactNode;
+}) {
   return (
     <CanvasNode.Card surfaceClassName="database-node-surface">
       <CanvasNode.Header>
@@ -144,7 +149,7 @@ export function DatabaseNodeContent() {
         <DatabaseNodeBodyContent />
       </CanvasNode.Body>
       <CanvasNode.Footer>
-        <DatabaseNodeFooterContent />
+        <DatabaseNodeFooterContent metricsContent={metricsContent} />
       </CanvasNode.Footer>
     </CanvasNode.Card>
   );
@@ -384,8 +389,10 @@ export function DatabaseNodeActionBar({ className }: { className?: string }) {
 
 export function DatabaseNodeFooterContent({
   className,
+  metricsContent,
 }: {
   className?: string;
+  metricsContent?: ReactNode;
 }) {
   const {
     state: {
@@ -403,8 +410,35 @@ export function DatabaseNodeFooterContent({
       data-slot="database-node-footer-content"
     >
       <CanvasNode.FooterStatus status={visualStatus} />
-      <CanvasNode.MetricList items={METRIC_ITEMS} values={metrics} />
+      <CanvasNode.Metrics>
+        {metricsContent ?? <DatabaseNodeMetricsContent metrics={metrics} />}
+      </CanvasNode.Metrics>
     </div>
+  );
+}
+
+export function DatabaseNodeMetricsContent({
+  metrics,
+}: {
+  metrics?: DatabaseNodeStates["metrics"];
+}) {
+  return (
+    <>
+      {METRIC_ITEMS.map((item) => {
+        const Icon = item.icon;
+
+        return (
+          <CanvasNode.Metric
+            format="percent"
+            key={item.key}
+            label={item.label}
+            value={metrics?.[item.key]}
+          >
+            <Icon aria-hidden className="size-3.5 shrink-0" />
+          </CanvasNode.Metric>
+        );
+      })}
+    </>
   );
 }
 

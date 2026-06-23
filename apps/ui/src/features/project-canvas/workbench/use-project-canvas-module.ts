@@ -26,7 +26,6 @@ import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-pro
 import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
 import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
-import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import {
   deploymentTaskDockDismissalsStorageKey,
   readBrowserDeploymentTaskDockDismissals,
@@ -439,11 +438,6 @@ export function useProjectCanvasModule({
     ]
   );
 
-  const selectedTelemetryTarget = useMemo(
-    () => telemetryTargetFromCanvasNode(workbench.selectedNode),
-    [workbench.selectedNode]
-  );
-
   const surfaceActions = useMemo<ProjectCanvasSurfaceHostActions>(
     () => ({
       closeDrawerSurface: workbench.closeDrawerSurface,
@@ -501,7 +495,6 @@ export function useProjectCanvasModule({
       meta,
       runtimeModelDecorators: workbench.runtimeModelDecorators,
       runtimeStore,
-      selectedTelemetryTarget,
       state,
     },
     surfaces: {

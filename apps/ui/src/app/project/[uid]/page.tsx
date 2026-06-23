@@ -67,9 +67,6 @@ export default function ProjectIdPage() {
             kubeconfig={kubeconfig}
             meta={projectCanvas.canvas.meta}
             runtimeStore={projectCanvas.canvas.runtimeStore}
-            selectedTelemetryTarget={
-              projectCanvas.canvas.selectedTelemetryTarget
-            }
             state={projectCanvas.canvas.state}
           />
           <ProjectCanvasOverlayLayer

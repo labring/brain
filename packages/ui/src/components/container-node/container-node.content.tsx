@@ -20,7 +20,7 @@ import {
   SquareTerminal,
   Trash2,
 } from "lucide-react";
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType, ReactNode, SVGProps } from "react";
 
 import { useContainerNode } from "./container-node.context";
 import { containerNodeLifecycleMenuVisibility } from "./container-node.menu-visibility";
@@ -29,6 +29,7 @@ import type {
   ContainerNodeLifecycleActionKey,
   ContainerNodeMetricKey,
   ContainerNodeQuickActionKey,
+  ContainerNodeStates,
 } from "./container-node.types";
 
 const METRIC_ITEMS = [
@@ -95,7 +96,11 @@ function formatContainerReplicas(replicas: number | undefined) {
     : "--";
 }
 
-export function ContainerNodeContent() {
+export function ContainerNodeContent({
+  metricsContent,
+}: {
+  metricsContent?: ReactNode;
+}) {
   return (
     <CanvasNode.Card surfaceClassName="container-node-surface">
       <CanvasNode.Header>
@@ -105,7 +110,7 @@ export function ContainerNodeContent() {
         <ContainerNodeBodyContent />
       </CanvasNode.Body>
       <CanvasNode.Footer>
-        <ContainerNodeFooterContent />
+        <ContainerNodeFooterContent metricsContent={metricsContent} />
       </CanvasNode.Footer>
     </CanvasNode.Card>
   );
@@ -248,12 +253,14 @@ export function ContainerNodeActionBar({ className }: { className?: string }) {
 
 export function ContainerNodeFooterContent({
   className,
+  metricsContent,
 }: {
   className?: string;
+  metricsContent?: ReactNode;
 }) {
   const {
     state: {
-      states: { metrics, replicas, status },
+      states: { metrics, status },
     },
   } = useContainerNode();
   const visualStatus = resolveContainerNodeStatus(status);
@@ -267,15 +274,53 @@ export function ContainerNodeFooterContent({
       data-slot="container-node-footer-content"
     >
       <CanvasNode.FooterStatus status={visualStatus} />
-      <CanvasNode.MetricList items={METRIC_ITEMS} values={metrics}>
-        <CanvasNode.Metric
-          label="Replicas"
-          value={formatContainerReplicas(replicas)}
-        >
-          <Layers aria-hidden className="size-3.5 shrink-0" />
-        </CanvasNode.Metric>
-      </CanvasNode.MetricList>
+      <CanvasNode.Metrics>
+        {metricsContent ?? <ContainerNodeMetricsContent metrics={metrics} />}
+        <ContainerNodeReplicasMetric />
+      </CanvasNode.Metrics>
     </div>
+  );
+}
+
+export function ContainerNodeMetricsContent({
+  metrics,
+}: {
+  metrics?: ContainerNodeStates["metrics"];
+}) {
+  return (
+    <>
+      {METRIC_ITEMS.map((item) => {
+        const Icon = item.icon;
+
+        return (
+          <CanvasNode.Metric
+            format="percent"
+            key={item.key}
+            label={item.label}
+            value={metrics?.[item.key]}
+          >
+            <Icon aria-hidden className="size-3.5 shrink-0" />
+          </CanvasNode.Metric>
+        );
+      })}
+    </>
+  );
+}
+
+function ContainerNodeReplicasMetric() {
+  const {
+    state: {
+      states: { replicas },
+    },
+  } = useContainerNode();
+
+  return (
+    <CanvasNode.Metric
+      label="Replicas"
+      value={formatContainerReplicas(replicas)}
+    >
+      <Layers aria-hidden className="size-3.5 shrink-0" />
+    </CanvasNode.Metric>
   );
 }
 

@@ -10,7 +10,6 @@ import { memo } from "react";
 import type { ProjectCanvasFrameState } from "@/features/project-canvas/snapshot/project-canvas-page-state";
 import { ProjectCanvasInteractionProvider } from "@/features/project-canvas/surface/interaction-react";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
-import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
 import type { DeploymentTaskDockModel } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import { ProjectCanvasDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry-affordance";
 import {
@@ -26,7 +25,6 @@ interface ProjectCanvasViewportProps {
   kubeconfig: string;
   meta?: CanvasMeta;
   runtimeStore: ProjectRuntimeStore;
-  selectedTelemetryTarget?: WorkloadTelemetryTarget | null;
   state: CanvasState;
 }
 
@@ -36,14 +34,10 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   kubeconfig,
   meta,
   runtimeStore,
-  selectedTelemetryTarget,
   state,
 }: ProjectCanvasViewportProps) {
   return (
-    <WorkloadTelemetryProvider
-      kubeconfig={kubeconfig}
-      selectedTarget={selectedTelemetryTarget}
-    >
+    <WorkloadTelemetryProvider kubeconfig={kubeconfig}>
       <ProjectRuntimeStoreProvider store={runtimeStore}>
         <ProjectRuntimeNodeModelDecoratorsProvider decorators={decorators}>
           <ProjectCanvasInteractionProvider state={state}>

@@ -1,19 +1,38 @@
 "use client";
 
-import { DatabaseNode } from "@workspace/ui/components/database-node/database-node";
+import {
+  DatabaseNode,
+  type DatabaseNodeStates,
+} from "@workspace/ui/components/database-node/database-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo, useMemo } from "react";
 
 import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
 import {
-  databaseStatesWithTelemetry,
+  databaseMetricsWithTelemetrySnapshot,
   databaseTelemetryTargetFromWorkload,
-  shouldSubscribeWorkloadTelemetry,
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
+import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
 import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasDatabaseNodeData, CanvasDatabaseRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
+
+function CanvasDatabaseTelemetryMetrics({
+  fallbackMetrics,
+  target,
+}: {
+  fallbackMetrics: DatabaseNodeStates["metrics"];
+  target: WorkloadTelemetryTarget | null;
+}) {
+  const telemetry = useWorkloadTelemetrySnapshot(target);
+  const metrics = databaseMetricsWithTelemetrySnapshot(
+    fallbackMetrics,
+    telemetry
+  );
+
+  return <DatabaseNode.MetricsContent metrics={metrics} />;
+}
 
 export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   data,
@@ -39,15 +58,6 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     positionAbsoluteY,
     type,
   });
-  const activeTelemetryTarget = shouldSubscribeWorkloadTelemetry({
-    expanded: expansion.expanded,
-    selected: interaction.selected,
-    sidePaneOpen: false,
-  })
-    ? telemetryTarget
-    : null;
-  const telemetry = useWorkloadTelemetrySnapshot(activeTelemetryTarget);
-  const statesWithTelemetry = databaseStatesWithTelemetry(states, telemetry);
 
   return (
     <DatabaseNode.Root
@@ -59,9 +69,16 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
       onExpandedChange={expansion.onExpandedChange}
       onTogglePublicConnection={actions.togglePublicConnection}
       quickActions={actions.quickActions}
-      states={statesWithTelemetry}
+      states={states}
     >
-      <DatabaseNode.Content />
+      <DatabaseNode.Content
+        metricsContent={
+          <CanvasDatabaseTelemetryMetrics
+            fallbackMetrics={states.metrics}
+            target={telemetryTarget}
+          />
+        }
+      />
     </DatabaseNode.Root>
   );
 });
