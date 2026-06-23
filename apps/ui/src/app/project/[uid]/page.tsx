@@ -2,7 +2,9 @@
 
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
+import type { CSSProperties } from "react";
 import { useMemo } from "react";
+import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
@@ -24,6 +26,17 @@ export default function ProjectIdPage() {
     namespace,
     projectId: uid,
   });
+  const canvasViewportStyle = useMemo(
+    () =>
+      ({
+        "--canvas-viewport-right-inset": `${
+          projectCanvas.surfaces.model.side == null
+            ? 0
+            : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET
+        }px`,
+      }) as CSSProperties,
+    [projectCanvas.surfaces.model.side]
+  );
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
@@ -44,7 +57,10 @@ export default function ProjectIdPage() {
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
       {projectCanvas.canvas.frameState.renderCanvas && (
-        <div className="relative min-h-0 min-w-0 flex-1">
+        <div
+          className="relative min-h-0 min-w-0 flex-1"
+          style={canvasViewportStyle}
+        >
           <ProjectCanvasViewport
             canvasKey={`${namespace}:${uid}`}
             decorators={projectCanvas.canvas.runtimeModelDecorators}
@@ -55,7 +71,6 @@ export default function ProjectIdPage() {
               projectCanvas.canvas.selectedTelemetryTarget
             }
             state={projectCanvas.canvas.state}
-            viewportInset={projectCanvas.canvas.viewportInset}
           />
           <ProjectCanvasOverlayLayer
             deploymentTaskDock={projectCanvas.canvas.deploymentTaskDock}

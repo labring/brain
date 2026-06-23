@@ -1,7 +1,7 @@
 "use client";
 
 import { parseAsString, useQueryStates } from "nuqs";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
@@ -82,6 +82,8 @@ export function useProjectWorkbenchRouteState(options: {
     () => supportedWorkbenchState(parsedState, isSideEntrySupported),
     [isSideEntrySupported, parsedState]
   );
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const commit = useCallback(
     (next: ProjectWorkbenchRouteState, history: ProjectRouteHistoryMode) => {
@@ -194,23 +196,23 @@ export function useProjectWorkbenchRouteState(options: {
   const openSurface = useCallback(
     (intent: ProjectWorkbenchSurfaceIntent, onCommitted?: () => void) => {
       applyTransition(
-        planOpenProjectWorkbenchSurface(state, intent),
+        planOpenProjectWorkbenchSurface(stateRef.current, intent),
         "push",
         onCommitted
       );
     },
-    [applyTransition, state]
+    [applyTransition]
   );
 
   const closeSurfaceSlot = useCallback(
     (slot: ProjectSurfaceSlot, onCommitted?: () => void) => {
       applyTransition(
-        planCloseProjectWorkbenchSurfaceSlot(state, slot),
+        planCloseProjectWorkbenchSurfaceSlot(stateRef.current, slot),
         "push",
         onCommitted
       );
     },
-    [applyTransition, state]
+    [applyTransition]
   );
 
   const openSide = useCallback(
@@ -226,18 +228,19 @@ export function useProjectWorkbenchRouteState(options: {
 
   const repairSide = useCallback(
     (entry: ProjectSideSurfaceEntry | null) => {
+      const currentState = stateRef.current;
       commit(
         {
-          ...state,
+          ...currentState,
           surfaces: {
-            ...state.surfaces,
+            ...currentState.surfaces,
             side: entry,
           },
         },
         "replace"
       );
     },
-    [commit, state]
+    [commit]
   );
 
   const openMain = useCallback(
@@ -278,25 +281,34 @@ export function useProjectWorkbenchRouteState(options: {
   const writeCanvasSelection = useCallback(
     (canvasSelection: ProjectCanvasSelection | null) => {
       applyTransition(
-        planSetProjectWorkbenchCanvasSelection(state, canvasSelection),
+        planSetProjectWorkbenchCanvasSelection(
+          stateRef.current,
+          canvasSelection
+        ),
         "push"
       );
     },
-    [applyTransition, state]
+    [applyTransition]
   );
 
   const clearCanvasFocus = useCallback(() => {
-    applyTransition(planClearProjectWorkbenchCanvasFocus(state), "push");
-  }, [applyTransition, state]);
+    applyTransition(
+      planClearProjectWorkbenchCanvasFocus(stateRef.current),
+      "push"
+    );
+  }, [applyTransition]);
 
   const focusCanvasSelection = useCallback(
     (canvasSelection: ProjectCanvasSelection) => {
       applyTransition(
-        planFocusProjectWorkbenchCanvasSelection(state, canvasSelection),
+        planFocusProjectWorkbenchCanvasSelection(
+          stateRef.current,
+          canvasSelection
+        ),
         "push"
       );
     },
-    [applyTransition, state]
+    [applyTransition]
   );
 
   return {

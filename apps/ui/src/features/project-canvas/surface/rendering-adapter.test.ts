@@ -10,7 +10,12 @@ import {
 } from "@/features/project-canvas/nodes/constants";
 import type { ProjectRuntimeNodeModels } from "@/features/project-runtime/resource-models";
 import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
-import { createProjectCanvasSurfaceRenderModel } from "./rendering-adapter";
+import {
+  createProjectCanvasDrawerRenderModel,
+  createProjectCanvasMainRenderModel,
+  createProjectCanvasSideRenderModel,
+  createProjectCanvasSurfaceRenderModel,
+} from "./rendering-adapter";
 
 const apNode = {
   data: {
@@ -194,6 +199,40 @@ test("canvas surface adapter resolves DB access and DB terminal independently", 
   assert.equal(model.main.node, dbNode);
   assert.equal(model.main.databaseData.workload.name, "pg");
   assert.equal(model.drawer.node, dbNode);
+});
+
+test("canvas surface adapter exposes independent slot renderers", () => {
+  const side = createProjectCanvasSideRenderModel({
+    nodes: [apNode],
+    surfaceState: {
+      main: null,
+      side: {
+        kind: "settings",
+        target: { kind: "AP", name: "api", namespace: "default" },
+      },
+    },
+  });
+  const main = createProjectCanvasMainRenderModel({
+    entry: {
+      kind: "dbAccess",
+      target: { kind: "DB", name: "pg", namespace: "data" },
+    },
+    nodes: [dbNode],
+  });
+  const drawer = createProjectCanvasDrawerRenderModel({
+    entry: {
+      kind: "dbTerminal",
+      target: { kind: "DB", name: "pg", namespace: "data" },
+    },
+    nodes: [dbNode],
+  });
+
+  if (side?.kind !== "resource") {
+    assert.fail("expected resource side render model");
+  }
+  assert.equal(side.content.kind, "settings");
+  assert.equal(main?.kind, "dbAccess");
+  assert.equal(drawer?.kind, "dbTerminal");
 });
 
 test("canvas surface adapter resolves resource logs by target kind", () => {

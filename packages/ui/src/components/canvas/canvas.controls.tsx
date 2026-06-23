@@ -201,10 +201,7 @@ function CanvasControlButton({
   );
 }
 
-export function CanvasControls({
-  className,
-  rightInset = 0,
-}: CanvasControlsProps) {
+export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { interactionMode, rootRef, setInteractionMode } = useCanvas();
   const chrome = useCanvasNavigationChromePresence();
@@ -264,6 +261,10 @@ export function CanvasControls({
       setInteractionMode(mode);
     },
   });
+  const rightOffset =
+    rightInset === undefined
+      ? "calc(0.5rem + var(--canvas-viewport-right-inset, 0px))"
+      : `calc(0.5rem + ${Math.max(0, rightInset)}px)`;
 
   return (
     <div
@@ -277,7 +278,7 @@ export function CanvasControls({
       data-slot="canvas-controls"
       data-visible={chrome.hidden ? undefined : "true"}
       {...chrome.interactionProps}
-      style={{ right: `calc(0.5rem + ${Math.max(0, rightInset)}px)` }}
+      style={{ right: rightOffset }}
     >
       <CanvasControlButton {...modeButton("hand", "Hand tool")}>
         <Hand aria-hidden className="size-4" />

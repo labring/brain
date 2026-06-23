@@ -5,7 +5,11 @@ import type { Edge, Node } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
-import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
+import {
+  createProjectCanvasDrawerRenderModel,
+  createProjectCanvasMainRenderModel,
+  createProjectCanvasSideRenderModel,
+} from "@/features/project-canvas/surface/rendering-adapter";
 import {
   projectSelectionNode,
   projectSelectionTargetExists,
@@ -322,14 +326,43 @@ export function useProjectCanvas(
         : null,
     [options?.edges, selected]
   );
-  const surfaceRenderModel = useMemo(
+  const sideSurfaceRenderModel = useMemo(
     () =>
-      createProjectCanvasSurfaceRenderModel({
+      createProjectCanvasSideRenderModel({
         nodes,
         runtimeStore: options?.runtimeStore,
-        surfaceState,
+        surfaceState: {
+          main: surfaceState.main,
+          side: surfaceState.side,
+        },
       }),
-    [nodes, options?.runtimeStore, surfaceState]
+    [nodes, options?.runtimeStore, surfaceState.main, surfaceState.side]
+  );
+  const mainSurfaceRenderModel = useMemo(
+    () =>
+      createProjectCanvasMainRenderModel({
+        entry: surfaceState.main,
+        nodes,
+        runtimeStore: options?.runtimeStore,
+      }),
+    [nodes, options?.runtimeStore, surfaceState.main]
+  );
+  const drawerSurfaceRenderModel = useMemo(
+    () =>
+      createProjectCanvasDrawerRenderModel({
+        entry: surfaceState.drawer,
+        nodes,
+        runtimeStore: options?.runtimeStore,
+      }),
+    [nodes, options?.runtimeStore, surfaceState.drawer]
+  );
+  const surfaceRenderModel = useMemo(
+    () => ({
+      drawer: drawerSurfaceRenderModel,
+      main: mainSurfaceRenderModel,
+      side: sideSurfaceRenderModel,
+    }),
+    [drawerSurfaceRenderModel, mainSurfaceRenderModel, sideSurfaceRenderModel]
   );
   const activeSettingsEntry =
     surfaceState.side?.kind === "settings" ? surfaceState.side : null;

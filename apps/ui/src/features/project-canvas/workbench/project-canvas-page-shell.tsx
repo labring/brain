@@ -28,7 +28,6 @@ interface ProjectCanvasViewportProps {
   runtimeStore: ProjectRuntimeStore;
   selectedTelemetryTarget?: WorkloadTelemetryTarget | null;
   state: CanvasState;
-  viewportInset: number;
 }
 
 export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
@@ -39,7 +38,6 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   runtimeStore,
   selectedTelemetryTarget,
   state,
-  viewportInset,
 }: ProjectCanvasViewportProps) {
   return (
     <WorkloadTelemetryProvider
@@ -51,8 +49,8 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
           <ProjectCanvasInteractionProvider state={state}>
             <Canvas.Root key={canvasKey} meta={meta} state={state}>
               <Canvas.Flow>
-                <Canvas.MiniMap rightInset={viewportInset} />
-                <Canvas.Controls rightInset={viewportInset} />
+                <Canvas.MiniMap />
+                <Canvas.Controls />
               </Canvas.Flow>
             </Canvas.Root>
           </ProjectCanvasInteractionProvider>

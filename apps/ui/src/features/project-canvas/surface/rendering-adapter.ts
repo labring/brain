@@ -38,6 +38,11 @@ interface ProjectRuntimeModelReader {
   runtimeNodeModels?: ProjectRuntimeNodeModels;
   runtimeStore?: ProjectRuntimeStore;
 }
+interface ProjectCanvasSurfaceRenderModelInput {
+  nodes: readonly Node[];
+  runtimeNodeModels?: ProjectRuntimeNodeModels;
+  runtimeStore?: ProjectRuntimeStore;
+}
 
 export type ProjectCanvasApResourcePaneKind =
   | "apEvents"
@@ -305,7 +310,7 @@ function sideRenderModel({
 }: {
   nodes: readonly Node[];
   runtime: ProjectRuntimeModelReader;
-  surfaceState: ProjectSurfaceState;
+  surfaceState: Pick<ProjectSurfaceState, "main" | "side">;
 }): ProjectCanvasSideRenderModel {
   const entry = surfaceState.side;
   if (entry == null || !projectSideSurfaceVisible(surfaceState)) {
@@ -415,15 +420,48 @@ function drawerRenderModel(
   }
 }
 
+export function createProjectCanvasSideRenderModel({
+  nodes,
+  runtimeNodeModels,
+  runtimeStore,
+  surfaceState,
+}: ProjectCanvasSurfaceRenderModelInput & {
+  surfaceState: Pick<ProjectSurfaceState, "main" | "side">;
+}): ProjectCanvasSideRenderModel {
+  const runtime = { runtimeNodeModels, runtimeStore };
+  return sideRenderModel({ nodes, runtime, surfaceState });
+}
+
+export function createProjectCanvasMainRenderModel({
+  entry,
+  nodes,
+  runtimeNodeModels,
+  runtimeStore,
+}: ProjectCanvasSurfaceRenderModelInput & {
+  entry: ProjectMainSurfaceEntry | null;
+}): ProjectCanvasMainRenderModel {
+  const runtime = { runtimeNodeModels, runtimeStore };
+  return mainRenderModel(nodes, entry, runtime);
+}
+
+export function createProjectCanvasDrawerRenderModel({
+  entry,
+  nodes,
+  runtimeNodeModels,
+  runtimeStore,
+}: ProjectCanvasSurfaceRenderModelInput & {
+  entry: ProjectDrawerSurfaceEntry | null;
+}): ProjectCanvasDrawerRenderModel {
+  const runtime = { runtimeNodeModels, runtimeStore };
+  return drawerRenderModel(nodes, entry, runtime);
+}
+
 export function createProjectCanvasSurfaceRenderModel({
   nodes,
   runtimeNodeModels,
   runtimeStore,
   surfaceState,
-}: {
-  nodes: readonly Node[];
-  runtimeNodeModels?: ProjectRuntimeNodeModels;
-  runtimeStore?: ProjectRuntimeStore;
+}: ProjectCanvasSurfaceRenderModelInput & {
   surfaceState: ProjectSurfaceState;
 }): ProjectCanvasSurfaceRenderModel {
   const runtime = { runtimeNodeModels, runtimeStore };

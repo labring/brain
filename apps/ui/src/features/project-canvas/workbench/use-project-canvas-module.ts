@@ -27,7 +27,6 @@ import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/
 import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { telemetryTargetFromCanvasNode } from "@/features/project-canvas/telemetry/workload-telemetry-node";
-import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   deploymentTaskDockDismissalsStorageKey,
   readBrowserDeploymentTaskDockDismissals,
@@ -490,11 +489,6 @@ export function useProjectCanvasModule({
     ]
   );
 
-  const viewportInset =
-    workbench.surfaceRenderModel.side == null
-      ? 0
-      : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET;
-
   return {
     actions: {
       dismissDeploymentTaskDockTask,
@@ -509,7 +503,6 @@ export function useProjectCanvasModule({
       runtimeStore,
       selectedTelemetryTarget,
       state,
-      viewportInset,
     },
     surfaces: {
       actions: surfaceActions,
