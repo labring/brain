@@ -99,6 +99,11 @@ export function useProjectCanvasNodeDecorators({
     startWorkload: startDbWorkload,
     stopWorkload: stopDbWorkload,
   } = dbLifecycle;
+  const nodesRef = useRef(nodes);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   const handlePendingDbReferencesChange = useCallback(
     (change: {
@@ -188,6 +193,14 @@ export function useProjectCanvasNodeDecorators({
       };
     },
     [onPendingApDbReferencesStart, pendingDbReferencesChangeHandlerForAp]
+  );
+  const handleNodeExpansionChange = useCallback<
+    NonNullable<CanvasNodeLayoutState["onExpandedChange"]>
+  >(
+    (nextNode) => {
+      onNodeExpansionChange?.(nextNode);
+    },
+    [onNodeExpansionChange]
   );
 
   useEffect(
@@ -309,7 +322,7 @@ export function useProjectCanvasNodeDecorators({
                       selection: projectCanvasSelectionFromNode(node),
                       target,
                     },
-                    nodes,
+                    nodes: nodesRef.current,
                     readOnly,
                   })
                 ),
@@ -347,7 +360,6 @@ export function useProjectCanvasNodeDecorators({
       executeCommandPlan,
       getPublicAccessPendingTarget,
       isDbLifecycleLoading,
-      nodes,
       readOnly,
       requestDbDelete,
       restartDbWorkload,
@@ -372,12 +384,7 @@ export function useProjectCanvasNodeDecorators({
       const hasSurfaceActions = target != null;
 
       if (!(hasSurfaceActions || isApLifecycle)) {
-        return {
-          ...node,
-          data: {
-            ...data,
-          },
-        };
+        return node;
       }
 
       const containerQuickAction = (action: ContainerNodeQuickActionKey) => ({
@@ -394,7 +401,7 @@ export function useProjectCanvasNodeDecorators({
                       selection: projectCanvasSelectionFromNode(node),
                       target,
                     },
-                    nodes,
+                    nodes: nodesRef.current,
                     readOnly,
                   })
                 ),
@@ -460,7 +467,6 @@ export function useProjectCanvasNodeDecorators({
     [
       apAuthReady,
       executeCommandPlan,
-      nodes,
       pauseWorkload,
       readOnly,
       requestApDelete,
@@ -479,20 +485,21 @@ export function useProjectCanvasNodeDecorators({
       const data = node.data as Record<string, unknown> & {
         layout?: CanvasNodeLayoutState;
       };
+      if (data.layout?.onExpandedChange === handleNodeExpansionChange) {
+        return node;
+      }
       return {
         ...node,
         data: {
           ...data,
           layout: {
             ...(data.layout ?? {}),
-            onExpandedChange: (nextNode: Node) => {
-              onNodeExpansionChange(nextNode);
-            },
+            onExpandedChange: handleNodeExpansionChange,
           },
         },
       };
     },
-    [onNodeExpansionChange, readOnly]
+    [handleNodeExpansionChange, onNodeExpansionChange, readOnly]
   );
 
   const decoratedNodes = useMemo(
