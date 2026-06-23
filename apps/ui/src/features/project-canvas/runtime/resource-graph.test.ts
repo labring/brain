@@ -7,11 +7,14 @@ import {
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
 import { projectRuntimeFactsFromResources } from "@/features/project-runtime/resource-facts";
-import { projectRuntimeShellNodesFromFacts } from "@/features/project-runtime/resource-store";
+import { projectRuntimeResourceTopologyFromFacts } from "@/features/project-runtime/resource-store";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import type { CanvasLayoutDocument, CanvasLayoutNode } from "../layout/types";
-import { projectCanvasRuntimeResourceGraph } from "./resource-graph";
+import {
+  projectCanvasRuntimeResourceGraph,
+  projectCanvasRuntimeShellNodesFromResources,
+} from "./resource-graph";
 
 function deploymentProjectionLayoutNode(input: {
   position: CanvasLayoutNode["position"];
@@ -41,7 +44,10 @@ test("Project Canvas runtime graph applies Canvas Layout to thin resource shell 
     },
     namespace: "default",
   });
-  const [shellNode] = projectRuntimeShellNodesFromFacts(runtimeFacts);
+  const resourceTopology =
+    projectRuntimeResourceTopologyFromFacts(runtimeFacts);
+  const [shellNode] =
+    projectCanvasRuntimeShellNodesFromResources(resourceTopology);
   const graph = projectCanvasRuntimeResourceGraph({
     canvasLayout: {
       namespace: "default",
@@ -60,7 +66,7 @@ test("Project Canvas runtime graph applies Canvas Layout to thin resource shell 
       version: 3,
     },
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
+    resourceTopology,
   });
 
   const [node] = graph.canvasState.nodes;
@@ -102,7 +108,7 @@ test("Project Canvas runtime graph emits first-placement intent for new shell no
       version: 1,
     },
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
+    resourceTopology: projectRuntimeResourceTopologyFromFacts(runtimeFacts),
   });
 
   assert.deepEqual(graph.layoutIntent, {
@@ -138,7 +144,7 @@ test("Project Canvas runtime graph hides resource shells until Canvas Layout is 
   const graph = projectCanvasRuntimeResourceGraph({
     canvasLayoutReady: false,
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
+    resourceTopology: projectRuntimeResourceTopologyFromFacts(runtimeFacts),
   });
 
   assert.deepEqual(graph.canvasState.nodes, []);
@@ -193,7 +199,7 @@ spec:
     relationshipIndexes: projectRuntimeFactsFromResources({
       namespace: "default",
     }).relationshipIndexes,
-    shellNodes: [],
+    resourceTopology: [],
   });
 
   assert.deepEqual(
@@ -290,7 +296,7 @@ test("Project Canvas runtime graph keeps live AP public access shell topology AP
 
   const graph = projectCanvasRuntimeResourceGraph({
     relationshipIndexes: runtimeFacts.relationshipIndexes,
-    shellNodes: projectRuntimeShellNodesFromFacts(runtimeFacts),
+    resourceTopology: projectRuntimeResourceTopologyFromFacts(runtimeFacts),
   });
 
   assert.deepEqual(

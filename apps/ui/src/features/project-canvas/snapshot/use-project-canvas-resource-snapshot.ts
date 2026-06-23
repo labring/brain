@@ -506,10 +506,10 @@ export function useProjectCanvasResourceSnapshot(options: {
       templateNativeData,
     });
   }, [apsData, dbsData, namespace, runtimeStore, templateNativeData]);
-  const shellNodes = useSyncExternalStore(
-    runtimeStore.subscribeShellNodes,
-    runtimeStore.selectShellNodes,
-    runtimeStore.selectShellNodes
+  const resourceTopology = useSyncExternalStore(
+    runtimeStore.subscribeResourceTopology,
+    runtimeStore.selectResourceTopology,
+    runtimeStore.selectResourceTopology
   );
   const relationshipIndexes = useSyncExternalStore(
     runtimeStore.subscribeRelationshipIndexes,
@@ -526,14 +526,14 @@ export function useProjectCanvasResourceSnapshot(options: {
         canvasLayoutReady,
         deployTasks: canvasDeployTasks,
         relationshipIndexes,
-        shellNodes,
+        resourceTopology,
       }),
     [
       canvasLayout,
       canvasLayoutReady,
       canvasDeployTasks,
       relationshipIndexes,
-      shellNodes,
+      resourceTopology,
     ]
   );
   const missingResourceLayoutGraceReady =
@@ -583,18 +583,18 @@ export function useProjectCanvasResourceSnapshot(options: {
         deployTasks: canvasDeployTasks,
         layoutCommands: missingLayoutCommands,
         relationshipIndexes,
+        resourceTopology,
         retainedLayoutOwnerKeys:
           missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-        shellNodes,
       }),
     [
       canvasLayout,
       canvasLayoutReady,
       canvasDeployTasks,
       relationshipIndexes,
+      resourceTopology,
       missingLayoutCommands,
       missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-      shellNodes,
     ]
   );
   const graphEmpty =

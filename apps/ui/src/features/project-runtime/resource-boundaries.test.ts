@@ -7,6 +7,7 @@ import type {
   CanvasDatabaseNodeData,
   CanvasEntryNodeData,
 } from "@/features/project-canvas/nodes/types";
+import { projectCanvasRuntimeShellNodesFromResources } from "@/features/project-canvas/runtime/resource-graph";
 import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
 import type {
@@ -16,7 +17,7 @@ import type {
   TemplateNativeWorkloadFact,
 } from "./resource-facts";
 import { projectRuntimeFactsFromResources } from "./resource-facts";
-import { projectRuntimeShellNodesFromFacts } from "./resource-store";
+import { projectRuntimeResourceTopologyFromFacts } from "./resource-store";
 
 type AssertFalse<T extends false> = T;
 type Extends<T, U> = [T] extends [U] ? true : false;
@@ -112,7 +113,9 @@ test("Project Runtime shell node data carries only runtime lookup data", () => {
     },
   });
 
-  const nodes = projectRuntimeShellNodesFromFacts(runtimeFacts);
+  const nodes = projectCanvasRuntimeShellNodesFromResources(
+    projectRuntimeResourceTopologyFromFacts(runtimeFacts)
+  );
 
   assert.equal(nodes.length, 4);
   for (const node of nodes) {
@@ -184,4 +187,19 @@ test("real Project Canvas path provides runtime store instead of a whole node mo
   assert.equal(pageSource.includes("ProjectRuntimeNodeModelsProvider"), false);
   assert.equal(pageSource.includes("runtimeNodeModels"), false);
   assert.equal(pageSource.includes("ProjectRuntimeStoreProvider"), true);
+});
+
+test("Project Runtime store does not own ReactFlow shell topology", () => {
+  const storeSource = readFileSync(
+    new URL("./resource-store.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.equal(storeSource.includes("@xyflow/react"), false);
+  assert.equal(storeSource.includes("selectShellNodes"), false);
+  assert.equal(storeSource.includes("subscribeShellNodes"), false);
+  assert.equal(
+    storeSource.includes("projectRuntimeShellNodesFromFacts"),
+    false
+  );
 });

@@ -10,3 +10,9 @@ Project Canvas resource cards now start from a Project Runtime read-side boundar
 ## Consequences
 
 Resource facts are app-owned read-side facts rather than shared UI prop objects or raw resources. Canvas shell topology should change only when resource identities change, while per-node runtime models absorb AP, DB, and AP Public Access fact updates.
+
+Project Runtime does not own rendered Canvas topology. ReactFlow shell nodes, generated positions, and shell-topology subscriptions belong to the Canvas Runtime layer, because they are Canvas presentation concerns rather than Project Resource Read Model facts.
+
+The Project Runtime store exposes read-side facts, relationship indexes, and the minimal resource identity set needed by Canvas Runtime to derive topology. It does not expose ReactFlow nodes as store state.
+
+Generated Canvas Positions are computed in Canvas Runtime topology/layout selectors, not in Project Runtime. A generated position is only a Canvas presentation proposal for a Canvas Placement Owner that lacks persisted Canvas Layout.

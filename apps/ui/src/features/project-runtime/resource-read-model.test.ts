@@ -363,7 +363,7 @@ test("Project Runtime store exposes relationship indexes after committing resour
   ]);
 });
 
-test("Project Runtime commits one AP update without notifying unrelated models or rebuilding shell topology", () => {
+test("Project Runtime commits one AP update without notifying unrelated models or changing resource topology", () => {
   const store = createProjectRuntimeStore();
   store.commitResources({
     apsData: {
@@ -387,7 +387,7 @@ test("Project Runtime commits one AP update without notifying unrelated models o
   const workerKey = "AP:default:worker";
   const apiBefore = store.selectApFact(apiKey);
   const workerBefore = store.selectApFact(workerKey);
-  const shellNodesBefore = store.selectShellNodes();
+  const resourceTopologyBefore = store.selectResourceTopology();
   const apiNotifications: unknown[] = [];
   const workerNotifications: unknown[] = [];
   store.subscribeApFact(apiKey, (fact) => apiNotifications.push(fact));
@@ -415,12 +415,12 @@ test("Project Runtime commits one AP update without notifying unrelated models o
   assert.notEqual(apiAfter, apiBefore);
   assert.deepEqual(apiAfter?.status, { label: "Updating", tone: "updating" });
   assert.equal(store.selectApFact(workerKey), workerBefore);
-  assert.equal(store.selectShellNodes(), shellNodesBefore);
+  assert.equal(store.selectResourceTopology(), resourceTopologyBefore);
   assert.deepEqual(apiNotifications, [apiAfter]);
   assert.deepEqual(workerNotifications, []);
 });
 
-test("Project Runtime commits one DB update without notifying unrelated DB models or rebuilding shell topology", () => {
+test("Project Runtime commits one DB update without notifying unrelated DB models or changing resource topology", () => {
   const store = createProjectRuntimeStore();
   store.commitResources({
     dbsData: {
@@ -449,7 +449,7 @@ test("Project Runtime commits one DB update without notifying unrelated DB model
   const redisKey = "DB:default:redis";
   const postgresBefore = store.selectDbFact(postgresKey);
   const redisBefore = store.selectDbFact(redisKey);
-  const shellNodesBefore = store.selectShellNodes();
+  const resourceTopologyBefore = store.selectResourceTopology();
   const postgresNotifications: unknown[] = [];
   const redisNotifications: unknown[] = [];
   store.subscribeDbFact(postgresKey, (fact) =>
@@ -482,12 +482,12 @@ test("Project Runtime commits one DB update without notifying unrelated DB model
     tone: "updating",
   });
   assert.equal(store.selectDbFact(redisKey), redisBefore);
-  assert.equal(store.selectShellNodes(), shellNodesBefore);
+  assert.equal(store.selectResourceTopology(), resourceTopologyBefore);
   assert.deepEqual(postgresNotifications, [postgresAfter]);
   assert.deepEqual(redisNotifications, []);
 });
 
-test("Project Runtime commits one AP Public Access update without notifying unrelated public access models or rebuilding shell topology", () => {
+test("Project Runtime commits one AP Public Access update without notifying unrelated public access models or changing resource topology", () => {
   const store = createProjectRuntimeStore();
   const apWithPublicAddress = (name: string, status: string) => ({
     metadata: { name, namespace: "default", uid: `${name}-uid` },
@@ -528,7 +528,7 @@ test("Project Runtime commits one AP Public Access update without notifying unre
   const webKey = "PublicAccess:default:web";
   const apiBefore = store.selectPublicAccessFact(apiKey);
   const webBefore = store.selectPublicAccessFact(webKey);
-  const shellNodesBefore = store.selectShellNodes();
+  const resourceTopologyBefore = store.selectResourceTopology();
   const apiNotifications: unknown[] = [];
   const webNotifications: unknown[] = [];
   store.subscribePublicAccessFact(apiKey, (fact) =>
@@ -555,7 +555,7 @@ test("Project Runtime commits one AP Public Access update without notifying unre
     tone: "accessible",
   });
   assert.equal(store.selectPublicAccessFact(webKey), webBefore);
-  assert.equal(store.selectShellNodes(), shellNodesBefore);
+  assert.equal(store.selectResourceTopology(), resourceTopologyBefore);
   assert.deepEqual(apiNotifications, [apiAfter]);
   assert.deepEqual(webNotifications, []);
 });

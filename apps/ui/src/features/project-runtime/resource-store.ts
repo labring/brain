@@ -1,14 +1,4 @@
-import type { Node } from "@xyflow/react";
-import {
-  canvasPlacementOwnerKey,
-  resourcePlacementOwner,
-} from "@/features/project-canvas/layout/placement-owner";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
-import {
-  CANVAS_CONTAINER_NODE_TYPE,
-  CANVAS_DATABASE_NODE_TYPE,
-  CANVAS_ENTRY_NODE_TYPE,
-} from "@/features/project-canvas/nodes/constants";
 import type {
   ApFact,
   DbFact,
@@ -61,23 +51,8 @@ interface RuntimeMaps {
 
 interface RuntimeState extends RuntimeMaps {
   relationshipIndexes: ProjectRuntimeRelationshipIndexes;
-  shellNodes: Node<ProjectRuntimeShellNodeData>[];
-  shellSignature: string;
-}
-
-const FALLBACK_COLUMNS = 3;
-const FALLBACK_COL_GAP = 340;
-const FALLBACK_ROW_GAP = 280;
-
-function fallbackCanvasPosition(index: number): { x: number; y: number } {
-  return {
-    x: (index % FALLBACK_COLUMNS) * FALLBACK_COL_GAP,
-    y: Math.floor(index / FALLBACK_COLUMNS) * FALLBACK_ROW_GAP,
-  };
-}
-
-function stableNodeName(name: string): string {
-  return name.replace(/\s+/g, "-");
+  resourceTopology: ProjectRuntimeResourceTopologyItem[];
+  resourceTopologySignature: string;
 }
 
 function factsEqual<TFact extends RuntimeFact>(a: TFact, b: TFact): boolean {
@@ -106,91 +81,85 @@ function mapFactsWithStructuralSharing<TFact extends RuntimeFact>(
   return next;
 }
 
-function resourceShellData(
-  kind: Exclude<ProjectRuntimeShellKind, "TemplateNativeWorkload">,
-  key: ProjectRuntimeFactKey,
-  ref: CanvasLayoutResourceRef,
-  observedUid: string | undefined
-): ProjectRuntimeShellNodeData {
-  const owner = resourcePlacementOwner(ref);
-  return {
-    runtime: {
-      kind,
-      modelKey: key,
-      ...(observedUid === undefined ? {} : { observedUid }),
-      placementOwnerKey: canvasPlacementOwnerKey(owner),
-      resourceRef: ref,
-    },
-  };
-}
+export type ProjectRuntimeResourceTopologyItem =
+  | {
+      kind: "AP";
+      modelKey: ProjectRuntimeFactKey;
+      observedUid?: string;
+      ref: ApFact["ref"];
+    }
+  | {
+      kind: "DB";
+      modelKey: ProjectRuntimeFactKey;
+      observedUid?: string;
+      ref: DbFact["ref"];
+    }
+  | {
+      kind: "PublicAccess";
+      modelKey: ProjectRuntimeFactKey;
+      observedUid?: string;
+      ref: PublicAccessFact["ref"];
+    }
+  | {
+      kind: "TemplateNativeWorkload";
+      modelKey: ProjectRuntimeFactKey;
+      observedUid?: string;
+      ref: TemplateNativeWorkloadFact["ref"];
+    };
 
-export function projectRuntimeShellNodesFromFacts(
+export function projectRuntimeResourceTopologyFromFacts(
   facts: ProjectRuntimeFacts
-): Node<ProjectRuntimeShellNodeData>[] {
-  let index = 0;
-  const nodes: Node<ProjectRuntimeShellNodeData>[] = [];
-  for (const fact of facts.apFacts) {
-    nodes.push({
-      data: resourceShellData("AP", fact.key, fact.ref, fact.observedUid),
-      id: `ap-${stableNodeName(fact.ref.name)}`,
-      position: fallbackCanvasPosition(index),
-      type: CANVAS_CONTAINER_NODE_TYPE,
-    });
-    index += 1;
-  }
-  for (const fact of facts.dbFacts) {
-    nodes.push({
-      data: resourceShellData("DB", fact.key, fact.ref, fact.observedUid),
-      id: `db-${stableNodeName(fact.ref.name)}`,
-      position: fallbackCanvasPosition(index),
-      type: CANVAS_DATABASE_NODE_TYPE,
-    });
-    index += 1;
-  }
-  for (const fact of facts.publicAccessFacts) {
-    nodes.push({
-      data: resourceShellData(
-        "PublicAccess",
-        fact.key,
-        fact.ref,
-        fact.observedUid
-      ),
-      id: `entry-${stableNodeName(fact.ref.name)}`,
-      position: fallbackCanvasPosition(index),
-      type: CANVAS_ENTRY_NODE_TYPE,
-    });
-    index += 1;
-  }
-  for (const fact of facts.templateNativeWorkloadFacts) {
-    nodes.push({
-      data: {
-        runtime: {
-          kind: "TemplateNativeWorkload",
-          modelKey: fact.key,
-        },
-      },
-      id: `template-${stableNodeName(fact.ref.name)}`,
-      position: fallbackCanvasPosition(index),
-      type: CANVAS_CONTAINER_NODE_TYPE,
-    });
-    index += 1;
-  }
-  return nodes;
-}
-
-export function projectRuntimeShellSignatureFromFacts(
-  facts: ProjectRuntimeFacts
-): string {
+): ProjectRuntimeResourceTopologyItem[] {
   return [
-    ...facts.apFacts.map((fact) => `AP:${fact.key}:${fact.observedUid ?? ""}`),
-    ...facts.dbFacts.map((fact) => `DB:${fact.key}:${fact.observedUid ?? ""}`),
+    ...facts.apFacts.map(
+      (fact): ProjectRuntimeResourceTopologyItem => ({
+        kind: "AP",
+        modelKey: fact.key,
+        ...(fact.observedUid === undefined
+          ? {}
+          : { observedUid: fact.observedUid }),
+        ref: fact.ref,
+      })
+    ),
+    ...facts.dbFacts.map(
+      (fact): ProjectRuntimeResourceTopologyItem => ({
+        kind: "DB",
+        modelKey: fact.key,
+        ...(fact.observedUid === undefined
+          ? {}
+          : { observedUid: fact.observedUid }),
+        ref: fact.ref,
+      })
+    ),
     ...facts.publicAccessFacts.map(
-      (fact) => `PublicAccess:${fact.key}:${fact.observedUid ?? ""}`
+      (fact): ProjectRuntimeResourceTopologyItem => ({
+        kind: "PublicAccess",
+        modelKey: fact.key,
+        ...(fact.observedUid === undefined
+          ? {}
+          : { observedUid: fact.observedUid }),
+        ref: fact.ref,
+      })
     ),
     ...facts.templateNativeWorkloadFacts.map(
-      (fact) => `TemplateNativeWorkload:${fact.key}:${fact.observedUid ?? ""}`
+      (fact): ProjectRuntimeResourceTopologyItem => ({
+        kind: "TemplateNativeWorkload",
+        modelKey: fact.key,
+        ...(fact.observedUid === undefined
+          ? {}
+          : { observedUid: fact.observedUid }),
+        ref: fact.ref,
+      })
     ),
-  ].join("|");
+  ];
+}
+
+function projectRuntimeResourceTopologySignature(
+  topology: readonly ProjectRuntimeResourceTopologyItem[]
+): string {
+  return topology
+    .map((item) => `${item.kind}:${item.modelKey}:${item.observedUid ?? ""}`)
+    .join("|");
 }
 
 function emptyState(): RuntimeState {
@@ -203,8 +172,8 @@ function emptyState(): RuntimeState {
       apToDb: [],
       publicAccessToAp: [],
     },
-    shellNodes: [],
-    shellSignature: "",
+    resourceTopology: [],
+    resourceTopologySignature: "",
     templateNativeWorkloadFactsByKey: new Map(),
   };
 }
@@ -241,7 +210,7 @@ export interface ProjectRuntimeStore {
     key: ProjectRuntimeFactKey
   ): PublicAccessFact | undefined;
   selectRelationshipIndexes(): ProjectRuntimeRelationshipIndexes;
-  selectShellNodes(): Node<ProjectRuntimeShellNodeData>[];
+  selectResourceTopology(): ProjectRuntimeResourceTopologyItem[];
   selectTemplateNativeWorkloadFact(
     key: ProjectRuntimeFactKey
   ): TemplateNativeWorkloadFact | undefined;
@@ -258,7 +227,7 @@ export interface ProjectRuntimeStore {
     subscriber: FactSubscriber<PublicAccessFact>
   ): () => void;
   subscribeRelationshipIndexes(subscriber: StoreSubscriber): () => void;
-  subscribeShellNodes(subscriber: StoreSubscriber): () => void;
+  subscribeResourceTopology(subscriber: StoreSubscriber): () => void;
   subscribeTemplateNativeWorkloadFact(
     key: ProjectRuntimeFactKey,
     subscriber: FactSubscriber<TemplateNativeWorkloadFact>
@@ -284,7 +253,7 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     Set<FactSubscriber<TemplateNativeWorkloadFact>>
   >();
   const relationshipSubscribers = new Set<StoreSubscriber>();
-  const shellSubscribers = new Set<StoreSubscriber>();
+  const resourceTopologySubscribers = new Set<StoreSubscriber>();
 
   function updateState(facts: ProjectRuntimeFacts): RuntimeState {
     const nextMaps: RuntimeMaps = {
@@ -305,7 +274,9 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
         facts.templateNativeWorkloadFacts
       ),
     };
-    const shellSignature = projectRuntimeShellSignatureFromFacts(facts);
+    const resourceTopology = projectRuntimeResourceTopologyFromFacts(facts);
+    const resourceTopologySignature =
+      projectRuntimeResourceTopologySignature(resourceTopology);
     const relationshipIndexes = relationshipIndexesEqual(
       state.relationshipIndexes,
       facts.relationshipIndexes
@@ -315,11 +286,11 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     return {
       ...nextMaps,
       relationshipIndexes,
-      shellNodes:
-        shellSignature === state.shellSignature
-          ? state.shellNodes
-          : projectRuntimeShellNodesFromFacts(facts),
-      shellSignature,
+      resourceTopology:
+        resourceTopologySignature === state.resourceTopologySignature
+          ? state.resourceTopology
+          : resourceTopology,
+      resourceTopologySignature,
     };
   }
 
@@ -350,8 +321,8 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       if (previous.relationshipIndexes !== state.relationshipIndexes) {
         notifyStoreSubscribers(relationshipSubscribers);
       }
-      if (previous.shellNodes !== state.shellNodes) {
-        notifyStoreSubscribers(shellSubscribers);
+      if (previous.resourceTopology !== state.resourceTopology) {
+        notifyStoreSubscribers(resourceTopologySubscribers);
       }
     },
     selectApFact(key) {
@@ -369,8 +340,8 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     selectRelationshipIndexes() {
       return state.relationshipIndexes;
     },
-    selectShellNodes() {
-      return state.shellNodes;
+    selectResourceTopology() {
+      return state.resourceTopology;
     },
     subscribeRelationshipIndexes(subscriber) {
       relationshipSubscribers.add(subscriber);
@@ -411,10 +382,10 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
         subscribers?.delete(subscriber);
       };
     },
-    subscribeShellNodes(subscriber) {
-      shellSubscribers.add(subscriber);
+    subscribeResourceTopology(subscriber) {
+      resourceTopologySubscribers.add(subscriber);
       return () => {
-        shellSubscribers.delete(subscriber);
+        resourceTopologySubscribers.delete(subscriber);
       };
     },
     subscribeTemplateNativeWorkloadFact(key, subscriber) {
