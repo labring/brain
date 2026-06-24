@@ -10,6 +10,7 @@ import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper
 import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
 import { useDatabaseSettingsSections } from "@/features/project-settings/db/db-settings-sections";
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+import { settingsSubmitCheckpointKey } from "@/features/project-settings/settings-submit-checkpoint-key";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ProjectDbTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -77,15 +78,6 @@ function dbSettingsRepairEntry({
   return { kind: "settings", target };
 }
 
-function dbSettingsSubmitCheckpointKey(
-  target: ProjectDbTarget | null
-): string | undefined {
-  if (target == null) {
-    return undefined;
-  }
-  return `database:${target.namespace}:${target.name}`;
-}
-
 export function DbSettingsProvider({
   kubeconfig,
   onModelChange,
@@ -146,7 +138,10 @@ export function DbSettingsProvider({
         : undefined,
     onUpdated,
     routingDomain,
-    submitCheckpointKey: dbSettingsSubmitCheckpointKey(dbTarget),
+    submitCheckpointKey: settingsSubmitCheckpointKey({
+      kubeconfig,
+      target: dbTarget,
+    }),
     updating,
   });
 
