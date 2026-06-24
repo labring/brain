@@ -2,6 +2,7 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import { parse as parseYaml } from "yaml";
+import { apNetworkSaveDraftFromNetwork } from "@/features/project-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
   ApEnvVar,
@@ -368,33 +369,124 @@ export function mibToMemoryLimit(mib: number): string {
 
 function buildEnvArray(
   originalEnv: unknown,
-  edited: ApEnvVar[]
+  edited: ApEnvVar[],
+  options: { preserveOmittedValueFrom?: boolean } = {}
 ): Record<string, unknown>[] {
-  const orig = Array.isArray(originalEnv) ? originalEnv : [];
+  const originalRecords = namedEnvRecords(originalEnv);
+  const originalByName = envRecordsByName(originalRecords);
+  const editedByName = editedEnvRecordsByName(edited, originalByName);
+  const merged = mergeExistingEnvRecords(
+    originalRecords,
+    editedByName,
+    options.preserveOmittedValueFrom === true
+  );
+  appendNewEditedEnvRecords(merged.out, edited, editedByName, merged.emitted);
+  return merged.out;
+}
+
+function namedEnvRecords(originalEnv: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(originalEnv)) {
+    return [];
+  }
+  return originalEnv.flatMap((item) => {
+    const record = asRecord(item);
+    return envRecordName(record) === undefined ? [] : [record];
+  });
+}
+
+function envRecordName(
+  record: Record<string, unknown> | undefined
+): string | undefined {
+  const name = record?.name;
+  return typeof name === "string" && name !== "" ? name : undefined;
+}
+
+function envRecordsByName(
+  records: readonly Record<string, unknown>[]
+): Map<string, Record<string, unknown>> {
   const byName = new Map<string, Record<string, unknown>>();
-  for (const item of orig) {
-    const o = asRecord(item);
-    if (o == null) {
-      continue;
-    }
-    const n = o.name;
-    if (typeof n === "string" && n !== "") {
-      byName.set(n, o);
+  for (const record of records) {
+    const name = envRecordName(record);
+    if (name !== undefined) {
+      byName.set(name, record);
     }
   }
+  return byName;
+}
 
-  return edited.map((e) => {
-    if (e.valueSource === "valueFrom" && e.valueFrom != null) {
-      return { name: e.name, valueFrom: e.valueFrom };
+function editedEnvRecordsByName(
+  edited: readonly ApEnvVar[],
+  originalByName: ReadonlyMap<string, Record<string, unknown>>
+): Map<string, Record<string, unknown>> {
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const row of edited) {
+    byName.set(row.name, editedEnvRecord(row, originalByName));
+  }
+  return byName;
+}
+
+function mergeExistingEnvRecords(
+  originalRecords: readonly Record<string, unknown>[],
+  editedByName: ReadonlyMap<string, Record<string, unknown>>,
+  preserveOmittedValueFrom: boolean
+): { emitted: Set<string>; out: Record<string, unknown>[] } {
+  const out: Record<string, unknown>[] = [];
+  const emitted = new Set<string>();
+  for (const record of originalRecords) {
+    const name = envRecordName(record);
+    const editedRecord =
+      name === undefined ? undefined : editedByName.get(name);
+    if (editedRecord !== undefined && name !== undefined) {
+      out.push(editedRecord);
+      emitted.add(name);
+    } else if (preserveOmittedValueFrom && name !== undefined) {
+      appendPreservedValueFromRecord(out, name, record);
     }
-    if (e.value === AP_ENV_VALUE_FROM_PLACEHOLDER) {
-      const prev = byName.get(e.name);
-      if (prev != null && prev.valueFrom != null) {
-        return { name: e.name, valueFrom: prev.valueFrom };
-      }
+  }
+  return { emitted, out };
+}
+
+function appendPreservedValueFromRecord(
+  out: Record<string, unknown>[],
+  name: string,
+  record: Record<string, unknown>
+) {
+  if (record.valueFrom != null) {
+    out.push({ name, valueFrom: record.valueFrom });
+  }
+}
+
+function appendNewEditedEnvRecords(
+  out: Record<string, unknown>[],
+  edited: readonly ApEnvVar[],
+  editedByName: ReadonlyMap<string, Record<string, unknown>>,
+  emitted: ReadonlySet<string>
+) {
+  for (const row of edited) {
+    if (emitted.has(row.name)) {
+      continue;
     }
-    return { name: e.name, value: e.value };
-  });
+    const record = editedByName.get(row.name);
+    if (record !== undefined) {
+      out.push(record);
+    }
+  }
+}
+
+function editedEnvRecord(
+  e: ApEnvVar,
+  originalByName: ReadonlyMap<string, Record<string, unknown>>
+): Record<string, unknown> {
+  if (e.valueSource === "valueFrom" && e.valueFrom != null) {
+    return { name: e.name, valueFrom: e.valueFrom };
+  }
+  if (e.value === AP_ENV_VALUE_FROM_PLACEHOLDER) {
+    const prev = originalByName.get(e.name);
+    if (prev != null && prev.valueFrom != null) {
+      return { name: e.name, valueFrom: prev.valueFrom };
+    }
+  }
+  return { name: e.name, value: e.value };
 }
 
 function canonicalApReplicaStrategyForPatch(
@@ -469,63 +561,6 @@ function apReplicaStrategiesEqual(
   );
 }
 
-function publicAddressesEqual(
-  a: readonly ApNetwork["publicAddresses"][number][] | undefined,
-  b: readonly ApNetwork["publicAddresses"][number][] | undefined
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((address, index) => {
-    const other = right[index];
-    return (
-      other != null &&
-      normalizePlatformAddressId(address.id) ===
-        normalizePlatformAddressId(other.id) &&
-      Math.round(address.port) === Math.round(other.port)
-    );
-  });
-}
-
-function customDomainsEqual(
-  a: readonly NonNullable<ApNetwork["customDomains"]>[number][] | undefined,
-  b: readonly NonNullable<ApNetwork["customDomains"]>[number][] | undefined
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((domain, index) => {
-    const other = right[index];
-    return (
-      other != null &&
-      normalizeCustomDomainBindingId(domain.id) ===
-        normalizeCustomDomainBindingId(other.id) &&
-      domain.domain.trim().toLowerCase() ===
-        other.domain.trim().toLowerCase() &&
-      normalizePlatformAddressId(domain.platformAddressId) ===
-        normalizePlatformAddressId(other.platformAddressId) &&
-      customDomainDetailSignature(domain.dns) ===
-        customDomainDetailSignature(other.dns)
-    );
-  });
-}
-
-function customDomainDetailSignature(
-  detail: NonNullable<ApNetwork["customDomains"]>[number]["dns"] | undefined
-): string {
-  return JSON.stringify({
-    message: detail?.message?.trim() ?? "",
-    reason: detail?.reason?.trim() ?? "",
-    status: detail?.status?.trim() ?? "",
-    target: detail?.target?.trim() ?? "",
-    verifiedAt: detail?.verifiedAt?.trim() ?? "",
-  });
-}
-
 function apNetworksEqual(
   a: ApNetworkSettingsPatch | undefined,
   b: ApNetworkSettingsPatch | undefined
@@ -534,12 +569,8 @@ function apNetworksEqual(
     return a == null && b == null;
   }
   return (
-    appListeningPortsEqual(
-      normalizedAppListeningPortsForSave(a),
-      normalizedAppListeningPortsForSave(b)
-    ) &&
-    publicAddressesEqual(a.publicAddresses, b.publicAddresses) &&
-    customDomainsEqual(a.customDomains, b.customDomains)
+    JSON.stringify(apNetworkSettingsPatchSaveDraft(a)) ===
+    JSON.stringify(apNetworkSettingsPatchSaveDraft(b))
   );
 }
 
@@ -573,10 +604,13 @@ function buildApNetworkInput(
   hasPublicAddresses: boolean;
   networkInput: Record<string, unknown>;
 } {
+  const saveDraft = apNetworkSettingsPatchSaveDraft(network);
   const appListeningPorts = normalizedAppListeningPortsForSave(network);
-  const platformAddresses = validatedPlatformAddresses(network.publicAddresses);
+  const platformAddresses = validatedPlatformAddresses(
+    saveDraft.publicAddresses
+  );
   const customDomains = validatedCustomDomains(
-    network.customDomains,
+    saveDraft.customDomains,
     platformAddresses,
     options
   );
@@ -591,6 +625,26 @@ function buildApNetworkInput(
     hasPublicAddresses: (platformAddresses?.length ?? 0) > 0,
     networkInput,
   };
+}
+
+function apNetworkSettingsPatchSaveDraft(
+  network: ApNetworkSettingsPatch
+): ApNetwork {
+  return apNetworkSaveDraftFromNetwork({
+    ...(network.appListeningPorts == null
+      ? {}
+      : {
+          appListeningPorts: network.appListeningPorts.map((row) => ({
+            port: row.port,
+          })),
+        }),
+    ...(network.customDomains == null
+      ? {}
+      : { customDomains: [...network.customDomains] }),
+    privatePort:
+      network.privatePort ?? network.appListeningPorts?.[0]?.port ?? Number.NaN,
+    publicAddresses: [...(network.publicAddresses ?? [])],
+  });
 }
 
 function sourcePortRowsForSave(
@@ -724,15 +778,19 @@ export function patchOpsForApPublicAddressesSettings(
     throw new Error("AP network settings are missing.");
   }
 
+  const saveDraft = apNetworkSettingsPatchSaveDraft(network);
   const platformAddresses =
-    validatedPlatformAddresses(network.publicAddresses) ?? [];
+    validatedPlatformAddresses(saveDraft.publicAddresses) ?? [];
   const appListeningPorts = appListeningPortsForPublicAddressPatch(
     inputNetwork,
     network
   );
   const customDomains =
-    validatedCustomDomains(network.customDomains, platformAddresses, options) ??
-    [];
+    validatedCustomDomains(
+      saveDraft.customDomains,
+      platformAddresses,
+      options
+    ) ?? [];
   const ops = [
     appListeningPorts == null
       ? null
@@ -908,7 +966,9 @@ export function patchOpsForApEnvSettings(
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
     return patchOpsForApInput(spec, {
-      env: buildEnvArray(input.env, result.env),
+      env: buildEnvArray(input.env, result.env, {
+        preserveOmittedValueFrom: true,
+      }),
       envRawSource: result.envRawSource,
     });
   }
@@ -1039,33 +1099,11 @@ function validatedCustomDomains(
     assertCustomDomainAvailableInNamespace(domain, options);
 
     return {
-      ...(customDomain.dns == null
-        ? {}
-        : { dns: validatedCustomDomainDns(customDomain.dns) }),
       domain,
       id,
       platformAddressId,
     };
   });
-}
-
-function validatedCustomDomainDns(
-  detail: NonNullable<ApNetwork["customDomains"]>[number]["dns"]
-): Record<string, unknown> {
-  const status = detail?.status?.trim().toLowerCase() ?? "";
-  const target = detail?.target?.trim() ?? "";
-  const verifiedAt = detail?.verifiedAt?.trim() ?? "";
-  const out: Record<string, unknown> = {};
-  if (status !== "") {
-    out.status = status;
-  }
-  if (target !== "") {
-    out.target = target;
-  }
-  if (verifiedAt !== "") {
-    out.verifiedAt = verifiedAt;
-  }
-  return out;
 }
 
 function assertCustomDomainAvailableInNamespace(
@@ -1186,7 +1224,9 @@ function patchOpsForApSettingsDraftInput(
           result.diagnostics[0]?.message ?? "Invalid environment."
         );
       }
-      inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
+      inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env, {
+        preserveOmittedValueFrom: true,
+      });
       inputPatch.envRawSource = result.envRawSource;
     }
   }

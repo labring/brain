@@ -30,10 +30,6 @@
   }
 }
 
-.project-explorer-item-row:hover {
-  background: color-mix(in oklab, var(--input) 30%, transparent);
-}
-
 .project-explorer-action-menu-item[data-highlighted] {
   color: var(--foreground);
   background: var(--input);

@@ -466,18 +466,12 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
           ? undefined
           : onAddDbDsnReferenceMutationStart?.(confirmedReferences);
 
-      try {
-        await applyApSettingsDraft(kc, body, draft, previous, {
-          dbDsnReferenceSources,
-          existingCustomDomains,
-        });
-        toast.success("Settings applied.");
-        await revalidateAfterApMutation();
-        clearPendingReferences?.();
-      } catch (e) {
-        toast.error(settingsDraftSaveFailureMessage(e, "Apply failed."));
-        throw e;
-      }
+      await applyApSettingsDraft(kc, body, draft, previous, {
+        dbDsnReferenceSources,
+        existingCustomDomains,
+      });
+      revalidateAfterApMutation().catch(() => undefined);
+      clearPendingReferences?.();
     },
     [
       display.cpuCores,

@@ -269,6 +269,56 @@ test("AP claim settings uses AP-projected Public Address status", () => {
   ]);
 });
 
+test("AP claim settings dedupes observed Platform Addresses by platformAddressId", () => {
+  const settings = claimToApSettings(
+    {
+      kind: "AP",
+      metadata: {
+        labels: { region: "apps.example.com" },
+        name: "api",
+        namespace: "default",
+      },
+      spec: {
+        input: {
+          image: "ghcr.io/acme/api:latest",
+          network: {
+            privatePort: 8080,
+            platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+          },
+        },
+      },
+      status: {
+        network: {
+          privateAddress: "http://api-service-port-8080.default.svc:8080",
+          privatePort: 8080,
+          publicAddresses: [
+            {
+              host: "api.example.com",
+              platformAddressId: "pa_abc123",
+              port: 8080,
+              status: "running",
+              type: "platform",
+              url: "https://api.example.com/",
+            },
+          ],
+        },
+      },
+    },
+    "AP"
+  );
+
+  assert.deepEqual(settings.network?.publicAddresses, [
+    {
+      host: "api.example.com",
+      id: "pa_abc123",
+      port: 8080,
+      status: "running",
+      type: "platform",
+      url: "https://api.example.com/",
+    },
+  ]);
+});
+
 test("AP claim settings falls back to desired Platform Addresses while observed URLs are pending", () => {
   const settings = claimToApSettings(
     {

@@ -73,7 +73,7 @@ export function ProjectCreatorProjectDescriptionField() {
     <Field className="gap-2" data-slot="project-creator-description-field">
       <div className="flex items-center justify-between gap-2">
         <FieldLabel
-          className="text-foreground leading-5"
+          className="text-foreground leading-none"
           htmlFor="project-creator-description"
         >
           Description

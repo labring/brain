@@ -53,7 +53,9 @@ function AppDialogHeader({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex min-w-0 items-center gap-2 border-white/10 border-b px-4 py-4",
+        "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 border-white/10 border-b py-4 pr-5 pl-4",
+        "[&>[data-slot=dialog-description]]:col-span-2 [&>[data-slot=dialog-description]]:min-w-0",
+        "[&>[data-slot=dialog-title]:first-child]:col-span-2",
         className
       )}
       data-slot="app-dialog-header"
@@ -99,7 +101,7 @@ function AppDialogTitle({
   return (
     <DialogTitle
       className={cn(
-        "min-w-0 flex-1 truncate font-medium text-base/5 text-zinc-50",
+        "h-5 min-w-0 flex-1 truncate font-medium text-lg/5 text-zinc-50",
         className
       )}
       {...props}
@@ -133,7 +135,7 @@ function AppDialogFooter({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center justify-end gap-2 px-4 pt-3 pb-4",
+        "flex flex-wrap items-center justify-end gap-2 px-4 pt-4 pb-4",
         className
       )}
       data-slot="app-dialog-footer"
@@ -215,7 +217,10 @@ function AppDialogField({ className, ...props }: ComponentProps<"div">) {
 function AppDialogLabel({ className, ...props }: ComponentProps<typeof Label>) {
   return (
     <Label
-      className={cn("font-medium text-sm/5 text-zinc-200", className)}
+      className={cn(
+        "font-medium text-sm text-zinc-200 leading-none",
+        className
+      )}
       {...props}
     />
   );

@@ -614,16 +614,14 @@ function RestoreBackupModal({
               <AppDialog.Icon>
                 <ArchiveRestore aria-hidden />
               </AppDialog.Icon>
-              <div className="min-w-0">
-                <AppDialog.Title>{"Restore DB Service Backup"}</AppDialog.Title>
-                <AppDialog.Description className="truncate">
-                  {`${backup.namespace}/${backup.name}`}
-                </AppDialog.Description>
-              </div>
+              <AppDialog.Title>{"Restore DB Service Backup"}</AppDialog.Title>
+              <AppDialog.Description className="truncate">
+                {`${backup.namespace}/${backup.name}`}
+              </AppDialog.Description>
             </AppDialog.Header>
             <AppDialog.Body>
               <AppDialog.Field>
-                <AppDialog.Label>{"New DB Service name"}</AppDialog.Label>
+                <AppDialog.Label>{"New DB Service Name"}</AppDialog.Label>
                 <AppDialog.Input
                   aria-invalid={validationError !== null}
                   data-qa-module="database"

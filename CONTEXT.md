@@ -102,6 +102,12 @@ The resource whose desired configuration is edited by a settings surface. AP and
 
 _Avoid_: EntryPoint Settings Owner, Public Access Node Settings Owner.
 
+### Settings Domain
+
+A Settings Owner configuration partition that can be independently checked for conflicts, submitted as a Pending Settings Update, reconciled against observed resource state, and cleared when applied. A Settings Domain is not a Settings Section, Settings View, or API field group.
+
+_Avoid_: Settings Section, Settings View, form tab, API field group.
+
 ### Docker Deployment Settings
 
 The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
@@ -331,6 +337,28 @@ The primary UI surface for viewing and editing an existing DB's desired configur
 A local set of pending AP or DB settings changes that is submitted only when the user confirms a settings update. Discarding a Settings Draft abandons the pending changes and keeps the settings surface open.
 
 _Avoid_: Cancellation, Cancel settings changes, Save settings changes.
+
+### Settings Submission
+
+An in-flight AP or DB settings write after the user confirms a settings update and before the product has accepted or rejected it. A Settings Submission is no longer an unsaved Settings Draft and may let the user leave the settings surface, but it is not a Pending Settings Update.
+
+_Avoid_: Pending Settings Update, saved draft, optimistic resource truth.
+
+### Pending Settings Update
+
+A submitted AP or DB settings change that the product has accepted but the underlying resource has not yet fully reflected. A Pending Settings Update is no longer a Settings Draft: leaving the settings surface should not warn about unsaved changes, and reopening the Settings Owner should present the submitted target until the resource catches up or the user intentionally replaces it or chooses to use the latest observed configuration.
+
+A Pending Settings Update belongs to a Settings Owner and one or more Settings Domains rather than to the Settings View that submitted it. A narrow Settings View and the full settings surface should therefore present the same submitted target for any domain they both include.
+
+A Pending Settings Update may complete one Settings Domain at a time. When the observed resource catches up for one submitted domain, that domain's pending update is cleared without requiring unrelated submitted domains on the same Settings Owner to complete first.
+
+_Avoid_: Submitted draft, saved draft, optimistic resource truth.
+
+### Observed Settings Divergence
+
+The condition where a Settings Owner's observed desired configuration for a Settings Domain changes to a value that is neither the Pending Settings Update's submitted target nor the observed desired configuration that target was submitted against. Observed Settings Divergence requires the user to choose whether to keep the submitted target or use the latest observed configuration.
+
+_Avoid_: Pending failure, automatic overwrite, silent reload.
 
 ### Database Binding
 

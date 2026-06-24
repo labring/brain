@@ -31,7 +31,7 @@ const PROJECT_DESCRIPTION_EMPTY_LABEL = "-";
 
 function projectExplorerItemRowClassName(interactive: boolean) {
   return cn(
-    "project-explorer-item-row relative grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-xl bg-transparent px-[18px] pt-2.5 pb-[18px] transition-colors",
+    "project-explorer-item-row relative grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-xl bg-transparent px-[18px] pt-2.5 pb-[18px] transition-colors hover:bg-input/30 hover:backdrop-blur-[2px]",
     interactive && "cursor-pointer"
   );
 }
@@ -460,7 +460,7 @@ export function ProjectExplorerListItem({
             >
               <div className="flex items-center justify-between gap-2">
                 <FieldLabel
-                  className="text-foreground leading-5"
+                  className="text-foreground leading-none"
                   htmlFor={`project-edit-description-${project.id}`}
                 >
                   Description

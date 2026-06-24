@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { DataBrowserDBServiceBackupPolicy } from "@data-browser/api/access-types";
 import {
   DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS,
+  dbServiceBackupRefreshIdentity,
   deriveDbServiceBackupWorkflowState,
   suggestedDbServiceBackupName,
   suggestedRestoredDbServiceName,
@@ -19,6 +20,34 @@ const source = {
 
 test("DB Service backup active refresh interval is three seconds", () => {
   assert.equal(DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS, 3000);
+});
+
+test("DB Service Backup refresh identity includes the DB Service scope", () => {
+  const refreshIdentity = dbServiceBackupRefreshIdentity({
+    projectId: " project-uid ",
+    source: {
+      name: " orders-db ",
+      namespace: " database-system ",
+      uid: " cluster-uid-1 ",
+    },
+  });
+  const nextRefreshIdentity = dbServiceBackupRefreshIdentity({
+    projectId: "project-uid",
+    source: {
+      name: "analytics-db",
+      namespace: "database-system",
+      uid: "cluster-uid-2",
+    },
+  });
+
+  assert.equal(
+    refreshIdentity,
+    "project-uid:database-system:orders-db:cluster-uid-1"
+  );
+  assert.equal(
+    nextRefreshIdentity,
+    "project-uid:database-system:analytics-db:cluster-uid-2"
+  );
 });
 
 test("DB Service Backup workflow derives visible backups and policy from refreshed DB Service state", () => {

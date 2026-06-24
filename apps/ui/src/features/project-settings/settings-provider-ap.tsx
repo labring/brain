@@ -11,6 +11,7 @@ import {
 import { verifyCustomDomainCnameFromApi } from "@/features/project-settings/ap/custom-domain-cname-client";
 import { useApWorkloadSettings } from "@/features/project-settings/ap/hooks/use-ap-workload-settings";
 import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
+import { settingsOwnerIdentity } from "@/features/project-settings/settings-owner-identity";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -144,6 +145,7 @@ interface ApSettingsSectionsHookInput {
   ignoreQuota: ApWorkloadSettingsState["ignoreQuota"];
   ignoreReplicas: ApWorkloadSettingsState["ignoreReplicas"];
   isApWorkload: boolean;
+  kubeconfig?: string;
   onEnvChange: ApWorkloadSettingsState["onEnvChange"];
   onEnvResolvedValue: ApWorkloadSettingsState["onEnvResolvedValue"];
   onImageChange: ApWorkloadSettingsState["onImageChange"];
@@ -169,6 +171,7 @@ function apSettingsSectionsHookProps({
   ignoreQuota,
   ignoreReplicas,
   isApWorkload,
+  kubeconfig,
   onEnvChange,
   onEnvResolvedValue,
   onImageChange,
@@ -238,6 +241,10 @@ function apSettingsSectionsHookProps({
     sectionFocus: metadata.sectionFocus,
     showImageSection: false,
     storage: display.storage,
+    submissionOwner: settingsOwnerIdentity({
+      kubeconfig,
+      target: apTarget,
+    }),
     workloadKind: display.workloadKind,
   };
 }
@@ -554,6 +561,7 @@ export function ApSettingsProvider({
       ignoreQuota,
       ignoreReplicas,
       isApWorkload,
+      kubeconfig,
       onEnvChange,
       onEnvResolvedValue,
       onImageChange,

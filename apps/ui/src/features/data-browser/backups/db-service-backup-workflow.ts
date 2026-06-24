@@ -53,6 +53,23 @@ export interface DbServiceBackupWorkflowStateInput {
   source: DataBrowserDBServiceBackupSource;
 }
 
+export interface DbServiceBackupRefreshIdentityInput {
+  projectId: string;
+  source: DataBrowserDBServiceBackupSource;
+}
+
+export function dbServiceBackupRefreshIdentity({
+  projectId,
+  source,
+}: DbServiceBackupRefreshIdentityInput): string {
+  return [
+    projectId.trim(),
+    source.namespace.trim(),
+    source.name.trim(),
+    source.uid?.trim() ?? "",
+  ].join(":");
+}
+
 function padDatePart(value: number): string {
   return String(value).padStart(2, "0");
 }

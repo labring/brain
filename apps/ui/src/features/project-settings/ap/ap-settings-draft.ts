@@ -1,6 +1,10 @@
 "use client";
 
-import { type ApNetwork, apNetworksEqual } from "./ap-network-model";
+import {
+  type ApNetwork,
+  apNetworkSaveDraftFromNetwork,
+  apNetworksEqual,
+} from "./ap-network-model";
 import {
   type ApReplicaStrategy,
   CPU_QUOTA_DIRTY_EPS,
@@ -8,7 +12,6 @@ import {
 } from "./ap-replica-strategy-section";
 import type { ApEnvVar, ApSettingsEnvChangeMeta } from "./environment-section";
 import { canonicalApEnvRawSource } from "./lib/ap-env-raw-source";
-import { apEnvRowsEqual } from "./lib/ap-env-rows";
 import type {
   ApConfigMapMount,
   ApStorageMount,
@@ -145,10 +148,7 @@ export function apSettingsDraftDomainIsDirty(
 
   switch (domain) {
     case "environment":
-      return (
-        !apEnvRowsEqual([...draft.env], [...original.env]) ||
-        draftEnvRawSource !== originalEnvRawSource
-      );
+      return draftEnvRawSource !== originalEnvRawSource;
     case "launch":
       return (
         draft.image.trim() !== original.image.trim() ||
@@ -199,11 +199,16 @@ export function mergeApSettingsDraftDomains({
 }
 
 export function apSettingsDraftBackingKey(draft: ApSettingsDraft) {
-  return JSON.stringify(draft);
+  return JSON.stringify({
+    ...draft,
+    ...(draft.network == null
+      ? {}
+      : { network: apNetworkSaveDraftFromNetwork(draft.network) }),
+  });
 }
 
 export function apNetworkDraftBackingKey(network: ApNetwork) {
-  return JSON.stringify(network);
+  return JSON.stringify(apNetworkSaveDraftFromNetwork(network));
 }
 
 interface ApSettingsDraftValues {

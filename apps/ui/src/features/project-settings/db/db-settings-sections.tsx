@@ -27,7 +27,7 @@ import {
   Settings2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   applySettingsDraftBackingResult,
@@ -37,17 +37,39 @@ import {
   keepEditingSettingsDraftBackingState,
   prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
+  settingsDraftSaveFailureMessage,
   syncSettingsDraftBackingState,
 } from "@/features/project-settings/ap/lib/settings-draft-backing";
+import {
+  classifyPendingSettingsEntry,
+  getBrowserPendingSettingsStore,
+  type PendingSettingsOwnerIdentity,
+  type PendingSettingsUpdateEntry,
+} from "@/features/project-settings/pending-settings-updates";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
 } from "@/features/project-settings/settings-leave-guard";
+import {
+  getBrowserSettingsSubmissionStore,
+  latestRejectedSettingsSubmission,
+  type SettingsSubmissionDomainUpdate,
+  useSettingsSubmissionEntries,
+} from "@/features/project-settings/settings-submissions";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import {
+  applyDbPendingTargets,
+  type DbPendingSettingsTarget,
+  type DbPendingSettingsTargets,
+  dbPendingTargetForDomain,
+  dbPendingTargetsEqual,
+  dbPendingTargetsForDirtyDomains,
+} from "./db-pending-settings";
 import {
   buildDbSettingsPatch,
   DATABASE_SETTINGS_DRAFT_DOMAINS,
   type DatabaseSettingsDraft,
+  type DatabaseSettingsDraftDomain,
   type DatabaseSettingsPatch,
   DB_SETTINGS_CPU_LIMIT_CORES,
   DB_SETTINGS_MEMORY_LIMIT_GIB,
@@ -66,6 +88,83 @@ import type { DbSettingsData } from "./db-settings-types";
 
 const DB_SETTINGS_SUBMIT_CONFLICT_MESSAGE =
   "Database configuration changed since you started editing.";
+const DB_SETTINGS_DRAFT_DOMAIN_SET = new Set<string>(
+  DATABASE_SETTINGS_DRAFT_DOMAINS
+);
+
+function isDatabaseSettingsDraftDomain(
+  domain: string
+): domain is DatabaseSettingsDraftDomain {
+  return DB_SETTINGS_DRAFT_DOMAIN_SET.has(domain);
+}
+
+function dbSettingsSubmissionTargets(
+  entries: readonly { domain: string; status: string; target: unknown }[]
+): DbPendingSettingsTargets {
+  const targets: DbPendingSettingsTargets = {};
+  for (const entry of entries) {
+    if (
+      entry.status !== "submitting" ||
+      !isDatabaseSettingsDraftDomain(entry.domain)
+    ) {
+      continue;
+    }
+    targets[entry.domain] = entry.target as never;
+  }
+  return targets;
+}
+
+function dbSettingsSubmissionUpdates(
+  base: DatabaseSettingsDraft,
+  draft: DatabaseSettingsDraft
+): SettingsSubmissionDomainUpdate<DbPendingSettingsTarget>[] {
+  const targets = dbPendingTargetsForDirtyDomains(base, draft);
+  const updates: SettingsSubmissionDomainUpdate<DbPendingSettingsTarget>[] = [];
+  for (const domain of DATABASE_SETTINGS_DRAFT_DOMAINS) {
+    if (!Object.hasOwn(targets, domain)) {
+      continue;
+    }
+    updates.push({
+      domain,
+      submittedAgainst: dbPendingTargetForDomain(domain, base),
+      target: targets[domain] as DbPendingSettingsTarget,
+    });
+  }
+  return updates;
+}
+
+function dbAcceptedPendingTargets(
+  base: DatabaseSettingsDraft,
+  entries: readonly PendingSettingsUpdateEntry[]
+): {
+  reconciledDomains: readonly DatabaseSettingsDraftDomain[];
+  targets: DbPendingSettingsTargets;
+} {
+  const reconciledDomains: DatabaseSettingsDraftDomain[] = [];
+  const targets: DbPendingSettingsTargets = {};
+  for (const entry of entries) {
+    if (!isDatabaseSettingsDraftDomain(entry.domain)) {
+      continue;
+    }
+    const domain = entry.domain;
+    const classification = classifyPendingSettingsEntry(
+      entry as PendingSettingsUpdateEntry<DbPendingSettingsTarget>,
+      {
+        equals: (left, right) => dbPendingTargetsEqual(domain, left, right),
+        observed: dbPendingTargetForDomain(domain, base),
+      }
+    );
+    if (classification.status === "reconciled") {
+      reconciledDomains.push(domain);
+      continue;
+    }
+    if (classification.status === "diverged") {
+      continue;
+    }
+    targets[domain] = entry.target as never;
+  }
+  return { reconciledDomains, targets };
+}
 
 interface DatabaseSettingsPaneProps {
   data: DbSettingsData;
@@ -81,6 +180,7 @@ export interface DatabaseSettingsSectionsProps {
   onSubmitPatch?: (patch: DatabaseSettingsPatch) => Promise<unknown> | unknown;
   onUpdated?: () => Promise<unknown>;
   routingDomain?: string;
+  submissionOwner?: PendingSettingsOwnerIdentity;
   updating?: boolean;
 }
 
@@ -428,6 +528,7 @@ export function useDatabaseSettingsSections({
   onSubmitPatch,
   onUpdated,
   routingDomain,
+  submissionOwner,
   updating = false,
 }: DatabaseSettingsSectionsProps): DatabaseSettingsSectionsModel {
   const readOnly = data.settingsAccess?.readOnly === true;
@@ -441,7 +542,19 @@ export function useDatabaseSettingsSections({
   const desiredReplicas = desired?.replicas;
   const desiredStorageSize = desired?.storageSize;
   const identityKey = `${workloadNamespace}/${workloadName}`;
-  const originalState = useMemo(() => {
+  const submissionStore = useMemo(
+    () => getBrowserSettingsSubmissionStore(),
+    []
+  );
+  const pendingSettingsStore = useMemo(
+    () => getBrowserPendingSettingsStore(),
+    []
+  );
+  const submissionEntries = useSettingsSubmissionEntries(
+    submissionOwner,
+    submissionStore
+  );
+  const observedState = useMemo(() => {
     const draft = dbSettingsDraftFromNodeData({
       desired: {
         ...(desiredCpuLimit === undefined ? {} : { cpuLimit: desiredCpuLimit }),
@@ -469,8 +582,58 @@ export function useDatabaseSettingsSections({
     desiredStorageSize,
     identityKey,
   ]);
+  const activeSubmissionTargets = useMemo(
+    () => dbSettingsSubmissionTargets(submissionEntries),
+    [submissionEntries]
+  );
+  const acceptedPendingEntries =
+    submissionOwner == null
+      ? []
+      : (pendingSettingsStore?.list(submissionOwner) ?? []);
+  const acceptedPendingOverlay = useMemo(
+    () => dbAcceptedPendingTargets(observedState.draft, acceptedPendingEntries),
+    [acceptedPendingEntries, observedState.draft]
+  );
+  useEffect(() => {
+    if (
+      submissionOwner == null ||
+      pendingSettingsStore == null ||
+      acceptedPendingOverlay.reconciledDomains.length === 0
+    ) {
+      return;
+    }
+    for (const domain of acceptedPendingOverlay.reconciledDomains) {
+      pendingSettingsStore.clear(submissionOwner, domain);
+    }
+  }, [
+    acceptedPendingOverlay.reconciledDomains,
+    pendingSettingsStore,
+    submissionOwner,
+  ]);
+  const pendingState = useMemo(() => {
+    const draft = applyDbPendingTargets(
+      observedState.draft,
+      acceptedPendingOverlay.targets
+    );
+    return {
+      backingKey: databaseSettingsBackingKey(observedState.identityKey, draft),
+      draft,
+      identityKey: observedState.identityKey,
+    };
+  }, [acceptedPendingOverlay.targets, observedState]);
+  const originalState = useMemo(() => {
+    const draft = applyDbPendingTargets(
+      pendingState.draft,
+      activeSubmissionTargets
+    );
+    return {
+      backingKey: databaseSettingsBackingKey(pendingState.identityKey, draft),
+      draft,
+      identityKey: pendingState.identityKey,
+    };
+  }, [activeSubmissionTargets, pendingState]);
   const [draft, setDraft] = useState<DatabaseSettingsDraft>(
-    originalState.draft
+    () => originalState.draft
   );
   const [backingState, setBackingState] = useState(() =>
     createSettingsDraftBackingState(
@@ -480,8 +643,75 @@ export function useDatabaseSettingsSections({
     )
   );
   const original = backingState.base;
+  const latestDraftRef = useRef(draft);
+  const latestBackingStateRef = useRef(backingState);
+  useEffect(() => {
+    latestDraftRef.current = draft;
+    latestBackingStateRef.current = backingState;
+  }, [backingState, draft]);
+  const rejectedSettingsSubmission = useMemo(
+    () =>
+      latestRejectedSettingsSubmission<DatabaseSettingsDraft>(
+        submissionEntries
+      ),
+    [submissionEntries]
+  );
+  const canApplyRejectedSettingsSubmission =
+    rejectedSettingsSubmission != null &&
+    !dbSettingsDraftIsDirty(backingState.base, draft);
+  const appliedRejectedSubmissionId = useRef<string | null>(null);
 
   useEffect(() => {
+    if (
+      !(canEdit && canApplyRejectedSettingsSubmission) ||
+      rejectedSettingsSubmission == null ||
+      submissionOwner == null ||
+      submissionStore == null ||
+      appliedRejectedSubmissionId.current ===
+        rejectedSettingsSubmission.submissionId
+    ) {
+      return;
+    }
+
+    appliedRejectedSubmissionId.current =
+      rejectedSettingsSubmission.submissionId;
+    setDraft(rejectedSettingsSubmission.draft);
+    setBackingState({
+      ...createSettingsDraftBackingState(
+        rejectedSettingsSubmission.baseDraft,
+        databaseSettingsBackingKey(
+          originalState.identityKey,
+          rejectedSettingsSubmission.baseDraft
+        ),
+        originalState.identityKey
+      ),
+      latest: originalState.draft,
+      latestKey: originalState.backingKey,
+      saveFailureMessage: settingsDraftSaveFailureMessage(
+        rejectedSettingsSubmission.errorMessage == null
+          ? new Error("Update failed.")
+          : new Error(rejectedSettingsSubmission.errorMessage),
+        "Could not submit database settings."
+      ),
+    });
+    submissionStore.clear({
+      domains: rejectedSettingsSubmission.domains,
+      owner: submissionOwner,
+      statuses: ["rejected"],
+    });
+  }, [
+    canApplyRejectedSettingsSubmission,
+    canEdit,
+    originalState,
+    rejectedSettingsSubmission,
+    submissionOwner,
+    submissionStore,
+  ]);
+
+  useEffect(() => {
+    if (canApplyRejectedSettingsSubmission) {
+      return;
+    }
     const synced = syncSettingsDraftBackingState(backingState, {
       backing: originalState.draft,
       backingKey: originalState.backingKey,
@@ -496,7 +726,7 @@ export function useDatabaseSettingsSections({
       draft: setDraft,
       state: setBackingState,
     });
-  }, [backingState, draft, originalState]);
+  }, [backingState, canApplyRejectedSettingsSubmission, draft, originalState]);
 
   const pendingPatch = useMemo(
     () =>
@@ -506,13 +736,36 @@ export function useDatabaseSettingsSections({
       }),
     [data.metadata, draft, original, routingDomain]
   );
-  const dirty = dbSettingsDraftIsDirty(original, draft);
+  const dirtyDomains = useMemo(
+    () =>
+      DATABASE_SETTINGS_DRAFT_DOMAINS.filter((domain) =>
+        dbSettingsDraftDomainIsDirty(domain, original, draft)
+      ),
+    [draft, original]
+  );
+  const submittingDomains = useMemo(
+    () =>
+      new Set(
+        submissionEntries
+          .filter((entry) => entry.status === "submitting")
+          .map((entry) => entry.domain)
+      ),
+    [submissionEntries]
+  );
+  const hasOverlappingSubmittingDomain = dirtyDomains.some((domain) =>
+    submittingDomains.has(domain)
+  );
+  const dirty = dirtyDomains.length > 0;
   const canUpdate =
-    canEdit && pendingPatch !== null && !updating && onSubmitPatch != null;
+    canEdit &&
+    pendingPatch !== null &&
+    !updating &&
+    onSubmitPatch != null &&
+    !hasOverlappingSubmittingDomain;
   const controlsDisabled = !canEdit || updating;
 
-  const saveSettingsDraft = useCallback(async () => {
-    if (!canEdit || pendingPatch === null || onSubmitPatch == null) {
+  const saveSettingsDraft = useCallback(() => {
+    if (!canUpdate || pendingPatch === null || onSubmitPatch == null) {
       throw new Error("Database settings draft cannot be saved yet.");
     }
     const prepared = prepareSettingsDraftSubmit(backingState, {
@@ -533,49 +786,124 @@ export function useDatabaseSettingsSections({
     if (patch === null) {
       setDraft(prepared.draft);
       setBackingState((current) =>
-        commitSettingsDraftBackingState(current, prepared.draft)
+        commitSettingsDraftBackingState(
+          current,
+          prepared.draft,
+          databaseSettingsBackingKey(originalState.identityKey, prepared.draft)
+        )
       );
       return;
     }
-    setBackingState((current) => ({ ...current, saveFailureMessage: null }));
-    try {
-      await onSubmitPatch(patch);
-      setBackingState((current) =>
-        commitSettingsDraftBackingState(current, prepared.draft)
-      );
-      setDraft(prepared.draft);
-      toast.success("Database settings updated.");
-      await onUpdated?.();
-    } catch (error) {
-      setBackingState((current) =>
-        failSettingsDraftSave(
-          current,
-          error,
-          "Could not update database settings."
-        )
-      );
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not update database settings."
-      );
-      throw error;
+    const submissionUpdates = dbSettingsSubmissionUpdates(
+      prepared.base,
+      prepared.draft
+    );
+    const submissionStart =
+      submissionOwner == null || submissionStore == null
+        ? { entries: [], status: "started" as const }
+        : submissionStore.start({
+            baseDraft: prepared.base,
+            draft: prepared.draft,
+            owner: submissionOwner,
+            updates: submissionUpdates,
+          });
+    if (submissionStart.status === "blocked") {
+      throw new Error("Settings update is already submitting.");
     }
+    const startedSubmissionEntries = submissionStart.entries;
+    setBackingState((current) => ({ ...current, saveFailureMessage: null }));
+    setBackingState((current) =>
+      commitSettingsDraftBackingState(
+        current,
+        prepared.draft,
+        databaseSettingsBackingKey(originalState.identityKey, prepared.draft)
+      )
+    );
+    setDraft(prepared.draft);
+
+    const toastId = toast.loading("Submitting database settings update...");
+    Promise.resolve()
+      .then(() => onSubmitPatch(patch))
+      .then(() => {
+        if (submissionOwner != null && submissionStore != null) {
+          submissionStore.accept({
+            entries: startedSubmissionEntries,
+            owner: submissionOwner,
+            pendingStore: pendingSettingsStore,
+          });
+        }
+        toast.success("Update accepted. Applying changes.", { id: toastId });
+        onUpdated?.().catch(() => undefined);
+      })
+      .catch((error) => {
+        if (submissionOwner != null && submissionStore != null) {
+          submissionStore.reject({
+            entries: startedSubmissionEntries,
+            error,
+            owner: submissionOwner,
+          });
+        } else {
+          setBackingState(
+            failSettingsDraftSave(
+              prepared.state,
+              error,
+              "Could not submit database settings."
+            )
+          );
+          setDraft(prepared.draft);
+        }
+        toast.error(
+          settingsDraftSaveFailureMessage(
+            error,
+            "Could not submit database settings."
+          ),
+          {
+            action: {
+              label: "Back to draft",
+              onClick: () => {
+                if (
+                  dbSettingsDraftIsDirty(
+                    latestBackingStateRef.current.base,
+                    latestDraftRef.current
+                  )
+                ) {
+                  return;
+                }
+                setBackingState(
+                  failSettingsDraftSave(
+                    prepared.state,
+                    error,
+                    "Could not submit database settings."
+                  )
+                );
+                setDraft(prepared.draft);
+              },
+            },
+            id: toastId,
+          }
+        );
+      });
   }, [
     backingState,
-    canEdit,
+    canUpdate,
     data.metadata,
     draft,
     onSubmitPatch,
     onUpdated,
+    originalState.identityKey,
+    pendingSettingsStore,
     pendingPatch,
     routingDomain,
+    submissionOwner,
+    submissionStore,
   ]);
 
   const handleUpdate = useCallback(() => {
-    saveSettingsDraft().catch(() => {
+    try {
+      saveSettingsDraft();
+    } catch {
       /* Keep the user on the settings draft; panel state already shows failure. */
-    });
+    }
   }, [saveSettingsDraft]);
 
   const handleReloadDraft = useCallback(() => {
@@ -746,6 +1074,7 @@ export function DatabaseSettingsPaneContent({
   onSubmitPatch,
   onUpdated,
   routingDomain,
+  submissionOwner,
   updating = false,
 }: DatabaseSettingsPaneContentProps) {
   const subtitle = databaseHeaderSubtitle(data.states);
@@ -755,6 +1084,7 @@ export function DatabaseSettingsPaneContent({
     onSubmitPatch,
     onUpdated,
     routingDomain,
+    submissionOwner,
     updating,
   });
 

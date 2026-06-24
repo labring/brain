@@ -139,14 +139,25 @@ export function DbAccessSessionProvider({
   runtime,
 }: DbAccessSessionProviderProps) {
   const dbServiceKey = dbAccessSessionKeyFromRuntime(runtime);
+  const selectedRootItem = useMemo<DbAccessSelectedItem>(
+    () => ({
+      dbServiceKey,
+      id: dbServiceKey,
+      metadata: {},
+      name: runtime.database.name || runtime.databaseWorkloadName,
+      type: "db_service",
+    }),
+    [dbServiceKey, runtime.database.name, runtime.databaseWorkloadName]
+  );
   const store = useMemo(() => {
     const nextStore = createStore();
     nextStore.set(
       dbAccessSessionAtom,
       initialSession ?? createDbAccessSession(dbServiceKey)
     );
+    nextStore.set(dbAccessSelectedItemAtom, selectedRootItem);
     return nextStore;
-  }, [dbServiceKey, initialSession]);
+  }, [dbServiceKey, initialSession, selectedRootItem]);
 
   useEffect(() => {
     store.set(dbAccessSessionAtom, (session) =>

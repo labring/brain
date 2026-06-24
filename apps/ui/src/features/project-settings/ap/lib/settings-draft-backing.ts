@@ -133,13 +133,15 @@ export function keepEditingSettingsDraftBackingState<TDraft>(
 
 export function commitSettingsDraftBackingState<TDraft>(
   state: SettingsDraftBackingState<TDraft>,
-  draft: TDraft
+  draft: TDraft,
+  draftKey: string
 ): SettingsDraftBackingState<TDraft> {
   return {
     ...state,
     base: draft,
-    baseKey: state.latestKey,
+    baseKey: draftKey,
     latest: draft,
+    latestKey: draftKey,
     saveFailureMessage: null,
     submitConflictMessage: null,
   };
@@ -152,6 +154,13 @@ export function prepareSettingsDraftSubmit<TDraft, TDomain extends string>(
     domains: readonly TDomain[];
     draft: TDraft;
     isDomainDirty: (domain: TDomain, base: TDraft, draft: TDraft) => boolean;
+    isLatestDomainChanged?: (
+      domain: TDomain,
+      input: {
+        base: TDraft;
+        latest: TDraft;
+      }
+    ) => boolean;
     mergeDraft: (input: {
       base: TDraft;
       dirtyDomains: readonly TDomain[];
@@ -177,8 +186,12 @@ export function prepareSettingsDraftSubmit<TDraft, TDomain extends string>(
     };
   }
 
-  const changedDomains = options.domains.filter((domain) =>
-    options.isDomainDirty(domain, state.base, state.latest)
+  const changedDomains = options.domains.filter(
+    (domain) =>
+      options.isLatestDomainChanged?.(domain, {
+        base: state.base,
+        latest: state.latest,
+      }) ?? options.isDomainDirty(domain, state.base, state.latest)
   );
   const changedDomainSet = new Set(changedDomains);
   const hasConflict = dirtyDomains.some((domain) =>
