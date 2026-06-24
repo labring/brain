@@ -4,11 +4,47 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+import { createPendingSettingsStore } from "@/features/project-settings/pending-settings-updates";
 import { DatabaseSettingsPaneContent } from "./db-settings-sections";
 
 const noop = () => {
   /* test noop */
 };
+
+class MemoryStorage
+  implements Pick<Storage, "getItem" | "removeItem" | "setItem">
+{
+  readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+}
+
+function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage: storage },
+  });
+  try {
+    return run();
+  } finally {
+    if (previousWindow == null) {
+      Reflect.deleteProperty(globalThis, "window");
+    } else {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    }
+  }
+}
 
 const CONNECTION_ADDRESS_RE = /Connection Address/;
 const PRIVATE_CONNECTION_RE = /Private Connection/;
@@ -26,6 +62,7 @@ const DISCARD_BUTTON_RE = />Discard</;
 const PROVISIONING_CONNECTION_RE = /Provisioning connection string/;
 const REPLICA_COUNT_RE = /Number of Replicas/;
 const REPLICA_VALUE_RE = />2</;
+const PENDING_REPLICA_VALUE_RE = />3</;
 const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
 const PRIVATE_DSN_RE = /mysql:\/\/r\*\*\*\*\*\*\*:.*?@db.default.svc:3306/;
 const PUBLIC_DSN_RE =
@@ -113,6 +150,48 @@ test("database settings pane renders replica counts without unit suffix", () => 
   assert.match(html, REPLICA_COUNT_RE);
   assert.match(html, REPLICA_VALUE_RE);
   assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
+});
+
+test("database settings pane overlays accepted pending settings targets", () => {
+  const storage = new MemoryStorage();
+  const owner = {
+    clusterFingerprint: "stable:test-cluster",
+    kind: "database" as const,
+    name: "postgres",
+    namespace: "default",
+  };
+  createPendingSettingsStore({ now: () => 1000, storage }).replaceDirtyDomains({
+    owner,
+    updates: [
+      {
+        domain: "resources",
+        submittedAgainst: {
+          cpuLimitCores: 1,
+          memoryLimitGi: 2,
+          replicas: 2,
+          storageSizeGi: 20,
+        },
+        target: {
+          cpuLimitCores: 1,
+          memoryLimitGi: 2,
+          replicas: 3,
+          storageSizeGi: 20,
+        },
+      },
+    ],
+  });
+
+  const html = withBrowserLocalStorage(storage, () =>
+    renderPane(
+      <DatabaseSettingsPaneContent
+        data={BASE_DATA}
+        onSubmitPatch={noop}
+        submissionOwner={owner}
+      />
+    )
+  );
+
+  assert.match(html, PENDING_REPLICA_VALUE_RE);
 });
 
 test("database settings pane hides unprovisioned public address while public access is off", () => {

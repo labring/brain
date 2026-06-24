@@ -1,6 +1,6 @@
 # Store Pending Settings Updates Browser-Locally
 
-Pending Settings Updates are remembered in the user's browser local storage rather than in backend Project state or provider-local React state. This preserves submitted target settings across settings entry points and browser refreshes without making accepted-but-not-reconciled settings targets shared Project truth, while keeping room for a future backend settings operation model if cross-user visibility, audit, or durable failure handling becomes necessary.
+Pending Settings Updates are remembered in the user's browser local storage rather than in backend Project state or provider-local React state. A Pending Settings Update starts only after a Settings Submission write is accepted; rejected or still-in-flight submissions remain outside this storage boundary and are covered by ADR-0031. This preserves accepted-but-not-yet-reconciled target settings across settings entry points and browser refreshes without making them shared Project truth, while keeping room for a future backend settings operation model if cross-user visibility, audit, or durable failure handling becomes necessary.
 
 ## Considered Options
 
@@ -22,6 +22,10 @@ Pending Settings Update reconciliation compares the pending target with the reso
 For AP Environment, the pending target and reconciliation predicate use the canonical AP Environment Raw Source. Compiled runtime environment rows are write output, not the user-authored target; they are used only as a fallback projection when an existing resource has no observed Raw Source.
 
 V1 Pending Settings Updates do not have a failed state. A write rejection remains a Settings Draft save failure and does not create a Pending Settings Update; after a write is accepted, an unreconciled pending target may become attention-needed but is not inferred failed from time alone.
+
+Settings Submissions may let the user leave the settings surface while the write is still in flight. If the write is rejected, v1 provides only best-effort current-session recovery, such as a toast action back to the draft; failed submissions are not persisted across refreshes or sessions.
+
+Rejected Settings Submission recovery restores the submitted draft for editing, not the original write command. A later resubmission must run the normal submit-time conflict detection and rebuild any API patch against the current observed backing.
 
 Attention-needed pending targets offer Edit and Use Latest actions. Retry is intentionally not a v1 action because the stored target is not the original write command; resubmission should go through the normal Settings Draft submit flow, rebuilding any API patch against the current observed backing.
 

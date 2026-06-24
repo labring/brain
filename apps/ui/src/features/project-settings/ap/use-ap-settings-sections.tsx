@@ -27,17 +27,36 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import {
+  classifyPendingSettingsEntry,
+  getBrowserPendingSettingsStore,
+  type PendingSettingsOwnerIdentity,
+  type PendingSettingsUpdateEntry,
+} from "../pending-settings-updates";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
 } from "../settings-leave-guard";
-import { getBrowserSettingsSubmitCheckpointStore } from "../settings-submit-checkpoint";
+import {
+  getBrowserSettingsSubmissionStore,
+  latestRejectedSettingsSubmission,
+  type SettingsSubmissionDomainUpdate,
+  useSettingsSubmissionEntries,
+} from "../settings-submissions";
 import { useApNetworkDraftController } from "./ap-network-draft";
 import type {
   ApCustomDomainCnameVerifier,
   ApNetwork,
   ApNetworkPlatformAddressDraftContext,
 } from "./ap-network-model";
+import {
+  type ApPendingSettingsTarget,
+  type ApPendingSettingsTargets,
+  apPendingTargetForDomain,
+  apPendingTargetsEqual,
+  apPendingTargetsForDirtyDomains,
+  applyApPendingTargets,
+} from "./ap-pending-settings";
 import {
   type ApReplicaStrategy,
   cpuCoresValueSuffix,
@@ -67,6 +86,7 @@ import {
   AP_SETTINGS_DRAFT_DOMAINS,
   type ApSettingsDraft,
   type ApSettingsDraftCommitMeta,
+  type ApSettingsDraftDomain,
   apSettingsDraftBackingKey,
   apSettingsDraftDomainIsDirty,
   apSettingsDraftFromValues,
@@ -145,10 +165,85 @@ import {
 
 const AP_SETTINGS_SUBMIT_CONFLICT_MESSAGE =
   "AP configuration changed since you started editing.";
+const AP_SETTINGS_DRAFT_DOMAIN_SET = new Set<string>(AP_SETTINGS_DRAFT_DOMAINS);
 const EMPTY_AP_NETWORK: ApNetwork = {
   privatePort: 80,
   publicAddresses: [],
 };
+
+function isApSettingsDraftDomain(
+  domain: string
+): domain is ApSettingsDraftDomain {
+  return AP_SETTINGS_DRAFT_DOMAIN_SET.has(domain);
+}
+
+function apSettingsSubmissionTargets(
+  entries: readonly { domain: string; status: string; target: unknown }[]
+): ApPendingSettingsTargets {
+  const targets: ApPendingSettingsTargets = {};
+  for (const entry of entries) {
+    if (
+      entry.status !== "submitting" ||
+      !isApSettingsDraftDomain(entry.domain)
+    ) {
+      continue;
+    }
+    targets[entry.domain] = entry.target as never;
+  }
+  return targets;
+}
+
+function apSettingsSubmissionUpdates(
+  base: ApSettingsDraft,
+  draft: ApSettingsDraft
+): SettingsSubmissionDomainUpdate<ApPendingSettingsTarget>[] {
+  const targets = apPendingTargetsForDirtyDomains(base, draft);
+  const updates: SettingsSubmissionDomainUpdate<ApPendingSettingsTarget>[] = [];
+  for (const domain of AP_SETTINGS_DRAFT_DOMAINS) {
+    if (!Object.hasOwn(targets, domain)) {
+      continue;
+    }
+    updates.push({
+      domain,
+      submittedAgainst: apPendingTargetForDomain(domain, base),
+      target: targets[domain] as ApPendingSettingsTarget,
+    });
+  }
+  return updates;
+}
+
+function apAcceptedPendingTargets(
+  base: ApSettingsDraft,
+  entries: readonly PendingSettingsUpdateEntry[]
+): {
+  reconciledDomains: readonly ApSettingsDraftDomain[];
+  targets: ApPendingSettingsTargets;
+} {
+  const reconciledDomains: ApSettingsDraftDomain[] = [];
+  const targets: ApPendingSettingsTargets = {};
+  for (const entry of entries) {
+    if (!isApSettingsDraftDomain(entry.domain)) {
+      continue;
+    }
+    const domain = entry.domain;
+    const classification = classifyPendingSettingsEntry(
+      entry as PendingSettingsUpdateEntry<ApPendingSettingsTarget>,
+      {
+        equals: (left, right) => apPendingTargetsEqual(domain, left, right),
+        observed: apPendingTargetForDomain(domain, base),
+      }
+    );
+    if (classification.status === "reconciled") {
+      reconciledDomains.push(domain);
+      continue;
+    }
+    if (classification.status === "diverged") {
+      continue;
+    }
+    targets[domain] = entry.target as never;
+  }
+  return { reconciledDomains, targets };
+}
 
 export interface ApSettingsSectionsProps {
   /**
@@ -218,7 +313,7 @@ export interface ApSettingsSectionsProps {
   /** Hide the Image section when image updates belong in a separate deployment surface. */
   showImageSection?: boolean;
   storage?: readonly ApStorageMount[];
-  submitCheckpointKey?: string;
+  submissionOwner?: PendingSettingsOwnerIdentity;
   workloadKind?: ApWorkloadKind;
 }
 
@@ -252,39 +347,135 @@ export function useApSettingsSections({
   sectionFocus = "all",
   showImageSection = true,
   storage = [],
-  submitCheckpointKey,
+  submissionOwner,
   workloadKind = "deployment",
 }: ApSettingsSectionsProps): ApSettingsSectionsModel {
-  const [draftImage, setDraftImage] = useState(image);
+  const settingsCommitMode = onSettingsDraftCommit != null && readOnly !== true;
+  const quotaCommitMode = onResourceQuotasCommit != null && readOnly !== true;
+  const quotaDraftMode = settingsCommitMode || quotaCommitMode;
+  const submissionStore = useMemo(
+    () => getBrowserSettingsSubmissionStore(),
+    []
+  );
+  const pendingSettingsStore = useMemo(
+    () => getBrowserPendingSettingsStore(),
+    []
+  );
+  const submissionEntries = useSettingsSubmissionEntries(
+    submissionOwner,
+    submissionStore
+  );
+  const initialCommittedReplicaStrategy = useMemo(
+    () =>
+      replicasQuota == null
+        ? undefined
+        : normalizeReplicaStrategy(replicaStrategy, replicasQuota.value),
+    [replicaStrategy, replicasQuota]
+  );
+  const initialObservedSettingsDraft = useMemo<ApSettingsDraft>(
+    () =>
+      apSettingsDraftFromValues({
+        args: normalizeCommandDraftLines(args),
+        command: normalizeCommandDraftLines(command),
+        configMaps: normalizeConfigMapDraftRows(configMaps),
+        cpuCores: cpuQuota.value,
+        env,
+        envRawSource,
+        image,
+        memoryMib: memoryQuota.value,
+        network,
+        replicaStrategy: initialCommittedReplicaStrategy,
+        storage: normalizeStorageDraftRows(storage),
+        workloadKind,
+      }),
+    [
+      args,
+      command,
+      configMaps,
+      cpuQuota.value,
+      env,
+      envRawSource,
+      image,
+      initialCommittedReplicaStrategy,
+      memoryQuota.value,
+      network,
+      storage,
+      workloadKind,
+    ]
+  );
+  const initialAcceptedPendingEntries =
+    submissionOwner == null
+      ? []
+      : (pendingSettingsStore?.list(submissionOwner) ?? []);
+  const initialAcceptedPendingOverlay = useMemo(
+    () =>
+      apAcceptedPendingTargets(
+        initialObservedSettingsDraft,
+        initialAcceptedPendingEntries
+      ),
+    [initialAcceptedPendingEntries, initialObservedSettingsDraft]
+  );
+  const initialSubmissionTargets = useMemo(
+    () => apSettingsSubmissionTargets(submissionEntries),
+    [submissionEntries]
+  );
+  const initialPendingSettingsDraft = useMemo(
+    () =>
+      applyApPendingTargets(
+        initialObservedSettingsDraft,
+        initialAcceptedPendingOverlay.targets
+      ),
+    [initialAcceptedPendingOverlay.targets, initialObservedSettingsDraft]
+  );
+  const initialSettingsDraft = useMemo(
+    () =>
+      applyApPendingTargets(
+        initialPendingSettingsDraft,
+        initialSubmissionTargets
+      ),
+    [initialPendingSettingsDraft, initialSubmissionTargets]
+  );
+
+  const [draftImage, setDraftImage] = useState(initialSettingsDraft.image);
   const [quotaSavePending, setQuotaSavePending] = useState(false);
   const [settingsSavePending, setSettingsSavePending] = useState(false);
   const [draftNetwork, setDraftNetwork] = useState<ApNetwork | undefined>(
-    network
+    initialSettingsDraft.network
   );
   const [draftCommand, setDraftCommand] = useState<string[]>(() =>
-    normalizeCommandDraftLines(command)
+    normalizeCommandDraftLines(initialSettingsDraft.command)
   );
   const [draftArgs, setDraftArgs] = useState<string[]>(() =>
-    normalizeCommandDraftLines(args)
+    normalizeCommandDraftLines(initialSettingsDraft.args)
   );
   const imageInputId = useId();
   const envDraftKeyPrefix = useId();
   const envDraftKeyCounter = useRef(0);
   const [draftConfigMaps, setDraftConfigMaps] = useState<ApConfigMapMount[]>(
-    () => normalizeConfigMapDraftRows(configMaps)
+    () => normalizeConfigMapDraftRows(initialSettingsDraft.configMaps)
   );
   const [configMapDraftKeys, setConfigMapDraftKeys] = useState<string[]>(() =>
-    createDraftRowKeys(normalizeConfigMapDraftRows(configMaps).length, "cm")
+    createDraftRowKeys(
+      normalizeConfigMapDraftRows(initialSettingsDraft.configMaps).length,
+      "cm"
+    )
   );
   const [draftStorage, setDraftStorage] = useState<ApStorageMount[]>(() =>
-    normalizeStorageDraftRows(storage)
+    normalizeStorageDraftRows(initialSettingsDraft.storage)
   );
   const [storageDraftKeys, setStorageDraftKeys] = useState<string[]>(() =>
-    createDraftRowKeys(normalizeStorageDraftRows(storage).length, "storage")
+    createDraftRowKeys(
+      normalizeStorageDraftRows(initialSettingsDraft.storage).length,
+      "storage"
+    )
   );
   const initialEnvRawSource = useMemo(
-    () => canonicalApEnvRawSource({ env, envRawSource }),
-    [env, envRawSource]
+    () =>
+      canonicalApEnvRawSource({
+        env: initialSettingsDraft.env,
+        envRawSource: initialSettingsDraft.envRawSource,
+      }),
+    [initialSettingsDraft]
   );
   const initialEnvDraft = useMemo(
     () =>
@@ -337,16 +528,15 @@ export function useApSettingsSections({
   const copiedEnvValueTimeout = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const settingsCommitMode = onSettingsDraftCommit != null && readOnly !== true;
-  const quotaCommitMode = onResourceQuotasCommit != null && readOnly !== true;
-  const quotaDraftMode = settingsCommitMode || quotaCommitMode;
 
-  const [draftCpu, setDraftCpu] = useState(cpuQuota.value);
-  const [draftMem, setDraftMem] = useState(memoryQuota.value);
+  const [draftCpu, setDraftCpu] = useState(initialSettingsDraft.cpuCores);
+  const [draftMem, setDraftMem] = useState(initialSettingsDraft.memoryMib);
   const [draftReplicaStrategy, setDraftReplicaStrategy] = useState(() =>
     normalizeReplicaStrategy(
-      replicaStrategy,
-      replicasQuota?.value ?? DEFAULT_FIXED_REPLICAS
+      initialSettingsDraft.replicaStrategy,
+      initialSettingsDraft.replicas ??
+        replicasQuota?.value ??
+        DEFAULT_FIXED_REPLICAS
     )
   );
 
@@ -625,7 +815,7 @@ export function useApSettingsSections({
         : normalizeReplicaStrategy(replicaStrategy, replicasQuota.value),
     [replicaStrategy, replicasQuota]
   );
-  const originalSettingsDraft = useMemo<ApSettingsDraft>(
+  const observedSettingsDraft = useMemo<ApSettingsDraft>(
     () =>
       apSettingsDraftFromValues({
         args: normalizeCommandDraftLines(args),
@@ -655,6 +845,47 @@ export function useApSettingsSections({
       storage,
       workloadKind,
     ]
+  );
+  const acceptedPendingEntries =
+    submissionOwner == null
+      ? []
+      : (pendingSettingsStore?.list(submissionOwner) ?? []);
+  const acceptedPendingOverlay = useMemo(
+    () =>
+      apAcceptedPendingTargets(observedSettingsDraft, acceptedPendingEntries),
+    [acceptedPendingEntries, observedSettingsDraft]
+  );
+  useEffect(() => {
+    if (
+      submissionOwner == null ||
+      pendingSettingsStore == null ||
+      acceptedPendingOverlay.reconciledDomains.length === 0
+    ) {
+      return;
+    }
+    for (const domain of acceptedPendingOverlay.reconciledDomains) {
+      pendingSettingsStore.clear(submissionOwner, domain);
+    }
+  }, [
+    acceptedPendingOverlay.reconciledDomains,
+    pendingSettingsStore,
+    submissionOwner,
+  ]);
+  const activeSubmissionTargets = useMemo(
+    () => apSettingsSubmissionTargets(submissionEntries),
+    [submissionEntries]
+  );
+  const pendingSettingsDraft = useMemo(
+    () =>
+      applyApPendingTargets(
+        observedSettingsDraft,
+        acceptedPendingOverlay.targets
+      ),
+    [acceptedPendingOverlay.targets, observedSettingsDraft]
+  );
+  const originalSettingsDraft = useMemo(
+    () => applyApPendingTargets(pendingSettingsDraft, activeSubmissionTargets),
+    [activeSubmissionTargets, pendingSettingsDraft]
   );
   const originalSettingsDraftKey = useMemo(
     () => apSettingsDraftBackingKey(originalSettingsDraft),
@@ -699,10 +930,12 @@ export function useApSettingsSections({
       originalSettingsDraftKey
     )
   );
-  const submitCheckpointStore = useMemo(
-    () => getBrowserSettingsSubmitCheckpointStore(),
-    []
-  );
+  const latestSettingsDraftRef = useRef(settingsDraft);
+  const latestSettingsBackingStateRef = useRef(settingsBackingState);
+  useEffect(() => {
+    latestSettingsDraftRef.current = settingsDraft;
+    latestSettingsBackingStateRef.current = settingsBackingState;
+  }, [settingsBackingState, settingsDraft]);
   const applySettingsDraftToLocalState = useCallback(
     (next: ApSettingsDraft) => {
       setDraftImage(next.image);
@@ -742,48 +975,60 @@ export function useApSettingsSections({
     },
     [envDraftKeyPrefix, replicasQuota?.value]
   );
-  const appliedFailedSubmitCheckpointKey = useRef<string | null>(null);
+  const rejectedSettingsSubmission = useMemo(
+    () => latestRejectedSettingsSubmission<ApSettingsDraft>(submissionEntries),
+    [submissionEntries]
+  );
+  const canApplyRejectedSettingsSubmission =
+    rejectedSettingsSubmission != null &&
+    !apSettingsDraftIsDirty(settingsBackingState.base, settingsDraft);
+  const appliedRejectedSubmissionId = useRef<string | null>(null);
   useEffect(() => {
     if (
-      !settingsCommitMode ||
-      submitCheckpointKey == null ||
-      appliedFailedSubmitCheckpointKey.current === submitCheckpointKey
+      !(settingsCommitMode && canApplyRejectedSettingsSubmission) ||
+      rejectedSettingsSubmission == null ||
+      submissionOwner == null ||
+      submissionStore == null ||
+      appliedRejectedSubmissionId.current ===
+        rejectedSettingsSubmission.submissionId
     ) {
       return;
     }
 
-    const checkpoint =
-      submitCheckpointStore?.get<ApSettingsDraft>(submitCheckpointKey);
-    if (checkpoint?.status !== "failed") {
-      return;
-    }
-
-    appliedFailedSubmitCheckpointKey.current = submitCheckpointKey;
-    applySettingsDraftToLocalState(checkpoint.draft);
+    appliedRejectedSubmissionId.current =
+      rejectedSettingsSubmission.submissionId;
+    applySettingsDraftToLocalState(rejectedSettingsSubmission.draft);
     setSettingsBackingState({
       ...createSettingsDraftBackingState(
-        checkpoint.base,
-        apSettingsDraftBackingKey(checkpoint.base)
+        rejectedSettingsSubmission.baseDraft,
+        apSettingsDraftBackingKey(rejectedSettingsSubmission.baseDraft)
       ),
       latest: originalSettingsDraft,
       latestKey: originalSettingsDraftKey,
       saveFailureMessage: settingsDraftSaveFailureMessage(
-        checkpoint.errorMessage == null
+        rejectedSettingsSubmission.errorMessage == null
           ? new Error("Update failed.")
-          : new Error(checkpoint.errorMessage),
-        "Update failed."
+          : new Error(rejectedSettingsSubmission.errorMessage),
+        "Could not submit settings."
       ),
+    });
+    submissionStore.clear({
+      domains: rejectedSettingsSubmission.domains,
+      owner: submissionOwner,
+      statuses: ["rejected"],
     });
   }, [
     applySettingsDraftToLocalState,
+    canApplyRejectedSettingsSubmission,
     originalSettingsDraft,
     originalSettingsDraftKey,
+    rejectedSettingsSubmission,
     settingsCommitMode,
-    submitCheckpointKey,
-    submitCheckpointStore,
+    submissionOwner,
+    submissionStore,
   ]);
   useEffect(() => {
-    if (!settingsCommitMode) {
+    if (!settingsCommitMode || canApplyRejectedSettingsSubmission) {
       return;
     }
     const synced = syncSettingsDraftBackingState(settingsBackingState, {
@@ -806,6 +1051,7 @@ export function useApSettingsSections({
     settingsBackingState,
     settingsCommitMode,
     settingsDraft,
+    canApplyRejectedSettingsSubmission,
   ]);
   const settingsBaseDraft = settingsBackingState.base;
   const committedEnvRawSource = settingsCommitMode
@@ -942,10 +1188,26 @@ export function useApSettingsSections({
     envRawSourceParse.valid &&
     envRuntimeCompile.valid &&
     envValidation.valid;
-  const settingsDirty = apSettingsDraftIsDirty(
-    settingsBaseDraft,
-    settingsDraft
+  const dirtySettingsDomains = useMemo(
+    () =>
+      AP_SETTINGS_DRAFT_DOMAINS.filter((domain) =>
+        apSettingsDraftDomainIsDirty(domain, settingsBaseDraft, settingsDraft)
+      ),
+    [settingsBaseDraft, settingsDraft]
   );
+  const submittingSettingsDomains = useMemo(
+    () =>
+      new Set(
+        submissionEntries
+          .filter((entry) => entry.status === "submitting")
+          .map((entry) => entry.domain)
+      ),
+    [submissionEntries]
+  );
+  const hasOverlappingSubmittingSettingsDomain = dirtySettingsDomains.some(
+    (domain) => submittingSettingsDomains.has(domain)
+  );
+  const settingsDirty = dirtySettingsDomains.length > 0;
   const panelDraftDirty = settingsDirty;
   const canSaveSettings =
     settingsCommitMode &&
@@ -954,7 +1216,8 @@ export function useApSettingsSections({
     envRuntimeCompile.valid &&
     envValidation.valid &&
     envTokenDiagnostics.length === 0 &&
-    !settingsSavePending;
+    !settingsSavePending &&
+    !hasOverlappingSubmittingSettingsDomain;
 
   const cpuSlider = useMemo(() => {
     const base = {
@@ -1394,18 +1657,28 @@ export function useApSettingsSections({
     const meta: ApSettingsDraftCommitMeta = {
       baseDraft: prepared.base,
     };
+    const submissionUpdates = apSettingsSubmissionUpdates(
+      prepared.base,
+      commitDraft
+    );
+    const submissionStart =
+      submissionOwner == null || submissionStore == null
+        ? { entries: [], status: "started" as const }
+        : submissionStore.start({
+            baseDraft: prepared.base,
+            draft: commitDraft,
+            owner: submissionOwner,
+            updates: submissionUpdates,
+          });
+    if (submissionStart.status === "blocked") {
+      throw new Error("Settings update is already submitting.");
+    }
+    const startedSubmissionEntries = submissionStart.entries;
     setSettingsSavePending(true);
     setSettingsBackingState((current) => ({
       ...current,
       saveFailureMessage: null,
     }));
-    if (submitCheckpointKey != null) {
-      submitCheckpointStore?.start({
-        base: prepared.base,
-        draft: commitDraft,
-        ownerKey: submitCheckpointKey,
-      });
-    }
     setSettingsBackingState((current) =>
       commitSettingsDraftBackingState(
         current,
@@ -1433,26 +1706,58 @@ export function useApSettingsSections({
     Promise.resolve()
       .then(() => onSettingsDraftCommit(commitDraft, meta))
       .then(() => {
-        if (submitCheckpointKey != null) {
-          submitCheckpointStore?.clear(submitCheckpointKey);
+        if (submissionOwner != null && submissionStore != null) {
+          submissionStore.accept({
+            entries: startedSubmissionEntries,
+            owner: submissionOwner,
+            pendingStore: pendingSettingsStore,
+          });
         }
         toast.success("Update accepted. Applying changes.", { id: toastId });
       })
       .catch((error) => {
-        if (submitCheckpointKey != null) {
-          submitCheckpointStore?.fail(submitCheckpointKey, error);
-        }
-        setSettingsBackingState(
-          failSettingsDraftSave(
-            prepared.state,
+        if (submissionOwner != null && submissionStore != null) {
+          submissionStore.reject({
+            entries: startedSubmissionEntries,
             error,
-            "Could not submit settings."
-          )
-        );
-        applySettingsDraftToLocalState(commitDraft);
+            owner: submissionOwner,
+          });
+        } else {
+          setSettingsBackingState(
+            failSettingsDraftSave(
+              prepared.state,
+              error,
+              "Could not submit settings."
+            )
+          );
+          applySettingsDraftToLocalState(commitDraft);
+        }
         toast.error(
           settingsDraftSaveFailureMessage(error, "Could not submit settings."),
-          { id: toastId }
+          {
+            action: {
+              label: "Back to draft",
+              onClick: () => {
+                if (
+                  apSettingsDraftIsDirty(
+                    latestSettingsBackingStateRef.current.base,
+                    latestSettingsDraftRef.current
+                  )
+                ) {
+                  return;
+                }
+                setSettingsBackingState(
+                  failSettingsDraftSave(
+                    prepared.state,
+                    error,
+                    "Could not submit settings."
+                  )
+                );
+                applySettingsDraftToLocalState(commitDraft);
+              },
+            },
+            id: toastId,
+          }
         );
       });
   }, [
@@ -1462,10 +1767,11 @@ export function useApSettingsSections({
     envDraft,
     envRawSourceDraft,
     onSettingsDraftCommit,
-    submitCheckpointKey,
-    submitCheckpointStore,
+    pendingSettingsStore,
     settingsBackingState,
     settingsDraft,
+    submissionOwner,
+    submissionStore,
   ]);
 
   const handleSaveSettingsDraft = useCallback(async () => {

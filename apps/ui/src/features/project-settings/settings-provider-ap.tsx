@@ -11,7 +11,7 @@ import {
 import { verifyCustomDomainCnameFromApi } from "@/features/project-settings/ap/custom-domain-cname-client";
 import { useApWorkloadSettings } from "@/features/project-settings/ap/hooks/use-ap-workload-settings";
 import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
-import { settingsSubmitCheckpointKey } from "@/features/project-settings/settings-submit-checkpoint-key";
+import { settingsOwnerIdentity } from "@/features/project-settings/settings-owner-identity";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -241,7 +241,7 @@ function apSettingsSectionsHookProps({
     sectionFocus: metadata.sectionFocus,
     showImageSection: false,
     storage: display.storage,
-    submitCheckpointKey: settingsSubmitCheckpointKey({
+    submissionOwner: settingsOwnerIdentity({
       kubeconfig,
       target: apTarget,
     }),

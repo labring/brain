@@ -338,6 +338,12 @@ A local set of pending AP or DB settings changes that is submitted only when the
 
 _Avoid_: Cancellation, Cancel settings changes, Save settings changes.
 
+### Settings Submission
+
+An in-flight AP or DB settings write after the user confirms a settings update and before the product has accepted or rejected it. A Settings Submission is no longer an unsaved Settings Draft and may let the user leave the settings surface, but it is not a Pending Settings Update.
+
+_Avoid_: Pending Settings Update, saved draft, optimistic resource truth.
+
 ### Pending Settings Update
 
 A submitted AP or DB settings change that the product has accepted but the underlying resource has not yet fully reflected. A Pending Settings Update is no longer a Settings Draft: leaving the settings surface should not warn about unsaved changes, and reopening the Settings Owner should present the submitted target until the resource catches up or the user intentionally replaces it or chooses to use the latest observed configuration.

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { createPendingSettingsStore } from "../pending-settings-updates";
 import {
   apNetworkAfterDeletePublicAddress,
   visibleDomainRows,
@@ -56,6 +57,41 @@ function TestApSettingsSections({
 const noop = () => {
   /* test noop */
 };
+
+class MemoryStorage
+  implements Pick<Storage, "getItem" | "removeItem" | "setItem">
+{
+  readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+}
+
+function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage: storage },
+  });
+  try {
+    return run();
+  } finally {
+    if (previousWindow == null) {
+      Reflect.deleteProperty(globalThis, "window");
+    } else {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    }
+  }
+}
 
 function editorToken(name: string): string {
   return ["$", "{{", name, "}}"].join("");
@@ -114,6 +150,7 @@ const CONFIG_FILE_PATH_RE = /aria-label="Config file mount path"/;
 const STORAGE_SIZE_RE = /aria-label="Storage size"/;
 const CONFIG_FILE_MOUNT_PATH_RE = /\/etc\/app\/config\.yaml/;
 const STORAGE_SIZE_VALUE_RE = /20Gi/;
+const PENDING_AP_IMAGE_RE = /ghcr.io\/acme\/api:pending/;
 const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
 const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
@@ -1574,6 +1611,57 @@ test("AP settings pane renders Launchpad-backed command config and storage field
   assert.match(html, STORAGE_SIZE_RE);
   assert.match(html, CONFIG_FILE_MOUNT_PATH_RE);
   assert.match(html, STORAGE_SIZE_VALUE_RE);
+});
+
+test("AP settings pane overlays accepted pending settings targets", () => {
+  const storage = new MemoryStorage();
+  const owner = {
+    clusterFingerprint: "stable:test-cluster",
+    kind: "ap" as const,
+    name: "api",
+    namespace: "default",
+  };
+  createPendingSettingsStore({ now: () => 1000, storage }).replaceDirtyDomains({
+    owner,
+    updates: [
+      {
+        domain: "launch",
+        submittedAgainst: {
+          args: [],
+          command: [],
+          configMaps: [],
+          image: "ghcr.io/acme/api:latest",
+          storage: [],
+          workloadKind: "deployment",
+        },
+        target: {
+          args: [],
+          command: [],
+          configMaps: [],
+          image: "ghcr.io/acme/api:pending",
+          storage: [],
+          workloadKind: "deployment",
+        },
+      },
+    ],
+  });
+
+  const html = withBrowserLocalStorage(storage, () =>
+    renderToStaticMarkup(
+      <TestApSettingsSections
+        cpuQuota={{ onValueChange: noop, value: 1 }}
+        env={[]}
+        image="ghcr.io/acme/api:latest"
+        memoryQuota={{ onValueChange: noop, value: 512 }}
+        onEnvChange={noop}
+        onImageChange={noop}
+        onSettingsDraftCommit={noop}
+        submissionOwner={owner}
+      />
+    )
+  );
+
+  assert.match(html, PENDING_AP_IMAGE_RE);
 });
 
 test("AP settings pane exposes panel-level draft actions without environment save controls", () => {
