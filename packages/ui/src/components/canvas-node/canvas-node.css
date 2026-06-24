@@ -435,7 +435,7 @@
   transition: opacity 150ms ease-out;
 }
 
-.canvas-node-frame:is([data-hover-intent], [data-dragging], [data-selected])
+.canvas-node-frame:is([data-hover-intent], [data-dragging])
   .canvas-node-card-frame::before {
   opacity: 1;
 }
