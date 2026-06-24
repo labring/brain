@@ -21,9 +21,18 @@ const AUTO_GENERATED_PUBLIC_ADDRESS_RE = /Auto-generated Public Address/;
 const PANE_LABEL_RE = /aria-label="Project creation pane"/;
 const PROJECT_NAME_RE = /Project Name/;
 const PROJECT_TITLE_RE = /Create New Project/;
+const GITHUB_IMPORT_RE = /GitHub Import/;
+const GITHUB_IMPORT_DESCRIPTION_RE =
+  /Import repository from URL or GitHub authorization\./;
+const GITHUB_ACCOUNT_RE = /GitHub Account/;
 const GITHUB_CONNECTED_RE = /GitHub connected/i;
 const GITHUB_REPO_CARD_RE = /data-slot="github-deployer-repo-card"/;
 const GITHUB_SEARCH_RE = /placeholder="Search"/;
+const GITHUB_URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
+const GITHUB_AUTHORIZE_RE = /Authorize GitHub/;
+const GITHUB_REPOSITORY_URL_RE = /Repository URL/;
+const GITHUB_REPOSITORY_LOCKED_RE =
+  /Please authorize your GitHub account before selecting a repository\./;
 const SCENARIO_RE = /Scenario/;
 const TRAIL_BACK_RE = />Back</;
 const DATABASE_DEPLOYER_RE = /data-slot="database-deployer"/;
@@ -107,12 +116,49 @@ test("project creation pane GitHub direct entry starts at repository selection",
   assert.match(html, PANE_LABEL_RE);
   assert.match(header, GITHUB_TITLE_RE);
   assert.doesNotMatch(header, PLUS_ICON_RE);
+  assert.match(header, GITHUB_IMPORT_RE);
+  assert.doesNotMatch(header, PROJECT_TITLE_RE);
+  assert.match(html, GITHUB_IMPORT_DESCRIPTION_RE);
   assert.match(html, GITHUB_CONNECTED_RE);
   assert.match(html, GITHUB_SEARCH_RE);
   assert.match(html, GITHUB_REPO_CARD_RE);
+  assert.match(html, GITHUB_URL_INPUT_RE);
   assert.doesNotMatch(html, PROJECT_NAME_RE);
   assert.doesNotMatch(html, SCENARIO_RE);
   assert.doesNotMatch(html, TRAIL_BACK_RE);
+});
+
+test("project creation pane GitHub direct entry asks for authorization before URL input", () => {
+  const html = renderToStaticMarkup(
+    <ProjectCreationPane
+      creatorRootProps={{
+        databaseOptions: [],
+        githubDeployer: {
+          actions: { onAuthorize: noop },
+          states: {
+            deployedRepo: null,
+            isAuthorized: false,
+            isLoading: false,
+            repos: [],
+          },
+        },
+      }}
+      entryMode="githubDirect"
+      onClose={noop}
+      resetKey={1}
+    />
+  );
+  const header = sidePaneHeader(html);
+
+  assert.match(header, GITHUB_TITLE_RE);
+  assert.match(header, GITHUB_IMPORT_RE);
+  assert.doesNotMatch(header, PROJECT_TITLE_RE);
+  assert.match(html, GITHUB_ACCOUNT_RE);
+  assert.match(html, GITHUB_REPOSITORY_URL_RE);
+  assert.match(html, GITHUB_REPOSITORY_LOCKED_RE);
+  assert.match(html, GITHUB_AUTHORIZE_RE);
+  assert.doesNotMatch(html, GITHUB_URL_INPUT_RE);
+  assert.doesNotMatch(html, GITHUB_SEARCH_RE);
 });
 
 test("project creation pane Database direct entry opens deployment settings without generic project naming first", () => {

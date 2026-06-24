@@ -14,7 +14,7 @@ export interface PlatformAddressEndpoint {
 
 export const PLATFORM_ADDRESS_ID_PATTERN = "^pa_[a-z0-9]{6,32}$";
 export const PLATFORM_ADDRESS_ID_RE = new RegExp(PLATFORM_ADDRESS_ID_PATTERN);
-export const PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN = "^[a-z]{6}$";
+export const PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN = "^(brain|[a-z]{6})$";
 export const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = new RegExp(
   PLATFORM_ADDRESS_DOMAIN_PREFIX_PATTERN
 );

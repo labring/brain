@@ -36,24 +36,35 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
   globalThis.fetch = ((url) => {
     requestedUrl = String(url);
     return Promise.resolve(
-      jsonResponse([
-        {
-          args: {
-            storage: {
-              default: "5",
-              description: "Storage size",
-              required: true,
-              type: "number",
+      jsonResponse({
+        code: 200,
+        data: {
+          menuKeys: "database",
+          templates: [
+            {
+              apiVersion: "app.sealos.io/v1",
+              kind: "Template",
+              metadata: { name: "memos" },
+              spec: {
+                categories: ["database"],
+                description: "Memos app",
+                gitRepo: "https://github.com/usememos/memos",
+                icon: "https://example.com/icon.png",
+                inputs: {
+                  storage: {
+                    default: "5",
+                    description: "Storage size",
+                    required: true,
+                    type: "number",
+                  },
+                },
+                readme: "https://example.com/readme.md",
+                title: "memos",
+              },
             },
-          },
-          category: ["database"],
-          description: "Memos app",
-          icon: "https://example.com/icon.png",
-          name: "memos",
-          readme: "https://example.com/readme.md",
-          sourceRepos: ["https://github.com/usememos/memos"],
+          ],
         },
-      ])
+      })
     );
   }) as typeof fetch;
 
@@ -61,7 +72,7 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
 
   assert.equal(
     requestedUrl,
-    "https://template.example.com/api/v2alpha/templates?language=zh"
+    "https://template.example.com/api/listTemplate?language=zh"
   );
   assert.deepEqual(catalog, [
     {
@@ -83,6 +94,53 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
       title: "memos",
     },
   ]);
+});
+
+test("listTemplateCatalog maps localized legacy template fields", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      jsonResponse({
+        code: 200,
+        data: {
+          templates: [
+            {
+              metadata: { name: "localized" },
+              spec: {
+                description: "中文描述",
+                gitRepo: "https://github.com/example/base",
+                icon: "https://example.com/icon.png",
+                i18n: {
+                  en: {
+                    description: "English description",
+                    gitRepo: "https://github.com/example/en",
+                    icon: "https://example.com/icon-en.png",
+                    readme: "https://example.com/readme-en.md",
+                    title: "Localized EN",
+                  },
+                },
+                inputs: {},
+                readme: "https://example.com/readme.md",
+                title: "Localized",
+              },
+            },
+          ],
+        },
+      })
+    )) as typeof fetch;
+
+  const catalog = await listTemplateCatalog({ language: "en" });
+
+  assert.deepEqual(catalog[0], {
+    args: [],
+    category: [],
+    description: "English description",
+    icon: "https://example.com/icon-en.png",
+    name: "localized",
+    readme: "https://example.com/readme-en.md",
+    sourceRepos: ["https://github.com/example/en"],
+    title: "Localized EN",
+  });
 });
 
 test("listTemplateCatalog requires TEMPLATE_PROVIDER_URL", async () => {

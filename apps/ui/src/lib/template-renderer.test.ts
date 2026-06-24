@@ -334,6 +334,46 @@ test("renderTemplateDeployment can override provider cloud domain with target cl
   );
 });
 
+test("renderTemplateDeployment disables ssl redirect for HTTP-only template ingress", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    instanceName: "template-web",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: template-web
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Forwarded-Proto https;
+spec:
+  rules:
+    - host: template-web.192.168.10.189.nip.io
+`,
+    },
+    templateName: "web",
+  });
+
+  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress");
+  assert.equal(
+    ingress?.metadata?.annotations?.[
+      "nginx.ingress.kubernetes.io/ssl-redirect"
+    ],
+    "false"
+  );
+  assert.equal(
+    ingress?.metadata?.annotations?.[
+      "nginx.ingress.kubernetes.io/configuration-snippet"
+    ],
+    undefined
+  );
+});
+
 test("renderTemplateDeployment normalizes duplicate env names and Service containerPort fields", () => {
   const rendered = renderTemplateDeployment({
     args: { storage: "8" },
