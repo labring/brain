@@ -1353,7 +1353,11 @@ export function useApSettingsSections({
     try {
       await onSettingsDraftCommit(commitDraft, meta);
       setSettingsBackingState((current) =>
-        commitSettingsDraftBackingState(current, commitDraft)
+        commitSettingsDraftBackingState(
+          current,
+          commitDraft,
+          apSettingsDraftBackingKey(commitDraft)
+        )
       );
       applySettingsDraftToLocalState(commitDraft);
       const committedRawSource = canonicalApEnvRawSource({

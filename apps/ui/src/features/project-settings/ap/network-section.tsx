@@ -1545,7 +1545,11 @@ export function useApPublicAddressesSettingsSections({
         baseNetwork: prepared.base,
       });
       setNetworkBackingState((current) =>
-        commitSettingsDraftBackingState(current, prepared.draft)
+        commitSettingsDraftBackingState(
+          current,
+          prepared.draft,
+          apNetworkDraftBackingKey(prepared.draft)
+        )
       );
       setDraftNetwork(prepared.draft);
     } catch (error) {

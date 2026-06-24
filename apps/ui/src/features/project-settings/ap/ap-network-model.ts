@@ -79,7 +79,7 @@ function publicAddressDraftsEqual(
     const other = b[index];
     return (
       other != null &&
-      (address.id?.trim() ?? "") === (other.id?.trim() ?? "") &&
+      publicAddressIdValue(address) === publicAddressIdValue(other) &&
       Math.round(address.port) === Math.round(other.port)
     );
   });
@@ -102,21 +102,10 @@ function customDomainDraftsEqual(
       domain.domain.trim().toLowerCase() ===
         other.domain.trim().toLowerCase() &&
       domain.platformAddressId.trim() === other.platformAddressId.trim() &&
-      customDomainDetailSignature(domain.dns) ===
-        customDomainDetailSignature(other.dns)
+      (domain.cnameTarget?.trim() ?? "") ===
+        (other.cnameTarget?.trim() ?? "") &&
+      Math.round(domain.targetPort ?? 0) === Math.round(other.targetPort ?? 0)
     );
-  });
-}
-
-function customDomainDetailSignature(
-  detail: ApNetworkCustomDomainDetail | undefined
-): string {
-  return JSON.stringify({
-    message: detail?.message?.trim() ?? "",
-    reason: detail?.reason?.trim() ?? "",
-    status: detail?.status?.trim() ?? "",
-    target: detail?.target?.trim() ?? "",
-    verifiedAt: detail?.verifiedAt?.trim() ?? "",
   });
 }
 

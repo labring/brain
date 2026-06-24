@@ -146,9 +146,45 @@ test("AP settings clean draft follows refresh and dirty draft merges unrelated l
   assert.deepEqual(failed.base, latest);
   assert.match(failed.saveFailureMessage ?? "", DRAFT_AVAILABLE_RE);
 
-  const committed = commitSettingsDraftBackingState(failed, prepared.draft);
+  const committed = commitSettingsDraftBackingState(
+    failed,
+    prepared.draft,
+    "committed-v1"
+  );
   assert.deepEqual(committed.base, prepared.draft);
+  assert.equal(committed.baseKey, "committed-v1");
+  assert.equal(committed.latestKey, "committed-v1");
   assert.equal(committed.saveFailureMessage, null);
+});
+
+test("settings draft commit aligns submitted draft with its own backing key", () => {
+  const observed = {
+    cpuLimitCores: 1,
+    exposeNodePort: false,
+    memoryLimitGi: 2,
+    replicas: 1,
+    storageSizeGi: 10,
+  };
+  const submitted = {
+    ...observed,
+    exposeNodePort: true,
+  };
+  const state = {
+    ...createSettingsDraftBackingState(observed, "observed-v1"),
+    latest: observed,
+    latestKey: "observed-v1",
+  };
+
+  const committed = commitSettingsDraftBackingState(
+    state,
+    submitted,
+    "submitted-v2"
+  );
+
+  assert.deepEqual(committed.base, submitted);
+  assert.deepEqual(committed.latest, submitted);
+  assert.equal(committed.baseKey, "submitted-v2");
+  assert.equal(committed.latestKey, "submitted-v2");
 });
 
 test("AP settings submit can ignore unchanged observed backing for an active pending domain", () => {

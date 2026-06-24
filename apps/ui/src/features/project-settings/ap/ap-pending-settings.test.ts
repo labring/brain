@@ -49,3 +49,82 @@ test("AP pending adapter extracts dirty domains and overlays authored environmen
     rawSource: AUTHORED_ENV_RAW_SOURCE,
   });
 });
+
+test("AP pending adapter ignores network lifecycle status when extracting dirty domains", () => {
+  const base: ApSettingsDraft = {
+    cpuCores: 1,
+    env: [],
+    image: "ghcr.io/acme/api:v1",
+    memoryMib: 512,
+    network: {
+      customDomains: [
+        {
+          cnameTarget: "target.example.dev",
+          dns: {
+            status: "verified",
+            target: "target.example.dev",
+            verifiedAt: "2026-06-24T01:00:00.000Z",
+          },
+          domain: "www.example.com",
+          id: "custom-1",
+          platformAddressId: "platform-1",
+          targetPort: 8080,
+        },
+      ],
+      privatePort: 8080,
+      publicAddresses: [{ id: "platform-1", port: 8080 }],
+    },
+  };
+  const baseDomain = base.network.customDomains?.[0];
+  assert.ok(baseDomain);
+  const draft: ApSettingsDraft = {
+    ...base,
+    network: {
+      ...base.network,
+      customDomains: [
+        {
+          ...baseDomain,
+          certificate: { status: "ready" },
+          dns: {
+            status: "running",
+            target: "target.example.dev",
+            verifiedAt: "2026-06-24T02:00:00.000Z",
+          },
+          routing: { status: "ready" },
+          status: "running",
+        },
+      ],
+    },
+  };
+
+  assert.deepEqual(apPendingTargetsForDirtyDomains(base, draft), {});
+});
+
+test("AP pending adapter treats platform address id evidence as the same network target", () => {
+  const base: ApSettingsDraft = {
+    cpuCores: 1,
+    env: [],
+    image: "ghcr.io/acme/api:v1",
+    memoryMib: 512,
+    network: {
+      privatePort: 8080,
+      publicAddresses: [{ id: "pa_abc123", port: 8080 }],
+    },
+  };
+  const draft: ApSettingsDraft = {
+    ...base,
+    network: {
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          platformAddressId: "pa_abc123",
+          port: 8080,
+          status: "running",
+          url: "https://api.example.com/",
+        },
+      ],
+    },
+  };
+
+  assert.deepEqual(apPendingTargetsForDirtyDomains(base, draft), {});
+});

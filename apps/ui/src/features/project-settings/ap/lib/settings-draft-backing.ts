@@ -133,13 +133,15 @@ export function keepEditingSettingsDraftBackingState<TDraft>(
 
 export function commitSettingsDraftBackingState<TDraft>(
   state: SettingsDraftBackingState<TDraft>,
-  draft: TDraft
+  draft: TDraft,
+  draftKey: string
 ): SettingsDraftBackingState<TDraft> {
   return {
     ...state,
     base: draft,
-    baseKey: state.latestKey,
+    baseKey: draftKey,
     latest: draft,
+    latestKey: draftKey,
     saveFailureMessage: null,
     submitConflictMessage: null,
   };

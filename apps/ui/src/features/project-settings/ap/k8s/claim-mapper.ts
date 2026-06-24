@@ -613,15 +613,17 @@ function normalizeNetworkPublicAddress(
   if (address == null) {
     return undefined;
   }
-  const id = trimStr(address.id);
+  const id =
+    platformAddressIdFromValue(address.id) ??
+    platformAddressIdFromValue(address.platformAddressId);
   const host = trimStr(address.host);
   const port = privatePortNum(address.port);
-  if ((host === "" && id === "") || port == null) {
+  if ((host === "" && id === undefined) || port == null) {
     return undefined;
   }
   const normalized: ApNetwork["publicAddresses"][number] = {
     ...(host === "" ? {} : { host }),
-    ...(id === "" ? {} : { id }),
+    ...(id === undefined ? {} : { id }),
     port,
   };
   if (!includeObservedFields) {

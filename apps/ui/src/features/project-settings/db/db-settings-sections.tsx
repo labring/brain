@@ -533,7 +533,11 @@ export function useDatabaseSettingsSections({
     if (patch === null) {
       setDraft(prepared.draft);
       setBackingState((current) =>
-        commitSettingsDraftBackingState(current, prepared.draft)
+        commitSettingsDraftBackingState(
+          current,
+          prepared.draft,
+          databaseSettingsBackingKey(originalState.identityKey, prepared.draft)
+        )
       );
       return;
     }
@@ -541,7 +545,11 @@ export function useDatabaseSettingsSections({
     try {
       await onSubmitPatch(patch);
       setBackingState((current) =>
-        commitSettingsDraftBackingState(current, prepared.draft)
+        commitSettingsDraftBackingState(
+          current,
+          prepared.draft,
+          databaseSettingsBackingKey(originalState.identityKey, prepared.draft)
+        )
       );
       setDraft(prepared.draft);
       toast.success("Database settings updated.");
@@ -568,6 +576,7 @@ export function useDatabaseSettingsSections({
     draft,
     onSubmitPatch,
     onUpdated,
+    originalState.identityKey,
     pendingPatch,
     routingDomain,
   ]);

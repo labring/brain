@@ -68,12 +68,15 @@ export function customDomainBindingIdFromValue(
 }
 
 export function platformAddressIdsFromRows(
-  rows: readonly { id?: string }[]
+  rows: readonly { id?: string; platformAddressId?: string }[]
 ): Set<string> {
   const ids = new Set<string>();
   for (const row of rows) {
-    if (row.id !== undefined) {
-      ids.add(row.id);
+    const id =
+      platformAddressIdFromValue(row.id) ??
+      platformAddressIdFromValue(row.platformAddressId);
+    if (id !== undefined) {
+      ids.add(id);
     }
   }
   return ids;
