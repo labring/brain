@@ -154,9 +154,17 @@ export function createSettingsSubmitCheckpointStore({
         ) as SettingsSubmitCheckpoint<TDraft> | undefined) ?? null
       );
     },
-    start({ base, draft, ownerKey }) {
+    start<TDraft>({
+      base,
+      draft,
+      ownerKey,
+    }: {
+      base: TDraft;
+      draft: TDraft;
+      ownerKey: string;
+    }) {
       const document = read();
-      const checkpoint = {
+      const checkpoint: SettingsSubmitCheckpoint<TDraft> = {
         base,
         draft,
         ownerKey,

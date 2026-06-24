@@ -640,9 +640,11 @@ export function useDatabaseSettingsSections({
   ]);
 
   const handleUpdate = useCallback(() => {
-    saveSettingsDraft().catch(() => {
+    try {
+      saveSettingsDraft();
+    } catch {
       /* Keep the user on the settings draft; panel state already shows failure. */
-    });
+    }
   }, [saveSettingsDraft]);
 
   const handleReloadDraft = useCallback(() => {
