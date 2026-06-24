@@ -1516,6 +1516,38 @@ test("AP settings draft detects dirty AP settings and restored state", () => {
   assert.equal(apSettingsDraftIsDirty(original, { ...original }), false);
 });
 
+test("AP settings draft ignores env rows that raw source cannot express", () => {
+  const original = {
+    cpuCores: 1,
+    env: [
+      { name: "FEATURE_FLAG", value: "true" },
+      {
+        name: "SECRET_TOKEN",
+        value: "",
+        valueFrom: { secretKeyRef: { key: "token", name: "app-secret" } },
+        valueSource: "valueFrom" as const,
+      },
+    ],
+    envRawSource: "FEATURE_FLAG=true",
+    image: "ghcr.io/acme/api:old",
+    memoryMib: 1024,
+  } satisfies Parameters<typeof apSettingsDraftIsDirty>[0];
+  const rawProjectedDraft = {
+    ...original,
+    env: [{ name: "FEATURE_FLAG", value: "true" }],
+  };
+
+  assert.equal(apSettingsDraftIsDirty(original, rawProjectedDraft), false);
+  assert.equal(
+    apSettingsDraftIsDirty(original, {
+      ...rawProjectedDraft,
+      env: [{ name: "FEATURE_FLAG", value: "false" }],
+      envRawSource: "FEATURE_FLAG=false",
+    }),
+    true
+  );
+});
+
 test("AP settings pane renders Launchpad-backed command config and storage fields", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections

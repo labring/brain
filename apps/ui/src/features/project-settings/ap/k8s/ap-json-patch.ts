@@ -369,33 +369,124 @@ export function mibToMemoryLimit(mib: number): string {
 
 function buildEnvArray(
   originalEnv: unknown,
-  edited: ApEnvVar[]
+  edited: ApEnvVar[],
+  options: { preserveOmittedValueFrom?: boolean } = {}
 ): Record<string, unknown>[] {
-  const orig = Array.isArray(originalEnv) ? originalEnv : [];
+  const originalRecords = namedEnvRecords(originalEnv);
+  const originalByName = envRecordsByName(originalRecords);
+  const editedByName = editedEnvRecordsByName(edited, originalByName);
+  const merged = mergeExistingEnvRecords(
+    originalRecords,
+    editedByName,
+    options.preserveOmittedValueFrom === true
+  );
+  appendNewEditedEnvRecords(merged.out, edited, editedByName, merged.emitted);
+  return merged.out;
+}
+
+function namedEnvRecords(originalEnv: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(originalEnv)) {
+    return [];
+  }
+  return originalEnv.flatMap((item) => {
+    const record = asRecord(item);
+    return envRecordName(record) === undefined ? [] : [record];
+  });
+}
+
+function envRecordName(
+  record: Record<string, unknown> | undefined
+): string | undefined {
+  const name = record?.name;
+  return typeof name === "string" && name !== "" ? name : undefined;
+}
+
+function envRecordsByName(
+  records: readonly Record<string, unknown>[]
+): Map<string, Record<string, unknown>> {
   const byName = new Map<string, Record<string, unknown>>();
-  for (const item of orig) {
-    const o = asRecord(item);
-    if (o == null) {
-      continue;
-    }
-    const n = o.name;
-    if (typeof n === "string" && n !== "") {
-      byName.set(n, o);
+  for (const record of records) {
+    const name = envRecordName(record);
+    if (name !== undefined) {
+      byName.set(name, record);
     }
   }
+  return byName;
+}
 
-  return edited.map((e) => {
-    if (e.valueSource === "valueFrom" && e.valueFrom != null) {
-      return { name: e.name, valueFrom: e.valueFrom };
+function editedEnvRecordsByName(
+  edited: readonly ApEnvVar[],
+  originalByName: ReadonlyMap<string, Record<string, unknown>>
+): Map<string, Record<string, unknown>> {
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const row of edited) {
+    byName.set(row.name, editedEnvRecord(row, originalByName));
+  }
+  return byName;
+}
+
+function mergeExistingEnvRecords(
+  originalRecords: readonly Record<string, unknown>[],
+  editedByName: ReadonlyMap<string, Record<string, unknown>>,
+  preserveOmittedValueFrom: boolean
+): { emitted: Set<string>; out: Record<string, unknown>[] } {
+  const out: Record<string, unknown>[] = [];
+  const emitted = new Set<string>();
+  for (const record of originalRecords) {
+    const name = envRecordName(record);
+    const editedRecord =
+      name === undefined ? undefined : editedByName.get(name);
+    if (editedRecord !== undefined && name !== undefined) {
+      out.push(editedRecord);
+      emitted.add(name);
+    } else if (preserveOmittedValueFrom && name !== undefined) {
+      appendPreservedValueFromRecord(out, name, record);
     }
-    if (e.value === AP_ENV_VALUE_FROM_PLACEHOLDER) {
-      const prev = byName.get(e.name);
-      if (prev != null && prev.valueFrom != null) {
-        return { name: e.name, valueFrom: prev.valueFrom };
-      }
+  }
+  return { emitted, out };
+}
+
+function appendPreservedValueFromRecord(
+  out: Record<string, unknown>[],
+  name: string,
+  record: Record<string, unknown>
+) {
+  if (record.valueFrom != null) {
+    out.push({ name, valueFrom: record.valueFrom });
+  }
+}
+
+function appendNewEditedEnvRecords(
+  out: Record<string, unknown>[],
+  edited: readonly ApEnvVar[],
+  editedByName: ReadonlyMap<string, Record<string, unknown>>,
+  emitted: ReadonlySet<string>
+) {
+  for (const row of edited) {
+    if (emitted.has(row.name)) {
+      continue;
     }
-    return { name: e.name, value: e.value };
-  });
+    const record = editedByName.get(row.name);
+    if (record !== undefined) {
+      out.push(record);
+    }
+  }
+}
+
+function editedEnvRecord(
+  e: ApEnvVar,
+  originalByName: ReadonlyMap<string, Record<string, unknown>>
+): Record<string, unknown> {
+  if (e.valueSource === "valueFrom" && e.valueFrom != null) {
+    return { name: e.name, valueFrom: e.valueFrom };
+  }
+  if (e.value === AP_ENV_VALUE_FROM_PLACEHOLDER) {
+    const prev = originalByName.get(e.name);
+    if (prev != null && prev.valueFrom != null) {
+      return { name: e.name, valueFrom: prev.valueFrom };
+    }
+  }
+  return { name: e.name, value: e.value };
 }
 
 function canonicalApReplicaStrategyForPatch(
@@ -875,7 +966,9 @@ export function patchOpsForApEnvSettings(
       throw new Error(result.diagnostics[0]?.message ?? "Invalid environment.");
     }
     return patchOpsForApInput(spec, {
-      env: buildEnvArray(input.env, result.env),
+      env: buildEnvArray(input.env, result.env, {
+        preserveOmittedValueFrom: true,
+      }),
       envRawSource: result.envRawSource,
     });
   }
@@ -1131,7 +1224,9 @@ function patchOpsForApSettingsDraftInput(
           result.diagnostics[0]?.message ?? "Invalid environment."
         );
       }
-      inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env);
+      inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env, {
+        preserveOmittedValueFrom: true,
+      });
       inputPatch.envRawSource = result.envRawSource;
     }
   }

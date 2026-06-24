@@ -118,6 +118,40 @@ test("AP env settings patch carries canonical raw source plus compiled runtime e
   ]);
 });
 
+test("AP env settings patch preserves existing valueFrom rows omitted by raw source", () => {
+  const secretRef = { secretKeyRef: { key: "token", name: "app-secret" } };
+
+  const ops = patchOpsForApEnvSettings(
+    {
+      input: {
+        env: [
+          { name: "FEATURE_FLAG", value: "false" },
+          { name: "SECRET_TOKEN", valueFrom: secretRef },
+        ],
+        envRawSource: "FEATURE_FLAG=false",
+      },
+    },
+    [{ name: "FEATURE_FLAG", value: "true" }],
+    { envRawSource: "FEATURE_FLAG=true" }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/env",
+      value: [
+        { name: "FEATURE_FLAG", value: "true" },
+        { name: "SECRET_TOKEN", valueFrom: secretRef },
+      ],
+    },
+    {
+      op: "replace",
+      path: "/spec/input/envRawSource",
+      value: "FEATURE_FLAG=true",
+    },
+  ]);
+});
+
 test("AP env settings patch compiles raw DB references into runtime env helpers", () => {
   const secretRefs = {
     host: { key: "endpoint", name: "postgres-conn-credential" },
