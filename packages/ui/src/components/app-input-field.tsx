@@ -55,7 +55,7 @@ function AppInputField({
   return (
     <Field className={cn("gap-2", className)} data-slot="app-input-field">
       <FieldLabel
-        className={cn("text-foreground leading-5", labelClassName)}
+        className={cn("text-foreground leading-none", labelClassName)}
         htmlFor={id}
       >
         {label}

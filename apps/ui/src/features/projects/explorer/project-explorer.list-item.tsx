@@ -460,7 +460,7 @@ export function ProjectExplorerListItem({
             >
               <div className="flex items-center justify-between gap-2">
                 <FieldLabel
-                  className="text-foreground leading-5"
+                  className="text-foreground leading-none"
                   htmlFor={`project-edit-description-${project.id}`}
                 >
                   Description
