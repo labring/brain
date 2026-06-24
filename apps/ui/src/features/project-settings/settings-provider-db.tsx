@@ -77,6 +77,15 @@ function dbSettingsRepairEntry({
   return { kind: "settings", target };
 }
 
+function dbSettingsSubmitCheckpointKey(
+  target: ProjectDbTarget | null
+): string | undefined {
+  if (target == null) {
+    return undefined;
+  }
+  return `database:${target.namespace}:${target.name}`;
+}
+
 export function DbSettingsProvider({
   kubeconfig,
   onModelChange,
@@ -137,6 +146,7 @@ export function DbSettingsProvider({
         : undefined,
     onUpdated,
     routingDomain,
+    submitCheckpointKey: dbSettingsSubmitCheckpointKey(dbTarget),
     updating,
   });
 

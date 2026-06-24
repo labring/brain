@@ -238,6 +238,7 @@ function apSettingsSectionsHookProps({
     sectionFocus: metadata.sectionFocus,
     showImageSection: false,
     storage: display.storage,
+    submitCheckpointKey: apSettingsSubmitCheckpointKey(apTarget),
     workloadKind: display.workloadKind,
   };
 }
@@ -418,6 +419,15 @@ function apSettingsSectionMetadata(resolvedView: string) {
     sectionFocus: environmentView ? "environment" : "all",
     title: environmentView ? "Environment Variables" : "AP Settings",
   } as const;
+}
+
+function apSettingsSubmitCheckpointKey(
+  target: ProjectApTarget | null
+): string | undefined {
+  if (target == null) {
+    return undefined;
+  }
+  return `ap:${target.namespace}:${target.name}`;
 }
 
 function fullApSettingsModel({

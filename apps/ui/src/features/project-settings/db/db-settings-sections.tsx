@@ -37,12 +37,14 @@ import {
   keepEditingSettingsDraftBackingState,
   prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
+  settingsDraftSaveFailureMessage,
   syncSettingsDraftBackingState,
 } from "@/features/project-settings/ap/lib/settings-draft-backing";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
 } from "@/features/project-settings/settings-leave-guard";
+import { getBrowserSettingsSubmitCheckpointStore } from "@/features/project-settings/settings-submit-checkpoint";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import {
   buildDbSettingsPatch,
@@ -81,6 +83,7 @@ export interface DatabaseSettingsSectionsProps {
   onSubmitPatch?: (patch: DatabaseSettingsPatch) => Promise<unknown> | unknown;
   onUpdated?: () => Promise<unknown>;
   routingDomain?: string;
+  submitCheckpointKey?: string;
   updating?: boolean;
 }
 
@@ -428,6 +431,7 @@ export function useDatabaseSettingsSections({
   onSubmitPatch,
   onUpdated,
   routingDomain,
+  submitCheckpointKey,
   updating = false,
 }: DatabaseSettingsSectionsProps): DatabaseSettingsSectionsModel {
   const readOnly = data.settingsAccess?.readOnly === true;
@@ -469,16 +473,49 @@ export function useDatabaseSettingsSections({
     desiredStorageSize,
     identityKey,
   ]);
-  const [draft, setDraft] = useState<DatabaseSettingsDraft>(
-    originalState.draft
+  const submitCheckpointStore = useMemo(
+    () => getBrowserSettingsSubmitCheckpointStore(),
+    []
   );
-  const [backingState, setBackingState] = useState(() =>
-    createSettingsDraftBackingState(
+  const failedSubmitCheckpoint = useMemo(() => {
+    if (submitCheckpointKey == null) {
+      return null;
+    }
+    const checkpoint =
+      submitCheckpointStore?.get<DatabaseSettingsDraft>(submitCheckpointKey) ??
+      null;
+    return checkpoint?.status === "failed" ? checkpoint : null;
+  }, [submitCheckpointKey, submitCheckpointStore]);
+  const [draft, setDraft] = useState<DatabaseSettingsDraft>(
+    () => failedSubmitCheckpoint?.draft ?? originalState.draft
+  );
+  const [backingState, setBackingState] = useState(() => {
+    if (failedSubmitCheckpoint != null) {
+      return {
+        ...createSettingsDraftBackingState(
+          failedSubmitCheckpoint.base,
+          databaseSettingsBackingKey(
+            originalState.identityKey,
+            failedSubmitCheckpoint.base
+          ),
+          originalState.identityKey
+        ),
+        latest: originalState.draft,
+        latestKey: originalState.backingKey,
+        saveFailureMessage: settingsDraftSaveFailureMessage(
+          failedSubmitCheckpoint.errorMessage == null
+            ? new Error("Update failed.")
+            : new Error(failedSubmitCheckpoint.errorMessage),
+          "Update failed."
+        ),
+      };
+    }
+    return createSettingsDraftBackingState(
       originalState.draft,
       originalState.backingKey,
       originalState.identityKey
-    )
-  );
+    );
+  });
   const original = backingState.base;
 
   useEffect(() => {
@@ -511,7 +548,7 @@ export function useDatabaseSettingsSections({
     canEdit && pendingPatch !== null && !updating && onSubmitPatch != null;
   const controlsDisabled = !canEdit || updating;
 
-  const saveSettingsDraft = useCallback(async () => {
+  const saveSettingsDraft = useCallback(() => {
     if (!canEdit || pendingPatch === null || onSubmitPatch == null) {
       throw new Error("Database settings draft cannot be saved yet.");
     }
@@ -542,33 +579,52 @@ export function useDatabaseSettingsSections({
       return;
     }
     setBackingState((current) => ({ ...current, saveFailureMessage: null }));
-    try {
-      await onSubmitPatch(patch);
-      setBackingState((current) =>
-        commitSettingsDraftBackingState(
-          current,
-          prepared.draft,
-          databaseSettingsBackingKey(originalState.identityKey, prepared.draft)
-        )
-      );
-      setDraft(prepared.draft);
-      toast.success("Database settings updated.");
-      await onUpdated?.();
-    } catch (error) {
-      setBackingState((current) =>
-        failSettingsDraftSave(
-          current,
-          error,
-          "Could not update database settings."
-        )
-      );
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Could not update database settings."
-      );
-      throw error;
+    if (submitCheckpointKey != null) {
+      submitCheckpointStore?.start({
+        base: prepared.base,
+        draft: prepared.draft,
+        ownerKey: submitCheckpointKey,
+      });
     }
+    setBackingState((current) =>
+      commitSettingsDraftBackingState(
+        current,
+        prepared.draft,
+        databaseSettingsBackingKey(originalState.identityKey, prepared.draft)
+      )
+    );
+    setDraft(prepared.draft);
+
+    const toastId = toast.loading("Submitting database settings update...");
+    Promise.resolve()
+      .then(() => onSubmitPatch(patch))
+      .then(() => {
+        if (submitCheckpointKey != null) {
+          submitCheckpointStore?.clear(submitCheckpointKey);
+        }
+        toast.success("Update accepted. Applying changes.", { id: toastId });
+        onUpdated?.().catch(() => undefined);
+      })
+      .catch((error) => {
+        if (submitCheckpointKey != null) {
+          submitCheckpointStore?.fail(submitCheckpointKey, error);
+        }
+        setBackingState(
+          failSettingsDraftSave(
+            prepared.state,
+            error,
+            "Could not submit database settings."
+          )
+        );
+        setDraft(prepared.draft);
+        toast.error(
+          settingsDraftSaveFailureMessage(
+            error,
+            "Could not submit database settings."
+          ),
+          { id: toastId }
+        );
+      });
   }, [
     backingState,
     canEdit,
@@ -579,6 +635,8 @@ export function useDatabaseSettingsSections({
     originalState.identityKey,
     pendingPatch,
     routingDomain,
+    submitCheckpointKey,
+    submitCheckpointStore,
   ]);
 
   const handleUpdate = useCallback(() => {

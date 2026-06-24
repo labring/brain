@@ -26,10 +26,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
 } from "../settings-leave-guard";
+import { getBrowserSettingsSubmitCheckpointStore } from "../settings-submit-checkpoint";
 import { useApNetworkDraftController } from "./ap-network-draft";
 import type {
   ApCustomDomainCnameVerifier,
@@ -123,6 +125,7 @@ import {
   keepEditingSettingsDraftBackingState,
   prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
+  settingsDraftSaveFailureMessage,
   syncSettingsDraftBackingState,
 } from "./lib/settings-draft-backing";
 import { NetworkSettingsSection } from "./network-section";
@@ -215,6 +218,7 @@ export interface ApSettingsSectionsProps {
   /** Hide the Image section when image updates belong in a separate deployment surface. */
   showImageSection?: boolean;
   storage?: readonly ApStorageMount[];
+  submitCheckpointKey?: string;
   workloadKind?: ApWorkloadKind;
 }
 
@@ -248,6 +252,7 @@ export function useApSettingsSections({
   sectionFocus = "all",
   showImageSection = true,
   storage = [],
+  submitCheckpointKey,
   workloadKind = "deployment",
 }: ApSettingsSectionsProps): ApSettingsSectionsModel {
   const [draftImage, setDraftImage] = useState(image);
@@ -694,6 +699,10 @@ export function useApSettingsSections({
       originalSettingsDraftKey
     )
   );
+  const submitCheckpointStore = useMemo(
+    () => getBrowserSettingsSubmitCheckpointStore(),
+    []
+  );
   const applySettingsDraftToLocalState = useCallback(
     (next: ApSettingsDraft) => {
       setDraftImage(next.image);
@@ -733,6 +742,46 @@ export function useApSettingsSections({
     },
     [envDraftKeyPrefix, replicasQuota?.value]
   );
+  const appliedFailedSubmitCheckpointKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !settingsCommitMode ||
+      submitCheckpointKey == null ||
+      appliedFailedSubmitCheckpointKey.current === submitCheckpointKey
+    ) {
+      return;
+    }
+
+    const checkpoint =
+      submitCheckpointStore?.get<ApSettingsDraft>(submitCheckpointKey);
+    if (checkpoint?.status !== "failed") {
+      return;
+    }
+
+    appliedFailedSubmitCheckpointKey.current = submitCheckpointKey;
+    applySettingsDraftToLocalState(checkpoint.draft);
+    setSettingsBackingState({
+      ...createSettingsDraftBackingState(
+        checkpoint.base,
+        apSettingsDraftBackingKey(checkpoint.base)
+      ),
+      latest: originalSettingsDraft,
+      latestKey: originalSettingsDraftKey,
+      saveFailureMessage: settingsDraftSaveFailureMessage(
+        checkpoint.errorMessage == null
+          ? new Error("Update failed.")
+          : new Error(checkpoint.errorMessage),
+        "Update failed."
+      ),
+    });
+  }, [
+    applySettingsDraftToLocalState,
+    originalSettingsDraft,
+    originalSettingsDraftKey,
+    settingsCommitMode,
+    submitCheckpointKey,
+    submitCheckpointStore,
+  ]);
   useEffect(() => {
     if (!settingsCommitMode) {
       return;
@@ -1308,7 +1357,7 @@ export function useApSettingsSections({
     );
   }, []);
 
-  const saveSettingsDraft = useCallback(async () => {
+  const saveSettingsDraft = useCallback(() => {
     if (!canSaveSettings || onSettingsDraftCommit == null) {
       throw new Error("Settings draft cannot be saved yet.");
     }
@@ -1350,37 +1399,62 @@ export function useApSettingsSections({
       ...current,
       saveFailureMessage: null,
     }));
-    try {
-      await onSettingsDraftCommit(commitDraft, meta);
-      setSettingsBackingState((current) =>
-        commitSettingsDraftBackingState(
-          current,
-          commitDraft,
-          apSettingsDraftBackingKey(commitDraft)
-        )
-      );
-      applySettingsDraftToLocalState(commitDraft);
-      const committedRawSource = canonicalApEnvRawSource({
-        env: commitDraft.env,
-        envRawSource: commitDraft.envRawSource,
+    if (submitCheckpointKey != null) {
+      submitCheckpointStore?.start({
+        base: prepared.base,
+        draft: commitDraft,
+        ownerKey: submitCheckpointKey,
       });
-      setEnvDraft(
-        envDraftRowsFromRawSource(committedRawSource).map((row, index) => {
-          const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
-          return intentId == null
-            ? row
-            : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
-        })
-      );
-      setEnvRawSourceDraft(committedRawSource);
-    } catch (error) {
-      setSettingsBackingState((current) =>
-        failSettingsDraftSave(current, error, "Could not save settings.")
-      );
-      throw error;
-    } finally {
-      setSettingsSavePending(false);
     }
+    setSettingsBackingState((current) =>
+      commitSettingsDraftBackingState(
+        current,
+        commitDraft,
+        apSettingsDraftBackingKey(commitDraft)
+      )
+    );
+    applySettingsDraftToLocalState(commitDraft);
+    const committedRawSource = canonicalApEnvRawSource({
+      env: commitDraft.env,
+      envRawSource: commitDraft.envRawSource,
+    });
+    setEnvDraft(
+      envDraftRowsFromRawSource(committedRawSource).map((row, index) => {
+        const intentId = envDraft[index]?.canvasAddDbDsnReferenceIntentId;
+        return intentId == null
+          ? row
+          : { ...row, canvasAddDbDsnReferenceIntentId: intentId };
+      })
+    );
+    setEnvRawSourceDraft(committedRawSource);
+    setSettingsSavePending(false);
+
+    const toastId = toast.loading("Submitting settings update...");
+    Promise.resolve()
+      .then(() => onSettingsDraftCommit(commitDraft, meta))
+      .then(() => {
+        if (submitCheckpointKey != null) {
+          submitCheckpointStore?.clear(submitCheckpointKey);
+        }
+        toast.success("Update accepted. Applying changes.", { id: toastId });
+      })
+      .catch((error) => {
+        if (submitCheckpointKey != null) {
+          submitCheckpointStore?.fail(submitCheckpointKey, error);
+        }
+        setSettingsBackingState(
+          failSettingsDraftSave(
+            prepared.state,
+            error,
+            "Could not submit settings."
+          )
+        );
+        applySettingsDraftToLocalState(commitDraft);
+        toast.error(
+          settingsDraftSaveFailureMessage(error, "Could not submit settings."),
+          { id: toastId }
+        );
+      });
   }, [
     canSaveSettings,
     applySettingsDraftToLocalState,
@@ -1388,6 +1462,8 @@ export function useApSettingsSections({
     envDraft,
     envRawSourceDraft,
     onSettingsDraftCommit,
+    submitCheckpointKey,
+    submitCheckpointStore,
     settingsBackingState,
     settingsDraft,
   ]);
