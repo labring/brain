@@ -150,3 +150,41 @@ test("AP settings clean draft follows refresh and dirty draft merges unrelated l
   assert.deepEqual(committed.base, prepared.draft);
   assert.equal(committed.saveFailureMessage, null);
 });
+
+test("AP settings submit can ignore unchanged observed backing for an active pending domain", () => {
+  const submittedAgainst: ApSettingsDraft = {
+    cpuCores: 1,
+    env: [],
+    image: "ghcr.io/acme/api:v1",
+    memoryMib: 512,
+  };
+  const pendingTarget = {
+    ...submittedAgainst,
+    image: "ghcr.io/acme/api:v2",
+  };
+  const newerDraft = {
+    ...pendingTarget,
+    image: "ghcr.io/acme/api:v3",
+  };
+  const state = {
+    ...createSettingsDraftBackingState(pendingTarget, "effective-v2"),
+    latest: submittedAgainst,
+    latestKey: "observed-v1",
+  };
+
+  const prepared = prepareSettingsDraftSubmit(state, {
+    conflictMessage: "AP configuration changed since you started editing.",
+    domains: AP_SETTINGS_DRAFT_DOMAINS,
+    draft: newerDraft,
+    isDomainDirty: apSettingsDraftDomainIsDirty,
+    isLatestDomainChanged: (domain, { latest }) =>
+      domain === "launch"
+        ? apSettingsDraftDomainIsDirty(domain, submittedAgainst, latest)
+        : apSettingsDraftDomainIsDirty(domain, pendingTarget, latest),
+    mergeDraft: mergeApSettingsDraftDomains,
+  });
+
+  assert.equal(prepared.status, "ready");
+  assert.deepEqual(prepared.base, submittedAgainst);
+  assert.equal(prepared.draft.image, "ghcr.io/acme/api:v3");
+});
