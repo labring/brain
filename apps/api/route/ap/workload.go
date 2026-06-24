@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 
+	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -109,7 +111,7 @@ func currentAPWorkload(cfg *clientcmdapi.Config, namespace, name string) (*apWor
 		if err := json.Unmarshal(deploymentJSON, &current); err != nil {
 			return nil, err
 		}
-		if err := requireBrainAPLikeDeployment(current); err != nil {
+		if err := requireLaunchpadAPDeployment(current); err != nil {
 			return nil, apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, name)
 		}
 		deployment = &current
@@ -124,7 +126,7 @@ func currentAPWorkload(cfg *clientcmdapi.Config, namespace, name string) (*apWor
 		if err := json.Unmarshal(statefulSetJSON, &current); err != nil {
 			return nil, err
 		}
-		if err := requireBrainAPLikeStatefulSet(current); err != nil {
+		if err := requireLaunchpadAPStatefulSet(current); err != nil {
 			return nil, apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "statefulsets"}, name)
 		}
 		statefulSet = &current
@@ -145,16 +147,9 @@ func currentAPWorkload(cfg *clientcmdapi.Config, namespace, name string) (*apWor
 }
 
 func apWorkloadLabelSelector(extra string) string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP
-	extra = strings.TrimSpace(extra)
-	if extra == "" {
-		return base
-	}
-	return base + "," + extra
-}
-
-func templateAPLikeWorkloadLabelSelector(extra string) string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindTemplate
+	base := orchestration.LaunchpadAppDeployManagerLabel + "," +
+		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," +
+		orchestration.BrainProjectIDLabel
 	extra = strings.TrimSpace(extra)
 	if extra == "" {
 		return base
@@ -163,10 +158,7 @@ func templateAPLikeWorkloadLabelSelector(extra string) string {
 }
 
 func apLikeWorkloadLabelSelectors(extra string) []string {
-	return []string{
-		apWorkloadLabelSelector(extra),
-		templateAPLikeWorkloadLabelSelector(extra),
-	}
+	return []string{apWorkloadLabelSelector(extra)}
 }
 
 func apResponseFromWorkload(workload *apWorkload) (json.RawMessage, error) {
@@ -202,16 +194,9 @@ func apObjectWithPublicAccessSupportResources(cfg *clientcmdapi.Config, workload
 	if err != nil {
 		return nil, err
 	}
-	services, err := currentAPTemplatePublicAccessServices(cfg, workload)
+	services, err := currentAPPublicAccessSupportResources(cfg, workload, "services")
 	if err != nil {
 		return nil, err
-	}
-	if len(services) > 0 {
-		templateIngresses, err := currentAPTemplatePublicAccessResources(cfg, workload, "ingresses")
-		if err != nil {
-			return nil, err
-		}
-		ingresses = append(ingresses, templateIngresses...)
 	}
 	certificates, err := currentAPPublicAccessSupportResources(cfg, workload, "certificates")
 	if err != nil {
@@ -226,7 +211,7 @@ func apObjectWithPublicAccessSupportResources(cfg *clientcmdapi.Config, workload
 
 func currentAPPublicAccessSupportResources(cfg *clientcmdapi.Config, workload apWorkload, resource string) ([]map[string]interface{}, error) {
 	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-		LabelSelector: apPublicRoutingSupportSelector(workload.Name()),
+		LabelSelector: apPublicRoutingSupportSelector(workload.Name(), workloadProjectID(workload)),
 		Namespace:     workload.Namespace(),
 		Resource:      resource,
 	})
@@ -245,75 +230,6 @@ func currentAPPublicAccessSupportResources(cfg *clientcmdapi.Config, workload ap
 		items = append(items, list.Items[i].Object)
 	}
 	return items, nil
-}
-
-func currentAPTemplatePublicAccessResources(cfg *clientcmdapi.Config, workload apWorkload, resource string) ([]map[string]interface{}, error) {
-	if workload.Labels()[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindTemplate {
-		return nil, nil
-	}
-	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-		LabelSelector: templateDeploymentSelector(workload),
-		Namespace:     workload.Namespace(),
-		Resource:      resource,
-	})
-	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, resource) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var list unstructured.UnstructuredList
-	if err := json.Unmarshal(jsonBytes, &list); err != nil {
-		return nil, err
-	}
-	items := make([]map[string]interface{}, 0, len(list.Items))
-	for i := range list.Items {
-		items = append(items, list.Items[i].Object)
-	}
-	return items, nil
-}
-
-func currentAPTemplatePublicAccessServices(cfg *clientcmdapi.Config, workload apWorkload) ([]map[string]interface{}, error) {
-	services, err := currentAPTemplatePublicAccessResources(cfg, workload, "services")
-	if err != nil || len(services) == 0 {
-		return services, err
-	}
-	podLabels := workload.PodLabels()
-	out := make([]map[string]interface{}, 0, len(services))
-	for _, service := range services {
-		if serviceSelectsPodLabels(service, podLabels) {
-			out = append(out, service)
-		}
-	}
-	return out, nil
-}
-
-func templateDeploymentSelector(workload apWorkload) string {
-	deploymentName := strings.TrimSpace(workload.Labels()[orchestration.BrainDeploymentNameLabel])
-	if deploymentName == "" {
-		deploymentName = workload.Name()
-	}
-	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," +
-		orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindTemplate + "," +
-		orchestration.BrainDeploymentNameLabel + "=" + deploymentName
-}
-
-func serviceSelectsPodLabels(service map[string]interface{}, podLabels map[string]string) bool {
-	if len(podLabels) == 0 {
-		return false
-	}
-	spec, _ := service["spec"].(map[string]interface{})
-	selector, _ := spec["selector"].(map[string]interface{})
-	if len(selector) == 0 {
-		return false
-	}
-	for key, raw := range selector {
-		value, _ := raw.(string)
-		if strings.TrimSpace(value) == "" || podLabels[key] != value {
-			return false
-		}
-	}
-	return true
 }
 
 func apObjectWithConfigMapValues(apObject map[string]interface{}, configMaps []orchestration.APConfigMapMount) map[string]interface{} {
@@ -428,10 +344,11 @@ func currentAPStorageStatus(cfg *clientcmdapi.Config, workload apWorkload, apObj
 }
 
 func apStorageStatusSelectors(workload apWorkload) []string {
-	if workload.Labels()[orchestration.BrainDeploymentKindLabel] == orchestration.DeploymentKindTemplate {
-		return []string{templateDeploymentSelector(workload)}
-	}
-	return []string{apWorkloadLabelSelector(orchestration.BrainDeploymentNameLabel + "=" + workload.Name())}
+	return []string{apPublicRoutingSupportSelector(workload.Name(), workloadProjectID(workload))}
+}
+
+func workloadProjectID(workload apWorkload) string {
+	return strings.TrimSpace(workload.Labels()[orchestration.BrainProjectIDLabel])
 }
 
 func apDesiredStorageRowsFromObject(apObject map[string]interface{}) map[string]string {
@@ -466,7 +383,26 @@ func storageResizePending(currentSize, desiredSize string) bool {
 }
 
 func apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON []byte) (json.RawMessage, error) {
-	items := []interface{}{}
+	workloads, err := apWorkloadsFromListJSON(deploymentJSON, statefulSetJSON)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]interface{}, 0, len(workloads))
+	for _, workload := range workloads {
+		if apObject := workload.APObject(); apObject != nil {
+			items = append(items, apObject)
+		}
+	}
+	out := map[string]interface{}{
+		"apiVersion": "brain.io/direct",
+		"items":      items,
+		"kind":       "APList",
+	}
+	return json.Marshal(out)
+}
+
+func apWorkloadsFromListJSON(deploymentJSON, statefulSetJSON []byte) ([]apWorkload, error) {
+	workloads := []apWorkload{}
 	if len(deploymentJSON) > 0 {
 		var list unstructured.UnstructuredList
 		if err := json.Unmarshal(deploymentJSON, &list); err != nil {
@@ -477,7 +413,7 @@ func apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON []byte) (json.R
 			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(list.Items[i].Object, &deployment); err != nil {
 				return nil, err
 			}
-			items = append(items, orchestration.APObjectFromDeployment(&deployment))
+			workloads = append(workloads, apWorkload{Deployment: &deployment})
 		}
 	}
 	if len(statefulSetJSON) > 0 {
@@ -490,8 +426,40 @@ func apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON []byte) (json.R
 			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(list.Items[i].Object, &statefulSet); err != nil {
 				return nil, err
 			}
-			items = append(items, orchestration.APObjectFromStatefulSet(&statefulSet))
+			workloads = append(workloads, apWorkload{StatefulSet: &statefulSet})
 		}
+	}
+	return workloads, nil
+}
+
+func apResponseFromWorkloadListsWithPublicAccessSupport(cfg *clientcmdapi.Config, deploymentJSON, statefulSetJSON []byte) (json.RawMessage, error) {
+	workloads, err := apWorkloadsFromListJSON(deploymentJSON, statefulSetJSON)
+	if err != nil {
+		return nil, err
+	}
+	support, err := newAPSupportResourceCache(cfg, workloads)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]interface{}, 0, len(workloads))
+	for _, workload := range workloads {
+		item := workload.APObject()
+		if item == nil {
+			continue
+		}
+		ref := apWorkloadRefFromWorkload(workload)
+		if ref.Name == "" || ref.Namespace == "" {
+			items = append(items, item)
+			continue
+		}
+		projected := aptransform.APWithPublicAccessSupportResourcesFromList(
+			item,
+			support.itemsFor(ref, "ingresses"),
+			support.itemsFor(ref, "services"),
+			support.itemsFor(ref, "certificates"),
+			support.itemsFor(ref, "issuers"),
+		)
+		items = append(items, projected)
 	}
 	out := map[string]interface{}{
 		"apiVersion": "brain.io/direct",
@@ -501,80 +469,86 @@ func apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON []byte) (json.R
 	return json.Marshal(out)
 }
 
-func apResponseFromWorkloadListsWithPublicAccessSupport(cfg *clientcmdapi.Config, deploymentJSON, statefulSetJSON []byte) (json.RawMessage, error) {
-	body, err := apResponseFromWorkloadLists(deploymentJSON, statefulSetJSON)
-	if err != nil {
-		return nil, err
-	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
-	}
-	rawItems, _ := out["items"].([]interface{})
-	items := make([]interface{}, 0, len(rawItems))
-	for _, raw := range rawItems {
-		item, _ := raw.(map[string]interface{})
-		if item == nil {
-			continue
-		}
-		workload := apWorkloadRefFromAPObject(item)
-		if workload.Name == "" || workload.Namespace == "" {
-			items = append(items, item)
-			continue
-		}
-		current, err := currentAPWorkload(cfg, workload.Namespace, workload.Name)
-		if err == nil {
-			projected, err := apObjectWithPublicAccessSupportResources(cfg, *current, item)
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, projected)
-			continue
-		}
-		projected, err := apObjectWithPublicAccessSupportResourcesForRef(cfg, workload, item)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, projected)
-	}
-	out["items"] = items
-	return json.Marshal(out)
-}
-
 type apWorkloadRef struct {
 	Name      string
 	Namespace string
+	ProjectID string
 }
 
-func apWorkloadRefFromAPObject(apObject map[string]interface{}) apWorkloadRef {
-	metadata, _ := apObject["metadata"].(map[string]interface{})
+func apWorkloadRefFromWorkload(workload apWorkload) apWorkloadRef {
 	return apWorkloadRef{
-		Name:      strings.TrimSpace(stringFromMap(metadata, "name")),
-		Namespace: strings.TrimSpace(stringFromMap(metadata, "namespace")),
+		Name:      workload.Name(),
+		Namespace: workload.Namespace(),
+		ProjectID: workloadProjectID(workload),
 	}
 }
 
-func apObjectWithPublicAccessSupportResourcesForRef(cfg *clientcmdapi.Config, workload apWorkloadRef, apObject map[string]interface{}) (map[string]interface{}, error) {
-	ingresses, err := currentAPPublicAccessSupportResourcesForRef(cfg, workload, "ingresses")
-	if err != nil {
-		return nil, err
-	}
-	certificates, err := currentAPPublicAccessSupportResourcesForRef(cfg, workload, "certificates")
-	if err != nil {
-		return nil, err
-	}
-	issuers, err := currentAPPublicAccessSupportResourcesForRef(cfg, workload, "issuers")
-	if err != nil {
-		return nil, err
-	}
-	return aptransform.APWithPublicAccessSupportResourcesFromList(apObject, ingresses, nil, certificates, issuers), nil
+type apSupportResourceCache struct {
+	items map[string]map[string][]map[string]interface{}
 }
 
-func currentAPPublicAccessSupportResourcesForRef(cfg *clientcmdapi.Config, workload apWorkloadRef, resource string) ([]map[string]interface{}, error) {
+func newAPSupportResourceCache(cfg *clientcmdapi.Config, workloads []apWorkload) (*apSupportResourceCache, error) {
+	cache := &apSupportResourceCache{
+		items: map[string]map[string][]map[string]interface{}{},
+	}
+	if len(workloads) == 0 {
+		return cache, nil
+	}
+	seenScopes := map[string]bool{}
+	for _, workload := range workloads {
+		ref := apWorkloadRefFromWorkload(workload)
+		if ref.Namespace == "" {
+			continue
+		}
+		scope := ref.Namespace + "\x00" + ref.ProjectID
+		if seenScopes[scope] {
+			continue
+		}
+		seenScopes[scope] = true
+		var mu sync.Mutex
+		group := errgroup.Group{}
+		for _, resource := range []string{"ingresses", "services", "certificates", "issuers"} {
+			resource := resource
+			group.Go(func() error {
+				items, err := listAPPublicAccessSupportResourcesForScope(cfg, ref.Namespace, ref.ProjectID, resource)
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				cache.items[scopeKey(ref.Namespace, ref.ProjectID, resource)] = groupAPPublicAccessSupportItems(items)
+				mu.Unlock()
+				return nil
+			})
+		}
+		if err := group.Wait(); err != nil {
+			return nil, err
+		}
+	}
+	return cache, nil
+}
+
+func (cache *apSupportResourceCache) itemsFor(ref apWorkloadRef, resource string) []map[string]interface{} {
+	if cache == nil || ref.Name == "" || ref.Namespace == "" {
+		return nil
+	}
+	return cache.items[scopeKey(ref.Namespace, ref.ProjectID, resource)][ref.Name]
+}
+
+func scopeKey(namespace string, projectID string, resource string) string {
+	return namespace + "\x00" + projectID + "\x00" + resource
+}
+
+func listAPPublicAccessSupportResourcesForScope(cfg *clientcmdapi.Config, namespace string, projectID string, resource string) ([]map[string]interface{}, error) {
+	projectSelector := orchestration.BrainProjectIDLabel
+	if trimmed := strings.TrimSpace(projectID); trimmed != "" {
+		projectSelector += "=" + trimmed
+	}
 	jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-		LabelSelector: apPublicRoutingSupportSelector(workload.Name),
-		Namespace:     workload.Namespace,
-		Resource:      resource,
+		LabelSelector: orchestration.LaunchpadAppDeployManagerLabel + "," +
+			orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," +
+			projectSelector,
+		Namespace: namespace,
+		Resource:  resource,
 	})
 	if apierrors.IsNotFound(err) || k8ssvc.IsUnknownResourceError(err, resource) {
 		return nil, nil
@@ -591,6 +565,27 @@ func currentAPPublicAccessSupportResourcesForRef(cfg *clientcmdapi.Config, workl
 		items = append(items, list.Items[i].Object)
 	}
 	return items, nil
+}
+
+func groupAPPublicAccessSupportItems(items []map[string]interface{}) map[string][]map[string]interface{} {
+	out := map[string][]map[string]interface{}{}
+	for _, item := range items {
+		name := apSupportResourceAPName(item)
+		if name == "" {
+			continue
+		}
+		out[name] = append(out[name], item)
+	}
+	return out
+}
+
+func apSupportResourceAPName(item map[string]interface{}) string {
+	metadata, _ := item["metadata"].(map[string]interface{})
+	labels, _ := metadata["labels"].(map[string]interface{})
+	if name := strings.TrimSpace(stringFromMap(labels, orchestration.LaunchpadAppDeployManagerLabel)); name != "" {
+		return name
+	}
+	return strings.TrimSpace(stringFromMap(labels, orchestration.BrainDeploymentNameLabel))
 }
 
 func mergeK8sListJSON(left, right []byte) []byte {
@@ -651,10 +646,10 @@ func isStrictBrainAPWorkload(workload apWorkload) bool {
 
 func requireBrainAPLikeWorkload(workload apWorkload) error {
 	if workload.Deployment != nil {
-		return requireBrainAPLikeDeployment(*workload.Deployment)
+		return requireLaunchpadAPDeployment(*workload.Deployment)
 	}
 	if workload.StatefulSet != nil {
-		return requireBrainAPLikeStatefulSet(*workload.StatefulSet)
+		return requireLaunchpadAPStatefulSet(*workload.StatefulSet)
 	}
 	return errors.New("AP workload is empty")
 }
@@ -664,24 +659,21 @@ func requireBrainAPLifecycleWorkload(workload apWorkload) error {
 }
 
 func requireBrainAPStatefulSet(statefulSet appsv1.StatefulSet) error {
+	return requireLaunchpadAPStatefulSet(statefulSet)
+}
+
+func requireLaunchpadAPStatefulSet(statefulSet appsv1.StatefulSet) error {
 	labels := statefulSet.GetLabels()
+	if strings.TrimSpace(labels[orchestration.LaunchpadAppDeployManagerLabel]) == "" {
+		return errors.New("statefulset is not a Launchpad AP")
+	}
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindAP ||
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
-		return errors.New("statefulset is not a Brain-managed AP")
+		return errors.New("statefulset is not a Brain-owned Launchpad AP")
 	}
 	return nil
 }
 
 func requireBrainAPLikeStatefulSet(statefulSet appsv1.StatefulSet) error {
-	labels := statefulSet.GetLabels()
-	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
-		return errors.New("statefulset is not a Brain-managed workload")
-	}
-	deploymentKind := labels[orchestration.BrainDeploymentKindLabel]
-	if deploymentKind != orchestration.DeploymentKindAP && deploymentKind != orchestration.DeploymentKindTemplate {
-		return errors.New("statefulset is not a Brain-managed AP-like workload")
-	}
-	return nil
+	return requireLaunchpadAPStatefulSet(statefulSet)
 }

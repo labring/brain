@@ -163,6 +163,7 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 		brainLabels(projectID, DeploymentKindAP, name),
 		map[string]string{
 			LaunchpadAppDeployManagerLabel: name,
+			LaunchpadAppLabel:              name,
 		},
 	)
 	if domain := strings.TrimSpace(input.RoutingDomain); domain != "" {
@@ -866,7 +867,12 @@ func renderAPHPA(name string, namespace string, projectID string, workloadKind A
 			Kind:       "HorizontalPodAutoscaler",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:    brainLabels(projectID, DeploymentKindAP, name),
+			Labels: mergeStringMap(
+				brainLabels(projectID, DeploymentKindAP, name),
+				map[string]string{
+					LaunchpadAppDeployManagerLabel: name,
+				},
+			),
 			Name:      name,
 			Namespace: namespace,
 		},

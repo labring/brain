@@ -15,14 +15,12 @@ import {
   expectedRefKey,
   layoutNodeByOwner,
   resourceOwnerKey,
-  templateNodeKeyFromNode,
 } from "./deployment-projection-model";
 
 export interface DeploymentProjectionContext {
   layout?: CanvasLayoutDocument;
   layoutByOwner: ReadonlyMap<string, CanvasLayoutNode>;
   liveNodeByExpectedRef: ReadonlyMap<string, Node>;
-  liveTemplateNodeByKey: ReadonlyMap<string, Node>;
   nodes: readonly Node[];
   placeholderByTaskSlotId: ReadonlyMap<string, Node>;
   previewByTaskId: ReadonlyMap<string, DeploymentResultPreview>;
@@ -39,17 +37,13 @@ export function createDeploymentProjectionContext(input: {
   const tasks = input.tasks ?? input.previews?.map(({ task }) => task) ?? [];
   const previews = input.previews ?? deploymentResultPreviewsFromTasks(tasks);
   const nodes = input.nodes ?? [];
-  const {
-    liveNodeByExpectedRef,
-    liveTemplateNodeByKey,
-    placeholderByTaskSlotId,
-  } = deploymentProjectionNodeIndexes(nodes);
+  const { liveNodeByExpectedRef, placeholderByTaskSlotId } =
+    deploymentProjectionNodeIndexes(nodes);
 
   return {
     layout: input.layout,
     layoutByOwner: layoutNodeByOwner(input.layout),
     liveNodeByExpectedRef,
-    liveTemplateNodeByKey,
     nodes,
     placeholderByTaskSlotId,
     previewByTaskId: deploymentResultPreviewByTaskId(previews),
@@ -60,17 +54,14 @@ export function createDeploymentProjectionContext(input: {
 
 function deploymentProjectionNodeIndexes(nodes: readonly Node[]): {
   liveNodeByExpectedRef: Map<string, Node>;
-  liveTemplateNodeByKey: Map<string, Node>;
   placeholderByTaskSlotId: Map<string, Node>;
 } {
   const liveNodeByExpectedRef = new Map<string, Node>();
-  const liveTemplateNodeByKey = new Map<string, Node>();
   const placeholderByTaskSlotId = new Map<string, Node>();
 
   for (const node of nodes) {
     addDeploymentProjectionNodeToIndexes({
       liveNodeByExpectedRef,
-      liveTemplateNodeByKey,
       node,
       placeholderByTaskSlotId,
     });
@@ -78,14 +69,12 @@ function deploymentProjectionNodeIndexes(nodes: readonly Node[]): {
 
   return {
     liveNodeByExpectedRef,
-    liveTemplateNodeByKey,
     placeholderByTaskSlotId,
   };
 }
 
 function addDeploymentProjectionNodeToIndexes(input: {
   liveNodeByExpectedRef: Map<string, Node>;
-  liveTemplateNodeByKey: Map<string, Node>;
   node: Node;
   placeholderByTaskSlotId: Map<string, Node>;
 }): void {
@@ -101,19 +90,6 @@ function addDeploymentProjectionNodeToIndexes(input: {
   const ref = canvasResourceIdentityFromNode(input.node);
   if (ref !== undefined) {
     input.liveNodeByExpectedRef.set(expectedRefKey(ref), input.node);
-    return;
-  }
-
-  const templateKey = templateNodeKeyFromNode(input.node);
-  if (templateKey !== undefined) {
-    input.liveTemplateNodeByKey.set(templateKey, input.node);
-    const [namespace, name] = templateKey.split("/");
-    if (namespace !== undefined && name !== undefined) {
-      input.liveNodeByExpectedRef.set(
-        expectedRefKey({ kind: "TemplateNative", name, namespace }),
-        input.node
-      );
-    }
   }
 }
 
@@ -131,7 +107,7 @@ function deploymentPlaceholderSlot(
 
 export function layoutHasRefInDeploymentProjectionContext(
   context: DeploymentProjectionContext,
-  ref: Exclude<DeploymentTaskResultResourceRef, { kind: "TemplateNative" }>
+  ref: DeploymentTaskResultResourceRef
 ): boolean {
   return context.layoutByOwner.has(resourceOwnerKey(ref));
 }
@@ -160,9 +136,6 @@ export function nodeForResultRefInDeploymentProjectionContext(
   context: DeploymentProjectionContext,
   ref: DeploymentTaskResultResourceRef
 ): Node | undefined {
-  if (ref.kind === "TemplateNative") {
-    return context.liveTemplateNodeByKey.get(`${ref.namespace}/${ref.name}`);
-  }
   return context.liveNodeByExpectedRef.get(expectedRefKey(ref));
 }
 
@@ -179,8 +152,5 @@ export function resultRefHasSavedLayoutInDeploymentProjectionContext(
   context: DeploymentProjectionContext,
   ref: DeploymentTaskResultResourceRef
 ): boolean {
-  return (
-    ref.kind !== "TemplateNative" &&
-    layoutHasRefInDeploymentProjectionContext(context, ref)
-  );
+  return layoutHasRefInDeploymentProjectionContext(context, ref);
 }

@@ -19,12 +19,17 @@ export interface ProjectChildResourceSummary {
   ap: string[];
   db: string[];
   template: string[];
+  templateCertificates: string[];
   templateClusters: string[];
+  templateConfigMaps: string[];
   templateDeployments: string[];
   templateIngresses: string[];
+  templateIssuers: string[];
   templateJobs: string[];
+  templateOpsRequests: string[];
   templatePersistentVolumeClaims: string[];
   templatePods: string[];
+  templateSecrets: string[];
   templateServices: string[];
   templateStatefulSets: string[];
 }
@@ -41,6 +46,12 @@ export class ProjectDeleteBlockedError extends Error {
         : "",
       resources.templateClusters.length > 0
         ? `${resources.templateClusters.length} template cluster`
+        : "",
+      resources.templateConfigMaps.length > 0
+        ? `${resources.templateConfigMaps.length} template configmap`
+        : "",
+      resources.templateSecrets.length > 0
+        ? `${resources.templateSecrets.length} template secret`
         : "",
       resources.templateDeployments.length > 0
         ? `${resources.templateDeployments.length} template deployment`
@@ -62,6 +73,15 @@ export class ProjectDeleteBlockedError extends Error {
         : "",
       resources.templateJobs.length > 0
         ? `${resources.templateJobs.length} template job`
+        : "",
+      resources.templateCertificates.length > 0
+        ? `${resources.templateCertificates.length} template certificate`
+        : "",
+      resources.templateIssuers.length > 0
+        ? `${resources.templateIssuers.length} template issuer`
+        : "",
+      resources.templateOpsRequests.length > 0
+        ? `${resources.templateOpsRequests.length} template opsrequest`
         : "",
     ].filter(Boolean);
     super(`Project still has ${parts.join(" and ")} resource(s).`);
@@ -318,12 +338,17 @@ export async function assertProjectHasNoManagedResources(
     ap,
     db,
     template,
+    templateCertificates,
     templateClusters,
+    templateConfigMaps,
     templateDeployments,
     templateIngresses,
+    templateIssuers,
     templateJobs,
+    templateOpsRequests,
     templatePods,
     templatePersistentVolumeClaims,
+    templateSecrets,
     templateServices,
     templateStatefulSets,
   ] = await Promise.all([
@@ -334,12 +359,17 @@ export async function assertProjectHasNoManagedResources(
       "label-selector": directDbProjectLabelSelector(input.id),
     }),
     listProjectK8sResources(input, "instances", templateSelector),
+    listProjectK8sResources(input, "certificates", templateSelector),
     listProjectK8sResources(input, "clusters", templateSelector),
+    listProjectK8sResources(input, "configmaps", templateSelector),
     listProjectK8sResources(input, "deployments", templateSelector),
     listProjectK8sResources(input, "ingresses", templateSelector),
+    listProjectK8sResources(input, "issuers", templateSelector),
     listProjectK8sResources(input, "jobs", templateSelector),
+    listProjectK8sResources(input, "opsrequests", templateSelector),
     listProjectK8sResources(input, "pods", templateSelector),
     listProjectK8sResources(input, "persistentvolumeclaims", templateSelector),
+    listProjectK8sResources(input, "secrets", templateSelector),
     listProjectK8sResources(input, "services", templateSelector),
     listProjectK8sResources(input, "statefulsets", templateSelector),
   ]);
@@ -347,12 +377,17 @@ export async function assertProjectHasNoManagedResources(
     ap,
     db,
     template,
+    templateCertificates,
     templateClusters,
+    templateConfigMaps,
     templateDeployments,
     templateIngresses,
+    templateIssuers,
     templateJobs,
+    templateOpsRequests,
     templatePods,
     templatePersistentVolumeClaims,
+    templateSecrets,
     templateServices,
     templateStatefulSets,
   };
@@ -369,12 +404,17 @@ export async function deleteProjectManagedResources(
     ap,
     db,
     template,
+    templateCertificates,
     templateClusters,
+    templateConfigMaps,
     templateDeployments,
     templateIngresses,
+    templateIssuers,
     templateJobs,
+    templateOpsRequests,
     templatePods,
     templatePersistentVolumeClaims,
+    templateSecrets,
     templateServices,
     templateStatefulSets,
   ] = await Promise.all([
@@ -385,12 +425,17 @@ export async function deleteProjectManagedResources(
       "label-selector": directDbProjectLabelSelector(input.id),
     }),
     listProjectK8sResources(input, "instances", templateSelector),
+    listProjectK8sResources(input, "certificates", templateSelector),
     listProjectK8sResources(input, "clusters", templateSelector),
+    listProjectK8sResources(input, "configmaps", templateSelector),
     listProjectK8sResources(input, "deployments", templateSelector),
     listProjectK8sResources(input, "ingresses", templateSelector),
+    listProjectK8sResources(input, "issuers", templateSelector),
     listProjectK8sResources(input, "jobs", templateSelector),
+    listProjectK8sResources(input, "opsrequests", templateSelector),
     listProjectK8sResources(input, "pods", templateSelector),
     listProjectK8sResources(input, "persistentvolumeclaims", templateSelector),
+    listProjectK8sResources(input, "secrets", templateSelector),
     listProjectK8sResources(input, "services", templateSelector),
     listProjectK8sResources(input, "statefulsets", templateSelector),
   ]);
@@ -404,14 +449,19 @@ export async function deleteProjectManagedResources(
     await deleteProjectK8sResource(input, "instances", name);
   }
   const selectorCleanupKinds = [
+    "certificates",
+    "configmaps",
     "jobs",
     "deployments",
     "statefulsets",
     "services",
     "ingresses",
+    "issuers",
     "clusters",
+    "opsrequests",
     "pods",
     "persistentvolumeclaims",
+    "secrets",
   ];
   for (const kind of selectorCleanupKinds) {
     await deleteProjectK8sResourcesBySelector(input, kind, templateSelector);
@@ -420,12 +470,17 @@ export async function deleteProjectManagedResources(
     ap,
     db,
     template,
+    templateCertificates,
     templateClusters,
+    templateConfigMaps,
     templateDeployments,
     templateIngresses,
+    templateIssuers,
     templateJobs,
+    templateOpsRequests,
     templatePods,
     templatePersistentVolumeClaims,
+    templateSecrets,
     templateServices,
     templateStatefulSets,
   };

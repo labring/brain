@@ -169,6 +169,12 @@
 }
 
 @layer components {
+  @keyframes deployment-timeline-border-beam {
+    to {
+      stroke-dashoffset: -100;
+    }
+  }
+
   .monaco-editor.ap-env-raw-source-monaco .suggest-widget,
   .monaco-editor.ap-env-raw-source-monaco .suggest-details {
     overflow: hidden;

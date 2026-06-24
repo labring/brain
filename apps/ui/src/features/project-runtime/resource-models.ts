@@ -12,7 +12,6 @@ import type {
   ProjectRuntimeFactKey,
   ProjectRuntimeFacts,
   PublicAccessFact,
-  TemplateNativeWorkloadFact,
 } from "./resource-facts";
 import type {
   ProjectRuntimeShellKind,
@@ -40,25 +39,6 @@ export type ProjectRuntimeNodeModel =
 function apModelFromFact(fact: ApFact): CanvasContainerNodeData {
   return {
     resourceKind: "ap",
-    states: {
-      image: fact.workload.image,
-      kind: fact.workload.kind,
-      name: fact.displayName,
-      namespace: fact.ref.namespace,
-      ...(fact.replicaSummary === undefined
-        ? {}
-        : { replicas: fact.replicaSummary.replicas }),
-      status: fact.status,
-      ...(fact.observedUid === undefined ? {} : { uid: fact.observedUid }),
-    },
-  };
-}
-
-function templateNativeModelFromFact(
-  fact: TemplateNativeWorkloadFact
-): CanvasContainerNodeData {
-  return {
-    resourceKind: "template",
     states: {
       image: fact.workload.image,
       kind: fact.workload.kind,
@@ -159,7 +139,7 @@ function publicAccessModelFromFact(
 
 export function projectRuntimeNodeModelFromFact(
   kind: ProjectRuntimeShellKind,
-  fact: ApFact | DbFact | PublicAccessFact | TemplateNativeWorkloadFact
+  fact: ApFact | DbFact | PublicAccessFact
 ): ProjectRuntimeNodeModel | undefined {
   switch (kind) {
     case "AP":
@@ -168,8 +148,6 @@ export function projectRuntimeNodeModelFromFact(
       return dbModelFromFact(fact as DbFact);
     case "PublicAccess":
       return publicAccessModelFromFact(fact as PublicAccessFact);
-    case "TemplateNativeWorkload":
-      return templateNativeModelFromFact(fact as TemplateNativeWorkloadFact);
     default:
       return undefined;
   }
@@ -226,26 +204,6 @@ function fallbackPublicAccessModelFromLookup(
   };
 }
 
-function fallbackTemplateNativeModelFromLookup(
-  lookup: ProjectRuntimeShellLookup
-): CanvasContainerNodeData {
-  const parts = lookup.modelKey.split(":");
-  const namespace = parts[1] ?? "";
-  const kind = parts[2] ?? "Workload";
-  const name = parts[3] ?? lookup.modelKey;
-  return {
-    resourceKind: "template",
-    states: {
-      image: "—",
-      kind,
-      name,
-      ...(namespace === "" ? {} : { namespace }),
-      status: { label: "Loading", tone: "pending" },
-      ...(lookup.observedUid === undefined ? {} : { uid: lookup.observedUid }),
-    },
-  };
-}
-
 export function projectRuntimeFallbackNodeModelFromLookup(
   lookup: ProjectRuntimeShellLookup | undefined
 ): ProjectRuntimeNodeModel | undefined {
@@ -259,8 +217,6 @@ export function projectRuntimeFallbackNodeModelFromLookup(
       return fallbackDatabaseModelFromLookup(lookup);
     case "PublicAccess":
       return fallbackPublicAccessModelFromLookup(lookup);
-    case "TemplateNativeWorkload":
-      return fallbackTemplateNativeModelFromLookup(lookup);
     default:
       return undefined;
   }
@@ -284,9 +240,6 @@ export function projectRuntimeNodeModelsFromFacts(
 
   for (const fact of facts.apFacts) {
     containerModelsByKey.set(fact.key, apModelFromFact(fact));
-  }
-  for (const fact of facts.templateNativeWorkloadFacts) {
-    containerModelsByKey.set(fact.key, templateNativeModelFromFact(fact));
   }
   for (const fact of facts.dbFacts) {
     databaseModelsByKey.set(fact.key, dbModelFromFact(fact));
@@ -320,12 +273,7 @@ export function projectRuntimeShellLookupFromNodeData(
 function isProjectRuntimeShellKind(
   value: unknown
 ): value is ProjectRuntimeShellKind {
-  return (
-    value === "AP" ||
-    value === "DB" ||
-    value === "PublicAccess" ||
-    value === "TemplateNativeWorkload"
-  );
+  return value === "AP" || value === "DB" || value === "PublicAccess";
 }
 
 export function selectProjectRuntimeNodeModel(
@@ -337,7 +285,6 @@ export function selectProjectRuntimeNodeModel(
   }
   switch (lookup.kind) {
     case "AP":
-    case "TemplateNativeWorkload":
       return models.containerModelsByKey.get(lookup.modelKey);
     case "DB":
       return models.databaseModelsByKey.get(lookup.modelKey);

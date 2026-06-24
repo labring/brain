@@ -6,7 +6,12 @@ import {
   BRAIN_MANAGED_BY_VALUE,
   BRAIN_PROJECT_ID_LABEL,
   BRAIN_TEMPLATE_NAME_LABEL,
+  DB_PROVIDER_CLUSTER_DEFINITION_LABEL,
+  DB_PROVIDER_CLUSTER_VERSION_LABEL,
+  DB_PROVIDER_INSTANCE_LABEL,
+  LAUNCHPAD_APP_DEPLOY_MANAGER_DOMAIN_LABEL,
   LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL,
+  LAUNCHPAD_APP_LABEL,
   LAUNCHPAD_TEMPLATE_SOURCE_LABEL,
 } from "@/lib/brain-labels";
 import type {
@@ -101,6 +106,7 @@ export interface TemplateEvaluationContext {
 type EvaluationContext = TemplateEvaluationContext;
 
 interface TemplateApWorkloadInfo {
+  appName: string;
   name: string;
   podLabels: Record<string, string>;
 }
@@ -108,6 +114,19 @@ interface TemplateApWorkloadInfo {
 interface TemplateResourceClassification {
   appName?: string;
   resourceKind: "ap" | "db" | "template";
+}
+
+function ensureRecordProperty(
+  object: Record<string, unknown>,
+  key: string
+): Record<string, unknown> {
+  const current = asRecord(object[key]);
+  if (current !== undefined) {
+    return current;
+  }
+  const next: Record<string, unknown> = {};
+  object[key] = next;
+  return next;
 }
 
 function randomLowercase(length: number): string {
@@ -691,7 +710,9 @@ function normalizeDockerConfigJsonSecret(object: TemplateK8sObject) {
     ".dockerconfigjson": value,
   };
   const nextStringData = Object.fromEntries(
-    Object.entries(stringData).filter(([key]) => key !== ".dockerconfigjson")
+    Object.entries(stringData ?? {}).filter(
+      ([key]) => key !== ".dockerconfigjson"
+    )
   );
   object.stringData =
     Object.keys(nextStringData).length === 0 ? undefined : nextStringData;
@@ -725,11 +746,41 @@ function normalizeRenderedResource(object: TemplateK8sObject) {
 }
 
 function isTemplateManagedApWorkload(object: TemplateK8sObject): boolean {
-  return object.kind === "Deployment" || object.kind === "StatefulSet";
+  if (object.kind !== "Deployment" && object.kind !== "StatefulSet") {
+    return false;
+  }
+  return templateApWorkloadAppName(object) !== undefined;
+}
+
+function templateApWorkloadAppName(
+  object: TemplateK8sObject
+): string | undefined {
+  const labels = stringRecord(object.metadata?.labels);
+  const selectorLabels = stringRecord(
+    asRecord(asRecord(object.spec)?.selector)?.matchLabels
+  );
+  const podLabels = stringRecord(
+    asRecord(asRecord(asRecord(object.spec)?.template)?.metadata)?.labels
+  );
+  const appName =
+    labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL]?.trim() ||
+    labels[LAUNCHPAD_APP_LABEL]?.trim() ||
+    selectorLabels[LAUNCHPAD_APP_LABEL]?.trim() ||
+    podLabels[LAUNCHPAD_APP_LABEL]?.trim();
+  return appName === undefined || appName === "" ? undefined : appName;
 }
 
 function isTemplateManagedDbCluster(object: TemplateK8sObject): boolean {
-  return object.kind === "Cluster";
+  if (object.kind !== "Cluster") {
+    return false;
+  }
+  const labels = stringRecord(object.metadata?.labels);
+  const spec = asRecord(object.spec);
+  return (
+    labels[DB_PROVIDER_INSTANCE_LABEL]?.trim() !== "" ||
+    labels[DB_PROVIDER_CLUSTER_DEFINITION_LABEL]?.trim() !== "" ||
+    requiredString(spec?.clusterDefinitionRef).trim() !== ""
+  );
 }
 
 function objectMetadataName(object: TemplateK8sObject): string {
@@ -757,16 +808,25 @@ function templateApWorkloads(
     if (!isTemplateManagedApWorkload(object)) {
       return [];
     }
+    const appName = templateApWorkloadAppName(object);
+    if (appName === undefined) {
+      return [];
+    }
     const name = objectMetadataName(object);
     if (name === "") {
       return [];
     }
+    const selectorLabels = stringRecord(
+      asRecord(asRecord(object.spec)?.selector)?.matchLabels
+    );
+    const podLabels = stringRecord(
+      asRecord(asRecord(asRecord(object.spec)?.template)?.metadata)?.labels
+    );
     return [
       {
+        appName,
         name,
-        podLabels: stringRecord(
-          asRecord(asRecord(asRecord(object.spec)?.template)?.metadata)?.labels
-        ),
+        podLabels: { ...selectorLabels, ...podLabels },
       },
     ];
   });
@@ -794,7 +854,7 @@ function serviceApNameForResource(
       workload.name === serviceName ||
       selectorMatchesPodLabels(selector, workload.podLabels)
     ) {
-      return workload.name;
+      return workload.appName;
     }
   }
   return undefined;
@@ -837,8 +897,9 @@ function setTemplateApClassification(
   if (!isTemplateManagedApWorkload(object)) {
     return false;
   }
+  const appName = templateApWorkloadAppName(object);
   classifications.set(object, {
-    appName: objectMetadataName(object),
+    appName,
     resourceKind: "ap",
   });
   return true;
@@ -934,14 +995,68 @@ function templateResourceClassifications(
 
 function applyTemplateProviderLabels(
   labels: Record<string, string>,
-  input: RenderTemplateDeploymentInput,
   classification: TemplateResourceClassification
 ) {
   if (classification.resourceKind !== "ap") {
     return;
   }
-  labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] =
-    labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] ?? input.instanceName;
+  const appName = classification.appName?.trim();
+  if (!appName) {
+    return;
+  }
+  labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] = appName;
+  if ((labels[LAUNCHPAD_APP_LABEL]?.trim() ?? "") === "") {
+    labels[LAUNCHPAD_APP_LABEL] = appName;
+  }
+}
+
+function applyTemplateIngressLabels(
+  labels: Record<string, string>,
+  object: TemplateK8sObject,
+  classification: TemplateResourceClassification
+) {
+  if (object.kind !== "Ingress" || classification.resourceKind !== "ap") {
+    return;
+  }
+  const appName = classification.appName?.trim();
+  if (!appName) {
+    return;
+  }
+  if (
+    (labels[LAUNCHPAD_APP_DEPLOY_MANAGER_DOMAIN_LABEL]?.trim() ?? "") === ""
+  ) {
+    labels[LAUNCHPAD_APP_DEPLOY_MANAGER_DOMAIN_LABEL] = appName;
+  }
+}
+
+function applyDBProviderLabels(
+  labels: Record<string, string>,
+  object: TemplateK8sObject,
+  classification: TemplateResourceClassification
+) {
+  if (classification.resourceKind !== "db") {
+    return;
+  }
+  const name = objectMetadataName(object);
+  if (
+    (labels[DB_PROVIDER_INSTANCE_LABEL]?.trim() ?? "") === "" &&
+    name !== ""
+  ) {
+    labels[DB_PROVIDER_INSTANCE_LABEL] = name;
+  }
+  const spec = asRecord(object.spec);
+  const definition =
+    labels[DB_PROVIDER_CLUSTER_DEFINITION_LABEL]?.trim() ||
+    requiredString(spec?.clusterDefinitionRef).trim();
+  if (definition !== "") {
+    labels[DB_PROVIDER_CLUSTER_DEFINITION_LABEL] = definition;
+  }
+  const version =
+    labels[DB_PROVIDER_CLUSTER_VERSION_LABEL]?.trim() ||
+    requiredString(spec?.clusterVersionRef).trim();
+  if (version !== "") {
+    labels[DB_PROVIDER_CLUSTER_VERSION_LABEL] = version;
+  }
 }
 
 function applyBrainDeploymentLabels(
@@ -960,15 +1075,21 @@ function applyPodTemplateLabels(
   input: RenderTemplateDeploymentInput,
   classification: TemplateResourceClassification
 ) {
-  const templateLabels = asRecord(
-    asRecord(asRecord(object.spec)?.template)?.metadata
-  )?.labels;
-  if (templateLabels == null) {
+  if (
+    object.kind !== "Deployment" &&
+    object.kind !== "StatefulSet" &&
+    object.kind !== "DaemonSet"
+  ) {
     return;
   }
+  object.spec ??= {};
+  const spec = object.spec;
+  const template = ensureRecordProperty(spec, "template");
+  const metadata = ensureRecordProperty(template, "metadata");
+  const templateLabels = ensureRecordProperty(metadata, "labels");
   const labels = templateLabels as Record<string, string>;
   applyBrainDeploymentLabels(labels, input);
-  applyTemplateProviderLabels(labels, input, classification);
+  applyTemplateProviderLabels(labels, classification);
 }
 
 function applyVolumeClaimTemplateLabels(
@@ -992,7 +1113,7 @@ function applyVolumeClaimTemplateLabels(
     const claimLabels = metadata.labels as Record<string, string>;
     claimLabels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
     applyBrainDeploymentLabels(claimLabels, input);
-    applyTemplateProviderLabels(claimLabels, input, classification);
+    applyTemplateProviderLabels(claimLabels, classification);
   }
 }
 
@@ -1008,7 +1129,9 @@ function applyResourceLabels(
   const labels = ensureLabels(meta);
   labels[LAUNCHPAD_TEMPLATE_SOURCE_LABEL] = input.instanceName;
   applyBrainDeploymentLabels(labels, input);
-  applyTemplateProviderLabels(labels, input, classification);
+  applyTemplateProviderLabels(labels, classification);
+  applyTemplateIngressLabels(labels, object, classification);
+  applyDBProviderLabels(labels, object, classification);
   if (object.kind === "App") {
     labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] =
       labels[LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL] ?? input.instanceName;

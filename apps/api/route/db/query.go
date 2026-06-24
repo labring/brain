@@ -72,25 +72,6 @@ func registerGet(grp huma.API) {
 			Name:          input.Name,
 			Namespace:     resolved.Namespace,
 		})
-		if input.Name == "" && err == nil {
-			templateJSON, templateErr := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-				LabelSelector: templateDBClusterLabelSelector(input.LabelSelector),
-				Resource:      "clusters",
-				Namespace:     resolved.Namespace,
-			})
-			if templateErr != nil && !apierrors.IsNotFound(templateErr) {
-				return nil, huma.Error500InternalServerError("failed to get template DBs", templateErr)
-			}
-			jsonBytes = mergeK8sListJSON(jsonBytes, templateJSON)
-		}
-		if input.Name != "" && apierrors.IsNotFound(err) {
-			jsonBytes, err = k8ssvc.Get(cfg, k8ssvc.GetOptions{
-				LabelSelector: templateDBClusterLabelSelector(input.LabelSelector),
-				Resource:      "clusters",
-				Name:          input.Name,
-				Namespace:     resolved.Namespace,
-			})
-		}
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("DB not found", err)
@@ -109,54 +90,15 @@ func registerGet(grp huma.API) {
 }
 
 func dbClusterLabelSelector(extra string) string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindDB
+	base := orchestration.DBProviderInstanceLabel + "," +
+		orchestration.DBProviderClusterDefinitionLabel + "," +
+		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," +
+		orchestration.BrainProjectIDLabel
 	extra = strings.TrimSpace(extra)
 	if extra == "" {
 		return base
 	}
 	return base + "," + extra
-}
-
-func templateDBClusterLabelSelector(extra string) string {
-	base := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindTemplate
-	extra = strings.TrimSpace(extra)
-	if extra == "" {
-		return base
-	}
-	return base + "," + extra
-}
-
-func mergeK8sListJSON(left, right []byte) []byte {
-	if len(left) == 0 {
-		return right
-	}
-	if len(right) == 0 {
-		return left
-	}
-	leftList, err := dbClusterListFromJSON(left)
-	if err != nil {
-		return left
-	}
-	rightList, err := dbClusterListFromJSON(right)
-	if err != nil {
-		return left
-	}
-	seen := map[string]bool{}
-	for _, item := range leftList.Items {
-		seen[item.GetNamespace()+"/"+item.GetName()] = true
-	}
-	for _, item := range rightList.Items {
-		key := item.GetNamespace() + "/" + item.GetName()
-		if seen[key] {
-			continue
-		}
-		leftList.Items = append(leftList.Items, item)
-	}
-	out, err := json.Marshal(leftList)
-	if err != nil {
-		return left
-	}
-	return out
 }
 
 func dbResponseFromClusters(jsonBytes []byte, single bool) (json.RawMessage, error) {

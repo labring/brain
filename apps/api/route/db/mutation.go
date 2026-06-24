@@ -187,26 +187,24 @@ func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 }
 
 func requireBrainDBCluster(cluster unstructured.Unstructured) error {
+	return requireDBProviderCluster(cluster)
+}
+
+func requireDBProviderCluster(cluster unstructured.Unstructured) error {
 	labels := cluster.GetLabels()
+	if strings.TrimSpace(labels[orchestration.DBProviderInstanceLabel]) == "" ||
+		strings.TrimSpace(labels[orchestration.DBProviderClusterDefinitionLabel]) == "" {
+		return errors.New("cluster is not a DB Provider instance")
+	}
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindDB ||
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
-		return errors.New("cluster is not a Brain-managed DB")
+		return errors.New("cluster is not a Brain-owned DB Provider instance")
 	}
 	return nil
 }
 
 func requireBrainDBLikeCluster(cluster unstructured.Unstructured) error {
-	labels := cluster.GetLabels()
-	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
-		return errors.New("cluster is not a Brain-managed workload")
-	}
-	deploymentKind := labels[orchestration.BrainDeploymentKindLabel]
-	if deploymentKind != orchestration.DeploymentKindDB && deploymentKind != orchestration.DeploymentKindTemplate {
-		return errors.New("cluster is not a Brain-managed DB-like workload")
-	}
-	return nil
+	return requireDBProviderCluster(cluster)
 }
 
 func requireBrainDBLifecycleCluster(cluster unstructured.Unstructured) error {

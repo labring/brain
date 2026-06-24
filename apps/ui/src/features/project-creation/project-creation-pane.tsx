@@ -117,8 +117,7 @@ export function ProjectCreationPane({
   );
   const headerIcon = projectCreationHeaderIcon(activeSource);
   let title = "Create New Project";
-  let subtitle =
-    "Provide a project name and select the project creation method.";
+  let subtitle = "Select the project creation method.";
   if (directGithubEntry) {
     title = "GitHub Import";
     subtitle = "Import repository from URL or GitHub authorization.";

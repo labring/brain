@@ -10,17 +10,12 @@ import {
   readApIsPaused,
   readApReplicas,
 } from "@/features/project-settings/ap/k8s/ap-spec-access";
-import { BRAIN_DEPLOYMENT_KIND_LABEL } from "@/lib/brain-labels";
 import {
   type ProjectRuntimeRelationshipIndexes,
   projectRuntimeRelationshipIndexesFromResources,
 } from "./resource-relationships";
 
-export type ProjectRuntimeResourceKind =
-  | "AP"
-  | "DB"
-  | "PublicAccess"
-  | "TemplateNativeWorkload";
+export type ProjectRuntimeResourceKind = "AP" | "DB" | "PublicAccess";
 
 export type ProjectRuntimeFactKey = string;
 
@@ -94,44 +89,17 @@ export interface PublicAccessFact {
   targets: PublicAccessTargetSummary[];
 }
 
-export interface TemplateNativeWorkloadRef {
-  kind: "TemplateNativeWorkload";
-  name: string;
-  namespace: string;
-  workloadKind: string;
-}
-
-export interface TemplateNativeWorkloadFact {
-  displayName: string;
-  key: ProjectRuntimeFactKey;
-  observedUid?: string;
-  ref: TemplateNativeWorkloadRef;
-  replicaSummary?: {
-    replicas: number;
-  };
-  status: ProjectRuntimeStatusSummary;
-  workload: {
-    image: string;
-    kind: string;
-  };
-}
-
 export interface ProjectRuntimeFacts {
   apFacts: ApFact[];
   dbFacts: DbFact[];
   publicAccessFacts: PublicAccessFact[];
   relationshipIndexes: ProjectRuntimeRelationshipIndexes;
-  templateNativeWorkloadFacts: TemplateNativeWorkloadFact[];
 }
 
 export interface ProjectRuntimeFactsInput {
   apsData?: K8sGetResponse;
   dbsData?: K8sGetResponse;
   namespace: string;
-  templateNativeData?: {
-    deployments?: K8sGetResponse;
-    statefulSets?: K8sGetResponse;
-  };
 }
 
 const STATUS_TONES = new Set([
@@ -589,139 +557,6 @@ function publicAccessFactFromAp(
   };
 }
 
-function templateNativeImage(item: unknown): string {
-  const spec = asRecord(asRecord(item)?.spec) ?? {};
-  const containers =
-    asRecord(asRecord(spec.template)?.spec)?.containers ??
-    asRecord(spec)?.containers;
-  if (!Array.isArray(containers)) {
-    return "—";
-  }
-  const image = asRecord(containers[0])?.image;
-  return typeof image === "string" && image !== "" ? image : "—";
-}
-
-function templateNativeReplicas(item: unknown): number | undefined {
-  const replicas = asRecord(asRecord(item)?.spec)?.replicas;
-  return typeof replicas === "number" && Number.isFinite(replicas)
-    ? replicas
-    : undefined;
-}
-
-function templateNativeStatus(item: unknown): ProjectRuntimeStatusSummary {
-  const status = asRecord(asRecord(item)?.status) ?? {};
-  const phase =
-    nonEmptyString(status.phase) ??
-    (typeof status.readyReplicas === "number" &&
-    typeof status.replicas === "number" &&
-    status.replicas > 0 &&
-    status.readyReplicas >= status.replicas
-      ? "Running"
-      : "Creating");
-  return {
-    label: phase,
-    tone: statusTone(phase),
-  };
-}
-
-function isTemplateNativeWorkload(item: unknown): boolean {
-  const labels = asRecord(asRecord(asRecord(item)?.metadata)?.labels) ?? {};
-  const kind = nonEmptyString(asRecord(item)?.kind);
-  return (
-    labels[BRAIN_DEPLOYMENT_KIND_LABEL] === "template" &&
-    (kind === "Deployment" || kind === "StatefulSet")
-  );
-}
-
-function apLikeWorkloadKeys(
-  apsData: K8sGetResponse | undefined,
-  namespaceFallback: string
-): Set<string> {
-  const keys = new Set<string>();
-  for (const item of apItemsFromList(apsData)) {
-    const name = metadataName(item);
-    const namespace = metadataNamespace(item) ?? namespaceFallback;
-    if (name !== undefined && namespace !== "") {
-      keys.add(`${namespace}/${name}`);
-    }
-  }
-  return keys;
-}
-
-function templateNativeWorkloadKey(
-  item: unknown,
-  namespaceFallback: string
-): string | undefined {
-  const name = metadataName(item);
-  const namespace = metadataNamespace(item) ?? namespaceFallback;
-  return name !== undefined && namespace !== ""
-    ? `${namespace}/${name}`
-    : undefined;
-}
-
-function templateNativeFactKey(ref: TemplateNativeWorkloadRef): string {
-  return `${ref.kind}:${ref.namespace}:${ref.workloadKind}:${ref.name}`;
-}
-
-function templateNativeFactFromResource(
-  item: unknown,
-  namespaceFallback: string
-): TemplateNativeWorkloadFact | undefined {
-  if (!isTemplateNativeWorkload(item)) {
-    return undefined;
-  }
-  const name = metadataName(item);
-  const namespace = metadataNamespace(item) ?? namespaceFallback;
-  const workloadKind = nonEmptyString(asRecord(item)?.kind) ?? "Workload";
-  if (name === undefined || namespace === "") {
-    return undefined;
-  }
-
-  const ref: TemplateNativeWorkloadRef = {
-    kind: "TemplateNativeWorkload",
-    name,
-    namespace,
-    workloadKind,
-  };
-  const replicas = templateNativeReplicas(item);
-  return {
-    displayName: name,
-    key: templateNativeFactKey(ref),
-    ...(metadataUid(item) === undefined
-      ? {}
-      : { observedUid: metadataUid(item) }),
-    ref,
-    ...(replicas === undefined ? {} : { replicaSummary: { replicas } }),
-    status: templateNativeStatus(item),
-    workload: {
-      image: templateNativeImage(item),
-      kind: workloadKind,
-    },
-  };
-}
-
-function templateNativeFactsFromResources({
-  apsData,
-  namespace,
-  templateNativeData,
-}: Pick<
-  ProjectRuntimeFactsInput,
-  "apsData" | "namespace" | "templateNativeData"
->): TemplateNativeWorkloadFact[] {
-  const apLikeKeys = apLikeWorkloadKeys(apsData, namespace);
-  return [
-    ...apItemsFromList(templateNativeData?.deployments),
-    ...apItemsFromList(templateNativeData?.statefulSets),
-  ].flatMap((item) => {
-    const workloadKey = templateNativeWorkloadKey(item, namespace);
-    if (workloadKey !== undefined && apLikeKeys.has(workloadKey)) {
-      return [];
-    }
-    const fact = templateNativeFactFromResource(item, namespace);
-    return fact === undefined ? [] : [fact];
-  });
-}
-
 function apFactFromResource(
   ap: unknown,
   namespaceFallback: string
@@ -754,7 +589,6 @@ export function projectRuntimeFactsFromResources({
   apsData,
   dbsData,
   namespace,
-  templateNativeData,
 }: ProjectRuntimeFactsInput): ProjectRuntimeFacts {
   return {
     apFacts: apItemsFromList(apsData).flatMap((ap) => {
@@ -773,11 +607,6 @@ export function projectRuntimeFactsFromResources({
       apsData,
       dbsData,
       namespaceFallback: namespace,
-    }),
-    templateNativeWorkloadFacts: templateNativeFactsFromResources({
-      apsData,
-      namespace,
-      templateNativeData,
     }),
   };
 }

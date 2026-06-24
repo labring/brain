@@ -24,8 +24,14 @@ const CONTINUE_DEPLOYMENT_RE = /Continue deployment/;
 const FIRECRAWL_API_KEY_RE = /FIRECRAWL_API_KEY/;
 const FIRECRAWL_API_KEY_DESCRIPTION_RE = /FIRECRAWL API KEY\./;
 const FIRECRAWL_API_KEY_INPUT_NAME_RE = /name="FIRECRAWL_API_KEY"/;
-const DEPLOYMENT_SETTINGS_STYLE_RE =
-  /rounded-lg border border-border bg-input\/30/;
+const TIMELINE_DESIGN_CARD_STYLE_RE =
+  /relative overflow-hidden rounded-lg bg-white\/\[0\.05\]/;
+const TIMELINE_BASE_SHADOW_RE =
+  /shadow-\[0_1px_3px_0_rgba\(0,0,0,0\.10\),0_1px_2px_0_rgba\(0,0,0,0\.06\)\]/;
+const TIMELINE_BORDER_BEAM_RE = /deployment-timeline-border-beam/;
+const TIMELINE_BASE_BORDER_RE = /border-white\/10/;
+const DEPLOYMENT_CONFIGURATION_CARD_STYLE_RE =
+  /rounded-md border border-white\/8 bg-white\/\[0\.06\]/;
 const AMBER_FORM_BACKGROUND_RE = /bg-amber-500\/10/;
 const DEPLOYMENT_CONFIGURATION_FORM_RE =
   /<form[^>]*data-slot="deployment-configuration-form"[^>]*>(.*?)<\/form>/;
@@ -306,7 +312,11 @@ test("deployment task timeline pane renders template input form when blocked", (
   assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
   assert.match(html, AI_GATEWAY_KEY_RE);
   assert.match(html, CONTINUE_DEPLOYMENT_RE);
-  assert.match(html, DEPLOYMENT_SETTINGS_STYLE_RE);
+  assert.match(html, TIMELINE_DESIGN_CARD_STYLE_RE);
+  assert.match(html, TIMELINE_BASE_SHADOW_RE);
+  assert.match(html, TIMELINE_BORDER_BEAM_RE);
+  assert.match(html, TIMELINE_BASE_BORDER_RE);
+  assert.match(html, DEPLOYMENT_CONFIGURATION_CARD_STYLE_RE);
   assert.doesNotMatch(
     deploymentConfigurationFormHtml(html),
     AMBER_FORM_BACKGROUND_RE

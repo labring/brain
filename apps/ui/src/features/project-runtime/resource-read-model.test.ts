@@ -183,74 +183,11 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
   ]);
 });
 
-test("Project Runtime parses template-native workloads separately from AP facts", () => {
-  const rawStatefulSet = {
-    apiVersion: "apps/v1",
-    kind: "StatefulSet",
-    metadata: {
-      labels: {
-        "brain.io/deployment-kind": "template",
-      },
-      name: "memos",
-      namespace: "ns-admin",
-      uid: "sts-uid",
-    },
-    spec: {
-      replicas: 1,
-      template: {
-        spec: {
-          containers: [
-            {
-              image: "ghcr.io/usememos/memos:latest",
-              name: "main",
-            },
-          ],
-        },
-      },
-    },
-    status: {
-      readyReplicas: 1,
-      replicas: 1,
-    },
-  };
+test("Project Runtime ignores old template-native workload facts", () => {
+  const facts = projectRuntimeFactsFromResources({ namespace: "ns-admin" });
 
-  const facts = projectRuntimeFactsFromResources({
-    namespace: "ns-admin",
-    templateNativeData: { statefulSets: { items: [rawStatefulSet] } },
-  });
-
-  assert.deepEqual(facts.templateNativeWorkloadFacts, [
-    {
-      displayName: "memos",
-      key: "TemplateNativeWorkload:ns-admin:StatefulSet:memos",
-      observedUid: "sts-uid",
-      ref: {
-        kind: "TemplateNativeWorkload",
-        name: "memos",
-        namespace: "ns-admin",
-        workloadKind: "StatefulSet",
-      },
-      replicaSummary: { replicas: 1 },
-      status: { label: "Running", tone: "running" },
-      workload: {
-        image: "ghcr.io/usememos/memos:latest",
-        kind: "StatefulSet",
-      },
-    },
-  ]);
   assert.deepEqual(facts.apFacts, []);
-  assert.equal(
-    "apRef" in required(facts.templateNativeWorkloadFacts[0]),
-    false
-  );
-  assert.equal(
-    "settingsOwner" in required(facts.templateNativeWorkloadFacts[0]),
-    false
-  );
-  assert.equal(
-    "lifecycleActions" in required(facts.templateNativeWorkloadFacts[0]),
-    false
-  );
+  assert.deepEqual(facts.dbFacts, []);
 });
 
 test("Project Runtime derives saved AP-to-DB relationship indexes and DB reference sources", () => {

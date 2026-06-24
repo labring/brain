@@ -62,11 +62,11 @@ import {
 } from "./gateway";
 import { deployOutputProgressSummary } from "./output-progress";
 import {
-  apWorkloadReadinessFromProductView,
-  dbServiceReadinessFromProductView,
-  publicAccessReadinessFromProductView,
-  templateWorkloadReadinessFromProductView,
-} from "./readiness";
+  isResultReadinessTerminalError,
+  observeDeploymentResultCardReadiness,
+  resultReadinessLabel,
+  waitingForResultObservationStatus,
+} from "./result-readiness";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
 import type {
   DeployTaskArtifactSummary,
@@ -517,100 +517,6 @@ async function markDeployTaskFailureTimeline(input: {
   return true;
 }
 
-async function fetchApProductView(input: {
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-}): Promise<unknown> {
-  return await fetcher({
-    base: ApiUrl(),
-    header: {
-      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
-    },
-    method: "GET",
-    path: API_ROUTES.ap.root,
-    query: {
-      name: input.name,
-      namespace: input.namespace,
-    },
-  });
-}
-
-async function fetchDbProductView(input: {
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-}): Promise<unknown> {
-  return await fetcher({
-    base: ApiUrl(),
-    header: {
-      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
-    },
-    method: "GET",
-    path: API_ROUTES.db.root,
-    query: {
-      name: input.name,
-      namespace: input.namespace,
-    },
-  });
-}
-
-function templateWorkloadK8sKind(kind: string): string {
-  switch (kind) {
-    case "CronJob":
-      return "cronjobs";
-    case "DaemonSet":
-      return "daemonsets";
-    case "Deployment":
-      return "deployments";
-    case "StatefulSet":
-      return "statefulsets";
-    default:
-      return kind.toLowerCase();
-  }
-}
-
-async function fetchTemplateWorkloadProductView(input: {
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-  workloadKind: string;
-}): Promise<unknown> {
-  return await fetcher({
-    base: ApiUrl(),
-    header: {
-      Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
-    },
-    method: "GET",
-    path: API_ROUTES.k8s.get,
-    query: {
-      kind: templateWorkloadK8sKind(input.workloadKind),
-      name: input.name,
-      namespace: input.namespace,
-    },
-  });
-}
-
-function publicAddressViewFromAp(input: {
-  ap: unknown;
-  publicAddressId: string;
-}): unknown {
-  const status = objectValue(objectValue(input.ap)?.status);
-  const network = objectValue(status?.network);
-  const publicAddresses = Array.isArray(network?.publicAddresses)
-    ? network.publicAddresses
-    : [];
-  return (
-    publicAddresses.find((address) => {
-      const record = objectValue(address);
-      return (
-        stringValue(record?.id) === input.publicAddressId ||
-        stringValue(record?.host) === input.publicAddressId
-      );
-    }) ?? { status: "unknown" }
-  );
-}
-
 async function upsertResultTimelineCard(input: {
   card: DeploymentResultResourceCard;
   eventMessage: string;
@@ -654,130 +560,6 @@ async function upsertResultTimelineCard(input: {
   });
 }
 
-function readinessEventSeverity(
-  status: ReturnType<typeof apWorkloadReadinessFromProductView>["status"]
-): "info" | "success" | "warning" | "error" {
-  if (status === "running") {
-    return "success";
-  }
-  if (status === "failed") {
-    return "error";
-  }
-  if (status === "blocked") {
-    return "warning";
-  }
-  return "info";
-}
-
-function applyReadinessToResultCard(
-  card: DeploymentResultResourceCard,
-  readiness: ReturnType<typeof apWorkloadReadinessFromProductView>
-): DeploymentResultResourceCard {
-  return {
-    ...card,
-    latestStatusText: readiness.latestStatusText,
-    status: readiness.status,
-  };
-}
-
-function resultReadinessEventReason(
-  card: DeploymentResultResourceCard
-): string {
-  switch (card.resultRef.kind) {
-    case "AP":
-      return "APWorkloadReadiness";
-    case "DB":
-      return "DBServiceReadiness";
-    case "PublicAccess":
-      return "PublicAddressReadiness";
-    case "TemplateWorkload":
-      return "TemplateWorkloadReadiness";
-    default:
-      return card.resultRef satisfies never;
-  }
-}
-
-function resultReadinessLabel(card: DeploymentResultResourceCard): string {
-  switch (card.resultRef.kind) {
-    case "AP":
-      return `AP ${card.resultRef.name}`;
-    case "DB":
-      return `DB Service ${card.resultRef.name}`;
-    case "PublicAccess":
-      return `Public Address ${card.resultRef.id}`;
-    case "TemplateWorkload":
-      return `${card.resultRef.workloadKind} ${card.resultRef.name}`;
-    default:
-      return card.resultRef satisfies never;
-  }
-}
-
-function isResultReadinessTerminalError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.message.includes("failed readiness") ||
-      error.message.includes("readiness is blocked"))
-  );
-}
-
-function waitingForResultObservationStatus(
-  card: DeploymentResultResourceCard,
-  error: unknown
-): string {
-  return error instanceof Error
-    ? `Waiting for ${resultReadinessLabel(card)} observation: ${error.message}`
-    : `Waiting for ${resultReadinessLabel(card)} observation.`;
-}
-
-async function resultCardReadiness(input: {
-  card: DeploymentResultResourceCard;
-  kubeconfig: string;
-}): Promise<ReturnType<typeof apWorkloadReadinessFromProductView>> {
-  const { resultRef } = input.card;
-  switch (resultRef.kind) {
-    case "AP": {
-      const ap = await fetchApProductView({
-        kubeconfig: input.kubeconfig,
-        name: resultRef.name,
-        namespace: resultRef.namespace,
-      });
-      return apWorkloadReadinessFromProductView(ap);
-    }
-    case "DB": {
-      const db = await fetchDbProductView({
-        kubeconfig: input.kubeconfig,
-        name: resultRef.name,
-        namespace: resultRef.namespace,
-      });
-      return dbServiceReadinessFromProductView(db);
-    }
-    case "PublicAccess": {
-      const ap = await fetchApProductView({
-        kubeconfig: input.kubeconfig,
-        name: resultRef.apName,
-        namespace: resultRef.namespace,
-      });
-      return publicAccessReadinessFromProductView(
-        publicAddressViewFromAp({
-          ap,
-          publicAddressId: resultRef.id,
-        })
-      );
-    }
-    case "TemplateWorkload": {
-      const workload = await fetchTemplateWorkloadProductView({
-        kubeconfig: input.kubeconfig,
-        name: resultRef.name,
-        namespace: resultRef.namespace,
-        workloadKind: resultRef.workloadKind,
-      });
-      return templateWorkloadReadinessFromProductView(workload);
-    }
-    default:
-      return resultRef satisfies never;
-  }
-}
-
 async function observeResultCardReadiness(input: {
   card: DeploymentResultResourceCard;
   kubeconfig: string;
@@ -788,28 +570,30 @@ async function observeResultCardReadiness(input: {
   status: DeploymentResultResourceCard["status"];
 }> {
   try {
-    const readiness = await resultCardReadiness(input);
-    const nextCard = applyReadinessToResultCard(input.card, readiness);
+    const observed = await observeDeploymentResultCardReadiness({
+      card: input.card,
+      kubeconfig: input.kubeconfig,
+    });
     await upsertResultTimelineCard({
-      card: nextCard,
-      eventMessage: readiness.eventMessage,
-      eventReason: resultReadinessEventReason(input.card),
-      eventSeverity: readinessEventSeverity(readiness.status),
+      card: observed.card,
+      eventMessage: observed.eventMessage,
+      eventReason: observed.eventReason,
+      eventSeverity: observed.eventSeverity,
       taskId: input.taskId,
     });
 
-    if (input.card.required && readiness.status === "failed") {
+    if (input.card.required && observed.status === "failed") {
       throw new Error(`${resultReadinessLabel(input.card)} failed readiness.`);
     }
-    if (input.card.required && readiness.status === "blocked") {
+    if (input.card.required && observed.status === "blocked") {
       throw new Error(
         `${resultReadinessLabel(input.card)} readiness is blocked.`
       );
     }
     return {
-      latestStatus: readiness.latestStatusText,
-      running: !input.card.required || readiness.status === "running",
-      status: readiness.status,
+      latestStatus: observed.latestStatus,
+      running: observed.running,
+      status: observed.status,
     };
   } catch (error) {
     if (isResultReadinessTerminalError(error)) {

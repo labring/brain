@@ -63,7 +63,7 @@ func apInputReferencesGeneratedImagePullSecret(input orchestration.APResourcesIn
 }
 
 func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config, name, namespace string, input orchestration.APResourcesInput) error {
-	for _, selector := range apPublicRoutingSupportSelectors(name) {
+	for _, selector := range apPublicRoutingSupportSelectors(name, input.ProjectID) {
 		for _, resource := range []string{"ingresses", "certificates", "issuers"} {
 			if _, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
 				LabelSelector: selector,
@@ -104,12 +104,18 @@ func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config,
 	return k8ssvc.ApplyObjects(restConfig, objects, namespace)
 }
 
-func apPublicRoutingSupportSelectors(name string) []string {
+func apPublicRoutingSupportSelectors(name string, projectID string) []string {
 	return []string{
-		apPublicRoutingSupportSelector(name),
+		apPublicRoutingSupportSelector(name, projectID),
 	}
 }
 
-func apPublicRoutingSupportSelector(name string) string {
-	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP + "," + orchestration.BrainDeploymentNameLabel + "=" + name
+func apPublicRoutingSupportSelector(name string, projectID string) string {
+	projectSelector := orchestration.BrainProjectIDLabel
+	if trimmed := strings.TrimSpace(projectID); trimmed != "" {
+		projectSelector += "=" + trimmed
+	}
+	return orchestration.LaunchpadAppDeployManagerLabel + "=" + name + "," +
+		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," +
+		projectSelector
 }

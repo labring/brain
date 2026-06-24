@@ -255,26 +255,23 @@ func apRuntimeObjects(resources *orchestration.APResources) []runtime.Object {
 }
 
 func requireBrainAPDeployment(deployment appsv1.Deployment) error {
+	return requireLaunchpadAPDeployment(deployment)
+}
+
+func requireLaunchpadAPDeployment(deployment appsv1.Deployment) error {
 	labels := deployment.GetLabels()
+	if strings.TrimSpace(labels[orchestration.LaunchpadAppDeployManagerLabel]) == "" {
+		return errors.New("deployment is not a Launchpad AP")
+	}
 	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		labels[orchestration.BrainDeploymentKindLabel] != orchestration.DeploymentKindAP ||
 		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
-		return errors.New("deployment is not a Brain-managed AP")
+		return errors.New("deployment is not a Brain-owned Launchpad AP")
 	}
 	return nil
 }
 
 func requireBrainAPLikeDeployment(deployment appsv1.Deployment) error {
-	labels := deployment.GetLabels()
-	if labels[orchestration.BrainManagedByLabel] != orchestration.BrainManagedByValue ||
-		strings.TrimSpace(labels[orchestration.BrainProjectIDLabel]) == "" {
-		return errors.New("deployment is not a Brain-managed workload")
-	}
-	deploymentKind := labels[orchestration.BrainDeploymentKindLabel]
-	if deploymentKind != orchestration.DeploymentKindAP && deploymentKind != orchestration.DeploymentKindTemplate {
-		return errors.New("deployment is not a Brain-managed AP-like workload")
-	}
-	return nil
+	return requireLaunchpadAPDeployment(deployment)
 }
 
 func ensureAPCreateTargetIsBrainManaged(cfg *clientcmdapi.Config, name string, namespace string, nextKind orchestration.APWorkloadKind) error {
@@ -744,7 +741,7 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 		}
 		return apierrors.NewNotFound(schema.GroupResource{Group: "brain.io", Resource: "aps"}, name)
 	}
-	selector := apDirectResourceDeleteSelector(name)
+	selector := apDirectResourceDeleteSelector(name, workloadProjectID(*workload))
 	for _, resource := range []string{"certificates", "issuers", "ingresses", "horizontalpodautoscalers", "services", "configmaps", "secrets", "persistentvolumeclaims"} {
 		_, err := k8ssvc.Delete(clientCfg, k8ssvc.DeleteOptions{
 			LabelSelector: selector,
@@ -766,8 +763,8 @@ func deleteAPDirectResources(clientCfg *clientcmdapi.Config, name string, namesp
 	return err
 }
 
-func apDirectResourceDeleteSelector(name string) string {
-	return orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP + "," + orchestration.BrainDeploymentNameLabel + "=" + name
+func apDirectResourceDeleteSelector(name string, projectID string) string {
+	return apPublicRoutingSupportSelector(name, projectID)
 }
 
 func templateDeploymentRefFromAPWorkload(workload apWorkload) (templateDeploymentRef, bool) {

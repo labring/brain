@@ -162,8 +162,6 @@ function resultKindLabel(kind: string): string {
       return "DB";
     case "PublicAccess":
       return "Public access";
-    case "TemplateNative":
-      return "Template workload";
     default:
       return kind;
   }
@@ -421,9 +419,12 @@ export function replaceDeploymentTaskProjections(
 ): DeploymentTaskProjection[] {
   if (
     current.length === nextProjections.length &&
-    current.every((projection, index) =>
-      deploymentTaskProjectionEqual(projection, nextProjections[index])
-    )
+    current.every((projection, index) => {
+      const next = nextProjections[index];
+      return (
+        next !== undefined && deploymentTaskProjectionEqual(projection, next)
+      );
+    })
   ) {
     return current;
   }
@@ -475,7 +476,11 @@ export function upsertDeploymentTaskProjection(
   if (index === -1) {
     return [projection, ...projections];
   }
-  if (deploymentTaskProjectionEqual(projections[index], projection)) {
+  const current = projections[index];
+  if (
+    current !== undefined &&
+    deploymentTaskProjectionEqual(current, projection)
+  ) {
     return projections;
   }
   const next = [...projections];

@@ -14,10 +14,7 @@ import {
 } from "@/features/deployment/template-deployer";
 
 import { useProjectCreator } from "./project-creator.context";
-import {
-  ProjectCreatorOptionPicker,
-  ProjectCreatorProjectNameField,
-} from "./project-creator.pick";
+import { ProjectCreatorOptionPicker } from "./project-creator.pick";
 import type {
   ProjectCreatorDatabaseChoice,
   ProjectCreatorSourceKind,
@@ -142,11 +139,6 @@ function DockerPanel() {
     >
       <DockerDeployer
         busy={busy}
-        childrenBeforeDeploy={
-          meta.dockerDirect && dockerImage.trim() !== "" ? (
-            <ProjectCreatorProjectNameField />
-          ) : null
-        }
         onDeploy={(settings) => {
           const projectDisplayName = states.projectDisplayName.trim();
           const projectDescription = states.projectDescription.trim();

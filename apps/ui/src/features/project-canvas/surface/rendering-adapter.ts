@@ -185,21 +185,12 @@ function runtimeModelForLookup(
           ? undefined
           : projectRuntimeNodeModelFromFact(lookup.kind, fact);
       }
-      case "TemplateNativeWorkload": {
-        const fact = runtime.runtimeStore.selectTemplateNativeWorkloadFact(
-          lookup.modelKey
-        );
-        return fact === undefined
-          ? undefined
-          : projectRuntimeNodeModelFromFact(lookup.kind, fact);
-      }
       default:
         return undefined;
     }
   }
   switch (lookup.kind) {
     case "AP":
-    case "TemplateNativeWorkload":
       return runtime.runtimeNodeModels?.containerModelsByKey.get(
         lookup.modelKey
       );

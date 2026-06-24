@@ -22,7 +22,6 @@ import {
   type DeploymentTaskResultResourceRef,
   materializedSlotPositions,
   resultRefForSlot,
-  templateNodeKeyFromNode,
 } from "./deployment-projection-model";
 
 export function deploymentPlaceholderHandoffs(input: {
@@ -64,15 +63,6 @@ function addResultRefHandoff(input: {
   position: CanvasLayoutPosition;
   ref: DeploymentTaskResultResourceRef;
 }): void {
-  if (input.ref.kind === "TemplateNative") {
-    const node = input.context.liveTemplateNodeByKey.get(
-      `${input.ref.namespace}/${input.ref.name}`
-    );
-    if (node !== undefined) {
-      input.byNodeId.set(node.id, input.position);
-    }
-    return;
-  }
   if (layoutHasRefInDeploymentProjectionContext(input.context, input.ref)) {
     return;
   }
@@ -137,10 +127,8 @@ export function deploymentPlaceholderPendingResultKeys(input: {
   context?: DeploymentProjectionContext;
 }): {
   refs: Set<string>;
-  templates: Set<string>;
 } {
   const refs = new Set<string>();
-  const templates = new Set<string>();
   const context =
     input.context ??
     createDeploymentProjectionContext({
@@ -155,25 +143,19 @@ export function deploymentPlaceholderPendingResultKeys(input: {
       preview,
       refs,
       task,
-      templates,
     });
   }
-  return { refs, templates };
+  return { refs };
 }
 
 function addPendingResultKey(input: {
   context: DeploymentProjectionContext;
   ref: DeploymentTaskResultResourceRef;
   refs: Set<string>;
-  templates: Set<string>;
 }): void {
   if (
     resultRefHasLiveNodeInDeploymentProjectionContext(input.context, input.ref)
   ) {
-    return;
-  }
-  if (input.ref.kind === "TemplateNative") {
-    input.templates.add(`${input.ref.namespace}/${input.ref.name}`);
     return;
   }
   if (!layoutHasRefInDeploymentProjectionContext(input.context, input.ref)) {
@@ -186,7 +168,6 @@ function addPreviewPendingResultKeys(input: {
   preview: DeploymentResultPreview;
   refs: Set<string>;
   task: DeploymentTaskProjection;
-  templates: Set<string>;
 }): void {
   for (const slot of input.preview.slots) {
     const expectedRef = resultRefForSlot({ slot, task: input.task });
@@ -203,7 +184,6 @@ function addPreviewPendingResultKeys(input: {
       context: input.context,
       ref: expectedRef,
       refs: input.refs,
-      templates: input.templates,
     });
   }
 }
@@ -216,6 +196,5 @@ export function isDeploymentPlaceholderPendingResultNode(input: {
   if (ref !== undefined && input.keys.refs.has(canvasResourceKey(ref))) {
     return true;
   }
-  const templateKey = templateNodeKeyFromNode(input.node);
-  return templateKey !== undefined && input.keys.templates.has(templateKey);
+  return false;
 }
