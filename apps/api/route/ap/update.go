@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -70,6 +75,8 @@ const (
 	apUpdateErrorInternal   apUpdateErrorKind = "internal"
 	apUpdateErrorNotFound   apUpdateErrorKind = "not-found"
 )
+
+const templateAPPausedReplicasAnnotation = "brain.io/template-paused-replicas"
 
 type apUpdateError struct {
 	err     error
@@ -146,6 +153,9 @@ func updateAP(ctx context.Context, req apUpdateRequest) (json.RawMessage, error)
 		return nil, apUpdateInternal("failed to get AP for update", err)
 	}
 	if err := requireBrainAPWorkload(*workload); err != nil {
+		if requireBrainAPLifecycleWorkload(*workload) == nil {
+			return updateTemplateAP(cfg, *workload, req.Body, time.Now().UTC())
+		}
 		return nil, apUpdateNotFound("AP not found", err)
 	}
 
@@ -178,6 +188,234 @@ func updateAP(ctx context.Context, req apUpdateRequest) (json.RawMessage, error)
 		return nil, apUpdateInternal("failed to annotate AP image version warning", err)
 	}
 	return body, nil
+}
+
+func updateTemplateAP(cfg *clientcmdapi.Config, workload apWorkload, raw json.RawMessage, now time.Time) (json.RawMessage, error) {
+	patch, err := templateAPUpdateMergePatch(workload, raw, now)
+	if err != nil {
+		return nil, apUpdateBadRequest("invalid template AP update request", err)
+	}
+	jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+		Resource:  workload.Resource(),
+		Name:      workload.Name(),
+		Namespace: workload.Namespace(),
+		PatchType: k8ssvc.PatchTypeStrategic,
+		Patch:     patch,
+	})
+	if err != nil {
+		return nil, apUpdateInternal("failed to update template AP", err)
+	}
+	var patchedWorkload apWorkload
+	if workload.Deployment != nil {
+		var deployment appsv1.Deployment
+		if err := json.Unmarshal(jsonBytes, &deployment); err != nil {
+			return nil, apUpdateInternal("failed to decode updated template AP", err)
+		}
+		patchedWorkload.Deployment = &deployment
+	} else {
+		var statefulSet appsv1.StatefulSet
+		if err := json.Unmarshal(jsonBytes, &statefulSet); err != nil {
+			return nil, apUpdateInternal("failed to decode updated template AP", err)
+		}
+		patchedWorkload.StatefulSet = &statefulSet
+	}
+	body, err := apResponseFromWorkloadWithConfigMapValues(cfg, &patchedWorkload)
+	if err != nil {
+		return nil, apUpdateInternal("failed to adapt updated template AP response", err)
+	}
+	return body, nil
+}
+
+func templateAPUpdateMergePatch(workload apWorkload, raw json.RawMessage, now time.Time) ([]byte, error) {
+	renderInput, paused, err := apRenderInputFromWorkloadPatch(workload, raw, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateTemplateAPUpdatePatch(raw); err != nil {
+		return nil, err
+	}
+
+	out := map[string]interface{}{}
+	metadata := map[string]interface{}{}
+	annotations := map[string]interface{}{}
+	if renderInput.EnvRawSource != workload.Annotations()[orchestration.APEnvRawSourceAnnotation] {
+		annotations[orchestration.APEnvRawSourceAnnotation] = renderInput.EnvRawSource
+	}
+	resourcePatch := templateAPUpdateResourcePatch(raw)
+	_, hasReplicaStrategy := resourcePatch["replicaStrategy"]
+	_, hasReplicas := resourcePatch["replicas"]
+	if hasReplicaStrategy && renderInput.ReplicaStrategy != nil {
+		rawStrategy, err := json.Marshal(renderInput.ReplicaStrategy)
+		if err != nil {
+			return nil, err
+		}
+		annotations[orchestration.APReplicaStrategyAnnotation] = string(rawStrategy)
+	}
+
+	specPatch := map[string]interface{}{}
+	templatePatch := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"containers": []interface{}{templateAPContainerPatch(workload, renderInput)},
+		},
+	}
+	specPatch["template"] = templatePatch
+	if renderInput.RestartRequest != nil {
+		annotations[orchestration.APRestartRequestAnnotation] = strconv.FormatInt(*renderInput.RestartRequest, 10)
+		templatePatch["metadata"] = map[string]interface{}{
+			"annotations": map[string]interface{}{
+				"kubectl.kubernetes.io/restartedAt": now.Format(time.RFC3339),
+			},
+		}
+	}
+	if paused != nil {
+		applyTemplateAPPausePatch(workload, specPatch, annotations, *paused)
+	} else if (hasReplicas || hasReplicaStrategy) && renderInput.Replicas > 0 {
+		specPatch["replicas"] = renderInput.Replicas
+	}
+	out["spec"] = specPatch
+	if len(annotations) > 0 {
+		metadata["annotations"] = annotations
+	}
+	if len(metadata) > 0 {
+		out["metadata"] = metadata
+	}
+	return json.Marshal(out)
+}
+
+func templateAPContainerPatch(workload apWorkload, input orchestration.APResourcesInput) map[string]interface{} {
+	container := map[string]interface{}{
+		"args":            input.Args,
+		"command":         input.Command,
+		"env":             templateAPEnvPatch(input.Env),
+		"image":           input.Image,
+		"imagePullPolicy": input.ImagePullPolicy,
+		"name":            templateAPContainerName(workload),
+		"resources": map[string]interface{}{
+			"limits":   input.ResourceLimit,
+			"requests": input.ResourceReq,
+		},
+	}
+	if input.StartupProbe != nil {
+		container["startupProbe"] = input.StartupProbe
+	}
+	if input.LivenessProbe != nil {
+		container["livenessProbe"] = input.LivenessProbe
+	}
+	if input.ReadinessProbe != nil {
+		container["readinessProbe"] = input.ReadinessProbe
+	}
+	return container
+}
+
+func templateAPEnvPatch(env []corev1.EnvVar) []interface{} {
+	out := make([]interface{}, 0, len(env)+1)
+	out = append(out, map[string]interface{}{"$patch": "replace"})
+	for i := range env {
+		out = append(out, env[i])
+	}
+	return out
+}
+
+func templateAPContainerName(workload apWorkload) string {
+	if workload.Deployment != nil && len(workload.Deployment.Spec.Template.Spec.Containers) > 0 {
+		if name := strings.TrimSpace(workload.Deployment.Spec.Template.Spec.Containers[0].Name); name != "" {
+			return name
+		}
+	}
+	if workload.StatefulSet != nil && len(workload.StatefulSet.Spec.Template.Spec.Containers) > 0 {
+		if name := strings.TrimSpace(workload.StatefulSet.Spec.Template.Spec.Containers[0].Name); name != "" {
+			return name
+		}
+	}
+	if name := strings.TrimSpace(workload.Name()); name != "" {
+		return name
+	}
+	return "main"
+}
+
+func templateAPUpdateResourcePatch(raw json.RawMessage) map[string]interface{} {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return nil
+	}
+	spec, _ := patch["spec"].(map[string]interface{})
+	resourceSpec, _ := spec["resource"].(map[string]interface{})
+	return resourceSpec
+}
+
+func applyTemplateAPPausePatch(workload apWorkload, specPatch map[string]interface{}, annotations map[string]interface{}, paused bool) {
+	annotations[orchestration.LaunchpadPauseAnnotation] = map[bool]string{true: "true", false: "false"}[paused]
+	replicas := int32(1)
+	if paused {
+		if currentReplicas := workloadReplicas(workload); currentReplicas > 0 {
+			annotations[templateAPPausedReplicasAnnotation] = strconv.FormatInt(int64(currentReplicas), 10)
+		}
+		replicas = 0
+	} else {
+		annotations[templateAPPausedReplicasAnnotation] = nil
+		if pausedReplicas := templateAPPausedReplicas(workload); pausedReplicas > 0 {
+			replicas = pausedReplicas
+		} else if currentReplicas := workloadReplicas(workload); currentReplicas > 0 {
+			replicas = currentReplicas
+		}
+	}
+	specPatch["replicas"] = replicas
+}
+
+func validateTemplateAPUpdatePatch(raw json.RawMessage) error {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return err
+	}
+	for key := range patch {
+		if key != "spec" {
+			return fmt.Errorf("template AP update only supports spec")
+		}
+	}
+	spec, _ := patch["spec"].(map[string]interface{})
+	for key := range spec {
+		switch key {
+		case "input", "resource", "paused", "restartRequest":
+		default:
+			return fmt.Errorf("unsupported template AP patch field spec.%s", key)
+		}
+	}
+	input, _ := spec["input"].(map[string]interface{})
+	for key := range input {
+		switch key {
+		case "args", "command", "env", "envRawSource", "image", "imagePullPolicy", "probes":
+		default:
+			return fmt.Errorf("unsupported template AP patch field spec.input.%s", key)
+		}
+	}
+	resourceSpec, _ := spec["resource"].(map[string]interface{})
+	for key := range resourceSpec {
+		switch key {
+		case "limits", "requests", "replicaStrategy", "replicas":
+		default:
+			return fmt.Errorf("unsupported template AP patch field spec.resource.%s", key)
+		}
+	}
+	return nil
+}
+
+func workloadReplicas(workload apWorkload) int32 {
+	if workload.Deployment != nil && workload.Deployment.Spec.Replicas != nil {
+		return *workload.Deployment.Spec.Replicas
+	}
+	if workload.StatefulSet != nil && workload.StatefulSet.Spec.Replicas != nil {
+		return *workload.StatefulSet.Spec.Replicas
+	}
+	return 0
+}
+
+func templateAPPausedReplicas(workload apWorkload) int32 {
+	value := strings.TrimSpace(workload.Annotations()[templateAPPausedReplicasAnnotation])
+	replicas, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || replicas < 1 {
+		return 0
+	}
+	return int32(replicas)
 }
 
 func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMaps []orchestration.APConfigMapMount, now time.Time) (apUpdatePlan, error) {

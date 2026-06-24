@@ -116,10 +116,12 @@ export function ProjectCreationPane({
     [creatorRootProps, handleStepChange]
   );
   const headerIcon = projectCreationHeaderIcon(activeSource);
+  let title = "Create New Project";
   let subtitle =
     "Provide a project name and select the project creation method.";
   if (directGithubEntry) {
-    subtitle = "Select a GitHub repository to create a project.";
+    title = "GitHub Import";
+    subtitle = "Import repository from URL or GitHub authorization.";
   } else if (directDockerEntry) {
     subtitle = "Provide Docker deployment settings.";
   } else if (directDatabaseEntry) {
@@ -197,7 +199,7 @@ export function ProjectCreationPane({
       label="Project creation pane"
       onClose={onClose}
       subtitle={subtitle}
-      title="Create New Project"
+      title={title}
     >
       {content}
     </SidePane>

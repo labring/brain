@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -39,6 +41,21 @@ const IMAGE_SRC_RE = /src="([^"]+)"/;
 const REQUIRED_ARG_RE = /init_password/;
 const EMPTY_RE = /No templates/;
 const DIFY_DESCRIPTION = "Dify is an open-source LLM app development platform.";
+const ROOT_TEST_ID_RE = /data-testid="template\.deployer"/;
+const COMBOBOX_TEST_ID_RE =
+  /data-testid="template\.deployer\.template-combobox"/;
+const PARAMETER_INPUT_TEST_ID_RE =
+  /data-testid="template\.deployer\.parameter-input"/;
+const PARAMETER_ARG_RE = /data-template-arg="init_password"/;
+const SUBMIT_TEST_ID_RE = /data-testid="template\.deployer\.submit"/;
+const EMPTY_TEST_ID_RE = /data-testid="template\.deployer\.empty"/;
+const SEARCH_INPUT_SOURCE_RE = /data-testid="template\.deployer\.search-input"/;
+const TEMPLATE_OPTION_SOURCE_RE =
+  /data-testid="template\.deployer\.template-option"/;
+const TEMPLATE_OPTION_NAME_SOURCE_RE = /data-template-name=\{choice\.name\}/;
+const SOURCE = readFileSync(
+  fileURLToPath(new URL("./template-deployer.tsx", import.meta.url))
+).toString();
 
 test("TemplateDeployer renders searchable template trigger with selected icon", () => {
   const html = renderToStaticMarkup(
@@ -50,6 +67,11 @@ test("TemplateDeployer renders searchable template trigger with selected icon", 
 
   assert.match(html, COMBOBOX_ROLE_RE);
   assert.match(html, TEMPLATE_ARIA_RE);
+  assert.match(html, ROOT_TEST_ID_RE);
+  assert.match(html, COMBOBOX_TEST_ID_RE);
+  assert.match(html, PARAMETER_INPUT_TEST_ID_RE);
+  assert.match(html, PARAMETER_ARG_RE);
+  assert.match(html, SUBMIT_TEST_ID_RE);
   assert.match(html, DIFY_RE);
   const imageSrc = IMAGE_SRC_RE.exec(html)?.[1] ?? "";
   assert.match(imageSrc, TEMPLATE_ICON_RE);
@@ -66,5 +88,12 @@ test("TemplateDeployer renders empty state without combobox", () => {
   );
 
   assert.match(html, EMPTY_RE);
+  assert.match(html, EMPTY_TEST_ID_RE);
   assert.doesNotMatch(html, COMBOBOX_ROLE_RE);
+});
+
+test("TemplateDeployer keeps runtime locators for opened template search", () => {
+  assert.match(SOURCE, SEARCH_INPUT_SOURCE_RE);
+  assert.match(SOURCE, TEMPLATE_OPTION_SOURCE_RE);
+  assert.match(SOURCE, TEMPLATE_OPTION_NAME_SOURCE_RE);
 });

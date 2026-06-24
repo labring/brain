@@ -143,6 +143,7 @@ function TemplateSearchSelect({
           "data-[popup-open]:border-blue-400 data-[popup-open]:ring-[1px] data-[popup-open]:ring-blue-400/60",
           disabled && "pointer-events-none opacity-50"
         )}
+        data-testid="template.deployer.template-combobox"
         disabled={disabled}
         ref={triggerRef}
         role="combobox"
@@ -165,7 +166,11 @@ function TemplateSearchSelect({
         style={{ width: triggerWidth }}
       >
         <Command className="rounded-md bg-transparent p-0">
-          <CommandInput placeholder="Search" />
+          <CommandInput
+            aria-label="Search templates"
+            data-testid="template.deployer.search-input"
+            placeholder="Search"
+          />
           <CommandList className="max-h-80 p-1">
             <CommandEmpty>No templates found.</CommandEmpty>
             <CommandGroup className="p-0">
@@ -178,6 +183,8 @@ function TemplateSearchSelect({
                       selected && "bg-blue-500/20 text-foreground"
                     )}
                     data-checked={selected}
+                    data-template-name={choice.name}
+                    data-testid="template.deployer.template-option"
                     key={choice.name}
                     onSelect={() => {
                       onValueChange(choice.name);
@@ -264,6 +271,7 @@ export function TemplateDeployer({
           className
         )}
         data-slot="template-deployer-empty"
+        data-testid="template.deployer.empty"
       >
         {emptyMessage}
       </div>
@@ -274,6 +282,7 @@ export function TemplateDeployer({
     <div
       className={cn("dark flex min-w-0 flex-col gap-4", className)}
       data-slot="template-deployer"
+      data-testid="template.deployer"
     >
       <DeploymentSettings.Section
         icon={<TemplateIcon choice={choice} />}
@@ -313,6 +322,8 @@ export function TemplateDeployer({
                     </span>
                     <AppInput
                       aria-label={arg.key}
+                      data-template-arg={arg.key}
+                      data-testid="template.deployer.parameter-input"
                       disabled={busy}
                       id={inputId}
                       onChange={(event) => {
@@ -335,6 +346,7 @@ export function TemplateDeployer({
 
       <AppButton
         className="w-full"
+        data-testid="template.deployer.submit"
         disabled={!canDeploy}
         onClick={() => {
           if (choice == null || !canDeploy) {

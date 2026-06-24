@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 
 	"sealos/api/service/apversion"
 	orchestration "sealos/api/service/orchestration"
@@ -462,6 +463,43 @@ func TestAPStrictOwnershipRejectsManagedTemplateWorkloads(t *testing.T) {
 	}
 }
 
+func TestTemplateDeploymentRefFromAPWorkload(t *testing.T) {
+	deployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainDeploymentNameLabel: "template-web",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name: "web",
+		},
+	}
+
+	ref, ok := templateDeploymentRefFromAPWorkload(apWorkload{Deployment: &deployment})
+	if !ok || ref.Name != "template-web" || ref.ProjectID != "project-a" {
+		t.Fatalf("template deployment ref = %#v/%v, want template-web project-a true", ref, ok)
+	}
+}
+
+func TestAPLifecycleOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
+	deployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainDeploymentNameLabel: "template-web",
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name: "template-web",
+		},
+	}
+
+	if err := requireBrainAPLifecycleWorkload(apWorkload{Deployment: &deployment}); err != nil {
+		t.Fatalf("expected managed template workload to pass AP lifecycle ownership check: %v", err)
+	}
+}
+
 func TestAPRenderInputFromWorkloadPatchPreservesValueFromAndProbes(t *testing.T) {
 	replicas := int32(1)
 	current := appsv1.Deployment{
@@ -779,6 +817,207 @@ func TestApplyAPResourcesPauseStateAllowsZeroReplicasOnUpdate(t *testing.T) {
 	}
 	if got := deployment.Annotations[orchestration.LaunchpadPauseAnnotation]; got != "false" {
 		t.Fatalf("pause annotation = %q, want false", got)
+	}
+}
+
+func TestTemplateAPUpdatePatchBuildsPauseMergePatch(t *testing.T) {
+	replicas := int32(2)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name:      "template-web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{Replicas: &replicas},
+	}
+
+	patch, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"spec":{"paused":true}}`), testTime())
+	if err != nil {
+		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(patch, &got); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	spec := got["spec"].(map[string]interface{})
+	if spec["replicas"] != float64(0) {
+		t.Fatalf("replicas patch = %v, want 0", spec["replicas"])
+	}
+	annotations := got["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	if annotations[orchestration.LaunchpadPauseAnnotation] != "true" {
+		t.Fatalf("pause annotation = %v, want true", annotations[orchestration.LaunchpadPauseAnnotation])
+	}
+	if annotations[templateAPPausedReplicasAnnotation] != "2" {
+		t.Fatalf("paused replicas annotation = %v, want 2", annotations[templateAPPausedReplicasAnnotation])
+	}
+}
+
+func TestTemplateAPUpdatePatchResumesPausedReplicas(t *testing.T) {
+	replicas := int32(0)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				templateAPPausedReplicasAnnotation: "3",
+			},
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name:      "template-web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{Replicas: &replicas},
+	}
+
+	patch, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"spec":{"paused":false}}`), testTime())
+	if err != nil {
+		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(patch, &got); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	spec := got["spec"].(map[string]interface{})
+	if spec["replicas"] != float64(3) {
+		t.Fatalf("replicas patch = %v, want 3", spec["replicas"])
+	}
+	annotations := got["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	if annotations[orchestration.LaunchpadPauseAnnotation] != "false" {
+		t.Fatalf("pause annotation = %v, want false", annotations[orchestration.LaunchpadPauseAnnotation])
+	}
+	if annotations[templateAPPausedReplicasAnnotation] != nil {
+		t.Fatalf("paused replicas annotation = %v, want nil", annotations[templateAPPausedReplicasAnnotation])
+	}
+}
+
+func TestTemplateAPUpdatePatchRejectsMetadataPatch(t *testing.T) {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name:      "template-web",
+			Namespace: "ns-a",
+		},
+	}
+
+	if _, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true}}`), testTime()); err == nil {
+		t.Fatal("expected template AP metadata patch to be rejected")
+	}
+}
+
+func TestTemplateAPUpdatePatchBuildsWorkloadMergePatch(t *testing.T) {
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name:      "template-web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Env:   []corev1.EnvVar{{Name: "OLD", Value: "1"}},
+							Image: "nginx:1.27",
+							Name:  "web",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	patch, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"spec":{"input":{"image":"nginx:1.28","env":[{"name":"FEATURE_FLAG","value":"true"}],"envRawSource":"FEATURE_FLAG=true\n"},"resource":{"limits":{"cpu":"500m","memory":"512Mi"},"requests":{"cpu":"250m","memory":"256Mi"},"replicaStrategy":{"type":"fixed","fixed":{"replicas":2}}}}}`), testTime())
+	if err != nil {
+		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(patch, &got); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	spec := got["spec"].(map[string]interface{})
+	if spec["replicas"] != float64(2) {
+		t.Fatalf("replicas patch = %v, want 2", spec["replicas"])
+	}
+	annotations := got["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	if annotations[orchestration.APEnvRawSourceAnnotation] != "FEATURE_FLAG=true\n" {
+		t.Fatalf("env raw source annotation = %v, want raw source", annotations[orchestration.APEnvRawSourceAnnotation])
+	}
+	template := spec["template"].(map[string]interface{})
+	templateSpec := template["spec"].(map[string]interface{})
+	containers := templateSpec["containers"].([]interface{})
+	container := containers[0].(map[string]interface{})
+	if container["name"] != "web" {
+		t.Fatalf("container name = %v, want existing workload container name web", container["name"])
+	}
+	if container["image"] != "nginx:1.28" {
+		t.Fatalf("image patch = %v, want nginx:1.28", container["image"])
+	}
+	env := container["env"].([]interface{})
+	if env[0].(map[string]interface{})["$patch"] != "replace" {
+		t.Fatalf("env patch directive = %#v, want replace", env[0])
+	}
+	if env[1].(map[string]interface{})["name"] != "FEATURE_FLAG" {
+		t.Fatalf("env patch = %#v, want FEATURE_FLAG", env)
+	}
+
+	original, err := json.Marshal(deployment)
+	if err != nil {
+		t.Fatalf("marshal deployment: %v", err)
+	}
+	merged, err := strategicpatch.StrategicMergePatch(original, patch, appsv1.Deployment{})
+	if err != nil {
+		t.Fatalf("strategic merge patch: %v", err)
+	}
+	var patched appsv1.Deployment
+	if err := json.Unmarshal(merged, &patched); err != nil {
+		t.Fatalf("unmarshal strategic merge result: %v", err)
+	}
+	gotEnv := patched.Spec.Template.Spec.Containers[0].Env
+	if len(gotEnv) != 1 || gotEnv[0].Name != "FEATURE_FLAG" {
+		t.Fatalf("strategic merge env = %#v, want only FEATURE_FLAG", gotEnv)
+	}
+}
+
+func TestTemplateAPUpdatePatchRejectsDirectOnlyFields(t *testing.T) {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
+				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:      "project-a",
+			},
+			Name:      "template-web",
+			Namespace: "ns-a",
+		},
+	}
+
+	for _, patch := range []json.RawMessage{
+		json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}}}`),
+		json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":3000}]}}}}`),
+		json.RawMessage(`{"spec":{"input":{"storage":[{"path":"/data","size":"10Gi"}]}}}`),
+		json.RawMessage(`{"spec":{"input":{"configMaps":[{"path":"/etc/app.yaml","value":"debug: true"}]}}}`),
+	} {
+		if _, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, patch, testTime()); err == nil {
+			t.Fatalf("expected template AP patch %s to be rejected", string(patch))
+		}
 	}
 }
 

@@ -5,7 +5,7 @@ import YAML from "yaml";
 import { renderDockerDeploymentYaml } from "./docker-deployment-yaml";
 
 const PLATFORM_ADDRESS_ID_RE = /^pa_[a-z0-9]{6,32}$/;
-const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = /^[a-z]{6}$/;
+const PLATFORM_ADDRESS_DOMAIN_PREFIX_RE = /^(brain|[a-z]{6})$/;
 
 function dockerSettings(overrides: {
   appListeningPort?: number;

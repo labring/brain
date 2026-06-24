@@ -37,6 +37,12 @@ const BRAIN_DEPLOYMENT_LABEL_KEYS = [
 const GHCR_HOST = "ghcr.io";
 const GHCR_PULL_SECRET_SUFFIX = "-ghcr-pull";
 const KUBERNETES_NAME_MAX_LENGTH = 63;
+const NGINX_SSL_REDIRECT_ANNOTATION =
+  "nginx.ingress.kubernetes.io/ssl-redirect";
+const NGINX_CONFIGURATION_SNIPPET_ANNOTATION =
+  "nginx.ingress.kubernetes.io/configuration-snippet";
+const FORCE_HTTPS_FORWARDED_PROTO_SNIPPET =
+  "proxy_set_header X-Forwarded-Proto https;";
 
 function apiBaseUrl(): string {
   const base = process.env.API_URL?.trim();
@@ -162,6 +168,14 @@ function ensureLabels(resource: TemplateK8sObject): Record<string, string> {
   return resource.metadata.labels;
 }
 
+function ensureAnnotations(
+  resource: TemplateK8sObject
+): Record<string, string> {
+  resource.metadata ??= {};
+  resource.metadata.annotations ??= {};
+  return resource.metadata.annotations as Record<string, string>;
+}
+
 function ensureBrainDeploymentLabels(input: {
   labels: Record<string, string>;
   instanceName: string;
@@ -225,6 +239,24 @@ function normalizeBrainDeploymentLabels(input: {
   }
 }
 
+function normalizeHttpOnlyIngress(resource: TemplateK8sObject) {
+  if (resource.kind !== "Ingress") {
+    return;
+  }
+  const spec = asRecord(resource.spec);
+  if (Array.isArray(spec?.tls) && spec.tls.length > 0) {
+    return;
+  }
+  const annotations = ensureAnnotations(resource);
+  annotations[NGINX_SSL_REDIRECT_ANNOTATION] = "false";
+  if (
+    annotations[NGINX_CONFIGURATION_SNIPPET_ANNOTATION]?.trim() ===
+    FORCE_HTTPS_FORWARDED_PROTO_SNIPPET
+  ) {
+    delete annotations[NGINX_CONFIGURATION_SNIPPET_ANNOTATION];
+  }
+}
+
 function normalizeRenderedTemplateDeployment(input: {
   instanceName: string;
   projectId: string;
@@ -239,6 +271,7 @@ function normalizeRenderedTemplateDeployment(input: {
       resource: copy,
       templateName: input.templateName,
     });
+    normalizeHttpOnlyIngress(copy);
     return copy;
   });
   const instanceResource = resources.find(

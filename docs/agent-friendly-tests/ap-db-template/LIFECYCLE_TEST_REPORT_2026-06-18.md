@@ -56,16 +56,16 @@
 
 执行证据：
 
-| Step | Result |
-| --- | --- |
-| 创建 AP | `POST /api/deploy-tasks => 201`，canvas 出现 AP `ap-yygzdh`。 |
-| 等待可操作 | 节点从 `Updating` 进入 `Running`。 |
-| Running 菜单 | 显示 `Stop`、`Restart`、`Delete`。 |
-| Restart | `POST /api/ap/v1alpha1/restart => 200`，body `{ name: "ap-yygzdh", namespace: "ns-1y0twy4y" }`。 |
-| Stop | `PATCH /api/ap/v1alpha1?name=ap-yygzdh&namespace=ns-1y0twy4y => 200`，body `{ spec: { paused: true } }`。 |
-| Stop 后菜单 | 显示 `Start`、`Restart`、`Delete`。 |
-| Start | `PATCH /api/ap/v1alpha1?name=ap-yygzdh&namespace=ns-1y0twy4y => 200`，body `{ spec: { paused: false } }`。 |
-| Start 后 UI | toast 显示 `Started "ap-yygzdh"`，节点进入 `Updating`，符合恢复过程中的中间态。 |
+| Step         | Result                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| 创建 AP      | `POST /api/deploy-tasks => 201`，canvas 出现 AP `ap-yygzdh`。                                              |
+| 等待可操作   | 节点从 `Updating` 进入 `Running`。                                                                         |
+| Running 菜单 | 显示 `Stop`、`Restart`、`Delete`。                                                                         |
+| Restart      | `POST /api/ap/v1alpha1/restart => 200`，body `{ name: "ap-yygzdh", namespace: "ns-1y0twy4y" }`。           |
+| Stop         | `PATCH /api/ap/v1alpha1?name=ap-yygzdh&namespace=ns-1y0twy4y => 200`，body `{ spec: { paused: true } }`。  |
+| Stop 后菜单  | 显示 `Start`、`Restart`、`Delete`。                                                                        |
+| Start        | `PATCH /api/ap/v1alpha1?name=ap-yygzdh&namespace=ns-1y0twy4y => 200`，body `{ spec: { paused: false } }`。 |
+| Start 后 UI  | toast 显示 `Started "ap-yygzdh"`，节点进入 `Updating`，符合恢复过程中的中间态。                            |
 
 结论：`TC-AP-02` 改为 `PASS`。
 
@@ -80,16 +80,16 @@
 
 执行证据：
 
-| Step | Result |
-| --- | --- |
-| 创建 DB | `POST /api/deploy-tasks => 201`，canvas 出现 DB `db-yursey`。 |
-| 等待可操作 | 节点从 `Creating` 进入 `Running`。 |
-| Running 菜单 | 显示 `Stop`、`Restart`、`Delete`。 |
-| Restart | `POST /api/db/v1alpha1/restart => 200`，body `{ name: "db-yursey", namespace: "ns-1y0twy4y" }`。 |
-| Stop | `POST /api/db/v1alpha1/stop => 200`，body `{ name: "db-yursey", namespace: "ns-1y0twy4y" }`。 |
-| Stop 后状态 | 节点进入 `Updating`；等待超过 4 分钟仍未出现 Start 菜单。 |
-| Start | 未能通过 UI 执行；菜单受 `Updating` 状态 gating，未暴露 Start。 |
-| Public access toggle | 未执行；DB 停止后长时间处于 `Updating`，不适合作为 public access 变更前置状态。 |
+| Step                 | Result                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| 创建 DB              | `POST /api/deploy-tasks => 201`，canvas 出现 DB `db-yursey`。                                    |
+| 等待可操作           | 节点从 `Creating` 进入 `Running`。                                                               |
+| Running 菜单         | 显示 `Stop`、`Restart`、`Delete`。                                                               |
+| Restart              | `POST /api/db/v1alpha1/restart => 200`，body `{ name: "db-yursey", namespace: "ns-1y0twy4y" }`。 |
+| Stop                 | `POST /api/db/v1alpha1/stop => 200`，body `{ name: "db-yursey", namespace: "ns-1y0twy4y" }`。    |
+| Stop 后状态          | 节点进入 `Updating`；等待超过 4 分钟仍未出现 Start 菜单。                                        |
+| Start                | 未能通过 UI 执行；菜单受 `Updating` 状态 gating，未暴露 Start。                                  |
+| Public access toggle | 未执行；DB 停止后长时间处于 `Updating`，不适合作为 public access 变更前置状态。                  |
 
 补充说明：
 
@@ -113,14 +113,14 @@
 
 执行证据：
 
-| Step | Result |
-| --- | --- |
-| 创建 Template 项目 | `POST /api/deploy-tasks => 201`。 |
-| Canvas 产物 | 初始显示 `template-allinssl-pfbvat`，之后投影为 AP 节点 `ap-allinssl-pfbvat`。 |
-| Running 菜单 | 显示 `Stop`、`Restart`、`Delete`。 |
-| Restart | UI 触发 `POST /api/ap/v1alpha1/restart => 404`，body `{ name: "allinssl-pfbvat", namespace: "ns-1y0twy4y" }`。 |
-| Stop | UI 触发 `PATCH /api/ap/v1alpha1?name=allinssl-pfbvat&namespace=ns-1y0twy4y => 404`，body `{ spec: { paused: true } }`。 |
-| Stop 后状态 | 菜单仍为 `Stop`、`Restart`、`Delete`，节点仍为 `Running`。 |
+| Step               | Result                                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| 创建 Template 项目 | `POST /api/deploy-tasks => 201`。                                                                                       |
+| Canvas 产物        | 初始显示 `template-allinssl-pfbvat`，之后投影为 AP 节点 `ap-allinssl-pfbvat`。                                          |
+| Running 菜单       | 显示 `Stop`、`Restart`、`Delete`。                                                                                      |
+| Restart            | UI 触发 `POST /api/ap/v1alpha1/restart => 404`，body `{ name: "allinssl-pfbvat", namespace: "ns-1y0twy4y" }`。          |
+| Stop               | UI 触发 `PATCH /api/ap/v1alpha1?name=allinssl-pfbvat&namespace=ns-1y0twy4y => 404`，body `{ spec: { paused: true } }`。 |
+| Stop 后状态        | 菜单仍为 `Stop`、`Restart`、`Delete`，节点仍为 `Running`。                                                              |
 
 结论：`TC-TPL-04` 记为 `FAIL`。
 
@@ -136,23 +136,23 @@
 
 清理后回到 `http://localhost:3000/project` 验证：
 
-| Project | Visible after cleanup | Has action button after cleanup |
-| --- | --- | --- |
-| `agent-lifecycle-ap-20260618-1022` | false | false |
-| `agent-lifecycle-db-20260618-1022` | false | false |
-| `agent-lifecycle-template-20260618-1022` | false | false |
+| Project                                  | Visible after cleanup | Has action button after cleanup |
+| ---------------------------------------- | --------------------- | ------------------------------- |
+| `agent-lifecycle-ap-20260618-1022`       | false                 | false                           |
+| `agent-lifecycle-db-20260618-1022`       | false                 | false                           |
+| `agent-lifecycle-template-20260618-1022` | false                 | false                           |
 
 结论：`TC-CLEAN-01` 本轮 lifecycle 资源清理为 `PASS`。
 
 ## 8. Updated Matrix
 
-| TC | Previous | Lifecycle Addendum | Current Status |
-| --- | --- | --- | --- |
-| TC-AP-02 | BLOCKED | Stop / Start / Restart 均通过 UI 执行并返回 200。 | PASS |
-| TC-DB-02 | BLOCKED | Restart / Stop 返回 200；Stop 后长时间 `Updating`，Start 菜单未出现。 | FAIL |
-| TC-DB-03 | BLOCKED | DB 停止后状态未恢复到可安全变更 public access 的状态。 | BLOCKED |
-| TC-TPL-04 | BLOCKED | Template-produced AP 暴露 Stop / Restart，但 AP lifecycle API 返回 404。 | FAIL |
-| TC-CLEAN-01 | PASS | 本轮三个 lifecycle 测试项目均已从项目列表消失。 | PASS |
+| TC          | Previous | Lifecycle Addendum                                                       | Current Status |
+| ----------- | -------- | ------------------------------------------------------------------------ | -------------- |
+| TC-AP-02    | BLOCKED  | Stop / Start / Restart 均通过 UI 执行并返回 200。                        | PASS           |
+| TC-DB-02    | BLOCKED  | Restart / Stop 返回 200；Stop 后长时间 `Updating`，Start 菜单未出现。    | FAIL           |
+| TC-DB-03    | BLOCKED  | DB 停止后状态未恢复到可安全变更 public access 的状态。                   | BLOCKED        |
+| TC-TPL-04   | BLOCKED  | Template-produced AP 暴露 Stop / Restart，但 AP lifecycle API 返回 404。 | FAIL           |
+| TC-CLEAN-01 | PASS     | 本轮三个 lifecycle 测试项目均已从项目列表消失。                          | PASS           |
 
 ## 9. Final Verdict
 

@@ -23,6 +23,10 @@ const GHCR_DOCKER_CONFIG_RE =
 const EXISTING_PULL_SECRET_RE = /existing-pull-secret/;
 const GHCR_BUILD_MATCH_RE =
   /every GHCR workload image matches the build result/;
+const SSL_REDIRECT_FALSE_RE =
+  /nginx\.ingress\.kubernetes\.io\/ssl-redirect: \\?"false\\?"/;
+const FORCE_HTTPS_FORWARDED_PROTO_RE =
+  /proxy_set_header X-Forwarded-Proto https/;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -231,6 +235,68 @@ test("applyRenderedTemplateDeployment injects GHCR pull secret only into apply p
     (calls[2]?.body ?? "").indexOf("kind: Secret") <
       (calls[2]?.body ?? "").indexOf("kind: Deployment")
   );
+});
+
+test("applyRenderedTemplateDeployment normalizes HTTP-only template ingress routing", async () => {
+  process.env.API_URL = "https://api.example.com";
+  const calls: Array<{ body?: string; url: string }> = [];
+  globalThis.fetch = ((url, init) => {
+    calls.push({
+      body: typeof init?.body === "string" ? init.body : undefined,
+      url: String(url),
+    });
+    if (String(url).includes("/api/k8s/v1alpha1/get")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            apiVersion: "app.sealos.io/v1",
+            kind: "Instance",
+            metadata: { name: "template-web", uid: "instance-uid" },
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 200 }
+        )
+      );
+    }
+    return Promise.resolve(new Response("", { status: 200 }));
+  }) as typeof fetch;
+
+  await applyRenderedTemplateDeployment({
+    encodedKubeconfig: "kubeconfig",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    rendered: {
+      dependentYamls: [],
+      instanceName: "template-web",
+      instanceYaml:
+        "apiVersion: app.sealos.io/v1\nkind: Instance\nmetadata:\n  name: template-web",
+      resources: [
+        {
+          apiVersion: "app.sealos.io/v1",
+          kind: "Instance",
+          metadata: { name: "template-web" },
+        },
+        {
+          apiVersion: "networking.k8s.io/v1",
+          kind: "Ingress",
+          metadata: {
+            annotations: {
+              "nginx.ingress.kubernetes.io/configuration-snippet":
+                "proxy_set_header X-Forwarded-Proto https;\n",
+              "nginx.ingress.kubernetes.io/ssl-redirect": "true",
+            },
+            name: "template-web",
+          },
+          spec: {
+            rules: [{ host: "template-web.192.168.10.189.nip.io" }],
+          },
+        },
+      ],
+    },
+    templateName: "web",
+  });
+
+  assert.match(calls[2]?.body ?? "", SSL_REDIRECT_FALSE_RE);
+  assert.doesNotMatch(calls[2]?.body ?? "", FORCE_HTTPS_FORWARDED_PROTO_RE);
 });
 
 test("applyRenderedTemplateDeployment keeps generated GHCR pull secret name within Kubernetes limits", async () => {

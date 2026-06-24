@@ -342,8 +342,6 @@ func TestRenderAPPublicIngressLabelsAndBackend(t *testing.T) {
 		Host:         "web.example.com",
 		Namespace:    "ns-a",
 		ProjectID:    "project-a",
-		PublicID:     "pa_abc",
-		PublicKind:   "platform",
 		ResourceName: "web-pa-abc",
 		ServicePort:  8080,
 	})
@@ -355,6 +353,12 @@ func TestRenderAPPublicIngressLabelsAndBackend(t *testing.T) {
 	}
 	if got := ingress.Labels[BrainDeploymentNameLabel]; got != "web" {
 		t.Fatalf("%s = %q, want web", BrainDeploymentNameLabel, got)
+	}
+	if _, ok := ingress.Labels["brain.io/public-address-id"]; ok {
+		t.Fatalf("brain.io/public-address-id label must not be rendered")
+	}
+	if _, ok := ingress.Labels["brain.io/public-address-kind"]; ok {
+		t.Fatalf("brain.io/public-address-kind label must not be rendered")
 	}
 	if got := ingress.Labels[LaunchpadAppDeployManagerDomainLabel]; got == "" || got == "web.example.com" {
 		t.Fatalf("%s = %q, want stable short host key", LaunchpadAppDeployManagerDomainLabel, got)
@@ -378,8 +382,6 @@ func TestRenderAPPublicIngressKeepsLongHostOutOfLabels(t *testing.T) {
 		Host:         longHost,
 		Namespace:    "ns-a",
 		ProjectID:    "project-a",
-		PublicID:     "pa_abc123",
-		PublicKind:   "platform",
 		ResourceName: "web-pa-abc123",
 		ServicePort:  8080,
 	})
@@ -435,8 +437,17 @@ func TestRenderAPPublicIngressesFromNetworkIntent(t *testing.T) {
 	if got := ingresses[1].Spec.Rules[0].Host; got != "www.example.com" {
 		t.Fatalf("custom-domain host = %q, want www.example.com", got)
 	}
-	if got := ingresses[1].Labels["brain.io/public-address-kind"]; got != "custom-domain" {
-		t.Fatalf("custom-domain kind label = %q, want custom-domain", got)
+	if _, ok := ingresses[1].Labels["brain.io/public-address-kind"]; ok {
+		t.Fatalf("custom-domain ingress must not render brain.io/public-address-kind")
+	}
+}
+
+func TestAPPlatformAddressDomainPrefixKeepsBrainPrefix(t *testing.T) {
+	if got := APPlatformAddressDomainPrefix("default", "web", "pa_abc123", "brain"); got != "brain" {
+		t.Fatalf("domain prefix = %q, want brain", got)
+	}
+	if got := PlatformAddressHost("default", "web", "pa_abc123", "brain", "apps.example.com"); got != "brain.apps.example.com" {
+		t.Fatalf("platform host = %q, want brain.apps.example.com", got)
 	}
 }
 

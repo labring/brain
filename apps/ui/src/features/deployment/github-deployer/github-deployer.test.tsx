@@ -16,17 +16,24 @@ const HEADER_SUBTITLE_RE =
   /Import repository from URL or GitHub authorization\./;
 const REPOSITORY_URL_RE = /Repository URL/;
 const GITHUB_ACCOUNT_RE = /GitHub Account/;
+const REPOSITORY_SECTION_RE = /<h3[^>]*>Repository<\/h3>/;
 const EXAMPLE_REPO_RE = /sealai\/example/;
 const REPO_SELECT_RE = /data-slot="github-deployer-repo-select"/;
 const REPO_CARD_RE = /data-slot="github-deployer-repo-card"/;
+const PRIMARY_DEPLOY_BUTTON_RE =
+  /<button[^>]*data-variant="primary"[^>]*>[\s\S]*?Deploy<\/button>/g;
 const REPO_EMPTY_RE = /data-slot="github-deployer-repo-empty"/;
 const REPO_ERROR_RE = /data-slot="github-deployer-repo-error"/;
 const VIEW_MORE_RE = /data-slot="github-deployer-view-more"/;
 const BAD_CREDENTIALS_RE = /bad credentials/;
+const GITHUB_URL_LOCKED_RE =
+  /Please authorize your GitHub account to deploy from a GitHub repository URL\./;
+const GITHUB_REPOSITORY_LOCKED_RE =
+  /Please authorize your GitHub account before selecting a repository\./;
 const DISABLED_DEPLOY_RE =
   /data-slot="github-deployer-repo-card"[\s\S]*?<button[^>]*disabled=""/;
 
-test("GithubDeployer shows URL input and authorization when unauthenticated", () => {
+test("GithubDeployer asks for authorization before showing URL input", () => {
   const html = renderToStaticMarkup(
     <GithubDeployer.Root
       actions={{ onAuthorize: noop, onDeploy: noop }}
@@ -36,15 +43,17 @@ test("GithubDeployer shows URL input and authorization when unauthenticated", ()
     </GithubDeployer.Root>
   );
 
-  assert.match(html, REPOSITORY_URL_RE);
   assert.match(html, GITHUB_ACCOUNT_RE);
+  assert.match(html, REPOSITORY_URL_RE);
   assert.doesNotMatch(html, HEADER_TITLE_RE);
   assert.doesNotMatch(html, HEADER_SUBTITLE_RE);
-  assert.match(html, URL_INPUT_RE);
-  assert.match(html, URL_PLACEHOLDER_RE);
-  assert.match(html, URL_AUTH_REQUIRED_RE);
+  assert.doesNotMatch(html, URL_INPUT_RE);
+  assert.doesNotMatch(html, URL_PLACEHOLDER_RE);
+  assert.doesNotMatch(html, URL_AUTH_REQUIRED_RE);
   assert.match(html, AUTH_BUTTON_RE);
   assert.doesNotMatch(html, REPO_SELECT_RE);
+  assert.match(html, GITHUB_URL_LOCKED_RE);
+  assert.match(html, GITHUB_REPOSITORY_LOCKED_RE);
 });
 
 test("GithubDeployer keeps URL input while showing authorized repo choices", () => {
@@ -61,11 +70,15 @@ test("GithubDeployer keeps URL input while showing authorized repo choices", () 
   );
 
   assert.match(html, URL_INPUT_RE);
+  assert.match(html, URL_PLACEHOLDER_RE);
+  assert.match(html, REPOSITORY_URL_RE);
+  assert.match(html, REPOSITORY_SECTION_RE);
   assert.doesNotMatch(html, URL_AUTH_REQUIRED_RE);
   assert.match(html, AUTHORIZED_RE);
   assert.match(html, DISCONNECT_BUTTON_RE);
   assert.match(html, REPO_SELECT_RE);
   assert.match(html, REPO_CARD_RE);
+  assert.equal(html.match(PRIMARY_DEPLOY_BUTTON_RE)?.length, 2);
   assert.match(html, EXAMPLE_REPO_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
   assert.doesNotMatch(html, REPO_EMPTY_RE);

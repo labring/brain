@@ -286,18 +286,14 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 		return
 	}
 	serviceNames := make(map[string]bool, len(services))
-	servicePorts := make(map[string]map[int]bool, len(services))
+	servicePorts := make(map[string]observedServicePorts, len(services))
 	for _, service := range services {
 		name := strings.TrimSpace(getString(service, "metadata", "name"))
 		if name == "" {
 			continue
 		}
 		serviceNames[name] = true
-		ports := make(map[int]bool)
-		for _, port := range getPorts(service) {
-			ports[port] = true
-		}
-		servicePorts[name] = ports
+		servicePorts[name] = observedServicePortsFromService(service)
 	}
 	rows := observedPublicAddressRows(ingresses, serviceNames, servicePorts)
 	if len(rows) == 0 {
@@ -307,7 +303,55 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 	status["network"] = networkCopy
 }
 
-func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]map[int]bool) []map[string]interface{} {
+type observedServicePorts struct {
+	numbers map[int]bool
+	names   map[string]int
+}
+
+func observedServicePortsFromService(service map[string]interface{}) observedServicePorts {
+	out := observedServicePorts{
+		numbers: make(map[int]bool),
+		names:   make(map[string]int),
+	}
+	spec, _ := service["spec"].(map[string]interface{})
+	rawPorts, _ := spec["ports"].([]interface{})
+	for _, item := range rawPorts {
+		portMap, _ := item.(map[string]interface{})
+		if portMap == nil {
+			continue
+		}
+		port, ok := privatePortFromValue(portMap["port"])
+		if !ok {
+			continue
+		}
+		out.numbers[port] = true
+		if name := strings.TrimSpace(getString(portMap, "name")); name != "" {
+			out.names[name] = port
+		}
+	}
+	return out
+}
+
+func (ports observedServicePorts) resolveBackendPort(service map[string]interface{}) int {
+	if port := publicAddressBackendPort(service); port > 0 {
+		return port
+	}
+	portMap, _ := service["port"].(map[string]interface{})
+	name := strings.TrimSpace(getString(portMap, "name"))
+	if name == "" {
+		return 0
+	}
+	return ports.names[name]
+}
+
+func (ports observedServicePorts) hasPort(port int) bool {
+	if len(ports.numbers) == 0 {
+		return true
+	}
+	return ports.numbers[port]
+}
+
+func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []map[string]interface{} {
 	rows := []map[string]interface{}{}
 	seen := map[string]bool{}
 	for _, ingress := range ingresses {
@@ -341,8 +385,9 @@ func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames 
 				if !serviceNames[serviceName] {
 					continue
 				}
-				port := publicAddressBackendPort(service)
-				if port <= 0 || (len(servicePorts[serviceName]) > 0 && !servicePorts[serviceName][port]) {
+				ports := servicePorts[serviceName]
+				port := ports.resolveBackendPort(service)
+				if port <= 0 || !ports.hasPort(port) {
 					continue
 				}
 				pathValue := strings.TrimSpace(getString(path, "path"))
@@ -518,17 +563,14 @@ func pendingCustomDomainRow(
 }
 
 type publicAccessSupportState struct {
-	platformIngresses map[string]map[string]interface{}
-	customIngresses   map[string]map[string]interface{}
-	certificates      map[string]map[string]interface{}
+	ingresses    []map[string]interface{}
+	certificates map[string]map[string]interface{}
 }
 
 const (
 	brainDeploymentKindLabel = "brain.io/deployment-kind"
 	brainDeploymentNameLabel = "brain.io/deployment-name"
 	directAPDeploymentKind   = "ap"
-	publicAddressIDLabel     = "brain.io/public-address-id"
-	publicAddressKindLabel   = "brain.io/public-address-kind"
 )
 
 func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string]interface{}, ingresses, certificates, issuers []map[string]interface{}) {
@@ -606,25 +648,14 @@ func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string
 
 func publicAccessSupportStateFromResources(apName string, ingresses, certificates []map[string]interface{}) publicAccessSupportState {
 	state := publicAccessSupportState{
-		platformIngresses: make(map[string]map[string]interface{}),
-		customIngresses:   make(map[string]map[string]interface{}),
-		certificates:      make(map[string]map[string]interface{}),
+		certificates: make(map[string]map[string]interface{}),
 	}
 	for _, ingress := range ingresses {
 		labels := labelsOf(ingress)
 		if !isPublicAccessSupportForAP(labels, apName) {
 			continue
 		}
-		id := strings.TrimSpace(labels[publicAddressIDLabel])
-		if id == "" {
-			continue
-		}
-		switch strings.TrimSpace(strings.ToLower(labels[publicAddressKindLabel])) {
-		case "platform":
-			state.platformIngresses[id] = ingress
-		case "custom-domain", "custom":
-			state.customIngresses[id] = ingress
-		}
+		state.ingresses = append(state.ingresses, ingress)
 	}
 	for _, certificate := range certificates {
 		labels := labelsOf(certificate)
@@ -671,7 +702,7 @@ func projectPlatformAddressSupportHealth(row, ap map[string]interface{}, namespa
 		return
 	}
 	delete(row, "reason")
-	if publicAddressIngressMatches(support.platformIngresses[address.ID], host, serviceName, int(address.Port)) {
+	if publicAccessIngressObserved(support.ingresses, host, serviceName, int(address.Port)) {
 		row["status"] = "accessible"
 		return
 	}
@@ -701,7 +732,7 @@ func projectCustomDomainSupportHealth(
 	dnsDetail := customDomainDNSDetail(customDomain, cnameTarget)
 	certName := orchestration.APCustomDomainTLSResourceName(getString(ap, "metadata", "name"), customDomain.ID)
 	certificateDetail := certificateHealthDetail(support.certificates[certName])
-	routingDetail := routingHealthDetail(support.customIngresses[customDomain.ID], customDomain.Domain, serviceName, int(target.Port))
+	routingDetail := routingHealthDetail(support.ingresses, customDomain.Domain, serviceName, int(target.Port))
 	row["dns"] = dnsDetail
 	row["certificate"] = certificateDetail
 	row["routing"] = routingDetail
@@ -774,21 +805,53 @@ func certificateHealthDetail(certificate map[string]interface{}) map[string]inte
 	return map[string]interface{}{"status": "verifying"}
 }
 
-func routingHealthDetail(ingress map[string]interface{}, host, serviceName string, port int) map[string]interface{} {
-	if ingress == nil {
+func routingHealthDetail(ingresses []map[string]interface{}, host, serviceName string, port int) map[string]interface{} {
+	if len(ingresses) == 0 {
 		return map[string]interface{}{
 			"message": "Custom Domain Ingress has not been observed yet.",
 			"status":  "verifying",
 		}
 	}
-	if publicAddressIngressMatches(ingress, host, serviceName, port) {
+	if publicAccessIngressObserved(ingresses, host, serviceName, port) {
 		return map[string]interface{}{"status": "ready"}
+	}
+	if !publicAccessIngressHostObserved(ingresses, host) {
+		return map[string]interface{}{
+			"message": "Custom Domain Ingress has not been observed yet.",
+			"status":  "verifying",
+		}
 	}
 	return map[string]interface{}{
 		"reason":  "routing-mismatch",
 		"message": "Custom Domain Ingress does not match the binding target.",
 		"status":  "failed",
 	}
+}
+
+func publicAccessIngressObserved(ingresses []map[string]interface{}, host, serviceName string, port int) bool {
+	for _, ingress := range ingresses {
+		if publicAddressIngressMatches(ingress, host, serviceName, port) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicAccessIngressHostObserved(ingresses []map[string]interface{}, host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	for _, ingress := range ingresses {
+		rules, _ := getSlice(ingress, "spec", "rules")
+		for _, item := range rules {
+			rule, _ := item.(map[string]interface{})
+			if rule != nil && strings.EqualFold(strings.TrimSpace(getString(rule, "host")), host) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func publicAddressIngressMatches(ingress map[string]interface{}, host, serviceName string, port int) bool {

@@ -924,7 +924,7 @@ type APCustomDomainRequest struct {
 }
 
 var apPublicAddressResourceNameUnsafeCharsPattern = regexp.MustCompile(`[^a-z0-9-]+`)
-var apPlatformAddressDomainPrefixPattern = regexp.MustCompile(`^[a-z]{6}$`)
+var apPlatformAddressDomainPrefixPattern = regexp.MustCompile(`^(brain|[a-z]{6})$`)
 
 const shortNameAlphabet = "abcdefghijklmnopqrstuvwxyz"
 const DefaultPlatformTLSSecretName = "wildcard-cert"
@@ -987,8 +987,6 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 			Host:          host,
 			Namespace:     namespace,
 			ProjectID:     projectID,
-			PublicID:      id,
-			PublicKind:    "platform",
 			ResourceName:  APPublicAddressResourceName(apName, id),
 			ServicePort:   port,
 			TLSSecretName: DefaultPlatformTLSSecretName,
@@ -1017,8 +1015,6 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 			Host:          host,
 			Namespace:     namespace,
 			ProjectID:     projectID,
-			PublicID:      id,
-			PublicKind:    "custom-domain",
 			ResourceName:  APPublicAddressResourceName(apName, id),
 			ServicePort:   platform.Port,
 			TLSSecretName: tlsSecretName,
@@ -1158,8 +1154,6 @@ type APPublicIngressInput struct {
 	Host          string
 	Namespace     string
 	ProjectID     string
-	PublicID      string
-	PublicKind    string
 	ServicePort   int32
 	ResourceName  string
 	TLSSecretName string
@@ -1189,8 +1183,6 @@ func RenderAPPublicIngress(input APPublicIngressInput) (*networkingv1.Ingress, e
 	labels := mergeStringMap(
 		brainLabels(projectID, DeploymentKindAP, apName),
 		map[string]string{
-			"brain.io/public-address-id":         strings.TrimSpace(input.PublicID),
-			"brain.io/public-address-kind":       strings.TrimSpace(input.PublicKind),
 			LaunchpadAppDeployManagerLabel:       apName,
 			LaunchpadAppDeployManagerDomainLabel: domainLabel,
 		},

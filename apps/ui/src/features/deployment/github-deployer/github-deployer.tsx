@@ -15,7 +15,7 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { type ComponentProps, useMemo, useState } from "react";
+import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { DeploymentSettings } from "../deployment-settings";
 import {
   GithubDeployerContext,
@@ -160,7 +160,7 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
 
 function GithubDeployerUrlInput({ className }: { className?: string }) {
   const {
-    actions: { onAuthorize, onDeploy, onDeployTemplate },
+    actions: { onDeploy, onDeployTemplate },
     requestDeploy,
     states: { deployedRepo, isAuthorized, isLoading, templateOptionsLoading },
   } = useGithubDeployer();
@@ -174,7 +174,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
     isAuthorized && parsedRepo && onDeploy && !isTemplateMatchingPending
   );
 
-  if (deployedRepo) {
+  if (deployedRepo || !isAuthorized) {
     return null;
   }
 
@@ -201,7 +201,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
           />
         </div>
         <AppButton
-          className="min-w-24 rounded-lg bg-white/5 text-primary hover:bg-input"
+          className="min-w-24 rounded-lg"
           data-slot="github-deployer-url-deploy"
           disabled={!canDeploy || isLoading}
           onClick={() => {
@@ -210,7 +210,7 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
             }
           }}
           type="button"
-          variant="secondary"
+          variant="primary"
         >
           <Rocket aria-hidden className="size-4" strokeWidth={2} />
           Deploy
@@ -224,32 +224,25 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
           Enter a GitHub repository URL.
         </p>
       ) : null}
-      {isAuthorized ? null : (
-        <div
-          className="flex min-w-0 items-center gap-3 rounded-md bg-input/30 px-3 py-2 text-muted-foreground text-sm"
-          data-slot="github-deployer-url-auth-required"
-        >
-          <ShieldCheck
-            aria-hidden
-            className="size-4 shrink-0"
-            strokeWidth={2}
-          />
-          <span className="min-w-0 flex-1">
-            Authorize GitHub before deploying from a repository URL.
-          </span>
-          <Button
-            className="h-8 shrink-0 rounded-lg bg-white/5 text-primary hover:bg-input"
-            data-slot="github-deployer-url-authorize"
-            disabled={isLoading || !onAuthorize}
-            onClick={onAuthorize}
-            type="button"
-            variant="ghost"
-          >
-            Authorize
-          </Button>
-        </div>
-      )}
     </div>
+  );
+}
+
+function GithubDeployerLockedSection({
+  description,
+  icon,
+  title,
+}: {
+  description: string;
+  icon: ReactNode;
+  title: string;
+}) {
+  return (
+    <DeploymentSettings.Section
+      description={description}
+      icon={icon}
+      title={title}
+    />
   );
 }
 
@@ -305,10 +298,7 @@ function GithubRepoCard({
         </p>
       </div>
       <AppButton
-        className={cn(
-          "h-8 min-w-24 rounded-lg bg-white/5 text-primary hover:bg-input",
-          featured && "text-primary"
-        )}
+        className="h-8 min-w-24 rounded-lg"
         data-slot="github-deployer-repo-deploy"
         disabled={!canDeploy}
         onClick={() => {
@@ -317,7 +307,7 @@ function GithubRepoCard({
           }
         }}
         type="button"
-        variant="secondary"
+        variant="primary"
       >
         <Rocket aria-hidden className="size-4" strokeWidth={2} />
         Deploy
@@ -328,7 +318,6 @@ function GithubRepoCard({
 
 function GithubDeployerRepoSelect({ className }: { className?: string }) {
   const {
-    actions: { onDisconnect },
     states: {
       isAuthorized,
       deployedRepo,
@@ -370,32 +359,6 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       className={cn("flex w-full min-w-0 flex-col gap-3", className)}
       data-slot="github-deployer-repo-select"
     >
-      <div className="flex w-full min-w-0 items-center gap-3">
-        <div
-          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md bg-input/30 px-3 text-muted-foreground text-sm"
-          data-slot="github-deployer-authorized"
-          role="status"
-        >
-          <CheckCircle2
-            aria-hidden
-            className="size-4 shrink-0 text-primary"
-            strokeWidth={2}
-          />
-          <span className="truncate">GitHub Connected</span>
-        </div>
-        <Button
-          aria-label="Disconnect GitHub"
-          className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
-          data-slot="github-deployer-disconnect"
-          disabled={isLoading || !onDisconnect}
-          onClick={onDisconnect}
-          size="icon-lg"
-          type="button"
-          variant="ghost"
-        >
-          <Link2Off aria-hidden className="size-4" strokeWidth={2} />
-        </Button>
-      </div>
       <div className="relative min-w-0">
         <Search
           aria-hidden
@@ -480,6 +443,46 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
   );
 }
 
+function GithubDeployerAccountStatus() {
+  const {
+    actions: { onDisconnect },
+    states: { deployedRepo, isAuthorized, isLoading },
+  } = useGithubDeployer();
+
+  if (deployedRepo || !isAuthorized) {
+    return null;
+  }
+
+  return (
+    <div className="flex w-full min-w-0 items-center gap-3">
+      <div
+        className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md bg-input/30 px-3 text-muted-foreground text-sm"
+        data-slot="github-deployer-authorized"
+        role="status"
+      >
+        <CheckCircle2
+          aria-hidden
+          className="size-4 shrink-0 text-primary"
+          strokeWidth={2}
+        />
+        <span className="truncate">GitHub Connected</span>
+      </div>
+      <Button
+        aria-label="Disconnect GitHub"
+        className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
+        data-slot="github-deployer-disconnect"
+        disabled={isLoading || !onDisconnect}
+        onClick={onDisconnect}
+        size="icon-lg"
+        type="button"
+        variant="ghost"
+      >
+        <Link2Off aria-hidden className="size-4" strokeWidth={2} />
+      </Button>
+    </div>
+  );
+}
+
 function GithubDeployerComplete({ className }: ComponentProps<"div">) {
   const {
     states: { deployedRepo },
@@ -514,31 +517,67 @@ function GithubDeployerComplete({ className }: ComponentProps<"div">) {
 }
 
 function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
+  const {
+    states: { deployedRepo, isAuthorized },
+  } = useGithubDeployer();
+  const showGithubAccount = !deployedRepo;
+  const showRepositoryInput = isAuthorized && !deployedRepo;
+  const showLockedRepositorySections = !(isAuthorized || deployedRepo);
+
   return (
     <div
       className={cn("dark flex w-full min-w-0 flex-col gap-4", className)}
       data-slot="github-deployer-shell"
       {...props}
     >
-      <DeploymentSettings.Section
-        description="Authorize GitHub before deploying from a repository URL."
-        icon={<Link2 aria-hidden className="size-4" />}
-        title="Repository URL"
-      >
-        <DeploymentSettings.Control>
-          <GithubDeployerUrlInput />
-        </DeploymentSettings.Control>
-      </DeploymentSettings.Section>
-      <DeploymentSettings.Section
-        description="Authorize GitHub to search and deploy repositories."
-        icon={<ShieldCheck aria-hidden className="size-4" />}
-        title="GitHub Account"
-      >
-        <DeploymentSettings.Control>
-          <GithubDeployerAuthButton />
-          <GithubDeployerRepoSelect />
-        </DeploymentSettings.Control>
-      </DeploymentSettings.Section>
+      {showGithubAccount ? (
+        <DeploymentSettings.Section
+          description="This is a description placeholder."
+          icon={<ShieldCheck aria-hidden className="size-4" />}
+          title="GitHub Account"
+        >
+          <DeploymentSettings.Control>
+            <GithubDeployerAuthButton />
+            <GithubDeployerAccountStatus />
+          </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
+      ) : null}
+      {showRepositoryInput ? (
+        <DeploymentSettings.Section
+          description="Deploy from a repository URL."
+          icon={<Link2 aria-hidden className="size-4" />}
+          title="Repository URL"
+        >
+          <DeploymentSettings.Control>
+            <GithubDeployerUrlInput />
+          </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
+      ) : null}
+      {showLockedRepositorySections ? (
+        <GithubDeployerLockedSection
+          description="Please authorize your GitHub account to deploy from a GitHub repository URL."
+          icon={<Link2 aria-hidden className="size-4" />}
+          title="Repository URL"
+        />
+      ) : null}
+      {showLockedRepositorySections ? (
+        <GithubDeployerLockedSection
+          description="Please authorize your GitHub account before selecting a repository."
+          icon={<GithubIcon className="size-4" />}
+          title="Repository"
+        />
+      ) : null}
+      {showRepositoryInput ? (
+        <DeploymentSettings.Section
+          description="Select a repository from your GitHub account."
+          icon={<GithubIcon className="size-4" />}
+          title="Repository"
+        >
+          <DeploymentSettings.Control>
+            <GithubDeployerRepoSelect />
+          </DeploymentSettings.Control>
+        </DeploymentSettings.Section>
+      ) : null}
       <GithubDeployerComplete />
     </div>
   );

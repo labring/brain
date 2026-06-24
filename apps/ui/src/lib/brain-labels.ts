@@ -5,8 +5,6 @@ export const BRAIN_DEPLOYMENT_KIND_LABEL = "brain.io/deployment-kind";
 export const BRAIN_DEPLOYMENT_NAME_LABEL = "brain.io/deployment-name";
 export const BRAIN_TEMPLATE_NAME_LABEL = "brain.io/template-name";
 export const BRAIN_DB_ENGINE_LABEL = "brain.io/db-engine";
-export const BRAIN_PUBLIC_ADDRESS_ID_LABEL = "brain.io/public-address-id";
-export const BRAIN_PUBLIC_ADDRESS_KIND_LABEL = "brain.io/public-address-kind";
 
 export const LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL =
   "cloud.sealos.io/app-deploy-manager";
