@@ -7,6 +7,7 @@ import { createProjectRuntimeStore } from "./resource-store";
 const AP_ENV_REFERENCE_PREFIX = "$";
 const postgresDatabaseUrlReference = `${AP_ENV_REFERENCE_PREFIX}{{postgres.DATABASE_URL}}`;
 const postgresHostReference = `${AP_ENV_REFERENCE_PREFIX}{{postgres.PG_HOST}}`;
+const POSTGRESQL_ORIGINAL_ICON_RE = /postgresql-original\.svg/;
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) {
@@ -542,7 +543,11 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
       uid: "api-uid",
     },
   });
-  assert.deepEqual(models.databaseModelsByKey.get("DB:default:postgres"), {
+  const databaseModel = required(
+    models.databaseModelsByKey.get("DB:default:postgres")
+  );
+  assert.match(databaseModel.states.iconUrl ?? "", POSTGRESQL_ORIGINAL_ICON_RE);
+  assert.deepEqual(databaseModel, {
     connections: [
       {
         id: "private",
@@ -561,6 +566,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
     states: {
       displayEngine: "PostgreSQL",
       engineKey: "postgresql",
+      iconUrl: databaseModel.states.iconUrl,
       metrics: {},
       name: "postgres",
       status: { label: "Running", tone: "running" },

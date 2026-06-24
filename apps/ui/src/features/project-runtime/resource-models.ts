@@ -1,3 +1,8 @@
+import {
+  type DeviconKey,
+  deviconSrc,
+  devicons,
+} from "@workspace/ui/assets/devicons";
 import type { DatabaseNodeConnection } from "@workspace/ui/components/database-node/database-node";
 
 import { publicAccessSelectionKey } from "@/features/project-canvas/nodes/entry-node-selection";
@@ -35,6 +40,31 @@ export type ProjectRuntimeNodeModel =
   | CanvasContainerNodeData
   | CanvasDatabaseNodeData
   | CanvasEntryNodeData;
+
+const DATABASE_ENGINE_ICON_BY_KEY: Record<
+  string,
+  Exclude<DeviconKey, "docker">
+> = {
+  mongo: "mongodb",
+  mongodb: "mongodb",
+  mysql: "mysql",
+  pg: "postgresql",
+  postgres: "postgresql",
+  postgresql: "postgresql",
+  redis: "redis",
+};
+
+function databaseEngineIconUrl(
+  engineKey: string | undefined
+): string | undefined {
+  if (engineKey === undefined) {
+    return undefined;
+  }
+  const iconKey = DATABASE_ENGINE_ICON_BY_KEY[engineKey.toLowerCase()];
+  return iconKey === undefined
+    ? undefined
+    : deviconSrc(devicons[iconKey].original);
+}
 
 function apModelFromFact(fact: ApFact): CanvasContainerNodeData {
   return {
@@ -76,6 +106,8 @@ function dbConnectionsFromFact(fact: DbFact): DatabaseNodeConnection[] {
 }
 
 function dbModelFromFact(fact: DbFact): CanvasDatabaseNodeData {
+  const iconUrl = databaseEngineIconUrl(fact.engine.key);
+
   return {
     connections: dbConnectionsFromFact(fact),
     ...(fact.metadataLabels === undefined
@@ -85,6 +117,7 @@ function dbModelFromFact(fact: DbFact): CanvasDatabaseNodeData {
       displayEngine: fact.engine.displayName,
       ...(fact.engine.key === undefined ? {} : { engineKey: fact.engine.key }),
       ...(fact.version === undefined ? {} : { formattedVersion: fact.version }),
+      ...(iconUrl === undefined ? {} : { iconUrl }),
       ...(fact.capacitySummary === undefined
         ? {}
         : {
