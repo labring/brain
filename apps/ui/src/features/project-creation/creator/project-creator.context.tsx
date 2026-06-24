@@ -113,10 +113,10 @@ function normalizeProjectCreatorDisplayName(name: string): string {
   return name.trim().toLowerCase();
 }
 
-function randomProjectWord<const T extends readonly string[]>(
+function randomProjectWord<const T extends readonly [string, ...string[]]>(
   words: T
 ): T[number] {
-  return words[Math.floor(Math.random() * words.length)];
+  return words[Math.floor(Math.random() * words.length)] ?? words[0];
 }
 
 function createRandomProjectDisplayName(

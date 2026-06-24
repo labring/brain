@@ -390,7 +390,10 @@ function namedEnvRecords(originalEnv: unknown): Record<string, unknown>[] {
   }
   return originalEnv.flatMap((item) => {
     const record = asRecord(item);
-    return envRecordName(record) === undefined ? [] : [record];
+    if (record === undefined || envRecordName(record) === undefined) {
+      return [];
+    }
+    return [record];
   });
 }
 

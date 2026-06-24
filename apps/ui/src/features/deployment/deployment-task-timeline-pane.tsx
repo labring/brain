@@ -53,6 +53,7 @@ import type {
   DeploymentTaskDeploymentPlanInput,
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskBlockingInput,
+  DeployTaskStatus,
 } from "@/lib/deploy-task/types";
 import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
 
@@ -64,20 +65,26 @@ interface DeploymentTaskTimelinePaneProps {
 }
 
 function statusDotTone(
-  status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
+  status:
+    | DeploymentTimelineStepStatus
+    | DeploymentResultResourceCardStatus
+    | DeployTaskStatus
 ): string {
   switch (status) {
     case "completed":
     case "running":
       return "bg-emerald-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-emerald-400)_18%,transparent)]";
+    case "applying":
     case "creating":
     case "pending":
+    case "queued":
       return "bg-blue-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-blue-400)_18%,transparent)]";
     case "blocked":
     case "unknown":
       return "bg-amber-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-amber-400)_18%,transparent)]";
     case "failed":
       return "bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_18%,transparent)]";
+    case "cancelled":
     case "skipped":
       return "bg-muted-foreground/50";
     default:
