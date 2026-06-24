@@ -6,6 +6,7 @@ import {
   createPendingSettingsStore,
   PENDING_SETTINGS_ATTENTION_WINDOW_MS,
   PENDING_SETTINGS_SCHEMA_VERSION,
+  PENDING_SETTINGS_STORAGE_KEY,
   pendingSettingsClusterFingerprint,
 } from "@/features/project-settings/pending-settings-updates";
 
@@ -48,12 +49,13 @@ test("pending settings store persists versioned dirty-domain entries without raw
 
   store.replaceDirtyDomains({
     owner,
-    submittedAgainstByDomain: {
-      network: { privatePort: 3000 },
-    },
-    targetByDomain: {
-      network: { privatePort: 8080 },
-    },
+    updates: [
+      {
+        domain: "network",
+        submittedAgainst: { privatePort: 3000 },
+        target: { privatePort: 8080 },
+      },
+    ],
   });
 
   const entries = store.list(owner);
@@ -68,6 +70,94 @@ test("pending settings store persists versioned dirty-domain entries without raw
   assert.match(rawStorage, new RegExp(clusterFingerprint));
 
   assert.deepEqual(store.list({ ...owner, uid: "ap-uid-2" }), []);
+});
+
+test("pending settings store applies one owner identity policy for list, replace, and clear", () => {
+  let time = 1000;
+  const storage = new MemoryStorage();
+  const store = createPendingSettingsStore({
+    now: () => time,
+    storage,
+  });
+  const ownerWithoutUid = {
+    clusterFingerprint: "sha256:cluster",
+    kind: "ap" as const,
+    name: "api",
+    namespace: "demo",
+  };
+  const ownerWithUid = { ...ownerWithoutUid, uid: "ap-uid-1" };
+
+  store.replaceDirtyDomains({
+    owner: ownerWithoutUid,
+    updates: [
+      {
+        domain: "launch",
+        submittedAgainst: { image: "ghcr.io/acme/api:v1" },
+        target: { image: "ghcr.io/acme/api:v2" },
+      },
+    ],
+  });
+
+  assert.equal(store.list(ownerWithUid).length, 1);
+
+  time = 2000;
+  store.replaceDirtyDomains({
+    owner: ownerWithUid,
+    updates: [
+      {
+        domain: "launch",
+        submittedAgainst: { image: "ghcr.io/acme/api:v1" },
+        target: { image: "ghcr.io/acme/api:v3" },
+      },
+    ],
+  });
+
+  const entries = store.list(ownerWithUid);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.uid, "ap-uid-1");
+  assert.equal(entries[0]?.submittedAtMs, 2000);
+  assert.deepEqual(entries[0]?.target, { image: "ghcr.io/acme/api:v3" });
+
+  const recreatedOwner = { ...ownerWithoutUid, uid: "ap-uid-2" };
+  assert.deepEqual(store.list(recreatedOwner), []);
+  store.clear(recreatedOwner, "launch");
+  assert.equal(store.list(ownerWithUid).length, 1);
+
+  store.clear(ownerWithUid, "launch");
+  assert.deepEqual(store.list(ownerWithUid), []);
+});
+
+test("pending settings store drops persisted entries without complete domain targets", () => {
+  const storage = new MemoryStorage();
+  storage.setItem(
+    PENDING_SETTINGS_STORAGE_KEY,
+    JSON.stringify({
+      entries: [
+        {
+          clusterFingerprint: "sha256:cluster",
+          domain: "resources",
+          kind: "database",
+          name: "postgres",
+          namespace: "demo",
+          submittedAtMs: 1000,
+          target: { replicas: 2 },
+          version: PENDING_SETTINGS_SCHEMA_VERSION,
+        },
+      ],
+      version: PENDING_SETTINGS_SCHEMA_VERSION,
+    })
+  );
+  const store = createPendingSettingsStore({ storage });
+
+  assert.deepEqual(
+    store.list({
+      clusterFingerprint: "sha256:cluster",
+      kind: "database",
+      name: "postgres",
+      namespace: "demo",
+    }),
+    []
+  );
 });
 
 test("pending settings classification separates applying, attention, reconciliation, and divergence", () => {

@@ -22,6 +22,12 @@ export interface PendingSettingsUpdateEntry<TTarget = unknown>
   version: typeof PENDING_SETTINGS_SCHEMA_VERSION;
 }
 
+export interface PendingSettingsDomainUpdate<TTarget = unknown> {
+  domain: string;
+  submittedAgainst: TTarget;
+  target: TTarget;
+}
+
 interface PendingSettingsDocument {
   entries: PendingSettingsUpdateEntry[];
   version: typeof PENDING_SETTINGS_SCHEMA_VERSION;
@@ -38,8 +44,7 @@ export interface PendingSettingsStore {
   list: (owner: PendingSettingsOwnerIdentity) => PendingSettingsUpdateEntry[];
   replaceDirtyDomains: (input: {
     owner: PendingSettingsOwnerIdentity;
-    submittedAgainstByDomain: Record<string, unknown>;
-    targetByDomain: Record<string, unknown>;
+    updates: readonly PendingSettingsDomainUpdate[];
   }) => PendingSettingsUpdateEntry[];
 }
 
@@ -104,6 +109,8 @@ function isPendingSettingsEntry(
     typeof candidate.namespace === "string" &&
     typeof candidate.name === "string" &&
     typeof candidate.domain === "string" &&
+    Object.hasOwn(candidate, "submittedAgainst") &&
+    Object.hasOwn(candidate, "target") &&
     typeof candidate.submittedAtMs === "number" &&
     (candidate.uid === undefined || typeof candidate.uid === "string")
   );
@@ -121,27 +128,25 @@ function sameOwnerName(
   );
 }
 
-function uidMatches(
+function samePendingOwner(
   entry: PendingSettingsOwnerIdentity,
   owner: PendingSettingsOwnerIdentity
 ) {
-  return (
-    entry.uid === undefined ||
-    owner.uid === undefined ||
-    entry.uid === owner.uid
-  );
+  if (!sameOwnerName(entry, owner)) {
+    return false;
+  }
+  if (entry.uid !== undefined && owner.uid !== undefined) {
+    return entry.uid === owner.uid;
+  }
+  return true;
 }
 
-function sameEntryKey(
+function samePendingDomain(
   entry: PendingSettingsUpdateEntry,
   owner: PendingSettingsOwnerIdentity,
   domain: string
 ) {
-  return (
-    sameOwnerName(entry, owner) &&
-    entry.uid === owner.uid &&
-    entry.domain === domain
-  );
+  return samePendingOwner(entry, owner) && entry.domain === domain;
 }
 
 export function createPendingSettingsStore({
@@ -159,33 +164,38 @@ export function createPendingSettingsStore({
       const document = read();
       writeDocument(storage, {
         entries: document.entries.filter(
-          (entry) => !sameEntryKey(entry, owner, domain)
+          (entry) => !samePendingDomain(entry, owner, domain)
         ),
         version: PENDING_SETTINGS_SCHEMA_VERSION,
       });
     },
     list(owner) {
-      return read().entries.filter(
-        (entry) => sameOwnerName(entry, owner) && uidMatches(entry, owner)
-      );
+      return read().entries.filter((entry) => samePendingOwner(entry, owner));
     },
-    replaceDirtyDomains({ owner, submittedAgainstByDomain, targetByDomain }) {
+    replaceDirtyDomains({ owner, updates }) {
+      if (updates.length === 0) {
+        return [];
+      }
       const submittedAtMs = now();
-      const domains = Object.keys(targetByDomain);
+      const updatesByDomain = new Map(
+        updates.map((update) => [update.domain, update])
+      );
+      const domains = [...updatesByDomain.keys()];
       const document = read();
       const entries = document.entries.filter(
-        (entry) => !domains.some((domain) => sameEntryKey(entry, owner, domain))
+        (entry) =>
+          !domains.some((domain) => samePendingDomain(entry, owner, domain))
       );
-      const replacements: PendingSettingsUpdateEntry[] = domains.map(
-        (domain) => ({
-          ...owner,
-          domain,
-          submittedAgainst: submittedAgainstByDomain[domain],
-          submittedAtMs,
-          target: targetByDomain[domain],
-          version: PENDING_SETTINGS_SCHEMA_VERSION,
-        })
-      );
+      const replacements: PendingSettingsUpdateEntry[] = [
+        ...updatesByDomain.values(),
+      ].map((update) => ({
+        ...owner,
+        domain: update.domain,
+        submittedAgainst: update.submittedAgainst,
+        submittedAtMs,
+        target: update.target,
+        version: PENDING_SETTINGS_SCHEMA_VERSION,
+      }));
       const nextEntries = [...entries, ...replacements];
       writeDocument(storage, {
         entries: nextEntries,
