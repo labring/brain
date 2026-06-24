@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -886,6 +887,9 @@ func TestTemplateAPUpdatePatchBuildsPauseMergePatch(t *testing.T) {
 	if annotations[templateAPPausedReplicasAnnotation] != "2" {
 		t.Fatalf("paused replicas annotation = %v, want 2", annotations[templateAPPausedReplicasAnnotation])
 	}
+	if _, ok := spec["template"]; ok {
+		t.Fatalf("pause patch must not patch pod template, got %#v", spec["template"])
+	}
 }
 
 func TestTemplateAPUpdatePatchResumesPausedReplicas(t *testing.T) {
@@ -928,7 +932,7 @@ func TestTemplateAPUpdatePatchResumesPausedReplicas(t *testing.T) {
 	}
 }
 
-func TestTemplateAPUpdatePatchRejectsMetadataPatch(t *testing.T) {
+func TestTemplateAPUpdatePatchAllowsRoutingMetadataPatch(t *testing.T) {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
@@ -941,8 +945,17 @@ func TestTemplateAPUpdatePatchRejectsMetadataPatch(t *testing.T) {
 		},
 	}
 
-	if _, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true}}`), testTime()); err == nil {
-		t.Fatal("expected template AP metadata patch to be rejected")
+	patch, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}},"spec":{"paused":true}}`), testTime())
+	if err != nil {
+		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(patch, &got); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	labels := got["metadata"].(map[string]interface{})["labels"].(map[string]interface{})
+	if labels[orchestration.APRoutingDomainLabel] != "apps.example.com" {
+		t.Fatalf("routing domain label = %v, want apps.example.com", labels[orchestration.APRoutingDomainLabel])
 	}
 }
 
@@ -1027,7 +1040,200 @@ func TestTemplateAPUpdatePatchBuildsWorkloadMergePatch(t *testing.T) {
 	}
 }
 
-func TestTemplateAPUpdatePatchRejectsDirectOnlyFields(t *testing.T) {
+func TestAPUpdatePatchPreservesStatefulSetTemplateFields(t *testing.T) {
+	replicas := int32(1)
+	statefulSet := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainDeploymentKindLabel:       orchestration.DeploymentKindTemplate,
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "affine",
+			},
+			Name:      "affine",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas:    &replicas,
+			ServiceName: "affine-headless",
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{{Name: "init-permissions", Image: "busybox"}},
+					Containers: []corev1.Container{
+						{
+							Env:          []corev1.EnvVar{{Name: "OLD", Value: "1"}},
+							Image:        "affine:old",
+							Name:         "affine-main",
+							Ports:        []corev1.ContainerPort{{Name: "web", ContainerPort: 3010}},
+							VolumeMounts: []corev1.VolumeMount{{Name: "config", MountPath: "/root/.affine/config"}},
+						},
+						{Name: "metrics-sidecar", Image: "metrics:1"},
+					},
+					Volumes: []corev1.Volume{{Name: "config", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
+				},
+			},
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "storage"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	patch, err := apUpdateMergePatch(apWorkload{StatefulSet: statefulSet}, json.RawMessage(`{"spec":{"input":{"image":"affine:new","env":[{"name":"FEATURE_FLAG","value":"true"}]},"resource":{"limits":{"cpu":"500m"}}}}`), nil, testTime())
+	if err != nil {
+		t.Fatalf("apUpdateMergePatch returned error: %v", err)
+	}
+	if strings.Contains(string(patch), "volumeClaimTemplates") || strings.Contains(string(patch), "serviceName") || strings.Contains(string(patch), "initContainers") {
+		t.Fatalf("patch must not claim unmanaged StatefulSet fields: %s", string(patch))
+	}
+	original, err := json.Marshal(statefulSet)
+	if err != nil {
+		t.Fatalf("marshal statefulset: %v", err)
+	}
+	merged, err := strategicpatch.StrategicMergePatch(original, patch, appsv1.StatefulSet{})
+	if err != nil {
+		t.Fatalf("strategic merge patch: %v", err)
+	}
+	var patched appsv1.StatefulSet
+	if err := json.Unmarshal(merged, &patched); err != nil {
+		t.Fatalf("unmarshal strategic merge result: %v", err)
+	}
+	if patched.Spec.ServiceName != "affine-headless" {
+		t.Fatalf("serviceName = %q, want affine-headless", patched.Spec.ServiceName)
+	}
+	if len(patched.Spec.VolumeClaimTemplates) != 1 || patched.Spec.VolumeClaimTemplates[0].Name != "storage" {
+		t.Fatalf("volumeClaimTemplates = %#v, want storage preserved", patched.Spec.VolumeClaimTemplates)
+	}
+	if len(patched.Spec.Template.Spec.InitContainers) != 1 || patched.Spec.Template.Spec.InitContainers[0].Name != "init-permissions" {
+		t.Fatalf("initContainers = %#v, want init-permissions preserved", patched.Spec.Template.Spec.InitContainers)
+	}
+	if len(patched.Spec.Template.Spec.Containers) != 2 || patched.Spec.Template.Spec.Containers[1].Name != "metrics-sidecar" {
+		t.Fatalf("containers = %#v, want sidecar preserved", patched.Spec.Template.Spec.Containers)
+	}
+	main := patched.Spec.Template.Spec.Containers[0]
+	if main.Name != "affine-main" || main.Image != "affine:new" {
+		t.Fatalf("main container = %#v, want updated affine-main image", main)
+	}
+	if len(main.Ports) != 1 || main.Ports[0].Name != "web" {
+		t.Fatalf("main ports = %#v, want existing named port preserved", main.Ports)
+	}
+	if len(main.VolumeMounts) != 1 || main.VolumeMounts[0].Name != "config" {
+		t.Fatalf("main volumeMounts = %#v, want existing mount preserved", main.VolumeMounts)
+	}
+}
+
+func TestAPUpdatePatchReplacesConfigMapMounts(t *testing.T) {
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "web",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Image: "nginx:1.27",
+						Name:  "web",
+						VolumeMounts: []corev1.VolumeMount{{
+							MountPath: "/etc/old.yaml",
+							Name:      orchestration.APConfigMapVolumeName("web"),
+							SubPath:   orchestration.APConfigMapKey("/etc/old.yaml"),
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name: orchestration.APConfigMapVolumeName("web"),
+						VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: orchestration.APConfigMapName("web")},
+						}},
+					}},
+				},
+			},
+		},
+	}
+
+	patch, err := apUpdateMergePatch(
+		apWorkload{Deployment: deployment},
+		json.RawMessage(`{"spec":{"input":{"configMaps":[{"path":"/etc/new.yaml","value":"new: true"}]}}}`),
+		[]orchestration.APConfigMapMount{{Path: "/etc/old.yaml", Value: "old: true"}},
+		testTime(),
+	)
+	if err != nil {
+		t.Fatalf("apUpdateMergePatch returned error: %v", err)
+	}
+	original, err := json.Marshal(deployment)
+	if err != nil {
+		t.Fatalf("marshal deployment: %v", err)
+	}
+	merged, err := strategicpatch.StrategicMergePatch(original, patch, appsv1.Deployment{})
+	if err != nil {
+		t.Fatalf("strategic merge patch: %v", err)
+	}
+	var patched appsv1.Deployment
+	if err := json.Unmarshal(merged, &patched); err != nil {
+		t.Fatalf("unmarshal strategic merge result: %v", err)
+	}
+	mounts := patched.Spec.Template.Spec.Containers[0].VolumeMounts
+	if len(mounts) != 1 || mounts[0].MountPath != "/etc/new.yaml" {
+		t.Fatalf("volumeMounts = %#v, want only /etc/new.yaml", mounts)
+	}
+}
+
+func TestAPUpdatePlanRestoresHPAOnResume(t *testing.T) {
+	replicas := int32(0)
+	current := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				orchestration.APReplicaStrategyAnnotation: `{"elastic":{"maxReplicas":4,"minReplicas":2,"target":{"metric":"cpu","type":"utilization","utilizationPercent":70}},"fixed":{"replicas":2},"type":"elastic"}`,
+				orchestration.LaunchpadPauseAnnotation:    "true",
+				templateAPPausedReplicasAnnotation:        "2",
+			},
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "web",
+			},
+			Name:      "web",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Image: "nginx:1.27", Name: "web", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 80}}}},
+				},
+			},
+		},
+	}
+
+	plan, err := buildAPUpdatePlan(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"paused":false}}`), nil, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	foundHPA := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*autoscalingv2.HorizontalPodAutoscaler); ok {
+			foundHPA = true
+		}
+	}
+	if !foundHPA {
+		t.Fatalf("SupportObjects = %#v, want HPA restored on resume", plan.SupportObjects)
+	}
+}
+
+func TestTemplateAPUpdatePatchAllowsAPFieldsWithoutFullWorkloadOwnership(t *testing.T) {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
@@ -1038,16 +1244,26 @@ func TestTemplateAPUpdatePatchRejectsDirectOnlyFields(t *testing.T) {
 			Name:      "template-web",
 			Namespace: "ns-a",
 		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "web", Image: "nginx:1.27", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 80}}}},
+				},
+			},
+		},
 	}
 
 	for _, patch := range []json.RawMessage{
 		json.RawMessage(`{"metadata":{"labels":{"region":"apps.example.com"}}}`),
 		json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":3000}]}}}}`),
-		json.RawMessage(`{"spec":{"input":{"storage":[{"path":"/data","size":"10Gi"}]}}}`),
 		json.RawMessage(`{"spec":{"input":{"configMaps":[{"path":"/etc/app.yaml","value":"debug: true"}]}}}`),
 	} {
-		if _, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, patch, testTime()); err == nil {
-			t.Fatalf("expected template AP patch %s to be rejected", string(patch))
+		mergePatch, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, patch, testTime())
+		if err != nil {
+			t.Fatalf("template AP patch %s returned error: %v", string(patch), err)
+		}
+		if strings.Contains(string(mergePatch), "volumeClaimTemplates") || strings.Contains(string(mergePatch), "serviceName") {
+			t.Fatalf("patch %s must not claim StatefulSet-only fields: %s", string(patch), string(mergePatch))
 		}
 	}
 }

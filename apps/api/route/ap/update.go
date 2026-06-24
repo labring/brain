@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -63,9 +61,14 @@ type apUpdateRequest struct {
 }
 
 type apUpdatePlan struct {
-	Objects     []runtime.Object
-	RenderInput orchestration.APResourcesInput
-	Resources   *orchestration.APResources
+	DeleteConfigMap       bool
+	DeleteHPA             bool
+	DeleteImagePullSecret bool
+	Patch                 []byte
+	RenderInput           orchestration.APResourcesInput
+	Resources             *orchestration.APResources
+	SupportObjects        []runtime.Object
+	UpdateRouting         bool
 }
 
 type apUpdateErrorKind string
@@ -153,9 +156,6 @@ func updateAP(ctx context.Context, req apUpdateRequest) (json.RawMessage, error)
 		return nil, apUpdateInternal("failed to get AP for update", err)
 	}
 	if err := requireBrainAPWorkload(*workload); err != nil {
-		if requireBrainAPLifecycleWorkload(*workload) == nil {
-			return updateTemplateAP(cfg, *workload, req.Body, time.Now().UTC())
-		}
 		return nil, apUpdateNotFound("AP not found", err)
 	}
 
@@ -190,60 +190,45 @@ func updateAP(ctx context.Context, req apUpdateRequest) (json.RawMessage, error)
 	return body, nil
 }
 
-func updateTemplateAP(cfg *clientcmdapi.Config, workload apWorkload, raw json.RawMessage, now time.Time) (json.RawMessage, error) {
-	patch, err := templateAPUpdateMergePatch(workload, raw, now)
-	if err != nil {
-		return nil, apUpdateBadRequest("invalid template AP update request", err)
-	}
-	jsonBytes, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
-		Resource:  workload.Resource(),
-		Name:      workload.Name(),
-		Namespace: workload.Namespace(),
-		PatchType: k8ssvc.PatchTypeStrategic,
-		Patch:     patch,
-	})
-	if err != nil {
-		return nil, apUpdateInternal("failed to update template AP", err)
-	}
-	var patchedWorkload apWorkload
-	if workload.Deployment != nil {
-		var deployment appsv1.Deployment
-		if err := json.Unmarshal(jsonBytes, &deployment); err != nil {
-			return nil, apUpdateInternal("failed to decode updated template AP", err)
-		}
-		patchedWorkload.Deployment = &deployment
-	} else {
-		var statefulSet appsv1.StatefulSet
-		if err := json.Unmarshal(jsonBytes, &statefulSet); err != nil {
-			return nil, apUpdateInternal("failed to decode updated template AP", err)
-		}
-		patchedWorkload.StatefulSet = &statefulSet
-	}
-	body, err := apResponseFromWorkloadWithConfigMapValues(cfg, &patchedWorkload)
-	if err != nil {
-		return nil, apUpdateInternal("failed to adapt updated template AP response", err)
-	}
-	return body, nil
+func templateAPUpdateMergePatch(workload apWorkload, raw json.RawMessage, now time.Time) ([]byte, error) {
+	return apUpdateMergePatch(workload, raw, nil, now)
 }
 
-func templateAPUpdateMergePatch(workload apWorkload, raw json.RawMessage, now time.Time) ([]byte, error) {
-	renderInput, paused, err := apRenderInputFromWorkloadPatch(workload, raw, nil)
+func apUpdateMergePatch(workload apWorkload, raw json.RawMessage, currentConfigMaps []orchestration.APConfigMapMount, now time.Time) ([]byte, error) {
+	renderInput, paused, err := apRenderInputFromWorkloadPatch(workload, raw, currentConfigMaps)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateTemplateAPUpdatePatch(raw); err != nil {
 		return nil, err
 	}
 
 	out := map[string]interface{}{}
 	metadata := map[string]interface{}{}
 	annotations := map[string]interface{}{}
-	if renderInput.EnvRawSource != workload.Annotations()[orchestration.APEnvRawSourceAnnotation] {
-		annotations[orchestration.APEnvRawSourceAnnotation] = renderInput.EnvRawSource
+	labels := map[string]interface{}{}
+	if metadataPatch, _ := apUpdateMetadataPatch(raw); metadataPatch != nil {
+		if labelPatch, _ := metadataPatch["labels"].(map[string]interface{}); labelPatch != nil {
+			if routingDomain := stringFromMap(labelPatch, orchestration.APRoutingDomainLabel); routingDomain != "" {
+				labels[orchestration.APRoutingDomainLabel] = routingDomain
+			}
+		}
 	}
+	spec, _ := apUpdateSpecPatch(raw)
+	inputPatch := apUpdateInputPatch(raw)
 	resourcePatch := templateAPUpdateResourcePatch(raw)
 	_, hasReplicaStrategy := resourcePatch["replicaStrategy"]
 	_, hasReplicas := resourcePatch["replicas"]
+	if _, ok := inputPatch["network"]; ok {
+		annotations[orchestration.APDesiredNetworkAnnotation] = renderInput.NetworkJSON
+	}
+	if _, ok := inputPatch["storage"]; ok {
+		rawStorage, err := json.Marshal(renderInput.Storage)
+		if err != nil {
+			return nil, err
+		}
+		annotations[orchestration.APDesiredStorageAnnotation] = string(rawStorage)
+	}
+	if _, ok := inputPatch["envRawSource"]; ok && renderInput.EnvRawSource != workload.Annotations()[orchestration.APEnvRawSourceAnnotation] {
+		annotations[orchestration.APEnvRawSourceAnnotation] = renderInput.EnvRawSource
+	}
 	if hasReplicaStrategy && renderInput.ReplicaStrategy != nil {
 		rawStrategy, err := json.Marshal(renderInput.ReplicaStrategy)
 		if err != nil {
@@ -253,13 +238,27 @@ func templateAPUpdateMergePatch(workload apWorkload, raw json.RawMessage, now ti
 	}
 
 	specPatch := map[string]interface{}{}
-	templatePatch := map[string]interface{}{
-		"spec": map[string]interface{}{
-			"containers": []interface{}{templateAPContainerPatch(workload, renderInput)},
-		},
+	templateSpecPatch := map[string]interface{}{}
+	if container := apUpdateContainerPatch(workload, inputPatch, resourcePatch, renderInput); len(container) > 0 {
+		templateSpecPatch["containers"] = []interface{}{container}
 	}
-	specPatch["template"] = templatePatch
-	if renderInput.RestartRequest != nil {
+	if _, ok := inputPatch["configMaps"]; ok {
+		applyAPConfigMapTemplatePatch(workload, renderInput, currentConfigMaps, templateSpecPatch)
+	} else if _, ok := inputPatch["configMap"]; ok {
+		applyAPConfigMapTemplatePatch(workload, renderInput, currentConfigMaps, templateSpecPatch)
+	}
+	if _, ok := inputPatch["imagePullSecrets"]; ok {
+		templateSpecPatch["imagePullSecrets"] = renderInput.ImagePullSecrets
+	} else if _, ok := inputPatch["imageRegistry"]; ok {
+		templateSpecPatch["imagePullSecrets"] = renderInput.ImagePullSecrets
+	} else if _, ok := inputPatch["registry"]; ok {
+		templateSpecPatch["imagePullSecrets"] = renderInput.ImagePullSecrets
+	}
+	templatePatch := map[string]interface{}{}
+	if len(templateSpecPatch) > 0 {
+		templatePatch["spec"] = templateSpecPatch
+	}
+	if _, ok := spec["restartRequest"]; ok && renderInput.RestartRequest != nil {
 		annotations[orchestration.APRestartRequestAnnotation] = strconv.FormatInt(*renderInput.RestartRequest, 10)
 		templatePatch["metadata"] = map[string]interface{}{
 			"annotations": map[string]interface{}{
@@ -267,14 +266,22 @@ func templateAPUpdateMergePatch(workload apWorkload, raw json.RawMessage, now ti
 			},
 		}
 	}
+	if len(templatePatch) > 0 {
+		specPatch["template"] = templatePatch
+	}
 	if paused != nil {
 		applyTemplateAPPausePatch(workload, specPatch, annotations, *paused)
 	} else if (hasReplicas || hasReplicaStrategy) && renderInput.Replicas > 0 {
 		specPatch["replicas"] = renderInput.Replicas
 	}
-	out["spec"] = specPatch
+	if len(specPatch) > 0 {
+		out["spec"] = specPatch
+	}
 	if len(annotations) > 0 {
 		metadata["annotations"] = annotations
+	}
+	if len(labels) > 0 {
+		metadata["labels"] = labels
 	}
 	if len(metadata) > 0 {
 		out["metadata"] = metadata
@@ -282,29 +289,149 @@ func templateAPUpdateMergePatch(workload apWorkload, raw json.RawMessage, now ti
 	return json.Marshal(out)
 }
 
-func templateAPContainerPatch(workload apWorkload, input orchestration.APResourcesInput) map[string]interface{} {
-	container := map[string]interface{}{
-		"args":            input.Args,
-		"command":         input.Command,
-		"env":             templateAPEnvPatch(input.Env),
-		"image":           input.Image,
-		"imagePullPolicy": input.ImagePullPolicy,
-		"name":            templateAPContainerName(workload),
-		"resources": map[string]interface{}{
-			"limits":   input.ResourceLimit,
-			"requests": input.ResourceReq,
-		},
+func apUpdateMetadataPatch(raw json.RawMessage) (map[string]interface{}, bool) {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return nil, false
 	}
-	if input.StartupProbe != nil {
-		container["startupProbe"] = input.StartupProbe
+	metadata, ok := patch["metadata"].(map[string]interface{})
+	return metadata, ok
+}
+
+func apUpdateSpecPatch(raw json.RawMessage) (map[string]interface{}, bool) {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return nil, false
 	}
-	if input.LivenessProbe != nil {
-		container["livenessProbe"] = input.LivenessProbe
+	spec, ok := patch["spec"].(map[string]interface{})
+	return spec, ok
+}
+
+func apUpdateInputPatch(raw json.RawMessage) map[string]interface{} {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return nil
 	}
-	if input.ReadinessProbe != nil {
-		container["readinessProbe"] = input.ReadinessProbe
+	spec, _ := patch["spec"].(map[string]interface{})
+	input, _ := spec["input"].(map[string]interface{})
+	return input
+}
+
+func apUpdateContainerPatch(workload apWorkload, inputPatch map[string]interface{}, resourcePatch map[string]interface{}, input orchestration.APResourcesInput) map[string]interface{} {
+	container := map[string]interface{}{}
+	for key := range inputPatch {
+		switch key {
+		case "args":
+			container["args"] = input.Args
+		case "command":
+			container["command"] = input.Command
+		case "env":
+			container["env"] = templateAPEnvPatch(input.Env)
+		case "image":
+			container["image"] = input.Image
+		case "imagePullPolicy":
+			container["imagePullPolicy"] = input.ImagePullPolicy
+		case "probes":
+			if input.StartupProbe != nil {
+				container["startupProbe"] = input.StartupProbe
+			}
+			if input.LivenessProbe != nil {
+				container["livenessProbe"] = input.LivenessProbe
+			}
+			if input.ReadinessProbe != nil {
+				container["readinessProbe"] = input.ReadinessProbe
+			}
+		}
+	}
+	resources := map[string]interface{}{}
+	if _, ok := resourcePatch["limits"]; ok {
+		resources["limits"] = input.ResourceLimit
+	}
+	if _, ok := resourcePatch["requests"]; ok {
+		resources["requests"] = input.ResourceReq
+	}
+	if len(resources) > 0 {
+		container["resources"] = resources
+	}
+	if len(container) > 0 {
+		container["name"] = templateAPContainerName(workload)
 	}
 	return container
+}
+
+func applyAPConfigMapTemplatePatch(workload apWorkload, input orchestration.APResourcesInput, currentConfigMaps []orchestration.APConfigMapMount, templateSpecPatch map[string]interface{}) {
+	volumeName := orchestration.APConfigMapVolumeName(input.Name)
+	configMapName := orchestration.APConfigMapName(input.Name)
+	containerName := templateAPContainerName(workload)
+	container, _ := mapFromFirstNamedListItem(templateSpecPatch["containers"], containerName)
+	if container == nil {
+		container = map[string]interface{}{"name": containerName}
+	}
+	if len(input.ConfigMaps) == 0 {
+		templateSpecPatch["volumes"] = []interface{}{map[string]interface{}{
+			"$patch": "delete",
+			"name":   volumeName,
+		}}
+		container["volumeMounts"] = configMapVolumeMountDeletePatches(currentConfigMaps, volumeName)
+		templateSpecPatch["containers"] = []interface{}{container}
+		return
+	}
+	volumeMounts := make([]interface{}, 0, len(input.ConfigMaps))
+	desiredPaths := map[string]struct{}{}
+	for _, item := range input.ConfigMaps {
+		desiredPaths[item.Path] = struct{}{}
+		volumeMounts = append(volumeMounts, map[string]interface{}{
+			"mountPath": item.Path,
+			"name":      volumeName,
+			"subPath":   orchestration.APConfigMapKey(item.Path),
+		})
+	}
+	for _, item := range currentConfigMaps {
+		if _, ok := desiredPaths[item.Path]; ok {
+			continue
+		}
+		volumeMounts = append(volumeMounts, map[string]interface{}{
+			"$patch":    "delete",
+			"mountPath": item.Path,
+		})
+	}
+	templateSpecPatch["volumes"] = []interface{}{map[string]interface{}{
+		"configMap": map[string]interface{}{"name": configMapName},
+		"name":      volumeName,
+	}}
+	container["volumeMounts"] = volumeMounts
+	templateSpecPatch["containers"] = []interface{}{container}
+}
+
+func configMapVolumeMountDeletePatches(currentConfigMaps []orchestration.APConfigMapMount, volumeName string) []interface{} {
+	if len(currentConfigMaps) == 0 {
+		return []interface{}{map[string]interface{}{
+			"$patch": "delete",
+			"name":   volumeName,
+		}}
+	}
+	out := make([]interface{}, 0, len(currentConfigMaps))
+	for _, item := range currentConfigMaps {
+		out = append(out, map[string]interface{}{
+			"$patch":    "delete",
+			"mountPath": item.Path,
+		})
+	}
+	return out
+}
+
+func mapFromFirstNamedListItem(value interface{}, name string) (map[string]interface{}, bool) {
+	rows, _ := value.([]interface{})
+	for _, row := range rows {
+		item, _ := row.(map[string]interface{})
+		if item == nil {
+			continue
+		}
+		if item["name"] == name {
+			return item, true
+		}
+	}
+	return nil, false
 }
 
 func templateAPEnvPatch(env []corev1.EnvVar) []interface{} {
@@ -362,43 +489,6 @@ func applyTemplateAPPausePatch(workload apWorkload, specPatch map[string]interfa
 	specPatch["replicas"] = replicas
 }
 
-func validateTemplateAPUpdatePatch(raw json.RawMessage) error {
-	var patch map[string]interface{}
-	if err := json.Unmarshal(raw, &patch); err != nil {
-		return err
-	}
-	for key := range patch {
-		if key != "spec" {
-			return fmt.Errorf("template AP update only supports spec")
-		}
-	}
-	spec, _ := patch["spec"].(map[string]interface{})
-	for key := range spec {
-		switch key {
-		case "input", "resource", "paused", "restartRequest":
-		default:
-			return fmt.Errorf("unsupported template AP patch field spec.%s", key)
-		}
-	}
-	input, _ := spec["input"].(map[string]interface{})
-	for key := range input {
-		switch key {
-		case "args", "command", "env", "envRawSource", "image", "imagePullPolicy", "probes":
-		default:
-			return fmt.Errorf("unsupported template AP patch field spec.input.%s", key)
-		}
-	}
-	resourceSpec, _ := spec["resource"].(map[string]interface{})
-	for key := range resourceSpec {
-		switch key {
-		case "limits", "requests", "replicaStrategy", "replicas":
-		default:
-			return fmt.Errorf("unsupported template AP patch field spec.resource.%s", key)
-		}
-	}
-	return nil
-}
-
 func workloadReplicas(workload apWorkload) int32 {
 	if workload.Deployment != nil && workload.Deployment.Spec.Replicas != nil {
 		return *workload.Deployment.Spec.Replicas
@@ -423,6 +513,10 @@ func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMap
 	if err != nil {
 		return apUpdatePlan{}, apUpdateBadRequest("invalid AP update request", err)
 	}
+	patch, err := apUpdateMergePatch(current, raw, currentConfigMaps, now)
+	if err != nil {
+		return apUpdatePlan{}, apUpdateBadRequest("invalid AP update request", err)
+	}
 	resources, err := orchestration.RenderAPResources(renderInput)
 	if err != nil {
 		return apUpdatePlan{}, apUpdateBadRequest("invalid AP direct resource request", err)
@@ -433,36 +527,86 @@ func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMap
 	if paused != nil && *paused {
 		resources.HPA = nil
 	}
-	objects := apRuntimeObjects(resources)
-	if resources.HPA != nil {
-		objects = append(objects, resources.HPA)
+	spec, _ := apUpdateSpecPatch(raw)
+	inputPatch := apUpdateInputPatch(raw)
+	_, configMapsChanged := inputPatch["configMaps"]
+	if !configMapsChanged {
+		_, configMapsChanged = inputPatch["configMap"]
+	}
+	_, networkChanged := inputPatch["network"]
+	metadataPatch, _ := apUpdateMetadataPatch(raw)
+	metadataLabels, _ := metadataPatch["labels"].(map[string]interface{})
+	_, routingDomainChanged := metadataLabels[orchestration.APRoutingDomainLabel]
+	imageSecretsChanged := false
+	if _, ok := inputPatch["imagePullSecrets"]; ok {
+		imageSecretsChanged = true
+	}
+	if _, ok := inputPatch["imageRegistry"]; ok {
+		imageSecretsChanged = true
+	}
+	if _, ok := inputPatch["registry"]; ok {
+		imageSecretsChanged = true
+	}
+	_, replicaStrategyChanged := templateAPUpdateResourcePatch(raw)["replicaStrategy"]
+	supportObjects := []runtime.Object{}
+	if configMapsChanged && resources.ConfigMap != nil {
+		supportObjects = append(supportObjects, resources.ConfigMap)
+	}
+	if imageSecretsChanged && resources.ImagePullSecret != nil {
+		supportObjects = append(supportObjects, resources.ImagePullSecret)
+	}
+	if networkChanged && resources.Service != nil {
+		supportObjects = append(supportObjects, resources.Service)
+	}
+	if (replicaStrategyChanged || (paused != nil && !*paused)) && resources.HPA != nil {
+		supportObjects = append(supportObjects, resources.HPA)
 	}
 	return apUpdatePlan{
-		Objects:     objects,
-		RenderInput: renderInput,
-		Resources:   resources,
+		DeleteConfigMap:       configMapsChanged && resources.ConfigMap == nil,
+		DeleteHPA:             paused != nil && *paused || replicaStrategyChanged && resources.HPA == nil,
+		DeleteImagePullSecret: imageSecretsChanged && !apInputReferencesGeneratedImagePullSecret(renderInput),
+		Patch:                 patch,
+		RenderInput:           renderInput,
+		Resources:             resources,
+		SupportObjects:        supportObjects,
+		UpdateRouting:         networkChanged || routingDomainChanged || strings.TrimSpace(stringFromMap(spec, "ingressAnnotations")) != "",
 	}, nil
 }
 
 func applyAPUpdatePlan(ctx context.Context, restConfig *rest.Config, cfg *clientcmdapi.Config, workload apWorkload, namespace string, plan apUpdatePlan) error {
 	renderInput := plan.RenderInput
-	if plan.Resources.HPA == nil {
+	if plan.DeleteHPA {
 		if err := deleteAPHPA(cfg, renderInput.Name, renderInput.Namespace); err != nil {
 			return apUpdateInternal("failed to update AP autoscaling", err)
 		}
 	}
-	if err := replaceAPPublicIngresses(restConfig, cfg, renderInput.Name, renderInput.Namespace, renderInput); err != nil {
-		return apUpdateInternal("failed to update AP public routing", err)
+	if plan.UpdateRouting {
+		if err := replaceAPPublicIngresses(restConfig, cfg, renderInput.Name, renderInput.Namespace, renderInput); err != nil {
+			return apUpdateInternal("failed to update AP public routing", err)
+		}
 	}
-	if err := k8ssvc.ApplyObjects(restConfig, plan.Objects, namespace); err != nil {
-		return apUpdateInternal("failed to update AP", err)
+	if len(plan.SupportObjects) > 0 {
+		if err := k8ssvc.ApplyObjects(restConfig, plan.SupportObjects, namespace); err != nil {
+			return apUpdateInternal("failed to update AP support resources", err)
+		}
 	}
-	if plan.Resources.ConfigMap == nil {
+	if !isEmptyJSONPatchObject(plan.Patch) {
+		if _, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+			Resource:  workload.Resource(),
+			Name:      workload.Name(),
+			Namespace: namespace,
+			PatchType: k8ssvc.PatchTypeStrategic,
+			Patch:     plan.Patch,
+		}); err != nil {
+			return apUpdateInternal("failed to update AP", err)
+		}
+	}
+	if plan.DeleteConfigMap {
 		if err := deleteAPConfigMap(cfg, renderInput.Name, renderInput.Namespace); err != nil {
 			return apUpdateInternal("failed to delete AP config map", err)
 		}
 	}
-	if !apInputReferencesGeneratedImagePullSecret(renderInput) {
+	if plan.DeleteImagePullSecret {
 		if err := deleteAPImagePullSecret(cfg, renderInput.Name, renderInput.Namespace); err != nil {
 			return apUpdateInternal("failed to delete AP image pull secret", err)
 		}
@@ -471,4 +615,12 @@ func applyAPUpdatePlan(ctx context.Context, restConfig *rest.Config, cfg *client
 		return apUpdateInternal("failed to update AP storage", err)
 	}
 	return nil
+}
+
+func isEmptyJSONPatchObject(patch []byte) bool {
+	var object map[string]interface{}
+	if err := json.Unmarshal(patch, &object); err != nil {
+		return false
+	}
+	return len(object) == 0
 }
