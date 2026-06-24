@@ -29,6 +29,8 @@ test("unsupported DB Service roots still render the service Backup unavailable s
   );
 
   assert.match(html, /data-testid="layout\.service-tab-bar"/);
+  assert.match(html, /data-qa-resource-type="db_service"/);
+  assert.match(html, /data-qa-state="selected collapsed"/);
   assert.match(html, /Backup unavailable/);
   assert.match(html, /ClickHouse/);
 });

@@ -194,6 +194,29 @@ function compactNodes(nodes: Array<TreeNodeData | null>): TreeNodeData[] {
   return nodes.filter((node): node is TreeNodeData => node !== null);
 }
 
+function expandedIdsFromStorageValue(
+  stored: string | null
+): Set<string> | null {
+  if (stored === null) {
+    return null;
+  }
+
+  const parsed: unknown = JSON.parse(stored);
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+
+  return new Set(
+    parsed.filter((item): item is string => typeof item === "string")
+  );
+}
+
+export function dataBrowserShouldUseDefaultExpandedTree(
+  expandedIds: ReadonlySet<string> | null
+): boolean {
+  return expandedIds === null || expandedIds.size === 0;
+}
+
 export function SidebarTreeProvider({
   children,
 }: {
@@ -306,21 +329,69 @@ export function SidebarTreeProvider({
     [dbService]
   );
 
-  const fetchNodeChildren = useCallback(
+  const loadNodeChildren = useCallback(
     async (node: TreeNodeData) => {
       setIsLoading((previous) => ({ ...previous, [node.id]: true }));
       try {
         const childNodes = await buildChildren(node);
         setTreeData((previous) => ({ ...previous, [node.id]: childNodes }));
         return childNodes;
-      } catch (error) {
-        console.error("Failed to fetch children:", error);
-        throw error;
       } finally {
         setIsLoading((previous) => ({ ...previous, [node.id]: false }));
       }
     },
     [buildChildren]
+  );
+
+  const fetchNodeChildren = useCallback(
+    async (node: TreeNodeData) => {
+      try {
+        return await loadNodeChildren(node);
+      } catch (error) {
+        console.error("Failed to fetch children:", error);
+        throw error;
+      }
+    },
+    [loadNodeChildren]
+  );
+
+  const expandDefaultTree = useCallback(
+    async (rootNode: TreeNodeData) => {
+      const expandedIds = new Set<string>([rootNode.id]);
+      setExpandedItems(new Set(expandedIds));
+
+      let rootChildren: TreeNodeData[] = [];
+      try {
+        rootChildren = await loadNodeChildren(rootNode);
+      } catch (error) {
+        console.error(
+          "Failed to initialize default expanded DB Access tree:",
+          error
+        );
+        return;
+      }
+
+      const logicalDatabases = rootChildren.filter(
+        (child) => child.type === "database"
+      );
+      for (const databaseNode of logicalDatabases) {
+        expandedIds.add(databaseNode.id);
+      }
+      setExpandedItems(new Set(expandedIds));
+
+      for (const databaseNode of logicalDatabases) {
+        try {
+          await loadNodeChildren(databaseNode);
+        } catch (error) {
+          console.error(
+            "Failed to initialize default expanded DB Access node:",
+            databaseNode.id,
+            error
+          );
+        }
+      }
+    },
+    [loadNodeChildren]
   );
 
   const toggleItem = useCallback(
@@ -385,50 +456,53 @@ export function SidebarTreeProvider({
       setTreeData({});
 
       const stored = localStorage.getItem(storageKey);
-      if (!stored) {
-        setExpandedItems(new Set());
-        setIsRestoring(false);
-        return;
-      }
-
       try {
-        const expandedIds = new Set<string>(JSON.parse(stored));
-        setExpandedItems(expandedIds);
+        let expandedIds: Set<string> | null = null;
+        try {
+          expandedIds = expandedIdsFromStorageValue(stored);
+        } catch (error) {
+          console.error("Failed to parse expanded items", error);
+        }
+
+        const rootNode = dbServiceToNode(dbService);
+        if (
+          expandedIds === null ||
+          dataBrowserShouldUseDefaultExpandedTree(expandedIds)
+        ) {
+          await expandDefaultTree(rootNode);
+          return;
+        }
+
+        const restoredExpandedIds = expandedIds;
+        setExpandedItems(restoredExpandedIds);
 
         const fetchRecursively = async (nodes: TreeNodeData[]) => {
           for (const node of nodes) {
-            if (!expandedIds.has(node.id)) {
+            if (!restoredExpandedIds.has(node.id)) {
               continue;
             }
-            setIsLoading((previous) => ({ ...previous, [node.id]: true }));
             try {
-              const childNodes = await buildChildren(node);
-              setTreeData((previous) => ({
-                ...previous,
-                [node.id]: childNodes,
-              }));
+              const childNodes = await loadNodeChildren(node);
               if (childNodes.length > 0) {
                 await fetchRecursively(childNodes);
               }
             } catch (error) {
               console.error("Failed to restore node:", node.id, error);
-            } finally {
-              setIsLoading((previous) => ({ ...previous, [node.id]: false }));
             }
           }
         };
 
-        await fetchRecursively([dbServiceToNode(dbService)]);
+        await fetchRecursively([rootNode]);
       } catch (error) {
         console.error("Failed to restore expanded items", error);
+      } finally {
+        setIsRestoring(false);
       }
-
-      setIsRestoring(false);
     };
 
     restoredStorageKey.current = storageKey;
     restoreState();
-  }, [buildChildren, dbService, storageKey]);
+  }, [dbService, expandDefaultTree, loadNodeChildren, storageKey]);
 
   const previousRefreshKey = useRef(sidebarRefreshKey);
   useEffect(() => {

@@ -9,6 +9,7 @@ import {
   dataBrowserObjectToTreeNode,
   dataBrowserPostgresSchemaFolders,
   dataBrowserRedisKeysFolder,
+  dataBrowserShouldUseDefaultExpandedTree,
 } from "./SidebarTreeProvider";
 import { dbServiceToNode, type TreeNodeData } from "./types";
 
@@ -178,5 +179,14 @@ test("expanded tree state waits for the current DB Service key to restore before
         "data-browser:expanded:project-uid:database-system:mysql-main",
     }),
     true
+  );
+});
+
+test("default expanded tree is used only for missing or old empty state", () => {
+  assert.equal(dataBrowserShouldUseDefaultExpandedTree(null), true);
+  assert.equal(dataBrowserShouldUseDefaultExpandedTree(new Set()), true);
+  assert.equal(
+    dataBrowserShouldUseDefaultExpandedTree(new Set([dbServiceKey])),
+    false
   );
 });
