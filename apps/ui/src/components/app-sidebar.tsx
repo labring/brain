@@ -13,6 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
+import { Separator } from "@workspace/ui/components/separator";
 import {
   Tooltip,
   TooltipContent,
@@ -25,6 +26,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   type ComponentProps,
+  Fragment,
   type ReactNode,
   useEffect,
   useMemo,
@@ -283,7 +285,14 @@ export default function AppSidebar() {
             className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto"
             data-slot="app-sidebar-project-shortcuts"
           >
-            {projectShortcutItems.map((item) => {
+            {projectShortcutItems.length === 0 && (
+              <Separator
+                aria-hidden
+                className="my-1.5 w-9 bg-border"
+                data-slot="app-sidebar-project-separator"
+              />
+            )}
+            {projectShortcutItems.map((item, index) => {
               const { project } = item;
               const iconKey =
                 projectShortcutIconKeys?.get(project.id) ?? "docker";
@@ -292,17 +301,35 @@ export default function AppSidebar() {
                 item.kind === "lastViewed"
                   ? `Last viewed unpinned project: ${project.name}`
                   : `Pinned project: ${project.name}`;
+              const showSeparatorBeforeItem =
+                index === 0 && item.kind !== "lastViewed";
+              const showSeparatorAfterItem = item.kind === "lastViewed";
 
               return (
-                <AppSidebarLinkButton
-                  active={active}
-                  aria-label={ariaLabel}
-                  href={`/project/${encodeURIComponent(project.id)}`}
-                  key={`${item.kind}:${project.id}`}
-                  tooltip={project.name}
-                >
-                  <ProjectShortcutIcon active={active} iconKey={iconKey} />
-                </AppSidebarLinkButton>
+                <Fragment key={`${item.kind}:${project.id}`}>
+                  {showSeparatorBeforeItem && (
+                    <Separator
+                      aria-hidden
+                      className="my-1.5 w-9 bg-border"
+                      data-slot="app-sidebar-project-separator"
+                    />
+                  )}
+                  <AppSidebarLinkButton
+                    active={active}
+                    aria-label={ariaLabel}
+                    href={`/project/${encodeURIComponent(project.id)}`}
+                    tooltip={project.name}
+                  >
+                    <ProjectShortcutIcon active={active} iconKey={iconKey} />
+                  </AppSidebarLinkButton>
+                  {showSeparatorAfterItem && (
+                    <Separator
+                      aria-hidden
+                      className="my-1.5 w-9 bg-border"
+                      data-slot="app-sidebar-project-separator"
+                    />
+                  )}
+                </Fragment>
               );
             })}
           </div>
