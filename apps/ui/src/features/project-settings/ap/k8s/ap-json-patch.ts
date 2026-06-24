@@ -2,6 +2,7 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import { parse as parseYaml } from "yaml";
+import { apNetworkSaveDraftFromNetwork } from "@/features/project-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
   ApEnvVar,
@@ -469,63 +470,6 @@ function apReplicaStrategiesEqual(
   );
 }
 
-function publicAddressesEqual(
-  a: readonly ApNetwork["publicAddresses"][number][] | undefined,
-  b: readonly ApNetwork["publicAddresses"][number][] | undefined
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((address, index) => {
-    const other = right[index];
-    return (
-      other != null &&
-      normalizePlatformAddressId(address.id) ===
-        normalizePlatformAddressId(other.id) &&
-      Math.round(address.port) === Math.round(other.port)
-    );
-  });
-}
-
-function customDomainsEqual(
-  a: readonly NonNullable<ApNetwork["customDomains"]>[number][] | undefined,
-  b: readonly NonNullable<ApNetwork["customDomains"]>[number][] | undefined
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((domain, index) => {
-    const other = right[index];
-    return (
-      other != null &&
-      normalizeCustomDomainBindingId(domain.id) ===
-        normalizeCustomDomainBindingId(other.id) &&
-      domain.domain.trim().toLowerCase() ===
-        other.domain.trim().toLowerCase() &&
-      normalizePlatformAddressId(domain.platformAddressId) ===
-        normalizePlatformAddressId(other.platformAddressId) &&
-      customDomainDetailSignature(domain.dns) ===
-        customDomainDetailSignature(other.dns)
-    );
-  });
-}
-
-function customDomainDetailSignature(
-  detail: NonNullable<ApNetwork["customDomains"]>[number]["dns"] | undefined
-): string {
-  return JSON.stringify({
-    message: detail?.message?.trim() ?? "",
-    reason: detail?.reason?.trim() ?? "",
-    status: detail?.status?.trim() ?? "",
-    target: detail?.target?.trim() ?? "",
-    verifiedAt: detail?.verifiedAt?.trim() ?? "",
-  });
-}
-
 function apNetworksEqual(
   a: ApNetworkSettingsPatch | undefined,
   b: ApNetworkSettingsPatch | undefined
@@ -534,12 +478,8 @@ function apNetworksEqual(
     return a == null && b == null;
   }
   return (
-    appListeningPortsEqual(
-      normalizedAppListeningPortsForSave(a),
-      normalizedAppListeningPortsForSave(b)
-    ) &&
-    publicAddressesEqual(a.publicAddresses, b.publicAddresses) &&
-    customDomainsEqual(a.customDomains, b.customDomains)
+    JSON.stringify(apNetworkSettingsPatchSaveDraft(a)) ===
+    JSON.stringify(apNetworkSettingsPatchSaveDraft(b))
   );
 }
 
@@ -573,10 +513,13 @@ function buildApNetworkInput(
   hasPublicAddresses: boolean;
   networkInput: Record<string, unknown>;
 } {
+  const saveDraft = apNetworkSettingsPatchSaveDraft(network);
   const appListeningPorts = normalizedAppListeningPortsForSave(network);
-  const platformAddresses = validatedPlatformAddresses(network.publicAddresses);
+  const platformAddresses = validatedPlatformAddresses(
+    saveDraft.publicAddresses
+  );
   const customDomains = validatedCustomDomains(
-    network.customDomains,
+    saveDraft.customDomains,
     platformAddresses,
     options
   );
@@ -591,6 +534,26 @@ function buildApNetworkInput(
     hasPublicAddresses: (platformAddresses?.length ?? 0) > 0,
     networkInput,
   };
+}
+
+function apNetworkSettingsPatchSaveDraft(
+  network: ApNetworkSettingsPatch
+): ApNetwork {
+  return apNetworkSaveDraftFromNetwork({
+    ...(network.appListeningPorts == null
+      ? {}
+      : {
+          appListeningPorts: network.appListeningPorts.map((row) => ({
+            port: row.port,
+          })),
+        }),
+    ...(network.customDomains == null
+      ? {}
+      : { customDomains: [...network.customDomains] }),
+    privatePort:
+      network.privatePort ?? network.appListeningPorts?.[0]?.port ?? Number.NaN,
+    publicAddresses: [...(network.publicAddresses ?? [])],
+  });
 }
 
 function sourcePortRowsForSave(
@@ -724,15 +687,19 @@ export function patchOpsForApPublicAddressesSettings(
     throw new Error("AP network settings are missing.");
   }
 
+  const saveDraft = apNetworkSettingsPatchSaveDraft(network);
   const platformAddresses =
-    validatedPlatformAddresses(network.publicAddresses) ?? [];
+    validatedPlatformAddresses(saveDraft.publicAddresses) ?? [];
   const appListeningPorts = appListeningPortsForPublicAddressPatch(
     inputNetwork,
     network
   );
   const customDomains =
-    validatedCustomDomains(network.customDomains, platformAddresses, options) ??
-    [];
+    validatedCustomDomains(
+      saveDraft.customDomains,
+      platformAddresses,
+      options
+    ) ?? [];
   const ops = [
     appListeningPorts == null
       ? null
@@ -1039,33 +1006,11 @@ function validatedCustomDomains(
     assertCustomDomainAvailableInNamespace(domain, options);
 
     return {
-      ...(customDomain.dns == null
-        ? {}
-        : { dns: validatedCustomDomainDns(customDomain.dns) }),
       domain,
       id,
       platformAddressId,
     };
   });
-}
-
-function validatedCustomDomainDns(
-  detail: NonNullable<ApNetwork["customDomains"]>[number]["dns"]
-): Record<string, unknown> {
-  const status = detail?.status?.trim().toLowerCase() ?? "";
-  const target = detail?.target?.trim() ?? "";
-  const verifiedAt = detail?.verifiedAt?.trim() ?? "";
-  const out: Record<string, unknown> = {};
-  if (status !== "") {
-    out.status = status;
-  }
-  if (target !== "") {
-    out.target = target;
-  }
-  if (verifiedAt !== "") {
-    out.verifiedAt = verifiedAt;
-  }
-  return out;
 }
 
 function assertCustomDomainAvailableInNamespace(

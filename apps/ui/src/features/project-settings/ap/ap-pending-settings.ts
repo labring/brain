@@ -1,4 +1,7 @@
-import type { ApNetwork } from "./ap-network-model";
+import {
+  type ApNetwork,
+  apNetworkSaveDraftFromNetwork,
+} from "./ap-network-model";
 import type { ApReplicaStrategy } from "./ap-replica-strategy-section";
 import {
   AP_SETTINGS_DRAFT_DOMAINS,
@@ -87,7 +90,11 @@ export function apPendingTargetForDomain(
           : { workloadKind: draft.workloadKind }),
       };
     case "network":
-      return clonePlain(draft.network);
+      return clonePlain(
+        draft.network == null
+          ? draft.network
+          : apNetworkSaveDraftFromNetwork(draft.network)
+      );
     case "resources":
       return {
         cpuCores: draft.cpuCores,

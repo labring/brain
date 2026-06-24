@@ -51,6 +51,25 @@ export interface ApNetwork {
   publicAddresses: ApNetworkPublicAddress[];
 }
 
+export interface ApNetworkSavePublicAddress {
+  domainPrefix?: string;
+  id?: string;
+  port: number;
+}
+
+export interface ApNetworkSaveCustomDomain {
+  domain: string;
+  id: string;
+  platformAddressId: string;
+}
+
+export interface ApNetworkSaveDraft {
+  appListeningPorts: ApNetworkAppListeningPort[];
+  customDomains?: ApNetworkSaveCustomDomain[];
+  privatePort: number;
+  publicAddresses: ApNetworkSavePublicAddress[];
+}
+
 export interface ApNetworkPlatformAddressDraftContext {
   appName?: string;
   namespace?: string;
@@ -68,47 +87,6 @@ export type ApCustomDomainCnameVerifier = (input: {
   target: string;
 }) => Promise<ApCustomDomainCnameVerificationResult>;
 
-function publicAddressDraftsEqual(
-  a: readonly ApNetworkPublicAddress[],
-  b: readonly ApNetworkPublicAddress[]
-): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  return a.every((address, index) => {
-    const other = b[index];
-    return (
-      other != null &&
-      publicAddressIdValue(address) === publicAddressIdValue(other) &&
-      Math.round(address.port) === Math.round(other.port)
-    );
-  });
-}
-
-function customDomainDraftsEqual(
-  a: readonly ApNetworkCustomDomain[] | undefined,
-  b: readonly ApNetworkCustomDomain[] | undefined
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((domain, index) => {
-    const other = right[index];
-    return (
-      other != null &&
-      domain.id.trim() === other.id.trim() &&
-      domain.domain.trim().toLowerCase() ===
-        other.domain.trim().toLowerCase() &&
-      domain.platformAddressId.trim() === other.platformAddressId.trim() &&
-      (domain.cnameTarget?.trim() ?? "") ===
-        (other.cnameTarget?.trim() ?? "") &&
-      Math.round(domain.targetPort ?? 0) === Math.round(other.targetPort ?? 0)
-    );
-  });
-}
-
 export function apNetworksEqual(
   a: ApNetwork | undefined,
   b: ApNetwork | undefined
@@ -117,13 +95,8 @@ export function apNetworksEqual(
     return a == null && b == null;
   }
   return (
-    Math.round(a.privatePort) === Math.round(b.privatePort) &&
-    appListeningPortDraftsEqual(
-      appListeningPortsFromNetwork(a),
-      appListeningPortsFromNetwork(b)
-    ) &&
-    publicAddressDraftsEqual(a.publicAddresses, b.publicAddresses) &&
-    customDomainDraftsEqual(a.customDomains, b.customDomains)
+    JSON.stringify(apNetworkSaveDraftFromNetwork(a)) ===
+    JSON.stringify(apNetworkSaveDraftFromNetwork(b))
   );
 }
 
@@ -222,21 +195,6 @@ export function addedAppListeningPorts(
     .filter((port) => !previousPorts.has(port));
 }
 
-function appListeningPortDraftsEqual(
-  a: readonly ApNetworkAppListeningPort[] | undefined,
-  b: readonly ApNetworkAppListeningPort[] | undefined
-): boolean {
-  const left = a ?? [];
-  const right = b ?? [];
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((row, index) => {
-    const other = right[index];
-    return other != null && Math.round(row.port) === Math.round(other.port);
-  });
-}
-
 export function publicAddressDefaultPort(network: ApNetwork): number {
   return appListeningPortsFromNetwork(network)[0]?.port ?? 80;
 }
@@ -266,6 +224,45 @@ export function publicAddressDisplayName(address: ApNetworkPublicAddress) {
 
 export function publicAddressIdValue(address: ApNetworkPublicAddress): string {
   return address.id?.trim() || address.platformAddressId?.trim() || "";
+}
+
+export function apNetworkSaveDraftFromNetwork(
+  network: ApNetwork
+): ApNetworkSaveDraft {
+  const appListeningPorts =
+    network.appListeningPorts != null && network.appListeningPorts.length > 0
+      ? network.appListeningPorts.map((row) => ({ port: row.port }))
+      : [{ port: network.privatePort }];
+  const firstPort = appListeningPorts[0]?.port ?? network.privatePort;
+  const publicAddresses = network.publicAddresses.flatMap((address) => {
+    if (address.type?.trim().toLowerCase() === "observed") {
+      return [];
+    }
+    const id = publicAddressIdValue(address);
+    const domainPrefix =
+      typeof address.domainPrefix === "string"
+        ? address.domainPrefix.trim().toLowerCase()
+        : "";
+    return [
+      {
+        ...(domainPrefix === "" ? {} : { domainPrefix }),
+        ...(id === "" ? {} : { id }),
+        port: address.port,
+      },
+    ];
+  });
+  const customDomains = (network.customDomains ?? []).map((domain) => ({
+    domain: domain.domain.trim().toLowerCase(),
+    id: domain.id.trim(),
+    platformAddressId: domain.platformAddressId.trim(),
+  }));
+
+  return {
+    appListeningPorts,
+    ...(customDomains.length === 0 ? {} : { customDomains }),
+    privatePort: firstPort,
+    publicAddresses,
+  };
 }
 
 export interface ApNetworkPublicAddressTarget {

@@ -35,6 +35,7 @@ test("AP pending adapter extracts dirty domains and overlays authored environmen
     rawSource: AUTHORED_ENV_RAW_SOURCE,
   });
   assert.deepEqual(targets.network, {
+    appListeningPorts: [{ port: 8080 }],
     privatePort: 8080,
     publicAddresses: [],
   });
@@ -42,6 +43,7 @@ test("AP pending adapter extracts dirty domains and overlays authored environmen
   const effective = applyApPendingTargets(base, targets);
   assert.equal(effective.envRawSource, AUTHORED_ENV_RAW_SOURCE);
   assert.deepEqual(effective.network, {
+    appListeningPorts: [{ port: 8080 }],
     privatePort: 8080,
     publicAddresses: [],
   });
@@ -127,4 +129,65 @@ test("AP pending adapter treats platform address id evidence as the same network
   };
 
   assert.deepEqual(apPendingTargetsForDirtyDomains(base, draft), {});
+});
+
+test("AP pending adapter stores only saveable network draft fields", () => {
+  const base: ApSettingsDraft = {
+    cpuCores: 1,
+    env: [],
+    image: "ghcr.io/acme/api:v1",
+    memoryMib: 512,
+    network: {
+      privatePort: 8080,
+      publicAddresses: [],
+    },
+  };
+  const draft: ApSettingsDraft = {
+    ...base,
+    network: {
+      appListeningPorts: [{ privateAddress: "http://api:8080", port: 8080 }],
+      customDomains: [
+        {
+          certificate: { status: "ready" },
+          cnameTarget: "api.example.dev",
+          dns: {
+            status: "verified",
+            target: "api.example.dev",
+            verifiedAt: "2026-06-24T01:00:00.000Z",
+          },
+          domain: "WWW.EXAMPLE.COM",
+          id: "cd_def456",
+          platformAddressId: "pa_abc123",
+          routing: { status: "ready" },
+          status: "running",
+          targetPort: 8080,
+        },
+      ],
+      privateAddress: "http://api:8080",
+      privatePort: 8080,
+      publicAddresses: [
+        {
+          host: "api.example.dev",
+          id: "pa_abc123",
+          port: 8080,
+          status: "running",
+          type: "platform",
+          url: "https://api.example.dev/",
+        },
+      ],
+    },
+  };
+
+  assert.deepEqual(apPendingTargetsForDirtyDomains(base, draft).network, {
+    appListeningPorts: [{ port: 8080 }],
+    customDomains: [
+      {
+        domain: "www.example.com",
+        id: "cd_def456",
+        platformAddressId: "pa_abc123",
+      },
+    ],
+    privatePort: 8080,
+    publicAddresses: [{ id: "pa_abc123", port: 8080 }],
+  });
 });

@@ -383,11 +383,6 @@ test("AP network settings writes v1 Custom Domains as AP desired state", () => {
       value: {
         customDomains: [
           {
-            dns: {
-              status: "verified",
-              target: "api.example.com",
-              verifiedAt: "2026-06-12T00:00:00.000Z",
-            },
             domain: "www.example.com",
             id: "cd_def456",
             platformAddressId: "pa_abc123",
@@ -1510,11 +1505,6 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
       value: {
         customDomains: [
           {
-            dns: {
-              status: "verified",
-              target: "api.example.com",
-              verifiedAt: "2026-06-12T00:00:00.000Z",
-            },
             domain: "www.example.com",
             id: "cd_def456",
             platformAddressId: "pa_abc123",
@@ -1527,6 +1517,76 @@ test("AP settings draft persists Custom Domain Bindings only on panel Save", () 
       },
     },
   ]);
+});
+
+test("AP settings draft ignores Custom Domain read-model metadata", () => {
+  const previous = {
+    network: {
+      appListeningPorts: [{ port: 80 }],
+      customDomains: [
+        {
+          domain: "www.example.com",
+          id: "cd_def456",
+          platformAddressId: "pa_abc123",
+        },
+      ],
+      publicAddresses: [{ id: "pa_abc123", port: 80 }],
+    },
+  } as const;
+
+  const ops = patchOpsForApSettingsDraft(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 80 }],
+          customDomains: [
+            {
+              domain: "www.example.com",
+              id: "cd_def456",
+              platformAddressId: "pa_abc123",
+            },
+          ],
+          platformAddresses: [{ id: "pa_abc123", port: 80 }],
+        },
+      },
+    },
+    {
+      network: {
+        appListeningPorts: [{ privateAddress: "http://api:80", port: 80 }],
+        customDomains: [
+          {
+            certificate: { status: "ready" },
+            cnameTarget: "api.example.com",
+            dns: {
+              status: "verified",
+              target: "api.example.com",
+              verifiedAt: "2026-06-12T00:00:00.000Z",
+            },
+            domain: "www.example.com",
+            id: "cd_def456",
+            platformAddressId: "pa_abc123",
+            routing: { status: "ready" },
+            status: "running",
+            targetPort: 80,
+          },
+        ],
+        privateAddress: "http://api:80",
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            id: "pa_abc123",
+            port: 80,
+            status: "running",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      },
+    },
+    previous
+  );
+
+  assert.deepEqual(ops, []);
 });
 
 test("AP settings draft merge patch clears the final Public Address", () => {

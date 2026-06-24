@@ -1,6 +1,10 @@
 "use client";
 
-import { type ApNetwork, apNetworksEqual } from "./ap-network-model";
+import {
+  type ApNetwork,
+  apNetworkSaveDraftFromNetwork,
+  apNetworksEqual,
+} from "./ap-network-model";
 import {
   type ApReplicaStrategy,
   CPU_QUOTA_DIRTY_EPS,
@@ -199,11 +203,16 @@ export function mergeApSettingsDraftDomains({
 }
 
 export function apSettingsDraftBackingKey(draft: ApSettingsDraft) {
-  return JSON.stringify(draft);
+  return JSON.stringify({
+    ...draft,
+    ...(draft.network == null
+      ? {}
+      : { network: apNetworkSaveDraftFromNetwork(draft.network) }),
+  });
 }
 
 export function apNetworkDraftBackingKey(network: ApNetwork) {
-  return JSON.stringify(network);
+  return JSON.stringify(apNetworkSaveDraftFromNetwork(network));
 }
 
 interface ApSettingsDraftValues {
