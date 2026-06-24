@@ -19,6 +19,10 @@ const PROJECT_DESCRIPTION_LAYOUT_RE =
   /<p class="[^"]*\bcol-span-full\b[^"]*\brow-start-2\b[^"]*"/;
 const PROJECT_ROW_DESCRIPTION_PADDING_RE =
   /<div class="[^"]*\bproject-explorer-item-row\b[^"]* pb-\[18px\][^"]*"/;
+const PROJECT_ROW_BUTTON_RE =
+  /<button aria-label="Open orders-api" class="[^"]*\binset-0\b[^"]*" type="button"><\/button>/;
+const PROJECT_DESCRIPTION_POINTER_EVENTS_RE =
+  /<p class="[^"]*\bpointer-events-none\b[^"]*\brow-start-2\b[^"]*">Handles order traffic\.<\/p>/;
 const PROJECT_EMPTY_DESCRIPTION_TONE_RE =
   /<p class="[^"]*\btext-muted-foreground\/45\b[^"]*"/;
 const PROJECT_PIN_ACTION_RE = /aria-label="Pin orders-api"/;
@@ -89,6 +93,29 @@ test("project explorer item renders Project Description when present", () => {
   assert.match(html, PROJECT_DESCRIPTION_RE);
   assert.match(html, PROJECT_DESCRIPTION_LAYOUT_RE);
   assert.match(html, PROJECT_ROW_DESCRIPTION_PADDING_RE);
+});
+
+test("project explorer item makes the full row, including description, interactive", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      ProjectExplorerRoot,
+      {
+        actions: { onProjectClick: () => undefined },
+        states: { projects: [] },
+      },
+      createElement(ProjectExplorerListItem, {
+        project: {
+          createdAt: "2026-05-26T00:00:00.000Z",
+          description: "Handles order traffic.",
+          id: "project-1",
+          name: "orders-api",
+        },
+      })
+    )
+  );
+
+  assert.match(html, PROJECT_ROW_BUTTON_RE);
+  assert.match(html, PROJECT_DESCRIPTION_POINTER_EVENTS_RE);
 });
 
 test("project explorer item renders a lightweight empty Project Description state", () => {

@@ -149,7 +149,7 @@ export const submitDeployTaskInputSchema = z.object({
 export type SubmitDeployTaskInput = z.infer<typeof submitDeployTaskInputSchema>;
 
 const deploymentTaskCanvasProjectionExpectedRefSchema = z.object({
-  kind: z.enum(["AP", "DB", "PublicAccess", "TemplateNative"]),
+  kind: z.enum(["AP", "DB", "PublicAccess"]),
   name: z.string().trim().min(1),
   namespace: z.string().trim().min(1),
 });

@@ -6,26 +6,17 @@ import type {
   ProjectRuntimeFacts,
   ProjectRuntimeFactsInput,
   PublicAccessFact,
-  TemplateNativeWorkloadFact,
 } from "./resource-facts";
 import { projectRuntimeFactsFromResources } from "./resource-facts";
 import type { ProjectRuntimeRelationshipIndexes } from "./resource-relationships";
 
-type RuntimeFact =
-  | ApFact
-  | DbFact
-  | PublicAccessFact
-  | TemplateNativeWorkloadFact;
+type RuntimeFact = ApFact | DbFact | PublicAccessFact;
 type FactSubscriber<TFact extends RuntimeFact> = (
   fact: TFact | undefined
 ) => void;
 type StoreSubscriber = () => void;
 
-export type ProjectRuntimeShellKind =
-  | "AP"
-  | "DB"
-  | "PublicAccess"
-  | "TemplateNativeWorkload";
+export type ProjectRuntimeShellKind = "AP" | "DB" | "PublicAccess";
 
 export interface ProjectRuntimeShellLookup {
   kind: ProjectRuntimeShellKind;
@@ -43,10 +34,6 @@ interface RuntimeMaps {
   apFactsByKey: Map<ProjectRuntimeFactKey, ApFact>;
   dbFactsByKey: Map<ProjectRuntimeFactKey, DbFact>;
   publicAccessFactsByKey: Map<ProjectRuntimeFactKey, PublicAccessFact>;
-  templateNativeWorkloadFactsByKey: Map<
-    ProjectRuntimeFactKey,
-    TemplateNativeWorkloadFact
-  >;
 }
 
 interface RuntimeState extends RuntimeMaps {
@@ -99,12 +86,6 @@ export type ProjectRuntimeResourceTopologyItem =
       modelKey: ProjectRuntimeFactKey;
       observedUid?: string;
       ref: PublicAccessFact["ref"];
-    }
-  | {
-      kind: "TemplateNativeWorkload";
-      modelKey: ProjectRuntimeFactKey;
-      observedUid?: string;
-      ref: TemplateNativeWorkloadFact["ref"];
     };
 
 export function projectRuntimeResourceTopologyFromFacts(
@@ -141,16 +122,6 @@ export function projectRuntimeResourceTopologyFromFacts(
         ref: fact.ref,
       })
     ),
-    ...facts.templateNativeWorkloadFacts.map(
-      (fact): ProjectRuntimeResourceTopologyItem => ({
-        kind: "TemplateNativeWorkload",
-        modelKey: fact.key,
-        ...(fact.observedUid === undefined
-          ? {}
-          : { observedUid: fact.observedUid }),
-        ref: fact.ref,
-      })
-    ),
   ];
 }
 
@@ -174,7 +145,6 @@ function emptyState(): RuntimeState {
     },
     resourceTopology: [],
     resourceTopologySignature: "",
-    templateNativeWorkloadFactsByKey: new Map(),
   };
 }
 
@@ -211,9 +181,6 @@ export interface ProjectRuntimeStore {
   ): PublicAccessFact | undefined;
   selectRelationshipIndexes(): ProjectRuntimeRelationshipIndexes;
   selectResourceTopology(): ProjectRuntimeResourceTopologyItem[];
-  selectTemplateNativeWorkloadFact(
-    key: ProjectRuntimeFactKey
-  ): TemplateNativeWorkloadFact | undefined;
   subscribeApFact(
     key: ProjectRuntimeFactKey,
     subscriber: FactSubscriber<ApFact>
@@ -228,10 +195,6 @@ export interface ProjectRuntimeStore {
   ): () => void;
   subscribeRelationshipIndexes(subscriber: StoreSubscriber): () => void;
   subscribeResourceTopology(subscriber: StoreSubscriber): () => void;
-  subscribeTemplateNativeWorkloadFact(
-    key: ProjectRuntimeFactKey,
-    subscriber: FactSubscriber<TemplateNativeWorkloadFact>
-  ): () => void;
 }
 
 export function createProjectRuntimeStore(): ProjectRuntimeStore {
@@ -247,10 +210,6 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
   const publicAccessSubscribers = new Map<
     ProjectRuntimeFactKey,
     Set<FactSubscriber<PublicAccessFact>>
-  >();
-  const templateNativeWorkloadSubscribers = new Map<
-    ProjectRuntimeFactKey,
-    Set<FactSubscriber<TemplateNativeWorkloadFact>>
   >();
   const relationshipSubscribers = new Set<StoreSubscriber>();
   const resourceTopologySubscribers = new Set<StoreSubscriber>();
@@ -268,10 +227,6 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       publicAccessFactsByKey: mapFactsWithStructuralSharing(
         state.publicAccessFactsByKey,
         facts.publicAccessFacts
-      ),
-      templateNativeWorkloadFactsByKey: mapFactsWithStructuralSharing(
-        state.templateNativeWorkloadFactsByKey,
-        facts.templateNativeWorkloadFacts
       ),
     };
     const resourceTopology = projectRuntimeResourceTopologyFromFacts(facts);
@@ -313,11 +268,6 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
         state.publicAccessFactsByKey,
         publicAccessSubscribers
       );
-      notifyFactChanges(
-        previous.templateNativeWorkloadFactsByKey,
-        state.templateNativeWorkloadFactsByKey,
-        templateNativeWorkloadSubscribers
-      );
       if (previous.relationshipIndexes !== state.relationshipIndexes) {
         notifyStoreSubscribers(relationshipSubscribers);
       }
@@ -333,9 +283,6 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     },
     selectPublicAccessFact(key) {
       return state.publicAccessFactsByKey.get(key);
-    },
-    selectTemplateNativeWorkloadFact(key) {
-      return state.templateNativeWorkloadFactsByKey.get(key);
     },
     selectRelationshipIndexes() {
       return state.relationshipIndexes;
@@ -386,17 +333,6 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       resourceTopologySubscribers.add(subscriber);
       return () => {
         resourceTopologySubscribers.delete(subscriber);
-      };
-    },
-    subscribeTemplateNativeWorkloadFact(key, subscriber) {
-      let subscribers = templateNativeWorkloadSubscribers.get(key);
-      if (subscribers === undefined) {
-        subscribers = new Set();
-        templateNativeWorkloadSubscribers.set(key, subscribers);
-      }
-      subscribers.add(subscriber);
-      return () => {
-        subscribers?.delete(subscriber);
       };
     },
   };

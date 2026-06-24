@@ -28,10 +28,7 @@ import {
   createProjectRuntimeStore,
   type ProjectRuntimeStore,
 } from "@/features/project-runtime/resource-store";
-import {
-  BRAIN_DEPLOYMENT_KIND_LABEL,
-  BRAIN_PROJECT_ID_LABEL,
-} from "@/lib/brain-labels";
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import {
   fetchProjectDeploymentTaskProjections,
   streamProjectDeploymentTaskProjections,
@@ -50,7 +47,6 @@ import {
   type WorkloadTransientSinceByKey,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
-import { useTemplateNativeWorkloads } from "./use-template-native-workloads";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
@@ -132,17 +128,10 @@ export function useProjectCanvasResourceSnapshot(options: {
     () => `${BRAIN_PROJECT_ID_LABEL}=${uid}`,
     [uid]
   );
-  const templateNativeLabelSelector = useMemo(
-    () => `${labelSelector},${BRAIN_DEPLOYMENT_KIND_LABEL}=template`,
-    [labelSelector]
-  );
-
   const apsListRef = useRef<K8sGetResponse | undefined>(undefined);
   const dbsListRef = useRef<K8sGetResponse | undefined>(undefined);
   const apTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const dbTransientSinceByKeyRef = useRef(createTransientSinceMap());
-  const deploymentTransientSinceByKeyRef = useRef(createTransientSinceMap());
-  const statefulSetTransientSinceByKeyRef = useRef(createTransientSinceMap());
   const missingLayoutSinceByOwnerKeyRef = useRef(new Map<string, number>());
   const [missingLayoutGraceClock, setMissingLayoutGraceClock] = useState(0);
   const [workloadDiscoveryPollUntil, setWorkloadDiscoveryPollUntil] =
@@ -283,35 +272,12 @@ export function useProjectCanvasResourceSnapshot(options: {
       ),
     [peerApsEmpty, workloadListRefreshInterval]
   );
-  const deploymentListRefreshInterval = useCallback(
-    (latestData: K8sGetResponse | undefined) =>
-      workloadListRefreshInterval(
-        latestData,
-        peerDbsEmpty,
-        "deployment",
-        deploymentTransientSinceByKeyRef.current
-      ),
-    [peerDbsEmpty, workloadListRefreshInterval]
-  );
-  const statefulSetListRefreshInterval = useCallback(
-    (latestData: K8sGetResponse | undefined) =>
-      workloadListRefreshInterval(
-        latestData,
-        peerDbsEmpty,
-        "statefulset",
-        statefulSetTransientSinceByKeyRef.current
-      ),
-    [peerDbsEmpty, workloadListRefreshInterval]
-  );
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset discovery polling when project changes
   useEffect(() => {
     resetWorkloadDiscoveryPollWindow();
     setWorkloadReconcilePollUntil(0);
     apTransientSinceByKeyRef.current.clear();
     dbTransientSinceByKeyRef.current.clear();
-    deploymentTransientSinceByKeyRef.current.clear();
-    statefulSetTransientSinceByKeyRef.current.clear();
     missingLayoutSinceByOwnerKeyRef.current.clear();
   }, [labelSelector]);
 
@@ -340,24 +306,12 @@ export function useProjectCanvasResourceSnapshot(options: {
     pollWhileEmpty: false,
     refreshInterval: dbListRefreshInterval,
   });
-  const {
-    data: templateNativeData,
-    error: templateNativeError,
-    isLoading: templateNativeLoading,
-    mutate: mutateTemplateNative,
-  } = useTemplateNativeWorkloads({
-    kubeconfig,
-    labelSelector: templateNativeLabelSelector,
-    namespace,
-    deploymentsRefreshInterval: deploymentListRefreshInterval,
-    statefulSetsRefreshInterval: statefulSetListRefreshInterval,
-  });
   apsListRef.current = apsData;
   dbsListRef.current = dbsData;
 
   const refreshWorkloadResources = useCallback(
-    () => Promise.all([mutateAps(), mutateDbs(), mutateTemplateNative()]),
-    [mutateAps, mutateDbs, mutateTemplateNative]
+    () => Promise.all([mutateAps(), mutateDbs()]),
+    [mutateAps, mutateDbs]
   );
   const refreshWorkloadResourcesRef = useRef(refreshWorkloadResources);
   useEffect(() => {
@@ -580,18 +534,16 @@ export function useProjectCanvasResourceSnapshot(options: {
     };
   }, [revalidate]);
 
-  const error = apsError ?? dbsError ?? templateNativeError ?? deployTasksError;
-  const isLoading =
-    apsLoading || dbsLoading || templateNativeLoading || deployTasksLoading;
+  const error = apsError ?? dbsError ?? deployTasksError;
+  const isLoading = apsLoading || dbsLoading || deployTasksLoading;
 
   useEffect(() => {
     runtimeStore.commitResources({
       apsData,
       dbsData,
       namespace,
-      templateNativeData,
     });
-  }, [apsData, dbsData, namespace, runtimeStore, templateNativeData]);
+  }, [apsData, dbsData, namespace, runtimeStore]);
   const resourceTopology = useSyncExternalStore(
     runtimeStore.subscribeResourceTopology,
     runtimeStore.selectResourceTopology,

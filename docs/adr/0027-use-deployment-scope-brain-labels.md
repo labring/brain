@@ -1,202 +1,263 @@
-# Use Deployment-Scoped Brain Labels
+# Use Sealos Native Product Labels for Template Instances
 
 ## Status
 
 Accepted.
 
+This ADR replaces the previous deployment-scoped Brain label model. The old
+model made `brain.io/deployment-kind=template` part of AP/DB discovery by
+classifying template-produced native resources from their Kubernetes kind and
+relationships. That direction is no longer accepted.
+
 ## Context
 
-Brain renders direct AP and DB resources itself, but template deployments are
-sent to the Sealos template provider with one global `extraLabels` map. The
-provider applies that same map to every rendered object in the template result.
-A single template deployment can contain a StatefulSet or Deployment, a
-KubeBlocks Cluster, Services, Ingresses, Secrets, PVCs, and other support
-objects.
+Brain has three deployment entry paths:
 
-The previous label model used `brain.io/resource-kind` for two different
-concepts:
+- Direct AP deployment.
+- Direct DB deployment.
+- Template deployment.
 
-- Product/resource classification: `ap`, `db`, `public-access-support`.
-- Deployment source classification: `template`.
+A template deployment creates one Sealos `Instance`. That instance can contain
+standard Launchpad AP resources, standard DB Provider/KubeBlocks resources, and
+support resources such as Services, Ingresses, Secrets, ConfigMaps, PVCs, and
+Certificates.
 
-That made template resources require special AP/DB selectors, and it prevented
-template-owned Ingresses from being consistently projected as AP Public Access.
-It also made it unsafe to solve template support by setting
-`brain.io/resource-kind=ap`, `db`, or `public-access` through template
-`extraLabels`, because every rendered object would receive the same product
-classification.
+The product identity must not be inferred from Brain's template ownership
+labels. A template does not produce a special product type. It produces normal
+AP and DB resources grouped by one template instance.
 
 ## Decision
 
-Brain-managed Kubernetes resources use deployment-scoped labels. These labels
-describe which Brain deployment produced the object. They do not claim the
-object's product type.
+Template is an instance/composition boundary. AP and DB identity must use the
+mature Sealos labels that their owning product controllers already use.
 
-All Brain-managed objects must carry:
+The required model is:
+
+```text
+Template Instance
+  -> standard AP resources identified by Launchpad labels
+  -> standard DB resources identified by DB Provider/KubeBlocks labels
+  -> support resources linked by the same product labels
+```
+
+Brain may keep Brain-specific ownership labels for cleanup, UI grouping, and
+internal bookkeeping, but Brain labels are not product classification labels.
+
+## Required Labels
+
+### Template Instance Boundary
+
+Every resource rendered from a template instance must carry:
+
+```text
+cloud.sealos.io/deploy-on-sealos=<instanceName>
+```
+
+This label means "belongs to this template instance". It does not mean AP, DB,
+or public access.
+
+Brain may also write:
 
 ```text
 brain.io/managed-by=brain
-brain.io/project-id=<projectId>
-brain.io/deployment-kind=<ap | db | template>
-brain.io/deployment-name=<apName | dbName | templateInstanceName>
-```
-
-Template deployments must also carry:
-
-```text
+brain.io/project-id=<instanceName-or-projectId>
+brain.io/deployment-name=<instanceName>
 brain.io/template-name=<templateName>
 ```
 
-Direct AP resources use:
+These labels are Brain ownership and bookkeeping labels only.
+
+### AP Identity
+
+Every AP workload produced by any path, including templates, must carry:
 
 ```text
-brain.io/managed-by=brain
-brain.io/project-id=<projectId>
-brain.io/deployment-kind=ap
-brain.io/deployment-name=<apName>
+cloud.sealos.io/app-deploy-manager=<appName>
+app=<appName>
 ```
 
-Direct DB resources use:
+The AP workload is the Deployment or StatefulSet selected by
+`cloud.sealos.io/app-deploy-manager=<appName>`.
+
+AP support resources must also carry:
 
 ```text
-brain.io/managed-by=brain
-brain.io/project-id=<projectId>
-brain.io/deployment-kind=db
-brain.io/deployment-name=<dbName>
+cloud.sealos.io/app-deploy-manager=<appName>
 ```
 
-Template resources use the same labels on every rendered object:
+Pod selectors and Service selectors must continue to use:
 
 ```text
-brain.io/managed-by=brain
-brain.io/project-id=<projectId>
-brain.io/deployment-kind=template
-brain.io/deployment-name=<templateInstanceName>
-brain.io/template-name=<templateName>
+app=<appName>
 ```
 
-Brain product views classify resources by Kubernetes kind and resource
-relationships inside a deployment scope:
+### AP Public Access
 
-- Deployment or StatefulSet becomes an AP-like workload.
-- KubeBlocks Cluster becomes a DB-like workload.
-- Ingress becomes AP Public Access evidence.
-- Service is support evidence and can connect Ingress backends to workloads.
+Ingress and public routing support resources for an AP must carry:
 
-AP Public Access is still an AP-derived product view. It is not a standalone
-Brain deployment and does not require a separate `deployment-kind` value.
+```text
+cloud.sealos.io/app-deploy-manager=<appName>
+cloud.sealos.io/app-deploy-manager-domain=<domainKey>
+```
 
-## Current Implementation Context
+Long hostnames must not be stored directly in label values. Store long host
+values in annotations when needed.
 
-Brain label handling is intentionally controlled. Product callers should not
-expect arbitrary user-provided `metadata.labels` to pass through to rendered
-runtime resources.
+### DB Identity
 
-Direct AP rendering reads only the `region` label from the input manifest. It
-uses that value as the routing domain compatibility label when public access is
-created. Other user-provided AP labels are not part of the direct AP render
-contract.
+Every DB instance produced by any path, including templates, must carry DB
+Provider/KubeBlocks identity labels:
 
-Direct DB rendering does not read user-provided `metadata.labels` from the DB
-product manifest. The DB renderer replaces labels with Brain ownership labels
-and KubeBlocks/provider compatibility labels.
+```text
+app.kubernetes.io/instance=<dbName>
+clusterdefinition.kubeblocks.io/name=<engine>
+clusterversion.kubeblocks.io/name=<version>
+```
 
-Template deployment requests do not accept an arbitrary labels field. The
-template deploy API derives one fixed `extraLabels` map from `projectId`,
-`instanceName`, and `templateName`. The template provider applies that map to
-the rendered template result, and Brain's local template renderer also applies
-the same deployment-scoped labels to rendered resources, pod templates, and
-volume claim templates.
-
-`TemplateNative` is not a Kubernetes label value, public resource type, or
-deployment kind. It is an internal canvas/deployment projection kind for native
-workloads produced by a template deployment.
-
-## Label Syntax and Value Safety
-
-Brain labels still have to satisfy Kubernetes label syntax:
-
-- Label key names are at most 63 characters and may include an optional DNS
-  subdomain prefix separated by `/`.
-- Label values are at most 63 characters.
-- Non-empty label values must begin and end with an alphanumeric character and
-  may contain alphanumerics, `-`, `_`, and `.`.
-
-The `region` routing label follows the non-empty Kubernetes label value subset:
-it is only written when the value is non-empty, no longer than 63 characters,
-and matches the Kubernetes label value character rules.
-
-Do not put long hostnames directly into labels. Direct AP public ingress uses a
-stable short compatibility label for
-`cloud.sealos.io/app-deploy-manager-domain` and stores the full host in the
-`cloud.sealos.io/app-deploy-manager-domain-host` annotation.
+The KubeBlocks `Cluster` is the DB product root. DB support resources must be
+linked by `app.kubernetes.io/instance=<dbName>` when the resource belongs to
+that DB.
 
 ## Query Rules
 
-Direct AP list/read scopes by:
+AP list/read must discover APs by Launchpad labels:
 
 ```text
-brain.io/managed-by=brain,
-brain.io/deployment-kind=ap
-```
-
-Direct DB list/read scopes by:
-
-```text
-brain.io/managed-by=brain,
-brain.io/deployment-kind=db
-```
-
-Template resource discovery scopes by:
-
-```text
-brain.io/managed-by=brain,
-brain.io/project-id=<projectId>,
-brain.io/deployment-kind=template
-```
-
-Within a template deployment scope, AP/DB/Public Access projection must inspect
-the object kind and relationships instead of trusting a product-kind label.
-
-AP Public Access for direct AP resources can use the direct AP deployment
-labels. AP Public Access for template resources must be linked through
-Ingress -> Service -> workload relationships, or through provider labels only
-as secondary evidence when the relationship is unambiguous.
-
-## Removed Brain Ownership Labels
-
-The following labels are no longer part of the Brain ownership contract:
-
-```text
-brain.io/resource-kind
-brain.io/resource-name
-brain.io/app-name
-brain.io/db-name
-```
-
-External controller labels are not Brain ownership labels and may remain when
-needed by Kubernetes controllers or Sealos/KubeBlocks integration. Examples:
-
-```text
-app
 cloud.sealos.io/app-deploy-manager
-cloud.sealos.io/app-deploy-manager-domain
+```
+
+When listing APs for a template instance, append:
+
+```text
+cloud.sealos.io/deploy-on-sealos=<instanceName>
+```
+
+DB list/read must discover DBs by DB Provider/KubeBlocks labels:
+
+```text
 app.kubernetes.io/instance
 clusterdefinition.kubeblocks.io/name
-clusterversion.kubeblocks.io/name
 ```
+
+When listing DBs for a template instance, append:
+
+```text
+cloud.sealos.io/deploy-on-sealos=<instanceName>
+```
+
+Brain product APIs must not use `brain.io/deployment-kind=template` to decide
+whether a workload is an AP or DB.
+
+## Rendering Rules
+
+Direct AP rendering must write the AP identity labels and AP support labels.
+
+Direct DB rendering must write the DB identity labels and DB support labels.
+
+Template rendering must normalize rendered resources before apply:
+
+- Deployment and StatefulSet resources that represent APs must receive AP
+  identity labels.
+- Their pod templates must receive `app=<appName>`.
+- Services for APs must select `app=<appName>` and carry
+  `cloud.sealos.io/app-deploy-manager=<appName>`.
+- Ingresses for APs must carry AP identity and domain labels.
+- KubeBlocks Clusters that represent DBs must receive DB identity labels.
+- DB support resources must carry `app.kubernetes.io/instance=<dbName>`.
+- All template-rendered namespaced resources must carry
+  `cloud.sealos.io/deploy-on-sealos=<instanceName>`.
+
+If a rendered resource cannot be normalized into a standard AP or DB, it remains
+a support resource for the template instance. It must not be projected as AP or
+DB by kind inference.
+
+## Lifecycle Rules
+
+AP lifecycle operations may operate only on resources identified as AP by
+Launchpad AP labels.
+
+DB lifecycle operations may operate only on resources identified as DB by DB
+Provider/KubeBlocks labels.
+
+Template lifecycle operations may operate on the whole instance scope selected
+by:
+
+```text
+cloud.sealos.io/deploy-on-sealos=<instanceName>
+```
+
+Deleting a template instance deletes the instance scope. Deleting an AP deletes
+only the AP and AP support resources. Deleting a DB deletes only the DB and DB
+support resources.
+
+## Prohibited Patterns
+
+Do not use these rules in new code:
+
+```text
+brain.io/deployment-kind=template => AP-like workload
+brain.io/deployment-kind=template => DB-like workload
+Deployment or StatefulSet => AP
+KubeBlocks Cluster => DB
+TemplateNative => user-visible resource type
+```
+
+`TemplateNative` may exist only as an internal transient implementation detail
+during removal work. It must not be part of the product model, API contract,
+label contract, or user-visible canvas model.
+
+## Removed Contract
+
+The following labels are not product identity labels and must not be used for
+AP/DB discovery:
+
+```text
+brain.io/deployment-kind
+brain.io/resource-kind
+brain.io/app-name
+brain.io/db-name
+brain.io/resource-name
+```
+
+They may be removed or retained only as Brain bookkeeping labels. They do not
+define product type.
+
+## Compatibility
+
+There is no backward-compatibility requirement for the old template inference
+model.
+
+Existing template resources that do not carry the new Sealos native labels are
+allowed to become invisible to AP/DB product queries and lifecycle operations.
+They must be redeployed or explicitly relabeled if a project needs to keep
+managing them.
 
 ## Consequences
 
-This is an incompatible label contract change. Existing resources that only
-carry the old Brain ownership labels are not required to remain visible or
-mutable. They should be redeployed or relabeled by an explicit migration if a
-project needs to preserve them.
+The read layer becomes simpler and more stable: AP and DB discovery use the same
+labels as Sealos Launchpad and DB Provider.
 
-The read layer becomes responsible for product classification. That is
-intentional: template labels cannot safely express per-object product types.
+Template rendering becomes responsible for producing valid standard AP and DB
+resources. If rendering omits the required labels, that is a render/apply bug,
+not a query-layer fallback case.
 
-The AP and DB create, update, delete, and support-resource cleanup paths must
-all use deployment-scoped labels consistently. Partial adoption is unsafe
-because resources created under the new contract would fail old ownership
-checks or cleanup selectors.
+Canvas should render template-produced APs and DBs through the normal AP and DB
+resource paths. It should not render template workloads through a separate
+TemplateNative product path.
+
+## Verification Requirements
+
+Before this ADR is considered implemented:
+
+- A template that produces an AP must make that AP visible through the normal AP
+  list API.
+- A template that produces a DB must make that DB visible through the normal DB
+  list API.
+- A template AP must support AP lifecycle operations through the normal AP
+  lifecycle API.
+- A template DB must support DB lifecycle operations through the normal DB
+  lifecycle API.
+- Canvas must show template APs and DBs as normal AP and DB nodes.
+- Canvas must not show a user-visible TemplateNative node.
+- Tests must reject `brain.io/deployment-kind=template` as an AP/DB discovery
+  mechanism.

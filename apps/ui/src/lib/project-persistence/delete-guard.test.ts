@@ -21,12 +21,17 @@ function managedResourceItems(url: URL) {
     return [{ metadata: { name: "template-memos" } }];
   }
   const names: Record<string, string> = {
+    certificates: "template-memos-cert",
     clusters: "template-memos-cluster",
+    configmaps: "template-memos-config",
     deployments: "template-memos-deploy",
     ingresses: "template-memos-ingress",
+    issuers: "template-memos-issuer",
     jobs: "template-memos-job",
+    opsrequests: "template-memos-ops",
     persistentvolumeclaims: "data-template-memos-0",
     pods: "template-memos-pod",
+    secrets: "template-memos-secret",
     services: "template-memos-service",
     statefulsets: "template-memos-sts",
   };
@@ -48,11 +53,10 @@ test("project delete guard blocks deletion when managed resources still exist", 
   const fetchImpl: typeof fetch = (url) => {
     calls.push(String(url));
     const parsed = new URL(String(url));
-    return new Response(
-      JSON.stringify({ items: managedResourceItems(parsed) }),
-      {
+    return Promise.resolve(
+      new Response(JSON.stringify({ items: managedResourceItems(parsed) }), {
         status: 200,
-      }
+      })
     );
   };
 
@@ -71,12 +75,17 @@ test("project delete guard blocks deletion when managed resources still exist", 
         ap: ["api"],
         db: ["postgres"],
         template: ["template-memos"],
+        templateCertificates: ["template-memos-cert"],
         templateClusters: ["template-memos-cluster"],
+        templateConfigMaps: ["template-memos-config"],
         templateDeployments: ["template-memos-deploy"],
         templateIngresses: ["template-memos-ingress"],
+        templateIssuers: ["template-memos-issuer"],
         templateJobs: ["template-memos-job"],
+        templateOpsRequests: ["template-memos-ops"],
         templatePods: ["template-memos-pod"],
         templatePersistentVolumeClaims: ["data-template-memos-0"],
+        templateSecrets: ["template-memos-secret"],
         templateServices: ["template-memos-service"],
         templateStatefulSets: ["template-memos-sts"],
       });
@@ -84,7 +93,7 @@ test("project delete guard blocks deletion when managed resources still exist", 
     }
   );
 
-  assert.equal(calls.length, 11);
+  assert.equal(calls.length, 16);
   for (const call of calls) {
     const url = new URL(call);
     assert.equal(url.searchParams.get("namespace"), "ns-a");
@@ -107,7 +116,9 @@ test("project delete guard blocks deletion when managed resources still exist", 
 
 test("project delete guard allows deletion when no managed resources exist", async () => {
   const fetchImpl: typeof fetch = () =>
-    new Response(JSON.stringify({ items: [] }), { status: 200 });
+    Promise.resolve(
+      new Response(JSON.stringify({ items: [] }), { status: 200 })
+    );
 
   await assertProjectHasNoManagedResources({
     apiBaseUrl: "https://brain.test",
@@ -126,7 +137,9 @@ test("project delete guard does not double encode kubeconfig authorization", asy
   const fetchImpl: typeof fetch = (_url, init) => {
     const headers = new Headers(init?.headers);
     calls.push(headers.get("Authorization") ?? "");
-    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    return Promise.resolve(
+      new Response(JSON.stringify({ items: [] }), { status: 200 })
+    );
   };
 
   await assertProjectHasNoManagedResources({
@@ -137,7 +150,7 @@ test("project delete guard does not double encode kubeconfig authorization", asy
     namespace: "ns-a",
   });
 
-  assert.equal(calls.length, 11);
+  assert.equal(calls.length, 16);
   for (const authorization of calls) {
     assert.equal(authorization, `Bearer ${encodedKubeconfig}`);
   }
@@ -149,7 +162,9 @@ test("project delete guard requires an API base URL", async () => {
       assertProjectHasNoManagedResources({
         encodedKubeconfig: "kubeconfig",
         fetchImpl: () =>
-          new Response(JSON.stringify({ items: [] }), { status: 200 }),
+          Promise.resolve(
+            new Response(JSON.stringify({ items: [] }), { status: 200 })
+          ),
         id: "project-a",
         namespace: "ns-a",
       }),
@@ -168,11 +183,15 @@ test("project delete guard surfaces downstream cleanup errors", async () => {
   const fetchImpl: typeof fetch = (url) => {
     const parsed = new URL(String(url));
     if (parsed.searchParams.get("kind") === "persistentvolumeclaims") {
-      return new Response(JSON.stringify({ error: "forbidden" }), {
-        status: 403,
-      });
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: "forbidden" }), {
+          status: 403,
+        })
+      );
     }
-    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    return Promise.resolve(
+      new Response(JSON.stringify({ items: [] }), { status: 200 })
+    );
   };
 
   await assert.rejects(
@@ -202,15 +221,16 @@ test("project managed resource cleanup deletes direct resources, template Instan
     calls.push(`${init?.method ?? "GET"} ${String(url)}`);
     const parsed = new URL(String(url));
     if (init?.method === "DELETE") {
-      return new Response(JSON.stringify({ status: "deleted" }), {
-        status: 200,
-      });
+      return Promise.resolve(
+        new Response(JSON.stringify({ status: "deleted" }), {
+          status: 200,
+        })
+      );
     }
-    return new Response(
-      JSON.stringify({ items: managedResourceItems(parsed) }),
-      {
+    return Promise.resolve(
+      new Response(JSON.stringify({ items: managedResourceItems(parsed) }), {
         status: 200,
-      }
+      })
     );
   };
 
@@ -226,48 +246,57 @@ test("project managed resource cleanup deletes direct resources, template Instan
     ap: ["api"],
     db: ["postgres"],
     template: ["template-memos"],
+    templateCertificates: ["template-memos-cert"],
     templateClusters: ["template-memos-cluster"],
+    templateConfigMaps: ["template-memos-config"],
     templateDeployments: ["template-memos-deploy"],
     templateIngresses: ["template-memos-ingress"],
+    templateIssuers: ["template-memos-issuer"],
     templateJobs: ["template-memos-job"],
+    templateOpsRequests: ["template-memos-ops"],
     templatePods: ["template-memos-pod"],
     templatePersistentVolumeClaims: ["data-template-memos-0"],
+    templateSecrets: ["template-memos-secret"],
     templateServices: ["template-memos-service"],
     templateStatefulSets: ["template-memos-sts"],
   });
-  assert.equal(calls.length, 22);
+  assert.equal(calls.length, 32);
   assert.equal(
-    calls[11],
+    calls[16],
     "DELETE https://brain.test/api/db/v1alpha1?name=postgres&namespace=ns-a"
   );
   assert.equal(
-    calls[12],
+    calls[17],
     "DELETE https://brain.test/api/ap/v1alpha1?name=api&namespace=ns-a"
   );
   assert.equal(
-    calls[13],
+    calls[18],
     "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=instances&name=template-memos&namespace=ns-a"
   );
   assert.equal(
-    calls[14],
-    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=jobs&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
+    calls[19],
+    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=certificates&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
   );
   assert.equal(
-    calls[21],
-    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=persistentvolumeclaims&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
+    calls[31],
+    "DELETE https://brain.test/api/k8s/v1alpha1/delete?kind=secrets&label-selector=brain.io%2Fproject-id%3Dproject-a%2Cbrain.io%2Fdeployment-kind%3Dtemplate&namespace=ns-a"
   );
 });
 
 test("project managed resource cleanup tolerates already-deleted children", async () => {
   const fetchImpl: typeof fetch = (url, init) => {
     if (init?.method === "DELETE") {
-      return new Response(JSON.stringify({ error: "not found" }), {
-        status: 404,
-      });
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+        })
+      );
     }
-    return new Response(
-      JSON.stringify({ items: apDbResourceItems(new URL(String(url))) }),
-      { status: 200 }
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ items: apDbResourceItems(new URL(String(url))) }),
+        { status: 200 }
+      )
     );
   };
 

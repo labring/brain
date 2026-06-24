@@ -10,12 +10,7 @@ import type {
 import { projectCanvasRuntimeShellNodesFromResources } from "@/features/project-canvas/runtime/resource-graph";
 import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
-import type {
-  ApFact,
-  DbFact,
-  PublicAccessFact,
-  TemplateNativeWorkloadFact,
-} from "./resource-facts";
+import type { ApFact, DbFact, PublicAccessFact } from "./resource-facts";
 import { projectRuntimeFactsFromResources } from "./resource-facts";
 import { projectRuntimeFallbackNodeModelFromLookup } from "./resource-models";
 import { projectRuntimeResourceTopologyFromFacts } from "./resource-store";
@@ -27,7 +22,6 @@ export type RuntimeFactsDoNotUseSharedUiNodeProps = [
   AssertFalse<Extends<ApFact, CanvasContainerNodeData>>,
   AssertFalse<Extends<DbFact, CanvasDatabaseNodeData>>,
   AssertFalse<Extends<PublicAccessFact, CanvasEntryNodeData>>,
-  AssertFalse<Extends<TemplateNativeWorkloadFact, CanvasContainerNodeData>>,
 ];
 
 const BANNED_SHELL_DATA_KEYS = [
@@ -97,28 +91,13 @@ test("Project Runtime shell node data carries only runtime lookup data", () => {
       ],
     },
     namespace: "default",
-    templateNativeData: {
-      deployments: {
-        items: [
-          {
-            kind: "Deployment",
-            metadata: {
-              labels: { "brain.io/deployment-kind": "template" },
-              name: "memos",
-              namespace: "default",
-            },
-            spec: { template: { spec: { containers: [{ image: "memos" }] } } },
-          },
-        ],
-      },
-    },
   });
 
   const nodes = projectCanvasRuntimeShellNodesFromResources(
     projectRuntimeResourceTopologyFromFacts(runtimeFacts)
   );
 
-  assert.equal(nodes.length, 4);
+  assert.equal(nodes.length, 3);
   for (const node of nodes) {
     assert.deepEqual(Object.keys(node.data).sort(), ["runtime"]);
     for (const key of BANNED_SHELL_DATA_KEYS) {
@@ -139,21 +118,6 @@ test("Project Runtime shell lookup can render a minimal model before facts hydra
       ],
     },
     namespace: "default",
-    templateNativeData: {
-      statefulSets: {
-        items: [
-          {
-            kind: "StatefulSet",
-            metadata: {
-              labels: { "brain.io/deployment-kind": "template" },
-              name: "memos",
-              namespace: "default",
-            },
-            spec: { template: { spec: { containers: [{ image: "memos" }] } } },
-          },
-        ],
-      },
-    },
   });
 
   const shellNodes = projectCanvasRuntimeShellNodesFromResources(
@@ -161,8 +125,6 @@ test("Project Runtime shell lookup can render a minimal model before facts hydra
   );
   const apLookup = shellNodes.find((node) => node.id === "ap-api")?.data
     .runtime;
-  const templateLookup = shellNodes.find((node) => node.id === "template-memos")
-    ?.data.runtime;
 
   assert.deepEqual(projectRuntimeFallbackNodeModelFromLookup(apLookup), {
     resourceKind: "ap",
@@ -175,16 +137,10 @@ test("Project Runtime shell lookup can render a minimal model before facts hydra
       uid: "ap-uid",
     },
   });
-  assert.deepEqual(projectRuntimeFallbackNodeModelFromLookup(templateLookup), {
-    resourceKind: "template",
-    states: {
-      image: "—",
-      kind: "StatefulSet",
-      name: "memos",
-      namespace: "default",
-      status: { label: "Loading", tone: "pending" },
-    },
-  });
+  assert.equal(
+    shellNodes.some((node) => node.id.startsWith("template-")),
+    false
+  );
 });
 
 test("Settings surface entries resolve without constructing source context from ReactFlow node data", () => {

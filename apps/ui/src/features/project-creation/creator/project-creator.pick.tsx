@@ -105,15 +105,6 @@ export function ProjectCreatorProjectDescriptionField() {
   );
 }
 
-function ProjectCreatorProjectDetailsFields() {
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <ProjectCreatorProjectNameField />
-      <ProjectCreatorProjectDescriptionField />
-    </div>
-  );
-}
-
 export function ProjectCreatorOptionPicker({
   className,
 }: {
@@ -126,12 +117,8 @@ export function ProjectCreatorOptionPicker({
       className={cn("flex min-w-0 flex-col gap-4", className)}
       data-slot="project-creator-option-picker"
     >
-      <ProjectCreatorProjectDetailsFields />
-      <div className="flex min-w-0 flex-col gap-3">
-        <p className="font-medium text-foreground text-sm leading-5">
-          Scenario
-        </p>
-        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
           {ORDER.filter((id) => meta.enabledSources.includes(id)).map((id) => {
             const Icon = ICON[id];
             return (

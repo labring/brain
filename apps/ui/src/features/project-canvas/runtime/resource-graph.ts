@@ -84,7 +84,7 @@ function stableNodeName(name: string): string {
 }
 
 function resourceShellData(
-  kind: Exclude<ProjectRuntimeShellKind, "TemplateNativeWorkload">,
+  kind: ProjectRuntimeShellKind,
   key: string,
   ref: CanvasLayoutResourceRef,
   observedUid: string | undefined
@@ -142,18 +142,6 @@ export function projectCanvasRuntimeShellNodesFromResources(
           id: `entry-${stableNodeName(item.ref.name)}`,
           position,
           type: CANVAS_ENTRY_NODE_TYPE,
-        };
-      case "TemplateNativeWorkload":
-        return {
-          data: {
-            runtime: {
-              kind: item.kind,
-              modelKey: item.modelKey,
-            },
-          },
-          id: `template-${stableNodeName(item.ref.name)}`,
-          position,
-          type: CANVAS_CONTAINER_NODE_TYPE,
         };
       default:
         return item satisfies never;

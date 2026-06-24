@@ -12,8 +12,7 @@ const ASIDE_RE = /<aside/;
 const BUSY_RE = /aria-busy="true"/;
 const CLOSE_LABEL_RE = /aria-label="Close project creation pane"/;
 const DESCRIPTION_FIELD_RE = /Description/;
-const DESCRIPTION_RE =
-  /Provide a project name and select the project creation method/;
+const DESCRIPTION_RE = /Select the project creation method/;
 const DIALOG_OVERLAY_RE = /data-slot="dialog-overlay"/;
 const DIALOG_ROLE_RE = /role="dialog"/;
 const DOCKER_IMAGE_RE = /Docker image/;
@@ -34,6 +33,7 @@ const GITHUB_REPOSITORY_URL_RE = /Repository URL/;
 const GITHUB_REPOSITORY_LOCKED_RE =
   /Please authorize your GitHub account before selecting a repository\./;
 const SCENARIO_RE = /Scenario/;
+const TWO_COLUMN_PICKER_RE = /sm:grid-cols-2/;
 const TRAIL_BACK_RE = />Back</;
 const DATABASE_DEPLOYER_RE = /data-slot="database-deployer"/;
 const DATABASE_ICON_RE = /lucide-database/;
@@ -69,11 +69,13 @@ test("project creation pane is a non-modal side pane with the method picker", ()
   assert.match(header, PLUS_ICON_RE);
   assert.doesNotMatch(header, GITHUB_TITLE_RE);
   assert.doesNotMatch(header, DOCKER_TITLE_RE);
-  assert.match(html, PROJECT_NAME_RE);
+  assert.doesNotMatch(html, PROJECT_NAME_RE);
   assert.match(html, CLOSE_LABEL_RE);
   assert.doesNotMatch(html, DIALOG_ROLE_RE);
   assert.doesNotMatch(html, DIALOG_OVERLAY_RE);
   assert.doesNotMatch(html, DESCRIPTION_FIELD_RE);
+  assert.doesNotMatch(html, SCENARIO_RE);
+  assert.doesNotMatch(html, TWO_COLUMN_PICKER_RE);
 
   const github = html.indexOf("GitHub");
   const docker = html.indexOf("Docker Image");

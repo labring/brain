@@ -188,7 +188,7 @@ function ensureBrainDeploymentLabels(input: {
     templateName: input.templateName,
   });
   for (const key of BRAIN_DEPLOYMENT_LABEL_KEYS) {
-    input.labels[key] = expected[key];
+    input.labels[key] = expected[key] ?? "";
   }
 }
 

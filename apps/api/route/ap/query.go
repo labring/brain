@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 
 	"github.com/danielgtaylor/huma/v2"
+	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
@@ -64,33 +67,14 @@ func registerGet(grp huma.API) {
 			return &getOutput{Body: body}, nil
 		}
 
-		var deploymentJSON []byte
-		var statefulSetJSON []byte
-		for _, selector := range apLikeWorkloadLabelSelectors(input.LabelSelector) {
-			nextDeploymentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-				LabelSelector: selector,
-				Resource:      "deployments",
-				Namespace:     resolved.Namespace,
-			})
-			if err != nil && !apierrors.IsNotFound(err) {
-				return nil, huma.Error500InternalServerError("failed to list AP deployments", err)
-			}
-			deploymentJSON = mergeK8sListJSON(deploymentJSON, nextDeploymentJSON)
-
-			nextStatefulSetJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-				LabelSelector: selector,
-				Resource:      "statefulsets",
-				Namespace:     resolved.Namespace,
-			})
-			if err != nil && !apierrors.IsNotFound(err) {
-				return nil, huma.Error500InternalServerError("failed to list AP statefulsets", err)
-			}
-			statefulSetJSON = mergeK8sListJSON(statefulSetJSON, nextStatefulSetJSON)
+		workloadJSON, err := listAPWorkloadJSON(ctx, cfg, resolved.Namespace, input.LabelSelector)
+		if err != nil {
+			return nil, err
 		}
 		body, err := apResponseFromWorkloadListsWithPublicAccessSupport(
 			cfg,
-			deploymentJSON,
-			statefulSetJSON,
+			workloadJSON.deployments,
+			workloadJSON.statefulSets,
 		)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to adapt AP response", err)
@@ -101,6 +85,49 @@ func registerGet(grp huma.API) {
 
 func apDeploymentLabelSelector(extra string) string {
 	return apWorkloadLabelSelector(extra)
+}
+
+type apWorkloadListJSON struct {
+	deployments  []byte
+	statefulSets []byte
+}
+
+func listAPWorkloadJSON(ctx context.Context, cfg *clientcmdapi.Config, namespace string, labelSelector string) (apWorkloadListJSON, error) {
+	var out apWorkloadListJSON
+	var mu sync.Mutex
+	group, _ := errgroup.WithContext(ctx)
+	for _, selector := range apLikeWorkloadLabelSelectors(labelSelector) {
+		selector := selector
+		group.Go(func() error {
+			nextDeploymentJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				LabelSelector: selector,
+				Resource:      "deployments",
+				Namespace:     namespace,
+			})
+			if err != nil && !apierrors.IsNotFound(err) {
+				return huma.Error500InternalServerError("failed to list AP deployments", err)
+			}
+			mu.Lock()
+			out.deployments = mergeK8sListJSON(out.deployments, nextDeploymentJSON)
+			mu.Unlock()
+			return nil
+		})
+		group.Go(func() error {
+			nextStatefulSetJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+				LabelSelector: selector,
+				Resource:      "statefulsets",
+				Namespace:     namespace,
+			})
+			if err != nil && !apierrors.IsNotFound(err) {
+				return huma.Error500InternalServerError("failed to list AP statefulsets", err)
+			}
+			mu.Lock()
+			out.statefulSets = mergeK8sListJSON(out.statefulSets, nextStatefulSetJSON)
+			mu.Unlock()
+			return nil
+		})
+	}
+	return out, group.Wait()
 }
 
 func apResponseFromDeployments(jsonBytes []byte, single bool) (json.RawMessage, error) {

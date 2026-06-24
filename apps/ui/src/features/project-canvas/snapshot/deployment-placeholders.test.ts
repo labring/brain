@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Node } from "@xyflow/react";
-
 import { DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS } from "@/lib/deploy-task/projection";
+import type { DeploymentTaskCanvasProjectionSlot } from "@/lib/deploy-task/types";
 import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
@@ -41,12 +41,15 @@ const PUBLIC_ACCESS_SLOT = {
   id: "PublicAccess:default:api",
 } as const;
 
-const PROJECTION_SLOTS = [AP_SLOT, PUBLIC_ACCESS_SLOT] as const;
+const PROJECTION_SLOTS: DeploymentTaskCanvasProjectionSlot[] = [
+  AP_SLOT,
+  PUBLIC_ACCESS_SLOT,
+];
 
 function projectionTask(overrides?: {
   completedAt?: string | null;
   id?: string;
-  slots?: typeof PROJECTION_SLOTS;
+  slots?: DeploymentTaskCanvasProjectionSlot[];
   status?: "applying" | "completed";
 }) {
   return {

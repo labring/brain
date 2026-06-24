@@ -19,7 +19,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { EllipsisVertical, Pin, PinOff, SquarePen, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useProjectExplorer } from "./project-explorer.context";
 import type { ProjectExplorerProject } from "./project-explorer.types";
@@ -31,7 +31,7 @@ const PROJECT_DESCRIPTION_EMPTY_LABEL = "-";
 
 function projectExplorerItemRowClassName(interactive: boolean) {
   return cn(
-    "project-explorer-item-row grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-xl bg-transparent px-[18px] pt-2.5 pb-[18px] transition-colors",
+    "project-explorer-item-row relative grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-xl bg-transparent px-[18px] pt-2.5 pb-[18px] transition-colors",
     interactive && "cursor-pointer"
   );
 }
@@ -206,7 +206,7 @@ function ProjectExplorerRowActions({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-0.5">
+    <div className="relative z-10 flex shrink-0 items-center gap-0.5">
       {canTogglePin ? (
         <ProjectExplorerPinAction
           limit={limit}
@@ -282,16 +282,6 @@ export function ProjectExplorerListItem({
     actions.onProjectClick?.(project);
   }, [actions, project]);
 
-  const handleRowKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        handleRowActivate();
-      }
-    },
-    [handleRowActivate]
-  );
-
   const submitEdit = useCallback(async () => {
     const displayName = displayNameDraft.trim();
     const nextDescription = descriptionDraft.trim();
@@ -363,25 +353,20 @@ export function ProjectExplorerListItem({
       data-slot="project-explorer-item"
     >
       <div className={rowClassName}>
+        {interactive ? (
+          <button
+            aria-label={`Open ${project.name}`}
+            className="absolute inset-0 z-0 cursor-pointer rounded-xl text-start"
+            onClick={handleRowActivate}
+            type="button"
+          />
+        ) : null}
         <CanvasNodeStatusDot
-          className="self-center"
+          className="pointer-events-none relative z-10 self-center"
           size="small"
           status={{ label: "", visualTone: project.status }}
         />
-        <div
-          className={cn(
-            "col-start-2 row-start-1 min-w-0 self-center text-start",
-            interactive && "cursor-pointer"
-          )}
-          {...(interactive
-            ? {
-                role: "button" as const,
-                tabIndex: 0,
-                onClick: handleRowActivate,
-                onKeyDown: handleRowKeyDown,
-              }
-            : {})}
-        >
+        <div className="pointer-events-none relative z-10 col-start-2 row-start-1 min-w-0 self-center text-start">
           <div className="flex min-w-0 items-baseline justify-between gap-3">
             <span className="min-w-0 truncate font-medium text-foreground text-sm">
               {project.name}
@@ -408,7 +393,7 @@ export function ProjectExplorerListItem({
         />
         <p
           className={cn(
-            "col-span-full row-start-2 min-w-0 truncate text-sm leading-5",
+            "pointer-events-none relative z-10 col-span-full row-start-2 min-w-0 truncate text-sm leading-5",
             hasDescription
               ? "text-muted-foreground"
               : "text-muted-foreground/45"

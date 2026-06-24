@@ -41,6 +41,46 @@ const DEFAULT_DATABASE_OPTIONS: ProjectCreatorDatabaseChoice[] = [
   { engine: "redis", id: "redis", label: "Redis" },
 ];
 const PROJECT_DESCRIPTION_MAX_LENGTH = 256;
+const RANDOM_PROJECT_ADJECTIVES = [
+  "bright",
+  "calm",
+  "clever",
+  "cosmic",
+  "dynamic",
+  "fresh",
+  "gentle",
+  "happy",
+  "lively",
+  "lucky",
+  "modern",
+  "nimble",
+  "quiet",
+  "rapid",
+  "smart",
+  "steady",
+  "swift",
+  "vivid",
+] as const;
+const RANDOM_PROJECT_NOUNS = [
+  "atlas",
+  "bridge",
+  "canvas",
+  "cloud",
+  "comet",
+  "garden",
+  "harbor",
+  "kernel",
+  "matrix",
+  "meadow",
+  "orbit",
+  "portal",
+  "signal",
+  "stream",
+  "studio",
+  "summit",
+  "valley",
+  "voyage",
+] as const;
 
 export interface ProjectCreatorRootProps {
   actions?: ProjectCreatorActions;
@@ -73,6 +113,40 @@ function normalizeProjectCreatorDisplayName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+function randomProjectWord<const T extends readonly string[]>(
+  words: T
+): T[number] {
+  return words[Math.floor(Math.random() * words.length)];
+}
+
+function createRandomProjectDisplayName(
+  existingProjectDisplayNames: readonly string[]
+): string {
+  const existing = new Set(
+    existingProjectDisplayNames
+      .map(normalizeProjectCreatorDisplayName)
+      .filter(Boolean)
+  );
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const name = `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}-${randomProjectWord(RANDOM_PROJECT_NOUNS)}`;
+    if (!existing.has(normalizeProjectCreatorDisplayName(name))) {
+      return name;
+    }
+  }
+
+  for (const adjective of RANDOM_PROJECT_ADJECTIVES) {
+    for (const noun of RANDOM_PROJECT_NOUNS) {
+      const name = `${adjective}-${noun}`;
+      if (!existing.has(normalizeProjectCreatorDisplayName(name))) {
+        return name;
+      }
+    }
+  }
+
+  return `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}-${randomProjectWord(RANDOM_PROJECT_NOUNS)}`;
+}
+
 export function ProjectCreatorRoot({
   actions: actionsProp,
   confirmApplying = false,
@@ -91,7 +165,9 @@ export function ProjectCreatorRoot({
   const [step, setStep] = useState<ProjectCreatorSourceKind | null>(
     initialStep
   );
-  const [projectDisplayName, setProjectDisplayNameState] = useState("");
+  const [projectDisplayName, setProjectDisplayNameState] = useState(() =>
+    createRandomProjectDisplayName(existingProjectDisplayNames)
+  );
   const [projectDisplayNameError, setProjectDisplayNameError] = useState<
     string | null
   >(null);
@@ -112,6 +188,11 @@ export function ProjectCreatorRoot({
           .map(normalizeProjectCreatorDisplayName)
           .filter(Boolean)
       ),
+    [existingProjectDisplayNames]
+  );
+
+  const generateProjectDisplayName = useCallback(
+    () => createRandomProjectDisplayName(existingProjectDisplayNames),
     [existingProjectDisplayNames]
   );
 
@@ -181,8 +262,15 @@ export function ProjectCreatorRoot({
 
   const pick = useCallback(
     (kind: ProjectCreatorSourceKind) => {
-      const displayNameError =
+      let displayNameError =
         validateAndSetProjectDisplayNameError(projectDisplayName);
+      if (displayNameError != null) {
+        const nextProjectDisplayName = generateProjectDisplayName();
+        setProjectDisplayNameState(nextProjectDisplayName);
+        displayNameError = validateAndSetProjectDisplayNameError(
+          nextProjectDisplayName
+        );
+      }
       const descriptionError =
         validateAndSetProjectDescriptionError(projectDescription);
       if (displayNameError != null || descriptionError != null) {
@@ -191,6 +279,7 @@ export function ProjectCreatorRoot({
       setStep(kind);
     },
     [
+      generateProjectDisplayName,
       projectDescription,
       projectDisplayName,
       validateAndSetProjectDescriptionError,

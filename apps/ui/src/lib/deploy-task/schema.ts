@@ -73,7 +73,7 @@ export interface DeploymentTaskDeploymentPlan {
 }
 
 export interface DeploymentTaskCanvasProjectionExpectedRef {
-  kind: "AP" | "DB" | "PublicAccess" | "TemplateNative";
+  kind: "AP" | "DB" | "PublicAccess";
   name: string;
   namespace: string;
 }

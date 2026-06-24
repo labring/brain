@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -33,10 +34,12 @@ export async function GET(request: Request, context: RouteContext) {
   if (namespaceResolved.namespace == null) {
     return jsonError("Invalid deploy task namespace", 400);
   }
+  const kubeconfig = decodeKubeconfig(params.encodedKubeconfig);
 
   const snapshot = await getDeployTaskTimelineSnapshot(
     taskId,
-    namespaceResolved.namespace
+    namespaceResolved.namespace,
+    { kubeconfig: kubeconfig ?? undefined }
   );
   if (snapshot == null) {
     return jsonError("Deploy task not found", 404);

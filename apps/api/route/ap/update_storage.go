@@ -169,15 +169,13 @@ func patchAPStatefulSetPVCStorage(ctx context.Context, restConfig *rest.Config, 
 		return err
 	}
 	var pvcs corev1.PersistentVolumeClaimList
-	for _, selector := range apLikeWorkloadLabelSelectors(orchestration.BrainDeploymentNameLabel + "=" + workload.Name()) {
-		next, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).List(ctx, metav1.ListOptions{
-			LabelSelector: selector,
-		})
-		if err != nil {
-			return err
-		}
-		pvcs.Items = append(pvcs.Items, next.Items...)
+	next, err := clientset.CoreV1().PersistentVolumeClaims(workload.Namespace()).List(ctx, metav1.ListOptions{
+		LabelSelector: apPublicRoutingSupportSelector(workload.Name(), workloadProjectID(workload)),
+	})
+	if err != nil {
+		return err
 	}
+	pvcs.Items = append(pvcs.Items, next.Items...)
 	desiredByPath := map[string]orchestration.APStorageMount{}
 	for _, item := range desired {
 		desiredByPath[item.Path] = item

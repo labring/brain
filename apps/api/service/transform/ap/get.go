@@ -571,6 +571,7 @@ const (
 	brainDeploymentKindLabel = "brain.io/deployment-kind"
 	brainDeploymentNameLabel = "brain.io/deployment-name"
 	directAPDeploymentKind   = "ap"
+	launchpadManagerLabel    = "cloud.sealos.io/app-deploy-manager"
 )
 
 func mergePublicAccessSupportHealth(ap map[string]interface{}, status map[string]interface{}, ingresses, certificates, issuers []map[string]interface{}) {
@@ -671,8 +672,11 @@ func publicAccessSupportStateFromResources(apName string, ingresses, certificate
 }
 
 func isPublicAccessSupportForAP(labels map[string]string, apName string) bool {
-	return labels[brainDeploymentKindLabel] == directAPDeploymentKind &&
-		labels[brainDeploymentNameLabel] == apName
+	if labels[brainDeploymentKindLabel] == directAPDeploymentKind &&
+		labels[brainDeploymentNameLabel] == apName {
+		return true
+	}
+	return labels[launchpadManagerLabel] == apName
 }
 
 func labelsOf(resource map[string]interface{}) map[string]string {

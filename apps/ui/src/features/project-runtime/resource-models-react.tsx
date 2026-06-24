@@ -13,12 +13,7 @@ import type {
   CanvasContainerNodeData,
   CanvasDatabaseNodeData,
 } from "@/features/project-canvas/nodes/types";
-import type {
-  ApFact,
-  DbFact,
-  PublicAccessFact,
-  TemplateNativeWorkloadFact,
-} from "./resource-facts";
+import type { ApFact, DbFact, PublicAccessFact } from "./resource-facts";
 import {
   type ProjectRuntimeNodeModel,
   projectRuntimeFallbackNodeModelFromLookup,
@@ -30,11 +25,7 @@ import type {
   ProjectRuntimeStore,
 } from "./resource-store";
 
-type RuntimeFact =
-  | ApFact
-  | DbFact
-  | PublicAccessFact
-  | TemplateNativeWorkloadFact;
+type RuntimeFact = ApFact | DbFact | PublicAccessFact;
 
 export interface ProjectRuntimeNodeModelSource {
   data: unknown;
@@ -107,8 +98,6 @@ function selectRuntimeFact(
       return store.selectDbFact(lookup.modelKey);
     case "PublicAccess":
       return store.selectPublicAccessFact(lookup.modelKey);
-    case "TemplateNativeWorkload":
-      return store.selectTemplateNativeWorkloadFact(lookup.modelKey);
     default:
       return undefined;
   }
@@ -129,11 +118,6 @@ function subscribeRuntimeFact(
       return store.subscribeDbFact(lookup.modelKey, onStoreChange);
     case "PublicAccess":
       return store.subscribePublicAccessFact(lookup.modelKey, onStoreChange);
-    case "TemplateNativeWorkload":
-      return store.subscribeTemplateNativeWorkloadFact(
-        lookup.modelKey,
-        onStoreChange
-      );
     default:
       return emptySubscribe();
   }
@@ -168,7 +152,6 @@ function decorateRuntimeNodeModel({
   const node = decoratorNodeFromSource(source, model);
   switch (lookup.kind) {
     case "AP":
-    case "TemplateNativeWorkload":
       return (
         decorators.decorateContainerModel?.({
           model: model as CanvasContainerNodeData,

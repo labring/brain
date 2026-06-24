@@ -41,15 +41,7 @@ import {
 export const DEPLOYMENT_PLACEHOLDER_COMPLETED_GRACE_MS =
   DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS;
 
-export interface DeploymentTaskTemplateNativeResultRef {
-  kind: "TemplateNative";
-  name: string;
-  namespace: string;
-}
-
-export type DeploymentTaskResultResourceRef =
-  | CanvasLayoutResourceRef
-  | DeploymentTaskTemplateNativeResultRef;
+export type DeploymentTaskResultResourceRef = CanvasLayoutResourceRef;
 
 export interface DeploymentResultPreview {
   edges: DeploymentTaskCanvasProjectionEdge[];
@@ -187,12 +179,6 @@ export function expectedRefToLayoutRef(
 export function expectedRefToResultRef(
   ref: DeploymentTaskCanvasProjectionExpectedRef | undefined
 ): DeploymentTaskResultResourceRef | undefined {
-  if (ref == null) {
-    return undefined;
-  }
-  if (ref.kind === "TemplateNative") {
-    return ref;
-  }
   return expectedRefToLayoutRef(ref);
 }
 
@@ -250,18 +236,6 @@ export function layoutHasRef(
   });
 }
 
-export function templateNodeKeyFromNode(node: Node): string | undefined {
-  const data = node.data as Record<string, unknown> | undefined;
-  const states = data?.states as Record<string, unknown> | undefined;
-  const namespace = states?.namespace;
-  const name = states?.name;
-  return data?.resourceKind === "template" &&
-    typeof namespace === "string" &&
-    typeof name === "string"
-    ? `${namespace}/${name}`
-    : undefined;
-}
-
 export function nodesByRef(nodes: readonly Node[]): Map<string, Node> {
   return new Map(
     nodes.flatMap((node) => {
@@ -271,22 +245,10 @@ export function nodesByRef(nodes: readonly Node[]): Map<string, Node> {
   );
 }
 
-export function nodesByTemplateKey(nodes: readonly Node[]): Map<string, Node> {
-  return new Map(
-    nodes.flatMap((node) => {
-      const key = templateNodeKeyFromNode(node);
-      return key === undefined ? [] : [[key, node] as const];
-    })
-  );
-}
-
 export function nodeForResultRef(
   ref: DeploymentTaskResultResourceRef,
   nodes: readonly Node[]
 ): Node | undefined {
-  if (ref.kind === "TemplateNative") {
-    return nodesByTemplateKey(nodes).get(`${ref.namespace}/${ref.name}`);
-  }
   return nodesByRef(nodes).get(canvasResourceKey(ref));
 }
 
@@ -301,7 +263,7 @@ export function resultRefHasSavedLayout(
   ref: DeploymentTaskResultResourceRef,
   layout: CanvasLayoutDocument | undefined
 ): boolean {
-  return ref.kind !== "TemplateNative" && layoutHasRef(layout, ref);
+  return layoutHasRef(layout, ref);
 }
 
 function resourceLayoutPosition(input: {
@@ -439,9 +401,7 @@ function derivedPreview(
 function expectedRefFromResultRef(
   ref: DeploymentTaskResultResourceRef
 ): DeploymentTaskCanvasProjectionExpectedRef {
-  return ref.kind === "TemplateNative"
-    ? ref
-    : { kind: ref.kind, name: ref.name, namespace: ref.namespace };
+  return { kind: ref.kind, name: ref.name, namespace: ref.namespace };
 }
 
 function addArtifactResourceSlots(

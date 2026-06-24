@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import type { UIMessage } from "ai";
 import { generateId } from "ai";
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
@@ -15,6 +17,7 @@ import {
   publicDeployTaskArtifactSummary,
   publicDeployTaskEventPayload,
 } from "./public-artifact-summary";
+import { observeDeploymentResultCardReadiness } from "./result-readiness";
 import {
   type DeploymentTaskSource,
   type DeployTaskEventRow,
@@ -28,9 +31,16 @@ import {
 } from "./schema";
 import { ensureDeployTaskStorageSchema } from "./schema-bootstrap";
 import {
+  appendCardEvent,
+  appendStepEvent,
   createDeploymentTaskTimelineForRunner,
+  type DeploymentResultResourceCard,
   type DeploymentTaskTimelineUpdate,
+  type DeploymentTimelineEvent,
+  deploymentTimelineResultReadinessReached,
+  markTimelineStep,
   updateTimelineStatus,
+  upsertResultResourceCard,
 } from "./timeline";
 import { publishDeploymentTaskTimelineChange } from "./timeline-events";
 import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
@@ -50,6 +60,25 @@ import type {
 
 const MAX_DEPLOY_EVENTS = 200;
 const MAX_DEPLOY_MESSAGES = 200;
+const DEPLOY_TASK_RESULT_READINESS_STEP_ID = "create-resources";
+
+function timelineEvent(input: {
+  dedupeKey?: string;
+  message: string;
+  reason?: string;
+  severity?: "info" | "success" | "warning" | "error";
+  source?: "runner" | "resource-observer" | "kubernetes-event" | "health-check";
+}): DeploymentTimelineEvent {
+  return {
+    createdAt: new Date().toISOString(),
+    dedupeKey: input.dedupeKey,
+    id: randomUUID(),
+    message: input.message,
+    reason: input.reason,
+    severity: input.severity,
+    source: input.source,
+  };
+}
 
 function shouldSkipSetIfEmptyCanvasProjection(input: {
   existing: DeploymentTaskCanvasProjection;
@@ -277,6 +306,169 @@ export async function getDeployTaskById(
   return task ?? null;
 }
 
+function isActiveApplyingTask(task: DeployTaskRow): boolean {
+  return task.status === "applying" && task.phase === "apply";
+}
+
+function requiredResultCardsFromTask(
+  task: DeployTaskRow
+): DeploymentResultResourceCard[] {
+  return deploymentTaskTimelineFromTaskRecord(task)
+    .steps.flatMap((step) => step.resultCards ?? [])
+    .filter((card) => card.required);
+}
+
+async function upsertObservedResultResourceCard(input: {
+  card: DeploymentResultResourceCard;
+  eventMessage: string;
+  eventReason: string;
+  eventSeverity: "info" | "success" | "warning" | "error";
+  taskId: string;
+}) {
+  const now = new Date().toISOString();
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind: "deployment_task.result_resource_observed",
+      message: input.eventMessage,
+      phase: "apply",
+      payload: {
+        cardId: input.card.id,
+        latestStatusText: input.card.latestStatusText,
+        resultRef: input.card.resultRef,
+        status: input.card.status,
+      },
+    },
+    update: (timeline) =>
+      appendCardEvent(
+        upsertResultResourceCard(timeline, {
+          card: input.card,
+          stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
+          updatedAt: now,
+        }),
+        {
+          cardId: input.card.id,
+          event: timelineEvent({
+            dedupeKey: `${input.card.id}:${input.card.status}:${input.card.latestStatusText ?? ""}`,
+            message: input.eventMessage,
+            reason: input.eventReason,
+            severity: input.eventSeverity,
+            source: "resource-observer",
+          }),
+          stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
+          updatedAt: now,
+        }
+      ),
+  });
+}
+
+async function completeTaskFromReconciledReadiness(
+  task: DeployTaskRow
+): Promise<DeployTaskRow> {
+  const current = await getDeployTaskById(task.id);
+  if (current == null || !isActiveApplyingTask(current)) {
+    return current ?? task;
+  }
+
+  const now = new Date().toISOString();
+  await updateDeployTaskTimeline(task.id, {
+    event: {
+      kind: "deployment_task.result_readiness_reached",
+      message: "Required deployment result resources are running.",
+      phase: "completed",
+    },
+    update: (timeline) =>
+      appendStepEvent(
+        markTimelineStep(
+          updateTimelineStatus(timeline, {
+            status: "completed",
+            updatedAt: now,
+          }),
+          {
+            status: "completed",
+            stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
+            updatedAt: now,
+          }
+        ),
+        {
+          event: timelineEvent({
+            dedupeKey: "deployment_task.result_readiness_reached",
+            message: "Required deployment result resources are running.",
+            reason: "ResultReadinessReached",
+            severity: "success",
+            source: "runner",
+          }),
+          stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
+          updatedAt: now,
+        }
+      ),
+  });
+  await updateDeployTaskState(task.id, {
+    phase: "completed",
+    status: "completed",
+  });
+  await recordDeployTaskEvent(task.id, {
+    kind: "deployment_task.completed",
+    message: "Deployment task completed.",
+    payload:
+      current.artifactSummary == null
+        ? {}
+        : { artifactSummary: current.artifactSummary },
+    phase: "completed",
+  });
+
+  return (await getDeployTaskById(task.id)) ?? current;
+}
+
+async function reconcileActiveApplyingTaskTimeline(input: {
+  kubeconfig?: string;
+  task: DeployTaskRow;
+}): Promise<DeployTaskRow> {
+  if (input.kubeconfig == null || !isActiveApplyingTask(input.task)) {
+    return input.task;
+  }
+
+  const timeline = deploymentTaskTimelineFromTaskRecord(input.task);
+  const requiredCards = requiredResultCardsFromTask(input.task);
+  if (requiredCards.length === 0) {
+    return input.task;
+  }
+
+  if (deploymentTimelineResultReadinessReached(timeline)) {
+    return await completeTaskFromReconciledReadiness(input.task);
+  }
+
+  const observedCards: Awaited<
+    ReturnType<typeof observeDeploymentResultCardReadiness>
+  >[] = [];
+  for (const card of requiredCards) {
+    const observed = await observeDeploymentResultCardReadiness({
+      card,
+      kubeconfig: input.kubeconfig,
+    });
+    if (!(observed.observed && observed.running)) {
+      return input.task;
+    }
+    observedCards.push(observed);
+  }
+
+  const current = await getDeployTaskById(input.task.id);
+  if (current == null || !isActiveApplyingTask(current)) {
+    return current ?? input.task;
+  }
+
+  for (const observed of observedCards) {
+    await upsertObservedResultResourceCard({
+      card: observed.card,
+      eventMessage: observed.eventMessage,
+      eventReason: observed.eventReason,
+      eventSeverity: observed.eventSeverity,
+      taskId: current.id,
+    });
+  }
+
+  return await completeTaskFromReconciledReadiness(current);
+}
+
 export async function getDeployTaskSnapshot(
   taskId: string,
   namespace?: string
@@ -332,7 +524,8 @@ async function recentDeployTaskEvents(
 
 export async function getDeployTaskTimelineSnapshot(
   taskId: string,
-  namespace?: string
+  namespace?: string,
+  options: { kubeconfig?: string } = {}
 ): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
   await ensureDeployTaskStorageSchema();
   const filters = [eq(deployTasks.id, taskId)];
@@ -349,10 +542,15 @@ export async function getDeployTaskTimelineSnapshot(
     return null;
   }
 
+  const reconciledTask = await reconcileActiveApplyingTaskTimeline({
+    kubeconfig: options.kubeconfig,
+    task,
+  });
+
   return {
     events: await recentDeployTaskEvents(taskId),
-    task: toDeployTaskDTO(task),
-    timeline: deploymentTaskTimelineFromTaskRecord(task),
+    task: toDeployTaskDTO(reconciledTask),
+    timeline: deploymentTaskTimelineFromTaskRecord(reconciledTask),
   };
 }
 

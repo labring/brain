@@ -32,7 +32,7 @@ export function templateDeploymentExtraLabels(input: {
   instanceName: string;
   projectId: string;
   templateName: string;
-}) {
+}): Record<string, string> {
   return {
     [BRAIN_MANAGED_BY_LABEL]: BRAIN_MANAGED_BY_VALUE,
     [BRAIN_PROJECT_ID_LABEL]: input.projectId,

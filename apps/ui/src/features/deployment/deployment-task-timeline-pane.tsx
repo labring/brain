@@ -25,6 +25,7 @@ import {
   Clock3,
   LoaderCircle,
   PackageCheck,
+  Rocket,
   Send,
   XCircle,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useState,
 } from "react";
@@ -53,7 +55,6 @@ import type {
   DeployTaskBlockingInput,
 } from "@/lib/deploy-task/types";
 import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
-import { DeploymentSettings } from "./deployment-settings";
 
 interface DeploymentTaskTimelinePaneProps {
   kubeconfig: string;
@@ -62,52 +63,74 @@ interface DeploymentTaskTimelinePaneProps {
   taskId: string;
 }
 
-function statusTone(
+function statusDotTone(
   status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
 ): string {
   switch (status) {
     case "completed":
     case "running":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+      return "bg-emerald-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-emerald-400)_18%,transparent)]";
     case "creating":
     case "pending":
-      return "border-blue-500/35 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+      return "bg-blue-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-blue-400)_18%,transparent)]";
     case "blocked":
     case "unknown":
-      return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+      return "bg-amber-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-amber-400)_18%,transparent)]";
     case "failed":
-      return "border-destructive/40 bg-destructive/10 text-destructive";
+      return "bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_18%,transparent)]";
     case "skipped":
-      return "border-border bg-muted text-muted-foreground";
+      return "bg-muted-foreground/50";
     default:
       return status satisfies never;
   }
 }
 
-function statusIcon(
+function statusMarkerTone(
+  status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
+): string {
+  switch (status) {
+    case "completed":
+    case "running":
+      return "border-emerald-400/35 bg-emerald-500/20 text-emerald-300";
+    case "creating":
+    case "pending":
+      return "border-blue-400/35 bg-blue-500/20 text-blue-300";
+    case "blocked":
+    case "unknown":
+      return "border-amber-400/35 bg-amber-500/20 text-amber-300";
+    case "failed":
+      return "border-destructive/35 bg-destructive/20 text-destructive";
+    case "skipped":
+      return "border-white/10 bg-white/5 text-muted-foreground";
+    default:
+      return status satisfies never;
+  }
+}
+
+function statusMarkerIcon(
   status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
 ) {
   switch (status) {
     case "completed":
+      return <CheckCircle2 aria-hidden className="size-3" />;
     case "running":
-      return <CheckCircle2 aria-hidden className="size-3.5" />;
     case "creating":
-      return <LoaderCircle aria-hidden className="size-3.5 animate-spin" />;
+      return <LoaderCircle aria-hidden className="size-3 animate-spin" />;
     case "pending":
-      return <Clock3 aria-hidden className="size-3.5" />;
+      return <Clock3 aria-hidden className="size-3" />;
     case "blocked":
     case "unknown":
-      return <AlertTriangle aria-hidden className="size-3.5" />;
+      return <AlertTriangle aria-hidden className="size-3" />;
     case "failed":
-      return <XCircle aria-hidden className="size-3.5" />;
+      return <XCircle aria-hidden className="size-3" />;
     case "skipped":
-      return <Circle aria-hidden className="size-3.5" />;
+      return <Circle aria-hidden className="size-3" />;
     default:
       return status satisfies never;
   }
 }
 
-function StatusPill({
+function StatusMarker({
   status,
 }: {
   status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus;
@@ -115,12 +138,11 @@ function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 font-medium text-xs capitalize",
-        statusTone(status)
+        "inline-flex size-4 shrink-0 items-center justify-center rounded-full border",
+        statusMarkerTone(status)
       )}
     >
-      {statusIcon(status)}
-      {status}
+      {statusMarkerIcon(status)}
     </span>
   );
 }
@@ -130,6 +152,66 @@ function EmptyState({ children }: { children: ReactNode }) {
     <div className="rounded-md border border-dashed bg-muted/30 px-3 py-4 text-muted-foreground text-sm">
       {children}
     </div>
+  );
+}
+
+function TimelineBorderBeam() {
+  const gradientId = useId();
+
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-[inherit] border border-white/10"
+    >
+      <svg
+        aria-hidden
+        className="absolute inset-0 size-full overflow-visible motion-reduce:hidden"
+        preserveAspectRatio="none"
+      >
+        <title>Animated deployment timeline border</title>
+        <defs>
+          <linearGradient id={gradientId} x1="0%" x2="100%" y1="0%" y2="100%">
+            <stop offset="0%" stopColor="transparent" />
+            <stop offset="32%" stopColor="rgba(96, 165, 250, 0.18)" />
+            <stop offset="52%" stopColor="#60A5FA" />
+            <stop offset="72%" stopColor="rgba(147, 197, 253, 0.7)" />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+        <rect
+          className="[animation:deployment-timeline-border-beam_8s_linear_infinite]"
+          fill="none"
+          height="100%"
+          pathLength="100"
+          rx="8"
+          ry="8"
+          stroke={`url(#${gradientId})`}
+          strokeDasharray="18 82"
+          strokeLinecap="round"
+          strokeWidth="2"
+          vectorEffect="non-scaling-stroke"
+          width="100%"
+          x="0"
+          y="0"
+        />
+        <rect
+          className="opacity-70 [animation-delay:-4s] [animation:deployment-timeline-border-beam_8s_linear_infinite]"
+          fill="none"
+          height="100%"
+          pathLength="100"
+          rx="8"
+          ry="8"
+          stroke={`url(#${gradientId})`}
+          strokeDasharray="12 88"
+          strokeLinecap="round"
+          strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke"
+          width="100%"
+          x="0"
+          y="0"
+        />
+      </svg>
+    </span>
   );
 }
 
@@ -166,10 +248,10 @@ function TimelineEventList({
       {events.map((event) => (
         <li
           className={cn(
-            "grid gap-2 text-sm",
+            "grid min-w-0 items-start gap-2 text-xs",
             showSeverity
-              ? "grid-cols-[0.5rem_5rem_minmax(0,1fr)]"
-              : "grid-cols-[5rem_minmax(0,1fr)]"
+              ? "grid-cols-[0.5rem_6rem_minmax(0,1fr)]"
+              : "grid-cols-[6rem_minmax(0,1fr)]"
           )}
           key={event.id}
         >
@@ -177,15 +259,15 @@ function TimelineEventList({
             <span
               aria-hidden
               className={cn(
-                "mt-2 size-1.5 rounded-full",
+                "mt-1.5 size-1 rounded-full",
                 eventSeverityTone(event.severity)
               )}
             />
           ) : null}
-          <span className="truncate text-muted-foreground text-xs leading-5">
+          <span className="truncate font-mono text-[10px] text-muted-foreground leading-4">
             {event.createdAt}
           </span>
-          <span className="min-w-0 text-foreground leading-5">
+          <span className="min-w-0 text-foreground/90 leading-4">
             {event.message}
           </span>
         </li>
@@ -207,6 +289,16 @@ function resultResourceKindLabel(ref: DeploymentResultResourceRef): string {
     default:
       return ref satisfies never;
   }
+}
+
+function resultResourceMeta(card: DeploymentResultResourceCard): string {
+  return [
+    resultResourceKindLabel(card.resultRef),
+    card.required ? "Required" : "Optional",
+    card.latestStatusText,
+  ]
+    .filter((value): value is string => value != null && value.trim() !== "")
+    .join(" ");
 }
 
 function defaultResourceCardOpen(
@@ -243,62 +335,72 @@ function useResourceCardOpen(status: DeploymentResultResourceCardStatus) {
 function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
   const { onOpenChange, open } = useResourceCardOpen(card.status);
   const latestEvent = card.events.at(-1);
-  const kindLabel = resultResourceKindLabel(card.resultRef);
+  const meta = resultResourceMeta(card);
 
   return (
     <Collapsible
       className={cn(
-        "overflow-hidden rounded-lg border border-border bg-input/30 transition-colors",
-        open && "bg-input/40"
+        "overflow-hidden rounded-md border border-white/8 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors",
+        open && "bg-white/[0.06]"
       )}
       data-slot="deployment-result-resource-card"
       onOpenChange={onOpenChange}
       open={open}
     >
       <CollapsibleTrigger
-        className="group/resource-card flex w-full cursor-pointer flex-col gap-2 px-3 py-3 text-left outline-none transition-colors hover:bg-input/25 focus-visible:ring-2 focus-visible:ring-ring/30"
+        className="group/resource-card flex w-full cursor-pointer flex-col gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-ring/30"
         type="button"
       >
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div
-              className="truncate font-medium text-foreground text-sm leading-5"
-              title={card.title}
-            >
-              {card.title}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs leading-4">
-              <span>{kindLabel}</span>
-              <span>{card.required ? "Required" : "Optional"}</span>
-              {card.latestStatusText == null ? null : (
-                <span className="min-w-0 truncate">
-                  {card.latestStatusText}
-                </span>
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="flex min-w-0 items-start gap-2">
+            <span
+              aria-hidden
+              className={cn(
+                "mt-1.5 size-1.5 shrink-0 rounded-full",
+                statusDotTone(card.status)
               )}
+            />
+            <div className="min-w-0">
+              <div
+                className="truncate font-medium text-foreground text-xs leading-4"
+                title={card.title}
+              >
+                {card.title}
+              </div>
+              <div className="mt-1 truncate text-[11px] text-muted-foreground leading-4">
+                {meta}
+              </div>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <StatusPill status={card.status} />
+            <span className="sr-only">{card.status}</span>
+            <div
+              aria-hidden
+              className={cn(
+                "size-1.5 rounded-full",
+                statusDotTone(card.status)
+              )}
+            />
             <ChevronDown
               aria-hidden
-              className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open/resource-card:rotate-180"
+              className="size-3 shrink-0 text-muted-foreground transition-transform group-data-panel-open/resource-card:rotate-180"
             />
           </div>
         </div>
         {latestEvent == null ? null : (
-          <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-2 text-sm">
-            <span className="truncate text-muted-foreground text-xs leading-5">
+          <div className="grid min-w-0 grid-cols-[6rem_minmax(0,1fr)] gap-2 pl-3.5 text-xs">
+            <span className="truncate font-mono text-[10px] text-muted-foreground leading-4">
               {latestEvent.createdAt}
             </span>
-            <span className="min-w-0 truncate text-foreground leading-5">
+            <span className="min-w-0 truncate text-foreground/90 leading-4">
               {latestEvent.message}
             </span>
           </div>
         )}
       </CollapsibleTrigger>
-      <CollapsibleContent className="border-border/70 border-t px-3 py-3 outline-none">
+      <CollapsibleContent className="border-white/8 border-t px-3 py-2.5 pl-6 outline-none">
         {card.events.length === 0 ? (
-          <p className="text-muted-foreground text-sm leading-5">
+          <p className="text-muted-foreground text-xs leading-4">
             No resource events recorded yet.
           </p>
         ) : (
@@ -318,29 +420,34 @@ function TimelineStepItem({
 }) {
   const cards = step.resultCards ?? [];
   return (
-    <section className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3">
+    <section className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2.5">
       <div className="flex flex-col items-center pt-1">
-        <span className="size-2.5 rounded-full bg-border" />
-        <span className="mt-1 min-h-10 w-px flex-1 bg-border" />
+        <StatusMarker status={step.status} />
+        <span className="mt-1 min-h-6 w-px flex-1 bg-white/12" />
       </div>
-      <div className="min-w-0 pb-5">
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <h3 className="truncate font-medium text-base" title={step.label}>
+      <div className="min-w-0 pb-3.5">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <h3
+            className="truncate font-medium text-foreground text-sm leading-5"
+            title={step.label}
+          >
             {step.label}
           </h3>
-          <StatusPill status={step.status} />
+          <span className="shrink-0 text-muted-foreground text-xs capitalize leading-4">
+            {step.status}
+          </span>
         </div>
-        <div className="mt-3">
+        <div className="mt-1.5">
           <TimelineEventList events={step.events} />
         </div>
         {cards.length === 0 ? null : (
-          <div className="mt-3 flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-2">
             {cards.map((card) => (
               <ResultResourceCard card={card} key={card.id} />
             ))}
           </div>
         )}
-        {children == null ? null : <div className="mt-3">{children}</div>}
+        {children == null ? null : <div className="mt-2">{children}</div>}
       </div>
     </section>
   );
@@ -490,6 +597,7 @@ function DeploymentInputControl({
   return (
     <AppInput
       autoComplete={controlType === "password" ? "off" : undefined}
+      className="h-8 rounded-md bg-white/[0.02] text-xs"
       id={`deployment-input-${input.key}`}
       name={input.key}
       onChange={(event) => onChange(event.currentTarget.value)}
@@ -515,7 +623,7 @@ function DeploymentInputField({
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <label
-        className="flex items-center gap-1 font-medium text-foreground text-sm leading-5"
+        className="flex items-center gap-1 font-medium text-foreground text-xs leading-4"
         htmlFor={`deployment-input-${input.key}`}
       >
         {label}
@@ -526,7 +634,7 @@ function DeploymentInputField({
         ) : null}
       </label>
       {description ? (
-        <span className="text-muted-foreground text-sm leading-5">
+        <span className="text-muted-foreground text-xs leading-4">
           {description}
         </span>
       ) : null}
@@ -639,35 +747,43 @@ function DeploymentConfigurationForm({
 
   return (
     <form
-      className="flex min-w-0 flex-col gap-3"
+      className="flex min-w-0 flex-col gap-3 rounded-md border border-white/8 bg-white/[0.06] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       data-slot="deployment-configuration-form"
       onSubmit={submit}
     >
-      <DeploymentSettings.Section
-        description="Required template values are missing. Submit them to continue this deployment."
-        icon={<AlertTriangle aria-hidden className="size-4" />}
-        title="Deployment configuration"
-      >
-        <div className="flex flex-col gap-3">
-          {inputs.map((input) => (
-            <DeploymentInputField
-              input={input}
-              key={input.key}
-              onChange={(nextValue) =>
-                setValues((current) => ({
-                  ...current,
-                  [input.key]: nextValue,
-                }))
-              }
-              value={values[input.key] ?? ""}
-            />
-          ))}
-        </div>
-      </DeploymentSettings.Section>
+      <div className="flex min-w-0 items-center gap-2">
+        <AlertTriangle aria-hidden className="size-4 shrink-0 text-amber-400" />
+        <h3 className="truncate font-medium text-foreground text-sm leading-5">
+          Deployment configuration
+        </h3>
+      </div>
+      <p className="text-muted-foreground text-xs leading-4">
+        Required template values are missing. Submit them to continue this
+        deployment.
+      </p>
+      <div className="flex flex-col gap-3">
+        {inputs.map((input) => (
+          <DeploymentInputField
+            input={input}
+            key={input.key}
+            onChange={(nextValue) =>
+              setValues((current) => ({
+                ...current,
+                [input.key]: nextValue,
+              }))
+            }
+            value={values[input.key] ?? ""}
+          />
+        ))}
+      </div>
       {error == null ? null : (
-        <p className="mt-3 text-destructive text-xs leading-4">{error}</p>
+        <p className="text-destructive text-xs leading-4">{error}</p>
       )}
-      <Button className="w-full" disabled={isSubmitting} type="submit">
+      <Button
+        className="h-7 w-full text-xs"
+        disabled={isSubmitting}
+        type="submit"
+      >
         {isSubmitting ? (
           <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
         ) : (
@@ -695,6 +811,12 @@ function deploymentConfigurationStepId(
   );
 }
 
+function timelineTaskStatusLabel(snapshot: DeploymentTaskTimelineSnapshotDTO) {
+  return `${snapshot.task.status}${
+    snapshot.task.phase ? ` - ${snapshot.task.phase}` : ""
+  }`;
+}
+
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
@@ -710,7 +832,26 @@ export function DeploymentTaskTimelinePaneContent({
   }
   const configurationStepId = deploymentConfigurationStepId(steps);
   return (
-    <div className="flex flex-col" data-slot="deployment-task-timeline">
+    <div
+      className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4 shadow-[0_1px_3px_0_rgba(0,0,0,0.10),0_1px_2px_0_rgba(0,0,0,0.06)]"
+      data-slot="deployment-task-timeline"
+    >
+      <TimelineBorderBeam />
+      <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border border-white/8" />
+      <div className="mb-3 flex items-center gap-2 text-foreground">
+        <Rocket aria-hidden className="size-4 text-foreground" />
+        <h3 className="font-medium text-base leading-5">Deployment Timeline</h3>
+      </div>
+      <div className="mb-4 flex items-center gap-2 text-muted-foreground text-sm leading-5">
+        <span
+          aria-hidden
+          className={cn(
+            "size-2.5 rounded-full",
+            statusDotTone(snapshot.timeline.status)
+          )}
+        />
+        <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
+      </div>
       {steps.map((step) => (
         <TimelineStepItem key={step.id} step={step}>
           {step.id === configurationStepId ? (

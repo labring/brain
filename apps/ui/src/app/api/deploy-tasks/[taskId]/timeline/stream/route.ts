@@ -1,3 +1,4 @@
+import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -41,6 +42,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const namespace = namespaceResolved.namespace;
+  const kubeconfig = decodeKubeconfig(params.encodedKubeconfig);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -110,7 +112,11 @@ export async function GET(request: Request, context: RouteContext) {
       );
 
       try {
-        const snapshot = await getDeployTaskTimelineSnapshot(taskId, namespace);
+        const snapshot = await getDeployTaskTimelineSnapshot(
+          taskId,
+          namespace,
+          { kubeconfig: kubeconfig ?? undefined }
+        );
         if (closed) {
           return;
         }

@@ -254,11 +254,11 @@ func TestAPObjectWithConfigMapValuesFillsMountedFileContents(t *testing.T) {
 }
 
 func TestAPDirectResourceDeleteSelectorIsScopedToAPResources(t *testing.T) {
-	selector := apDirectResourceDeleteSelector("web")
+	selector := apDirectResourceDeleteSelector("web", "project-a")
 	for _, want := range []string{
+		orchestration.LaunchpadAppDeployManagerLabel + "=web",
 		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue,
-		orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindAP,
-		orchestration.BrainDeploymentNameLabel + "=web",
+		orchestration.BrainProjectIDLabel + "=project-a",
 	} {
 		if !strings.Contains(selector, want) {
 			t.Fatalf("delete selector = %q, want %q", selector, want)
@@ -363,8 +363,8 @@ func TestAPVersionRollbackPatchUsesSpecSnapshotWhenAvailable(t *testing.T) {
 func TestAPDeploymentLabelSelectorKeepsBrainOwnership(t *testing.T) {
 	got := apDeploymentLabelSelector("brain.io/project-id=project-a")
 	for _, want := range []string{
-		"brain.io/managed-by=brain",
-		"brain.io/deployment-kind=ap",
+		orchestration.LaunchpadAppDeployManagerLabel,
+		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue,
 		"brain.io/project-id=project-a",
 	} {
 		if !strings.Contains(got, want) {
@@ -377,20 +377,56 @@ func TestAPOwnershipRequiresBrainLabels(t *testing.T) {
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindAP,
-				orchestration.BrainDeploymentNameLabel: "web",
-				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:      "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "web",
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
 			},
 			Name: "web",
 		},
 	}
 	if err := requireBrainAPDeployment(deployment); err != nil {
-		t.Fatalf("expected Brain AP deployment to pass ownership check: %v", err)
+		t.Fatalf("expected Launchpad AP deployment to pass ownership check: %v", err)
 	}
-	delete(deployment.Labels, orchestration.BrainManagedByLabel)
+	delete(deployment.Labels, orchestration.BrainProjectIDLabel)
 	if err := requireBrainAPDeployment(deployment); err == nil {
-		t.Fatal("expected missing brain.io/managed-by label to fail ownership check")
+		t.Fatal("expected missing Brain project label to fail ownership check")
+	}
+}
+
+func TestAPSupportResourceGroupingAcceptsLaunchpadAndLegacyLabels(t *testing.T) {
+	grouped := groupAPPublicAccessSupportItems([]map[string]interface{}{
+		{
+			"metadata": map[string]interface{}{
+				"labels": map[string]interface{}{
+					orchestration.LaunchpadAppDeployManagerLabel: "web",
+				},
+				"name": "web-ingress",
+			},
+		},
+		{
+			"metadata": map[string]interface{}{
+				"labels": map[string]interface{}{
+					orchestration.BrainDeploymentNameLabel: "legacy",
+				},
+				"name": "legacy-ingress",
+			},
+		},
+		{
+			"metadata": map[string]interface{}{
+				"labels": map[string]interface{}{},
+				"name":   "unowned-ingress",
+			},
+		},
+	})
+
+	if got := len(grouped["web"]); got != 1 {
+		t.Fatalf("web support item count = %d, want 1", got)
+	}
+	if got := len(grouped["legacy"]); got != 1 {
+		t.Fatalf("legacy support item count = %d, want 1", got)
+	}
+	if _, ok := grouped[""]; ok {
+		t.Fatal("unowned support item should not be grouped")
 	}
 }
 
@@ -399,41 +435,40 @@ func TestAPOwnershipRejectsWrongResourceKind(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindDB,
-				orchestration.BrainDeploymentNameLabel: "web",
-				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "web",
 		},
 	}
 	if err := requireBrainAPDeployment(deployment); err == nil {
-		t.Fatal("expected wrong brain.io/deployment-kind label to fail ownership check")
+		t.Fatal("expected missing Launchpad AP label to fail ownership check")
 	}
 }
 
-func TestAPLikeOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
+func TestAPLikeOwnershipRequiresLaunchpadLabels(t *testing.T) {
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-				orchestration.BrainDeploymentNameLabel: "template-web",
-				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "template-web",
 		},
 	}
+	if err := requireBrainAPLikeDeployment(deployment); err == nil {
+		t.Fatal("expected template deployment without Launchpad label to fail AP-like ownership check")
+	}
+	deployment.Labels[orchestration.LaunchpadAppDeployManagerLabel] = "template-web"
+	deployment.Labels[orchestration.BrainManagedByLabel] = orchestration.BrainManagedByValue
+	deployment.Labels[orchestration.BrainProjectIDLabel] = "project-a"
 	if err := requireBrainAPLikeDeployment(deployment); err != nil {
-		t.Fatalf("expected managed template deployment to pass AP-like ownership check: %v", err)
+		t.Fatalf("expected Launchpad-labeled template deployment to pass AP-like ownership check: %v", err)
 	}
 
 	statefulSet := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-				orchestration.BrainDeploymentNameLabel: "template-worker",
-				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:      "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "template-worker",
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
 			},
 			Name: "template-worker",
 		},
@@ -451,9 +486,6 @@ func TestAPStrictOwnershipRejectsManagedTemplateWorkloads(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-				orchestration.BrainDeploymentNameLabel: "template-web",
-				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:      "project-a",
 			},
 			Name: "template-web",
 		},
@@ -486,10 +518,9 @@ func TestAPLifecycleOwnershipAllowsManagedTemplateWorkloads(t *testing.T) {
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-				orchestration.BrainDeploymentNameLabel: "template-web",
-				orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-				orchestration.BrainProjectIDLabel:      "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "template-web",
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
 			},
 			Name: "template-web",
 		},

@@ -381,21 +381,21 @@ func TestDBOwnershipRequiresBrainLabels(t *testing.T) {
 	cluster := unstructured.Unstructured{}
 	cluster.SetName("pg")
 	cluster.SetLabels(map[string]string{
-		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindDB,
-		orchestration.BrainDeploymentNameLabel: "pg",
-		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-		orchestration.BrainProjectIDLabel:      "project-a",
+		orchestration.DBProviderClusterDefinitionLabel: "postgresql",
+		orchestration.DBProviderInstanceLabel:          "pg",
+		orchestration.BrainManagedByLabel:              orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:              "project-a",
 	})
 	cluster.SetCreationTimestamp(metav1.Now())
 
 	if err := requireBrainDBCluster(cluster); err != nil {
-		t.Fatalf("expected Brain DB cluster to pass ownership check: %v", err)
+		t.Fatalf("expected DB Provider cluster to pass ownership check: %v", err)
 	}
 	labels := cluster.GetLabels()
-	delete(labels, orchestration.BrainManagedByLabel)
+	delete(labels, orchestration.BrainProjectIDLabel)
 	cluster.SetLabels(labels)
 	if err := requireBrainDBCluster(cluster); err == nil {
-		t.Fatal("expected missing brain.io/managed-by label to fail ownership check")
+		t.Fatal("expected missing Brain project label to fail ownership check")
 	}
 }
 
@@ -404,29 +404,32 @@ func TestDBOwnershipRejectsWrongResourceKind(t *testing.T) {
 	cluster.SetName("pg")
 	cluster.SetLabels(map[string]string{
 		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindAP,
-		orchestration.BrainDeploymentNameLabel: "pg",
-		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-		orchestration.BrainProjectIDLabel:      "project-a",
 	})
 
 	if err := requireBrainDBCluster(cluster); err == nil {
-		t.Fatal("expected wrong brain.io/deployment-kind label to fail ownership check")
+		t.Fatal("expected missing DB Provider labels to fail ownership check")
 	}
 }
 
-func TestDBLikeOwnershipAllowsManagedTemplateClusters(t *testing.T) {
+func TestDBLikeOwnershipRequiresDBProviderLabels(t *testing.T) {
 	cluster := unstructured.Unstructured{}
 	cluster.SetName("template-pg")
 	cluster.SetLabels(map[string]string{
-		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-		orchestration.BrainDeploymentNameLabel: "template-pg",
-		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-		orchestration.BrainProjectIDLabel:      "project-a",
-		"clusterdefinition.kubeblocks.io/name": "postgresql",
+		orchestration.BrainDeploymentKindLabel:         orchestration.DeploymentKindTemplate,
+		orchestration.DBProviderClusterDefinitionLabel: "postgresql",
 	})
 
+	if err := requireBrainDBLikeCluster(cluster); err == nil {
+		t.Fatal("expected missing DB provider instance label to fail DB-like ownership check")
+	}
+	cluster.SetLabels(map[string]string{
+		orchestration.DBProviderClusterDefinitionLabel: "postgresql",
+		orchestration.DBProviderInstanceLabel:          "template-pg",
+		orchestration.BrainManagedByLabel:              orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:              "project-a",
+	})
 	if err := requireBrainDBLikeCluster(cluster); err != nil {
-		t.Fatalf("expected managed template cluster to pass DB-like ownership check: %v", err)
+		t.Fatalf("expected DB Provider-labeled cluster to pass DB-like ownership check: %v", err)
 	}
 }
 
@@ -438,7 +441,6 @@ func TestDBStrictOwnershipRejectsManagedTemplateClusters(t *testing.T) {
 		orchestration.BrainDeploymentNameLabel: "template-pg",
 		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
 		orchestration.BrainProjectIDLabel:      "project-a",
-		"clusterdefinition.kubeblocks.io/name": "postgresql",
 	})
 
 	if err := requireBrainDBCluster(cluster); err == nil {
@@ -466,15 +468,14 @@ func TestDBLifecycleOwnershipAllowsManagedTemplateClusters(t *testing.T) {
 	cluster := unstructured.Unstructured{}
 	cluster.SetName("template-pg")
 	cluster.SetLabels(map[string]string{
-		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-		orchestration.BrainDeploymentNameLabel: "template-pg",
-		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-		orchestration.BrainProjectIDLabel:      "project-a",
-		"clusterdefinition.kubeblocks.io/name": "postgresql",
+		orchestration.DBProviderClusterDefinitionLabel: "postgresql",
+		orchestration.DBProviderInstanceLabel:          "template-pg",
+		orchestration.BrainManagedByLabel:              orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:              "project-a",
 	})
 
 	if err := requireBrainDBLifecycleCluster(cluster); err != nil {
-		t.Fatalf("expected managed template cluster to pass DB lifecycle ownership check: %v", err)
+		t.Fatalf("expected DB Provider-labeled cluster to pass DB lifecycle ownership check: %v", err)
 	}
 }
 
@@ -482,15 +483,14 @@ func TestDBUpdateOwnershipAllowsManagedTemplateClusters(t *testing.T) {
 	cluster := unstructured.Unstructured{}
 	cluster.SetName("affine-rvxatt-redis")
 	cluster.SetLabels(map[string]string{
-		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-		orchestration.BrainDeploymentNameLabel: "affine-rvxatt",
-		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-		orchestration.BrainProjectIDLabel:      "project-a",
-		"clusterdefinition.kubeblocks.io/name": "redis",
+		orchestration.DBProviderClusterDefinitionLabel: "redis",
+		orchestration.DBProviderInstanceLabel:          "affine-rvxatt-redis",
+		orchestration.BrainManagedByLabel:              orchestration.BrainManagedByValue,
+		orchestration.BrainProjectIDLabel:              "project-a",
 	})
 
 	if err := requireBrainDBUpdateCluster(cluster); err != nil {
-		t.Fatalf("expected managed template Redis cluster to pass DB update ownership check: %v", err)
+		t.Fatalf("expected DB Provider-labeled Redis cluster to pass DB update ownership check: %v", err)
 	}
 }
 
@@ -498,11 +498,8 @@ func TestDBUpdateOwnershipRejectsTemplateClustersWithUnsupportedEngine(t *testin
 	cluster := unstructured.Unstructured{}
 	cluster.SetName("template-support")
 	cluster.SetLabels(map[string]string{
-		orchestration.BrainDeploymentKindLabel: orchestration.DeploymentKindTemplate,
-		orchestration.BrainDeploymentNameLabel: "template-app",
-		orchestration.BrainManagedByLabel:      orchestration.BrainManagedByValue,
-		orchestration.BrainProjectIDLabel:      "project-a",
-		"clusterdefinition.kubeblocks.io/name": "unsupported-engine",
+		orchestration.DBProviderClusterDefinitionLabel: "unsupported-engine",
+		orchestration.DBProviderInstanceLabel:          "template-support",
 	})
 
 	if err := requireBrainDBUpdateCluster(cluster); err == nil {
@@ -992,21 +989,9 @@ func TestDBVariablesFromSecretReturnPrimitiveSecretRefs(t *testing.T) {
 func TestDBClusterLabelSelectorKeepsBrainOwnership(t *testing.T) {
 	got := dbClusterLabelSelector("brain.io/project-id=project-a")
 	for _, want := range []string{
-		"brain.io/managed-by=brain",
-		"brain.io/deployment-kind=db",
-		"brain.io/project-id=project-a",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("selector %q missing %q", got, want)
-		}
-	}
-}
-
-func TestTemplateDBClusterLabelSelectorKeepsBrainOwnership(t *testing.T) {
-	got := templateDBClusterLabelSelector("brain.io/project-id=project-a")
-	for _, want := range []string{
-		"brain.io/managed-by=brain",
-		"brain.io/deployment-kind=template",
+		"app.kubernetes.io/instance",
+		"clusterdefinition.kubeblocks.io/name",
+		orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue,
 		"brain.io/project-id=project-a",
 	} {
 		if !strings.Contains(got, want) {

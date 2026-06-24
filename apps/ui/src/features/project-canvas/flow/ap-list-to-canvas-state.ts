@@ -19,7 +19,6 @@ import {
   readApReplicas,
 } from "@/features/project-settings/ap/k8s/ap-spec-access";
 import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
-import { BRAIN_DEPLOYMENT_KIND_LABEL } from "@/lib/brain-labels";
 
 import {
   CANVAS_CONTAINER_NODE_TYPE,
@@ -229,15 +228,6 @@ export interface PublicAccessToCanvasStateOptions {
   namespaceFallback?: string;
 }
 
-export interface TemplateNativeWorkloadsToCanvasStateOptions {
-  /** Workload keys already represented as AP-like nodes (`namespace/name`). */
-  apLikeWorkloadKeys?: Set<string>;
-  /** Index offset for deterministic fallback placement when combining node lists. @default 0 */
-  gridIndexOffset?: number;
-  /** Used when a list item has no `metadata.namespace` (same as k8s list query). */
-  namespaceFallback?: string;
-}
-
 /**
  * Builds React Flow `nodes` / `edges` for the project AP list (canvas state).
  */
@@ -273,126 +263,6 @@ export function apsToCanvasState(
     return {
       data: { states },
       id: `ap-${String(stable).replace(/\s+/g, "-")}`,
-      position: fallbackCanvasPosition(g),
-      type: CANVAS_CONTAINER_NODE_TYPE,
-    };
-  });
-  return { nodes, edges: [] };
-}
-
-function templateNativeImage(item: unknown): string {
-  const spec = asRecord(asRecord(item)?.spec) ?? {};
-  const containers =
-    asRecord(asRecord(spec.template)?.spec)?.containers ??
-    asRecord(spec)?.containers;
-  if (!Array.isArray(containers)) {
-    return "—";
-  }
-  const image = asRecord(containers[0])?.image;
-  return typeof image === "string" && image !== "" ? image : "—";
-}
-
-function templateNativeReplicas(item: unknown): number | undefined {
-  const replicas = asRecord(asRecord(item)?.spec)?.replicas;
-  return typeof replicas === "number" && Number.isFinite(replicas)
-    ? replicas
-    : undefined;
-}
-
-function templateNativeStatus(item: unknown) {
-  const status = asRecord(asRecord(item)?.status) ?? {};
-  const phase =
-    nonEmptyString(status.phase) ??
-    (typeof status.readyReplicas === "number" &&
-    typeof status.replicas === "number" &&
-    status.replicas > 0 &&
-    status.readyReplicas >= status.replicas
-      ? "Running"
-      : "Creating");
-  return {
-    label: phase,
-    tone: getToneForStatus(phase.toLowerCase()) ?? "pending",
-  };
-}
-
-function isTemplateNativeWorkload(item: unknown): boolean {
-  const labels = asRecord(asRecord(asRecord(item)?.metadata)?.labels) ?? {};
-  const kind = nonEmptyString(asRecord(item)?.kind);
-  return (
-    labels[BRAIN_DEPLOYMENT_KIND_LABEL] === "template" &&
-    (kind === "Deployment" || kind === "StatefulSet")
-  );
-}
-
-export function apLikeWorkloadKeysFromList(
-  data: K8sGetResponse | undefined,
-  options?: { namespaceFallback?: string }
-): Set<string> {
-  const keys = new Set<string>();
-  for (const item of apItemsFromList(data)) {
-    const name = metadataName(item);
-    const namespace = metadataNamespace(item) ?? options?.namespaceFallback;
-    if (name !== undefined && namespace !== undefined && namespace !== "") {
-      keys.add(`${namespace}/${name}`);
-    }
-  }
-  return keys;
-}
-
-function templateNativeWorkloadKey(
-  item: unknown,
-  namespaceFallback: string | undefined
-): string | undefined {
-  const name = metadataName(item);
-  const namespace = metadataNamespace(item) ?? namespaceFallback;
-  return name !== undefined && namespace !== undefined && namespace !== ""
-    ? `${namespace}/${name}`
-    : undefined;
-}
-
-export function templateNativeWorkloadsToCanvasState(
-  data: {
-    deployments?: K8sGetResponse;
-    statefulSets?: K8sGetResponse;
-  },
-  options?: TemplateNativeWorkloadsToCanvasStateOptions
-): { edges: Edge[]; nodes: Node[] } {
-  const items = [
-    ...apItemsFromList(data.deployments),
-    ...apItemsFromList(data.statefulSets),
-  ].filter((item) => {
-    if (!isTemplateNativeWorkload(item)) {
-      return false;
-    }
-    const key = templateNativeWorkloadKey(item, options?.namespaceFallback);
-    return key === undefined || !options?.apLikeWorkloadKeys?.has(key);
-  });
-  const grid0 = options?.gridIndexOffset ?? 0;
-  const nodes: Node[] = items.map((item, i) => {
-    const stable = metadataName(item) ?? metadataUid(item) ?? `i-${i}`;
-    const namespace =
-      metadataNamespace(item) ?? options?.namespaceFallback ?? undefined;
-    const name = metadataName(item) ?? "unknown";
-    const kind = nonEmptyString(asRecord(item)?.kind) ?? "Workload";
-    const g = grid0 + i;
-    return {
-      data: {
-        resourceKind: "template",
-        states: {
-          image: templateNativeImage(item),
-          kind,
-          name,
-          ...(namespace === undefined || namespace === "" ? {} : { namespace }),
-          ...(templateNativeReplicas(item) === undefined
-            ? {}
-            : { replicas: templateNativeReplicas(item) }),
-          status: templateNativeStatus(item),
-          ...(metadataUid(item) === undefined
-            ? {}
-            : { uid: metadataUid(item) }),
-        },
-      },
-      id: `template-${String(stable).replace(/\s+/g, "-")}`,
       position: fallbackCanvasPosition(g),
       type: CANVAS_CONTAINER_NODE_TYPE,
     };

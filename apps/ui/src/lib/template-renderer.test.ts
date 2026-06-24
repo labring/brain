@@ -95,6 +95,28 @@ const NUMBER_PARAMETER_RE = /Template parameter "storage" must be a number/;
 const TEMPLATE_SECRET_NAME_RE = /secretName: wildcard-cert/;
 const TEMPLATE_EXPR_MARKER_RE = /\$/;
 
+interface RenderedIngress {
+  metadata?: {
+    annotations?: Record<string, string>;
+    labels?: Record<string, string>;
+  };
+  spec?: {
+    rules?: Array<{ host?: string }>;
+  };
+}
+
+interface RenderedStatefulSet {
+  metadata?: { labels?: Record<string, string>; namespace?: string };
+  spec?: {
+    template?: {
+      metadata?: { labels?: Record<string, string> };
+    };
+    volumeClaimTemplates?: Array<{
+      metadata?: { labels?: Record<string, string> };
+    }>;
+  };
+}
+
 test("renderTemplateDeployment injects Brain labels into rendered resources", () => {
   const rendered = renderTemplateDeployment({
     args: { storage: "8" },
@@ -108,8 +130,12 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
 
   const docs = rendered.resources;
   const instance = docs.find((doc) => doc.kind === "Instance");
-  const statefulSet = docs.find((doc) => doc.kind === "StatefulSet");
-  const ingress = docs.find((doc) => doc.kind === "Ingress");
+  const statefulSet = docs.find((doc) => doc.kind === "StatefulSet") as
+    | RenderedStatefulSet
+    | undefined;
+  const ingress = docs.find((doc) => doc.kind === "Ingress") as
+    | RenderedIngress
+    | undefined;
 
   assert.equal(instance?.metadata?.name, "template-memos");
   assert.equal(
@@ -134,6 +160,11 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
     "template-memos"
   );
   assert.equal(
+    statefulSet?.metadata?.labels?.["cloud.sealos.io/app-deploy-manager"],
+    "template-memos"
+  );
+  assert.equal(statefulSet?.metadata?.labels?.app, "template-memos");
+  assert.equal(
     statefulSet?.spec?.template?.metadata?.labels?.["brain.io/deployment-kind"],
     "template"
   );
@@ -142,27 +173,31 @@ test("renderTemplateDeployment injects Brain labels into rendered resources", ()
     "template-memos"
   );
   assert.equal(
-    (
-      statefulSet?.spec?.volumeClaimTemplates as Array<{
-        metadata?: { labels?: Record<string, string> };
-      }>
-    )[0]?.metadata?.labels?.["brain.io/project-id"],
+    statefulSet?.spec?.template?.metadata?.labels?.[
+      "cloud.sealos.io/app-deploy-manager"
+    ],
+    "template-memos"
+  );
+  assert.equal(
+    statefulSet?.spec?.template?.metadata?.labels?.app,
+    "template-memos"
+  );
+  assert.equal(
+    statefulSet?.spec?.volumeClaimTemplates?.[0]?.metadata?.labels?.[
+      "brain.io/project-id"
+    ],
     "project-uid"
   );
   assert.equal(
-    (
-      statefulSet?.spec?.volumeClaimTemplates as Array<{
-        metadata?: { labels?: Record<string, string> };
-      }>
-    )[0]?.metadata?.labels?.["brain.io/deployment-kind"],
+    statefulSet?.spec?.volumeClaimTemplates?.[0]?.metadata?.labels?.[
+      "brain.io/deployment-kind"
+    ],
     "template"
   );
   assert.equal(
-    (
-      statefulSet?.spec?.volumeClaimTemplates as Array<{
-        metadata?: { labels?: Record<string, string> };
-      }>
-    )[0]?.metadata?.labels?.["brain.io/deployment-name"],
+    statefulSet?.spec?.volumeClaimTemplates?.[0]?.metadata?.labels?.[
+      "brain.io/deployment-name"
+    ],
     "template-memos"
   );
   assert.equal(
@@ -188,7 +223,7 @@ test("renderTemplateDeployment assigns matching Services and Ingresses to templa
       appYaml: `apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: template-web
+  name: web-deploy
 spec:
   selector:
     matchLabels:
@@ -236,9 +271,25 @@ spec:
     templateName: "web",
   });
 
+  const deployment = rendered.resources.find(
+    (doc) => doc.kind === "Deployment"
+  ) as RenderedStatefulSet | undefined;
   const service = rendered.resources.find((doc) => doc.kind === "Service");
-  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress");
+  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress") as
+    | RenderedIngress
+    | undefined;
 
+  assert.equal(
+    deployment?.metadata?.labels?.["cloud.sealos.io/app-deploy-manager"],
+    "template-web"
+  );
+  assert.equal(deployment?.metadata?.labels?.app, "template-web");
+  assert.equal(
+    deployment?.spec?.template?.metadata?.labels?.[
+      "cloud.sealos.io/app-deploy-manager"
+    ],
+    "template-web"
+  );
   assert.equal(
     service?.metadata?.labels?.["brain.io/deployment-kind"],
     "template"
@@ -248,12 +299,68 @@ spec:
     "template-web"
   );
   assert.equal(
+    service?.metadata?.labels?.["cloud.sealos.io/app-deploy-manager"],
+    "template-web"
+  );
+  assert.equal(
     ingress?.metadata?.labels?.["brain.io/deployment-kind"],
     "template"
   );
   assert.equal(
     ingress?.metadata?.labels?.["brain.io/deployment-name"],
     "template-web"
+  );
+  assert.equal(
+    ingress?.metadata?.labels?.["cloud.sealos.io/app-deploy-manager"],
+    "template-web"
+  );
+  assert.equal(
+    ingress?.metadata?.labels?.["cloud.sealos.io/app-deploy-manager-domain"],
+    "template-web"
+  );
+});
+
+test("renderTemplateDeployment keeps ordinary workloads out of AP classification", () => {
+  const rendered = renderTemplateDeployment({
+    args: {},
+    instanceName: "template-worker",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: migration-worker
+spec:
+  selector:
+    matchLabels:
+      worker: migration
+  template:
+    metadata:
+      labels:
+        worker: migration
+    spec:
+      containers:
+        - name: worker
+          image: busybox:1.36
+`,
+    },
+    templateName: "worker",
+  });
+
+  const deployment = rendered.resources.find(
+    (doc) => doc.kind === "Deployment"
+  );
+
+  assert.equal(
+    deployment?.metadata?.labels?.["cloud.sealos.io/app-deploy-manager"],
+    undefined
+  );
+  assert.equal(
+    deployment?.metadata?.labels?.["brain.io/deployment-kind"],
+    "template"
   );
 });
 
@@ -274,6 +381,7 @@ metadata:
     clusterdefinition.kubeblocks.io/name: postgresql
 spec:
   clusterDefinitionRef: postgresql
+  clusterVersionRef: postgresql-16
   componentSpecs:
     - name: postgresql
       replicas: 1
@@ -313,6 +421,58 @@ spec:
     cluster?.metadata?.labels?.["cloud.sealos.io/deploy-on-sealos"],
     "template-pg"
   );
+  assert.equal(
+    cluster?.metadata?.labels?.["app.kubernetes.io/instance"],
+    "template-pg"
+  );
+  assert.equal(
+    cluster?.metadata?.labels?.["clusterdefinition.kubeblocks.io/name"],
+    "postgresql"
+  );
+  assert.equal(
+    cluster?.metadata?.labels?.["clusterversion.kubeblocks.io/name"],
+    "postgresql-16"
+  );
+});
+
+test("renderTemplateDeployment normalizes KubeBlocks Clusters without provider labels", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    instanceName: "template-mysql",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: apps.kubeblocks.io/v1alpha1
+kind: Cluster
+metadata:
+  name: template-mysql
+spec:
+  clusterDefinitionRef: apecloud-mysql
+  clusterVersionRef: apecloud-mysql-8.0
+  componentSpecs:
+    - name: mysql
+      replicas: 1
+`,
+    },
+    templateName: "mysql",
+  });
+
+  const cluster = rendered.resources.find((doc) => doc.kind === "Cluster");
+
+  assert.equal(
+    cluster?.metadata?.labels?.["app.kubernetes.io/instance"],
+    "template-mysql"
+  );
+  assert.equal(
+    cluster?.metadata?.labels?.["clusterdefinition.kubeblocks.io/name"],
+    "apecloud-mysql"
+  );
+  assert.equal(
+    cluster?.metadata?.labels?.["clusterversion.kubeblocks.io/name"],
+    "apecloud-mysql-8.0"
+  );
 });
 
 test("renderTemplateDeployment can override provider cloud domain with target cluster domain", () => {
@@ -327,7 +487,9 @@ test("renderTemplateDeployment can override provider cloud domain with target cl
     templateName: "memos",
   });
 
-  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress");
+  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress") as
+    | RenderedIngress
+    | undefined;
   assert.equal(
     ingress?.spec?.rules?.[0]?.host,
     "memos-host.192.168.10.189.nip.io"
@@ -359,7 +521,9 @@ spec:
     templateName: "web",
   });
 
-  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress");
+  const ingress = rendered.resources.find((doc) => doc.kind === "Ingress") as
+    | RenderedIngress
+    | undefined;
   assert.equal(
     ingress?.metadata?.annotations?.[
       "nginx.ingress.kubernetes.io/ssl-redirect"
