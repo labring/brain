@@ -452,7 +452,7 @@ function ProjectAssistantChatSession({
           messages={messages}
           status={status}
         />
-        <div className="group flex w-full shrink-0 flex-col p-2 pt-4">
+        <div className="group flex w-full shrink-0 flex-col p-[10px]">
           <div className="relative isolate w-full">
             {composerContextToggles.length > 0 ? (
               <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 w-full -translate-y-full">
@@ -466,7 +466,7 @@ function ProjectAssistantChatSession({
               <Chat.ComposerTextarea
                 onPrimaryAction={onPrimaryAction}
                 onValueChange={setInput}
-                placeholder="Message…"
+                placeholder="Tell me your project ideas here..."
                 responding={busy}
                 value={input}
               />

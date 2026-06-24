@@ -137,7 +137,7 @@ export function ChatComposerShell({
   return (
     <div
       className={cn(
-        "group flex w-full flex-col gap-2 rounded-xl border border-transparent bg-input/30 p-2 shadow-sm focus-within:border-border group-focus-within:border-border",
+        "group flex min-h-[130px] w-full flex-col justify-between gap-2 rounded-xl border border-transparent bg-input/30 p-[10px] backdrop-blur-sm focus-within:border-border group-focus-within:border-border",
         className
       )}
       data-slot="chat-composer-shell"
@@ -158,7 +158,7 @@ export type ChatComposerTextareaProps = Omit<
 
 export function ChatComposerTextarea({
   className,
-  placeholder = "Message…",
+  placeholder = "Tell me your project ideas here...",
   onKeyDown,
   onPrimaryAction,
   onValueChange,
@@ -176,7 +176,7 @@ export function ChatComposerTextarea({
 
     const adjustHeight = () => {
       textarea.style.height = "auto";
-      const minHeight = 32;
+      const minHeight = 20;
       const maxHeight = 80;
       const scrollHeight = textarea.scrollHeight;
       const nextHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
@@ -198,7 +198,7 @@ export function ChatComposerTextarea({
       return;
     }
     textarea.style.height = "auto";
-    const minHeight = 32;
+    const minHeight = 20;
     const maxHeight = 80;
     const scrollHeight = textarea.scrollHeight;
     const nextHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
@@ -211,7 +211,7 @@ export function ChatComposerTextarea({
       <Textarea
         {...rest}
         className={cn(
-          "max-h-20 min-h-8 w-full resize-none rounded-xl border-0 bg-transparent! p-2 px-1 text-sm! shadow-none focus-visible:border-0 focus-visible:ring-0",
+          "max-h-20 min-h-5 w-full resize-none rounded-xl border-0 bg-transparent! p-0 text-sm! leading-5 shadow-none focus-visible:border-0 focus-visible:ring-0",
           className
         )}
         onChange={(e) => onValueChange(e.target.value)}
@@ -231,7 +231,7 @@ export function ChatComposerTextarea({
         placeholder={placeholder}
         ref={textareaRef}
         rows={1}
-        style={{ minHeight: 32 }}
+        style={{ minHeight: 20 }}
         value={value}
       />
     </div>
@@ -245,7 +245,7 @@ export function ChatComposerFooter({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-1 text-sm",
+        "flex h-9 items-center justify-between gap-1 text-sm",
         className
       )}
       {...props}
@@ -501,7 +501,7 @@ export function ChatComposer({
   onComposerAction,
   onPrimaryAction,
   onValueChange,
-  placeholder = "Message…",
+  placeholder = "Tell me your project ideas here...",
   responding = false,
   value,
   ...shellProps
