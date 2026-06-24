@@ -8,7 +8,7 @@ import { clampScale } from "@workspace/ui/components/settings-slider/settings-sl
 import { SlidingToggle } from "@workspace/ui/components/sliding-toggle";
 import {
   Cpu,
-  FileText,
+  FileCog,
   HardDrive,
   MemoryStick,
   Network,
@@ -1943,7 +1943,7 @@ export function useApSettingsSections({
           readOnly={readOnly}
         />
       ),
-      icon: FileText,
+      icon: FileCog,
       id: "config-files",
       title: "Config Files",
     });
