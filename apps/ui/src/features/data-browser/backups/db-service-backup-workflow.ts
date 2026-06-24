@@ -53,6 +53,37 @@ export interface DbServiceBackupWorkflowStateInput {
   source: DataBrowserDBServiceBackupSource;
 }
 
+export interface DbServiceBackupRefreshIdentityInput {
+  projectId: string;
+  source: DataBrowserDBServiceBackupSource;
+}
+
+export interface DbServiceBackupInitialRefreshInput {
+  lastRefreshIdentity: string | null;
+  refreshIdentity: string;
+  supported: boolean;
+}
+
+export function dbServiceBackupRefreshIdentity({
+  projectId,
+  source,
+}: DbServiceBackupRefreshIdentityInput): string {
+  return [
+    projectId.trim(),
+    source.namespace.trim(),
+    source.name.trim(),
+    source.uid?.trim() ?? "",
+  ].join(":");
+}
+
+export function shouldRequestDbServiceBackupInitialRefresh({
+  lastRefreshIdentity,
+  refreshIdentity,
+  supported,
+}: DbServiceBackupInitialRefreshInput): boolean {
+  return supported && lastRefreshIdentity !== refreshIdentity;
+}
+
 function padDatePart(value: number): string {
   return String(value).padStart(2, "0");
 }
