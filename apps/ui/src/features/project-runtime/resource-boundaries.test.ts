@@ -17,6 +17,7 @@ import type {
   TemplateNativeWorkloadFact,
 } from "./resource-facts";
 import { projectRuntimeFactsFromResources } from "./resource-facts";
+import { projectRuntimeFallbackNodeModelFromLookup } from "./resource-models";
 import { projectRuntimeResourceTopologyFromFacts } from "./resource-store";
 
 type AssertFalse<T extends false> = T;
@@ -126,6 +127,66 @@ test("Project Runtime shell node data carries only runtime lookup data", () => {
   }
 });
 
+test("Project Runtime shell lookup can render a minimal model before facts hydrate", () => {
+  const runtimeFacts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "ap-uid" },
+          spec: { input: { image: "nginx" } },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    namespace: "default",
+    templateNativeData: {
+      statefulSets: {
+        items: [
+          {
+            kind: "StatefulSet",
+            metadata: {
+              labels: { "brain.io/deployment-kind": "template" },
+              name: "memos",
+              namespace: "default",
+            },
+            spec: { template: { spec: { containers: [{ image: "memos" }] } } },
+          },
+        ],
+      },
+    },
+  });
+
+  const shellNodes = projectCanvasRuntimeShellNodesFromResources(
+    projectRuntimeResourceTopologyFromFacts(runtimeFacts)
+  );
+  const apLookup = shellNodes.find((node) => node.id === "ap-api")?.data
+    .runtime;
+  const templateLookup = shellNodes.find((node) => node.id === "template-memos")
+    ?.data.runtime;
+
+  assert.deepEqual(projectRuntimeFallbackNodeModelFromLookup(apLookup), {
+    resourceKind: "ap",
+    states: {
+      image: "—",
+      kind: "AP",
+      name: "api",
+      namespace: "default",
+      status: { label: "Loading", tone: "pending" },
+      uid: "ap-uid",
+    },
+  });
+  assert.deepEqual(projectRuntimeFallbackNodeModelFromLookup(templateLookup), {
+    resourceKind: "template",
+    states: {
+      image: "—",
+      kind: "StatefulSet",
+      name: "memos",
+      namespace: "default",
+      status: { label: "Loading", tone: "pending" },
+    },
+  });
+});
+
 test("Settings surface entries resolve without constructing source context from ReactFlow node data", () => {
   const surfaceState: ProjectSurfaceState = {
     drawer: null,
@@ -177,16 +238,19 @@ test("real Project Canvas path provides runtime store instead of a whole node mo
     ),
     "utf8"
   );
-  const pageSource = readFileSync(
-    new URL("../../app/project/[uid]/page.tsx", import.meta.url),
+  const shellSource = readFileSync(
+    new URL(
+      "../project-canvas/workbench/project-canvas-page-shell.tsx",
+      import.meta.url
+    ),
     "utf8"
   );
 
   assert.equal(hookSource.includes("projectRuntimeNodeModelsFromFacts"), false);
   assert.equal(hookSource.includes("runtimeNodeModels"), false);
-  assert.equal(pageSource.includes("ProjectRuntimeNodeModelsProvider"), false);
-  assert.equal(pageSource.includes("runtimeNodeModels"), false);
-  assert.equal(pageSource.includes("ProjectRuntimeStoreProvider"), true);
+  assert.equal(shellSource.includes("ProjectRuntimeNodeModelsProvider"), false);
+  assert.equal(shellSource.includes("runtimeNodeModels"), false);
+  assert.equal(shellSource.includes("ProjectRuntimeStoreProvider"), true);
 });
 
 test("Project Runtime store does not own ReactFlow shell topology", () => {

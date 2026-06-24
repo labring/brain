@@ -175,6 +175,97 @@ export function projectRuntimeNodeModelFromFact(
   }
 }
 
+function fallbackApModelFromLookup(
+  lookup: ProjectRuntimeShellLookup
+): CanvasContainerNodeData {
+  const ref = lookup.resourceRef;
+  return {
+    resourceKind: "ap",
+    states: {
+      image: "—",
+      kind: "AP",
+      name: ref?.name ?? lookup.modelKey,
+      ...(ref?.namespace === undefined ? {} : { namespace: ref.namespace }),
+      status: { label: "Loading", tone: "pending" },
+      ...(lookup.observedUid === undefined ? {} : { uid: lookup.observedUid }),
+    },
+  };
+}
+
+function fallbackDatabaseModelFromLookup(
+  lookup: ProjectRuntimeShellLookup
+): CanvasDatabaseNodeData {
+  const ref = lookup.resourceRef;
+  return {
+    connections: [],
+    states: {
+      displayEngine: "Database",
+      name: ref?.name ?? lookup.modelKey,
+      status: { label: "Loading", tone: "pending" },
+      ...(lookup.observedUid === undefined ? {} : { uid: lookup.observedUid }),
+    },
+    workload: {
+      name: ref?.name ?? lookup.modelKey,
+      namespace: ref?.namespace ?? "",
+    },
+  };
+}
+
+function fallbackPublicAccessModelFromLookup(
+  lookup: ProjectRuntimeShellLookup
+): CanvasEntryNodeData {
+  const ref = lookup.resourceRef;
+  return {
+    resource: {
+      apRef: ref?.name,
+      name: ref?.name ?? lookup.modelKey,
+      namespace: ref?.namespace ?? "",
+    },
+    states: { name: ref?.name ?? lookup.modelKey },
+    targets: [],
+  };
+}
+
+function fallbackTemplateNativeModelFromLookup(
+  lookup: ProjectRuntimeShellLookup
+): CanvasContainerNodeData {
+  const parts = lookup.modelKey.split(":");
+  const namespace = parts[1] ?? "";
+  const kind = parts[2] ?? "Workload";
+  const name = parts[3] ?? lookup.modelKey;
+  return {
+    resourceKind: "template",
+    states: {
+      image: "—",
+      kind,
+      name,
+      ...(namespace === "" ? {} : { namespace }),
+      status: { label: "Loading", tone: "pending" },
+      ...(lookup.observedUid === undefined ? {} : { uid: lookup.observedUid }),
+    },
+  };
+}
+
+export function projectRuntimeFallbackNodeModelFromLookup(
+  lookup: ProjectRuntimeShellLookup | undefined
+): ProjectRuntimeNodeModel | undefined {
+  if (lookup === undefined) {
+    return undefined;
+  }
+  switch (lookup.kind) {
+    case "AP":
+      return fallbackApModelFromLookup(lookup);
+    case "DB":
+      return fallbackDatabaseModelFromLookup(lookup);
+    case "PublicAccess":
+      return fallbackPublicAccessModelFromLookup(lookup);
+    case "TemplateNativeWorkload":
+      return fallbackTemplateNativeModelFromLookup(lookup);
+    default:
+      return undefined;
+  }
+}
+
 export function projectRuntimeNodeModelsFromFacts(
   facts: ProjectRuntimeFacts
 ): ProjectRuntimeNodeModels {

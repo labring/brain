@@ -21,6 +21,7 @@ import type {
 } from "./resource-facts";
 import {
   type ProjectRuntimeNodeModel,
+  projectRuntimeFallbackNodeModelFromLookup,
   projectRuntimeNodeModelFromFact,
   projectRuntimeShellLookupFromNodeData,
 } from "./resource-models";
@@ -202,13 +203,15 @@ export function useProjectRuntimeNodeModel<
     () => selectRuntimeFact(store, lookup),
     () => undefined
   );
-  const baseModel = useMemo(
-    () =>
-      lookup === undefined || fact === undefined
-        ? undefined
-        : projectRuntimeNodeModelFromFact(lookup.kind, fact),
-    [fact, lookup]
-  );
+  const baseModel = useMemo(() => {
+    if (lookup === undefined) {
+      return undefined;
+    }
+    if (fact === undefined) {
+      return projectRuntimeFallbackNodeModelFromLookup(lookup);
+    }
+    return projectRuntimeNodeModelFromFact(lookup.kind, fact);
+  }, [fact, lookup]);
 
   return useMemo(
     () =>
