@@ -12,7 +12,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { Network, Plus, Settings, Trash2, X } from "lucide-react";
+import { Network, Plus, Save, Settings, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { SettingsLeaveGuardHandle } from "../settings-leave-guard";
@@ -909,6 +909,7 @@ function PublicAddressEditForm({
           type="button"
           variant="quiet"
         >
+          {pending ? null : <Save aria-hidden data-icon="inline-start" />}
           {pending ? "Verifying" : "Save"}
         </AppButton>
       </div>
