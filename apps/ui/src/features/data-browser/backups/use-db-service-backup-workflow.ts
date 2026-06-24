@@ -22,7 +22,6 @@ import {
   dbServiceBackupPolicyFromProductResource,
   dbServiceBackupRefreshIdentity,
   deriveDbServiceBackupWorkflowState,
-  shouldRequestDbServiceBackupInitialRefresh,
   validateRestoredDbServiceName,
 } from "./db-service-backup-workflow";
 import { requestDbServiceBackupDelete } from "./db-service-delete-request";
@@ -37,6 +36,16 @@ interface LatestProductResource {
 
 interface OptimisticallyDeletedBackupNames {
   names: ReadonlySet<string>;
+  refreshIdentity: string;
+}
+
+interface PendingRefresh {
+  count: number;
+  refreshIdentity: string;
+}
+
+interface LastRefreshError {
+  message: string;
   refreshIdentity: string;
 }
 
@@ -78,15 +87,18 @@ export function useDbServiceBackupWorkflow({
 }: UseDbServiceBackupWorkflowOptions) {
   const [latestProductResource, setLatestProductResource] =
     useState<LatestProductResource | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pendingRefresh, setPendingRefresh] = useState<PendingRefresh | null>(
+    null
+  );
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isPolicySaving, setIsPolicySaving] = useState(false);
+  const activeRefreshIdentityRef = useRef<string | null>(null);
   const [optimisticallyDeletedBackups, setOptimisticallyDeletedBackups] =
     useState<OptimisticallyDeletedBackupNames | null>(null);
   const lastInitialRefreshIdentityRef = useRef<string | null>(null);
-  const lastRefreshErrorRef = useRef<string | null>(null);
+  const lastRefreshErrorRef = useRef<LastRefreshError | null>(null);
   const fallbackTransport = useMemo(
     () =>
       createDbServiceBackupFetchTransport({
@@ -118,6 +130,7 @@ export function useDbServiceBackupWorkflow({
       runtime.projectId,
     ]
   );
+  activeRefreshIdentityRef.current = refreshIdentity;
   const currentProductResource =
     latestProductResource?.refreshIdentity === refreshIdentity
       ? latestProductResource.value
@@ -126,6 +139,9 @@ export function useDbServiceBackupWorkflow({
     optimisticallyDeletedBackups?.refreshIdentity === refreshIdentity
       ? optimisticallyDeletedBackups.names
       : EMPTY_DELETED_BACKUP_NAMES;
+  const isRefreshing =
+    pendingRefresh?.refreshIdentity === refreshIdentity &&
+    pendingRefresh.count > 0;
   const state = useMemo(
     () =>
       deriveDbServiceBackupWorkflowState({
@@ -154,25 +170,56 @@ export function useDbServiceBackupWorkflow({
     if (!state.supported) {
       return;
     }
-    setIsRefreshing(true);
+    const requestRefreshIdentity = refreshIdentity;
+    setPendingRefresh((previous) => {
+      if (previous?.refreshIdentity === requestRefreshIdentity) {
+        return { ...previous, count: previous.count + 1 };
+      }
+      return { count: 1, refreshIdentity: requestRefreshIdentity };
+    });
     try {
+      const productResource = await activeTransport.refreshDbService();
+      if (activeRefreshIdentityRef.current !== requestRefreshIdentity) {
+        return;
+      }
       setLatestProductResource({
-        refreshIdentity,
-        value: await activeTransport.refreshDbService(),
+        refreshIdentity: requestRefreshIdentity,
+        value: productResource,
       });
       setOptimisticallyDeletedBackups({
         names: new Set(),
-        refreshIdentity,
+        refreshIdentity: requestRefreshIdentity,
       });
-      lastRefreshErrorRef.current = null;
+      if (
+        lastRefreshErrorRef.current?.refreshIdentity === requestRefreshIdentity
+      ) {
+        lastRefreshErrorRef.current = null;
+      }
     } catch (error) {
+      if (activeRefreshIdentityRef.current !== requestRefreshIdentity) {
+        return;
+      }
       const message = errorMessage(error, "Failed to refresh backups.");
-      if (lastRefreshErrorRef.current !== message) {
-        lastRefreshErrorRef.current = message;
+      if (
+        lastRefreshErrorRef.current?.refreshIdentity !==
+          requestRefreshIdentity ||
+        lastRefreshErrorRef.current.message !== message
+      ) {
+        lastRefreshErrorRef.current = {
+          message,
+          refreshIdentity: requestRefreshIdentity,
+        };
         notifier.error(message);
       }
     } finally {
-      setIsRefreshing(false);
+      setPendingRefresh((previous) => {
+        if (previous?.refreshIdentity !== requestRefreshIdentity) {
+          return previous;
+        }
+        return previous.count <= 1
+          ? null
+          : { ...previous, count: previous.count - 1 };
+      });
     }
   }, [activeTransport, notifier, refreshIdentity, state.supported]);
 
@@ -207,6 +254,9 @@ export function useDbServiceBackupWorkflow({
       const deletion = requestDbServiceBackupDelete({
         backupName,
         markBackupDeleted: (deletedBackupName) => {
+          if (activeRefreshIdentityRef.current !== refreshIdentity) {
+            return;
+          }
           setOptimisticallyDeletedBackups((previous) => {
             const previousNames =
               previous?.refreshIdentity === refreshIdentity
@@ -281,7 +331,9 @@ export function useDbServiceBackupWorkflow({
           enabled: form.enabled,
           retentionDays: form.enabled ? form.retentionDays : undefined,
         });
-        setLatestProductResource({ refreshIdentity, value: updated });
+        if (activeRefreshIdentityRef.current === refreshIdentity) {
+          setLatestProductResource({ refreshIdentity, value: updated });
+        }
         return dbServiceBackupPolicyFromProductResource(updated);
       })();
       notifier.promise(save, {
@@ -303,11 +355,8 @@ export function useDbServiceBackupWorkflow({
 
   useEffect(() => {
     if (
-      !shouldRequestDbServiceBackupInitialRefresh({
-        lastRefreshIdentity: lastInitialRefreshIdentityRef.current,
-        refreshIdentity,
-        supported: state.supported,
-      })
+      !state.supported ||
+      lastInitialRefreshIdentityRef.current === refreshIdentity
     ) {
       return;
     }

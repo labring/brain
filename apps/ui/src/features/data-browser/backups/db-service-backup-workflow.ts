@@ -58,12 +58,6 @@ export interface DbServiceBackupRefreshIdentityInput {
   source: DataBrowserDBServiceBackupSource;
 }
 
-export interface DbServiceBackupInitialRefreshInput {
-  lastRefreshIdentity: string | null;
-  refreshIdentity: string;
-  supported: boolean;
-}
-
 export function dbServiceBackupRefreshIdentity({
   projectId,
   source,
@@ -74,14 +68,6 @@ export function dbServiceBackupRefreshIdentity({
     source.name.trim(),
     source.uid?.trim() ?? "",
   ].join(":");
-}
-
-export function shouldRequestDbServiceBackupInitialRefresh({
-  lastRefreshIdentity,
-  refreshIdentity,
-  supported,
-}: DbServiceBackupInitialRefreshInput): boolean {
-  return supported && lastRefreshIdentity !== refreshIdentity;
 }
 
 function padDatePart(value: number): string {

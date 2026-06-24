@@ -6,7 +6,6 @@ import {
   DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS,
   dbServiceBackupRefreshIdentity,
   deriveDbServiceBackupWorkflowState,
-  shouldRequestDbServiceBackupInitialRefresh,
   suggestedDbServiceBackupName,
   suggestedRestoredDbServiceName,
   validateDbServiceBackupForm,
@@ -23,7 +22,7 @@ test("DB Service backup active refresh interval is three seconds", () => {
   assert.equal(DB_SERVICE_BACKUP_ACTIVE_REFRESH_MS, 3000);
 });
 
-test("DB Service Backup workflow requests one initial refresh per DB Service", () => {
+test("DB Service Backup refresh identity includes the DB Service scope", () => {
   const refreshIdentity = dbServiceBackupRefreshIdentity({
     projectId: " project-uid ",
     source: {
@@ -46,36 +45,8 @@ test("DB Service Backup workflow requests one initial refresh per DB Service", (
     "project-uid:database-system:orders-db:cluster-uid-1"
   );
   assert.equal(
-    shouldRequestDbServiceBackupInitialRefresh({
-      lastRefreshIdentity: null,
-      refreshIdentity,
-      supported: true,
-    }),
-    true
-  );
-  assert.equal(
-    shouldRequestDbServiceBackupInitialRefresh({
-      lastRefreshIdentity: refreshIdentity,
-      refreshIdentity,
-      supported: true,
-    }),
-    false
-  );
-  assert.equal(
-    shouldRequestDbServiceBackupInitialRefresh({
-      lastRefreshIdentity: null,
-      refreshIdentity,
-      supported: false,
-    }),
-    false
-  );
-  assert.equal(
-    shouldRequestDbServiceBackupInitialRefresh({
-      lastRefreshIdentity: refreshIdentity,
-      refreshIdentity: nextRefreshIdentity,
-      supported: true,
-    }),
-    true
+    nextRefreshIdentity,
+    "project-uid:database-system:analytics-db:cluster-uid-2"
   );
 });
 
