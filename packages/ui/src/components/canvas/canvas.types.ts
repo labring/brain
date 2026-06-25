@@ -66,11 +66,13 @@ export interface CanvasMeta {
   viewportFocus?: {
     active?: boolean;
     bottomInset?: number;
+    fitMinZoom?: number;
     key?: number | string;
     maxZoom?: number;
     minZoom?: number;
     nodeId?: string | null;
     nodeIds?: readonly string[];
+    padding?: number;
     rightInset?: number;
   };
   /**

@@ -48,6 +48,51 @@ test("zooms into the comfortable range when the canvas is too far away", () => {
   });
 });
 
+test("keeps the comfortable range when fit zoom has a lower floor", () => {
+  const result = resolveCanvasViewportFocus({
+    fitMinZoom: 0.45,
+    flowHeight: 800,
+    flowWidth: 1200,
+    maxZoom: 1.05,
+    minZoom: 0.85,
+    node: { height: 100, width: 200, x: 400, y: 300 },
+    rightInset: 640,
+    viewport: { x: 0, y: 0, zoom: 0.3 },
+  });
+
+  assert.deepEqual(result, {
+    kind: "setViewport",
+    viewport: {
+      x: -145,
+      y: 102.5,
+      zoom: 0.85,
+    },
+  });
+});
+
+test("zooms below the comfortable range to fit a large focus group", () => {
+  const result = resolveCanvasViewportFocus({
+    fitMinZoom: 0.45,
+    flowHeight: 800,
+    flowWidth: 1200,
+    maxZoom: 1.05,
+    minZoom: 0.85,
+    node: { height: 400, width: 1000, x: 0, y: 0 },
+    padding: 32,
+    rightInset: 640,
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+
+  assert.deepEqual(result, {
+    kind: "setViewport",
+    viewport: {
+      x: 32,
+      y: 300.8,
+      zoom: 0.496,
+    },
+  });
+});
+
 test("zooms out to the comfortable range when the canvas is too close", () => {
   const result = resolveCanvasViewportFocus({
     flowHeight: 800,

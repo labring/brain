@@ -36,6 +36,7 @@ import {
 } from "./canvas.upper-right";
 import { useCanvas } from "./canvas.use";
 import {
+  type CanvasViewportFocusNodeBounds,
   nodesBoundsForViewportFocus,
   resolveCanvasViewportFocus,
 } from "./canvas.viewport-focus";
@@ -363,10 +364,12 @@ function viewportFocusInsets(input: {
 
 function viewportFocusKey(input: {
   bottomInset: number;
+  fitMinZoom: number;
   flowHeight: number;
   flowWidth: number;
   maxZoom: number;
   minZoom: number;
+  padding: number;
   requestKey: string | null;
   rightInset: number;
   targetKey: string;
@@ -378,9 +381,45 @@ function viewportFocusKey(input: {
     input.flowHeight,
     input.rightInset,
     input.bottomInset,
+    input.padding,
     input.minZoom,
+    input.fitMinZoom,
     input.maxZoom,
   ].join(":");
+}
+
+function viewportFocusZoom(input: {
+  viewportFocus: NonNullable<CanvasMeta["viewportFocus"]>;
+}): {
+  fitMinZoom: number;
+  maxZoom: number;
+  minZoom: number;
+  padding: number;
+} {
+  const minZoom =
+    input.viewportFocus.minZoom ?? VIEWPORT_FOCUS_DEFAULT_MIN_ZOOM;
+  return {
+    fitMinZoom: input.viewportFocus.fitMinZoom ?? minZoom,
+    maxZoom: input.viewportFocus.maxZoom ?? VIEWPORT_FOCUS_DEFAULT_MAX_ZOOM,
+    minZoom,
+    padding: Math.max(0, input.viewportFocus.padding ?? 0),
+  };
+}
+
+function viewportFocusResolutionReady(input: {
+  bounds: CanvasViewportFocusNodeBounds | null;
+  targetKey: string | null;
+  viewportFocus: CanvasMeta["viewportFocus"];
+}): input is {
+  bounds: CanvasViewportFocusNodeBounds;
+  targetKey: string;
+  viewportFocus: NonNullable<CanvasMeta["viewportFocus"]>;
+} {
+  return (
+    input.bounds !== null &&
+    input.viewportFocus !== undefined &&
+    input.targetKey !== null
+  );
 }
 
 function edgesMatchIncoming(current: Edge[], incoming: Edge[]): boolean {
@@ -682,37 +721,43 @@ function CanvasFlow({ children }: CanvasFlowProps) {
 
     const focusNodes = viewportFocusNodesById(nodes, viewportFocusNodeIds);
     const focusBounds = nodesBoundsForViewportFocus(focusNodes);
-    if (
-      focusBounds === null ||
-      viewportFocus === undefined ||
-      viewportFocusTargetKey === null
-    ) {
+    const focusResolution = {
+      bounds: focusBounds,
+      targetKey: viewportFocusTargetKey,
+      viewportFocus,
+    };
+    if (!viewportFocusResolutionReady(focusResolution)) {
       return;
     }
 
     const { bottomInset, rightInset } = viewportFocusInsets({
       root: rootRef.current,
-      viewportFocus,
+      viewportFocus: focusResolution.viewportFocus,
     });
-    const minZoom = viewportFocus.minZoom ?? VIEWPORT_FOCUS_DEFAULT_MIN_ZOOM;
-    const maxZoom = viewportFocus.maxZoom ?? VIEWPORT_FOCUS_DEFAULT_MAX_ZOOM;
+    const { fitMinZoom, maxZoom, minZoom, padding } = viewportFocusZoom({
+      viewportFocus: focusResolution.viewportFocus,
+    });
     const focusKey = viewportFocusKey({
       bottomInset,
+      fitMinZoom,
       flowWidth,
       flowHeight,
       maxZoom,
       minZoom,
+      padding,
       requestKey: viewportFocusRequestKey,
       rightInset,
-      targetKey: viewportFocusTargetKey,
+      targetKey: focusResolution.targetKey,
     });
     const action = resolveCanvasViewportFocus({
       bottomInset,
       flowHeight,
       flowWidth,
+      fitMinZoom,
       maxZoom,
       minZoom,
-      node: focusBounds,
+      node: focusResolution.bounds,
+      padding,
       rightInset,
       viewport: getViewport(),
     });
@@ -721,7 +766,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       getViewport,
       requestKey: viewportFocusRequestKey,
       state: previous,
-      targetKey: viewportFocusTargetKey,
+      targetKey: focusResolution.targetKey,
     });
 
     if (
@@ -730,7 +775,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
         focusKey,
         requestKey: viewportFocusRequestKey,
         state: previous,
-        targetKey: viewportFocusTargetKey,
+        targetKey: focusResolution.targetKey,
       })
     ) {
       setViewport(action.viewport, {

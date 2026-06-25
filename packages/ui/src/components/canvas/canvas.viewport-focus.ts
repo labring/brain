@@ -9,11 +9,13 @@ export interface CanvasViewportFocusNodeBounds {
 
 export interface ResolveCanvasViewportFocusOptions {
   bottomInset?: number;
+  fitMinZoom?: number;
   flowHeight: number;
   flowWidth: number;
   maxZoom: number;
   minZoom: number;
   node: CanvasViewportFocusNodeBounds;
+  padding?: number;
   rightInset: number;
   viewport: Viewport;
 }
@@ -74,11 +76,13 @@ function fitZoomForDimension(input: {
 
 export function resolveCanvasViewportFocus({
   bottomInset = 0,
+  fitMinZoom,
   flowHeight,
   flowWidth,
   maxZoom,
   minZoom,
   node,
+  padding = 0,
   rightInset,
   viewport,
 }: ResolveCanvasViewportFocusOptions): CanvasViewportFocusAction {
@@ -99,15 +103,29 @@ export function resolveCanvasViewportFocus({
     return { kind: "none" };
   }
 
-  const lowerZoom = Math.min(minZoom, maxZoom);
+  const fitLowerZoom =
+    fitMinZoom === undefined || fitMinZoom <= 0 ? minZoom : fitMinZoom;
+  const lowerZoom = Math.min(fitLowerZoom, maxZoom);
   const upperZoom = Math.max(minZoom, maxZoom);
+  const comfortableZoom = clamp(
+    viewport.zoom,
+    Math.min(minZoom, maxZoom),
+    upperZoom
+  );
+  const focusPadding = clamp(
+    padding,
+    0,
+    Math.min(visibleWidth, visibleHeight) / 2
+  );
+  const availableWidth = visibleWidth - focusPadding * 2;
+  const availableHeight = visibleHeight - focusPadding * 2;
   const currentZoom = clamp(viewport.zoom, lowerZoom, upperZoom);
   const zoom = clamp(
     fitZoomForDimension({
-      available: visibleHeight,
+      available: availableHeight,
       current: fitZoomForDimension({
-        available: visibleWidth,
-        current: currentZoom,
+        available: availableWidth,
+        current: Math.max(currentZoom, comfortableZoom),
         size: node.width,
       }),
       size: node.height,
