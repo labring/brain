@@ -1,2 +1,2 @@
-/** Global utility `.scrollbar-chat-thin` (`packages/ui/src/styles/globals.css`). */
+/** Legacy explicit marker for chat scroll surfaces (`packages/ui/src/styles/globals.css`). */
 export const chatScrollbarThinClass = "scrollbar-chat-thin";

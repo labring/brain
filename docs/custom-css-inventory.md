@@ -19,7 +19,7 @@ Source: `packages/ui/src/styles/globals.css`
 | 3 | `shadcn/tailwind.css` import | shadcn/base-mira support layer, not Tailwind default. |
 | 4, 8 | `@source` paths | Repo-specific content scanning. Keep. |
 | 6 | `@custom-variant dark (&:is(.dark *))` | Project dark-mode variant. Keep. |
-| 10-12 | `--scrollbar-chat-width` | Custom theme token for `.scrollbar-chat-thin`. |
+| 10-14 | `--scrollbar-width`, `--scrollbar-thumb`, `--scrollbar-track` | Custom theme tokens for global native scrollbars and scrollbar adapters. |
 
 Registry also extends scanning in `apps/registry/src/styles/globals.css` lines 1-4.
 
@@ -49,9 +49,9 @@ Source: `packages/ui/src/styles/globals.css`
 
 | Lines | Selector | Notes |
 | --- | --- | --- |
-| 120-130 | base `*`, `body`, `::selection` | shadcn-style global base applications. |
+| 160-185 | base `*`, `body`, `::selection`, native scrollbar pseudos | shadcn-style global base applications plus global native scrollbar styling. |
 | 132-144 | `.hoverable` | Project utility for muted hoverable controls. Uses `!bg-input`, so it can override component styles. |
-| 147-161 | `.scrollbar-chat-thin` | Custom scrollbar utility. Uses raw scrollbar CSS and `--scrollbar-chat-width`. |
+| 347-362 | `.scrollbar-chat-thin` | Legacy explicit marker for chat scroll surfaces. Uses the global scrollbar tokens. |
 | 163-170 | `.resource-pane-surface` | SidePane background/overlay utility. Uses literal `#080a11` plus white 4.5% overlay instead of exposing a global resource-pane token. |
 | 172-201 | `.main-action-surface-background` and `::after`, `.main-action-surface-body-background` | Custom canvas action background with fixed `132vw` top-biased glow and `1929 / 1255` ratio. The glow is shared by the header and body while the body class remains the content-area hook. Strongly opinionated visual layer. |
 

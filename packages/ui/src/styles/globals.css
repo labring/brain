@@ -8,8 +8,9 @@
 @source "../../../../{apps,packages}/**/*.{ts,tsx}";
 
 @theme {
-  /** `.scrollbar-chat-thin` WebKit scrollbar width (matches prior `w-1`). */
-  --scrollbar-chat-width: 0.25rem;
+  --scrollbar-thumb: var(--border);
+  --scrollbar-track: transparent;
+  --scrollbar-width: 0.5rem;
 }
 
 @theme inline {
@@ -162,6 +163,25 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  * {
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+    }
+  }
+  *::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-width);
+  }
+  *::-webkit-scrollbar-track {
+    background-color: var(--scrollbar-track);
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: calc(infinity * 1px);
   }
   ::selection {
     @apply bg-foreground text-background;
@@ -323,25 +343,25 @@
     .monaco-scrollable-element
     > .scrollbar
     > .slider {
-    background-color: color-mix(in oklab, var(--border) 74%, transparent);
+    background-color: var(--scrollbar-thumb);
   }
 }
 
 @layer utilities {
-  /** Chat scroll surfaces (transcript, thread picker): thin track, themed thumb — Firefox + WebKit. */
+  /** Legacy explicit marker for chat scroll surfaces; global scrollbar tokens provide the styling. */
   .scrollbar-chat-thin {
-    scrollbar-color: var(--border) transparent;
-    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
   .scrollbar-chat-thin::-webkit-scrollbar {
-    width: var(--scrollbar-chat-width);
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-width);
+  }
+  .scrollbar-chat-thin::-webkit-scrollbar-track {
+    background-color: var(--scrollbar-track);
   }
   .scrollbar-chat-thin::-webkit-scrollbar-thumb {
-    background-color: color-mix(in oklab, var(--border) 80%, transparent);
+    background-color: var(--scrollbar-thumb);
     border-radius: calc(infinity * 1px);
-  }
-  .scrollbar-chat-thin:hover::-webkit-scrollbar-thumb {
-    background-color: var(--border);
   }
 
   .project-chrome-surface {

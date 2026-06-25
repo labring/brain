@@ -383,7 +383,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
         </div>
       </header>
       <div
-        className="[&_.xterm-scrollable-element]:!bg-transparent [&_.xterm-viewport]:!bg-transparent min-h-0 flex-1 overflow-hidden [&_.xterm-viewport]:[scrollbar-color:rgba(255,255,255,0.15)_transparent] [&_.xterm-viewport]:[scrollbar-width:thin] [&_.xterm]:h-full"
+        className="[&_.xterm-scrollable-element]:!bg-transparent [&_.xterm-viewport]:!bg-transparent min-h-0 flex-1 overflow-hidden [&_.xterm-viewport]:[scrollbar-color:var(--scrollbar-thumb)_var(--scrollbar-track)] [&_.xterm]:h-full"
         data-slot="exec-terminal-surface"
       >
         <div className="h-full px-4 pt-2 pb-4" ref={containerRef} />
