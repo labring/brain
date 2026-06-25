@@ -2,13 +2,12 @@
 
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
-import type { CSSProperties } from "react";
 import { useMemo } from "react";
-import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
 } from "@/features/project-canvas/workbench/project-canvas-page-shell";
+import { useProjectCanvasViewportInsets } from "@/features/project-canvas/workbench/project-canvas-viewport-insets";
 import { ProjectCanvasSurfaceHost } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
@@ -26,16 +25,17 @@ export default function ProjectIdPage() {
     namespace,
     projectId: uid,
   });
-  const canvasViewportStyle = useMemo(
-    () =>
-      ({
-        "--canvas-viewport-right-inset": `${
-          projectCanvas.surfaces.model.side == null
-            ? 0
-            : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET
-        }px`,
-      }) as CSSProperties,
-    [projectCanvas.surfaces.model.side]
+  const { insets: canvasViewportInsets, rootRef: canvasViewportRootRef } =
+    useProjectCanvasViewportInsets({
+      drawerOpen: projectCanvas.surfaces.model.drawer != null,
+      sideOpen: projectCanvas.surfaces.model.side != null,
+    });
+  const canvasMeta = useMemo(
+    () => ({
+      ...projectCanvas.canvas.meta,
+      viewportInsets: canvasViewportInsets,
+    }),
+    [canvasViewportInsets, projectCanvas.canvas.meta]
   );
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
@@ -59,13 +59,13 @@ export default function ProjectIdPage() {
       {projectCanvas.canvas.frameState.renderCanvas && (
         <div
           className="relative min-h-0 min-w-0 flex-1"
-          style={canvasViewportStyle}
+          ref={canvasViewportRootRef}
         >
           <ProjectCanvasViewport
             canvasKey={`${namespace}:${uid}`}
             decorators={projectCanvas.canvas.runtimeModelDecorators}
             kubeconfig={kubeconfig}
-            meta={projectCanvas.canvas.meta}
+            meta={canvasMeta}
             runtimeStore={projectCanvas.canvas.runtimeStore}
             state={projectCanvas.canvas.state}
           />

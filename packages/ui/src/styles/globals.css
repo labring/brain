@@ -175,6 +175,33 @@
     }
   }
 
+  .cn-toast[data-sonner-toast] {
+    width: fit-content !important;
+    min-width: min(12rem, calc(100vw - 2rem));
+    max-width: min(22rem, calc(100vw - 2rem));
+  }
+
+  .cn-toast[data-sonner-toast][data-x-position="center"] {
+    right: 0;
+    left: 0;
+    margin-inline: auto;
+  }
+
+  .cn-toast[data-sonner-toast]:has([data-description]) {
+    width: min(27rem, calc(100vw - 2rem)) !important;
+    max-width: min(27rem, calc(100vw - 2rem));
+  }
+
+  .cn-toast.cn-toast-compact[data-sonner-toast] {
+    width: fit-content !important;
+    max-width: min(22rem, calc(100vw - 2rem));
+  }
+
+  .cn-toast.cn-toast-wide[data-sonner-toast] {
+    width: min(34rem, calc(100vw - 2rem)) !important;
+    max-width: min(34rem, calc(100vw - 2rem));
+  }
+
   .monaco-editor.ap-env-raw-source-monaco .suggest-widget,
   .monaco-editor.ap-env-raw-source-monaco .suggest-details {
     overflow: hidden;

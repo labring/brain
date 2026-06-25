@@ -4,27 +4,31 @@ import type { ProjectExplorerProject } from "@/features/projects/explorer/projec
 import {
   type DeploymentTargetPipelineAdapters,
   type DeploymentTaskCreateInput,
+  type DeploymentTaskCreateResult,
   existingProjectDeploymentTarget,
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "./pipeline";
 
 function testAdapters(overrides?: {
+  createDeploymentTaskResult?: DeploymentTaskCreateResult;
   onCreateDeploymentTask?: (input: DeploymentTaskCreateInput) => void;
 }): DeploymentTargetPipelineAdapters {
   return {
     createDeploymentTask: (input) => {
       overrides?.onCreateDeploymentTask?.(input);
-      return Promise.resolve({
-        message: "Deployment task task-1 queued.",
-        projectId:
-          input.target.kind === "existingProject" ? null : "project-uid",
-        projectName:
-          input.target.kind === "existingProject"
-            ? (input.target.projectName ?? input.target.projectId)
-            : "project-uid",
-        taskId: "task-1",
-      });
+      return Promise.resolve(
+        overrides?.createDeploymentTaskResult ?? {
+          message: "Deployment task task-1 queued.",
+          projectId:
+            input.target.kind === "existingProject" ? null : "project-uid",
+          projectName:
+            input.target.kind === "existingProject"
+              ? (input.target.projectName ?? input.target.projectId)
+              : "project-uid",
+          taskId: "task-1",
+        }
+      );
     },
   };
 }
@@ -41,6 +45,8 @@ const existingProjects = [
 const DUPLICATE_PROJECT_NAME_ERROR =
   /A project named "existing" already exists/;
 const MISSING_PROJECT_ID_ERROR = /Could not resolve the current project/;
+const MISSING_CREATED_PROJECT_ID_ERROR =
+  /Could not resolve the created project/;
 
 test("Deployment Target pipeline creates a Docker Deployment Task for a new Project", async () => {
   let created: DeploymentTaskCreateInput | null = null;
@@ -246,6 +252,34 @@ test("Deployment Target pipeline rejects template deploys without a Project id",
       },
     }),
     MISSING_PROJECT_ID_ERROR
+  );
+});
+
+test("Deployment Target pipeline rejects new Project deploys without a resolved Project id", async () => {
+  await assert.rejects(
+    runDeploymentTargetPipeline({
+      adapters: testAdapters({
+        createDeploymentTaskResult: {
+          message: "Deployment task task-1 queued.",
+          projectId: null,
+          projectName: null,
+          taskId: "task-1",
+        },
+      }),
+      credentialsReady: true,
+      existingProjects,
+      namespace: "ns-admin",
+      request: {
+        kind: "docker",
+        settings: {
+          appListeningPort: 8080,
+          env: [],
+          image: "ghcr.io/acme/api:1.2",
+        },
+        target: newProjectDeploymentTarget("web"),
+      },
+    }),
+    MISSING_CREATED_PROJECT_ID_ERROR
   );
 });
 

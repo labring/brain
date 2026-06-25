@@ -17,7 +17,6 @@ import {
   useNodesState,
   useReactFlow,
   useStore,
-  type Viewport,
 } from "@xyflow/react";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -36,9 +35,20 @@ import {
 } from "./canvas.upper-right";
 import { useCanvas } from "./canvas.use";
 import {
-  nodeBoundsForViewportFocus,
-  resolveCanvasViewportFocus,
-} from "./canvas.viewport-focus";
+  canvasViewportFocusNodeIds,
+  canvasViewportFocusRequestKey,
+  canvasViewportFocusTargetKey,
+  focusedViewportFocusState,
+  inactiveViewportFocusState,
+  initialCanvasViewportFocusState,
+  pendingViewportFocusState,
+  resolveCanvasViewportFocusRequest,
+  shouldApplyFocusedViewport,
+  shouldDeferViewportFocusRestore,
+  shouldRestoreViewportFocus,
+  suspendedViewportFocusState,
+  userControlledViewportFocusState,
+} from "./canvas.viewport-focus-runtime";
 import {
   initialCanvasViewportFollowState,
   resolveCanvasViewportFollow,
@@ -63,162 +73,6 @@ const OPENING_FIT_ANIMATION_MS = 300;
 const OPENING_FIT_SETTLE_MS = 150;
 const VIEWPORT_FOLLOW_ANIMATION_MS = 300;
 const VIEWPORT_FOCUS_ANIMATION_MS = 200;
-const VIEWPORT_FOCUS_DEFAULT_MIN_ZOOM = 0.85;
-const VIEWPORT_FOCUS_DEFAULT_MAX_ZOOM = 1.05;
-
-interface CanvasViewportFocusRuntimeState {
-  active: boolean;
-  baseline: Viewport | null;
-  initialized: boolean;
-  lastFocusKey: string | null;
-  targetNodeId: string | null;
-  userControlled: boolean;
-}
-
-const initialCanvasViewportFocusState: CanvasViewportFocusRuntimeState = {
-  active: false,
-  baseline: null,
-  initialized: false,
-  lastFocusKey: null,
-  targetNodeId: null,
-  userControlled: false,
-};
-
-function shouldRestoreViewportFocus(
-  state: CanvasViewportFocusRuntimeState
-): state is CanvasViewportFocusRuntimeState & { baseline: Viewport } {
-  return state.active && state.baseline !== null && !state.userControlled;
-}
-
-function shouldDeferViewportFocusRestore({
-  state,
-  viewportReady,
-}: {
-  state: CanvasViewportFocusRuntimeState;
-  viewportReady: boolean;
-}) {
-  return shouldRestoreViewportFocus(state) && !viewportReady;
-}
-
-function inactiveViewportFocusState({
-  ready,
-  state,
-}: {
-  ready: boolean;
-  state: CanvasViewportFocusRuntimeState;
-}): CanvasViewportFocusRuntimeState {
-  if (state.active) {
-    return {
-      ...initialCanvasViewportFocusState,
-      initialized: true,
-    };
-  }
-
-  return {
-    ...state,
-    initialized: state.initialized || ready,
-  };
-}
-
-function suspendedViewportFocusState({
-  getViewport,
-  nodeId,
-  state,
-  viewportReady,
-}: {
-  getViewport: () => Viewport;
-  nodeId: string | null;
-  state: CanvasViewportFocusRuntimeState;
-  viewportReady: boolean;
-}): CanvasViewportFocusRuntimeState {
-  const openingSession = !state.active;
-
-  return {
-    active: true,
-    baseline:
-      openingSession && state.initialized && viewportReady
-        ? getViewport()
-        : state.baseline,
-    initialized: true,
-    lastFocusKey: state.lastFocusKey,
-    targetNodeId: nodeId,
-    userControlled: state.userControlled,
-  };
-}
-
-function pendingViewportFocusState({
-  getViewport,
-  state,
-}: {
-  getViewport: () => Viewport;
-  state: CanvasViewportFocusRuntimeState;
-}): CanvasViewportFocusRuntimeState {
-  const openingSession = !state.active;
-
-  return {
-    active: true,
-    baseline:
-      openingSession && state.initialized ? getViewport() : state.baseline,
-    initialized: true,
-    lastFocusKey: null,
-    targetNodeId: null,
-    userControlled: state.userControlled,
-  };
-}
-
-function focusedViewportFocusState({
-  focusKey,
-  nodeId,
-  state,
-  getViewport,
-}: {
-  focusKey: string;
-  getViewport: () => Viewport;
-  nodeId: string;
-  state: CanvasViewportFocusRuntimeState;
-}): CanvasViewportFocusRuntimeState {
-  const openingSession = !state.active;
-
-  return {
-    active: true,
-    baseline:
-      openingSession && state.initialized ? getViewport() : state.baseline,
-    initialized: true,
-    lastFocusKey: focusKey,
-    targetNodeId: nodeId,
-    userControlled: state.userControlled,
-  };
-}
-
-function shouldApplyFocusedViewport({
-  focusKey,
-  nodeId,
-  state,
-}: {
-  focusKey: string;
-  nodeId: string;
-  state: CanvasViewportFocusRuntimeState;
-}): boolean {
-  if (state.lastFocusKey === focusKey) {
-    return false;
-  }
-
-  const targetChanged = state.targetNodeId !== nodeId;
-  return !(state.active && state.userControlled && !targetChanged);
-}
-
-function userControlledViewportFocusState(
-  state: CanvasViewportFocusRuntimeState
-): CanvasViewportFocusRuntimeState {
-  if (!(state.active && !state.userControlled)) {
-    return state;
-  }
-
-  return {
-    ...state,
-    userControlled: true,
-  };
-}
 
 function resolveCanvasReactFlowProps({
   handMode,
@@ -403,9 +257,16 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const openingFitViewOptions = userReactFlowProps.fitViewOptions;
   const shouldFitOpeningView = userReactFlowProps.fitView !== false;
   const viewportFocus = meta.viewportFocus;
-  const viewportFocusNodeId = viewportFocus?.nodeId ?? null;
+  const viewportInsets = meta.viewportInsets;
+  const viewportFocusNodeIds = useMemo(
+    () => canvasViewportFocusNodeIds(viewportFocus),
+    [viewportFocus]
+  );
+  const viewportFocusTargetKey =
+    canvasViewportFocusTargetKey(viewportFocusNodeIds);
+  const viewportFocusRequestKey = canvasViewportFocusRequestKey(viewportFocus);
   const viewportFocusActive =
-    viewportFocus?.active ?? viewportFocusNodeId !== null;
+    viewportFocus?.active ?? viewportFocusNodeIds.length > 0;
   const handleMoveStart: NonNullable<CanvasReactFlowProps["onMoveStart"]> = (
     event,
     viewport
@@ -564,14 +425,15 @@ function CanvasFlow({ children }: CanvasFlowProps) {
     if (!canvasReadyForViewportActions) {
       viewportFocusStateRef.current = suspendedViewportFocusState({
         getViewport,
-        nodeId: viewportFocusNodeId,
+        requestKey: viewportFocusRequestKey,
         state: previous,
+        targetKey: viewportFocusTargetKey,
         viewportReady: viewportReadyForViewportActions,
       });
       return;
     }
 
-    if (viewportFocusNodeId === null) {
+    if (viewportFocusNodeIds.length === 0) {
       viewportFocusStateRef.current = pendingViewportFocusState({
         getViewport,
         state: previous,
@@ -579,49 +441,38 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       return;
     }
 
-    const node = nodes.find(
-      (candidate) => candidate.id === viewportFocusNodeId
-    );
-    if (node === undefined || viewportFocus === undefined) {
+    const focusResolution = resolveCanvasViewportFocusRequest({
+      flowHeight,
+      flowWidth,
+      focus: viewportFocus,
+      nodeIds: viewportFocusNodeIds,
+      nodes,
+      targetKey: viewportFocusTargetKey,
+      viewport: getViewport(),
+      viewportInsets,
+    });
+    if (focusResolution === null) {
       return;
     }
 
-    const rightInset = Math.max(0, viewportFocus.rightInset);
-    const minZoom = viewportFocus.minZoom ?? VIEWPORT_FOCUS_DEFAULT_MIN_ZOOM;
-    const maxZoom = viewportFocus.maxZoom ?? VIEWPORT_FOCUS_DEFAULT_MAX_ZOOM;
-    const focusKey = [
-      viewportFocusNodeId,
-      flowWidth,
-      flowHeight,
-      rightInset,
-      minZoom,
-      maxZoom,
-    ].join(":");
-    const action = resolveCanvasViewportFocus({
-      flowHeight,
-      flowWidth,
-      maxZoom,
-      minZoom,
-      node: nodeBoundsForViewportFocus(node),
-      rightInset,
-      viewport: getViewport(),
-    });
     viewportFocusStateRef.current = focusedViewportFocusState({
-      focusKey,
+      focusKey: focusResolution.focusKey,
       getViewport,
-      nodeId: viewportFocusNodeId,
+      requestKey: focusResolution.requestKey,
       state: previous,
+      targetKey: focusResolution.targetKey,
     });
 
     if (
-      action.kind === "setViewport" &&
+      focusResolution.action.kind === "setViewport" &&
       shouldApplyFocusedViewport({
-        focusKey,
-        nodeId: viewportFocusNodeId,
+        focusKey: focusResolution.focusKey,
+        requestKey: focusResolution.requestKey,
         state: previous,
+        targetKey: focusResolution.targetKey,
       })
     ) {
-      setViewport(action.viewport, {
+      setViewport(focusResolution.action.viewport, {
         duration: VIEWPORT_FOCUS_ANIMATION_MS,
         interpolate: "smooth",
       });
@@ -635,7 +486,10 @@ function CanvasFlow({ children }: CanvasFlowProps) {
     setViewport,
     viewportFocus,
     viewportFocusActive,
-    viewportFocusNodeId,
+    viewportInsets,
+    viewportFocusNodeIds,
+    viewportFocusRequestKey,
+    viewportFocusTargetKey,
     viewportReadyForViewportActions,
   ]);
 

@@ -2,6 +2,7 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { Preview, PreviewWrapper } from "@workspace/ui/components/preview";
+import { toastClassNames } from "@workspace/ui/components/sonner";
 import {
   Bell,
   Check,
@@ -38,15 +39,11 @@ export default function ToasterPreview() {
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <AppButton
             className="justify-start"
-            onClick={() =>
-              toast.success("Settings applied.", {
-                description: "Network routes are up to date.",
-              })
-            }
+            onClick={() => toast.success("Settings applied.")}
             variant="secondary"
           >
             <Check aria-hidden data-icon="inline-start" />
-            Success
+            Compact
           </AppButton>
           <AppButton
             className="justify-start"
@@ -150,12 +147,12 @@ export default function ToasterPreview() {
         <div className="flex flex-wrap items-center gap-3">
           <AppButton
             onClick={() =>
-              toast.error(
-                'API 500: {"title":"Internal Server Error","status":500,"detail":"failed to update DB","errors":[{"message":"admission webhook \\"vopsrequest.kb.io\\" denied the request: storageClass [openebs-hostpath] of volumeClaimTemplate [data] does not support volume expansion in component mysql; you can view infos by command: kubectl get sc"}]}',
-                {
-                  duration: 10_000,
-                }
-              )
+              toast.error("Apply failed.", {
+                className: toastClassNames.wide,
+                description:
+                  'API 500: {"title":"Internal Server Error","status":500,"detail":"failed to update DB","errors":[{"message":"admission webhook \\"vopsrequest.kb.io\\" denied the request: storageClass [openebs-hostpath] of volumeClaimTemplate [data] does not support volume expansion in component mysql; you can view infos by command: kubectl get sc"}]}',
+                duration: 10_000,
+              })
             }
             variant="secondary"
           >

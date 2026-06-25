@@ -23,8 +23,8 @@ export interface ProjectCanvasConnectionOrigin {
   side: CanvasNodeConnectionSide;
 }
 
-export const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
-
+const PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_FIT_MIN_ZOOM = 0.45;
+const PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_PADDING = 32;
 const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
   "bottom",
   "left",
@@ -52,12 +52,6 @@ export function viewportFocusNodeIdFromSideRenderModel(
   }
 
   return side.content.node.id;
-}
-
-export function sideRenderModelHasViewportFocusSession(
-  side: ProjectCanvasSideRenderModel
-): boolean {
-  return side?.kind === "resource";
 }
 
 export function connectionOriginFromHandle(
@@ -92,8 +86,9 @@ export function createProjectCanvasMeta({
   projectId,
   projectCanvasConnectionLine,
   readOnly,
+  viewportFocusKey,
   viewportFocusActive,
-  viewportFocusNodeId,
+  viewportFocusNodeIds,
 }: {
   clearSelection: () => void;
   connectionGestureActive: boolean;
@@ -116,9 +111,12 @@ export function createProjectCanvasMeta({
   projectId?: string;
   projectCanvasConnectionLine: CanvasReactFlowProps["connectionLineComponent"];
   readOnly: boolean;
+  viewportFocusKey?: number | string;
   viewportFocusActive: boolean;
-  viewportFocusNodeId: string | null;
+  viewportFocusNodeIds: readonly string[];
 }): CanvasMeta {
+  const viewportFocusIsGroup = viewportFocusNodeIds.length > 1;
+
   return {
     edgeAnchorResolver: ({ dragging, previousPair, sourceNode, targetNode }) =>
       selectCanvasAnchorPair({
@@ -172,10 +170,16 @@ export function createProjectCanvasMeta({
     },
     viewportFocus: {
       active: viewportFocusActive,
+      fitMinZoom: viewportFocusIsGroup
+        ? PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_FIT_MIN_ZOOM
+        : undefined,
+      key: viewportFocusKey,
       maxZoom: 1.05,
       minZoom: 0.85,
-      nodeId: viewportFocusNodeId,
-      rightInset: PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET,
+      nodeIds: viewportFocusNodeIds,
+      padding: viewportFocusIsGroup
+        ? PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_PADDING
+        : undefined,
     },
   };
 }

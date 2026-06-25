@@ -275,6 +275,12 @@ function deploymentTaskForRequest(
   }
 }
 
+function unresolvedProjectIdMessage(target: DeploymentTaskTarget): string {
+  return target.kind === "newProject"
+    ? "Could not resolve the created project."
+    : "Could not resolve the current project.";
+}
+
 export async function runDeploymentTargetPipeline(
   options: DeploymentTargetPipelineOptions
 ): Promise<DeploymentTargetPipelineOutcome> {
@@ -293,6 +299,9 @@ export async function runDeploymentTargetPipeline(
   const projectId =
     task.projectId?.trim() ||
     (target.kind === "existingProject" ? target.projectId.trim() : "");
+  if (projectId === "") {
+    throw new Error(unresolvedProjectIdMessage(target));
+  }
   const projectName =
     task.projectName?.trim() ||
     (target.kind === "existingProject" ? target.projectName?.trim() : "") ||

@@ -11,6 +11,11 @@ import { useTheme } from "next-themes";
 import type { CSSProperties } from "react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
+const toastClassNames = {
+  compact: "cn-toast-compact",
+  wide: "cn-toast-wide",
+} as const;
+
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();
 
@@ -41,7 +46,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--toast-icon-margin-start": "0px",
           "--toast-svg-margin-end": "0px",
           "--toast-svg-margin-start": "0px",
-          "--width": "min(27rem, calc(100vw - 2rem))",
+          "--width": "min(34rem, calc(100vw - 2rem))",
         } as CSSProperties
       }
       theme={theme as ToasterProps["theme"]}
@@ -67,4 +72,4 @@ const Toaster = ({ ...props }: ToasterProps) => {
   );
 };
 
-export { Toaster };
+export { Toaster, toastClassNames };
