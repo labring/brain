@@ -39,6 +39,21 @@ export interface CanvasState {
 export type CanvasSelectedNode = CanvasState["selectedNode"];
 export type CanvasSelectedEdge = CanvasState["selectedEdge"];
 
+export interface CanvasViewportInsets {
+  bottom?: number;
+  right?: number;
+}
+
+export interface CanvasViewportFocusRequest {
+  active?: boolean;
+  fitMinZoom?: number;
+  key?: number | string;
+  maxZoom?: number;
+  minZoom?: number;
+  nodeIds: readonly string[];
+  padding?: number;
+}
+
 export interface CanvasMeta {
   /**
    * Session-local canvas interaction mode. Pointer mode supports canvas element
@@ -60,21 +75,10 @@ export interface CanvasMeta {
   };
   reactFlowProps?: CanvasReactFlowProps;
   /**
-   * Temporary viewport focus for a selected node while another surface covers
-   * part of the canvas. This changes viewport only, never node layout.
+   * Temporary viewport focus for one or more nodes. This changes viewport only,
+   * never node layout.
    */
-  viewportFocus?: {
-    active?: boolean;
-    bottomInset?: number;
-    fitMinZoom?: number;
-    key?: number | string;
-    maxZoom?: number;
-    minZoom?: number;
-    nodeId?: string | null;
-    nodeIds?: readonly string[];
-    padding?: number;
-    rightInset?: number;
-  };
+  viewportFocus?: CanvasViewportFocusRequest;
   /**
    * Optional follow behavior for newly seen nodes selected by the host app.
    * The first node-set observed for each key is treated as opening state.
@@ -83,6 +87,11 @@ export interface CanvasMeta {
     isFollowTarget: (node: Node) => boolean;
     key?: number | string;
   };
+  /**
+   * Canvas area covered by sibling chrome such as side panes or drawers.
+   * Focus and controls both consume this explicit footprint.
+   */
+  viewportInsets?: CanvasViewportInsets;
 }
 
 export interface CanvasNavigationChromeState {

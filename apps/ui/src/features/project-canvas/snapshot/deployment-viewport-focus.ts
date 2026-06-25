@@ -1,14 +1,17 @@
 import type { Node } from "@xyflow/react";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import { canvasResourceKey } from "../nodes/resource-identity";
-import { isDeploymentPlaceholderNode } from "../snapshot/deployment-placeholder-nodes";
+import { isDeploymentPlaceholderNode } from "./deployment-placeholder-nodes";
+import {
+  createDeploymentProjectionContext,
+  nodeForResultRefInDeploymentProjectionContext,
+} from "./deployment-projection-context";
 import {
   type DeploymentTaskResultResourceRef,
   deploymentResultPreview,
   expectedRefToResultRef,
-  nodeForResultRef,
   resultRefForSlot,
-} from "../snapshot/deployment-projection-model";
+} from "./deployment-projection-model";
 
 function uniqueNodeIds(nodes: readonly Node[]): string[] {
   const seen = new Set<string>();
@@ -57,21 +60,25 @@ export function deploymentTaskViewportFocusNodeIds(input: {
     return [];
   }
 
-  const placeholderNodes = input.nodes.filter(
+  const visiblePlaceholderNodes = input.nodes.filter(
     (node) => isDeploymentPlaceholderNode(node) && node.data.taskId === taskId
   );
-  if (placeholderNodes.length > 0) {
-    return uniqueNodeIds(placeholderNodes);
+  if (visiblePlaceholderNodes.length > 0) {
+    return uniqueNodeIds(visiblePlaceholderNodes);
   }
 
-  const task = input.tasks.find((item) => item.id === taskId);
+  const context = createDeploymentProjectionContext({
+    nodes: input.nodes,
+    tasks: input.tasks,
+  });
+  const task = context.tasks.find((item) => item.id === taskId);
   if (task === undefined) {
     return [];
   }
 
   return uniqueNodeIds(
     deploymentTaskResultRefs(task).flatMap((ref) => {
-      const node = nodeForResultRef(ref, input.nodes);
+      const node = nodeForResultRefInDeploymentProjectionContext(context, ref);
       return node === undefined ? [] : [node];
     })
   );

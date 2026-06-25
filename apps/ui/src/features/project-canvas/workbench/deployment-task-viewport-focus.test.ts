@@ -7,7 +7,7 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
 } from "../nodes/constants";
-import { deploymentTaskViewportFocusNodeIds } from "./deployment-task-viewport-focus";
+import { deploymentTaskViewportFocusNodeIds } from "../snapshot/deployment-viewport-focus";
 
 function task(
   overrides: Partial<DeploymentTaskProjection>

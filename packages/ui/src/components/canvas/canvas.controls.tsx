@@ -203,7 +203,7 @@ function CanvasControlButton({
 
 export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
-  const { interactionMode, rootRef, setInteractionMode } = useCanvas();
+  const { interactionMode, meta, rootRef, setInteractionMode } = useCanvas();
   const chrome = useCanvasNavigationChromePresence();
 
   useEffect(() => {
@@ -261,10 +261,11 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
       setInteractionMode(mode);
     },
   });
-  const rightOffset =
-    rightInset === undefined
-      ? "calc(0.5rem + var(--canvas-viewport-right-inset, 0px))"
-      : `calc(0.5rem + ${Math.max(0, rightInset)}px)`;
+  const rightOffsetPx = Math.max(
+    0,
+    rightInset ?? meta.viewportInsets?.right ?? 0
+  );
+  const rightOffset = `calc(0.5rem + ${rightOffsetPx}px)`;
 
   return (
     <div

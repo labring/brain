@@ -23,8 +23,6 @@ export interface ProjectCanvasConnectionOrigin {
   side: CanvasNodeConnectionSide;
 }
 
-export const PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET = 640;
-
 const PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_FIT_MIN_ZOOM = 0.45;
 const PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_PADDING = 32;
 const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([

@@ -25,6 +25,7 @@ import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/t
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
 import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
 import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
+import { deploymentTaskViewportFocusNodeIds } from "@/features/project-canvas/snapshot/deployment-viewport-focus";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import {
   deploymentTaskDockDismissalsStorageKey,
@@ -36,7 +37,10 @@ import {
   selectDeploymentTaskDock,
 } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
-import { useProjectCanvas } from "@/features/project-canvas/workbench/use-project-canvas";
+import {
+  type ProjectCanvasSideViewportFocusResolver,
+  useProjectCanvas,
+} from "@/features/project-canvas/workbench/use-project-canvas";
 import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
@@ -315,10 +319,30 @@ export function useProjectCanvasModule({
       projectCanvasLayout.scheduleNodeLayoutSave,
     ]
   );
+  const sideViewportFocus = useCallback<ProjectCanvasSideViewportFocusResolver>(
+    ({ nodes, requestKey, side }) => {
+      const taskId =
+        side?.kind === "global" && side.entry.kind === "deploymentTaskTimeline"
+          ? side.entry.taskId
+          : null;
+      if (taskId == null) {
+        return null;
+      }
+      return {
+        active: true,
+        key: `deployment-task:${taskId}:${requestKey}`,
+        nodeIds: deploymentTaskViewportFocusNodeIds({
+          nodes,
+          taskId,
+          tasks: deploymentTaskProjections,
+        }),
+      };
+    },
+    [deploymentTaskProjections]
+  );
 
   const workbench = useProjectCanvas(canvasState.nodes, {
     apEnvironmentDbReferenceSources,
-    deploymentTaskProjections,
     edges: canvasEdges,
     kubeconfig,
     namespace,
@@ -331,6 +355,7 @@ export function useProjectCanvasModule({
     refreshWorkloadLists: refresh,
     runtimeStore,
     selectionReady: !isEmptyGraphLoading,
+    sideViewportFocus,
   });
   const activeDeploymentTaskTimelineTaskId = useMemo(() => {
     const side = workbench.surfaceRenderModel.side;

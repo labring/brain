@@ -2,118 +2,18 @@
 
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
-import type { CSSProperties } from "react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
+import { useMemo } from "react";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
 } from "@/features/project-canvas/workbench/project-canvas-page-shell";
+import { useProjectCanvasViewportInsets } from "@/features/project-canvas/workbench/project-canvas-viewport-insets";
 import { ProjectCanvasSurfaceHost } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-
-const PROJECT_CANVAS_SESSION_DRAWER_BOTTOM_INSET = 288;
-
-function activeSurfaceElement(
-  root: HTMLElement,
-  selector: string
-): HTMLElement | null {
-  const element = root.querySelector<HTMLElement>(selector);
-  if (element == null || element.getAttribute("aria-hidden") === "true") {
-    return null;
-  }
-  return element;
-}
-
-function useProjectCanvasViewportInsets(input: {
-  drawerOpen: boolean;
-  sideOpen: boolean;
-}) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [insets, setInsets] = useState(() => ({
-    bottom: input.drawerOpen ? PROJECT_CANVAS_SESSION_DRAWER_BOTTOM_INSET : 0,
-    right: input.sideOpen ? PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET : 0,
-  }));
-
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (root == null) {
-      return;
-    }
-
-    let frame = 0;
-    let resizeObserver: ResizeObserver;
-    const observedElements = new WeakSet<Element>();
-    const observeElement = (element: Element) => {
-      if (observedElements.has(element)) {
-        return;
-      }
-      observedElements.add(element);
-      resizeObserver.observe(element);
-    };
-    const measure = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const rootRect = root.getBoundingClientRect();
-        const sidePane = activeSurfaceElement(root, '[data-slot="side-pane"]');
-        const drawer = activeSurfaceElement(
-          root,
-          '[data-slot="exec-terminal-plane"]'
-        );
-        if (sidePane != null) {
-          observeElement(sidePane);
-        }
-        if (drawer != null) {
-          observeElement(drawer);
-        }
-        const sideRect = sidePane?.getBoundingClientRect();
-        const drawerRect = drawer?.getBoundingClientRect();
-        const right =
-          sideRect == null
-            ? 0
-            : Math.max(
-                0,
-                Math.min(rootRect.width, rootRect.right - sideRect.left)
-              );
-        const bottom =
-          drawerRect == null
-            ? 0
-            : Math.max(
-                0,
-                Math.min(rootRect.height, rootRect.bottom - drawerRect.top)
-              );
-
-        setInsets((current) =>
-          current.right === right && current.bottom === bottom
-            ? current
-            : { bottom, right }
-        );
-      });
-    };
-
-    resizeObserver = new ResizeObserver(measure);
-    const mutationObserver = new MutationObserver(measure);
-    observeElement(root);
-    mutationObserver.observe(root, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
-    measure();
-
-    return () => {
-      cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-    };
-  }, []);
-
-  return { insets, rootRef };
-}
 
 export default function ProjectIdPage() {
   const params = useParams<{ uid: string }>();
@@ -130,13 +30,12 @@ export default function ProjectIdPage() {
       drawerOpen: projectCanvas.surfaces.model.drawer != null,
       sideOpen: projectCanvas.surfaces.model.side != null,
     });
-  const canvasViewportStyle = useMemo(
-    () =>
-      ({
-        "--canvas-viewport-bottom-inset": `${canvasViewportInsets.bottom}px`,
-        "--canvas-viewport-right-inset": `${canvasViewportInsets.right}px`,
-      }) as CSSProperties,
-    [canvasViewportInsets]
+  const canvasMeta = useMemo(
+    () => ({
+      ...projectCanvas.canvas.meta,
+      viewportInsets: canvasViewportInsets,
+    }),
+    [canvasViewportInsets, projectCanvas.canvas.meta]
   );
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
@@ -161,13 +60,12 @@ export default function ProjectIdPage() {
         <div
           className="relative min-h-0 min-w-0 flex-1"
           ref={canvasViewportRootRef}
-          style={canvasViewportStyle}
         >
           <ProjectCanvasViewport
             canvasKey={`${namespace}:${uid}`}
             decorators={projectCanvas.canvas.runtimeModelDecorators}
             kubeconfig={kubeconfig}
-            meta={projectCanvas.canvas.meta}
+            meta={canvasMeta}
             runtimeStore={projectCanvas.canvas.runtimeStore}
             state={projectCanvas.canvas.state}
           />
