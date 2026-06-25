@@ -288,7 +288,7 @@ export default function AppSidebar() {
             {projectShortcutItems.length === 0 && (
               <Separator
                 aria-hidden
-                className="my-1.5 w-9 bg-border"
+                className="my-1.5 w-9 rounded-full bg-border"
                 data-slot="app-sidebar-project-separator"
               />
             )}
@@ -310,7 +310,7 @@ export default function AppSidebar() {
                   {showSeparatorBeforeItem && (
                     <Separator
                       aria-hidden
-                      className="my-1.5 w-9 bg-border"
+                      className="my-1.5 w-9 rounded-full bg-border"
                       data-slot="app-sidebar-project-separator"
                     />
                   )}
@@ -325,7 +325,7 @@ export default function AppSidebar() {
                   {showSeparatorAfterItem && (
                     <Separator
                       aria-hidden
-                      className="my-1.5 w-9 bg-border"
+                      className="my-1.5 w-9 rounded-full bg-border"
                       data-slot="app-sidebar-project-separator"
                     />
                   )}
@@ -335,7 +335,17 @@ export default function AppSidebar() {
           </div>
         </nav>
 
-        <AppSidebarUpgrade />
+        <div
+          className="flex w-9 shrink-0 flex-col gap-3"
+          data-slot="app-sidebar-bottom-actions"
+        >
+          <Separator
+            aria-hidden
+            className="w-9 rounded-full bg-border"
+            data-slot="app-sidebar-bottom-separator"
+          />
+          <AppSidebarUpgrade />
+        </div>
       </div>
     </aside>
   );
