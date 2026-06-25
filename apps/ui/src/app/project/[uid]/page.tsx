@@ -3,7 +3,7 @@
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
 import type { CSSProperties } from "react";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET } from "@/features/project-canvas/workbench/canvas-meta";
 import {
   ProjectCanvasOverlayLayer,
@@ -16,6 +16,105 @@ import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
+const PROJECT_CANVAS_SESSION_DRAWER_BOTTOM_INSET = 288;
+
+function activeSurfaceElement(
+  root: HTMLElement,
+  selector: string
+): HTMLElement | null {
+  const element = root.querySelector<HTMLElement>(selector);
+  if (element == null || element.getAttribute("aria-hidden") === "true") {
+    return null;
+  }
+  return element;
+}
+
+function useProjectCanvasViewportInsets(input: {
+  drawerOpen: boolean;
+  sideOpen: boolean;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [insets, setInsets] = useState(() => ({
+    bottom: input.drawerOpen ? PROJECT_CANVAS_SESSION_DRAWER_BOTTOM_INSET : 0,
+    right: input.sideOpen ? PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET : 0,
+  }));
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root == null) {
+      return;
+    }
+
+    let frame = 0;
+    let resizeObserver: ResizeObserver;
+    const observedElements = new WeakSet<Element>();
+    const observeElement = (element: Element) => {
+      if (observedElements.has(element)) {
+        return;
+      }
+      observedElements.add(element);
+      resizeObserver.observe(element);
+    };
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rootRect = root.getBoundingClientRect();
+        const sidePane = activeSurfaceElement(root, '[data-slot="side-pane"]');
+        const drawer = activeSurfaceElement(
+          root,
+          '[data-slot="exec-terminal-plane"]'
+        );
+        if (sidePane != null) {
+          observeElement(sidePane);
+        }
+        if (drawer != null) {
+          observeElement(drawer);
+        }
+        const sideRect = sidePane?.getBoundingClientRect();
+        const drawerRect = drawer?.getBoundingClientRect();
+        const right =
+          sideRect == null
+            ? 0
+            : Math.max(
+                0,
+                Math.min(rootRect.width, rootRect.right - sideRect.left)
+              );
+        const bottom =
+          drawerRect == null
+            ? 0
+            : Math.max(
+                0,
+                Math.min(rootRect.height, rootRect.bottom - drawerRect.top)
+              );
+
+        setInsets((current) =>
+          current.right === right && current.bottom === bottom
+            ? current
+            : { bottom, right }
+        );
+      });
+    };
+
+    resizeObserver = new ResizeObserver(measure);
+    const mutationObserver = new MutationObserver(measure);
+    observeElement(root);
+    mutationObserver.observe(root, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+    measure();
+
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, []);
+
+  return { insets, rootRef };
+}
+
 export default function ProjectIdPage() {
   const params = useParams<{ uid: string }>();
   const uid = decodeURIComponent(params.uid ?? "");
@@ -26,16 +125,18 @@ export default function ProjectIdPage() {
     namespace,
     projectId: uid,
   });
+  const { insets: canvasViewportInsets, rootRef: canvasViewportRootRef } =
+    useProjectCanvasViewportInsets({
+      drawerOpen: projectCanvas.surfaces.model.drawer != null,
+      sideOpen: projectCanvas.surfaces.model.side != null,
+    });
   const canvasViewportStyle = useMemo(
     () =>
       ({
-        "--canvas-viewport-right-inset": `${
-          projectCanvas.surfaces.model.side == null
-            ? 0
-            : PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET
-        }px`,
+        "--canvas-viewport-bottom-inset": `${canvasViewportInsets.bottom}px`,
+        "--canvas-viewport-right-inset": `${canvasViewportInsets.right}px`,
       }) as CSSProperties,
-    [projectCanvas.surfaces.model.side]
+    [canvasViewportInsets]
   );
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
@@ -59,6 +160,7 @@ export default function ProjectIdPage() {
       {projectCanvas.canvas.frameState.renderCanvas && (
         <div
           className="relative min-h-0 min-w-0 flex-1"
+          ref={canvasViewportRootRef}
           style={canvasViewportStyle}
         >
           <ProjectCanvasViewport

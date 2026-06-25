@@ -490,7 +490,21 @@ After first placement, Canvas Placement Group membership does not imply that lat
 
 A temporary, per-view adjustment of the Project Canvas viewport that keeps a target canvas node visible within the currently available canvas area without changing Canvas Layout.
 
+The currently available canvas area excludes temporary project surfaces that cover the canvas, such as a Side Pane or Session Drawer.
+
 _Avoid_: using Canvas Layout to describe temporary viewport movement.
+
+### Deployment Task Viewport Focus
+
+A Canvas Viewport Focus for one Deployment Task that keeps the task's visible Deployment Placeholder Node or handed-off Deployment Result Resource nodes in the currently available canvas area. It is not Canvas Selection, Canvas Layout, Deployment Projection Placement, or a command to close project surfaces.
+
+While a Deployment Placeholder Node remains visible for the Deployment Task, it is the task-facing focus target; after Deployment Handoff removes task placeholders, Deployment Result Resource nodes may stand in as the focus target.
+
+When one Deployment Task has multiple visible focus targets, Deployment Task Viewport Focus keeps the target footprint visible rather than choosing only one node.
+
+Deployment Task Viewport Focus is a one-shot focus caused by explicit task re-entry or by the first appearance of a focus target. Routine Deployment Task Timeline streaming updates should not repeatedly move the user's canvas viewport.
+
+_Avoid_: deployment task selection, deployment task layout focus, close panels to focus task.
 
 ### Canvas Pointer Mode
 

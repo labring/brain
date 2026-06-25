@@ -54,12 +54,6 @@ export function viewportFocusNodeIdFromSideRenderModel(
   return side.content.node.id;
 }
 
-export function sideRenderModelHasViewportFocusSession(
-  side: ProjectCanvasSideRenderModel
-): boolean {
-  return side?.kind === "resource";
-}
-
 export function connectionOriginFromHandle(
   handle: ProjectCanvasConnectionHandle | null
 ): ProjectCanvasConnectionOrigin | null {
@@ -92,8 +86,9 @@ export function createProjectCanvasMeta({
   projectId,
   projectCanvasConnectionLine,
   readOnly,
+  viewportFocusKey,
   viewportFocusActive,
-  viewportFocusNodeId,
+  viewportFocusNodeIds,
 }: {
   clearSelection: () => void;
   connectionGestureActive: boolean;
@@ -116,8 +111,9 @@ export function createProjectCanvasMeta({
   projectId?: string;
   projectCanvasConnectionLine: CanvasReactFlowProps["connectionLineComponent"];
   readOnly: boolean;
+  viewportFocusKey?: number | string;
   viewportFocusActive: boolean;
-  viewportFocusNodeId: string | null;
+  viewportFocusNodeIds: readonly string[];
 }): CanvasMeta {
   return {
     edgeAnchorResolver: ({ dragging, previousPair, sourceNode, targetNode }) =>
@@ -172,10 +168,10 @@ export function createProjectCanvasMeta({
     },
     viewportFocus: {
       active: viewportFocusActive,
+      key: viewportFocusKey,
       maxZoom: 1.05,
       minZoom: 0.85,
-      nodeId: viewportFocusNodeId,
-      rightInset: PROJECT_CANVAS_SIDE_PANE_RIGHT_INSET,
+      nodeIds: viewportFocusNodeIds,
     },
   };
 }

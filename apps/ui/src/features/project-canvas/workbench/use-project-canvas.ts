@@ -17,10 +17,10 @@ import {
 } from "@/features/project-canvas/surface/selection";
 import {
   createProjectCanvasMeta,
-  sideRenderModelHasViewportFocusSession,
   viewportFocusNodeIdFromSideRenderModel,
 } from "@/features/project-canvas/workbench/canvas-meta";
 import type { ProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/command-model";
+import { deploymentTaskViewportFocusNodeIds } from "@/features/project-canvas/workbench/deployment-task-viewport-focus";
 import { executeUnguardedProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/project-canvas-command-executor";
 import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/use-db-service-restore-focus";
 import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workbench/use-deployment-task-timeline-opener";
@@ -45,10 +45,12 @@ import type {
   SettingsSessionEvents,
 } from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 export interface UseProjectCanvasOptions {
   apEnvironmentDbReferenceSources?: ApEnvironmentDbReferenceSource[];
+  deploymentTaskProjections?: readonly DeploymentTaskProjection[];
   edges?: Edge[];
   kubeconfig?: string;
   namespace?: string;
@@ -182,6 +184,10 @@ export function useProjectCanvas(
     manuallyClosedDeploymentTaskTimelineTaskIds,
     setManuallyClosedDeploymentTaskTimelineTaskIds,
   ] = useState<ReadonlySet<string>>(() => new Set());
+  const [
+    deploymentTaskViewportFocusRequestKey,
+    setDeploymentTaskViewportFocusRequestKey,
+  ] = useState(0);
   const openSideSurface = useCallback(
     (
       entry: ProjectSideSurfaceEntry,
@@ -200,6 +206,10 @@ export function useProjectCanvas(
           next.delete(entry.taskId);
           return next;
         });
+        openSideRoute(entry, canvasSelection, () => {
+          setDeploymentTaskViewportFocusRequestKey((current) => current + 1);
+        });
+        return;
       }
       if (entry.kind === "settings") {
         openSideRoute(entry, canvasSelection, () => {
@@ -409,17 +419,49 @@ export function useProjectCanvas(
     refreshWorkloadLists: options?.refreshWorkloadLists,
   });
 
-  const viewportFocusNodeId = useMemo(
+  const activeDeploymentTaskTimelineTaskId =
+    surfaceState.side?.kind === "deploymentTaskTimeline"
+      ? surfaceState.side.taskId
+      : null;
+  const deploymentTaskFocusNodeIds = useMemo(
     () =>
-      viewportFocusNodeIdFromSideRenderModel(surfaceRenderModel.side) ??
-      restoredDbServiceViewportFocusNodeId,
-    [restoredDbServiceViewportFocusNodeId, surfaceRenderModel.side]
+      deploymentTaskViewportFocusNodeIds({
+        nodes,
+        taskId: activeDeploymentTaskTimelineTaskId,
+        tasks: options?.deploymentTaskProjections ?? [],
+      }),
+    [
+      activeDeploymentTaskTimelineTaskId,
+      nodes,
+      options?.deploymentTaskProjections,
+    ]
   );
+  const viewportFocusNodeIds = useMemo(() => {
+    const sideNodeId = viewportFocusNodeIdFromSideRenderModel(
+      surfaceRenderModel.side
+    );
+    if (sideNodeId != null) {
+      return [sideNodeId];
+    }
+    if (restoredDbServiceViewportFocusNodeId != null) {
+      return [restoredDbServiceViewportFocusNodeId];
+    }
+    return deploymentTaskFocusNodeIds;
+  }, [
+    deploymentTaskFocusNodeIds,
+    restoredDbServiceViewportFocusNodeId,
+    surfaceRenderModel.side,
+  ]);
   const viewportFocusActive = useMemo(
     () =>
-      sideRenderModelHasViewportFocusSession(surfaceRenderModel.side) ||
+      surfaceRenderModel.side?.kind === "resource" ||
+      activeDeploymentTaskTimelineTaskId !== null ||
       restoredDbServiceViewportFocusNodeId !== null,
-    [restoredDbServiceViewportFocusNodeId, surfaceRenderModel.side]
+    [
+      activeDeploymentTaskTimelineTaskId,
+      restoredDbServiceViewportFocusNodeId,
+      surfaceRenderModel.side,
+    ]
   );
 
   useEffect(() => {
@@ -548,8 +590,12 @@ export function useProjectCanvas(
         projectCanvasConnectionLine:
           connectionGesture.projectCanvasConnectionLine,
         readOnly,
+        viewportFocusKey:
+          activeDeploymentTaskTimelineTaskId == null
+            ? undefined
+            : `deployment-task:${activeDeploymentTaskTimelineTaskId}:${deploymentTaskViewportFocusRequestKey}`,
         viewportFocusActive,
-        viewportFocusNodeId,
+        viewportFocusNodeIds,
       }),
     [
       clearSelection,
@@ -566,8 +612,10 @@ export function useProjectCanvas(
       options?.onNodePositionChange,
       options?.projectId,
       readOnly,
+      activeDeploymentTaskTimelineTaskId,
+      deploymentTaskViewportFocusRequestKey,
       viewportFocusActive,
-      viewportFocusNodeId,
+      viewportFocusNodeIds,
     ]
   );
 

@@ -318,6 +318,7 @@ export function useProjectCanvasModule({
 
   const workbench = useProjectCanvas(canvasState.nodes, {
     apEnvironmentDbReferenceSources,
+    deploymentTaskProjections,
     edges: canvasEdges,
     kubeconfig,
     namespace,

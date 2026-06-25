@@ -65,10 +65,13 @@ export interface CanvasMeta {
    */
   viewportFocus?: {
     active?: boolean;
+    bottomInset?: number;
+    key?: number | string;
     maxZoom?: number;
     minZoom?: number;
-    nodeId: string | null;
-    rightInset: number;
+    nodeId?: string | null;
+    nodeIds?: readonly string[];
+    rightInset?: number;
   };
   /**
    * Optional follow behavior for newly seen nodes selected by the host app.
