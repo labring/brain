@@ -5,8 +5,8 @@ import type {
   CanvasMeta,
   CanvasState,
 } from "@workspace/ui/components/canvas/canvas.types";
-import { Spinner } from "@workspace/ui/components/spinner";
-import { memo } from "react";
+import { memo, useEffect, useLayoutEffect } from "react";
+import { toast } from "sonner";
 import type { ProjectCanvasFrameState } from "@/features/project-canvas/snapshot/project-canvas-page-state";
 import { ProjectCanvasInteractionProvider } from "@/features/project-canvas/surface/interaction-react";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
@@ -18,6 +18,10 @@ import {
   ProjectRuntimeStoreProvider,
 } from "@/features/project-runtime/resource-models-react";
 import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
+
+const PROJECT_CANVAS_LOADING_TOAST_ID = "project-canvas-loading-workloads";
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 interface ProjectCanvasViewportProps {
   canvasKey: string;
@@ -54,6 +58,25 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   );
 });
 
+function ProjectCanvasLoadingToast({ active }: { active: boolean }) {
+  useIsomorphicLayoutEffect(() => {
+    if (!active) {
+      toast.dismiss(PROJECT_CANVAS_LOADING_TOAST_ID);
+      return;
+    }
+
+    toast.loading("Loading workloads...", {
+      id: PROJECT_CANVAS_LOADING_TOAST_ID,
+    });
+
+    return () => {
+      toast.dismiss(PROJECT_CANVAS_LOADING_TOAST_ID);
+    };
+  }, [active]);
+
+  return null;
+}
+
 interface ProjectCanvasOverlayLayerProps {
   deploymentTaskDock: DeploymentTaskDockModel;
   frameState: ProjectCanvasFrameState;
@@ -75,24 +98,7 @@ export function ProjectCanvasOverlayLayer({
         onDismiss={onDismissDeploymentTask}
         onOpen={onOpenDeploymentTask}
       />
-      {frameState.overlay === "loading" ? (
-        <div
-          aria-live="polite"
-          className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[min(100%-2rem,20rem)]"
-          data-slot="project-canvas-loading-toast"
-          role="status"
-        >
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-md">
-            <Spinner
-              aria-hidden
-              className="size-4 shrink-0 text-muted-foreground"
-            />
-            <span className="font-medium text-foreground text-sm">
-              Loading workloads…
-            </span>
-          </div>
-        </div>
-      ) : null}
+      <ProjectCanvasLoadingToast active={frameState.overlay === "loading"} />
       {frameState.overlay === "error" || frameState.overlay === "empty" ? (
         <div
           aria-live="polite"
