@@ -10,11 +10,16 @@ import { Aurora } from "@/components/aurora";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
-import { useProjectCreator } from "@/features/project-creation/use-project-creator";
+import {
+  type ProjectCreatedContext,
+  useProjectCreator,
+} from "@/features/project-creation/use-project-creator";
+import { PROJECT_SIDE_QUERY_KEY } from "@/features/project-route-state/side-url-codec";
 import { useProjectSideRouteState } from "@/features/project-route-state/use-project-side-route-state";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
+import { serializeProjectSideSurfaceEntry } from "@/features/project-surfaces/url-codec";
 import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
@@ -44,12 +49,32 @@ export default function ProjectIndexPage() {
   const creationSideEntryMode = creationSideEntry?.entryMode ?? null;
 
   const onProjectCreated = useCallback(
-    async (projectId: string | undefined) => {
-      closeProjectSideRoute("replace");
+    async (projectId: string | undefined, context?: ProjectCreatedContext) => {
       await refreshProjects();
-      if (projectId) {
-        router.push(`/project/${encodeURIComponent(projectId)}`);
+      const resolvedProjectId = projectId?.trim();
+      if (resolvedProjectId) {
+        const projectPath = `/project/${encodeURIComponent(resolvedProjectId)}`;
+        const deploymentTaskId = context?.deploymentTaskId?.trim();
+        if (deploymentTaskId == null || deploymentTaskId === "") {
+          router.push(projectPath);
+          return;
+        }
+        const side = serializeProjectSideSurfaceEntry({
+          kind: "deploymentTaskTimeline",
+          projectId: resolvedProjectId,
+          taskId: deploymentTaskId,
+        });
+        const query = new URLSearchParams();
+        if (side != null) {
+          query.set(PROJECT_SIDE_QUERY_KEY, side);
+        }
+        const queryString = query.toString();
+        router.push(
+          queryString === "" ? projectPath : `${projectPath}?${queryString}`
+        );
+        return;
       }
+      closeProjectSideRoute("replace");
     },
     [closeProjectSideRoute, refreshProjects, router]
   );

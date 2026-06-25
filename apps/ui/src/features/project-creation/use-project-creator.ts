@@ -8,6 +8,7 @@ import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/g
 import type { TemplateDeploymentSettings } from "@/features/deployment/template-deployer";
 import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
 import {
+  type DeploymentTargetPipelineOutcome,
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
@@ -27,7 +28,6 @@ import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
@@ -87,6 +87,10 @@ type CreatorRootPropsForCreationPane = Pick<
   | "templateOptions"
 >;
 
+export interface ProjectCreatedContext {
+  deploymentTaskId?: string;
+}
+
 export interface UseProjectCreatorOptions {
   /** Existing Project rows in the namespace, used for display-name uniqueness checks. */
   existingProjects?: readonly ProjectExplorerProject[];
@@ -98,7 +102,10 @@ export interface UseProjectCreatorOptions {
    * Called after a Project + child product resource create succeeds.
    * `projectId` currently carries the Brain Project ID for compatibility with older prop names.
    */
-  onProjectCreated?: (projectId: string | undefined) => void | Promise<void>;
+  onProjectCreated?: (
+    projectId: string | undefined,
+    context?: ProjectCreatedContext
+  ) => void | Promise<void>;
 }
 
 export function useProjectCreator(options?: UseProjectCreatorOptions): {
@@ -220,6 +227,21 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       }),
     [deploymentAdapters, existingProjects, hasKubeconfig, namespace]
   );
+  const completeProjectCreation = useCallback(
+    (
+      outcome: Pick<DeploymentTargetPipelineOutcome, "projectId" | "taskId">
+    ) => {
+      const projectId = outcome.projectId.trim();
+      const taskId = outcome.taskId?.trim();
+      return onProjectCreated?.(
+        projectId === "" ? undefined : projectId,
+        taskId == null || taskId === ""
+          ? undefined
+          : { deploymentTaskId: taskId }
+      );
+    },
+    [onProjectCreated]
+  );
 
   const actions = useMemo<ProjectCreatorActions>(
     () => ({
@@ -256,17 +278,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(
             `Created deployment task for project "${displayName}".`
           );
-          if (outcome.taskId != null) {
-            dispatchDeployTaskCreatedEvent({
-              projectId: outcome.projectId,
-              taskId: outcome.taskId,
-            });
-          }
           setLastConfirmedKind(
             `docker:${settings.image}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectId);
+          await completeProjectCreation(outcome);
         });
       },
       onDatabaseConfirm: async (
@@ -288,17 +304,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(
             `Created deployment task for project "${displayName}".`
           );
-          if (outcome.taskId != null) {
-            dispatchDeployTaskCreatedEvent({
-              projectId: outcome.projectId,
-              taskId: outcome.taskId,
-            });
-          }
           setLastConfirmedKind(
             `database:${settings.databaseId}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectId);
+          await completeProjectCreation(outcome);
         });
       },
       onTemplateConfirm: async (
@@ -322,17 +332,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           toast.success(
             `Created deployment task for project "${displayName}".`
           );
-          if (outcome.taskId != null) {
-            dispatchDeployTaskCreatedEvent({
-              projectId: outcome.projectId,
-              taskId: outcome.taskId,
-            });
-          }
           setLastConfirmedKind(
             `template:${choice.name}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectId);
+          await completeProjectCreation(outcome);
         });
       },
       onGithubConfirm: async (
@@ -352,21 +356,20 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
             return;
           }
           toast.success(outcome.taskMessage);
-          if (outcome.taskId != null) {
-            dispatchDeployTaskCreatedEvent({
-              projectId: outcome.projectId,
-              taskId: outcome.taskId,
-            });
-          }
           setLastConfirmedKind(
             `github:${outcome.sourceLabel}:${outcome.projectName}`
           );
           dispatchCreationPaneState({ type: "close" });
-          await onProjectCreated?.(outcome.projectId);
+          await completeProjectCreation(outcome);
         });
       },
     }),
-    [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]
+    [
+      applyWithBusyState,
+      completeProjectCreation,
+      existingProjects,
+      runDeployment,
+    ]
   );
 
   const handleGithubDeploy = useCallback(
@@ -387,20 +390,19 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           return;
         }
         toast.success(outcome.taskMessage);
-        if (outcome.taskId != null) {
-          dispatchDeployTaskCreatedEvent({
-            projectId: outcome.projectId,
-            taskId: outcome.taskId,
-          });
-        }
         setLastConfirmedKind(
           `github:${outcome.sourceLabel}:${outcome.projectName}`
         );
         dispatchCreationPaneState({ type: "close" });
-        await onProjectCreated?.(outcome.projectId);
+        await completeProjectCreation(outcome);
       });
     },
-    [applyWithBusyState, existingProjects, onProjectCreated, runDeployment]
+    [
+      applyWithBusyState,
+      completeProjectCreation,
+      existingProjects,
+      runDeployment,
+    ]
   );
 
   const handleGithubDisconnect = useCallback(async () => {
@@ -450,23 +452,17 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           return;
         }
         toast.success(outcome.taskMessage);
-        if (outcome.taskId != null) {
-          dispatchDeployTaskCreatedEvent({
-            projectId: outcome.projectId,
-            taskId: outcome.taskId,
-          });
-        }
         setLastConfirmedKind(
           `template:${input.template.name}:${outcome.projectName}`
         );
         dispatchCreationPaneState({ type: "close" });
-        await onProjectCreated?.(outcome.projectId);
+        await completeProjectCreation(outcome);
       });
     },
     [
       applyWithBusyState,
+      completeProjectCreation,
       existingProjects,
-      onProjectCreated,
       runDeployment,
       templateCatalog.templates,
     ]
