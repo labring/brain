@@ -4,7 +4,7 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   InfoIcon,
-  Loader2Icon,
+  LoaderIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -30,7 +30,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         info: <InfoIcon className="size-4" />,
         warning: <TriangleAlertIcon className="size-4" />,
         error: <CircleAlertIcon className="size-4" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
+        loading: <LoaderIcon className="size-4 animate-spin" />,
       }}
       mobileOffset={16}
       offset={16}
@@ -60,11 +60,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "min-w-0 break-words !text-sm !font-normal !leading-5 !text-primary",
           icon: "!m-0 !flex !size-9 shrink-0 !items-center !justify-center rounded-lg bg-input/30 text-primary/80 [&>svg]:!m-0 [&>svg]:size-4",
           content: "min-w-0 flex-1 !gap-0",
-          success: "[&_[data-icon]]:text-primary/80",
+          success: "[&_[data-icon]]:text-blue-400",
           info: "[&_[data-icon]]:text-primary/80",
-          warning: "[&_[data-icon]]:text-primary/80",
-          error: "[&_[data-icon]]:!text-red-500",
-          loading: "[&_[data-icon]]:text-primary/80",
+          warning: "[&_[data-icon]]:text-yellow-400",
+          error: "[&_[data-icon]]:!text-red-400",
+          loading: "[&_[data-icon]]:text-blue-400",
         },
       }}
       {...props}
