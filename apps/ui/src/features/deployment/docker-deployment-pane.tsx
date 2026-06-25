@@ -15,6 +15,7 @@ import {
 } from "@/features/deployment-target/pipeline";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 export function DockerDeploymentPane({
   kubeconfig,
@@ -73,8 +74,9 @@ export function DockerDeploymentPane({
           onDeployed().catch(() => undefined);
         }
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Could not deploy Docker AP."
+        toastErrorDetail(
+          "Could not deploy Docker AP.",
+          errorDescription(error, "Could not deploy Docker AP.")
         );
       } finally {
         setDeploying(false);

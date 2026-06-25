@@ -31,6 +31,7 @@ import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
@@ -203,7 +204,10 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       try {
         await fn();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Apply failed");
+        toastErrorDetail(
+          "Apply failed.",
+          errorDescription(err, "Apply failed.")
+        );
       } finally {
         setConfirmApplying(false);
       }
@@ -411,8 +415,9 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       await mutateGithubRepos([], { revalidate: false });
       toast.success("Disconnected GitHub.");
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not disconnect GitHub."
+      toastErrorDetail(
+        "Could not disconnect GitHub.",
+        errorDescription(error, "Could not disconnect GitHub.")
       );
     }
   }, [disconnectGithubAuth, mutateGithubRepos]);

@@ -20,6 +20,9 @@ import {
 import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
 
 const PROJECT_CANVAS_LOADING_TOAST_ID = "project-canvas-loading-workloads";
+const PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID = "project-canvas-no-workloads";
+const PROJECT_CANVAS_UNAVAILABLE_TOAST_ID =
+  "project-canvas-workloads-unavailable";
 const useIsomorphicLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -77,6 +80,43 @@ function ProjectCanvasLoadingToast({ active }: { active: boolean }) {
   return null;
 }
 
+function ProjectCanvasFrameStateToast({
+  overlay,
+}: {
+  overlay: ProjectCanvasFrameState["overlay"];
+}) {
+  useIsomorphicLayoutEffect(() => {
+    if (overlay === "empty") {
+      toast.dismiss(PROJECT_CANVAS_UNAVAILABLE_TOAST_ID);
+      toast.info("No workloads", {
+        duration: Number.POSITIVE_INFINITY,
+        id: PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID,
+      });
+
+      return () => {
+        toast.dismiss(PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID);
+      };
+    }
+
+    if (overlay === "error") {
+      toast.dismiss(PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID);
+      toast.error("Workloads unavailable", {
+        duration: Number.POSITIVE_INFINITY,
+        id: PROJECT_CANVAS_UNAVAILABLE_TOAST_ID,
+      });
+
+      return () => {
+        toast.dismiss(PROJECT_CANVAS_UNAVAILABLE_TOAST_ID);
+      };
+    }
+
+    toast.dismiss(PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID);
+    toast.dismiss(PROJECT_CANVAS_UNAVAILABLE_TOAST_ID);
+  }, [overlay]);
+
+  return null;
+}
+
 interface ProjectCanvasOverlayLayerProps {
   deploymentTaskDock: DeploymentTaskDockModel;
   frameState: ProjectCanvasFrameState;
@@ -99,22 +139,7 @@ export function ProjectCanvasOverlayLayer({
         onOpen={onOpenDeploymentTask}
       />
       <ProjectCanvasLoadingToast active={frameState.overlay === "loading"} />
-      {frameState.overlay === "error" || frameState.overlay === "empty" ? (
-        <div
-          aria-live="polite"
-          className="pointer-events-none absolute top-6 left-1/2 z-10 -translate-x-1/2"
-          data-slot="project-canvas-empty-state"
-          role="status"
-        >
-          <div className="rounded-lg border border-border bg-card px-4 py-2 shadow-md">
-            <span className="font-medium text-foreground text-sm">
-              {frameState.overlay === "error"
-                ? "Workloads unavailable"
-                : "No workloads"}
-            </span>
-          </div>
-        </div>
-      ) : null}
+      <ProjectCanvasFrameStateToast overlay={frameState.overlay} />
     </>
   );
 }

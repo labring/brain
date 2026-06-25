@@ -34,6 +34,7 @@ import {
 } from "@/features/project-settings/ap/k8s/claim-mapper";
 import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
 import { settingsDraftSaveFailureMessage } from "@/features/project-settings/ap/lib/settings-draft-backing";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
@@ -254,7 +255,10 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         await revalidateAfterApMutation();
       } catch (e) {
         setLocalOverride(null);
-        toast.error(e instanceof Error ? e.message : "Apply failed");
+        toastErrorDetail(
+          "Image update failed.",
+          errorDescription(e, "Image update failed.")
+        );
       }
     },
     [isApWorkload, kubeconfig, readOnly, revalidateAfterApMutation]
@@ -293,7 +297,10 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         clearPendingReferences?.();
       } catch (e) {
         setLocalOverride(null);
-        toast.error(e instanceof Error ? e.message : "Apply failed");
+        toastErrorDetail(
+          "Environment update failed.",
+          errorDescription(e, "Environment update failed.")
+        );
       }
     },
     [
@@ -324,7 +331,10 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         await revalidateAfterApMutation();
       } catch (e) {
         setLocalOverride(null);
-        toast.error(e instanceof Error ? e.message : "Apply failed");
+        toastErrorDetail(
+          "Network update failed.",
+          errorDescription(e, "Network update failed.")
+        );
       }
     },
     [
@@ -345,7 +355,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
         const error = new Error("Workload resource or kubeconfig missing.");
-        toast.error(error.message);
+        toast.error("Workload resource or kubeconfig missing.");
         throw error;
       }
       setLocalOverride((prev) => ({ ...(prev ?? {}), network }));
@@ -357,7 +367,10 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         await revalidateAfterApMutation();
       } catch (e) {
         setLocalOverride(null);
-        toast.error(settingsDraftSaveFailureMessage(e, "Apply failed."));
+        toastErrorDetail(
+          "Public addresses update failed.",
+          settingsDraftSaveFailureMessage(e, "Public addresses update failed.")
+        );
         throw e;
       }
     },
@@ -417,7 +430,10 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         await revalidateAfterApMutation();
       } catch (e) {
         setLocalOverride(null);
-        toast.error(e instanceof Error ? e.message : "Apply failed");
+        toastErrorDetail(
+          "Resource quota update failed.",
+          errorDescription(e, "Resource quota update failed.")
+        );
       }
     },
     [
@@ -441,7 +457,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
       const kc = kubeconfig.trim();
       if (body == null || kc === "") {
         const error = new Error("Workload resource or kubeconfig missing.");
-        toast.error(error.message);
+        toast.error("Workload resource or kubeconfig missing.");
         throw error;
       }
 

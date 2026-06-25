@@ -57,6 +57,7 @@ import {
   useSettingsSubmissionEntries,
 } from "@/features/project-settings/settings-submissions";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { toastErrorDetail } from "@/lib/toast-utils";
 import {
   applyDbPendingTargets,
   type DbPendingSettingsTarget,
@@ -852,7 +853,8 @@ export function useDatabaseSettingsSections({
           );
           setDraft(prepared.draft);
         }
-        toast.error(
+        toastErrorDetail(
+          "Could not submit database settings.",
           settingsDraftSaveFailureMessage(
             error,
             "Could not submit database settings."

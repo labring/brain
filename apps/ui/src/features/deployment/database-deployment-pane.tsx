@@ -16,6 +16,7 @@ import {
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 export function DatabaseDeploymentPane({
   kubeconfig,
@@ -75,8 +76,9 @@ export function DatabaseDeploymentPane({
           onDeployed().catch(() => undefined);
         }
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Could not deploy database."
+        toastErrorDetail(
+          "Could not deploy database.",
+          errorDescription(error, "Could not deploy database.")
         );
       } finally {
         setDeploying(false);

@@ -8,12 +8,12 @@ import {
 } from "@workspace/api/hooks";
 import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components/database-node/database-node";
 import { useCallback } from "react";
-import { toast } from "sonner";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import type {
   ProjectApTarget,
   ProjectDbTarget,
 } from "@/features/project-surfaces/target-identity";
+import { errorDescription, toastPromiseDetail } from "@/lib/toast-utils";
 
 export interface ProjectResourceActionCopy {
   loading: string;
@@ -109,7 +109,7 @@ export function useProjectResourceActions({
       copy: ProjectResourceActionCopy,
       options?: RunProjectResourceActionOptions
     ) => {
-      toast.promise(
+      toastPromiseDetail(
         (async (): Promise<void> => {
           try {
             await mutation();
@@ -120,8 +120,8 @@ export function useProjectResourceActions({
           }
         })(),
         {
-          error: (err) =>
-            err instanceof Error ? err.message : "Operation failed",
+          errorDescription: (err) => errorDescription(err, "Operation failed."),
+          errorTitle: "Operation failed.",
           loading: copy.loading,
           success: copy.success,
         }

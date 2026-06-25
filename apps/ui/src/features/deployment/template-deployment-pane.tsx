@@ -14,6 +14,7 @@ import {
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 export function TemplateDeploymentPane({
   kubeconfig,
@@ -74,8 +75,9 @@ export function TemplateDeploymentPane({
           onDeployed().catch(() => undefined);
         }
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Could not deploy template."
+        toastErrorDetail(
+          "Could not deploy template.",
+          errorDescription(error, "Could not deploy template.")
         );
       } finally {
         setDeploying(false);

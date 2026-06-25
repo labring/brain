@@ -27,6 +27,11 @@ import {
 import { applyApImage } from "@/features/project-settings/ap/k8s/ap-json-patch";
 import { readApImage } from "@/features/project-settings/ap/k8s/ap-spec-access";
 import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
+import {
+  errorDescription,
+  toastErrorDetail,
+  toastPromiseDetail,
+} from "@/lib/toast-utils";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import {
   CanvasResourcePane,
@@ -124,8 +129,9 @@ function DeploymentImageSection({
       toast.success("Image updated.");
       await onApplied();
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Image update failed."
+      toastErrorDetail(
+        "Image update failed.",
+        errorDescription(error, "Image update failed.")
       );
     } finally {
       setIsUpdating(false);
@@ -270,7 +276,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
       return;
     }
     setRollbackConfirmVersion(null);
-    toast.promise(
+    toastPromiseDetail(
       (async () => {
         setRollbackBusyVersion(versionHash);
         try {
@@ -280,10 +286,11 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         }
       })(),
       {
+        errorDescription: (e) =>
+          errorDescription(e, "Rollback failed unexpectedly."),
+        errorTitle: "Rollback failed.",
         loading: "Rolling back deployment...",
         success: "AP restored from the selected deployment.",
-        error: (e) =>
-          e instanceof Error ? e.message : "Rollback failed unexpectedly.",
       }
     );
   };

@@ -8,7 +8,7 @@ import {
 } from "@data-browser/backups/backup-policy-schedule";
 import type { DbServiceBackupSummary } from "@data-browser/backups/backup-summary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toastErrorDetail, toastPromiseDetail } from "@/lib/toast-utils";
 import {
   createDbServiceBackupFetchTransport,
   type DbServiceBackupTransport,
@@ -50,11 +50,12 @@ interface LastRefreshError {
 }
 
 export interface DbServiceBackupWorkflowNotifier {
-  error(message: string): void;
+  error(message: string, title?: string): void;
   promise<T>(
     promise: Promise<T>,
     messages: {
       error: (error: unknown) => string;
+      errorTitle?: string;
       loading: string;
       success: string;
     }
@@ -62,9 +63,16 @@ export interface DbServiceBackupWorkflowNotifier {
 }
 
 const defaultNotifier: DbServiceBackupWorkflowNotifier = {
-  error: (message) => toast.error(message),
+  error: (message, title = "Backup operation failed.") => {
+    toastErrorDetail(title, message);
+  },
   promise: (promise, messages) => {
-    toast.promise(promise, messages);
+    toastPromiseDetail(promise, {
+      errorDescription: messages.error,
+      errorTitle: messages.errorTitle ?? "Backup operation failed.",
+      loading: messages.loading,
+      success: messages.success,
+    });
   },
 };
 
@@ -209,7 +217,7 @@ export function useDbServiceBackupWorkflow({
           message,
           refreshIdentity: requestRefreshIdentity,
         };
-        notifier.error(message);
+        notifier.error(message, "Could not refresh backups.");
       }
     } finally {
       setPendingRefresh((previous) => {
@@ -234,6 +242,7 @@ export function useDbServiceBackupWorkflow({
       })();
       notifier.promise(submission, {
         error: (error) => errorMessage(error, "Failed to create backup."),
+        errorTitle: "Failed to create backup.",
         loading: `Requesting backup ${trimmedName}...`,
         success: `Backup request accepted for ${trimmedName}.`,
       });
@@ -272,6 +281,7 @@ export function useDbServiceBackupWorkflow({
       });
       notifier.promise(deletion, {
         error: (error) => errorMessage(error, "Failed to delete backup."),
+        errorTitle: "Failed to delete backup.",
         loading: `Deleting backup ${backupName}...`,
         success: `Deleted backup ${backupName}.`,
       });
@@ -307,6 +317,7 @@ export function useDbServiceBackupWorkflow({
       notifier.promise(restore, {
         error: (error) =>
           errorMessage(error, "DB Service backup restore failed."),
+        errorTitle: "DB Service backup restore failed.",
         loading: `Restoring DB Service ${trimmedRestoredName}...`,
         success: "Restore request accepted.",
       });
@@ -339,6 +350,7 @@ export function useDbServiceBackupWorkflow({
       notifier.promise(save, {
         error: (error) =>
           errorMessage(error, "Failed to update backup policy."),
+        errorTitle: "Failed to update backup policy.",
         loading: "Saving backup policy...",
         success: form.enabled
           ? "Backup policy saved."

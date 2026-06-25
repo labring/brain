@@ -29,6 +29,7 @@ import {
   type ProjectWorkloadStatusInput,
 } from "@/lib/project-aggregate-status";
 import { projectShortcutIconKeysFromWorkloads } from "@/lib/project-shortcut-icons";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { openAssistantPane } from "@/store/layout-store";
 
 /**
@@ -245,8 +246,10 @@ export function useProjectsExplorer(options: {
         await mutate();
         toast.success(`Updated "${result.project.displayName}".`);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Project update failed";
-        toast.error(msg);
+        toastErrorDetail(
+          "Project update failed.",
+          errorDescription(e, "Project update failed.")
+        );
         throw e;
       }
     },
@@ -277,8 +280,10 @@ export function useProjectsExplorer(options: {
           router.push("/project");
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Delete failed";
-        toast.error(msg);
+        toastErrorDetail(
+          "Project delete failed.",
+          errorDescription(e, "Project delete failed.")
+        );
         throw e;
       }
     },

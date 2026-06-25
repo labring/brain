@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { toastErrorDetail } from "@/lib/toast-utils";
 import {
   classifyPendingSettingsEntry,
   getBrowserPendingSettingsStore,
@@ -1732,7 +1733,8 @@ export function useApSettingsSections({
           );
           applySettingsDraftToLocalState(commitDraft);
         }
-        toast.error(
+        toastErrorDetail(
+          "Could not submit settings.",
           settingsDraftSaveFailureMessage(error, "Could not submit settings."),
           {
             action: {
