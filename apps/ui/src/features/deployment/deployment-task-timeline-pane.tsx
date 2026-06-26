@@ -154,11 +154,129 @@ function StatusMarker({
   );
 }
 
+function resourceStatusDotOuterTone(
+  status: DeploymentResultResourceCardStatus
+): string {
+  switch (status) {
+    case "completed":
+    case "running":
+      return "bg-emerald-500/30";
+    case "creating":
+    case "pending":
+      return "bg-blue-500/30";
+    case "blocked":
+    case "unknown":
+      return "bg-amber-500/30";
+    case "failed":
+      return "bg-destructive/30";
+    case "skipped":
+      return "bg-muted-foreground/20";
+    default:
+      return status satisfies never;
+  }
+}
+
+function resourceStatusDotInnerTone(
+  status: DeploymentResultResourceCardStatus
+): string {
+  switch (status) {
+    case "completed":
+    case "running":
+      return "bg-emerald-500";
+    case "creating":
+    case "pending":
+      return "bg-blue-500";
+    case "blocked":
+    case "unknown":
+      return "bg-amber-500";
+    case "failed":
+      return "bg-destructive";
+    case "skipped":
+      return "bg-muted-foreground/60";
+    default:
+      return status satisfies never;
+  }
+}
+
+function ResourceStatusDot({
+  status,
+}: {
+  status: DeploymentResultResourceCardStatus;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex size-3.5 shrink-0 items-center justify-center rounded-full",
+        resourceStatusDotOuterTone(status)
+      )}
+    >
+      <span
+        className={cn(
+          "size-2 rounded-full",
+          resourceStatusDotInnerTone(status)
+        )}
+      />
+    </span>
+  );
+}
+
 function EmptyState({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-md border border-dashed bg-muted/30 px-3 py-4 text-muted-foreground text-sm">
       {children}
     </div>
+  );
+}
+
+function ResourceEventLine({
+  event,
+  showSeverity = false,
+}: {
+  event: DeploymentTimelineEvent;
+  showSeverity?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 items-center text-xs leading-4",
+        showSeverity && "gap-2"
+      )}
+    >
+      {showSeverity ? (
+        <span
+          aria-hidden
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            eventSeverityTone(event.severity)
+          )}
+        />
+      ) : null}
+      <div className="flex min-w-0 items-center gap-1">
+        <span className="w-[77px] shrink-0 truncate text-muted-foreground">
+          {event.createdAt}
+        </span>
+        <span className="min-w-0 truncate text-foreground/90">
+          {event.message}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ResourceEventList({
+  events,
+}: {
+  events: readonly DeploymentTimelineEvent[];
+}) {
+  return (
+    <ol className="flex flex-col gap-1">
+      {events.map((event) => (
+        <li key={event.id}>
+          <ResourceEventLine event={event} showSeverity />
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -361,26 +479,27 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
 
   return (
     <DeploymentTimelineCard
-      className={cn("transition-colors", open && "bg-white/[0.06]")}
+      className="p-4 transition-colors"
       data-slot="deployment-result-resource-card"
     >
-      <Collapsible className="contents" onOpenChange={onOpenChange} open={open}>
+      <Collapsible
+        className="flex flex-col gap-4"
+        onOpenChange={onOpenChange}
+        open={open}
+      >
         <CollapsibleTrigger
-          className="group/resource-card flex w-full cursor-pointer flex-col gap-2 p-4 text-left outline-none transition-colors hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-ring/30"
+          className="group/resource-card flex w-full cursor-pointer flex-col gap-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
           type="button"
         >
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-2.5">
-              <StatusMarker status={card.status} />
-              <div className="min-w-0">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ResourceStatusDot status={card.status} />
+              <div className="min-w-0 flex-1">
                 <div
                   className="truncate font-medium text-foreground text-sm leading-5"
                   title={card.title}
                 >
                   {card.title}
-                </div>
-                <div className="mt-1 truncate text-muted-foreground text-xs leading-4">
-                  {meta}
                 </div>
               </div>
             </div>
@@ -389,24 +508,22 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
               className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/resource-card:rotate-180"
             />
           </div>
-          {latestEvent == null ? null : (
-            <div className="grid min-w-0 grid-cols-[77px_minmax(0,1fr)] gap-1 pl-6 text-xs">
-              <span className="truncate text-muted-foreground text-xs leading-4">
-                {latestEvent.createdAt}
-              </span>
-              <span className="min-w-0 truncate text-foreground/90 leading-4">
-                {latestEvent.message}
-              </span>
-            </div>
-          )}
+          <div className="flex w-full min-w-0 flex-col gap-1">
+            <p className="min-w-0 truncate text-muted-foreground text-xs leading-4">
+              {meta}
+            </p>
+            {latestEvent == null ? null : (
+              <ResourceEventLine event={latestEvent} />
+            )}
+          </div>
         </CollapsibleTrigger>
-        <CollapsibleContent className="border-white/8 border-t px-4 py-3 outline-none">
+        <CollapsibleContent className="border-white/8 border-t pt-4 outline-none">
           {card.events.length === 0 ? (
             <p className="text-muted-foreground text-xs leading-4">
               No resource events recorded yet.
             </p>
           ) : (
-            <TimelineEventList events={card.events} showSeverity />
+            <ResourceEventList events={card.events} />
           )}
         </CollapsibleContent>
       </Collapsible>
