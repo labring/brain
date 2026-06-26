@@ -26,10 +26,10 @@ import {
   LoaderCircle,
   PackageCheck,
   Rocket,
-  Send,
   XCircle,
 } from "lucide-react";
 import {
+  type ComponentPropsWithoutRef,
   type FormEvent,
   type ReactNode,
   useCallback,
@@ -154,11 +154,144 @@ function StatusMarker({
   );
 }
 
+function resourceStatusDotOuterTone(
+  status: DeploymentResultResourceCardStatus
+): string {
+  switch (status) {
+    case "completed":
+    case "running":
+      return "bg-emerald-500/30";
+    case "creating":
+    case "pending":
+      return "bg-blue-500/30";
+    case "blocked":
+    case "unknown":
+      return "bg-amber-500/30";
+    case "failed":
+      return "bg-destructive/30";
+    case "skipped":
+      return "bg-muted-foreground/20";
+    default:
+      return status satisfies never;
+  }
+}
+
+function resourceStatusDotInnerTone(
+  status: DeploymentResultResourceCardStatus
+): string {
+  switch (status) {
+    case "completed":
+    case "running":
+      return "bg-emerald-500";
+    case "creating":
+    case "pending":
+      return "bg-blue-500";
+    case "blocked":
+    case "unknown":
+      return "bg-amber-500";
+    case "failed":
+      return "bg-destructive";
+    case "skipped":
+      return "bg-muted-foreground/60";
+    default:
+      return status satisfies never;
+  }
+}
+
+function ResourceStatusDot({
+  status,
+}: {
+  status: DeploymentResultResourceCardStatus;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex size-3.5 shrink-0 items-center justify-center rounded-full",
+        resourceStatusDotOuterTone(status)
+      )}
+    >
+      <span
+        className={cn(
+          "size-2 rounded-full",
+          resourceStatusDotInnerTone(status)
+        )}
+      />
+    </span>
+  );
+}
+
 function EmptyState({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-md border border-dashed bg-muted/30 px-3 py-4 text-muted-foreground text-sm">
       {children}
     </div>
+  );
+}
+
+function ResourceEventLine({
+  event,
+  showSeverity = false,
+}: {
+  event: DeploymentTimelineEvent;
+  showSeverity?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 items-center text-xs leading-4",
+        showSeverity && "gap-2"
+      )}
+    >
+      {showSeverity ? (
+        <span
+          aria-hidden
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            eventSeverityTone(event.severity)
+          )}
+        />
+      ) : null}
+      <div className="flex min-w-0 items-center gap-1">
+        <span className="w-[77px] shrink-0 truncate text-muted-foreground">
+          {event.createdAt}
+        </span>
+        <span className="min-w-0 truncate text-foreground/90">
+          {event.message}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ResourceEventList({
+  events,
+}: {
+  events: readonly DeploymentTimelineEvent[];
+}) {
+  return (
+    <ol className="flex flex-col gap-1">
+      {events.map((event) => (
+        <li key={event.id}>
+          <ResourceEventLine event={event} showSeverity />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function DeploymentTimelineCard({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"div">) {
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border border-white/8 bg-input/30 shadow-none backdrop-blur-sm",
+        className
+      )}
+      {...props}
+    />
   );
 }
 
@@ -255,10 +388,10 @@ function TimelineEventList({
       {events.map((event) => (
         <li
           className={cn(
-            "grid min-w-0 items-start gap-2 text-xs",
+            "grid min-w-0 items-start gap-1 text-xs",
             showSeverity
-              ? "grid-cols-[0.5rem_6rem_minmax(0,1fr)]"
-              : "grid-cols-[6rem_minmax(0,1fr)]"
+              ? "grid-cols-[0.5rem_77px_minmax(0,1fr)]"
+              : "grid-cols-[77px_minmax(0,1fr)]"
           )}
           key={event.id}
         >
@@ -266,12 +399,12 @@ function TimelineEventList({
             <span
               aria-hidden
               className={cn(
-                "mt-1.5 size-1 rounded-full",
+                "mt-1 size-2 rounded-full",
                 eventSeverityTone(event.severity)
               )}
             />
           ) : null}
-          <span className="truncate font-mono text-[10px] text-muted-foreground leading-4">
+          <span className="truncate text-muted-foreground text-xs leading-4">
             {event.createdAt}
           </span>
           <span className="min-w-0 text-foreground/90 leading-4">
@@ -345,76 +478,56 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
   const meta = resultResourceMeta(card);
 
   return (
-    <Collapsible
-      className={cn(
-        "overflow-hidden rounded-md border border-white/8 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors",
-        open && "bg-white/[0.06]"
-      )}
+    <DeploymentTimelineCard
+      className="p-4 transition-colors"
       data-slot="deployment-result-resource-card"
-      onOpenChange={onOpenChange}
-      open={open}
     >
-      <CollapsibleTrigger
-        className="group/resource-card flex w-full cursor-pointer flex-col gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-white/[0.035] focus-visible:ring-2 focus-visible:ring-ring/30"
-        type="button"
+      <Collapsible
+        className="flex flex-col gap-4"
+        onOpenChange={onOpenChange}
+        open={open}
       >
-        <div className="flex min-w-0 items-start justify-between gap-2">
-          <div className="flex min-w-0 items-start gap-2">
-            <span
-              aria-hidden
-              className={cn(
-                "mt-1.5 size-1.5 shrink-0 rounded-full",
-                statusDotTone(card.status)
-              )}
-            />
-            <div className="min-w-0">
-              <div
-                className="truncate font-medium text-foreground text-xs leading-4"
-                title={card.title}
-              >
-                {card.title}
-              </div>
-              <div className="mt-1 truncate text-[11px] text-muted-foreground leading-4">
-                {meta}
+        <CollapsibleTrigger
+          className="group/resource-card flex w-full cursor-pointer flex-col gap-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+          type="button"
+        >
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ResourceStatusDot status={card.status} />
+              <div className="min-w-0 flex-1">
+                <div
+                  className="truncate font-medium text-foreground text-sm leading-5"
+                  title={card.title}
+                >
+                  {card.title}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="sr-only">{card.status}</span>
-            <div
-              aria-hidden
-              className={cn(
-                "size-1.5 rounded-full",
-                statusDotTone(card.status)
-              )}
-            />
             <ChevronDown
               aria-hidden
-              className="size-3 shrink-0 text-muted-foreground transition-transform group-data-panel-open/resource-card:rotate-180"
+              className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/resource-card:rotate-180"
             />
           </div>
-        </div>
-        {latestEvent == null ? null : (
-          <div className="grid min-w-0 grid-cols-[6rem_minmax(0,1fr)] gap-2 pl-3.5 text-xs">
-            <span className="truncate font-mono text-[10px] text-muted-foreground leading-4">
-              {latestEvent.createdAt}
-            </span>
-            <span className="min-w-0 truncate text-foreground/90 leading-4">
-              {latestEvent.message}
-            </span>
+          <div className="flex w-full min-w-0 flex-col gap-1">
+            <p className="min-w-0 truncate text-muted-foreground text-xs leading-4">
+              {meta}
+            </p>
+            {latestEvent == null ? null : (
+              <ResourceEventLine event={latestEvent} />
+            )}
           </div>
-        )}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="border-white/8 border-t px-3 py-2.5 pl-6 outline-none">
-        {card.events.length === 0 ? (
-          <p className="text-muted-foreground text-xs leading-4">
-            No resource events recorded yet.
-          </p>
-        ) : (
-          <TimelineEventList events={card.events} showSeverity />
-        )}
-      </CollapsibleContent>
-    </Collapsible>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-white/8 border-t pt-4 outline-none">
+          {card.events.length === 0 ? (
+            <p className="text-muted-foreground text-xs leading-4">
+              No resource events recorded yet.
+            </p>
+          ) : (
+            <ResourceEventList events={card.events} />
+          )}
+        </CollapsibleContent>
+      </Collapsible>
+    </DeploymentTimelineCard>
   );
 }
 
@@ -435,7 +548,7 @@ function TimelineStepItem({
       <div className="min-w-0 pb-3.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <h3
-            className="truncate font-medium text-foreground text-sm leading-5"
+            className="truncate font-normal text-foreground text-sm leading-5"
             title={step.label}
           >
             {step.label}
@@ -604,7 +717,7 @@ function DeploymentInputControl({
   return (
     <AppInput
       autoComplete={controlType === "password" ? "off" : undefined}
-      className="h-8 rounded-md bg-white/[0.02] text-xs"
+      className="h-9 rounded-md bg-white/[0.02] text-sm"
       id={`deployment-input-${input.key}`}
       name={input.key}
       onChange={(event) => onChange(event.currentTarget.value)}
@@ -630,7 +743,7 @@ function DeploymentInputField({
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <label
-        className="flex items-center gap-1 font-medium text-foreground text-xs leading-4"
+        className="flex items-center gap-1 font-normal text-foreground text-sm leading-none"
         htmlFor={`deployment-input-${input.key}`}
       >
         {label}
@@ -641,7 +754,7 @@ function DeploymentInputField({
         ) : null}
       </label>
       {description ? (
-        <span className="text-muted-foreground text-xs leading-4">
+        <span className="text-muted-foreground text-sm leading-5">
           {description}
         </span>
       ) : null}
@@ -753,52 +866,53 @@ function DeploymentConfigurationForm({
   }
 
   return (
-    <form
-      className="flex min-w-0 flex-col gap-3 rounded-md border border-white/8 bg-white/[0.06] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-      data-slot="deployment-configuration-form"
-      onSubmit={submit}
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        <AlertTriangle aria-hidden className="size-4 shrink-0 text-amber-400" />
-        <h3 className="truncate font-medium text-foreground text-sm leading-5">
-          Deployment configuration
-        </h3>
-      </div>
-      <p className="text-muted-foreground text-xs leading-4">
-        Required template values are missing. Submit them to continue this
-        deployment.
-      </p>
-      <div className="flex flex-col gap-3">
-        {inputs.map((input) => (
-          <DeploymentInputField
-            input={input}
-            key={input.key}
-            onChange={(nextValue) =>
-              setValues((current) => ({
-                ...current,
-                [input.key]: nextValue,
-              }))
-            }
-            value={values[input.key] ?? ""}
+    <DeploymentTimelineCard data-slot="deployment-configuration-form">
+      <form className="flex min-w-0 flex-col gap-[14px] p-4" onSubmit={submit}>
+        <div className="flex min-w-0 items-center gap-2">
+          <AlertTriangle
+            aria-hidden
+            className="size-4 shrink-0 text-amber-400"
           />
-        ))}
-      </div>
-      {error == null ? null : (
-        <p className="text-destructive text-xs leading-4">{error}</p>
-      )}
-      <Button
-        className="h-7 w-full text-xs"
-        disabled={isSubmitting}
-        type="submit"
-      >
-        {isSubmitting ? (
-          <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
-        ) : (
-          <Send aria-hidden className="size-3.5" />
+          <h3 className="truncate font-medium text-foreground text-sm leading-5">
+            Deployment configuration
+          </h3>
+        </div>
+        <p className="text-muted-foreground text-sm leading-5">
+          Required template values are missing. Submit them to continue this
+          deployment.
+        </p>
+        <div className="flex flex-col gap-3">
+          {inputs.map((input) => (
+            <DeploymentInputField
+              input={input}
+              key={input.key}
+              onChange={(nextValue) =>
+                setValues((current) => ({
+                  ...current,
+                  [input.key]: nextValue,
+                }))
+              }
+              value={values[input.key] ?? ""}
+            />
+          ))}
+        </div>
+        {error == null ? null : (
+          <p className="text-destructive text-xs leading-4">{error}</p>
         )}
-        Continue deployment
-      </Button>
-    </form>
+        <Button
+          className="h-9 w-full font-medium text-sm"
+          disabled={isSubmitting}
+          type="submit"
+        >
+          {isSubmitting ? (
+            <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+          ) : (
+            <Rocket aria-hidden className="size-3.5" />
+          )}
+          Continue Deployment
+        </Button>
+      </form>
+    </DeploymentTimelineCard>
   );
 }
 
@@ -847,7 +961,7 @@ export function DeploymentTaskTimelinePaneContent({
       <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border border-white/8" />
       <div className="mb-3 flex items-center gap-2 text-foreground">
         <Rocket aria-hidden className="size-4 text-foreground" />
-        <h3 className="font-medium text-base leading-5">Deployment Timeline</h3>
+        <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
       </div>
       <div className="mb-4 flex items-center gap-2 text-muted-foreground text-sm leading-5">
         <span
