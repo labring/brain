@@ -255,10 +255,10 @@ function TimelineEventList({
       {events.map((event) => (
         <li
           className={cn(
-            "grid min-w-0 items-start gap-2 text-xs",
+            "grid min-w-0 items-start gap-1 text-xs",
             showSeverity
-              ? "grid-cols-[0.5rem_6rem_minmax(0,1fr)]"
-              : "grid-cols-[6rem_minmax(0,1fr)]"
+              ? "grid-cols-[0.5rem_77px_minmax(0,1fr)]"
+              : "grid-cols-[77px_minmax(0,1fr)]"
           )}
           key={event.id}
         >
@@ -271,7 +271,7 @@ function TimelineEventList({
               )}
             />
           ) : null}
-          <span className="truncate font-mono text-[10px] text-muted-foreground leading-4">
+          <span className="truncate text-muted-foreground text-xs leading-4">
             {event.createdAt}
           </span>
           <span className="min-w-0 text-foreground/90 leading-4">
@@ -369,12 +369,12 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
             />
             <div className="min-w-0">
               <div
-                className="truncate font-medium text-foreground text-xs leading-4"
+                className="truncate font-medium text-foreground text-sm leading-5"
                 title={card.title}
               >
                 {card.title}
               </div>
-              <div className="mt-1 truncate text-[11px] text-muted-foreground leading-4">
+              <div className="mt-1 truncate text-muted-foreground text-xs leading-4">
                 {meta}
               </div>
             </div>
@@ -395,8 +395,8 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
           </div>
         </div>
         {latestEvent == null ? null : (
-          <div className="grid min-w-0 grid-cols-[6rem_minmax(0,1fr)] gap-2 pl-3.5 text-xs">
-            <span className="truncate font-mono text-[10px] text-muted-foreground leading-4">
+          <div className="grid min-w-0 grid-cols-[77px_minmax(0,1fr)] gap-1 pl-3.5 text-xs">
+            <span className="truncate text-muted-foreground text-xs leading-4">
               {latestEvent.createdAt}
             </span>
             <span className="min-w-0 truncate text-foreground/90 leading-4">
@@ -435,7 +435,7 @@ function TimelineStepItem({
       <div className="min-w-0 pb-3.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <h3
-            className="truncate font-medium text-foreground text-sm leading-5"
+            className="truncate font-normal text-foreground text-sm leading-5"
             title={step.label}
           >
             {step.label}
@@ -604,7 +604,7 @@ function DeploymentInputControl({
   return (
     <AppInput
       autoComplete={controlType === "password" ? "off" : undefined}
-      className="h-8 rounded-md bg-white/[0.02] text-xs"
+      className="h-9 rounded-md bg-white/[0.02] text-sm"
       id={`deployment-input-${input.key}`}
       name={input.key}
       onChange={(event) => onChange(event.currentTarget.value)}
@@ -630,7 +630,7 @@ function DeploymentInputField({
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <label
-        className="flex items-center gap-1 font-medium text-foreground text-xs leading-4"
+        className="flex items-center gap-1 font-normal text-foreground text-sm leading-none"
         htmlFor={`deployment-input-${input.key}`}
       >
         {label}
@@ -641,7 +641,7 @@ function DeploymentInputField({
         ) : null}
       </label>
       {description ? (
-        <span className="text-muted-foreground text-xs leading-4">
+        <span className="text-muted-foreground text-sm leading-5">
           {description}
         </span>
       ) : null}
@@ -764,7 +764,7 @@ function DeploymentConfigurationForm({
           Deployment configuration
         </h3>
       </div>
-      <p className="text-muted-foreground text-xs leading-4">
+      <p className="text-muted-foreground text-sm leading-5">
         Required template values are missing. Submit them to continue this
         deployment.
       </p>
@@ -787,7 +787,7 @@ function DeploymentConfigurationForm({
         <p className="text-destructive text-xs leading-4">{error}</p>
       )}
       <Button
-        className="h-7 w-full text-xs"
+        className="h-9 w-full font-medium text-sm"
         disabled={isSubmitting}
         type="submit"
       >
@@ -796,7 +796,7 @@ function DeploymentConfigurationForm({
         ) : (
           <Send aria-hidden className="size-3.5" />
         )}
-        Continue deployment
+        Continue Deployment
       </Button>
     </form>
   );
@@ -847,7 +847,7 @@ export function DeploymentTaskTimelinePaneContent({
       <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border border-white/8" />
       <div className="mb-3 flex items-center gap-2 text-foreground">
         <Rocket aria-hidden className="size-4 text-foreground" />
-        <h3 className="font-medium text-base leading-5">Deployment Timeline</h3>
+        <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
       </div>
       <div className="mb-4 flex items-center gap-2 text-muted-foreground text-sm leading-5">
         <span
