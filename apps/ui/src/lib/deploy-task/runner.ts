@@ -609,9 +609,11 @@ async function observeResultCardReadiness(input: {
 
 async function waitForRequiredResultCards(input: {
   cards: DeploymentResultResourceCard[];
+  failOnTimeout?: boolean;
   kubeconfig: string;
   taskId: string;
-}) {
+}): Promise<boolean> {
+  const failOnTimeout = input.failOnTimeout ?? true;
   const startedAt = Date.now();
   const timeoutMs = directApReadinessTimeoutMs();
   let latestStatus = "waiting for required result resource observation";
@@ -644,7 +646,7 @@ async function waitForRequiredResultCards(input: {
         snapshot == null ||
         deploymentTimelineResultReadinessReached(snapshot.timeline)
       ) {
-        return;
+        return true;
       }
     }
 
@@ -671,11 +673,16 @@ async function waitForRequiredResultCards(input: {
       update: (timeline) =>
         applyResultResourceTimeout(timeline, {
           cardId: card.id,
+          failRequired: failOnTimeout,
           lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
           stepId: "create-resources",
           updatedAt: now,
         }),
     });
+  }
+
+  if (!failOnTimeout) {
+    return false;
   }
 
   throw new Error(
@@ -1564,6 +1571,10 @@ async function markDeploymentGenerationStartedIfNeeded(input: {
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   artifactSummaryExtras?: Partial<DeployTaskArtifactSummary>;
+  completionEventMessage?: string;
+  completionEventKind?: string;
+  completionRecordMessage?: string;
+  failOnResultReadinessTimeout?: boolean;
   githubToken?: string;
   kubeconfig: string;
   outputJson?: Record<string, unknown>;
@@ -1645,16 +1656,29 @@ async function completeTaskWithArtifact(input: {
   }
 
   if (resultCards.some((card) => card.required)) {
-    await waitForRequiredResultCards({
+    const ready = await waitForRequiredResultCards({
       cards: resultCards,
+      failOnTimeout: input.failOnResultReadinessTimeout ?? true,
       kubeconfig: input.kubeconfig,
       taskId: input.task.id,
     });
+    if (!ready) {
+      await recordDeployTaskEvent(input.task.id, {
+        kind: "deployment_task.result_readiness_timeout",
+        message:
+          "Required deployment result resources were created but did not all become ready before timeout.",
+        payload: { artifactSummary: applied.artifactSummary },
+        phase: "apply",
+      });
+    }
   }
 
   await markTimelineStepWithEvent({
-    eventKind: "deployment_task.result_readiness_reached",
-    eventMessage: "Required deployment result resources are running.",
+    eventKind:
+      input.completionEventKind ?? "deployment_task.result_readiness_reached",
+    eventMessage:
+      input.completionEventMessage ??
+      "Required deployment result resources are running.",
     phase: "completed",
     status: "completed",
     stepId: "create-resources",
@@ -1666,7 +1690,7 @@ async function completeTaskWithArtifact(input: {
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.completed",
-    message: "Deployment task completed.",
+    message: input.completionRecordMessage ?? "Deployment task completed.",
     payload: { artifactSummary: applied.artifactSummary },
     phase: "completed",
   });
@@ -1997,6 +2021,11 @@ async function runTemplateDeploymentTask(input: {
 
     await completeTaskWithArtifact({
       artifact,
+      completionEventKind: "deployment_task.resources_created",
+      completionEventMessage:
+        "Template deployment resources were created. Workload readiness continues in Kubernetes.",
+      completionRecordMessage: "Template deployment resources created.",
+      failOnResultReadinessTimeout: false,
       kubeconfig: input.kubeconfig,
       task: input.task,
     });

@@ -495,6 +495,52 @@ test("required result card timeout fails the timeline with last observed status"
   assert.equal(card?.events[0]?.severity, "error");
 });
 
+test("required result card timeout can preserve the timeline for template resources", () => {
+  const timeline = upsertResultResourceCard(
+    declareTimelineSteps(
+      createDeploymentTaskTimeline({
+        status: "applying",
+        taskId: "task-1",
+        updatedAt: NOW,
+      }),
+      {
+        steps: [{ id: "create-resources", label: "Create resources" }],
+        updatedAt: NOW,
+      }
+    ),
+    {
+      card: {
+        id: "TemplateWorkload:default:StatefulSet:dify-api",
+        required: true,
+        resultRef: {
+          kind: "TemplateWorkload",
+          name: "dify-api",
+          namespace: "default",
+          workloadKind: "StatefulSet",
+        },
+        status: "creating",
+        title: "dify-api",
+      },
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+
+  const timedOut = applyResultResourceTimeout(timeline, {
+    cardId: "TemplateWorkload:default:StatefulSet:dify-api",
+    failRequired: false,
+    lastObservedStatus: "Progressing, 0/1 replicas ready",
+    stepId: "create-resources",
+    updatedAt: "2026-06-17T10:00:07.000Z",
+  });
+
+  const card = timedOut.steps[0]?.resultCards?.[0];
+  assert.equal(timedOut.status, "applying");
+  assert.equal(card?.status, "unknown");
+  assert.equal(card?.latestStatusText, "Progressing, 0/1 replicas ready");
+  assert.equal(card?.events[0]?.severity, "warning");
+});
+
 test("marking a step updates only the matching runner step", () => {
   const timeline = declareTimelineSteps(
     createDeploymentTaskTimeline({

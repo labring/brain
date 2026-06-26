@@ -428,11 +428,13 @@ export function applyResultResourceTimeout(
   timeline: DeploymentTaskTimelineSnapshot,
   input: {
     cardId: string;
+    failRequired?: boolean;
     lastObservedStatus: string;
     stepId: string;
     updatedAt: string;
   }
 ): DeploymentTaskTimelineSnapshot {
+  const failRequired = input.failRequired ?? true;
   let requiredTimeout = false;
   const nextSteps = timeline.steps.map((step) => {
     if (step.id !== input.stepId) {
@@ -444,11 +446,10 @@ export function applyResultResourceTimeout(
         if (card.id !== input.cardId) {
           return card;
         }
-        requiredTimeout = card.required;
+        requiredTimeout = card.required && failRequired;
         const timeoutScope = card.required ? "required" : "optional";
-        const status: DeploymentResultResourceCardStatus = card.required
-          ? "failed"
-          : "unknown";
+        const status: DeploymentResultResourceCardStatus =
+          card.required && failRequired ? "failed" : "unknown";
         return {
           ...card,
           events: appendDedupeEvent(card.events, {
@@ -457,7 +458,7 @@ export function applyResultResourceTimeout(
             id: `${card.id}:timeout`,
             message: `Result resource timed out while ${timeoutScope}: ${input.lastObservedStatus}.`,
             reason: "ResourceReadinessTimeout",
-            severity: card.required ? "error" : "warning",
+            severity: card.required && failRequired ? "error" : "warning",
             source: "resource-observer",
           }),
           latestStatusText: input.lastObservedStatus,
