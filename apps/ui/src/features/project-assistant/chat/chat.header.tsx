@@ -329,7 +329,7 @@ export function ChatHeader({
   return (
     <header
       className={cn(
-        "flex shrink-0 items-center justify-between gap-1 border-border border-b p-2",
+        "flex h-13 shrink-0 items-center justify-between gap-1 border-border border-b px-2",
         className
       )}
       data-slot="chat-header"
