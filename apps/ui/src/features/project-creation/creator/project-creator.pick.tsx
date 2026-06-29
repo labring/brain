@@ -57,7 +57,7 @@ export function ProjectCreatorProjectNameField() {
       onChange={(event) =>
         actions.setProjectDisplayName(event.currentTarget.value)
       }
-      placeholder="Placeholder"
+      placeholder="Name"
       value={states.projectDisplayName}
     />
   );
@@ -92,7 +92,7 @@ export function ProjectCreatorProjectDescriptionField() {
         onChange={(event) =>
           actions.setProjectDescription(event.currentTarget.value)
         }
-        placeholder="Optional project context"
+        placeholder="Description"
         rows={1}
         value={states.projectDescription}
       />
