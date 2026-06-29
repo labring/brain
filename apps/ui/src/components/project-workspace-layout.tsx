@@ -1,7 +1,10 @@
 "use client";
 
 import { useChat as useAIChat } from "@ai-sdk/react";
+import { fetcher } from "@workspace/api/fetch";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -12,7 +15,12 @@ import {
   type UIMessage,
 } from "ai";
 import { useAtomValue, useSetAtom } from "jotai";
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import {
+  ChevronRight,
+  PanelRightClose,
+  PanelRightOpen,
+  SquarePen,
+} from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import {
@@ -23,6 +31,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { Chat } from "@/features/project-assistant/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/project-assistant/chat/chat.types";
@@ -37,6 +46,7 @@ import {
 } from "@/features/project-surfaces/react";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
+import type { BrainProjectResponse } from "@/lib/brain-projects";
 import {
   createAssistantThread,
   fetchAssistantSession,
@@ -49,6 +59,8 @@ import type {
   AssistantThreadDTO,
 } from "@/lib/chat-persistence/types";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -647,25 +659,211 @@ function ProjectRouteTopBar({
     projectId,
   });
   const showProjectName = projectId.trim() !== "";
+  const projectName = currentProject.displayName ?? "Project";
+  const [editOpen, setEditOpen] = useState(false);
+  const { mutate } = useSWRConfig();
+  const revalidateProjects = useCallback(
+    () =>
+      mutate(
+        (key) => Array.isArray(key) && key[0] === "/api/projects",
+        undefined,
+        { revalidate: true }
+      ),
+    [mutate]
+  );
 
   return (
-    <header
-      className={cn(
-        "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 bg-[#09090B]/10 pr-2 pl-6 backdrop-blur-lg",
-        !assistantPaneOpen && "pr-12"
-      )}
+    <>
+      <header
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 bg-[#09090B]/10 pr-2 pl-6 backdrop-blur-lg",
+          !assistantPaneOpen && "pr-12"
+        )}
+      >
+        <div className="pointer-events-auto flex min-w-0 shrink-0 basis-40 items-center gap-1">
+          {showProjectName && currentProject.isLoading ? (
+            <Skeleton className="h-5 w-36 max-w-full" />
+          ) : null}
+          {showProjectName && !currentProject.isLoading ? (
+            <>
+              <button
+                aria-label={`Edit project name: ${projectName}`}
+                className="flex min-w-0 shrink-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                onClick={() => setEditOpen(true)}
+                type="button"
+              >
+                <h1 className="truncate font-medium text-foreground text-sm leading-5">
+                  {projectName}
+                </h1>
+                <SquarePen
+                  aria-hidden
+                  className="size-3.5 shrink-0 text-foreground"
+                  strokeWidth={2}
+                />
+              </button>
+              <ChevronRight
+                aria-hidden
+                className="size-4 shrink-0 text-muted-foreground"
+                strokeWidth={2}
+              />
+            </>
+          ) : null}
+        </div>
+      </header>
+      <ProjectNameEditDialog
+        currentName={projectName}
+        kubeconfig={kubeconfig}
+        namespace={namespace}
+        onOpenChange={setEditOpen}
+        onUpdated={revalidateProjects}
+        open={editOpen}
+        projectId={projectId}
+      />
+    </>
+  );
+}
+
+function ProjectNameEditDialog({
+  currentName,
+  kubeconfig,
+  namespace,
+  onOpenChange,
+  onUpdated,
+  open,
+  projectId,
+}: {
+  currentName: string;
+  kubeconfig: string;
+  namespace: string;
+  onOpenChange: (open: boolean) => void;
+  onUpdated: () => Promise<unknown>;
+  open: boolean;
+  projectId: string;
+}) {
+  const [draft, setDraft] = useState(currentName);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setDraft(currentName);
+      setError(null);
+    }
+  }, [currentName, open]);
+
+  const submit = useCallback(async () => {
+    const displayName = draft.trim();
+    if (displayName === "") {
+      setError("Project name is required.");
+      return;
+    }
+    if (displayName === currentName) {
+      onOpenChange(false);
+      return;
+    }
+    const encodedKubeconfig = kubeconfig.trim();
+    if (encodedKubeconfig === "") {
+      setError("Credentials are not ready yet.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await fetcher<BrainProjectResponse>({
+        base: window.location.origin,
+        path: "/api/projects",
+        method: "PATCH",
+        header: { Authorization: kubeconfigBearerHeader(encodedKubeconfig) },
+        body: {
+          displayName,
+          id: projectId,
+          namespace,
+        },
+      });
+      await onUpdated();
+      toast.success(`Updated "${result.project.displayName}".`);
+      onOpenChange(false);
+    } catch (e) {
+      const message = errorDescription(e, "Project update failed.");
+      setError(message);
+      toastErrorDetail("Project update failed.", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    currentName,
+    draft,
+    kubeconfig,
+    namespace,
+    onOpenChange,
+    onUpdated,
+    projectId,
+  ]);
+
+  return (
+    <AppDialog.Root
+      onOpenChange={(nextOpen) => {
+        if (busy && !nextOpen) {
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+      open={open}
     >
-      <div className="min-w-0 flex-1">
-        {showProjectName && currentProject.isLoading ? (
-          <Skeleton className="h-5 w-36 max-w-full" />
-        ) : null}
-        {showProjectName && !currentProject.isLoading ? (
-          <h1 className="truncate font-medium text-foreground text-sm">
-            {currentProject.displayName ?? "Project"}
-          </h1>
-        ) : null}
-      </div>
-    </header>
+      <AppDialog.Content data-slot="project-route-edit-name-dialog">
+        <AppDialog.Header>
+          <AppDialog.Icon>
+            <SquarePen aria-hidden />
+          </AppDialog.Icon>
+          <AppDialog.Title>Edit project</AppDialog.Title>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <AppDialog.Description>
+            Update the project name.
+          </AppDialog.Description>
+          <AppInputField
+            autoComplete="off"
+            error={error}
+            id="project-route-edit-name"
+            label="Name"
+            onChange={(event) => {
+              setDraft(event.target.value);
+              if (error) {
+                setError(null);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submit().catch(() => undefined);
+              }
+            }}
+            value={draft}
+          />
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel
+            className="bg-input/30 hover:bg-input"
+            disabled={busy}
+          >
+            Cancel
+          </AppDialog.Cancel>
+          <AppDialog.Action
+            className="bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
+            disabled={
+              busy || draft.trim() === "" || draft.trim() === currentName
+            }
+            loading={busy}
+            loadingLabel="Saving"
+            onClick={() => submit().catch(() => undefined)}
+            type="button"
+          >
+            Save
+          </AppDialog.Action>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }
 

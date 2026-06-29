@@ -16,7 +16,7 @@ import {
   MessageSquareText,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type {
   DeploymentTaskDisplaySummary,
   DeploymentTaskProjection,
@@ -133,7 +133,7 @@ function TaskDismissButton({
           <AppIconButton
             aria-label="Dismiss deployment task reminder"
             className={cn(
-              "size-6 text-zinc-300 hover:bg-white/10 hover:text-white",
+              "size-6 text-muted-foreground hover:bg-white/10 hover:text-foreground",
               className
             )}
             onClick={(event) => {
@@ -161,7 +161,7 @@ function TaskStatusIndicator({ task }: { task: DeploymentTaskProjection }) {
     >
       <span
         aria-hidden
-        className={cn("size-1.5 rounded-full", statusDotTone(task.status))}
+        className={cn("size-2 rounded-full", statusDotTone(task.status))}
       />
       <span className="sr-only">{statusLabel(task.status)}</span>
     </span>
@@ -186,9 +186,9 @@ function DeploymentTaskDockTask({
   return (
     <div
       className={cn(
-        "group/dock-task flex min-w-0 items-center gap-1 rounded-lg border transition-colors",
-        "h-10 w-max min-w-36 max-w-[12.5rem] border-white/15 bg-zinc-900/85 px-1.5 py-1 shadow-[0_1px_3px_rgba(0,0,0,0.22)] focus-within:border-white/20 focus-within:bg-zinc-900 hover:border-white/20 hover:bg-zinc-900 max-sm:w-full max-sm:max-w-full",
-        item.active && "bg-input"
+        "group/dock-task flex min-w-0 items-center gap-[6px] overflow-hidden rounded-md bg-white/[0.05] px-4 py-2 transition-colors hover:bg-white/[0.08]",
+        "max-sm:w-full max-sm:max-w-full",
+        item.active && "bg-white/10"
       )}
       data-active={item.active ? "true" : "false"}
       data-slot="deployment-task-dock-task"
@@ -196,8 +196,7 @@ function DeploymentTaskDockTask({
       <button
         aria-current={item.active ? "true" : undefined}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue-300/45",
-          "h-full px-1.5"
+          "flex min-w-0 flex-1 items-center gap-[6px] rounded-md text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue-300/45"
         )}
         onClick={() => onOpen(task.id)}
         title={title}
@@ -218,10 +217,22 @@ function DeploymentTaskDockTask({
         <TaskStatusIndicator task={task} />
       </button>
       <TaskDismissButton
-        className="size-5 text-zinc-400"
+        className="size-6 text-muted-foreground"
         onDismiss={onDismiss}
         task={task}
       />
+    </div>
+  );
+}
+
+function DeploymentTaskDockDivider() {
+  return (
+    <div
+      aria-hidden
+      className="flex h-9 w-px shrink-0 items-center justify-center"
+      data-slot="deployment-task-dock-divider"
+    >
+      <div className="h-9 w-px rounded-full bg-white/10" />
     </div>
   );
 }
@@ -250,7 +261,7 @@ function ExpandButton({
           : `Show ${hiddenCount} more deployment tasks`
       }
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 font-medium text-xs text-zinc-200 outline-none transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-blue-300/45",
+        "inline-flex shrink-0 items-center gap-[6px] rounded-md bg-white/[0.08] px-4 py-2 font-medium text-foreground text-sm outline-none transition-colors hover:bg-white/[0.12] focus-visible:ring-2 focus-visible:ring-blue-300/45",
         className
       )}
       onClick={onToggle}
@@ -292,16 +303,13 @@ export function ProjectCanvasDeploymentTaskDock({
   return (
     <div
       className={cn(
-        "pointer-events-auto w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] rounded-lg border border-white/10 p-1 sm:w-fit",
-        expanded && "bg-zinc-950/70 backdrop-blur-md",
+        "pointer-events-auto w-[calc(100vw-13rem)] max-w-[calc(100vw-13rem)] overflow-hidden rounded-lg sm:w-fit",
         className
       )}
       data-slot="deployment-task-dock"
     >
-      <div className="flex min-w-0 items-start gap-1.5 sm:hidden">
-        <div
-          className={cn("min-w-0 flex-1", expanded && "flex flex-col gap-1.5")}
-        >
+      <div className="flex min-w-0 items-start sm:hidden">
+        <div className={cn("min-w-0 flex-1", expanded && "flex flex-col")}>
           {mobileTasks.map((item) => (
             <DeploymentTaskDockTask
               item={item}
@@ -317,15 +325,20 @@ export function ProjectCanvasDeploymentTaskDock({
           onToggle={toggleExpanded}
         />
       </div>
-      <div className="hidden min-w-0 flex-wrap items-center gap-1.5 sm:flex">
-        {desktopTasks.map((item) => (
-          <DeploymentTaskDockTask
-            item={item}
-            key={item.task.id}
-            onDismiss={onDismiss}
-            onOpen={onOpen}
-          />
+      <div className="hidden min-w-0 flex-nowrap items-center gap-1 sm:flex">
+        {desktopTasks.map((item, index) => (
+          <Fragment key={item.task.id}>
+            {index > 0 ? <DeploymentTaskDockDivider /> : null}
+            <DeploymentTaskDockTask
+              item={item}
+              onDismiss={onDismiss}
+              onOpen={onOpen}
+            />
+          </Fragment>
         ))}
+        {dock.desktopHiddenCount > 0 && desktopTasks.length > 0 ? (
+          <DeploymentTaskDockDivider />
+        ) : null}
         <ExpandButton
           expanded={expanded}
           hiddenCount={dock.desktopHiddenCount}

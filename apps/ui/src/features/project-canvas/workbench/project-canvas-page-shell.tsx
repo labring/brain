@@ -133,7 +133,7 @@ export function ProjectCanvasOverlayLayer({
   return (
     <>
       <ProjectCanvasDeploymentTaskDock
-        className="absolute top-4 left-4 z-20"
+        className="absolute top-2 left-48 z-20"
         dock={deploymentTaskDock}
         onDismiss={onDismissDeploymentTask}
         onOpen={onOpenDeploymentTask}
