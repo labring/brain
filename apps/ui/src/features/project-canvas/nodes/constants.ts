@@ -10,3 +10,6 @@ export const CANVAS_ENTRY_NODE_TYPE = "entryNode" as const;
 /** React Flow `type` for Deployment Task placeholder skeletons. */
 export const CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE =
   "deploymentPlaceholderNode" as const;
+
+/** Default presentation state for resource-backed Project Canvas cards. */
+export const CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED = true;

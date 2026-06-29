@@ -1,6 +1,7 @@
 import type { Node } from "@xyflow/react";
 
 import type { CanvasDetectedConnection } from "../flow/detected-connections";
+import { CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED } from "../nodes/constants";
 import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,
@@ -133,7 +134,8 @@ export function canvasLayoutNodeFromNode(
       ...(options?.source === undefined ? {} : { source: options.source }),
     };
   }
-  const expanded = canvasLayoutExpandedFromNode(node) ?? false;
+  const expanded =
+    canvasLayoutExpandedFromNode(node) ?? CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED;
   const lastSeenUid = canvasResourceLastSeenUidFromNode(node);
   const stackOrder = canvasNodeStackOrder(node);
   return {

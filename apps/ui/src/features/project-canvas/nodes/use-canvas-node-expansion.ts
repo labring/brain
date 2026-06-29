@@ -3,6 +3,7 @@
 import { type Node, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect, useState } from "react";
 
+import { CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED } from "./constants";
 import type { CanvasNodeLayoutState } from "./types";
 
 interface UseCanvasNodeExpansionOptions {
@@ -53,7 +54,8 @@ export function useCanvasNodeExpansion({
   type,
 }: UseCanvasNodeExpansionOptions) {
   const { getNode, updateNodeData } = useReactFlow<Node>();
-  const defaultExpanded = data.layout?.expanded ?? false;
+  const defaultExpanded =
+    data.layout?.expanded ?? CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED;
   const [expandedState, setExpandedState] = useState(defaultExpanded);
   useEffect(() => {
     setExpandedState((current) =>
