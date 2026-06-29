@@ -13,6 +13,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
   data,
   dragging,
   id,
+  isConnectable,
   positionAbsoluteX,
   positionAbsoluteY,
   type,
@@ -33,7 +34,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
     <EntryNode.Root
       accessDomain={accessDomain}
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ ...interaction, dragging }}
+      interaction={{ ...interaction, connectable: isConnectable, dragging }}
       onCopyTarget={actions.copyTarget}
       onExpandedChange={expansion.onExpandedChange}
       states={states}

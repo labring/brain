@@ -1,6 +1,12 @@
 import type { Node } from "@xyflow/react";
 
-import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
+import {
+  CANVAS_CONTAINER_NODE_TYPE,
+  CANVAS_DATABASE_NODE_TYPE,
+  CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+  CANVAS_ENTRY_NODE_TYPE,
+  CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED,
+} from "../nodes/constants";
 import { canvasResourceLastSeenUidFromNode } from "../nodes/resource-identity";
 import {
   CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED,
@@ -20,13 +26,32 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function isNodeExpanded(node: Node): boolean {
+function isResourceCanvasNode(node: Node): boolean {
+  return (
+    node.type === CANVAS_CONTAINER_NODE_TYPE ||
+    node.type === CANVAS_DATABASE_NODE_TYPE ||
+    node.type === CANVAS_ENTRY_NODE_TYPE
+  );
+}
+
+function expansionStateFromNode(node: Node): boolean | undefined {
   const layout = asRecord(asRecord(node.data)?.layout);
-  return layout?.expanded === true;
+  return typeof layout?.expanded === "boolean" ? layout.expanded : undefined;
+}
+
+function isNodeExpanded(node: Node): boolean {
+  return (
+    expansionStateFromNode(node) ??
+    (isResourceCanvasNode(node) ? CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED : false)
+  );
 }
 
 export function layoutNodeFootprintHeight(node: CanvasLayoutNode): number {
-  return node.expanded === true
+  const expanded =
+    node.owner.kind === "resource"
+      ? (node.expanded ?? CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED)
+      : node.expanded === true;
+  return expanded
     ? CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED
     : CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED;
 }
@@ -123,7 +148,9 @@ export function layoutNodeFromPlacedNode(
   const data = asRecord(node.data);
   const layout = asRecord(data?.layout);
   const expanded =
-    typeof layout?.expanded === "boolean" ? layout.expanded : false;
+    typeof layout?.expanded === "boolean"
+      ? layout.expanded
+      : CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED;
   const lastSeenUid = canvasResourceLastSeenUidFromNode(node);
   return {
     expanded,

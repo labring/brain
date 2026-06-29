@@ -11,6 +11,7 @@
   --canvas-node-control-gap: calc(var(--spacing) * 1.5);
   --canvas-node-connection-size: calc(var(--spacing) * 5);
   --canvas-node-connection-gap: calc(var(--spacing) * 1.5);
+  --canvas-node-connection-hit-size: var(--canvas-node-connection-size);
   --canvas-node-edge-highlight-size: calc(var(--spacing) * 0.25);
   display: grid;
   grid-template-columns: var(--canvas-node-card-width);
@@ -170,21 +171,16 @@
 }
 
 .react-flow__handle.canvas-node-rf-handle[data-side] {
-  width: var(--canvas-node-connection-size);
-  height: var(--canvas-node-connection-size);
+  width: var(--canvas-node-connection-hit-size);
+  height: var(--canvas-node-connection-hit-size);
   overflow: visible;
   pointer-events: none;
   background: transparent;
   border: 0;
+  border-radius: 0;
   opacity: 0;
   transform: none;
   transition: opacity 150ms ease;
-}
-
-.react-flow__handle.canvas-node-rf-handle::before {
-  position: absolute;
-  content: "";
-  background: transparent;
 }
 
 .canvas-node-connection-affordance {
@@ -225,20 +221,29 @@
     [data-selected]
   )
   .react-flow__handle.canvas-node-rf-handle {
-  pointer-events: auto;
   opacity: 1;
 }
 
 .react-flow.project-canvas-connection-active
-  .react-flow__handle.canvas-node-rf-handle.connectionindicator[data-side] {
+  .canvas-node-frame[data-connectable][data-state="expanded"]:not(
+    [data-dragging]
+  )
+  .react-flow__handle.canvas-node-rf-handle.connectionindicator[data-side],
+.canvas-node-frame[data-connectable][data-state="expanded"]:not([data-dragging])
+  .react-flow__handle.canvas-node-rf-handle[data-side] {
   pointer-events: auto;
 }
 
-.canvas-node-frame[data-state="expanded"]:not([data-dragging]):is(
-    [data-hover-intent],
-    [data-selected]
-  )
+.canvas-node-frame[data-connectable][data-state="expanded"]:not(
+    [data-dragging]
+  ):is([data-hover-intent], [data-selected])
   .canvas-node-connection-affordance {
+  opacity: 1;
+}
+
+.canvas-node-frame[data-connectable][data-state="expanded"]:not([data-dragging])
+  .react-flow__handle.canvas-node-rf-handle:hover
+  + .canvas-node-connection-affordance {
   opacity: 1;
 }
 
@@ -265,66 +270,36 @@
 
 .react-flow__handle.canvas-node-rf-handle[data-side="top"] {
   top: 0;
-  left: 50%;
-  translate: -50% -50%;
-}
-
-.react-flow__handle.canvas-node-rf-handle[data-side="top"]::before {
-  right: 0;
-  bottom: 100%;
   left: 0;
-  height: calc(
-    var(--canvas-node-connection-size) +
-    var(--canvas-node-connection-gap)
-  );
+  width: 100%;
+  translate: 0 -50%;
 }
 
 .react-flow__handle.canvas-node-rf-handle[data-side="right"] {
   top: 50%;
   right: 0;
-  translate: 50% -50%;
-}
-
-.react-flow__handle.canvas-node-rf-handle[data-side="right"]::before {
-  top: 0;
-  bottom: 0;
-  left: 100%;
-  width: calc(
-    var(--canvas-node-connection-size) +
-    var(--canvas-node-connection-gap)
+  height: max(
+    var(--canvas-node-connection-size),
+    calc(100% - (var(--canvas-node-connection-hit-size) * 2))
   );
+  translate: 50% -50%;
 }
 
 .react-flow__handle.canvas-node-rf-handle[data-side="bottom"] {
   bottom: 0;
-  left: 50%;
-  translate: -50% 50%;
-}
-
-.react-flow__handle.canvas-node-rf-handle[data-side="bottom"]::before {
-  top: 100%;
-  right: 0;
   left: 0;
-  height: calc(
-    var(--canvas-node-connection-size) +
-    var(--canvas-node-connection-gap)
-  );
+  width: 100%;
+  translate: 0 50%;
 }
 
 .react-flow__handle.canvas-node-rf-handle[data-side="left"] {
   top: 50%;
   left: 0;
-  translate: -50% -50%;
-}
-
-.react-flow__handle.canvas-node-rf-handle[data-side="left"]::before {
-  top: 0;
-  right: 100%;
-  bottom: 0;
-  width: calc(
-    var(--canvas-node-connection-size) +
-    var(--canvas-node-connection-gap)
+  height: max(
+    var(--canvas-node-connection-size),
+    calc(100% - (var(--canvas-node-connection-hit-size) * 2))
   );
+  translate: -50% -50%;
 }
 
 .canvas-node-connection-affordance[data-side="top"] {

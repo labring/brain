@@ -97,7 +97,7 @@ test("merge returns first-placement layout nodes without rewriting loaded layout
   assert.deepEqual(result.nodes[0]?.position, { x: 0, y: 0 });
   assert.deepEqual(result.placedLayoutNodes, [
     {
-      expanded: false,
+      expanded: true,
       owner: {
         kind: "resource",
         ref: { kind: "AP", name: "api", namespace: "default" },

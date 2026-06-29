@@ -270,7 +270,7 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
   return (
     <div
       className={cn(
-        "absolute top-[52px] right-2 z-10 flex flex-col items-center rounded-lg transition-[right,opacity] duration-200 ease-out",
+        "absolute top-[52px] right-2 z-10 flex flex-col items-center rounded-lg bg-[#09090b]/10 backdrop-blur-lg transition-[right,opacity] duration-200 ease-out",
         chrome.hidden
           ? "pointer-events-none opacity-0"
           : "pointer-events-auto opacity-100",

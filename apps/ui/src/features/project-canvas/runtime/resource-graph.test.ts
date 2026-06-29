@@ -115,7 +115,7 @@ test("Project Canvas runtime graph emits first-placement intent for new shell no
     kind: "first-placement",
     nodes: [
       {
-        expanded: false,
+        expanded: true,
         owner: {
           kind: "resource",
           ref: { kind: "AP", name: "api", namespace: "default" },
