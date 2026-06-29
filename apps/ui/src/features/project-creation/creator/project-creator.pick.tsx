@@ -8,7 +8,7 @@ import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { Field, FieldError, FieldLabel } from "@workspace/ui/components/field";
 import { cn } from "@workspace/ui/lib/utils";
-import { Blocks, Database } from "lucide-react";
+import { Database, PanelsTopLeft } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 import {
   PROJECT_DESCRIPTION_MAX_LENGTH,
@@ -29,7 +29,12 @@ const DESCRIPTION: Record<ProjectCreatorSourceKind, string> = {
   github: "Import repository from URL or GitHub authorization.",
   "docker-image": "Create and run a project directly using an existing image.",
   database: "Set up a database project or data service first.",
-  template: "Deploy a preconfigured application template.",
+  template: "Quickly import from commonly used application templates.",
+};
+
+const SOURCE_LIST_LABEL: Record<ProjectCreatorSourceKind, string> = {
+  ...PROJECT_CREATOR_SOURCE_LABEL,
+  template: "Templates",
 };
 
 const ICON: Record<
@@ -39,7 +44,7 @@ const ICON: Record<
   github: ProjectSourceGithubIcon,
   "docker-image": ProjectSourceDockerIcon,
   database: Database,
-  template: Blocks,
+  template: PanelsTopLeft,
 };
 
 export function ProjectCreatorProjectNameField() {
@@ -123,7 +128,7 @@ export function ProjectCreatorOptionPicker({
             const Icon = ICON[id];
             return (
               <button
-                className="flex min-h-[76px] min-w-0 flex-col items-start gap-1.5 rounded-md border border-transparent p-2.5 text-left outline-none transition-colors hover:bg-input/30 focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 active:bg-input/30"
+                className="flex min-h-[74px] min-w-0 cursor-pointer flex-col items-start gap-1.5 rounded-lg bg-input/30 p-4 text-left shadow-xs outline-none transition-colors hover:bg-input/50 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 active:bg-input/50"
                 data-slot="project-creator-option"
                 key={id}
                 onClick={() => actions.pick(id)}
@@ -135,7 +140,7 @@ export function ProjectCreatorOptionPicker({
                     className="size-4 shrink-0 text-foreground"
                   />
                   <span className="truncate font-medium text-foreground text-sm leading-5">
-                    {PROJECT_CREATOR_SOURCE_LABEL[id]}
+                    {SOURCE_LIST_LABEL[id]}
                   </span>
                 </span>
                 <span className="line-clamp-2 text-muted-foreground text-xs leading-4">
