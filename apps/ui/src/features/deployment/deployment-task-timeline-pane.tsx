@@ -285,7 +285,7 @@ function DeploymentTimelineCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-white/8 bg-input/30 shadow-none backdrop-blur-sm",
+        "overflow-hidden rounded-lg border border-white/10 bg-input/30 shadow-none backdrop-blur-sm",
         className
       )}
       {...props}
@@ -741,7 +741,7 @@ function DeploymentInputField({
       >
         {label}
         {input.required ? (
-          <span className="text-destructive" title="Required">
+          <span className="text-red-500" title="Required">
             *
           </span>
         ) : null}
