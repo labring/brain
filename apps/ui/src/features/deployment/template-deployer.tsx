@@ -17,7 +17,7 @@ import {
 } from "@workspace/ui/components/popover";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
-import { Blocks, ChevronDown, Rocket, Settings2 } from "lucide-react";
+import { Blocks, ChevronDown, Rocket, Upload } from "lucide-react";
 import Image from "next/image";
 import {
   useCallback,
@@ -304,7 +304,7 @@ export function TemplateDeployer({
       {(choice?.args.length ?? 0) > 0 ? (
         <DeploymentSettings.Section
           description="Provide template parameters before deploying."
-          icon={<Settings2 aria-hidden className="size-4" />}
+          icon={<Upload aria-hidden className="size-4" />}
           title="Parameters"
         >
           <DeploymentSettings.Control>
