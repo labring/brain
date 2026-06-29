@@ -224,21 +224,23 @@ function configMapPathError({
 function ConfigMapCollapsedCard({
   index,
   item,
+  onDelete,
   onEdit,
   readOnly,
 }: {
   index: number;
   item: ApConfigMapMount;
+  onDelete: (index: number) => void;
   onEdit: (index: number) => void;
   readOnly: boolean;
 }) {
   const preview = configFileContentPreview(item.value);
   return (
     <div
-      className="flex min-w-0 items-start justify-between gap-2 rounded-lg bg-white/5 p-3"
+      className="flex min-h-17 min-w-0 items-center justify-between gap-2 rounded-lg bg-white/5 px-2.5 py-2"
       data-config-card="collapsed"
     >
-      <div className="min-w-0 flex-1">
+      <div className="grid min-w-0 flex-1 gap-2">
         <div
           className="truncate text-foreground text-sm leading-5"
           title={item.path}
@@ -246,23 +248,35 @@ function ConfigMapCollapsedCard({
           {item.path}
         </div>
         <div
-          className="mt-1 truncate text-muted-foreground text-xs leading-4"
+          className="truncate text-muted-foreground text-sm leading-5"
           title={preview}
         >
-          {preview === "" ? "(empty file)" : preview}
+          {preview === "" ? "Empty file" : preview}
         </div>
       </div>
       {readOnly ? null : (
-        <AppIconButton
-          aria-label="Edit configuration file"
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={() => onEdit(index)}
-          size="md"
-          type="button"
-          variant="quiet"
-        >
-          <SquarePen aria-hidden className="size-4" />
-        </AppIconButton>
+        <div className="flex shrink-0 items-center gap-2">
+          <AppIconButton
+            aria-label="Edit configuration file"
+            onClick={() => onEdit(index)}
+            size="lg"
+            title="Edit configuration file"
+            type="button"
+            variant="secondary"
+          >
+            <SquarePen aria-hidden />
+          </AppIconButton>
+          <AppIconButton
+            aria-label="Delete configuration file"
+            onClick={() => onDelete(index)}
+            size="lg"
+            title="Delete configuration file"
+            type="button"
+            variant="danger"
+          >
+            <Trash2 aria-hidden />
+          </AppIconButton>
+        </div>
       )}
     </div>
   );
@@ -273,7 +287,6 @@ function ConfigMapEditingCard({
   index,
   item,
   onCancel,
-  onDelete,
   onSave,
   onUpdate,
   submitBlocked,
@@ -282,7 +295,6 @@ function ConfigMapEditingCard({
   index: number;
   item: ApConfigMapMount;
   onCancel: (index: number) => void;
-  onDelete: (index: number) => void;
   onSave: (index: number) => void;
   onUpdate: (index: number, patch: Partial<ApConfigMapMount>) => void;
   submitBlocked: boolean;
@@ -303,7 +315,7 @@ function ConfigMapEditingCard({
     >
       <AppInput
         aria-invalid={pathError != null}
-        aria-label="Config file mount path"
+        aria-label="Configuration file mount path"
         className={pathError == null ? undefined : CONFIG_CARD_INVALID_INPUT}
         onChange={(event) => onUpdate(index, { path: event.target.value })}
         placeholder="/etc/app/config.yaml"
@@ -315,7 +327,7 @@ function ConfigMapEditingCard({
         </p>
       )}
       <ApSettingsTextarea
-        aria-label="Config file content"
+        aria-label="Configuration file content"
         onChange={(event) => onUpdate(index, { value: event.target.value })}
         placeholder="key: value"
         value={item.value}
@@ -343,17 +355,6 @@ function ConfigMapEditingCard({
         >
           <Save aria-hidden data-icon="inline-start" />
           Save
-        </AppButton>
-        <AppButton
-          aria-label="Delete configuration file"
-          className="h-9 rounded-lg bg-white/5 px-4 text-red-500 text-sm hover:bg-input hover:text-red-500"
-          onClick={() => onDelete(index)}
-          size="lg"
-          type="button"
-          variant="quiet"
-        >
-          <Trash2 aria-hidden data-icon="inline-start" />
-          Delete
         </AppButton>
       </div>
       {submitBlocked && canSaveRow ? (
@@ -397,18 +398,18 @@ export function ConfigMapSettingsContent({
       {readOnly ? null : (
         <AppButton
           aria-label="Add configuration file"
-          className="h-9 w-full justify-center rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
           onClick={onAdd}
           size="default"
           type="button"
-          variant="quiet"
+          variant="secondary"
         >
-          <Plus aria-hidden data-icon="inline-start" />
+          <Plus aria-hidden />
           Add
         </AppButton>
       )}
       {configMaps.length === 0 ? (
-        <div className="flex h-9 items-center justify-center rounded-lg border border-border border-dashed bg-transparent px-3 text-muted-foreground text-xs leading-4">
+        <div className="flex min-h-9 w-full items-center justify-center rounded-lg border border-border border-dashed px-3 text-muted-foreground text-xs leading-4">
           No config files yet.
         </div>
       ) : (
@@ -425,7 +426,6 @@ export function ConfigMapSettingsContent({
                 item={item}
                 key={key}
                 onCancel={onCancel}
-                onDelete={onDelete}
                 onSave={onSave}
                 onUpdate={onUpdate}
                 submitBlocked={submitBlocked}
@@ -435,6 +435,7 @@ export function ConfigMapSettingsContent({
                 index={index}
                 item={item}
                 key={key}
+                onDelete={onDelete}
                 onEdit={onEdit}
                 readOnly={readOnly}
               />
