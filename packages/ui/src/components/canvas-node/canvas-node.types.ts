@@ -13,6 +13,7 @@ export interface CanvasNodeStatus {
 }
 
 export interface CanvasNodeInteractionState {
+  connectable?: boolean;
   dragging?: boolean;
   highlightedConnectionSide?: CanvasNodeConnectionSide;
   selected?: boolean;

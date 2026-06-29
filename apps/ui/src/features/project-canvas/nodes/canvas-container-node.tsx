@@ -38,6 +38,7 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   data,
   dragging,
   id,
+  isConnectable,
   positionAbsoluteX,
   positionAbsoluteY,
   type,
@@ -66,7 +67,7 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   return (
     <ContainerNode.Root
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ ...interaction, dragging }}
+      interaction={{ ...interaction, connectable: isConnectable, dragging }}
       lifecycleActions={actions.lifecycleActions}
       onExpandedChange={expansion.onExpandedChange}
       quickActions={actions.quickActions}
