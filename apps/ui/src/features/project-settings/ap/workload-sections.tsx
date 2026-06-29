@@ -7,7 +7,7 @@ import { Label } from "@workspace/ui/components/label";
 import { ResourceSettingsDraftFooter } from "@workspace/ui/components/resource-settings/resource-settings";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Save, SquarePen, Trash2, X } from "lucide-react";
 import type { ComponentProps } from "react";
 
 export interface ApConfigMapMount {
@@ -163,88 +163,286 @@ export function LaunchCommandSettingsContent({
   );
 }
 
+const CONFIG_CARD_INVALID_INPUT =
+  "border-destructive ring-[3px] ring-destructive/20 dark:border-destructive/50 dark:ring-destructive/40";
+
+/**
+ * Mount paths that appear on more than one AP Configuration File draft row.
+ * The trimmed mount path is the file's identifying key, so a repeated path is
+ * a conflict that blocks saving the affected card.
+ */
+export function configMapDuplicatePaths(
+  rows: readonly ApConfigMapMount[]
+): Set<string> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const path = row.path.trim();
+    if (path === "") {
+      continue;
+    }
+    counts.set(path, (counts.get(path) ?? 0) + 1);
+  }
+  const duplicates = new Set<string>();
+  for (const [path, count] of counts) {
+    if (count > 1) {
+      duplicates.add(path);
+    }
+  }
+  return duplicates;
+}
+
+/** First non-empty line of a config file's content, used for the read view. */
+export function configFileContentPreview(value: string): string {
+  return (
+    value
+      .split("\n")
+      .find((line) => line.trim() !== "")
+      ?.trim() ?? ""
+  );
+}
+
+function configMapPathError({
+  trimmedPath,
+  isDuplicate,
+  hasContent,
+  submitBlocked,
+}: {
+  trimmedPath: string;
+  isDuplicate: boolean;
+  hasContent: boolean;
+  submitBlocked: boolean;
+}): string | null {
+  if (isDuplicate) {
+    return "This mount path is already in use.";
+  }
+  if (trimmedPath === "" && (hasContent || submitBlocked)) {
+    return "Mount path is required.";
+  }
+  return null;
+}
+
+function ConfigMapCollapsedCard({
+  index,
+  item,
+  onEdit,
+  readOnly,
+}: {
+  index: number;
+  item: ApConfigMapMount;
+  onEdit: (index: number) => void;
+  readOnly: boolean;
+}) {
+  const preview = configFileContentPreview(item.value);
+  return (
+    <div
+      className="flex min-w-0 items-start justify-between gap-2 rounded-lg bg-white/5 p-3"
+      data-config-card="collapsed"
+    >
+      <div className="min-w-0 flex-1">
+        <div
+          className="truncate text-foreground text-sm leading-5"
+          title={item.path}
+        >
+          {item.path}
+        </div>
+        <div
+          className="mt-1 truncate text-muted-foreground text-xs leading-4"
+          title={preview}
+        >
+          {preview === "" ? "(empty file)" : preview}
+        </div>
+      </div>
+      {readOnly ? null : (
+        <AppIconButton
+          aria-label="Edit configuration file"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => onEdit(index)}
+          size="md"
+          type="button"
+          variant="quiet"
+        >
+          <SquarePen aria-hidden className="size-4" />
+        </AppIconButton>
+      )}
+    </div>
+  );
+}
+
+function ConfigMapEditingCard({
+  duplicatePaths,
+  index,
+  item,
+  onCancel,
+  onDelete,
+  onSave,
+  onUpdate,
+  submitBlocked,
+}: {
+  duplicatePaths: ReadonlySet<string>;
+  index: number;
+  item: ApConfigMapMount;
+  onCancel: (index: number) => void;
+  onDelete: (index: number) => void;
+  onSave: (index: number) => void;
+  onUpdate: (index: number, patch: Partial<ApConfigMapMount>) => void;
+  submitBlocked: boolean;
+}) {
+  const trimmedPath = item.path.trim();
+  const isDuplicate = trimmedPath !== "" && duplicatePaths.has(trimmedPath);
+  const pathError = configMapPathError({
+    hasContent: item.value.trim() !== "",
+    isDuplicate,
+    submitBlocked,
+    trimmedPath,
+  });
+  const canSaveRow = trimmedPath !== "" && !isDuplicate;
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-2 rounded-lg border border-input border-dashed bg-transparent p-3"
+      data-config-card="expanded"
+    >
+      <AppInput
+        aria-invalid={pathError != null}
+        aria-label="Config file mount path"
+        className={pathError == null ? undefined : CONFIG_CARD_INVALID_INPUT}
+        onChange={(event) => onUpdate(index, { path: event.target.value })}
+        placeholder="/etc/app/config.yaml"
+        value={item.path}
+      />
+      {pathError == null ? null : (
+        <p className="text-destructive text-xs" role="status">
+          {pathError}
+        </p>
+      )}
+      <ApSettingsTextarea
+        aria-label="Config file content"
+        onChange={(event) => onUpdate(index, { value: event.target.value })}
+        placeholder="key: value"
+        value={item.value}
+      />
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <AppButton
+          aria-label="Cancel configuration file changes"
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          onClick={() => onCancel(index)}
+          size="lg"
+          type="button"
+          variant="quiet"
+        >
+          <X aria-hidden data-icon="inline-start" />
+          Cancel
+        </AppButton>
+        <AppButton
+          aria-label="Save configuration file"
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          disabled={!canSaveRow}
+          onClick={() => onSave(index)}
+          size="lg"
+          type="button"
+          variant="quiet"
+        >
+          <Save aria-hidden data-icon="inline-start" />
+          Save
+        </AppButton>
+        <AppButton
+          aria-label="Delete configuration file"
+          className="h-9 rounded-lg bg-white/5 px-4 text-red-500 text-sm hover:bg-input hover:text-red-500"
+          onClick={() => onDelete(index)}
+          size="lg"
+          type="button"
+          variant="quiet"
+        >
+          <Trash2 aria-hidden data-icon="inline-start" />
+          Delete
+        </AppButton>
+      </div>
+      {submitBlocked && canSaveRow ? (
+        <p className="text-muted-foreground text-xs">
+          Save or cancel this file before updating.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ConfigMapSettingsContent({
   configMaps,
   configMapKeys,
+  expandedKeys,
   onAdd,
+  onCancel,
   onDelete,
+  onEdit,
+  onSave,
   onUpdate,
   readOnly,
+  submitBlocked,
 }: {
   configMaps: readonly ApConfigMapMount[];
   configMapKeys: readonly string[];
+  expandedKeys: readonly string[];
   onAdd: () => void;
+  onCancel: (index: number) => void;
   onDelete: (index: number) => void;
+  onEdit: (index: number) => void;
+  onSave: (index: number) => void;
   onUpdate: (index: number, patch: Partial<ApConfigMapMount>) => void;
   readOnly: boolean;
+  submitBlocked: boolean;
 }) {
+  const duplicatePaths = configMapDuplicatePaths(configMaps);
+  const expanded = new Set(expandedKeys);
   return (
-    <>
-      <div className="flex min-w-0 flex-col gap-2">
-        {configMaps.length === 0 ? (
-          <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
-            No config files
-          </div>
-        ) : (
-          configMaps.map((item, index) => (
-            <div
-              className="grid min-w-0 gap-2 rounded-md border border-input bg-transparent p-2"
-              key={configMapKeys[index] ?? `${item.path}\u0000${item.value}`}
-            >
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_2.25rem]">
-                <AppInput
-                  aria-label="Config file mount path"
-                  onChange={(event) =>
-                    onUpdate(index, { path: event.target.value })
-                  }
-                  placeholder="/etc/app/config.yaml"
-                  readOnly={readOnly}
-                  value={item.path}
-                />
-                {readOnly ? (
-                  <div aria-hidden className="size-9" />
-                ) : (
-                  <AppIconButton
-                    aria-label="Remove config file"
-                    className="hover:text-red-500"
-                    onClick={() => onDelete(index)}
-                    size="lg"
-                    type="button"
-                    variant="quiet"
-                  >
-                    <Trash2 aria-hidden className="size-4" />
-                  </AppIconButton>
-                )}
-              </div>
-              <ApSettingsTextarea
-                aria-label="Config file content"
-                onChange={(event) =>
-                  onUpdate(index, { value: event.target.value })
-                }
-                placeholder="key: value"
-                readOnly={readOnly}
-                value={item.value}
-              />
-            </div>
-          ))
-        )}
-      </div>
+    <div className="flex min-w-0 flex-col gap-3">
       {readOnly ? null : (
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <AppButton
-            aria-label="Add config file"
-            className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
-            onClick={onAdd}
-            size="lg"
-            type="button"
-            variant="quiet"
-          >
-            <Plus aria-hidden data-icon="inline-start" />
-            Add
-          </AppButton>
+        <AppButton
+          aria-label="Add configuration file"
+          className="h-9 w-full justify-center rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          onClick={onAdd}
+          size="default"
+          type="button"
+          variant="quiet"
+        >
+          <Plus aria-hidden data-icon="inline-start" />
+          Add
+        </AppButton>
+      )}
+      {configMaps.length === 0 ? (
+        <div className="flex h-9 items-center justify-center rounded-lg border border-border border-dashed bg-transparent px-3 text-muted-foreground text-xs leading-4">
+          No config files yet.
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-col gap-2">
+          {configMaps.map((item, index) => {
+            const cardKey = configMapKeys[index];
+            const key = cardKey ?? `${item.path} ${item.value}`;
+            const isExpanded =
+              !readOnly && cardKey != null && expanded.has(cardKey);
+            return isExpanded ? (
+              <ConfigMapEditingCard
+                duplicatePaths={duplicatePaths}
+                index={index}
+                item={item}
+                key={key}
+                onCancel={onCancel}
+                onDelete={onDelete}
+                onSave={onSave}
+                onUpdate={onUpdate}
+                submitBlocked={submitBlocked}
+              />
+            ) : (
+              <ConfigMapCollapsedCard
+                index={index}
+                item={item}
+                key={key}
+                onEdit={onEdit}
+                readOnly={readOnly}
+              />
+            );
+          })}
         </div>
       )}
-    </>
+    </div>
   );
 }
 

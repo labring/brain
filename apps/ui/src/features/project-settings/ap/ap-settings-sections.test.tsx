@@ -25,6 +25,10 @@ import {
   resourceQuotaReplicaPatchFromDraft,
   useApSettingsSections,
 } from "./ap-settings-sections";
+import {
+  configFileContentPreview,
+  configMapDuplicatePaths,
+} from "./workload-sections";
 
 function TestApSettingsSections({
   className,
@@ -143,10 +147,11 @@ const DISCARD_AP_SETTINGS_RE = /aria-label="Discard AP Settings changes"/;
 const CPU_MEMORY_SECTION_RE = /CPU \/ Memory/;
 const IMAGE_INPUT_RE = /aria-label="AP image"/;
 const LAUNCH_COMMAND_RE = /Launch Command/;
-const CONFIG_FILES_RE = /Config Files/;
+const CONFIG_FILES_RE = /Configuration Files/;
 const STORAGE_RE = /Storage/;
 const AP_COMMAND_RE = /aria-label="AP command"/;
-const CONFIG_FILE_PATH_RE = /aria-label="Config file mount path"/;
+const CONFIG_FILE_EDIT_RE = /aria-label="Edit configuration file"/;
+const CONFIG_FILE_PREVIEW_RE = /debug: false/;
 const STORAGE_SIZE_RE = /aria-label="Storage size"/;
 const CONFIG_FILE_MOUNT_PATH_RE = /\/etc\/app\/config\.yaml/;
 const STORAGE_SIZE_VALUE_RE = /20Gi/;
@@ -1607,10 +1612,38 @@ test("AP settings pane renders Launchpad-backed command config and storage field
   assert.match(html, CONFIG_FILES_RE);
   assert.match(html, STORAGE_RE);
   assert.match(html, AP_COMMAND_RE);
-  assert.match(html, CONFIG_FILE_PATH_RE);
+  assert.match(html, CONFIG_FILE_EDIT_RE);
   assert.match(html, STORAGE_SIZE_RE);
   assert.match(html, CONFIG_FILE_MOUNT_PATH_RE);
+  assert.match(html, CONFIG_FILE_PREVIEW_RE);
   assert.match(html, STORAGE_SIZE_VALUE_RE);
+});
+
+test("configMapDuplicatePaths flags only repeated non-empty mount paths", () => {
+  assert.deepEqual(
+    [
+      ...configMapDuplicatePaths([
+        { path: "/etc/app/a.yaml", value: "1" },
+        { path: "/etc/app/a.yaml", value: "2" },
+        { path: "/etc/app/b.yaml", value: "3" },
+        { path: "  ", value: "4" },
+        { path: "", value: "5" },
+      ]),
+    ],
+    ["/etc/app/a.yaml"]
+  );
+  assert.equal(configMapDuplicatePaths([]).size, 0);
+  assert.equal(configMapDuplicatePaths([{ path: "", value: "x" }]).size, 0);
+});
+
+test("configFileContentPreview returns the first non-empty trimmed line", () => {
+  assert.equal(configFileContentPreview(""), "");
+  assert.equal(configFileContentPreview("\n\n  \n"), "");
+  assert.equal(
+    configFileContentPreview("\n  debug: true\nkey: v"),
+    "debug: true"
+  );
+  assert.equal(configFileContentPreview("key: value"), "key: value");
 });
 
 test("AP settings pane overlays accepted pending settings targets", () => {

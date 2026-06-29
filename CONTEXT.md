@@ -78,6 +78,12 @@ _Avoid_: AP Public Access Health, Public Address readiness, route readiness.
 
 The primary UI surface for viewing and editing AP desired configuration, including image, resource capacity, Replica Strategy, environment, and network settings.
 
+### AP Configuration File
+
+An AP-owned configuration file mounted into the application runtime through AP Settings. AP Configuration Files are user-authored file content and mount paths, not a standalone Settings Owner.
+
+_Avoid_: ConfigMap, Config Files, configuration map.
+
 ### AP Network Settings
 
 The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings. Private Addresses and Public Addresses are two views of the same AP Network Settings: Public Address changes may add App Listening Ports as part of the same Settings Draft.
