@@ -8,6 +8,7 @@ import {
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { DialogClose } from "@workspace/ui/components/dialog";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Spinner } from "@workspace/ui/components/spinner";
 import {
@@ -16,7 +17,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { Eye, History, Info, RotateCcw } from "lucide-react";
+import { Eye, History, Info, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -156,9 +157,9 @@ function ReviewVersionBody({
   yamlError: string | null;
   yamlLoading: boolean;
 }) {
-  /** Shared height avoids layout jump between loading spinner and scrolled YAML */
+  /** Shared height avoids layout jump between loading spinner and scrolled version details. */
   const frame =
-    "relative h-[min(22rem,48vh)] w-full overflow-hidden rounded-lg border border-border bg-muted/10";
+    "relative h-80 w-full overflow-hidden rounded-md border border-border bg-transparent";
 
   if (yamlLoading) {
     return (
@@ -202,7 +203,7 @@ function ReviewVersionBody({
 
   return (
     <ScrollArea className={frame}>
-      <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-foreground text-xs leading-relaxed">
+      <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-words px-3 py-2 font-sans text-foreground text-sm leading-5">
         {yamlBody.trim()}
       </pre>
     </ScrollArea>
@@ -416,37 +417,58 @@ export function ContainerHistoryPane({
       </div>
 
       <AppDialog.Root onOpenChange={handleReviewClose} open={reviewOpen}>
-        <AppDialog.Content size="lg">
-          <AppDialog.Header>
-            <AppDialog.Title>Image version</AppDialog.Title>
+        <AppDialog.Content
+          className="max-h-[calc(100vh-2rem)] data-[size=lg]:sm:max-w-[720px]"
+          size="lg"
+        >
+          <AppDialog.Header className="flex h-[52px] items-center justify-between gap-2 px-4 py-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <Eye aria-hidden className="size-4 shrink-0 text-blue-400" />
+              <AppDialog.Title className="h-auto truncate text-lg leading-7">
+                Image version
+              </AppDialog.Title>
+            </div>
+            <DialogClose
+              render={
+                <AppIconButton
+                  aria-label="Close image version"
+                  className="size-9 shrink-0 text-zinc-300 hover:text-zinc-50"
+                  size="lg"
+                  type="button"
+                  variant="quiet"
+                >
+                  <X aria-hidden className="size-4" />
+                </AppIconButton>
+              }
+            />
           </AppDialog.Header>
-          <AppDialog.Body>
-            <AppDialog.Description>
+          <AppDialog.Body className="mt-4 h-[min(444px,calc(100vh-7rem))] gap-4 overflow-y-auto overflow-x-hidden px-4 pt-0 pb-4">
+            <AppDialog.Description className="text-muted-foreground text-sm leading-5">
               {reviewRow == null
                 ? "Captured AP image version metadata."
                 : `Image ${reviewRow.image.trim() === "" ? "-" : reviewRow.image}, saved ${formatSnapshotTime(reviewRow.createdAt)}.`}
             </AppDialog.Description>
 
             {reviewRow == null ? null : (
-              <div className="flex flex-col gap-1 text-sm text-zinc-400">
-                <p className="break-all font-mono text-xs text-zinc-100 leading-relaxed">
+              <div className="flex flex-col gap-4 text-sm leading-5">
+                <p className="break-all text-foreground">
                   {reviewRow.versionHash}
                 </p>
-                <p>
+                <p className="break-words text-muted-foreground">
                   Image:{" "}
-                  <span className="text-zinc-100">
+                  <span className="text-foreground">
                     {reviewRow.image.trim() === "" ? "-" : reviewRow.image}
                   </span>
                   {" · "}
                   Saved:{" "}
-                  <span className="text-zinc-100">
+                  <span className="text-foreground">
                     {formatSnapshotTime(reviewRow.createdAt)}
                   </span>
                   {reviewHashPreview === "" ? null : (
                     <>
                       {" · "}
                       Hash:{" "}
-                      <span className="font-mono text-zinc-100">
+                      <span className="text-foreground">
                         {reviewHashPreview}
                       </span>
                     </>
@@ -463,10 +485,6 @@ export function ContainerHistoryPane({
               />
             </div>
           </AppDialog.Body>
-
-          <AppDialog.Footer>
-            <AppDialog.Cancel>Close</AppDialog.Cancel>
-          </AppDialog.Footer>
         </AppDialog.Content>
       </AppDialog.Root>
     </div>
