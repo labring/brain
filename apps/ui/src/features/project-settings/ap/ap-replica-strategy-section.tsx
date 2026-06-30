@@ -587,13 +587,12 @@ function ScalingTargetSlider({
           <SettingsSlider.Header>
             <SlidingToggle
               ariaLabel="Scaling target"
-              className="h-8 w-auto"
               disabled={disabled}
-              indicatorClassName="rounded-md bg-white/5"
-              itemClassName="!rounded-md h-8 min-w-0 px-3 text-xs data-[state=on]:text-foreground text-muted-foreground"
               onValueChange={onTargetMetricChange}
               options={SCALING_TARGET_TOGGLE_OPTIONS}
+              size="sm"
               value={targetMetric}
+              width="auto"
             />
             <SettingsSlider.Value />
           </SettingsSlider.Header>
