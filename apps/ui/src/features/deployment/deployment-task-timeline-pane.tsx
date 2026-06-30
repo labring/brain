@@ -537,31 +537,36 @@ function TimelineStepItem({
   step: DeploymentTimelineStep;
 }) {
   const cards = step.resultCards ?? [];
+  const hasEvents = step.events.length > 0;
   return (
-    <section className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2.5">
-      <div className="flex flex-col items-center pt-1">
+    <section className="flex flex-col gap-2.5">
+      <div className="flex min-w-0 items-center gap-2">
         <StatusMarker status={step.status} />
-        <span className="mt-1 min-h-6 w-px flex-1 bg-white/12" />
-      </div>
-      <div className="min-w-0 pb-3.5">
         <h3
-          className="truncate font-normal text-foreground text-sm leading-5"
+          className="min-w-0 flex-1 truncate font-normal text-foreground text-sm leading-5"
           title={step.label}
         >
           {step.label}
         </h3>
-        <div className="mt-1.5">
-          <TimelineEventList events={step.events} />
-        </div>
-        {cards.length === 0 ? null : (
-          <div className="mt-2 flex flex-col gap-2">
-            {cards.map((card) => (
-              <ResultResourceCard card={card} key={card.id} />
-            ))}
-          </div>
-        )}
-        {children == null ? null : <div className="mt-2">{children}</div>}
       </div>
+      {hasEvents ? (
+        <div className="flex items-stretch gap-1">
+          <div className="flex w-3.5 justify-center">
+            <span aria-hidden className="w-px self-stretch bg-white/10" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TimelineEventList events={step.events} />
+          </div>
+        </div>
+      ) : null}
+      {cards.length === 0 ? null : (
+        <div className="flex flex-col gap-2.5">
+          {cards.map((card) => (
+            <ResultResourceCard card={card} key={card.id} />
+          ))}
+        </div>
+      )}
+      {children ?? null}
     </section>
   );
 }
@@ -952,7 +957,7 @@ export function DeploymentTaskTimelinePaneContent({
     >
       <TimelineBorderBeam />
       <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border border-white/8" />
-      <div className="mb-3 flex items-center gap-2 text-foreground">
+      <div className="mb-2.5 flex items-center gap-2 text-foreground">
         <Rocket aria-hidden className="size-4 text-foreground" />
         <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
       </div>
@@ -960,17 +965,19 @@ export function DeploymentTaskTimelinePaneContent({
         <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
       </div>
-      {steps.map((step) => (
-        <TimelineStepItem key={step.id} step={step}>
-          {step.id === configurationStepId ? (
-            <DeploymentConfigurationForm
-              kubeconfig={kubeconfig}
-              namespace={namespace}
-              snapshot={snapshot}
-            />
-          ) : null}
-        </TimelineStepItem>
-      ))}
+      <div className="flex flex-col gap-4">
+        {steps.map((step) => (
+          <TimelineStepItem key={step.id} step={step}>
+            {step.id === configurationStepId ? (
+              <DeploymentConfigurationForm
+                kubeconfig={kubeconfig}
+                namespace={namespace}
+                snapshot={snapshot}
+              />
+            ) : null}
+          </TimelineStepItem>
+        ))}
+      </div>
     </div>
   );
 }
