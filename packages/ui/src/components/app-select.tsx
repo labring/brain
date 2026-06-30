@@ -26,13 +26,13 @@ function optionText(option: AppSelectOption): string {
 }
 
 const triggerClass = cn(
-  "flex h-9 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-foreground text-sm outline-none transition-[color,box-shadow] disabled:pointer-events-none disabled:opacity-50 dark:bg-transparent",
+  "group flex h-9 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-foreground text-sm outline-none transition-[color,background-color,box-shadow] hover:bg-input/30 disabled:pointer-events-none disabled:opacity-50",
   "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
   "data-[popup-open]:border-blue-400 data-[popup-open]:ring-[1px] data-[popup-open]:ring-blue-400/50"
 );
 
 const itemClass =
-  "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-input/30 data-selected:bg-input";
+  "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-hidden data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-input/30 data-selected:bg-input";
 
 function OptionIcon({ children }: { children: ReactNode }) {
   return (
@@ -48,6 +48,12 @@ function OptionContent({ option }: { option: AppSelectOption }) {
       {option.icon ? <OptionIcon>{option.icon}</OptionIcon> : null}
       <span className="min-w-0 truncate">{option.label}</span>
     </span>
+  );
+}
+
+function TriggerChevron() {
+  return (
+    <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground opacity-50 transition-transform duration-200 group-data-[popup-open]:rotate-180" />
   );
 }
 
@@ -82,9 +88,10 @@ function SelectPopup({
             minWidthClassName,
             className
           )}
+          initialFocus={searchable ? false : undefined}
         >
           {searchable ? (
-            <div className="relative flex h-9 items-center border-border border-b px-3">
+            <div className="relative flex h-9 items-center border-border border-b px-3 transition-colors focus-within:border-blue-400">
               <SearchIcon
                 aria-hidden
                 className="pointer-events-none absolute left-3 size-4 text-muted-foreground"
@@ -198,7 +205,7 @@ export function AppSelect({
             return <OptionContent option={option} />;
           }}
         </Combobox.Value>
-        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground opacity-50" />
+        <TriggerChevron />
       </Combobox.Trigger>
       <SelectPopup
         className={contentClassName}
@@ -341,20 +348,22 @@ export function AppMultiSelect({
             }}
           </Combobox.Value>
         </span>
-        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground opacity-50" />
+        <TriggerChevron />
       </Combobox.Trigger>
       <SelectPopup
         className={contentClassName}
         emptyMessage={emptyMessage}
         header={
-          <button
-            className="m-1 mb-0 flex h-8 w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-input/30"
-            onClick={() => onValueChange?.([])}
-            type="button"
-          >
-            <MultiCheckbox checked={selectedValues.length === 0} />
-            <span className="min-w-0 truncate">{allLabel}</span>
-          </button>
+          <div className="p-1 pb-0">
+            <button
+              className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none hover:bg-input/30"
+              onClick={() => onValueChange?.([])}
+              type="button"
+            >
+              <MultiCheckbox checked={selectedValues.length === 0} />
+              <span className="min-w-0 truncate">{allLabel}</span>
+            </button>
+          </div>
         }
         minWidthClassName="min-w-60"
         searchable={searchable}
