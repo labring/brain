@@ -1270,6 +1270,226 @@ function EnvRawSourceEditor({
   );
 }
 
+interface DraftEnvRowProps {
+  copied: boolean;
+  dbDsnReferenceSources: ApEnvDbDsnSource[];
+  error?: string;
+  expanded: boolean;
+  index: number;
+  onCancelRow: (index: number) => void;
+  onCopyResolvedValue: (index: number) => void;
+  onDeleteRow: (index: number) => void;
+  onEditRow: (index: number) => void;
+  onRevealResolvedValue: (index: number) => void;
+  onSaveRow: (index: number) => void;
+  onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
+  resolvedValuesAvailable: boolean;
+  revealedValue?: string;
+  row: ApEnvVar;
+  savedRow?: ApEnvVar;
+  submitBlocked: boolean;
+}
+
+function CollapsedEnvNameControl({
+  clean,
+  index,
+  managed,
+  onUpdateRow,
+  row,
+}: {
+  clean: boolean;
+  index: number;
+  managed: boolean;
+  onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
+  row: ApEnvVar;
+}) {
+  if (managed && !clean) {
+    return (
+      <EditableEnvNameControl
+        index={index}
+        managed
+        onUpdateRow={onUpdateRow}
+        row={row}
+      />
+    );
+  }
+  return <SavedEnvNameControl row={row} />;
+}
+
+function CollapsedEnvValueControl({
+  clean,
+  copied,
+  dbDsnReferenceSources,
+  index,
+  managed,
+  onCopyResolvedValue,
+  onRevealResolvedValue,
+  onUpdateRow,
+  resolvedValuesAvailable,
+  revealedValue,
+  row,
+}: {
+  clean: boolean;
+  copied: boolean;
+  dbDsnReferenceSources: ApEnvDbDsnSource[];
+  index: number;
+  managed: boolean;
+  onCopyResolvedValue: (index: number) => void;
+  onRevealResolvedValue: (index: number) => void;
+  onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
+  resolvedValuesAvailable: boolean;
+  revealedValue?: string;
+  row: ApEnvVar;
+}) {
+  if (clean) {
+    return (
+      <SavedEnvValueControl
+        copied={copied}
+        index={index}
+        onCopyResolvedValue={onCopyResolvedValue}
+        onRevealResolvedValue={onRevealResolvedValue}
+        resolvedValuesAvailable={resolvedValuesAvailable}
+        revealedValue={revealedValue}
+        row={row}
+      />
+    );
+  }
+  if (managed) {
+    return (
+      <EditableEnvValueControl
+        dbDsnReferenceSources={dbDsnReferenceSources}
+        index={index}
+        managed
+        onUpdateRow={onUpdateRow}
+        row={row}
+      />
+    );
+  }
+  return <CollapsedDirtyEnvValue row={row} />;
+}
+
+function CollapsedEnvTrailing({
+  index,
+  managed,
+  onDeleteRow,
+  onEditRow,
+  row,
+}: {
+  index: number;
+  managed: boolean;
+  onDeleteRow: (index: number) => void;
+  onEditRow: (index: number) => void;
+  row: ApEnvVar;
+}) {
+  if (managed) {
+    return <div aria-hidden className="size-9" />;
+  }
+  return (
+    <EnvRowActionsMenu
+      canEdit
+      index={index}
+      onDeleteRow={onDeleteRow}
+      onEditRow={onEditRow}
+      row={row}
+    />
+  );
+}
+
+function DraftEnvRow({
+  copied,
+  dbDsnReferenceSources,
+  error,
+  expanded,
+  index,
+  onCancelRow,
+  onCopyResolvedValue,
+  onDeleteRow,
+  onEditRow,
+  onRevealResolvedValue,
+  onSaveRow,
+  onUpdateRow,
+  resolvedValuesAvailable,
+  revealedValue,
+  row,
+  savedRow,
+  submitBlocked,
+}: DraftEnvRowProps) {
+  const managed = envRowIsManagedHelper(row);
+  const open = !managed && expanded;
+  const errorNode =
+    error == null ? null : (
+      <p className="text-destructive text-xs" role="status">
+        {error}
+      </p>
+    );
+
+  if (open) {
+    return (
+      <div className="grid min-w-0 gap-1.5" data-env-row="editing">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <EditableEnvNameControl
+            error={error}
+            index={index}
+            onUpdateRow={onUpdateRow}
+            row={row}
+          />
+          <EditableEnvValueControl
+            dbDsnReferenceSources={dbDsnReferenceSources}
+            index={index}
+            onUpdateRow={onUpdateRow}
+            row={row}
+          />
+        </div>
+        {errorNode}
+        <EnvRowEditActions
+          canSave={error == null && row.name.trim() !== ""}
+          index={index}
+          onCancelRow={onCancelRow}
+          onSaveRow={onSaveRow}
+          rowName={row.name}
+          submitBlocked={submitBlocked}
+        />
+      </div>
+    );
+  }
+
+  const clean = savedRow != null && apEnvRowsModelEqual([row], [savedRow]);
+  return (
+    <div className="grid min-w-0 gap-1.5">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]">
+        <CollapsedEnvNameControl
+          clean={clean}
+          index={index}
+          managed={managed}
+          onUpdateRow={onUpdateRow}
+          row={row}
+        />
+        <CollapsedEnvValueControl
+          clean={clean}
+          copied={copied}
+          dbDsnReferenceSources={dbDsnReferenceSources}
+          index={index}
+          managed={managed}
+          onCopyResolvedValue={onCopyResolvedValue}
+          onRevealResolvedValue={onRevealResolvedValue}
+          onUpdateRow={onUpdateRow}
+          resolvedValuesAvailable={resolvedValuesAvailable}
+          revealedValue={revealedValue}
+          row={row}
+        />
+        <CollapsedEnvTrailing
+          index={index}
+          managed={managed}
+          onDeleteRow={onDeleteRow}
+          onEditRow={onEditRow}
+          row={row}
+        />
+      </div>
+      {errorNode}
+    </div>
+  );
+}
+
 export function EditableEnvRows({
   copiedValueIndex,
   dbDsnReferenceSources,
@@ -1315,124 +1535,28 @@ export function EditableEnvRows({
     );
   } else {
     editorContent = envDraft.map((row, index) => {
-      const error = envErrorsByIndex.get(index);
-      const managed = envRowIsManagedHelper(row);
       const rowKey = envRowKeys[index] ?? envRowKey(row, index);
-      const savedRow = savedRows[index];
-      const open = !managed && expandedKeys.includes(rowKey);
-      const cleanSavedRow =
-        !open && savedRow != null && apEnvRowsModelEqual([row], [savedRow]);
-      const savedValueControl = (
-        <SavedEnvValueControl
+      return (
+        <DraftEnvRow
           copied={copiedValueIndex === index}
+          dbDsnReferenceSources={dbDsnReferenceSources}
+          error={envErrorsByIndex.get(index)}
+          expanded={expandedKeys.includes(rowKey)}
           index={index}
+          key={rowKey}
+          onCancelRow={onCancelRow}
           onCopyResolvedValue={onCopyResolvedValue}
+          onDeleteRow={onDeleteRow}
+          onEditRow={onEditRow}
           onRevealResolvedValue={onRevealResolvedValue}
+          onSaveRow={onSaveRow}
+          onUpdateRow={onUpdateRow}
           resolvedValuesAvailable={resolvedValuesAvailable}
           revealedValue={revealedValues.get(index)}
           row={row}
+          savedRow={savedRows[index]}
+          submitBlocked={submitBlocked}
         />
-      );
-
-      let nameControl: ReactNode;
-      let valueControl: ReactNode;
-      if (open) {
-        nameControl = (
-          <EditableEnvNameControl
-            error={error}
-            index={index}
-            onUpdateRow={onUpdateRow}
-            row={row}
-          />
-        );
-        valueControl = (
-          <EditableEnvValueControl
-            dbDsnReferenceSources={dbDsnReferenceSources}
-            index={index}
-            onUpdateRow={onUpdateRow}
-            row={row}
-          />
-        );
-      } else if (managed) {
-        nameControl = cleanSavedRow ? (
-          <SavedEnvNameControl row={row} />
-        ) : (
-          <EditableEnvNameControl
-            index={index}
-            managed
-            onUpdateRow={onUpdateRow}
-            row={row}
-          />
-        );
-        valueControl = cleanSavedRow ? (
-          savedValueControl
-        ) : (
-          <EditableEnvValueControl
-            dbDsnReferenceSources={dbDsnReferenceSources}
-            index={index}
-            managed
-            onUpdateRow={onUpdateRow}
-            row={row}
-          />
-        );
-      } else {
-        nameControl = <SavedEnvNameControl row={row} />;
-        valueControl = cleanSavedRow ? (
-          savedValueControl
-        ) : (
-          <CollapsedDirtyEnvValue row={row} />
-        );
-      }
-
-      let trailingSlot: ReactNode = null;
-      if (!open) {
-        trailingSlot = managed ? (
-          <div aria-hidden className="size-9" />
-        ) : (
-          <EnvRowActionsMenu
-            canEdit
-            index={index}
-            onDeleteRow={onDeleteRow}
-            onEditRow={onEditRow}
-            row={row}
-          />
-        );
-      }
-
-      return (
-        <div
-          className="grid min-w-0 gap-1.5"
-          data-env-row={open ? "editing" : undefined}
-          key={rowKey}
-        >
-          <div
-            className={cn(
-              "grid min-w-0 gap-2",
-              open
-                ? "sm:grid-cols-2"
-                : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem]"
-            )}
-          >
-            {nameControl}
-            {valueControl}
-            {trailingSlot}
-          </div>
-          {error == null ? null : (
-            <p className="text-destructive text-xs" role="status">
-              {error}
-            </p>
-          )}
-          {open ? (
-            <EnvRowEditActions
-              canSave={error == null && row.name.trim() !== ""}
-              index={index}
-              onCancelRow={onCancelRow}
-              onSaveRow={onSaveRow}
-              rowName={row.name}
-              submitBlocked={submitBlocked}
-            />
-          ) : null}
-        </div>
       );
     });
   }

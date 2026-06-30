@@ -138,6 +138,10 @@ const ENV_ROW_ACTIONS_NODE_VARIANT_RE =
   /aria-label="Environment variable actions for DATABASE_URL"[^>]*data-variant="node"/;
 const EDIT_ENV_RE = /aria-label="Edit environment variable/;
 const SAVE_ENV_RE = /Save environment/;
+const EDITING_ENV_ROW_RE = /data-env-row="editing"/;
+const PER_ROW_CANCEL_ENV_RE =
+  /aria-label="Discard [^"]*environment variable edit"/;
+const PER_ROW_SAVE_ENV_RE = /aria-label="Confirm [^"]*environment variable"/;
 const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
 const UPDATE_ENVIRONMENT_VARIABLES_RE =
   /aria-label="Update Environment Variables"/;
@@ -1816,4 +1820,46 @@ test("AP settings raw editor keeps the mode toggle but hides Add", () => {
   assert.match(html, ENV_RAW_SOURCE_RE);
   assert.match(html, ENV_EDITOR_MODE_RE);
   assert.doesNotMatch(html, ADD_ENV_RE);
+});
+
+test("AP settings pane shows per-row Save/Cancel for an editing environment row", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "postgres",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[{ name: "postgres", namespace: "default" }]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, EDITING_ENV_ROW_RE);
+  assert.match(html, ENV_NAME_INPUT_RE);
+  assert.match(html, PER_ROW_CANCEL_ENV_RE);
+  assert.match(html, PER_ROW_SAVE_ENV_RE);
+});
+
+test("AP settings pane renders committed environment rows collapsed without per-row actions", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_ROW_ACTIONS_RE);
+  assert.doesNotMatch(html, EDITING_ENV_ROW_RE);
+  assert.doesNotMatch(html, PER_ROW_CANCEL_ENV_RE);
+  assert.doesNotMatch(html, PER_ROW_SAVE_ENV_RE);
 });
