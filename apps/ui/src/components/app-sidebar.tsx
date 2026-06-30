@@ -1,5 +1,6 @@
 "use client";
 
+import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { brainV2LogoSrc } from "@workspace/ui/assets/brand";
 import {
   type DeviconKey,
@@ -91,6 +92,26 @@ const UPGRADE_USAGE_ROWS = [
   ["Ports", "0.0/0"],
 ] as const;
 
+async function openCostCenterApp() {
+  const cleanup = createSealosApp();
+
+  try {
+    await sealosApp.runEvents("openDesktopApp", {
+      appKey: "system-costcenter",
+      pathname: "/",
+      query: {
+        mode: "upgrade",
+      },
+      messageData: {
+        type: "InternalAppCall",
+        mode: "upgrade",
+      },
+    });
+  } finally {
+    cleanup?.();
+  }
+}
+
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
   "aria-label" | "children"
@@ -141,6 +162,11 @@ function BrainV2Logo() {
 
 function AppSidebarUpgrade() {
   const [open, setOpen] = useState(false);
+  const handleUpgradeClick = () => {
+    openCostCenterApp().catch((error: unknown) => {
+      console.warn("[AppSidebarUpgrade] open cost center failed:", error);
+    });
+  };
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -180,7 +206,12 @@ function AppSidebarUpgrade() {
             ))}
           </div>
 
-          <AppButton className="w-full" type="button" variant="secondary">
+          <AppButton
+            className="w-full"
+            onClick={handleUpgradeClick}
+            type="button"
+            variant="secondary"
+          >
             <Sparkles
               aria-hidden
               className="size-4"
@@ -260,13 +291,13 @@ export default function AppSidebar() {
       data-slot="app-sidebar"
     >
       <div className="flex min-h-0 flex-1 flex-col items-start gap-3 px-2 py-2.5">
-        <span
-          aria-label="Brain v2"
-          className="flex size-9 shrink-0 items-center justify-center"
-          role="img"
+        <Link
+          aria-label="Home"
+          className="flex size-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+          href="/"
         >
           <BrainV2Logo />
-        </span>
+        </Link>
 
         <nav
           aria-label="Project shortcuts"

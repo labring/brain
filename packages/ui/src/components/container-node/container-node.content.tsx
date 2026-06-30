@@ -87,6 +87,10 @@ const LIFECYCLE_ACTION_ITEMS: readonly LifecycleActionItem[] = [
 function formatContainerSubtitle(kind: string | undefined) {
   const resolvedKind = kind?.trim() || "AP";
 
+  if (resolvedKind.toUpperCase() === "AP") {
+    return "Container";
+  }
+
   return `${resolvedKind} workload`;
 }
 

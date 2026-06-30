@@ -145,6 +145,7 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
           },
         ],
       },
+      phase: "Running",
     },
   };
 
@@ -182,6 +183,47 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
       target: { kind: "AP", name: "api", namespace: "default" },
     },
   ]);
+});
+
+test("Project Runtime does not show Public Access accessible while AP is updating", () => {
+  const facts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        {
+          metadata: { name: "api", namespace: "default", uid: "ap-uid" },
+          spec: {
+            input: {
+              network: {
+                platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+                privatePort: 8080,
+              },
+            },
+          },
+          status: {
+            network: {
+              publicAddresses: [
+                {
+                  host: "api.example.com",
+                  id: "pa_abc123",
+                  port: 8080,
+                  status: "accessible",
+                  type: "platform",
+                  url: "https://api.example.com/",
+                },
+              ],
+            },
+            phase: "Updating",
+          },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  assert.deepEqual(facts.publicAccessFacts[0]?.targets[0]?.status, {
+    label: "Updating",
+    tone: "updating",
+  });
 });
 
 test("Project Runtime ignores old template-native workload facts", () => {

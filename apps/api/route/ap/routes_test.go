@@ -3,6 +3,10 @@ package ap
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +30,209 @@ func testTime() time.Time {
 	return time.Date(2026, 6, 10, 8, 9, 10, 0, time.UTC)
 }
 
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) Do(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestAPCheckReadyURLsExtractsProjectedPublicAddresses(t *testing.T) {
+	tests := []struct {
+		name string
+		rows interface{}
+	}{
+		{
+			name: "interface rows from decoded JSON",
+			rows: []interface{}{
+				map[string]interface{}{"url": "https://web.example.com/"},
+				map[string]interface{}{"host": "api.example.com"},
+				map[string]interface{}{"url": "https://web.example.com/"},
+				map[string]interface{}{"url": "ftp://ignored.example.com/"},
+			},
+		},
+		{
+			name: "map rows from AP transform",
+			rows: []map[string]interface{}{
+				{"url": "https://web.example.com/"},
+				{"host": "api.example.com"},
+				{"url": "https://web.example.com/"},
+				{"url": "ftp://ignored.example.com/"},
+			},
+		},
+	}
+	want := []string{"https://web.example.com/", "https://api.example.com/"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := apCheckReadyURLs(map[string]interface{}{
+				"status": map[string]interface{}{
+					"network": map[string]interface{}{
+						"publicAddresses": tt.rows,
+					},
+				},
+			})
+			if len(got) != len(want) {
+				t.Fatalf("urls = %#v, want %#v", got, want)
+			}
+			for index := range want {
+				if got[index] != want[index] {
+					t.Fatalf("urls[%d] = %q, want %q", index, got[index], want[index])
+				}
+			}
+		})
+	}
+}
+
+func TestAPCheckReadyURLMatchesLaunchpadReadinessSemantics(t *testing.T) {
+	t.Run("ordinary response is reachable", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("application error"))
+		}))
+		defer server.Close()
+
+		got := apCheckReadyURL(context.Background(), server.Client(), server.URL)
+		if !got.Ready || got.Error != "" {
+			t.Fatalf("result = %#v, want ready reachable response", got)
+		}
+	})
+
+	t.Run("empty ingress 404 is not ready", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		got := apCheckReadyURL(context.Background(), server.Client(), server.URL)
+		if got.Ready || got.Error != "404" {
+			t.Fatalf("result = %#v, want not-ready 404", got)
+		}
+	})
+
+	t.Run("upstream 503 is not ready", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("upstream connect error"))
+		}))
+		defer server.Close()
+
+		got := apCheckReadyURL(context.Background(), server.Client(), server.URL)
+		if got.Ready || got.Error != "Upstream not healthy" {
+			t.Fatalf("result = %#v, want upstream not ready", got)
+		}
+	})
+
+	t.Run("no healthy upstream is not ready", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("no healthy upstream"))
+		}))
+		defer server.Close()
+
+		got := apCheckReadyURL(context.Background(), server.Client(), server.URL)
+		if got.Ready || got.Error != "Upstream not healthy" {
+			t.Fatalf("result = %#v, want upstream not ready", got)
+		}
+	})
+}
+
+func TestAPCheckReadyTargetsRequireWorkloadAndIngressReady(t *testing.T) {
+	apObject := map[string]interface{}{
+		"status": map[string]interface{}{
+			"network": map[string]interface{}{
+				"publicAddresses": []map[string]interface{}{
+					{
+						"routing": map[string]interface{}{"status": "ready"},
+						"status":  "accessible",
+						"url":     "https://ready.example.com/",
+					},
+					{
+						"routing": map[string]interface{}{"status": "verifying"},
+						"status":  "verifying",
+						"url":     "https://pending.example.com/",
+					},
+					{
+						"reason": "target-port-missing",
+						"status": "blocked",
+						"url":    "https://blocked.example.com/",
+					},
+				},
+			},
+		},
+	}
+
+	notReady := apCheckReadyTargets(apObject, false)
+	for _, target := range notReady {
+		if target.Error != "Pod not ready" {
+			t.Fatalf("target = %#v, want pod readiness gate", target)
+		}
+	}
+
+	ready := apCheckReadyTargets(apObject, true)
+	wantErrors := []string{"", "Ingress not ready", "target-port-missing"}
+	if len(ready) != len(wantErrors) {
+		t.Fatalf("targets = %#v, want %d targets", ready, len(wantErrors))
+	}
+	for index, want := range wantErrors {
+		if ready[index].Error != want {
+			t.Fatalf("target[%d] = %#v, want error %q", index, ready[index], want)
+		}
+	}
+}
+
+func TestAPCheckReadyTargetsWithClientSkipsPreconditionFailures(t *testing.T) {
+	calls := 0
+	client := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{
+			Body:       http.NoBody,
+			StatusCode: http.StatusOK,
+		}, nil
+	})
+
+	got := apCheckReadyTargetsWithClient(context.Background(), []apCheckReadyTarget{
+		{URL: "https://ready.example.com/"},
+		{Error: "Pod not ready", URL: "https://pod.example.com/"},
+		{Error: "Ingress not ready", URL: "https://ingress.example.com/"},
+	}, client)
+
+	if calls != 1 {
+		t.Fatalf("client calls = %d, want only ready precondition target to be fetched", calls)
+	}
+	if len(got) != 3 || !got[0].Ready || got[1].Error != "Pod not ready" || got[2].Error != "Ingress not ready" {
+		t.Fatalf("results = %#v, want precondition failures preserved", got)
+	}
+}
+
+func TestAPCheckReadyURLRejectsPrivateTargets(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	got := apCheckReadyURL(context.Background(), newAPCheckReadyHTTPClient(), server.URL)
+	if got.Ready || got.Error != "fetch error" {
+		t.Fatalf("result = %#v, want private target fetch error", got)
+	}
+}
+
+func TestAPCheckReadyClientBlocksUnsafeRedirects(t *testing.T) {
+	client := newAPCheckReadyHTTPClient()
+	target, err := url.Parse("file:///etc/passwd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := url.Parse("https://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.CheckRedirect(&http.Request{URL: target}, []*http.Request{{URL: source}})
+	if !errors.Is(err, errAPCheckReadyRedirectBlocked) {
+		t.Fatalf("CheckRedirect error = %v, want redirect blocked", err)
+	}
+}
+
 func TestAPMutationOpenAPIDocsDescribeDirectKubernetesContract(t *testing.T) {
 	router := chi.NewRouter()
 	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
@@ -39,6 +246,10 @@ func TestAPMutationOpenAPIDocsDescribeDirectKubernetesContract(t *testing.T) {
 	envValuePath := api.OpenAPI().Paths["/api/ap/v1alpha1/env-value"]
 	if envValuePath == nil || envValuePath.Get == nil {
 		t.Fatal("expected AP resolved env value route to be registered")
+	}
+	checkReadyPath := api.OpenAPI().Paths["/api/ap/v1alpha1/check-ready"]
+	if checkReadyPath == nil || checkReadyPath.Get == nil {
+		t.Fatal("expected AP check-ready route to be registered")
 	}
 
 	descriptions := map[string]string{

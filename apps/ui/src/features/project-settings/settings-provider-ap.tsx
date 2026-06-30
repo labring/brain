@@ -1,5 +1,6 @@
 "use client";
 
+import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
 import { Router, Settings2, SquarePen } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/project-settings/ap/ap-settings-context";
@@ -107,7 +108,7 @@ function apSettingsModelBase({
       closeAriaLabel: "Close Public Address settings",
       icon: <Router aria-hidden className="size-4 shrink-0 text-blue-400" />,
       resolvedView,
-      subtitle: `AP · ${target.namespace}`,
+      subtitle: `Container · ${target.namespace}`,
       title: `${target.name} Public Addresses`,
     };
   }
@@ -155,6 +156,7 @@ interface ApSettingsSectionsHookInput {
   onResourceQuotasCommit: ApWorkloadSettingsState["onResourceQuotasCommit"];
   onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
   pendingDatabaseBindingIntent: ApSettingsSectionsInput["addDbDsnReferenceIntent"];
+  publicAddressReadiness?: ApSettingsSectionsInput["publicAddressReadiness"];
   resolvedView: string;
 }
 
@@ -181,6 +183,7 @@ function apSettingsSectionsHookProps({
   onResourceQuotasCommit,
   onSettingsDraftCommit,
   pendingDatabaseBindingIntent,
+  publicAddressReadiness,
   resolvedView,
 }: ApSettingsSectionsHookInput): Parameters<typeof useApSettingsSections>[0] {
   const metadata = apSettingsSectionMetadata(resolvedView);
@@ -227,6 +230,7 @@ function apSettingsSectionsHookProps({
     onPendingDbReferencesChange,
     onResourceQuotasCommit: canEditAp ? onResourceQuotasCommit : undefined,
     onSettingsDraftCommit: canEditAp ? onSettingsDraftCommit : undefined,
+    publicAddressReadiness,
     readOnly: !isApWorkload || effectiveReadOnly,
     replicaStrategy: display.replicaStrategy,
     replicasQuota: isApWorkload
@@ -256,6 +260,7 @@ function publicAddressesSectionsHookProps({
   effectiveReadOnly,
   network,
   onNetworkDraftCommit,
+  publicAddressReadiness,
 }: {
   apTarget: ProjectApTarget | null;
   canEditAp: boolean;
@@ -263,6 +268,9 @@ function publicAddressesSectionsHookProps({
   effectiveReadOnly: boolean;
   network: ApNetwork | null;
   onNetworkDraftCommit: ApWorkloadSettingsState["onNetworkDraftCommit"];
+  publicAddressReadiness?: Parameters<
+    typeof useApPublicAddressesSettingsSections
+  >[0]["publicAddressReadiness"];
 }): Parameters<typeof useApPublicAddressesSettingsSections>[0] {
   return {
     identityKey:
@@ -281,6 +289,7 @@ function publicAddressesSectionsHookProps({
       : undefined,
     onNetworkDraftCommit:
       canEditAp && network != null ? onNetworkDraftCommit : undefined,
+    publicAddressReadiness,
     readOnly: effectiveReadOnly,
   };
 }
@@ -544,9 +553,17 @@ export function ApSettingsProvider({
   const canEditAp = isApWorkload && !effectiveReadOnly;
   const baseSubtitle = workloadSettingsSubtitle({
     image: display.image,
-    kind: "AP",
+    kind: "Container",
   });
   const network = publicAddressNetworkOrNull(display.network);
+  const { data: publicAddressReadiness } = useAPPublicAddressReadiness({
+    enabled: apTarget != null && isApWorkload && network != null,
+    kubeconfig,
+    target:
+      apTarget == null
+        ? null
+        : { name: apTarget.name, namespace: apTarget.namespace },
+  });
   const settingsSectionsModel = useApSettingsSections(
     apSettingsSectionsHookProps({
       apTarget,
@@ -574,6 +591,7 @@ export function ApSettingsProvider({
       onResourceQuotasCommit,
       onSettingsDraftCommit,
       pendingDatabaseBindingIntent,
+      publicAddressReadiness,
       resolvedView,
     })
   );
@@ -585,6 +603,7 @@ export function ApSettingsProvider({
       effectiveReadOnly,
       network,
       onNetworkDraftCommit,
+      publicAddressReadiness,
     })
   );
 

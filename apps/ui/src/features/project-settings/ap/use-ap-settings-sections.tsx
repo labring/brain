@@ -96,6 +96,7 @@ import {
   mergeApSettingsDraftDomains,
 } from "./ap-settings-draft";
 import type {
+  ApPublicAddressReadiness,
   ApSettingsControlledQuotaProps,
   ApSettingsRenderedSection,
   ApSettingsSectionsModel,
@@ -297,6 +298,7 @@ export interface ApSettingsSectionsProps {
     meta?: ApSettingsDraftCommitMeta
   ) => void | Promise<void>;
   onSettingsDraftLeaveGuardChange?: SettingsLeaveGuardRegistration;
+  publicAddressReadiness?: readonly ApPublicAddressReadiness[];
   /**
    * When true, image/env/network are view-only and quota sliders do not send updates.
    * Host may pass no-op callbacks.
@@ -336,6 +338,7 @@ export function useApSettingsSections({
   network,
   networkPlatformAddressDraftContext,
   onCustomDomainCnameVerify,
+  publicAddressReadiness,
   replicasQuota,
   replicaStrategy,
   envResolvedValueScope,
@@ -2174,6 +2177,7 @@ export function useApSettingsSections({
           controller={networkController}
           onCustomDomainCnameVerify={onCustomDomainCnameVerify}
           platformAddressDraftContext={networkPlatformAddressDraftContext}
+          publicAddressReadiness={publicAddressReadiness}
           readOnly={readOnly}
         />
       ),

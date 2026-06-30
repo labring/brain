@@ -12,6 +12,12 @@ import type {
   ApNetworkPlatformAddressDraftContext,
 } from "./ap-network-model";
 
+export interface ApPublicAddressReadiness {
+  error?: string;
+  ready: boolean;
+  url: string;
+}
+
 /** Quota sliders are controlled: parent owns `value` and receives `onValueChange`. */
 export interface ApSettingsControlledQuotaProps {
   disabled?: boolean;
@@ -56,5 +62,6 @@ export interface ApPublicAddressesSettingsSectionsProps {
     meta: ApPublicAddressesSettingsDraftCommitMeta
   ) => void | Promise<void>;
   onSettingsDraftLeaveGuardChange?: SettingsLeaveGuardRegistration;
+  publicAddressReadiness?: readonly ApPublicAddressReadiness[];
   readOnly?: boolean;
 }
