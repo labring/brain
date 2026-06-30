@@ -5,6 +5,7 @@ import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { appFieldFocusClass } from "@workspace/ui/lib/field-state";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   HardDrive,
@@ -110,7 +111,7 @@ function AppTextarea({ className, ...props }: ComponentProps<typeof Textarea>) {
     <Textarea
       className={cn(
         "min-h-20 border-input bg-transparent text-foreground text-sm placeholder:text-muted-foreground dark:bg-transparent",
-        "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
+        appFieldFocusClass,
         className
       )}
       {...props}
