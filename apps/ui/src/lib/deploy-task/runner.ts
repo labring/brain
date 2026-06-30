@@ -1234,7 +1234,7 @@ function installSkillsCommand(): string {
     'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
     "if command -v npx >/dev/null 2>&1; then",
     '  cd "$workspace_dir"',
-    "  timeout 120 npx --yes skills add https://github.com/zjy365/sealos-skills/tree/sandbox-skill-lite-preview -y",
+    "  timeout 120 npx --yes skills add https://github.com/labring/sealos-skills/tree/brain-deploy -y",
     "else",
     "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
     "  exit 1",

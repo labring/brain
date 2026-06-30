@@ -42,6 +42,8 @@ export const API_ROUTES = {
     versions: "/api/ap/v1alpha1/versions",
     /** Rollout-restart the composed Deployment (same name as the AP). */
     restart: "/api/ap/v1alpha1/restart",
+    /** Real external reachability check for AP Public Addresses. */
+    checkReady: "/api/ap/v1alpha1/check-ready",
   },
 
   db: {

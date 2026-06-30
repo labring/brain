@@ -8,7 +8,6 @@ import { clampScale } from "@workspace/ui/components/settings-slider/settings-sl
 import { SlidingToggle } from "@workspace/ui/components/sliding-toggle";
 import {
   Cpu,
-  FileCog,
   HardDrive,
   MemoryStick,
   Network,
@@ -97,6 +96,7 @@ import {
   mergeApSettingsDraftDomains,
 } from "./ap-settings-draft";
 import type {
+  ApPublicAddressReadiness,
   ApSettingsControlledQuotaProps,
   ApSettingsRenderedSection,
   ApSettingsSectionsModel,
@@ -298,6 +298,7 @@ export interface ApSettingsSectionsProps {
     meta?: ApSettingsDraftCommitMeta
   ) => void | Promise<void>;
   onSettingsDraftLeaveGuardChange?: SettingsLeaveGuardRegistration;
+  publicAddressReadiness?: readonly ApPublicAddressReadiness[];
   /**
    * When true, image/env/network are view-only and quota sliders do not send updates.
    * Host may pass no-op callbacks.
@@ -337,6 +338,7 @@ export function useApSettingsSections({
   network,
   networkPlatformAddressDraftContext,
   onCustomDomainCnameVerify,
+  publicAddressReadiness,
   replicasQuota,
   replicaStrategy,
   envResolvedValueScope,
@@ -461,6 +463,18 @@ export function useApSettingsSections({
       "cm"
     )
   );
+  // Per-card edit state for AP Configuration Files: which cards are expanded for
+  // editing, which were added in this draft (Cancel removes them), and the
+  // pre-edit snapshot used to revert an existing card on Cancel. All local to
+  // the Settings Draft — the bottom Update is still the only backend write.
+  const [expandedConfigKeys, setExpandedConfigKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [newConfigKeys, setNewConfigKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+  const configEditSnapshots = useRef<Map<string, ApConfigMapMount>>(new Map());
+  const [configSubmitBlocked, setConfigSubmitBlocked] = useState(false);
   const [draftStorage, setDraftStorage] = useState<ApStorageMount[]>(() =>
     normalizeStorageDraftRows(initialSettingsDraft.storage)
   );
@@ -542,6 +556,12 @@ export function useApSettingsSections({
   );
 
   useEffect(() => {
+    if (expandedConfigKeys.size === 0) {
+      setConfigSubmitBlocked(false);
+    }
+  }, [expandedConfigKeys]);
+
+  useEffect(() => {
     if (settingsCommitMode) {
       return;
     }
@@ -564,6 +584,10 @@ export function useApSettingsSections({
     const nextConfigMaps = normalizeConfigMapDraftRows(configMaps);
     setDraftConfigMaps(nextConfigMaps);
     setConfigMapDraftKeys(createDraftRowKeys(nextConfigMaps.length, "cm"));
+    setExpandedConfigKeys(new Set());
+    setNewConfigKeys(new Set());
+    configEditSnapshots.current = new Map();
+    setConfigSubmitBlocked(false);
     const nextStorage = normalizeStorageDraftRows(storage);
     setDraftStorage(nextStorage);
     setStorageDraftKeys(createDraftRowKeys(nextStorage.length, "storage"));
@@ -970,6 +994,10 @@ export function useApSettingsSections({
       const nextConfigMaps = normalizeConfigMapDraftRows(next.configMaps);
       setDraftConfigMaps(nextConfigMaps);
       setConfigMapDraftKeys(createDraftRowKeys(nextConfigMaps.length, "cm"));
+      setExpandedConfigKeys(new Set());
+      setNewConfigKeys(new Set());
+      configEditSnapshots.current = new Map();
+      setConfigSubmitBlocked(false);
       const nextStorage = normalizeStorageDraftRows(next.storage);
       setDraftStorage(nextStorage);
       setStorageDraftKeys(createDraftRowKeys(nextStorage.length, "storage"));
@@ -1526,18 +1554,105 @@ export function useApSettingsSections({
     });
   };
 
+  const collapseConfigCard = (key: string) => {
+    setExpandedConfigKeys((current) => {
+      if (!current.has(key)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  };
+
   const handleAddConfigMapRow = () => {
+    const key = createDraftRowKey("cm");
     setDraftConfigMaps((rows) => [...rows, { path: "", value: "" }]);
-    setConfigMapDraftKeys((keys) => [...keys, createDraftRowKey("cm")]);
+    setConfigMapDraftKeys((keys) => [...keys, key]);
+    setExpandedConfigKeys((current) => new Set(current).add(key));
+    setNewConfigKeys((current) => new Set(current).add(key));
+  };
+
+  const handleEditConfigMapRow = (index: number) => {
+    const key = configMapDraftKeys[index];
+    if (key == null) {
+      return;
+    }
+    const row = draftConfigMaps[index];
+    if (row != null) {
+      configEditSnapshots.current.set(key, { ...row });
+    }
+    setExpandedConfigKeys((current) => new Set(current).add(key));
+  };
+
+  const handleSaveConfigMapRow = (index: number) => {
+    const key = configMapDraftKeys[index];
+    if (key == null) {
+      return;
+    }
+    configEditSnapshots.current.delete(key);
+    setNewConfigKeys((current) => {
+      if (!current.has(key)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    collapseConfigCard(key);
+  };
+
+  const handleCancelConfigMapRow = (index: number) => {
+    const key = configMapDraftKeys[index];
+    if (key == null) {
+      return;
+    }
+    if (newConfigKeys.has(key)) {
+      setDraftConfigMaps((rows) =>
+        rows.filter((_, rowIndex) => rowIndex !== index)
+      );
+      setConfigMapDraftKeys((keys) =>
+        keys.filter((_, keyIndex) => keyIndex !== index)
+      );
+      setNewConfigKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    } else {
+      const snapshot = configEditSnapshots.current.get(key);
+      if (snapshot != null) {
+        setDraftConfigMaps((rows) =>
+          rows.map((row, rowIndex) =>
+            rowIndex === index ? { ...snapshot } : row
+          )
+        );
+      }
+    }
+    configEditSnapshots.current.delete(key);
+    collapseConfigCard(key);
   };
 
   const handleDeleteConfigMapRow = (index: number) => {
+    const key = configMapDraftKeys[index];
     setDraftConfigMaps((rows) =>
       rows.filter((_, rowIndex) => rowIndex !== index)
     );
     setConfigMapDraftKeys((keys) =>
       keys.filter((_, keyIndex) => keyIndex !== index)
     );
+    if (key != null) {
+      configEditSnapshots.current.delete(key);
+      setNewConfigKeys((current) => {
+        if (!current.has(key)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      collapseConfigCard(key);
+    }
   };
 
   const handleUpdateConfigMapRow = (
@@ -1777,12 +1892,29 @@ export function useApSettingsSections({
   ]);
 
   const handleSaveSettingsDraft = useCallback(async () => {
+    // A still-expanded AP Configuration File card is an unsaved edit. Block the
+    // panel submit, surface the per-card prompt, and scroll to the first one.
+    if (expandedConfigKeys.size > 0) {
+      setConfigSubmitBlocked(true);
+      if (typeof document !== "undefined") {
+        const scrollToUnsaved = () =>
+          document
+            .querySelector('[data-config-card="expanded"]')
+            ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(scrollToUnsaved);
+        } else {
+          scrollToUnsaved();
+        }
+      }
+      return;
+    }
     try {
       await saveSettingsDraft();
     } catch {
       // The footer keeps the user on the draft and shows the panel-level failure.
     }
-  }, [saveSettingsDraft]);
+  }, [expandedConfigKeys, saveSettingsDraft]);
 
   const environmentFocus = sectionFocus === "environment";
 
@@ -1939,15 +2071,20 @@ export function useApSettingsSections({
         <ConfigMapSettingsContent
           configMapKeys={configMapDraftKeys}
           configMaps={settingsDraft.configMaps ?? []}
+          expandedKeys={[...expandedConfigKeys]}
           onAdd={handleAddConfigMapRow}
+          onCancel={handleCancelConfigMapRow}
           onDelete={handleDeleteConfigMapRow}
+          onEdit={handleEditConfigMapRow}
+          onSave={handleSaveConfigMapRow}
           onUpdate={handleUpdateConfigMapRow}
           readOnly={readOnly}
+          submitBlocked={configSubmitBlocked}
         />
       ),
-      icon: FileCog,
+      icon: SquarePen,
       id: "config-files",
-      title: "Config Files",
+      title: "Configuration Files",
     });
 
     if (workloadKind === "statefulset" || draftStorage.length > 0) {
@@ -2040,6 +2177,7 @@ export function useApSettingsSections({
           controller={networkController}
           onCustomDomainCnameVerify={onCustomDomainCnameVerify}
           platformAddressDraftContext={networkPlatformAddressDraftContext}
+          publicAddressReadiness={publicAddressReadiness}
           readOnly={readOnly}
         />
       ),

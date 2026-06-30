@@ -115,6 +115,17 @@ const STATUS_TONES = new Set([
   "stopping",
   "updating",
 ]);
+const PUBLIC_ACCESS_BLOCKING_AP_TONES = new Set([
+  "creating",
+  "deleting",
+  "failed",
+  "pending",
+  "restarting",
+  "starting",
+  "stopped",
+  "stopping",
+  "updating",
+]);
 
 const DISPLAY_ENGINE_BY_KEY: Record<string, string> = {
   mongodb: "MongoDB",
@@ -480,7 +491,8 @@ function titleCaseStatus(status: string): string {
 }
 
 function publicAccessTargetStatus(
-  status: string | undefined
+  status: string | undefined,
+  apStatus: ProjectRuntimeStatusSummary
 ): ProjectRuntimeStatusSummary | undefined {
   if (status === undefined) {
     return { label: "Unknown", tone: "unknown" };
@@ -488,11 +500,20 @@ function publicAccessTargetStatus(
   const tone = status
     .toLowerCase()
     .replace(PUBLIC_ACCESS_STATUS_SEPARATOR_PATTERN, "-");
+  const apTone = apStatus.tone?.trim().toLowerCase();
+  if (
+    tone === "accessible" &&
+    apTone !== undefined &&
+    PUBLIC_ACCESS_BLOCKING_AP_TONES.has(apTone)
+  ) {
+    return { label: apStatus.label, tone: apTone };
+  }
   return { label: titleCaseStatus(tone), tone };
 }
 
 function publicAccessTargetsFromAddresses(
-  addresses: readonly NetworkPublicAddress[]
+  addresses: readonly NetworkPublicAddress[],
+  apStatus: ProjectRuntimeStatusSummary
 ): PublicAccessTargetSummary[] {
   return addresses.map((address, index) => {
     const host = address.host;
@@ -500,7 +521,7 @@ function publicAccessTargetsFromAddresses(
       id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
       label: publicAddressTargetLabel(address.type),
       port: address.port,
-      status: publicAccessTargetStatus(address.status),
+      status: publicAccessTargetStatus(address.status, apStatus),
       ...(address.type === undefined ? {} : { type: address.type }),
       value:
         address.url ?? (host === undefined ? "Pending" : `https://${host}/`),
@@ -544,7 +565,10 @@ function publicAccessFactFromAp(
     name: apName,
     namespace,
   };
-  const targets = publicAccessTargetsFromAddresses(publicAddresses);
+  const targets = publicAccessTargetsFromAddresses(
+    publicAddresses,
+    apStatusSummary(ap)
+  );
   const accessDomain = accessDomainFromTargets(targets);
   return {
     ...(accessDomain === undefined ? {} : { accessDomain }),

@@ -84,6 +84,7 @@ test("PublicAccess canvas nodes are derived from AP Network public addresses", (
                 },
               ],
             },
+            phase: "Running",
           },
         },
         {

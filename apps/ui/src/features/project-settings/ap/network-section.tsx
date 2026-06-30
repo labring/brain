@@ -44,6 +44,7 @@ import {
 import { apNetworkDraftBackingKey } from "./ap-settings-draft";
 import type {
   ApPublicAddressesSettingsSectionsProps,
+  ApPublicAddressReadiness,
   ApSettingsSectionsModel,
 } from "./ap-settings-model";
 import {
@@ -69,6 +70,7 @@ interface NetworkSettingsSectionProps {
   controller: ApNetworkDraftController;
   onCustomDomainCnameVerify?: ApCustomDomainCnameVerifier;
   platformAddressDraftContext?: ApNetworkPlatformAddressDraftContext;
+  publicAddressReadiness?: readonly ApPublicAddressReadiness[];
   readOnly: boolean;
 }
 
@@ -103,6 +105,100 @@ function publicAddressStatusLabel(address: ApNetworkPublicAddress): string {
   const status = address.status?.trim() || "Pending";
   const reason = address.reason?.trim();
   return reason == null || reason === "" ? status : `${status}: ${reason}`;
+}
+
+function publicAddressReadinessKey(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return "";
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+
+function publicAddressReadinessURLForAddress(
+  address: Pick<ApNetworkPublicAddress, "host" | "url">
+): string {
+  const url = address.url?.trim();
+  if (url != null && url !== "") {
+    return url;
+  }
+  const host = address.host?.trim();
+  return host == null || host === "" ? "" : `https://${host}/`;
+}
+
+function publicAddressReadinessByUrl(
+  readiness: readonly ApPublicAddressReadiness[] | undefined
+): Map<string, ApPublicAddressReadiness> {
+  const out = new Map<string, ApPublicAddressReadiness>();
+  for (const item of readiness ?? []) {
+    const key = publicAddressReadinessKey(item.url);
+    if (key !== "") {
+      out.set(key, item);
+    }
+  }
+  return out;
+}
+
+function publicAddressStatusAllowsReadinessOverride(
+  status: string | undefined
+): boolean {
+  const normalized = status?.trim().toLowerCase();
+  return normalized !== "blocked" && normalized !== "failed";
+}
+
+function publicAddressWithReadiness(
+  address: ApNetworkPublicAddress,
+  readiness: ApPublicAddressReadiness | undefined
+): ApNetworkPublicAddress {
+  if (
+    readiness == null ||
+    !publicAddressStatusAllowsReadinessOverride(address.status)
+  ) {
+    return address;
+  }
+  if (readiness.ready) {
+    const { reason: _reason, ...rest } = address;
+    return { ...rest, status: "accessible" };
+  }
+  return {
+    ...address,
+    reason: readiness.error?.trim() || "check-ready-pending",
+    status: "progressing",
+  };
+}
+
+function customDomainWithReadiness(
+  domain: ApNetworkCustomDomain,
+  readiness: ApPublicAddressReadiness | undefined
+): ApNetworkCustomDomain {
+  if (
+    readiness == null ||
+    !publicAddressStatusAllowsReadinessOverride(domain.status)
+  ) {
+    return domain;
+  }
+  if (readiness.ready) {
+    const { reason: _reason, ...rest } = domain;
+    return { ...rest, status: "accessible" };
+  }
+  return {
+    ...domain,
+    reason: readiness.error?.trim() || "check-ready-pending",
+    status: "progressing",
+  };
+}
+
+function customDomainReadinessUrl(domain: ApNetworkCustomDomain): string {
+  const host = domain.domain.trim();
+  return host === "" ? "" : `https://${host}/`;
 }
 
 function publicAddressStatusDotClasses(address: ApNetworkPublicAddress): {
@@ -1081,6 +1177,7 @@ interface DomainListSectionProps {
   onShowAllPublicAddresses: () => void;
   onUnbindCustomDomain: (domain: ApNetworkCustomDomain) => void | Promise<void>;
   platformAddressDraftContext?: ApNetworkPlatformAddressDraftContext;
+  publicAddressReadiness?: readonly ApPublicAddressReadiness[];
   readOnly: boolean;
   showAllPublicAddresses: boolean;
   verify?: ApCustomDomainCnameVerifier;
@@ -1104,6 +1201,7 @@ function DomainListSection({
   onShowAllPublicAddresses,
   onUnbindCustomDomain,
   platformAddressDraftContext,
+  publicAddressReadiness,
   readOnly,
   showAllPublicAddresses,
   verify,
@@ -1115,6 +1213,10 @@ function DomainListSection({
     visibleDomainRows.customDomains.length === 0;
   const hasPublicAddressOverflow =
     visibleDomainRows.publicAddressRows.length > PUBLIC_ADDRESS_VISIBLE_COUNT;
+  const readinessByUrl = useMemo(
+    () => publicAddressReadinessByUrl(publicAddressReadiness),
+    [publicAddressReadiness]
+  );
 
   return (
     <NetworkCard title="Domain List">
@@ -1147,21 +1249,38 @@ function DomainListSection({
       ) : (
         <CanvasNode.CopyFeedbackScope>
           <div className="grid gap-2">
-            {visibleDomainRows.customDomains.map((domain, index) => (
-              <CustomDomainRow
-                domain={domain}
-                key={customDomainKey(domain, index)}
-                onUnbind={
-                  canMutateNetwork
-                    ? () => onUnbindCustomDomain(domain)
-                    : undefined
-                }
-                readOnly={readOnly}
-              />
-            ))}
+            {visibleDomainRows.customDomains.map((domain, index) => {
+              const readiness = readinessByUrl.get(
+                publicAddressReadinessKey(customDomainReadinessUrl(domain))
+              );
+              const displayDomain = customDomainWithReadiness(
+                domain,
+                readiness
+              );
+              return (
+                <CustomDomainRow
+                  domain={displayDomain}
+                  key={customDomainKey(domain, index)}
+                  onUnbind={
+                    canMutateNetwork
+                      ? () => onUnbindCustomDomain(domain)
+                      : undefined
+                  }
+                  readOnly={readOnly}
+                />
+              );
+            })}
             {visiblePublicAddressRows.map((row) => {
               const { address } = row;
               const key = publicAddressKey(address, row.publicAddressIndex);
+              const displayAddress = publicAddressWithReadiness(
+                address,
+                readinessByUrl.get(
+                  publicAddressReadinessKey(
+                    publicAddressReadinessURLForAddress(address)
+                  )
+                )
+              );
               return expandedCnameRowKeys.has(key) ? (
                 <PublicAddressEditForm
                   address={address}
@@ -1185,7 +1304,7 @@ function DomainListSection({
                 />
               ) : (
                 <PublicAddressRow
-                  address={address}
+                  address={displayAddress}
                   key={key}
                   onBindCustomDomain={
                     canMutateNetwork ? () => onOpenBindAddress(key) : undefined
@@ -1230,6 +1349,7 @@ export function NetworkSettingsSection({
   controller,
   onCustomDomainCnameVerify,
   platformAddressDraftContext,
+  publicAddressReadiness,
   readOnly,
 }: NetworkSettingsSectionProps) {
   const { network } = controller;
@@ -1387,6 +1507,7 @@ export function NetworkSettingsSection({
         onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
         onUnbindCustomDomain={handleUnbindCustomDomain}
         platformAddressDraftContext={platformAddressDraftContext}
+        publicAddressReadiness={publicAddressReadiness}
         readOnly={readOnly}
         showAllPublicAddresses={showAllPublicAddresses}
         verify={onCustomDomainCnameVerify}
@@ -1417,6 +1538,7 @@ export function useApPublicAddressesSettingsSections({
   networkPlatformAddressDraftContext,
   onCustomDomainCnameVerify,
   onNetworkDraftCommit,
+  publicAddressReadiness,
   readOnly = false,
 }: ApPublicAddressesSettingsSectionsProps): ApSettingsSectionsModel {
   const commitMode = onNetworkDraftCommit != null && readOnly !== true;
@@ -1662,6 +1784,7 @@ export function useApPublicAddressesSettingsSections({
               onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
               onUnbindCustomDomain={controller.unbindCustomDomain}
               platformAddressDraftContext={networkPlatformAddressDraftContext}
+              publicAddressReadiness={publicAddressReadiness}
               readOnly={readOnly}
               showAllPublicAddresses={showAllPublicAddresses}
               verify={onCustomDomainCnameVerify}

@@ -212,7 +212,7 @@ test("returns newly placed layout nodes for first placement persistence", () => 
 
   assert.deepEqual(result.placedLayoutNodes, [
     {
-      expanded: false,
+      expanded: true,
       owner: {
         kind: "resource",
         ref: { kind: "AP", name: "api", namespace: "default" },
@@ -235,7 +235,7 @@ test("includes last seen UID in first-placement layout nodes", () => {
   });
 
   assert.deepEqual(result.placedLayoutNodes[0], {
-    expanded: false,
+    expanded: true,
     lastSeenUid: "api-uid",
     owner: {
       kind: "resource",

@@ -27,6 +27,7 @@ export type {
 export type {
   ApPublicAddressesSettingsDraftCommitMeta,
   ApPublicAddressesSettingsSectionsProps,
+  ApPublicAddressReadiness,
   ApSettingsControlledQuotaProps,
   ApSettingsQuotaSliderProps,
   ApSettingsRenderedSection,

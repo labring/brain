@@ -6,10 +6,13 @@ import type { CanvasDeploymentPlaceholderRfNode } from "./types";
 
 export function CanvasDeploymentPlaceholderNode({
   dragging,
+  isConnectable,
   selected,
 }: NodeProps<CanvasDeploymentPlaceholderRfNode>) {
   return (
-    <CanvasNode.Root interaction={{ dragging, selected }}>
+    <CanvasNode.Root
+      interaction={{ connectable: isConnectable, dragging, selected }}
+    >
       <CanvasNode.Placeholder aria-label="Deployment placeholder" />
     </CanvasNode.Root>
   );

@@ -23,4 +23,5 @@ func Register(api huma.API) {
 	registerEvents(grp)
 	registerEnvValue(grp)
 	registerVersions(grp)
+	registerCheckReady(grp)
 }

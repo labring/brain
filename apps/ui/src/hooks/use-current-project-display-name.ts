@@ -43,17 +43,20 @@ export function useCurrentProjectDisplayName(options: {
     );
     if (hit == null) {
       return {
+        description: undefined,
         displayName: undefined,
         resourceName: undefined,
       };
     }
     return {
+      description: hit.description,
       displayName: hit.displayName,
       resourceName: hit.id,
     };
   }, [data, projectId]);
 
   return {
+    description: currentProject.description,
     displayName: currentProject.displayName,
     error: error instanceof Error ? error : undefined,
     isLoading: enabled && isLoading,

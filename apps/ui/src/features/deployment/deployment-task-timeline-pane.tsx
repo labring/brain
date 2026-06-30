@@ -22,7 +22,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
-  Clock3,
   LoaderCircle,
   PackageCheck,
   Rocket,
@@ -64,132 +63,132 @@ interface DeploymentTaskTimelinePaneProps {
   taskId: string;
 }
 
-function statusDotTone(
-  status:
-    | DeploymentTimelineStepStatus
-    | DeploymentResultResourceCardStatus
-    | DeployTaskStatus
-): string {
+type TimelineStatus =
+  | DeploymentResultResourceCardStatus
+  | DeploymentTimelineStepStatus
+  | DeployTaskStatus;
+
+type StatusHue = "blue" | "green" | "neutral" | "red" | "yellow";
+
+function statusHue(status: TimelineStatus): StatusHue {
   switch (status) {
     case "completed":
     case "running":
-      return "bg-emerald-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-emerald-400)_18%,transparent)]";
+      return "green";
     case "applying":
     case "creating":
     case "pending":
     case "queued":
-      return "bg-blue-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-blue-400)_18%,transparent)]";
+      return "blue";
     case "blocked":
     case "unknown":
-      return "bg-amber-400 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-amber-400)_18%,transparent)]";
+      return "yellow";
     case "failed":
-      return "bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_18%,transparent)]";
+      return "red";
     case "cancelled":
     case "skipped":
-      return "bg-muted-foreground/50";
+      return "neutral";
     default:
       return status satisfies never;
   }
 }
 
-function statusMarkerTone(
-  status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
-): string {
+const STATUS_DOT_BG: Record<StatusHue, string> = {
+  blue: "bg-blue-500",
+  green: "bg-green-500",
+  neutral: "bg-muted-foreground/50",
+  red: "bg-red-500",
+  yellow: "bg-yellow-500",
+};
+
+const STATUS_ICON_TEXT: Record<StatusHue, string> = {
+  blue: "text-blue-500",
+  green: "text-green-500",
+  neutral: "text-muted-foreground",
+  red: "text-red-500",
+  yellow: "text-yellow-500",
+};
+
+type StepIconStatus =
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "unknown";
+
+function stepStatusUsesDot(
+  status: DeploymentResultResourceCardStatus | DeploymentTimelineStepStatus
+): status is "creating" | "pending" | "running" {
+  return status === "creating" || status === "pending" || status === "running";
+}
+
+function statusMarkerIcon(status: StepIconStatus) {
   switch (status) {
     case "completed":
-    case "running":
-      return "border-emerald-400/35 bg-emerald-500/20 text-emerald-300";
-    case "creating":
-    case "pending":
-      return "border-blue-400/35 bg-blue-500/20 text-blue-300";
+      return <CheckCircle2 aria-hidden className="size-3.5" />;
     case "blocked":
     case "unknown":
-      return "border-amber-400/35 bg-amber-500/20 text-amber-300";
+      return <AlertTriangle aria-hidden className="size-3.5" />;
     case "failed":
-      return "border-destructive/35 bg-destructive/20 text-destructive";
+      return <XCircle aria-hidden className="size-3.5" />;
     case "skipped":
-      return "border-white/10 bg-white/5 text-muted-foreground";
+      return <Circle aria-hidden className="size-3.5" />;
     default:
       return status satisfies never;
   }
 }
 
-function statusMarkerIcon(
-  status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus
-) {
-  switch (status) {
-    case "completed":
-      return <CheckCircle2 aria-hidden className="size-3" />;
-    case "running":
-    case "creating":
-      return <LoaderCircle aria-hidden className="size-3 animate-spin" />;
-    case "pending":
-      return <Clock3 aria-hidden className="size-3" />;
-    case "blocked":
-    case "unknown":
-      return <AlertTriangle aria-hidden className="size-3" />;
-    case "failed":
-      return <XCircle aria-hidden className="size-3" />;
-    case "skipped":
-      return <Circle aria-hidden className="size-3" />;
-    default:
-      return status satisfies never;
-  }
+function StatusPulseDot({
+  breathing,
+  hue,
+}: {
+  breathing: boolean;
+  hue: StatusHue;
+}) {
+  return (
+    <>
+      {breathing ? (
+        <span
+          aria-hidden
+          className={cn(
+            "absolute size-2 animate-ping rounded-full opacity-75",
+            STATUS_DOT_BG[hue]
+          )}
+        />
+      ) : null}
+      <span
+        aria-hidden
+        className={cn("relative size-2 rounded-full", STATUS_DOT_BG[hue])}
+      />
+    </>
+  );
 }
 
 function StatusMarker({
   status,
 }: {
-  status: DeploymentTimelineStepStatus | DeploymentResultResourceCardStatus;
+  status: DeploymentResultResourceCardStatus | DeploymentTimelineStepStatus;
 }) {
+  const hue = statusHue(status);
+  if (stepStatusUsesDot(status)) {
+    return (
+      <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+        <span className="sr-only">{status}</span>
+        <StatusPulseDot breathing={status === "running"} hue={hue} />
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
-        "inline-flex size-4 shrink-0 items-center justify-center rounded-full border",
-        statusMarkerTone(status)
+        "inline-flex size-3.5 shrink-0 items-center justify-center",
+        STATUS_ICON_TEXT[hue]
       )}
     >
+      <span className="sr-only">{status}</span>
       {statusMarkerIcon(status)}
     </span>
   );
-}
-
-function resourceStatusDotOuterTone(
-  status: DeploymentResultResourceCardStatus
-): string {
-  switch (status) {
-    case "running":
-      return "bg-emerald-500/30";
-    case "creating":
-    case "pending":
-      return "bg-blue-500/30";
-    case "blocked":
-    case "unknown":
-      return "bg-amber-500/30";
-    case "failed":
-      return "bg-destructive/30";
-    default:
-      return status satisfies never;
-  }
-}
-
-function resourceStatusDotInnerTone(
-  status: DeploymentResultResourceCardStatus
-): string {
-  switch (status) {
-    case "running":
-      return "bg-emerald-500";
-    case "creating":
-    case "pending":
-      return "bg-blue-500";
-    case "blocked":
-    case "unknown":
-      return "bg-amber-500";
-    case "failed":
-      return "bg-destructive";
-    default:
-      return status satisfies never;
-  }
 }
 
 function ResourceStatusDot({
@@ -197,20 +196,25 @@ function ResourceStatusDot({
 }: {
   status: DeploymentResultResourceCardStatus;
 }) {
+  const hue = statusHue(status);
   return (
     <span
       aria-hidden
-      className={cn(
-        "flex size-3.5 shrink-0 items-center justify-center rounded-full",
-        resourceStatusDotOuterTone(status)
-      )}
+      className="relative flex size-3.5 shrink-0 items-center justify-center"
     >
-      <span
-        className={cn(
-          "size-2 rounded-full",
-          resourceStatusDotInnerTone(status)
-        )}
-      />
+      <StatusPulseDot breathing={status === "running"} hue={hue} />
+    </span>
+  );
+}
+
+function TaskStatusDot({ status }: { status: DeployTaskStatus }) {
+  const hue = statusHue(status);
+  return (
+    <span
+      aria-hidden
+      className="relative flex size-3.5 shrink-0 items-center justify-center"
+    >
+      <StatusPulseDot breathing={status === "running"} hue={hue} />
     </span>
   );
 }
@@ -281,7 +285,7 @@ function DeploymentTimelineCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-white/8 bg-input/30 shadow-none backdrop-blur-sm",
+        "overflow-hidden rounded-lg border border-white/10 bg-input/30 shadow-none backdrop-blur-sm",
         className
       )}
       {...props}
@@ -354,11 +358,11 @@ function eventSeverityTone(
 ): string {
   switch (severity) {
     case "success":
-      return "bg-emerald-400";
+      return "bg-green-500";
     case "warning":
-      return "bg-amber-400";
+      return "bg-yellow-500";
     case "error":
-      return "bg-destructive";
+      return "bg-red-500";
     case "info":
     case undefined:
       return "bg-muted-foreground/60";
@@ -540,17 +544,12 @@ function TimelineStepItem({
         <span className="mt-1 min-h-6 w-px flex-1 bg-white/12" />
       </div>
       <div className="min-w-0 pb-3.5">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <h3
-            className="truncate font-normal text-foreground text-sm leading-5"
-            title={step.label}
-          >
-            {step.label}
-          </h3>
-          <span className="shrink-0 text-muted-foreground text-xs capitalize leading-4">
-            {step.status}
-          </span>
-        </div>
+        <h3
+          className="truncate font-normal text-foreground text-sm leading-5"
+          title={step.label}
+        >
+          {step.label}
+        </h3>
         <div className="mt-1.5">
           <TimelineEventList events={step.events} />
         </div>
@@ -742,7 +741,7 @@ function DeploymentInputField({
       >
         {label}
         {input.required ? (
-          <span className="text-destructive" title="Required">
+          <span className="text-red-500" title="Required">
             *
           </span>
         ) : null}
@@ -865,7 +864,7 @@ function DeploymentConfigurationForm({
         <div className="flex min-w-0 items-center gap-2">
           <AlertTriangle
             aria-hidden
-            className="size-4 shrink-0 text-amber-400"
+            className="size-4 shrink-0 text-yellow-500"
           />
           <h3 className="truncate font-medium text-foreground text-sm leading-5">
             Deployment configuration
@@ -958,13 +957,7 @@ export function DeploymentTaskTimelinePaneContent({
         <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
       </div>
       <div className="mb-4 flex items-center gap-2 text-muted-foreground text-sm leading-5">
-        <span
-          aria-hidden
-          className={cn(
-            "size-2.5 rounded-full",
-            statusDotTone(snapshot.timeline.status)
-          )}
-        />
+        <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
       </div>
       {steps.map((step) => (

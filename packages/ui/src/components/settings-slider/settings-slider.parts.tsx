@@ -102,7 +102,7 @@ export function SettingsSliderRange({
   return (
     <SliderRange
       className={cn(
-        "absolute h-full rounded-full bg-gradient-to-r from-blue-950 to-blue-500",
+        "absolute h-full rounded-l-full bg-gradient-to-r from-blue-950 to-blue-500",
         className
       )}
       {...props}

@@ -59,6 +59,17 @@ const STATUS_TONES = new Set([
   "stopping",
   "updating",
 ]);
+const PUBLIC_ACCESS_BLOCKING_AP_TONES = new Set([
+  "creating",
+  "deleting",
+  "failed",
+  "pending",
+  "restarting",
+  "starting",
+  "stopped",
+  "stopping",
+  "updating",
+]);
 
 function getToneForStatus(status: string | null | undefined) {
   const normalized = status?.trim().toLowerCase();
@@ -384,12 +395,13 @@ function publicAccessCanvasResources(
     if (apName === undefined || namespace === "") {
       continue;
     }
+    const apTone = apToWorkloadStates(ap).status?.tone;
     resources.push({
       apRef: apName,
       name: apName,
       namespace,
       stableName: apName,
-      targets: entryNodeTargetsFromPublicAddresses(publicAddresses),
+      targets: entryNodeTargetsFromPublicAddresses(publicAddresses, apTone),
     });
   }
   return resources;
@@ -549,7 +561,8 @@ function networkPublicAddressFromRecord(
 }
 
 function entryNodeTargetsFromPublicAddresses(
-  addresses: readonly NetworkPublicAddress[]
+  addresses: readonly NetworkPublicAddress[],
+  apTone: string | undefined
 ): EntryNodeTarget[] {
   return addresses.map((address, index) => {
     const host = address.host;
@@ -557,7 +570,7 @@ function entryNodeTargetsFromPublicAddresses(
     return {
       id,
       label: publicAddressTargetLabel(address.type),
-      status: publicAccessTargetStatus(address.status),
+      status: publicAccessTargetStatus(address.status, apTone),
       value:
         address.url ?? (host === undefined ? "Pending" : `https://${host}/`),
     };
@@ -601,7 +614,8 @@ function publicAccessTargetPort(input: unknown): number | undefined {
 }
 
 function publicAccessTargetStatus(
-  input: unknown
+  input: unknown,
+  apTone: string | undefined
 ): EntryNodeTargetStatus | undefined {
   const status = nonEmptyString(input);
   if (status === undefined) {
@@ -610,6 +624,14 @@ function publicAccessTargetStatus(
   const tone = status
     .toLowerCase()
     .replace(ENTRY_NODE_STATUS_SEPARATOR_PATTERN, "-");
+  const normalizedApTone = apTone?.trim().toLowerCase();
+  if (
+    tone === "accessible" &&
+    normalizedApTone != null &&
+    PUBLIC_ACCESS_BLOCKING_AP_TONES.has(normalizedApTone)
+  ) {
+    return { label: titleCaseStatus(normalizedApTone), tone: normalizedApTone };
+  }
   return { label: titleCaseStatus(tone), tone };
 }
 

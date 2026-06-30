@@ -38,6 +38,7 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   data,
   dragging,
   id,
+  isConnectable,
   positionAbsoluteX,
   positionAbsoluteY,
   type,
@@ -63,7 +64,7 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     <DatabaseNode.Root
       connections={connections}
       defaultExpanded={expansion.defaultExpanded}
-      interaction={{ ...interaction, dragging }}
+      interaction={{ ...interaction, connectable: isConnectable, dragging }}
       lifecycleActions={actions.lifecycleActions}
       onCopyConnection={actions.copyConnection}
       onExpandedChange={expansion.onExpandedChange}

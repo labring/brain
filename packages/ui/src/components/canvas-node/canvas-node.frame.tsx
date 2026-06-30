@@ -54,6 +54,7 @@ export function CanvasNodeFrame({
   } = useCanvasNode();
   const selected = interaction?.selected ?? false;
   const dragging = interaction?.dragging ?? false;
+  const connectable = interaction?.connectable ?? true;
   const highlightedConnectionSide = interaction?.highlightedConnectionSide;
   const [hoverIntent, setHoverIntent] = useState(false);
   const hoverIntentRef = useRef(false);
@@ -118,15 +119,12 @@ export function CanvasNodeFrame({
         event.target
       );
 
-      if (hoverZone === "surface") {
+      if (hoverZone === "surface" || hoverZone === "connection") {
         showHoverIntent();
         return;
       }
 
-      if (
-        hoverIntentRef.current &&
-        (hoverZone === "connection" || hoverZone === "expand-control")
-      ) {
+      if (hoverIntentRef.current && hoverZone === "expand-control") {
         clearHoverIntentTimer();
         setResolvedHoverIntent(true);
         return;
@@ -153,6 +151,7 @@ export function CanvasNodeFrame({
   return (
     <div
       className={cn("canvas-node-frame relative", className)}
+      data-connectable={connectable || undefined}
       data-dragging={dragging || undefined}
       data-highlighted-connection-side={highlightedConnectionSide}
       data-hover-intent={hoverIntent || undefined}
