@@ -13,6 +13,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { chatScrollbarThinClass } from "@workspace/ui/lib/chat-scrollbar";
+import { popoverSurfaceClass } from "@workspace/ui/lib/popover-surface";
 import { cn } from "@workspace/ui/lib/utils";
 import { ChevronDown, PanelRightClose, Plus, Settings2 } from "lucide-react";
 import { type ComponentProps, useMemo, useState } from "react";
@@ -234,7 +235,7 @@ export function ChatThreadSelect({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Select thread"
-          className="flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground text-sm outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-100"
+          className="group flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-medium text-foreground text-sm outline-none disabled:pointer-events-none disabled:cursor-default disabled:opacity-100"
           disabled={!canPickHistory}
           type="button"
         >
@@ -242,14 +243,17 @@ export function ChatThreadSelect({
           {canPickHistory ? (
             <ChevronDown
               aria-hidden
-              className="size-4 shrink-0 text-muted-foreground"
+              className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[popup-open]:rotate-180"
               strokeWidth={2}
             />
           ) : null}
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="min-w-72 max-w-96 border border-border bg-input/30 p-1 text-foreground shadow-none ring-0 backdrop-blur-xl"
+          className={cn(
+            "min-w-72 max-w-96 p-1 text-foreground",
+            popoverSurfaceClass
+          )}
         >
           {canPickHistory ? (
             <>

@@ -319,6 +319,21 @@ export interface ApSettingsSectionsProps {
   workloadKind?: ApWorkloadKind;
 }
 
+function scrollFirstUnsavedSettingIntoView(selector: string) {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const scroll = () =>
+    document
+      .querySelector(selector)
+      ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(scroll);
+  } else {
+    scroll();
+  }
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This provider-local assembler coordinates shared AP Settings draft, save, reveal, and leave-guard state across split sections.
 export function useApSettingsSections({
   addDbDsnReferenceIntent,
@@ -507,6 +522,32 @@ export function useApSettingsSections({
       readOnly,
     ]
   );
+  // Seed per-row edit state for AP environment reference rows added by a canvas
+  // Add Reference intent so they open editable on first render. Computed once;
+  // createEnvDraftKeys advances the shared key counter, so this owns the initial
+  // envDraftKeys too.
+  const initialEnvEditState = useRef<{
+    expanded: Set<string>;
+    keys: string[];
+    newKeys: Set<string>;
+  } | null>(null);
+  if (initialEnvEditState.current === null) {
+    const keys = createEnvDraftKeys(
+      initialEnvDraft.rows.length,
+      envDraftKeyPrefix,
+      envDraftKeyCounter
+    );
+    const expanded = new Set<string>();
+    const newKeys = new Set<string>();
+    for (const [index, row] of initialEnvDraft.rows.entries()) {
+      const key = keys[index];
+      if (row.canvasAddDbDsnReferenceIntentId != null && key != null) {
+        expanded.add(key);
+        newKeys.add(key);
+      }
+    }
+    initialEnvEditState.current = { expanded, keys, newKeys };
+  }
   const [envEditorMode, setEnvEditorMode] = useState<EnvEditorMode>(() =>
     parseApEnvRawSource(initialEnvDraft.rawSource).valid ? "structured" : "raw"
   );
@@ -521,12 +562,8 @@ export function useApSettingsSections({
   const [envDraft, setEnvDraft] = useState<EnvDraftRow[]>(
     () => initialEnvDraft.rows
   );
-  const [envDraftKeys, setEnvDraftKeys] = useState<string[]>(() =>
-    createEnvDraftKeys(
-      initialEnvDraft.rows.length,
-      envDraftKeyPrefix,
-      envDraftKeyCounter
-    )
+  const [envDraftKeys, setEnvDraftKeys] = useState<string[]>(
+    () => initialEnvEditState.current?.keys ?? []
   );
   const [revealedEnvValues, setRevealedEnvValues] = useState<
     Map<number, string>
@@ -534,9 +571,21 @@ export function useApSettingsSections({
   const [copiedEnvValueIndex, setCopiedEnvValueIndex] = useState<number | null>(
     null
   );
-  const [editingSavedEnvRows, setEditingSavedEnvRows] = useState<Set<number>>(
-    () => new Set()
+  // Per-row edit state for AP environment rows, mirroring the AP Configuration
+  // File card model: which rows are expanded for editing, which were added in
+  // this draft (Cancel removes them), and the pre-edit snapshot used to revert
+  // an existing row on Cancel. Local to the Settings Draft — the bottom Update
+  // (or non-commit Save) is still the only write.
+  const [expandedEnvKeys, setExpandedEnvKeys] = useState<Set<string>>(
+    () => new Set(initialEnvEditState.current?.expanded)
   );
+  const [newEnvKeys, setNewEnvKeys] = useState<Set<string>>(
+    () => new Set(initialEnvEditState.current?.newKeys)
+  );
+  const envEditSnapshots = useRef<Map<string, { name: string; value: string }>>(
+    new Map()
+  );
+  const [envSubmitBlocked, setEnvSubmitBlocked] = useState(false);
   const revealTimeouts = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map()
   );
@@ -560,6 +609,12 @@ export function useApSettingsSections({
       setConfigSubmitBlocked(false);
     }
   }, [expandedConfigKeys]);
+
+  useEffect(() => {
+    if (expandedEnvKeys.size === 0) {
+      setEnvSubmitBlocked(false);
+    }
+  }, [expandedEnvKeys]);
 
   useEffect(() => {
     if (settingsCommitMode) {
@@ -690,8 +745,25 @@ export function useApSettingsSections({
     previousRevealResetKey.current = revealResetKey;
     clearRevealedEnvValues();
     clearCopiedEnvValueFeedback();
-    setEditingSavedEnvRows(new Set());
+    setExpandedEnvKeys(new Set());
+    setNewEnvKeys(new Set());
+    envEditSnapshots.current = new Map();
   }, [clearCopiedEnvValueFeedback, clearRevealedEnvValues, revealResetKey]);
+
+  const markEnvKeysAddedOpen = useCallback((addedKeys: readonly string[]) => {
+    if (addedKeys.length === 0) {
+      return;
+    }
+    const addKeys = (current: Set<string>) => {
+      const next = new Set(current);
+      for (const key of addedKeys) {
+        next.add(key);
+      }
+      return next;
+    };
+    setExpandedEnvKeys(addKeys);
+    setNewEnvKeys(addKeys);
+  }, []);
 
   useEffect(() => {
     const intent = addDbDsnReferenceIntent;
@@ -721,20 +793,24 @@ export function useApSettingsSections({
         sources: dbDsnReferenceSources,
       });
       setEnvDraft(result.rows);
-      setEnvDraftKeys((keys) =>
-        resizeEnvDraftKeys(
+      setEnvDraftKeys((keys) => {
+        const nextKeys = resizeEnvDraftKeys(
           keys,
           result.rows.length,
           envDraftKeyPrefix,
           envDraftKeyCounter
-        )
-      );
+        );
+        // A dragged DB reference opens editable, mirroring the Add button.
+        markEnvKeysAddedOpen(nextKeys.slice(keys.length));
+        return nextKeys;
+      });
       return result.rawSource;
     });
   }, [
     addDbDsnReferenceIntent,
     dbDsnReferenceSources,
     envDraftKeyPrefix,
+    markEnvKeysAddedOpen,
     onAddDbDsnReferenceIntentConsumed,
     readOnly,
   ]);
@@ -1205,13 +1281,17 @@ export function useApSettingsSections({
     },
     [resolveSavedEnvValue, showCopiedEnvValueFeedback]
   );
-  const editSavedEnvRow = useCallback((index: number) => {
-    setEditingSavedEnvRows((current) => {
-      const next = new Set(current);
-      next.add(index);
-      return next;
-    });
-  }, []);
+  const editEnvRow = (index: number) => {
+    const key = envDraftKeys[index];
+    if (key == null) {
+      return;
+    }
+    const row = envDraft[index];
+    if (row != null) {
+      envEditSnapshots.current.set(key, { name: row.name, value: row.value });
+    }
+    setExpandedEnvKeys((current) => new Set(current).add(key));
+  };
   const canSaveEnv =
     envDirty &&
     envRawSourceParse.valid &&
@@ -1522,6 +1602,7 @@ export function useApSettingsSections({
   };
 
   const handleAddEnvRow = () => {
+    const key = nextEnvDraftKey(envDraftKeyPrefix, envDraftKeyCounter);
     setEnvRawSourceDraft((source) => {
       const nextRow = addApEnvRow(envDraftRowsFromRawSource(source)).at(-1);
       if (nextRow === undefined) {
@@ -1531,10 +1612,9 @@ export function useApSettingsSections({
       setEnvDraft(envDraftRowsFromRawParse(parsed));
       return parsed.source;
     });
-    setEnvDraftKeys((keys) => [
-      ...keys,
-      nextEnvDraftKey(envDraftKeyPrefix, envDraftKeyCounter),
-    ]);
+    setEnvDraftKeys((keys) => [...keys, key]);
+    setExpandedEnvKeys((current) => new Set(current).add(key));
+    setNewEnvKeys((current) => new Set(current).add(key));
   };
 
   const handleDeleteEnvRow = (index: number) => {
@@ -1552,6 +1632,71 @@ export function useApSettingsSections({
       setEnvDraft(refreshed);
       return result.source;
     });
+  };
+
+  const dropEnvEditKey = (key: string) => {
+    envEditSnapshots.current.delete(key);
+    setNewEnvKeys((current) => {
+      if (!current.has(key)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    setExpandedEnvKeys((current) => {
+      if (!current.has(key)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  // Per-row Save confirms the row back into the draft and collapses it; the
+  // live value is already in the Raw Source, so there is no backend write here.
+  const handleSaveEnvRow = (index: number) => {
+    const key = envDraftKeys[index];
+    if (key == null) {
+      return;
+    }
+    dropEnvEditKey(key);
+  };
+
+  // Per-row Cancel removes a newly-added row, or restores an existing row to its
+  // pre-edit snapshot, then collapses it.
+  const handleCancelEnvRow = (index: number) => {
+    const key = envDraftKeys[index];
+    if (key == null) {
+      return;
+    }
+    if (newEnvKeys.has(key)) {
+      handleDeleteEnvRow(index);
+      dropEnvEditKey(key);
+      return;
+    }
+    const snapshot = envEditSnapshots.current.get(key);
+    if (snapshot != null) {
+      setEnvRawSourceDraft((source) => {
+        const result = applyApEnvRawSourceRowPatch(source, index, {
+          name: snapshot.name,
+          value: snapshot.value,
+        });
+        const refreshed = envDraftRowsFromRawParse(result);
+        setEnvDraftKeys((keys) =>
+          resizeEnvDraftKeys(
+            keys,
+            refreshed.length,
+            envDraftKeyPrefix,
+            envDraftKeyCounter
+          )
+        );
+        setEnvDraft(refreshed);
+        return result.source;
+      });
+    }
+    dropEnvEditKey(key);
   };
 
   const collapseConfigCard = (key: string) => {
@@ -1892,21 +2037,23 @@ export function useApSettingsSections({
   ]);
 
   const handleSaveSettingsDraft = useCallback(async () => {
-    // A still-expanded AP Configuration File card is an unsaved edit. Block the
-    // panel submit, surface the per-card prompt, and scroll to the first one.
-    if (expandedConfigKeys.size > 0) {
-      setConfigSubmitBlocked(true);
-      if (typeof document !== "undefined") {
-        const scrollToUnsaved = () =>
-          document
-            .querySelector('[data-config-card="expanded"]')
-            ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-        if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(scrollToUnsaved);
-        } else {
-          scrollToUnsaved();
-        }
+    // A still-expanded AP Configuration File card or AP environment row is an
+    // unsaved edit. Block the panel submit, surface the per-row prompt, and
+    // scroll to the first one.
+    const configOpen = expandedConfigKeys.size > 0;
+    const envOpen = expandedEnvKeys.size > 0;
+    if (configOpen || envOpen) {
+      if (configOpen) {
+        setConfigSubmitBlocked(true);
       }
+      if (envOpen) {
+        setEnvSubmitBlocked(true);
+      }
+      scrollFirstUnsavedSettingIntoView(
+        configOpen
+          ? '[data-config-card="expanded"]'
+          : '[data-env-row="editing"]'
+      );
       return;
     }
     try {
@@ -1914,7 +2061,7 @@ export function useApSettingsSections({
     } catch {
       // The footer keeps the user on the draft and shows the panel-level failure.
     }
-  }, [expandedConfigKeys, saveSettingsDraft]);
+  }, [expandedConfigKeys, expandedEnvKeys, saveSettingsDraft]);
 
   const environmentFocus = sectionFocus === "environment";
 
@@ -1931,14 +2078,14 @@ export function useApSettingsSections({
 
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
-  const envSectionActions = readOnly ? null : (
-    <>
+  const envEditorControls = readOnly ? null : (
+    <div className="flex min-w-0 flex-col gap-2">
       <SlidingToggle
         ariaLabel="Environment editor mode"
-        className="h-8 w-40"
+        className="h-9 w-full"
         disabled={readOnly}
         indicatorClassName="rounded-md"
-        itemClassName="!rounded-md h-8 min-w-0 px-2 text-foreground text-sm"
+        itemClassName="!rounded-md h-9 min-w-0 px-2 text-foreground text-sm"
         onValueChange={setEnvEditorMode}
         options={ENV_EDITOR_MODE_TOGGLE_OPTIONS.map((option) =>
           option.value === "structured"
@@ -1947,17 +2094,20 @@ export function useApSettingsSections({
         )}
         value={envEditorMode}
       />
-      <AppButton
-        aria-label="Add environment variable"
-        className="h-8 rounded-lg bg-white/5 px-3 text-foreground text-sm hover:bg-transparent"
-        onClick={handleAddEnvRow}
-        type="button"
-        variant="quiet"
-      >
-        <Plus aria-hidden data-icon="inline-start" />
-        Add
-      </AppButton>
-    </>
+      {envEditorMode === "structured" ? (
+        <AppButton
+          aria-label="Add environment variable"
+          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+          onClick={handleAddEnvRow}
+          size="default"
+          type="button"
+          variant="secondary"
+        >
+          <Plus aria-hidden />
+          Add
+        </AppButton>
+      ) : null}
+    </div>
   );
 
   const sections: ApSettingsRenderedSection[] = [];
@@ -2105,9 +2255,9 @@ export function useApSettingsSections({
   }
 
   sections.push({
-    actions: envSectionActions,
     content: (
       <>
+        {envEditorControls}
         <div className="flex min-w-0 flex-col gap-2">
           {readOnly ? (
             <ReadOnlyEnvRows env={env} />
@@ -2115,7 +2265,6 @@ export function useApSettingsSections({
             <EditableEnvRows
               copiedValueIndex={copiedEnvValueIndex}
               dbDsnReferenceSources={dbDsnReferenceSources}
-              editingSavedRows={editingSavedEnvRows}
               envDirty={envDirty}
               envDraft={envDraft}
               envErrorsByIndex={envErrorsByIndex}
@@ -2124,16 +2273,20 @@ export function useApSettingsSections({
               envRowKeys={envDraftKeys}
               envTokenDiagnostics={envTokenDiagnostics}
               envValidation={envValidation}
+              expandedKeys={[...expandedEnvKeys]}
               mode={envEditorMode}
+              onCancelRow={handleCancelEnvRow}
               onCopyResolvedValue={copyResolvedEnvValue}
               onDeleteRow={handleDeleteEnvRow}
-              onEditSavedRow={editSavedEnvRow}
+              onEditRow={editEnvRow}
               onRawSourceChange={handleRawSourceChange}
               onRevealResolvedValue={revealResolvedEnvValue}
+              onSaveRow={handleSaveEnvRow}
               onUpdateRow={handleUpdateEnvRow}
               resolvedValuesAvailable={resolvedEnvValuesAvailable}
               revealedValues={revealedEnvValues}
               savedRows={committedEnvRows}
+              submitBlocked={envSubmitBlocked}
             />
           )}
         </div>

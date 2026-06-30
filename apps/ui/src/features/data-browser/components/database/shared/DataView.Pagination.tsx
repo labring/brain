@@ -1,12 +1,6 @@
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
+import { AppSelect } from "@workspace/ui/components/app-select";
 import {
   Tooltip,
   TooltipContent,
@@ -48,20 +42,15 @@ export function DataViewPagination({
           <span className="whitespace-nowrap text-muted-foreground text-sm">
             {"Rows per page"}
           </span>
-          <Select
+          <AppSelect
+            className="w-auto"
             onValueChange={(v) => onPageSizeChange(Number(v))}
+            options={["10", "20", "50", "100"].map((size) => ({
+              label: size,
+              value: size,
+            }))}
             value={String(pageSize)}
-          >
-            <SelectTrigger className="w-auto gap-1 border-border bg-transparent">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
+          />
         </div>
         <div className="flex items-center gap-1">
           <Tooltip>

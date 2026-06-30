@@ -2,7 +2,7 @@
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { MultiSelect } from "@workspace/ui/components/multi-select";
+import { AppMultiSelect } from "@workspace/ui/components/app-select";
 import { LivePauseToggle } from "@workspace/ui/components/refresh-controls";
 import { TimeRangeSelector } from "@workspace/ui/components/time-range-selector";
 import { Box, Download, RefreshCw, Search, Server } from "lucide-react";
@@ -44,7 +44,7 @@ export function LogViewerToolbar() {
     <div className="flex items-center gap-2" data-slot="log-viewer-toolbar">
       {/* Filters */}
       <div className="flex items-center gap-1">
-        <MultiSelect
+        <AppMultiSelect
           aria-label="Filter pods"
           className="w-36"
           emptyMessage="No pods found."
@@ -55,7 +55,7 @@ export function LogViewerToolbar() {
           searchPlaceholder="Search"
           value={selectedPods}
         />
-        <MultiSelect
+        <AppMultiSelect
           aria-label="Filter containers"
           className="w-40"
           emptyMessage="No containers found."

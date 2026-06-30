@@ -102,7 +102,7 @@ export function ProjectExplorerNewProjectButton({
     <AppButton
       aria-label={defaultContent ? "New Project" : undefined}
       className={cn(
-        "h-9 bg-blue-500 text-sm text-white hover:bg-blue-500/90",
+        "h-9 bg-blue-500 text-sm text-white hover:bg-[color-mix(in_oklab,var(--color-blue-500)_90%,white_10%)] active:bg-[color-mix(in_oklab,var(--color-blue-500)_90%,white_10%)]",
         defaultContent
           ? "project-explorer-new-project-button justify-start gap-1.5 overflow-hidden px-3"
           : "gap-1.5 px-3",

@@ -6,6 +6,7 @@ import { AppInput } from "@workspace/ui/components/app-input";
 import { Label } from "@workspace/ui/components/label";
 import { ResourceSettingsDraftFooter } from "@workspace/ui/components/resource-settings/resource-settings";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { appFieldFocusClass } from "@workspace/ui/lib/field-state";
 import { cn } from "@workspace/ui/lib/utils";
 import { Plus, Save, SquarePen, Trash2, X } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -110,7 +111,7 @@ function ApSettingsTextarea({
     <Textarea
       className={cn(
         "min-h-20 border-input bg-transparent text-foreground text-sm placeholder:text-muted-foreground dark:bg-transparent",
-        "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
+        appFieldFocusClass,
         className
       )}
       {...props}
@@ -162,9 +163,6 @@ export function LaunchCommandSettingsContent({
     </div>
   );
 }
-
-const CONFIG_CARD_INVALID_INPUT =
-  "border-destructive ring-[3px] ring-destructive/20 dark:border-destructive/50 dark:ring-destructive/40";
 
 /**
  * Mount paths that appear on more than one AP Configuration File draft row.
@@ -316,7 +314,6 @@ function ConfigMapEditingCard({
       <AppInput
         aria-invalid={pathError != null}
         aria-label="Configuration file mount path"
-        className={pathError == null ? undefined : CONFIG_CARD_INVALID_INPUT}
         onChange={(event) => onUpdate(index, { path: event.target.value })}
         placeholder="/etc/app/config.yaml"
         value={item.path}

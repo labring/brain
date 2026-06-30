@@ -1,0 +1,93 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import {
+  AppMultiSelect,
+  type AppMultiSelectOption,
+  AppSelect,
+  type AppSelectOption,
+} from "./app-select";
+
+const SINGLE_OPTIONS = [
+  {
+    label: "MySQL",
+    value: "mysql",
+  },
+  {
+    disabled: true,
+    label: "Redis",
+    value: "redis",
+  },
+] satisfies readonly AppSelectOption[];
+
+const MULTI_OPTIONS = [
+  {
+    label: "postgresql",
+    value: "postgresql",
+  },
+  {
+    label: "pgbouncer",
+    value: "pgbouncer",
+  },
+] satisfies readonly AppMultiSelectOption[];
+
+const COMBOBOX_ROLE_RE = /role="combobox"/;
+const MYSQL_RE = /MySQL/;
+const SELECTED_COUNT_RE = /2 selected/;
+const SINGLE_ARIA_RE = /aria-label="Database engine"/;
+const MULTI_ARIA_RE = /aria-label="Log containers"/;
+const SINGLE_EMPTY_SLOT_RE = /data-slot="app-select-empty"/;
+const MULTI_EMPTY_SLOT_RE = /data-slot="app-multi-select-empty"/;
+const NO_ENGINES_RE = /No engines/;
+const NO_CONTAINERS_RE = /No containers/;
+
+test("AppSelect renders the selected option in the trigger", () => {
+  const html = renderToStaticMarkup(
+    <AppSelect
+      aria-label="Database engine"
+      onValueChange={() => undefined}
+      options={SINGLE_OPTIONS}
+      value="mysql"
+    />
+  );
+
+  assert.match(html, SINGLE_ARIA_RE);
+  assert.match(html, MYSQL_RE);
+  assert.match(html, COMBOBOX_ROLE_RE);
+});
+
+test("AppSelect renders an empty state without a combobox trigger", () => {
+  const html = renderToStaticMarkup(
+    <AppSelect emptyMessage="No engines" options={[]} />
+  );
+
+  assert.match(html, SINGLE_EMPTY_SLOT_RE);
+  assert.match(html, NO_ENGINES_RE);
+  assert.doesNotMatch(html, COMBOBOX_ROLE_RE);
+});
+
+test("AppMultiSelect renders the selected count in the trigger", () => {
+  const html = renderToStaticMarkup(
+    <AppMultiSelect
+      aria-label="Log containers"
+      onValueChange={() => undefined}
+      options={MULTI_OPTIONS}
+      placeholder="Container"
+      value={["postgresql", "pgbouncer"]}
+    />
+  );
+
+  assert.match(html, MULTI_ARIA_RE);
+  assert.match(html, SELECTED_COUNT_RE);
+});
+
+test("AppMultiSelect renders an empty state without a combobox trigger", () => {
+  const html = renderToStaticMarkup(
+    <AppMultiSelect emptyMessage="No containers" options={[]} value={[]} />
+  );
+
+  assert.match(html, MULTI_EMPTY_SLOT_RE);
+  assert.match(html, NO_CONTAINERS_RE);
+  assert.doesNotMatch(html, COMBOBOX_ROLE_RE);
+});

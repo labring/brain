@@ -14,6 +14,8 @@ const RESPONSIVE_ACTION_RE = /project-explorer-new-project-action/;
 const RESPONSIVE_BUTTON_RE = /project-explorer-new-project-button/;
 const RESPONSIVE_LABEL_RE = /project-explorer-new-project-label/;
 const SVG_RE = /<svg/;
+const LIGHTENED_BLUE_STATE_CLASS =
+  "bg-[color-mix(in_oklab,var(--color-blue-500)_90%,white_10%)]";
 const TOOLTIP_TEXT_RE = /<span[^>]*>New Project<\/span>/;
 const SYSTEM_CONFIG_TITLE_RE = /System configuration unavailable/;
 const SYSTEM_CONFIG_DESCRIPTION_RE =
@@ -41,6 +43,8 @@ test("project explorer new-project action renders responsive default content", (
   assert.match(buttonHtml, ARIA_LABEL_RE);
   assert.match(buttonHtml, RESPONSIVE_BUTTON_RE);
   assert.match(buttonHtml, RESPONSIVE_LABEL_RE);
+  assert.ok(buttonHtml.includes(`hover:${LIGHTENED_BLUE_STATE_CLASS}`));
+  assert.ok(buttonHtml.includes(`active:${LIGHTENED_BLUE_STATE_CLASS}`));
   assert.match(buttonHtml, SVG_RE);
   assert.match(html, TOOLTIP_TEXT_RE);
 });

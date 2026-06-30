@@ -7,9 +7,9 @@ import {
 } from "@workspace/ui/assets/devicons";
 import { AppButton } from "@workspace/ui/components/app-button";
 import {
-  SingleSelect,
-  type SingleSelectOption,
-} from "@workspace/ui/components/single-select";
+  AppSelect,
+  type AppSelectOption,
+} from "@workspace/ui/components/app-select";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
@@ -44,16 +44,17 @@ const INSTANCE_PRESETS: readonly {
 ];
 
 const REPLICA_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
-const INSTANCE_PRESET_SELECT_OPTIONS: readonly SingleSelectOption[] =
+const INSTANCE_PRESET_SELECT_OPTIONS: readonly AppSelectOption[] =
   INSTANCE_PRESETS.map((preset) => ({
     label: preset.label,
     value: preset.id,
   }));
-const REPLICA_SELECT_OPTIONS: readonly SingleSelectOption[] =
-  REPLICA_OPTIONS.map((replica) => ({
+const REPLICA_SELECT_OPTIONS: readonly AppSelectOption[] = REPLICA_OPTIONS.map(
+  (replica) => ({
     label: databaseReplicaOptionLabel(replica),
     value: String(replica),
-  }));
+  })
+);
 
 const PRESET_SUMMARIES: Record<
   string,
@@ -191,7 +192,7 @@ export function DatabaseDeployer({
   const choice = selectedChoice(databaseOptions, databaseId);
   const effectiveDatabaseId = choice?.id ?? "";
   const databaseSelectOptions = useMemo(
-    (): SingleSelectOption[] =>
+    (): AppSelectOption[] =>
       databaseOptions.map((option) => ({
         icon: <DatabaseChoiceIcon choice={option} />,
         label: option.label,
@@ -220,7 +221,7 @@ export function DatabaseDeployer({
           title="Type"
         >
           <DeploymentSettings.Control>
-            <SingleSelect
+            <AppSelect
               aria-label="Database engine"
               disabled={busy}
               emptyMessage={emptyMessage}
@@ -239,7 +240,7 @@ export function DatabaseDeployer({
         >
           <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
             <DeploymentSettings.Field label="Instance Preset">
-              <SingleSelect
+              <AppSelect
                 aria-label="Database instance preset"
                 disabled={busy || choice === null}
                 onValueChange={(value) =>
@@ -255,7 +256,7 @@ export function DatabaseDeployer({
               </p>
             </DeploymentSettings.Field>
             <DeploymentSettings.Field label="Replicas">
-              <SingleSelect
+              <AppSelect
                 aria-label="Database replica count"
                 disabled={busy || choice === null}
                 onValueChange={setReplicas}
