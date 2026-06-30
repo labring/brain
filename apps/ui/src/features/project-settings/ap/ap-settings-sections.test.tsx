@@ -354,7 +354,7 @@ test("AP settings pane shows raw draft values for dirty structured rows", () => 
   assert.doesNotMatch(html, COPY_MYSQL_ENV_VALUE_RE);
 });
 
-test("AP settings pane renders environment actions in section header", () => {
+test("AP settings pane renders environment editor controls above the rows", () => {
   const html = renderPane();
   const titleIndex = html.search(ENVIRONMENT_VARIABLES_TITLE_RE);
   const modeIndex = html.search(ENV_EDITOR_MODE_RE);
@@ -1798,4 +1798,22 @@ test("AP settings raw editor omits fixed raw footer actions", () => {
   assert.doesNotMatch(html, COPY_RAW_SOURCE_RE);
   assert.doesNotMatch(html, INSERT_RAW_REFERENCE_RE);
   assert.doesNotMatch(html, COPY_ENV_VALUE_RE);
+});
+
+test("AP settings raw editor keeps the mode toggle but hides Add", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      envRawSource="BROKEN"
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, ENV_EDITOR_MODE_RE);
+  assert.doesNotMatch(html, ADD_ENV_RE);
 });

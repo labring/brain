@@ -1931,14 +1931,14 @@ export function useApSettingsSections({
 
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
-  const envSectionActions = readOnly ? null : (
-    <>
+  const envEditorControls = readOnly ? null : (
+    <div className="flex min-w-0 flex-col gap-2">
       <SlidingToggle
         ariaLabel="Environment editor mode"
-        className="h-8 w-40"
+        className="h-9 w-full"
         disabled={readOnly}
         indicatorClassName="rounded-md"
-        itemClassName="!rounded-md h-8 min-w-0 px-2 text-foreground text-sm"
+        itemClassName="!rounded-md h-9 min-w-0 px-2 text-foreground text-sm"
         onValueChange={setEnvEditorMode}
         options={ENV_EDITOR_MODE_TOGGLE_OPTIONS.map((option) =>
           option.value === "structured"
@@ -1947,17 +1947,20 @@ export function useApSettingsSections({
         )}
         value={envEditorMode}
       />
-      <AppButton
-        aria-label="Add environment variable"
-        className="h-8 rounded-lg bg-white/5 px-3 text-foreground text-sm hover:bg-transparent"
-        onClick={handleAddEnvRow}
-        type="button"
-        variant="quiet"
-      >
-        <Plus aria-hidden data-icon="inline-start" />
-        Add
-      </AppButton>
-    </>
+      {envEditorMode === "structured" ? (
+        <AppButton
+          aria-label="Add environment variable"
+          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+          onClick={handleAddEnvRow}
+          size="default"
+          type="button"
+          variant="secondary"
+        >
+          <Plus aria-hidden />
+          Add
+        </AppButton>
+      ) : null}
+    </div>
   );
 
   const sections: ApSettingsRenderedSection[] = [];
@@ -2105,9 +2108,9 @@ export function useApSettingsSections({
   }
 
   sections.push({
-    actions: envSectionActions,
     content: (
       <>
+        {envEditorControls}
         <div className="flex min-w-0 flex-col gap-2">
           {readOnly ? (
             <ReadOnlyEnvRows env={env} />

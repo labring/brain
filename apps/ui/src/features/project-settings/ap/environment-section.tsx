@@ -450,8 +450,8 @@ export function ReadOnlyEnvRows({ env }: { env: readonly ApEnvVar[] }) {
       data-slot="ap-env-rows"
     >
       {env.length === 0 ? (
-        <span className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
-          No variables
+        <span className="flex min-h-9 w-full items-center justify-center rounded-lg border border-border border-dashed px-3 text-muted-foreground text-xs leading-4">
+          No environment variables yet.
         </span>
       ) : (
         env.map((row, index) => (
@@ -1232,8 +1232,8 @@ export function EditableEnvRows({
     );
   } else if (envDraft.length === 0) {
     editorContent = (
-      <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-3 text-muted-foreground text-sm leading-5">
-        No variables
+      <div className="flex min-h-9 w-full items-center justify-center rounded-lg border border-border border-dashed px-3 text-muted-foreground text-xs leading-4">
+        No environment variables yet.
       </div>
     );
   } else {
