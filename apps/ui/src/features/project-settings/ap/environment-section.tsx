@@ -1063,6 +1063,9 @@ function EnvRowActionsMenu({
   return (
     <CanvasNode.ActionMenu
       aria-label={`Environment variable actions for ${row.name}`}
+      className="bg-input/30 hover:bg-input! aria-expanded:bg-input! aria-expanded:text-blue-400 data-[state=open]:bg-input! data-[state=open]:text-blue-400"
+      triggerSize="lg"
+      triggerVariant="secondary"
     >
       {canEdit ? (
         <CanvasNode.ActionMenuItem
@@ -1425,7 +1428,10 @@ function DraftEnvRow({
 
   if (open) {
     return (
-      <div className="grid min-w-0 gap-1.5" data-env-row="editing">
+      <div
+        className="flex min-w-0 flex-col gap-2 rounded-lg border border-input border-dashed bg-transparent p-3"
+        data-env-row="editing"
+      >
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <EditableEnvNameControl
             error={error}

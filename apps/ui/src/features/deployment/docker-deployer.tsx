@@ -634,7 +634,7 @@ export function DockerDeployer({
       <AppButton
         aria-busy={busy}
         aria-label="Deploy Docker image"
-        className="h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input"
+        className="w-full"
         disabled={!canDeploy}
         onClick={async () => {
           if (!canDeploy) {
@@ -643,7 +643,6 @@ export function DockerDeployer({
           await onDeploy?.(normalizeDockerDeploymentSettings(settings));
         }}
         type="button"
-        variant="quiet"
       >
         {busy ? (
           <Spinner aria-hidden className="size-4 shrink-0" />

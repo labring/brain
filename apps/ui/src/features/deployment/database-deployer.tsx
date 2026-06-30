@@ -271,7 +271,7 @@ export function DatabaseDeployer({
       <AppButton
         aria-busy={busy}
         aria-label="Deploy database"
-        className="h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input"
+        className="w-full"
         disabled={!canDeploy}
         onClick={async () => {
           if (!(choice && canDeploy)) {
@@ -287,7 +287,6 @@ export function DatabaseDeployer({
           );
         }}
         type="button"
-        variant="quiet"
       >
         {busy ? (
           <Spinner aria-hidden className="size-4 shrink-0" />

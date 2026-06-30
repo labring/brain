@@ -1,6 +1,9 @@
 "use client";
 
-import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import {
+  AppIconButton,
+  type AppIconButtonProps,
+} from "@workspace/ui/components/app-icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -116,6 +119,8 @@ export interface CanvasNodeActionMenuProps {
   children?: ReactNode;
   className?: string;
   contentClassName?: string;
+  triggerSize?: AppIconButtonProps["size"];
+  triggerVariant?: AppIconButtonProps["variant"];
 }
 
 export function CanvasNodeActionMenu({
@@ -123,6 +128,8 @@ export function CanvasNodeActionMenu({
   children,
   className,
   contentClassName,
+  triggerSize = "md",
+  triggerVariant = "node",
 }: CanvasNodeActionMenuProps) {
   return (
     <DropdownMenu>
@@ -136,9 +143,9 @@ export function CanvasNodeActionMenu({
               className
             )}
             onClick={stopCanvasNodeControlEvent}
-            size="md"
+            size={triggerSize}
             type="button"
-            variant="node"
+            variant={triggerVariant}
           >
             <Ellipsis aria-hidden className="size-4" />
           </AppIconButton>

@@ -134,8 +134,8 @@ const ENV_ROW_ACTIONS_RE =
 const ENV_ROW_ACTIONS_RE_GLOBAL =
   /aria-label="Environment variable actions for [^"]+"/g;
 const CANVAS_NODE_ACTION_MENU_TRIGGER_RE = /canvas-node-action-menu-trigger/;
-const ENV_ROW_ACTIONS_NODE_VARIANT_RE =
-  /aria-label="Environment variable actions for DATABASE_URL"[^>]*data-variant="node"/;
+const ENV_ROW_ACTIONS_SECONDARY_TRIGGER_RE =
+  /aria-label="Environment variable actions for DATABASE_URL"[^>]*data-size="lg"[^>]*data-variant="secondary"/;
 const EDIT_ENV_RE = /aria-label="Edit environment variable/;
 const SAVE_ENV_RE = /Save environment/;
 const EDITING_ENV_ROW_RE = /data-env-row="editing"/;
@@ -1226,7 +1226,7 @@ test("AP settings pane hides DB Reference selector before saved row edit mode", 
   assert.match(html, COPY_ENV_VALUE_RE);
   assert.match(html, ENV_ROW_ACTIONS_RE);
   assert.match(html, CANVAS_NODE_ACTION_MENU_TRIGGER_RE);
-  assert.match(html, ENV_ROW_ACTIONS_NODE_VARIANT_RE);
+  assert.match(html, ENV_ROW_ACTIONS_SECONDARY_TRIGGER_RE);
   assert.doesNotMatch(html, ENV_NAME_INPUT_RE);
   assert.doesNotMatch(html, EDIT_ENV_RE);
   assert.doesNotMatch(html, INLINE_REFERENCE_TRIGGER_RE);

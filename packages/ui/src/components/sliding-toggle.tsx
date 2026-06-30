@@ -84,7 +84,7 @@ export function SlidingToggle<TValue extends string = string>({
     <ToggleGroup
       aria-label={ariaLabel}
       className={cn(
-        "relative grid overflow-hidden bg-muted/40 p-0 text-foreground",
+        "relative grid overflow-hidden bg-input/30 p-0 text-foreground",
         sizeClasses.root,
         slidingToggleWidthClasses[width],
         className
@@ -104,7 +104,7 @@ export function SlidingToggle<TValue extends string = string>({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-y-0 left-0 z-0 bg-input transition-transform duration-200 ease-out",
+          "pointer-events-none absolute inset-y-0 left-0 z-0 bg-input transition-transform duration-200 ease-out dark:bg-[#36383c]",
           sizeClasses.indicator,
           indicatorClassName
         )}

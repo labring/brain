@@ -293,7 +293,7 @@ function TimelineBorderBeam() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-0 rounded-[inherit] border border-white/10"
+      className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)]"
     >
       <svg
         aria-hidden
@@ -315,12 +315,12 @@ function TimelineBorderBeam() {
           fill="none"
           height="100%"
           pathLength="100"
-          rx="8"
-          ry="8"
+          rx="7"
+          ry="7"
           stroke={`url(#${gradientId})`}
           strokeDasharray="18 82"
           strokeLinecap="round"
-          strokeWidth="2"
+          strokeWidth="1"
           vectorEffect="non-scaling-stroke"
           width="100%"
           x="0"
@@ -331,12 +331,12 @@ function TimelineBorderBeam() {
           fill="none"
           height="100%"
           pathLength="100"
-          rx="8"
-          ry="8"
+          rx="7"
+          ry="7"
           stroke={`url(#${gradientId})`}
           strokeDasharray="12 88"
           strokeLinecap="round"
-          strokeWidth="1.5"
+          strokeWidth="1"
           vectorEffect="non-scaling-stroke"
           width="100%"
           x="0"
@@ -946,11 +946,11 @@ export function DeploymentTaskTimelinePaneContent({
   const configurationStepId = deploymentConfigurationStepId(steps);
   return (
     <div
-      className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4 shadow-[0_1px_3px_0_rgba(0,0,0,0.10),0_1px_2px_0_rgba(0,0,0,0.06)]"
+      className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
       data-slot="deployment-task-timeline"
     >
       <TimelineBorderBeam />
-      <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border border-white/8" />
+      <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border" />
       <div className="mb-2.5 flex items-center gap-2 text-foreground">
         <Rocket aria-hidden className="size-4 text-foreground" />
         <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
