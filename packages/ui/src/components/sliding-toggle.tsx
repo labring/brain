@@ -115,7 +115,7 @@ export function SlidingToggle<TValue extends string = string>({
         <ToggleGroupItem
           aria-label={option.ariaLabel}
           className={cn(
-            "relative z-10 min-w-0 border-0 bg-transparent hover:bg-transparent aria-pressed:bg-transparent data-[state=on]:bg-transparent",
+            "relative z-10 min-w-0 cursor-pointer border-0 bg-transparent hover:bg-transparent aria-pressed:bg-transparent data-[state=on]:bg-transparent",
             sizeClasses.item,
             itemClassName
           )}
