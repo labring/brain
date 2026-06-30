@@ -1,7 +1,7 @@
 "use client";
 
 import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
-import { brainV2LogoSrc } from "@workspace/ui/assets/brand";
+import { sealosLogoSrc } from "@workspace/ui/assets/brand";
 import {
   type DeviconKey,
   deviconSrc,
@@ -81,6 +81,32 @@ function ProjectShortcutIcon({
   );
 }
 
+function ProjectsShortcutIcon({
+  showGridOnHover,
+}: {
+  showGridOnHover: boolean;
+}) {
+  return (
+    <span aria-hidden className="relative block size-4">
+      <span
+        className={cn(
+          "absolute inset-0 block bg-center bg-contain bg-no-repeat transition-opacity",
+          showGridOnHover &&
+            "group-hover/button:opacity-0 group-focus-visible/button:opacity-0"
+        )}
+        style={{ backgroundImage: `url(${JSON.stringify(sealosLogoSrc)})` }}
+      />
+      {showGridOnHover ? (
+        <LayoutGrid
+          aria-hidden
+          className="absolute top-1/2 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover/button:opacity-100 group-focus-visible/button:opacity-100"
+          strokeWidth={1.33}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
@@ -114,7 +140,7 @@ async function openCostCenterApp() {
 
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
-  "aria-label" | "children"
+  "aria-label" | "children" | "className"
 > &
   Pick<ComponentProps<typeof Link>, "href"> & {
     active?: boolean;
@@ -125,6 +151,7 @@ function AppSidebarLinkButton({
   active,
   "aria-label": ariaLabel,
   children,
+  className,
   href,
   tooltip,
 }: AppSidebarLinkButtonProps) {
@@ -135,7 +162,7 @@ function AppSidebarLinkButton({
           <AppIconButton
             aria-current={active ? "page" : undefined}
             aria-label={ariaLabel}
-            className={APP_SIDEBAR_LINK_CLASS}
+            className={cn(APP_SIDEBAR_LINK_CLASS, className)}
             nativeButton={false}
             render={<Link href={href} />}
             size="lg"
@@ -147,16 +174,6 @@ function AppSidebarLinkButton({
       />
       <TooltipContent side="right">{tooltip}</TooltipContent>
     </Tooltip>
-  );
-}
-
-function BrainV2Logo() {
-  return (
-    <span
-      aria-hidden
-      className="block size-full bg-center bg-contain bg-no-repeat"
-      style={{ backgroundImage: `url(${JSON.stringify(brainV2LogoSrc)})` }}
-    />
   );
 }
 
@@ -291,14 +308,6 @@ export default function AppSidebar() {
       data-slot="app-sidebar"
     >
       <div className="flex min-h-0 flex-1 flex-col items-start gap-3 px-2 py-2.5">
-        <Link
-          aria-label="Home"
-          className="flex size-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-          href="/"
-        >
-          <BrainV2Logo />
-        </Link>
-
         <nav
           aria-label="Project shortcuts"
           className="flex min-h-0 w-9 flex-1 flex-col gap-1.5"
@@ -306,10 +315,13 @@ export default function AppSidebar() {
           <AppSidebarLinkButton
             active={projectsActive}
             aria-label="Projects"
+            className="aria-[current=page]:bg-transparent!"
             href="/project"
             tooltip="Projects"
           >
-            <LayoutGrid aria-hidden className="size-4" strokeWidth={1.33} />
+            <ProjectsShortcutIcon
+              showGridOnHover={currentProjectId !== undefined}
+            />
           </AppSidebarLinkButton>
 
           <div
