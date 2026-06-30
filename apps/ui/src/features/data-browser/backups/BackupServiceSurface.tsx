@@ -16,8 +16,8 @@ import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import { AppSelect } from "@workspace/ui/components/app-select";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
-import { SingleSelect } from "@workspace/ui/components/single-select";
 import { Switch } from "@workspace/ui/components/switch";
 import {
   Tooltip,
@@ -913,7 +913,7 @@ function BackupPolicyForm({
           <span className="font-medium text-muted-foreground leading-5">
             {"Backup Frequency"}
           </span>
-          <SingleSelect
+          <AppSelect
             className="w-full"
             disabled={!form.enabled || isSaving}
             onValueChange={(value) =>
@@ -933,7 +933,7 @@ function BackupPolicyForm({
           <span className="font-medium text-muted-foreground leading-5">
             {"Retention Period"}
           </span>
-          <SingleSelect
+          <AppSelect
             className="w-full"
             disabled={!form.enabled || isSaving}
             onValueChange={(value) => setRetentionDays(Number(value))}
@@ -950,7 +950,7 @@ function BackupPolicyForm({
             <span className="font-medium text-muted-foreground leading-5">
               {"Week"}
             </span>
-            <SingleSelect
+            <AppSelect
               className="w-full"
               disabled={!form.enabled || isSaving}
               onValueChange={setWeekday}
@@ -970,7 +970,7 @@ function BackupPolicyForm({
             <span className="font-medium text-muted-foreground leading-5">
               {"Start Hour"}
             </span>
-            <SingleSelect
+            <AppSelect
               className="w-full"
               disabled={!form.enabled || isSaving}
               onValueChange={setHour}
@@ -993,7 +993,7 @@ function BackupPolicyForm({
           <span className="font-medium text-muted-foreground leading-5">
             {"Start Minute"}
           </span>
-          <SingleSelect
+          <AppSelect
             className="w-full"
             disabled={!form.enabled || isSaving}
             onValueChange={setMinute}

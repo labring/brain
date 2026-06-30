@@ -2,19 +2,13 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import { AppSelect } from "@workspace/ui/components/app-select";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -678,18 +672,16 @@ function DeploymentInputControl({
     return (
       <>
         <input name={input.key} type="hidden" value={value} />
-        <Select onValueChange={onChange} value={value}>
-          <SelectTrigger className="h-9" id={controlId}>
-            <SelectValue placeholder="Select value" />
-          </SelectTrigger>
-          <SelectContent>
-            {(input.options ?? []).map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AppSelect
+          id={controlId}
+          onValueChange={onChange}
+          options={(input.options ?? []).map((option) => ({
+            label: option,
+            value: option,
+          }))}
+          placeholder="Select value"
+          value={value}
+        />
       </>
     );
   }
