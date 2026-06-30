@@ -74,7 +74,7 @@ export function ProjectExplorerSearchField({
     >
       <Search
         aria-hidden
-        className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+        className="pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2 text-foreground"
       />
       <AppInput
         aria-label="Search projects"
@@ -88,7 +88,7 @@ export function ProjectExplorerSearchField({
       {searchQuery ? (
         <AppIconButton
           aria-label="Clear search"
-          className="absolute top-1/2 right-1 z-10 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          className="absolute top-1/2 right-1.5 z-10 size-7 -translate-y-1/2 text-foreground"
           onClick={() => setSearchQuery("")}
           size="sm"
           type="button"
