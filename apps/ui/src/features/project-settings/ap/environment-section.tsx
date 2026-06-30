@@ -1063,6 +1063,9 @@ function EnvRowActionsMenu({
   return (
     <CanvasNode.ActionMenu
       aria-label={`Environment variable actions for ${row.name}`}
+      className="bg-input/30 hover:bg-input! aria-expanded:bg-input! aria-expanded:text-blue-400 data-[state=open]:bg-input! data-[state=open]:text-blue-400"
+      triggerSize="lg"
+      triggerVariant="secondary"
     >
       {canEdit ? (
         <CanvasNode.ActionMenuItem
