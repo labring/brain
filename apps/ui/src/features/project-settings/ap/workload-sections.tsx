@@ -395,14 +395,14 @@ export function ConfigMapSettingsContent({
       {readOnly ? null : (
         <AppButton
           aria-label="Add configuration file"
-          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+          className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
           onClick={onAdd}
           size="default"
           type="button"
           variant="secondary"
         >
           <Plus aria-hidden />
-          Add
+          Add File
         </AppButton>
       )}
       {configMaps.length === 0 ? (

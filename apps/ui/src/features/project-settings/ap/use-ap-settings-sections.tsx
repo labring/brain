@@ -2097,14 +2097,14 @@ export function useApSettingsSections({
       {envEditorMode === "structured" ? (
         <AppButton
           aria-label="Add environment variable"
-          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+          className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
           onClick={handleAddEnvRow}
           size="default"
           type="button"
           variant="secondary"
         >
           <Plus aria-hidden />
-          Add
+          Add Variable
         </AppButton>
       ) : null}
     </div>
