@@ -158,7 +158,6 @@ function resourceStatusDotOuterTone(
   status: DeploymentResultResourceCardStatus
 ): string {
   switch (status) {
-    case "completed":
     case "running":
       return "bg-emerald-500/30";
     case "creating":
@@ -169,8 +168,6 @@ function resourceStatusDotOuterTone(
       return "bg-amber-500/30";
     case "failed":
       return "bg-destructive/30";
-    case "skipped":
-      return "bg-muted-foreground/20";
     default:
       return status satisfies never;
   }
@@ -180,7 +177,6 @@ function resourceStatusDotInnerTone(
   status: DeploymentResultResourceCardStatus
 ): string {
   switch (status) {
-    case "completed":
     case "running":
       return "bg-emerald-500";
     case "creating":
@@ -191,8 +187,6 @@ function resourceStatusDotInnerTone(
       return "bg-amber-500";
     case "failed":
       return "bg-destructive";
-    case "skipped":
-      return "bg-muted-foreground/60";
     default:
       return status satisfies never;
   }
