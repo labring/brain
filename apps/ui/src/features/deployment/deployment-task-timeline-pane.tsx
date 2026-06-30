@@ -1,7 +1,7 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
   Collapsible,
@@ -715,10 +715,10 @@ function DeploymentInputControl({
   return (
     <AppInput
       autoComplete={controlType === "password" ? "off" : undefined}
-      className="h-9 rounded-md bg-white/[0.02] text-sm"
       id={`deployment-input-${input.key}`}
       name={input.key}
       onChange={(event) => onChange(event.currentTarget.value)}
+      placeholder={input.label?.trim() || input.key}
       required={input.required}
       type={controlType}
       value={value}
@@ -739,7 +739,7 @@ function DeploymentInputField({
   const description = input.description?.trim();
   const controlType = deploymentInputControlType(input);
   return (
-    <div className="flex flex-col gap-1.5 text-sm">
+    <div className="flex flex-col gap-2 text-sm">
       <label
         className="flex items-center gap-1 font-normal text-foreground text-sm leading-none"
         htmlFor={`deployment-input-${input.key}`}
@@ -866,20 +866,22 @@ function DeploymentConfigurationForm({
   return (
     <DeploymentTimelineCard data-slot="deployment-configuration-form">
       <form className="flex min-w-0 flex-col gap-[14px] p-4" onSubmit={submit}>
-        <div className="flex min-w-0 items-center gap-2">
-          <AlertTriangle
-            aria-hidden
-            className="size-4 shrink-0 text-yellow-500"
-          />
-          <h3 className="truncate font-medium text-foreground text-sm leading-5">
-            Deployment configuration
-          </h3>
+        <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <AlertTriangle
+              aria-hidden
+              className="size-4 shrink-0 text-yellow-500"
+            />
+            <h3 className="truncate font-medium text-foreground text-sm leading-5">
+              Deployment configuration
+            </h3>
+          </div>
+          <p className="text-muted-foreground text-sm leading-5">
+            Required template values are missing. Submit them to continue this
+            deployment.
+          </p>
         </div>
-        <p className="text-muted-foreground text-sm leading-5">
-          Required template values are missing. Submit them to continue this
-          deployment.
-        </p>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3.5">
           {inputs.map((input) => (
             <DeploymentInputField
               input={input}
@@ -897,18 +899,18 @@ function DeploymentConfigurationForm({
         {error == null ? null : (
           <p className="text-destructive text-xs leading-4">{error}</p>
         )}
-        <Button
-          className="h-9 w-full font-medium text-sm"
-          disabled={isSubmitting}
-          type="submit"
-        >
+        <AppButton className="w-full" disabled={isSubmitting} type="submit">
           {isSubmitting ? (
-            <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+            <LoaderCircle
+              aria-hidden
+              className="animate-spin"
+              data-icon="inline-start"
+            />
           ) : (
-            <Rocket aria-hidden className="size-3.5" />
+            <Rocket aria-hidden data-icon="inline-start" />
           )}
           Continue Deployment
-        </Button>
+        </AppButton>
       </form>
     </DeploymentTimelineCard>
   );
