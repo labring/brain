@@ -1,6 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import {
   Tooltip,
@@ -8,7 +9,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { LayoutGrid, Plus, Search } from "lucide-react";
+import { LayoutGrid, Plus, Search, X } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import { useProjectExplorer } from "./project-explorer.context";
@@ -77,13 +78,25 @@ export function ProjectExplorerSearchField({
       />
       <AppInput
         aria-label="Search projects"
-        className="bg-input/30 pl-9 shadow-xs backdrop-blur-lg"
+        className="bg-input/30 pr-9 pl-9 shadow-xs backdrop-blur-lg [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder={placeholder}
         type="search"
         value={searchQuery}
         {...props}
       />
+      {searchQuery ? (
+        <AppIconButton
+          aria-label="Clear search"
+          className="absolute top-1/2 right-1 z-10 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          onClick={() => setSearchQuery("")}
+          size="sm"
+          type="button"
+          variant="quiet"
+        >
+          <X aria-hidden className="size-4" />
+        </AppIconButton>
+      ) : null}
     </div>
   );
 }
