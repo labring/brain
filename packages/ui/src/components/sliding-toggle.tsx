@@ -73,7 +73,7 @@ export function SlidingToggle<TValue extends string = string>({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-y-0 left-0 z-0 rounded-lg bg-input/30 transition-transform duration-200 ease-out",
+          "pointer-events-none absolute inset-y-0 left-0 z-0 rounded-lg bg-input transition-transform duration-200 ease-out",
           indicatorClassName
         )}
         data-slot="sliding-toggle-indicator"

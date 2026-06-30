@@ -138,6 +138,10 @@ const ENV_ROW_ACTIONS_NODE_VARIANT_RE =
   /aria-label="Environment variable actions for DATABASE_URL"[^>]*data-variant="node"/;
 const EDIT_ENV_RE = /aria-label="Edit environment variable/;
 const SAVE_ENV_RE = /Save environment/;
+const EDITING_ENV_ROW_RE = /data-env-row="editing"/;
+const PER_ROW_CANCEL_ENV_RE =
+  /aria-label="Discard [^"]*environment variable edit"/;
+const PER_ROW_SAVE_ENV_RE = /aria-label="Confirm [^"]*environment variable"/;
 const UPDATE_AP_SETTINGS_RE = /aria-label="Update AP Settings"/;
 const UPDATE_ENVIRONMENT_VARIABLES_RE =
   /aria-label="Update Environment Variables"/;
@@ -354,7 +358,7 @@ test("AP settings pane shows raw draft values for dirty structured rows", () => 
   assert.doesNotMatch(html, COPY_MYSQL_ENV_VALUE_RE);
 });
 
-test("AP settings pane renders environment actions in section header", () => {
+test("AP settings pane renders environment editor controls above the rows", () => {
   const html = renderPane();
   const titleIndex = html.search(ENVIRONMENT_VARIABLES_TITLE_RE);
   const modeIndex = html.search(ENV_EDITOR_MODE_RE);
@@ -1798,4 +1802,64 @@ test("AP settings raw editor omits fixed raw footer actions", () => {
   assert.doesNotMatch(html, COPY_RAW_SOURCE_RE);
   assert.doesNotMatch(html, INSERT_RAW_REFERENCE_RE);
   assert.doesNotMatch(html, COPY_ENV_VALUE_RE);
+});
+
+test("AP settings raw editor keeps the mode toggle but hides Add", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      envRawSource="BROKEN"
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, ENV_EDITOR_MODE_RE);
+  assert.doesNotMatch(html, ADD_ENV_RE);
+});
+
+test("AP settings pane shows per-row Save/Cancel for an editing environment row", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      addDbDsnReferenceIntent={{
+        dbName: "postgres",
+        dbNamespace: "default",
+        id: "drag-1",
+      }}
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      dbDsnReferenceSources={[{ name: "postgres", namespace: "default" }]}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, EDITING_ENV_ROW_RE);
+  assert.match(html, ENV_NAME_INPUT_RE);
+  assert.match(html, PER_ROW_CANCEL_ENV_RE);
+  assert.match(html, PER_ROW_SAVE_ENV_RE);
+});
+
+test("AP settings pane renders committed environment rows collapsed without per-row actions", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db" }]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, ENV_ROW_ACTIONS_RE);
+  assert.doesNotMatch(html, EDITING_ENV_ROW_RE);
+  assert.doesNotMatch(html, PER_ROW_CANCEL_ENV_RE);
+  assert.doesNotMatch(html, PER_ROW_SAVE_ENV_RE);
 });

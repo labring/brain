@@ -1,20 +1,14 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { Button } from "@workspace/ui/components/button";
+import { AppSelect } from "@workspace/ui/components/app-select";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -537,31 +531,36 @@ function TimelineStepItem({
   step: DeploymentTimelineStep;
 }) {
   const cards = step.resultCards ?? [];
+  const hasEvents = step.events.length > 0;
   return (
-    <section className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2.5">
-      <div className="flex flex-col items-center pt-1">
+    <section className="flex flex-col gap-2.5">
+      <div className="flex min-w-0 items-center gap-2">
         <StatusMarker status={step.status} />
-        <span className="mt-1 min-h-6 w-px flex-1 bg-white/12" />
-      </div>
-      <div className="min-w-0 pb-3.5">
         <h3
-          className="truncate font-normal text-foreground text-sm leading-5"
+          className="min-w-0 flex-1 truncate font-normal text-foreground text-sm leading-5"
           title={step.label}
         >
           {step.label}
         </h3>
-        <div className="mt-1.5">
-          <TimelineEventList events={step.events} />
-        </div>
-        {cards.length === 0 ? null : (
-          <div className="mt-2 flex flex-col gap-2">
-            {cards.map((card) => (
-              <ResultResourceCard card={card} key={card.id} />
-            ))}
-          </div>
-        )}
-        {children == null ? null : <div className="mt-2">{children}</div>}
       </div>
+      {hasEvents ? (
+        <div className="flex items-stretch gap-1">
+          <div className="flex w-3.5 justify-center">
+            <span aria-hidden className="w-px self-stretch bg-white/10" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TimelineEventList events={step.events} />
+          </div>
+        </div>
+      ) : null}
+      {cards.length === 0 ? null : (
+        <div className="flex flex-col gap-2.5">
+          {cards.map((card) => (
+            <ResultResourceCard card={card} key={card.id} />
+          ))}
+        </div>
+      )}
+      {children ?? null}
     </section>
   );
 }
@@ -673,18 +672,16 @@ function DeploymentInputControl({
     return (
       <>
         <input name={input.key} type="hidden" value={value} />
-        <Select onValueChange={onChange} value={value}>
-          <SelectTrigger className="h-9" id={controlId}>
-            <SelectValue placeholder="Select value" />
-          </SelectTrigger>
-          <SelectContent>
-            {(input.options ?? []).map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AppSelect
+          id={controlId}
+          onValueChange={onChange}
+          options={(input.options ?? []).map((option) => ({
+            label: option,
+            value: option,
+          }))}
+          placeholder="Select value"
+          value={value}
+        />
       </>
     );
   }
@@ -710,10 +707,10 @@ function DeploymentInputControl({
   return (
     <AppInput
       autoComplete={controlType === "password" ? "off" : undefined}
-      className="h-9 rounded-md bg-white/[0.02] text-sm"
       id={`deployment-input-${input.key}`}
       name={input.key}
       onChange={(event) => onChange(event.currentTarget.value)}
+      placeholder={input.label?.trim() || input.key}
       required={input.required}
       type={controlType}
       value={value}
@@ -734,7 +731,7 @@ function DeploymentInputField({
   const description = input.description?.trim();
   const controlType = deploymentInputControlType(input);
   return (
-    <div className="flex flex-col gap-1.5 text-sm">
+    <div className="flex flex-col gap-2 text-sm">
       <label
         className="flex items-center gap-1 font-normal text-foreground text-sm leading-none"
         htmlFor={`deployment-input-${input.key}`}
@@ -861,20 +858,22 @@ function DeploymentConfigurationForm({
   return (
     <DeploymentTimelineCard data-slot="deployment-configuration-form">
       <form className="flex min-w-0 flex-col gap-[14px] p-4" onSubmit={submit}>
-        <div className="flex min-w-0 items-center gap-2">
-          <AlertTriangle
-            aria-hidden
-            className="size-4 shrink-0 text-yellow-500"
-          />
-          <h3 className="truncate font-medium text-foreground text-sm leading-5">
-            Deployment configuration
-          </h3>
+        <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <AlertTriangle
+              aria-hidden
+              className="size-4 shrink-0 text-yellow-500"
+            />
+            <h3 className="truncate font-medium text-foreground text-sm leading-5">
+              Deployment configuration
+            </h3>
+          </div>
+          <p className="text-muted-foreground text-sm leading-5">
+            Required template values are missing. Submit them to continue this
+            deployment.
+          </p>
         </div>
-        <p className="text-muted-foreground text-sm leading-5">
-          Required template values are missing. Submit them to continue this
-          deployment.
-        </p>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3.5">
           {inputs.map((input) => (
             <DeploymentInputField
               input={input}
@@ -892,18 +891,18 @@ function DeploymentConfigurationForm({
         {error == null ? null : (
           <p className="text-destructive text-xs leading-4">{error}</p>
         )}
-        <Button
-          className="h-9 w-full font-medium text-sm"
-          disabled={isSubmitting}
-          type="submit"
-        >
+        <AppButton className="w-full" disabled={isSubmitting} type="submit">
           {isSubmitting ? (
-            <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+            <LoaderCircle
+              aria-hidden
+              className="animate-spin"
+              data-icon="inline-start"
+            />
           ) : (
-            <Rocket aria-hidden className="size-3.5" />
+            <Rocket aria-hidden data-icon="inline-start" />
           )}
           Continue Deployment
-        </Button>
+        </AppButton>
       </form>
     </DeploymentTimelineCard>
   );
@@ -952,7 +951,7 @@ export function DeploymentTaskTimelinePaneContent({
     >
       <TimelineBorderBeam />
       <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border border-white/8" />
-      <div className="mb-3 flex items-center gap-2 text-foreground">
+      <div className="mb-2.5 flex items-center gap-2 text-foreground">
         <Rocket aria-hidden className="size-4 text-foreground" />
         <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
       </div>
@@ -960,17 +959,19 @@ export function DeploymentTaskTimelinePaneContent({
         <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
       </div>
-      {steps.map((step) => (
-        <TimelineStepItem key={step.id} step={step}>
-          {step.id === configurationStepId ? (
-            <DeploymentConfigurationForm
-              kubeconfig={kubeconfig}
-              namespace={namespace}
-              snapshot={snapshot}
-            />
-          ) : null}
-        </TimelineStepItem>
-      ))}
+      <div className="flex flex-col gap-4">
+        {steps.map((step) => (
+          <TimelineStepItem key={step.id} step={step}>
+            {step.id === configurationStepId ? (
+              <DeploymentConfigurationForm
+                kubeconfig={kubeconfig}
+                namespace={namespace}
+                snapshot={snapshot}
+              />
+            ) : null}
+          </TimelineStepItem>
+        ))}
+      </div>
     </div>
   );
 }

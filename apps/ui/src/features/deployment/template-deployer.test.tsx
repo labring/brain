@@ -49,10 +49,8 @@ const PARAMETER_INPUT_TEST_ID_RE =
 const PARAMETER_ARG_RE = /data-template-arg="init_password"/;
 const SUBMIT_TEST_ID_RE = /data-testid="template\.deployer\.submit"/;
 const EMPTY_TEST_ID_RE = /data-testid="template\.deployer\.empty"/;
-const SEARCH_INPUT_SOURCE_RE = /data-testid="template\.deployer\.search-input"/;
-const TEMPLATE_OPTION_SOURCE_RE =
-  /data-testid="template\.deployer\.template-option"/;
-const TEMPLATE_OPTION_NAME_SOURCE_RE = /data-template-name=\{choice\.name\}/;
+const APP_SELECT_SOURCE_RE = /<AppSelect/;
+const SEARCHABLE_SOURCE_RE = /searchable/;
 const SOURCE = readFileSync(
   fileURLToPath(new URL("./template-deployer.tsx", import.meta.url))
 ).toString();
@@ -92,8 +90,7 @@ test("TemplateDeployer renders empty state without combobox", () => {
   assert.doesNotMatch(html, COMBOBOX_ROLE_RE);
 });
 
-test("TemplateDeployer keeps runtime locators for opened template search", () => {
-  assert.match(SOURCE, SEARCH_INPUT_SOURCE_RE);
-  assert.match(SOURCE, TEMPLATE_OPTION_SOURCE_RE);
-  assert.match(SOURCE, TEMPLATE_OPTION_NAME_SOURCE_RE);
+test("TemplateDeployer wires the template selector through a searchable AppSelect", () => {
+  assert.match(SOURCE, APP_SELECT_SOURCE_RE);
+  assert.match(SOURCE, SEARCHABLE_SOURCE_RE);
 });

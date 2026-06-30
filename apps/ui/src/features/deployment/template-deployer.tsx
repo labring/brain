@@ -3,30 +3,14 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@workspace/ui/components/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@workspace/ui/components/popover";
+  AppSelect,
+  type AppSelectOption,
+} from "@workspace/ui/components/app-select";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
-import { Blocks, ChevronDown, Rocket, Upload } from "lucide-react";
+import { Blocks, Rocket, Upload } from "lucide-react";
 import Image from "next/image";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { DeploymentSettings } from "./deployment-settings";
 
 export interface TemplateDeploymentInput {
@@ -120,90 +104,29 @@ function TemplateSearchSelect({
   onValueChange: (value: string) => void;
   value: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [triggerWidth, setTriggerWidth] = useState<number | undefined>();
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const selected = selectedChoice(choices, value);
-
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (nextOpen) {
-      setTriggerWidth(triggerRef.current?.offsetWidth);
-    }
-  }, []);
+  const options = useMemo<AppSelectOption[]>(
+    () =>
+      choices.map((choice) => ({
+        icon: <TemplateIcon choice={choice} />,
+        label: templateLabel(choice),
+        textValue: `${choice.title || choice.name} ${choice.name}`,
+        value: choice.name,
+      })),
+    [choices]
+  );
 
   return (
-    <Popover onOpenChange={handleOpenChange} open={open}>
-      <PopoverTrigger
-        aria-expanded={open}
-        aria-label="Template"
-        className={cn(
-          "flex h-12 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-input/20 px-3 text-left text-foreground text-sm shadow-none outline-hidden transition-colors",
-          "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/60",
-          "data-[popup-open]:border-blue-400 data-[popup-open]:ring-[1px] data-[popup-open]:ring-blue-400/60",
-          disabled && "pointer-events-none opacity-50"
-        )}
-        data-testid="template.deployer.template-combobox"
-        disabled={disabled}
-        ref={triggerRef}
-        role="combobox"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <TemplateIcon choice={selected} />
-          <span className="min-w-0 truncate">{templateLabel(selected)}</span>
-        </span>
-        <ChevronDown
-          aria-hidden
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-180"
-          )}
-        />
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="gap-0 rounded-md border border-blue-400/80 bg-popover/95 p-0 shadow-none ring-0 backdrop-blur-xl"
-        style={{ width: triggerWidth }}
-      >
-        <Command className="rounded-md bg-transparent p-0">
-          <CommandInput
-            aria-label="Search templates"
-            data-testid="template.deployer.search-input"
-            placeholder="Search"
-          />
-          <CommandList className="max-h-80 p-1">
-            <CommandEmpty>No templates found.</CommandEmpty>
-            <CommandGroup className="p-0">
-              {choices.map((choice) => {
-                const selected = choice.name === value;
-                return (
-                  <CommandItem
-                    className={cn(
-                      "h-10 rounded-md px-2 text-sm data-selected:bg-input/60",
-                      selected && "bg-blue-500/20 text-foreground"
-                    )}
-                    data-checked={selected}
-                    data-template-name={choice.name}
-                    data-testid="template.deployer.template-option"
-                    key={choice.name}
-                    onSelect={() => {
-                      onValueChange(choice.name);
-                      setOpen(false);
-                    }}
-                    value={`${choice.title || choice.name} ${choice.name}`}
-                  >
-                    <TemplateIcon choice={choice} />
-                    <span className="min-w-0 truncate">
-                      {templateLabel(choice)}
-                    </span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <AppSelect
+      aria-label="Template"
+      data-testid="template.deployer.template-combobox"
+      disabled={disabled}
+      onValueChange={onValueChange}
+      options={options}
+      placeholder="Select template"
+      searchable
+      searchPlaceholder="Search"
+      value={value}
+    />
   );
 }
 

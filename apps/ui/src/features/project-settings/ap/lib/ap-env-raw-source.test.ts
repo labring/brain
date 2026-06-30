@@ -289,16 +289,6 @@ test("AP env raw source compiler generates stable Secret-backed DATABASE_URL hel
     [
       { name: "PGUSER", value: "manual" },
       {
-        name: "DATABASE_URL",
-        value:
-          "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)?sslmode=require",
-      },
-      {
-        name: "READ_REPLICA_URL",
-        value:
-          "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/readonly",
-      },
-      {
         name: "POSTGRES_USERNAME",
         value: "(valueFrom)",
         valueFrom: {
@@ -330,9 +320,20 @@ test("AP env raw source compiler generates stable Secret-backed DATABASE_URL hel
         },
         valueSource: "valueFrom",
       },
+      {
+        name: "DATABASE_URL",
+        value:
+          "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)?sslmode=require",
+      },
+      {
+        name: "READ_REPLICA_URL",
+        value:
+          "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/readonly",
+      },
     ]
   );
-  assert.deepEqual(compiled.env[1]?.compiledReference?.helpers, [
+  const databaseUrl = compiled.env.find((row) => row.name === "DATABASE_URL");
+  assert.deepEqual(databaseUrl?.compiledReference?.helpers, [
     {
       field: "username",
       name: "POSTGRES_USERNAME",

@@ -1051,19 +1051,22 @@ export function compileApEnvRawSourceForRuntime(
   };
   const references = referencesByRow(parsed, resolution.references);
   const env: ApEnvRow[] = [];
-  const helperByName = new Map<string, ApEnvRow>();
+  const emittedHelperNames = new Set<string>();
   for (const row of parsed.rows) {
     const compiled = compileRowReferences(
       row,
       references.get(row.line) ?? [],
       context
     );
-    env.push(compiled.row);
     for (const helper of compiled.helpers) {
-      helperByName.set(helper.name, helper);
+      if (emittedHelperNames.has(helper.name)) {
+        continue;
+      }
+      env.push(helper);
+      emittedHelperNames.add(helper.name);
     }
+    env.push(compiled.row);
   }
-  env.push(...helperByName.values());
 
   return {
     diagnostics,
