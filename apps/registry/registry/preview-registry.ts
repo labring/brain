@@ -202,6 +202,38 @@ export const Index: RegistryIndex = {
       import("@registry/linear/components/app-input/app-input-preview"),
   },
 
+  "linear/components/app-select": {
+    style: "linear",
+    group: "components",
+    name: "app-select",
+    title: "App Select",
+    description:
+      "SealAI product single and multi-select controls for forms, filters, and settings surfaces.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "app-select"],
+    files: [
+      {
+        path: "registry/linear/components/app-select/app-select-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/app-select.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/lib/popover-surface.ts",
+        type: "registry:lib",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/app-select/app-select-preview"),
+  },
+
   "linear/components/app-textarea": {
     style: "linear",
     group: "components",
@@ -573,6 +605,45 @@ export const Index: RegistryIndex = {
     load: () =>
       import(
         "@registry/linear/components/settings-slider/settings-slider-preview"
+      ),
+  },
+
+  "linear/components/sliding-toggle": {
+    style: "linear",
+    group: "components",
+    name: "sliding-toggle",
+    title: "Sliding toggle",
+    description:
+      "Segmented toggle with a sliding input-colored indicator, default and compact sizing, and full-width or content-width layout.",
+    state: "done",
+    type: "registry:preview",
+    registryDependencies: ["preview", "sliding-toggle", "toggle-group"],
+    files: [
+      {
+        path: "registry/linear/components/sliding-toggle/sliding-toggle-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/sliding-toggle.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/toggle-group.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/toggle.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import(
+        "@registry/linear/components/sliding-toggle/sliding-toggle-preview"
       ),
   },
 

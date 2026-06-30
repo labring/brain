@@ -48,6 +48,25 @@
       ]
     },
     {
+      "name": "app-select",
+      "type": "registry:ui",
+      "title": "App Select",
+      "description": "SealAI product single and multi-select controls for forms, filters, and settings surfaces",
+      "dependencies": ["@base-ui/react", "lucide-react"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/app-select.tsx",
+          "type": "registry:component",
+          "target": "components/app-select.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/lib/popover-surface.ts",
+          "type": "registry:lib",
+          "target": "lib/popover-surface.ts"
+        }
+      ]
+    },
+    {
       "name": "app-textarea",
       "type": "registry:ui",
       "title": "App Textarea",
@@ -72,6 +91,20 @@
           "path": "../../packages/ui/src/components/app-input-field.tsx",
           "type": "registry:component",
           "target": "components/app-input-field.tsx"
+        }
+      ]
+    },
+    {
+      "name": "sliding-toggle",
+      "type": "registry:ui",
+      "title": "Sliding Toggle",
+      "description": "Segmented toggle with a sliding input-colored indicator, default and compact sizing, and full-width or content-width layout",
+      "registryDependencies": ["toggle-group"],
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/sliding-toggle.tsx",
+          "type": "registry:component",
+          "target": "components/sliding-toggle.tsx"
         }
       ]
     },

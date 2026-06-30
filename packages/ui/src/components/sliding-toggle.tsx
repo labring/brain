@@ -14,6 +14,9 @@ export interface SlidingToggleOption<TValue extends string = string> {
   value: TValue;
 }
 
+export type SlidingToggleSize = "default" | "sm";
+export type SlidingToggleWidth = "auto" | "full";
+
 export interface SlidingToggleProps<TValue extends string = string> {
   ariaLabel: string;
   className?: string;
@@ -22,8 +25,31 @@ export interface SlidingToggleProps<TValue extends string = string> {
   itemClassName?: string;
   onValueChange: (value: TValue) => void;
   options: readonly SlidingToggleOption<TValue>[];
+  size?: SlidingToggleSize;
   value: TValue;
+  width?: SlidingToggleWidth;
 }
+
+const slidingToggleSizeClasses = {
+  default: {
+    indicator: "rounded-lg",
+    item: "!rounded-lg h-9 px-2 text-sm",
+    root: "h-9 rounded-lg",
+  },
+  sm: {
+    indicator: "rounded-md",
+    item: "!rounded-md h-8 px-3 text-xs",
+    root: "h-8 rounded-md",
+  },
+} satisfies Record<
+  SlidingToggleSize,
+  { indicator: string; item: string; root: string }
+>;
+
+const slidingToggleWidthClasses = {
+  auto: "w-auto",
+  full: "w-full",
+} satisfies Record<SlidingToggleWidth, string>;
 
 export function SlidingToggle<TValue extends string = string>({
   ariaLabel,
@@ -33,12 +59,15 @@ export function SlidingToggle<TValue extends string = string>({
   itemClassName,
   onValueChange,
   options,
+  size = "default",
   value,
+  width = "full",
 }: SlidingToggleProps<TValue>) {
   if (options.length === 0) {
     return null;
   }
 
+  const sizeClasses = slidingToggleSizeClasses[size];
   const selectedIndex = Math.max(
     0,
     options.findIndex((option) => option.value === value)
@@ -55,7 +84,9 @@ export function SlidingToggle<TValue extends string = string>({
     <ToggleGroup
       aria-label={ariaLabel}
       className={cn(
-        "relative grid h-9 w-full overflow-hidden rounded-lg bg-muted/40 p-0 text-foreground",
+        "relative grid overflow-hidden bg-muted/40 p-0 text-foreground",
+        sizeClasses.root,
+        slidingToggleWidthClasses[width],
         className
       )}
       onValueChange={(nextValue) => {
@@ -73,7 +104,8 @@ export function SlidingToggle<TValue extends string = string>({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-y-0 left-0 z-0 rounded-lg bg-input transition-transform duration-200 ease-out",
+          "pointer-events-none absolute inset-y-0 left-0 z-0 bg-input transition-transform duration-200 ease-out",
+          sizeClasses.indicator,
           indicatorClassName
         )}
         data-slot="sliding-toggle-indicator"
@@ -83,7 +115,8 @@ export function SlidingToggle<TValue extends string = string>({
         <ToggleGroupItem
           aria-label={option.ariaLabel}
           className={cn(
-            "!rounded-lg relative z-10 h-9 min-w-0 border-0 bg-transparent text-sm hover:bg-transparent aria-pressed:bg-transparent data-[state=on]:bg-transparent",
+            "relative z-10 min-w-0 cursor-pointer border-0 bg-transparent hover:bg-transparent aria-pressed:bg-transparent data-[state=on]:bg-transparent",
+            sizeClasses.item,
             itemClassName
           )}
           disabled={disabled || option.disabled}

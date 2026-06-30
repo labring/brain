@@ -1223,7 +1223,7 @@ function DomainListSection({
       {readOnly ? null : (
         <AppButton
           aria-label="Add Public Address"
-          className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+          className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
           disabled={addOpen || !canMutateNetwork}
           onClick={onOpenAddPublicAddress}
           type="button"
@@ -1450,7 +1450,7 @@ export function NetworkSettingsSection({
         {readOnly ? null : (
           <AppButton
             aria-label="Add App Listening Port"
-            className="h-9 w-full rounded-lg bg-white/5 text-muted-foreground text-sm hover:bg-input"
+            className="h-9 w-full rounded-lg bg-white/5 text-primary text-sm hover:bg-input"
             disabled={addPortOpen || !canMutateNetwork}
             onClick={() => setAddPortOpen(true)}
             type="button"
