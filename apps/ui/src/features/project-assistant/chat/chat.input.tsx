@@ -211,7 +211,7 @@ export function ChatComposerTextarea({
       <Textarea
         {...rest}
         className={cn(
-          "max-h-20 min-h-5 w-full resize-none rounded-xl border-0 bg-transparent! p-0 text-sm! leading-5 shadow-none focus-visible:border-0 focus-visible:ring-0",
+          "max-h-20 min-h-5 w-full resize-none rounded-none border-0 bg-transparent! p-0 text-sm! leading-5 shadow-none focus-visible:border-0 not-aria-invalid:focus-visible:border-0 focus-visible:ring-0 not-aria-invalid:focus-visible:ring-0",
           className
         )}
         onChange={(e) => onValueChange(e.target.value)}
