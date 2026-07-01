@@ -7,6 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
+import { TimeWheelField } from "@workspace/ui/components/time-wheel-field";
 import { cn } from "@workspace/ui/lib/utils";
 import { format } from "date-fns";
 import { ChevronDown, Clock } from "lucide-react";
@@ -38,6 +39,7 @@ export function TimeRangeSelector({
   className,
 }: TimeRangeSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [activeField, setActiveField] = useState<"start" | "end" | null>(null);
   const [draftRange, setDraftRange] = useState<DateRange | undefined>();
   const [draftStartTime, setDraftStartTime] = useState("00:00:00");
   const [draftEndTime, setDraftEndTime] = useState("23:59:59");
@@ -46,6 +48,7 @@ export function TimeRangeSelector({
     if (!open) {
       return;
     }
+    setActiveField(null);
     if (value.mode === "custom") {
       setDraftRange({ from: value.start, to: value.end });
       setDraftStartTime(format(value.start, "HH:mm:ss"));
@@ -131,29 +134,21 @@ export function TimeRangeSelector({
               onSelect={setDraftRange}
               selected={draftRange}
             />
-            <div className="flex items-center gap-2 px-1 text-sm">
-              <label className="text-foreground" htmlFor="time-range-start">
-                Start
-              </label>
-              <input
-                className="rounded-md border border-input bg-transparent px-2 py-1 text-foreground text-sm [color-scheme:dark]"
-                id="time-range-start"
-                onChange={(e) => setDraftStartTime(e.target.value)}
-                step="1"
-                type="time"
+            <div className="flex gap-4 px-1">
+              <TimeWheelField
+                className="flex-1"
+                label="Start"
+                onChange={setDraftStartTime}
+                onOpenChange={(next) => setActiveField(next ? "start" : null)}
+                open={activeField === "start"}
                 value={draftStartTime}
               />
-            </div>
-            <div className="flex items-center gap-2 px-1 text-sm">
-              <label className="text-foreground" htmlFor="time-range-end">
-                End&nbsp;&nbsp;
-              </label>
-              <input
-                className="rounded-md border border-input bg-transparent px-2 py-1 text-foreground text-sm [color-scheme:dark]"
-                id="time-range-end"
-                onChange={(e) => setDraftEndTime(e.target.value)}
-                step="1"
-                type="time"
+              <TimeWheelField
+                className="flex-1"
+                label="End"
+                onChange={setDraftEndTime}
+                onOpenChange={(next) => setActiveField(next ? "end" : null)}
+                open={activeField === "end"}
                 value={draftEndTime}
               />
             </div>
