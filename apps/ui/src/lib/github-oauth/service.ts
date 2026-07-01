@@ -3,10 +3,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import {
-  KUBECONFIG_DEFAULT_NAMESPACE,
-  namespaceFromKubeconfigText,
-} from "@/lib/chat-runtime/kubeconfig-namespace";
 import { fetchServerCredentials } from "@/lib/server-credentials";
 import { fetchGithubLogin, upsertGithubConnection } from "./connection-service";
 import {
@@ -15,6 +11,7 @@ import {
   setAuthorizeCookies,
 } from "./cookies";
 import { applyGhcrSecretIfAuthenticated } from "./ghcr-secret";
+import { authorizeGithubConnectionNamespace } from "./namespace-auth-core";
 import { generatePKCE } from "./pkce";
 import { GITHUB_OAUTH_SCOPES, parseOAuthNamespaceParam } from "./types";
 import {
@@ -39,23 +36,6 @@ function jsonError(
     { error, error_description: description },
     { status }
   );
-}
-
-function parseNamespaceFromEncodedKubeconfig(
-  serverEncodedKubeconfig: string | undefined
-): string {
-  const raw = serverEncodedKubeconfig?.trim();
-  if (!raw) {
-    return KUBECONFIG_DEFAULT_NAMESPACE;
-  }
-  try {
-    return (
-      namespaceFromKubeconfigText(decodeURIComponent(raw)) ??
-      KUBECONFIG_DEFAULT_NAMESPACE
-    );
-  } catch {
-    return KUBECONFIG_DEFAULT_NAMESPACE;
-  }
 }
 
 async function exchangeCodeForToken(args: {
@@ -99,13 +79,21 @@ async function exchangeCodeForToken(args: {
 }
 
 /** Step 1 — generate PKCE, persist cookies, redirect to GitHub authorize. */
-export function startAuthorize(
+export async function startAuthorize(
   request: Request,
   options: { namespace: string | null; returnPath: string | null }
-): NextResponse {
+): Promise<NextResponse> {
   const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
   if (!clientId) {
     return jsonError("server_error", "GitHub OAuth app not configured", 500);
+  }
+  const credentials = await fetchServerCredentials();
+  const namespace = authorizeGithubConnectionNamespace(
+    options.namespace,
+    credentials
+  );
+  if (!namespace.ok) {
+    return jsonError("forbidden", namespace.error, namespace.status);
   }
   const state = randomUUID();
   const { verifier, challenge } = generatePKCE();
@@ -122,7 +110,7 @@ export function startAuthorize(
     `${GITHUB_AUTHORIZE_URL}?${params.toString()}`
   );
   setAuthorizeCookies(response, {
-    namespace: options.namespace,
+    namespace: namespace.namespace,
     state,
     codeVerifier: verifier,
     returnPath: options.returnPath,
@@ -157,6 +145,19 @@ export async function completeAuthorization(
       400
     );
   }
+  const credentials = await fetchServerCredentials();
+  const storedNamespace = parseOAuthNamespaceParam(namespace ?? null);
+  const authorizedNamespace = authorizeGithubConnectionNamespace(
+    storedNamespace,
+    credentials
+  );
+  if (!authorizedNamespace.ok) {
+    return jsonError(
+      "forbidden",
+      authorizedNamespace.error,
+      authorizedNamespace.status
+    );
+  }
   const baseUrl = getCallbackBaseUrl(request);
   const data = await exchangeCodeForToken({
     code: args.code,
@@ -171,22 +172,21 @@ export async function completeAuthorization(
       status
     );
   }
-  const { serverEncodedKubeconfig } = await fetchServerCredentials();
-  const storedNamespace = parseOAuthNamespaceParam(namespace ?? null);
   const githubLogin = await fetchGithubLogin(data.access_token);
   await upsertGithubConnection({
     accessToken: data.access_token,
     githubLogin,
-    namespace:
-      storedNamespace ??
-      parseNamespaceFromEncodedKubeconfig(serverEncodedKubeconfig),
+    namespace: authorizedNamespace.namespace,
     scope: data.scope,
     tokenType: data.token_type,
   });
-  await applyGhcrSecretIfAuthenticated(serverEncodedKubeconfig, {
-    githubLogin,
-    token: data.access_token,
-  });
+  await applyGhcrSecretIfAuthenticated(
+    authorizedNamespace.serverEncodedKubeconfig,
+    {
+      githubLogin,
+      token: data.access_token,
+    }
+  );
   const response = NextResponse.redirect(
     buildOAuthPopupCompleteUrl(baseUrl, returnPath)
   );
