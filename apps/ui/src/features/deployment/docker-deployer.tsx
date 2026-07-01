@@ -217,10 +217,10 @@ export function DockerDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-4", className)}
+      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
       data-slot="docker-deployer"
     >
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3.5">
         <DeploymentSettings.Section
           description="Choose the container image to run."
           icon={<Package aria-hidden className="size-4" />}
@@ -260,7 +260,7 @@ export function DockerDeployer({
           icon={<TerminalSquare aria-hidden className="size-4" />}
           title="Launch"
         >
-          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-1 gap-3.5">
             <DeploymentSettings.Field label="Command">
               <AppTextarea
                 aria-label="Launch command"
@@ -284,7 +284,7 @@ export function DockerDeployer({
 
         <DeploymentSettings.Section
           action={
-            <AppIconButton
+            <AppButton
               aria-label="Add environment variable"
               disabled={busy}
               onClick={() =>
@@ -297,101 +297,92 @@ export function DockerDeployer({
                   },
                 ])
               }
-              size="md"
+              size="default"
               type="button"
-              variant="quiet"
+              variant="secondary"
             >
-              <Plus aria-hidden className="size-4" />
-            </AppIconButton>
+              <Plus aria-hidden />
+              Add
+            </AppButton>
           }
           description="Set direct environment variables for startup."
           icon={<Settings2 aria-hidden className="size-4" />}
           title="Runtime"
         >
-          <div
-            className="flex min-w-0 flex-col gap-2"
-            data-slot="docker-env-rows"
-          >
-            {envRows.length === 0 ? (
-              <AppInput
-                aria-label="Environment variables"
-                disabled
-                readOnly
-                value="No environment variables."
-              />
-            ) : (
-              <div className="flex min-w-0 flex-col gap-2">
-                {envRows.map((row, index) => {
-                  const rowError = envErrorForIndex(validation, index);
-                  return (
-                    <div
-                      className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2"
-                      key={row.id}
-                    >
-                      <AppInput
-                        aria-invalid={rowError ? true : undefined}
-                        aria-label={`Environment variable ${index + 1} name`}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const nextName = event.currentTarget.value;
-                          setEnvRows((rows) =>
-                            rows.map((current, rowIndex) =>
-                              rowIndex === index
-                                ? { ...current, name: nextName }
-                                : current
-                            )
-                          );
-                        }}
-                        placeholder="NAME"
-                        value={row.name}
-                      />
-                      <AppInput
-                        aria-label={`Environment variable ${index + 1} value`}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const nextValue = event.currentTarget.value;
-                          setEnvRows((rows) =>
-                            rows.map((current, rowIndex) =>
-                              rowIndex === index
-                                ? { ...current, value: nextValue }
-                                : current
-                            )
-                          );
-                        }}
-                        placeholder="value"
-                        value={row.value}
-                      />
-                      <AppIconButton
-                        aria-label="Remove environment variable"
-                        className="hover:text-red-500"
-                        disabled={busy}
-                        onClick={() =>
-                          setEnvRows((rows) =>
-                            rows.filter((_, rowIndex) => rowIndex !== index)
+          {envRows.length === 0 ? null : (
+            <div
+              className="flex min-w-0 flex-col gap-2"
+              data-slot="docker-env-rows"
+            >
+              {envRows.map((row, index) => {
+                const rowError = envErrorForIndex(validation, index);
+                return (
+                  <div
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2.5"
+                    key={row.id}
+                  >
+                    <AppInput
+                      aria-invalid={rowError ? true : undefined}
+                      aria-label={`Environment variable ${index + 1} name`}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const nextName = event.currentTarget.value;
+                        setEnvRows((rows) =>
+                          rows.map((current, rowIndex) =>
+                            rowIndex === index
+                              ? { ...current, name: nextName }
+                              : current
                           )
-                        }
-                        size="lg"
-                        type="button"
-                        variant="quiet"
-                      >
-                        <Trash2 aria-hidden className="size-4" />
-                      </AppIconButton>
-                      {rowError ? (
-                        <p className="col-span-3 text-destructive text-xs leading-4">
-                          {rowError.message}
-                        </p>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                        );
+                      }}
+                      placeholder="NAME"
+                      value={row.name}
+                    />
+                    <AppInput
+                      aria-label={`Environment variable ${index + 1} value`}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const nextValue = event.currentTarget.value;
+                        setEnvRows((rows) =>
+                          rows.map((current, rowIndex) =>
+                            rowIndex === index
+                              ? { ...current, value: nextValue }
+                              : current
+                          )
+                        );
+                      }}
+                      placeholder="value"
+                      value={row.value}
+                    />
+                    <AppIconButton
+                      aria-label="Remove environment variable"
+                      disabled={busy}
+                      onClick={() =>
+                        setEnvRows((rows) =>
+                          rows.filter((_, rowIndex) => rowIndex !== index)
+                        )
+                      }
+                      size="lg"
+                      type="button"
+                      variant="danger"
+                    >
+                      <Trash2 aria-hidden className="size-4" />
+                    </AppIconButton>
+                    {rowError ? (
+                      <p className="col-span-3 text-destructive text-xs leading-4">
+                        {rowError.message}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </DeploymentSettings.Section>
 
         <DeploymentSettings.Section
           action={
-            <AppIconButton
+            <AppButton
               aria-label="Add config file"
               disabled={busy}
               onClick={() =>
@@ -404,27 +395,21 @@ export function DockerDeployer({
                   },
                 ])
               }
-              size="md"
+              size="default"
               type="button"
-              variant="quiet"
+              variant="secondary"
             >
-              <Plus aria-hidden className="size-4" />
-            </AppIconButton>
+              <Plus aria-hidden />
+              Add
+            </AppButton>
           }
           description="Mount file contents into the container."
           icon={<ScrollText aria-hidden className="size-4" />}
           title="Config Files"
         >
-          <div className="flex min-w-0 flex-col gap-2">
-            {configMapRows.length === 0 ? (
-              <AppInput
-                aria-label="Config files"
-                disabled
-                readOnly
-                value="No config files."
-              />
-            ) : (
-              configMapRows.map((row, index) => {
+          {configMapRows.length === 0 ? null : (
+            <div className="flex min-w-0 flex-col gap-2">
+              {configMapRows.map((row, index) => {
                 const rowError = rowErrorForIndex(
                   validation,
                   "configMaps",
@@ -432,7 +417,7 @@ export function DockerDeployer({
                 );
                 return (
                   <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2.5"
                     key={row.id}
                   >
                     <AppInput
@@ -466,7 +451,6 @@ export function DockerDeployer({
                     />
                     <AppIconButton
                       aria-label="Remove config file"
-                      className="hover:text-red-500"
                       disabled={busy}
                       onClick={() =>
                         setConfigMapRows((rows) =>
@@ -475,7 +459,7 @@ export function DockerDeployer({
                       }
                       size="lg"
                       type="button"
-                      variant="quiet"
+                      variant="danger"
                     >
                       <Trash2 aria-hidden className="size-4" />
                     </AppIconButton>
@@ -486,14 +470,14 @@ export function DockerDeployer({
                     ) : null}
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </DeploymentSettings.Section>
 
         <DeploymentSettings.Section
           action={
-            <AppIconButton
+            <AppButton
               aria-label="Add storage mount"
               disabled={busy}
               onClick={() =>
@@ -502,32 +486,26 @@ export function DockerDeployer({
                   { id: createStorageRowId(), path: "/data", size: "1Gi" },
                 ])
               }
-              size="md"
+              size="default"
               type="button"
-              variant="quiet"
+              variant="secondary"
             >
-              <Plus aria-hidden className="size-4" />
-            </AppIconButton>
+              <Plus aria-hidden />
+              Add
+            </AppButton>
           }
           description="Persist data at container paths."
           icon={<HardDrive aria-hidden className="size-4" />}
           title="Storage"
         >
-          <div className="flex min-w-0 flex-col gap-2">
-            {storageRows.length === 0 ? (
-              <AppInput
-                aria-label="Storage mounts"
-                disabled
-                readOnly
-                value="No storage mounts."
-              />
-            ) : (
-              storageRows.map((row, index) => {
+          {storageRows.length === 0 ? null : (
+            <div className="flex min-w-0 flex-col gap-2">
+              {storageRows.map((row, index) => {
                 const rowError = rowErrorForIndex(validation, "storage", index);
                 const sizeError = rowError?.type === "invalid-storage-size";
                 return (
                   <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem_2.25rem] gap-2"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem_2.25rem] gap-2.5"
                     key={row.id}
                   >
                     <AppInput
@@ -560,7 +538,6 @@ export function DockerDeployer({
                     />
                     <AppIconButton
                       aria-label="Remove storage mount"
-                      className="hover:text-red-500"
                       disabled={busy}
                       onClick={() =>
                         setStorageRows((rows) =>
@@ -569,7 +546,7 @@ export function DockerDeployer({
                       }
                       size="lg"
                       type="button"
-                      variant="quiet"
+                      variant="danger"
                     >
                       <Trash2 aria-hidden className="size-4" />
                     </AppIconButton>
@@ -580,9 +557,9 @@ export function DockerDeployer({
                     ) : null}
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
         </DeploymentSettings.Section>
 
         <DeploymentSettings.Section

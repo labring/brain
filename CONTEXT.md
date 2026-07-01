@@ -122,7 +122,7 @@ _Avoid_: Settings Section, Settings View, form tab, API field group.
 
 ### Docker Deployment Settings
 
-The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
+The creation-time choices for a new AP before the AP exists, including Docker image, container launch command and arguments override, runtime environment variables, AP Configuration Files, AP Storage Mounts, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
 
 ### Deployment Task
 

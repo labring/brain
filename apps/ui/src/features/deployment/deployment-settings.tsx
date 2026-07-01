@@ -26,7 +26,7 @@ function DeploymentSettingsSection({
       )}
       {...props}
     >
-      <header className="flex min-w-0 items-start justify-between gap-3">
+      <header className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex size-4 shrink-0 items-center justify-center text-foreground">

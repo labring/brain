@@ -203,7 +203,7 @@ export function TemplateDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-4", className)}
+      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
       data-slot="template-deployer"
       data-testid="template.deployer"
     >

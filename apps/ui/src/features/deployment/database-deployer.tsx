@@ -211,10 +211,10 @@ export function DatabaseDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-4", className)}
+      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
       data-slot="database-deployer"
     >
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3.5">
         <DeploymentSettings.Section
           description="Choose a managed database engine for this workspace."
           icon={<Database aria-hidden className="size-4" />}
