@@ -22,6 +22,8 @@ const ARIA_BUSY_RE = /aria-busy="true"/;
 const VALUE_8080_RE = /value="8080"/;
 const FEATURE_FLAG_RE = /value="FEATURE_FLAG"/;
 const VALUE_TRUE_RE = /value="true"/;
+const DEFAULT_DOCKER_IMAGE_RE = /value="nginx"/;
+const IMAGE_PLACEHOLDER_RE = /placeholder="image:tag"/;
 const DOCKER_IMAGE_REQUIRED_RE = /Docker image is required\./;
 
 test("DockerDeployer renders Docker Deployment Settings with default network choices", () => {
@@ -30,6 +32,8 @@ test("DockerDeployer renders Docker Deployment Settings with default network cho
   assert.match(html, DOCKER_DEPLOYER_SLOT_RE);
   assert.match(html, IMAGE_RE);
   assert.match(html, DOCKER_IMAGE_RE);
+  assert.match(html, DEFAULT_DOCKER_IMAGE_RE);
+  assert.match(html, IMAGE_PLACEHOLDER_RE);
   assert.match(html, RUNTIME_RE);
   assert.doesNotMatch(html, ENVIRONMENT_VARIABLES_RE);
   assert.match(html, ADD_ENVIRONMENT_VARIABLE_RE);

@@ -1,4 +1,5 @@
 export const DEFAULT_DOCKER_APP_LISTENING_PORT = 80;
+export const DEFAULT_DOCKER_IMAGE = "nginx";
 
 export interface DockerDeploymentEnvVar {
   name: string;

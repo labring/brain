@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DeploymentSettings } from "./deployment-settings";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,
+  DEFAULT_DOCKER_IMAGE,
   type DockerDeploymentConfigMap,
   type DockerDeploymentEnvVar,
   type DockerDeploymentSettings,
@@ -136,7 +137,9 @@ export function DockerDeployer({
   onDeploy?: (settings: DockerDeploymentSettings) => void | Promise<void>;
   onSettingsChange?: (settings: DockerDeploymentSettings) => void;
 }) {
-  const [image, setImage] = useState(initialSettings?.image ?? "");
+  const [image, setImage] = useState(
+    initialSettings?.image ?? DEFAULT_DOCKER_IMAGE
+  );
   const [commandText, setCommandText] = useState(
     initialSettings?.command?.join("\n") ?? ""
   );
@@ -239,7 +242,7 @@ export function DockerDeployer({
                 setImageTouched(true);
                 setImage(event.currentTarget.value);
               }}
-              placeholder="ghcr.io/org/image:tag"
+              placeholder="image:tag"
               value={image}
             />
             {visibleImageError ? (
