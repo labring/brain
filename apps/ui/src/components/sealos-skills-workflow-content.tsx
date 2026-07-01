@@ -37,12 +37,14 @@ export const SEALOS_SKILLS_FLOW_STEPS = [
   {
     description:
       "After deployment is complete, an accessible domain will be returned automatically.",
-    title: "7. Automatically Deploy and Generate an Accessible Domain",
+    title: "6. Automatically Deploy and Generate an Accessible Domain",
   },
 ] as const;
 
 function SealosSkillsInstallCommandRow({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
+  const [copyButtonFocused, setCopyButtonFocused] = useState(false);
+  const isCommandHighlighted = copied || copyButtonFocused;
 
   const copyCommand = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard) {
@@ -61,26 +63,40 @@ function SealosSkillsInstallCommandRow({ command }: { command: string }) {
 
   return (
     <div
-      className="flex h-10 items-center gap-1 overflow-hidden rounded-md bg-input/30 px-3 py-2"
+      className={cn(
+        "group flex h-10 items-center gap-1 overflow-hidden rounded-md bg-input/30 px-3 py-2 transition-colors hover:bg-input",
+        isCommandHighlighted && "bg-input"
+      )}
       data-slot="sealos-skills-install-command"
     >
-      <p className="min-w-0 flex-1 truncate font-normal text-muted-foreground text-sm leading-5">
+      <p
+        className={cn(
+          "min-w-0 flex-1 truncate font-normal text-muted-foreground text-sm leading-5 transition-colors group-hover:text-foreground",
+          isCommandHighlighted && "text-foreground"
+        )}
+      >
         {command}
       </p>
       <AppIconButton
         aria-label={copied ? "Copied install command" : "Copy install command"}
-        className="shrink-0"
+        className={cn(
+          "shrink-0 text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:bg-transparent group-hover:text-foreground",
+          isCommandHighlighted && "text-foreground"
+        )}
+        data-copied={copied}
+        onBlur={() => setCopyButtonFocused(false)}
         onClick={() => {
           copyCommand().catch(() => undefined);
         }}
+        onFocus={() => setCopyButtonFocused(true)}
         size="sm"
         type="button"
         variant="quiet"
       >
         {copied ? (
-          <Check aria-hidden className="size-4 text-foreground" />
+          <Check aria-hidden className="size-4" />
         ) : (
-          <Copy aria-hidden className="size-4 text-foreground" />
+          <Copy aria-hidden className="size-4" />
         )}
       </AppIconButton>
     </div>
