@@ -578,6 +578,32 @@ A Side Pane is distinct from the Project Assistant Pane: the Project Assistant P
 
 The persistent right-side project layout region that hosts assistant chat and related chat controls. It can trigger Side Panes, but is not itself a Side Pane.
 
+### Chat Billing Mode
+
+Who pays for one assistant model call: `free` spends a Free Chat Turn funded by the platform, `user` bills the caller's AI Proxy. The mode is decided per turn — `free` while Free Chat Turns remain and a platform model is configured, otherwise `user` — and the handoff from `free` to `user` is automatic rather than a separate user action.
+
+Chat Billing Mode, not the Free Chat Turns count, is the reliable signal for whether the caller is being charged. Because `free` also requires a configured platform model, a namespace with no platform model bills `user` from its first turn while its Free Chat Turns remain unspent; a `user` turn therefore does not imply Free Chat Turns are exhausted. Surfaces that present this state lead with Chat Billing Mode and only show the Free Chat Turns count while the mode is `free`.
+
+_Avoid_: subscription tier, plan, quota mode.
+
+### Free Chat Turns
+
+A platform-funded allowance of assistant turns granted per namespace, consumed only after a turn completes successfully. Free Chat Turns are an entitlement counter, not a rate limit or a cap on AI Proxy usage.
+
+_Avoid_: free tier, trial credits, message quota.
+
+### AI Proxy
+
+The per-cluster, OpenAI-compatible gateway (Sealos `aiproxy`) that serves user-billed assistant turns and charges the user's own cluster account. It is reached at the cluster's `aiproxy` host and is distinct from its `aiproxy-web` token-management sibling.
+
+_Avoid_: model provider, LLM backend, OpenAI.
+
+### AI Proxy Token
+
+A user-scoped API key minted from the caller's kubeconfig through the `aiproxy-web` token endpoint so a `user`-billed turn can call the AI Proxy. An AI Proxy Token authorizes and bills one user; it is neither a platform credential nor the kubeconfig itself.
+
+_Avoid_: system token, platform key, service account token.
+
 ### Connecting Edge
 
 A temporary canvas interaction created when a user drags a line between canvas nodes. A Connecting Edge may become a domain command only when its endpoints match a supported resource relationship, regardless of drag direction.

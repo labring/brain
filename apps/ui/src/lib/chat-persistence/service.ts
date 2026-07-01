@@ -2,6 +2,7 @@ import "server-only";
 
 import { generateId, type generateText, type UIMessage } from "ai";
 
+import { getFreeTierSnapshot, isSystemOpenAiConfigured } from "./free-tier";
 import {
   insertThread,
   selectMessagesByThread,
@@ -77,10 +78,18 @@ export async function bootstrapAssistantSession(
   if (!latest) {
     throw new Error("Failed to bootstrap assistant chat thread");
   }
+  const snapshot = await getFreeTierSnapshot(key);
+  const billing =
+    snapshot.remaining > 0 && isSystemOpenAiConfigured() ? "free" : "user";
   return {
     chatId: latest.id,
     messages: await selectMessagesByThread(latest.id),
     threads: toThreadDTOs(rows),
+    freeTier: {
+      billing,
+      remaining: snapshot.remaining,
+      limit: snapshot.limit,
+    },
   };
 }
 

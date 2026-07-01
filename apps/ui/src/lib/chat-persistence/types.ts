@@ -28,9 +28,17 @@ export const assistantThreadDTOSchema = z.object({
   updatedAt: z.string(),
 }) satisfies z.ZodType<AssistantThreadDTO>;
 
+/** Read-side snapshot of a namespace's chat billing posture, seeded into the pane on load. */
+export interface FreeTierState {
+  billing: "free" | "user";
+  limit: number;
+  remaining: number;
+}
+
 /** Bootstrap payload returned by `GET /api/chat/session`. */
 export interface AssistantSessionPayload {
   chatId: string;
+  freeTier: FreeTierState;
   messages: UIMessage[];
   threads: AssistantThreadDTO[];
 }

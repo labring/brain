@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { Chat } from "@/features/project-assistant/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/project-assistant/chat/chat.types";
+import { FreeTurnsIndicator } from "@/features/project-assistant/free-turns-indicator";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import {
   PROJECT_SELECTED_QUERY_KEY,
@@ -59,6 +60,7 @@ import type {
   AssistantContextPayload,
   AssistantSessionPayload,
   AssistantThreadDTO,
+  FreeTierState,
 } from "@/lib/chat-persistence/types";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
@@ -170,10 +172,12 @@ function buildAssistantContextPayload(
 
 function ProjectAssistantChatSession({
   bootstrap,
+  freeTier,
   creatingThread,
   threads,
   assistantNamespaceRaw,
   onAssistantStreamFinished,
+  onBillingHeaders,
   onDatabaseIntent,
   onDockerIntent,
   onCreateThread,
@@ -182,10 +186,12 @@ function ProjectAssistantChatSession({
   onSkillsIntent,
 }: {
   bootstrap: Pick<AssistantSessionPayload, "chatId" | "messages">;
+  freeTier: FreeTierState | null;
   creatingThread: boolean;
   threads: AssistantThreadDTO[];
   assistantNamespaceRaw: string;
   onAssistantStreamFinished?: () => Promise<void>;
+  onBillingHeaders: (headers: Headers) => void;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
   onCreateThread: () => Promise<void>;
@@ -232,10 +238,18 @@ function ProjectAssistantChatSession({
     selected,
   };
 
+  const billingHandlerRef = useRef(onBillingHeaders);
+  billingHandlerRef.current = onBillingHeaders;
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
+        fetch: async (input, init) => {
+          const response = await fetch(input, init);
+          billingHandlerRef.current(response.headers);
+          return response;
+        },
         prepareSendMessagesRequest: ({
           api,
           body,
@@ -466,6 +480,14 @@ function ProjectAssistantChatSession({
           messages={messages}
           status={status}
         />
+        {freeTier?.billing === "free" ? (
+          <div className="shrink-0 px-[10px] pt-1">
+            <FreeTurnsIndicator
+              limit={freeTier.limit}
+              remaining={freeTier.remaining}
+            />
+          </div>
+        ) : null}
         <div className="group flex w-full shrink-0 flex-col p-[10px]">
           <div className="relative isolate w-full">
             {composerContextToggles.length > 0 ? (
@@ -519,11 +541,15 @@ function ProjectAssistantChatPane() {
   const [creatingThread, setCreatingThread] = useState(false);
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
+  const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
+  const prevBillingRef = useRef<"free" | "user" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setSession(null);
     setSessionError(false);
+    setFreeTier(null);
+    prevBillingRef.current = null;
 
     fetchAssistantSession(namespaceRaw).then((payload) => {
       if (cancelled) {
@@ -534,12 +560,40 @@ function ProjectAssistantChatPane() {
         return;
       }
       setSession(payload);
+      setFreeTier(payload.freeTier);
+      prevBillingRef.current = payload.freeTier.billing;
     });
 
     return () => {
       cancelled = true;
     };
   }, [namespaceRaw]);
+
+  const handleBillingHeaders = useCallback((headers: Headers) => {
+    const billingHeader = headers.get("X-Chat-Billing");
+    if (billingHeader !== "free" && billingHeader !== "user") {
+      return;
+    }
+    const remaining = Number.parseInt(
+      headers.get("X-Chat-Free-Remaining") ?? "",
+      10
+    );
+    const limit = Number.parseInt(headers.get("X-Chat-Free-Limit") ?? "", 10);
+    setFreeTier((prev) => {
+      if (Number.isFinite(remaining) && Number.isFinite(limit)) {
+        return { billing: billingHeader, remaining, limit };
+      }
+      return prev == null
+        ? { billing: billingHeader, remaining: 0, limit: 0 }
+        : { ...prev, billing: billingHeader };
+    });
+    if (prevBillingRef.current === "free" && billingHeader === "user") {
+      toast.info("Free assistant allowance used up", {
+        description: "Further messages now use your own AI Proxy balance.",
+      });
+    }
+    prevBillingRef.current = billingHeader;
+  }, []);
 
   const selectThread = useCallback(
     async (threadId: string) => {
@@ -567,11 +621,16 @@ function ProjectAssistantChatPane() {
       if (created == null) {
         return;
       }
-      setSession({
-        chatId: created.chatId,
-        messages: [],
-        threads: created.threads,
-      });
+      setSession((prev) =>
+        prev == null
+          ? prev
+          : {
+              chatId: created.chatId,
+              messages: [],
+              threads: created.threads,
+              freeTier: prev.freeTier,
+            }
+      );
     } finally {
       setCreatingThread(false);
     }
@@ -633,8 +692,10 @@ function ProjectAssistantChatPane() {
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
       creatingThread={creatingThread}
+      freeTier={freeTier}
       key={session.chatId}
       onAssistantStreamFinished={refreshThreads}
+      onBillingHeaders={handleBillingHeaders}
       onCreateThread={createThread}
       onDatabaseIntent={openDatabaseIntent}
       onDockerIntent={openDockerIntent}
