@@ -190,7 +190,6 @@ function AppSidebarUpgrade() {
       <PopoverTrigger
         render={
           <AppIconButton
-            aria-expanded={open}
             aria-label="Upgrade"
             className={APP_SIDEBAR_LINK_CLASS}
             size="lg"

@@ -84,6 +84,12 @@ An AP-owned configuration file mounted into the application runtime through AP S
 
 _Avoid_: ConfigMap, Config Files, configuration map.
 
+### AP Storage Mount
+
+A persistent volume an AP owns at one absolute container path, where the application's own data is kept across restarts and redeploys. An AP has zero or more AP Storage Mounts; each mount path is unique and fixed once created, and a mount's capacity can grow but never shrink. Distinct from an AP Configuration File, which mounts user-authored file content rather than application-written data.
+
+_Avoid_: Volume, PVC, disk, persistent storage, storage size.
+
 ### AP Network Settings
 
 The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings. Private Addresses and Public Addresses are two views of the same AP Network Settings: Public Address changes may add App Listening Ports as part of the same Settings Draft.
@@ -116,7 +122,7 @@ _Avoid_: Settings Section, Settings View, form tab, API field group.
 
 ### Docker Deployment Settings
 
-The creation-time choices for a new AP before the AP exists, including Docker image, runtime environment variables, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
+The creation-time choices for a new AP before the AP exists, including Docker image, container launch command and arguments override, runtime environment variables, AP Configuration Files, AP Storage Mounts, App Listening Port, and whether to request a Platform Address. Docker Deployment Settings create an AP workload from an existing image, are independent of entry path, and should use Public Address or Network language rather than Ingress language in user-facing surfaces.
 
 ### Deployment Task
 
@@ -571,6 +577,32 @@ A Side Pane is distinct from the Project Assistant Pane: the Project Assistant P
 ### Project Assistant Pane
 
 The persistent right-side project layout region that hosts assistant chat and related chat controls. It can trigger Side Panes, but is not itself a Side Pane.
+
+### Chat Billing Mode
+
+Who pays for one assistant model call: `free` spends a Free Chat Turn funded by the platform, `user` bills the caller's AI Proxy. The mode is decided per turn — `free` while Free Chat Turns remain and a platform model is configured, otherwise `user` — and the handoff from `free` to `user` is automatic rather than a separate user action.
+
+Chat Billing Mode, not the Free Chat Turns count, is the reliable signal for whether the caller is being charged. Because `free` also requires a configured platform model, a namespace with no platform model bills `user` from its first turn while its Free Chat Turns remain unspent; a `user` turn therefore does not imply Free Chat Turns are exhausted. Surfaces that present this state lead with Chat Billing Mode and only show the Free Chat Turns count while the mode is `free`.
+
+_Avoid_: subscription tier, plan, quota mode.
+
+### Free Chat Turns
+
+A platform-funded allowance of assistant turns granted per namespace, consumed only after a turn completes successfully. Free Chat Turns are an entitlement counter, not a rate limit or a cap on AI Proxy usage.
+
+_Avoid_: free tier, trial credits, message quota.
+
+### AI Proxy
+
+The per-cluster, OpenAI-compatible gateway (Sealos `aiproxy`) that serves user-billed assistant turns and charges the user's own cluster account. It is reached at the cluster's `aiproxy` host and is distinct from its `aiproxy-web` token-management sibling.
+
+_Avoid_: model provider, LLM backend, OpenAI.
+
+### AI Proxy Token
+
+A user-scoped API key minted from the caller's kubeconfig through the `aiproxy-web` token endpoint so a `user`-billed turn can call the AI Proxy. An AI Proxy Token authorizes and bills one user; it is neither a platform credential nor the kubeconfig itself.
+
+_Avoid_: system token, platform key, service account token.
 
 ### Connecting Edge
 

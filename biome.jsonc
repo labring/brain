@@ -103,6 +103,14 @@
           "style": { "useGraphqlNamingConvention": "off" }
         }
       }
+    },
+    {
+      // Vendored upstream K8s quantity port (see packages/shared/src/vendor/*/VENDOR.md);
+      // kept byte-identical to upstream, so exclude from formatting, linting, and assists.
+      "includes": ["packages/shared/src/vendor/**"],
+      "formatter": { "enabled": false },
+      "linter": { "enabled": false },
+      "assist": { "enabled": false }
     }
   ]
 }
