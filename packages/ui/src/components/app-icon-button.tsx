@@ -9,14 +9,14 @@ const appIconButtonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover aria-expanded:bg-brand-primary-hover data-[state=open]:bg-brand-primary-hover",
+          "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover data-popup-open:bg-brand-primary-hover",
         secondary:
-          "bg-input/30 text-brand-primary-foreground hover:bg-input aria-expanded:bg-input data-[state=open]:bg-input",
+          "bg-input/30 text-brand-primary-foreground hover:bg-input data-popup-open:bg-input",
         quiet:
-          "bg-transparent text-brand-primary-foreground hover:bg-input/30 aria-expanded:bg-input/30 aria-[current=page]:bg-input data-[active=true]:bg-input data-[state=open]:bg-input/30",
-        node: "bg-zinc-950/20 text-brand-primary-foreground hover:bg-input/30 aria-expanded:bg-input aria-expanded:text-blue-400 data-[state=open]:bg-input data-popup-open:bg-input data-[state=open]:text-blue-400 data-popup-open:text-blue-400",
+          "bg-transparent text-brand-primary-foreground hover:bg-input/30 aria-[current=page]:bg-input data-[active=true]:bg-input data-popup-open:bg-input/30",
+        node: "bg-zinc-950/20 text-brand-primary-foreground hover:bg-input data-popup-open:bg-input data-popup-open:text-blue-400",
         danger:
-          "bg-input/30 text-foreground hover:bg-input hover:text-red-500 focus-visible:border-destructive/40 focus-visible:ring-destructive/25 aria-expanded:bg-input aria-expanded:text-red-500 data-[state=open]:bg-input data-[state=open]:text-red-500",
+          "bg-input/30 text-foreground hover:bg-input hover:text-red-500 focus-visible:border-destructive/40 focus-visible:ring-destructive/25 data-popup-open:bg-input data-popup-open:text-red-500",
       },
       size: {
         sm: "size-7 [&_svg:not([class*='size-'])]:size-3.5",
