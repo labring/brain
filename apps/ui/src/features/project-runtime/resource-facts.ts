@@ -249,22 +249,18 @@ function dbStatusSummary(
 }
 
 function dbCapacitySummary(
-  status: Record<string, unknown>
+  spec: Record<string, unknown>
 ): DbFact["capacitySummary"] {
-  const effectiveResources = asRecord(status.effectiveResources);
-  if (effectiveResources === undefined) {
-    return undefined;
-  }
   const capacity = {
-    ...(nonEmptyString(effectiveResources.cpuLimit) === undefined
+    ...(nonEmptyString(spec.cpuLimit) === undefined
       ? {}
-      : { cpu: nonEmptyString(effectiveResources.cpuLimit) }),
-    ...(nonEmptyString(effectiveResources.memoryLimit) === undefined
+      : { cpu: nonEmptyString(spec.cpuLimit) }),
+    ...(nonEmptyString(spec.memoryLimit) === undefined
       ? {}
-      : { memory: nonEmptyString(effectiveResources.memoryLimit) }),
-    ...(nonEmptyString(effectiveResources.storageSize) === undefined
+      : { memory: nonEmptyString(spec.memoryLimit) }),
+    ...(nonEmptyString(spec.storageSize) === undefined
       ? {}
-      : { storage: nonEmptyString(effectiveResources.storageSize) }),
+      : { storage: nonEmptyString(spec.storageSize) }),
   };
   return Object.keys(capacity).length === 0 ? undefined : capacity;
 }
@@ -284,7 +280,7 @@ function dbFactFromResource(
 
   const ref: DbFact["ref"] = { kind: "DB", name, namespace };
   const engineKey = nonEmptyString(spec.engine);
-  const capacitySummary = dbCapacitySummary(status);
+  const capacitySummary = dbCapacitySummary(spec);
   const labels = metadataLabels(db);
   return {
     ...(capacitySummary === undefined ? {} : { capacitySummary }),

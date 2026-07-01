@@ -53,6 +53,7 @@ function DatabaseMetricCard({
   series: MetricDataPoint[];
 }) {
   const percent = latestPercent(series, fallback);
+  const reading = metricReading({ capacity, kind: metric, percent });
 
   return (
     <section
@@ -69,9 +70,11 @@ function DatabaseMetricCard({
               {label}
             </h3>
           </div>
-          <p className="shrink-0 text-foreground text-sm leading-5">
-            {metricReading({ capacity, kind: metric, percent })}
-          </p>
+          {reading === undefined ? null : (
+            <p className="shrink-0 text-foreground text-sm leading-5">
+              {reading}
+            </p>
+          )}
         </div>
         <div className="flex min-w-0 justify-between gap-3 text-sm leading-5">
           <p className="truncate text-muted-foreground">
@@ -123,6 +126,7 @@ function DatabaseStorageCard({
   series: MetricDataPoint[];
 }) {
   const percent = latestPercent(series, fallback);
+  const reading = metricReading({ capacity, kind: "storage", percent });
 
   return (
     <section className="flex min-w-0 flex-col gap-6 rounded-lg bg-white/5 p-4">
@@ -137,9 +141,11 @@ function DatabaseStorageCard({
               Storage
             </h3>
           </div>
-          <p className="shrink-0 text-foreground text-sm leading-5">
-            {metricReading({ capacity, kind: "storage", percent })}
-          </p>
+          {reading === undefined ? null : (
+            <p className="shrink-0 text-foreground text-sm leading-5">
+              {reading}
+            </p>
+          )}
         </div>
         <div className="flex min-w-0 justify-between gap-3 text-sm leading-5">
           <p className="truncate text-muted-foreground">

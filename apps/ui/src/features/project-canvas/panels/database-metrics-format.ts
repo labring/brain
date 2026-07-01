@@ -99,13 +99,7 @@ function formatCpuCapacity(capacity: string) {
   return cores === undefined ? capacity : formatCpuCores(cores);
 }
 
-function formatCpuReading(
-  capacity: string | undefined,
-  percent: number | undefined
-) {
-  if (capacity === undefined) {
-    return "-- / --";
-  }
+function formatCpuReading(capacity: string, percent: number | undefined) {
   const formattedCapacity = formatCpuCapacity(capacity);
   const cores = parseCpuCores(capacity);
   if (cores === undefined || percent === undefined) {
@@ -157,13 +151,7 @@ function formatBinaryQuantity(valueMi: number) {
   return `${ONE_DECIMAL_FORMATTER.format(valueMi / 1024)}Gi`;
 }
 
-function formatQuantityReading(
-  capacity: string | undefined,
-  percent: number | undefined
-) {
-  if (capacity === undefined) {
-    return "-- / --";
-  }
+function formatQuantityReading(capacity: string, percent: number | undefined) {
   const capacityMi = parseMiQuantity(capacity);
   if (capacityMi === undefined) {
     return `-- / ${capacity}`;
@@ -183,7 +171,10 @@ export function metricReading({
   capacity: string | undefined;
   kind: DatabaseNodeMetricKey;
   percent: number | undefined;
-}) {
+}): string | undefined {
+  if (capacity === undefined) {
+    return undefined;
+  }
   if (kind === "cpu") {
     return formatCpuReading(capacity, percent);
   }
