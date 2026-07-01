@@ -123,7 +123,30 @@ export const githubConnections = ns.table(
   ]
 );
 
+export const githubAppInstallSessions = ns.table(
+  "github_app_install_sessions",
+  {
+    state: text("state").primaryKey(),
+    namespace: text("namespace").notNull(),
+    returnPath: text("return_path"),
+    userId: text("user_id").notNull(),
+    expiresAt: timestamp("expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("github_app_install_sessions_expires_at_idx").on(table.expiresAt),
+    index("github_app_install_sessions_namespace_idx").on(table.namespace),
+  ]
+);
+
 export type AssistantChatRow = typeof assistantChats.$inferSelect;
 export type AssistantChatMessageRow = typeof assistantChatMessages.$inferSelect;
 export type AssistantEntitlementRow = typeof assistantEntitlements.$inferSelect;
+export type GithubAppInstallSessionRow =
+  typeof githubAppInstallSessions.$inferSelect;
 export type GithubConnectionRow = typeof githubConnections.$inferSelect;

@@ -13,10 +13,7 @@ import {
   updateProject,
 } from "@/lib/project-persistence/projects";
 import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
-import {
-  fetchServerCredentials,
-  hasDevCredentialBypass,
-} from "@/lib/server-credentials";
+import { hasDevCredentialBypass } from "@/lib/server-credentials";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -151,9 +148,7 @@ export async function DELETE(request: NextRequest) {
     if (authorization.denied !== null) {
       return authorization.denied;
     }
-    const encodedKubeconfig =
-      authorization.encodedKubeconfig ||
-      (await fetchServerCredentials()).serverEncodedKubeconfig;
+    const encodedKubeconfig = authorization.encodedKubeconfig;
     if (encodedKubeconfig.trim() === "") {
       return jsonError("Authentication is required.", 401);
     }

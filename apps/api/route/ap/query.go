@@ -40,14 +40,8 @@ func registerGet(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}

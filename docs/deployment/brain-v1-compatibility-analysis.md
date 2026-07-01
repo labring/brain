@@ -35,13 +35,6 @@ v2 source:
 - Repository checkout: `/Users/jingyang/work/brain`
 - Current working tree was dirty before this document was added; this analysis did not modify existing code.
 
-Runtime evidence:
-
-- Cluster: `usw`
-- Kubeconfig: `/Users/jingyang/.kube/sealos-usw-admin`
-- Context: `sealos-usw-admin`
-- Brain production namespace observed: `brain-system`
-
 ## v1 Resource Model
 
 ### Project
@@ -574,4 +567,3 @@ Read-only compatibility is correct when:
 4. A random Launchpad Deployment with only `cloud.sealos.io/app-deploy-manager` is not treated as Brain-owned.
 5. Mutating AP endpoints reject legacy resources before import with a clear `requires import` error.
 6. After import/backfill, the same resource carries both v1 and v2 labels and is visible through the strict v2 AP selector.
-

@@ -37,14 +37,12 @@ type GetOptions struct {
 	Resource string
 	// Name is the resource name. If empty, lists all resources of the type.
 	Name string
-	// Namespace limits results to this namespace. Empty uses kubeconfig current context; if not set, uses all namespaces.
+	// Namespace limits results to this namespace. Empty uses kubeconfig current context or default.
 	Namespace string
 	// LabelSelector filters by labels (e.g. "app=nginx").
 	LabelSelector string
 	// FieldSelector filters by fields (e.g. "metadata.name=my-pod").
 	FieldSelector string
-	// AllNamespaces when true lists across all namespaces (like kubectl get pods -A).
-	AllNamespaces bool
 }
 
 type UnknownResourceError struct {
@@ -69,8 +67,7 @@ func IsUnknownResourceError(err error, resource string) bool {
 func Get(cfg *clientcmdapi.Config, opts GetOptions) ([]byte, error) {
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
-		AllNamespaces:    opts.AllNamespaces,
-		DefaultNamespace: corev1.NamespaceAll,
+		DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return nil, err
@@ -97,13 +94,7 @@ func Get(cfg *clientcmdapi.Config, opts GetOptions) ([]byte, error) {
 	}
 
 	ns := resolvedCtx.Namespace
-	if namespaced {
-		if opts.AllNamespaces {
-			ns = corev1.NamespaceAll
-		} else if ns == "" {
-			ns = corev1.NamespaceAll
-		}
-	} else {
+	if !namespaced {
 		ns = ""
 	}
 

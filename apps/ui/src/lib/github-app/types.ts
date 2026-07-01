@@ -1,6 +1,5 @@
 /**
  * Client + server safe public surface of the GitHub App install module.
- * Cookie names and node-only helpers live in sibling files.
  */
 
 /** Must match the GitHub App's registered setup callback URL. */
@@ -14,7 +13,7 @@ export const GITHUB_APP_INSTALL_COMPLETE_PATH =
 export const GITHUB_APP_INSTALL_COMPLETE_MESSAGE =
   "github-app-install-complete" as const;
 
-/** Max length for path + search stored in install return cookie / `next` query. */
+/** Max length for path + search stored in pending install session / `next` query. */
 export const MAX_INSTALL_RETURN_PATH_LEN = 2048;
 
 /** Conservative namespace format accepted from the browser during install. */

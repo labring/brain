@@ -268,14 +268,8 @@ func accessObjectsServiceFromAuthWithTimeout(authorization, namespace, projectID
 	if strings.TrimSpace(projectID) == "" {
 		return "", dbsvc.AccessObjectsService{}, huma.Error400BadRequest("Brain Project ID is required", nil)
 	}
-
-	gvr := middleware.PodsGVR()
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-		Namespace:        namespace,
-		AllNamespaces:    false,
-		DefaultNamespace: "",
-		AdminCheckGVR:    &gvr,
-	})
+		Namespace: namespace, DefaultNamespace: ""})
 	if err != nil {
 		return "", dbsvc.AccessObjectsService{}, huma.Error500InternalServerError("failed to resolve request context", err)
 	}

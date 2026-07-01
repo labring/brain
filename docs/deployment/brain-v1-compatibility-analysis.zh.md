@@ -35,13 +35,6 @@ v2 代码：
 - 当前仓库：`/Users/jingyang/work/brain`
 - 分析前工作树已有未提交改动；本文档只新增文档，没有修改现有代码。
 
-线上证据：
-
-- 集群：`usw`
-- Kubeconfig：`/Users/jingyang/.kube/sealos-usw-admin`
-- Context：`sealos-usw-admin`
-- Brain 生产 namespace：`brain-system`
-
 ## v1 资源模型
 
 ### Project
@@ -574,4 +567,3 @@ v1 通常只给用户选择的顶层资源 patch 项目成员 label。Service/In
 4. 只有 `cloud.sealos.io/app-deploy-manager` 的普通 Launchpad Deployment 不会被当作 Brain-owned。
 5. import 前，AP mutation endpoints 对 legacy 资源返回清晰的 `requires import` 错误。
 6. import/backfill 后，同一资源同时保留 v1 labels 和 v2 labels，并能通过严格 v2 AP selector 被发现。
-

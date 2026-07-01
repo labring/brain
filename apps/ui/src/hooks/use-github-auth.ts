@@ -5,7 +5,6 @@ import { useCallback } from "react";
 import useSWR from "swr";
 
 import {
-  GITHUB_APP_INSTALL_CALLBACK_PATH,
   GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
   parseInstallNamespaceParam,
   parseInstallReturnPathParam,
@@ -97,8 +96,9 @@ async function deleteConnection(
 async function createInstallSession(
   namespace: string,
   kubeconfig: string,
-  userId: string
-): Promise<void> {
+  userId: string,
+  returnPath: string
+): Promise<{ installUrl: string }> {
   const response = await fetch("/api/github/install-session", {
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
@@ -106,12 +106,18 @@ async function createInstallSession(
     body: JSON.stringify({
       encodedKubeconfig: encodeURIComponent(kubeconfig),
       namespace,
+      returnPath,
       userId,
     }),
   });
   if (!response.ok) {
     throw new Error(await response.text());
   }
+  const body = (await response.json()) as { installUrl?: unknown };
+  if (typeof body.installUrl !== "string" || body.installUrl.trim() === "") {
+    throw new Error("GitHub App install URL was not returned.");
+  }
+  return { installUrl: body.installUrl };
 }
 
 function centeredPopupFeatures(): string {
@@ -163,23 +169,14 @@ export function useGithubAuth(options?: {
 
   const initiateGithubAuth = useCallback(() => {
     const next = `${window.location.pathname}${window.location.search}`;
-    const url = new URL(
-      GITHUB_APP_INSTALL_CALLBACK_PATH,
-      window.location.origin
-    );
-    url.searchParams.set("next", next);
     const normalizedNamespace = parseInstallNamespaceParam(namespace);
-    if (normalizedNamespace) {
-      url.searchParams.set("namespace", normalizedNamespace);
-    }
     const openPopup = () => {
       const popup = window.open(
-        `${url.pathname}${url.search}`,
+        "about:blank",
         GITHUB_APP_INSTALL_POPUP_NAME,
         centeredPopupFeatures()
       );
       if (!popup) {
-        window.location.assign(`${url.pathname}${url.search}`);
         return null;
       }
       popup.focus();
@@ -218,7 +215,7 @@ export function useGithubAuth(options?: {
       refreshConnection();
     };
 
-    const start = async () => {
+    const start = async (popup: Window | null) => {
       if (
         kubeconfig.trim() === "" ||
         normalizedNamespace == null ||
@@ -228,11 +225,17 @@ export function useGithubAuth(options?: {
           "GitHub App installation requires workspace credentials and user ID."
         );
       }
-      await createInstallSession(normalizedNamespace, kubeconfig, userId);
-      const popup = openPopup();
+      const { installUrl } = await createInstallSession(
+        normalizedNamespace,
+        kubeconfig,
+        userId,
+        next
+      );
       if (popup == null) {
+        window.location.assign(installUrl);
         return;
       }
+      popup.location.replace(installUrl);
       window.addEventListener("message", handleMessage);
       closePoll = window.setInterval(() => {
         if (popup.closed) {
@@ -242,7 +245,9 @@ export function useGithubAuth(options?: {
       }, 1000);
     };
 
-    start().catch((startError: unknown) => {
+    const popup = openPopup();
+    start(popup).catch((startError: unknown) => {
+      popup?.close();
       console.error(
         "[github-app] failed to create install session:",
         startError

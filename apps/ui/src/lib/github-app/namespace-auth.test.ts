@@ -139,8 +139,7 @@ test("uses request bearer kubeconfig over empty server credentials", () => {
       credentialsWithRequestKubeconfig(
         new Request("https://brain.test/api/github/connection", {
           headers: { Authorization: `Bearer ${kubeconfig("ns-sdk")}` },
-        }),
-        { serverEncodedKubeconfig: "", serverNamespace: "" }
+        })
       )
     ),
     {
@@ -160,8 +159,7 @@ test("rejects request bearer kubeconfig namespace mismatch", () => {
       credentialsWithRequestKubeconfig(
         new Request("https://brain.test/api/github/connection", {
           headers: { Authorization: `Bearer ${kubeconfig("ns-a")}` },
-        }),
-        { serverEncodedKubeconfig: "", serverNamespace: "" }
+        })
       )
     ),
     {

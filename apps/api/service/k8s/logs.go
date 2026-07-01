@@ -39,8 +39,7 @@ func Logs(cfg *clientcmdapi.Config, opts LogsOptions, w io.Writer) error {
 
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
-		AllNamespaces:    false,
-		DefaultNamespace: "",
+		DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return err

@@ -23,11 +23,11 @@ func Register(grp huma.API) {
 func registerHealth(grp huma.API) {
 	huma.Register(grp, huma.Operation{
 		OperationID: "logs-health",
-		Method:     http.MethodGet,
-		Path:       "/logs/health",
-		Summary:    "Logs health",
+		Method:      http.MethodGet,
+		Path:        "/logs/health",
+		Summary:     "Logs health",
 		Description: "Health check for logs endpoints.",
-		Tags:       []string{"Logs"},
+		Tags:        []string{"Logs"},
 	}, func(ctx context.Context, input *struct{}) (*health.Output, error) {
 		resp := &health.Output{}
 		resp.Body.Status = "ok"
@@ -54,9 +54,9 @@ type queryOutput struct {
 func registerQuery(grp huma.API) {
 	huma.Register(grp, huma.Operation{
 		OperationID: "logs-query",
-		Method:     http.MethodGet,
-		Path:       "/logs",
-		Summary:    "Query logs",
+		Method:      http.MethodGet,
+		Path:        "/logs",
+		Summary:     "Query logs",
 		Description: `Query logs from VictoriaLogs.
 
 **Response format:** Map of key to log entries array.
@@ -95,7 +95,7 @@ func registerQuery(grp huma.API) {
 - All db logs: ?namespace=ns-abc&name=my-db&kind=db
 - Specific db container: ?namespace=ns-abc&name=my-db&kind=db&container=postgresql
 - With time range and search: ?namespace=ns-abc&name=my-app&kind=ap&start=1710000000&end=1710003600&limit=100&search=error`,
-		Tags:        []string{"Logs"},
+		Tags: []string{"Logs"},
 	}, func(ctx context.Context, input *queryInput) (*queryOutput, error) {
 		// Validate optional params
 		if input.Limit != "" {
@@ -130,13 +130,8 @@ func registerQuery(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}

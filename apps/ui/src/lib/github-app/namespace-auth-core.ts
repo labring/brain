@@ -2,7 +2,6 @@ import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
 import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
 import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
-import type { ServerCredentials } from "@/lib/server-credentials";
 
 export type GithubConnectionAuthorization =
   | {
@@ -16,10 +15,10 @@ export type GithubConnectionAuthorization =
 export function authorizeGithubConnectionIdentity(
   requestedNamespace: string | null | undefined,
   requestedUserId: string | null | undefined,
-  credentials: Pick<
-    ServerCredentials,
-    "serverEncodedKubeconfig" | "serverNamespace"
-  >
+  credentials: {
+    serverEncodedKubeconfig: string;
+    serverNamespace?: string;
+  }
 ): GithubConnectionAuthorization {
   const requested = requestedNamespace?.trim() ?? "";
   if (requested === "") {
@@ -57,7 +56,7 @@ export function authorizeGithubConnectionIdentity(
 
   const namespace =
     namespaceFromKubeconfigText(kubeconfig) ??
-    credentials.serverNamespace.trim();
+    (credentials.serverNamespace ?? "").trim();
   if (namespace === "") {
     return {
       error: "Could not resolve namespace from authenticated workspace.",
@@ -83,19 +82,13 @@ export function authorizeGithubConnectionIdentity(
   };
 }
 
-export function credentialsWithRequestKubeconfig(
-  request: Request,
-  credentials: Pick<
-    ServerCredentials,
-    "serverEncodedKubeconfig" | "serverNamespace"
-  >
-): Pick<ServerCredentials, "serverEncodedKubeconfig" | "serverNamespace"> {
+export function credentialsWithRequestKubeconfig(request: Request): {
+  serverEncodedKubeconfig: string;
+  serverNamespace: string;
+} {
   const requestEncodedKubeconfig = encodedKubeconfigFromRequest(request);
-  if (requestEncodedKubeconfig === "") {
-    return credentials;
-  }
   return {
     serverEncodedKubeconfig: requestEncodedKubeconfig,
-    serverNamespace: credentials.serverNamespace,
+    serverNamespace: "",
   };
 }

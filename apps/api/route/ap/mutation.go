@@ -111,13 +111,8 @@ spec:
 		}
 		ns := obj.GetNamespace()
 		if ns == "" {
-			gvr := middleware.PodsGVR()
 			resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-				Namespace:        "",
-				AllNamespaces:    false,
-				DefaultNamespace: "default",
-				AdminCheckGVR:    &gvr,
-			})
+				Namespace: "", DefaultNamespace: "default"})
 			if err != nil {
 				return nil, huma.Error500InternalServerError("failed to resolve namespace", err)
 			}
@@ -702,14 +697,8 @@ func registerDelete(grp huma.API) {
 		if input.Name == "" {
 			return nil, huma.Error400BadRequest("name is required", nil)
 		}
-
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
@@ -806,14 +795,8 @@ func registerRestart(grp huma.API) {
 		if name == "" {
 			return nil, huma.Error400BadRequest("name is required", nil)
 		}
-
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Body.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Body.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}

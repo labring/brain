@@ -237,13 +237,8 @@ func registerVersionRollback(grp huma.API) {
 }
 
 func resolveAPNamespace(cfg *clientcmdapi.Config, namespace string) (string, error) {
-	gvr := middleware.PodsGVR()
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-		Namespace:        namespace,
-		AllNamespaces:    false,
-		DefaultNamespace: "",
-		AdminCheckGVR:    &gvr,
-	})
+		Namespace: namespace, DefaultNamespace: ""})
 	if err != nil {
 		return "", err
 	}

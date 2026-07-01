@@ -3,17 +3,13 @@ import {
   handleProviderError,
   startAuthorize,
 } from "@/lib/github-app/service";
-import {
-  parseInstallNamespaceParam,
-  parseInstallReturnPathParam,
-} from "@/lib/github-app/types";
 
 export const runtime = "nodejs";
 
 /**
  * Single-handler GitHub App installation round-trip:
- *   - `?error=…`  → provider denied/failed; clean up cookies and bounce home.
- *   - no `?installation_id=` → first hop; persist state and redirect to GitHub App install.
+ *   - `?error=…`  → provider denied/failed; bounce home.
+ *   - no `?installation_id=` → reject direct entry; install starts from Desktop SDK session.
  *   - with `?installation_id=` → second hop; verify state, store installation, redirect.
  */
 export function GET(request: Request) {
@@ -23,10 +19,7 @@ export function GET(request: Request) {
   }
   const installationId = searchParams.get("installation_id");
   if (!installationId) {
-    return startAuthorize(request, {
-      namespace: parseInstallNamespaceParam(searchParams.get("namespace")),
-      returnPath: parseInstallReturnPathParam(searchParams.get("next")),
-    });
+    return startAuthorize();
   }
   return completeAuthorization(request, {
     installationId,

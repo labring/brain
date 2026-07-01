@@ -172,13 +172,10 @@ func authorizeTelemetryNamespaces(authHeader string, namespaces ...string) (stri
 		return "", huma.Error400BadRequest("invalid kubeconfig", err)
 	}
 
-	podsGVR := middleware.PodsGVR()
 	for _, namespace := range namespaces {
 		if _, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 			Namespace:        namespace,
-			AllNamespaces:    false,
 			DefaultNamespace: "",
-			AdminCheckGVR:    &podsGVR,
 		}); err != nil {
 			return "", huma.Error500InternalServerError("failed to resolve request context", err)
 		}

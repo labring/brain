@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { setInstallSessionCookies } from "@/lib/github-app/cookies";
 import { authorizeGithubConnectionIdentity } from "@/lib/github-app/namespace-auth-core";
+import { createGithubAppInstallSessionUrl } from "@/lib/github-app/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,6 +14,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     encodedKubeconfig?: unknown;
     namespace?: unknown;
+    returnPath?: unknown;
     userId?: unknown;
   } | null;
   const namespace = typeof body?.namespace === "string" ? body.namespace : "";
@@ -29,13 +30,16 @@ export async function POST(request: Request) {
     return jsonError(authorized.error, authorized.status);
   }
 
-  const response = NextResponse.json({
-    namespace: authorized.namespace,
-    userId: authorized.userId,
-  });
-  setInstallSessionCookies(response, {
+  const install = await createGithubAppInstallSessionUrl({
     encodedKubeconfig: authorized.serverEncodedKubeconfig,
+    namespace: authorized.namespace,
+    returnPath: typeof body?.returnPath === "string" ? body.returnPath : null,
     userId: authorized.userId,
   });
-  return response;
+  return NextResponse.json({
+    installUrl: install.installUrl,
+    namespace: authorized.namespace,
+    state: install.state,
+    userId: authorized.userId,
+  });
 }

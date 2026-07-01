@@ -141,7 +141,6 @@ Go API, 负责 Brain product API 和 Kubernetes access。
 - `apps/api/route/db`: `/api/db/v1alpha1`, DB list/get/create/update/delete/backup/restore/start/stop/restart/access。
 - `apps/api/route/k8s`: `/api/k8s/v1alpha1`, get/describe/logs/top/apply/delete/patch/scale/autoscale/rollout/exec。
 - `apps/api/route/logs`, `apps/api/route/metrics`, `apps/api/route/telemetry`: logs 和 metrics 查询面。
-- `apps/api/route/auth`: region token -> kubeconfig。
 
 服务层:
 
@@ -744,12 +743,10 @@ API:
 
 - `DATABASE_URL`
 - `DB_PUBLIC_HOST`
-- `SEALOS_DESKTOP_URL`
 - `WHODB_URL`
 - `VMSELECT_URL`
 - `VLSELECT_URL`
 - `VLSELECT_USERNAME`, `VLSELECT_PASSWORD`
-- `SEALOS_DESKTOP_SKIP_TLS_VERIFY`
 
 本地 env examples:
 
@@ -989,9 +986,9 @@ Telemetry/logs/metrics:
 
 Auth:
 
-- Route prefix: `/api/auth/v1alpha1`
-- Route/service: `apps/api/route/auth`, `apps/api/service/regiontoken`
-- 主要职责: region token / kubeconfig 相关能力, 不是用户身份系统。
+- 生产认证入口: Desktop iframe SDK 下发 `kubeconfig` 和 `user` 信息。
+- API 调用约定: UI 将 Desktop SDK kubeconfig 显式放入 `Authorization: Bearer <url-encoded kubeconfig>`。
+- Go API 解析该 kubeconfig 并交给 Kubernetes RBAC 判断资源权限；不再提供 region token -> kubeconfig 路由。
 
 ## 14.5 从用户动作反查代码入口
 

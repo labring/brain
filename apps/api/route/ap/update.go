@@ -136,14 +136,8 @@ func updateAP(ctx context.Context, req apUpdateRequest) (json.RawMessage, error)
 	if len(req.Body) == 0 {
 		return nil, apUpdateBadRequest("patch body is required", nil)
 	}
-
-	gvr := middleware.PodsGVR()
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-		Namespace:        req.Namespace,
-		AllNamespaces:    false,
-		DefaultNamespace: "",
-		AdminCheckGVR:    &gvr,
-	})
+		Namespace: req.Namespace, DefaultNamespace: ""})
 	if err != nil {
 		return nil, apUpdateInternal("failed to resolve request context", err)
 	}

@@ -359,9 +359,7 @@ func mapToUnstructured(obj map[string]interface{}) *unstructured.Unstructured {
 
 func restConfigAndNamespaceForDBBackup(cfg *clientcmdapi.Config, ns string) (*rest.Config, string, error) {
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-		Namespace:        ns,
-		AllNamespaces:    false,
-		DefaultNamespace: corev1.NamespaceDefault,
+		Namespace: ns, DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return nil, "", err

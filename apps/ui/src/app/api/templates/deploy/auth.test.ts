@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { BrainProject } from "@/lib/project-persistence/projects";
-import type { ServerCredentials } from "@/lib/server-credentials";
 import { authorizeTemplateDeployIdentity } from "./auth";
 
 function kubeconfig(namespace: string, user: string) {
@@ -39,11 +38,6 @@ const PROJECT: BrainProject = {
   updatedAt: "",
 };
 
-const SERVER_CREDENTIALS: ServerCredentials = {
-  serverEncodedKubeconfig: SERVER_KUBECONFIG,
-  serverNamespace: "ns-admin",
-};
-
 function authorize(
   input: Partial<Parameters<typeof authorizeTemplateDeployIdentity>[0]> = {}
 ) {
@@ -54,7 +48,6 @@ function authorize(
     encodedKubeconfig: SERVER_KUBECONFIG,
     namespace: "ns-admin",
     project: PROJECT,
-    serverCredentials: SERVER_CREDENTIALS,
     ...input,
   });
 }
@@ -83,10 +76,6 @@ test("template deploy dev bypass rejects arbitrary kubeconfig", () => {
     devBypass: true,
     devEncodedKubeconfig: SERVER_KUBECONFIG,
     encodedKubeconfig: CALLER_KUBECONFIG,
-    serverCredentials: {
-      serverEncodedKubeconfig: "",
-      serverNamespace: "",
-    },
   });
 
   assert.deepEqual(result, {

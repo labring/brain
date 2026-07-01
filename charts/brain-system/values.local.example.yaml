@@ -17,8 +17,6 @@ api:
     DATABASE_URL: ""
     # Public host used to render DB NodePort connection strings.
     DB_PUBLIC_HOST: "192.168.10.189.nip.io"
-    # Sealos Desktop base URL used to exchange region token for user kubeconfig.
-    SEALOS_DESKTOP_URL: "https://192.168.10.189.nip.io"
     WHODB_URL: "http://whodb.brain-system.svc:11000"
 
 ui:

@@ -89,13 +89,8 @@ func execWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		writeExecError(conn, "invalid kubeconfig")
 		return
 	}
-	gvr := middleware.PodsGVR()
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-		Namespace:        initMsg.Namespace,
-		AllNamespaces:    false,
-		DefaultNamespace: "",
-		AdminCheckGVR:    &gvr,
-	})
+		Namespace: initMsg.Namespace, DefaultNamespace: ""})
 	if err != nil {
 		writeExecError(conn, "failed to resolve Kubernetes context")
 		return

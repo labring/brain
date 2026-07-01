@@ -53,10 +53,7 @@ api:
     VMAUTH_SECRET_NAME: ""
     DATABASE_URL: ""
     DB_PUBLIC_HOST: ""
-    SEALOS_DESKTOP_URL: ""
     WHODB_URL: "http://whodb.brain-system.svc:11000"
-  staticEnv:
-    SEALOS_DESKTOP_SKIP_TLS_VERIFY: "1"
   resources:
     requests:
       cpu: 250m

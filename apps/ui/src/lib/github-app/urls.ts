@@ -62,7 +62,7 @@ export function getCallbackBaseUrl(request: Request): string {
 
 export function buildInstallPopupCompleteUrl(
   baseUrl: string,
-  storedReturnRaw: string | undefined
+  storedReturnRaw: string | null | undefined
 ): string {
   const doneUrl = new URL(
     GITHUB_APP_INSTALL_COMPLETE_PATH,

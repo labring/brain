@@ -45,10 +45,6 @@ async function authorizeTemplateDeploy(input: {
       encodedKubeconfig: input.encodedKubeconfig,
       namespace: input.namespace,
       project,
-      serverCredentials: {
-        serverEncodedKubeconfig: "",
-        serverNamespace: "",
-      },
     });
     return authorization.ok
       ? { denied: null, encodedKubeconfig: authorization.encodedKubeconfig }
@@ -63,10 +59,6 @@ async function authorizeTemplateDeploy(input: {
     encodedKubeconfig: input.encodedKubeconfig,
     namespace: input.namespace,
     project,
-    serverCredentials: {
-      serverEncodedKubeconfig: "",
-      serverNamespace: "",
-    },
   });
   return authorization.ok
     ? { denied: null, encodedKubeconfig: authorization.encodedKubeconfig }

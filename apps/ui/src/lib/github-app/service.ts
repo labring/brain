@@ -3,20 +3,17 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { fetchServerCredentials } from "@/lib/server-credentials";
 import {
   getGithubAppInstallationMetadata,
   getGithubAppMetadata,
 } from "./app-auth";
 import { upsertGithubAppConnection } from "./connection-service";
 import {
-  clearInstallCookies,
-  readCallbackCookies,
-  readInstallSessionCookies,
-  setAuthorizeCookies,
-} from "./cookies";
+  consumeGithubAppInstallSession,
+  createGithubAppInstallSession,
+} from "./install-session-service";
 import { authorizeGithubConnectionIdentity } from "./namespace-auth-core";
-import { parseInstallNamespaceParam } from "./types";
+import { parseInstallReturnPathParam } from "./types";
 import { buildInstallPopupCompleteUrl, getCallbackBaseUrl } from "./urls";
 
 const TRAILING_SLASH_RE = /\/+$/;
@@ -41,53 +38,46 @@ async function githubAppInstallUrl(state: string): Promise<string> {
   return url.toString();
 }
 
-/** Step 1 — persist namespace session and redirect to GitHub App installation. */
-export async function startAuthorize(
-  _request: Request,
-  options: { namespace: string | null; returnPath: string | null }
-): Promise<NextResponse> {
-  const serverCredentials = await fetchServerCredentials();
-  const { encodedKubeconfig, userId } = await readInstallSessionCookies();
-  if (encodedKubeconfig == null || userId == null) {
-    return jsonError(
-      "forbidden",
-      "GitHub App install session is required.",
-      401
-    );
-  }
+export async function createGithubAppInstallSessionUrl(input: {
+  encodedKubeconfig: string;
+  namespace: string;
+  returnPath: string | null;
+  userId: string;
+}): Promise<{ installUrl: string; state: string }> {
   const identity = authorizeGithubConnectionIdentity(
-    options.namespace,
-    userId,
-    {
-      serverEncodedKubeconfig: encodedKubeconfig,
-      serverNamespace: serverCredentials.serverNamespace,
-    }
+    input.namespace,
+    input.userId,
+    { serverEncodedKubeconfig: input.encodedKubeconfig }
   );
   if (!identity.ok) {
-    return jsonError("forbidden", identity.error, identity.status);
+    throw new Error(identity.error);
   }
 
   const state = randomUUID();
-  const response = NextResponse.redirect(await githubAppInstallUrl(state));
-  setAuthorizeCookies(response, {
+  await createGithubAppInstallSession({
     namespace: identity.namespace,
+    returnPath: parseInstallReturnPathParam(input.returnPath),
     state,
-    returnPath: options.returnPath,
     userId: identity.userId,
   });
-  return response;
+  return { installUrl: await githubAppInstallUrl(state), state };
 }
 
-/** Provider returned `?error=...` — clean up cookies and redirect home. */
-export async function handleProviderError(
-  request: Request
-): Promise<NextResponse> {
-  const baseUrl = getCallbackBaseUrl(request);
-  const { returnPath } = await readCallbackCookies();
-  const response = NextResponse.redirect(
-    buildInstallPopupCompleteUrl(baseUrl, returnPath)
+/** Direct callback entry is rejected; install must start from an authenticated Desktop SDK session. */
+export function startAuthorize(): NextResponse {
+  return jsonError(
+    "install_session_required",
+    "GitHub App installation must start from an authenticated Desktop SDK session.",
+    401
   );
-  clearInstallCookies(response);
+}
+
+/** Provider returned `?error=...` — redirect back to the opener. */
+export function handleProviderError(request: Request): NextResponse {
+  const baseUrl = getCallbackBaseUrl(request);
+  const response = NextResponse.redirect(
+    buildInstallPopupCompleteUrl(baseUrl, null)
+  );
   return response;
 }
 
@@ -100,9 +90,8 @@ export async function completeAuthorization(
     state: string | null;
   }
 ): Promise<NextResponse> {
-  const { state, encodedKubeconfig, namespace, returnPath, userId } =
-    await readCallbackCookies();
-  if (!state || state !== args.state) {
+  const session = await consumeGithubAppInstallSession(args.state ?? "");
+  if (session == null) {
     return jsonError(
       "invalid_state",
       "CSRF check failed. State mismatch or expired.",
@@ -118,31 +107,19 @@ export async function completeAuthorization(
     );
   }
 
-  const serverCredentials = await fetchServerCredentials();
-  const storedNamespace = parseInstallNamespaceParam(namespace ?? null);
-  const identity = authorizeGithubConnectionIdentity(storedNamespace, userId, {
-    serverEncodedKubeconfig:
-      encodedKubeconfig ?? serverCredentials.serverEncodedKubeconfig,
-    serverNamespace: serverCredentials.serverNamespace,
-  });
-  if (!identity.ok) {
-    return jsonError("forbidden", identity.error, identity.status);
-  }
-
   const installation = await getGithubAppInstallationMetadata(installationId);
   await upsertGithubAppConnection({
     accountLogin: installation.accountLogin,
     accountType: installation.accountType,
-    actorUserId: identity.userId,
+    actorUserId: session.userId,
     installationId,
-    namespace: identity.namespace,
+    namespace: session.namespace,
     repositorySelection: installation.repositorySelection,
   });
 
   const baseUrl = getCallbackBaseUrl(request);
   const response = NextResponse.redirect(
-    buildInstallPopupCompleteUrl(baseUrl, returnPath)
+    buildInstallPopupCompleteUrl(baseUrl, session.returnPath)
   );
-  clearInstallCookies(response);
   return response;
 }

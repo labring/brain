@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/discovery/cached/memory"
@@ -35,8 +36,7 @@ type DeleteOptions struct {
 func Delete(cfg *clientcmdapi.Config, opts DeleteOptions) ([]byte, error) {
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
-		AllNamespaces:    true,
-		DefaultNamespace: "",
+		DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return nil, err

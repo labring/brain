@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -51,8 +52,7 @@ func Autoscale(cfg *clientcmdapi.Config, opts AutoscaleOptions) ([]byte, error) 
 
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
-		AllNamespaces:    true,
-		DefaultNamespace: "",
+		DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return nil, err

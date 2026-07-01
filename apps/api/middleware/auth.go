@@ -8,11 +8,6 @@ import (
 	"net/url"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -72,23 +67,16 @@ func ConfigFromAuth(auth string) (*clientcmdapi.Config, error) {
 
 type ResolveOptions struct {
 	Namespace        string
-	AllNamespaces    bool
 	DefaultNamespace string
-	AdminCheckGVR    *schema.GroupVersionResource
 }
 
 type ResolvedContext struct {
 	RestConfig *rest.Config
 	Namespace  string
 	Server     string
-	IsAdmin    bool
 }
 
-func PodsGVR() schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-}
-
-// ResolveContext resolves rest config, effective namespace, server and optional admin status.
+// ResolveContext resolves rest config, effective namespace, and server.
 func ResolveContext(cfg *clientcmdapi.Config, opts ResolveOptions) (*ResolvedContext, error) {
 	restConfig, err := clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
@@ -109,59 +97,16 @@ func ResolveContext(cfg *clientcmdapi.Config, opts ResolveOptions) (*ResolvedCon
 		}
 	}
 
-	isAdmin := false
-	if opts.AdminCheckGVR != nil {
-		client, err := dynamic.NewForConfig(restConfig)
-		if err != nil {
-			return nil, err
-		}
-		_, err = client.Resource(*opts.AdminCheckGVR).Namespace(corev1.NamespaceAll).List(context.Background(), metav1.ListOptions{Limit: 1})
-		if err != nil {
-			if !apierrors.IsForbidden(err) {
-				return nil, err
-			}
-		} else {
-			isAdmin = true
-		}
-	}
-
 	ns := ""
-	if opts.AdminCheckGVR != nil {
-		if isAdmin {
-			if opts.Namespace != "" {
-				ns = opts.Namespace
-			} else if opts.AllNamespaces {
-				ns = corev1.NamespaceAll
-			} else if userNS != "" {
-				ns = userNS
-			} else {
-				ns = opts.DefaultNamespace
-			}
-		} else {
-			// Not cluster-admin: target namespace is enforced by Kubernetes RBAC.
-			// Prefer an explicit opts.Namespace when the route passes one (matches list/get UX
-			// where the UI selects a namespace independently of kubeconfig context).
-			if opts.Namespace != "" {
-				ns = opts.Namespace
-			} else if userNS != "" {
-				ns = userNS
-			} else if opts.AllNamespaces {
-				ns = corev1.NamespaceAll
-			} else {
-				ns = opts.DefaultNamespace
-			}
-		}
-	} else if opts.Namespace != "" {
+	if opts.Namespace != "" {
 		ns = opts.Namespace
 	} else if userNS != "" {
 		ns = userNS
-	} else if opts.AllNamespaces {
-		ns = corev1.NamespaceAll
 	} else {
 		ns = opts.DefaultNamespace
 	}
 
-	return &ResolvedContext{RestConfig: restConfig, Namespace: ns, Server: server, IsAdmin: isAdmin}, nil
+	return &ResolvedContext{RestConfig: restConfig, Namespace: ns, Server: server}, nil
 }
 
 // RestConfigFromAuth parses Authorization header and returns rest.Config and clientcmd Config.

@@ -1,7 +1,6 @@
 import { kubeconfigCredentialsMatch } from "@/lib/chat-runtime/kubeconfig-identity-core";
 import type { BrainProject } from "@/lib/project-persistence/projects";
 import { authorizeEncodedKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
-import type { ServerCredentials } from "@/lib/server-credentials";
 
 export type TemplateDeployAuthorization =
   | { ok: true; encodedKubeconfig: string }
@@ -14,7 +13,6 @@ export function authorizeTemplateDeployIdentity(input: {
   encodedKubeconfig: string;
   namespace: string;
   project: BrainProject | null;
-  serverCredentials: ServerCredentials;
 }): TemplateDeployAuthorization {
   if (input.devBypass) {
     if (
