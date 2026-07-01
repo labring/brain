@@ -2,8 +2,9 @@ import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-names
 
 export function applySealosSdkHydration(input: {
   language: { lng: string } | null;
-  session: { kubeconfig: string } | null;
+  session: { kubeconfig: string; user?: { id?: string } } | null;
   setDesktopLanguage: (language: string) => void;
+  setDesktopUserId: (userId: string) => void;
   setKubeconfig: (kubeconfig: string) => void;
   setNamespace: (namespace: string) => void;
 }) {
@@ -12,6 +13,7 @@ export function applySealosSdkHydration(input: {
   }
 
   const kubeconfig = input.session?.kubeconfig.trim() ?? "";
+  input.setDesktopUserId(input.session?.user?.id?.trim() ?? "");
   if (kubeconfig === "") {
     return;
   }

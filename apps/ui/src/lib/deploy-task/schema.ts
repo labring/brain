@@ -195,6 +195,8 @@ export const deployTasks = ns.table(
     // the app-level contract is the Brain Project ID.
     projectId: text("project_uid"),
     projectName: text("project_name"),
+    actorUserId: text("actor_user_id"),
+    githubConnectionId: text("github_connection_id"),
     prompt: text("prompt"),
     source: jsonb("source").notNull().$type<DeploymentTaskSource>(),
     target: jsonb("target").notNull().$type<DeploymentTaskTarget>(),

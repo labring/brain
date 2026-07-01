@@ -7,6 +7,7 @@ import {
   pgSchema,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 import { ASSISTANT_DB_SCHEMA } from "./types";
@@ -88,23 +89,17 @@ export const assistantEntitlements = ns.table(
   ]
 );
 
-export interface EncryptedSecretPayload {
-  ciphertext: string;
-  iv: string;
-  tag: string;
-  version: 1;
-}
-
 export const githubConnections = ns.table(
   "github_connections",
   {
-    namespace: text("namespace").primaryKey(),
-    githubLogin: text("github_login").notNull(),
-    scope: text("scope").notNull().default(""),
-    tokenType: text("token_type").notNull().default("bearer"),
-    encryptedAccessToken: jsonb("encrypted_access_token")
-      .notNull()
-      .$type<EncryptedSecretPayload>(),
+    id: text("id").primaryKey(),
+    namespace: text("namespace").notNull(),
+    type: text("type").notNull().default("github_app"),
+    installationId: text("installation_id").notNull(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull().default("User"),
+    repositorySelection: text("repository_selection").notNull().default("all"),
+    installedByUserId: text("installed_by_user_id").notNull(),
     revokedAt: timestamp("revoked_at", { mode: "date", withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", {
       mode: "date",
@@ -119,7 +114,12 @@ export const githubConnections = ns.table(
   },
   (table) => [
     index("github_connections_updated_at_idx").on(table.updatedAt),
-    index("github_connections_github_login_idx").on(table.githubLogin),
+    index("github_connections_namespace_updated_at_idx").on(
+      table.namespace,
+      table.updatedAt
+    ),
+    uniqueIndex("github_connections_namespace_unique_idx").on(table.namespace),
+    index("github_connections_installation_idx").on(table.installationId),
   ]
 );
 

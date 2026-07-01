@@ -82,6 +82,8 @@ async function createDeployTaskTables(pool: Pool): Promise<void> {
       namespace text not null,
       project_uid text,
       project_name text,
+      actor_user_id text,
+      github_connection_id text,
       prompt text,
       source jsonb not null,
       target jsonb not null,
@@ -159,6 +161,8 @@ async function migrateDeployTaskTableShape(
     alter table ${deployTasks} add column if not exists source jsonb;
     alter table ${deployTasks} add column if not exists target jsonb;
     alter table ${deployTasks} add column if not exists runner jsonb;
+    alter table ${deployTasks} add column if not exists actor_user_id text;
+    alter table ${deployTasks} add column if not exists github_connection_id text;
     alter table ${deployTasks} add column if not exists created_from text not null default 'api';
     alter table ${deployTasks} add column if not exists canvas_projection jsonb not null default '{}'::jsonb;
     alter table ${deployTasks} add column if not exists timeline_snapshot jsonb;

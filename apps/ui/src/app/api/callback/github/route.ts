@@ -2,34 +2,35 @@ import {
   completeAuthorization,
   handleProviderError,
   startAuthorize,
-} from "@/lib/github-oauth/service";
+} from "@/lib/github-app/service";
 import {
-  parseOAuthNamespaceParam,
-  parseOAuthReturnPathParam,
-} from "@/lib/github-oauth/types";
+  parseInstallNamespaceParam,
+  parseInstallReturnPathParam,
+} from "@/lib/github-app/types";
 
 export const runtime = "nodejs";
 
 /**
- * Single-handler OAuth round-trip:
+ * Single-handler GitHub App installation round-trip:
  *   - `?error=…`  → provider denied/failed; clean up cookies and bounce home.
- *   - no `?code=` → first hop; persist PKCE + state and redirect to GitHub authorize.
- *   - with `?code=` → second hop; verify state, exchange code, apply GHCR secret, redirect.
+ *   - no `?installation_id=` → first hop; persist state and redirect to GitHub App install.
+ *   - with `?installation_id=` → second hop; verify state, store installation, redirect.
  */
 export function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   if (searchParams.get("error")) {
     return handleProviderError(request);
   }
-  const code = searchParams.get("code");
-  if (!code) {
+  const installationId = searchParams.get("installation_id");
+  if (!installationId) {
     return startAuthorize(request, {
-      namespace: parseOAuthNamespaceParam(searchParams.get("namespace")),
-      returnPath: parseOAuthReturnPathParam(searchParams.get("next")),
+      namespace: parseInstallNamespaceParam(searchParams.get("namespace")),
+      returnPath: parseInstallReturnPathParam(searchParams.get("next")),
     });
   }
   return completeAuthorization(request, {
-    code,
+    installationId,
+    setupAction: searchParams.get("setup_action"),
     state: searchParams.get("state"),
   });
 }

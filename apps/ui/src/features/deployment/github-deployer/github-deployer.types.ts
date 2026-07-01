@@ -14,7 +14,7 @@ export interface GithubDeployerRepo {
 
 /**
  * Optional: hosts may dispatch this from `actions.onAuthorize` to coordinate in-page
- * “simulate OAuth” flows — the deployer does not dispatch it.
+ * simulated install flows — the deployer does not dispatch it.
  */
 export const GITHUB_DEPLOYER_AUTHORIZE_SIMULATE_EVENT =
   "agui:github-deployer:authorize" as const;

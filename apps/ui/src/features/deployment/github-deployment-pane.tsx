@@ -1,6 +1,7 @@
 "use client";
 
 import { SidePane } from "@workspace/ui/components/side-pane";
+import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
@@ -25,6 +26,7 @@ import { useGithubRepos } from "@/hooks/use-github-repos";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
+import { desktopUserIdAtom } from "@/store/auth-store";
 
 const GITHUB_MARK_PATH =
   "M12 2c5.5228 0 10 4.47715 10 10 0 4.5716 -3.0686 8.4239 -7.2578 9.6162v-3.0117c0 -0.7275 -0.1595 -1.4465 -0.4678 -2.1055 2.1883 -0.7822 4.2783 -2.4447 4.2783 -4.4355 0 -1.2663 -0.4671 -2.75174 -1.5127 -3.63186V6l-2.9462 0.98828c-0.6589 -0.16036 -1.3628 -0.24706 -2.0938 -0.24707 -0.731 0 -1.4349 0.08673 -2.09375 0.24707L6.95996 6v2.43164c-1.04555 0.88009 -1.51163 2.36566 -1.51172 3.63186 0 1.9907 2.08913 3.6533 4.27735 4.4355 -0.26358 0.5635 -0.41862 1.1711 -0.45801 1.7901 -0.13854 0.0283 -0.25191 0.0415 -0.34473 0.04 -0.20756 -0.0033 -0.36606 -0.06 -0.51953 -0.1562 -1.11532 -0.7 -1.54401 -1.9835 -3.05566 -2.1543 -0.19076 -0.0214 -0.3474 0.1371 -0.34766 0.3291 0 0.1922 0.15921 0.3423 0.34473 0.3925 1.44216 0.39 1.42755 3.2266 3.54785 3.2598 0.11976 0.0019 0.24101 -0.0069 0.36426 -0.0186v1.6348C5.06807 20.4236 2 16.5713 2 12 2 6.47715 6.47715 2 12 2";
@@ -43,6 +45,7 @@ export function GitHubDeploymentPane({
   projectId: string;
 }) {
   const projectIdTrimmed = projectId.trim();
+  const actorUserId = useAtomValue(desktopUserIdAtom).trim();
   const hasCurrentProject = projectIdTrimmed !== "";
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
@@ -53,6 +56,7 @@ export function GitHubDeploymentPane({
 
   const {
     disconnectGithubAuth,
+    githubConnectionId,
     initiateGithubAuth,
     isAuthorized,
     isLoading: authLoading,
@@ -101,7 +105,13 @@ export function GitHubDeploymentPane({
       try {
         const outcome = await runDeploymentTargetPipeline({
           adapters: deploymentAdapters,
-          credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
+          actorUserId,
+          credentialsReady:
+            kubeconfig.trim() !== "" &&
+            namespace.trim() !== "" &&
+            actorUserId !== "" &&
+            (githubConnectionId?.trim() ?? "") !== "",
+          githubConnectionId,
           namespace,
           request: {
             kind: "github",
@@ -137,7 +147,9 @@ export function GitHubDeploymentPane({
     },
     [
       currentProject.resourceName,
+      actorUserId,
       deploymentAdapters,
+      githubConnectionId,
       kubeconfig,
       namespace,
       onClose,

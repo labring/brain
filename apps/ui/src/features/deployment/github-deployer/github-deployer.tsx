@@ -562,14 +562,14 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
       ) : null}
       {showLockedRepositorySections ? (
         <GithubDeployerLockedSection
-          description="Please authorize your GitHub account before selecting a repository."
+          description="Install the GitHub App for this workspace before selecting a repository."
           icon={<GithubIcon className="size-4" />}
           title="Repository"
         />
       ) : null}
       {showRepositoryInput ? (
         <DeploymentSettings.Section
-          description="Select a repository from your GitHub account."
+          description="Select a repository from this workspace's GitHub App installation."
           icon={<GithubIcon className="size-4" />}
           title="Repository"
         >
@@ -583,7 +583,7 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** Compound GitHub OAuth + deploy repo picker; state comes from `Root`. */
+/** Compound GitHub App install + deploy repo picker; state comes from `Root`. */
 const GithubDeployerBase = Object.assign(GithubDeployerShell, {
   AuthButton: GithubDeployerAuthButton,
   Complete: GithubDeployerComplete,

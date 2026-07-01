@@ -157,6 +157,8 @@ test("Deployment Target pipeline creates a GitHub AI Deployment Task", async () 
     }),
     credentialsReady: true,
     existingProjects,
+    actorUserId: "admin",
+    githubConnectionId: "github-connection-1",
     namespace: "ns-admin",
     request: {
       kind: "github",
@@ -171,6 +173,8 @@ test("Deployment Target pipeline creates a GitHub AI Deployment Task", async () 
   });
 
   assert.deepEqual(created, {
+    actorUserId: "admin",
+    githubConnectionId: "github-connection-1",
     namespace: "ns-admin",
     runner: {
       kind: "ai",

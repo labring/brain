@@ -34,7 +34,7 @@ import {
 import type { DevboxInfo } from "@/lib/devbox/types";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
-import { getGithubAccessToken } from "@/lib/github-oauth/connection-service";
+import { getGithubInstallationToken } from "@/lib/github-app/connection-service";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { childResourceName } from "@/lib/project-child-resource-name";
@@ -2063,6 +2063,20 @@ function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
     : "Deployment request analysis is complete.";
 }
 
+async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
+  if (task.source.kind !== "github") {
+    return null;
+  }
+  const githubConnectionId = task.githubConnectionId?.trim() ?? "";
+  if (githubConnectionId === "") {
+    throw new Error("GitHub connection ID is required for GitHub deployment.");
+  }
+  return await getGithubInstallationToken({
+    connectionId: githubConnectionId,
+    namespace: task.namespace,
+  });
+}
+
 async function runAiDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -2090,10 +2104,7 @@ async function runAiDeploymentTask(input: {
     taskId: input.task.id,
   });
 
-  const githubToken =
-    input.task.source.kind === "github"
-      ? await getGithubAccessToken(input.task.namespace)
-      : null;
+  const githubToken = await githubTokenForTask(input.task);
 
   const runtime = await ensureDeployDevbox({
     existingRuntimeName: input.task.runtimeName,
@@ -2392,8 +2403,7 @@ export async function startDeployTaskRunner(
         encodedKubeconfig: input.encodedKubeconfig ?? "",
         githubToken:
           resolvedTask.source.kind === "github"
-            ? ((await getGithubAccessToken(resolvedTask.namespace)) ??
-              undefined)
+            ? ((await githubTokenForTask(resolvedTask)) ?? undefined)
             : undefined,
         kubeconfig,
         outputJson,

@@ -47,6 +47,8 @@ export type DeploymentTargetPipelineRequest =
     };
 
 export interface DeploymentTaskCreateInput {
+  actorUserId?: string;
+  githubConnectionId?: string;
   namespace: string;
   prompt?: string;
   runner: DeploymentTaskRunner;
@@ -68,9 +70,11 @@ export interface DeploymentTargetPipelineAdapters {
 }
 
 export interface DeploymentTargetPipelineOptions {
+  actorUserId?: string;
   adapters: DeploymentTargetPipelineAdapters;
   credentialsReady: boolean;
   existingProjects?: readonly ProjectExplorerProject[];
+  githubConnectionId?: string;
   namespace: string;
   request: DeploymentTargetPipelineRequest;
 }
@@ -293,6 +297,12 @@ export async function runDeploymentTargetPipeline(
   const taskInput = deploymentTaskForRequest(options.request);
   const task = await options.adapters.createDeploymentTask({
     ...taskInput,
+    ...(options.request.kind === "github"
+      ? {
+          actorUserId: options.actorUserId?.trim() ?? "",
+          githubConnectionId: options.githubConnectionId?.trim() ?? "",
+        }
+      : {}),
     namespace: options.namespace,
     target,
   });

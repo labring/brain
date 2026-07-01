@@ -31,7 +31,7 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - `global.region`
 - `api.env.SEALOS_DESKTOP_URL`
 - `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
-- GitHub OAuth values (`GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_CREDENTIAL_ENCRYPTION_KEY`)
+- GitHub App values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`)
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
 - Devbox runtime values (`DEVBOX_API_BASE_URL`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`

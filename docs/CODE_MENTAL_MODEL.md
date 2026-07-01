@@ -566,11 +566,12 @@ UI:
 - `apps/ui/src/features/deployment/github-deployer/*`
 - `apps/ui/src/hooks/use-github-auth.ts`
 
-OAuth/token:
+GitHub App/token:
 
-- `apps/ui/src/lib/github-oauth/*`
+- `apps/ui/src/lib/github-app/*`
 - GitHub connection 存在 `sealai_assistant.github_connections`。
-- access token 加密存储, 依赖 `GITHUB_CREDENTIAL_ENCRYPTION_KEY`。
+- DB 保存 namespace 级 GitHub App installation 元数据。
+- runner 按 `githubConnectionId + namespace` 服务端临时 mint installation token。
 
 Task runner:
 
@@ -734,7 +735,7 @@ UI:
 - `API_URL`: Next proxy 到 Go API 的 upstream。
 - `NEXT_PUBLIC_APP_URL`: app public URL。
 - `DATABASE_URL`: app-owned Postgres。
-- `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `GITHUB_CREDENTIAL_ENCRYPTION_KEY`。
+- `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`。
 - `TEMPLATE_PROVIDER_URL`。
 - `SYSTEM_OPENAI_API_KEY`, `SYSTEM_OPENAI_API_BASE_URL`, `FREE_CHAT_TURNS`。
 - `DEVBOX_API_BASE_URL`, `DEVBOX_TOKEN`, `DEVBOX_JWT_SIGNING_KEY`, `DEVBOX_RUNTIME_IMAGE`。

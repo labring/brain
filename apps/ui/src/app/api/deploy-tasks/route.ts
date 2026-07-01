@@ -14,6 +14,7 @@ import {
   listDeploymentTaskProjections,
 } from "@/lib/deploy-task/service";
 import { createDeployTaskInputSchema } from "@/lib/deploy-task/types";
+import { getGithubConnectionForNamespaceById } from "@/lib/github-app/connection-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -64,6 +65,21 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  if (
+    parsed.data.source.kind === "github" &&
+    (parsed.data.actorUserId?.trim() ?? "") === ""
+  ) {
+    return jsonError("Actor user ID is required for GitHub deployment.", 400);
+  }
+  if (
+    parsed.data.source.kind === "github" &&
+    (parsed.data.githubConnectionId?.trim() ?? "") === ""
+  ) {
+    return jsonError(
+      "GitHub connection ID is required for GitHub deployment.",
+      400
+    );
+  }
 
   const namespaceResolved = await resolveDeployTaskRequestNamespace({
     encodedKubeconfig: parsed.data.encodedKubeconfig,
@@ -75,16 +91,29 @@ export async function POST(request: Request) {
       namespaceResolved.status ?? 400
     );
   }
+  const taskNamespace = namespaceResolved.namespace ?? parsed.data.namespace;
+  if (parsed.data.source.kind === "github") {
+    const connection = await getGithubConnectionForNamespaceById({
+      connectionId: parsed.data.githubConnectionId ?? "",
+      namespace: taskNamespace,
+    });
+    if (connection == null) {
+      return jsonError(
+        "GitHub connection does not belong to this namespace.",
+        403
+      );
+    }
+  }
 
   const { encodedKubeconfig: _encodedKubeconfig, ...taskInput } = parsed.data;
   const task = await createDeployTask({
     ...taskInput,
     createdFrom: "ui",
-    namespace: namespaceResolved.namespace ?? taskInput.namespace,
+    namespace: taskNamespace,
   });
   const resolved = await resolveDeploymentTaskTarget({
     ...task,
-    namespace: namespaceResolved.namespace ?? task.namespace,
+    namespace: taskNamespace,
   });
 
   startDeployTaskRunner({

@@ -134,6 +134,7 @@ function nowIso(value: Date | null): string | null {
 
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
   return {
+    actorUserId: row.actorUserId,
     artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary),
     blockingInputs: row.blockingInputs,
     canvasProjection: row.canvasProjection,
@@ -146,6 +147,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     gatewayStateSnapshot: row.gatewayStateSnapshot,
     gatewayTurnId: row.gatewayTurnId,
     gatewayUrl: row.gatewayUrl,
+    githubConnectionId: row.githubConnectionId,
     id: row.id,
     namespace: row.namespace,
     phase: row.phase,
@@ -236,6 +238,18 @@ export async function createDeployTask(
   input: CreateDeployTaskInput
 ): Promise<DeployTaskDTO> {
   await ensureDeployTaskStorageSchema();
+  if (
+    input.source.kind === "github" &&
+    (input.actorUserId?.trim() ?? "") === ""
+  ) {
+    throw new Error("Actor user ID is required for GitHub deployment.");
+  }
+  if (
+    input.source.kind === "github" &&
+    (input.githubConnectionId?.trim() ?? "") === ""
+  ) {
+    throw new Error("GitHub connection ID is required for GitHub deployment.");
+  }
   const id = generateId();
   const now = new Date();
   const timelineSnapshot = createDeploymentTaskTimelineForRunner({
@@ -249,8 +263,10 @@ export async function createDeployTask(
     .insert(deployTasks)
     .values({
       id,
+      actorUserId: input.actorUserId?.trim() ?? null,
       createdAt: now,
       createdFrom: input.createdFrom ?? "api",
+      githubConnectionId: input.githubConnectionId?.trim() ?? null,
       heartbeatAt: now,
       namespace: input.namespace.trim(),
       phase: "queued",

@@ -39,7 +39,7 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - `global.region`
 - `projectId`
 - `api.env.SEALOS_DESKTOP_URL`
-- GitHub OAuth values
+- GitHub App values
 - assistant model values
 - Devbox runtime values
 - `imagePullSecret.create`
