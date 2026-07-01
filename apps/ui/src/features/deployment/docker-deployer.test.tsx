@@ -22,7 +22,7 @@ const ARIA_BUSY_RE = /aria-busy="true"/;
 const VALUE_8080_RE = /value="8080"/;
 const FEATURE_FLAG_RE = /value="FEATURE_FLAG"/;
 const VALUE_TRUE_RE = /value="true"/;
-const DEFAULT_DOCKER_IMAGE_RE = /value="nginx:stable"/;
+const DEFAULT_DOCKER_IMAGE_RE = /value="nginx"/;
 const IMAGE_PLACEHOLDER_RE = /placeholder="image:tag"/;
 const DOCKER_IMAGE_REQUIRED_RE = /Docker image is required\./;
 
