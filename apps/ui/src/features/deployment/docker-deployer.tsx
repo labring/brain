@@ -414,7 +414,7 @@ export function DockerDeployer({
           title="Config Files"
         >
           {configMapRows.length === 0 ? null : (
-            <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-4">
               {configMapRows.map((row, index) => {
                 const rowError = rowErrorForIndex(
                   validation,
@@ -422,27 +422,44 @@ export function DockerDeployer({
                   index
                 );
                 return (
-                  <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2.5"
-                    key={row.id}
-                  >
-                    <AppInput
-                      aria-invalid={rowError ? true : undefined}
-                      aria-label={`Config file ${index + 1} path`}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const path = event.currentTarget.value;
-                        setConfigMapRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index ? { ...current, path } : current
+                  <div className="flex min-w-0 flex-col gap-2" key={row.id}>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <AppInput
+                        aria-invalid={rowError ? true : undefined}
+                        aria-label={`Config file ${index + 1} path`}
+                        className="font-mono"
+                        disabled={busy}
+                        onChange={(event) => {
+                          const path = event.currentTarget.value;
+                          setConfigMapRows((rows) =>
+                            rows.map((current, rowIndex) =>
+                              rowIndex === index
+                                ? { ...current, path }
+                                : current
+                            )
+                          );
+                        }}
+                        placeholder="/etc/app/config.yaml"
+                        value={row.path}
+                      />
+                      <AppIconButton
+                        aria-label="Remove config file"
+                        disabled={busy}
+                        onClick={() =>
+                          setConfigMapRows((rows) =>
+                            rows.filter((_, rowIndex) => rowIndex !== index)
                           )
-                        );
-                      }}
-                      placeholder="/etc/app/config.yaml"
-                      value={row.path}
-                    />
+                        }
+                        size="lg"
+                        type="button"
+                        variant="danger"
+                      >
+                        <Trash2 aria-hidden className="size-4" />
+                      </AppIconButton>
+                    </div>
                     <AppTextarea
                       aria-label={`Config file ${index + 1} value`}
+                      className="min-h-28 font-mono"
                       disabled={busy}
                       onChange={(event) => {
                         const value = event.currentTarget.value;
@@ -455,22 +472,8 @@ export function DockerDeployer({
                       placeholder="file contents"
                       value={row.value}
                     />
-                    <AppIconButton
-                      aria-label="Remove config file"
-                      disabled={busy}
-                      onClick={() =>
-                        setConfigMapRows((rows) =>
-                          rows.filter((_, rowIndex) => rowIndex !== index)
-                        )
-                      }
-                      size="lg"
-                      type="button"
-                      variant="danger"
-                    >
-                      <Trash2 aria-hidden className="size-4" />
-                    </AppIconButton>
                     {rowError ? (
-                      <p className="col-span-3 text-destructive text-xs leading-4">
+                      <p className="text-destructive text-xs leading-4">
                         {rowError.message}
                       </p>
                     ) : null}
