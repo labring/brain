@@ -17,7 +17,7 @@ const DATABASE_OPTIONS = [
   },
 ] satisfies readonly DatabaseDeploymentChoice[];
 
-const REPLICA_COUNT_SELECT_RE = /aria-label="Database replica count"/;
+const REPLICA_COUNT_SELECT_RE = /id="database-deployer-replicas"/;
 const NUMERIC_REPLICA_UNIT_OPTION_RE = />\d+ replicas?</;
 const PRIVATE_ACCESS_DESCRIPTION_RE = /Private access by default/;
 const POSTGRESQL_ORIGINAL_ICON_RE = /postgresql-original\.svg/;

@@ -91,16 +91,20 @@ function DeploymentSettingsGroupHeader({
 function DeploymentSettingsField({
   children,
   className,
+  htmlFor,
   label,
   labelClassName,
   ...props
 }: ComponentPropsWithoutRef<"div"> & {
+  htmlFor?: string;
   label: ReactNode;
   labelClassName?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)} {...props}>
-      <Label className={labelClassName}>{label}</Label>
+    <div className={cn("flex min-w-0 flex-col gap-2", className)} {...props}>
+      <Label className={labelClassName} htmlFor={htmlFor}>
+        {label}
+      </Label>
       {children}
     </div>
   );

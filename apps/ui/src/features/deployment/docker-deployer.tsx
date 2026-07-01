@@ -261,19 +261,25 @@ export function DockerDeployer({
           title="Launch"
         >
           <div className="grid min-w-0 grid-cols-1 gap-3.5">
-            <DeploymentSettings.Field label="Command">
+            <DeploymentSettings.Field
+              htmlFor="docker-deployer-command"
+              label="Command"
+            >
               <AppTextarea
-                aria-label="Launch command"
                 disabled={busy}
+                id="docker-deployer-command"
                 onChange={(event) => setCommandText(event.currentTarget.value)}
                 placeholder="/app/server"
                 value={commandText}
               />
             </DeploymentSettings.Field>
-            <DeploymentSettings.Field label="Args">
+            <DeploymentSettings.Field
+              htmlFor="docker-deployer-args"
+              label="Args"
+            >
               <AppTextarea
-                aria-label="Launch args"
                 disabled={busy}
+                id="docker-deployer-args"
                 onChange={(event) => setArgsText(event.currentTarget.value)}
                 placeholder={"--config\n/etc/app/config.yaml"}
                 value={argsText}
@@ -568,7 +574,10 @@ export function DockerDeployer({
           title="Network"
         >
           <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-            <DeploymentSettings.Field label="App Listening Port">
+            <DeploymentSettings.Field
+              htmlFor="docker-deployer-port"
+              label="App Listening Port"
+            >
               <AppInput
                 aria-describedby={
                   portError ? "docker-deployer-port-error" : undefined
