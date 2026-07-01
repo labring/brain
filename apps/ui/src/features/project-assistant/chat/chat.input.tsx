@@ -5,7 +5,6 @@ import {
   AppIconButton,
   type AppIconButtonProps,
 } from "@workspace/ui/components/app-icon-button";
-import { buttonVariants } from "@workspace/ui/components/button";
 import {
   Popover,
   PopoverContent,
@@ -92,16 +91,18 @@ export function ChatGithubDeployPopover({
   return (
     <Popover onOpenChange={onOpenChange} open={open}>
       <PopoverTrigger
-        aria-label="GitHub"
-        className={cn(
-          buttonVariants({ variant: "ghost", size: "icon-lg" }),
-          "shrink-0 rounded-xl",
-          triggerClassName
-        )}
-        type="button"
-      >
-        <ChatGithubMark className="opacity-90" />
-      </PopoverTrigger>
+        render={
+          <AppIconButton
+            aria-label="GitHub"
+            className={cn("shrink-0 rounded-xl", triggerClassName)}
+            size="md"
+            type="button"
+            variant="quiet"
+          >
+            <ChatGithubMark className="opacity-90" />
+          </AppIconButton>
+        }
+      />
       <PopoverContent
         align="start"
         className={cn("w-[min(100vw-2rem,22rem)]", contentClassName)}
