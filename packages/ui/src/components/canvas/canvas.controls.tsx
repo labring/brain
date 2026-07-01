@@ -15,6 +15,8 @@ import type { CanvasInteractionMode } from "./canvas.types";
 import { useCanvas } from "./canvas.use";
 
 const VIEWPORT_ACTION_DURATION_MS = 180;
+const CANVAS_NAVIGATION_CHROME_CLASS =
+  "rounded-lg bg-[#09090b]/10 backdrop-blur-lg";
 type CanvasShortcut = "fit-view" | "hand" | "pointer" | "zoom-in" | "zoom-out";
 
 export interface CanvasViewportInsetProps {
@@ -270,7 +272,8 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
   return (
     <div
       className={cn(
-        "absolute top-[52px] right-2 z-10 flex flex-col items-center rounded-lg bg-[#09090b]/10 backdrop-blur-lg transition-[right,opacity] duration-200 ease-out",
+        "absolute top-[52px] right-2 z-10 flex flex-col items-center transition-[right,opacity] duration-200 ease-out",
+        CANVAS_NAVIGATION_CHROME_CLASS,
         chrome.hidden
           ? "pointer-events-none opacity-0"
           : "pointer-events-auto opacity-100",
@@ -333,7 +336,8 @@ export function CanvasMiniMap({
   return (
     <div
       className={cn(
-        "absolute top-[60px] left-3 z-10 transition-[right,opacity] duration-200 ease-out",
+        "absolute top-[60px] left-3 z-10 h-[130px] w-[223px] overflow-hidden transition-[right,opacity] duration-200 ease-out",
+        CANVAS_NAVIGATION_CHROME_CLASS,
         chrome.hidden
           ? "pointer-events-none opacity-0"
           : "pointer-events-auto opacity-100",
@@ -346,9 +350,9 @@ export function CanvasMiniMap({
     >
       <MiniMap
         ariaLabel="Canvas mini map"
-        bgColor="color-mix(in oklab, var(--input) 30%, transparent)"
-        className="overflow-hidden bg-input/30 shadow-none"
-        maskColor="color-mix(in oklab, var(--input) 30%, transparent)"
+        bgColor="transparent"
+        className="bg-transparent shadow-none"
+        maskColor="transparent"
         maskStrokeColor="var(--color-border)"
         maskStrokeWidth={1}
         nodeBorderRadius={10}
