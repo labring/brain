@@ -84,6 +84,12 @@ An AP-owned configuration file mounted into the application runtime through AP S
 
 _Avoid_: ConfigMap, Config Files, configuration map.
 
+### AP Storage Mount
+
+A persistent volume an AP owns at one absolute container path, where the application's own data is kept across restarts and redeploys. An AP has zero or more AP Storage Mounts; each mount path is unique and fixed once created, and a mount's capacity can grow but never shrink. Distinct from an AP Configuration File, which mounts user-authored file content rather than application-written data.
+
+_Avoid_: Volume, PVC, disk, persistent storage, storage size.
+
 ### AP Network Settings
 
 The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings. Private Addresses and Public Addresses are two views of the same AP Network Settings: Public Address changes may add App Listening Ports as part of the same Settings Draft.

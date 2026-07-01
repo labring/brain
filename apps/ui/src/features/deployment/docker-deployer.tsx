@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { StorageSizeInput } from "@/components/storage-size-input";
 import { DeploymentSettings } from "./deployment-settings";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,
@@ -523,13 +524,14 @@ export function DockerDeployer({
             ) : (
               storageRows.map((row, index) => {
                 const rowError = rowErrorForIndex(validation, "storage", index);
+                const sizeError = rowError?.type === "invalid-storage-size";
                 return (
                   <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_7rem_2.25rem] gap-2"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem_2.25rem] gap-2"
                     key={row.id}
                   >
                     <AppInput
-                      aria-invalid={rowError ? true : undefined}
+                      aria-invalid={rowError && !sizeError ? true : undefined}
                       aria-label={`Storage ${index + 1} path`}
                       disabled={busy}
                       onChange={(event) => {
@@ -543,18 +545,17 @@ export function DockerDeployer({
                       placeholder="/data"
                       value={row.path}
                     />
-                    <AppInput
+                    <StorageSizeInput
+                      aria-invalid={sizeError ? true : undefined}
                       aria-label={`Storage ${index + 1} size`}
                       disabled={busy}
-                      onChange={(event) => {
-                        const size = event.currentTarget.value;
+                      onChange={(size) => {
                         setStorageRows((rows) =>
                           rows.map((current, rowIndex) =>
                             rowIndex === index ? { ...current, size } : current
                           )
                         );
                       }}
-                      placeholder="1Gi"
                       value={row.size}
                     />
                     <AppIconButton

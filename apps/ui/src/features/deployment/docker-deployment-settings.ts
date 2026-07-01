@@ -1,3 +1,5 @@
+import { Quantity } from "@workspace/shared";
+
 export const DEFAULT_DOCKER_APP_LISTENING_PORT = 80;
 
 export interface DockerDeploymentEnvVar {
@@ -58,7 +60,8 @@ export interface DockerDeploymentValidationResult {
 
 const IMAGE_WHITESPACE_RE = /\s/;
 const K8S_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
-const STORAGE_SIZE_RE = /^\d+(\.\d+)?(Gi|Mi|Ti)$/i;
+const STORAGE_MIN_SIZE = Quantity.parse("0.1Gi");
+const STORAGE_MAX_SIZE = Quantity.parse("100Gi");
 
 function isKubernetesEnvName(name: string): boolean {
   return K8S_ENV_NAME_RE.test(name);
@@ -204,11 +207,22 @@ function validateStorage(
       return;
     }
     seen.add(path);
-    if (!STORAGE_SIZE_RE.test(row.size.trim())) {
+    const trimmedSize = row.size.trim();
+    let size: Quantity | null = null;
+    try {
+      size = trimmedSize === "" ? null : Quantity.parse(trimmedSize);
+    } catch {
+      size = null;
+    }
+    if (
+      size === null ||
+      size.cmp(STORAGE_MIN_SIZE) < 0 ||
+      size.cmp(STORAGE_MAX_SIZE) > 0
+    ) {
       errors.push({
         field: "storage",
         index,
-        message: "Use a size such as 10Gi, 512Mi, or 1Ti.",
+        message: "Size must be between 0.1 and 100 Gi.",
         type: "invalid-storage-size",
       });
     }

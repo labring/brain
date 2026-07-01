@@ -10,6 +10,12 @@ import { appFieldFocusClass } from "@workspace/ui/lib/field-state";
 import { cn } from "@workspace/ui/lib/utils";
 import { Plus, Save, SquarePen, Trash2, X } from "lucide-react";
 import type { ComponentProps } from "react";
+import {
+  isStorageShrink,
+  maxGiForStorage,
+  parseStorageSizeToGi,
+} from "@/components/storage-size";
+import { StorageSizeInput } from "@/components/storage-size-input";
 
 export interface ApConfigMapMount {
   path: string;
@@ -445,11 +451,13 @@ export function ConfigMapSettingsContent({
 }
 
 export function StorageSettingsContent({
+  currentStorage,
   onUpdate,
   readOnly,
   storage,
   storageKeys,
 }: {
+  currentStorage: readonly ApStorageMount[];
   onUpdate: (index: number, patch: Partial<ApStorageMount>) => void;
   readOnly: boolean;
   storage: readonly ApStorageMount[];
@@ -462,28 +470,42 @@ export function StorageSettingsContent({
           No storage
         </div>
       ) : (
-        storage.map((item, index) => (
-          <div
-            className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"
-            key={storageKeys[index] ?? `${item.path}\u0000${item.size}`}
-          >
-            <AppInput
-              aria-label="Storage mount path"
-              readOnly
-              title="StatefulSet storage mount path is immutable."
-              value={item.path}
-            />
-            <AppInput
-              aria-label="Storage size"
-              onChange={(event) =>
-                onUpdate(index, { size: event.target.value })
-              }
-              placeholder="1Gi"
-              readOnly={readOnly}
-              value={item.size}
-            />
-          </div>
-        ))
+        storage.map((item, index) => {
+          const currentSize =
+            currentStorage.find((mount) => mount.path === item.path)?.size ??
+            item.size;
+          const shrink = isStorageShrink(item.size, currentSize);
+          const currentGi = parseStorageSizeToGi(currentSize);
+          return (
+            <div
+              className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"
+              key={storageKeys[index] ?? `${item.path}\u0000${item.size}`}
+            >
+              <AppInput
+                aria-label="Storage mount path"
+                readOnly
+                title="StatefulSet storage mount path is immutable."
+                value={item.path}
+              />
+              <StorageSizeInput
+                aria-invalid={shrink ? true : undefined}
+                aria-label="Storage size"
+                maxGi={maxGiForStorage(currentSize)}
+                minSize={currentSize}
+                onChange={(size) => onUpdate(index, { size })}
+                readOnly={readOnly}
+                value={item.size}
+              />
+              {shrink ? (
+                <p className="text-destructive text-xs leading-4 sm:col-span-2">
+                  Volumes can only grow
+                  {currentGi === null ? "" : ` — keep at least ${currentGi} Gi`}
+                  .
+                </p>
+              ) : null}
+            </div>
+          );
+        })
       )}
     </div>
   );
