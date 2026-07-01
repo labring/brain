@@ -38,7 +38,7 @@ async function authorizeTemplateDeploy(input: {
   if (hasDevCredentialBypass()) {
     const dev = devCredentialsFromEnv();
     const project = await getProject(input.namespace, input.projectId);
-    const authorization = authorizeTemplateDeployIdentity({
+    const authorization = await authorizeTemplateDeployIdentity({
       devBypass: true,
       devEncodedKubeconfig: dev.encodedKubeconfig,
       devNamespace: dev.namespace,
@@ -52,7 +52,7 @@ async function authorizeTemplateDeploy(input: {
   }
 
   const project = await getProject(input.namespace, input.projectId);
-  const authorization = authorizeTemplateDeployIdentity({
+  const authorization = await authorizeTemplateDeployIdentity({
     devBypass: false,
     devEncodedKubeconfig: "",
     devNamespace: "",

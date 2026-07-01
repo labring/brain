@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { test } from "node:test";
 
 import {
@@ -27,16 +28,69 @@ users:
 `);
 }
 
-test("authorizes request namespace from bearer kubeconfig", () => {
+async function withJsonServer<T>(
+  handler: (request: import("node:http").IncomingMessage) => unknown,
+  run: (
+    url: string,
+    requests: import("node:http").IncomingMessage[]
+  ) => Promise<T>
+): Promise<T> {
+  const requests: import("node:http").IncomingMessage[] = [];
+  const server = createServer((request, response) => {
+    requests.push(request);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify(handler(request)));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert.notEqual(address, null);
+  const url = `http://127.0.0.1:${address.port}`;
+  try {
+    return await run(url, requests);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error == null ? resolve() : reject(error)))
+    );
+  }
+}
+
+function withEnv<T>(
+  values: Partial<NodeJS.ProcessEnv>,
+  run: () => Promise<T>
+): Promise<T> {
+  const previous = new Map(
+    Object.keys(values).map((key) => [key, process.env[key]])
+  );
+  for (const [key, value] of Object.entries(values)) {
+    if (value == null) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  return run().finally(() => {
+    for (const [key, value] of previous) {
+      if (value == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+}
+
+test("authorizes request namespace from bearer kubeconfig", async () => {
   const request = new Request("https://brain.test/api/projects", {
     headers: {
       Authorization: `Bearer ${kubeconfig("ns-sdk")}`,
     },
   });
 
-  const result = authorizeRequestNamespace(request, {
+  const result = await authorizeRequestNamespace(request, {
     namespace: "ns-sdk",
     subject: "Project",
+    verify: async () => ({ ok: true }),
   });
 
   assert.equal(result.ok, true);
@@ -45,12 +99,16 @@ test("authorizes request namespace from bearer kubeconfig", () => {
   }
 });
 
-test("rejects missing request bearer kubeconfig", () => {
+test("rejects missing request bearer kubeconfig", async () => {
   assert.deepEqual(
-    authorizeRequestNamespace(new Request("https://brain.test/api/projects"), {
-      namespace: "ns-sdk",
-      subject: "Project",
-    }),
+    await authorizeRequestNamespace(
+      new Request("https://brain.test/api/projects"),
+      {
+        namespace: "ns-sdk",
+        subject: "Project",
+        verify: async () => ({ ok: true }),
+      }
+    ),
     {
       message: "Authentication is required.",
       ok: false,
@@ -59,17 +117,105 @@ test("rejects missing request bearer kubeconfig", () => {
   );
 });
 
-test("rejects kubeconfig namespace mismatch", () => {
+test("rejects kubeconfig namespace mismatch", async () => {
   assert.deepEqual(
-    authorizeEncodedKubeconfigNamespace({
+    await authorizeEncodedKubeconfigNamespace({
       encodedKubeconfig: kubeconfig("ns-a"),
       namespace: "ns-b",
       subject: "Project",
+      verify: async () => ({ ok: true }),
     }),
     {
       message: "Project namespace is not accessible.",
       ok: false,
       status: 403,
+    }
+  );
+});
+
+test("rejects kubeconfig when Kubernetes verification denies access", async () => {
+  assert.deepEqual(
+    await authorizeEncodedKubeconfigNamespace({
+      encodedKubeconfig: kubeconfig("ns-a"),
+      namespace: "ns-a",
+      subject: "Project",
+      verify: async () => ({
+        message: "Kubeconfig is not authorized for this namespace.",
+        ok: false,
+        status: 403,
+      }),
+    }),
+    {
+      message: "Kubeconfig is not authorized for this namespace.",
+      ok: false,
+      status: 403,
+    }
+  );
+});
+
+test("rejects fake kubeconfig API servers when no trusted API server is configured", async () => {
+  await withJsonServer(
+    () => ({ status: { allowed: true } }),
+    async (fakeApiServer, requests) => {
+      const fakeKubeconfig = kubeconfig("ns-a").replace(
+        "https%3A%2F%2Fexample.test",
+        encodeURIComponent(fakeApiServer)
+      );
+
+      await withEnv(
+        {
+          KUBERNETES_SERVICE_HOST: undefined,
+          KUBERNETES_SERVICE_PORT: undefined,
+          SEALOS_KUBERNETES_API_SERVER: undefined,
+        },
+        async () => {
+          assert.deepEqual(
+            await authorizeEncodedKubeconfigNamespace({
+              encodedKubeconfig: fakeKubeconfig,
+              namespace: "ns-a",
+              subject: "Project",
+            }),
+            {
+              message:
+                "Trusted Kubernetes API server is not configured. Set SEALOS_KUBERNETES_API_SERVER outside the cluster.",
+              ok: false,
+              status: 500,
+            }
+          );
+        }
+      );
+      assert.equal(requests.length, 0);
+    }
+  );
+});
+
+test("uses in-cluster API server instead of kubeconfig server for verification", async () => {
+  await withJsonServer(
+    () => ({ status: { allowed: true } }),
+    async (trustedApiServer, requests) => {
+      const trusted = new URL(trustedApiServer);
+      await withEnv(
+        {
+          KUBERNETES_SERVICE_HOST: trusted.hostname,
+          KUBERNETES_SERVICE_PORT: trusted.port,
+          SEALOS_KUBERNETES_API_SERVER: undefined,
+        },
+        async () => {
+          assert.deepEqual(
+            await authorizeEncodedKubeconfigNamespace({
+              encodedKubeconfig: kubeconfig("ns-a"),
+              namespace: "ns-a",
+              subject: "Project",
+            }),
+            {
+              message: "Kubernetes access review failed.",
+              ok: false,
+              status: 502,
+            }
+          );
+        }
+      );
+      assert.equal(requests.length, 0);
     }
   );
 });

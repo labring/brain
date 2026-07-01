@@ -22,10 +22,14 @@ export async function POST(request: Request) {
   const encodedKubeconfig =
     typeof body?.encodedKubeconfig === "string" ? body.encodedKubeconfig : "";
 
-  const authorized = authorizeGithubConnectionIdentity(namespace, userId, {
-    serverEncodedKubeconfig: encodedKubeconfig,
-    serverNamespace: "",
-  });
+  const authorized = await authorizeGithubConnectionIdentity(
+    namespace,
+    userId,
+    {
+      serverEncodedKubeconfig: encodedKubeconfig,
+      serverNamespace: "",
+    }
+  );
   if (!authorized.ok) {
     return jsonError(authorized.error, authorized.status);
   }

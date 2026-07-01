@@ -27,11 +27,14 @@ users:
 `);
 }
 
-test("authorizes a GitHub connection namespace from authenticated kubeconfig", () => {
+const ALLOW_VERIFY = async () => ({ ok: true }) as const;
+
+test("authorizes a GitHub connection namespace from authenticated kubeconfig", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity("ns-sdk", "admin", {
+    await authorizeGithubConnectionIdentity("ns-sdk", "admin", {
       serverEncodedKubeconfig: kubeconfig("ns-sdk"),
       serverNamespace: "ns-sdk",
+      verify: ALLOW_VERIFY,
     }),
     {
       namespace: "ns-sdk",
@@ -42,11 +45,12 @@ test("authorizes a GitHub connection namespace from authenticated kubeconfig", (
   );
 });
 
-test("rejects missing GitHub connection namespace", () => {
+test("rejects missing GitHub connection namespace", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity("", "admin", {
+    await authorizeGithubConnectionIdentity("", "admin", {
       serverEncodedKubeconfig: kubeconfig("ns-sdk"),
       serverNamespace: "ns-sdk",
+      verify: ALLOW_VERIFY,
     }),
     {
       error: "Missing namespace.",
@@ -56,11 +60,12 @@ test("rejects missing GitHub connection namespace", () => {
   );
 });
 
-test("rejects missing GitHub connection user ID", () => {
+test("rejects missing GitHub connection user ID", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity("ns-sdk", "", {
+    await authorizeGithubConnectionIdentity("ns-sdk", "", {
       serverEncodedKubeconfig: kubeconfig("ns-sdk"),
       serverNamespace: "ns-sdk",
+      verify: ALLOW_VERIFY,
     }),
     {
       error: "Missing user ID.",
@@ -70,7 +75,7 @@ test("rejects missing GitHub connection user ID", () => {
   );
 });
 
-test("authorizes from server namespace when kubeconfig has no current namespace", () => {
+test("authorizes from server namespace when kubeconfig has no current namespace", async () => {
   const encodedKubeconfig = encodeURIComponent(`
 apiVersion: v1
 clusters:
@@ -90,9 +95,10 @@ users:
 `);
 
   assert.deepEqual(
-    authorizeGithubConnectionIdentity("ns-sdk", "admin", {
+    await authorizeGithubConnectionIdentity("ns-sdk", "admin", {
       serverEncodedKubeconfig: encodedKubeconfig,
       serverNamespace: "ns-sdk",
+      verify: ALLOW_VERIFY,
     }),
     {
       namespace: "ns-sdk",
@@ -103,11 +109,12 @@ users:
   );
 });
 
-test("rejects unauthenticated GitHub connection namespace access", () => {
+test("rejects unauthenticated GitHub connection namespace access", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity("ns-sdk", "admin", {
+    await authorizeGithubConnectionIdentity("ns-sdk", "admin", {
       serverEncodedKubeconfig: "",
       serverNamespace: "",
+      verify: ALLOW_VERIFY,
     }),
     {
       error: "Authentication is required.",
@@ -117,11 +124,12 @@ test("rejects unauthenticated GitHub connection namespace access", () => {
   );
 });
 
-test("rejects cross-namespace GitHub connection access", () => {
+test("rejects cross-namespace GitHub connection access", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity("ns-b", "admin", {
+    await authorizeGithubConnectionIdentity("ns-b", "admin", {
       serverEncodedKubeconfig: kubeconfig("ns-a"),
       serverNamespace: "ns-a",
+      verify: ALLOW_VERIFY,
     }),
     {
       error: "namespace does not match authenticated workspace.",
@@ -131,17 +139,16 @@ test("rejects cross-namespace GitHub connection access", () => {
   );
 });
 
-test("uses request bearer kubeconfig over empty server credentials", () => {
+test("uses request bearer kubeconfig over empty server credentials", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity(
-      "ns-sdk",
-      "admin",
-      credentialsWithRequestKubeconfig(
+    await authorizeGithubConnectionIdentity("ns-sdk", "admin", {
+      ...credentialsWithRequestKubeconfig(
         new Request("https://brain.test/api/github/connection", {
           headers: { Authorization: `Bearer ${kubeconfig("ns-sdk")}` },
         })
-      )
-    ),
+      ),
+      verify: ALLOW_VERIFY,
+    }),
     {
       namespace: "ns-sdk",
       ok: true,
@@ -151,19 +158,37 @@ test("uses request bearer kubeconfig over empty server credentials", () => {
   );
 });
 
-test("rejects request bearer kubeconfig namespace mismatch", () => {
+test("rejects request bearer kubeconfig namespace mismatch", async () => {
   assert.deepEqual(
-    authorizeGithubConnectionIdentity(
-      "ns-b",
-      "admin",
-      credentialsWithRequestKubeconfig(
+    await authorizeGithubConnectionIdentity("ns-b", "admin", {
+      ...credentialsWithRequestKubeconfig(
         new Request("https://brain.test/api/github/connection", {
           headers: { Authorization: `Bearer ${kubeconfig("ns-a")}` },
         })
-      )
-    ),
+      ),
+      verify: ALLOW_VERIFY,
+    }),
     {
       error: "namespace does not match authenticated workspace.",
+      ok: false,
+      status: 403,
+    }
+  );
+});
+
+test("rejects GitHub connection when Kubernetes verification denies access", async () => {
+  assert.deepEqual(
+    await authorizeGithubConnectionIdentity("ns-sdk", "admin", {
+      serverEncodedKubeconfig: kubeconfig("ns-sdk"),
+      serverNamespace: "ns-sdk",
+      verify: async () => ({
+        message: "Kubeconfig is not authorized for this namespace.",
+        ok: false,
+        status: 403,
+      }),
+    }),
+    {
+      error: "Kubeconfig is not authorized for this namespace.",
       ok: false,
       status: 403,
     }

@@ -2,6 +2,10 @@ import "server-only";
 
 import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
 import {
+  type VerifyKubeconfigNamespace,
+  verifyKubeconfigNamespaceAccess,
+} from "@/lib/request-kubeconfig-auth";
+import {
   devCredentialsFromEnv,
   hasDevCredentialBypass,
 } from "@/lib/server-credentials";
@@ -79,10 +83,11 @@ function rejectClientNamespaceMismatch(
  * - **Dev bypass:** optional match against `NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`;
  *   namespace from kubeconfig context.
  */
-export function resolveAuthoritativeChatNamespace(options: {
+export async function resolveAuthoritativeChatNamespace(options: {
   encodedKubeconfig: string | undefined;
   clientNamespace: string;
-}): ResolveChatNamespaceOutcome {
+  verify?: VerifyKubeconfigNamespace;
+}): Promise<ResolveChatNamespaceOutcome> {
   const kubeconfigText = decodeKubeconfig(options.encodedKubeconfig);
   if (kubeconfigText == null) {
     return {
@@ -130,6 +135,20 @@ export function resolveAuthoritativeChatNamespace(options: {
     }
 
     return { ok: true, namespace: authoritativeNamespace };
+  }
+
+  const verification = await (
+    options.verify ?? verifyKubeconfigNamespaceAccess
+  )({
+    kubeconfig: kubeconfigText,
+    namespace: parsed.namespace,
+  });
+  if (!verification.ok) {
+    return {
+      message: verification.message,
+      ok: false,
+      status: verification.status,
+    };
   }
 
   return { ok: true, namespace: parsed.namespace };

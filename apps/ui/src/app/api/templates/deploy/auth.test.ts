@@ -38,6 +38,8 @@ const PROJECT: BrainProject = {
   updatedAt: "",
 };
 
+const ALLOW_VERIFY = async () => ({ ok: true }) as const;
+
 function authorize(
   input: Partial<Parameters<typeof authorizeTemplateDeployIdentity>[0]> = {}
 ) {
@@ -48,12 +50,13 @@ function authorize(
     encodedKubeconfig: SERVER_KUBECONFIG,
     namespace: "ns-admin",
     project: PROJECT,
+    verify: ALLOW_VERIFY,
     ...input,
   });
 }
 
-test("template deploy auth forwards caller kubeconfig from desktop sdk", () => {
-  const result = authorize({ encodedKubeconfig: CALLER_KUBECONFIG });
+test("template deploy auth forwards caller kubeconfig from desktop sdk", async () => {
+  const result = await authorize({ encodedKubeconfig: CALLER_KUBECONFIG });
 
   assert.deepEqual(result, {
     encodedKubeconfig: CALLER_KUBECONFIG,
@@ -61,8 +64,10 @@ test("template deploy auth forwards caller kubeconfig from desktop sdk", () => {
   });
 });
 
-test("template deploy auth rejects kubeconfig namespace mismatch", () => {
-  const result = authorize({ encodedKubeconfig: OTHER_NAMESPACE_KUBECONFIG });
+test("template deploy auth rejects kubeconfig namespace mismatch", async () => {
+  const result = await authorize({
+    encodedKubeconfig: OTHER_NAMESPACE_KUBECONFIG,
+  });
 
   assert.deepEqual(result, {
     message: "Project namespace is not accessible.",
@@ -71,8 +76,8 @@ test("template deploy auth rejects kubeconfig namespace mismatch", () => {
   });
 });
 
-test("template deploy dev bypass rejects arbitrary kubeconfig", () => {
-  const result = authorize({
+test("template deploy dev bypass rejects arbitrary kubeconfig", async () => {
+  const result = await authorize({
     devBypass: true,
     devEncodedKubeconfig: SERVER_KUBECONFIG,
     encodedKubeconfig: CALLER_KUBECONFIG,
@@ -85,8 +90,8 @@ test("template deploy dev bypass rejects arbitrary kubeconfig", () => {
   });
 });
 
-test("template deploy auth rejects inaccessible namespaces", () => {
-  const result = authorize({ namespace: "other-ns" });
+test("template deploy auth rejects inaccessible namespaces", async () => {
+  const result = await authorize({ namespace: "other-ns" });
 
   assert.deepEqual(result, {
     message: "Project namespace is not accessible.",
@@ -95,12 +100,28 @@ test("template deploy auth rejects inaccessible namespaces", () => {
   });
 });
 
-test("template deploy auth rejects missing projects", () => {
-  const result = authorize({ project: null });
+test("template deploy auth rejects missing projects", async () => {
+  const result = await authorize({ project: null });
 
   assert.deepEqual(result, {
     message: "Project not found.",
     ok: false,
     status: 404,
+  });
+});
+
+test("template deploy auth rejects kubeconfig denied by Kubernetes verification", async () => {
+  const result = await authorize({
+    verify: async () => ({
+      message: "Kubeconfig is not authorized for this namespace.",
+      ok: false,
+      status: 403,
+    }),
+  });
+
+  assert.deepEqual(result, {
+    message: "Kubeconfig is not authorized for this namespace.",
+    ok: false,
+    status: 403,
   });
 });

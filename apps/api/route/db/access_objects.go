@@ -23,7 +23,7 @@ const (
 func registerAccessObjects(grp huma.API) {
 	type dbAccessObjectsBody struct {
 		ProjectID string                 `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		Namespace string                 `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		Namespace string                 `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)."`
 		Parent    *dbsvc.AccessObjectRef `json:"parent,omitempty" doc:"Returned object ref to browse children under. Omit or set null to list root objects."`
 		Kinds     []string               `json:"kinds,omitempty" doc:"Optional object kinds to include. Supported values include database, schema, table, view, collection, key, and index."`
 	}
@@ -66,7 +66,7 @@ func registerAccessObjects(grp huma.API) {
 func registerAccessObject(grp huma.API) {
 	type dbAccessObjectBody struct {
 		ProjectID string                `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		Namespace string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		Namespace string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)."`
 		Ref       dbsvc.AccessObjectRef `json:"ref" required:"true" doc:"Returned object ref to inspect."`
 	}
 	type dbAccessObjectInput struct {
@@ -107,7 +107,7 @@ func registerAccessObject(grp huma.API) {
 func registerAccessColumns(grp huma.API) {
 	type dbAccessColumnsBody struct {
 		ProjectID string                `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		Namespace string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		Namespace string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)."`
 		Ref       dbsvc.AccessObjectRef `json:"ref" required:"true" doc:"Returned table, view, collection, key, item, or index ref to inspect."`
 	}
 	type dbAccessColumnsInput struct {
@@ -148,7 +148,7 @@ func registerAccessColumns(grp huma.API) {
 func registerAccessRows(grp huma.API) {
 	type dbAccessRowsBody struct {
 		ProjectID  string                 `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		Namespace  string                 `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		Namespace  string                 `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)."`
 		Ref        dbsvc.AccessObjectRef  `json:"ref" required:"true" doc:"Returned table, view, collection, key, item, or index ref to read."`
 		PageSize   int                    `json:"pageSize,omitempty" doc:"Rows per page. Defaults to 100 and is capped at 500."`
 		PageOffset int                    `json:"pageOffset,omitempty" doc:"Zero-based row offset for pagination."`
@@ -195,7 +195,7 @@ func registerAccessRows(grp huma.API) {
 func registerAccessExport(grp huma.API) {
 	type dbAccessExportBody struct {
 		ProjectID string                `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		Namespace string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		Namespace string                `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)."`
 		Ref       dbsvc.AccessObjectRef `json:"ref" required:"true" doc:"Returned table, view, collection, key, item, or index ref to export."`
 		Format    string                `json:"format,omitempty" enum:"csv,ndjson" doc:"Export format. Defaults to csv. Only csv and ndjson are supported."`
 	}

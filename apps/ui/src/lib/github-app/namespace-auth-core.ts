@@ -1,7 +1,11 @@
 import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
 import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
-import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
+import {
+  encodedKubeconfigFromRequest,
+  type VerifyKubeconfigNamespace,
+  verifyKubeconfigNamespaceAccess,
+} from "@/lib/request-kubeconfig-auth";
 
 export type GithubConnectionAuthorization =
   | {
@@ -12,14 +16,15 @@ export type GithubConnectionAuthorization =
     }
   | { error: string; ok: false; status: number };
 
-export function authorizeGithubConnectionIdentity(
+export async function authorizeGithubConnectionIdentity(
   requestedNamespace: string | null | undefined,
   requestedUserId: string | null | undefined,
   credentials: {
     serverEncodedKubeconfig: string;
     serverNamespace?: string;
+    verify?: VerifyKubeconfigNamespace;
   }
-): GithubConnectionAuthorization {
+): Promise<GithubConnectionAuthorization> {
   const requested = requestedNamespace?.trim() ?? "";
   if (requested === "") {
     return {
@@ -71,6 +76,20 @@ export function authorizeGithubConnectionIdentity(
       error: "namespace does not match authenticated workspace.",
       ok: false,
       status: 403,
+    };
+  }
+
+  const verification = await (
+    credentials.verify ?? verifyKubeconfigNamespaceAccess
+  )({
+    kubeconfig,
+    namespace: authoritativeNamespace,
+  });
+  if (!verification.ok) {
+    return {
+      error: verification.message,
+      ok: false,
+      status: verification.status,
     };
   }
 

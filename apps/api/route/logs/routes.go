@@ -125,7 +125,7 @@ func registerQuery(grp huma.API) {
 			Search: input.Search,
 		}
 
-		// Resolve effective namespace and admin status, mirroring k8s query behavior.
+		// Resolve effective namespace, mirroring k8s query behavior.
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)

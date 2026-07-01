@@ -16,7 +16,7 @@ func registerEvents(grp huma.API) {
 		middleware.AuthInput
 		Limit     string `query:"limit" doc:"Maximum events to return (default 50)"`
 		Name      string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type eventsOutput struct {
 		Body k8ssvc.APWorkloadEventsResult

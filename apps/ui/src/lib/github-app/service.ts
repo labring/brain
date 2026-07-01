@@ -44,7 +44,7 @@ export async function createGithubAppInstallSessionUrl(input: {
   returnPath: string | null;
   userId: string;
 }): Promise<{ installUrl: string; state: string }> {
-  const identity = authorizeGithubConnectionIdentity(
+  const identity = await authorizeGithubConnectionIdentity(
     input.namespace,
     input.userId,
     { serverEncodedKubeconfig: input.encodedKubeconfig }

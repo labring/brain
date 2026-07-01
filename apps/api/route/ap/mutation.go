@@ -674,7 +674,7 @@ func registerDelete(grp huma.API) {
 	type deleteInput struct {
 		middleware.AuthInput
 		Name      string `query:"name" required:"true" doc:"AP instance name to delete"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type deleteOutput struct {
 		Body struct {
@@ -687,7 +687,7 @@ func registerDelete(grp huma.API) {
 		Method:      http.MethodDelete,
 		Path:        "/",
 		Summary:     "Delete AP",
-		Description: "Delete an AP instance by name.\n\nParameter usage:\n- `name` is required and selects the AP to delete.\n- `namespace` is optional; admins can override the namespace from kubeconfig.\n\nBehavior:\n- The Go API explicitly deletes Brain-managed public routing support resources, private Service, and Deployment using brain.io labels.",
+		Description: "Delete an AP instance by name.\n\nParameter usage:\n- `name` is required and selects the AP to delete.\n- `namespace` is optional. Resolution order is explicit namespace, kubeconfig current-context namespace, then the route default.\n\nBehavior:\n- The Go API explicitly deletes Brain-managed public routing support resources, private Service, and Deployment using brain.io labels.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *deleteInput) (*deleteOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -769,7 +769,7 @@ func templateDeploymentRefFromAPWorkload(workload apWorkload) (templateDeploymen
 func registerRestart(grp huma.API) {
 	type restartBody struct {
 		Name      string `json:"name" required:"true" doc:"AP metadata.name; the backing workload uses the same name in the same namespace."`
-		Namespace string `json:"namespace" doc:"Namespace of the AP (default from kubeconfig; admin can override)."`
+		Namespace string `json:"namespace" doc:"Namespace of the AP (default from kubeconfig)."`
 	}
 	type restartInput struct {
 		middleware.AuthInput

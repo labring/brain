@@ -17,7 +17,7 @@ import (
 func registerAccessHealth(grp huma.API) {
 	type dbAccessHealthBody struct {
 		ProjectID string `json:"projectId" doc:"Brain Project ID that must match the brain.io/project-id DB ownership label."`
-		Namespace string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)."`
+		Namespace string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)."`
 	}
 	type dbAccessHealthInput struct {
 		middleware.AuthInput

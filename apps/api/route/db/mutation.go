@@ -282,12 +282,12 @@ func registerBackup(grp huma.API) {
 		Name        string `json:"name" required:"true" doc:"DB instance name to create backup for"`
 		BackupName  string `json:"backupName" required:"true" doc:"Backup Name for the Backup CR. Must be unique in the namespace and follow lowercase DNS-style Kubernetes naming rules."`
 		Description string `json:"description,omitempty" maxLength:"120" doc:"Optional short description stored as backup metadata."`
-		Namespace   string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace   string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)"`
 	}
 	type dbBackupDeleteBody struct {
 		Name       string `json:"name" required:"true" doc:"Source DB Service name"`
 		BackupName string `json:"backupName" required:"true" doc:"Backup Name to delete"`
-		Namespace  string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace  string `json:"namespace,omitempty" doc:"Namespace (default from kubeconfig)"`
 	}
 	type dbBackupInput struct {
 		middleware.AuthInput
@@ -405,7 +405,7 @@ func registerRestore(grp huma.API) {
 		BackupName      string `json:"backupName" required:"true" doc:"Completed DB Service Backup metadata.name to restore from"`
 		BackupNamespace string `json:"backupNamespace,omitempty" doc:"Backup namespace; defaults to the source DB Service namespace"`
 		Name            string `json:"name" required:"true" doc:"Source DB Service metadata.name. The source remains intact."`
-		Namespace       string `json:"namespace,omitempty" doc:"Source DB Service namespace; default from kubeconfig; admin can override"`
+		Namespace       string `json:"namespace,omitempty" doc:"Source DB Service namespace; default from kubeconfig"`
 		RestoredName    string `json:"restoredName" required:"true" doc:"New DB Service metadata.name. Must be lowercase DNS-style and unique in the namespace."`
 	}
 	type dbRestoreInput struct {
@@ -486,7 +486,7 @@ type dbBackupPolicyRequest struct {
 	CronExpression string `json:"cronExpression,omitempty" doc:"UTC cron expression for the automatic DB Service Backup Policy."`
 	Enabled        bool   `json:"enabled" doc:"Whether future automatic DB Service Backups should run."`
 	Name           string `json:"name" required:"true" doc:"DB metadata.name."`
-	Namespace      string `json:"namespace,omitempty" doc:"Namespace of the DB (default from kubeconfig; admin can override)."`
+	Namespace      string `json:"namespace,omitempty" doc:"Namespace of the DB (default from kubeconfig)."`
 	RetentionDays  int64  `json:"retentionDays,omitempty" doc:"Automatic backup retention in days. Allowed values: 1, 3, 7, 14, or 30."`
 }
 
@@ -711,7 +711,7 @@ func isAllowedRetentionDays(days int64) bool {
 
 type dbLifecycleBody struct {
 	Name      string `json:"name" required:"true" doc:"DB metadata.name."`
-	Namespace string `json:"namespace" doc:"Namespace of the DB (default from kubeconfig; admin can override)."`
+	Namespace string `json:"namespace" doc:"Namespace of the DB (default from kubeconfig)."`
 }
 
 type dbLifecycleInput struct {
@@ -893,7 +893,7 @@ func registerUpdate(grp huma.API) {
 	type dbUpdateInput struct {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"DB instance name to patch"`
-		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB product surface.\n\nSupported patch targets:\n- spec.replicas: creates a KubeBlocks HorizontalScaling OpsRequest.\n- spec.paused: creates a KubeBlocks Stop or Start OpsRequest.\n- spec.restartRequest: creates a KubeBlocks Restart OpsRequest; prefer POST /restart.\n- spec.storageSize: creates a KubeBlocks VolumeExpansion OpsRequest when the desired size increases.\n- spec.cpuRequest / spec.memoryRequest: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.cpuLimit / spec.memoryLimit: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.terminationPolicy: patches the KubeBlocks Cluster management policy.\n- spec.exposeNodePort: applies or deletes Service {name}-export.\n\nUnsupported for now and rejected with 422: spec.quota, spec.storageClassName, spec.clusterVersion, spec.version, spec.scheduledBackup, spec.parameterConfig, spec.restoreFromBackup.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Expand storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Runtime operations are expressed as KubeBlocks OpsRequest CRs, not direct Cluster componentSpec rewrites."`
 	}
 	type dbUpdateOutput struct {
@@ -905,7 +905,7 @@ func registerUpdate(grp huma.API) {
 		Method:      http.MethodPatch,
 		Path:        "/",
 		Summary:     "Update DB",
-		Description: "Patch a DB instance by name.\n\nRequest parameter usage:\n- `name` is required and selects the DB to patch.\n- `namespace` is optional; admins can use it to target a different namespace.\n- The request body must be a JSON merge patch fragment for the DB product surface.\n\nPatch semantics:\n- Runtime changes create KubeBlocks OpsRequest CRs, following the Sealos dbprovider model.\n- `spec.replicas` creates HorizontalScaling.\n- `spec.storageSize` creates VolumeExpansion when increasing size.\n- `spec.cpuRequest`, `spec.memoryRequest`, `spec.cpuLimit`, and `spec.memoryLimit` create VerticalScaling.\n- `spec.paused` creates Stop or Start.\n- `spec.restartRequest` creates Restart; prefer `POST /api/db/v1alpha1/restart`.\n- `spec.exposeNodePort` toggles Service `{metadata.name}-export`.\n- `spec.terminationPolicy` is patched directly on the Cluster management policy.\n\nUnsupported fields are rejected with 422 so callers do not silently get a partial update.",
+		Description: "Patch a DB instance by name.\n\nRequest parameter usage:\n- `name` is required and selects the DB to patch.\n- `namespace` is optional. Resolution order is explicit namespace, kubeconfig current-context namespace, then the route default.\n- The request body must be a JSON merge patch fragment for the DB product surface.\n\nPatch semantics:\n- Runtime changes create KubeBlocks OpsRequest CRs, following the Sealos dbprovider model.\n- `spec.replicas` creates HorizontalScaling.\n- `spec.storageSize` creates VolumeExpansion when increasing size.\n- `spec.cpuRequest`, `spec.memoryRequest`, `spec.cpuLimit`, and `spec.memoryLimit` create VerticalScaling.\n- `spec.paused` creates Stop or Start.\n- `spec.restartRequest` creates Restart; prefer `POST /api/db/v1alpha1/restart`.\n- `spec.exposeNodePort` toggles Service `{metadata.name}-export`.\n- `spec.terminationPolicy` is patched directly on the Cluster management policy.\n\nUnsupported fields are rejected with 422 so callers do not silently get a partial update.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbUpdateInput) (*dbUpdateOutput, error) {
 		restConfig, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
@@ -1276,7 +1276,7 @@ func registerDelete(grp huma.API) {
 	type dbDeleteInput struct {
 		middleware.AuthInput
 		Name      string `query:"name" required:"true" doc:"DB instance name to delete"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type dbDeleteOutput struct {
 		Body struct {
@@ -1289,7 +1289,7 @@ func registerDelete(grp huma.API) {
 		Method:      http.MethodDelete,
 		Path:        "/",
 		Summary:     "Delete DB",
-		Description: "Delete a DB instance by name.\n\nParameter usage:\n- `name` is required and selects the DB to delete.\n- `namespace` is optional; admins can override the namespace from kubeconfig.\n\nBehavior:\n- The Go API explicitly deletes Brain-managed DB support resources and the KubeBlocks Cluster using brain.io labels.",
+		Description: "Delete a DB instance by name.\n\nParameter usage:\n- `name` is required and selects the DB to delete.\n- `namespace` is optional. Resolution order is explicit namespace, kubeconfig current-context namespace, then the route default.\n\nBehavior:\n- The Go API explicitly deletes Brain-managed DB support resources and the KubeBlocks Cluster using brain.io labels.",
 		Tags:        []string{"DB"},
 	}, func(ctx context.Context, input *dbDeleteInput) (*dbDeleteOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)

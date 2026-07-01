@@ -40,17 +40,18 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function authorizeNamespace(
+async function authorizeNamespace(
   request: Request,
   namespace: string
-):
+): Promise<
   | { denied: null; encodedKubeconfig: string }
-  | { denied: Response; encodedKubeconfig?: never } {
+  | { denied: Response; encodedKubeconfig?: never }
+> {
   if (hasDevCredentialBypass()) {
     return { denied: null, encodedKubeconfig: "" };
   }
 
-  const authorization = authorizeRequestNamespace(request, {
+  const authorization = await authorizeRequestNamespace(request, {
     namespace,
     subject: "Project",
   });

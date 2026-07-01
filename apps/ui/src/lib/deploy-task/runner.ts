@@ -2071,10 +2071,16 @@ async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
   if (githubConnectionId === "") {
     throw new Error("GitHub connection ID is required for GitHub deployment.");
   }
-  return await getGithubInstallationToken({
+  const token = await getGithubInstallationToken({
     connectionId: githubConnectionId,
     namespace: task.namespace,
   });
+  if (token == null) {
+    throw new Error(
+      "GitHub App connection is not authorized for this deployment."
+    );
+  }
+  return token;
 }
 
 async function runAiDeploymentTask(input: {

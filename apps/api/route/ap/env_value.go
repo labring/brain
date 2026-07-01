@@ -44,7 +44,7 @@ func registerEnvValue(grp huma.API) {
 		middleware.AuthInput
 		EnvName   string `query:"envName" required:"true" doc:"Saved AP environment variable name to resolve."`
 		Name      string `query:"name" required:"true" doc:"AP instance name."`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type envValueOutput struct {
 		CacheControl string `header:"Cache-Control"`

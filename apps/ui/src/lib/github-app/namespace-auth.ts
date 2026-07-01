@@ -10,7 +10,7 @@ export function resolveGithubConnectionIdentity(
   request: Request,
   requestedNamespace: string | null | undefined,
   requestedUserId: string | null | undefined
-): GithubConnectionAuthorization {
+): Promise<GithubConnectionAuthorization> {
   return authorizeGithubConnectionIdentity(
     requestedNamespace,
     requestedUserId,

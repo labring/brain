@@ -40,7 +40,7 @@ func registerCheckReady(grp huma.API) {
 	type checkReadyInput struct {
 		middleware.AuthInput
 		Name      string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type checkReadyOutput struct {
 		Body []apCheckReadyItem

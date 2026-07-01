@@ -41,7 +41,7 @@ export function consumeGithubAppInstallSession(
 ): Promise<GithubAppInstallSessionRow | null> {
   const trimmedState = state.trim();
   if (trimmedState === "") {
-    return null;
+    return Promise.resolve(null);
   }
   const now = new Date();
   return getAssistantDb().transaction(async (tx) => {
