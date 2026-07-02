@@ -630,6 +630,18 @@ _Avoid_: metric refresh, node state, resource status.
 
 A read-only Main Action Surface for inspecting timestamped runtime output emitted by one AP or DB Service. Resource Logs are for recent or historical observation, not for interactive commands like AP Terminal or DB Terminal.
 
+### Live Log Window
+
+The Resource Logs viewing state whose window is anchored to the present: it always covers the trailing relative span and keeps following newly emitted output. Choosing a relative span means entering or staying in this state; Resource Logs are always in exactly one of Live Log Window or Frozen Log Window.
+
+_Avoid_: realtime toggle, auto-refresh interval, live mode flag, refresh switch.
+
+### Frozen Log Window
+
+The Resource Logs viewing state whose window is anchored to fixed wall-clock bounds and never moves on its own. Pausing a Live Log Window enters it by materializing the window bounds at that instant; applying an absolute range enters it directly. A Frozen Log Window is always described by its actual start and end, never as a relative span.
+
+_Avoid_: custom range, paused relative range, snapshot mode, static last-hour view.
+
 ### Project Aggregate Status
 
 A derived health tone for one Project row in the project list, computed from the phases of the Project's APs and DBs. It is not a persisted field on the Project product record; it is computed from sibling workload lists. It expresses "are the workloads inside this project healthy", which is what users look at on the list, and is distinct from whether the Project record itself exists.
