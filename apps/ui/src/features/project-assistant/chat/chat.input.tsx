@@ -13,10 +13,20 @@ import {
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Send, Square, Wrench } from "lucide-react";
-import { type ComponentProps, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  type ComponentProps,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
 
 import type { ChatGithubDeployPopoverConfig } from "./chat.types";
+
+function isComposingText(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
 
 /** GitHub invertocat path (matches common monochrome mark). */
 export const GITHUB_MARK_PATH =
@@ -138,7 +148,10 @@ export function ChatComposerShell({
   return (
     <div
       className={cn(
-        "group flex min-h-[130px] w-full flex-col justify-between gap-2 rounded-xl border border-transparent bg-input/30 p-[10px] backdrop-blur-sm focus-within:border-border group-focus-within:border-border",
+        "group flex min-h-[126px] w-full flex-col justify-between gap-2 rounded-2xl border border-border/35 bg-input/20 p-3 backdrop-blur-sm",
+        "transition-[background-color,border-color,box-shadow] duration-150 ease-out",
+        "focus-within:border-blue-300/45 focus-within:bg-input/30 focus-within:ring-1 focus-within:ring-blue-400/20",
+        "group-focus-within:border-blue-300/45 group-focus-within:bg-input/30 group-focus-within:ring-1 group-focus-within:ring-blue-400/20",
         className
       )}
       data-slot="chat-composer-shell"
@@ -159,7 +172,7 @@ export type ChatComposerTextareaProps = Omit<
 
 export function ChatComposerTextarea({
   className,
-  placeholder = "Tell me your project ideas here...",
+  placeholder = "Ask SealAI to inspect, deploy, or explain this project...",
   onKeyDown,
   onPrimaryAction,
   onValueChange,
@@ -178,7 +191,7 @@ export function ChatComposerTextarea({
     const adjustHeight = () => {
       textarea.style.height = "auto";
       const minHeight = 20;
-      const maxHeight = 80;
+      const maxHeight = 96;
       const scrollHeight = textarea.scrollHeight;
       const nextHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
       textarea.style.height = `${nextHeight}px`;
@@ -200,7 +213,7 @@ export function ChatComposerTextarea({
     }
     textarea.style.height = "auto";
     const minHeight = 20;
-    const maxHeight = 80;
+    const maxHeight = 96;
     const scrollHeight = textarea.scrollHeight;
     const nextHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
     textarea.style.height = `${nextHeight}px`;
@@ -212,7 +225,7 @@ export function ChatComposerTextarea({
       <Textarea
         {...rest}
         className={cn(
-          "max-h-20 min-h-5 w-full resize-none rounded-none border-0 bg-transparent! p-0 text-sm! leading-5 shadow-none focus-visible:border-0 not-aria-invalid:focus-visible:border-0 focus-visible:ring-0 not-aria-invalid:focus-visible:ring-0",
+          "max-h-24 min-h-5 w-full resize-none rounded-none border-0 bg-transparent! p-0 text-sm! leading-5 shadow-none placeholder:text-muted-foreground focus-visible:border-0 not-aria-invalid:focus-visible:border-0 focus-visible:ring-0 not-aria-invalid:focus-visible:ring-0",
           className
         )}
         onChange={(e) => onValueChange(e.target.value)}
@@ -222,7 +235,8 @@ export function ChatComposerTextarea({
             !e.shiftKey &&
             !e.ctrlKey &&
             !e.metaKey &&
-            !responding
+            !responding &&
+            !isComposingText(e)
           ) {
             e.preventDefault();
             onPrimaryAction();
@@ -290,13 +304,13 @@ export function ChatComposerContextIndicator({
       <div className="flex min-h-0 items-center justify-center">
         <div
           className={cn(
-            "flex h-12 min-h-8 w-[98%] min-w-0 translate-y-full gap-1 overflow-hidden rounded-xl border border-transparent bg-input/30 p-1 px-2 text-muted-foreground text-xs opacity-0 shadow-sm",
+            "flex h-6 w-[calc(100%-0.5rem)] min-w-0 translate-y-2 items-center gap-1 overflow-hidden rounded-t-xl border border-transparent border-b-0 bg-input/20 px-2 text-muted-foreground text-xs opacity-0",
 
             // Base transition (applies to both enter + exit)
-            "transition-all duration-300 ease-out motion-reduce:transition-none",
+            "transition-all duration-200 ease-out motion-reduce:transition-none",
 
             // Enter state
-            "group-focus-within:translate-y-6 group-focus-within:border-border group-focus-within:opacity-100",
+            "group-focus-within:translate-y-0 group-focus-within:border-border/35 group-focus-within:opacity-100",
 
             // Optional: slight delay on exit for polish
             "group-focus-within:delay-75",
@@ -304,7 +318,7 @@ export function ChatComposerContextIndicator({
           )}
         >
           <span className="shrink-0 text-muted-foreground">Context:</span>
-          <div className="min-w-0 flex-1 flex-wrap items-center">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             {labels.map((label, index) => (
               <span
                 className="pointer-events-none shrink-0 text-foreground text-xs"
@@ -469,8 +483,9 @@ export function ChatComposerSend({
     <AppIconButton
       aria-label={responding ? "Stop response" : "Send message"}
       className={cn(
-        "shrink-0 transition-all duration-100",
+        "shrink-0 transition-colors duration-150",
         sendDisabled ? "cursor-not-allowed" : "cursor-pointer",
+        responding && "bg-input text-foreground hover:bg-input/80",
         className
       )}
       disabled={sendDisabled}
@@ -502,7 +517,7 @@ export function ChatComposer({
   onComposerAction,
   onPrimaryAction,
   onValueChange,
-  placeholder = "Tell me your project ideas here...",
+  placeholder = "Ask SealAI to inspect, deploy, or explain this project...",
   responding = false,
   value,
   ...shellProps

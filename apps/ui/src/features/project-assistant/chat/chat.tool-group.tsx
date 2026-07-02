@@ -92,14 +92,6 @@ function readIntention(input: unknown): string | undefined {
     : undefined;
 }
 
-function formatJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 function ToolStatusIcon({ state }: { state: string }) {
   if (state === "output-available") {
     return (
@@ -125,15 +117,26 @@ function ToolStatusIcon({ state }: { state: string }) {
       />
     );
   }
-  return <Spinner className="size-3.5 shrink-0 text-muted-foreground/80" />;
+  return <Spinner className="size-3.5 shrink-0 text-blue-300/80" />;
 }
 
-function PreBlock({ children }: { children: string }) {
-  return (
-    <pre className="max-h-56 overflow-auto rounded-md bg-muted/45 p-2 font-mono text-foreground text-xs leading-relaxed">
-      {children}
-    </pre>
-  );
+function toolStatusText(state: string): string {
+  if (state === "output-available") {
+    return "Completed";
+  }
+  if (state === "output-error") {
+    return "Failed";
+  }
+  if (state === "output-denied") {
+    return "Denied";
+  }
+  if (state === "approval-requested") {
+    return "Waiting for approval";
+  }
+  if (state === "approval-responded") {
+    return "Applying approval";
+  }
+  return "Running";
 }
 
 /** One tool-call row inside a `ChatToolGroup`. */
@@ -168,13 +171,13 @@ function ChatToolGroupItem({
       <CollapsibleTrigger
         className={cn(
           "group/tool-row flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left",
-          "transition-colors hover:bg-input/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+          "transition-colors hover:bg-input/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
         )}
         type="button"
       >
         <ToolStatusIcon state={part.state} />
         <span className="min-w-0 flex-1 truncate">{labelNode}</span>
-        <span className="shrink-0 rounded border border-border/45 bg-input/20 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <span className="shrink-0 rounded border border-border/35 bg-input/15 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
           {fallbackLabel}
         </span>
         {durationMs !== undefined && settled ? (
@@ -188,34 +191,21 @@ function ChatToolGroupItem({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1.5 space-y-2 rounded-md bg-input/20 p-2 backdrop-blur-sm">
-          {part.input !== undefined && (
-            <div>
-              <p className="mb-1 font-medium text-foreground text-xs">Input</p>
-              <PreBlock>{formatJson(part.input)}</PreBlock>
-            </div>
-          )}
+        <div className="mt-1.5 space-y-2 rounded-md bg-input/15 p-2">
+          <p className="text-muted-foreground text-xs">
+            <span className="font-medium text-foreground">Status</span>{" "}
+            {toolStatusText(part.state)}
+          </p>
           {durationMs !== undefined && settled ? (
             <p className="text-muted-foreground text-xs">
               <span className="font-medium text-foreground">Duration</span>{" "}
               {formatToolDurationMs(durationMs)}
             </p>
           ) : null}
-          {part.state === "output-available" && part.output !== undefined && (
-            <div>
-              <p className="mb-1 font-medium text-foreground text-xs">Output</p>
-              <PreBlock>{formatJson(part.output)}</PreBlock>
-            </div>
-          )}
           {part.state === "output-error" && (
-            <div>
-              <p className="mb-1 font-medium text-destructive text-xs">Error</p>
-              <p className="whitespace-pre-wrap rounded-md border border-destructive/35 bg-destructive/10 p-2 text-destructive text-xs">
-                {part.errorText != null && part.errorText !== ""
-                  ? part.errorText
-                  : "Unknown error"}
-              </p>
-            </div>
+            <p className="rounded-md border border-destructive/35 bg-destructive/10 p-2 text-destructive text-xs">
+              Tool call failed.
+            </p>
           )}
           {part.state === "output-denied" && (
             <p className="text-muted-foreground text-xs">
@@ -314,18 +304,22 @@ export function ChatToolGroup({
 
   return (
     <div
-      className="w-full min-w-0"
+      className="w-full min-w-0 py-0.5"
       data-slot="chat-tool-group"
       data-tool-group-prefix={partKeyPrefix}
     >
       <Task
+        className="border-border/35 bg-transparent p-0"
         onOpenChange={(next) => {
           setUserTouched(true);
           setOpen(next);
         }}
         open={open}
       >
-        <TaskTrigger title={triggerLabel}>
+        <TaskTrigger
+          className="min-h-8 rounded-md px-2 py-1.5 hover:bg-input/20"
+          title={triggerLabel}
+        >
           <ListTodoIcon
             aria-hidden
             className="size-3.5 shrink-0 text-muted-foreground/80"
@@ -346,7 +340,7 @@ export function ChatToolGroup({
             className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180"
           />
         </TaskTrigger>
-        <TaskContent>
+        <TaskContent className="mt-1">
           {parts.map((p, i) => (
             <ChatToolGroupItem
               addToolApprovalResponse={addToolApprovalResponse}
