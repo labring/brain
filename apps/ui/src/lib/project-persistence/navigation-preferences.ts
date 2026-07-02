@@ -9,7 +9,6 @@ import {
   type ProjectNavigationPreferencesRow,
   projectNavigationPreferences,
 } from "./schema";
-import { ensureProjectStorageSchema } from "./schema-bootstrap";
 
 export interface ProjectNavigationPreferences {
   namespace: string;
@@ -35,7 +34,6 @@ function rowToPreferences(
 export async function getProjectNavigationPreferences(
   namespace: string
 ): Promise<ProjectNavigationPreferences> {
-  await ensureProjectStorageSchema();
   const [row] = await getProjectDb()
     .select()
     .from(projectNavigationPreferences)
@@ -50,7 +48,6 @@ export async function getProjectNavigationPreferences(
 export async function updateProjectNavigationPreferences(
   input: UpdateProjectNavigationPreferencesInput
 ): Promise<ProjectNavigationPreferences> {
-  await ensureProjectStorageSchema();
   const now = new Date();
   const pinnedProjectIds = normalizePinnedProjectIds(input.pinnedProjectIds);
   const [row] = await getProjectDb()

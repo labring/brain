@@ -154,6 +154,7 @@ export function AppSelect({
   value,
 }: AppSelectProps) {
   const byValue = new Map(options.map((option) => [option.value, option]));
+  const filter = searchable ? undefined : null;
 
   if (options.length === 0) {
     return (
@@ -173,6 +174,7 @@ export function AppSelect({
     <Combobox.Root
       defaultValue={defaultValue}
       disabled={disabled}
+      filter={filter}
       items={options.map((option) => option.value)}
       itemToStringLabel={(itemValue: string) => {
         const option = byValue.get(itemValue);
@@ -287,6 +289,7 @@ export function AppMultiSelect({
 }: AppMultiSelectProps) {
   const byValue = new Map(options.map((option) => [option.value, option]));
   const selectedValues = value.filter((item) => byValue.has(item));
+  const filter = searchable ? undefined : null;
 
   if (options.length === 0) {
     return (
@@ -305,6 +308,7 @@ export function AppMultiSelect({
   return (
     <Combobox.Root
       disabled={disabled}
+      filter={filter}
       items={options.map((option) => option.value)}
       itemToStringLabel={(itemValue: string) => {
         const option = byValue.get(itemValue);

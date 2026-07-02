@@ -76,6 +76,7 @@ const DB_SERVICE_BACKUP_WEEKDAY_SELECT_LABELS = [
   "Saturday",
 ] as const;
 const BACKUP_DESCRIPTION_MAX_LENGTH = 120;
+const BACKUP_DESCRIPTION_INPUT_MAX_LENGTH = 1024;
 
 function removeFormError(
   errors: DbServiceBackupFormErrors,
@@ -407,6 +408,11 @@ function BackupCreationForm({
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState<DbServiceBackupFormErrors>({});
   const descriptionLength = [...description].length;
+  const isDescriptionOverLimit =
+    descriptionLength > BACKUP_DESCRIPTION_MAX_LENGTH;
+  const descriptionError = isDescriptionOverLimit
+    ? "Description must be 120 characters or fewer."
+    : errors.description;
 
   useEffect(() => {
     if (!isBackupNameEdited) {
@@ -469,7 +475,7 @@ function BackupCreationForm({
           />
           {errors.backupName !== undefined && (
             <p
-              className="mt-1 mb-0 text-[12px] text-destructive-foreground leading-4"
+              className="mt-1 mb-0 text-[12px] text-destructive leading-4"
               data-testid="database.backup.name-error"
             >
               {errors.backupName}
@@ -485,17 +491,23 @@ function BackupCreationForm({
             >
               {"Description"}
             </label>
-            <span className="text-[11px] text-muted-foreground leading-4">
+            <span
+              className={
+                isDescriptionOverLimit
+                  ? "text-[11px] text-destructive leading-4"
+                  : "text-[11px] text-muted-foreground leading-4"
+              }
+            >
               {`${descriptionLength}/${BACKUP_DESCRIPTION_MAX_LENGTH}`}
             </span>
           </div>
           <AppTextarea
-            aria-invalid={errors.description === undefined ? undefined : true}
-            className="min-h-9 min-w-0 resize-none border-input bg-transparent text-sm"
+            aria-invalid={descriptionError === undefined ? undefined : true}
+            className="max-h-[7.25rem] min-h-9 min-w-0 resize-none overflow-y-auto border-input bg-transparent text-sm"
             data-testid="database.backup.description-input"
             disabled={disabled || isSubmitting}
             id="db-service-backup-description"
-            maxLength={BACKUP_DESCRIPTION_MAX_LENGTH + 1}
+            maxLength={BACKUP_DESCRIPTION_INPUT_MAX_LENGTH}
             onChange={(event) => {
               setDescription(event.target.value);
               setErrors((current) => removeFormError(current, "description"));
@@ -504,12 +516,12 @@ function BackupCreationForm({
             rows={1}
             value={description}
           />
-          {errors.description !== undefined && (
+          {descriptionError !== undefined && (
             <p
-              className="mt-1 mb-0 text-[12px] text-destructive-foreground leading-4"
+              className="mt-1 mb-0 text-[12px] text-destructive leading-4"
               data-testid="database.backup.description-error"
             >
-              {errors.description}
+              {descriptionError}
             </p>
           )}
         </div>
@@ -533,7 +545,7 @@ function BackupCreationForm({
           data-qa-object="backup"
           data-qa-state={isSubmitting ? "loading" : "idle"}
           data-testid="database.backup.create-button"
-          disabled={disabled || isSubmitting}
+          disabled={disabled || isSubmitting || isDescriptionOverLimit}
           type="submit"
           variant="secondary"
         >

@@ -45,8 +45,9 @@ function GithubPanel() {
             const projectDescription = creatorStates.projectDescription.trim();
             const displayNameError =
               creatorActions.validateProjectDisplayName(projectDisplayName);
-            const descriptionError =
-              creatorActions.validateProjectDescription(projectDescription);
+            const descriptionError = creatorActions.validateProjectDescription(
+              creatorStates.projectDescription
+            );
             if (displayNameError != null || descriptionError != null) {
               return;
             }
@@ -73,8 +74,9 @@ function GithubPanel() {
             const projectDescription = creatorStates.projectDescription.trim();
             const displayNameError =
               creatorActions.validateProjectDisplayName(projectDisplayName);
-            const descriptionError =
-              creatorActions.validateProjectDescription(projectDescription);
+            const descriptionError = creatorActions.validateProjectDescription(
+              creatorStates.projectDescription
+            );
             if (displayNameError != null || descriptionError != null) {
               return;
             }
@@ -143,8 +145,9 @@ function DockerPanel() {
           const projectDisplayName = states.projectDisplayName.trim();
           const projectDescription = states.projectDescription.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
-          const descriptionError =
-            actions.validateProjectDescription(projectDescription);
+          const descriptionError = actions.validateProjectDescription(
+            states.projectDescription
+          );
           if (error != null || descriptionError != null) {
             return;
           }
@@ -190,8 +193,9 @@ function DatabasePanel({
             ? ""
             : states.projectDescription.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
-          const descriptionError =
-            actions.validateProjectDescription(projectDescription);
+          const descriptionError = actions.validateProjectDescription(
+            meta.databaseDirect ? "" : states.projectDescription
+          );
           if (error != null || descriptionError != null) {
             return;
           }
@@ -234,8 +238,9 @@ function TemplatePanel() {
             ? ""
             : states.projectDescription.trim();
           const error = actions.validateProjectDisplayName(projectDisplayName);
-          const descriptionError =
-            actions.validateProjectDescription(projectDescription);
+          const descriptionError = actions.validateProjectDescription(
+            meta.templateDirect ? "" : states.projectDescription
+          );
           if (error != null || descriptionError != null) {
             return;
           }

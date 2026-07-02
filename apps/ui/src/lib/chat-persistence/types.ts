@@ -1,7 +1,7 @@
 import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
-/** Postgres schema name. Shared between drizzle tables and `instrumentation.ts` bootstrap. */
+/** Postgres schema name for assistant chat tables (created by `drizzle/` migrations). */
 export const ASSISTANT_DB_SCHEMA = "sealai_assistant";
 
 /** Bucket key for threads created without an explicit kube namespace. */
