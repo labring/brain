@@ -1,6 +1,6 @@
 "use client";
 
-import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
+import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { sealosLogoSrc } from "@workspace/ui/assets/brand";
 import {
   type DeviconKey,
@@ -29,12 +29,18 @@ import {
   type ComponentProps,
   Fragment,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { createProjectSidebarShortcutItems } from "@/components/app-sidebar.shortcuts";
+import {
+  type AppSidebarUpgradeUsageRow,
+  formatWorkspaceQuotaRows,
+  type WorkspaceQuotaItem,
+} from "@/components/app-sidebar-upgrade";
 import { useLastViewedProject } from "@/hooks/use-last-viewed-project";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
@@ -111,31 +117,44 @@ const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
-const UPGRADE_USAGE_ROWS = [
-  ["CPU", "0.0/0"],
-  ["Memory", "0.0/0"],
-  ["Storage", "0.0/0"],
-  ["Ports", "0.0/0"],
-] as const;
+const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
+
+function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const item = value as { limit?: unknown; type?: unknown; used?: unknown };
+  return (
+    (item.type === "cpu" ||
+      item.type === "memory" ||
+      item.type === "storage" ||
+      item.type === "nodeport") &&
+    typeof item.used === "number" &&
+    typeof item.limit === "number"
+  );
+}
+
+async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
+  const snapshot = await sealosApp.getWorkspaceQuota();
+  return formatWorkspaceQuotaRows(
+    Array.isArray(snapshot.quota)
+      ? snapshot.quota.filter(isWorkspaceQuotaItem)
+      : []
+  );
+}
 
 async function openCostCenterApp() {
-  const cleanup = createSealosApp();
-
-  try {
-    await sealosApp.runEvents("openDesktopApp", {
-      appKey: "system-costcenter",
-      pathname: "/",
-      query: {
-        mode: "upgrade",
-      },
-      messageData: {
-        type: "InternalAppCall",
-        mode: "upgrade",
-      },
-    });
-  } finally {
-    cleanup?.();
-  }
+  await sealosApp.runEvents("openDesktopApp", {
+    appKey: "system-costcenter",
+    pathname: "/",
+    query: {
+      mode: "upgrade",
+    },
+    messageData: {
+      type: "InternalAppCall",
+      mode: "upgrade",
+    },
+  });
 }
 
 type AppSidebarLinkButtonProps = Pick<
@@ -179,14 +198,29 @@ function AppSidebarLinkButton({
 
 function AppSidebarUpgrade() {
   const [open, setOpen] = useState(false);
+  const [usageRows, setUsageRows] = useState<AppSidebarUpgradeUsageRow[]>(
+    EMPTY_UPGRADE_USAGE_ROWS
+  );
   const handleUpgradeClick = () => {
     openCostCenterApp().catch((error: unknown) => {
       console.warn("[AppSidebarUpgrade] open cost center failed:", error);
     });
   };
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      return;
+    }
+    loadWorkspaceQuotaRows()
+      .then(setUsageRows)
+      .catch((error: unknown) => {
+        console.warn("[AppSidebarUpgrade] load workspace quota failed:", error);
+        setUsageRows(EMPTY_UPGRADE_USAGE_ROWS);
+      });
+  }, []);
 
   return (
-    <Popover onOpenChange={setOpen} open={open}>
+    <Popover onOpenChange={handleOpenChange} open={open}>
       <PopoverTrigger
         render={
           <AppIconButton
@@ -209,7 +243,7 @@ function AppSidebarUpgrade() {
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3">
-            {UPGRADE_USAGE_ROWS.map(([label, value]) => (
+            {usageRows.map(([label, value]) => (
               <div
                 className="flex w-full items-start justify-between gap-4 whitespace-nowrap text-sm/5"
                 key={label}
