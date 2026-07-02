@@ -14,7 +14,7 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import {
@@ -64,6 +64,74 @@ const READ_ONLY_RESOURCE_ACTION_REASON =
 const AUTH_UNAVAILABLE_RESOURCE_ACTION_REASON =
   "Resource credentials are not available.";
 const MISSING_RESOURCE_TARGET_REASON = "Resource target is unavailable.";
+
+/** Engines whose native client the platform ships for DB Terminal and DB Access. */
+const DB_ENGINES_WITH_CLIENT_SUPPORT = new Set([
+  "apecloud-mysql",
+  "mongodb",
+  "mysql",
+  "postgresql",
+  "redis",
+]);
+const DB_TERMINAL_UNSUPPORTED_ENGINE_REASON =
+  "Terminal is not available for this database engine.";
+const DB_ACCESS_UNSUPPORTED_ENGINE_REASON =
+  "Database access is not available for this database engine.";
+
+function dbEngineClientSupported(engineKey: string | undefined): boolean {
+  const normalized = engineKey?.trim().toLowerCase() ?? "";
+  return normalized === "" || DB_ENGINES_WITH_CLIENT_SUPPORT.has(normalized);
+}
+
+function databaseLiveSessionUnavailableReasons(engineKey: string | undefined): {
+  dbAccessReason?: string;
+  terminalReason?: string;
+} {
+  if (dbEngineClientSupported(engineKey)) {
+    return {};
+  }
+  return {
+    dbAccessReason: DB_ACCESS_UNSUPPORTED_ENGINE_REASON,
+    terminalReason: DB_TERMINAL_UNSUPPORTED_ENGINE_REASON,
+  };
+}
+
+function databaseQuickActionFactory({
+  executeCommandPlan,
+  node,
+  nodesRef,
+  readOnly,
+  target,
+}: {
+  executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
+  node: Node;
+  nodesRef: RefObject<Node[]>;
+  readOnly: boolean;
+  target: ReturnType<typeof projectDbTargetFromNode>;
+}) {
+  const surfaceDisabledReason =
+    target == null ? MISSING_RESOURCE_TARGET_REASON : undefined;
+  return (action: DatabaseNodeQuickActionKey, unavailableReason?: string) => ({
+    disabled: target == null || unavailableReason != null,
+    disabledReason: surfaceDisabledReason ?? unavailableReason,
+    onClick:
+      target == null
+        ? undefined
+        : () =>
+            executeCommandPlan(
+              planProjectCanvasCommand({
+                intent: {
+                  action,
+                  kind: "databaseQuickAction",
+                  selection: projectCanvasSelectionFromNode(node),
+                  target,
+                },
+                nodes: nodesRef.current,
+                readOnly,
+              })
+            ),
+  });
+}
 
 function resourceActionDisabledReason({
   authReady,
@@ -347,10 +415,6 @@ export function useProjectCanvasNodeDecorators({
         onClick: () => runResourceAction(mutation, copy),
       });
       const displayName = data.states.name || name;
-      const hasSurfaceActions = target != null;
-      const surfaceDisabledReason = hasSurfaceActions
-        ? undefined
-        : MISSING_RESOURCE_TARGET_REASON;
       const lifecycleActions =
         canUseLifecycle && workload != null
           ? {
@@ -393,26 +457,15 @@ export function useProjectCanvasNodeDecorators({
             }
           : unavailableDatabaseLifecycleActions(lifecycleDisabledReason);
 
-      const databaseQuickAction = (action: DatabaseNodeQuickActionKey) => ({
-        disabled: !hasSurfaceActions,
-        disabledReason: surfaceDisabledReason,
-        onClick:
-          target == null
-            ? undefined
-            : () =>
-                executeCommandPlan(
-                  planProjectCanvasCommand({
-                    intent: {
-                      action,
-                      kind: "databaseQuickAction",
-                      selection: projectCanvasSelectionFromNode(node),
-                      target,
-                    },
-                    nodes: nodesRef.current,
-                    readOnly,
-                  })
-                ),
+      const databaseQuickAction = databaseQuickActionFactory({
+        executeCommandPlan,
+        node,
+        nodesRef,
+        readOnly,
+        target,
       });
+      const { dbAccessReason, terminalReason } =
+        databaseLiveSessionUnavailableReasons(data.states.engineKey);
 
       return {
         ...node,
@@ -424,15 +477,18 @@ export function useProjectCanvasNodeDecorators({
             ...(togglePublicConnection === undefined
               ? {}
               : { togglePublicConnection }),
+            ...(lifecycleDisabledReason === undefined
+              ? {}
+              : {
+                  togglePublicConnectionDisabledReason: lifecycleDisabledReason,
+                }),
             ...(lifecycleActions === undefined ? {} : { lifecycleActions }),
             quickActions: {
               ...(data.actions?.quickActions ?? {}),
-              dbAccess: {
-                ...databaseQuickAction("dbAccess"),
-              },
+              dbAccess: databaseQuickAction("dbAccess", dbAccessReason),
               metrics: databaseQuickAction("metrics"),
               logs: databaseQuickAction("logs"),
-              terminal: databaseQuickAction("terminal"),
+              terminal: databaseQuickAction("terminal", terminalReason),
             },
           },
           connections,

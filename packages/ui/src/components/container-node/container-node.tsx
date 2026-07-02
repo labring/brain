@@ -15,6 +15,10 @@ import { ContainerNodeRoot } from "./container-node.root";
 
 // biome-ignore lint/performance/noBarrelFile: compound component public API includes colocated helpers.
 export {
+  containerNodeLifecycleAvailability,
+  containerNodeQuickActionAvailability,
+} from "./container-node.availability";
+export {
   ContainerNodeActionBar,
   ContainerNodeBodyContent,
   ContainerNodeContent,
@@ -24,7 +28,6 @@ export {
   ContainerNodeMetricsContent,
 } from "./container-node.content";
 export { useContainerNode } from "./container-node.context";
-export { containerNodeLifecycleMenuVisibility } from "./container-node.menu-visibility";
 export { ContainerNodeRoot } from "./container-node.root";
 export {
   resolveContainerNodeStatus,

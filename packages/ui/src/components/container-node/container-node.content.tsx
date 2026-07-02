@@ -5,6 +5,7 @@ import {
   CanvasNode,
   type CanvasNodeMetricListItem,
 } from "@workspace/ui/components/canvas-node/canvas-node";
+import { canvasNodeActionWithAvailability } from "@workspace/ui/components/canvas-node/canvas-node.availability";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
@@ -21,9 +22,11 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ComponentType, ReactNode, SVGProps } from "react";
-
+import {
+  containerNodeLifecycleAvailability,
+  containerNodeQuickActionAvailability,
+} from "./container-node.availability";
 import { useContainerNode } from "./container-node.context";
-import { containerNodeLifecycleMenuVisibility } from "./container-node.menu-visibility";
 import { resolveContainerNodeStatus } from "./container-node.status";
 import type {
   ContainerNodeLifecycleActionKey,
@@ -232,12 +235,22 @@ export function ContainerNodeImageRow({ className }: { className?: string }) {
 export function ContainerNodeActionBar({ className }: { className?: string }) {
   const {
     actions: { quickActions },
+    state: {
+      states: { status },
+    },
   } = useContainerNode();
+  const availability = containerNodeQuickActionAvailability(
+    status?.tone ?? status?.label
+  );
 
   return (
     <CanvasNode.ActionBar className={className}>
       {QUICK_ACTION_ITEMS.map((item) => {
-        const action = quickActions?.[item.key];
+        const entry = availability[item.key];
+        const action =
+          entry === undefined
+            ? quickActions?.[item.key]
+            : canvasNodeActionWithAvailability(quickActions?.[item.key], entry);
         const Icon = item.icon;
 
         return (
@@ -335,8 +348,9 @@ function ContainerNodeHeaderMenu() {
       states: { status },
     },
   } = useContainerNode();
-  const { showRestart, showStart, showStop } =
-    containerNodeLifecycleMenuVisibility(status?.tone ?? status?.label);
+  const availability = containerNodeLifecycleAvailability(
+    status?.tone ?? status?.label
+  );
 
   if (lifecycleActions == null) {
     return null;
@@ -345,17 +359,15 @@ function ContainerNodeHeaderMenu() {
   return (
     <CanvasNode.ActionMenu aria-label="Open workload actions">
       {LIFECYCLE_ACTION_ITEMS.map((item) => {
-        if (item.key === "start" && !showStart) {
-          return null;
-        }
-        if (item.key === "stop" && !showStop) {
-          return null;
-        }
-        if (item.key === "restart" && !showRestart) {
+        const entry = availability[item.key];
+        if (!entry.present) {
           return null;
         }
 
-        const action = lifecycleActions?.[item.key];
+        const action = canvasNodeActionWithAvailability(
+          lifecycleActions?.[item.key],
+          entry
+        );
         const Icon = item.icon;
 
         return (

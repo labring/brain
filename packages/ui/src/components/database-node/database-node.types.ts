@@ -137,6 +137,8 @@ export interface DatabaseNodeActions {
   lifecycleActions?: DatabaseNodeLifecycleActions;
   quickActions?: DatabaseNodeQuickActions;
   togglePublicConnection?: DatabaseNodeTogglePublicConnectionHandler;
+  /** User-facing reason shown when the public access toggle is unavailable. */
+  togglePublicConnectionDisabledReason?: string;
 }
 
 export interface DatabaseNodeMeta {
@@ -174,4 +176,5 @@ export interface DatabaseNodeRootProps {
   onTogglePublicConnection?: DatabaseNodeTogglePublicConnectionHandler;
   quickActions?: DatabaseNodeQuickActions;
   states: DatabaseNodeStates;
+  togglePublicConnectionDisabledReason?: string;
 }

@@ -8,6 +8,7 @@ import { ContainerNodeRoot } from "./container-node.root";
 const CONTAINER_SUBTITLE_RE = />Container</;
 const AP_WORKLOAD_SUBTITLE_RE = /AP workload/;
 const OPEN_WORKLOAD_ACTIONS_RE = /Open workload actions/;
+const WORKLOAD_NOT_RUNNING_RE = /Workload is not running\./;
 
 test("ContainerNodeContent labels AP cards as Container", () => {
   const html = renderToStaticMarkup(
@@ -72,4 +73,24 @@ test("ContainerNodeContent keeps disabled lifecycle family discoverable", () => 
   );
 
   assert.match(html, OPEN_WORKLOAD_ACTIONS_RE);
+});
+
+test("ContainerNodeContent gates the terminal quick action while stopped", () => {
+  const html = renderToStaticMarkup(
+    <ContainerNodeRoot
+      quickActions={{
+        terminal: { onClick: () => undefined },
+      }}
+      states={{
+        image: "nginx:latest",
+        kind: "AP",
+        name: "api",
+        status: { label: "Stopped", tone: "stopped" },
+      }}
+    >
+      <ContainerNodeContent />
+    </ContainerNodeRoot>
+  );
+
+  assert.match(html, WORKLOAD_NOT_RUNNING_RE);
 });

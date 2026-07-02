@@ -15,8 +15,11 @@ import {
 import { DatabaseNodeRoot } from "./database-node.root";
 
 // biome-ignore lint/performance/noBarrelFile: compound component public API includes colocated helpers.
+export {
+  databaseNodeLifecycleAvailability,
+  databaseNodeQuickActionAvailability,
+} from "./database-node.availability";
 export { maskDatabaseConnectionString } from "./database-node.mask";
-export { databaseNodeLifecycleMenuVisibility } from "./database-node.menu-visibility";
 export {
   canCopyDatabaseNodeConnection,
   getDatabaseNodeConnectionKey,

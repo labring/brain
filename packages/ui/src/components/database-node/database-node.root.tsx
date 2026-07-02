@@ -49,6 +49,7 @@ export function DatabaseNodeRoot({
   onTogglePublicConnection,
   quickActions,
   states,
+  togglePublicConnectionDisabledReason,
 }: DatabaseNodeRootProps) {
   return (
     <CanvasNodeRoot
@@ -68,6 +69,7 @@ export function DatabaseNodeRoot({
               lifecycleActions,
               quickActions,
               togglePublicConnection: onTogglePublicConnection,
+              togglePublicConnectionDisabledReason,
             },
             meta: {
               copiedFeedbackMs,
