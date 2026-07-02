@@ -26,12 +26,12 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
       <div className="relative z-10 flex h-full items-center justify-between">
         <div className="mr-10 flex flex-col overflow-hidden">
           <div className="flex items-center gap-1">
-            <span className="truncate" title={column}>
+            <span className="truncate text-foreground" title={column}>
               {column}
             </span>
             {column === state.primaryKey && (
               <Badge
-                className="h-4 shrink-0 px-1 py-0 text-[10px]"
+                className="h-4 shrink-0 bg-input/30 px-1 py-0 text-[10px]"
                 variant="secondary"
               >
                 PK
