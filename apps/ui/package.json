@@ -9,7 +9,8 @@
     "start": "next start",
     "check": "npx ultracite check",
     "fix": "npx ultracite fix",
-    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

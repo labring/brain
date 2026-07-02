@@ -12,7 +12,7 @@ function requireDatabaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim();
   if (!url) {
     throw new Error(
-      "DATABASE_URL is required for app Postgres persistence. Add DATABASE_URL (Postgres URL) to apps/ui/.env or apps/ui/.env.local, restart the dev server, and run drizzle db:push."
+      "DATABASE_URL is required for app Postgres persistence. Add DATABASE_URL (Postgres URL) to apps/ui/.env or apps/ui/.env.local and restart the dev server; migrations apply automatically at startup."
     );
   }
   return url;

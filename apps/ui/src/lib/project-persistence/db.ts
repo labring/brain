@@ -5,14 +5,12 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { getAppPostgresPool } from "@/lib/app-postgres/db";
 
 import {
-  apImageVersions,
   projectCanvasLayouts,
   projectNavigationPreferences,
   projects,
 } from "./schema";
 
 const projectSchema = {
-  apImageVersions,
   projectCanvasLayouts,
   projectNavigationPreferences,
   projects,

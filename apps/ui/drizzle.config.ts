@@ -1,14 +1,21 @@
 import dotenv from "dotenv";
 import { defineConfig } from "drizzle-kit";
 
-import { ASSISTANT_DB_SCHEMA } from "./src/lib/chat-persistence/types";
-import { DEPLOYMENT_TASK_DB_SCHEMA } from "./src/lib/deploy-task/schema";
-import { PROJECT_DB_SCHEMA } from "./src/lib/project-persistence/types";
-
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-/** Run from `apps/ui`: `bun run db:push` */
+/**
+ * Migration workflow (run from `apps/ui`):
+ * - `bun run db:generate` — diff schema.ts files into `./drizzle/*.sql`
+ * - `bun run db:migrate` — apply pending migrations manually (CI / operators)
+ *
+ * The app also applies pending migrations automatically on server start
+ * (`src/instrumentation.ts` → `src/lib/app-postgres/migrate.ts`).
+ *
+ * `sealai_project.ap_image_versions` is owned by the Go API
+ * (`apps/api/service/apversion/store.go`) and is intentionally absent from the
+ * drizzle schema and migrations.
+ */
 export default defineConfig({
   dialect: "postgresql",
   schema: [
@@ -18,18 +25,4 @@ export default defineConfig({
   ],
   dbCredentials: { url: process.env.DATABASE_URL ?? "" },
   out: "./drizzle",
-  /** Only reconcile app-owned schemas — avoids drizzle trying to DROP `public` objects (e.g. `postgres_log`) on managed PG. */
-  schemaFilter: [
-    ASSISTANT_DB_SCHEMA,
-    DEPLOYMENT_TASK_DB_SCHEMA,
-    PROJECT_DB_SCHEMA,
-  ],
-  tablesFilter: [
-    "!pg_auth_mon",
-    "!pg_stat_kcache",
-    "!pg_stat_kcache_detail",
-    "!pg_stat_statements",
-    "!pg_stat_statements_info",
-    "!postgres_log",
-  ],
 });

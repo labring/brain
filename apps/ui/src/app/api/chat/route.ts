@@ -219,7 +219,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("[api/chat] pipeline:", error);
     return jsonError(
-      "Could not handle chat request (DATABASE_URL, drizzle db:push, or upstream).",
+      "Could not handle chat request (DATABASE_URL, schema migrations, or upstream).",
       503
     );
   }
