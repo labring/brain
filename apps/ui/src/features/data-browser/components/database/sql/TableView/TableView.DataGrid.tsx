@@ -137,7 +137,7 @@ export function TableViewDataGrid() {
                   <td
                     className={cn(
                       "relative scroll-mt-14 overflow-hidden border-border border-r border-b text-foreground/80 text-sm",
-                      "px-6 py-2",
+                      "px-4 py-2",
                       highlight === "current" && "bg-input",
                       highlight === "match" && "bg-input/30"
                     )}
