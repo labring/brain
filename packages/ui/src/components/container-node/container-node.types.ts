@@ -72,6 +72,7 @@ export type ContainerNodeLifecycleActionKey =
 
 export interface ContainerNodeAction {
   disabled?: boolean;
+  disabledReason?: string;
   loading?: boolean;
   onClick?: () => Promise<void> | void;
 }

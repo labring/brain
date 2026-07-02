@@ -536,6 +536,11 @@ export function useProjectCanvasModule({
           { key: "resource-delete" },
           workbench.resourceDeleteDialog
         ),
+        createElement(
+          Fragment,
+          { key: "resource-stop" },
+          workbench.resourceStopDialog
+        ),
       ],
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,

@@ -119,6 +119,7 @@ export type DatabaseNodeLifecycleActionKey =
 
 export interface DatabaseNodeAction {
   disabled?: boolean;
+  disabledReason?: string;
   loading?: boolean;
   onClick?: () => Promise<void> | void;
 }

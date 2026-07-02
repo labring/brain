@@ -338,6 +338,10 @@ function ContainerNodeHeaderMenu() {
   const { showRestart, showStart, showStop } =
     containerNodeLifecycleMenuVisibility(status?.tone ?? status?.label);
 
+  if (lifecycleActions == null) {
+    return null;
+  }
+
   return (
     <CanvasNode.ActionMenu aria-label="Open workload actions">
       {LIFECYCLE_ACTION_ITEMS.map((item) => {

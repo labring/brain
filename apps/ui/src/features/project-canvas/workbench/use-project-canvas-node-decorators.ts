@@ -1,9 +1,15 @@
 "use client";
 
 import type { DbLifecycleWorkloadRef } from "@workspace/api/hooks";
-import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type {
+  ContainerNodeAction,
+  ContainerNodeLifecycleActions,
+  ContainerNodeQuickActionKey,
+} from "@workspace/ui/components/container-node/container-node";
+import type {
+  DatabaseNodeAction,
   DatabaseNodeLifecycleActionKey,
+  DatabaseNodeLifecycleActions,
   DatabaseNodeQuickActionKey,
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
@@ -40,6 +46,10 @@ import type {
   ProjectCanvasApDeleteTarget,
   ProjectCanvasDbDeleteTarget,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
+import type {
+  ProjectCanvasApStopTarget,
+  ProjectCanvasDbStopTarget,
+} from "@/features/project-canvas/workbench/project-canvas-stop-dialog";
 import {
   apLifecycleWorkloadRefFromTarget,
   dbLifecycleWorkloadRefFromTarget,
@@ -49,6 +59,71 @@ import { projectRuntimeShellLookupFromNodeData } from "@/features/project-runtim
 import type { ProjectRuntimeNodeModelDecorators } from "@/features/project-runtime/resource-models-react";
 import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
 
+const READ_ONLY_RESOURCE_ACTION_REASON =
+  "This project is read-only. Resource actions are unavailable.";
+const AUTH_UNAVAILABLE_RESOURCE_ACTION_REASON =
+  "Resource credentials are not available.";
+const MISSING_RESOURCE_TARGET_REASON = "Resource target is unavailable.";
+
+function resourceActionDisabledReason({
+  authReady,
+  readOnly,
+  targetAvailable,
+}: {
+  authReady: boolean;
+  readOnly: boolean;
+  targetAvailable: boolean;
+}) {
+  if (readOnly) {
+    return READ_ONLY_RESOURCE_ACTION_REASON;
+  }
+  if (!authReady) {
+    return AUTH_UNAVAILABLE_RESOURCE_ACTION_REASON;
+  }
+  if (!targetAvailable) {
+    return MISSING_RESOURCE_TARGET_REASON;
+  }
+  return undefined;
+}
+
+function unavailableContainerAction(
+  disabledReason: string
+): ContainerNodeAction {
+  return { disabled: true, disabledReason };
+}
+
+function unavailableDatabaseAction(disabledReason: string): DatabaseNodeAction {
+  return { disabled: true, disabledReason };
+}
+
+function unavailableContainerLifecycleActions(
+  disabledReason: string | undefined
+): ContainerNodeLifecycleActions | undefined {
+  if (disabledReason == null) {
+    return undefined;
+  }
+  return {
+    delete: unavailableContainerAction(disabledReason),
+    restart: unavailableContainerAction(disabledReason),
+    start: unavailableContainerAction(disabledReason),
+    stop: unavailableContainerAction(disabledReason),
+  };
+}
+
+function unavailableDatabaseLifecycleActions(
+  disabledReason: string | undefined
+): DatabaseNodeLifecycleActions | undefined {
+  if (disabledReason == null) {
+    return undefined;
+  }
+  return {
+    delete: unavailableDatabaseAction(disabledReason),
+    restart: unavailableDatabaseAction(disabledReason),
+    start: unavailableDatabaseAction(disabledReason),
+    stop: unavailableDatabaseAction(disabledReason),
+  };
+}
+
 export function useProjectCanvasNodeDecorators({
   executeCommandPlan,
   nodes,
@@ -56,7 +131,9 @@ export function useProjectCanvasNodeDecorators({
   onPendingApDbReferencesStart,
   readOnly,
   requestApDelete,
+  requestApStop,
   requestDbDelete,
+  requestDbStop,
   resourceActions,
 }: {
   executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
@@ -67,7 +144,9 @@ export function useProjectCanvasNodeDecorators({
   ) => (() => void) | undefined;
   readOnly: boolean;
   requestApDelete: (target: ProjectCanvasApDeleteTarget) => void;
+  requestApStop: (target: ProjectCanvasApStopTarget) => void;
   requestDbDelete: (target: ProjectCanvasDbDeleteTarget) => void;
+  requestDbStop: (target: ProjectCanvasDbStopTarget) => void;
   resourceActions: ProjectResourceActions;
 }) {
   const pendingApDbReferenceDraftByApKey = useRef<
@@ -86,7 +165,6 @@ export function useProjectCanvasNodeDecorators({
   } = resourceActions;
   const {
     authReady: apAuthReady,
-    pauseWorkload,
     restartWorkload,
     startWorkload,
   } = apLifecycle;
@@ -97,7 +175,6 @@ export function useProjectCanvasNodeDecorators({
     isLoading: isDbLifecycleLoading,
     restartWorkload: restartDbWorkload,
     startWorkload: startDbWorkload,
-    stopWorkload: stopDbWorkload,
   } = dbLifecycle;
   const nodesRef = useRef(nodes);
 
@@ -222,7 +299,12 @@ export function useProjectCanvasNodeDecorators({
       const workload = dbLifecycleWorkloadRefFromTarget(target);
       const name = workload?.name ?? "";
       const canTogglePublicAccess = dbAuthReady && workload != null;
-      const canUseLifecycle = dbAuthReady && workload != null;
+      const canUseLifecycle = !readOnly && dbAuthReady && workload != null;
+      const lifecycleDisabledReason = resourceActionDisabledReason({
+        authReady: dbAuthReady,
+        readOnly,
+        targetAvailable: workload != null,
+      });
       const publicAccessPendingTarget =
         workload == null ? undefined : getPublicAccessPendingTarget(workload);
       const connections = resolveDatabasePublicConnections(
@@ -266,6 +348,9 @@ export function useProjectCanvasNodeDecorators({
       });
       const displayName = data.states.name || name;
       const hasSurfaceActions = target != null;
+      const surfaceDisabledReason = hasSurfaceActions
+        ? undefined
+        : MISSING_RESOURCE_TARGET_REASON;
       const lifecycleActions =
         canUseLifecycle && workload != null
           ? {
@@ -296,20 +381,21 @@ export function useProjectCanvasNodeDecorators({
                   success: `Start requested for "${displayName}"`,
                 }
               ),
-              stop: dbLifecycleAction(
-                workload,
-                "stop",
-                () => stopDbWorkload(workload),
-                {
-                  loading: `Stopping "${displayName}"...`,
-                  success: `Stop requested for "${displayName}"`,
-                }
-              ),
+              stop: {
+                loading: isDbLifecycleLoading(workload, "stop"),
+                onClick: () =>
+                  requestDbStop({
+                    displayName,
+                    name: workload.name,
+                    namespace: workload.namespace,
+                  }),
+              },
             }
-          : undefined;
+          : unavailableDatabaseLifecycleActions(lifecycleDisabledReason);
 
       const databaseQuickAction = (action: DatabaseNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
+        disabledReason: surfaceDisabledReason,
         onClick:
           target == null
             ? undefined
@@ -362,10 +448,10 @@ export function useProjectCanvasNodeDecorators({
       isDbLifecycleLoading,
       readOnly,
       requestDbDelete,
+      requestDbStop,
       restartDbWorkload,
       runResourceAction,
       startDbWorkload,
-      stopDbWorkload,
       toggleDatabasePublicAccess,
     ]
   );
@@ -378,17 +464,24 @@ export function useProjectCanvasNodeDecorators({
       const workload = apLifecycleWorkloadRefFromTarget(target);
       const ns = workload?.namespace ?? states.namespace?.trim() ?? "";
 
-      const isApLifecycle =
-        apAuthReady && states.kind === "AP" && workload != null;
-
+      const isApKind = states.kind === "AP";
+      const canUseLifecycle =
+        !readOnly && apAuthReady && isApKind && workload != null;
+      const lifecycleDisabledReason = isApKind
+        ? resourceActionDisabledReason({
+            authReady: apAuthReady,
+            readOnly,
+            targetAvailable: workload != null,
+          })
+        : undefined;
       const hasSurfaceActions = target != null;
-
-      if (!(hasSurfaceActions || isApLifecycle)) {
-        return node;
-      }
+      const surfaceDisabledReason = hasSurfaceActions
+        ? undefined
+        : MISSING_RESOURCE_TARGET_REASON;
 
       const containerQuickAction = (action: ContainerNodeQuickActionKey) => ({
         disabled: !hasSurfaceActions,
+        disabledReason: surfaceDisabledReason,
         onClick:
           target == null
             ? undefined
@@ -409,7 +502,7 @@ export function useProjectCanvasNodeDecorators({
 
       const ref = workload ?? { name: states.name, namespace: ns };
       const displayName = states.name;
-      const lifecycleActions = isApLifecycle
+      const lifecycleActions = canUseLifecycle
         ? {
             delete: {
               onClick: () =>
@@ -436,13 +529,15 @@ export function useProjectCanvasNodeDecorators({
             },
             stop: {
               onClick: () =>
-                runResourceAction(() => pauseWorkload(ref), {
-                  loading: `Stopping "${displayName}"...`,
-                  success: `Stop requested for "${displayName}"`,
+                requestApStop({
+                  displayName,
+                  kind: states.kind,
+                  name: ref.name,
+                  namespace: ref.namespace,
                 }),
             },
           }
-        : undefined;
+        : unavailableContainerLifecycleActions(lifecycleDisabledReason);
       const quickActions = {
         ...(data.actions?.quickActions ?? {}),
         calendar: containerQuickAction("calendar"),
@@ -467,9 +562,9 @@ export function useProjectCanvasNodeDecorators({
     [
       apAuthReady,
       executeCommandPlan,
-      pauseWorkload,
       readOnly,
       requestApDelete,
+      requestApStop,
       restartWorkload,
       runResourceAction,
       startWorkload,

@@ -564,6 +564,30 @@ A user-triggered intent to open a resource-focused project surface for an existi
 
 _Avoid_: Canvas Action, node action, Resource Action when no resource state changes.
 
+### Resource Affordance
+
+A user-facing entry point for either a Resource Action or a Resource Surface Intent. A Resource Affordance belongs to the target resource rather than to the Project Canvas or the surface where the entry point is shown.
+
+_Avoid_: Canvas Action, node action.
+
+### Resource Affordance Family
+
+The set of Resource Affordances users can reasonably expect for one target kind. A Resource Affordance Family stays stable within that target kind, but mutually exclusive lifecycle affordances may resolve to the state-appropriate entries for the current resource state; a target kind without an established family should not gain placeholder or empty affordances for menu parity.
+
+_Avoid_: one global node menu, cross-resource menu parity, node action set.
+
+### Unavailable Resource Affordance
+
+A Resource Affordance that applies to the target resource conceptually but cannot be used in the current project, session, resource state, or platform capability. An Unavailable Resource Affordance remains part of the user's resource mental model and presents a user-facing reason at the point where the user discovers the affordance; it is not a placeholder for unshipped roadmap capability.
+
+_Avoid_: hidden unsupported action, missing menu item, future feature placeholder, node action.
+
+### Unavailable Resource Affordance Reason
+
+The reason an Unavailable Resource Affordance cannot currently be used, expressed in product terms such as read-only access, unavailable authentication, missing resource target identity, a busy resource state, unsupported platform capability, missing configuration, or an unknown cause.
+
+_Avoid_: generic unavailable state, silent disabled state.
+
 ### Main Action Surface
 
 A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.
