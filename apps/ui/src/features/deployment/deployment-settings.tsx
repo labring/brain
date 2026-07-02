@@ -26,7 +26,7 @@ function DeploymentSettingsSection({
       )}
       {...props}
     >
-      <header className="flex min-w-0 items-start justify-between gap-3">
+      <header className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
@@ -91,16 +91,20 @@ function DeploymentSettingsGroupHeader({
 function DeploymentSettingsField({
   children,
   className,
+  htmlFor,
   label,
   labelClassName,
   ...props
 }: ComponentPropsWithoutRef<"div"> & {
+  htmlFor?: string;
   label: ReactNode;
   labelClassName?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1.5", className)} {...props}>
-      <Label className={labelClassName}>{label}</Label>
+    <div className={cn("flex min-w-0 flex-col gap-2", className)} {...props}>
+      <Label className={labelClassName} htmlFor={htmlFor}>
+        {label}
+      </Label>
       {children}
     </div>
   );

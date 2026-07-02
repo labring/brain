@@ -29,7 +29,6 @@ import {
   deployTaskMessages,
   deployTasks,
 } from "./schema";
-import { ensureDeployTaskStorageSchema } from "./schema-bootstrap";
 import {
   appendCardEvent,
   appendStepEvent,
@@ -198,7 +197,6 @@ export async function recordDeployTaskEvent(
   taskId: string,
   input: DeployTaskEventInput
 ): Promise<DeployTaskEventRow> {
-  await ensureDeployTaskStorageSchema();
   return await getDeploymentTaskDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
 
@@ -237,7 +235,6 @@ export async function recordDeployTaskEvent(
 export async function createDeployTask(
   input: CreateDeployTaskInput
 ): Promise<DeployTaskDTO> {
-  await ensureDeployTaskStorageSchema();
   if (
     input.source.kind === "github" &&
     (input.actorUserId?.trim() ?? "") === ""
@@ -313,7 +310,6 @@ export async function createDeployTask(
 export async function getDeployTaskById(
   taskId: string
 ): Promise<DeployTaskRow | null> {
-  await ensureDeployTaskStorageSchema();
   const [task] = await getDeploymentTaskDb()
     .select()
     .from(deployTasks)
@@ -489,7 +485,6 @@ export async function getDeployTaskSnapshot(
   taskId: string,
   namespace?: string
 ): Promise<DeployTaskSnapshotDTO | null> {
-  await ensureDeployTaskStorageSchema();
   const filters = [eq(deployTasks.id, taskId)];
   if (namespace?.trim()) {
     filters.push(eq(deployTasks.namespace, namespace.trim()));
@@ -543,7 +538,6 @@ export async function getDeployTaskTimelineSnapshot(
   namespace?: string,
   options: { kubeconfig?: string } = {}
 ): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
-  await ensureDeployTaskStorageSchema();
   const filters = [eq(deployTasks.id, taskId)];
   if (namespace?.trim()) {
     filters.push(eq(deployTasks.namespace, namespace.trim()));
@@ -587,7 +581,6 @@ export async function listDeployTasks(input: {
   namespace: string;
   projectId?: string;
 }): Promise<DeployTaskDTO[]> {
-  await ensureDeployTaskStorageSchema();
   const filters = [eq(deployTasks.namespace, input.namespace.trim())];
   if (input.projectId?.trim()) {
     filters.push(eq(deployTasks.projectId, input.projectId.trim()));
@@ -605,7 +598,6 @@ export async function listDeploymentTaskProjections(input: {
   namespace: string;
   projectId: string;
 }): Promise<DeploymentTaskProjection[]> {
-  await ensureDeployTaskStorageSchema();
   const rows = await getDeploymentTaskDb()
     .select()
     .from(deployTasks)
@@ -649,7 +641,6 @@ export async function updateDeployTaskState(
     status?: DeployTaskStatus;
   }
 ): Promise<DeployTaskDTO | null> {
-  await ensureDeployTaskStorageSchema();
   const dto = await getDeploymentTaskDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
     const [existing] = await tx
@@ -714,7 +705,6 @@ export async function updateDeployTaskTimeline(
     update: DeploymentTaskTimelineUpdate;
   }
 ): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
-  await ensureDeployTaskStorageSchema();
   const result = await getDeploymentTaskDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
     const [existing] = await tx
@@ -778,7 +768,6 @@ export async function updateDeployTaskCanvasProjection(
   taskId: string,
   input: UpdateDeployTaskCanvasProjectionInput
 ): Promise<DeployTaskDTO | null> {
-  await ensureDeployTaskStorageSchema();
   return await getDeploymentTaskDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
     const [existing] = await tx
@@ -823,7 +812,6 @@ export async function appendDeployTaskMessage(input: {
   role: UIMessage["role"];
   taskId: string;
 }): Promise<DeployTaskMessageDTO> {
-  await ensureDeployTaskStorageSchema();
   const [message] = await getDeploymentTaskDb()
     .insert(deployTaskMessages)
     .values({

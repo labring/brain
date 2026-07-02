@@ -526,7 +526,7 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
 
   return (
     <div
-      className={cn("dark flex w-full min-w-0 flex-col gap-4", className)}
+      className={cn("dark flex w-full min-w-0 flex-col gap-3.5", className)}
       data-slot="github-deployer-shell"
       {...props}
     >

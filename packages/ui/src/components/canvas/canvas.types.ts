@@ -47,6 +47,12 @@ export interface CanvasViewportInsets {
 export interface CanvasViewportFocusRequest {
   active?: boolean;
   fitMinZoom?: number;
+  /**
+   * Apply focus viewport changes without animation. For continuous canvas
+   * container resize (e.g. a layout pane drag) where an animated catch-up
+   * would lag behind the gesture.
+   */
+  instant?: boolean;
   key?: number | string;
   maxZoom?: number;
   minZoom?: number;

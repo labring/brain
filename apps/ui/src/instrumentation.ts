@@ -1,36 +1,27 @@
-import { Pool } from "pg";
-
-import { ASSISTANT_DB_SCHEMA } from "@/lib/chat-persistence/types";
-import { DEPLOYMENT_TASK_DB_SCHEMA } from "@/lib/deploy-task/schema";
-import { PROJECT_DB_SCHEMA } from "@/lib/project-persistence/types";
-
 /**
- * Runs once when the Node server starts. Ensures app-owned Postgres schemas
- * exist so DDL from `db:push` can target stable qualified names (`<schema>.*`).
+ * Runs once when the Node server starts. Applies pending app-owned Postgres
+ * migrations (`apps/ui/drizzle`) before the server takes traffic.
+ *
+ * In production a migration failure aborts the boot (a half-migrated schema
+ * must not serve traffic). In dev it degrades to a warning so the UI still
+ * boots against a broken/unreachable database.
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
     return;
   }
-  const url = process.env.DATABASE_URL?.trim();
-  if (!url) {
-    return;
-  }
-  const pool = new Pool({ connectionString: url, max: 1 });
+  const { runAppPostgresMigrations } = await import(
+    "@/lib/app-postgres/migrate"
+  );
   try {
-    for (const schemaName of [
-      ASSISTANT_DB_SCHEMA,
-      DEPLOYMENT_TASK_DB_SCHEMA,
-      PROJECT_DB_SCHEMA,
-    ]) {
-      await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
-    }
+    await runAppPostgresMigrations();
   } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw error;
+    }
     console.warn(
-      "[instrumentation] skipped app Postgres schema bootstrap:",
+      "[instrumentation] app Postgres migrations failed; persistence-backed features will not work:",
       error
     );
-  } finally {
-    await pool.end();
   }
 }

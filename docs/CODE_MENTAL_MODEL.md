@@ -1272,7 +1272,7 @@ Agent-friendly lifecycle docs:
 5. Template labels 必须由 Brain apply/render path 兜底, 不应信任外部 template provider。
 6. Helm chart 当前仍有旧 Brain labels 残留, 与 ADR 0027/Go/TS 新 contract 不完全一致。
 7. 本地 dev kubeconfig/env 可能覆盖 Sealos Desktop session, 排障前先确认 namespace 和 DB instance。
-8. Drizzle 当前主要靠 `db:push` 和 bootstrap SQL, 不是完整 migration workflow。
+8. Drizzle 走 `drizzle/` 下的 SQL migration（`db:generate` 生成, 启动时自动 apply）; 没有 `db:push`, 也没有 runtime bootstrap SQL。`sealai_project.ap_image_versions` 归 Go API 管, 不在 drizzle schema 里。
 9. `packages/ui` 和 `apps/ui/features` 的边界容易被 AI 写乱, 产品 workflow 应留在 app feature。
 10. Go API 和 Next API 都叫 `/api`, 但职责完全不同。读浏览器请求时先判断是否被 Next proxy 到 Go API。
 

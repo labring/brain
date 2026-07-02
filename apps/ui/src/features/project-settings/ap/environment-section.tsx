@@ -837,19 +837,21 @@ function EditableEnvValueControl({
         open={referenceMenuOpen}
       >
         <PopoverTrigger
-          aria-label="Insert environment reference token"
-          className={cn(
-            "mr-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-white/5 p-0 text-muted-foreground outline-none hover:bg-input/40 hover:text-foreground focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50 disabled:pointer-events-none disabled:opacity-50",
-            referenceMenuOpen &&
-              "bg-input/40 text-foreground ring-[1px] ring-blue-400/50"
-          )}
-          data-slot="ap-env-token-trigger"
-          disabled={!canInsertReference}
-          title="Insert reference token"
-          type="button"
-        >
-          <Braces aria-hidden className="size-4" />
-        </PopoverTrigger>
+          render={
+            <AppIconButton
+              aria-label="Insert environment reference token"
+              className="mr-1 rounded-md"
+              data-slot="ap-env-token-trigger"
+              disabled={!canInsertReference}
+              size="sm"
+              title="Insert reference token"
+              type="button"
+              variant="secondary"
+            >
+              <Braces aria-hidden className="size-4" />
+            </AppIconButton>
+          }
+        />
         <PopoverContent
           align="end"
           className="w-80 gap-0 rounded-md border border-border bg-input/30 p-0 shadow-none ring-0 backdrop-blur-xl"
@@ -1062,8 +1064,10 @@ function EnvRowActionsMenu({
 }: EnvRowActionsMenuProps) {
   return (
     <CanvasNode.ActionMenu
+      alignOffset={0}
       aria-label={`Environment variable actions for ${row.name}`}
-      className="bg-input/30 hover:bg-input! aria-expanded:bg-input! aria-expanded:text-blue-400 data-[state=open]:bg-input! data-[state=open]:text-blue-400"
+      className="bg-input/30 hover:bg-input! data-popup-open:bg-input! data-popup-open:text-blue-400"
+      sideOffset={6}
       triggerSize="lg"
       triggerVariant="secondary"
     >

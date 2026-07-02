@@ -73,6 +73,8 @@ export function ProjectCreatorProjectDescriptionField() {
     "ProjectCreator.ProjectDescriptionField"
   );
   const descriptionLength = states.projectDescription.length;
+  const isDescriptionOverLimit =
+    descriptionLength > PROJECT_DESCRIPTION_MAX_LENGTH;
 
   return (
     <Field className="gap-2" data-slot="project-creator-description-field">
@@ -83,17 +85,25 @@ export function ProjectCreatorProjectDescriptionField() {
         >
           Description
         </FieldLabel>
-        <span className="text-[11px] text-muted-foreground leading-4">
+        <span
+          className={
+            isDescriptionOverLimit
+              ? "text-[11px] text-destructive leading-4"
+              : "text-[11px] text-muted-foreground leading-4"
+          }
+        >
           {`${descriptionLength}/${PROJECT_DESCRIPTION_MAX_LENGTH}`}
         </span>
       </div>
       <AppTextarea
         aria-invalid={
-          states.projectDescriptionError === null ? undefined : true
+          isDescriptionOverLimit || states.projectDescriptionError !== null
+            ? true
+            : undefined
         }
-        className="min-h-9 resize-none border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+        className="max-h-[7.25rem] min-h-9 resize-none overflow-y-auto border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
         id="project-creator-description"
-        maxLength={PROJECT_DESCRIPTION_MAX_LENGTH + 1}
+        maxLength={1024}
         onChange={(event) =>
           actions.setProjectDescription(event.currentTarget.value)
         }

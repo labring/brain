@@ -26,6 +26,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { isStorageShrink } from "@/components/storage-size";
 import { toastErrorDetail } from "@/lib/toast-utils";
 import {
   classifyPendingSettingsEntry,
@@ -1318,6 +1319,16 @@ export function useApSettingsSections({
   );
   const settingsDirty = dirtySettingsDomains.length > 0;
   const panelDraftDirty = settingsDirty;
+  const storageHasShrink = useMemo(
+    () =>
+      draftStorage.some((row) => {
+        const current = (initialSettingsDraft.storage ?? []).find(
+          (mount) => mount.path === row.path
+        );
+        return current ? isStorageShrink(row.size, current.size) : false;
+      }),
+    [draftStorage, initialSettingsDraft.storage]
+  );
   const canSaveSettings =
     settingsCommitMode &&
     panelDraftDirty &&
@@ -1326,7 +1337,8 @@ export function useApSettingsSections({
     envValidation.valid &&
     envTokenDiagnostics.length === 0 &&
     !settingsSavePending &&
-    !hasOverlappingSubmittingSettingsDomain;
+    !hasOverlappingSubmittingSettingsDomain &&
+    !storageHasShrink;
 
   const cpuSlider = useMemo(() => {
     const base = {
@@ -2241,6 +2253,7 @@ export function useApSettingsSections({
       sections.push({
         content: (
           <StorageSettingsContent
+            currentStorage={initialSettingsDraft.storage ?? []}
             onUpdate={handleUpdateStorageRow}
             readOnly={readOnly}
             storage={settingsDraft.storage ?? []}

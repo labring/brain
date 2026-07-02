@@ -14,6 +14,7 @@ import type { ProjectSidePaneAssistantSurface } from "@/features/project-surface
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import { assistantPaneResizingAtom } from "@/store/layout-store";
 
 export default function ProjectIdPage() {
   const params = useParams<{ uid: string }>();
@@ -30,13 +31,18 @@ export default function ProjectIdPage() {
       drawerOpen: projectCanvas.surfaces.model.drawer != null,
       sideOpen: projectCanvas.surfaces.model.side != null,
     });
-  const canvasMeta = useMemo(
-    () => ({
-      ...projectCanvas.canvas.meta,
+  const assistantPaneResizing = useAtomValue(assistantPaneResizingAtom);
+  const canvasMeta = useMemo(() => {
+    const baseMeta = projectCanvas.canvas.meta;
+    return {
+      ...baseMeta,
+      viewportFocus:
+        baseMeta.viewportFocus == null
+          ? undefined
+          : { ...baseMeta.viewportFocus, instant: assistantPaneResizing },
       viewportInsets: canvasViewportInsets,
-    }),
-    [canvasViewportInsets, projectCanvas.canvas.meta]
-  );
+    };
+  }, [assistantPaneResizing, canvasViewportInsets, projectCanvas.canvas.meta]);
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,

@@ -115,19 +115,27 @@ export function CanvasNodeActionButton({
 }
 
 export interface CanvasNodeActionMenuProps {
+  align?: ComponentProps<typeof DropdownMenuContent>["align"];
+  alignOffset?: ComponentProps<typeof DropdownMenuContent>["alignOffset"];
   "aria-label": string;
   children?: ReactNode;
   className?: string;
   contentClassName?: string;
+  side?: ComponentProps<typeof DropdownMenuContent>["side"];
+  sideOffset?: ComponentProps<typeof DropdownMenuContent>["sideOffset"];
   triggerSize?: AppIconButtonProps["size"];
   triggerVariant?: AppIconButtonProps["variant"];
 }
 
 export function CanvasNodeActionMenu({
+  align = "start",
+  alignOffset = CANVAS_NODE_MENU_ALIGN_OFFSET,
   "aria-label": ariaLabel,
   children,
   className,
   contentClassName,
+  side = "right",
+  sideOffset = CANVAS_NODE_MENU_SIDE_OFFSET,
   triggerSize = "md",
   triggerVariant = "node",
 }: CanvasNodeActionMenuProps) {
@@ -152,15 +160,15 @@ export function CanvasNodeActionMenu({
         }
       />
       <DropdownMenuContent
-        align="start"
-        alignOffset={CANVAS_NODE_MENU_ALIGN_OFFSET}
+        align={align}
+        alignOffset={alignOffset}
         className={cn(
           RF_CONTROL_CLASS,
           "canvas-node-action-menu-content w-38 min-w-38 rounded-md border-0 bg-white/5 p-1 text-zinc-50 shadow-none ring-1 ring-white/10 ring-inset",
           contentClassName
         )}
-        side="right"
-        sideOffset={CANVAS_NODE_MENU_SIDE_OFFSET}
+        side={side}
+        sideOffset={sideOffset}
       >
         {children}
       </DropdownMenuContent>

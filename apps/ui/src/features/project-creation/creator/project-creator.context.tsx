@@ -214,7 +214,7 @@ export function ProjectCreatorRoot({
 
   const validateProjectDescription = useCallback(
     (value: string): string | null => {
-      if (value.trim().length > PROJECT_DESCRIPTION_MAX_LENGTH) {
+      if (value.length > PROJECT_DESCRIPTION_MAX_LENGTH) {
         return "Project description must be 256 characters or fewer.";
       }
       return null;
@@ -235,9 +235,7 @@ export function ProjectCreatorRoot({
   const setProjectDescription = useCallback(
     (value: string) => {
       setProjectDescriptionState(value);
-      setProjectDescriptionError((current) =>
-        current == null ? null : validateProjectDescription(value)
-      );
+      setProjectDescriptionError(validateProjectDescription(value));
     },
     [validateProjectDescription]
   );

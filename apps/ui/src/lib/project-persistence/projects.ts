@@ -2,11 +2,10 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { getProjectDb } from "./db";
 import { type ProjectRow, projects } from "./schema";
-import { ensureProjectStorageSchema } from "./schema-bootstrap";
 
 export interface BrainProject {
   createdAt: string;
@@ -89,12 +88,12 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export async function listProjects(namespace: string): Promise<BrainProject[]> {
-  await ensureProjectStorageSchema();
   const rows = await getProjectDb()
     .select()
     .from(projects)
     .where(eq(projects.namespace, namespace))
-    .orderBy(projects.createdAt);
+    // Newest first, so freshly created projects surface at the top of the list.
+    .orderBy(desc(projects.createdAt));
   return rows.map(rowToProject);
 }
 
@@ -102,7 +101,6 @@ export async function getProject(
   namespace: string,
   id: string
 ): Promise<BrainProject | null> {
-  await ensureProjectStorageSchema();
   const [row] = await getProjectDb()
     .select()
     .from(projects)
@@ -114,7 +112,6 @@ export async function getProject(
 export async function createProject(
   input: CreateProjectInput
 ): Promise<BrainProject> {
-  await ensureProjectStorageSchema();
   const now = new Date();
   const id = randomUUID();
   const displayName = normalizeDisplayName(input.displayName);
@@ -153,7 +150,6 @@ export async function createProject(
 export async function updateProject(
   input: UpdateProjectInput
 ): Promise<BrainProject> {
-  await ensureProjectStorageSchema();
   const displayName = normalizeDisplayName(input.displayName);
   const description =
     input.description === undefined
@@ -189,7 +185,6 @@ export async function updateProject(
 }
 
 export async function deleteProject(input: DeleteProjectInput): Promise<void> {
-  await ensureProjectStorageSchema();
   const [row] = await getProjectDb()
     .delete(projects)
     .where(whereProject(input.namespace, input.id))

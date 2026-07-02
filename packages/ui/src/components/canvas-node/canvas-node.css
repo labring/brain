@@ -326,10 +326,13 @@
   translate: calc(-100% - var(--canvas-node-connection-gap)) -50%;
 }
 
+/* Plain action buttons only — deliberately NOT the menu trigger. The trigger's
+   hover/open background is owned by the AppIconButton `node` variant
+   (hover:bg-input / data-popup-open:bg-input). This rule is unlayered, so it
+   would beat the layered variant utilities: re-adding the trigger here flips an
+   open menu button back to this subtle bg on hover (the "weird" background jump). */
 .canvas-node-action-button:hover,
-.canvas-node-action-button:focus-visible,
-.canvas-node-action-menu-trigger:hover,
-.canvas-node-action-menu-trigger:focus-visible {
+.canvas-node-action-button:focus-visible {
   background: color-mix(in oklab, var(--color-white) 4.5%, transparent);
 }
 

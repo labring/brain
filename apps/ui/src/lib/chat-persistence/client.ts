@@ -15,10 +15,17 @@ const uiMessageSchema = z
   })
   .passthrough() as unknown as z.ZodType<UIMessage>;
 
+const freeTierSchema = z.object({
+  billing: z.enum(["free", "user"]),
+  remaining: z.number(),
+  limit: z.number(),
+});
+
 const sessionResponseSchema = z.object({
   chatId: z.string(),
   messages: z.array(uiMessageSchema),
   threads: z.array(assistantThreadDTOSchema),
+  freeTier: freeTierSchema,
 }) satisfies z.ZodType<AssistantSessionPayload>;
 
 const threadsResponseSchema = z.object({

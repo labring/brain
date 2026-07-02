@@ -211,10 +211,10 @@ export function DatabaseDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-4", className)}
+      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
       data-slot="database-deployer"
     >
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3.5">
         <DeploymentSettings.Section
           description="Choose a managed database engine for this workspace."
           icon={<Database aria-hidden className="size-4" />}
@@ -239,10 +239,13 @@ export function DatabaseDeployer({
           title="Instance"
         >
           <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-            <DeploymentSettings.Field label="Instance Preset">
+            <DeploymentSettings.Field
+              htmlFor="database-deployer-instance-preset"
+              label="Instance Preset"
+            >
               <AppSelect
-                aria-label="Database instance preset"
                 disabled={busy || choice === null}
+                id="database-deployer-instance-preset"
                 onValueChange={(value) =>
                   setInstancePreset(value as DatabaseInstancePreset)
                 }
@@ -255,10 +258,13 @@ export function DatabaseDeployer({
                   : presetSummary(choice.engine, instancePreset)}
               </p>
             </DeploymentSettings.Field>
-            <DeploymentSettings.Field label="Replicas">
+            <DeploymentSettings.Field
+              htmlFor="database-deployer-replicas"
+              label="Replicas"
+            >
               <AppSelect
-                aria-label="Database replica count"
                 disabled={busy || choice === null}
+                id="database-deployer-replicas"
                 onValueChange={setReplicas}
                 options={REPLICA_SELECT_OPTIONS}
                 value={replicas}

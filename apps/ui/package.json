@@ -10,7 +10,8 @@
     "brain:v1-import": "bun scripts/brain-v1-import.mjs",
     "check": "npx ultracite check",
     "fix": "npx ultracite fix",
-    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "@labring/sealos-desktop-sdk": "^0.1.21",
     "@monaco-editor/react": "^4.7.0",
     "@workspace/api": "workspace:*",
+    "@workspace/shared": "workspace:*",
     "@workspace/ui": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

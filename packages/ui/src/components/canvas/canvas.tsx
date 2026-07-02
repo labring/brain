@@ -472,10 +472,12 @@ function CanvasFlow({ children }: CanvasFlowProps) {
         targetKey: focusResolution.targetKey,
       })
     ) {
-      setViewport(focusResolution.action.viewport, {
-        duration: VIEWPORT_FOCUS_ANIMATION_MS,
-        interpolate: "smooth",
-      });
+      setViewport(
+        focusResolution.action.viewport,
+        viewportFocus?.instant === true
+          ? undefined
+          : { duration: VIEWPORT_FOCUS_ANIMATION_MS, interpolate: "smooth" }
+      );
     }
   }, [
     canvasReadyForViewportActions,

@@ -54,6 +54,11 @@ COPY --from=builder --chown=nodeuser:nodeuser \
     /app/apps/ui/.next/static ./apps/ui/.next/static
 COPY --from=builder --chown=nodeuser:nodeuser \
     /app/apps/ui/public ./apps/ui/public
+# SQL migrations applied at boot (instrumentation.ts). Next's file tracing
+# currently bundles drizzle/ into standalone, but that is heuristic — copy
+# explicitly so a tracing change can never break boot-time migrations.
+COPY --from=builder --chown=nodeuser:nodeuser \
+    /app/apps/ui/drizzle ./apps/ui/drizzle
 
 EXPOSE 3000
 

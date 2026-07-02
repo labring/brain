@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -41,6 +43,12 @@ const SINGLE_EMPTY_SLOT_RE = /data-slot="app-select-empty"/;
 const MULTI_EMPTY_SLOT_RE = /data-slot="app-multi-select-empty"/;
 const NO_ENGINES_RE = /No engines/;
 const NO_CONTAINERS_RE = /No containers/;
+const NON_SEARCHABLE_FILTER_RE =
+  /const filter = searchable \? undefined : null;/g;
+const COMBOBOX_FILTER_PROP_RE = /filter=\{filter\}/g;
+const SOURCE = readFileSync(
+  fileURLToPath(new URL("./app-select.tsx", import.meta.url))
+).toString();
 
 test("AppSelect renders the selected option in the trigger", () => {
   const html = renderToStaticMarkup(
@@ -90,4 +98,17 @@ test("AppMultiSelect renders an empty state without a combobox trigger", () => {
   assert.match(html, MULTI_EMPTY_SLOT_RE);
   assert.match(html, NO_CONTAINERS_RE);
   assert.doesNotMatch(html, COMBOBOX_ROLE_RE);
+});
+
+test("AppSelect disables combobox filtering when search is hidden", () => {
+  assert.equal(
+    [...SOURCE.matchAll(NON_SEARCHABLE_FILTER_RE)].length,
+    2,
+    "single and multi select should not filter by hidden combobox input"
+  );
+  assert.equal(
+    [...SOURCE.matchAll(COMBOBOX_FILTER_PROP_RE)].length,
+    2,
+    "single and multi select should pass the resolved filter to Base UI"
+  );
 });
