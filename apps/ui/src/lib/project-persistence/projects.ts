@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { getProjectDb } from "./db";
 import { type ProjectRow, projects } from "./schema";
@@ -94,7 +94,8 @@ export async function listProjects(namespace: string): Promise<BrainProject[]> {
     .select()
     .from(projects)
     .where(eq(projects.namespace, namespace))
-    .orderBy(projects.createdAt);
+    // Newest first, so freshly created projects surface at the top of the list.
+    .orderBy(desc(projects.createdAt));
   return rows.map(rowToProject);
 }
 

@@ -160,16 +160,12 @@ function databaseMetricsFromTelemetry(
   };
 }
 
-function databaseMetricCapacitiesFromStatus(
-  status: Record<string, unknown>
+function databaseMetricCapacitiesFromSpec(
+  spec: Record<string, unknown>
 ): DatabaseNodeStates["metricCapacities"] | undefined {
-  const effectiveResources = asRecord(status.effectiveResources);
-  if (effectiveResources === undefined) {
-    return undefined;
-  }
-  const cpuCapacity = nonEmptyString(effectiveResources.cpuLimit);
-  const memoryCapacity = nonEmptyString(effectiveResources.memoryLimit);
-  const storageCapacity = nonEmptyString(effectiveResources.storageSize);
+  const cpuCapacity = nonEmptyString(spec.cpuLimit);
+  const memoryCapacity = nonEmptyString(spec.memoryLimit);
+  const storageCapacity = nonEmptyString(spec.storageSize);
   const metricCapacities: DatabaseNodeStates["metricCapacities"] = {
     ...(cpuCapacity === undefined ? {} : { cpu: cpuCapacity }),
     ...(memoryCapacity === undefined ? {} : { memory: memoryCapacity }),
@@ -202,12 +198,10 @@ function databaseConnectionsFromResource(
 }
 
 function databaseDesiredFromSpec(
-  spec: Record<string, unknown>,
-  status: Record<string, unknown>
+  spec: Record<string, unknown>
 ): DbSettingsData["desired"] {
-  const effectiveResources = asRecord(status.effectiveResources);
   const desiredResource = (field: "cpuLimit" | "memoryLimit" | "storageSize") =>
-    nonEmptyString(spec[field]) ?? nonEmptyString(effectiveResources?.[field]);
+    nonEmptyString(spec[field]);
   const replicas =
     typeof spec.replicas === "number" && Number.isFinite(spec.replicas)
       ? spec.replicas
@@ -308,7 +302,7 @@ export function dbResourceToSettingsData(
       ? undefined
       : (options?.engineIconByName?.get(engineKey) ??
         databaseEngineIconUrl(engineKey));
-  const metricCapacities = databaseMetricCapacitiesFromStatus(status);
+  const metricCapacities = databaseMetricCapacitiesFromSpec(spec);
   const mountPath = nonEmptyString(status.mountPath);
   const backups = Array.isArray(status.backups) ? status.backups : undefined;
   const backupPolicy = databaseBackupPolicyFromSpec(spec);
@@ -333,7 +327,7 @@ export function dbResourceToSettingsData(
     ...(backupPolicy === undefined ? {} : { backupPolicy }),
     ...(backups === undefined ? {} : { backups }),
     connections: databaseConnectionsFromResource(spec, status),
-    desired: databaseDesiredFromSpec(spec, status),
+    desired: databaseDesiredFromSpec(spec),
     ...(resourceMetadata === undefined ? {} : { metadata: resourceMetadata }),
     states,
     ...(uid === undefined || uid === "" ? {} : { uid }),

@@ -66,19 +66,17 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
       uid: "db-uid",
     },
     spec: {
+      cpuLimit: "1000m",
       engine: "postgresql",
       exposeNodePort: true,
+      memoryLimit: "2Gi",
       replicas: 3,
+      storageSize: "20Gi",
     },
     status: {
       clusterVersionRef: "postgresql-15.4.0",
       connectionStringPrivate: "postgres://private",
       connectionStringPublic: "postgres://public",
-      effectiveResources: {
-        cpuLimit: "1000m",
-        memoryLimit: "2Gi",
-        storageSize: "20Gi",
-      },
       phase: "Running",
     },
   };
