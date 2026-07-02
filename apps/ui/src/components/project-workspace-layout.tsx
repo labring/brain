@@ -12,7 +12,7 @@ import {
   lastAssistantMessageIsCompleteWithToolCalls,
   type UIMessage,
 } from "ai";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   ChevronRight,
   PanelRightClose,
@@ -22,9 +22,13 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import {
+  type KeyboardEvent,
+  memo,
+  type PointerEvent,
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -49,6 +53,15 @@ import {
 } from "@/features/projects/project-edit-dialog";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
+import {
+  ASSISTANT_PANE_DEFAULT_WIDTH,
+  ASSISTANT_PANE_MIN_WIDTH,
+  ASSISTANT_PANE_RESIZE_STEP,
+  assistantPaneMaxWidth,
+  clampAssistantPaneWidth,
+  readStoredAssistantPaneWidth,
+  writeStoredAssistantPaneWidth,
+} from "@/lib/assistant-pane-width";
 import type { BrainProjectResponse } from "@/lib/brain-projects";
 import {
   createAssistantThread,
@@ -81,7 +94,11 @@ import {
   runRefreshFrontendSwrCachesTool,
 } from "@/lib/tool/chat-refresh-frontend-swr-tool";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-import { assistantPaneOpenAtom } from "@/store/layout-store";
+import {
+  assistantPaneOpenAtom,
+  assistantPaneResizingAtom,
+  assistantPaneWidthAtom,
+} from "@/store/layout-store";
 
 type AssistantClientToolSubmission =
   | {
@@ -707,6 +724,8 @@ function ProjectAssistantChatPane() {
   );
 }
 
+const ProjectAssistantChatPaneMemo = memo(ProjectAssistantChatPane);
+
 function ProjectRouteTopBar({
   assistantPaneOpen,
 }: {
@@ -817,6 +836,8 @@ function ProjectRouteTopBar({
   );
 }
 
+const ProjectRouteTopBarMemo = memo(ProjectRouteTopBar);
+
 /** Main project column + optional Project Assistant Pane (`POST /api/chat` + AI SDK). */
 function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   const assistantPaneOpen = useAtomValue(assistantPaneOpenAtom);
@@ -824,30 +845,204 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   const toggleAssistantPane = useCallback(() => {
     setAssistantPaneOpen((open) => !open);
   }, [setAssistantPaneOpen]);
+  const [paneWidth, setPaneWidth] = useAtom(assistantPaneWidthAtom);
+  const [paneResizing, setPaneResizing] = useAtom(assistantPaneResizingAtom);
+  const [workspaceWidth, setWorkspaceWidth] = useState(0);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const paneWidthRef = useRef(paneWidth);
+  paneWidthRef.current = paneWidth;
+  const dragRef = useRef<{
+    lastWidth: number;
+    pointerId: number;
+    startWidth: number;
+    startX: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const stored = readStoredAssistantPaneWidth();
+    if (stored != null) {
+      setPaneWidth(stored);
+    }
+  }, [setPaneWidth]);
+
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (workspace == null) {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width != null) {
+        setWorkspaceWidth(Math.round(width));
+      }
+    });
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, []);
+
+  // The divider unmounts without a pointerup when the pane closes mid-drag.
+  useEffect(() => {
+    if (!assistantPaneOpen && dragRef.current != null) {
+      dragRef.current = null;
+      setPaneResizing(false);
+    }
+  }, [assistantPaneOpen, setPaneResizing]);
+
+  const endPaneResize = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (drag == null || drag.pointerId !== event.pointerId) {
+        return;
+      }
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      setPaneResizing(false);
+      writeStoredAssistantPaneWidth(drag.lastWidth);
+    },
+    [setPaneResizing]
+  );
+
+  const handleResizePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const workspace = workspaceRef.current;
+      if (event.button !== 0 || workspace == null) {
+        return;
+      }
+      const startWidth = clampAssistantPaneWidth(
+        paneWidthRef.current,
+        workspace.getBoundingClientRect().width
+      );
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        lastWidth: startWidth,
+        pointerId: event.pointerId,
+        startWidth,
+        startX: event.clientX,
+      };
+      setPaneResizing(true);
+    },
+    [setPaneResizing]
+  );
+
+  const handleResizePointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      const workspace = workspaceRef.current;
+      if (
+        drag == null ||
+        drag.pointerId !== event.pointerId ||
+        workspace == null
+      ) {
+        return;
+      }
+      const next = clampAssistantPaneWidth(
+        drag.startWidth + (drag.startX - event.clientX),
+        workspace.getBoundingClientRect().width
+      );
+      drag.lastWidth = next;
+      setPaneWidth(next);
+    },
+    [setPaneWidth]
+  );
+
+  const handleResizeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      const workspace = workspaceRef.current;
+      if (workspace == null) {
+        return;
+      }
+      event.preventDefault();
+      const available = workspace.getBoundingClientRect().width;
+      const step =
+        event.key === "ArrowLeft"
+          ? ASSISTANT_PANE_RESIZE_STEP
+          : -ASSISTANT_PANE_RESIZE_STEP;
+      const next = clampAssistantPaneWidth(
+        clampAssistantPaneWidth(paneWidthRef.current, available) + step,
+        available
+      );
+      setPaneWidth(next);
+      writeStoredAssistantPaneWidth(next);
+    },
+    [setPaneWidth]
+  );
+
+  const handleResizeDoubleClick = useCallback(() => {
+    setPaneWidth(ASSISTANT_PANE_DEFAULT_WIDTH);
+    writeStoredAssistantPaneWidth(null);
+  }, [setPaneWidth]);
+
+  // Rendered as plain px: transitioning between clamp() values wedges the CSS
+  // width transition in Chrome, so the workspace clamp is resolved here.
+  const renderedPaneWidth = clampAssistantPaneWidth(paneWidth, workspaceWidth);
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+    <div
+      className={cn(
+        "relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden",
+        paneResizing && "cursor-col-resize select-none"
+      )}
+      ref={workspaceRef}
+    >
       <section
         className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         data-slot="project-main-pane"
       >
-        <ProjectRouteTopBar assistantPaneOpen={assistantPaneOpen} />
+        <ProjectRouteTopBarMemo assistantPaneOpen={assistantPaneOpen} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {children}
         </div>
       </section>
+      {assistantPaneOpen ? (
+        <div
+          className="relative z-30 w-0 shrink-0"
+          data-slot="assistant-pane-resizer"
+        >
+          {/* biome-ignore lint/a11y/useSemanticElements: WAI-ARIA window-splitter pattern needs a focusable `role="separator"` widget; `<hr>` is a static, void separator. */}
+          <div
+            aria-label="Resize assistant pane"
+            aria-orientation="vertical"
+            aria-valuemax={assistantPaneMaxWidth(workspaceWidth)}
+            aria-valuemin={ASSISTANT_PANE_MIN_WIDTH}
+            aria-valuenow={renderedPaneWidth}
+            className="group/pane-resize absolute inset-y-0 -left-1 w-2 cursor-col-resize outline-none"
+            onDoubleClick={handleResizeDoubleClick}
+            onKeyDown={handleResizeKeyDown}
+            onPointerCancel={endPaneResize}
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={endPaneResize}
+            role="separator"
+            tabIndex={0}
+          >
+            <div
+              className={cn(
+                "absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-ring opacity-0 transition-opacity duration-150 group-hover/pane-resize:opacity-60 group-focus-visible/pane-resize:opacity-100",
+                paneResizing && "opacity-100"
+              )}
+            />
+          </div>
+        </div>
+      ) : null}
       <aside
         aria-hidden={!assistantPaneOpen}
         className={cn(
-          "project-chrome-surface box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,min-width,opacity,transform,border-color] duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
           assistantPaneOpen
-            ? "w-104 min-w-104 translate-x-0 border-border opacity-100"
-            : "pointer-events-none w-0 min-w-0 translate-x-4 border-transparent opacity-0"
+            ? "translate-x-0 border-border opacity-100"
+            : "pointer-events-none translate-x-4 border-transparent opacity-0",
+          paneResizing && "transition-none"
         )}
         data-slot="project-assistant-pane"
         id="project-assistant-pane"
+        style={{ width: assistantPaneOpen ? renderedPaneWidth : 0 }}
       >
-        <ProjectAssistantChatPane />
+        <ProjectAssistantChatPaneMemo />
       </aside>
       <AppIconButton
         aria-controls="project-assistant-pane"
