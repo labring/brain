@@ -179,7 +179,7 @@ export function validateDbServiceBackupForm({
     errors.backupName =
       "Backup Name must use lowercase letters, numbers, and hyphens, and start and end with a letter or number.";
   }
-  if ([...description.trim()].length > BACKUP_DESCRIPTION_MAX_LENGTH) {
+  if ([...description].length > BACKUP_DESCRIPTION_MAX_LENGTH) {
     errors.description = "Description must be 120 characters or fewer.";
   }
   return errors;

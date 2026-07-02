@@ -165,6 +165,13 @@ test("manual backup form validates name and description before submit", () => {
   assert.deepEqual(
     validateDbServiceBackupForm({
       backupName: "orders-before-migration",
+      description: `${"x".repeat(120)} `,
+    }),
+    { description: "Description must be 120 characters or fewer." }
+  );
+  assert.deepEqual(
+    validateDbServiceBackupForm({
+      backupName: "orders-before-migration",
       description: "Before invoice migration",
     }),
     {}
