@@ -9,20 +9,38 @@ const CANVAS_CONTROLS_SOURCE = readFileSync(
 const NAVIGATION_CHROME_CONSTANT_RE =
   /CANVAS_NAVIGATION_CHROME_CLASS =\s+"rounded-lg bg-\[#09090b\]\/10 backdrop-blur-lg"/;
 const NAVIGATION_CHROME_USAGE_RE = /CANVAS_NAVIGATION_CHROME_CLASS/;
-const MINIMAP_FIXED_FRAME_RE = /h-\[130px\] w-\[223px\]/;
+const MINIMAP_LEGACY_CHROME_RE =
+  /absolute top-\[60px\] left-3 z-10 h-\[130px\] w-\[223px\] overflow-hidden transition-\[right,opacity\]/;
+const MINIMAP_LEGACY_BACKGROUND_RE =
+  /bgColor="color-mix\(in oklab, var\(--input\) 30%, transparent\)"/;
+const MINIMAP_LEGACY_MASK_RE =
+  /maskColor="color-mix\(in oklab, var\(--input\) 30%, transparent\)"/;
+const MINIMAP_LEGACY_CLASS_RE =
+  /className="overflow-hidden bg-input\/30 shadow-none"/;
 
-function sourceBeforeCanvasMiniMapSlot() {
-  const slotIndex = CANVAS_CONTROLS_SOURCE.indexOf(
-    'data-slot="canvas-minimap"'
+function canvasMiniMapSource() {
+  const startIndex = CANVAS_CONTROLS_SOURCE.indexOf(
+    "export function CanvasMiniMap"
   );
-  assert.notEqual(slotIndex, -1, "canvas minimap slot should be present");
-  return CANVAS_CONTROLS_SOURCE.slice(Math.max(0, slotIndex - 700), slotIndex);
+  assert.notEqual(startIndex, -1, "canvas minimap source should be present");
+  return CANVAS_CONTROLS_SOURCE.slice(startIndex);
 }
 
-test("canvas minimap uses the same glass chrome material as canvas controls", () => {
-  const minimapSource = sourceBeforeCanvasMiniMapSlot();
+function sourceBeforeCanvasMiniMapSlot() {
+  const minimapSource = canvasMiniMapSource();
+  const slotIndex = minimapSource.indexOf('data-slot="canvas-minimap"');
+  assert.notEqual(slotIndex, -1, "canvas minimap slot should be present");
+  return minimapSource.slice(0, slotIndex);
+}
+
+test("canvas minimap keeps the legacy visual style with overlap blur", () => {
+  const minimapSource = canvasMiniMapSource();
+  const minimapChromeSource = sourceBeforeCanvasMiniMapSlot();
 
   assert.match(CANVAS_CONTROLS_SOURCE, NAVIGATION_CHROME_CONSTANT_RE);
-  assert.match(minimapSource, MINIMAP_FIXED_FRAME_RE);
-  assert.match(minimapSource, NAVIGATION_CHROME_USAGE_RE);
+  assert.match(minimapChromeSource, MINIMAP_LEGACY_CHROME_RE);
+  assert.match(minimapChromeSource, NAVIGATION_CHROME_USAGE_RE);
+  assert.match(minimapSource, MINIMAP_LEGACY_BACKGROUND_RE);
+  assert.match(minimapSource, MINIMAP_LEGACY_MASK_RE);
+  assert.match(minimapSource, MINIMAP_LEGACY_CLASS_RE);
 });
