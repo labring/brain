@@ -350,9 +350,9 @@ export function CanvasMiniMap({
     >
       <MiniMap
         ariaLabel="Canvas mini map"
-        bgColor="transparent"
-        className="bg-transparent shadow-none"
-        maskColor="transparent"
+        bgColor="color-mix(in oklab, var(--input) 30%, transparent)"
+        className="overflow-hidden bg-input/30 shadow-none"
+        maskColor="color-mix(in oklab, var(--input) 30%, transparent)"
         maskStrokeColor="var(--color-border)"
         maskStrokeWidth={1}
         nodeBorderRadius={10}
