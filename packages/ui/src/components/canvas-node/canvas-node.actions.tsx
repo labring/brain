@@ -104,7 +104,6 @@ export function CanvasNodeActionButton({
       onKeyDown={stopCanvasNodeControlEvent}
       onPointerDown={stopCanvasNodeControlEvent}
       size="md"
-      title={disabledReason}
       type="button"
       variant="node"
     >
@@ -217,7 +216,6 @@ export function CanvasNodeActionMenuItem({
         event.stopPropagation();
         invokeCanvasNodeAction(action);
       }}
-      title={disabledReason}
     >
       {action?.loading ? <Spinner className="size-4" /> : icon}
       {children}

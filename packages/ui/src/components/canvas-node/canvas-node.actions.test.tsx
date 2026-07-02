@@ -32,7 +32,7 @@ test("CanvasNodeActionButton exposes disabled reasons at the trigger", () => {
 
   assert.match(html, ARIA_DISABLED_RE);
   assert.match(html, BUTTON_REASON_DESCRIPTION_RE);
-  assert.match(html, DISABLED_REASON_TITLE_RE);
+  assert.doesNotMatch(html, DISABLED_REASON_TITLE_RE);
 });
 
 test("CanvasNodeActionMenuItem exposes disabled reasons", () => {
@@ -52,5 +52,5 @@ test("CanvasNodeActionMenuItem exposes disabled reasons", () => {
 
   assert.match(html, RESTART_LABEL_RE);
   assert.match(html, RESTART_ACTION_KEY_RE);
-  assert.match(html, DISABLED_REASON_TITLE_RE);
+  assert.doesNotMatch(html, DISABLED_REASON_TITLE_RE);
 });
