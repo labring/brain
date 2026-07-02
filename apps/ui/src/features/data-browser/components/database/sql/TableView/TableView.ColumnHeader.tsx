@@ -1,25 +1,13 @@
-import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { DataViewSortMenu } from "@data-browser/components/database/shared/DataViewSortMenu";
 import { Badge } from "@workspace/ui/components/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@workspace/ui/components/dropdown-menu";
 import { cn } from "@workspace/ui/lib/utils";
-import { ArrowDownAZ, ArrowUpAZ, MoreHorizontal, X } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ } from "lucide-react";
 import { simplifyColumnType, useTableView } from "./TableViewProvider";
 
 interface ColumnHeaderProps {
   column: string;
   index: number;
 }
-
-const activeSortMenuItemClass =
-  "bg-input font-medium text-foreground focus:bg-input data-highlighted:bg-input";
 
 /** Renders a single column header `<th>` with type badge, sort indicator, menu dropdown, and resize handle. */
 export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
@@ -73,71 +61,18 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
             </span>
           )}
         </div>
-        <DropdownMenu
+        <DataViewSortMenu
+          align={index === 0 ? "start" : "end"}
+          column={column}
+          onClearSort={actions.clearSort}
           onOpenChange={(open) =>
             actions.setActiveColumnMenu(open ? column : null)
           }
+          onSort={actions.handleSort}
           open={state.activeColumnMenu === column}
-        >
-          <DropdownMenuTrigger
-            render={
-              <AppIconButton
-                aria-label="Column actions"
-                className={cn(
-                  "absolute top-2 right-2 text-muted-foreground",
-                  state.activeColumnMenu === column &&
-                    "bg-muted text-foreground"
-                )}
-                onClick={(event) => event.stopPropagation()}
-                size="sm"
-                variant="quiet"
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </AppIconButton>
-            }
-          />
-          <DropdownMenuContent
-            align={index === 0 ? "start" : "end"}
-            className="w-40"
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-[10px] text-muted-foreground">
-                {"Sort actions"}
-              </DropdownMenuLabel>
-              <DropdownMenuItem
-                className={cn(
-                  state.sortColumn === column &&
-                    state.sortDirection === "asc" &&
-                    activeSortMenuItemClass
-                )}
-                onClick={() => actions.handleSort(column, "asc")}
-              >
-                <ArrowUpAZ className="h-3.5 w-3.5" />
-                {"Sort ascending"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={cn(
-                  state.sortColumn === column &&
-                    state.sortDirection === "desc" &&
-                    activeSortMenuItemClass
-                )}
-                onClick={() => actions.handleSort(column, "desc")}
-              >
-                <ArrowDownAZ className="h-3.5 w-3.5" />
-                {"Sort descending"}
-              </DropdownMenuItem>
-              {state.sortColumn === column && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => actions.clearSort()}>
-                    <X className="h-3.5 w-3.5" />
-                    {"Clear sort"}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          sortColumn={state.sortColumn}
+          sortDirection={state.sortDirection}
+        />
       </div>
 
       {/* Resize Handle */}
