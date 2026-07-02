@@ -104,6 +104,48 @@ export function getRegistryPreviewLoaderByKey(
 }
 
 export const Index: RegistryIndex = {
+  "linear/components/ai-elements": {
+    style: "linear",
+    group: "components",
+    name: "ai-elements",
+    title: "AI Elements",
+    description:
+      "Chat primitives used by the project assistant: message bubbles, the conversation scroll region, loading shimmer, and collapsible tool/task cards.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "button", "collapsible", "spinner"],
+    files: [
+      {
+        path: "registry/linear/components/ai-elements/ai-elements-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/ai-elements/message.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/ai-elements/conversation.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/ai-elements/shimmer.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/ai-elements/task.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/ai-elements/ai-elements-preview"),
+  },
+
   "linear/components/app-icon-button": {
     style: "linear",
     group: "components",
