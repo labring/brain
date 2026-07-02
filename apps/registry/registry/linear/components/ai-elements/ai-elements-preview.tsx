@@ -119,13 +119,13 @@ export default function AiElementsPreview() {
         <div className="flex flex-col gap-4">
           <Task defaultOpen>
             <TaskTrigger title="Working · 0.8s">
-              <ListTodo className="size-4 shrink-0 text-muted-foreground" />
+              <ListTodo className="size-3.5 shrink-0 text-muted-foreground/80" />
               <span className="min-w-0 flex-1 truncate">
                 <Shimmer as="span" className="font-medium text-sm">
                   Working · 0.8s
                 </Shimmer>
               </span>
-              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
             </TaskTrigger>
             <TaskContent>
               <TaskItem>
