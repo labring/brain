@@ -56,6 +56,9 @@ import {
 
 type RedisKeyType = "string" | "hash" | "list" | "set" | "zset";
 
+const activeSortMenuItemClass =
+  "bg-input font-medium text-foreground focus:bg-input data-highlighted:bg-input";
+
 function detectRedisKeyType(
   columns: string[],
   disableUpdate: boolean
@@ -535,7 +538,7 @@ export function RedisKeyDetailView({
                                 className={cn(
                                   sortColumn === col &&
                                     sortDirection === "asc" &&
-                                    "bg-primary/5 font-medium text-primary"
+                                    activeSortMenuItemClass
                                 )}
                                 onClick={() => handleSort(col, "asc")}
                               >
@@ -546,7 +549,7 @@ export function RedisKeyDetailView({
                                 className={cn(
                                   sortColumn === col &&
                                     sortDirection === "desc" &&
-                                    "bg-primary/5 font-medium text-primary"
+                                    activeSortMenuItemClass
                                 )}
                                 onClick={() => handleSort(col, "desc")}
                               >

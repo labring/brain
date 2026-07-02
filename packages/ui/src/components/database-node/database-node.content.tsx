@@ -452,6 +452,10 @@ function DatabaseNodeHeaderMenu() {
   const { showRestart, showStart, showStop } =
     databaseNodeLifecycleMenuVisibility(status?.tone ?? status?.label);
 
+  if (lifecycleActions == null) {
+    return null;
+  }
+
   return (
     <CanvasNode.ActionMenu aria-label="Open database actions">
       {LIFECYCLE_ACTION_ITEMS.map((item) => {

@@ -33,6 +33,7 @@ export type CanvasNodeActionTone =
 
 export interface CanvasNodeAction {
   disabled?: boolean;
+  disabledReason?: string;
   loading?: boolean;
   onClick?: () => Promise<void> | void;
 }
@@ -81,16 +82,20 @@ export function CanvasNodeActionButton({
   title,
 }: CanvasNodeActionButtonProps) {
   const disabled = action?.disabled || action?.loading || !action?.onClick;
-  const tooltip = title ?? ariaLabel;
+  const disabledReason = disabled ? action?.disabledReason : undefined;
+  const tooltip = disabledReason ?? title ?? ariaLabel;
   const button = (
     <AppIconButton
+      aria-description={disabledReason}
+      aria-disabled={disabled || undefined}
       aria-label={ariaLabel}
       className={cn(
         RF_CONTROL_CLASS,
         "canvas-node-action-button shrink-0 cursor-pointer border-0",
+        disabledReason && "cursor-not-allowed opacity-50",
         className
       )}
-      disabled={disabled}
+      disabled={disabled && disabledReason == null}
       onClick={(event) => {
         event.stopPropagation();
         invokeCanvasNodeAction(action);
@@ -99,6 +104,7 @@ export function CanvasNodeActionButton({
       onKeyDown={stopCanvasNodeControlEvent}
       onPointerDown={stopCanvasNodeControlEvent}
       size="md"
+      title={disabledReason}
       type="button"
       variant="node"
     >
@@ -194,11 +200,14 @@ export function CanvasNodeActionMenuItem({
   tone = "default",
 }: CanvasNodeActionMenuItemProps) {
   const disabled = action?.disabled || action?.loading || !action?.onClick;
+  const disabledReason = disabled ? action?.disabledReason : undefined;
 
-  return (
+  const item = (
     <DropdownMenuItem
       className={cn(
         "canvas-node-action-menu-item h-7 cursor-pointer rounded-md px-2 py-0 font-normal text-sm text-zinc-200 leading-none hover:bg-white/15 hover:text-zinc-50 focus:bg-white/15 focus:text-zinc-50",
+        disabledReason &&
+          "cursor-not-allowed data-disabled:pointer-events-auto",
         className
       )}
       data-action-key={actionKey}
@@ -208,9 +217,21 @@ export function CanvasNodeActionMenuItem({
         event.stopPropagation();
         invokeCanvasNodeAction(action);
       }}
+      title={disabledReason}
     >
       {action?.loading ? <Spinner className="size-4" /> : icon}
       {children}
     </DropdownMenuItem>
+  );
+
+  if (!disabledReason) {
+    return item;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={item} />
+      <TooltipContent side="right">{disabledReason}</TooltipContent>
+    </Tooltip>
   );
 }

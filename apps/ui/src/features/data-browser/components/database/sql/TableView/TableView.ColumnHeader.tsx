@@ -18,6 +18,9 @@ interface ColumnHeaderProps {
   index: number;
 }
 
+const activeSortMenuItemClass =
+  "bg-input font-medium text-foreground focus:bg-input data-highlighted:bg-input";
+
 /** Renders a single column header `<th>` with type badge, sort indicator, menu dropdown, and resize handle. */
 export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
   const { state, actions } = useTableView();
@@ -105,7 +108,7 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
                 className={cn(
                   state.sortColumn === column &&
                     state.sortDirection === "asc" &&
-                    "bg-primary/5 font-medium text-primary"
+                    activeSortMenuItemClass
                 )}
                 onClick={() => actions.handleSort(column, "asc")}
               >
@@ -116,7 +119,7 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
                 className={cn(
                   state.sortColumn === column &&
                     state.sortDirection === "desc" &&
-                    "bg-primary/5 font-medium text-primary"
+                    activeSortMenuItemClass
                 )}
                 onClick={() => actions.handleSort(column, "desc")}
               >

@@ -13,7 +13,6 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { chatScrollbarThinClass } from "@workspace/ui/lib/chat-scrollbar";
-import { popoverSurfaceClass } from "@workspace/ui/lib/popover-surface";
 import { cn } from "@workspace/ui/lib/utils";
 import { ChevronDown, PanelRightClose, Plus, Settings2 } from "lucide-react";
 import { type ComponentProps, useMemo, useState } from "react";
@@ -248,13 +247,7 @@ export function ChatThreadSelect({
             />
           ) : null}
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className={cn(
-            "min-w-72 max-w-96 p-1 text-foreground",
-            popoverSurfaceClass
-          )}
-        >
+        <DropdownMenuContent align="start" className="min-w-72 max-w-96">
           {canPickHistory ? (
             <>
               <DropdownMenuRadioGroup

@@ -28,6 +28,7 @@ import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/wor
 import { useProjectCanvasNodeDecorators } from "@/features/project-canvas/workbench/use-project-canvas-node-decorators";
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
+import { useResourceStopDialogs } from "@/features/project-canvas/workbench/use-resource-stop-dialogs";
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
@@ -284,6 +285,12 @@ export function useProjectCanvas(
       onResourceLayoutDelete: options?.onResourceLayoutDelete,
       runResourceAction: resourceActions.runResourceAction,
     });
+  const { requestApStop, requestDbStop, resourceStopDialog } =
+    useResourceStopDialogs({
+      runResourceAction: resourceActions.runResourceAction,
+      stopApWorkload: resourceActions.apLifecycle.pauseWorkload,
+      stopDbWorkload: resourceActions.dbLifecycle.stopWorkload,
+    });
 
   const executeCommandPlan = useCallback(
     (plan: ProjectCanvasCommandPlan) => {
@@ -327,7 +334,9 @@ export function useProjectCanvas(
     onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
     readOnly,
     requestApDelete,
+    requestApStop,
     requestDbDelete,
+    requestDbStop,
     resourceActions,
   });
   const nodes = decorated.nodes;
@@ -640,6 +649,7 @@ export function useProjectCanvas(
     openMainSurface,
     openSideSurface,
     resourceDeleteDialog,
+    resourceStopDialog,
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,
