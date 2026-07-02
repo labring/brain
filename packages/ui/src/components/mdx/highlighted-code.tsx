@@ -157,7 +157,7 @@ export function HighlightedCodeRoot({
   return (
     <div
       className={cn(
-        "group/code not-prose relative my-4 overflow-hidden rounded-xl border bg-background",
+        "group/code not-prose relative my-4 overflow-hidden rounded-lg border border-border bg-muted/40",
         className
       )}
       {...props}
@@ -172,7 +172,7 @@ export function HighlightedCodeHeader({
   return (
     <div
       className={cn(
-        "flex items-center justify-between p-2 pb-0 font-medium text-sm",
+        "flex items-center justify-between border-border/60 border-b px-3 py-1.5 font-medium text-xs",
         className
       )}
       {...props}
@@ -189,7 +189,7 @@ export function HighlightedCodeLanguage({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pl-2 font-mono text-muted-foreground uppercase tracking-wide",
+        "font-mono text-[11px] text-muted-foreground uppercase tracking-wider",
         className
       )}
     >
@@ -217,21 +217,21 @@ export function HighlightedCodeCopyButton({
     <button
       aria-label="Copy code"
       className={cn(
-        "flex cursor-pointer items-center gap-1.5 rounded-xl p-2 text-muted-foreground transition-colors",
+        "-mr-1 flex cursor-pointer items-center gap-1.5 rounded-md p-1 text-muted-foreground transition-colors",
         "pointer-events-none opacity-0 transition-opacity duration-150",
         "group-hover/code:pointer-events-auto group-hover/code:opacity-100",
         "focus-visible:pointer-events-auto focus-visible:opacity-100",
         copied && "pointer-events-auto opacity-100",
-        "hover:bg-muted-foreground/20 hover:text-foreground",
+        "hover:bg-input/50 hover:text-foreground",
         className
       )}
       onClick={copy}
       type="button"
     >
       {copied ? (
-        <HugeiconsIcon icon={Tick01Icon} size={16} />
+        <HugeiconsIcon icon={Tick01Icon} size={14} />
       ) : (
-        <HugeiconsIcon icon={ClipboardCopyIcon} size={16} />
+        <HugeiconsIcon icon={ClipboardCopyIcon} size={14} />
       )}
     </button>
   );
@@ -272,7 +272,7 @@ export function HighlightedCodeInline({
   return (
     <code
       className={cn(
-        "rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono",
+        "rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[0.85em] text-foreground",
         className
       )}
       {...props}
