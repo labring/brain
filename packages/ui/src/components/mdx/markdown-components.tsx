@@ -20,7 +20,7 @@ export const markdownComponents = {
   h1: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h1
       className={cn(
-        "mt-2 scroll-m-20 font-bold font-heading text-4xl",
+        "mt-5 scroll-m-20 font-heading font-semibold text-base leading-6 first:mt-0",
         className
       )}
       {...props}
@@ -29,7 +29,7 @@ export const markdownComponents = {
   h2: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h2
       className={cn(
-        "mt-12 scroll-m-20 pb-2 font-heading font-semibold text-2xl tracking-tight first:mt-0",
+        "mt-5 scroll-m-20 font-heading font-semibold text-[0.95rem] leading-6 first:mt-0",
         className
       )}
       {...props}
@@ -38,7 +38,7 @@ export const markdownComponents = {
   h3: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h3
       className={cn(
-        "mt-8 scroll-m-20 font-heading font-semibold text-xl tracking-tight",
+        "mt-4 scroll-m-20 font-heading font-semibold text-sm leading-6 first:mt-0",
         className
       )}
       {...props}
@@ -47,7 +47,7 @@ export const markdownComponents = {
   h4: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h4
       className={cn(
-        "mt-8 scroll-m-20 font-heading font-semibold text-lg tracking-tight",
+        "mt-4 scroll-m-20 font-heading font-semibold text-sm leading-6 first:mt-0",
         className
       )}
       {...props}
@@ -56,7 +56,7 @@ export const markdownComponents = {
   h5: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h5
       className={cn(
-        "mt-8 scroll-m-20 font-semibold text-lg tracking-tight",
+        "mt-4 scroll-m-20 font-semibold text-sm leading-6 first:mt-0",
         className
       )}
       {...props}
@@ -65,7 +65,7 @@ export const markdownComponents = {
   h6: ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h6
       className={cn(
-        "mt-8 scroll-m-20 font-semibold text-base tracking-tight",
+        "mt-4 scroll-m-20 font-semibold text-muted-foreground text-sm leading-6 first:mt-0",
         className
       )}
       {...props}
@@ -83,7 +83,7 @@ export const markdownComponents = {
       return (
         <a
           className={cn(
-            "font-medium text-muted-foreground tabular-nums no-underline hover:text-foreground",
+            "font-medium text-muted-foreground tabular-nums no-underline [overflow-wrap:anywhere] hover:text-foreground",
             className
           )}
           {...props}
@@ -94,7 +94,7 @@ export const markdownComponents = {
       return (
         <a
           className={cn(
-            "text-muted-foreground no-underline hover:text-foreground",
+            "text-muted-foreground no-underline [overflow-wrap:anywhere] hover:text-foreground",
             className
           )}
           {...props}
@@ -104,7 +104,7 @@ export const markdownComponents = {
     return (
       <a
         className={cn(
-          "font-medium underline underline-offset-4 transition-colors hover:text-muted-foreground",
+          "font-medium text-brand-primary underline underline-offset-4 transition-colors [overflow-wrap:anywhere] hover:text-brand-primary-hover",
           className
         )}
         {...props}
@@ -142,18 +142,24 @@ export const markdownComponents = {
     );
   },
   p: ({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
-    <p className={cn("not-first:mt-6 leading-7", className)} {...props} />
+    <p
+      className={cn("not-first:mt-3 max-w-[75ch] leading-6", className)}
+      {...props}
+    />
   ),
   ul: ({ className, ...props }: React.HTMLAttributes<HTMLUListElement>) => (
     <ul
-      className={cn("ml-6 list-disc marker:text-muted-foreground", className)}
+      className={cn(
+        "my-3 ml-4 list-disc space-y-1 marker:text-muted-foreground",
+        className
+      )}
       {...props}
     />
   ),
   ol: ({ className, ...props }: React.HTMLAttributes<HTMLOListElement>) => (
     <ol
       className={cn(
-        "ml-6 list-decimal marker:text-muted-foreground",
+        "my-3 ml-4 list-decimal space-y-1 marker:text-muted-foreground",
         "[&_ol]:list-[lower-alpha]!",
         "[&_ol_ol]:list-[lower-roman]!",
         className
@@ -162,11 +168,20 @@ export const markdownComponents = {
     />
   ),
   li: ({ className, ...props }: React.HTMLAttributes<HTMLElement>) => (
-    <li className={cn("mt-2", className)} {...props} />
+    <li
+      className={cn(
+        "pl-1 leading-6 [&>p:not(:first-child)]:mt-2 [&>p]:my-0",
+        className
+      )}
+      {...props}
+    />
   ),
   blockquote: ({ className, ...props }: React.HTMLAttributes<HTMLElement>) => (
     <blockquote
-      className={cn("mt-6 border-l-2 pl-6 italic", className)}
+      className={cn(
+        "my-3 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-muted-foreground text-sm leading-6 [&>p]:max-w-none [&>p]:leading-6",
+        className
+      )}
       {...props}
     />
   ),
@@ -176,26 +191,36 @@ export const markdownComponents = {
     ...props
   }: React.ImgHTMLAttributes<HTMLImageElement>) => (
     // biome-ignore lint/correctness/useImageSize: MDX/markdown images have arbitrary dimensions
-    <img alt={alt} className={cn("rounded-md", className)} {...props} />
+    <img
+      alt={alt}
+      className={cn(
+        "my-3 max-w-full rounded-md border border-border/70",
+        className
+      )}
+      {...props}
+    />
   ),
   hr: ({ ...props }: React.HTMLAttributes<HTMLHRElement>) => (
-    <hr className="my-4 md:my-8" {...props} />
+    <hr className="my-4 border-border/70" {...props} />
   ),
   table: ({ className, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
-    <div className="my-6 w-full overflow-y-auto">
-      <table className={cn("w-full", className)} {...props} />
+    <div className="my-3 w-full overflow-x-auto rounded-md border border-border/70">
+      <table
+        className={cn("w-full border-collapse text-sm", className)}
+        {...props}
+      />
     </div>
   ),
   tr: ({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) => (
     <tr
-      className={cn("m-0 border-t p-0 even:bg-muted", className)}
+      className={cn("border-border/70 border-b last:border-b-0", className)}
       {...props}
     />
   ),
   th: ({ className, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
     <th
       className={cn(
-        "border px-4 py-2 text-left font-bold [[align=center]]:text-center [[align=right]]:text-right",
+        "bg-muted/30 px-3 py-2 text-left font-medium text-muted-foreground [[align=center]]:text-center [[align=right]]:text-right",
         className
       )}
       {...props}
@@ -204,7 +229,7 @@ export const markdownComponents = {
   td: ({ className, ...props }: React.HTMLAttributes<HTMLTableCellElement>) => (
     <td
       className={cn(
-        "border px-4 py-2 text-left [[align=center]]:text-center [[align=right]]:text-right",
+        "px-3 py-2 text-left align-top [[align=center]]:text-center [[align=right]]:text-right",
         className
       )}
       {...props}
@@ -218,7 +243,7 @@ export const markdownComponents = {
     const match = LANGUAGE_CLASS.exec(codeClassName || "");
     const language = match ? match[1] : "text";
     const codeString = String(children).replace(TRAILING_NEWLINE, "");
-    const isBlock = Boolean(match);
+    const isBlock = Boolean(match) || codeString.includes("\n");
 
     return (
       <HighlightedCode.Provider

@@ -1,8 +1,8 @@
 "use client";
 
-import { ClipboardCopyIcon, Tick01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { cn } from "@workspace/ui/lib/utils";
+import { Check, Copy } from "lucide-react";
 import {
   type ComponentProps,
   createContext,
@@ -22,9 +22,10 @@ const LIGHT_THEME = "aurora-x";
 const TRAILING_NEWLINE = /\n$/;
 
 const SHIKI_PRE_CLASS =
-  "!m-0 !bg-transparent min-w-0 overflow-x-auto px-4 py-2 font-mono text-sm font-normal leading-normal";
+  "!m-0 !bg-transparent min-w-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.8125rem] font-normal leading-5 [font-variant-ligatures:none]";
 
-const SHIKI_CODE_CLASS = "font-mono text-sm font-normal leading-normal";
+const SHIKI_CODE_CLASS =
+  "font-mono text-[0.8125rem] font-normal leading-5 [font-variant-ligatures:none]";
 
 function escapeHtml(s: string) {
   return s
@@ -129,9 +130,16 @@ export function HighlightedCodeProvider({
   }, [codeString, lang, inline]);
 
   const copy = useCallback(() => {
-    navigator.clipboard.writeText(codeString);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+    navigator.clipboard
+      .writeText(codeString)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => undefined);
   }, [codeString]);
 
   const value = useMemo<HighlightedCodeContextValue>(
@@ -157,7 +165,7 @@ export function HighlightedCodeRoot({
   return (
     <div
       className={cn(
-        "group/code not-prose relative my-4 overflow-hidden rounded-lg border border-border bg-muted/40",
+        "group/code not-prose relative my-3 overflow-hidden rounded-md border border-border/70 bg-background/45 text-foreground",
         className
       )}
       {...props}
@@ -172,7 +180,7 @@ export function HighlightedCodeHeader({
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-border/60 border-b px-3 py-1.5 font-medium text-xs",
+        "flex h-8 items-center justify-between border-border/60 border-b bg-muted/20 px-3 font-medium text-xs",
         className
       )}
       {...props}
@@ -189,7 +197,7 @@ export function HighlightedCodeLanguage({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "font-mono text-[11px] text-muted-foreground uppercase tracking-wider",
+        "font-mono text-[11px] text-muted-foreground leading-none",
         className
       )}
     >
@@ -213,27 +221,33 @@ export function HighlightedCodeCopyButton({
     return null;
   }
 
+  const label = copied ? "Copied code" : "Copy code";
+
   return (
-    <button
-      aria-label="Copy code"
+    <AppIconButton
+      aria-label={label}
       className={cn(
-        "-mr-1 flex cursor-pointer items-center gap-1.5 rounded-md p-1 text-muted-foreground transition-colors",
+        "-mr-1 size-6 rounded-md text-muted-foreground",
         "pointer-events-none opacity-0 transition-opacity duration-150",
         "group-hover/code:pointer-events-auto group-hover/code:opacity-100",
+        "group-focus-within/code:pointer-events-auto group-focus-within/code:opacity-100",
         "focus-visible:pointer-events-auto focus-visible:opacity-100",
-        copied && "pointer-events-auto opacity-100",
         "hover:bg-input/50 hover:text-foreground",
+        copied && "pointer-events-auto text-foreground opacity-100",
         className
       )}
       onClick={copy}
+      size="sm"
+      title={label}
       type="button"
+      variant="quiet"
     >
       {copied ? (
-        <HugeiconsIcon icon={Tick01Icon} size={14} />
+        <Check aria-hidden className="size-3.5" />
       ) : (
-        <HugeiconsIcon icon={ClipboardCopyIcon} size={14} />
+        <Copy aria-hidden className="size-3.5" />
       )}
-    </button>
+    </AppIconButton>
   );
 }
 
@@ -247,10 +261,10 @@ export function HighlightedCodeBody({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "[&_.shiki]:font-normal [&_.shiki]:text-sm",
+        "[&_.shiki]:font-normal [&_.shiki]:text-[0.8125rem]",
         "[&_pre]:m-0! [&_pre]:bg-transparent!",
-        "[&_code]:font-normal [&_code]:text-sm",
-        "[&_span.line]:text-sm",
+        "[&_code]:font-normal [&_code]:text-[0.8125rem]",
+        "[&_span.line]:text-[0.8125rem]",
         className
       )}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: Shiki HTML is safe
@@ -272,7 +286,7 @@ export function HighlightedCodeInline({
   return (
     <code
       className={cn(
-        "rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[0.85em] text-foreground",
+        "rounded-sm border border-border/60 bg-input/30 box-decoration-clone px-1.5 py-0.5 font-mono text-[0.85em] text-foreground [font-variant-ligatures:none] [overflow-wrap:anywhere]",
         className
       )}
       {...props}

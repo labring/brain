@@ -54,11 +54,11 @@ export function DataViewSortMenu({
           <AppIconButton
             aria-label="Column actions"
             className={cn(
-              "absolute top-2 right-2 text-muted-foreground",
+              "absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground",
               open && "bg-muted text-foreground"
             )}
             onClick={(event) => event.stopPropagation()}
-            size="sm"
+            size="md"
             variant="quiet"
           >
             <MoreHorizontal className="h-3.5 w-3.5" />

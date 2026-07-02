@@ -105,7 +105,7 @@ function ToolStatusIcon({ state }: { state: string }) {
     return (
       <CheckCircle2Icon
         aria-hidden
-        className="size-3.5 shrink-0 text-emerald-500"
+        className="size-3.5 shrink-0 text-emerald-400"
       />
     );
   }
@@ -125,7 +125,7 @@ function ToolStatusIcon({ state }: { state: string }) {
       />
     );
   }
-  return <Spinner className="size-3.5 shrink-0 text-muted-foreground" />;
+  return <Spinner className="size-3.5 shrink-0 text-muted-foreground/80" />;
 }
 
 function PreBlock({ children }: { children: string }) {
@@ -156,25 +156,25 @@ function ChatToolGroupItem({
   const settled = isToolSettled(part.state);
 
   const labelNode = active ? (
-    <Shimmer as="span" className="text-sm">
+    <Shimmer as="span" className="font-medium text-sm">
       {label}
     </Shimmer>
   ) : (
-    <span className="text-foreground text-sm">{label}</span>
+    <span className="text-foreground/90 text-sm">{label}</span>
   );
 
   return (
     <Collapsible data-tool-part={partKeyPrefix}>
       <CollapsibleTrigger
         className={cn(
-          "group/tool-row flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left",
-          "transition-colors hover:bg-input/30"
+          "group/tool-row flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left",
+          "transition-colors hover:bg-input/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
         )}
         type="button"
       >
         <ToolStatusIcon state={part.state} />
         <span className="min-w-0 flex-1 truncate">{labelNode}</span>
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
+        <span className="shrink-0 rounded border border-border/45 bg-input/20 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
           {fallbackLabel}
         </span>
         {durationMs !== undefined && settled ? (
@@ -188,7 +188,7 @@ function ChatToolGroupItem({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1 space-y-2 rounded-md bg-input/25 p-2 backdrop-blur-sm">
+        <div className="mt-1.5 space-y-2 rounded-md bg-input/20 p-2 backdrop-blur-sm">
           {part.input !== undefined && (
             <div>
               <p className="mb-1 font-medium text-foreground text-xs">Input</p>
@@ -328,7 +328,7 @@ export function ChatToolGroup({
         <TaskTrigger title={triggerLabel}>
           <ListTodoIcon
             aria-hidden
-            className="size-4 shrink-0 text-muted-foreground"
+            className="size-3.5 shrink-0 text-muted-foreground/80"
           />
           <span className="min-w-0 flex-1 truncate">
             {anyActive ? (
@@ -343,7 +343,7 @@ export function ChatToolGroup({
           </span>
           <ChevronDownIcon
             aria-hidden
-            className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180"
+            className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180"
           />
         </TaskTrigger>
         <TaskContent>

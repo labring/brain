@@ -16,7 +16,7 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
 
   return (
     <th
-      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border border-r bg-transparent px-6 py-2 text-left font-medium text-muted-foreground text-sm"
+      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border border-r bg-transparent py-2 pr-0 pl-4 text-left font-medium text-muted-foreground text-sm"
       style={{
         minWidth: `${width}px`,
         ...(state.resizedColumns.has(column) && { maxWidth: `${width}px` }),
@@ -24,7 +24,7 @@ export function TableViewColumnHeader({ column, index }: ColumnHeaderProps) {
     >
       <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
       <div className="relative z-10 flex h-full items-center justify-between">
-        <div className="mr-6 flex flex-col overflow-hidden">
+        <div className="mr-10 flex flex-col overflow-hidden">
           <div className="flex items-center gap-1">
             <span className="truncate" title={column}>
               {column}
