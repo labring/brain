@@ -125,12 +125,12 @@ function ToolStatusIcon({ state }: { state: string }) {
       />
     );
   }
-  return <Spinner className="size-3.5 shrink-0 text-muted-foreground/80" />;
+  return <Spinner className="size-3.5 shrink-0 text-blue-300/80" />;
 }
 
 function PreBlock({ children }: { children: string }) {
   return (
-    <pre className="max-h-56 overflow-auto rounded-md bg-muted/45 p-2 font-mono text-foreground text-xs leading-relaxed">
+    <pre className="max-h-56 overflow-auto rounded-md bg-background/35 p-2 font-mono text-foreground/90 text-xs leading-relaxed">
       {children}
     </pre>
   );
@@ -168,13 +168,13 @@ function ChatToolGroupItem({
       <CollapsibleTrigger
         className={cn(
           "group/tool-row flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left",
-          "transition-colors hover:bg-input/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+          "transition-colors hover:bg-input/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
         )}
         type="button"
       >
         <ToolStatusIcon state={part.state} />
         <span className="min-w-0 flex-1 truncate">{labelNode}</span>
-        <span className="shrink-0 rounded border border-border/45 bg-input/20 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <span className="shrink-0 rounded border border-border/35 bg-input/15 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
           {fallbackLabel}
         </span>
         {durationMs !== undefined && settled ? (
@@ -188,7 +188,7 @@ function ChatToolGroupItem({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1.5 space-y-2 rounded-md bg-input/20 p-2 backdrop-blur-sm">
+        <div className="mt-1.5 space-y-2 rounded-md bg-input/15 p-2">
           {part.input !== undefined && (
             <div>
               <p className="mb-1 font-medium text-foreground text-xs">Input</p>
@@ -314,18 +314,22 @@ export function ChatToolGroup({
 
   return (
     <div
-      className="w-full min-w-0"
+      className="w-full min-w-0 py-0.5"
       data-slot="chat-tool-group"
       data-tool-group-prefix={partKeyPrefix}
     >
       <Task
+        className="border-border/35 bg-transparent p-0"
         onOpenChange={(next) => {
           setUserTouched(true);
           setOpen(next);
         }}
         open={open}
       >
-        <TaskTrigger title={triggerLabel}>
+        <TaskTrigger
+          className="min-h-8 rounded-md px-2 py-1.5 hover:bg-input/20"
+          title={triggerLabel}
+        >
           <ListTodoIcon
             aria-hidden
             className="size-3.5 shrink-0 text-muted-foreground/80"
@@ -346,7 +350,7 @@ export function ChatToolGroup({
             className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180"
           />
         </TaskTrigger>
-        <TaskContent>
+        <TaskContent className="mt-1">
           {parts.map((p, i) => (
             <ChatToolGroupItem
               addToolApprovalResponse={addToolApprovalResponse}

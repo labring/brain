@@ -521,7 +521,7 @@ function ProjectAssistantChatSession({
             <Chat.ComposerTextarea
               onPrimaryAction={onPrimaryAction}
               onValueChange={setInput}
-              placeholder="Tell me your project ideas here..."
+              placeholder="Ask SealAI to inspect, deploy, or explain this project..."
               responding={busy}
               value={input}
             />

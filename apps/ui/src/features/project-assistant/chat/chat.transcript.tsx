@@ -23,8 +23,10 @@ import { renderChatMessageParts } from "./chat.part";
 import { isChatToolPartStateInFlight } from "./chat.tool-group";
 import type { ChatTranscriptProps } from "./chat.types";
 
-const userBubbleClassName =
-  "group-[.is-user]:rounded-3xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:bg-input/30 group-[.is-user]:px-3 group-[.is-user]:py-1.5";
+const assistantMessageClassName = "max-w-full";
+const userMessageClassName = "max-w-[82%] sm:max-w-[78%]";
+const messageContentClassName =
+  "group-[.is-assistant]:w-full group-[.is-assistant]:gap-3 group-[.is-assistant]:text-foreground group-[.is-assistant]:leading-6 group-[.is-user]:rounded-2xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:border-border/45 group-[.is-user]:bg-input/25 group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:leading-5 group-[.is-user]:backdrop-blur-sm";
 
 const COPIED_FEEDBACK_MS = 1500;
 
@@ -151,10 +153,18 @@ export function ChatTranscript({
       {...props}
     >
       <Conversation className="min-h-0 w-full flex-1">
-        <ConversationContent>
+        <ConversationContent className="gap-5 px-4 py-5">
           {messages.map((message) => (
-            <Message from={message.role} key={message.id}>
-              <MessageContent className={userBubbleClassName}>
+            <Message
+              className={
+                message.role === "user"
+                  ? userMessageClassName
+                  : assistantMessageClassName
+              }
+              from={message.role}
+              key={message.id}
+            >
+              <MessageContent className={messageContentClassName}>
                 {renderChatMessageParts({
                   addToolApprovalResponse,
                   message,
@@ -167,17 +177,17 @@ export function ChatTranscript({
             </Message>
           ))}
           {showLoadingRow && (
-            <Message from="assistant">
-              <MessageContent>
+            <Message className={assistantMessageClassName} from="assistant">
+              <MessageContent className={messageContentClassName}>
                 <div
-                  className="flex items-center gap-2 text-muted-foreground"
+                  className="flex items-center gap-2 text-muted-foreground text-xs"
                   data-slot="chat-transcript-loading"
                 >
-                  <Spinner className="size-4 shrink-0" />
-                  <Shimmer as="span" className="text-sm">
+                  <Spinner className="size-3.5 shrink-0" />
+                  <Shimmer as="span" className="text-xs">
                     {showSubmittedLoading
-                      ? "Waiting for the model to start…"
-                      : "Generating response…"}
+                      ? "Waiting for model..."
+                      : "Generating..."}
                   </Shimmer>
                 </div>
               </MessageContent>
