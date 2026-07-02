@@ -18,7 +18,7 @@ export const TaskItemFile = ({
 }: TaskItemFileProps) => (
   <div
     className={cn(
-      "inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-1.5 py-0.5 text-foreground text-xs",
+      "inline-flex items-center gap-1 rounded-md border border-border bg-input/40 px-1.5 py-0.5 text-foreground text-xs backdrop-blur-sm",
       className
     )}
     {...props}
@@ -62,7 +62,7 @@ export const TaskTrigger = ({
 }: TaskTriggerProps) => (
   <CollapsibleTrigger
     className={cn(
-      "group flex w-full cursor-pointer items-center gap-2 rounded-md border border-transparent px-1 py-1 text-left text-muted-foreground text-sm transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground",
+      "group flex w-full cursor-pointer items-center gap-2 rounded-md border border-transparent px-1 py-1 text-left text-muted-foreground text-sm transition-colors hover:border-border hover:bg-input/30 hover:text-foreground",
       className
     )}
     type="button"
@@ -86,6 +86,6 @@ export const TaskContent = ({
   ...props
 }: TaskContentProps) => (
   <CollapsibleContent className={cn("mt-2 outline-none", className)} {...props}>
-    <div className="space-y-2 border-muted border-l-2 pl-3">{children}</div>
+    <div className="space-y-2 border-border border-l pl-3">{children}</div>
   </CollapsibleContent>
 );

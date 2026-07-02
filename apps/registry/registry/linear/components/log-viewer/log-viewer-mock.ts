@@ -1,7 +1,7 @@
 import type { LogsData } from "@workspace/ui/components/log-viewer/log-viewer.context";
 
-/** Wider than default 5m so demo rows stay visible as wall time passes. */
-export const LOG_VIEWER_PREVIEW_QUICK_RANGE_MS = 24 * 60 * 60_000;
+/** Wide live span so demo rows stay inside the window as wall time passes. */
+export const LOG_VIEWER_PREVIEW_LIVE_SPAN_MS = 24 * 60 * 60_000;
 
 /** Deterministic mock logs for registry previews (detail panes, log viewer, etc.). */
 export function buildMockLogs(now: number): LogsData {

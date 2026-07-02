@@ -71,6 +71,9 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
       onTogglePublicConnection={actions.togglePublicConnection}
       quickActions={actions.quickActions}
       states={states}
+      togglePublicConnectionDisabledReason={
+        actions.togglePublicConnectionDisabledReason
+      }
     >
       <DatabaseNode.Content
         metricsContent={

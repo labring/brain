@@ -27,7 +27,8 @@ export type {
 export {
   canCopyDatabaseNodeConnection,
   DatabaseNode,
-  databaseNodeLifecycleMenuVisibility,
+  databaseNodeLifecycleAvailability,
+  databaseNodeQuickActionAvailability,
   getDatabaseNodeConnectionKey,
   maskDatabaseConnectionString,
   resolveDatabaseNodeStatus,

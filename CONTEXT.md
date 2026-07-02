@@ -410,7 +410,7 @@ _Avoid_: Data Browser, database browser.
 
 ### DB Terminal
 
-An interactive terminal session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Terminal is distinct from DB Access: DB Access is a structured object and data workflow, while a DB Terminal is a full interactive engine-client session. It is offered only for engines that ship a supported client and only while the DB Service is running.
+An interactive terminal session that runs a DB Service's native engine client — such as `psql`, `mysql`, `mongosh`, or `redis-cli` — for ad-hoc, read-write commands against that DB Service. A DB Terminal is distinct from DB Access: DB Access is a structured object and data workflow, while a DB Terminal is a full interactive engine-client session. It is usable only for engines that ship a supported client and only while the DB Service is running; on engines without a supported client it is presented as an Unavailable Resource Affordance rather than omitted.
 
 _Avoid_: DB Console, console.
 

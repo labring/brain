@@ -8,6 +8,7 @@ import type {
   DataFlowTableData,
 } from "@data-browser/api/access-types";
 import { DataView } from "@data-browser/components/database/shared/DataView";
+import { DataViewSortMenu } from "@data-browser/components/database/shared/DataViewSortMenu";
 import {
   FindBar,
   useFindBar,
@@ -19,15 +20,6 @@ import {
 } from "@data-browser/state/db-access-session";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@workspace/ui/components/dropdown-menu";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -38,7 +30,6 @@ import {
   ArrowUpAZ,
   Download,
   Loader2,
-  MoreHorizontal,
   RefreshCw,
   X,
 } from "lucide-react";
@@ -55,9 +46,6 @@ import {
 // ---------------------------------------------------------------------------
 
 type RedisKeyType = "string" | "hash" | "list" | "set" | "zset";
-
-const activeSortMenuItemClass =
-  "bg-input font-medium text-foreground focus:bg-input data-highlighted:bg-input";
 
 function detectRedisKeyType(
   columns: string[],
@@ -502,72 +490,18 @@ export function RedisKeyDetailView({
                           )}
                         </div>
 
-                        {/* Sort menu */}
-                        <DropdownMenu
+                        <DataViewSortMenu
+                          align={colIdx === 0 ? "start" : "end"}
+                          column={col}
+                          onClearSort={clearSort}
                           onOpenChange={(open) =>
                             setActiveColumnMenu(open ? col : null)
                           }
+                          onSort={handleSort}
                           open={activeColumnMenu === col}
-                        >
-                          <DropdownMenuTrigger
-                            render={
-                              <AppIconButton
-                                aria-label="Column actions"
-                                className={cn(
-                                  "absolute top-2 right-2 text-muted-foreground",
-                                  activeColumnMenu === col &&
-                                    "bg-muted text-foreground"
-                                )}
-                                onClick={(e) => e.stopPropagation()}
-                                size="sm"
-                                variant="quiet"
-                              >
-                                <MoreHorizontal className="h-3.5 w-3.5" />
-                              </AppIconButton>
-                            }
-                          />
-                          <DropdownMenuContent
-                            align={colIdx === 0 ? "start" : "end"}
-                            className="w-40"
-                          >
-                            <DropdownMenuGroup>
-                              <DropdownMenuLabel className="text-[10px] text-muted-foreground">
-                                {"Sort actions"}
-                              </DropdownMenuLabel>
-                              <DropdownMenuItem
-                                className={cn(
-                                  sortColumn === col &&
-                                    sortDirection === "asc" &&
-                                    activeSortMenuItemClass
-                                )}
-                                onClick={() => handleSort(col, "asc")}
-                              >
-                                <ArrowUpAZ className="h-3.5 w-3.5" />
-                                {"Sort ascending"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className={cn(
-                                  sortColumn === col &&
-                                    sortDirection === "desc" &&
-                                    activeSortMenuItemClass
-                                )}
-                                onClick={() => handleSort(col, "desc")}
-                              >
-                                <ArrowDownAZ className="h-3.5 w-3.5" />
-                                {"Sort descending"}
-                              </DropdownMenuItem>
-                              {sortColumn === col && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={clearSort}>
-                                    <X className="h-3.5 w-3.5" />
-                                    {"Clear sort"}
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          sortColumn={sortColumn}
+                          sortDirection={sortDirection}
+                        />
                       </div>
 
                       {/* Resize handle */}

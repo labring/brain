@@ -18,7 +18,8 @@ export type {
 // biome-ignore lint/performance/noBarrelFile: container-node public package surface
 export {
   ContainerNode,
-  containerNodeLifecycleMenuVisibility,
+  containerNodeLifecycleAvailability,
+  containerNodeQuickActionAvailability,
   resolveContainerNodeStatus,
   resolveContainerNodeVisualTone,
 } from "./container-node";

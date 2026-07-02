@@ -1,8 +1,8 @@
 "use client";
 
 import { LogViewer } from "@workspace/ui/components/log-viewer/log-viewer";
+import type { LogWindow } from "@workspace/ui/components/log-viewer/log-window";
 import { Preview, PreviewWrapper } from "@workspace/ui/components/preview";
-import type { TimeRange } from "@workspace/ui/components/time-range-selector";
 import {
   Tabs,
   TabsContent,
@@ -13,19 +13,19 @@ import { useState } from "react";
 
 import {
   buildMockLogs,
-  LOG_VIEWER_PREVIEW_QUICK_RANGE_MS,
+  LOG_VIEWER_PREVIEW_LIVE_SPAN_MS,
 } from "./log-viewer-mock";
 
 export default function LogViewerPreview() {
   const [logs, setLogs] = useState(() => buildMockLogs(Date.now()));
-  const [timeRange, setTimeRange] = useState<TimeRange>({
-    mode: "quick",
-    ms: LOG_VIEWER_PREVIEW_QUICK_RANGE_MS,
+  const [logWindow, setLogWindow] = useState<LogWindow>({
+    mode: "live",
+    spanMs: LOG_VIEWER_PREVIEW_LIVE_SPAN_MS,
   });
 
   const handlePreviewReset = () => {
     setLogs(buildMockLogs(Date.now()));
-    setTimeRange({ mode: "quick", ms: LOG_VIEWER_PREVIEW_QUICK_RANGE_MS });
+    setLogWindow({ mode: "live", spanMs: LOG_VIEWER_PREVIEW_LIVE_SPAN_MS });
   };
 
   return (
@@ -72,8 +72,8 @@ export default function LogViewerPreview() {
             <LogViewer.Variant0
               className="h-full min-h-0 min-w-0 flex-1"
               logs={logs}
-              onTimeRangeChange={setTimeRange}
-              timeRange={timeRange}
+              logWindow={logWindow}
+              onLogWindowChange={setLogWindow}
             />
           </TabsContent>
         </Tabs>

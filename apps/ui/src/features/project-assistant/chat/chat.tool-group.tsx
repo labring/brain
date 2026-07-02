@@ -168,7 +168,7 @@ function ChatToolGroupItem({
       <CollapsibleTrigger
         className={cn(
           "group/tool-row flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left",
-          "transition-colors hover:bg-muted/40"
+          "transition-colors hover:bg-input/30"
         )}
         type="button"
       >
@@ -188,7 +188,7 @@ function ChatToolGroupItem({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1 space-y-2 rounded-md bg-muted/30 p-2">
+        <div className="mt-1 space-y-2 rounded-md bg-input/25 p-2 backdrop-blur-sm">
           {part.input !== undefined && (
             <div>
               <p className="mb-1 font-medium text-foreground text-xs">Input</p>

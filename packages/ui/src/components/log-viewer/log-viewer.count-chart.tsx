@@ -10,6 +10,7 @@ import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useLogViewerContext } from "./log-viewer.context";
 import { formatLogTime } from "./log-viewer.utils";
+import { logWindowBounds } from "./log-window";
 
 const chartConfig = {
   count: {
@@ -19,19 +20,12 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export function LogViewerCountChart() {
-  const { filteredEntries, timeRange } = useLogViewerContext();
+  const { filteredEntries, logWindow } = useLogViewerContext();
 
   const buckets = useMemo(() => {
-    // Determine the full time range from the filter
-    let rangeStart: number;
-    let rangeEnd: number;
-    if (timeRange.mode === "quick") {
-      rangeEnd = Date.now();
-      rangeStart = rangeEnd - timeRange.ms;
-    } else {
-      rangeStart = timeRange.start.getTime();
-      rangeEnd = timeRange.end.getTime();
-    }
+    const bounds = logWindowBounds(logWindow);
+    const rangeStart = bounds.start.getTime();
+    const rangeEnd = bounds.end.getTime();
 
     const span = rangeEnd - rangeStart;
     if (span <= 0) {
@@ -60,7 +54,7 @@ export function LogViewerCountChart() {
       time: formatLogTime(new Date(rangeStart + i * interval).toISOString()),
       count,
     }));
-  }, [filteredEntries, timeRange]);
+  }, [filteredEntries, logWindow]);
 
   return (
     <ChartContainer

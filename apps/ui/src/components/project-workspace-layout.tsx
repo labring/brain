@@ -507,46 +507,44 @@ function ProjectAssistantChatSession({
           </div>
         ) : null}
         <div className="group flex w-full shrink-0 flex-col p-[10px]">
-          <div className="relative isolate w-full">
-            {composerContextToggles.length > 0 ? (
-              <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 w-full -translate-y-full">
+          {composerContextToggles.length > 0 ? (
+            <div className="relative h-0 w-full overflow-visible transition-[height] duration-300 ease-out group-focus-within:h-6 motion-reduce:transition-none">
+              <div className="pointer-events-none absolute inset-x-0 top-full w-full -translate-y-full">
                 <Chat.ContextIndicator
                   className="w-full"
                   contextToggles={composerContextToggles}
                 />
               </div>
-            ) : null}
-            <Chat.ComposerShell>
-              <Chat.ComposerTextarea
+            </div>
+          ) : null}
+          <Chat.ComposerShell>
+            <Chat.ComposerTextarea
+              onPrimaryAction={onPrimaryAction}
+              onValueChange={setInput}
+              placeholder="Tell me your project ideas here..."
+              responding={busy}
+              value={input}
+            />
+            <Chat.ComposerFooter>
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                <Chat.GithubDeployButton
+                  authLoading={authLoading}
+                  isAuthorized={isAuthorized}
+                  onComposerAction={onGithubIntent}
+                />
+                <Chat.SkillsWorkflowButton onComposerAction={onSkillsIntent} />
+                <Chat.DockerDeployButton onComposerAction={onDockerIntent} />
+                <Chat.DatabaseDeployButton
+                  onComposerAction={onDatabaseIntent}
+                />
+              </div>
+              <Chat.ComposerSend
                 onPrimaryAction={onPrimaryAction}
-                onValueChange={setInput}
-                placeholder="Tell me your project ideas here..."
                 responding={busy}
                 value={input}
               />
-              <Chat.ComposerFooter>
-                <div className="flex min-w-0 flex-1 items-center gap-1">
-                  <Chat.GithubDeployButton
-                    authLoading={authLoading}
-                    isAuthorized={isAuthorized}
-                    onComposerAction={onGithubIntent}
-                  />
-                  <Chat.SkillsWorkflowButton
-                    onComposerAction={onSkillsIntent}
-                  />
-                  <Chat.DockerDeployButton onComposerAction={onDockerIntent} />
-                  <Chat.DatabaseDeployButton
-                    onComposerAction={onDatabaseIntent}
-                  />
-                </div>
-                <Chat.ComposerSend
-                  onPrimaryAction={onPrimaryAction}
-                  responding={busy}
-                  value={input}
-                />
-              </Chat.ComposerFooter>
-            </Chat.ComposerShell>
-          </div>
+            </Chat.ComposerFooter>
+          </Chat.ComposerShell>
         </div>
       </Chat>
     </Chat.Root>

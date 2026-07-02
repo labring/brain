@@ -76,6 +76,8 @@ export function useWorkloadLogs(options: {
   getWindow: () => WorkloadLogsWindow;
   kubeconfig?: string;
   limit?: number;
+  /** Poll cadence for live windows; 0 (default) fetches once per key. */
+  refreshIntervalMs?: number;
   search?: string;
   target: WorkloadLogsTarget | null;
   windowKey: string;
@@ -85,6 +87,7 @@ export function useWorkloadLogs(options: {
     enabled = true,
     getWindow,
     limit,
+    refreshIntervalMs = 0,
     search,
     target,
     windowKey,
@@ -128,6 +131,8 @@ export function useWorkloadLogs(options: {
         }),
       });
     },
-    { refreshInterval: 0 }
+    // keepPreviousData keeps the list stable across window-key changes, so
+    // pausing (live key -> frozen key) freezes in place instead of blanking.
+    { keepPreviousData: true, refreshInterval: refreshIntervalMs }
   );
 }
