@@ -5,7 +5,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
-import { Pause } from "lucide-react";
+import { cn } from "@workspace/ui/lib/utils";
+import { Pause, Play } from "lucide-react";
 import { useLogViewerContext } from "./log-viewer.context";
 
 /**
@@ -15,37 +16,27 @@ import { useLogViewerContext } from "./log-viewer.context";
  */
 export function LogViewerLiveControl() {
   const { logWindow, freeze, resumeLive } = useLogViewerContext();
-
-  if (logWindow.mode === "live") {
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          aria-label="Pause — freeze this window"
-          className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-input text-blue-400 shadow-none transition-colors hover:bg-input/80 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-          onClick={freeze}
-          type="button"
-        >
-          <Pause className="size-4" />
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Pause — freeze this window
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
+  const isLive = logWindow.mode === "live";
 
   return (
     <Tooltip>
       <TooltipTrigger
-        aria-label="Back to live"
-        className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-transparent bg-input/30 px-3 text-foreground text-sm shadow-none transition-colors hover:bg-input focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-        onClick={resumeLive}
+        aria-label={isLive ? "Pause live logs" : "Start live logs"}
+        aria-pressed={isLive}
+        className={cn(
+          "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent shadow-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
+          isLive
+            ? "bg-input text-blue-400 hover:bg-input/80"
+            : "bg-input/30 text-brand-primary-foreground hover:bg-input"
+        )}
+        onClick={isLive ? freeze : resumeLive}
         type="button"
       >
-        <span aria-hidden className="size-2 rounded-full bg-blue-400" />
-        Live
+        {isLive ? <Pause className="size-4" /> : <Play className="size-4" />}
       </TooltipTrigger>
-      <TooltipContent side="bottom">Back to live</TooltipContent>
+      <TooltipContent side="bottom">
+        {isLive ? "Pause live logs" : "Start live logs"}
+      </TooltipContent>
     </Tooltip>
   );
 }

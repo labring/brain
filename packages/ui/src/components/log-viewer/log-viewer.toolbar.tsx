@@ -62,10 +62,7 @@ export function LogViewerToolbar() {
           searchPlaceholder="Search"
           value={selectedContainers}
         />
-        {/* One window control: the selector states the anchor, the live
-            control switches it. They stay adjacent by design. */}
         <LogWindowSelector onChange={setLogWindow} value={logWindow} />
-        <LogViewerLiveControl />
       </div>
 
       {/* Search + Actions */}
@@ -84,6 +81,7 @@ export function LogViewerToolbar() {
             value={searchQuery}
           />
         </div>
+        <LogViewerLiveControl />
         <AppIconButton
           aria-label="Download logs"
           onClick={() => downloadLogs(filteredEntries)}
