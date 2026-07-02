@@ -126,7 +126,7 @@ export function ChatGithubDeployPopover({
   );
 }
 
-/** Wrapper with `group` for sibling layouts (context strip + shell). Borders on shell/indicator react via `group-focus-within:border-border`. */
+/** Wrapper with `group` for sibling layouts (context strip + shell). */
 export function ChatComposerFocusScope({
   className,
   ...props
@@ -140,7 +140,7 @@ export function ChatComposerFocusScope({
   );
 }
 
-/** Bordered composer container; border color shows when this stack or any wrapping focus scope has focus-within. */
+/** Bordered composer container. */
 export function ChatComposerShell({
   className,
   ...props
@@ -149,9 +149,6 @@ export function ChatComposerShell({
     <div
       className={cn(
         "group flex min-h-[126px] w-full flex-col justify-between gap-2 rounded-2xl border border-border/35 bg-input/20 p-3 backdrop-blur-sm",
-        "transition-[background-color,border-color,box-shadow] duration-150 ease-out",
-        "focus-within:border-blue-300/45 focus-within:bg-input/30 focus-within:ring-1 focus-within:ring-blue-400/20",
-        "group-focus-within:border-blue-300/45 group-focus-within:bg-input/30 group-focus-within:ring-1 group-focus-within:ring-blue-400/20",
         className
       )}
       data-slot="chat-composer-shell"
