@@ -297,7 +297,11 @@ func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{},
 
 func dbPrivateConnectionAddress(db map[string]interface{}, name string, namespace string) string {
 	profile := dbEngineProfileFromDBObject(db)
-	host := name + "." + namespace + ".svc"
+	hostName := name
+	if strings.TrimSpace(profile.ComponentName) != "" {
+		hostName = name + "-" + profile.ComponentName
+	}
+	host := hostName + "." + namespace + ".svc"
 	return netAddress(host, profile.ServicePort)
 }
 

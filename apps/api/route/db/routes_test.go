@@ -899,7 +899,7 @@ func TestBackupDeleteErrorStatusMapping(t *testing.T) {
 	}
 }
 
-func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testing.T) {
+func TestDBConnectionStringsUseComponentPrivateAddressesWithoutSecrets(t *testing.T) {
 	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
 
 	db := map[string]interface{}{
@@ -909,12 +909,25 @@ func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testin
 	}
 
 	private := dbConnectionString(db, dbPrivateConnectionAddress(db, "db-main", "ns-a"))
-	if private != "mysql://db-main.ns-a.svc:3306/mysql" {
+	if private != "mysql://db-main-mysql.ns-a.svc:3306/mysql" {
 		t.Fatalf("private connection string = %q, want MySQL service DSN", private)
 	}
 	public := dbConnectionString(db, dbPublicConnectionAddress(45211))
 	if public != "mysql://192.168.10.189.nip.io:45211/mysql" {
 		t.Fatalf("public connection string = %q, want MySQL public DSN", public)
+	}
+}
+
+func TestDBConnectionStringsUsePostgresComponentPrivateAddress(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+
+	private := dbConnectionString(db, dbPrivateConnectionAddress(db, "db-main", "ns-a"))
+	if private != "postgresql://db-main-postgresql.ns-a.svc:5432/postgres" {
+		t.Fatalf("private connection string = %q, want PostgreSQL service DSN", private)
 	}
 }
 
