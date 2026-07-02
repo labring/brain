@@ -8,7 +8,6 @@ type FetchInitWithDispatcher = RequestInit & {
 };
 
 const HEADER_WHITESPACE_RE = /\s+/;
-const TRUSTED_API_SERVER_ENV = "SEALOS_KUBERNETES_API_SERVER";
 
 interface KubeconfigCluster {
   "certificate-authority-data"?: string;
@@ -140,25 +139,18 @@ function trimTrailingSlashes(value: string): string {
   return out;
 }
 
-function trustedKubernetesApiServer():
-  | { ok: true; server: string }
-  | { message: string; ok: false } {
+function kubernetesApiServerForVerification(credentials: {
+  server: string;
+}): { ok: true; server: string } | { message: string; ok: false } {
   const serviceHost = process.env.KUBERNETES_SERVICE_HOST?.trim() ?? "";
   const servicePort = process.env.KUBERNETES_SERVICE_PORT?.trim() ?? "";
-  const rawServer =
-    serviceHost !== "" && servicePort !== ""
-      ? `https://${serviceHost}:${servicePort}`
-      : (process.env[TRUSTED_API_SERVER_ENV]?.trim() ?? "");
-  if (rawServer === "") {
-    return {
-      message: `Trusted Kubernetes API server is not configured. Set ${TRUSTED_API_SERVER_ENV} outside the cluster.`,
-      ok: false,
-    };
+  if (serviceHost === "" || servicePort === "") {
+    return { ok: true, server: credentials.server };
   }
 
   let serverUrl: URL;
   try {
-    serverUrl = new URL(rawServer);
+    serverUrl = new URL(`https://${serviceHost}:${servicePort}`);
   } catch {
     return { message: "Trusted Kubernetes API server is invalid.", ok: false };
   }
@@ -194,9 +186,9 @@ export async function verifyKubeconfigNamespaceAccess(input: {
   if (!credentials.ok) {
     return { message: credentials.message, ok: false, status: 400 };
   }
-  const trustedServer = trustedKubernetesApiServer();
-  if (!trustedServer.ok) {
-    return { message: trustedServer.message, ok: false, status: 500 };
+  const apiServer = kubernetesApiServerForVerification(credentials);
+  if (!apiServer.ok) {
+    return { message: apiServer.message, ok: false, status: 500 };
   }
 
   const controller = new AbortController();
@@ -204,7 +196,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
   try {
     const url = new URL(
       "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
-      trustedServer.server
+      apiServer.server
     );
     const init: FetchInitWithDispatcher = {
       body: JSON.stringify({

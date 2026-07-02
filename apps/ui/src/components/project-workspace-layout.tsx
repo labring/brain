@@ -31,6 +31,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import { isAssistantChatNamespaceReady } from "@/components/project-assistant-chat-readiness";
 import { Chat } from "@/features/project-assistant/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/project-assistant/chat/chat.types";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
@@ -515,6 +516,7 @@ function ProjectAssistantChatSession({
 
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
+  const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [creatingThread, setCreatingThread] = useState(false);
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
@@ -524,6 +526,10 @@ function ProjectAssistantChatPane() {
     let cancelled = false;
     setSession(null);
     setSessionError(false);
+
+    if (!namespaceReady) {
+      return;
+    }
 
     fetchAssistantSession(namespaceRaw).then((payload) => {
       if (cancelled) {
@@ -539,7 +545,7 @@ function ProjectAssistantChatPane() {
     return () => {
       cancelled = true;
     };
-  }, [namespaceRaw]);
+  }, [namespaceRaw, namespaceReady]);
 
   const selectThread = useCallback(
     async (threadId: string) => {

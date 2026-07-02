@@ -1,6 +1,7 @@
 import "server-only";
 
-import { importPKCS8, SignJWT } from "jose";
+import { createPrivateKey } from "node:crypto";
+import { SignJWT } from "jose";
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
@@ -51,7 +52,7 @@ function privateKeyFromEnv(): string {
 
 async function createGithubAppJwt(): Promise<string> {
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const key = await importPKCS8(privateKeyFromEnv(), "RS256");
+  const key = createPrivateKey(privateKeyFromEnv());
   return await new SignJWT({})
     .setProtectedHeader({ alg: "RS256" })
     .setIssuedAt(nowSeconds - 60)

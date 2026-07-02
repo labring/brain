@@ -153,38 +153,37 @@ test("rejects kubeconfig when Kubernetes verification denies access", async () =
   );
 });
 
-test("rejects fake kubeconfig API servers when no trusted API server is configured", async () => {
+test("uses kubeconfig API server outside the cluster", async () => {
   await withJsonServer(
     () => ({ status: { allowed: true } }),
-    async (fakeApiServer, requests) => {
-      const fakeKubeconfig = kubeconfig("ns-a").replace(
+    async (apiServer, requests) => {
+      const encodedKubeconfig = kubeconfig("ns-a").replace(
         "https%3A%2F%2Fexample.test",
-        encodeURIComponent(fakeApiServer)
+        encodeURIComponent(apiServer)
       );
 
       await withEnv(
         {
           KUBERNETES_SERVICE_HOST: undefined,
           KUBERNETES_SERVICE_PORT: undefined,
-          SEALOS_KUBERNETES_API_SERVER: undefined,
         },
         async () => {
           assert.deepEqual(
             await authorizeEncodedKubeconfigNamespace({
-              encodedKubeconfig: fakeKubeconfig,
+              encodedKubeconfig,
               namespace: "ns-a",
               subject: "Project",
             }),
             {
-              message:
-                "Trusted Kubernetes API server is not configured. Set SEALOS_KUBERNETES_API_SERVER outside the cluster.",
-              ok: false,
-              status: 500,
+              encodedKubeconfig,
+              kubeconfig: decodeURIComponent(encodedKubeconfig),
+              namespace: "ns-a",
+              ok: true,
             }
           );
         }
       );
-      assert.equal(requests.length, 0);
+      assert.equal(requests.length, 1);
     }
   );
 });
@@ -198,7 +197,6 @@ test("uses in-cluster API server instead of kubeconfig server for verification",
         {
           KUBERNETES_SERVICE_HOST: trusted.hostname,
           KUBERNETES_SERVICE_PORT: trusted.port,
-          SEALOS_KUBERNETES_API_SERVER: undefined,
         },
         async () => {
           assert.deepEqual(
