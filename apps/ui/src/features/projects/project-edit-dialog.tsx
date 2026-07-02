@@ -35,15 +35,18 @@ export function ProjectEditDialog({
   const [displayNameDraft, setDisplayNameDraft] = useState(currentName);
   const [descriptionDraft, setDescriptionDraft] = useState(description);
   const [editError, setEditError] = useState<string | null>(null);
-  const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const isDescriptionOverLimit =
+    descriptionDraft.length > PROJECT_EDIT_DESCRIPTION_MAX_LENGTH;
+  const descriptionError = isDescriptionOverLimit
+    ? "Project description must be 256 characters or fewer."
+    : null;
 
   useEffect(() => {
     if (open) {
       setDisplayNameDraft(currentName);
       setDescriptionDraft(description);
       setEditError(null);
-      setDescriptionError(null);
     }
   }, [currentName, description, open]);
 
@@ -54,10 +57,7 @@ export function ProjectEditDialog({
       setEditError("Project name is required.");
       return;
     }
-    if (nextDescription.length > PROJECT_EDIT_DESCRIPTION_MAX_LENGTH) {
-      setDescriptionError(
-        "Project description must be 256 characters or fewer."
-      );
+    if (descriptionDraft.length > PROJECT_EDIT_DESCRIPTION_MAX_LENGTH) {
       return;
     }
     if (displayName === currentName && nextDescription === description) {
@@ -67,7 +67,6 @@ export function ProjectEditDialog({
 
     setBusy(true);
     setEditError(null);
-    setDescriptionError(null);
     try {
       await onSubmit({ description: nextDescription, displayName });
       onOpenChange(false);
@@ -136,20 +135,23 @@ export function ProjectEditDialog({
               >
                 Description
               </FieldLabel>
-              <span className="text-[11px] text-muted-foreground leading-4">
+              <span
+                className={
+                  isDescriptionOverLimit
+                    ? "text-[11px] text-destructive leading-4"
+                    : "text-[11px] text-muted-foreground leading-4"
+                }
+              >
                 {`${descriptionDraft.length}/${PROJECT_EDIT_DESCRIPTION_MAX_LENGTH}`}
               </span>
             </div>
             <AppTextarea
               aria-invalid={descriptionError === null ? undefined : true}
-              className="min-h-9 resize-none border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
+              className="max-h-[7.25rem] min-h-9 resize-none overflow-y-auto border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
               id={`${idBase}-description`}
-              maxLength={PROJECT_EDIT_DESCRIPTION_MAX_LENGTH + 1}
+              maxLength={1024}
               onChange={(event) => {
                 setDescriptionDraft(event.currentTarget.value);
-                if (descriptionError) {
-                  setDescriptionError(null);
-                }
               }}
               placeholder="Description"
               rows={1}
@@ -174,8 +176,7 @@ export function ProjectEditDialog({
             disabled={
               busy ||
               displayNameDraft.trim() === "" ||
-              descriptionDraft.trim().length >
-                PROJECT_EDIT_DESCRIPTION_MAX_LENGTH ||
+              descriptionDraft.length > PROJECT_EDIT_DESCRIPTION_MAX_LENGTH ||
               (displayNameDraft.trim() === currentName &&
                 descriptionDraft.trim() === description)
             }
