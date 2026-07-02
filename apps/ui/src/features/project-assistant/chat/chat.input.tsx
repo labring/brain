@@ -13,10 +13,20 @@ import {
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Send, Square, Wrench } from "lucide-react";
-import { type ComponentProps, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  type ComponentProps,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
 
 import type { ChatGithubDeployPopoverConfig } from "./chat.types";
+
+function isComposingText(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
 
 /** GitHub invertocat path (matches common monochrome mark). */
 export const GITHUB_MARK_PATH =
@@ -225,7 +235,8 @@ export function ChatComposerTextarea({
             !e.shiftKey &&
             !e.ctrlKey &&
             !e.metaKey &&
-            !responding
+            !responding &&
+            !isComposingText(e)
           ) {
             e.preventDefault();
             onPrimaryAction();
