@@ -38,18 +38,14 @@ export function ChatTool({
         </div>
       );
     case "approval-requested": {
-      const specPreview = JSON.stringify(part.input, null, 2);
       return (
         <div
           className="flex max-w-full flex-col gap-2 rounded-lg border border-border bg-background p-3"
           data-slot="chat-gen-ui-approval"
         >
           <p className="text-foreground text-xs">
-            Render this generated UI? Review the spec below.
+            Render the generated UI preview?
           </p>
-          <pre className="max-h-40 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-xs leading-snug">
-            {specPreview}
-          </pre>
           <div className="flex flex-wrap gap-2">
             <AppButton
               onClick={() =>
@@ -122,7 +118,7 @@ export function ChatTool({
           className="rounded-md border border-destructive/35 bg-muted/40 p-2 text-destructive text-xs"
           role="alert"
         >
-          {part.errorText}
+          UI rendering failed.
         </p>
       );
     case "output-denied":
