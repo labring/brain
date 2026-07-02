@@ -880,13 +880,24 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
     return () => observer.disconnect();
   }, []);
 
+  const cancelPaneResize = useCallback(() => {
+    if (dragRef.current == null) {
+      return;
+    }
+    dragRef.current = null;
+    setPaneResizing(false);
+  }, [setPaneResizing]);
+
   // The divider unmounts without a pointerup when the pane closes mid-drag.
   useEffect(() => {
-    if (!assistantPaneOpen && dragRef.current != null) {
-      dragRef.current = null;
-      setPaneResizing(false);
+    if (!assistantPaneOpen) {
+      cancelPaneResize();
     }
-  }, [assistantPaneOpen, setPaneResizing]);
+  }, [assistantPaneOpen, cancelPaneResize]);
+
+  useEffect(() => {
+    return cancelPaneResize;
+  }, [cancelPaneResize]);
 
   const endPaneResize = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -1013,6 +1024,7 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
             className="group/pane-resize absolute inset-y-0 -left-1 w-2 cursor-col-resize outline-none"
             onDoubleClick={handleResizeDoubleClick}
             onKeyDown={handleResizeKeyDown}
+            onLostPointerCapture={endPaneResize}
             onPointerCancel={endPaneResize}
             onPointerDown={handleResizePointerDown}
             onPointerMove={handleResizePointerMove}
