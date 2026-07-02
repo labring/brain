@@ -1,14 +1,19 @@
 "use client";
 
-import type { TimeRange } from "@workspace/ui/components/time-range-selector";
 import {
   createContext,
   use,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import {
+  DEFAULT_LIVE_SPAN_MS,
+  freezeLogWindow,
+  type LogWindow,
+} from "./log-window";
 
 export interface LogEntry {
   container: string;
@@ -24,18 +29,20 @@ export type LogsData = LogEntry[];
 interface LogViewerContextValue {
   entries: LogEntry[];
   filteredEntries: LogEntry[];
-  isLive: boolean;
-  onRefresh?: () => void;
-  refreshMode: "live" | "manual";
+  /** Freeze the current window in place, materializing live bounds. */
+  freeze: () => void;
+  logWindow: LogWindow;
+  /** Re-anchor to now using the last live span. Always explicit. */
+  resumeLive: () => void;
   searchQuery: string;
   selectedContainers: string[];
   selectedPods: string[];
-  setIsLive: (v: boolean) => void;
+  setLogWindow: (logWindow: LogWindow) => void;
   setSearchQuery: (q: string) => void;
   setSelectedContainers: (containers: string[]) => void;
   setSelectedPods: (pods: string[]) => void;
-  setTimeRange: (range: TimeRange) => void;
-  timeRange: TimeRange;
+  /** When set, the fetch was truncated to the newest N lines of the window. */
+  truncatedAt?: number;
   uniqueContainers: string[];
   uniquePods: string[];
 }
@@ -55,30 +62,27 @@ export function useLogViewerContext() {
 export function LogViewerProvider({
   logs,
   children,
-  onRefresh,
-  externalTimeRange,
-  onTimeRangeChange,
+  externalLogWindow,
+  onLogWindowChange,
   externalSearchQuery,
   onSearchQueryChange,
-  refreshMode = "live",
+  truncatedAt,
 }: {
   logs: LogsData;
   children: React.ReactNode;
-  onRefresh?: () => void;
-  externalTimeRange?: TimeRange;
-  onTimeRangeChange?: (range: TimeRange) => void;
+  externalLogWindow?: LogWindow;
+  onLogWindowChange?: (logWindow: LogWindow) => void;
   externalSearchQuery?: string;
   onSearchQueryChange?: (q: string) => void;
-  refreshMode?: "live" | "manual";
+  truncatedAt?: number;
 }) {
   const [selectedPods, setSelectedPods] = useState<string[]>([]);
   const [selectedContainers, setSelectedContainers] = useState<string[]>([]);
   const [internalSearchQuery, setInternalSearchQuery] = useState("");
-  const [internalTimeRange, setInternalTimeRange] = useState<TimeRange>({
-    mode: "quick",
-    ms: 5 * 60_000,
+  const [internalLogWindow, setInternalLogWindow] = useState<LogWindow>({
+    mode: "live",
+    spanMs: DEFAULT_LIVE_SPAN_MS,
   });
-  const [isLive, setIsLive] = useState(false);
 
   // Controlled-or-uncontrolled pattern
   const searchQuery =
@@ -86,43 +90,46 @@ export function LogViewerProvider({
       ? internalSearchQuery
       : externalSearchQuery;
   const setSearchQuery = onSearchQueryChange ?? setInternalSearchQuery;
-  const timeRange = externalTimeRange ?? internalTimeRange;
-  const setTimeRange = onTimeRangeChange ?? setInternalTimeRange;
-  const onRefreshRef = useRef(onRefresh);
-  onRefreshRef.current = onRefresh;
+  const logWindow = externalLogWindow ?? internalLogWindow;
+  const setLogWindow = onLogWindowChange ?? setInternalLogWindow;
 
+  const lastLiveSpanRef = useRef(DEFAULT_LIVE_SPAN_MS);
   useEffect(() => {
-    if (!(refreshMode === "live" && isLive && onRefreshRef.current)) {
-      return;
+    if (logWindow.mode === "live") {
+      lastLiveSpanRef.current = logWindow.spanMs;
     }
-    onRefreshRef.current();
-    const id = setInterval(() => {
-      onRefreshRef.current?.();
-    }, 3000);
-    return () => clearInterval(id);
-  }, [isLive, refreshMode]);
+  }, [logWindow]);
+
+  const freeze = useCallback(() => {
+    if (logWindow.mode === "live") {
+      setLogWindow(freezeLogWindow(logWindow));
+    }
+  }, [logWindow, setLogWindow]);
+
+  const resumeLive = useCallback(() => {
+    setLogWindow({ mode: "live", spanMs: lastLiveSpanRef.current });
+  }, [setLogWindow]);
+
+  // Windowing is the data layer's job; entries are trusted to match the
+  // window. Sorting here guarantees the oldest-to-newest invariant the list,
+  // chart, and live tail rely on.
+  const entries = useMemo(
+    () => [...logs].sort((a, b) => a.time.localeCompare(b.time)),
+    [logs]
+  );
 
   const uniquePods = useMemo(
-    () => [...new Set(logs.map((e) => e.pod))].sort(),
-    [logs]
+    () => [...new Set(entries.map((e) => e.pod))].sort(),
+    [entries]
   );
 
   const uniqueContainers = useMemo(
-    () => [...new Set(logs.map((e) => e.container))].sort(),
-    [logs]
+    () => [...new Set(entries.map((e) => e.container))].sort(),
+    [entries]
   );
 
   const filteredEntries = useMemo(() => {
-    let result = logs;
-    // Time range filter
-    if (timeRange.mode === "quick") {
-      const cutoff = new Date(Date.now() - timeRange.ms).toISOString();
-      result = result.filter((e) => e.time >= cutoff);
-    } else {
-      const start = timeRange.start.toISOString();
-      const end = timeRange.end.toISOString();
-      result = result.filter((e) => e.time >= start && e.time <= end);
-    }
+    let result = entries;
     if (selectedPods.length > 0) {
       result = result.filter((e) => selectedPods.includes(e.pod));
     }
@@ -134,41 +141,40 @@ export function LogViewerProvider({
       result = result.filter((e) => e.message.toLowerCase().includes(q));
     }
     return result;
-  }, [logs, timeRange, selectedPods, selectedContainers, searchQuery]);
+  }, [entries, selectedPods, selectedContainers, searchQuery]);
 
   const value: LogViewerContextValue = useMemo(
     () => ({
-      entries: logs,
+      entries,
       filteredEntries,
-      selectedPods,
-      setSelectedPods,
-      uniquePods,
-      selectedContainers,
-      setSelectedContainers,
-      uniqueContainers,
+      freeze,
+      logWindow,
+      resumeLive,
       searchQuery,
+      selectedContainers,
+      selectedPods,
+      setLogWindow,
       setSearchQuery,
-      timeRange,
-      setTimeRange,
-      isLive,
-      setIsLive,
-      onRefresh,
-      refreshMode,
+      setSelectedContainers,
+      setSelectedPods,
+      truncatedAt,
+      uniqueContainers,
+      uniquePods,
     }),
     [
-      logs,
+      entries,
       filteredEntries,
-      selectedPods,
-      uniquePods,
-      selectedContainers,
-      uniqueContainers,
+      freeze,
+      logWindow,
+      resumeLive,
       searchQuery,
+      selectedContainers,
+      selectedPods,
+      setLogWindow,
       setSearchQuery,
-      timeRange,
-      setTimeRange,
-      isLive,
-      onRefresh,
-      refreshMode,
+      truncatedAt,
+      uniqueContainers,
+      uniquePods,
     ]
   );
 

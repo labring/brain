@@ -13,31 +13,44 @@ import { format } from "date-fns";
 import { ChevronDown, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { DateRange } from "react-day-picker";
+import {
+  formatLogWindowLabel,
+  LIVE_SPANS,
+  type LogWindow,
+  logWindowBounds,
+} from "./log-window";
 
-export type TimeRange =
-  | { mode: "quick"; ms: number }
-  | { mode: "custom"; start: Date; end: Date };
-
-export const QUICK_RANGES = [
-  { label: "Last 5 min", short: "Last 5m", ms: 5 * 60_000 },
-  { label: "Last 15 min", short: "Last 15m", ms: 15 * 60_000 },
-  { label: "Last 30 min", short: "Last 30m", ms: 30 * 60_000 },
-  { label: "Last 1 hour", short: "Last 1h", ms: 60 * 60_000 },
-  { label: "Last 3 hours", short: "Last 3h", ms: 3 * 60 * 60_000 },
-  { label: "Last 6 hours", short: "Last 6h", ms: 6 * 60 * 60_000 },
-];
-
-interface TimeRangeSelectorProps {
+interface LogWindowSelectorProps {
   className?: string;
-  onChange: (range: TimeRange) => void;
-  value: TimeRange;
+  onChange: (logWindow: LogWindow) => void;
+  value: LogWindow;
 }
 
-export function TimeRangeSelector({
+function draftBounds(
+  range: DateRange | undefined,
+  startTime: string,
+  endTime: string
+): { end: Date; start: Date } | null {
+  if (!(range?.from && range?.to)) {
+    return null;
+  }
+  const startParts = startTime.split(":").map(Number);
+  const endParts = endTime.split(":").map(Number);
+  const start = new Date(range.from);
+  start.setHours(startParts[0] ?? 0, startParts[1] ?? 0, startParts[2] ?? 0, 0);
+  const end = new Date(range.to);
+  end.setHours(endParts[0] ?? 23, endParts[1] ?? 59, endParts[2] ?? 59, 999);
+  if (start.getTime() >= end.getTime()) {
+    return null;
+  }
+  return { end, start };
+}
+
+export function LogWindowSelector({
   value,
   onChange,
   className,
-}: TimeRangeSelectorProps) {
+}: LogWindowSelectorProps) {
   const [open, setOpen] = useState(false);
   const [activeField, setActiveField] = useState<"start" | "end" | null>(null);
   const [draftRange, setDraftRange] = useState<DateRange | undefined>();
@@ -49,47 +62,28 @@ export function TimeRangeSelector({
       return;
     }
     setActiveField(null);
-    if (value.mode === "custom") {
-      setDraftRange({ from: value.start, to: value.end });
-      setDraftStartTime(format(value.start, "HH:mm:ss"));
-      setDraftEndTime(format(value.end, "HH:mm:ss"));
-    } else {
-      const now = new Date();
-      const from = new Date(now.getTime() - value.ms);
-      setDraftRange({ from, to: now });
-      setDraftStartTime(format(from, "HH:mm:ss"));
-      setDraftEndTime(format(now, "HH:mm:ss"));
-    }
+    // Seed the frozen-window editor from the materialized bounds of whatever
+    // is currently displayed — the "narrow down what I'm seeing" starting point.
+    const { start, end } = logWindowBounds(value);
+    setDraftRange({ from: start, to: end });
+    setDraftStartTime(format(start, "HH:mm:ss"));
+    setDraftEndTime(format(end, "HH:mm:ss"));
   }, [open, value]);
 
-  function handleConfirm() {
-    if (!(draftRange?.from && draftRange?.to)) {
+  const draft = draftBounds(draftRange, draftStartTime, draftEndTime);
+
+  function handleApply() {
+    if (!draft) {
       return;
     }
-    const startParts = draftStartTime.split(":").map(Number);
-    const endParts = draftEndTime.split(":").map(Number);
-    const start = new Date(draftRange.from);
-    start.setHours(
-      startParts[0] ?? 0,
-      startParts[1] ?? 0,
-      startParts[2] ?? 0,
-      0
-    );
-    const end = new Date(draftRange.to);
-    end.setHours(endParts[0] ?? 23, endParts[1] ?? 59, endParts[2] ?? 59, 999);
-    onChange({ mode: "custom", start, end });
+    onChange({ end: draft.end, mode: "frozen", start: draft.start });
     setOpen(false);
   }
 
-  function handleQuickRange(ms: number) {
-    onChange({ mode: "quick", ms });
+  function handleLiveSpan(spanMs: number) {
+    onChange({ mode: "live", spanMs });
     setOpen(false);
   }
-
-  const triggerLabel =
-    value.mode === "quick"
-      ? (QUICK_RANGES.find((r) => r.ms === value.ms)?.label ?? "Custom")
-      : "Custom";
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -99,8 +93,15 @@ export function TimeRangeSelector({
           className
         )}
       >
-        <Clock className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate">{triggerLabel}</span>
+        {value.mode === "live" ? (
+          <span
+            aria-hidden
+            className="size-2 shrink-0 rounded-full bg-blue-400"
+          />
+        ) : (
+          <Clock className="size-4 shrink-0 text-muted-foreground" />
+        )}
+        <span className="truncate">{formatLogWindowLabel(value)}</span>
         <ChevronDown className="size-3.5 shrink-0 opacity-50" />
       </PopoverTrigger>
       <PopoverContent
@@ -162,8 +163,8 @@ export function TimeRangeSelector({
               </Button>
               <Button
                 className="bg-blue-500 text-foreground hover:bg-blue-500/90"
-                disabled={!(draftRange?.from && draftRange?.to)}
-                onClick={handleConfirm}
+                disabled={!draft}
+                onClick={handleApply}
                 size="sm"
               >
                 Apply
@@ -171,22 +172,23 @@ export function TimeRangeSelector({
             </div>
           </div>
           <div className="flex flex-col gap-1 p-3">
-            <span className="mb-1 font-medium text-muted-foreground text-xs">
-              Relative
+            <span className="mb-1 flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
+              <span aria-hidden className="size-1.5 rounded-full bg-blue-400" />
+              Live
             </span>
-            {QUICK_RANGES.map((r) => (
+            {LIVE_SPANS.map((span) => (
               <button
                 className={cn(
                   "rounded-md px-3 py-1.5 text-left text-foreground text-sm hover:bg-input/30",
-                  value.mode === "quick" &&
-                    value.ms === r.ms &&
+                  value.mode === "live" &&
+                    value.spanMs === span.ms &&
                     "bg-input font-medium"
                 )}
-                key={r.ms}
-                onClick={() => handleQuickRange(r.ms)}
+                key={span.ms}
+                onClick={() => handleLiveSpan(span.ms)}
                 type="button"
               >
-                {r.label}
+                {span.label}
               </button>
             ))}
           </div>

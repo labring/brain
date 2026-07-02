@@ -1,12 +1,13 @@
 "use client";
 
-import type { TimeRange } from "@workspace/ui/components/time-range-selector";
 import { cn } from "@workspace/ui/lib/utils";
 import type { ReactNode } from "react";
 import { type LogsData, LogViewerProvider } from "./log-viewer.context";
 import { LogViewerCountChart } from "./log-viewer.count-chart";
 import { LogViewerListContent, LogViewerListHeader } from "./log-viewer.list";
+import { LogViewerLivePill } from "./log-viewer.live-control";
 import { LogViewerToolbar } from "./log-viewer.toolbar";
+import type { LogWindow } from "./log-window";
 
 function LogViewerRoot({
   className,
@@ -38,12 +39,13 @@ function LogViewerList({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border",
+        "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border",
         className
       )}
       data-slot="log-viewer-list"
     >
       {children}
+      <LogViewerLivePill />
     </div>
   );
 }
@@ -51,31 +53,28 @@ function LogViewerList({
 function LogViewerVariant0({
   logs,
   className,
-  onRefresh,
-  refreshMode,
-  timeRange,
-  onTimeRangeChange,
+  logWindow,
+  onLogWindowChange,
   searchQuery,
   onSearchQueryChange,
+  truncatedAt,
 }: {
   logs: LogsData;
   className?: string;
-  onRefresh?: () => void;
-  refreshMode?: "live" | "manual";
-  timeRange?: TimeRange;
-  onTimeRangeChange?: (range: TimeRange) => void;
+  logWindow?: LogWindow;
+  onLogWindowChange?: (logWindow: LogWindow) => void;
   searchQuery?: string;
   onSearchQueryChange?: (q: string) => void;
+  truncatedAt?: number;
 }) {
   return (
     <LogViewerProvider
+      externalLogWindow={logWindow}
       externalSearchQuery={searchQuery}
-      externalTimeRange={timeRange}
       logs={logs}
-      onRefresh={onRefresh}
+      onLogWindowChange={onLogWindowChange}
       onSearchQueryChange={onSearchQueryChange}
-      onTimeRangeChange={onTimeRangeChange}
-      refreshMode={refreshMode}
+      truncatedAt={truncatedAt}
     >
       <LogViewerRoot className={className}>
         <LogViewerToolbar />

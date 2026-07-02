@@ -5,34 +5,44 @@ import type {
   WorkloadLogsWindow,
 } from "@workspace/api/hooks";
 import type { LogEntry } from "@workspace/ui/components/log-viewer/log-viewer.context";
-import type { TimeRange } from "@workspace/ui/components/time-range-selector";
+import {
+  DEFAULT_LIVE_SPAN_MS,
+  type LogWindow,
+  logWindowBounds,
+} from "@workspace/ui/components/log-viewer/log-window";
 
-export const RESOURCE_LOGS_DEFAULT_RANGE_MS = 60 * 60 * 1000;
 export const RESOURCE_LOGS_DEFAULT_LIMIT = 500;
+export const RESOURCE_LOGS_POLL_INTERVAL_MS = 3000;
 
-export const RESOURCE_LOGS_DEFAULT_TIME_RANGE: TimeRange = {
-  mode: "quick",
-  ms: RESOURCE_LOGS_DEFAULT_RANGE_MS,
+export const RESOURCE_LOGS_DEFAULT_WINDOW: LogWindow = {
+  mode: "live",
+  spanMs: DEFAULT_LIVE_SPAN_MS,
 };
 
 export function resourceLogsWindow(
-  range: TimeRange,
+  logWindow: LogWindow,
   now = new Date()
 ): WorkloadLogsWindow {
-  if (range.mode === "custom") {
-    return { end: range.end, start: range.start };
-  }
-  return {
-    end: now,
-    start: new Date(now.getTime() - range.ms),
-  };
+  return logWindowBounds(logWindow, now);
 }
 
-export function resourceLogsWindowKey(range: TimeRange): string {
-  if (range.mode === "custom") {
-    return `${range.start.toISOString()}-${range.end.toISOString()}`;
+export function resourceLogsWindowKey(logWindow: LogWindow): string {
+  if (logWindow.mode === "frozen") {
+    return `${logWindow.start.toISOString()}-${logWindow.end.toISOString()}`;
   }
-  return `last-${range.ms}`;
+  return `live-${logWindow.spanMs}`;
+}
+
+export function resourceLogsRefreshIntervalMs(logWindow: LogWindow): number {
+  return logWindow.mode === "live" ? RESOURCE_LOGS_POLL_INTERVAL_MS : 0;
+}
+
+export function resourceLogsTruncatedAt(
+  entries: LogEntry[]
+): number | undefined {
+  return entries.length >= RESOURCE_LOGS_DEFAULT_LIMIT
+    ? RESOURCE_LOGS_DEFAULT_LIMIT
+    : undefined;
 }
 
 function stringField(value: unknown): string {
@@ -61,7 +71,8 @@ export function workloadLogsToLogEntries(
   if (data === undefined) {
     return [];
   }
-  const entries = Object.values(data).flatMap((group) =>
+  // No sorting here: LogViewerProvider owns the oldest-to-newest invariant.
+  return Object.values(data).flatMap((group) =>
     Array.isArray(group)
       ? group.map((entry) => ({
           container: stringField(entry.container),
@@ -73,7 +84,6 @@ export function workloadLogsToLogEntries(
         }))
       : []
   );
-  return entries.sort((a, b) => b.time.localeCompare(a.time));
 }
 
 export function resourceLogsTarget(options: {

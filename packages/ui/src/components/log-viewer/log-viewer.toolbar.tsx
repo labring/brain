@@ -3,29 +3,25 @@
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppMultiSelect } from "@workspace/ui/components/app-select";
-import { LivePauseToggle } from "@workspace/ui/components/refresh-controls";
-import { TimeRangeSelector } from "@workspace/ui/components/time-range-selector";
-import { Box, Download, RefreshCw, Search, Server } from "lucide-react";
+import { Box, Download, Search, Server } from "lucide-react";
 import { useMemo } from "react";
 import { type LogEntry, useLogViewerContext } from "./log-viewer.context";
+import { LogViewerLiveControl } from "./log-viewer.live-control";
+import { LogWindowSelector } from "./log-window-selector";
 
 export function LogViewerToolbar() {
   const {
     searchQuery,
     setSearchQuery,
-    isLive,
-    setIsLive,
     filteredEntries,
-    timeRange,
-    setTimeRange,
+    logWindow,
+    setLogWindow,
     selectedPods,
     setSelectedPods,
     uniquePods,
     selectedContainers,
     setSelectedContainers,
     uniqueContainers,
-    onRefresh,
-    refreshMode,
   } = useLogViewerContext();
   const podOptions = useMemo(
     () => uniquePods.map((pod) => ({ label: pod, value: pod })),
@@ -66,7 +62,10 @@ export function LogViewerToolbar() {
           searchPlaceholder="Search"
           value={selectedContainers}
         />
-        <TimeRangeSelector onChange={setTimeRange} value={timeRange} />
+        {/* One window control: the selector states the anchor, the live
+            control switches it. They stay adjacent by design. */}
+        <LogWindowSelector onChange={setLogWindow} value={logWindow} />
+        <LogViewerLiveControl />
       </div>
 
       {/* Search + Actions */}
@@ -85,24 +84,6 @@ export function LogViewerToolbar() {
             value={searchQuery}
           />
         </div>
-        {refreshMode === "live" ? (
-          <LivePauseToggle
-            disabled={onRefresh === undefined}
-            isLive={isLive}
-            onToggle={() => setIsLive(!isLive)}
-          />
-        ) : (
-          <AppIconButton
-            aria-label="Refresh logs"
-            disabled={onRefresh === undefined}
-            onClick={onRefresh}
-            size="lg"
-            type="button"
-            variant="secondary"
-          >
-            <RefreshCw className="size-4" />
-          </AppIconButton>
-        )}
         <AppIconButton
           aria-label="Download logs"
           onClick={() => downloadLogs(filteredEntries)}

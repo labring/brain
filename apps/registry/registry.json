@@ -124,15 +124,33 @@
         "input-group",
         "popover",
         "tooltip",
-        "faceted",
-        "refresh-controls",
-        "time-range-selector"
+        "faceted"
       ],
       "files": [
         {
           "path": "../../packages/ui/src/components/log-viewer/log-viewer.tsx",
           "type": "registry:component",
           "target": "components/log-viewer/log-viewer.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/log-viewer/log-window.ts",
+          "type": "registry:lib",
+          "target": "components/log-viewer/log-window.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/log-viewer/log-window-selector.tsx",
+          "type": "registry:component",
+          "target": "components/log-viewer/log-window-selector.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/log-viewer/log-viewer.live-control.tsx",
+          "type": "registry:component",
+          "target": "components/log-viewer/log-viewer.live-control.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/time-wheel-field.tsx",
+          "type": "registry:component",
+          "target": "components/time-wheel-field.tsx"
         },
         {
           "path": "../../packages/ui/src/components/log-viewer/log-viewer.context.tsx",

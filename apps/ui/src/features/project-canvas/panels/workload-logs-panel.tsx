@@ -2,7 +2,7 @@
 
 import { useWorkloadLogs } from "@workspace/api/hooks";
 import { LogViewer } from "@workspace/ui/components/log-viewer/log-viewer";
-import type { TimeRange } from "@workspace/ui/components/time-range-selector";
+import type { LogWindow } from "@workspace/ui/components/log-viewer/log-window";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { FileText } from "lucide-react";
@@ -13,8 +13,10 @@ import { containerStatesFromNode } from "@/features/project-canvas/flow/containe
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import {
   RESOURCE_LOGS_DEFAULT_LIMIT,
-  RESOURCE_LOGS_DEFAULT_TIME_RANGE,
+  RESOURCE_LOGS_DEFAULT_WINDOW,
+  resourceLogsRefreshIntervalMs,
   resourceLogsTarget,
+  resourceLogsTruncatedAt,
   resourceLogsWindow,
   resourceLogsWindowKey,
   workloadLogsToLogEntries,
@@ -35,8 +37,8 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
   const states = containerStatesFromNode(node);
   const name =
     states?.name === "" || states?.name == null ? "Logs" : states.name;
-  const [timeRange, setTimeRange] = useState<TimeRange>(
-    RESOURCE_LOGS_DEFAULT_TIME_RANGE
+  const [logWindow, setLogWindow] = useState<LogWindow>(
+    RESOURCE_LOGS_DEFAULT_WINDOW
   );
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(
@@ -54,16 +56,17 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
     [states?.name, states?.namespace, ns]
   );
   const getWindow = useCallback(
-    () => resourceLogsWindow(timeRange),
-    [timeRange]
+    () => resourceLogsWindow(logWindow),
+    [logWindow]
   );
-  const { data, error, isLoading, mutate } = useWorkloadLogs({
+  const { data, error, isLoading } = useWorkloadLogs({
     getWindow,
     kubeconfig,
     limit: RESOURCE_LOGS_DEFAULT_LIMIT,
+    refreshIntervalMs: resourceLogsRefreshIntervalMs(logWindow),
     search: debouncedSearchQuery,
     target,
-    windowKey: resourceLogsWindowKey(timeRange),
+    windowKey: resourceLogsWindowKey(logWindow),
   });
   const logs = useMemo(() => workloadLogsToLogEntries(data), [data]);
 
@@ -85,14 +88,11 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
       <LogViewer.Variant0
         className={isLoading ? "opacity-70" : undefined}
         logs={logs}
-        onRefresh={() => {
-          mutate().catch(() => undefined);
-        }}
+        logWindow={logWindow}
+        onLogWindowChange={setLogWindow}
         onSearchQueryChange={setSearchQuery}
-        onTimeRangeChange={setTimeRange}
-        refreshMode="live"
         searchQuery={searchQuery}
-        timeRange={timeRange}
+        truncatedAt={resourceLogsTruncatedAt(logs)}
       />
     </MainActionSurfaceFrame>
   );
