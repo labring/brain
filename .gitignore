@@ -57,5 +57,5 @@ apps/api/api
 CONTEXT.md
 specs
 .playwright-mcp
-
+.playwright-cli
 .idea/
