@@ -63,7 +63,11 @@ export const ConversationEmptyState = ({
   >
     {children ?? (
       <>
-        {icon && <div className="text-muted-foreground">{icon}</div>}
+        {icon && (
+          <div className="flex size-11 items-center justify-center rounded-full border border-border/60 bg-input/30 text-muted-foreground backdrop-blur-sm">
+            {icon}
+          </div>
+        )}
         <div className="space-y-1">
           <h3 className="font-medium text-sm">{title}</h3>
           {description && (
@@ -91,7 +95,7 @@ export const ConversationScrollButton = ({
     !isAtBottom && (
       <Button
         className={cn(
-          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted",
+          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full border-border bg-input/30 shadow-[0px_2px_4px_0px_rgba(8,10,17,0.25),inset_-1px_-1px_4px_0px_rgba(8,10,17,0.25)] backdrop-blur-lg hover:bg-input/50",
           className
         )}
         onClick={handleScrollToBottom}
@@ -159,7 +163,7 @@ export const ConversationDownload = ({
   return (
     <Button
       className={cn(
-        "absolute top-4 right-4 rounded-full dark:bg-background dark:hover:bg-muted",
+        "absolute top-4 right-4 rounded-full border-border bg-input/30 shadow-[0px_2px_4px_0px_rgba(8,10,17,0.25),inset_-1px_-1px_4px_0px_rgba(8,10,17,0.25)] backdrop-blur-lg hover:bg-input/50",
         className
       )}
       onClick={handleDownload}
