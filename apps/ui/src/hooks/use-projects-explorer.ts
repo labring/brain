@@ -69,6 +69,38 @@ function projectWorkloadsFromList(
   return result;
 }
 
+export function projectHistoryErrorEmptyState(error: unknown):
+  | {
+      description: string;
+      title: string;
+    }
+  | undefined {
+  if (error == null) {
+    return undefined;
+  }
+
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("API 401:")) {
+    return {
+      description:
+        "Project history is waiting for workspace credentials. Open Brain inside Sealos Desktop or configure NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG for local development.",
+      title: "Workspace credentials unavailable",
+    };
+  }
+  if (message.startsWith("API 403:")) {
+    return {
+      description:
+        "Project history is unavailable because the current workspace credentials are not authorized for this namespace.",
+      title: "Workspace access denied",
+    };
+  }
+  return {
+    description:
+      "Project history is temporarily unavailable because the app database cannot be reached. Check DATABASE_URL and database status, then refresh.",
+    title: "System configuration unavailable",
+  };
+}
+
 export function useProjectsExplorer(options: {
   /** URL-encoded kubeconfig string (Bearer token body). */
   kubeconfig: string;
@@ -173,17 +205,14 @@ export function useProjectsExplorer(options: {
     );
   }, [projects, prunePinnedProjects, rawProjects]);
 
+  const projectHistoryEmptyState = useMemo(
+    () => projectHistoryErrorEmptyState(projectsError),
+    [projectsError]
+  );
+
   const states = useMemo(
     (): ProjectExplorerStates => ({
-      ...(projectsError
-        ? {
-            empty: {
-              description:
-                "Project history is temporarily unavailable because the app database cannot be reached. Check DATABASE_URL and database status, then refresh.",
-              title: "System configuration unavailable",
-            },
-          }
-        : {}),
+      ...(projectHistoryEmptyState ? { empty: projectHistoryEmptyState } : {}),
       pinnedProjectIds,
       pinnedProjectLimit,
       projectShortcutIconKeys,
@@ -192,9 +221,9 @@ export function useProjectsExplorer(options: {
     [
       pinnedProjectIds,
       pinnedProjectLimit,
+      projectHistoryEmptyState,
       projectShortcutIconKeys,
       projects,
-      projectsError,
     ]
   );
 

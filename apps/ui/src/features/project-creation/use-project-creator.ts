@@ -1,5 +1,6 @@
 "use client";
 
+import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 import type { DatabaseDeploymentSettings } from "@/features/deployment/database-deployer";
@@ -32,6 +33,7 @@ import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options
 import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
+import { desktopUserIdAtom } from "@/store/auth-store";
 import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
@@ -123,6 +125,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 } {
   const kubeconfig = options?.kubeconfig?.trim() ?? "";
   const namespace = options?.namespace?.trim() ?? "";
+  const actorUserId = useAtomValue(desktopUserIdAtom).trim();
   const onProjectCreated = options?.onProjectCreated;
   const existingProjects = options?.existingProjects ?? EMPTY_PROJECTS;
   const hasKubeconfig = kubeconfig !== "";
@@ -144,6 +147,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 
   const {
     disconnectGithubAuth,
+    githubConnectionId,
     initiateGithubAuth,
     isAuthorized: githubAuthorized,
     isLoading: githubAuthLoading,
@@ -224,12 +228,25 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>
       runDeploymentTargetPipeline({
         adapters: deploymentAdapters,
-        credentialsReady: hasKubeconfig && namespace !== "",
+        actorUserId,
+        credentialsReady:
+          hasKubeconfig &&
+          namespace !== "" &&
+          (request.kind !== "github" ||
+            (actorUserId !== "" && (githubConnectionId?.trim() ?? "") !== "")),
         existingProjects,
+        githubConnectionId,
         namespace,
         request,
       }),
-    [deploymentAdapters, existingProjects, hasKubeconfig, namespace]
+    [
+      deploymentAdapters,
+      actorUserId,
+      existingProjects,
+      githubConnectionId,
+      hasKubeconfig,
+      namespace,
+    ]
   );
   const completeProjectCreation = useCallback(
     (

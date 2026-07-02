@@ -53,10 +53,7 @@ api:
     VMAUTH_SECRET_NAME: ""
     DATABASE_URL: ""
     DB_PUBLIC_HOST: ""
-    SEALOS_DESKTOP_URL: ""
     WHODB_URL: "http://whodb.brain-system.svc:11000"
-  staticEnv:
-    SEALOS_DESKTOP_SKIP_TLS_VERIFY: "1"
   resources:
     requests:
       cpu: 250m
@@ -105,11 +102,8 @@ ui:
     API_URL: ""
     NEXT_PUBLIC_APP_URL: ""
     DATABASE_URL: ""
-    GITHUB_OAUTH_CLIENT_ID: ""
-    GITHUB_OAUTH_CLIENT_SECRET: ""
-    GITHUB_CREDENTIAL_ENCRYPTION_KEY: ""
-    GITHUB_OAUTH_NEXT_PATH: "/"
-    GITHUB_OAUTH_NEXT_SEARCH: ""
+    GITHUB_APP_ID: ""
+    GITHUB_APP_PRIVATE_KEY: ""
     TEMPLATE_PROVIDER_URL: ""
     SYSTEM_OPENAI_API_KEY: ""
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"

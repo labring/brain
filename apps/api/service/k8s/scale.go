@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/kubernetes"
@@ -39,8 +40,7 @@ func Scale(cfg *clientcmdapi.Config, opts ScaleOptions) ([]byte, error) {
 
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
-		AllNamespaces:    true,
-		DefaultNamespace: "",
+		DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return nil, err

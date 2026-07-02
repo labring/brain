@@ -41,7 +41,7 @@ func registerVersionList(grp huma.API) {
 	type listInput struct {
 		middleware.AuthInput
 		Name      string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type listOutput struct {
 		Body struct {
@@ -94,7 +94,7 @@ func registerVersionDetail(grp huma.API) {
 		middleware.AuthInput
 		VersionHash string `path:"versionHash" doc:"AP image version hash"`
 		Name        string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace   string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace   string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type detailOutput struct {
 		Body apVersionRow
@@ -137,7 +137,7 @@ func registerVersionRollback(grp huma.API) {
 		middleware.AuthInput
 		VersionHash string `path:"versionHash" doc:"AP image version hash"`
 		Name        string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace   string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace   string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type rollbackOutput struct {
 		Body json.RawMessage
@@ -237,13 +237,8 @@ func registerVersionRollback(grp huma.API) {
 }
 
 func resolveAPNamespace(cfg *clientcmdapi.Config, namespace string) (string, error) {
-	gvr := middleware.PodsGVR()
 	resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-		Namespace:        namespace,
-		AllNamespaces:    false,
-		DefaultNamespace: "",
-		AdminCheckGVR:    &gvr,
-	})
+		Namespace: namespace, DefaultNamespace: ""})
 	if err != nil {
 		return "", err
 	}

@@ -22,7 +22,7 @@ func registerGet(grp huma.API) {
 		middleware.AuthInput
 		LabelSelector string `query:"label-selector" doc:"Optional Kubernetes label selector appended to the Brain-managed AP selector"`
 		Name          string `query:"name" doc:"AP instance name (omit to list all in namespace)"`
-		Namespace     string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace     string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type getOutput struct {
 		Body json.RawMessage
@@ -33,21 +33,15 @@ func registerGet(grp huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/",
 		Summary:     "Get AP(s)",
-		Description: "Get a single AP by name or list APs in the namespace.\n\nParameter usage:\n- `name` is optional. If omitted, the endpoint lists all Brain-managed APs in the resolved namespace.\n- `namespace` is optional. It uses the kubeconfig namespace by default; admins can override it.\n- `label-selector` is optional and is appended to the mandatory Brain AP selector.\n\nWhat the AP represents:\n- AP is a Brain product view backed by direct Kubernetes workload resources and private Service.\n- `brain.io/project-id` is the project ownership boundary for list, canvas, and lifecycle operations.",
+		Description: "Get a single AP by name or list APs in the namespace.\n\nParameter usage:\n- `name` is optional. If omitted, the endpoint lists all Brain-managed APs in the resolved namespace.\n- `namespace` is optional. Resolution order is explicit namespace, kubeconfig current-context namespace, then the route default.\n- `label-selector` is optional and is appended to the mandatory Brain AP selector.\n\nWhat the AP represents:\n- AP is a Brain product view backed by direct Kubernetes workload resources and private Service.\n- `brain.io/project-id` is the project ownership boundary for list, canvas, and lifecycle operations.",
 		Tags:        []string{"AP"},
 	}, func(ctx context.Context, input *getInput) (*getOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}

@@ -8,6 +8,7 @@ import {
   assistantChatMessages,
   assistantChats,
   assistantEntitlements,
+  githubAppInstallSessions,
   githubConnections,
 } from "./schema";
 
@@ -15,6 +16,7 @@ const assistantSchema = {
   assistantChatMessages,
   assistantChats,
   assistantEntitlements,
+  githubAppInstallSessions,
   githubConnections,
 };
 

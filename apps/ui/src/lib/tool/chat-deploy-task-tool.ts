@@ -94,6 +94,13 @@ export function createDeployTaskTools(options: {
             "No deployment target was provided. Use target.kind newProject with a displayName, or open a Project first.",
         };
       }
+      if (input.source.kind === "github") {
+        return {
+          ok: false,
+          error:
+            "GitHub deployment from chat requires the Desktop user identity. Use the GitHub deployment pane for now.",
+        };
+      }
 
       const task = await createDeployTask({
         createdFrom: "chat",

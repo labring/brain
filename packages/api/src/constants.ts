@@ -64,14 +64,6 @@ export const API_ROUTES = {
     metricsSnapshot: "/api/telemetry/v1alpha1/metrics/snapshot",
     metricsSeries: "/api/telemetry/v1alpha1/metrics/series",
   },
-
-  /**
-   * Region JWT → encoded kubeconfig via configured Sealos Desktop URL (`/api/auth/v1alpha1` in `apps/api/route/auth`).
-   */
-  auth: {
-    base: "/api/auth/v1alpha1",
-    regionToken: "/api/auth/v1alpha1/regionToken",
-  },
 } as const;
 
 type ApiRouteLeaf<T> = T extends string

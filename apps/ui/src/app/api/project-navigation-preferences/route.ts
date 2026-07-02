@@ -23,15 +23,15 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function authorizeNamespace(
+async function authorizeNamespace(
   request: Request,
   namespace: string
-): Response | null {
+): Promise<Response | null> {
   if (hasDevCredentialBypass()) {
     return null;
   }
 
-  const authorization = authorizeRequestNamespace(request, {
+  const authorization = await authorizeRequestNamespace(request, {
     namespace,
     subject: "Project navigation preferences",
   });
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     return jsonError("Invalid project navigation preferences request.", 400);
   }
 
-  const denied = authorizeNamespace(request, namespace.data);
+  const denied = await authorizeNamespace(request, namespace.data);
   if (denied !== null) {
     return denied;
   }
@@ -75,7 +75,7 @@ export async function PATCH(request: NextRequest) {
     const body = updateNavigationPreferencesRequestSchema.parse(
       await request.json()
     );
-    const denied = authorizeNamespace(request, body.namespace);
+    const denied = await authorizeNamespace(request, body.namespace);
     if (denied !== null) {
       return denied;
     }

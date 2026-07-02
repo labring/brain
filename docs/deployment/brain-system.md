@@ -38,13 +38,10 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 
 - `global.region`
 - `projectId`
-- `api.env.SEALOS_DESKTOP_URL`
-- GitHub OAuth values
+- GitHub App values
 - assistant model values
 - Devbox runtime values
 - `imagePullSecret.create`
-
-`api.env.SEALOS_DESKTOP_URL` is the Sealos Desktop base URL used to exchange the region token for a user kubeconfig.
 
 When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret.
 

@@ -10,6 +10,7 @@ import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-names
 import { scheduleChatDevboxWarmup } from "@/lib/devbox.actions";
 import {
   desktopLanguageAtom,
+  desktopUserIdAtom,
   kubeconfigAtom,
   namespaceAtom,
 } from "@/store/auth-store";
@@ -73,6 +74,7 @@ export default function AuthBootstrap({
 /** Hydrates credentials from the Sealos Desktop iframe SDK when available. */
 export function SealosSdkBootstrap() {
   const setDesktopLanguage = useSetAtom(desktopLanguageAtom);
+  const setDesktopUserId = useSetAtom(desktopUserIdAtom);
   const setKubeconfig = useSetAtom(kubeconfigAtom);
   const setNamespace = useSetAtom(namespaceAtom);
 
@@ -94,6 +96,7 @@ export function SealosSdkBootstrap() {
           language,
           session,
           setDesktopLanguage,
+          setDesktopUserId,
           setKubeconfig,
           setNamespace,
         });
@@ -121,7 +124,7 @@ export function SealosSdkBootstrap() {
       unsubscribeLanguage?.();
       cleanup?.();
     };
-  }, [setDesktopLanguage, setKubeconfig, setNamespace]);
+  }, [setDesktopLanguage, setDesktopUserId, setKubeconfig, setNamespace]);
 
   return null;
 }

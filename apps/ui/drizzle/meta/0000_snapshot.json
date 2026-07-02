@@ -1,5 +1,5 @@
 {
-  "id": "92165ba5-87cc-4687-83bf-b8587d2ef60e",
+  "id": "bd7a4eda-d4a5-4c6f-a585-fd4f792d82cf",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -235,39 +235,139 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "sealai_assistant.github_connections": {
-      "name": "github_connections",
+    "sealai_assistant.github_app_install_sessions": {
+      "name": "github_app_install_sessions",
       "schema": "sealai_assistant",
       "columns": {
-        "namespace": {
-          "name": "namespace",
+        "state": {
+          "name": "state",
           "type": "text",
           "primaryKey": true,
           "notNull": true
         },
-        "github_login": {
-          "name": "github_login",
+        "namespace": {
+          "name": "namespace",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "scope": {
-          "name": "scope",
+        "return_path": {
+          "name": "return_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "github_app_install_sessions_expires_at_idx": {
+          "name": "github_app_install_sessions_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "github_app_install_sessions_namespace_idx": {
+          "name": "github_app_install_sessions_namespace_idx",
+          "columns": [
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "sealai_assistant.github_connections": {
+      "name": "github_connections",
+      "schema": "sealai_assistant",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "''"
+          "default": "'github_app'"
         },
-        "token_type": {
-          "name": "token_type",
+        "installation_id": {
+          "name": "installation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_login": {
+          "name": "account_login",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_type": {
+          "name": "account_type",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'bearer'"
+          "default": "'User'"
         },
-        "encrypted_access_token": {
-          "name": "encrypted_access_token",
-          "type": "jsonb",
+        "repository_selection": {
+          "name": "repository_selection",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'all'"
+        },
+        "installed_by_user_id": {
+          "name": "installed_by_user_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -314,11 +414,47 @@
           "method": "btree",
           "with": {}
         },
-        "github_connections_github_login_idx": {
-          "name": "github_connections_github_login_idx",
+        "github_connections_namespace_updated_at_idx": {
+          "name": "github_connections_namespace_updated_at_idx",
           "columns": [
             {
-              "expression": "github_login",
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "github_connections_namespace_unique_idx": {
+          "name": "github_connections_namespace_unique_idx",
+          "columns": [
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "github_connections_installation_idx": {
+          "name": "github_connections_installation_idx",
+          "columns": [
+            {
+              "expression": "installation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -548,6 +684,18 @@
         },
         "project_name": {
           "name": "project_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "github_connection_id": {
+          "name": "github_connection_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false

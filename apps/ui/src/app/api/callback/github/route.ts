@@ -2,34 +2,28 @@ import {
   completeAuthorization,
   handleProviderError,
   startAuthorize,
-} from "@/lib/github-oauth/service";
-import {
-  parseOAuthNamespaceParam,
-  parseOAuthReturnPathParam,
-} from "@/lib/github-oauth/types";
+} from "@/lib/github-app/service";
 
 export const runtime = "nodejs";
 
 /**
- * Single-handler OAuth round-trip:
- *   - `?error=…`  → provider denied/failed; clean up cookies and bounce home.
- *   - no `?code=` → first hop; persist PKCE + state and redirect to GitHub authorize.
- *   - with `?code=` → second hop; verify state, exchange code, apply GHCR secret, redirect.
+ * Single-handler GitHub App installation round-trip:
+ *   - `?error=…`  → provider denied/failed; bounce home.
+ *   - no `?installation_id=` → reject direct entry; install starts from Desktop SDK session.
+ *   - with `?installation_id=` → second hop; verify state, store installation, redirect.
  */
 export function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   if (searchParams.get("error")) {
     return handleProviderError(request);
   }
-  const code = searchParams.get("code");
-  if (!code) {
-    return startAuthorize(request, {
-      namespace: parseOAuthNamespaceParam(searchParams.get("namespace")),
-      returnPath: parseOAuthReturnPathParam(searchParams.get("next")),
-    });
+  const installationId = searchParams.get("installation_id");
+  if (!installationId) {
+    return startAuthorize();
   }
   return completeAuthorization(request, {
-    code,
+    installationId,
+    setupAction: searchParams.get("setup_action"),
     state: searchParams.get("state"),
   });
 }

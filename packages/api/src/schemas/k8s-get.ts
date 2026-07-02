@@ -10,7 +10,6 @@ export const k8sGetQuerySchema = z.object({
   namespace: z.string().optional(),
   "label-selector": z.string().optional(),
   "field-selector": z.string().optional(),
-  "all-namespaces": z.string().optional(),
 });
 
 export type K8sGetQuery = z.infer<typeof k8sGetQuerySchema>;

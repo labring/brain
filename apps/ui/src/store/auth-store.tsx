@@ -19,4 +19,6 @@ export const namespaceAtom = atom(
   namespaceFromKubeconfigText(devKubeconfig) ?? ""
 );
 
+export const desktopUserIdAtom = atom("");
+
 export const desktopLanguageAtom = atom("en");

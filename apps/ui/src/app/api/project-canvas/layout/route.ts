@@ -20,15 +20,15 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function authorizeNamespace(
+async function authorizeNamespace(
   request: Request,
   namespace: string
-): Response | null {
+): Promise<Response | null> {
   if (hasDevCredentialBypass()) {
     return null;
   }
 
-  const authorization = authorizeRequestNamespace(request, {
+  const authorization = await authorizeRequestNamespace(request, {
     namespace,
     subject: "Canvas layout",
   });
@@ -41,7 +41,7 @@ function authorizeNamespace(
 function authorizeLayoutRead(
   request: Request,
   query: ReturnType<typeof parseCanvasLayoutGetQuery>
-): Response | null {
+): Promise<Response | null> {
   return authorizeNamespace(request, query.namespace);
 }
 

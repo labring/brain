@@ -27,8 +27,6 @@ type DescribeOptions struct {
 	LabelSelector string
 	// FieldSelector filters by fields.
 	FieldSelector string
-	// AllNamespaces when true describes across all namespaces.
-	AllNamespaces bool
 }
 
 // DescribeResult holds resource info and events (kubectl describe output).
@@ -41,8 +39,7 @@ type DescribeResult struct {
 func Describe(cfg *clientcmdapi.Config, opts DescribeOptions) ([]byte, error) {
 	resolvedCtx, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 		Namespace:        opts.Namespace,
-		AllNamespaces:    opts.AllNamespaces,
-		DefaultNamespace: corev1.NamespaceAll,
+		DefaultNamespace: corev1.NamespaceDefault,
 	})
 	if err != nil {
 		return nil, err
@@ -69,13 +66,7 @@ func Describe(cfg *clientcmdapi.Config, opts DescribeOptions) ([]byte, error) {
 	}
 
 	ns := resolvedCtx.Namespace
-	if namespaced {
-		if opts.AllNamespaces {
-			ns = corev1.NamespaceAll
-		} else if ns == "" {
-			ns = resolvedCtx.Namespace
-		}
-	} else {
+	if !namespaced {
 		ns = ""
 	}
 
@@ -85,7 +76,7 @@ func Describe(cfg *clientcmdapi.Config, opts DescribeOptions) ([]byte, error) {
 			return nil, err
 		}
 		result := DescribeResult{Resource: obj.Object}
-		if namespaced && ns != corev1.NamespaceAll {
+		if namespaced {
 			events, _ := clientset.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
 				FieldSelector: "involvedObject.name=" + opts.Name,
 			})

@@ -40,7 +40,7 @@ func registerCheckReady(grp huma.API) {
 	type checkReadyInput struct {
 		middleware.AuthInput
 		Name      string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type checkReadyOutput struct {
 		Body []apCheckReadyItem
@@ -61,14 +61,8 @@ func registerCheckReady(grp huma.API) {
 		if strings.TrimSpace(input.Name) == "" {
 			return nil, huma.Error400BadRequest("name is required", nil)
 		}
-
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}

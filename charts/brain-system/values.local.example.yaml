@@ -17,8 +17,6 @@ api:
     DATABASE_URL: ""
     # Public host used to render DB NodePort connection strings.
     DB_PUBLIC_HOST: "192.168.10.189.nip.io"
-    # Sealos Desktop base URL used to exchange region token for user kubeconfig.
-    SEALOS_DESKTOP_URL: "https://192.168.10.189.nip.io"
     WHODB_URL: "http://whodb.brain-system.svc:11000"
 
 ui:
@@ -29,11 +27,8 @@ ui:
     NEXT_PUBLIC_APP_URL: ""
     # Leave empty to use the chart-created brain-pg KubeBlocks credential.
     DATABASE_URL: ""
-    GITHUB_OAUTH_CLIENT_ID: "REPLACE_ME"
-    GITHUB_OAUTH_CLIENT_SECRET: "REPLACE_ME"
-    GITHUB_CREDENTIAL_ENCRYPTION_KEY: "REPLACE_ME_STABLE_SECRET"
-    GITHUB_OAUTH_NEXT_PATH: "/"
-    GITHUB_OAUTH_NEXT_SEARCH: ""
+    GITHUB_APP_ID: "REPLACE_ME"
+    GITHUB_APP_PRIVATE_KEY: "REPLACE_ME_PRIVATE_KEY"
     # Platform-paid free turns. Set FREE_CHAT_TURNS to "0" to disable.
     SYSTEM_OPENAI_API_KEY: "REPLACE_ME_OPENAI_COMPATIBLE_KEY"
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"

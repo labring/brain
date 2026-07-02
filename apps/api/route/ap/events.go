@@ -16,7 +16,7 @@ func registerEvents(grp huma.API) {
 		middleware.AuthInput
 		Limit     string `query:"limit" doc:"Maximum events to return (default 50)"`
 		Name      string `query:"name" required:"true" doc:"AP instance name"`
-		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig; admin can override)"`
+		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
 	type eventsOutput struct {
 		Body k8ssvc.APWorkloadEventsResult
@@ -34,14 +34,8 @@ func registerEvents(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        input.Namespace,
-			AllNamespaces:    false,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
-		})
+			Namespace: input.Namespace, DefaultNamespace: ""})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}

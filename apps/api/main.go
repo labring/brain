@@ -18,7 +18,6 @@ import (
 	"github.com/joho/godotenv"
 
 	"sealos/api/route/ap"
-	"sealos/api/route/auth"
 	"sealos/api/route/db"
 	"sealos/api/route/health"
 	"sealos/api/route/k8s"
@@ -67,7 +66,6 @@ func main() {
 	k8s.Register(api)
 	k8s.RegisterExecWebSocket(router)
 	ap.Register(api)
-	auth.Register(api)
 	db.Register(api)
 	telemetry.Register(api)
 

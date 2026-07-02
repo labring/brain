@@ -3,27 +3,27 @@
 import { useEffect } from "react";
 
 import {
-  GITHUB_OAUTH_COMPLETE_MESSAGE,
-  parseOAuthReturnPathParam,
-} from "@/lib/github-oauth/types";
+  GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
+  parseInstallReturnPathParam,
+} from "@/lib/github-app/types";
 
-function oauthReturnPath(): string {
+function installReturnPath(): string {
   if (typeof window === "undefined") {
     return "/";
   }
   const url = new URL(window.location.href);
-  return parseOAuthReturnPathParam(url.searchParams.get("next")) ?? "/";
+  return parseInstallReturnPathParam(url.searchParams.get("next")) ?? "/";
 }
 
-export default function GithubOAuthCompletePage() {
+export default function GithubInstallCompletePage() {
   useEffect(() => {
-    const returnPath = oauthReturnPath();
+    const returnPath = installReturnPath();
     if (!window.opener) {
       window.location.replace(returnPath);
       return;
     }
     window.opener.postMessage(
-      { returnPath, type: GITHUB_OAUTH_COMPLETE_MESSAGE },
+      { returnPath, type: GITHUB_APP_INSTALL_COMPLETE_MESSAGE },
       window.location.origin
     );
     window.close();
@@ -32,7 +32,7 @@ export default function GithubOAuthCompletePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
       <p className="text-muted-foreground text-sm">
-        GitHub authorization complete. You can close this window.
+        GitHub App installation complete. You can close this window.
       </p>
     </main>
   );

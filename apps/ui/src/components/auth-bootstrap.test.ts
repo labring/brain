@@ -10,11 +10,12 @@ describe("Sealos SDK bootstrap hydration", () => {
       language: { lng: "zh" },
       session: { kubeconfig: "" },
       setDesktopLanguage: (language) => updates.push(`language:${language}`),
+      setDesktopUserId: (userId) => updates.push(`user:${userId}`),
       setKubeconfig: (kubeconfig) => updates.push(`kubeconfig:${kubeconfig}`),
       setNamespace: (namespace) => updates.push(`namespace:${namespace}`),
     });
 
-    assert.deepEqual(updates, ["language:zh"]);
+    assert.deepEqual(updates, ["language:zh", "user:"]);
   });
 
   test("falls back to English when desktop language is blank", () => {
@@ -26,6 +27,7 @@ describe("Sealos SDK bootstrap hydration", () => {
       setDesktopLanguage: (value) => {
         language = value;
       },
+      setDesktopUserId: () => undefined,
       setKubeconfig: () => undefined,
       setNamespace: () => undefined,
     });
@@ -49,14 +51,16 @@ contexts:
 
     applySealosSdkHydration({
       language: null,
-      session: { kubeconfig },
+      session: { kubeconfig, user: { id: " admin " } },
       setDesktopLanguage: (language) => updates.push(`language:${language}`),
+      setDesktopUserId: (userId) => updates.push(`user:${userId}`),
       setKubeconfig: (value) => updates.push(`kubeconfig:${value}`),
       setNamespace: (namespace) => updates.push(`namespace:${namespace}`),
     });
 
-    assert.equal(updates.length, 2);
-    assert.equal(updates[0]?.startsWith("kubeconfig:"), true);
-    assert.equal(updates[1], "namespace:ns-demo");
+    assert.equal(updates.length, 3);
+    assert.equal(updates[0], "user:admin");
+    assert.equal(updates[1]?.startsWith("kubeconfig:"), true);
+    assert.equal(updates[2], "namespace:ns-demo");
   });
 });

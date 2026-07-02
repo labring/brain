@@ -22,21 +22,18 @@ func registerGet(grp huma.API) {
 		Namespace     string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 		LabelSelector string `query:"label-selector" doc:"Label selector"`
 		FieldSelector string `query:"field-selector" doc:"Field selector"`
-		AllNamespaces string `query:"all-namespaces" doc:"List all namespaces (true/1)"`
 	}
 	type getOutput struct {
 		Body json.RawMessage
 	}
 	handler := func(ctx context.Context, input *getInput) (*getOutput, error) {
 		authz := strings.TrimSpace(input.Authorization)
-		allNs := input.AllNamespaces == "true" || input.AllNamespaces == "1"
 		opts := k8ssvc.GetOptions{
 			Resource:      input.Kind,
 			Name:          input.Name,
 			Namespace:     input.Namespace,
 			LabelSelector: input.LabelSelector,
 			FieldSelector: input.FieldSelector,
-			AllNamespaces: allNs,
 		}
 
 		if authz == "" {
@@ -46,12 +43,9 @@ func registerGet(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 			Namespace:        input.Namespace,
-			AllNamespaces:    allNs,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
+			DefaultNamespace: corev1.NamespaceDefault,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
@@ -86,7 +80,6 @@ func registerDescribe(grp huma.API) {
 		Namespace     string `query:"namespace" doc:"Namespace"`
 		LabelSelector string `query:"label-selector" doc:"Label selector"`
 		FieldSelector string `query:"field-selector" doc:"Field selector"`
-		AllNamespaces string `query:"all-namespaces" doc:"All namespaces (true/1)"`
 	}
 	type describeOutput struct {
 		Body json.RawMessage
@@ -103,13 +96,9 @@ func registerDescribe(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		allNs := input.AllNamespaces == "true" || input.AllNamespaces == "1"
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 			Namespace:        input.Namespace,
-			AllNamespaces:    allNs,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
+			DefaultNamespace: corev1.NamespaceDefault,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
@@ -120,7 +109,6 @@ func registerDescribe(grp huma.API) {
 			Namespace:     resolved.Namespace,
 			LabelSelector: input.LabelSelector,
 			FieldSelector: input.FieldSelector,
-			AllNamespaces: allNs,
 		}
 		jsonBytes, err := k8ssvc.Describe(cfg, opts)
 		if err != nil {
@@ -156,12 +144,9 @@ func registerLogs(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 			Namespace:        input.Namespace,
-			AllNamespaces:    false,
 			DefaultNamespace: corev1.NamespaceDefault,
-			AdminCheckGVR:    &gvr,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
@@ -188,11 +173,10 @@ func registerLogs(grp huma.API) {
 func registerTop(grp huma.API) {
 	type topInput struct {
 		middleware.AuthInput
-		Kind          string `query:"kind" doc:"Resource kind (default: pods)"`
-		Name          string `query:"name" doc:"Resource name"`
-		Namespace     string `query:"namespace" doc:"Namespace"`
-		AllNamespaces string `query:"all-namespaces" doc:"All namespaces (true/1)"`
-		Containers    string `query:"containers" doc:"Show containers (true)"`
+		Kind       string `query:"kind" doc:"Resource kind (pods only)"`
+		Name       string `query:"name" doc:"Resource name"`
+		Namespace  string `query:"namespace" doc:"Namespace"`
+		Containers string `query:"containers" doc:"Show containers (true)"`
 	}
 	type topOutput struct {
 		Body json.RawMessage
@@ -202,30 +186,25 @@ func registerTop(grp huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/top",
 		Summary:     "Resource usage",
-		Description: "Get CPU/memory usage (like kubectl top). Requires metrics-server.",
+		Description: "Get pod CPU/memory usage in the resolved namespace. Requires metrics-server.",
 		Tags:        []string{"K8s"},
 	}, func(ctx context.Context, input *topInput) (*topOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		allNs := input.AllNamespaces == "true" || input.AllNamespaces == "1"
-		gvr := middleware.PodsGVR()
 		resolved, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
 			Namespace:        input.Namespace,
-			AllNamespaces:    allNs,
-			DefaultNamespace: "",
-			AdminCheckGVR:    &gvr,
+			DefaultNamespace: corev1.NamespaceDefault,
 		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 		opts := k8ssvc.TopOptions{
-			Resource:      input.Kind,
-			Name:          input.Name,
-			Namespace:     resolved.Namespace,
-			AllNamespaces: allNs,
-			Containers:    input.Containers == "true",
+			Resource:   input.Kind,
+			Name:       input.Name,
+			Namespace:  resolved.Namespace,
+			Containers: input.Containers == "true",
 		}
 		if opts.Resource == "" {
 			opts.Resource = "pods"

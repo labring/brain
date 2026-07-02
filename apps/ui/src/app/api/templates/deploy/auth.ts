@@ -1,21 +1,23 @@
 import { kubeconfigCredentialsMatch } from "@/lib/chat-runtime/kubeconfig-identity-core";
 import type { BrainProject } from "@/lib/project-persistence/projects";
-import { authorizeEncodedKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
-import type { ServerCredentials } from "@/lib/server-credentials";
+import {
+  authorizeEncodedKubeconfigNamespace,
+  type VerifyKubeconfigNamespace,
+} from "@/lib/request-kubeconfig-auth";
 
 export type TemplateDeployAuthorization =
   | { ok: true; encodedKubeconfig: string }
   | { message: string; ok: false; status: number };
 
-export function authorizeTemplateDeployIdentity(input: {
+export async function authorizeTemplateDeployIdentity(input: {
   devBypass: boolean;
   devEncodedKubeconfig: string;
   devNamespace: string;
   encodedKubeconfig: string;
   namespace: string;
   project: BrainProject | null;
-  serverCredentials: ServerCredentials;
-}): TemplateDeployAuthorization {
+  verify?: VerifyKubeconfigNamespace;
+}): Promise<TemplateDeployAuthorization> {
   if (input.devBypass) {
     if (
       input.devEncodedKubeconfig !== "" &&
@@ -49,10 +51,11 @@ export function authorizeTemplateDeployIdentity(input: {
         };
   }
 
-  const authorization = authorizeEncodedKubeconfigNamespace({
+  const authorization = await authorizeEncodedKubeconfigNamespace({
     encodedKubeconfig: input.encodedKubeconfig,
     namespace: input.namespace,
     subject: "Project",
+    verify: input.verify,
   });
   if (!authorization.ok) {
     return authorization;

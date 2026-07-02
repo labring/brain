@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
 import {
-  getGithubConnection,
-  revokeGithubConnection,
-} from "@/lib/github-oauth/connection-service";
-import { resolveGithubConnectionNamespace } from "@/lib/github-oauth/namespace-auth";
+  getGithubConnectionForNamespace,
+  revokeGithubConnectionForNamespace,
+} from "@/lib/github-app/connection-service";
+import { resolveGithubConnectionIdentity } from "@/lib/github-app/namespace-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,23 +14,29 @@ function jsonError(message: string, status: number) {
 }
 
 export async function GET(request: Request) {
-  const namespace = await resolveGithubConnectionNamespace(
-    new URL(request.url).searchParams.get("namespace")
+  const searchParams = new URL(request.url).searchParams;
+  const identity = await resolveGithubConnectionIdentity(
+    request,
+    searchParams.get("namespace"),
+    searchParams.get("userId")
   );
-  if (!namespace.ok) {
-    return jsonError(namespace.error, namespace.status);
+  if (!identity.ok) {
+    return jsonError(identity.error, identity.status);
   }
-  const connection = await getGithubConnection(namespace.namespace);
+  const connection = await getGithubConnectionForNamespace(identity.namespace);
   return NextResponse.json({ connection });
 }
 
 export async function DELETE(request: Request) {
-  const namespace = await resolveGithubConnectionNamespace(
-    new URL(request.url).searchParams.get("namespace")
+  const searchParams = new URL(request.url).searchParams;
+  const identity = await resolveGithubConnectionIdentity(
+    request,
+    searchParams.get("namespace"),
+    searchParams.get("userId")
   );
-  if (!namespace.ok) {
-    return jsonError(namespace.error, namespace.status);
+  if (!identity.ok) {
+    return jsonError(identity.error, identity.status);
   }
-  await revokeGithubConnection(namespace.namespace);
+  await revokeGithubConnectionForNamespace(identity.namespace);
   return NextResponse.json({ connection: null });
 }

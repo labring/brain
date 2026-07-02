@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "brain:v1-import": "bun scripts/brain-v1-import.mjs",
     "check": "npx ultracite check",
     "fix": "npx ultracite fix",
     "db:generate": "drizzle-kit generate",
