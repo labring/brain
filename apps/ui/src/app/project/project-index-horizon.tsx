@@ -9,6 +9,14 @@ const HORIZON_TWEAKS = {
   note: "project-index.module.css → .horizon",
   title: "Project · horizon glow",
   tweaks: {
+    bleedX: {
+      cssVar: "--horizon-bleed-x",
+      label: "Glow horizontal bleed",
+      max: 30,
+      min: 0,
+      unit: "%",
+      value: 12,
+    },
     glowCore: {
       cssVar: "--horizon-glow-core",
       label: "Glow core intensity",
@@ -23,7 +31,7 @@ const HORIZON_TWEAKS = {
       max: 90,
       min: 10,
       unit: "%",
-      value: 40,
+      value: 31,
     },
     glowMid: {
       cssVar: "--horizon-glow-mid",
@@ -39,7 +47,7 @@ const HORIZON_TWEAKS = {
       max: 100,
       min: 0,
       unit: "%",
-      value: 18,
+      value: 13,
     },
     glowWidth: {
       cssVar: "--horizon-glow-w",
@@ -47,7 +55,7 @@ const HORIZON_TWEAKS = {
       max: 140,
       min: 20,
       unit: "%",
-      value: 64,
+      value: 102,
     },
     glowY: {
       cssVar: "--horizon-glow-y",
@@ -80,7 +88,7 @@ const HORIZON_TWEAKS = {
       min: 1,
       step: 0.5,
       unit: "s",
-      value: 8,
+      value: 5,
     },
     huesViolet: {
       cssVar: "--horizon-hues-violet",
@@ -121,7 +129,7 @@ const HORIZON_TWEAKS = {
       min: 1,
       step: 0.5,
       unit: "s",
-      value: 9,
+      value: 5,
     },
     surgeHeight: {
       cssVar: "--horizon-surge-h",

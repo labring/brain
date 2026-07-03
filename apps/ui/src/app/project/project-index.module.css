@@ -15,19 +15,19 @@
   /* Tunable via the dev tweaks pane (⌃⌥T in dev). These defaults are the
      source of truth; project-index-horizon.tsx mirrors them for the pane. */
   --horizon-glow-core: 56%;
-  --horizon-glow-h: 40%;
+  --horizon-glow-h: 31%;
   --horizon-glow-mid: 38%;
-  --horizon-glow-outer: 18%;
-  --horizon-glow-w: 64%;
+  --horizon-glow-outer: 13%;
+  --horizon-glow-w: 102%;
   --horizon-glow-y: 110%;
   --horizon-hues-blur: 30px;
   --horizon-hues-cyan: 20%;
-  --horizon-hues-dur: 8s;
+  --horizon-hues-dur: 5s;
   --horizon-hues-violet: 24%;
   --horizon-noise-opacity: 0.05;
   --horizon-surge-base-opacity: 0.55;
   --horizon-surge-core: 36%;
-  --horizon-surge-dur: 9s;
+  --horizon-surge-dur: 5s;
   --horizon-surge-h: 40%;
   --horizon-surge-mid: 16%;
   --horizon-surge-op-max: 0.95;
@@ -40,6 +40,7 @@
   --horizon-swell-op-min: 0.75;
   --horizon-swell-scale-max: 1.12;
   --horizon-swell-scale-min: 0.9;
+  --horizon-bleed-x: 12%;
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -50,7 +51,7 @@
    that an elliptical form is still readable along the bottom edge. */
 .horizonGlow {
   position: absolute;
-  inset: 0;
+  inset: 0 calc(0% - var(--horizon-bleed-x));
   background: radial-gradient(
     ellipse var(--horizon-glow-w) var(--horizon-glow-h) at 50%
       var(--horizon-glow-y),
@@ -84,7 +85,7 @@
 
 .horizonHues {
   position: absolute;
-  inset: 0;
+  inset: 0 calc(0% - var(--horizon-bleed-x));
   background:
     radial-gradient(
       ellipse 34% 26% at 30% 112%,
@@ -121,7 +122,7 @@
    so the glow's reach visibly rises and falls. */
 .horizonSurge {
   position: absolute;
-  inset: 0;
+  inset: 0 calc(0% - var(--horizon-bleed-x));
   background: radial-gradient(
     ellipse var(--horizon-surge-w) var(--horizon-surge-h) at 50%
       var(--horizon-surge-y),
