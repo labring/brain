@@ -118,6 +118,8 @@ type AssistantClientToolSubmission =
       output: OpenProjectSurfaceToolOutput;
     };
 
+const VIEWPORT_RESIZE_SETTLE_MS = 180;
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -852,7 +854,11 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   const [paneWidth, setPaneWidth] = useAtom(assistantPaneWidthAtom);
   const [paneResizing, setPaneResizing] = useAtom(assistantPaneResizingAtom);
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
+  const [viewportResizing, setViewportResizing] = useState(false);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const workspaceWidthRef = useRef(workspaceWidth);
+  const viewportResizingRef = useRef(false);
+  const viewportResizeTimerRef = useRef<number | null>(null);
   const paneWidthRef = useRef(paneWidth);
   paneWidthRef.current = paneWidth;
   const dragRef = useRef<{
@@ -876,12 +882,69 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
     }
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width != null) {
-        setWorkspaceWidth(Math.round(width));
+      if (width == null) {
+        return;
       }
+      const roundedWidth = Math.round(width);
+      if (workspaceWidthRef.current === roundedWidth) {
+        return;
+      }
+      workspaceWidthRef.current = roundedWidth;
+      setWorkspaceWidth(roundedWidth);
     });
     observer.observe(workspace);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const visualViewport = window.visualViewport;
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
+
+    const clearViewportResizeTimer = () => {
+      if (viewportResizeTimerRef.current == null) {
+        return;
+      }
+      window.clearTimeout(viewportResizeTimerRef.current);
+      viewportResizeTimerRef.current = null;
+    };
+
+    const settleViewportResize = () => {
+      viewportResizeTimerRef.current = null;
+      if (!viewportResizingRef.current) {
+        return;
+      }
+      viewportResizingRef.current = false;
+      setViewportResizing(false);
+    };
+
+    const handleViewportResize = () => {
+      const nextWidth = window.innerWidth;
+      const nextHeight = window.innerHeight;
+      if (nextWidth === lastWidth && nextHeight === lastHeight) {
+        return;
+      }
+      lastWidth = nextWidth;
+      lastHeight = nextHeight;
+      if (!viewportResizingRef.current) {
+        viewportResizingRef.current = true;
+        setViewportResizing(true);
+      }
+      clearViewportResizeTimer();
+      viewportResizeTimerRef.current = window.setTimeout(
+        settleViewportResize,
+        VIEWPORT_RESIZE_SETTLE_MS
+      );
+    };
+
+    window.addEventListener("resize", handleViewportResize);
+    visualViewport?.addEventListener("resize", handleViewportResize);
+
+    return () => {
+      clearViewportResizeTimer();
+      window.removeEventListener("resize", handleViewportResize);
+      visualViewport?.removeEventListener("resize", handleViewportResize);
+    };
   }, []);
 
   const cancelPaneResize = useCallback(() => {
@@ -1002,6 +1065,7 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
         "relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden",
         paneResizing && "cursor-col-resize select-none"
       )}
+      data-viewport-resizing={viewportResizing || undefined}
       ref={workspaceRef}
     >
       <section
@@ -1052,7 +1116,7 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
           assistantPaneOpen
             ? "project-surface-slide-x-open border-border opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
             : "project-surface-slide-x-offset pointer-events-none border-transparent opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
-          paneResizing && "transition-none"
+          (paneResizing || viewportResizing) && "transition-none"
         )}
         data-slot="project-assistant-pane"
         id="project-assistant-pane"
