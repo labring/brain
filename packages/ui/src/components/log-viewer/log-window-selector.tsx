@@ -89,7 +89,7 @@ export function LogWindowSelector({
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger
         className={cn(
-          "flex h-9 min-w-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-foreground text-sm outline-none transition-[color,box-shadow] hover:bg-input/30 focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50 aria-expanded:border-blue-400 aria-expanded:ring-[1px] aria-expanded:ring-blue-400/50 aria-expanded:ring-offset-0 dark:bg-transparent",
+          "flex h-9 min-w-0 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-input/30 px-3 py-2 text-foreground text-sm outline-none transition-[color,box-shadow] hover:bg-input/50 focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50 aria-expanded:border-blue-400 aria-expanded:ring-[1px] aria-expanded:ring-blue-400/50 aria-expanded:ring-offset-0",
           className
         )}
       >
@@ -109,7 +109,7 @@ export function LogWindowSelector({
         className="w-auto border border-border bg-input/30 p-0 text-foreground shadow-md ring-0 backdrop-blur-xl"
       >
         <div className="flex">
-          <div className="flex flex-col gap-3 border-border border-r p-3">
+          <div className="flex flex-col gap-4 border-border border-r p-4">
             <Calendar
               className="p-0 [--cell-radius:var(--radius-lg)] [--cell-size:--spacing(10)]"
               classNames={{
@@ -136,7 +136,7 @@ export function LogWindowSelector({
               onSelect={setDraftRange}
               selected={draftRange}
             />
-            <div className="flex gap-4 px-1">
+            <div className="flex gap-4">
               <TimeWheelField
                 className="flex-1"
                 label="Start"
@@ -154,32 +154,31 @@ export function LogWindowSelector({
                 value={draftEndTime}
               />
             </div>
-            <div className="flex justify-end gap-2 px-1">
+            <div className="flex justify-end gap-2">
               <Button
+                className="h-9 rounded-lg bg-input/30 px-4 text-foreground text-sm hover:bg-input/50"
                 onClick={() => setOpen(false)}
-                size="sm"
-                variant="outline"
+                variant="secondary"
               >
                 Cancel
               </Button>
               <Button
-                className="bg-blue-500 text-foreground hover:bg-blue-500/90"
+                className="h-9 rounded-lg bg-blue-500 px-4 text-foreground text-sm hover:bg-blue-500/90"
                 disabled={!draft}
                 onClick={handleApply}
-                size="sm"
               >
                 Apply
               </Button>
             </div>
           </div>
-          <div className="flex flex-col gap-1 p-3">
+          <div className="flex flex-col gap-1 p-4">
             {LIVE_SPANS.map((span) => (
               <button
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-left text-foreground text-sm hover:bg-input/30",
+                  "flex h-9 items-center rounded-md px-2 text-left text-foreground text-sm hover:bg-input/30",
                   value.mode === "live" &&
                     value.spanMs === span.ms &&
-                    "bg-input font-medium"
+                    "bg-input"
                 )}
                 key={span.ms}
                 onClick={() => handleLiveSpan(span.ms)}
