@@ -436,6 +436,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         "Could not disconnect GitHub.",
         errorDescription(error, "Could not disconnect GitHub.")
       );
+      throw error;
     }
   }, [disconnectGithubAuth, mutateGithubRepos]);
 

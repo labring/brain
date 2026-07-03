@@ -56,6 +56,8 @@ export function GithubDeployerRoot({
   const [recommendationSubmitting, setRecommendationSubmitting] = useState<
     "github" | "template" | null
   >(null);
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+  const [disconnectSubmitting, setDisconnectSubmitting] = useState(false);
 
   useEffect(() => {
     setSelectedRepoId((prev) => {
@@ -98,16 +100,23 @@ export function GithubDeployerRoot({
     },
     [resolvedActions, states.templateOptions]
   );
+  const requestDisconnect = useCallback(() => {
+    if (states.isLoading || resolvedActions.onDisconnect == null) {
+      return;
+    }
+    setDisconnectConfirmOpen(true);
+  }, [resolvedActions.onDisconnect, states.isLoading]);
 
   const value = useMemo(
     (): GithubDeployerValue => ({
       actions: resolvedActions,
+      requestDisconnect,
       requestDeploy,
       selectedRepoId,
       setSelectedRepoId,
       states,
     }),
-    [requestDeploy, resolvedActions, selectedRepoId, states]
+    [requestDisconnect, requestDeploy, resolvedActions, selectedRepoId, states]
   );
 
   const recommendedTemplateLabel =
@@ -146,6 +155,18 @@ export function GithubDeployerRoot({
   );
 
   const recommendationActionDisabled = recommendationSubmitting != null;
+  const confirmDisconnect = useCallback(async () => {
+    if (resolvedActions.onDisconnect == null || disconnectSubmitting) {
+      return;
+    }
+    setDisconnectSubmitting(true);
+    try {
+      await resolvedActions.onDisconnect();
+      setDisconnectConfirmOpen(false);
+    } finally {
+      setDisconnectSubmitting(false);
+    }
+  }, [disconnectSubmitting, resolvedActions]);
 
   return (
     <GithubDeployerContext.Provider value={value}>
@@ -195,6 +216,46 @@ export function GithubDeployerRoot({
             >
               Use Template
             </AppDialog.Action>
+          </AppDialog.Footer>
+        </AppDialog.Content>
+      </AppDialog.Root>
+      <AppDialog.Root
+        onOpenChange={(open) => {
+          if (disconnectSubmitting) {
+            return;
+          }
+          setDisconnectConfirmOpen(open);
+        }}
+        open={disconnectConfirmOpen}
+      >
+        <AppDialog.Content data-slot="github-disconnect-confirm-dialog">
+          <AppDialog.Header>
+            <AppDialog.WarningIcon />
+            <AppDialog.Title>Disconnect GitHub?</AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body>
+            <AppDialog.Description>
+              This removes the GitHub connection for this workspace. You will
+              need to reconnect GitHub before deploying repositories from GitHub
+              again.
+            </AppDialog.Description>
+          </AppDialog.Body>
+          <AppDialog.Footer>
+            <AppDialog.Cancel disabled={disconnectSubmitting}>
+              Cancel
+            </AppDialog.Cancel>
+            <AppDialog.DestructiveAction
+              disabled={
+                states.isLoading || resolvedActions.onDisconnect == null
+              }
+              loading={disconnectSubmitting}
+              loadingLabel="Disconnecting..."
+              onClick={() => {
+                confirmDisconnect().catch(() => undefined);
+              }}
+            >
+              Disconnect
+            </AppDialog.DestructiveAction>
           </AppDialog.Footer>
         </AppDialog.Content>
       </AppDialog.Root>

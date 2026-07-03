@@ -278,6 +278,12 @@ The user-provided origin or intent for a Deployment Task, such as a GitHub repos
 
 _Avoid_: deploy input, entry path, creation method.
 
+### GitHub Connection
+
+A namespace-scoped authorization relationship that lets a workspace use a GitHub App installation to list and deploy repositories. A GitHub Connection belongs to the workspace namespace rather than one user's browser session or personal GitHub identity.
+
+_Avoid_: personal GitHub token, user GitHub binding, browser GitHub connection.
+
 ### Deployment Target
 
 The Project relationship selected before a Deployment Task starts. A Deployment Target is either a new Project being created in the same flow or an existing Project that will receive the deployed resources.

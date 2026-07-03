@@ -235,6 +235,7 @@ export function GitHubDeploymentPane({
         "Could not disconnect GitHub.",
         errorDescription(error, "Could not disconnect GitHub.")
       );
+      throw error;
     }
   }, [disconnectGithubAuth, mutateRepos]);
 

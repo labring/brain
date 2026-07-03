@@ -31,7 +31,7 @@ export interface GithubDeployerStates {
    */
   deployedRepo?: GithubDeployerRepo | null;
   /**
-   * True when the host has a server-side GitHub credential for the current scope.
+   * True when the host has a namespace-scoped GitHub connection.
    */
   isAuthorized?: boolean;
   /**
@@ -63,20 +63,21 @@ export interface GithubDeployerActions {
     settings: TemplateDeploymentSettings;
     template: TemplateDeploymentChoice;
   }) => void | Promise<void>;
-  /** Invoked when the user disconnects the current server-side GitHub credential. */
-  onDisconnect?: () => void;
+  /** Invoked after the user confirms disconnecting the current GitHub connection. */
+  onDisconnect?: () => void | Promise<void>;
 }
 
 export interface GithubDeployerResolvedActions {
   onAuthorize?: () => void;
   onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
   onDeployTemplate?: GithubDeployerActions["onDeployTemplate"];
-  onDisconnect?: () => void;
+  onDisconnect?: () => void | Promise<void>;
 }
 
 export interface GithubDeployerValue {
   actions: GithubDeployerResolvedActions;
   requestDeploy: (repo: GithubDeployerRepo) => void;
+  requestDisconnect: () => void;
   selectedRepoId: string;
   setSelectedRepoId: (id: string) => void;
   states: GithubDeployerStates;
