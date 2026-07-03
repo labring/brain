@@ -454,12 +454,12 @@ export function ChatDockerDeployButton({
   );
 }
 
-/** Icon-only control for Sealos Skills workflow; omitted `onComposerAction` renders nothing. */
+/** Icon-only control for local deploy; omitted `onComposerAction` renders nothing. */
 export function ChatSkillsWorkflowButton({
   className,
-  "aria-label": ariaLabel = "Sealos Skills workflow",
+  "aria-label": ariaLabel = "Deploy local project",
   onComposerAction,
-  title = "Sealos Skills workflow",
+  title = "Deploy local project",
   ...props
 }: ChatSkillsWorkflowButtonProps) {
   if (!onComposerAction) {
