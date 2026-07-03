@@ -314,7 +314,7 @@ function ConfigMapEditingCard({
   const canSaveRow = trimmedPath !== "" && !isDuplicate;
   return (
     <div
-      className="flex min-w-0 flex-col gap-2 rounded-lg border border-input border-dashed bg-transparent p-3"
+      className="flex min-w-0 flex-col gap-2 rounded-lg border border-border border-dashed bg-transparent p-3"
       data-config-card="expanded"
     >
       <AppInput

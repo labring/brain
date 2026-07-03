@@ -11,10 +11,16 @@ import {
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import { Textarea } from "@workspace/ui/components/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Send, Square, Wrench } from "lucide-react";
 import {
   type ComponentProps,
+  type ReactElement,
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useLayoutEffect,
@@ -67,6 +73,21 @@ export type ChatSkillsWorkflowButtonProps = Omit<
   "aria-label"?: string;
   onComposerAction?: () => void;
 };
+
+function ChatComposerActionTooltip({
+  children,
+  label,
+}: {
+  children: ReactElement;
+  label: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 /** Monochrome GitHub mark (same path as `GITHUB_MARK_PATH`). */
 export function ChatGithubMark({ className, ...props }: ComponentProps<"svg">) {
@@ -338,6 +359,7 @@ export function ChatGithubDeployButton({
   authLoading = false,
   isAuthorized: isAuthorizedProp,
   onComposerAction,
+  title: titleProp,
   ...props
 }: ChatGithubDeployButtonProps) {
   if (!onComposerAction) {
@@ -346,31 +368,26 @@ export function ChatGithubDeployButton({
 
   const isAuthorized = isAuthorizedProp ?? false;
 
-  let title: string;
-  if (authLoading) {
-    title = "Loading GitHub credential…";
-  } else if (isAuthorized) {
-    title = "GitHub import";
-  } else {
-    title = "GitHub import — open to connect or configure secrets";
-  }
+  const title = authLoading ? "Checking GitHub access" : "Deploy from GitHub";
+  const tooltipLabel = titleProp ?? title;
 
   return (
-    <AppIconButton
-      aria-busy={authLoading}
-      aria-label={ariaLabel}
-      className={cn("shrink-0 cursor-pointer", className)}
-      data-github-authorized={isAuthorized || undefined}
-      data-slot="chat-github-deploy-button"
-      onClick={onComposerAction}
-      size="lg"
-      title={title}
-      type="button"
-      variant="quiet"
-      {...props}
-    >
-      <ChatGithubMark />
-    </AppIconButton>
+    <ChatComposerActionTooltip label={tooltipLabel}>
+      <AppIconButton
+        aria-busy={authLoading}
+        aria-label={ariaLabel}
+        className={cn("shrink-0 cursor-pointer", className)}
+        data-github-authorized={isAuthorized || undefined}
+        data-slot="chat-github-deploy-button"
+        onClick={onComposerAction}
+        size="lg"
+        type="button"
+        variant="quiet"
+        {...props}
+      >
+        <ChatGithubMark />
+      </AppIconButton>
+    </ChatComposerActionTooltip>
   );
 }
 
@@ -379,6 +396,7 @@ export function ChatDatabaseDeployButton({
   className,
   "aria-label": ariaLabel = "Database deploy",
   onComposerAction,
+  title = "Database deploy",
   ...props
 }: ChatDatabaseDeployButtonProps) {
   if (!onComposerAction) {
@@ -386,19 +404,20 @@ export function ChatDatabaseDeployButton({
   }
 
   return (
-    <AppIconButton
-      aria-label={ariaLabel}
-      className={cn("shrink-0 cursor-pointer", className)}
-      data-slot="chat-database-deploy-button"
-      onClick={onComposerAction}
-      size="lg"
-      title="Database deploy"
-      type="button"
-      variant="quiet"
-      {...props}
-    >
-      <Database aria-hidden className="size-4 text-foreground opacity-90" />
-    </AppIconButton>
+    <ChatComposerActionTooltip label={title}>
+      <AppIconButton
+        aria-label={ariaLabel}
+        className={cn("shrink-0 cursor-pointer", className)}
+        data-slot="chat-database-deploy-button"
+        onClick={onComposerAction}
+        size="lg"
+        type="button"
+        variant="quiet"
+        {...props}
+      >
+        <Database aria-hidden className="size-4 text-foreground opacity-90" />
+      </AppIconButton>
+    </ChatComposerActionTooltip>
   );
 }
 
@@ -407,6 +426,7 @@ export function ChatDockerDeployButton({
   className,
   "aria-label": ariaLabel = "Docker deploy",
   onComposerAction,
+  title = "Docker deploy",
   ...props
 }: ChatDockerDeployButtonProps) {
   if (!onComposerAction) {
@@ -414,22 +434,23 @@ export function ChatDockerDeployButton({
   }
 
   return (
-    <AppIconButton
-      aria-label={ariaLabel}
-      className={cn("shrink-0 cursor-pointer", className)}
-      data-slot="chat-docker-deploy-button"
-      onClick={onComposerAction}
-      size="lg"
-      title="Docker deploy"
-      type="button"
-      variant="quiet"
-      {...props}
-    >
-      <ProjectSourceDockerIcon
-        aria-hidden
-        className="size-4 text-foreground opacity-90"
-      />
-    </AppIconButton>
+    <ChatComposerActionTooltip label={title}>
+      <AppIconButton
+        aria-label={ariaLabel}
+        className={cn("shrink-0 cursor-pointer", className)}
+        data-slot="chat-docker-deploy-button"
+        onClick={onComposerAction}
+        size="lg"
+        type="button"
+        variant="quiet"
+        {...props}
+      >
+        <ProjectSourceDockerIcon
+          aria-hidden
+          className="size-4 text-foreground opacity-90"
+        />
+      </AppIconButton>
+    </ChatComposerActionTooltip>
   );
 }
 
@@ -438,6 +459,7 @@ export function ChatSkillsWorkflowButton({
   className,
   "aria-label": ariaLabel = "Sealos Skills workflow",
   onComposerAction,
+  title = "Sealos Skills workflow",
   ...props
 }: ChatSkillsWorkflowButtonProps) {
   if (!onComposerAction) {
@@ -445,19 +467,20 @@ export function ChatSkillsWorkflowButton({
   }
 
   return (
-    <AppIconButton
-      aria-label={ariaLabel}
-      className={cn("shrink-0 cursor-pointer", className)}
-      data-slot="chat-skills-workflow-button"
-      onClick={onComposerAction}
-      size="lg"
-      title="Sealos Skills workflow"
-      type="button"
-      variant="quiet"
-      {...props}
-    >
-      <Wrench aria-hidden className="size-4 text-foreground opacity-90" />
-    </AppIconButton>
+    <ChatComposerActionTooltip label={title}>
+      <AppIconButton
+        aria-label={ariaLabel}
+        className={cn("shrink-0 cursor-pointer", className)}
+        data-slot="chat-skills-workflow-button"
+        onClick={onComposerAction}
+        size="lg"
+        type="button"
+        variant="quiet"
+        {...props}
+      >
+        <Wrench aria-hidden className="size-4 text-foreground opacity-90" />
+      </AppIconButton>
+    </ChatComposerActionTooltip>
   );
 }
 

@@ -269,7 +269,7 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
       subtitle={subtitle}
       title={`${name} Events`}
     >
-      <section className="flex min-w-0 flex-col gap-2 rounded-lg border border-input p-2.5">
+      <section className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-2.5">
         <WorkloadEventsBody error={error} isLoading={isLoading} items={items} />
       </section>
     </CanvasResourcePane>

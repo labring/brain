@@ -118,6 +118,40 @@
     color-mix(in oklab, var(--input) 30%, transparent),
     color-mix(in oklab, var(--input) 30%, transparent)
   );
+  --project-surface-motion-duration: var(
+    --project-surface-motion-enter-duration
+  );
+  --project-surface-motion-enter-duration: 340ms;
+  --project-surface-motion-exit-duration: 340ms;
+  --project-surface-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /** Side pane seam glow tokens. */
+  --side-pane-glow-color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--color-blue-500) 30%, var(--color-canvas-glow)) 88%,
+    transparent
+  );
+  --side-pane-glow-core-color: color-mix(
+    in oklab,
+    var(--color-blue-300) 18%,
+    transparent
+  );
+  --side-pane-glow-width: 18px;
+  --side-pane-glow-rest-opacity: 0.46;
+  --side-pane-glow-bloom-opacity: 0.94;
+  --side-pane-glow-flash-opacity: 0.68;
+  --side-pane-glow-soft-color: color-mix(
+    in oklab,
+    var(--side-pane-glow-color) 6%,
+    transparent
+  );
+  --side-pane-glow-halo-color: color-mix(
+    in oklab,
+    var(--side-pane-glow-color) 14%,
+    transparent
+  );
+  --side-pane-glow-settle-duration: 820ms;
+  --side-pane-glow-settle-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .dark {
@@ -194,6 +228,144 @@
     to {
       stroke-dashoffset: -100;
     }
+  }
+
+  @keyframes side-pane-glow-settle {
+    0%,
+    34% {
+      opacity: 0;
+      filter: blur(1.1px) saturate(1.08);
+      transform: scaleX(0.72);
+    }
+    48% {
+      opacity: var(--side-pane-glow-bloom-opacity);
+      filter: blur(0.7px) saturate(1.24);
+      transform: scaleX(1);
+    }
+    68% {
+      opacity: var(--side-pane-glow-flash-opacity);
+      filter: blur(0.45px) saturate(1.1);
+    }
+    100% {
+      opacity: var(--side-pane-glow-rest-opacity);
+      filter: blur(0) saturate(1);
+      transform: scaleX(1);
+    }
+  }
+
+  @keyframes side-pane-glow-release {
+    0% {
+      opacity: var(--side-pane-glow-rest-opacity);
+      filter: blur(0) saturate(1);
+      transform: scaleX(1);
+    }
+    36% {
+      opacity: var(--side-pane-glow-flash-opacity);
+      filter: blur(0.7px) saturate(1.1);
+      transform: scaleX(0.92);
+    }
+    100% {
+      opacity: 0;
+      filter: blur(1.4px) saturate(1.02);
+      transform: scaleX(0.72);
+    }
+  }
+
+  .project-surface-slide-x {
+    transform: translate3d(var(--project-surface-slide-x, 0), 0, 0);
+  }
+
+  .project-surface-slide-y {
+    transform: translate3d(0, var(--project-surface-slide-y, 0), 0);
+  }
+
+  .project-surface-slide-x-open,
+  .project-surface-slide-y-open {
+    --project-surface-slide-x: 0;
+    --project-surface-slide-y: 0;
+  }
+
+  .project-surface-slide-x-offset {
+    --project-surface-slide-x: 1.5rem;
+  }
+
+  .project-surface-slide-x-full {
+    --project-surface-slide-x: 100%;
+  }
+
+  .project-surface-slide-y-offset {
+    --project-surface-slide-y: 1.5rem;
+  }
+
+  /* Seam glow on the side pane's right edge. Must render inside the pane:
+     every ancestor clips with overflow-hidden, so light cannot bleed outward. */
+  .side-pane-glow {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    z-index: 2;
+    width: var(--side-pane-glow-width);
+    contain: paint;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    opacity: var(--side-pane-glow-rest-opacity);
+    transform-origin: right center;
+  }
+
+  .side-pane-glow::before,
+  .side-pane-glow::after {
+    position: absolute;
+    pointer-events: none;
+    content: "";
+  }
+
+  .side-pane-glow::before {
+    inset-block: 0;
+    right: 0;
+    width: 1px;
+    background: var(--side-pane-glow-core-color);
+    box-shadow:
+      0 0 2px var(--side-pane-glow-core-color),
+      0 0 7px var(--side-pane-glow-halo-color);
+  }
+
+  .side-pane-glow::after {
+    inset-block: -4%;
+    right: 0;
+    width: 100%;
+    background:
+      radial-gradient(
+        ellipse 22px 68% at right center,
+        var(--side-pane-glow-halo-color) 0%,
+        var(--side-pane-glow-soft-color) 48%,
+        transparent 82%
+      ),
+      linear-gradient(
+        to left,
+        var(--side-pane-glow-soft-color) 0%,
+        transparent 76%
+      );
+    filter: blur(0.7px);
+    -webkit-mask-image: linear-gradient(
+      to left,
+      #000 0%,
+      #000 34%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(to left, #000 0%, #000 34%, transparent 100%);
+  }
+
+  .side-pane-glow-settle {
+    animation: side-pane-glow-settle var(--side-pane-glow-settle-duration)
+      var(--side-pane-glow-settle-ease);
+    will-change: opacity, filter, transform;
+  }
+
+  .side-pane-glow-release {
+    animation: side-pane-glow-release
+      var(--project-surface-motion-exit-duration)
+      var(--project-surface-motion-ease);
+    will-change: opacity, filter, transform;
   }
 
   .cn-toast[data-sonner-toast] {

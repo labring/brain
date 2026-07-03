@@ -6,7 +6,6 @@ import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
-import { Aurora } from "@/components/aurora";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
@@ -24,6 +23,7 @@ import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import styles from "./project-index.module.css";
+import { ProjectIndexHorizon } from "./project-index-horizon";
 
 export default function ProjectIndexPage() {
   const router = useRouter();
@@ -183,13 +183,7 @@ export default function ProjectIndexPage() {
               "linear-gradient(to bottom, black 0%, black 58%, transparent 94%)",
           }}
         />
-        <Aurora
-          amplitude={1.35}
-          blend={0.42}
-          className={styles.ambientAurora}
-          colorStops={["#0a0a0a", "#1d4ed8", "#0a0a0a"]}
-          speed={0.5}
-        />
+        <ProjectIndexHorizon />
       </div>
       <div
         className={cn(
@@ -209,10 +203,7 @@ export default function ProjectIndexPage() {
         </section>
         <div
           aria-hidden
-          className={cn(
-            styles.sidePaneReserve,
-            "min-h-0 shrink-0 transition-[width,max-width] duration-200 ease-out motion-reduce:transition-none"
-          )}
+          className={cn(styles.sidePaneReserve, "min-h-0 shrink-0")}
           data-open={sidePaneOpen}
           data-slot="project-index-side-pane-reserve"
         />

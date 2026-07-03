@@ -14,9 +14,11 @@ import {
 export const WorkloadTerminalPane = memo(function WorkloadTerminalPane({
   node,
   onClose,
+  open,
 }: {
   node: Node;
   onClose: () => void;
+  open?: boolean;
 }) {
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
@@ -33,7 +35,9 @@ export const WorkloadTerminalPane = memo(function WorkloadTerminalPane({
     [name, namespace]
   );
 
-  return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;
+  return (
+    <ExecTerminalPane descriptor={descriptor} onClose={onClose} open={open} />
+  );
 });
 
 WorkloadTerminalPane.displayName = "WorkloadTerminalPane";
