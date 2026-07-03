@@ -118,6 +118,14 @@
     color-mix(in oklab, var(--input) 30%, transparent),
     color-mix(in oklab, var(--input) 30%, transparent)
   );
+
+  /** Side pane seam glow tokens. */
+  --side-pane-glow-color: var(--color-canvas-glow);
+  --side-pane-glow-core-color: var(--color-blue-400);
+  --side-pane-glow-width: 20px;
+  --side-pane-glow-rest-opacity: 0.1;
+  --side-pane-glow-flash-opacity: 0.2;
+  --side-pane-glow-settle-duration: 450ms;
 }
 
 .dark {
@@ -194,6 +202,35 @@
     to {
       stroke-dashoffset: -100;
     }
+  }
+
+  @keyframes side-pane-glow-settle {
+    from {
+      opacity: var(--side-pane-glow-flash-opacity);
+    }
+    to {
+      opacity: var(--side-pane-glow-rest-opacity);
+    }
+  }
+
+  /* Seam glow on the side pane's right edge. Must render inside the pane:
+     every ancestor clips with overflow-hidden, so light cannot bleed outward. */
+  .side-pane-glow {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    width: var(--side-pane-glow-width);
+    pointer-events: none;
+    background: linear-gradient(
+      to left,
+      var(--side-pane-glow-color),
+      transparent
+    );
+    border-right: 1px solid var(--side-pane-glow-core-color);
+    mix-blend-mode: screen;
+    opacity: var(--side-pane-glow-rest-opacity);
+    animation: side-pane-glow-settle var(--side-pane-glow-settle-duration)
+      ease-out;
   }
 
   .cn-toast[data-sonner-toast] {

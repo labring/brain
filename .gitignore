@@ -21,6 +21,7 @@ coverage
 
 # Build Outputs
 .next/
+.next-preview/
 out/
 build
 dist

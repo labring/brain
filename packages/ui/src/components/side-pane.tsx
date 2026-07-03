@@ -125,6 +125,11 @@ export function SidePane({
             </div>
           </div>
         </div>
+        <div
+          aria-hidden
+          className="side-pane-glow motion-reduce:animate-none"
+          data-slot="side-pane-glow"
+        />
       </div>
     </aside>
   );
