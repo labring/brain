@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, buttonVariants } from "@workspace/ui/components/button";
+import { type Button, buttonVariants } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ChevronDownIcon,
@@ -50,12 +50,12 @@ function Calendar({
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) select-none p-0 aria-disabled:opacity-50",
+          "size-7 select-none rounded-md border border-input bg-transparent p-0 text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground aria-disabled:opacity-50",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) select-none p-0 aria-disabled:opacity-50",
+          "size-7 select-none rounded-md border border-input bg-transparent p-0 text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground aria-disabled:opacity-50",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -84,7 +84,7 @@ function Calendar({
         table: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "flex-1 select-none rounded-(--cell-radius) font-normal text-[0.8rem] text-muted-foreground",
+          "flex-1 select-none rounded-(--cell-radius) font-normal text-muted-foreground text-xs",
           defaultClassNames.weekday
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
@@ -97,27 +97,27 @@ function Calendar({
           defaultClassNames.week_number
         ),
         day: cn(
-          "group/day relative aspect-square h-full w-full select-none rounded-(--cell-radius) p-0 text-center [&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius)",
+          "group/day relative h-full w-full select-none rounded-(--cell-radius) p-0 text-center [&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius)",
           props.showWeekNumber
             ? "[&:nth-child(2)[data-selected=true]_button]:rounded-l-(--cell-radius)"
             : "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)",
           defaultClassNames.day
         ),
-        range_start: cn(
-          "elative isolate -z-0 rounded-l-(--cell-radius) bg-muted after:absolute after:inset-y-0 after:right-0 after:w-4 after:bg-muted",
-          defaultClassNames.range_start
-        ),
-        range_middle: cn("rounded-none", defaultClassNames.range_middle),
-        range_end: cn(
-          "relative isolate -z-0 rounded-r-(--cell-radius) bg-muted after:absolute after:inset-y-0 after:left-0 after:w-4 after:bg-muted",
-          defaultClassNames.range_end
-        ),
+        // Selection backgrounds are painted ONLY by the day buttons (they tile
+        // edge-to-edge, so the band is seamless). The cells stay unpainted —
+        // a second paint layer under translucent buttons darkens the band and
+        // leaks square corners outside the row-edge button radius.
+        range_start: cn(defaultClassNames.range_start),
+        range_middle: cn(defaultClassNames.range_middle),
+        range_end: cn(defaultClassNames.range_end),
+        // Today: a faint pill ONLY while unselected. Inside a range (or as an
+        // endpoint) the cell renders exactly like its neighbors.
         today: cn(
-          "rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-none",
+          "rounded-(--cell-radius) not-data-[selected=true]:bg-input/30",
           defaultClassNames.today
         ),
         outside: cn(
-          "text-muted-foreground aria-selected:text-muted-foreground",
+          "text-muted-foreground opacity-50 aria-selected:text-muted-foreground",
           defaultClassNames.outside
         ),
         disabled: cn(
@@ -197,9 +197,36 @@ function CalendarDayButton({
   }, [modifiers.focused]);
 
   return (
-    <Button
+    <button
       className={cn(
-        "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 border-0 font-normal leading-none data-[range-end=true]:rounded-(--cell-radius) data-[range-middle=true]:rounded-none data-[range-start=true]:rounded-(--cell-radius) data-[range-end=true]:rounded-r-(--cell-radius) data-[range-start=true]:rounded-l-(--cell-radius) data-[range-end=true]:bg-primary data-[range-middle=true]:bg-muted data-[range-start=true]:bg-primary data-[selected-single=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:text-foreground data-[range-start=true]:text-primary-foreground data-[selected-single=true]:text-primary-foreground group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 dark:hover:text-foreground [&>span]:text-xs [&>span]:opacity-70",
+        // Plain <button> on purpose: the shared Button's ghost variant ships
+        // its own hover / dark-hover backgrounds, which tie with the selected
+        // -state rules below at equal specificity and repaint hovered cells.
+        // Owning every class here keeps the cascade flat and deterministic.
+        //
+        // Geometry: fixed-height row cell that stretches to fill the column
+        // width (flat non-square cells per the design system).
+        "relative isolate z-10 flex h-(--cell-size) w-full min-w-(--cell-size) cursor-pointer select-none flex-col items-center justify-center gap-1 whitespace-nowrap rounded-(--cell-radius) font-normal text-foreground text-xs leading-none outline-none transition-all disabled:pointer-events-none disabled:opacity-50",
+        // Hover is deliberately restrained: only UNSELECTED days get a faint
+        // input wash. Selected cells (band + endpoints + single) are excluded
+        // from the selector itself, so hovering them changes nothing and no
+        // rule ever competes with their background.
+        "not-data-[range-end=true]:not-data-[range-middle=true]:not-data-[range-start=true]:not-data-[selected-single=true]:hover:bg-input/30",
+        // Range middle: square band segment.
+        "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-input",
+        // Range endpoints: blue pills that round only their outer edge and
+        // flatten the inner edge, but ONLY when they are a *pure* endpoint —
+        // a single-day range is both start and end, so it stays fully rounded.
+        "data-[range-start=true]:not-data-[range-end=true]:rounded-r-none data-[range-start=true]:rounded-l-(--cell-radius) data-[range-start=true]:bg-blue-500",
+        "data-[range-end=true]:rounded-r-(--cell-radius) data-[range-end=true]:not-data-[range-start=true]:rounded-l-none data-[range-end=true]:bg-blue-500",
+        // Single selected day (mode="single").
+        "data-[selected-single=true]:bg-blue-500",
+        // Focus ring for KEYBOARD navigation only (focus-visible) — RDP marks
+        // mouse-clicked days as focused too, which used to leave a stray halo
+        // around the last-clicked endpoint. z-20 lifts the ring above the
+        // neighboring cells so the band never clips it.
+        "focus-visible:z-20 focus-visible:ring-[2px] focus-visible:ring-blue-400/50",
+        "[&>span]:text-xs [&>span]:opacity-70",
         defaultClassNames.day,
         className
       )}
@@ -213,8 +240,8 @@ function CalendarDayButton({
         !modifiers.range_end &&
         !modifiers.range_middle
       }
-      size="icon"
-      variant="ghost"
+      ref={ref}
+      type="button"
       {...props}
     />
   );

@@ -1,4 +1,5 @@
-import { format } from "date-fns";
+import { format, isSameDay } from "date-fns";
+import type { DateRange } from "react-day-picker";
 
 /**
  * A log window is anchored either to "now" (live: relative span, follows new
@@ -15,12 +16,16 @@ export interface LogWindowBounds {
 }
 
 export const LIVE_SPANS = [
-  { label: "Last 5 min", ms: 5 * 60_000, short: "5m" },
-  { label: "Last 15 min", ms: 15 * 60_000, short: "15m" },
-  { label: "Last 30 min", ms: 30 * 60_000, short: "30m" },
+  { label: "Last 5 minutes", ms: 5 * 60_000, short: "5m" },
+  { label: "Last 15 minutes", ms: 15 * 60_000, short: "15m" },
+  { label: "Last 30 minutes", ms: 30 * 60_000, short: "30m" },
   { label: "Last 1 hour", ms: 60 * 60_000, short: "1h" },
   { label: "Last 3 hours", ms: 3 * 60 * 60_000, short: "3h" },
   { label: "Last 6 hours", ms: 6 * 60 * 60_000, short: "6h" },
+  { label: "Last 24 hours", ms: 24 * 60 * 60_000, short: "24h" },
+  { label: "Last 2 days", ms: 2 * 24 * 60 * 60_000, short: "2d" },
+  { label: "Last 3 days", ms: 3 * 24 * 60 * 60_000, short: "3d" },
+  { label: "Last 7 days", ms: 7 * 24 * 60 * 60_000, short: "7d" },
 ] as const;
 
 export const DEFAULT_LIVE_SPAN_MS = 60 * 60_000;
@@ -91,7 +96,32 @@ export function formatLogWindowLabel(
   now = new Date()
 ): string {
   if (logWindow.mode === "live") {
-    return `Live · ${liveSpanShortLabel(logWindow.spanMs)}`;
+    const preset = LIVE_SPANS.find((span) => span.ms === logWindow.spanMs);
+    return preset?.label ?? `Last ${liveSpanShortLabel(logWindow.spanMs)}`;
   }
   return formatFrozenWindowLabel(logWindow.start, logWindow.end, now);
+}
+
+/**
+ * Range-calendar click semantics for the log picker. When a complete
+ * multi-day range exists, react-day-picker's default treats a click on
+ * either endpoint as "restart the range at the clicked day"; users read
+ * that click as "deselect this endpoint". Collapse to the other endpoint
+ * instead, and keep the library's proposed range for every other click.
+ */
+export function resolveRangeClick(
+  prev: DateRange | undefined,
+  clicked: Date,
+  proposed: DateRange | undefined
+): DateRange | undefined {
+  if (!(prev?.from && prev.to) || isSameDay(prev.from, prev.to)) {
+    return proposed;
+  }
+  if (isSameDay(clicked, prev.to)) {
+    return { from: prev.from, to: prev.from };
+  }
+  if (isSameDay(clicked, prev.from)) {
+    return { from: prev.to, to: prev.to };
+  }
+  return proposed;
 }

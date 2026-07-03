@@ -52,6 +52,9 @@ export interface ContainerNodeStates {
   metrics?: Partial<Record<ContainerNodeMetricKey, ContainerNodeMetricValue>>;
   name: string;
   namespace?: string;
+  /** Ready pods currently serving; leads the replicas metric when present. */
+  readyReplicas?: number;
+  /** Desired replica count; shown as `ready/desired` context while they differ. */
   replicas?: number;
   status?: ContainerNodeStatus;
   uid?: string;

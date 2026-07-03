@@ -7,6 +7,7 @@ import {
   WORKLOAD_LIST_BACKGROUND_REFRESH_MS,
   WORKLOAD_LIST_FAST_REFRESH_MS,
   WORKLOAD_LIST_MEDIUM_REFRESH_MS,
+  WORKLOAD_LIST_STEADY_REFRESH_MS,
   WORKLOAD_LIST_STUCK_REFRESH_MS,
   workloadListRefreshIntervalForCanvas,
   workloadTransientRefreshIntervalForAge,
@@ -353,5 +354,97 @@ test("background workload list refresh keeps idle lists stopped", () => {
       workloadReconcilePollUntil: 0,
     }),
     0
+  );
+});
+
+test("visible canvas with running workloads keeps a steady 30s heartbeat", () => {
+  const runningList = {
+    items: [
+      {
+        metadata: { name: "api", namespace: "default", uid: "ap-1" },
+        status: { phase: "Running", readyReplicas: 3, replicas: 3 },
+      },
+    ],
+  };
+
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      discoveryPollUntil: 0,
+      latestData: runningList,
+      now: 100_000,
+      peerEmpty: false,
+      resourceKind: "ap",
+      transientSinceByKey: new Map<string, number>(),
+      workloadReconcilePollUntil: 0,
+    }),
+    WORKLOAD_LIST_STEADY_REFRESH_MS
+  );
+});
+
+test("steady heartbeat stays quiet when hidden, covered, or empty", () => {
+  const runningList = {
+    items: [
+      {
+        metadata: { name: "api", namespace: "default", uid: "ap-1" },
+        status: { phase: "Running" },
+      },
+    ],
+  };
+  const base = {
+    discoveryPollUntil: 0,
+    now: 100_000,
+    peerEmpty: false,
+    resourceKind: "ap",
+    workloadReconcilePollUntil: 0,
+  };
+
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      ...base,
+      isPageVisible: false,
+      latestData: runningList,
+      transientSinceByKey: new Map<string, number>(),
+    }),
+    0
+  );
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      ...base,
+      canvasCovered: true,
+      latestData: runningList,
+      transientSinceByKey: new Map<string, number>(),
+    }),
+    0
+  );
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      ...base,
+      latestData: { items: [] },
+      peerEmpty: true,
+      transientSinceByKey: new Map<string, number>(),
+    }),
+    0
+  );
+});
+
+test("transient polling stays faster than the steady heartbeat", () => {
+  assert.equal(
+    workloadListRefreshIntervalForCanvas({
+      discoveryPollUntil: 0,
+      latestData: {
+        items: [
+          {
+            metadata: { name: "api", namespace: "default", uid: "ap-1" },
+            status: { phase: "Updating" },
+          },
+        ],
+      },
+      now: 100_000,
+      peerEmpty: false,
+      resourceKind: "ap",
+      transientSinceByKey: new Map<string, number>(),
+      workloadReconcilePollUntil: 0,
+    }),
+    WORKLOAD_LIST_FAST_REFRESH_MS
   );
 });

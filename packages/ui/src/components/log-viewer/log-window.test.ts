@@ -7,6 +7,7 @@ import {
   freezeLogWindow,
   liveSpanShortLabel,
   logWindowBounds,
+  resolveRangeClick,
 } from "./log-window";
 
 test("live window bounds trail now by the span", () => {
@@ -87,7 +88,15 @@ test("frozen labels always state actual bounds", () => {
 test("window labels read live as span and frozen as bounds", () => {
   assert.equal(
     formatLogWindowLabel({ mode: "live", spanMs: 60 * 60_000 }),
-    "Live · 1h"
+    "Last 1 hour"
+  );
+  assert.equal(
+    formatLogWindowLabel({ mode: "live", spanMs: 2 * 24 * 60 * 60_000 }),
+    "Last 2 days"
+  );
+  assert.equal(
+    formatLogWindowLabel({ mode: "live", spanMs: 90 * 60_000 }),
+    "Last 90m"
   );
   const now = new Date(2026, 6, 2, 13, 0, 0);
   assert.equal(
@@ -100,5 +109,46 @@ test("window labels read live as span and frozen as bounds", () => {
       now
     ),
     "Jul 2 · 11:15 – 12:15"
+  );
+});
+
+test("clicking a range endpoint deselects that endpoint", () => {
+  // Seeded ranges carry times-of-day; clicks arrive at midnight.
+  const from = new Date(2026, 6, 3, 17, 0, 23);
+  const to = new Date(2026, 6, 5, 18, 0, 23);
+  const range = { from, to };
+
+  assert.deepEqual(resolveRangeClick(range, new Date(2026, 6, 5), undefined), {
+    from,
+    to: from,
+  });
+  assert.deepEqual(resolveRangeClick(range, new Date(2026, 6, 3), undefined), {
+    from: to,
+    to,
+  });
+});
+
+test("non-endpoint clicks keep the proposed range", () => {
+  const range = { from: new Date(2026, 6, 3), to: new Date(2026, 6, 5) };
+  const extended = { from: range.from, to: new Date(2026, 6, 9) };
+
+  // Clicking outside/inside the range defers to react-day-picker's proposal.
+  assert.equal(
+    resolveRangeClick(range, new Date(2026, 6, 9), extended),
+    extended
+  );
+
+  // A single-day selection re-clicked deselects entirely (proposal passes through).
+  const single = { from: new Date(2026, 6, 3), to: new Date(2026, 6, 3) };
+  assert.equal(
+    resolveRangeClick(single, new Date(2026, 6, 3), undefined),
+    undefined
+  );
+
+  // No prior selection: first click starts the proposed single-day range.
+  const started = { from: new Date(2026, 6, 3), to: new Date(2026, 6, 3) };
+  assert.equal(
+    resolveRangeClick(undefined, new Date(2026, 6, 3), started),
+    started
   );
 });
