@@ -122,7 +122,7 @@
     --project-surface-motion-enter-duration
   );
   --project-surface-motion-enter-duration: 340ms;
-  --project-surface-motion-exit-duration: 240ms;
+  --project-surface-motion-exit-duration: 340ms;
   --project-surface-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /** Side pane seam glow tokens. */
@@ -252,6 +252,24 @@
     }
   }
 
+  @keyframes side-pane-glow-release {
+    0% {
+      opacity: var(--side-pane-glow-rest-opacity);
+      filter: blur(0) saturate(1);
+      transform: scaleX(1);
+    }
+    36% {
+      opacity: var(--side-pane-glow-flash-opacity);
+      filter: blur(0.7px) saturate(1.1);
+      transform: scaleX(0.92);
+    }
+    100% {
+      opacity: 0;
+      filter: blur(1.4px) saturate(1.02);
+      transform: scaleX(0.72);
+    }
+  }
+
   .project-surface-slide-x {
     transform: translate3d(var(--project-surface-slide-x, 0), 0, 0);
   }
@@ -338,6 +356,13 @@
   .side-pane-glow-settle {
     animation: side-pane-glow-settle var(--side-pane-glow-settle-duration)
       var(--side-pane-glow-settle-ease);
+    will-change: opacity, filter, transform;
+  }
+
+  .side-pane-glow-release {
+    animation: side-pane-glow-release
+      var(--project-surface-motion-exit-duration)
+      var(--project-surface-motion-ease);
     will-change: opacity, filter, transform;
   }
 

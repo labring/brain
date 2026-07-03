@@ -3,7 +3,7 @@ export const PROJECT_SURFACE_MOTION_ENTER_DURATION_VAR =
 export const PROJECT_SURFACE_MOTION_EXIT_DURATION_VAR =
   "--project-surface-motion-exit-duration";
 
-export const PROJECT_SURFACE_MOTION_EXIT_FALLBACK_MS = 240;
+export const PROJECT_SURFACE_MOTION_EXIT_FALLBACK_MS = 340;
 
 function parseMotionDuration(value: string): number | null {
   const trimmed = value.trim();
