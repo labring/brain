@@ -65,6 +65,8 @@ export interface CanvasViewportFocusRequest {
 export interface CanvasFlowSnapshot {
   edges: Edge[];
   nodes: Node[];
+  /** Edge to render with the selected style; null/undefined for none. */
+  selectedEdgeId?: string | null;
 }
 
 /**

@@ -256,13 +256,16 @@ function CanvasFlow({ children }: CanvasFlowProps) {
     );
   }, [flowStore, setEdges, state.edges]);
 
+  const selectedEdgeId =
+    flowSnapshot == null
+      ? (state.selectedEdge?.id ?? null)
+      : (flowSnapshot.selectedEdgeId ?? null);
   const edgesWithSelectionStyle = useMemo((): Edge[] => {
-    const selected = state.selectedEdge;
-    if (selected == null) {
+    if (selectedEdgeId == null) {
       return edges;
     }
     return edges.map((edge) => {
-      if (edge.id !== selected.id) {
+      if (edge.id !== selectedEdgeId) {
         return edge;
       }
       const prev =
@@ -276,7 +279,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
         },
       };
     });
-  }, [edges, state.selectedEdge]);
+  }, [edges, selectedEdgeId]);
   const edgeAnchorResolver = meta.edgeAnchorResolver;
   const edgeAnchorResolution = useMemo(() => {
     if (edgeAnchorResolver == null) {

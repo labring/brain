@@ -21,6 +21,7 @@ export interface ProjectCanvasFlowStore extends CanvasFlowStore {
    * applied when the drag ends.
    */
   reconcile(input: { edges: Edge[]; nodes: Node[] }): void;
+  setSelectedEdgeId(selectedEdgeId: string | null): void;
 }
 
 function edgesMatchIncoming(current: Edge[], incoming: Edge[]): boolean {
@@ -51,15 +52,27 @@ function someDragging(nodes: readonly Node[]): boolean {
  * the canvas controller only writes.
  */
 export function createProjectCanvasFlowStore(): ProjectCanvasFlowStore {
-  let snapshot: CanvasFlowSnapshot = { edges: [], nodes: [] };
+  let snapshot: CanvasFlowSnapshot = {
+    edges: [],
+    nodes: [],
+    selectedEdgeId: null,
+  };
   let incomingNodes: Node[] = [];
   const listeners = new Set<() => void>();
 
-  const commit = (nodes: Node[], edges: Edge[]) => {
-    if (nodes === snapshot.nodes && edges === snapshot.edges) {
+  const commit = (
+    nodes: Node[],
+    edges: Edge[],
+    selectedEdgeId: string | null = snapshot.selectedEdgeId ?? null
+  ) => {
+    if (
+      nodes === snapshot.nodes &&
+      edges === snapshot.edges &&
+      selectedEdgeId === snapshot.selectedEdgeId
+    ) {
       return;
     }
-    snapshot = { edges, nodes };
+    snapshot = { edges, nodes, selectedEdgeId };
     for (const listener of listeners) {
       listener();
     }
@@ -88,6 +101,9 @@ export function createProjectCanvasFlowStore(): ProjectCanvasFlowStore {
         ? snapshot.nodes
         : mergeNodes(snapshot.nodes, incomingNodes);
       commit(nextNodes, nextEdges);
+    },
+    setSelectedEdgeId(selectedEdgeId) {
+      commit(snapshot.nodes, snapshot.edges, selectedEdgeId);
     },
     subscribe(listener) {
       listeners.add(listener);

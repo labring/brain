@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useCallback, useState } from "react";
+import { createElement, useCallback, useMemo, useState } from "react";
 import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import {
   type ProjectCanvasApStopTarget,
@@ -52,22 +52,31 @@ export function useResourceStopDialogs({
     );
   }, [pendingDbStopTarget, runResourceAction, stopDbWorkload]);
 
-  const resourceStopDialog = createElement(ProjectCanvasStopDialogs, {
-    apTarget: pendingApStopTarget,
-    dbTarget: pendingDbStopTarget,
-    onApConfirm: confirmPendingApStop,
-    onApOpenChange: (open: boolean) => {
-      if (!open) {
-        setPendingApStopTarget(null);
-      }
-    },
-    onDbConfirm: confirmPendingDbStop,
-    onDbOpenChange: (open: boolean) => {
-      if (!open) {
-        setPendingDbStopTarget(null);
-      }
-    },
-  });
+  const resourceStopDialog = useMemo(
+    () =>
+      createElement(ProjectCanvasStopDialogs, {
+        apTarget: pendingApStopTarget,
+        dbTarget: pendingDbStopTarget,
+        onApConfirm: confirmPendingApStop,
+        onApOpenChange: (open: boolean) => {
+          if (!open) {
+            setPendingApStopTarget(null);
+          }
+        },
+        onDbConfirm: confirmPendingDbStop,
+        onDbOpenChange: (open: boolean) => {
+          if (!open) {
+            setPendingDbStopTarget(null);
+          }
+        },
+      }),
+    [
+      confirmPendingApStop,
+      confirmPendingDbStop,
+      pendingApStopTarget,
+      pendingDbStopTarget,
+    ]
+  );
 
   return {
     requestApStop: setPendingApStopTarget,

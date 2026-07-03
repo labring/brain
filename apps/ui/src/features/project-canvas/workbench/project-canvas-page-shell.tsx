@@ -8,7 +8,8 @@ import type {
 import { memo, useEffect, useLayoutEffect } from "react";
 import { toast } from "sonner";
 import type { ProjectCanvasFrameState } from "@/features/project-canvas/snapshot/project-canvas-page-state";
-import { ProjectCanvasInteractionProvider } from "@/features/project-canvas/surface/interaction-react";
+import { ProjectCanvasInteractionStoreProvider } from "@/features/project-canvas/surface/interaction-react";
+import type { ProjectCanvasInteractionStore } from "@/features/project-canvas/surface/interaction-store";
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { DeploymentTaskDockModel } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import { ProjectCanvasDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry-affordance";
@@ -27,24 +28,36 @@ const PROJECT_CANVAS_UNAVAILABLE_TOAST_ID =
 const useIsomorphicLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
 
+/**
+ * Static empty canvas state: the project canvas is fully store-driven
+ * (flow store, interaction store, viewport directives), so the legacy
+ * CanvasState prop carries no live data.
+ */
+const EMPTY_PROJECT_CANVAS_STATE: CanvasState = {
+  edges: [],
+  nodes: [],
+  selectedEdge: null,
+  selectedNode: null,
+};
+
 interface ProjectCanvasViewportProps {
   canvasKey: string;
   commands?: ProjectCanvasNodeCommands;
+  interactionStore?: ProjectCanvasInteractionStore;
   kubeconfig: string;
   lifecycleActivity?: CanvasLifecycleActivityStore;
   meta?: CanvasMeta;
   runtimeStore: ProjectRuntimeStore;
-  state: CanvasState;
 }
 
 export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   canvasKey,
   commands,
+  interactionStore,
   kubeconfig,
   lifecycleActivity,
   meta,
   runtimeStore,
-  state,
 }: ProjectCanvasViewportProps) {
   return (
     <WorkloadTelemetryProvider kubeconfig={kubeconfig}>
@@ -53,14 +66,20 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
           commands={commands ?? null}
           lifecycleActivity={lifecycleActivity ?? null}
         >
-          <ProjectCanvasInteractionProvider state={state}>
-            <Canvas.Root key={canvasKey} meta={meta} state={state}>
+          <ProjectCanvasInteractionStoreProvider
+            store={interactionStore ?? null}
+          >
+            <Canvas.Root
+              key={canvasKey}
+              meta={meta}
+              state={EMPTY_PROJECT_CANVAS_STATE}
+            >
               <Canvas.Flow>
                 <Canvas.MiniMap />
                 <Canvas.Controls />
               </Canvas.Flow>
             </Canvas.Root>
-          </ProjectCanvasInteractionProvider>
+          </ProjectCanvasInteractionStoreProvider>
         </ProjectCanvasNodeCommandsProvider>
       </ProjectRuntimeStoreProvider>
     </WorkloadTelemetryProvider>

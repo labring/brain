@@ -12,6 +12,8 @@ import {
 } from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
+import { interactionSnapshotFromCanvasState } from "@/features/project-canvas/surface/interaction-react";
+import { createProjectCanvasInteractionStore } from "@/features/project-canvas/surface/interaction-store";
 import {
   createProjectCanvasDrawerRenderModel,
   createProjectCanvasMainRenderModel,
@@ -609,6 +611,24 @@ export function useProjectCanvas(
     readOnly,
   });
 
+  const interactionStore = useMemo(
+    () => createProjectCanvasInteractionStore(),
+    []
+  );
+  const connectionOrigin = connectionGesture.connectionOrigin;
+  useLayoutEffect(() => {
+    interactionStore.setSnapshot(
+      interactionSnapshotFromCanvasState({
+        connectionOrigin,
+        selectedEdge,
+        selectedNode,
+      })
+    );
+  }, [connectionOrigin, interactionStore, selectedEdge, selectedNode]);
+  useLayoutEffect(() => {
+    flowStore.setSelectedEdgeId(selectedEdge?.id ?? null);
+  }, [flowStore, selectedEdge]);
+
   const closeSideSurface = useCallback(() => {
     const side = surfaceState.side;
     if (side?.kind === "deploymentTaskTimeline") {
@@ -753,6 +773,7 @@ export function useProjectCanvas(
     closeResourcePane,
     closeSideSurface,
     connectionOrigin: connectionGesture.connectionOrigin,
+    interactionStore,
     lifecycleActivityStore,
     meta,
     nodeCommands,

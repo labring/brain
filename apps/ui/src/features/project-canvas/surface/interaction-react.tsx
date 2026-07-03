@@ -21,7 +21,7 @@ const ProjectCanvasInteractionStoreContext =
 
 const EMPTY_STORE = createProjectCanvasInteractionStore();
 
-function interactionSnapshotFromCanvasState(
+export function interactionSnapshotFromCanvasState(
   state: Pick<CanvasState, "connectionOrigin" | "selectedEdge" | "selectedNode">
 ): ProjectCanvasInteractionSnapshot {
   return {
@@ -61,6 +61,25 @@ export function ProjectCanvasInteractionProvider({
 
   return (
     <ProjectCanvasInteractionStoreContext value={store}>
+      {children}
+    </ProjectCanvasInteractionStoreContext>
+  );
+}
+
+/**
+ * Provides a controller-owned interaction store. Preferred over
+ * ProjectCanvasInteractionProvider: the controller writes snapshots
+ * imperatively, so selection changes never flow through view props.
+ */
+export function ProjectCanvasInteractionStoreProvider({
+  children,
+  store,
+}: {
+  children: ReactNode;
+  store: ProjectCanvasInteractionStore | null;
+}) {
+  return (
+    <ProjectCanvasInteractionStoreContext value={store ?? EMPTY_STORE}>
       {children}
     </ProjectCanvasInteractionStoreContext>
   );

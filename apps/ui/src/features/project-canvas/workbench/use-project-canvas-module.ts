@@ -1,6 +1,5 @@
 "use client";
 
-import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import {
   createElement,
   Fragment,
@@ -435,25 +434,6 @@ export function useProjectCanvasModule({
   }, [openingKey, viewportDirectives]);
   const meta = workbench.meta;
 
-  const state = useMemo<CanvasState>(
-    () => ({
-      ...canvasState,
-      connectionOrigin: workbench.connectionOrigin,
-      edges: canvasEdges,
-      nodes: workbench.nodes,
-      selectedEdge: workbench.selectedEdge,
-      selectedNode: workbench.selectedNode,
-    }),
-    [
-      canvasEdges,
-      canvasState,
-      workbench.connectionOrigin,
-      workbench.nodes,
-      workbench.selectedEdge,
-      workbench.selectedNode,
-    ]
-  );
-
   const surfaceActions = useMemo<ProjectCanvasSurfaceHostActions>(
     () => ({
       closeDrawerSurface: workbench.closeDrawerSurface,
@@ -474,6 +454,31 @@ export function useProjectCanvasModule({
       workbench.onDbServiceRestoreAccepted,
       workbench.registerSettingsLeaveGuard,
       workbench.repairSide,
+    ]
+  );
+
+  const surfaceDialogs = useMemo(
+    () => [
+      createElement(
+        Fragment,
+        { key: "settings-leave-guard" },
+        workbench.settingsLeaveGuardDialog
+      ),
+      createElement(
+        Fragment,
+        { key: "resource-delete" },
+        workbench.resourceDeleteDialog
+      ),
+      createElement(
+        Fragment,
+        { key: "resource-stop" },
+        workbench.resourceStopDialog
+      ),
+    ],
+    [
+      workbench.resourceDeleteDialog,
+      workbench.resourceStopDialog,
+      workbench.settingsLeaveGuardDialog,
     ]
   );
 
@@ -508,32 +513,16 @@ export function useProjectCanvasModule({
     canvas: {
       deploymentTaskDock,
       frameState,
+      interactionStore: workbench.interactionStore,
       lifecycleActivityStore: workbench.lifecycleActivityStore,
       meta,
       nodeCommands: workbench.nodeCommands,
       runtimeStore,
-      state,
       viewportDirectives,
     },
     surfaces: {
       actions: surfaceActions,
-      dialogs: [
-        createElement(
-          Fragment,
-          { key: "settings-leave-guard" },
-          workbench.settingsLeaveGuardDialog
-        ),
-        createElement(
-          Fragment,
-          { key: "resource-delete" },
-          workbench.resourceDeleteDialog
-        ),
-        createElement(
-          Fragment,
-          { key: "resource-stop" },
-          workbench.resourceStopDialog
-        ),
-      ],
+      dialogs: surfaceDialogs,
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,
       settingsLaunchContext: workbench.settingsLaunchContext,
