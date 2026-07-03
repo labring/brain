@@ -11,6 +11,7 @@ import {
 
 const noop = () => undefined;
 const DOCKER_DEPLOY_ARIA_LABEL_RE = /aria-label="Docker deploy"/;
+const NATIVE_TITLE_ATTR_RE = /\stitle="/;
 
 test("chat composer deploy actions include GitHub, Docker, Database, and Skills controls in order", () => {
   const html = renderToStaticMarkup(
@@ -35,4 +36,5 @@ test("chat composer deploy actions include GitHub, Docker, Database, and Skills 
   assert.ok(docker < database, "Docker appears before Database");
   assert.ok(database < skills, "Database appears before Skills");
   assert.match(html, DOCKER_DEPLOY_ARIA_LABEL_RE);
+  assert.doesNotMatch(html, NATIVE_TITLE_ATTR_RE);
 });
