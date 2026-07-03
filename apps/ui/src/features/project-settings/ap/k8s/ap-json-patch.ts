@@ -862,6 +862,20 @@ export async function applyApMemoryLimit(
   ]);
 }
 
+/**
+ * Resource merge fields for a replica strategy change. The resource patch
+ * replaces the whole spec.resource subtree, so the legacy `replicas` field
+ * must follow the fixed strategy instead of echoing the stale rendered value.
+ */
+function apResourceMergeForReplicaStrategy(
+  strategy: ApReplicaStrategy
+): Record<string, unknown> {
+  if (strategy.type === "fixed") {
+    return { replicaStrategy: strategy, replicas: strategy.fixed.replicas };
+  }
+  return { replicaStrategy: strategy };
+}
+
 /** One JSON Patch for CPU, memory, and/or replicas (avoids parallel PATCH races). */
 export function patchOpsForApResourceQuotaSettings(
   spec: Record<string, unknown> | undefined,
@@ -884,17 +898,21 @@ export function patchOpsForApResourceQuotaSettings(
     merge.limits = limits;
   }
   if (next.replicaStrategy !== undefined) {
-    merge.replicaStrategy = canonicalApReplicaStrategyForPatch(
-      spec,
-      next.replicaStrategy
+    Object.assign(
+      merge,
+      apResourceMergeForReplicaStrategy(
+        canonicalApReplicaStrategyForPatch(spec, next.replicaStrategy)
+      )
     );
     return patchOpsForApResource(spec, merge);
   }
   if (next.replicas !== undefined) {
     const currentStrategy = readApReplicaStrategy(spec ?? {});
-    merge.replicaStrategy = canonicalFixedReplicaStrategy(
-      next.replicas,
-      currentStrategy.elastic
+    Object.assign(
+      merge,
+      apResourceMergeForReplicaStrategy(
+        canonicalFixedReplicaStrategy(next.replicas, currentStrategy.elastic)
+      )
     );
   }
   return patchOpsForApResource(spec, merge);
@@ -904,9 +922,12 @@ export function patchOpsForApReplicaStrategySettings(
   spec: Record<string, unknown> | undefined,
   replicaStrategy: ApReplicaStrategy
 ): K8sJsonPatchOp[] {
-  return patchOpsForApResource(spec, {
-    replicaStrategy: canonicalApReplicaStrategyForPatch(spec, replicaStrategy),
-  });
+  return patchOpsForApResource(
+    spec,
+    apResourceMergeForReplicaStrategy(
+      canonicalApReplicaStrategyForPatch(spec, replicaStrategy)
+    )
+  );
 }
 
 export async function applyApResourceQuotas(

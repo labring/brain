@@ -926,7 +926,7 @@ test("AP resource quota settings write canonical fixed replica strategy", () => 
           fixed: { replicas: 4 },
           type: "fixed",
         },
-        replicas: 2,
+        replicas: 4,
       },
     },
   ]);
@@ -999,6 +999,7 @@ test("AP resource quota settings preserve inactive elastic settings on fixed sav
           fixed: { replicas: 5 },
           type: "fixed",
         },
+        replicas: 5,
       },
     },
   ]);
@@ -1047,6 +1048,7 @@ test("AP replica strategy settings preserve existing inactive elastic branch on 
           fixed: { replicas: 5 },
           type: "fixed",
         },
+        replicas: 5,
       },
     },
   ]);

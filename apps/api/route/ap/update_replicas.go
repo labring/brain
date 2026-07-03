@@ -7,22 +7,27 @@ import (
 	orchestration "sealos/api/service/orchestration"
 )
 
+// Legacy spec.resource.replicas is only a fallback when replicaStrategy is
+// absent or carries no usable fixed count: settings clients replace the whole
+// spec.resource subtree, so their patches echo the previously rendered legacy
+// value next to the replicaStrategy they actually changed.
 func apReplicasFromResourceSpec(resourceSpec map[string]interface{}) int32 {
 	if resourceSpec == nil {
 		return 0
 	}
-	if replicas := int32FromMap(resourceSpec, "replicas"); replicas > 0 {
-		return replicas
-	}
+	legacyReplicas := int32FromMap(resourceSpec, "replicas")
 	replicaStrategy, _ := resourceSpec["replicaStrategy"].(map[string]interface{})
 	if replicaStrategy == nil {
-		return 0
+		return legacyReplicas
 	}
 	if strategyType := stringFromMap(replicaStrategy, "type"); strategyType != "" && strategyType != "fixed" {
 		return 0
 	}
 	fixed, _ := replicaStrategy["fixed"].(map[string]interface{})
-	return int32FromMap(fixed, "replicas")
+	if fixedReplicas := int32FromMap(fixed, "replicas"); fixedReplicas > 0 {
+		return fixedReplicas
+	}
+	return legacyReplicas
 }
 
 func apReplicaStrategyFromAnnotation(raw string, fallbackReplicas int32) *orchestration.APReplicaStrategy {
