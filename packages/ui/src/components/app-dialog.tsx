@@ -37,7 +37,7 @@ function AppDialogContent({
   return (
     <DialogContent
       className={cn(
-        "dark flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-lg border border-white/10 bg-project-chrome-surface p-0 text-foreground shadow-2xl backdrop-blur-[20px]",
+        "dark flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-lg border border-border bg-project-chrome-surface p-0 text-foreground shadow-2xl backdrop-blur-[20px]",
         "max-w-[calc(100vw-2rem)] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
         className
       )}
@@ -53,7 +53,7 @@ function AppDialogHeader({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "grid min-w-0 shrink-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 border-white/10 border-b py-4 pr-5 pl-4",
+        "grid min-w-0 shrink-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 border-border border-b py-4 pr-5 pl-4",
         "[&>[data-slot=dialog-description]]:col-span-2 [&>[data-slot=dialog-description]]:min-w-0",
         "[&>[data-slot=dialog-title]:first-child]:col-span-2",
         className

@@ -69,7 +69,7 @@ export function SingleObjectExportModal({
             {DATA_BROWSER_EXPORT_FORMATS.map((option) => (
               <button
                 className={cn(
-                  "inline-flex h-9 items-center justify-start gap-2 rounded-lg border border-white/10 px-3 font-medium text-sm/5 outline-none transition-colors",
+                  "inline-flex h-9 items-center justify-start gap-2 rounded-lg border border-border px-3 font-medium text-sm/5 outline-none transition-colors",
                   format === option
                     ? "bg-white/10 text-zinc-50"
                     : "bg-white/[0.045] text-zinc-300 hover:bg-white/10 hover:text-zinc-50"

@@ -1433,7 +1433,7 @@ function DraftEnvRow({
   if (open) {
     return (
       <div
-        className="flex min-w-0 flex-col gap-2 rounded-lg border border-input border-dashed bg-transparent p-3"
+        className="flex min-w-0 flex-col gap-2 rounded-lg border border-border border-dashed bg-transparent p-3"
         data-env-row="editing"
       >
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">

@@ -279,7 +279,7 @@ function DeploymentTimelineCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-white/10 bg-input/30 shadow-none backdrop-blur-sm",
+        "overflow-hidden rounded-lg border border-border bg-input/30 shadow-none backdrop-blur-sm",
         className
       )}
       {...props}
@@ -509,7 +509,7 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
             )}
           </div>
         </CollapsibleTrigger>
-        <CollapsibleContent className="border-white/8 border-t pt-4 outline-none">
+        <CollapsibleContent className="border-border border-t pt-4 outline-none">
           {card.events.length === 0 ? (
             <p className="text-muted-foreground text-xs leading-4">
               No resource events recorded yet.
