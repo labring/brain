@@ -1,4 +1,5 @@
 import type {
+  CanvasFlowStore,
   CanvasMeta,
   CanvasReactFlowProps,
 } from "@workspace/ui/components/canvas/canvas.types";
@@ -75,6 +76,7 @@ export function createProjectCanvasMeta({
   clearSelection,
   connectionGestureActive,
   executeCommandPlan,
+  flowStore,
   focusCanvasSelection,
   frontCanvasNode,
   getNodes,
@@ -95,6 +97,7 @@ export function createProjectCanvasMeta({
   executeCommandPlan: (
     plan: ReturnType<typeof planProjectCanvasCommand>
   ) => void;
+  flowStore: CanvasFlowStore;
   focusCanvasSelection: (selection: ProjectCanvasSelection) => void;
   frontCanvasNode: (
     node: Node,
@@ -126,6 +129,7 @@ export function createProjectCanvasMeta({
         source: canvasNodeGeometryFromNode(sourceNode),
         target: canvasNodeGeometryFromNode(targetNode),
       }),
+    flowStore,
     nodeTypes: projectCanvasFlowNodeTypes,
     reactFlowProps: {
       ...projectCanvasInteractionProps({

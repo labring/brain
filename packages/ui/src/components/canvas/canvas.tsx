@@ -19,7 +19,14 @@ import {
   useStore,
 } from "@xyflow/react";
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { CanvasControls, CanvasMiniMap } from "./canvas.controls";
 import {
   type CanvasEdgeAnchorPair,
@@ -161,11 +168,50 @@ function edgesMatchIncoming(current: Edge[], incoming: Edge[]): boolean {
   });
 }
 
+const NOOP_UNSUBSCRIBE = () => undefined;
+
 function CanvasFlow({ children }: CanvasFlowProps) {
   const { interactionMode, meta, navigationChrome, rootRef, state } =
     useCanvas();
-  const [nodes, setNodes, onNodesChange] = useNodesState(state.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(state.edges);
+  const flowStore = meta.flowStore;
+  const subscribeFlowStore = useCallback(
+    (listener: () => void) =>
+      flowStore == null ? NOOP_UNSUBSCRIBE : flowStore.subscribe(listener),
+    [flowStore]
+  );
+  const getFlowSnapshot = useCallback(
+    () => flowStore?.getSnapshot(),
+    [flowStore]
+  );
+  const flowSnapshot = useSyncExternalStore(
+    subscribeFlowStore,
+    getFlowSnapshot,
+    getFlowSnapshot
+  );
+  const [internalNodes, setNodes, onInternalNodesChange] = useNodesState(
+    state.nodes
+  );
+  const [internalEdges, setEdges, onInternalEdgesChange] = useEdgesState(
+    state.edges
+  );
+  const nodes = flowSnapshot?.nodes ?? internalNodes;
+  const edges = flowSnapshot?.edges ?? internalEdges;
+  const handleNodesChange = useMemo(
+    () =>
+      flowStore == null
+        ? onInternalNodesChange
+        : (changes: Parameters<typeof onInternalNodesChange>[0]) =>
+            flowStore.applyNodeChanges(changes),
+    [flowStore, onInternalNodesChange]
+  );
+  const handleEdgesChange = useMemo(
+    () =>
+      flowStore == null
+        ? onInternalEdgesChange
+        : (changes: Parameters<typeof onInternalEdgesChange>[0]) =>
+            flowStore.applyEdgeChanges?.(changes),
+    [flowStore, onInternalEdgesChange]
+  );
   const {
     fitView,
     getViewport,
@@ -188,7 +234,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const nodeDragging = nodes.some((node) => node.dragging === true);
 
   useLayoutEffect(() => {
-    if (nodeDragging) {
+    if (flowStore != null || nodeDragging) {
       return;
     }
     if (initializedRef.current) {
@@ -197,13 +243,16 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       initializedRef.current = true;
       setNodes((prev) => (prev === state.nodes ? prev : state.nodes));
     }
-  }, [nodeDragging, setNodes, state.nodes]);
+  }, [flowStore, nodeDragging, setNodes, state.nodes]);
 
   useLayoutEffect(() => {
+    if (flowStore != null) {
+      return;
+    }
     setEdges((prev) =>
       edgesMatchIncoming(prev, state.edges) ? prev : state.edges
     );
-  }, [setEdges, state.edges]);
+  }, [flowStore, setEdges, state.edges]);
 
   const edgesWithSelectionStyle = useMemo((): Edge[] => {
     const selected = state.selectedEdge;
@@ -571,8 +620,8 @@ function CanvasFlow({ children }: CanvasFlowProps) {
             edgeTypes={meta.edgeTypes}
             nodes={nodes}
             nodeTypes={meta.nodeTypes}
-            onEdgesChange={onEdgesChange}
-            onNodesChange={onNodesChange}
+            onEdgesChange={handleEdgesChange}
+            onNodesChange={handleNodesChange}
           >
             <Background
               color="var(--color-canvas-dot)"

@@ -31,6 +31,7 @@ import type { ProjectCanvasCommandPlan } from "@/features/project-canvas/workben
 import { createCanvasLifecycleActivityStore } from "@/features/project-canvas/workbench/lifecycle-activity-store";
 import type { ProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
 import { executeUnguardedProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/project-canvas-command-executor";
+import { createProjectCanvasFlowStore } from "@/features/project-canvas/workbench/project-canvas-flow-store";
 import { useApSettingsSessionEvents } from "@/features/project-canvas/workbench/use-ap-settings-session-events";
 import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/use-db-service-restore-focus";
 import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workbench/use-deployment-task-timeline-opener";
@@ -331,6 +332,11 @@ export function useProjectCanvas(
 
   const nodes = stackOrderedNodes;
   const getNodes = useStableCallback((): readonly Node[] => nodes);
+  const flowStore = useMemo(() => createProjectCanvasFlowStore(), []);
+  const optionEdges = options?.edges;
+  useLayoutEffect(() => {
+    flowStore.reconcile({ edges: optionEdges ?? [], nodes });
+  }, [flowStore, nodes, optionEdges]);
   const { apSettingsSessionEventsForAp } = useApSettingsSessionEvents({
     onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
   });
@@ -683,6 +689,7 @@ export function useProjectCanvas(
         clearSelection,
         connectionGestureActive: connectionGesture.connectionGestureActive,
         executeCommandPlan,
+        flowStore,
         focusCanvasSelection,
         frontCanvasNode,
         getNodes,
@@ -708,6 +715,7 @@ export function useProjectCanvas(
       connectionGesture.isValidCanvasConnection,
       connectionGesture.projectCanvasConnectionLine,
       executeCommandPlan,
+      flowStore,
       focusCanvasSelection,
       frontCanvasNode,
       getNodes,

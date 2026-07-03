@@ -1,7 +1,9 @@
 import type {
   Edge,
+  EdgeChange,
   EdgeTypes,
   Node,
+  NodeChange,
   NodeTypes,
   ReactFlowProps,
 } from "@xyflow/react";
@@ -60,6 +62,24 @@ export interface CanvasViewportFocusRequest {
   padding?: number;
 }
 
+export interface CanvasFlowSnapshot {
+  edges: Edge[];
+  nodes: Node[];
+}
+
+/**
+ * Host-owned controlled store for flow nodes/edges. When provided via
+ * `CanvasMeta.flowStore`, the canvas renders from the store snapshot and
+ * routes React Flow changes back into it instead of mirroring nodes in
+ * component state.
+ */
+export interface CanvasFlowStore {
+  applyEdgeChanges?(changes: EdgeChange[]): void;
+  applyNodeChanges(changes: NodeChange[]): void;
+  getSnapshot(): CanvasFlowSnapshot;
+  subscribe(listener: () => void): () => void;
+}
+
 export interface CanvasMeta {
   /**
    * Session-local canvas interaction mode. Pointer mode supports canvas element
@@ -72,6 +92,12 @@ export interface CanvasMeta {
    */
   edgeAnchorResolver?: CanvasEdgeAnchorResolver;
   edgeTypes?: EdgeTypes;
+  /**
+   * Controlled nodes/edges source. When set, the canvas is a controlled view
+   * of this store; when omitted, nodes/edges are mirrored into internal state
+   * (static/preview usage).
+   */
+  flowStore?: CanvasFlowStore;
   nodeTypes?: NodeTypes;
   /**
    * Controls the one-shot fit-to-view that runs when a canvas opens.
