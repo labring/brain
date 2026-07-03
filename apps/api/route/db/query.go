@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -277,7 +278,8 @@ func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{},
 	}
 	secret := dbConnectionSecret(cfg, name, namespace)
 	status["variables"] = dbVariablesFromSecret(db, secret)
-	if privateDSN := dbConnectionString(db, dbPrivateConnectionAddress(db, name, namespace)); privateDSN != "" {
+	credentials := dbConnectionCredentialsFromSecret(secret)
+	if privateDSN := dbConnectionString(db, dbPrivateConnectionAddress(db, name, namespace), credentials); privateDSN != "" {
 		status["connectionStringPrivate"] = privateDSN
 	}
 	if !enabled {
@@ -289,10 +291,16 @@ func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{},
 	}
 	if nodePort := firstServiceNodePort(service); nodePort > 0 {
 		status["nodePort"] = nodePort
-		if publicDSN := dbConnectionString(db, dbPublicConnectionAddress(nodePort)); publicDSN != "" {
+		if publicDSN := dbConnectionString(db, dbPublicConnectionAddress(nodePort), credentials); publicDSN != "" {
 			status["connectionStringPublic"] = publicDSN
 		}
 	}
+}
+
+type dbConnectionCredentials struct {
+	database string
+	password string
+	username string
 }
 
 func dbPrivateConnectionAddress(db map[string]interface{}, name string, namespace string) string {
@@ -385,6 +393,54 @@ func dbVariablesFromSecret(db map[string]interface{}, secret *unstructured.Unstr
 	return variables
 }
 
+func dbConnectionCredentialsFromSecret(secret *unstructured.Unstructured) dbConnectionCredentials {
+	data := dbDecodedSecretData(secret)
+	return dbConnectionCredentials{
+		database: dbDecodedValue(data, "database", "dbname", "databaseName"),
+		password: dbDecodedValue(data, "password", "passwd"),
+		username: dbDecodedValue(data, "username", "user"),
+	}
+}
+
+func dbDecodedSecretData(secret *unstructured.Unstructured) map[string]string {
+	out := map[string]string{}
+	if secret == nil {
+		return out
+	}
+	if data, _ := secret.Object["data"].(map[string]interface{}); len(data) > 0 {
+		for key, value := range data {
+			encoded, ok := value.(string)
+			if !ok {
+				continue
+			}
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				out[key] = encoded
+				continue
+			}
+			out[key] = string(decoded)
+		}
+	}
+	if stringData, _ := secret.Object["stringData"].(map[string]interface{}); len(stringData) > 0 {
+		for key, value := range stringData {
+			text, ok := value.(string)
+			if ok {
+				out[key] = text
+			}
+		}
+	}
+	return out
+}
+
+func dbDecodedValue(data map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := data[key]; value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func orderedDBSecretKeys(keys []string) []string {
 	preferred := []string{"host", "endpoint", "port", "username", "user", "password", "passwd"}
 	seen := map[string]bool{}
@@ -425,24 +481,48 @@ func dbEnvKey(key string) string {
 	return key
 }
 
-func dbConnectionString(db map[string]interface{}, address string) string {
+func dbConnectionString(db map[string]interface{}, address string, credentials ...dbConnectionCredentials) string {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		return ""
 	}
 	profile := dbEngineProfileFromDBObject(db)
+	credential := dbConnectionCredentials{}
+	if len(credentials) > 0 {
+		credential = credentials[0]
+	}
+	database := strings.TrimSpace(credential.database)
+	if database == "" {
+		database = profile.DefaultDatabase
+	}
 	switch profile.Engine {
 	case "postgresql":
-		return "postgresql://" + address + dbConnectionPath(profile.DefaultDatabase)
+		return dbConnectionURL("postgresql", address, database, credential, false)
 	case "mysql":
-		return "mysql://" + address + dbConnectionPath(profile.DefaultDatabase)
+		return dbConnectionURL("mysql", address, database, credential, false)
 	case "mongodb":
-		return "mongodb://" + address + dbConnectionPath(profile.DefaultDatabase)
+		return dbConnectionURL("mongodb", address, database, credential, false)
 	case "redis":
-		return "redis://" + address + "/"
+		return dbConnectionURL("redis", address, "", credential, true)
 	default:
 		return address
 	}
+}
+
+func dbConnectionURL(scheme string, address string, database string, credential dbConnectionCredentials, allowPasswordOnly bool) string {
+	u := url.URL{
+		Scheme: scheme,
+		Host:   address,
+		Path:   dbConnectionPath(database),
+	}
+	username := credential.username
+	password := credential.password
+	if username != "" && password != "" {
+		u.User = url.UserPassword(username, password)
+	} else if allowPasswordOnly && password != "" {
+		u.User = url.UserPassword("", password)
+	}
+	return u.String()
 }
 
 func dbConnectionPath(database string) string {
