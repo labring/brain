@@ -16,6 +16,7 @@ import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetr
 import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
 import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasDatabaseNodeData, CanvasDatabaseRfNode } from "./types";
+import { useCanvasDatabaseNodeActions } from "./use-canvas-node-actions";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 
 function CanvasDatabaseTelemetryMetrics({
@@ -46,7 +47,12 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   const model =
     useProjectRuntimeNodeModel<CanvasDatabaseNodeData>({ data, id, type }) ??
     data;
-  const { actions = {}, connections, states } = model;
+  const { actions, connections } = useCanvasDatabaseNodeActions({
+    id,
+    model,
+    type,
+  });
+  const { states } = model;
   const telemetryTarget = useMemo(
     () => databaseTelemetryTargetFromWorkload(model.workload),
     [model.workload]

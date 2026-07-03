@@ -2,7 +2,14 @@
 
 import type { CanvasSelectedNode } from "@workspace/ui/components/canvas/canvas.types";
 import type { Edge, Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import {
@@ -21,11 +28,13 @@ import {
   viewportFocusNodeIdFromSideRenderModel,
 } from "@/features/project-canvas/workbench/canvas-meta";
 import type { ProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/command-model";
+import { createCanvasLifecycleActivityStore } from "@/features/project-canvas/workbench/lifecycle-activity-store";
+import type { ProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
 import { executeUnguardedProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/project-canvas-command-executor";
+import { useApSettingsSessionEvents } from "@/features/project-canvas/workbench/use-ap-settings-session-events";
 import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/use-db-service-restore-focus";
 import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workbench/use-deployment-task-timeline-opener";
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
-import { useProjectCanvasNodeDecorators } from "@/features/project-canvas/workbench/use-project-canvas-node-decorators";
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
 import { useResourceStopDialogs } from "@/features/project-canvas/workbench/use-resource-stop-dialogs";
@@ -320,21 +329,104 @@ export function useProjectCanvas(
     }
   );
 
-  const decorated = useProjectCanvasNodeDecorators({
-    executeCommandPlan,
-    nodes: stackOrderedNodes,
-    onNodeExpansionChange: options?.onNodeExpansionChange,
-    onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
-    readOnly,
-    requestApDelete,
-    requestApStop,
-    requestDbDelete,
-    requestDbStop,
-    resourceActions,
-  });
-  const nodes = decorated.nodes;
-  const runtimeModelDecorators = decorated.runtimeModelDecorators;
+  const nodes = stackOrderedNodes;
   const getNodes = useStableCallback((): readonly Node[] => nodes);
+  const { apSettingsSessionEventsForAp } = useApSettingsSessionEvents({
+    onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
+  });
+
+  const persistNodeLayout = useStableCallback((node: Node) => {
+    options?.onNodeExpansionChange?.(node);
+  });
+  const runResourceAction = useStableCallback(
+    resourceActions.runResourceAction
+  );
+  const toggleDatabasePublicAccess = useStableCallback(
+    resourceActions.toggleDatabasePublicAccess
+  );
+  const copyDatabaseConnection = useStableCallback(
+    resourceActions.copyDatabaseConnection
+  );
+  const restartApWorkload = useStableCallback(
+    resourceActions.apLifecycle.restartWorkload
+  );
+  const startApWorkload = useStableCallback(
+    resourceActions.apLifecycle.startWorkload
+  );
+  const restartDbWorkload = useStableCallback(
+    resourceActions.dbLifecycle.restartWorkload
+  );
+  const startDbWorkload = useStableCallback(
+    resourceActions.dbLifecycle.startWorkload
+  );
+  const clearDbPublicAccessPendingTarget = useStableCallback(
+    resourceActions.dbLifecycle.clearPublicAccessPendingTarget
+  );
+
+  const nodeCommands = useMemo<ProjectCanvasNodeCommands>(
+    () => ({
+      clearDbPublicAccessPendingTarget,
+      copyDatabaseConnection,
+      executeCommandPlan,
+      getNodes,
+      persistNodeLayout,
+      projectId: options?.projectId,
+      readOnly,
+      requestApDelete,
+      requestApStop,
+      requestDbDelete,
+      requestDbStop,
+      restartApWorkload,
+      restartDbWorkload,
+      runResourceAction,
+      startApWorkload,
+      startDbWorkload,
+      toggleDatabasePublicAccess,
+    }),
+    [
+      clearDbPublicAccessPendingTarget,
+      copyDatabaseConnection,
+      executeCommandPlan,
+      getNodes,
+      persistNodeLayout,
+      options?.projectId,
+      readOnly,
+      requestApDelete,
+      requestApStop,
+      requestDbDelete,
+      requestDbStop,
+      restartApWorkload,
+      restartDbWorkload,
+      runResourceAction,
+      startApWorkload,
+      startDbWorkload,
+      toggleDatabasePublicAccess,
+    ]
+  );
+
+  const lifecycleActivityStore = useMemo(
+    () => createCanvasLifecycleActivityStore(),
+    []
+  );
+  const apAuthReady = resourceActions.apLifecycle.authReady;
+  const dbAuthReady = resourceActions.dbLifecycle.authReady;
+  const getDbPublicAccessPendingTarget =
+    resourceActions.dbLifecycle.getPublicAccessPendingTarget;
+  const isDbLifecycleLoading = resourceActions.dbLifecycle.isLoading;
+  useLayoutEffect(() => {
+    lifecycleActivityStore.publish({
+      apAuthReady,
+      dbAuthReady,
+      getDbPublicAccessPendingTarget,
+      isDbLifecycleLoading,
+    });
+  }, [
+    apAuthReady,
+    dbAuthReady,
+    getDbPublicAccessPendingTarget,
+    isDbLifecycleLoading,
+    lifecycleActivityStore,
+  ]);
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -558,12 +650,12 @@ export function useProjectCanvas(
       return undefined;
     }
     return {
-      ap: decorated.apSettingsSessionEventsForAp({
+      ap: apSettingsSessionEventsForAp({
         name: target.name,
         namespace: target.namespace,
       }),
     };
-  }, [decorated, surfaceRenderModel.side]);
+  }, [apSettingsSessionEventsForAp, surfaceRenderModel.side]);
   const consumeSettingsLaunchContext = useCallback(() => {
     const entry = activeSettingsEntry;
     if (entry == null) {
@@ -636,7 +728,9 @@ export function useProjectCanvas(
     closeResourcePane,
     closeSideSurface,
     connectionOrigin: connectionGesture.connectionOrigin,
+    lifecycleActivityStore,
     meta,
+    nodeCommands,
     nodes,
     onDbServiceRestoreAccepted,
     openDrawerSurface,
@@ -647,7 +741,6 @@ export function useProjectCanvas(
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,
-    runtimeModelDecorators,
     selected,
     selectedEdge,
     selectedNode,

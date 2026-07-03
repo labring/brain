@@ -1,6 +1,5 @@
 "use client";
 
-import type { Node } from "@xyflow/react";
 import {
   createContext,
   type ReactNode,
@@ -9,10 +8,6 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import type {
-  CanvasContainerNodeData,
-  CanvasDatabaseNodeData,
-} from "@/features/project-canvas/nodes/types";
 import type { ApFact, DbFact, PublicAccessFact } from "./resource-facts";
 import {
   type ProjectRuntimeNodeModel,
@@ -33,22 +28,9 @@ export interface ProjectRuntimeNodeModelSource {
   type?: string;
 }
 
-export interface ProjectRuntimeNodeModelDecorators {
-  decorateContainerModel?: (args: {
-    model: CanvasContainerNodeData;
-    node: Node;
-  }) => CanvasContainerNodeData;
-  decorateDatabaseModel?: (args: {
-    model: CanvasDatabaseNodeData;
-    node: Node;
-  }) => CanvasDatabaseNodeData;
-}
-
 const ProjectRuntimeStoreContext = createContext<ProjectRuntimeStore | null>(
   null
 );
-const ProjectRuntimeNodeModelDecoratorsContext =
-  createContext<ProjectRuntimeNodeModelDecorators | null>(null);
 
 export function ProjectRuntimeStoreProvider({
   children,
@@ -61,22 +43,6 @@ export function ProjectRuntimeStoreProvider({
     <ProjectRuntimeStoreContext.Provider value={store}>
       {children}
     </ProjectRuntimeStoreContext.Provider>
-  );
-}
-
-export function ProjectRuntimeNodeModelDecoratorsProvider({
-  children,
-  decorators,
-}: {
-  children: ReactNode;
-  decorators?: ProjectRuntimeNodeModelDecorators;
-}) {
-  return (
-    <ProjectRuntimeNodeModelDecoratorsContext.Provider
-      value={decorators ?? null}
-    >
-      {children}
-    </ProjectRuntimeNodeModelDecoratorsContext.Provider>
   );
 }
 
@@ -123,60 +89,10 @@ function subscribeRuntimeFact(
   }
 }
 
-function decoratorNodeFromSource(
-  source: ProjectRuntimeNodeModelSource,
-  model: ProjectRuntimeNodeModel
-): Node {
-  return {
-    data: model,
-    id: source.id,
-    position: { x: 0, y: 0 },
-    type: source.type,
-  } as Node;
-}
-
-function decorateRuntimeNodeModel({
-  decorators,
-  lookup,
-  model,
-  source,
-}: {
-  decorators: ProjectRuntimeNodeModelDecorators | null;
-  lookup: ProjectRuntimeShellLookup | undefined;
-  model: ProjectRuntimeNodeModel | undefined;
-  source: ProjectRuntimeNodeModelSource;
-}): ProjectRuntimeNodeModel | undefined {
-  if (model === undefined || lookup === undefined || decorators === null) {
-    return model;
-  }
-  const node = decoratorNodeFromSource(source, model);
-  switch (lookup.kind) {
-    case "AP":
-      return (
-        decorators.decorateContainerModel?.({
-          model: model as CanvasContainerNodeData,
-          node,
-        }) ?? model
-      );
-    case "DB":
-      return (
-        decorators.decorateDatabaseModel?.({
-          model: model as CanvasDatabaseNodeData,
-          node,
-        }) ?? model
-      );
-    case "PublicAccess":
-      return model;
-    default:
-      return model;
-  }
-}
-
 export function useProjectRuntimeNodeModel<
   TModel extends ProjectRuntimeNodeModel,
 >(source: ProjectRuntimeNodeModelSource): TModel | undefined {
   const store = useContext(ProjectRuntimeStoreContext);
-  const decorators = useContext(ProjectRuntimeNodeModelDecoratorsContext);
   const lookup = useMemo(
     () => projectRuntimeShellLookupFromNodeData(source.data),
     [source.data]
@@ -186,24 +102,17 @@ export function useProjectRuntimeNodeModel<
     () => selectRuntimeFact(store, lookup),
     () => undefined
   );
-  const baseModel = useMemo(() => {
+  return useMemo(() => {
     if (lookup === undefined) {
       return undefined;
     }
     if (fact === undefined) {
-      return projectRuntimeFallbackNodeModelFromLookup(lookup);
+      return projectRuntimeFallbackNodeModelFromLookup(lookup) as
+        | TModel
+        | undefined;
     }
-    return projectRuntimeNodeModelFromFact(lookup.kind, fact);
+    return projectRuntimeNodeModelFromFact(lookup.kind, fact) as
+      | TModel
+      | undefined;
   }, [fact, lookup]);
-
-  return useMemo(
-    () =>
-      decorateRuntimeNodeModel({
-        decorators,
-        lookup,
-        model: baseModel,
-        source,
-      }) as TModel | undefined,
-    [baseModel, decorators, lookup, source]
-  );
 }

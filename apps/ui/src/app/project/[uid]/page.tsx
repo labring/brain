@@ -69,8 +69,9 @@ export default function ProjectIdPage() {
         >
           <ProjectCanvasViewport
             canvasKey={`${namespace}:${uid}`}
-            decorators={projectCanvas.canvas.runtimeModelDecorators}
+            commands={projectCanvas.canvas.nodeCommands}
             kubeconfig={kubeconfig}
+            lifecycleActivity={projectCanvas.canvas.lifecycleActivityStore}
             meta={canvasMeta}
             runtimeStore={projectCanvas.canvas.runtimeStore}
             state={projectCanvas.canvas.state}

@@ -12,11 +12,12 @@ import { ProjectCanvasInteractionProvider } from "@/features/project-canvas/surf
 import { WorkloadTelemetryProvider } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { DeploymentTaskDockModel } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import { ProjectCanvasDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry-affordance";
+import type { CanvasLifecycleActivityStore } from "@/features/project-canvas/workbench/lifecycle-activity-store";
 import {
-  type ProjectRuntimeNodeModelDecorators,
-  ProjectRuntimeNodeModelDecoratorsProvider,
-  ProjectRuntimeStoreProvider,
-} from "@/features/project-runtime/resource-models-react";
+  type ProjectCanvasNodeCommands,
+  ProjectCanvasNodeCommandsProvider,
+} from "@/features/project-canvas/workbench/node-commands-react";
+import { ProjectRuntimeStoreProvider } from "@/features/project-runtime/resource-models-react";
 import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
 
 const PROJECT_CANVAS_LOADING_TOAST_ID = "project-canvas-loading-workloads";
@@ -28,8 +29,9 @@ const useIsomorphicLayoutEffect =
 
 interface ProjectCanvasViewportProps {
   canvasKey: string;
-  decorators?: ProjectRuntimeNodeModelDecorators;
+  commands?: ProjectCanvasNodeCommands;
   kubeconfig: string;
+  lifecycleActivity?: CanvasLifecycleActivityStore;
   meta?: CanvasMeta;
   runtimeStore: ProjectRuntimeStore;
   state: CanvasState;
@@ -37,8 +39,9 @@ interface ProjectCanvasViewportProps {
 
 export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   canvasKey,
-  decorators,
+  commands,
   kubeconfig,
+  lifecycleActivity,
   meta,
   runtimeStore,
   state,
@@ -46,7 +49,10 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   return (
     <WorkloadTelemetryProvider kubeconfig={kubeconfig}>
       <ProjectRuntimeStoreProvider store={runtimeStore}>
-        <ProjectRuntimeNodeModelDecoratorsProvider decorators={decorators}>
+        <ProjectCanvasNodeCommandsProvider
+          commands={commands ?? null}
+          lifecycleActivity={lifecycleActivity ?? null}
+        >
           <ProjectCanvasInteractionProvider state={state}>
             <Canvas.Root key={canvasKey} meta={meta} state={state}>
               <Canvas.Flow>
@@ -55,7 +61,7 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
               </Canvas.Flow>
             </Canvas.Root>
           </ProjectCanvasInteractionProvider>
-        </ProjectRuntimeNodeModelDecoratorsProvider>
+        </ProjectCanvasNodeCommandsProvider>
       </ProjectRuntimeStoreProvider>
     </WorkloadTelemetryProvider>
   );

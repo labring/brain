@@ -514,8 +514,9 @@ export function useProjectCanvasModule({
     canvas: {
       deploymentTaskDock,
       frameState,
+      lifecycleActivityStore: workbench.lifecycleActivityStore,
       meta,
-      runtimeModelDecorators: workbench.runtimeModelDecorators,
+      nodeCommands: workbench.nodeCommands,
       runtimeStore,
       state,
     },
