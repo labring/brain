@@ -8,7 +8,7 @@ This runbook describes the current `brain-system` deployment model after AP/DB o
 
 The chart renders:
 
-- Brain direct AP manifests for `sealai-api-staging`, `sealai-ui-staging`, and `sealai-registry`.
+- Brain direct AP manifests for `brain-api-staging`, `brain-ui-staging`, and `brain-registry`.
 - A Brain direct DB manifest for `brain-pg`.
 - Native Kubernetes `Deployment` and `Service` for `whodb`.
 - Optional application env `Secret` objects and image pull `Secret`.
@@ -36,22 +36,18 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 
 Edit `/tmp/brain-system.values.yaml`, especially:
 
-- `global.region`
 - `projectId`
 - GitHub App values
 - assistant model values
 - Devbox runtime values
 - `imagePullSecret.create`
 
-When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret.
+The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST` and `ui.env.DEVBOX_API_BASE_URL` are also derived from the platform cloud domain when left empty.
 
 Install or upgrade:
 
 ```bash
-helm upgrade --install brain-system charts/brain-system \
-  -n brain-system \
-  --create-namespace \
-  -f /tmp/brain-system.values.yaml
+charts/brain-system/install.sh /tmp/brain-system.values.yaml
 ```
 
 ## Verify
@@ -91,8 +87,8 @@ Durable AP and DB changes should go through the Brain API product endpoints so r
 For emergency inspection, read the native resources directly:
 
 ```bash
-kubectl -n brain-system get deploy sealai-api-staging -o yaml
-kubectl -n brain-system get svc sealai-api-staging-service -o yaml
+kubectl -n brain-system get deploy brain-api-staging -o yaml
+kubectl -n brain-system get svc brain-api-staging-service -o yaml
 kubectl -n brain-system get cluster brain-pg -o yaml
 kubectl -n brain-system get svc brain-pg-export -o yaml
 ```

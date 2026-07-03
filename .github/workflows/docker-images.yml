@@ -36,11 +36,14 @@ jobs:
       matrix:
         include:
           - component: api
-            image: sealai-api
+            image: brain-api
             dockerfile: apps/api/Dockerfile
           - component: ui
-            image: sealai-ui
+            image: brain-ui
             dockerfile: apps/ui/Dockerfile
+          - component: registry
+            image: brain-registry
+            dockerfile: apps/registry/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -56,7 +59,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve image name
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}/${{ matrix.image }}" >> "$GITHUB_ENV"
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_ENV"
 
       - name: Extract metadata
         id: meta

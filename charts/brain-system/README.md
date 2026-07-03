@@ -4,7 +4,7 @@ This chart is the preferred entrypoint for deploying the `brain-system` stack.
 
 It renders:
 
-- native Kubernetes `Deployment`, `Service`, and `Ingress` resources for `sealai-api-staging`, `sealai-ui-staging`, and `sealai-registry`
+- native Kubernetes `Deployment`, `Service`, and `Ingress` resources for `brain-api-staging`, `brain-ui-staging`, and `brain-registry`
 - native KubeBlocks `Cluster` resources for the app database
 - native Kubernetes `Deployment` and `Service`: `whodb`
 - optional image pull `Secret`
@@ -28,24 +28,25 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 
 Edit `/tmp/brain-system.values.yaml`, especially:
 
-- `global.region`
 - `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
 - GitHub App values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`)
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
-- Devbox runtime values (`DEVBOX_API_BASE_URL`, `DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
+- Devbox runtime values (`DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`
+
+The install script reads `cloudDomain` and `cloudPort` from
+`sealos-system/sealos-config` and passes them to Helm. Keep these values empty
+in private values files unless you intentionally want to override the platform
+config.
 
 When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart.
 
-`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty.
+`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST` and `ui.env.DEVBOX_API_BASE_URL` are also derived from the platform cloud domain when left empty.
 
 Install or upgrade:
 
 ```bash
-helm upgrade --install brain-system charts/brain-system \
-  -n brain-system \
-  --create-namespace \
-  -f /tmp/brain-system.values.yaml
+charts/brain-system/install.sh /tmp/brain-system.values.yaml
 ```
 
 ## Database Credentials

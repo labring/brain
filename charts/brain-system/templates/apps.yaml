@@ -1,4 +1,5 @@
 {{- $root := . -}}
+{{- $cloudDomain := include "brain-system.cloudDomain" $root -}}
 {{- range $component, $cfg := dict "api" .Values.api "ui" .Values.ui "registry" .Values.registry }}
 {{- if $cfg.enabled }}
 {{- $projectId := include "brain-system.projectId" $root -}}
@@ -6,6 +7,7 @@
 {{- $probes := default (dict) $cfg.probes -}}
 {{- $env := default (dict) $cfg.env -}}
 {{- $staticEnv := default (dict) $cfg.staticEnv -}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,7 +15,7 @@ metadata:
   namespace: {{ $root.Release.Namespace }}
   labels:
     {{- include "brain-system.labels" $root | nindent 4 }}
-    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $root.Values.global.region) | nindent 4 }}
+    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $cloudDomain) | nindent 4 }}
   annotations:
     brain.io/ap-desired-network: {{ include "brain-system.networkAnnotation" (dict "namespace" $root.Release.Namespace "name" $cfg.name "port" $cfg.port "platformAddresses" $cfg.platformAddresses) | quote }}
     brain.io/ap-replica-strategy: {{ include "brain-system.replicaStrategyAnnotation" (dict "replicas" $cfg.resources.replicas) | quote }}
@@ -36,7 +38,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "brain-system.apPodLabels" (dict "projectId" $projectId "name" $cfg.name "region" $root.Values.global.region) | nindent 8 }}
+        {{- include "brain-system.apPodLabels" (dict "projectId" $projectId "name" $cfg.name "region" $cloudDomain) | nindent 8 }}
     spec:
       {{- if and $root.Values.imagePullSecret.create $root.Values.imagePullSecret.name }}
       imagePullSecrets:
@@ -79,7 +81,7 @@ metadata:
   namespace: {{ $root.Release.Namespace }}
   labels:
     {{- include "brain-system.labels" $root | nindent 4 }}
-    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $root.Values.global.region) | nindent 4 }}
+    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $cloudDomain) | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
@@ -90,7 +92,7 @@ spec:
       protocol: TCP
       targetPort: {{ $cfg.port }}
 {{- range $address := $cfg.platformAddresses }}
-{{- $addressContext := dict "namespace" $root.Release.Namespace "name" $cfg.name "id" $address.id "region" $root.Values.global.region "domainPrefix" $address.domainPrefix }}
+{{- $addressContext := dict "namespace" $root.Release.Namespace "name" $cfg.name "id" $address.id "cloudDomain" $cloudDomain "domainPrefix" $address.domainPrefix }}
 {{- $host := include "brain-system.platformAddressHost" $addressContext }}
 {{- $domainPrefix := include "brain-system.platformAddressPrefix" $addressContext }}
 ---

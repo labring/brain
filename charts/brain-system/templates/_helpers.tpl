@@ -35,8 +35,21 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 {{- end -}}
 
+{{- define "brain-system.cloudDomain" -}}
+{{- default .Values.global.region .Values.global.cloudDomain | required "global.cloudDomain is required; use charts/brain-system/install.sh to read it from sealos-system/sealos-config" -}}
+{{- end -}}
+
+{{- define "brain-system.cloudPort" -}}
+{{- $port := default "" .Values.global.cloudPort | toString -}}
+{{- if or (eq $port "") (eq $port "443") -}}
+{{- "" -}}
+{{- else -}}
+{{- printf ":%s" $port -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "brain-system.regionLabel" -}}
-region: {{ required "global.region is required" .Values.global.region | quote }}
+region: {{ include "brain-system.cloudDomain" . | quote }}
 {{- end -}}
 
 {{- define "brain-system.envValue" -}}
@@ -99,21 +112,21 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{- end -}}
 
 {{- define "brain-system.platformAddressHost" -}}
-{{- printf "%s.%s" (include "brain-system.platformAddressPrefix" .) .region -}}
+{{- printf "%s.%s" (include "brain-system.platformAddressPrefix" .) .cloudDomain -}}
 {{- end -}}
 
 {{- define "brain-system.firstPlatformAddressHost" -}}
 {{- $addresses := default (list) .platformAddresses -}}
 {{- if gt (len $addresses) 0 -}}
 {{- $address := first $addresses -}}
-{{- include "brain-system.platformAddressHost" (dict "namespace" .namespace "name" .name "id" $address.id "region" .region "domainPrefix" $address.domainPrefix) -}}
+{{- include "brain-system.platformAddressHost" (dict "namespace" .namespace "name" .name "id" $address.id "cloudDomain" .cloudDomain "domainPrefix" $address.domainPrefix) -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "brain-system.publicUrl" -}}
 {{- $host := include "brain-system.firstPlatformAddressHost" . -}}
 {{- if $host -}}
-{{- printf "https://%s" $host -}}
+{{- printf "https://%s%s" $host (include "brain-system.cloudPort" .root) -}}
 {{- end -}}
 {{- end -}}
 
@@ -170,12 +183,18 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{ range $key, $value := .env }}
 {{ if and $root.Values.database.enabled (eq $key "DATABASE_URL") (eq (toString $value) "") }}
 {{ include "brain-system.databaseEnv" (dict "root" $root) }}
+{{ else if and (eq $component "api") (eq $key "DB_PUBLIC_HOST") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ include "brain-system.cloudDomain" $root | quote }}
 {{ else if and (eq $component "ui") (eq $key "API_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
-  value: {{ include "brain-system.publicUrl" (dict "namespace" $root.Release.Namespace "name" $root.Values.api.name "platformAddresses" $root.Values.api.platformAddresses "region" $root.Values.global.region) | quote }}
+  value: {{ include "brain-system.publicUrl" (dict "root" $root "namespace" $root.Release.Namespace "name" $root.Values.api.name "platformAddresses" $root.Values.api.platformAddresses "cloudDomain" (include "brain-system.cloudDomain" $root)) | quote }}
 {{ else if and (eq $component "ui") (eq $key "NEXT_PUBLIC_APP_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
-  value: {{ include "brain-system.publicUrl" (dict "namespace" $root.Release.Namespace "name" $root.Values.ui.name "platformAddresses" $root.Values.ui.platformAddresses "region" $root.Values.global.region) | quote }}
+  value: {{ include "brain-system.publicUrl" (dict "root" $root "namespace" $root.Release.Namespace "name" $root.Values.ui.name "platformAddresses" $root.Values.ui.platformAddresses "cloudDomain" (include "brain-system.cloudDomain" $root)) | quote }}
+{{ else if and (eq $component "ui") (eq $key "DEVBOX_API_BASE_URL") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ printf "https://devbox-server.%s%s" (include "brain-system.cloudDomain" $root) (include "brain-system.cloudPort" $root) | quote }}
 {{ else }}
 - name: {{ $key }}
   value: {{ $value | quote }}
