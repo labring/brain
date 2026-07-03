@@ -14,7 +14,6 @@ const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
   { label: "Storage", type: "storage" },
   { label: "Ports", type: "nodeport" },
 ] as const;
-const GIBI_SUFFIX_RE = /Gi$/;
 
 function formatPortQuotaNumber(value: number) {
   if (!Number.isFinite(value)) {
@@ -46,13 +45,11 @@ function formatBinaryQuotaNumberFromMi(value: number) {
     return "--";
   }
   try {
-    return Quantity.parse(`${value}Mi`)
-      .formatForDisplay({
-        digits: 2,
-        format: "BinarySI",
-        scale: BinaryScale.Gibi,
-      })
-      .replace(GIBI_SUFFIX_RE, "GB");
+    return Quantity.parse(`${value}Mi`).formatForDisplay({
+      digits: 2,
+      format: "BinarySI",
+      scale: BinaryScale.Gibi,
+    });
   } catch {
     return "--";
   }
