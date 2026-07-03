@@ -58,6 +58,7 @@ const runningStates: ContainerNodeStates = {
     memory: 61,
   },
   name: "api-running",
+  readyReplicas: 3,
   replicas: 3,
   status: { label: "Running", tone: "running" },
 };
@@ -66,6 +67,7 @@ const pausedStates: ContainerNodeStates = {
   image: "registry.example.io/worker:v1",
   kind: "AP",
   name: "worker-paused",
+  readyReplicas: 0,
   replicas: 0,
   status: { label: "Paused", tone: "paused" },
 };

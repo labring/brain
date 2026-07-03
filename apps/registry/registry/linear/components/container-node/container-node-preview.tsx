@@ -75,6 +75,7 @@ function buildPreviewStates(
         cpu: RUN_CPU_STEPS[liveStep],
         memory: RUN_MEM_STEPS[liveStep],
       },
+      readyReplicas: 3,
       status: { label: "Running", tone: "running" },
     };
   }
@@ -82,14 +83,15 @@ function buildPreviewStates(
     return {
       ...base,
       metrics: {},
-      replicas: 0,
+      readyReplicas: 1,
       status: { label: "Failed", tone: "failed" },
     };
   }
   return {
     ...base,
     metrics: {},
-    replicas: 1,
+    readyReplicas: 0,
+    replicas: 0,
     status: { label: "Paused", tone: "paused" },
   };
 }

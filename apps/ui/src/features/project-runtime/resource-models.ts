@@ -74,9 +74,12 @@ function apModelFromFact(fact: ApFact): CanvasContainerNodeData {
       kind: fact.workload.kind,
       name: fact.displayName,
       namespace: fact.ref.namespace,
-      ...(fact.replicaSummary === undefined
+      ...(fact.replicaSummary?.desired === undefined
         ? {}
-        : { replicas: fact.replicaSummary.replicas }),
+        : { replicas: fact.replicaSummary.desired }),
+      ...(fact.replicaSummary?.ready === undefined
+        ? {}
+        : { readyReplicas: fact.replicaSummary.ready }),
       status: fact.status,
       ...(fact.observedUid === undefined ? {} : { uid: fact.observedUid }),
     },
