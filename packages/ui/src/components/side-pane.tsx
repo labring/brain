@@ -17,7 +17,7 @@ const SidePaneMotionContext = createContext(true);
 type SidePaneGlowPhase = "enter" | "exit" | null;
 const SidePaneGlowPhaseContext = createContext<SidePaneGlowPhase>(null);
 const SIDE_PANE_GLOW_SETTLE_DURATION_VAR = "--side-pane-glow-settle-duration";
-const SIDE_PANE_GLOW_SETTLE_FALLBACK_MS = 620;
+const SIDE_PANE_GLOW_SETTLE_FALLBACK_MS = 820;
 
 function isRenderablePane(children: ReactNode): boolean {
   return children !== null && children !== undefined && children !== false;

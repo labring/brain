@@ -133,24 +133,24 @@
   );
   --side-pane-glow-core-color: color-mix(
     in oklab,
-    var(--color-blue-300) 28%,
+    var(--color-blue-300) 18%,
     transparent
   );
   --side-pane-glow-width: 18px;
-  --side-pane-glow-rest-opacity: 0.76;
-  --side-pane-glow-bloom-opacity: 1;
-  --side-pane-glow-flash-opacity: 0.86;
+  --side-pane-glow-rest-opacity: 0.46;
+  --side-pane-glow-bloom-opacity: 0.94;
+  --side-pane-glow-flash-opacity: 0.68;
   --side-pane-glow-soft-color: color-mix(
     in oklab,
-    var(--side-pane-glow-color) 12%,
+    var(--side-pane-glow-color) 6%,
     transparent
   );
   --side-pane-glow-halo-color: color-mix(
     in oklab,
-    var(--side-pane-glow-color) 28%,
+    var(--side-pane-glow-color) 14%,
     transparent
   );
-  --side-pane-glow-settle-duration: 620ms;
+  --side-pane-glow-settle-duration: 820ms;
   --side-pane-glow-settle-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -231,19 +231,20 @@
   }
 
   @keyframes side-pane-glow-settle {
-    0% {
+    0%,
+    34% {
       opacity: 0;
-      filter: blur(1.5px) saturate(1.12);
+      filter: blur(1.1px) saturate(1.08);
       transform: scaleX(0.72);
     }
-    34% {
+    48% {
       opacity: var(--side-pane-glow-bloom-opacity);
-      filter: blur(1px) saturate(1.14);
+      filter: blur(0.7px) saturate(1.24);
       transform: scaleX(1);
     }
     68% {
       opacity: var(--side-pane-glow-flash-opacity);
-      filter: blur(0.35px) saturate(1.06);
+      filter: blur(0.45px) saturate(1.1);
     }
     100% {
       opacity: var(--side-pane-glow-rest-opacity);
@@ -302,6 +303,7 @@
     position: absolute;
     inset-block: 0;
     right: 0;
+    z-index: 2;
     width: var(--side-pane-glow-width);
     contain: paint;
     pointer-events: none;
