@@ -10,7 +10,7 @@ import {
 import { TimeWheelField } from "@workspace/ui/components/time-wheel-field";
 import { cn } from "@workspace/ui/lib/utils";
 import { format } from "date-fns";
-import { ChevronDown, Clock } from "lucide-react";
+import { CalendarClock, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import {
@@ -99,7 +99,7 @@ export function LogWindowSelector({
             className="size-2 shrink-0 rounded-full bg-blue-400"
           />
         ) : (
-          <Clock className="size-4 shrink-0 text-muted-foreground" />
+          <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
         )}
         <span className="truncate">{formatLogWindowLabel(value)}</span>
         <ChevronDown className="size-3.5 shrink-0 opacity-50" />
@@ -111,6 +111,7 @@ export function LogWindowSelector({
         <div className="flex">
           <div className="flex flex-col gap-3 border-border border-r p-3">
             <Calendar
+              className="p-0 [--cell-radius:var(--radius-lg)] [--cell-size:--spacing(10)]"
               classNames={{
                 button_next:
                   "border border-input bg-transparent text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground",
@@ -172,10 +173,6 @@ export function LogWindowSelector({
             </div>
           </div>
           <div className="flex flex-col gap-1 p-3">
-            <span className="mb-1 flex items-center gap-1.5 font-medium text-muted-foreground text-xs">
-              <span aria-hidden className="size-1.5 rounded-full bg-blue-400" />
-              Live
-            </span>
             {LIVE_SPANS.map((span) => (
               <button
                 className={cn(
