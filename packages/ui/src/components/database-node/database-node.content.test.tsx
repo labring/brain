@@ -13,6 +13,14 @@ const DATABASE_STATES = {
 const OPEN_DATABASE_ACTIONS_RE = /Open database actions/;
 const DATABASE_NOT_RUNNING_RE = /Database is not running\./;
 const READ_ONLY_REASON_RE = /This project is read-only\./;
+const FIXED_CONNECTION_MASK_RE = />\*{12}</;
+const HOVER_REVEALED_CONNECTION_RE =
+  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>postgresql:\/\/alice:s3cr3t@db-main-postgresql.ns-a.svc:5432\/postgres</;
+const FIXED_CONNECTION_MASK_TITLE_RE = /title="\*{12}"/;
+const RAW_CONNECTION_TITLE_RE =
+  /title="postgresql:\/\/alice:s3cr3t@db-main-postgresql.ns-a.svc:5432\/postgres"/;
+const PARTIAL_CONNECTION_MASK_RE =
+  /postgresql:\/\/a\*\*\*\*\*\*\*:\*\*\*\*\*\*\*@db-main-postgresql/;
 
 test("DatabaseNodeContent omits lifecycle menu without a family", () => {
   const html = renderToStaticMarkup(
@@ -89,4 +97,29 @@ test("DatabaseNodeContent explains the unavailable public access toggle", () => 
   );
 
   assert.match(html, READ_ONLY_REASON_RE);
+});
+
+test("DatabaseNodeContent hides connection strings until the row is hovered", () => {
+  const html = renderToStaticMarkup(
+    <DatabaseNodeRoot
+      connections={[
+        {
+          id: "private",
+          kind: "private",
+          label: "Private connection",
+          value:
+            "postgresql://alice:s3cr3t@db-main-postgresql.ns-a.svc:5432/postgres",
+        },
+      ]}
+      states={DATABASE_STATES}
+    >
+      <DatabaseNodeContent />
+    </DatabaseNodeRoot>
+  );
+
+  assert.match(html, FIXED_CONNECTION_MASK_RE);
+  assert.match(html, HOVER_REVEALED_CONNECTION_RE);
+  assert.doesNotMatch(html, FIXED_CONNECTION_MASK_TITLE_RE);
+  assert.doesNotMatch(html, RAW_CONNECTION_TITLE_RE);
+  assert.doesNotMatch(html, PARTIAL_CONNECTION_MASK_RE);
 });

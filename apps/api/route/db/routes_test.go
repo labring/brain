@@ -899,7 +899,7 @@ func TestBackupDeleteErrorStatusMapping(t *testing.T) {
 	}
 }
 
-func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testing.T) {
+func TestDBConnectionStringsUseComponentPrivateAddressesWithoutSecrets(t *testing.T) {
 	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
 
 	db := map[string]interface{}{
@@ -909,12 +909,68 @@ func TestDBConnectionStringsUsePrivateAndPublicAddressesWithoutSecrets(t *testin
 	}
 
 	private := dbConnectionString(db, dbPrivateConnectionAddress(db, "db-main", "ns-a"))
-	if private != "mysql://db-main.ns-a.svc:3306/mysql" {
+	if private != "mysql://db-main-mysql.ns-a.svc:3306/mysql" {
 		t.Fatalf("private connection string = %q, want MySQL service DSN", private)
 	}
 	public := dbConnectionString(db, dbPublicConnectionAddress(45211))
 	if public != "mysql://192.168.10.189.nip.io:45211/mysql" {
 		t.Fatalf("public connection string = %q, want MySQL public DSN", public)
+	}
+}
+
+func TestDBConnectionStringsUsePostgresComponentPrivateAddress(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+
+	private := dbConnectionString(db, dbPrivateConnectionAddress(db, "db-main", "ns-a"))
+	if private != "postgresql://db-main-postgresql.ns-a.svc:5432/postgres" {
+		t.Fatalf("private connection string = %q, want PostgreSQL service DSN", private)
+	}
+}
+
+func TestDBConnectionStringUsesCredentialsFromSecret(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "postgresql",
+		},
+	}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"data": map[string]interface{}{
+			"username": "YWxpY2U=",
+			"password": "czNjcjN0",
+		},
+	}}
+
+	got := dbConnectionString(db, "pg.ns-a.svc:5432", dbConnectionCredentialsFromSecret(secret))
+	want := "postgresql://alice:s3cr3t@pg.ns-a.svc:5432/postgres"
+	if got != want {
+		t.Fatalf("connection string = %q, want %q", got, want)
+	}
+}
+
+func TestDBConnectionStringEscapesCredentialCharacters(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{
+			"engine": "mysql",
+		},
+	}
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"stringData": map[string]interface{}{
+			"user":   "root",
+			"passwd": " p@ss/word ",
+		},
+	}}
+
+	private := dbConnectionString(db, "mysql.ns-a.svc:3306", dbConnectionCredentialsFromSecret(secret))
+	if private != "mysql://root:%20p%40ss%2Fword%20@mysql.ns-a.svc:3306/mysql" {
+		t.Fatalf("private connection string = %q, want escaped MySQL credentials", private)
+	}
+	public := dbConnectionString(db, "192.168.10.189.nip.io:45211", dbConnectionCredentialsFromSecret(secret))
+	if public != "mysql://root:%20p%40ss%2Fword%20@192.168.10.189.nip.io:45211/mysql" {
+		t.Fatalf("public connection string = %q, want escaped MySQL credentials", public)
 	}
 }
 

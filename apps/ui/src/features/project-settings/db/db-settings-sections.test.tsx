@@ -49,10 +49,16 @@ function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
 const CONNECTION_ADDRESS_RE = /Connection Address/;
 const PRIVATE_CONNECTION_RE = /Private Connection/;
 const PUBLIC_CONNECTION_RE = /Public Connection/;
-const MASKED_PRIVATE_CONNECTION_RE =
-  /postgres:\/\/u\*\*\*\*\*\*\*:.*?@postgres.default.svc/;
-const MASKED_PUBLIC_CONNECTION_RE =
-  /postgres:\/\/u\*\*\*\*\*\*\*:.*?@db.example.com/;
+const FIXED_CONNECTION_MASK_RE = />\*{12}</g;
+const HOVER_REVEALED_PRIVATE_CONNECTION_RE =
+  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>postgres:\/\/user:secret@postgres.default.svc:5432\/app</;
+const HOVER_REVEALED_PUBLIC_CONNECTION_RE =
+  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>postgres:\/\/user:secret@db.example.com:30432\/app</;
+const FIXED_CONNECTION_MASK_TITLE_RE = /title="\*{12}"/;
+const RAW_PRIVATE_CONNECTION_TITLE_RE =
+  /title="postgres:\/\/user:secret@postgres.default.svc:5432\/app"/;
+const RAW_PUBLIC_CONNECTION_TITLE_RE =
+  /title="postgres:\/\/user:secret@db.example.com:30432\/app"/;
 const COPY_PRIVATE_CONNECTION_RE = /aria-label="Copy Private Connection"/;
 const COPY_PUBLIC_CONNECTION_RE = /aria-label="Copy Public Connection"/;
 const PUBLIC_CONNECTION_SWITCH_RE = /aria-label="Public connection"/;
@@ -64,9 +70,10 @@ const REPLICA_COUNT_RE = /Number of Replicas/;
 const REPLICA_VALUE_RE = />2</;
 const PENDING_REPLICA_VALUE_RE = />3</;
 const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
-const PRIVATE_DSN_RE = /mysql:\/\/r\*\*\*\*\*\*\*:.*?@db.default.svc:3306/;
+const PRIVATE_DSN_RE =
+  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>mysql:\/\/root:secret@db.default.svc:3306\/mydb</;
 const PUBLIC_DSN_RE =
-  /mysql:\/\/r\*\*\*\*\*\*\*:.*?@192.168.10.189.nip.io:45211/;
+  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>mysql:\/\/root:secret@192.168.10.189.nip.io:45211\/mydb</;
 const INVISIBLE_UNSAVED_CHANGES_RE =
   /<p class="[^"]*\binvisible\b[^"]*" role="status">.*Unsaved changes.*<\/p>/;
 
@@ -116,8 +123,12 @@ test("database settings pane renders copyable connection address rows", () => {
   assert.match(html, CONNECTION_ADDRESS_RE);
   assert.match(html, PRIVATE_CONNECTION_RE);
   assert.match(html, PUBLIC_CONNECTION_RE);
-  assert.match(html, MASKED_PRIVATE_CONNECTION_RE);
-  assert.match(html, MASKED_PUBLIC_CONNECTION_RE);
+  assert.equal([...html.matchAll(FIXED_CONNECTION_MASK_RE)].length, 2);
+  assert.match(html, HOVER_REVEALED_PRIVATE_CONNECTION_RE);
+  assert.match(html, HOVER_REVEALED_PUBLIC_CONNECTION_RE);
+  assert.doesNotMatch(html, FIXED_CONNECTION_MASK_TITLE_RE);
+  assert.doesNotMatch(html, RAW_PRIVATE_CONNECTION_TITLE_RE);
+  assert.doesNotMatch(html, RAW_PUBLIC_CONNECTION_TITLE_RE);
   assert.match(html, COPY_PRIVATE_CONNECTION_RE);
   assert.match(html, COPY_PUBLIC_CONNECTION_RE);
 });

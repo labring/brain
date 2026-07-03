@@ -118,6 +118,39 @@ function getConnectionDisplayValue(connection: DatabaseNodeConnection) {
   return connection.unavailableMessage ?? "Connection unavailable";
 }
 
+function DatabaseNodeConnectionValueText({
+  displayValue,
+  value,
+}: {
+  displayValue: string;
+  value?: string;
+}) {
+  if (!value || displayValue !== maskDatabaseConnectionString(value)) {
+    return <span className="min-w-0 truncate">{displayValue}</span>;
+  }
+
+  return (
+    <>
+      <span className="min-w-0 truncate group-focus-within/copyable-row:hidden group-hover/copyable-row:hidden">
+        {displayValue}
+      </span>
+      <span className="hidden min-w-0 truncate group-focus-within/copyable-row:inline group-hover/copyable-row:inline">
+        {value}
+      </span>
+    </>
+  );
+}
+
+function databaseNodeConnectionTitle(
+  displayValue: string | null,
+  value?: string
+) {
+  if (value && displayValue === maskDatabaseConnectionString(value)) {
+    return "";
+  }
+  return displayValue ?? undefined;
+}
+
 function DatabaseNodeHeaderIcon({ iconUrl }: { iconUrl?: string }) {
   const resolvedIconUrl = iconUrl?.trim();
 
@@ -265,10 +298,10 @@ export function DatabaseNodeConnectionRow({
   const { actions } = useDatabaseNode();
   const copyable = canCopyDatabaseNodeConnection(connection);
   const displayValue = getConnectionDisplayValue(connection);
-  const connectionTitle =
-    connection.kind === "public"
-      ? (displayValue ?? undefined)
-      : (connection.value ?? displayValue ?? undefined);
+  const connectionTitle = databaseNodeConnectionTitle(
+    displayValue,
+    connection.value
+  );
   const rowKey = getDatabaseNodeConnectionKey(connection, index);
   const publicSwitch =
     connection.kind === "public" ? (
@@ -323,7 +356,10 @@ export function DatabaseNodeConnectionRow({
               data-slot="database-node-connection-value"
               title={connectionTitle}
             >
-              <span className="min-w-0 truncate">{displayValue}</span>
+              <DatabaseNodeConnectionValueText
+                displayValue={displayValue}
+                value={connection.value}
+              />
               <CanvasNode.CopyableRowIndicator />
             </div>
           ) : null}

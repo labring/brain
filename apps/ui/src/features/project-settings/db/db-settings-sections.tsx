@@ -262,6 +262,39 @@ function getConnectionAddressDisplayValue(
   return connection.unavailableMessage ?? "Connection unavailable";
 }
 
+function DatabaseSettingsConnectionValueText({
+  displayValue,
+  value,
+}: {
+  displayValue: string;
+  value?: string;
+}) {
+  if (!value || displayValue !== maskDatabaseConnectionString(value)) {
+    return <span className="min-w-0 truncate">{displayValue}</span>;
+  }
+
+  return (
+    <>
+      <span className="min-w-0 truncate group-focus-within/copyable-row:hidden group-hover/copyable-row:hidden">
+        {displayValue}
+      </span>
+      <span className="hidden min-w-0 truncate group-focus-within/copyable-row:inline group-hover/copyable-row:inline">
+        {value}
+      </span>
+    </>
+  );
+}
+
+function databaseSettingsConnectionTitle(
+  displayValue: string | null,
+  value?: string
+) {
+  if (value && displayValue === maskDatabaseConnectionString(value)) {
+    return "";
+  }
+  return displayValue ?? undefined;
+}
+
 function shouldShowConnectionAddress(connection: DatabaseNodeConnection) {
   return connection.kind === "private" || connection.kind === "public";
 }
@@ -308,10 +341,7 @@ function DatabaseSettingsConnectionAddressRow({
       ? publicConnectionEnabled && Boolean(connection.value)
       : canCopyDatabaseNodeConnection(connection);
   const copyValue = copyable ? connection.value : undefined;
-  const title =
-    connection.kind === "public"
-      ? (displayValue ?? undefined)
-      : (connection.value ?? displayValue ?? undefined);
+  const title = databaseSettingsConnectionTitle(displayValue, connection.value);
   const publicSwitch =
     connection.kind === "public" ? (
       <CanvasNode.CopyableRowControl className="pointer-events-auto relative z-20 flex shrink-0 items-center">
@@ -363,7 +393,10 @@ function DatabaseSettingsConnectionAddressRow({
               data-slot="database-settings-connection-address-value"
               title={title}
             >
-              <span className="min-w-0 truncate">{displayValue}</span>
+              <DatabaseSettingsConnectionValueText
+                displayValue={displayValue}
+                value={connection.value}
+              />
               <CanvasNode.CopyableRowIndicator />
             </div>
           )}
