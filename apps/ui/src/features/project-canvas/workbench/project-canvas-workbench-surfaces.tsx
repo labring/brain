@@ -262,24 +262,29 @@ function ProjectCanvasDrawerSlot({
     return null;
   }
 
-  if (renderedDrawer.kind === "apTerminal") {
-    return (
-      <WorkloadTerminalPane
-        node={renderedDrawer.node}
-        onClose={onClose}
-        open={open}
-      />
-    );
+  switch (renderedDrawer.kind) {
+    case "apTerminal":
+      return (
+        <WorkloadTerminalPane
+          node={renderedDrawer.node}
+          onClose={onClose}
+          open={open}
+        />
+      );
+    case "dbTerminal":
+      return (
+        <DatabaseTerminalPane
+          node={renderedDrawer.node}
+          onClose={onClose}
+          open={open}
+          projectId={projectId}
+        />
+      );
+    case "pendingTarget":
+      return null;
+    default:
+      return renderedDrawer satisfies never;
   }
-
-  return (
-    <DatabaseTerminalPane
-      node={renderedDrawer.node}
-      onClose={onClose}
-      open={open}
-      projectId={projectId}
-    />
-  );
 }
 
 function canvasSidePaneEntryFromRenderModel(
