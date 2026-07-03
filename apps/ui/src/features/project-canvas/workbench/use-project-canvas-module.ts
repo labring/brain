@@ -44,6 +44,7 @@ import {
 import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
   DeploymentTaskProjection["status"]
@@ -293,7 +294,7 @@ export function useProjectCanvasModule({
     [projectCanvasLayout.savePlacementCommands]
   );
 
-  const onNodePositionChange = useCallback(
+  const onNodePositionChange = useStableCallback(
     (
       node: Parameters<typeof projectCanvasLayout.scheduleNodeLayoutSave>[0]
     ) => {
@@ -312,12 +313,7 @@ export function useProjectCanvasModule({
         return;
       }
       projectCanvasLayout.scheduleNodeLayoutSave(node, { source: "user" });
-    },
-    [
-      canvasState.nodes,
-      projectCanvasLayout.saveLayoutNodes,
-      projectCanvasLayout.scheduleNodeLayoutSave,
-    ]
+    }
   );
   const sideViewportFocus = useCallback<ProjectCanvasSideViewportFocusResolver>(
     ({ nodes, requestKey, side }) => {

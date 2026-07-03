@@ -47,6 +47,7 @@ import type {
 } from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 export interface ProjectCanvasSideViewportFocus {
   active?: boolean;
@@ -292,7 +293,7 @@ export function useProjectCanvas(
       stopDbWorkload: resourceActions.dbLifecycle.stopWorkload,
     });
 
-  const executeCommandPlan = useCallback(
+  const executeCommandPlan = useStableCallback(
     (plan: ProjectCanvasCommandPlan) => {
       const run = () => {
         executeUnguardedProjectCanvasCommandPlan(plan, {
@@ -316,15 +317,7 @@ export function useProjectCanvas(
       }
 
       run();
-    },
-    [
-      bringNodeToFrontById,
-      openDrawerSurface,
-      openMainSurface,
-      openSideSurface,
-      requestSettingsLeave,
-      writeSelection,
-    ]
+    }
   );
 
   const decorated = useProjectCanvasNodeDecorators({
@@ -341,6 +334,7 @@ export function useProjectCanvas(
   });
   const nodes = decorated.nodes;
   const runtimeModelDecorators = decorated.runtimeModelDecorators;
+  const getNodes = useStableCallback((): readonly Node[] => nodes);
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -599,11 +593,11 @@ export function useProjectCanvas(
         executeCommandPlan,
         focusCanvasSelection,
         frontCanvasNode,
+        getNodes,
         handleConnect: connectionGesture.handleConnect,
         handleConnectEnd: connectionGesture.handleConnectEnd,
         handleConnectStart: connectionGesture.handleConnectStart,
         isValidCanvasConnection: connectionGesture.isValidCanvasConnection,
-        nodes,
         onNodePositionChange: options?.onNodePositionChange,
         projectId: options?.projectId,
         projectCanvasConnectionLine:
@@ -624,7 +618,7 @@ export function useProjectCanvas(
       executeCommandPlan,
       focusCanvasSelection,
       frontCanvasNode,
-      nodes,
+      getNodes,
       options?.onNodePositionChange,
       options?.projectId,
       readOnly,

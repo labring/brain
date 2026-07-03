@@ -77,11 +77,11 @@ export function createProjectCanvasMeta({
   executeCommandPlan,
   focusCanvasSelection,
   frontCanvasNode,
+  getNodes,
   handleConnect,
   handleConnectEnd,
   handleConnectStart,
   isValidCanvasConnection,
-  nodes,
   onNodePositionChange,
   projectId,
   projectCanvasConnectionLine,
@@ -100,13 +100,14 @@ export function createProjectCanvasMeta({
     node: Node,
     options?: { persist?: boolean }
   ) => Node | undefined;
+  /** Reads the current decorated canvas nodes at event time. */
+  getNodes: () => readonly Node[];
   handleConnect: NonNullable<CanvasReactFlowProps["onConnect"]>;
   handleConnectEnd: NonNullable<CanvasReactFlowProps["onConnectEnd"]>;
   handleConnectStart: NonNullable<CanvasReactFlowProps["onConnectStart"]>;
   isValidCanvasConnection: NonNullable<
     CanvasReactFlowProps["isValidConnection"]
   >;
-  nodes: Node[];
   onNodePositionChange?: (node: Node) => void;
   projectId?: string;
   projectCanvasConnectionLine: CanvasReactFlowProps["connectionLineComponent"];
@@ -150,7 +151,7 @@ export function createProjectCanvasMeta({
         executeCommandPlan(
           planProjectCanvasCommand({
             intent: projectCanvasNodeClickIntentFromNode(node),
-            nodes,
+            nodes: getNodes(),
             projectId,
             readOnly,
           })
