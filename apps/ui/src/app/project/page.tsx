@@ -6,7 +6,6 @@ import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
-import { Aurora } from "@/components/aurora";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
@@ -183,13 +182,12 @@ export default function ProjectIndexPage() {
               "linear-gradient(to bottom, black 0%, black 58%, transparent 94%)",
           }}
         />
-        <Aurora
-          amplitude={1.35}
-          blend={0.42}
-          className={styles.ambientAurora}
-          colorStops={["#0a0a0a", "#1d4ed8", "#0a0a0a"]}
-          speed={0.5}
-        />
+        <div className={styles.horizon} data-slot="project-index-horizon">
+          <div className={styles.horizonGlow} />
+          <div className={styles.horizonHues} />
+          <div className={styles.horizonSurge} />
+          <div className={styles.horizonNoise} />
+        </div>
       </div>
       <div
         className={cn(

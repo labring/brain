@@ -8,27 +8,105 @@
   max-width: 0;
 }
 
-.ambientAurora {
+.horizon {
   position: absolute;
-  inset: auto 0 0;
+  inset: 0;
   z-index: 10;
-  height: 48%;
   pointer-events: none;
+}
+
+/* Gathered low ellipse: edges stay soft, but the falloff ends early enough
+   that an elliptical form is still readable along the bottom edge. */
+.horizonGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 64% 40% at 50% 110%,
+    color-mix(in oklab, var(--color-blue-400, #60a5fa) 56%, transparent) 0%,
+    color-mix(in oklab, var(--color-blue-500, #3b82f6) 38%, transparent) 28%,
+    color-mix(in oklab, var(--color-blue-600, #2563eb) 18%, transparent) 52%,
+    transparent 78%
+  );
+  transform-origin: 50% 100%;
+  animation: horizon-swell 6s ease-in-out infinite alternate;
+}
+
+.horizonHues {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 34% 26% at 30% 112%,
+      color-mix(in oklab, var(--color-violet-600, #7c3aed) 24%, transparent) 0%,
+      transparent 75%
+    ),
+    radial-gradient(
+      ellipse 36% 28% at 70% 114%,
+      color-mix(in oklab, var(--color-cyan-400, #22d3ee) 20%, transparent) 0%,
+      transparent 75%
+    );
   mix-blend-mode: screen;
-  opacity: 0.9;
-  filter: blur(0.5px);
-  transform: rotate(180deg);
+  filter: blur(30px);
+  transform-origin: 50% 100%;
+  animation: horizon-swell 8s ease-in-out -8s infinite alternate;
+}
+
+/* One huge ultra-soft wash swells far above the base haze and recedes,
+   so the glow's reach visibly rises and falls. */
+.horizonSurge {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 72% 40% at 50% 114%,
+    color-mix(in oklab, var(--color-blue-400, #60a5fa) 36%, transparent) 0%,
+    color-mix(in oklab, var(--color-blue-600, #2563eb) 16%, transparent) 45%,
+    transparent 80%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.55;
+  transform-origin: 50% 100%;
+  animation: horizon-surge 9s ease-in-out infinite alternate;
+}
+
+/* Fine noise dithers the large dark gradients so they don't band. */
+.horizonNoise {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+  mix-blend-mode: overlay;
+  opacity: 0.05;
+}
+
+@keyframes horizon-swell {
+  from {
+    opacity: 0.75;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes horizon-surge {
+  from {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+
+  to {
+    opacity: 0.95;
+    transform: scale(1.22);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ambientAurora {
-    background: radial-gradient(
-      ellipse 76% 50% at 50% 112%,
-      color-mix(in oklab, var(--color-blue-700, #1d4ed8) 30%, transparent) 0%,
-      color-mix(in oklab, var(--color-blue-700, #1d4ed8) 30%, transparent)
-        73.56%,
-      rgba(10, 10, 10, 0) 100%
-    );
+  .horizonGlow,
+  .horizonHues,
+  .horizonSurge {
+    animation: none;
   }
 }
 
