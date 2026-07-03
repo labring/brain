@@ -206,11 +206,16 @@ function CalendarDayButton({
         // width (flat non-square cells per the design system), rounded by
         // default so the unselected-hover pill matches.
         "relative isolate z-10 flex h-(--cell-size) w-full min-w-(--cell-size) flex-col gap-1 rounded-(--cell-radius) border-0 font-normal text-foreground leading-none",
-        // Unselected hover — bg-input overrides the ghost variant's
-        // hover:bg-accent via tailwind-merge (same variant + property).
-        "hover:bg-input",
-        // Range middle: square band segment; hover lifts one shade to accent.
-        "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-input data-[range-middle=true]:text-foreground data-[range-middle=true]:hover:bg-accent",
+        // Unselected hover: a subtle input-tinted highlight, matching the rest
+        // of the picker's hover language. Declared for BOTH the base and dark
+        // hover variants so tailwind-merge drops the ghost Button variant's
+        // leaked hover:bg-muted / dark:hover:bg-muted/50 (identical variant
+        // stacks). Without the dark twin, the leaked dark rule wins a
+        // specificity tie and repaints a darker box over the hovered cell.
+        "hover:bg-input/30 dark:hover:bg-input/30",
+        // Range middle: square band segment; hover holds the band tone so a
+        // mid-range cell never flickers to a different shade under the cursor.
+        "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-input data-[range-middle=true]:text-foreground data-[range-middle=true]:hover:bg-input",
         // Range endpoints: blue pills that round only their outer edge and
         // flatten the inner edge, but ONLY when they are a *pure* endpoint —
         // a single-day range is both start and end, so it stays fully rounded.
