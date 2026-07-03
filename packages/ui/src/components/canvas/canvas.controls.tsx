@@ -13,6 +13,7 @@ import type { FocusEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { CanvasInteractionMode } from "./canvas.types";
 import { useCanvas } from "./canvas.use";
+import { useCanvasViewportDirectives } from "./canvas.viewport-directives";
 
 const VIEWPORT_ACTION_DURATION_MS = 180;
 const CANVAS_NAVIGATION_CHROME_CLASS =
@@ -263,10 +264,10 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
       setInteractionMode(mode);
     },
   });
-  const rightOffsetPx = Math.max(
-    0,
-    rightInset ?? meta.viewportInsets?.right ?? 0
-  );
+  const directives = useCanvasViewportDirectives(meta.viewportDirectives);
+  const metaRightInset =
+    directives == null ? meta.viewportInsets?.right : directives.insets?.right;
+  const rightOffsetPx = Math.max(0, rightInset ?? metaRightInset ?? 0);
   const rightOffset = `calc(0.5rem + ${rightOffsetPx}px)`;
 
   return (

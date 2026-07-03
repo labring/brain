@@ -1,14 +1,11 @@
 "use client";
 
-import type {
-  CanvasMeta,
-  CanvasState,
-} from "@workspace/ui/components/canvas/canvas.types";
 import {
   createElement,
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,6 +41,7 @@ import {
 import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
 import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
 import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
   DeploymentTaskProjection["status"]
@@ -114,6 +112,8 @@ export function useProjectCanvasModule({
     projectId,
   });
 
+  const canvasCoveredRef = useRef(false);
+  const isCanvasCovered = useCallback(() => canvasCoveredRef.current, []);
   const {
     apEnvironmentDbReferenceSources,
     canvasState,
@@ -123,10 +123,12 @@ export function useProjectCanvasModule({
     isLoading: resourceSnapshotLoading,
     layoutIntent,
     refresh,
+    revalidate,
     runtimeStore,
   } = useProjectCanvasResourceSnapshot({
     canvasLayout: projectCanvasLayout.layout,
     canvasLayoutReady: projectCanvasLayout.layoutReady,
+    isCanvasCovered,
     kubeconfig,
     namespace,
     uid: projectId,
@@ -293,7 +295,7 @@ export function useProjectCanvasModule({
     [projectCanvasLayout.savePlacementCommands]
   );
 
-  const onNodePositionChange = useCallback(
+  const onNodePositionChange = useStableCallback(
     (
       node: Parameters<typeof projectCanvasLayout.scheduleNodeLayoutSave>[0]
     ) => {
@@ -312,12 +314,7 @@ export function useProjectCanvasModule({
         return;
       }
       projectCanvasLayout.scheduleNodeLayoutSave(node, { source: "user" });
-    },
-    [
-      canvasState.nodes,
-      projectCanvasLayout.saveLayoutNodes,
-      projectCanvasLayout.scheduleNodeLayoutSave,
-    ]
+    }
   );
   const sideViewportFocus = useCallback<ProjectCanvasSideViewportFocusResolver>(
     ({ nodes, requestKey, side }) => {
@@ -430,39 +427,29 @@ export function useProjectCanvasModule({
     [deploymentTaskProjections, namespace, projectId]
   );
 
-  const openingKey = `${namespace}:${projectId}`;
-  const meta = useMemo<CanvasMeta>(
-    () => ({
-      ...workbench.meta,
-      openingFitView: {
-        key: openingKey,
-      },
-      viewportFollow: {
-        isFollowTarget: isCanvasNodeGeneratedPosition,
-        key: openingKey,
-      },
-    }),
-    [workbench.meta, openingKey]
-  );
+  const mainRenderModel = workbench.surfaceRenderModel.main;
+  const canvasCovered =
+    mainRenderModel != null && mainRenderModel.kind !== "pendingTarget";
+  canvasCoveredRef.current = canvasCovered;
+  const previousCanvasCoveredRef = useRef(canvasCovered);
+  useEffect(() => {
+    const wasCovered = previousCanvasCoveredRef.current;
+    previousCanvasCoveredRef.current = canvasCovered;
+    if (wasCovered && !canvasCovered) {
+      revalidate().catch(() => undefined);
+    }
+  }, [canvasCovered, revalidate]);
 
-  const state = useMemo<CanvasState>(
-    () => ({
-      ...canvasState,
-      connectionOrigin: workbench.connectionOrigin,
-      edges: canvasEdges,
-      nodes: workbench.nodes,
-      selectedEdge: workbench.selectedEdge,
-      selectedNode: workbench.selectedNode,
-    }),
-    [
-      canvasEdges,
-      canvasState,
-      workbench.connectionOrigin,
-      workbench.nodes,
-      workbench.selectedEdge,
-      workbench.selectedNode,
-    ]
-  );
+  const openingKey = `${namespace}:${projectId}`;
+  const viewportDirectives = workbench.viewportDirectives;
+  useLayoutEffect(() => {
+    viewportDirectives.setOpeningFitKey(openingKey);
+    viewportDirectives.setFollow({
+      isFollowTarget: isCanvasNodeGeneratedPosition,
+      key: openingKey,
+    });
+  }, [openingKey, viewportDirectives]);
+  const meta = workbench.meta;
 
   const surfaceActions = useMemo<ProjectCanvasSurfaceHostActions>(
     () => ({
@@ -484,6 +471,31 @@ export function useProjectCanvasModule({
       workbench.onDbServiceRestoreAccepted,
       workbench.registerSettingsLeaveGuard,
       workbench.repairSide,
+    ]
+  );
+
+  const surfaceDialogs = useMemo(
+    () => [
+      createElement(
+        Fragment,
+        { key: "settings-leave-guard" },
+        workbench.settingsLeaveGuardDialog
+      ),
+      createElement(
+        Fragment,
+        { key: "resource-delete" },
+        workbench.resourceDeleteDialog
+      ),
+      createElement(
+        Fragment,
+        { key: "resource-stop" },
+        workbench.resourceStopDialog
+      ),
+    ],
+    [
+      workbench.resourceDeleteDialog,
+      workbench.resourceStopDialog,
+      workbench.settingsLeaveGuardDialog,
     ]
   );
 
@@ -516,32 +528,19 @@ export function useProjectCanvasModule({
       openDeploymentTaskDockTask,
     },
     canvas: {
+      covered: canvasCovered,
       deploymentTaskDock,
       frameState,
+      interactionStore: workbench.interactionStore,
+      lifecycleActivityStore: workbench.lifecycleActivityStore,
       meta,
-      runtimeModelDecorators: workbench.runtimeModelDecorators,
+      nodeCommands: workbench.nodeCommands,
       runtimeStore,
-      state,
+      viewportDirectives,
     },
     surfaces: {
       actions: surfaceActions,
-      dialogs: [
-        createElement(
-          Fragment,
-          { key: "settings-leave-guard" },
-          workbench.settingsLeaveGuardDialog
-        ),
-        createElement(
-          Fragment,
-          { key: "resource-delete" },
-          workbench.resourceDeleteDialog
-        ),
-        createElement(
-          Fragment,
-          { key: "resource-stop" },
-          workbench.resourceStopDialog
-        ),
-      ],
+      dialogs: surfaceDialogs,
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,
       settingsLaunchContext: workbench.settingsLaunchContext,

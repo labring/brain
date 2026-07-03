@@ -2,9 +2,18 @@
 
 import type { CanvasSelectedNode } from "@workspace/ui/components/canvas/canvas.types";
 import type { Edge, Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
+import { interactionSnapshotFromCanvasState } from "@/features/project-canvas/surface/interaction-react";
+import { createProjectCanvasInteractionStore } from "@/features/project-canvas/surface/interaction-store";
 import {
   createProjectCanvasDrawerRenderModel,
   createProjectCanvasMainRenderModel,
@@ -18,17 +27,22 @@ import {
 } from "@/features/project-canvas/surface/selection";
 import {
   createProjectCanvasMeta,
+  projectCanvasViewportFocusRequest,
   viewportFocusNodeIdFromSideRenderModel,
 } from "@/features/project-canvas/workbench/canvas-meta";
 import type { ProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/command-model";
+import { createCanvasLifecycleActivityStore } from "@/features/project-canvas/workbench/lifecycle-activity-store";
+import type { ProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
 import { executeUnguardedProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/project-canvas-command-executor";
+import { createProjectCanvasFlowStore } from "@/features/project-canvas/workbench/project-canvas-flow-store";
+import { useApSettingsSessionEvents } from "@/features/project-canvas/workbench/use-ap-settings-session-events";
 import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/use-db-service-restore-focus";
 import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workbench/use-deployment-task-timeline-opener";
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
-import { useProjectCanvasNodeDecorators } from "@/features/project-canvas/workbench/use-project-canvas-node-decorators";
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
 import { useResourceStopDialogs } from "@/features/project-canvas/workbench/use-resource-stop-dialogs";
+import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
@@ -47,6 +61,7 @@ import type {
 } from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 export interface ProjectCanvasSideViewportFocus {
   active?: boolean;
@@ -292,7 +307,7 @@ export function useProjectCanvas(
       stopDbWorkload: resourceActions.dbLifecycle.stopWorkload,
     });
 
-  const executeCommandPlan = useCallback(
+  const executeCommandPlan = useStableCallback(
     (plan: ProjectCanvasCommandPlan) => {
       const run = () => {
         executeUnguardedProjectCanvasCommandPlan(plan, {
@@ -316,31 +331,112 @@ export function useProjectCanvas(
       }
 
       run();
-    },
+    }
+  );
+
+  const nodes = stackOrderedNodes;
+  const getNodes = useStableCallback((): readonly Node[] => nodes);
+  const flowStore = useMemo(() => createProjectCanvasFlowStore(), []);
+  const optionEdges = options?.edges;
+  useLayoutEffect(() => {
+    flowStore.reconcile({ edges: optionEdges ?? [], nodes });
+  }, [flowStore, nodes, optionEdges]);
+  const { apSettingsSessionEventsForAp } = useApSettingsSessionEvents({
+    onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
+  });
+
+  const persistNodeLayout = useStableCallback((node: Node) => {
+    options?.onNodeExpansionChange?.(node);
+  });
+  const runResourceAction = useStableCallback(
+    resourceActions.runResourceAction
+  );
+  const toggleDatabasePublicAccess = useStableCallback(
+    resourceActions.toggleDatabasePublicAccess
+  );
+  const copyDatabaseConnection = useStableCallback(
+    resourceActions.copyDatabaseConnection
+  );
+  const restartApWorkload = useStableCallback(
+    resourceActions.apLifecycle.restartWorkload
+  );
+  const startApWorkload = useStableCallback(
+    resourceActions.apLifecycle.startWorkload
+  );
+  const restartDbWorkload = useStableCallback(
+    resourceActions.dbLifecycle.restartWorkload
+  );
+  const startDbWorkload = useStableCallback(
+    resourceActions.dbLifecycle.startWorkload
+  );
+  const clearDbPublicAccessPendingTarget = useStableCallback(
+    resourceActions.dbLifecycle.clearPublicAccessPendingTarget
+  );
+
+  const nodeCommands = useMemo<ProjectCanvasNodeCommands>(
+    () => ({
+      clearDbPublicAccessPendingTarget,
+      copyDatabaseConnection,
+      executeCommandPlan,
+      getNodes,
+      persistNodeLayout,
+      projectId: options?.projectId,
+      readOnly,
+      requestApDelete,
+      requestApStop,
+      requestDbDelete,
+      requestDbStop,
+      restartApWorkload,
+      restartDbWorkload,
+      runResourceAction,
+      startApWorkload,
+      startDbWorkload,
+      toggleDatabasePublicAccess,
+    }),
     [
-      bringNodeToFrontById,
-      openDrawerSurface,
-      openMainSurface,
-      openSideSurface,
-      requestSettingsLeave,
-      writeSelection,
+      clearDbPublicAccessPendingTarget,
+      copyDatabaseConnection,
+      executeCommandPlan,
+      getNodes,
+      persistNodeLayout,
+      options?.projectId,
+      readOnly,
+      requestApDelete,
+      requestApStop,
+      requestDbDelete,
+      requestDbStop,
+      restartApWorkload,
+      restartDbWorkload,
+      runResourceAction,
+      startApWorkload,
+      startDbWorkload,
+      toggleDatabasePublicAccess,
     ]
   );
 
-  const decorated = useProjectCanvasNodeDecorators({
-    executeCommandPlan,
-    nodes: stackOrderedNodes,
-    onNodeExpansionChange: options?.onNodeExpansionChange,
-    onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
-    readOnly,
-    requestApDelete,
-    requestApStop,
-    requestDbDelete,
-    requestDbStop,
-    resourceActions,
-  });
-  const nodes = decorated.nodes;
-  const runtimeModelDecorators = decorated.runtimeModelDecorators;
+  const lifecycleActivityStore = useMemo(
+    () => createCanvasLifecycleActivityStore(),
+    []
+  );
+  const apAuthReady = resourceActions.apLifecycle.authReady;
+  const dbAuthReady = resourceActions.dbLifecycle.authReady;
+  const getDbPublicAccessPendingTarget =
+    resourceActions.dbLifecycle.getPublicAccessPendingTarget;
+  const isDbLifecycleLoading = resourceActions.dbLifecycle.isLoading;
+  useLayoutEffect(() => {
+    lifecycleActivityStore.publish({
+      apAuthReady,
+      dbAuthReady,
+      getDbPublicAccessPendingTarget,
+      isDbLifecycleLoading,
+    });
+  }, [
+    apAuthReady,
+    dbAuthReady,
+    getDbPublicAccessPendingTarget,
+    isDbLifecycleLoading,
+    lifecycleActivityStore,
+  ]);
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -482,6 +578,25 @@ export function useProjectCanvas(
       surfaceRenderModel.side,
     ]
   );
+  const viewportDirectives = useMemo(
+    () => createProjectCanvasViewportDirectiveStore(),
+    []
+  );
+  const sideViewportFocusKey = sideViewportFocus?.key;
+  useLayoutEffect(() => {
+    viewportDirectives.setFocus(
+      projectCanvasViewportFocusRequest({
+        active: viewportFocusActive,
+        key: sideViewportFocusKey,
+        nodeIds: viewportFocusNodeIds,
+      })
+    );
+  }, [
+    sideViewportFocusKey,
+    viewportDirectives,
+    viewportFocusActive,
+    viewportFocusNodeIds,
+  ]);
 
   useEffect(() => {
     if (selectedNode == null) {
@@ -495,6 +610,24 @@ export function useProjectCanvas(
     nodes,
     readOnly,
   });
+
+  const interactionStore = useMemo(
+    () => createProjectCanvasInteractionStore(),
+    []
+  );
+  const connectionOrigin = connectionGesture.connectionOrigin;
+  useLayoutEffect(() => {
+    interactionStore.setSnapshot(
+      interactionSnapshotFromCanvasState({
+        connectionOrigin,
+        selectedEdge,
+        selectedNode,
+      })
+    );
+  }, [connectionOrigin, interactionStore, selectedEdge, selectedNode]);
+  useLayoutEffect(() => {
+    flowStore.setSelectedEdgeId(selectedEdge?.id ?? null);
+  }, [flowStore, selectedEdge]);
 
   const closeSideSurface = useCallback(() => {
     const side = surfaceState.side;
@@ -564,12 +697,12 @@ export function useProjectCanvas(
       return undefined;
     }
     return {
-      ap: decorated.apSettingsSessionEventsForAp({
+      ap: apSettingsSessionEventsForAp({
         name: target.name,
         namespace: target.namespace,
       }),
     };
-  }, [decorated, surfaceRenderModel.side]);
+  }, [apSettingsSessionEventsForAp, surfaceRenderModel.side]);
   const consumeSettingsLaunchContext = useCallback(() => {
     const entry = activeSettingsEntry;
     if (entry == null) {
@@ -597,21 +730,20 @@ export function useProjectCanvas(
         clearSelection,
         connectionGestureActive: connectionGesture.connectionGestureActive,
         executeCommandPlan,
+        flowStore,
         focusCanvasSelection,
         frontCanvasNode,
+        getNodes,
         handleConnect: connectionGesture.handleConnect,
         handleConnectEnd: connectionGesture.handleConnectEnd,
         handleConnectStart: connectionGesture.handleConnectStart,
         isValidCanvasConnection: connectionGesture.isValidCanvasConnection,
-        nodes,
         onNodePositionChange: options?.onNodePositionChange,
         projectId: options?.projectId,
         projectCanvasConnectionLine:
           connectionGesture.projectCanvasConnectionLine,
         readOnly,
-        viewportFocusKey: sideViewportFocus?.key,
-        viewportFocusActive,
-        viewportFocusNodeIds,
+        viewportDirectives,
       }),
     [
       clearSelection,
@@ -622,15 +754,14 @@ export function useProjectCanvas(
       connectionGesture.isValidCanvasConnection,
       connectionGesture.projectCanvasConnectionLine,
       executeCommandPlan,
+      flowStore,
       focusCanvasSelection,
       frontCanvasNode,
-      nodes,
+      getNodes,
       options?.onNodePositionChange,
       options?.projectId,
       readOnly,
-      sideViewportFocus?.key,
-      viewportFocusActive,
-      viewportFocusNodeIds,
+      viewportDirectives,
     ]
   );
 
@@ -642,7 +773,10 @@ export function useProjectCanvas(
     closeResourcePane,
     closeSideSurface,
     connectionOrigin: connectionGesture.connectionOrigin,
+    interactionStore,
+    lifecycleActivityStore,
     meta,
+    nodeCommands,
     nodes,
     onDbServiceRestoreAccepted,
     openDrawerSurface,
@@ -653,7 +787,6 @@ export function useProjectCanvas(
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,
-    runtimeModelDecorators,
     selected,
     selectedEdge,
     selectedNode,
@@ -663,5 +796,6 @@ export function useProjectCanvas(
     settingsSessionEvents,
     consumeSettingsLaunchContext,
     surfaceRenderModel,
+    viewportDirectives,
   };
 }

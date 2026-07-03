@@ -1,7 +1,7 @@
 "use client";
 
 import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
 import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
@@ -57,7 +57,7 @@ export interface ProjectCanvasSurfaceHostProps {
   surfaceModel: ProjectCanvasSurfaceRenderModel;
 }
 
-export function ProjectCanvasSurfaceHost({
+export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
   actions,
   dialogs,
   kubeconfig,
@@ -178,7 +178,7 @@ export function ProjectCanvasSurfaceHost({
       />
     </>
   );
-}
+});
 
 type ProjectCanvasDrawerRenderModel = ProjectCanvasSurfaceRenderModel["drawer"];
 

@@ -19,7 +19,14 @@ import {
   useStore,
 } from "@xyflow/react";
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { CanvasControls, CanvasMiniMap } from "./canvas.controls";
 import {
   type CanvasEdgeAnchorPair,
@@ -34,6 +41,7 @@ import {
   CanvasUpperRightProvider,
 } from "./canvas.upper-right";
 import { useCanvas } from "./canvas.use";
+import { useCanvasViewportDirectives } from "./canvas.viewport-directives";
 import {
   canvasViewportFocusNodeIds,
   canvasViewportFocusRequestKey,
@@ -161,11 +169,51 @@ function edgesMatchIncoming(current: Edge[], incoming: Edge[]): boolean {
   });
 }
 
+const NOOP_UNSUBSCRIBE = () => undefined;
+
 function CanvasFlow({ children }: CanvasFlowProps) {
   const { interactionMode, meta, navigationChrome, rootRef, state } =
     useCanvas();
-  const [nodes, setNodes, onNodesChange] = useNodesState(state.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(state.edges);
+  const flowStore = meta.flowStore;
+  const subscribeFlowStore = useCallback(
+    (listener: () => void) =>
+      flowStore == null ? NOOP_UNSUBSCRIBE : flowStore.subscribe(listener),
+    [flowStore]
+  );
+  const getFlowSnapshot = useCallback(
+    () => flowStore?.getSnapshot(),
+    [flowStore]
+  );
+  const flowSnapshot = useSyncExternalStore(
+    subscribeFlowStore,
+    getFlowSnapshot,
+    getFlowSnapshot
+  );
+  const directives = useCanvasViewportDirectives(meta.viewportDirectives);
+  const [internalNodes, setNodes, onInternalNodesChange] = useNodesState(
+    state.nodes
+  );
+  const [internalEdges, setEdges, onInternalEdgesChange] = useEdgesState(
+    state.edges
+  );
+  const nodes = flowSnapshot?.nodes ?? internalNodes;
+  const edges = flowSnapshot?.edges ?? internalEdges;
+  const handleNodesChange = useMemo(
+    () =>
+      flowStore == null
+        ? onInternalNodesChange
+        : (changes: Parameters<typeof onInternalNodesChange>[0]) =>
+            flowStore.applyNodeChanges(changes),
+    [flowStore, onInternalNodesChange]
+  );
+  const handleEdgesChange = useMemo(
+    () =>
+      flowStore == null
+        ? onInternalEdgesChange
+        : (changes: Parameters<typeof onInternalEdgesChange>[0]) =>
+            flowStore.applyEdgeChanges?.(changes),
+    [flowStore, onInternalEdgesChange]
+  );
   const {
     fitView,
     getViewport,
@@ -188,7 +236,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const nodeDragging = nodes.some((node) => node.dragging === true);
 
   useLayoutEffect(() => {
-    if (nodeDragging) {
+    if (flowStore != null || nodeDragging) {
       return;
     }
     if (initializedRef.current) {
@@ -197,21 +245,27 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       initializedRef.current = true;
       setNodes((prev) => (prev === state.nodes ? prev : state.nodes));
     }
-  }, [nodeDragging, setNodes, state.nodes]);
+  }, [flowStore, nodeDragging, setNodes, state.nodes]);
 
   useLayoutEffect(() => {
+    if (flowStore != null) {
+      return;
+    }
     setEdges((prev) =>
       edgesMatchIncoming(prev, state.edges) ? prev : state.edges
     );
-  }, [setEdges, state.edges]);
+  }, [flowStore, setEdges, state.edges]);
 
+  const selectedEdgeId =
+    flowSnapshot == null
+      ? (state.selectedEdge?.id ?? null)
+      : (flowSnapshot.selectedEdgeId ?? null);
   const edgesWithSelectionStyle = useMemo((): Edge[] => {
-    const selected = state.selectedEdge;
-    if (selected == null) {
+    if (selectedEdgeId == null) {
       return edges;
     }
     return edges.map((edge) => {
-      if (edge.id !== selected.id) {
+      if (edge.id !== selectedEdgeId) {
         return edge;
       }
       const prev =
@@ -225,7 +279,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
         },
       };
     });
-  }, [edges, state.selectedEdge]);
+  }, [edges, selectedEdgeId]);
   const edgeAnchorResolver = meta.edgeAnchorResolver;
   const edgeAnchorResolution = useMemo(() => {
     if (edgeAnchorResolver == null) {
@@ -256,8 +310,20 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const userReactFlowProps = meta.reactFlowProps ?? {};
   const openingFitViewOptions = userReactFlowProps.fitViewOptions;
   const shouldFitOpeningView = userReactFlowProps.fitView !== false;
-  const viewportFocus = meta.viewportFocus;
-  const viewportInsets = meta.viewportInsets;
+  const baseViewportFocus =
+    directives == null ? meta.viewportFocus : directives.viewportFocus;
+  const directiveInstant = directives?.instant === true;
+  const viewportFocus = useMemo(() => {
+    if (baseViewportFocus == null) {
+      return;
+    }
+    if (directiveInstant && baseViewportFocus.instant !== true) {
+      return { ...baseViewportFocus, instant: true };
+    }
+    return baseViewportFocus;
+  }, [baseViewportFocus, directiveInstant]);
+  const viewportInsets =
+    directives == null ? meta.viewportInsets : directives.insets;
   const viewportFocusNodeIds = useMemo(
     () => canvasViewportFocusNodeIds(viewportFocus),
     [viewportFocus]
@@ -339,9 +405,13 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       onNodeDragStop: handleNodeDragStop,
     },
   });
-  const openingFitKey = meta.openingFitView?.key ?? DEFAULT_OPENING_FIT_KEY;
+  const openingFitKey =
+    (directives == null
+      ? meta.openingFitView?.key
+      : directives.openingFitKey) ?? DEFAULT_OPENING_FIT_KEY;
   const nodeCount = nodes.length;
-  const viewportFollow = meta.viewportFollow;
+  const viewportFollow =
+    directives == null ? meta.viewportFollow : directives.viewportFollow;
   const viewportFollowTarget = viewportFollow?.isFollowTarget;
   const viewportFollowKey = viewportFollow?.key ?? openingFitKey;
   const viewportReadyForViewportActions =
@@ -571,8 +641,8 @@ function CanvasFlow({ children }: CanvasFlowProps) {
             edgeTypes={meta.edgeTypes}
             nodes={nodes}
             nodeTypes={meta.nodeTypes}
-            onEdgesChange={onEdgesChange}
-            onNodesChange={onNodesChange}
+            onEdgesChange={handleEdgesChange}
+            onNodesChange={handleNodesChange}
           >
             <Background
               color="var(--color-canvas-dot)"

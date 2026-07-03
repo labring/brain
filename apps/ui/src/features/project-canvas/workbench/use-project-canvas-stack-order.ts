@@ -1,7 +1,7 @@
 "use client";
 
 import type { Node } from "@xyflow/react";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   applyCanvasStackOrderToNodes,
   bringCanvasNodeToFrontInStackOrder,
@@ -9,6 +9,7 @@ import {
   canvasNodeStackOrder,
   nodeWithCanvasStackOrder,
 } from "@/features/project-canvas/layout/node-stack-order";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 export function useProjectCanvasStackOrder({
   nodes,
@@ -35,7 +36,7 @@ export function useProjectCanvasStackOrder({
     return applyCanvasStackOrderToNodes(overridden);
   }, [localStackOrderByRef, nodes]);
 
-  const frontCanvasNode = useCallback(
+  const frontCanvasNode = useStableCallback(
     (node: Node, options?: { persist?: boolean }) => {
       const sourceNodes = stackOrderedNodes.map((candidate) =>
         candidate.id === node.id
@@ -65,21 +66,15 @@ export function useProjectCanvasStackOrder({
         onNodeStackOrderChange?.(nextNode);
       }
       return nextNode;
-    },
-    [onNodeStackOrderChange, readOnly, stackOrderedNodes]
+    }
   );
 
-  const bringNodeToFrontById = useCallback(
-    (nodeId: string) => {
-      const node = stackOrderedNodes.find(
-        (candidate) => candidate.id === nodeId
-      );
-      if (node !== undefined) {
-        frontCanvasNode(node);
-      }
-    },
-    [frontCanvasNode, stackOrderedNodes]
-  );
+  const bringNodeToFrontById = useStableCallback((nodeId: string) => {
+    const node = stackOrderedNodes.find((candidate) => candidate.id === nodeId);
+    if (node !== undefined) {
+      frontCanvasNode(node);
+    }
+  });
 
   return {
     bringNodeToFrontById,
