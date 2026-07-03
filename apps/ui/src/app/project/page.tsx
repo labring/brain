@@ -207,10 +207,7 @@ export default function ProjectIndexPage() {
         </section>
         <div
           aria-hidden
-          className={cn(
-            styles.sidePaneReserve,
-            "min-h-0 shrink-0 transition-[width,max-width] duration-200 ease-out motion-reduce:transition-none"
-          )}
+          className={cn(styles.sidePaneReserve, "min-h-0 shrink-0")}
           data-open={sidePaneOpen}
           data-slot="project-index-side-pane-reserve"
         />

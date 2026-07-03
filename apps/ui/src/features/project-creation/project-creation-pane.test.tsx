@@ -31,7 +31,7 @@ const GITHUB_URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
 const GITHUB_AUTHORIZE_RE = /Authorize GitHub/;
 const GITHUB_REPOSITORY_URL_RE = /Repository URL/;
 const GITHUB_REPOSITORY_LOCKED_RE =
-  /Please authorize your GitHub account before selecting a repository\./;
+  /Please authorize your GitHub account to deploy from a GitHub repository URL\./;
 const SCENARIO_RE = /Scenario/;
 const TWO_COLUMN_PICKER_RE = /sm:grid-cols-2/;
 const TRAIL_BACK_RE = />Back</;

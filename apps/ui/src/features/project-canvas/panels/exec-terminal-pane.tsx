@@ -339,10 +339,10 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
       aria-hidden={!open}
       aria-label="Terminal session"
       className={cn(
-        "project-chrome-surface pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)] transition-[opacity,transform,border-color] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+        "project-chrome-surface project-surface-slide-y pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)] transition-[opacity,transform,border-color] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
         open
-          ? "translate-y-0 opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
-          : "pointer-events-none translate-y-6 opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
+          ? "project-surface-slide-y-open opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
+          : "project-surface-slide-y-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
         isResizing ? "border-input" : "border-white/10"
       )}
       data-slot="exec-terminal-plane"

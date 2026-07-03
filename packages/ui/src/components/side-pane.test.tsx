@@ -14,6 +14,8 @@ const BUSY_RE = /aria-busy="true"/;
 const CLOSE_LABEL_RE = /Close details/;
 const CLOSED_RE = /aria-hidden="true"/;
 const DESCRIPTION_RE = /Secondary copy/;
+const GLOW_RE = /data-slot="side-pane-glow"/;
+const GLOW_SETTLE_RE = /side-pane-glow-settle/;
 const MOTION_REDUCE_TRANSFORM_RE = /motion-reduce:transform-none/;
 const MOTION_REDUCE_TRANSITION_RE = /motion-reduce:transition-none/;
 const OPEN_ASIDE_RE = /<aside aria-hidden="false"/;
@@ -21,18 +23,19 @@ const OPEN_DURATION_RE =
   /duration-\[var\(--project-surface-motion-enter-duration\)\]/;
 const OPEN_MAX_WIDTH_RE = /max-w-screen-sm/;
 const OPEN_OPACITY_RE = /opacity-100/;
-const OPEN_TRANSLATE_RE = /translate-x-0/;
+const OPEN_SLIDE_RE = /project-surface-slide-x-open/;
 const OPEN_WIDTH_RE = /w-full/;
 const PANE_LABEL_RE = /aria-label="Details pane"/;
 const POINTER_EVENTS_NONE_RE = /pointer-events-none/;
 const PROJECT_CHROME_SURFACE_RE = /project-chrome-surface/;
+const SLIDE_X_RE = /project-surface-slide-x/;
 const SCROLL_BEFORE_CONTENT_GAP_RE = /flex min-h-0 flex-1 flex-col gap-2.5/;
 const SCROLL_BODY_RE = /scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto/;
 const SCROLL_CONTENT_RE =
   /flex min-h-full min-w-0 flex-col gap-5 px-5 pt-2.5 pb-5/;
 const TITLE_RE = /Details/;
 const TITLE_ROW_GAP_RE = /flex min-w-0 items-center gap-2"/;
-const TRANSLATE_CLOSED_RE = /translate-x-full/;
+const CLOSED_SLIDE_FULL_RE = /project-surface-slide-x-full/;
 
 function indexOfOrThrow(source: string, needle: string) {
   const index = source.indexOf(needle);
@@ -63,6 +66,9 @@ test("side pane renders shared chrome, accessibility labels, and motion-safe cla
   assert.match(html, DESCRIPTION_RE);
   assert.match(html, BODY_RE);
   assert.match(html, PROJECT_CHROME_SURFACE_RE);
+  assert.match(html, SLIDE_X_RE);
+  assert.match(html, GLOW_RE);
+  assert.doesNotMatch(html, GLOW_SETTLE_RE);
   assert.match(html, MOTION_REDUCE_TRANSITION_RE);
   assert.match(html, SCROLL_BEFORE_CONTENT_GAP_RE);
   assert.match(html, TITLE_ROW_GAP_RE);
@@ -100,7 +106,7 @@ test("side pane closed state is non-interactive and keeps reduced-motion structu
 
   assert.match(html, CLOSED_RE);
   assert.match(html, POINTER_EVENTS_NONE_RE);
-  assert.match(html, TRANSLATE_CLOSED_RE);
+  assert.match(html, CLOSED_SLIDE_FULL_RE);
   assert.match(html, MOTION_REDUCE_TRANSFORM_RE);
 });
 
@@ -117,8 +123,9 @@ test("side pane presence renders initial pane content open", () => {
   assert.match(html, OPEN_ASIDE_RE);
   assert.match(html, OPEN_WIDTH_RE);
   assert.match(html, OPEN_MAX_WIDTH_RE);
-  assert.match(html, OPEN_TRANSLATE_RE);
+  assert.match(html, OPEN_SLIDE_RE);
   assert.match(html, OPEN_OPACITY_RE);
   assert.match(html, OPEN_DURATION_RE);
-  assert.doesNotMatch(html, TRANSLATE_CLOSED_RE);
+  assert.doesNotMatch(html, GLOW_SETTLE_RE);
+  assert.doesNotMatch(html, CLOSED_SLIDE_FULL_RE);
 });

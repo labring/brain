@@ -14,6 +14,9 @@ import {
 } from "react";
 
 const SidePaneMotionContext = createContext(true);
+const SidePaneGlowSettleContext = createContext(false);
+const SIDE_PANE_GLOW_SETTLE_DURATION_VAR = "--side-pane-glow-settle-duration";
+const SIDE_PANE_GLOW_SETTLE_FALLBACK_MS = 620;
 
 function isRenderablePane(children: ReactNode): boolean {
   return children !== null && children !== undefined && children !== false;
@@ -54,6 +57,7 @@ export function SidePane({
   title,
 }: SidePaneProps) {
   const motionOpen = useSidePaneMotionOpen(open);
+  const glowSettling = useContext(SidePaneGlowSettleContext);
 
   return (
     <aside
@@ -61,19 +65,19 @@ export function SidePane({
       aria-hidden={!motionOpen}
       aria-label={label}
       className={cn(
-        "pointer-events-auto absolute top-13 right-0 bottom-0 z-20 w-full min-w-0 max-w-screen-sm overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+        "project-surface-slide-x pointer-events-auto absolute top-13 right-0 bottom-0 z-20 w-full min-w-0 max-w-screen-sm overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
         motionOpen
-          ? "translate-x-0 opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
-          : "pointer-events-none translate-x-6 opacity-0 duration-[var(--project-surface-motion-exit-duration)]"
+          ? "project-surface-slide-x-open opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
+          : "project-surface-slide-x-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]"
       )}
       data-slot="side-pane"
     >
       <div
         className={cn(
-          "project-chrome-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface project-surface-slide-x dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
           motionOpen
-            ? "translate-x-0 duration-[var(--project-surface-motion-enter-duration)]"
-            : "translate-x-full duration-[var(--project-surface-motion-exit-duration)]",
+            ? "project-surface-slide-x-open duration-[var(--project-surface-motion-enter-duration)]"
+            : "project-surface-slide-x-full duration-[var(--project-surface-motion-exit-duration)]",
           className
         )}
       >
@@ -128,7 +132,10 @@ export function SidePane({
         </div>
         <div
           aria-hidden
-          className="side-pane-glow motion-reduce:animate-none"
+          className={cn(
+            "side-pane-glow motion-reduce:animate-none",
+            motionOpen && glowSettling && "side-pane-glow-settle"
+          )}
           data-slot="side-pane-glow"
         />
       </div>
@@ -141,9 +148,11 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
   const [renderedChildren, setRenderedChildren] =
     useState<ReactNode>(initialChildren);
   const [open, setOpen] = useState(initialChildren !== null);
+  const [glowSettling, setGlowSettling] = useState(false);
   const presentRef = useRef(initialChildren !== null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openFrameRef = useRef<number | null>(null);
+  const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const clearCloseTimer = () => {
@@ -158,24 +167,52 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
         openFrameRef.current = null;
       }
     };
+    const clearGlowTimer = () => {
+      if (glowTimerRef.current !== null) {
+        clearTimeout(glowTimerRef.current);
+        glowTimerRef.current = null;
+      }
+    };
     const hasChildren = isRenderablePane(children);
 
     if (hasChildren) {
       const wasPresent = presentRef.current;
+      const opening = openFrameRef.current !== null;
       presentRef.current = true;
       clearCloseTimer();
-      clearOpenFrame();
+      clearGlowTimer();
       setRenderedChildren(children);
 
       if (wasPresent) {
+        if (opening) {
+          return;
+        }
         setOpen(true);
+        setGlowSettling(false);
         return;
       }
 
+      clearOpenFrame();
       setOpen(false);
+      setGlowSettling(false);
+      // Let the closed transform paint before opening; otherwise light pages can
+      // batch both states into a jump instead of a transition.
       openFrameRef.current = requestAnimationFrame(() => {
-        openFrameRef.current = null;
-        setOpen(true);
+        openFrameRef.current = requestAnimationFrame(() => {
+          openFrameRef.current = null;
+          setOpen(true);
+          setGlowSettling(true);
+          glowTimerRef.current = setTimeout(
+            () => {
+              glowTimerRef.current = null;
+              setGlowSettling(false);
+            },
+            projectSurfaceMotionMs(
+              SIDE_PANE_GLOW_SETTLE_DURATION_VAR,
+              SIDE_PANE_GLOW_SETTLE_FALLBACK_MS
+            )
+          );
+        });
       });
       return;
     }
@@ -186,7 +223,9 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
 
     presentRef.current = false;
     clearOpenFrame();
+    clearGlowTimer();
     setOpen(false);
+    setGlowSettling(false);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       setRenderedChildren(null);
@@ -201,6 +240,9 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
       if (openFrameRef.current !== null) {
         cancelAnimationFrame(openFrameRef.current);
       }
+      if (glowTimerRef.current !== null) {
+        clearTimeout(glowTimerRef.current);
+      }
     },
     []
   );
@@ -211,7 +253,9 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
 
   return (
     <SidePaneMotionContext.Provider value={open}>
-      {renderedChildren}
+      <SidePaneGlowSettleContext.Provider value={glowSettling}>
+        {renderedChildren}
+      </SidePaneGlowSettleContext.Provider>
     </SidePaneMotionContext.Provider>
   );
 }

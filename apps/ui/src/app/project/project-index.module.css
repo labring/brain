@@ -6,6 +6,9 @@
 .sidePaneReserve {
   width: 0;
   max-width: 0;
+  transition-timing-function: var(--project-surface-motion-ease);
+  transition-duration: var(--project-surface-motion-exit-duration);
+  transition-property: width, max-width;
 }
 
 .horizon {
@@ -114,5 +117,12 @@
   .sidePaneReserve[data-open="true"] {
     width: min(40rem, 100cqw);
     max-width: min(40rem, 100cqw);
+    transition-duration: var(--project-surface-motion-enter-duration);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidePaneReserve {
+    transition: none;
   }
 }

@@ -1048,10 +1048,10 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       <aside
         aria-hidden={!assistantPaneOpen}
         className={cn(
-          "project-chrome-surface box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface project-surface-slide-x box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
           assistantPaneOpen
-            ? "translate-x-0 border-border opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
-            : "pointer-events-none translate-x-6 border-transparent opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
+            ? "project-surface-slide-x-open border-border opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
+            : "project-surface-slide-x-offset pointer-events-none border-transparent opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
           paneResizing && "transition-none"
         )}
         data-slot="project-assistant-pane"
