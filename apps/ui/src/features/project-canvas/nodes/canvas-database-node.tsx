@@ -16,8 +16,8 @@ import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetr
 import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
 import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasDatabaseNodeData, CanvasDatabaseRfNode } from "./types";
-import { useCanvasDatabaseNodeActions } from "./use-canvas-node-actions";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
+import { useCanvasDatabaseNodeActions } from "./use-database-node-actions";
 
 function CanvasDatabaseTelemetryMetrics({
   fallbackMetrics,
