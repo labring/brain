@@ -1,14 +1,12 @@
 "use client";
 
-import type {
-  CanvasMeta,
-  CanvasState,
-} from "@workspace/ui/components/canvas/canvas.types";
+import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import {
   createElement,
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -427,19 +425,15 @@ export function useProjectCanvasModule({
   );
 
   const openingKey = `${namespace}:${projectId}`;
-  const meta = useMemo<CanvasMeta>(
-    () => ({
-      ...workbench.meta,
-      openingFitView: {
-        key: openingKey,
-      },
-      viewportFollow: {
-        isFollowTarget: isCanvasNodeGeneratedPosition,
-        key: openingKey,
-      },
-    }),
-    [workbench.meta, openingKey]
-  );
+  const viewportDirectives = workbench.viewportDirectives;
+  useLayoutEffect(() => {
+    viewportDirectives.setOpeningFitKey(openingKey);
+    viewportDirectives.setFollow({
+      isFollowTarget: isCanvasNodeGeneratedPosition,
+      key: openingKey,
+    });
+  }, [openingKey, viewportDirectives]);
+  const meta = workbench.meta;
 
   const state = useMemo<CanvasState>(
     () => ({
@@ -519,6 +513,7 @@ export function useProjectCanvasModule({
       nodeCommands: workbench.nodeCommands,
       runtimeStore,
       state,
+      viewportDirectives,
     },
     surfaces: {
       actions: surfaceActions,

@@ -2,7 +2,7 @@
 
 import { useAtomValue } from "jotai";
 import { useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
@@ -32,17 +32,13 @@ export default function ProjectIdPage() {
       sideOpen: projectCanvas.surfaces.model.side != null,
     });
   const assistantPaneResizing = useAtomValue(assistantPaneResizingAtom);
-  const canvasMeta = useMemo(() => {
-    const baseMeta = projectCanvas.canvas.meta;
-    return {
-      ...baseMeta,
-      viewportFocus:
-        baseMeta.viewportFocus == null
-          ? undefined
-          : { ...baseMeta.viewportFocus, instant: assistantPaneResizing },
-      viewportInsets: canvasViewportInsets,
-    };
-  }, [assistantPaneResizing, canvasViewportInsets, projectCanvas.canvas.meta]);
+  const viewportDirectives = projectCanvas.canvas.viewportDirectives;
+  useLayoutEffect(() => {
+    viewportDirectives.setInsets(canvasViewportInsets);
+  }, [canvasViewportInsets, viewportDirectives]);
+  useLayoutEffect(() => {
+    viewportDirectives.setInstant(assistantPaneResizing);
+  }, [assistantPaneResizing, viewportDirectives]);
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${uid}`,
@@ -72,7 +68,7 @@ export default function ProjectIdPage() {
             commands={projectCanvas.canvas.nodeCommands}
             kubeconfig={kubeconfig}
             lifecycleActivity={projectCanvas.canvas.lifecycleActivityStore}
-            meta={canvasMeta}
+            meta={projectCanvas.canvas.meta}
             runtimeStore={projectCanvas.canvas.runtimeStore}
             state={projectCanvas.canvas.state}
           />

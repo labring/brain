@@ -25,6 +25,7 @@ import {
 } from "@/features/project-canvas/surface/selection";
 import {
   createProjectCanvasMeta,
+  projectCanvasViewportFocusRequest,
   viewportFocusNodeIdFromSideRenderModel,
 } from "@/features/project-canvas/workbench/canvas-meta";
 import type { ProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/command-model";
@@ -39,6 +40,7 @@ import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/wor
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
 import { useResourceStopDialogs } from "@/features/project-canvas/workbench/use-resource-stop-dialogs";
+import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
@@ -574,6 +576,25 @@ export function useProjectCanvas(
       surfaceRenderModel.side,
     ]
   );
+  const viewportDirectives = useMemo(
+    () => createProjectCanvasViewportDirectiveStore(),
+    []
+  );
+  const sideViewportFocusKey = sideViewportFocus?.key;
+  useLayoutEffect(() => {
+    viewportDirectives.setFocus(
+      projectCanvasViewportFocusRequest({
+        active: viewportFocusActive,
+        key: sideViewportFocusKey,
+        nodeIds: viewportFocusNodeIds,
+      })
+    );
+  }, [
+    sideViewportFocusKey,
+    viewportDirectives,
+    viewportFocusActive,
+    viewportFocusNodeIds,
+  ]);
 
   useEffect(() => {
     if (selectedNode == null) {
@@ -702,9 +723,7 @@ export function useProjectCanvas(
         projectCanvasConnectionLine:
           connectionGesture.projectCanvasConnectionLine,
         readOnly,
-        viewportFocusKey: sideViewportFocus?.key,
-        viewportFocusActive,
-        viewportFocusNodeIds,
+        viewportDirectives,
       }),
     [
       clearSelection,
@@ -722,9 +741,7 @@ export function useProjectCanvas(
       options?.onNodePositionChange,
       options?.projectId,
       readOnly,
-      sideViewportFocus?.key,
-      viewportFocusActive,
-      viewportFocusNodeIds,
+      viewportDirectives,
     ]
   );
 
@@ -758,5 +775,6 @@ export function useProjectCanvas(
     settingsSessionEvents,
     consumeSettingsLaunchContext,
     surfaceRenderModel,
+    viewportDirectives,
   };
 }

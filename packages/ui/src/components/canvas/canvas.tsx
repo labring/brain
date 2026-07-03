@@ -41,6 +41,7 @@ import {
   CanvasUpperRightProvider,
 } from "./canvas.upper-right";
 import { useCanvas } from "./canvas.use";
+import { useCanvasViewportDirectives } from "./canvas.viewport-directives";
 import {
   canvasViewportFocusNodeIds,
   canvasViewportFocusRequestKey,
@@ -188,6 +189,7 @@ function CanvasFlow({ children }: CanvasFlowProps) {
     getFlowSnapshot,
     getFlowSnapshot
   );
+  const directives = useCanvasViewportDirectives(meta.viewportDirectives);
   const [internalNodes, setNodes, onInternalNodesChange] = useNodesState(
     state.nodes
   );
@@ -305,8 +307,20 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const userReactFlowProps = meta.reactFlowProps ?? {};
   const openingFitViewOptions = userReactFlowProps.fitViewOptions;
   const shouldFitOpeningView = userReactFlowProps.fitView !== false;
-  const viewportFocus = meta.viewportFocus;
-  const viewportInsets = meta.viewportInsets;
+  const baseViewportFocus =
+    directives == null ? meta.viewportFocus : directives.viewportFocus;
+  const directiveInstant = directives?.instant === true;
+  const viewportFocus = useMemo(() => {
+    if (baseViewportFocus == null) {
+      return;
+    }
+    if (directiveInstant && baseViewportFocus.instant !== true) {
+      return { ...baseViewportFocus, instant: true };
+    }
+    return baseViewportFocus;
+  }, [baseViewportFocus, directiveInstant]);
+  const viewportInsets =
+    directives == null ? meta.viewportInsets : directives.insets;
   const viewportFocusNodeIds = useMemo(
     () => canvasViewportFocusNodeIds(viewportFocus),
     [viewportFocus]
@@ -388,9 +402,13 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       onNodeDragStop: handleNodeDragStop,
     },
   });
-  const openingFitKey = meta.openingFitView?.key ?? DEFAULT_OPENING_FIT_KEY;
+  const openingFitKey =
+    (directives == null
+      ? meta.openingFitView?.key
+      : directives.openingFitKey) ?? DEFAULT_OPENING_FIT_KEY;
   const nodeCount = nodes.length;
-  const viewportFollow = meta.viewportFollow;
+  const viewportFollow =
+    directives == null ? meta.viewportFollow : directives.viewportFollow;
   const viewportFollowTarget = viewportFollow?.isFollowTarget;
   const viewportFollowKey = viewportFollow?.key ?? openingFitKey;
   const viewportReadyForViewportActions =
