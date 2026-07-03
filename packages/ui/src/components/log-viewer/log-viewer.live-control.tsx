@@ -54,12 +54,12 @@ export function LogViewerLivePill() {
 
   return (
     <button
-      className="absolute bottom-3 left-1/2 z-10 flex h-7 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-background/80 px-3 font-medium text-foreground text-xs shadow-sm backdrop-blur transition-colors hover:bg-input/50"
+      className="absolute bottom-3 left-1/2 z-10 flex h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-input/30 px-3.5 font-medium text-foreground text-sm shadow-[0px_2px_4px_0px_rgba(8,10,17,0.25),inset_-1px_-1px_4px_0px_rgba(8,10,17,0.25)] backdrop-blur-lg transition-colors hover:bg-input/50"
       onClick={resumeLive}
       type="button"
     >
       <span aria-hidden className="size-1.5 rounded-full bg-blue-400" />
-      Live
+      Go live
     </button>
   );
 }

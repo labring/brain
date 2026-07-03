@@ -18,6 +18,7 @@ import {
   LIVE_SPANS,
   type LogWindow,
   logWindowBounds,
+  resolveRangeClick,
 } from "./log-window";
 
 interface LogWindowSelectorProps {
@@ -114,7 +115,9 @@ export function LogWindowSelector({
               className="w-79 p-0 [--cell-radius:var(--radius-lg)] [--cell-size:--spacing(9)]"
               mode="range"
               numberOfMonths={1}
-              onSelect={setDraftRange}
+              onSelect={(range, clicked) =>
+                setDraftRange(resolveRangeClick(draftRange, clicked, range))
+              }
               selected={draftRange}
             />
             <div className="flex gap-4">

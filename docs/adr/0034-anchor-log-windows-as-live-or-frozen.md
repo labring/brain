@@ -13,7 +13,7 @@ Resource Logs previously treated realtime as an independent auto-refresh flag ne
 
 - Resource Logs open in a Live Log Window (default span 1 hour) for both AP and DB panes. Entries render oldest-to-newest with the newest at the bottom, and Live keeps the list pinned to the tail.
 - Selecting a relative span enters Live immediately with no Apply step; the absolute-range editor is the only Apply-gated surface and seeds from the materialized bounds of the currently displayed window.
-- The range control never lies: Live reads "● Live · 1h"; Frozen always shows the actual bounds; the label "Custom" disappears from the product.
-- Scrolling away from the bottom edge while Live is a pause gesture and freezes the window in place. Returning to Live is always explicit — a persistent bottom "Live" pill in any Frozen state, or the toolbar control. There is no auto-resume on reaching the bottom.
+- The range control never lies: Live reads as its rolling span next to a live dot ("● Last 1 hour"); Frozen always shows the actual bounds; the labels "Custom" and "Live" disappear from the trigger.
+- Scrolling away from the bottom edge while Live is a pause gesture and freezes the window in place. Returning to Live is always explicit — a persistent bottom "Go live" pill (blue live dot) in any Frozen state, or the toolbar control. There is no auto-resume on reaching the bottom.
 - The manual refresh button disappears from the logs toolbar: Live polls on its own, and a Frozen Log Window is fixed by definition (late-arriving lines are out of scope).
 - Fetch truncation must be visible: when a window holds more lines than the fetch limit, the older end of the list must state that only the newest N lines are shown, in both states.
