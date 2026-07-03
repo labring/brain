@@ -216,6 +216,7 @@ function hasPublicApEndpointItem(item: unknown) {
 }
 
 export function workloadListRefreshIntervalForCanvas({
+  canvasCovered = false,
   discoveryPollUntil,
   fallbackNamespace,
   isPageVisible = true,
@@ -226,6 +227,12 @@ export function workloadListRefreshIntervalForCanvas({
   transientSinceByKey = new Map<string, number>(),
   workloadReconcilePollUntil,
 }: {
+  /**
+   * True while a full-coverage surface (Main Action Surface) hides the
+   * canvas. Treated like a hidden page: polling drops to background cadence
+   * until the canvas is revealed.
+   */
+  canvasCovered?: boolean;
   discoveryPollUntil: number;
   fallbackNamespace?: string | undefined;
   isPageVisible?: boolean;
@@ -260,5 +267,8 @@ export function workloadListRefreshIntervalForCanvas({
     interval = minPositiveInterval(interval, WORKLOAD_LIST_FAST_REFRESH_MS);
   }
 
-  return applyPageVisibilityRefreshInterval({ interval, isPageVisible });
+  return applyPageVisibilityRefreshInterval({
+    interval,
+    isPageVisible: isPageVisible && !canvasCovered,
+  });
 }

@@ -101,6 +101,12 @@ interface ProjectCanvasResourceRuntimeState {
 export function useProjectCanvasResourceSnapshot(options: {
   canvasLayout?: CanvasLayoutDocument;
   canvasLayoutReady?: boolean;
+  /**
+   * Reads whether a full-coverage surface currently hides the canvas.
+   * Evaluated at poll-scheduling time so covered canvases drop to
+   * background cadence without re-rendering the hook.
+   */
+  isCanvasCovered?: () => boolean;
   /** URL-encoded kubeconfig (Authorization bearer body). */
   kubeconfig: string;
   /** K8s namespace for AP, DB, and public access discovery. */
@@ -115,10 +121,13 @@ export function useProjectCanvasResourceSnapshot(options: {
   isLoading: boolean;
   /** Refetch Project Canvas resource lists after lifecycle mutations. */
   refresh: () => Promise<unknown>;
+  /** Revalidates resource lists and deployment projections without opening poll windows. */
+  revalidate: () => Promise<unknown>;
 } {
   const {
     canvasLayout,
     canvasLayoutReady = true,
+    isCanvasCovered,
     kubeconfig,
     namespace,
     uid,
@@ -236,6 +245,7 @@ export function useProjectCanvasResourceSnapshot(options: {
       transientSinceByKey: WorkloadTransientSinceByKey
     ) =>
       workloadListRefreshIntervalForCanvas({
+        canvasCovered: isCanvasCovered?.() ?? false,
         discoveryPollUntil: workloadDiscoveryPollUntil,
         fallbackNamespace: namespace,
         isPageVisible,
@@ -246,6 +256,7 @@ export function useProjectCanvasResourceSnapshot(options: {
         workloadReconcilePollUntil,
       }),
     [
+      isCanvasCovered,
       isPageVisible,
       namespace,
       workloadDiscoveryPollUntil,
@@ -701,6 +712,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     isLoading,
     layoutIntent: graph.layoutIntent,
     refresh,
+    revalidate,
     runtimeStore,
   };
 }

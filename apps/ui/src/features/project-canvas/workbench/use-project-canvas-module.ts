@@ -112,6 +112,8 @@ export function useProjectCanvasModule({
     projectId,
   });
 
+  const canvasCoveredRef = useRef(false);
+  const isCanvasCovered = useCallback(() => canvasCoveredRef.current, []);
   const {
     apEnvironmentDbReferenceSources,
     canvasState,
@@ -121,10 +123,12 @@ export function useProjectCanvasModule({
     isLoading: resourceSnapshotLoading,
     layoutIntent,
     refresh,
+    revalidate,
     runtimeStore,
   } = useProjectCanvasResourceSnapshot({
     canvasLayout: projectCanvasLayout.layout,
     canvasLayoutReady: projectCanvasLayout.layoutReady,
+    isCanvasCovered,
     kubeconfig,
     namespace,
     uid: projectId,
@@ -423,6 +427,19 @@ export function useProjectCanvasModule({
     [deploymentTaskProjections, namespace, projectId]
   );
 
+  const mainRenderModel = workbench.surfaceRenderModel.main;
+  const canvasCovered =
+    mainRenderModel != null && mainRenderModel.kind !== "pendingTarget";
+  canvasCoveredRef.current = canvasCovered;
+  const previousCanvasCoveredRef = useRef(canvasCovered);
+  useEffect(() => {
+    const wasCovered = previousCanvasCoveredRef.current;
+    previousCanvasCoveredRef.current = canvasCovered;
+    if (wasCovered && !canvasCovered) {
+      revalidate().catch(() => undefined);
+    }
+  }, [canvasCovered, revalidate]);
+
   const openingKey = `${namespace}:${projectId}`;
   const viewportDirectives = workbench.viewportDirectives;
   useLayoutEffect(() => {
@@ -511,6 +528,7 @@ export function useProjectCanvasModule({
       openDeploymentTaskDockTask,
     },
     canvas: {
+      covered: canvasCovered,
       deploymentTaskDock,
       frameState,
       interactionStore: workbench.interactionStore,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { useLayoutEffect, useMemo } from "react";
+import { Activity, useLayoutEffect, useMemo } from "react";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
@@ -72,15 +72,20 @@ export function ProjectCanvasWorkbench({
           className="relative min-h-0 min-w-0 flex-1"
           ref={canvasViewportRootRef}
         >
-          <ProjectCanvasViewport
-            canvasKey={`${namespace}:${projectId}`}
-            commands={projectCanvas.canvas.nodeCommands}
-            interactionStore={projectCanvas.canvas.interactionStore}
-            kubeconfig={kubeconfig}
-            lifecycleActivity={projectCanvas.canvas.lifecycleActivityStore}
-            meta={projectCanvas.canvas.meta}
-            runtimeStore={projectCanvas.canvas.runtimeStore}
-          />
+          <Activity
+            mode={projectCanvas.canvas.covered ? "hidden" : "visible"}
+            name="project-canvas-viewport"
+          >
+            <ProjectCanvasViewport
+              canvasKey={`${namespace}:${projectId}`}
+              commands={projectCanvas.canvas.nodeCommands}
+              interactionStore={projectCanvas.canvas.interactionStore}
+              kubeconfig={kubeconfig}
+              lifecycleActivity={projectCanvas.canvas.lifecycleActivityStore}
+              meta={projectCanvas.canvas.meta}
+              runtimeStore={projectCanvas.canvas.runtimeStore}
+            />
+          </Activity>
           <ProjectCanvasOverlayLayer
             deploymentTaskDock={projectCanvas.canvas.deploymentTaskDock}
             frameState={projectCanvas.canvas.frameState}
