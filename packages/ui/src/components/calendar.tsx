@@ -50,12 +50,12 @@ function Calendar({
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) select-none p-0 aria-disabled:opacity-50",
+          "size-7 select-none rounded-md border border-input bg-transparent p-0 text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground aria-disabled:opacity-50",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) select-none p-0 aria-disabled:opacity-50",
+          "size-7 select-none rounded-md border border-input bg-transparent p-0 text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground aria-disabled:opacity-50",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -84,7 +84,7 @@ function Calendar({
         table: "w-full border-collapse",
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
-          "flex-1 select-none rounded-(--cell-radius) font-normal text-[0.8rem] text-muted-foreground",
+          "flex-1 select-none rounded-(--cell-radius) font-normal text-muted-foreground text-xs",
           defaultClassNames.weekday
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
@@ -97,27 +97,30 @@ function Calendar({
           defaultClassNames.week_number
         ),
         day: cn(
-          "group/day relative aspect-square h-full w-full select-none rounded-(--cell-radius) p-0 text-center [&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius)",
+          "group/day relative h-full w-full select-none rounded-(--cell-radius) p-0 text-center [&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius)",
           props.showWeekNumber
             ? "[&:nth-child(2)[data-selected=true]_button]:rounded-l-(--cell-radius)"
             : "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)",
           defaultClassNames.day
         ),
         range_start: cn(
-          "elative isolate -z-0 rounded-l-(--cell-radius) bg-muted after:absolute after:inset-y-0 after:right-0 after:w-4 after:bg-muted",
+          "relative isolate -z-0 rounded-l-(--cell-radius) bg-input after:absolute after:inset-y-0 after:right-0 after:w-4 after:bg-input",
           defaultClassNames.range_start
         ),
-        range_middle: cn("rounded-none", defaultClassNames.range_middle),
+        range_middle: cn(
+          "rounded-none bg-input",
+          defaultClassNames.range_middle
+        ),
         range_end: cn(
-          "relative isolate -z-0 rounded-r-(--cell-radius) bg-muted after:absolute after:inset-y-0 after:left-0 after:w-4 after:bg-muted",
+          "relative isolate -z-0 rounded-r-(--cell-radius) bg-input after:absolute after:inset-y-0 after:left-0 after:w-4 after:bg-input",
           defaultClassNames.range_end
         ),
         today: cn(
-          "rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-none",
+          "rounded-(--cell-radius) bg-input/30 text-foreground data-[selected=true]:rounded-none",
           defaultClassNames.today
         ),
         outside: cn(
-          "text-muted-foreground aria-selected:text-muted-foreground",
+          "text-muted-foreground opacity-50 aria-selected:text-muted-foreground",
           defaultClassNames.outside
         ),
         disabled: cn(
@@ -199,7 +202,25 @@ function CalendarDayButton({
   return (
     <Button
       className={cn(
-        "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 border-0 font-normal leading-none data-[range-end=true]:rounded-(--cell-radius) data-[range-middle=true]:rounded-none data-[range-start=true]:rounded-(--cell-radius) data-[range-end=true]:rounded-r-(--cell-radius) data-[range-start=true]:rounded-l-(--cell-radius) data-[range-end=true]:bg-primary data-[range-middle=true]:bg-muted data-[range-start=true]:bg-primary data-[selected-single=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:text-foreground data-[range-start=true]:text-primary-foreground data-[selected-single=true]:text-primary-foreground group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 dark:hover:text-foreground [&>span]:text-xs [&>span]:opacity-70",
+        // Geometry: fixed-height row cell that stretches to fill the column
+        // width (flat non-square cells per the design system), rounded by
+        // default so the unselected-hover pill matches.
+        "relative isolate z-10 flex h-(--cell-size) w-full min-w-(--cell-size) flex-col gap-1 rounded-(--cell-radius) border-0 font-normal text-foreground leading-none",
+        // Unselected hover — bg-input overrides the ghost variant's
+        // hover:bg-accent via tailwind-merge (same variant + property).
+        "hover:bg-input",
+        // Range middle: square band segment; hover lifts one shade to accent.
+        "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-input data-[range-middle=true]:text-foreground data-[range-middle=true]:hover:bg-accent",
+        // Range endpoints: blue pills that round only their outer edge and
+        // flatten the inner edge, but ONLY when they are a *pure* endpoint —
+        // a single-day range is both start and end, so it stays fully rounded.
+        "data-[range-start=true]:not-data-[range-end=true]:rounded-r-none data-[range-start=true]:rounded-l-(--cell-radius) data-[range-start=true]:bg-blue-500 data-[range-start=true]:text-foreground data-[range-start=true]:hover:bg-blue-500",
+        "data-[range-end=true]:rounded-r-(--cell-radius) data-[range-end=true]:not-data-[range-start=true]:rounded-l-none data-[range-end=true]:bg-blue-500 data-[range-end=true]:text-foreground data-[range-end=true]:hover:bg-blue-500",
+        // Single selected day (mode="single").
+        "data-[selected-single=true]:bg-blue-500 data-[selected-single=true]:text-foreground data-[selected-single=true]:hover:bg-blue-500",
+        // Keyboard focus ring, matched to the trigger's blue focus treatment.
+        "group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-blue-400 group-data-[focused=true]/day:ring-[2px] group-data-[focused=true]/day:ring-blue-400/50",
+        "[&>span]:text-xs [&>span]:opacity-70",
         defaultClassNames.day,
         className
       )}

@@ -111,26 +111,7 @@ export function LogWindowSelector({
         <div className="flex">
           <div className="flex flex-col gap-4 border-border border-r p-4">
             <Calendar
-              className="p-0 [--cell-radius:var(--radius-lg)] [--cell-size:--spacing(10)]"
-              classNames={{
-                button_next:
-                  "border border-input bg-transparent text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground",
-                button_previous:
-                  "border border-input bg-transparent text-muted-foreground opacity-50 hover:bg-input/30 hover:text-foreground",
-                day_button:
-                  "data-[range-end=true]:bg-blue-500 data-[range-middle=true]:bg-input data-[range-start=true]:bg-blue-500 data-[selected-single=true]:bg-blue-500 data-[range-end=true]:text-foreground data-[range-middle=true]:text-foreground data-[range-start=true]:text-foreground data-[selected-single=true]:text-foreground hover:bg-input/30 dark:hover:bg-input/30",
-                outside:
-                  "text-muted-foreground opacity-50 aria-selected:text-muted-foreground",
-                range_end:
-                  "relative isolate -z-0 rounded-r-(--cell-radius) bg-input after:absolute after:inset-y-0 after:left-0 after:w-4 after:bg-input",
-                range_middle: "rounded-none bg-input",
-                range_start:
-                  "relative isolate -z-0 rounded-l-(--cell-radius) bg-input after:absolute after:inset-y-0 after:right-0 after:w-4 after:bg-input",
-                today:
-                  "rounded-(--cell-radius) bg-input/30 text-foreground data-[selected=true]:rounded-none",
-                weekday:
-                  "flex-1 select-none rounded-(--cell-radius) font-normal text-[0.8rem] text-muted-foreground",
-              }}
+              className="w-79 p-0 [--cell-radius:var(--radius-lg)] [--cell-size:--spacing(9)]"
               mode="range"
               numberOfMonths={1}
               onSelect={setDraftRange}
