@@ -688,6 +688,7 @@ export function RedisKeyDetailView({
         {total > 0 && (
           <DataView.Pagination
             currentPage={currentPage}
+            itemLabel="entries"
             loading={loading}
             onPageChange={handlePageChange}
             onPageSizeChange={handlePageSizeChange}
