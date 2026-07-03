@@ -1,6 +1,7 @@
 "use client";
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion";
 import { cn } from "@workspace/ui/lib/utils";
 import { X } from "lucide-react";
 import {
@@ -11,8 +12,6 @@ import {
   useRef,
   useState,
 } from "react";
-
-export const SIDE_PANE_TRANSITION_MS = 200;
 
 const SidePaneMotionContext = createContext(true);
 
@@ -62,7 +61,7 @@ export function SidePane({
       aria-hidden={!motionOpen}
       aria-label={label}
       className={cn(
-        "pointer-events-auto absolute top-13 right-0 bottom-0 z-20 min-w-0 overflow-hidden transition-[width,max-width,min-width,opacity,transform] duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+        "pointer-events-auto absolute top-13 right-0 bottom-0 z-20 min-w-0 overflow-hidden transition-[width,max-width,min-width,opacity,transform] duration-[var(--project-surface-motion-duration)] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
         motionOpen
           ? "w-full max-w-screen-sm translate-x-0 opacity-100"
           : "pointer-events-none w-0 max-w-0 translate-x-4 opacity-0"
@@ -71,7 +70,7 @@ export function SidePane({
     >
       <div
         className={cn(
-          "project-chrome-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform duration-[var(--project-surface-motion-duration)] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
           motionOpen ? "translate-x-0" : "translate-x-full",
           className
         )}
@@ -189,7 +188,7 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       setRenderedChildren(null);
-    }, SIDE_PANE_TRANSITION_MS);
+    }, projectSurfaceMotionMs());
   }, [children]);
 
   useEffect(

@@ -1048,7 +1048,7 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       <aside
         aria-hidden={!assistantPaneOpen}
         className={cn(
-          "project-chrome-surface box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] duration-[var(--project-surface-motion-duration)] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
           assistantPaneOpen
             ? "translate-x-0 border-border opacity-100"
             : "pointer-events-none translate-x-4 border-transparent opacity-0",

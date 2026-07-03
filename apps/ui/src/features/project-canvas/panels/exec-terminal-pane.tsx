@@ -83,9 +83,11 @@ function clampTerminalHeight(height: number, maxHeight: number): number {
 export const ExecTerminalPane = memo(function ExecTerminalPane({
   descriptor,
   onClose,
+  open = true,
 }: {
   descriptor: ExecTerminalDescriptor;
   onClose: () => void;
+  open?: boolean;
 }) {
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const [, setStatus] = useState<TerminalStatus>("connecting");
@@ -334,9 +336,13 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
 
   return (
     <section
+      aria-hidden={!open}
       aria-label="Terminal session"
       className={cn(
-        "project-chrome-surface pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)]",
+        "project-chrome-surface pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[80vh] min-h-72 flex-col overflow-hidden border-t text-zinc-50 shadow-[0_-18px_60px_rgba(0,0,0,0.36)] transition-[opacity,transform,border-color] duration-[var(--project-surface-motion-duration)] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+        open
+          ? "translate-y-0 opacity-100"
+          : "pointer-events-none translate-y-4 opacity-0",
         isResizing ? "border-input" : "border-white/10"
       )}
       data-slot="exec-terminal-plane"

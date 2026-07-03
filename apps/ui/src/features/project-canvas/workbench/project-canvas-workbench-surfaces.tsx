@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
 import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
@@ -170,20 +171,114 @@ export function ProjectCanvasSurfaceHost({
         />
       ) : null}
       {dialogs}
-      {drawer?.kind === "apTerminal" ? (
-        <WorkloadTerminalPane
-          node={drawer.node}
-          onClose={actions.closeDrawerSurface}
-        />
-      ) : null}
-      {drawer?.kind === "dbTerminal" ? (
-        <DatabaseTerminalPane
-          node={drawer.node}
-          onClose={actions.closeDrawerSurface}
-          projectId={projectId}
-        />
-      ) : null}
+      <ProjectCanvasDrawerSlot
+        drawer={drawer}
+        onClose={actions.closeDrawerSurface}
+        projectId={projectId}
+      />
     </>
+  );
+}
+
+type ProjectCanvasDrawerRenderModel = ProjectCanvasSurfaceRenderModel["drawer"];
+
+function ProjectCanvasDrawerSlot({
+  drawer,
+  onClose,
+  projectId,
+}: {
+  drawer: ProjectCanvasDrawerRenderModel;
+  onClose: () => void;
+  projectId: string;
+}) {
+  const initialDrawer = drawer ?? null;
+  const [renderedDrawer, setRenderedDrawer] =
+    useState<ProjectCanvasDrawerRenderModel>(initialDrawer);
+  const [open, setOpen] = useState(initialDrawer !== null);
+  const presentRef = useRef(initialDrawer !== null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const clearCloseTimer = () => {
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+    const clearOpenFrame = () => {
+      if (openFrameRef.current !== null) {
+        cancelAnimationFrame(openFrameRef.current);
+        openFrameRef.current = null;
+      }
+    };
+
+    if (drawer !== null) {
+      const wasPresent = presentRef.current;
+      presentRef.current = true;
+      clearCloseTimer();
+      clearOpenFrame();
+      setRenderedDrawer(drawer);
+
+      if (wasPresent) {
+        setOpen(true);
+        return;
+      }
+
+      setOpen(false);
+      openFrameRef.current = requestAnimationFrame(() => {
+        openFrameRef.current = null;
+        setOpen(true);
+      });
+      return;
+    }
+
+    if (!presentRef.current) {
+      return;
+    }
+
+    presentRef.current = false;
+    clearOpenFrame();
+    setOpen(false);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      setRenderedDrawer(null);
+    }, projectSurfaceMotionMs());
+  }, [drawer]);
+
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+      }
+      if (openFrameRef.current !== null) {
+        cancelAnimationFrame(openFrameRef.current);
+      }
+    },
+    []
+  );
+
+  if (renderedDrawer === null) {
+    return null;
+  }
+
+  if (renderedDrawer.kind === "apTerminal") {
+    return (
+      <WorkloadTerminalPane
+        node={renderedDrawer.node}
+        onClose={onClose}
+        open={open}
+      />
+    );
+  }
+
+  return (
+    <DatabaseTerminalPane
+      node={renderedDrawer.node}
+      onClose={onClose}
+      open={open}
+      projectId={projectId}
+    />
   );
 }
 

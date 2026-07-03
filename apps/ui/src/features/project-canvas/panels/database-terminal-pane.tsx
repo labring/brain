@@ -12,10 +12,12 @@ import {
 export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
   node,
   onClose,
+  open,
   projectId,
 }: {
   node: Node;
   onClose: () => void;
+  open?: boolean;
   projectId: string;
 }) {
   const data = databaseNodeDataFromNode(node);
@@ -37,7 +39,9 @@ export const DatabaseTerminalPane = memo(function DatabaseTerminalPane({
     [displayEngine, name, namespace, projectId]
   );
 
-  return <ExecTerminalPane descriptor={descriptor} onClose={onClose} />;
+  return (
+    <ExecTerminalPane descriptor={descriptor} onClose={onClose} open={open} />
+  );
 });
 
 DatabaseTerminalPane.displayName = "DatabaseTerminalPane";

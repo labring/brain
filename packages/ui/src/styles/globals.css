@@ -118,6 +118,8 @@
     color-mix(in oklab, var(--input) 30%, transparent),
     color-mix(in oklab, var(--input) 30%, transparent)
   );
+  --project-surface-motion-duration: 280ms;
+  --project-surface-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
   /** Side pane seam glow tokens. */
   --side-pane-glow-color: var(--color-canvas-glow);
