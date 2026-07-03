@@ -9,6 +9,7 @@ import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { JotaiProvider } from "@/components/jotai-provider";
+import { DevTweaks } from "@/features/dev-tweaks/dev-tweaks";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -63,6 +64,9 @@ export default function RootLayout({
             <ThemeProvider>
               <TooltipProvider>
                 <Toaster />
+                {/* Outside the children Suspense so it works while the app
+                    content is still streaming or blocked on data. */}
+                <DevTweaks />
                 <Suspense fallback={null}>{children}</Suspense>
               </TooltipProvider>
             </ThemeProvider>

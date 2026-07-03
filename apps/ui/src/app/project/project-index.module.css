@@ -12,6 +12,34 @@
 }
 
 .horizon {
+  /* Tunable via the dev tweaks pane (⌃⌥T in dev). These defaults are the
+     source of truth; project-index-horizon.tsx mirrors them for the pane. */
+  --horizon-glow-core: 56%;
+  --horizon-glow-h: 40%;
+  --horizon-glow-mid: 38%;
+  --horizon-glow-outer: 18%;
+  --horizon-glow-w: 64%;
+  --horizon-glow-y: 110%;
+  --horizon-hues-blur: 30px;
+  --horizon-hues-cyan: 20%;
+  --horizon-hues-dur: 8s;
+  --horizon-hues-violet: 24%;
+  --horizon-noise-opacity: 0.05;
+  --horizon-surge-base-opacity: 0.55;
+  --horizon-surge-core: 36%;
+  --horizon-surge-dur: 9s;
+  --horizon-surge-h: 40%;
+  --horizon-surge-mid: 16%;
+  --horizon-surge-op-max: 0.95;
+  --horizon-surge-op-min: 0.45;
+  --horizon-surge-scale-max: 1.22;
+  --horizon-surge-scale-min: 0.85;
+  --horizon-surge-w: 72%;
+  --horizon-surge-y: 114%;
+  --horizon-swell-dur: 6s;
+  --horizon-swell-op-min: 0.75;
+  --horizon-swell-scale-max: 1.12;
+  --horizon-swell-scale-min: 0.9;
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -24,14 +52,34 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 64% 40% at 50% 110%,
-    color-mix(in oklab, var(--color-blue-400, #60a5fa) 56%, transparent) 0%,
-    color-mix(in oklab, var(--color-blue-500, #3b82f6) 38%, transparent) 28%,
-    color-mix(in oklab, var(--color-blue-600, #2563eb) 18%, transparent) 52%,
+    ellipse var(--horizon-glow-w) var(--horizon-glow-h) at 50%
+      var(--horizon-glow-y),
+    color-mix(
+        in oklab,
+        var(--color-blue-400, #60a5fa) var(--horizon-glow-core),
+        transparent
+      )
+      0%,
+    color-mix(
+        in oklab,
+        var(--color-blue-500, #3b82f6) var(--horizon-glow-mid),
+        transparent
+      )
+      28%,
+    color-mix(
+        in oklab,
+        var(--color-blue-600, #2563eb) var(--horizon-glow-outer),
+        transparent
+      )
+      52%,
     transparent 78%
   );
   transform-origin: 50% 100%;
-  animation: horizon-swell 6s ease-in-out infinite alternate;
+  animation-name: horizon-swell;
+  animation-duration: var(--horizon-swell-dur);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 
 .horizonHues {
@@ -40,18 +88,33 @@
   background:
     radial-gradient(
       ellipse 34% 26% at 30% 112%,
-      color-mix(in oklab, var(--color-violet-600, #7c3aed) 24%, transparent) 0%,
+      color-mix(
+          in oklab,
+          var(--color-violet-600, #7c3aed) var(--horizon-hues-violet),
+          transparent
+        )
+        0%,
       transparent 75%
     ),
     radial-gradient(
       ellipse 36% 28% at 70% 114%,
-      color-mix(in oklab, var(--color-cyan-400, #22d3ee) 20%, transparent) 0%,
+      color-mix(
+          in oklab,
+          var(--color-cyan-400, #22d3ee) var(--horizon-hues-cyan),
+          transparent
+        )
+        0%,
       transparent 75%
     );
   mix-blend-mode: screen;
-  filter: blur(30px);
+  filter: blur(var(--horizon-hues-blur));
   transform-origin: 50% 100%;
-  animation: horizon-swell 8s ease-in-out -8s infinite alternate;
+  animation-name: horizon-swell;
+  animation-duration: var(--horizon-hues-dur);
+  animation-timing-function: ease-in-out;
+  animation-delay: calc(-1 * var(--horizon-hues-dur));
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 
 /* One huge ultra-soft wash swells far above the base haze and recedes,
@@ -60,15 +123,30 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 72% 40% at 50% 114%,
-    color-mix(in oklab, var(--color-blue-400, #60a5fa) 36%, transparent) 0%,
-    color-mix(in oklab, var(--color-blue-600, #2563eb) 16%, transparent) 45%,
+    ellipse var(--horizon-surge-w) var(--horizon-surge-h) at 50%
+      var(--horizon-surge-y),
+    color-mix(
+        in oklab,
+        var(--color-blue-400, #60a5fa) var(--horizon-surge-core),
+        transparent
+      )
+      0%,
+    color-mix(
+        in oklab,
+        var(--color-blue-600, #2563eb) var(--horizon-surge-mid),
+        transparent
+      )
+      45%,
     transparent 80%
   );
   mix-blend-mode: screen;
-  opacity: 0.55;
+  opacity: var(--horizon-surge-base-opacity);
   transform-origin: 50% 100%;
-  animation: horizon-surge 9s ease-in-out infinite alternate;
+  animation-name: horizon-surge;
+  animation-duration: var(--horizon-surge-dur);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 
 /* Fine noise dithers the large dark gradients so they don't band. */
@@ -78,30 +156,30 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
   background-size: 140px 140px;
   mix-blend-mode: overlay;
-  opacity: 0.05;
+  opacity: var(--horizon-noise-opacity);
 }
 
 @keyframes horizon-swell {
   from {
-    opacity: 0.75;
-    transform: scale(0.9);
+    opacity: var(--horizon-swell-op-min);
+    transform: scale(var(--horizon-swell-scale-min));
   }
 
   to {
     opacity: 1;
-    transform: scale(1.12);
+    transform: scale(var(--horizon-swell-scale-max));
   }
 }
 
 @keyframes horizon-surge {
   from {
-    opacity: 0.45;
-    transform: scale(0.85);
+    opacity: var(--horizon-surge-op-min);
+    transform: scale(var(--horizon-surge-scale-min));
   }
 
   to {
-    opacity: 0.95;
-    transform: scale(1.22);
+    opacity: var(--horizon-surge-op-max);
+    transform: scale(var(--horizon-surge-scale-max));
   }
 }
 

@@ -23,6 +23,7 @@ import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import styles from "./project-index.module.css";
+import { ProjectIndexHorizon } from "./project-index-horizon";
 
 export default function ProjectIndexPage() {
   const router = useRouter();
@@ -182,12 +183,7 @@ export default function ProjectIndexPage() {
               "linear-gradient(to bottom, black 0%, black 58%, transparent 94%)",
           }}
         />
-        <div className={styles.horizon} data-slot="project-index-horizon">
-          <div className={styles.horizonGlow} />
-          <div className={styles.horizonHues} />
-          <div className={styles.horizonSurge} />
-          <div className={styles.horizonNoise} />
-        </div>
+        <ProjectIndexHorizon />
       </div>
       <div
         className={cn(
