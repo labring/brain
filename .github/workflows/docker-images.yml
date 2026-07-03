@@ -37,13 +37,20 @@ jobs:
         include:
           - component: api
             image: brain-api
+            context: .
             dockerfile: apps/api/Dockerfile
           - component: ui
             image: brain-ui
+            context: .
             dockerfile: apps/ui/Dockerfile
           - component: registry
             image: brain-registry
+            context: .
             dockerfile: apps/registry/Dockerfile
+          - component: whodb
+            image: brain-whodb
+            context: apps/whodb
+            dockerfile: apps/whodb/core/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -75,7 +82,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
@@ -84,3 +91,5 @@ jobs:
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ inputs.next_public_app_url || 'http://localhost:3000' }}
             NEXT_PUBLIC_API_URL=${{ inputs.next_public_api_url || 'http://localhost:9000' }}
+            VERSION=${{ steps.meta.outputs.version }}
+            PLATFORM=github-actions
