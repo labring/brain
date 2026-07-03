@@ -61,17 +61,19 @@ export function SidePane({
       aria-hidden={!motionOpen}
       aria-label={label}
       className={cn(
-        "pointer-events-auto absolute top-13 right-0 bottom-0 z-20 min-w-0 overflow-hidden transition-[width,max-width,min-width,opacity,transform] duration-[var(--project-surface-motion-duration)] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+        "pointer-events-auto absolute top-13 right-0 bottom-0 z-20 w-full min-w-0 max-w-screen-sm overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
         motionOpen
-          ? "w-full max-w-screen-sm translate-x-0 opacity-100"
-          : "pointer-events-none w-0 max-w-0 translate-x-4 opacity-0"
+          ? "translate-x-0 opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
+          : "pointer-events-none translate-x-6 opacity-0 duration-[var(--project-surface-motion-exit-duration)]"
       )}
       data-slot="side-pane"
     >
       <div
         className={cn(
-          "project-chrome-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform duration-[var(--project-surface-motion-duration)] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
-          motionOpen ? "translate-x-0" : "translate-x-full",
+          "project-chrome-surface dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-input border-t border-l text-foreground shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          motionOpen
+            ? "translate-x-0 duration-[var(--project-surface-motion-enter-duration)]"
+            : "translate-x-full duration-[var(--project-surface-motion-exit-duration)]",
           className
         )}
       >

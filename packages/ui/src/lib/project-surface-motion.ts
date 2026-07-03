@@ -1,7 +1,9 @@
-export const PROJECT_SURFACE_MOTION_DURATION_VAR =
-  "--project-surface-motion-duration";
+export const PROJECT_SURFACE_MOTION_ENTER_DURATION_VAR =
+  "--project-surface-motion-enter-duration";
+export const PROJECT_SURFACE_MOTION_EXIT_DURATION_VAR =
+  "--project-surface-motion-exit-duration";
 
-export const PROJECT_SURFACE_MOTION_FALLBACK_MS = 280;
+export const PROJECT_SURFACE_MOTION_EXIT_FALLBACK_MS = 240;
 
 function parseMotionDuration(value: string): number | null {
   const trimmed = value.trim();
@@ -23,14 +25,17 @@ function parseMotionDuration(value: string): number | null {
   return numeric;
 }
 
-export function projectSurfaceMotionMs(): number {
+export function projectSurfaceMotionMs(
+  cssVar = PROJECT_SURFACE_MOTION_EXIT_DURATION_VAR,
+  fallbackMs = PROJECT_SURFACE_MOTION_EXIT_FALLBACK_MS
+): number {
   if (typeof window === "undefined") {
-    return PROJECT_SURFACE_MOTION_FALLBACK_MS;
+    return fallbackMs;
   }
 
   const duration = window
     .getComputedStyle(document.documentElement)
-    .getPropertyValue(PROJECT_SURFACE_MOTION_DURATION_VAR);
+    .getPropertyValue(cssVar);
 
-  return parseMotionDuration(duration) ?? PROJECT_SURFACE_MOTION_FALLBACK_MS;
+  return parseMotionDuration(duration) ?? fallbackMs;
 }

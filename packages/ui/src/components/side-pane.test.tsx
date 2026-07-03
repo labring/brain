@@ -17,7 +17,12 @@ const DESCRIPTION_RE = /Secondary copy/;
 const MOTION_REDUCE_TRANSFORM_RE = /motion-reduce:transform-none/;
 const MOTION_REDUCE_TRANSITION_RE = /motion-reduce:transition-none/;
 const OPEN_ASIDE_RE = /<aside aria-hidden="false"/;
-const OPEN_GEOMETRY_RE = /w-full max-w-screen-sm translate-x-0 opacity-100/;
+const OPEN_DURATION_RE =
+  /duration-\[var\(--project-surface-motion-enter-duration\)\]/;
+const OPEN_MAX_WIDTH_RE = /max-w-screen-sm/;
+const OPEN_OPACITY_RE = /opacity-100/;
+const OPEN_TRANSLATE_RE = /translate-x-0/;
+const OPEN_WIDTH_RE = /w-full/;
 const PANE_LABEL_RE = /aria-label="Details pane"/;
 const POINTER_EVENTS_NONE_RE = /pointer-events-none/;
 const PROJECT_CHROME_SURFACE_RE = /project-chrome-surface/;
@@ -110,6 +115,10 @@ test("side pane presence renders initial pane content open", () => {
 
   assert.match(html, PANE_LABEL_RE);
   assert.match(html, OPEN_ASIDE_RE);
-  assert.match(html, OPEN_GEOMETRY_RE);
+  assert.match(html, OPEN_WIDTH_RE);
+  assert.match(html, OPEN_MAX_WIDTH_RE);
+  assert.match(html, OPEN_TRANSLATE_RE);
+  assert.match(html, OPEN_OPACITY_RE);
+  assert.match(html, OPEN_DURATION_RE);
   assert.doesNotMatch(html, TRANSLATE_CLOSED_RE);
 });
