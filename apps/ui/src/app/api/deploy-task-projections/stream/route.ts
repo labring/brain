@@ -96,6 +96,8 @@ export async function GET(request: Request) {
       }
 
       unsubscribe = subscribeDeploymentTaskProjectionEvents({
+        listProjections: () =>
+          listDeploymentTaskProjections({ namespace, projectId }),
         listener: (event) => {
           if (snapshotSent) {
             send(event.type, event);

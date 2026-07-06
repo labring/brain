@@ -298,3 +298,80 @@ export async function patchDeployTaskCanvasProjection(input: {
   }
   return body.task;
 }
+
+export interface DeployTaskActionResult {
+  /** 409: the intent can no longer be satisfied; snapshot carries truth. */
+  conflict: boolean;
+  task: DeployTaskDTO | null;
+}
+
+async function actionResultOrError(
+  response: Response,
+  fallback: string
+): Promise<DeployTaskActionResult> {
+  const body = (await response.json().catch(() => undefined)) as
+    | { error?: unknown; task?: DeployTaskDTO }
+    | undefined;
+  if (response.ok) {
+    return { conflict: false, task: body?.task ?? null };
+  }
+  if (response.status === 409) {
+    return { conflict: true, task: body?.task ?? null };
+  }
+  throw new Error(
+    errorMessageFromBody(body) ?? `${fallback} (${response.status}).`
+  );
+}
+
+/**
+ * Two-phase cancel (ADR 0038): success may mean cancelled or "cancelling";
+ * a 409 carries the terminal snapshot so surfaces reconcile without toasts.
+ */
+export async function cancelDeploymentTask(input: {
+  kubeconfig: string;
+  namespace: string;
+  taskId: string;
+}): Promise<DeployTaskActionResult> {
+  const url = new URL(
+    `${DEPLOY_TASKS_API_PATH}/${encodeURIComponent(input.taskId)}/cancel`,
+    window.location.origin
+  );
+  url.searchParams.set("namespace", input.namespace);
+  return await actionResultOrError(
+    await fetch(url, {
+      headers: {
+        Authorization: kubeconfigBearerHeader(input.kubeconfig),
+      },
+      method: "POST",
+    }),
+    "Deploy task cancel failed"
+  );
+}
+
+/**
+ * Redeploy is task creation from a failed/cancelled predecessor (ADR 0038).
+ * A 409 carries the already-active recovery attempt (or the non-terminal
+ * predecessor); callers reconcile from that snapshot.
+ */
+export async function redeployDeploymentTask(input: {
+  kubeconfig: string;
+  namespace: string;
+  predecessorTaskId: string;
+}): Promise<DeployTaskActionResult> {
+  const url = new URL(DEPLOY_TASKS_API_PATH, window.location.origin);
+  return await actionResultOrError(
+    await fetch(url, {
+      body: JSON.stringify({
+        encodedKubeconfig: input.kubeconfig,
+        namespace: input.namespace,
+        predecessorTaskId: input.predecessorTaskId,
+      }),
+      headers: {
+        Authorization: kubeconfigBearerHeader(input.kubeconfig),
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    }),
+    "Redeploy failed"
+  );
+}

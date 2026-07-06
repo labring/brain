@@ -195,6 +195,8 @@ export interface DeployTaskDTO {
   actorUserId?: string | null;
   artifactSummary: DeployTaskArtifactSummary;
   blockingInputs: DeployTaskBlockingInput[];
+  /** Server-derived "cancelling" truth (ADR 0038). */
+  cancelRequestedAt?: string | null;
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: string | null;
   createdAt: string;
@@ -213,6 +215,8 @@ export interface DeployTaskDTO {
   projectId: string | null;
   projectName: string | null;
   resultUrl: string | null;
+  /** Redeploy lineage (predecessor task id, purgeable; ADR 0038). */
+  retriedFromTaskId?: string | null;
   runner: DeploymentTaskRunner;
   runtimeName: string | null;
   runtimeProvider: string | null;

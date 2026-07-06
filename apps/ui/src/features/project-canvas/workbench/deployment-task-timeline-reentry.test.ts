@@ -201,3 +201,47 @@ test("deployment task dock shows completed tasks only as current-session notices
   assert.equal(withNotice.tasks.length, 1);
   assert.equal(withNotice.tasks[0]?.task.id, "task-completed");
 });
+
+test("deployment task dock hides a failed task superseded by a redeploy", () => {
+  const dock = selectDeploymentTaskDock({
+    activeTaskId: null,
+    dismissedTaskUpdatedAtById: new Map(),
+    now: NOW,
+    tasks: [
+      task({ id: "task-failed", status: "failed" }),
+      task({
+        id: "task-recovery",
+        retriedFromTaskId: "task-failed",
+        status: "running",
+        updatedAt: "2026-06-17T10:03:30.000Z",
+      }),
+    ],
+  });
+
+  assert.deepEqual(
+    dock.tasks.map((item) => item.task.id),
+    ["task-recovery"]
+  );
+});
+
+test("deployment task dock shows cancelled tasks only as brief notices", () => {
+  const silent = selectDeploymentTaskDock({
+    activeTaskId: null,
+    dismissedTaskUpdatedAtById: new Map(),
+    now: NOW,
+    tasks: [task({ id: "task-cancelled", status: "cancelled" })],
+  });
+  assert.equal(silent.tasks.length, 0);
+
+  const noticed = selectDeploymentTaskDock({
+    activeTaskId: null,
+    completedNoticeTaskIds: new Set(["task-cancelled"]),
+    dismissedTaskUpdatedAtById: new Map(),
+    now: NOW,
+    tasks: [task({ id: "task-cancelled", status: "cancelled" })],
+  });
+  assert.deepEqual(
+    noticed.tasks.map((item) => item.task.id),
+    ["task-cancelled"]
+  );
+});

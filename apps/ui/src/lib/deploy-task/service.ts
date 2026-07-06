@@ -1,130 +1,48 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-
 import type { UIMessage } from "ai";
 import { generateId } from "ai";
-import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 
 import { getDeploymentTaskDb } from "./db";
+import { getDeployTaskEngineContext } from "./engine/server";
 import {
   type DeploymentTaskProjection,
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES,
   toDeploymentTaskProjection,
 } from "./projection";
-import { publishDeploymentTaskProjectionChange } from "./projection-events";
 import {
   publicDeployTaskArtifactSummary,
   publicDeployTaskEventPayload,
 } from "./public-artifact-summary";
-import { observeDeploymentResultCardReadiness } from "./result-readiness";
 import {
-  type DeploymentTaskSource,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
-  type DeployTaskPhase,
   type DeployTaskRow,
   type DeployTaskStatus,
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
 } from "./schema";
-import {
-  appendCardEvent,
-  appendStepEvent,
-  createDeploymentTaskTimelineForRunner,
-  type DeploymentResultResourceCard,
-  type DeploymentTaskTimelineUpdate,
-  type DeploymentTimelineEvent,
-  deploymentTimelineResultReadinessReached,
-  markTimelineStep,
-  updateTimelineStatus,
-  upsertResultResourceCard,
-} from "./timeline";
-import { publishDeploymentTaskTimelineChange } from "./timeline-events";
 import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
 
 import type {
-  CreateDeployTaskInput,
   DeploymentTaskCanvasProjection,
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskDTO,
   DeployTaskEventDTO,
-  DeployTaskEventInput,
   DeployTaskMessageDTO,
   DeployTaskSnapshotDTO,
-  SubmitDeployTaskInput,
   UpdateDeployTaskCanvasProjectionInput,
 } from "./types";
 
 const MAX_DEPLOY_EVENTS = 200;
 const MAX_DEPLOY_MESSAGES = 200;
-const DEPLOY_TASK_RESULT_READINESS_STEP_ID = "create-resources";
-
-function timelineEvent(input: {
-  dedupeKey?: string;
-  message: string;
-  reason?: string;
-  severity?: "info" | "success" | "warning" | "error";
-  source?: "runner" | "resource-observer" | "kubernetes-event" | "health-check";
-}): DeploymentTimelineEvent {
-  return {
-    createdAt: new Date().toISOString(),
-    dedupeKey: input.dedupeKey,
-    id: randomUUID(),
-    message: input.message,
-    reason: input.reason,
-    severity: input.severity,
-    source: input.source,
-  };
-}
-
-function shouldSkipSetIfEmptyCanvasProjection(input: {
-  existing: DeploymentTaskCanvasProjection;
-  incoming: DeploymentTaskCanvasProjection;
-}): boolean {
-  const incomingHasSlots = (input.incoming.slots?.length ?? 0) > 0;
-  if (incomingHasSlots) {
-    return (input.existing.slots?.length ?? 0) > 0;
-  }
-  return (
-    (input.existing.slots?.length ?? 0) > 0 ||
-    (input.existing.edges?.length ?? 0) > 0 ||
-    (input.existing.resultMappings?.length ?? 0) > 0
-  );
-}
+const DEFAULT_TASK_LIST_LIMIT = 100;
 
 function compactOptional(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
-}
-
-function taskTitle(input: CreateDeployTaskInput): string {
-  const source = deploymentSourceLabel(input.source);
-  if (input.target.kind === "existingProject") {
-    const project = compactOptional(
-      input.target.projectName ?? input.target.projectId
-    );
-    return project ? `Deploy ${source} into ${project}` : `Deploy ${source}`;
-  }
-  return `Deploy ${source} into new Project ${input.target.displayName}`;
-}
-
-function deploymentSourceLabel(source: DeploymentTaskSource): string {
-  switch (source.kind) {
-    case "database":
-      return "database";
-    case "docker":
-      return String(source.settings.image ?? "Docker image");
-    case "github":
-      return source.repo.fullName;
-    case "prompt":
-      return "AI prompt";
-    case "template":
-      return source.templateName;
-    default:
-      return source satisfies never;
-  }
 }
 
 function nowIso(value: Date | null): string | null {
@@ -136,6 +54,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     actorUserId: row.actorUserId,
     artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary),
     blockingInputs: row.blockingInputs,
+    cancelRequestedAt: nowIso(row.cancelRequestedAt),
     canvasProjection: row.canvasProjection,
     completedAt: nowIso(row.completedAt),
     createdFrom: row.createdFrom,
@@ -154,6 +73,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     projectId: row.projectId,
     projectName: row.projectName,
     resultUrl: row.resultUrl,
+    retriedFromTaskId: row.retriedFromTaskId,
     runner: row.runner,
     runtimeName: row.runtimeName,
     runtimeProvider: row.runtimeProvider,
@@ -193,120 +113,6 @@ export function toDeployTaskMessageDTO(
   };
 }
 
-export async function recordDeployTaskEvent(
-  taskId: string,
-  input: DeployTaskEventInput
-): Promise<DeployTaskEventRow> {
-  return await getDeploymentTaskDb().transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
-
-    const [row] = await tx
-      .select({ value: max(deployTaskEvents.seq) })
-      .from(deployTaskEvents)
-      .where(eq(deployTaskEvents.taskId, taskId));
-    const seq = (row?.value ?? 0) + 1;
-
-    const [event] = await tx
-      .insert(deployTaskEvents)
-      .values({
-        kind: input.kind,
-        message: compactOptional(input.message),
-        payload: input.payload ?? {},
-        phase: input.phase ?? null,
-        seq,
-        taskId,
-      })
-      .returning();
-    if (event == null) {
-      throw new Error("Failed to record deploy task event.");
-    }
-    await tx
-      .update(deployTasks)
-      .set({
-        heartbeatAt: new Date(),
-        ...(input.phase == null ? {} : { phase: input.phase }),
-        updatedAt: new Date(),
-      })
-      .where(eq(deployTasks.id, taskId));
-    return event;
-  });
-}
-
-export async function createDeployTask(
-  input: CreateDeployTaskInput
-): Promise<DeployTaskDTO> {
-  if (
-    input.source.kind === "github" &&
-    (input.actorUserId?.trim() ?? "") === ""
-  ) {
-    throw new Error("Actor user ID is required for GitHub deployment.");
-  }
-  if (
-    input.source.kind === "github" &&
-    (input.githubConnectionId?.trim() ?? "") === ""
-  ) {
-    throw new Error("GitHub connection ID is required for GitHub deployment.");
-  }
-  const id = generateId();
-  const now = new Date();
-  const timelineSnapshot = createDeploymentTaskTimelineForRunner({
-    runner: input.runner,
-    source: input.source,
-    status: "queued",
-    taskId: id,
-    updatedAt: now.toISOString(),
-  });
-  const [task] = await getDeploymentTaskDb()
-    .insert(deployTasks)
-    .values({
-      id,
-      actorUserId: input.actorUserId?.trim() ?? null,
-      createdAt: now,
-      createdFrom: input.createdFrom ?? "api",
-      githubConnectionId: input.githubConnectionId?.trim() ?? null,
-      heartbeatAt: now,
-      namespace: input.namespace.trim(),
-      phase: "queued",
-      prompt: compactOptional(input.prompt) ?? taskTitle(input),
-      runner: input.runner,
-      source: input.source,
-      status: "queued",
-      target: input.target,
-      timelineSnapshot,
-      updatedAt: now,
-    })
-    .returning();
-  if (task == null) {
-    throw new Error("Failed to create deploy task.");
-  }
-
-  await getDeploymentTaskDb()
-    .insert(deployTaskMessages)
-    .values({
-      id: generateId(),
-      parts: [
-        {
-          text: compactOptional(input.prompt) ?? taskTitle(input),
-          type: "text",
-        },
-      ],
-      role: "user",
-      taskId: task.id,
-    });
-
-  await recordDeployTaskEvent(task.id, {
-    kind: "deploy_task.created",
-    message: "Deploy task queued.",
-    payload: {
-      source: task.source,
-      target: task.target,
-    },
-    phase: "queued",
-  });
-
-  return toDeployTaskDTO(task);
-}
-
 export async function getDeployTaskById(
   taskId: string
 ): Promise<DeployTaskRow | null> {
@@ -316,169 +122,6 @@ export async function getDeployTaskById(
     .where(eq(deployTasks.id, taskId))
     .limit(1);
   return task ?? null;
-}
-
-function isActiveApplyingTask(task: DeployTaskRow): boolean {
-  return task.status === "applying" && task.phase === "apply";
-}
-
-function requiredResultCardsFromTask(
-  task: DeployTaskRow
-): DeploymentResultResourceCard[] {
-  return deploymentTaskTimelineFromTaskRecord(task)
-    .steps.flatMap((step) => step.resultCards ?? [])
-    .filter((card) => card.required);
-}
-
-async function upsertObservedResultResourceCard(input: {
-  card: DeploymentResultResourceCard;
-  eventMessage: string;
-  eventReason: string;
-  eventSeverity: "info" | "success" | "warning" | "error";
-  taskId: string;
-}) {
-  const now = new Date().toISOString();
-  await updateDeployTaskTimeline(input.taskId, {
-    event: {
-      kind: "deployment_task.result_resource_observed",
-      message: input.eventMessage,
-      phase: "apply",
-      payload: {
-        cardId: input.card.id,
-        latestStatusText: input.card.latestStatusText,
-        resultRef: input.card.resultRef,
-        status: input.card.status,
-      },
-    },
-    update: (timeline) =>
-      appendCardEvent(
-        upsertResultResourceCard(timeline, {
-          card: input.card,
-          stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
-          updatedAt: now,
-        }),
-        {
-          cardId: input.card.id,
-          event: timelineEvent({
-            dedupeKey: `${input.card.id}:${input.card.status}:${input.card.latestStatusText ?? ""}`,
-            message: input.eventMessage,
-            reason: input.eventReason,
-            severity: input.eventSeverity,
-            source: "resource-observer",
-          }),
-          stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
-          updatedAt: now,
-        }
-      ),
-  });
-}
-
-async function completeTaskFromReconciledReadiness(
-  task: DeployTaskRow
-): Promise<DeployTaskRow> {
-  const current = await getDeployTaskById(task.id);
-  if (current == null || !isActiveApplyingTask(current)) {
-    return current ?? task;
-  }
-
-  const now = new Date().toISOString();
-  await updateDeployTaskTimeline(task.id, {
-    event: {
-      kind: "deployment_task.result_readiness_reached",
-      message: "Required deployment result resources are running.",
-      phase: "completed",
-    },
-    update: (timeline) =>
-      appendStepEvent(
-        markTimelineStep(
-          updateTimelineStatus(timeline, {
-            status: "completed",
-            updatedAt: now,
-          }),
-          {
-            status: "completed",
-            stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
-            updatedAt: now,
-          }
-        ),
-        {
-          event: timelineEvent({
-            dedupeKey: "deployment_task.result_readiness_reached",
-            message: "Required deployment result resources are running.",
-            reason: "ResultReadinessReached",
-            severity: "success",
-            source: "runner",
-          }),
-          stepId: DEPLOY_TASK_RESULT_READINESS_STEP_ID,
-          updatedAt: now,
-        }
-      ),
-  });
-  await updateDeployTaskState(task.id, {
-    phase: "completed",
-    status: "completed",
-  });
-  await recordDeployTaskEvent(task.id, {
-    kind: "deployment_task.completed",
-    message: "Deployment task completed.",
-    payload:
-      current.artifactSummary == null
-        ? {}
-        : { artifactSummary: current.artifactSummary },
-    phase: "completed",
-  });
-
-  return (await getDeployTaskById(task.id)) ?? current;
-}
-
-async function reconcileActiveApplyingTaskTimeline(input: {
-  kubeconfig?: string;
-  task: DeployTaskRow;
-}): Promise<DeployTaskRow> {
-  if (input.kubeconfig == null || !isActiveApplyingTask(input.task)) {
-    return input.task;
-  }
-
-  const timeline = deploymentTaskTimelineFromTaskRecord(input.task);
-  const requiredCards = requiredResultCardsFromTask(input.task);
-  if (requiredCards.length === 0) {
-    return input.task;
-  }
-
-  if (deploymentTimelineResultReadinessReached(timeline)) {
-    return await completeTaskFromReconciledReadiness(input.task);
-  }
-
-  const observedCards: Awaited<
-    ReturnType<typeof observeDeploymentResultCardReadiness>
-  >[] = [];
-  for (const card of requiredCards) {
-    const observed = await observeDeploymentResultCardReadiness({
-      card,
-      kubeconfig: input.kubeconfig,
-    });
-    if (!(observed.observed && observed.running)) {
-      return input.task;
-    }
-    observedCards.push(observed);
-  }
-
-  const current = await getDeployTaskById(input.task.id);
-  if (current == null || !isActiveApplyingTask(current)) {
-    return current ?? input.task;
-  }
-
-  for (const observed of observedCards) {
-    await upsertObservedResultResourceCard({
-      card: observed.card,
-      eventMessage: observed.eventMessage,
-      eventReason: observed.eventReason,
-      eventSeverity: observed.eventSeverity,
-      taskId: current.id,
-    });
-  }
-
-  return await completeTaskFromReconciledReadiness(current);
 }
 
 export async function getDeployTaskSnapshot(
@@ -533,10 +176,14 @@ async function recentDeployTaskEvents(
   return events.reverse().map(toDeployTaskEventDTO);
 }
 
+/**
+ * Pure read (ADR 0037): the prior readiness reconciliation — completing
+ * `applying` tasks from the read path with an unfenced write — is gone.
+ * Reads never write status; the runner owns verification under its lease.
+ */
 export async function getDeployTaskTimelineSnapshot(
   taskId: string,
-  namespace?: string,
-  options: { kubeconfig?: string } = {}
+  namespace?: string
 ): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
   const filters = [eq(deployTasks.id, taskId)];
   if (namespace?.trim()) {
@@ -552,46 +199,101 @@ export async function getDeployTaskTimelineSnapshot(
     return null;
   }
 
-  const reconciledTask = await reconcileActiveApplyingTaskTimeline({
-    kubeconfig: options.kubeconfig,
-    task,
-  });
-
   return {
     events: await recentDeployTaskEvents(taskId),
-    task: toDeployTaskDTO(reconciledTask),
-    timeline: deploymentTaskTimelineFromTaskRecord(reconciledTask),
+    task: toDeployTaskDTO(task),
+    timeline: deploymentTaskTimelineFromTaskRecord(task),
   };
 }
 
-async function publishDeploymentTaskTimelineForTask(input: {
+export interface ListDeployTasksInput {
+  /** Opaque cursor from a previous page (createdAt/id keyset). */
+  cursor?: string;
+  limit?: number;
   namespace: string;
-  taskId: string;
-}) {
-  const snapshot = await getDeployTaskTimelineSnapshot(
-    input.taskId,
-    input.namespace
-  );
-  if (snapshot != null) {
-    publishDeploymentTaskTimelineChange(snapshot);
+  projectId?: string;
+  status?: DeployTaskStatus[];
+}
+
+export interface ListDeployTasksResult {
+  nextCursor: string | null;
+  tasks: DeployTaskDTO[];
+}
+
+function encodeTaskCursor(row: DeployTaskRow): string {
+  return Buffer.from(
+    JSON.stringify({ c: row.createdAt.toISOString(), i: row.id })
+  ).toString("base64url");
+}
+
+function decodeTaskCursor(
+  cursor: string | undefined
+): { createdAt: Date; id: string } | null {
+  if (!cursor) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8")
+    ) as { c?: string; i?: string };
+    if (typeof parsed.c !== "string" || typeof parsed.i !== "string") {
+      return null;
+    }
+    const createdAt = new Date(parsed.c);
+    if (Number.isNaN(createdAt.getTime())) {
+      return null;
+    }
+    return { createdAt, id: parsed.i };
+  } catch {
+    return null;
   }
 }
 
-export async function listDeployTasks(input: {
-  namespace: string;
-  projectId?: string;
-}): Promise<DeployTaskDTO[]> {
+/**
+ * Cursor pagination keys on (createdAt, id) — stable under updates, unlike
+ * updatedAt — so any future task surface pages the same API (ADR 0037).
+ */
+export async function listDeployTasks(
+  input: ListDeployTasksInput
+): Promise<ListDeployTasksResult> {
+  const limit = Math.min(
+    Math.max(input.limit ?? DEFAULT_TASK_LIST_LIMIT, 1),
+    200
+  );
   const filters = [eq(deployTasks.namespace, input.namespace.trim())];
   if (input.projectId?.trim()) {
     filters.push(eq(deployTasks.projectId, input.projectId.trim()));
   }
+  if (input.status != null && input.status.length > 0) {
+    filters.push(inArray(deployTasks.status, input.status));
+  }
+  const cursor = decodeTaskCursor(input.cursor);
+  if (cursor != null) {
+    const beforeCursor = or(
+      lt(deployTasks.createdAt, cursor.createdAt),
+      and(
+        eq(deployTasks.createdAt, cursor.createdAt),
+        lt(deployTasks.id, cursor.id)
+      )
+    );
+    if (beforeCursor != null) {
+      filters.push(beforeCursor);
+    }
+  }
+
   const rows = await getDeploymentTaskDb()
     .select()
     .from(deployTasks)
     .where(and(...filters))
-    .orderBy(desc(deployTasks.updatedAt))
-    .limit(100);
-  return rows.map(toDeployTaskDTO);
+    .orderBy(desc(deployTasks.createdAt), desc(deployTasks.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const lastRow = page.at(-1);
+  return {
+    nextCursor:
+      rows.length > limit && lastRow != null ? encodeTaskCursor(lastRow) : null,
+    tasks: page.map(toDeployTaskDTO),
+  };
 }
 
 export async function listDeploymentTaskProjections(input: {
@@ -616,194 +318,76 @@ export async function listDeploymentTaskProjections(input: {
   });
 }
 
-export async function updateDeployTaskState(
-  taskId: string,
-  input: {
-    artifactSummary?: DeployTaskRow["artifactSummary"];
-    blockingInputs?: DeployTaskRow["blockingInputs"];
-    completedAt?: Date | null;
-    error?: string | null;
-    failureDetails?: DeployTaskRow["failureDetails"];
-    gatewaySessionId?: string | null;
-    gatewayStateSnapshot?: DeployTaskRow["gatewayStateSnapshot"];
-    gatewayThreadId?: string | null;
-    gatewayTurnId?: string | null;
-    gatewayUrl?: string | null;
-    phase?: DeployTaskPhase;
-    previewUrl?: string | null;
-    projectId?: string | null;
-    projectName?: string | null;
-    resultUrl?: string | null;
-    runtimeName?: string | null;
-    runtimeProvider?: string | null;
-    runtimeState?: string | null;
-    startedAt?: Date | null;
-    status?: DeployTaskStatus;
+function shouldSkipSetIfEmptyCanvasProjection(input: {
+  existing: DeploymentTaskCanvasProjection;
+  incoming: DeploymentTaskCanvasProjection;
+}): boolean {
+  const incomingHasSlots = (input.incoming.slots?.length ?? 0) > 0;
+  if (incomingHasSlots) {
+    return (input.existing.slots?.length ?? 0) > 0;
   }
-): Promise<DeployTaskDTO | null> {
-  const dto = await getDeploymentTaskDb().transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
-    const [existing] = await tx
-      .select()
-      .from(deployTasks)
-      .where(eq(deployTasks.id, taskId))
-      .limit(1);
-    if (existing == null) {
-      return null;
-    }
-
-    const now = new Date();
-    const isTerminal =
-      input.status === "completed" ||
-      input.status === "failed" ||
-      input.status === "cancelled";
-    const isActive =
-      input.status === "queued" ||
-      input.status === "running" ||
-      input.status === "blocked" ||
-      input.status === "applying";
-    const timelineSnapshot =
-      input.status == null
-        ? existing.timelineSnapshot
-        : updateTimelineStatus(deploymentTaskTimelineFromTaskRecord(existing), {
-            status: input.status,
-            updatedAt: now.toISOString(),
-          });
-    const [task] = await tx
-      .update(deployTasks)
-      .set({
-        ...input,
-        ...(input.status === "running" ? { startedAt: now } : {}),
-        ...(isTerminal ? { completedAt: now } : {}),
-        ...(isActive ? { completedAt: null } : {}),
-        ...(input.status === "completed" || isActive
-          ? { error: null, failureDetails: null }
-          : {}),
-        heartbeatAt: now,
-        timelineSnapshot,
-        updatedAt: now,
-      })
-      .where(eq(deployTasks.id, taskId))
-      .returning();
-    return task == null ? null : toDeployTaskDTO(task);
-  });
-  if (dto == null) {
-    return null;
-  }
-  publishDeploymentTaskProjectionChange(dto);
-  await publishDeploymentTaskTimelineForTask({
-    namespace: dto.namespace,
-    taskId: dto.id,
-  });
-  return dto;
-}
-
-export async function updateDeployTaskTimeline(
-  taskId: string,
-  input: {
-    event?: DeployTaskEventInput;
-    update: DeploymentTaskTimelineUpdate;
-  }
-): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
-  const result = await getDeploymentTaskDb().transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
-    const [existing] = await tx
-      .select()
-      .from(deployTasks)
-      .where(eq(deployTasks.id, taskId))
-      .limit(1);
-    if (existing == null) {
-      return null;
-    }
-
-    const nextTimeline = input.update(
-      deploymentTaskTimelineFromTaskRecord(existing)
-    );
-
-    if (input.event != null) {
-      const [row] = await tx
-        .select({ value: max(deployTaskEvents.seq) })
-        .from(deployTaskEvents)
-        .where(eq(deployTaskEvents.taskId, taskId));
-      const seq = (row?.value ?? 0) + 1;
-      await tx.insert(deployTaskEvents).values({
-        kind: input.event.kind,
-        message: compactOptional(input.event.message),
-        payload: input.event.payload ?? {},
-        phase: input.event.phase ?? null,
-        seq,
-        taskId,
-      });
-    }
-
-    const now = new Date();
-    const [task] = await tx
-      .update(deployTasks)
-      .set({
-        heartbeatAt: now,
-        ...(input.event?.phase == null ? {} : { phase: input.event.phase }),
-        timelineSnapshot: nextTimeline,
-        updatedAt: now,
-      })
-      .where(eq(deployTasks.id, taskId))
-      .returning();
-    return task == null ? null : toDeployTaskDTO(task);
-  });
-
-  if (result == null) {
-    return null;
-  }
-  publishDeploymentTaskProjectionChange(result);
-  const snapshot = await getDeployTaskTimelineSnapshot(
-    result.id,
-    result.namespace
+  return (
+    (input.existing.slots?.length ?? 0) > 0 ||
+    (input.existing.edges?.length ?? 0) > 0 ||
+    (input.existing.resultMappings?.length ?? 0) > 0
   );
-  if (snapshot != null) {
-    publishDeploymentTaskTimelineChange(snapshot);
-  }
-  return snapshot;
 }
 
+/**
+ * Canvas projection is user canvas state on the task row, not engine state:
+ * a plain conditional write (single statement) that publishes a change so
+ * every process's streams converge.
+ */
 export async function updateDeployTaskCanvasProjection(
   taskId: string,
   input: UpdateDeployTaskCanvasProjectionInput
 ): Promise<DeployTaskDTO | null> {
-  return await getDeploymentTaskDb().transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${taskId}))`);
-    const [existing] = await tx
-      .select()
-      .from(deployTasks)
-      .where(eq(deployTasks.id, taskId))
-      .limit(1);
-    if (existing == null) {
-      return null;
-    }
-    const mode = input.mode ?? "replace";
-    const incomingProjection = input.projection;
-    if (
-      mode === "set-if-empty" &&
-      shouldSkipSetIfEmptyCanvasProjection({
-        existing: existing.canvasProjection,
-        incoming: incomingProjection,
-      })
-    ) {
-      return toDeployTaskDTO(existing);
-    }
-    const [task] = await tx
-      .update(deployTasks)
-      .set({
-        canvasProjection: incomingProjection,
-        updatedAt: new Date(),
-      })
-      .where(eq(deployTasks.id, taskId))
-      .returning();
-    if (task == null) {
-      return null;
-    }
-    const dto = toDeployTaskDTO(task);
-    publishDeploymentTaskProjectionChange(dto);
-    return dto;
-  });
+  const existing = await getDeployTaskById(taskId);
+  if (existing == null) {
+    return null;
+  }
+  const mode = input.mode ?? "replace";
+  if (
+    mode === "set-if-empty" &&
+    shouldSkipSetIfEmptyCanvasProjection({
+      existing: existing.canvasProjection,
+      incoming: input.projection,
+    })
+  ) {
+    return toDeployTaskDTO(existing);
+  }
+  const guard =
+    mode === "set-if-empty"
+      ? sql`${deployTasks.canvasProjection} = ${JSON.stringify(existing.canvasProjection)}::jsonb`
+      : undefined;
+  const [task] = await getDeploymentTaskDb()
+    .update(deployTasks)
+    .set({
+      canvasProjection: input.projection,
+      updatedAt: new Date(),
+    })
+    .where(
+      guard == null
+        ? eq(deployTasks.id, taskId)
+        : and(eq(deployTasks.id, taskId), guard)
+    )
+    .returning();
+  if (task == null) {
+    return existing == null ? null : toDeployTaskDTO(existing);
+  }
+  const dto = toDeployTaskDTO(task);
+  const ctx = getDeployTaskEngineContext();
+  await ctx.notify
+    .publish({
+      kind: "change",
+      namespace: dto.namespace,
+      projectId: dto.projectId,
+      taskId: dto.id,
+    })
+    .catch((error) => {
+      console.error("[deploy-task] projection notify failed:", error);
+    });
+  return dto;
 }
 
 export async function appendDeployTaskMessage(input: {
@@ -834,49 +418,4 @@ export async function appendDeployTaskMessage(input: {
   return toDeployTaskMessageDTO(message);
 }
 
-export async function submitDeployTaskInput(
-  taskId: string,
-  input: SubmitDeployTaskInput
-): Promise<DeployTaskDTO | null> {
-  const existing = await getDeployTaskById(taskId);
-  if (existing == null) {
-    return null;
-  }
-  const hasPendingInputs =
-    existing.blockingInputs.length > 0 ||
-    (existing.artifactSummary.deploymentPlan?.missingInputKeys?.length ?? 0) >
-      0;
-  const isWaitingForInput =
-    existing.phase === "configure" &&
-    (existing.status === "blocked" || existing.status === "failed") &&
-    hasPendingInputs;
-  if (!isWaitingForInput) {
-    throw new Error("Deploy task is not waiting for input.");
-  }
-  const submittedKeys = Object.keys(input.values);
-  await recordDeployTaskEvent(taskId, {
-    kind: "deploy_task.input_submitted",
-    message: "Additional deploy input submitted.",
-    payload: {
-      inputKeys: submittedKeys,
-      redacted: true,
-    },
-    phase: "configure",
-  });
-  return await updateDeployTaskState(taskId, {
-    phase: "configure",
-    status: "queued",
-  });
-}
-
-export async function cancelDeployTask(
-  taskId: string
-): Promise<DeployTaskDTO | null> {
-  await recordDeployTaskEvent(taskId, {
-    kind: "deploy_task.cancelled",
-    message: "Deploy task cancelled.",
-  });
-  return await updateDeployTaskState(taskId, {
-    status: "cancelled",
-  });
-}
+export { compactOptional as compactOptionalDeployTaskText };

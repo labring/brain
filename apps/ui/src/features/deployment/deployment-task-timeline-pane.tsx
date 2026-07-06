@@ -31,6 +31,11 @@ import {
   useMemo,
   useState,
 } from "react";
+import {
+  deployTaskIsCancellable,
+  deployTaskIsCancelling,
+  deployTaskIsRedeployable,
+} from "@/lib/deploy-task/status-presentation";
 import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
@@ -46,8 +51,10 @@ import type {
   DeploymentTaskDeploymentPlanInput,
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskBlockingInput,
+  DeployTaskDTO,
   DeployTaskStatus,
 } from "@/lib/deploy-task/types";
+import { useDeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
 import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
 
 interface DeploymentTaskTimelinePaneProps {
@@ -771,10 +778,7 @@ function DeploymentConfigurationForm({
   const hasBlockingInputs =
     snapshot.task.blockingInputs.length > 0 ||
     (plan?.missingInputKeys?.length ?? 0) > 0;
-  const showForm =
-    (snapshot.task.status === "blocked" || snapshot.task.status === "failed") &&
-    snapshot.task.phase === "configure" &&
-    hasBlockingInputs;
+  const showForm = snapshot.task.status === "blocked" && hasBlockingInputs;
   const [values, setValues] = useState<Record<string, string>>({});
   const inputs = useMemo(
     () =>
@@ -976,6 +980,70 @@ export function DeploymentTaskTimelinePaneContent({
   );
 }
 
+function DeploymentTaskTimelineActions({
+  kubeconfig,
+  namespace,
+  task,
+}: {
+  kubeconfig: string;
+  namespace: string;
+  task: DeployTaskDTO;
+}) {
+  const actions = useDeploymentTaskActions({ kubeconfig, namespace });
+  const cancellable = deployTaskIsCancellable(task.status);
+  const redeployable = deployTaskIsRedeployable(task.status);
+  if (!(cancellable || redeployable)) {
+    return null;
+  }
+  const cancelling =
+    deployTaskIsCancelling(task) || actions.cancelPendingTaskIds.has(task.id);
+  const redeployPending = actions.redeployPendingTaskIds.has(task.id);
+  return (
+    <div className="flex items-center gap-2">
+      {cancellable ? (
+        <AppButton
+          disabled={cancelling}
+          onClick={() => {
+            actions.cancel(task.id).catch(() => undefined);
+          }}
+          size="sm"
+          type="button"
+          variant="secondary"
+        >
+          {cancelling ? (
+            <>
+              <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+              Cancelling…
+            </>
+          ) : (
+            "Cancel deployment"
+          )}
+        </AppButton>
+      ) : null}
+      {redeployable ? (
+        <AppButton
+          disabled={redeployPending}
+          onClick={() => {
+            actions.redeploy(task.id).catch(() => undefined);
+          }}
+          size="sm"
+          type="button"
+          variant="secondary"
+        >
+          {redeployPending ? (
+            <>
+              <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+              Redeploying…
+            </>
+          ) : (
+            "Redeploy"
+          )}
+        </AppButton>
+      ) : null}
+    </div>
+  );
+}
+
 export function DeploymentTaskTimelinePane({
   kubeconfig,
   namespace,
@@ -1003,6 +1071,13 @@ export function DeploymentTaskTimelinePane({
       }
       title="Deployment Timeline"
     >
+      {task == null ? null : (
+        <DeploymentTaskTimelineActions
+          kubeconfig={kubeconfig}
+          namespace={namespace}
+          task={task}
+        />
+      )}
       {timeline.error == null ? null : (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-sm">
           {timeline.error.message}

@@ -1,4 +1,3 @@
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -42,7 +41,6 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const namespace = namespaceResolved.namespace;
-  const kubeconfig = decodeKubeconfig(params.encodedKubeconfig);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -97,13 +95,18 @@ export async function GET(request: Request, context: RouteContext) {
       }
 
       unsubscribe = subscribeDeploymentTaskTimelineEvents({
-        listener: (event) => {
+        listener: (timelineSnapshot) => {
+          const event: DeploymentTaskTimelineStreamEvent = {
+            snapshot: timelineSnapshot,
+            type: "update",
+          };
           if (snapshotSent) {
             send(event.type, event);
             return;
           }
           pendingEvents.push(event);
         },
+        namespace,
         taskId,
       });
       heartbeatTimer = setInterval(
@@ -112,11 +115,7 @@ export async function GET(request: Request, context: RouteContext) {
       );
 
       try {
-        const snapshot = await getDeployTaskTimelineSnapshot(
-          taskId,
-          namespace,
-          { kubeconfig: kubeconfig ?? undefined }
-        );
+        const snapshot = await getDeployTaskTimelineSnapshot(taskId, namespace);
         if (closed) {
           return;
         }

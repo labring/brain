@@ -12,17 +12,17 @@ const deploymentTaskSchema = {
   deployTasks,
 };
 
-export type DeploymentTaskPgDatabase = NodePgDatabase<
-  typeof deploymentTaskSchema
->;
+export type { DeploymentTaskPgDatabase } from "./db-types";
 
-let deploymentTaskDbInstance: DeploymentTaskPgDatabase | undefined;
+type DeploymentTaskNodePgDatabase = NodePgDatabase<typeof deploymentTaskSchema>;
+
+let deploymentTaskDbInstance: DeploymentTaskNodePgDatabase | undefined;
 
 /**
  * Lazily creates the Drizzle client on first use so `next build` does not need
  * `DATABASE_URL` during route collection.
  */
-export function getDeploymentTaskDb(): DeploymentTaskPgDatabase {
+export function getDeploymentTaskDb(): DeploymentTaskNodePgDatabase {
   deploymentTaskDbInstance ??= drizzle(getAppPostgresPool(), {
     schema: deploymentTaskSchema,
   });

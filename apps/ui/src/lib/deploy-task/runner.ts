@@ -53,6 +53,8 @@ import {
 } from "./artifacts";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
+import { isDeployTaskAbortError } from "./engine/errors";
+import type { DeployTaskHandle } from "./engine/handle";
 import { deployTaskFailureSummary } from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
@@ -67,19 +69,24 @@ import {
   resultReadinessLabel,
   waitingForResultObservationStatus,
 } from "./result-readiness";
+import {
+  deployTaskBeginApplying,
+  deployTaskCheckpoint,
+  deployTaskComplete,
+  deployTaskRequestInputs,
+  deployTaskRunSignal,
+  recordDeployTaskEvent,
+  throwIfDeployTaskAborted,
+  updateDeployTaskState,
+  updateDeployTaskTimeline,
+} from "./runner-writes";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
 import type {
   DeployTaskArtifactSummary,
   DeployTaskEventPayload,
   DeployTaskRow,
 } from "./schema";
-import {
-  getDeployTaskById,
-  getDeployTaskTimelineSnapshot,
-  recordDeployTaskEvent,
-  updateDeployTaskState,
-  updateDeployTaskTimeline,
-} from "./service";
+import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
 import {
   appendCardEvent,
   appendStepEvent,
@@ -132,6 +139,57 @@ export interface StartDeployTaskRunnerInput {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Sleep that unblocks immediately when the run's abort signal fires. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+const DEPLOY_FAILURE_DETAILS_KEY = "__sealaiDeployFailureDetails";
+
+/**
+ * Attaches structured failure context to an error so the run's single
+ * terminal `fail` transition can persist it — intermediate writes of
+ * failure_details on a live run are gone with the engine.
+ */
+function attachDeployFailureDetails(
+  error: unknown,
+  details: Record<string, unknown>
+): unknown {
+  if (error instanceof Error) {
+    const carrier = error as Error & {
+      [DEPLOY_FAILURE_DETAILS_KEY]?: Record<string, unknown>;
+    };
+    carrier[DEPLOY_FAILURE_DETAILS_KEY] = {
+      ...carrier[DEPLOY_FAILURE_DETAILS_KEY],
+      ...details,
+    };
+  }
+  return error;
+}
+
+function attachedDeployFailureDetails(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    const carrier = error as Error & {
+      [DEPLOY_FAILURE_DETAILS_KEY]?: Record<string, unknown>;
+    };
+    return carrier[DEPLOY_FAILURE_DETAILS_KEY] ?? {};
+  }
+  return {};
 }
 
 function shellQuote(value: string): string {
@@ -609,11 +667,9 @@ async function observeResultCardReadiness(input: {
 
 async function waitForRequiredResultCards(input: {
   cards: DeploymentResultResourceCard[];
-  failOnTimeout?: boolean;
   kubeconfig: string;
   taskId: string;
-}): Promise<boolean> {
-  const failOnTimeout = input.failOnTimeout ?? true;
+}): Promise<void> {
   const startedAt = Date.now();
   const timeoutMs = directApReadinessTimeoutMs();
   let latestStatus = "waiting for required result resource observation";
@@ -624,6 +680,8 @@ async function waitForRequiredResultCards(input: {
   >();
 
   while (Date.now() - startedAt <= timeoutMs) {
+    // Cancel means "stop waiting" during verify (ADR 0038).
+    await deployTaskCheckpoint(input.taskId);
     let requiredCardsRunning = true;
 
     for (const card of input.cards) {
@@ -646,11 +704,14 @@ async function waitForRequiredResultCards(input: {
         snapshot == null ||
         deploymentTimelineResultReadinessReached(snapshot.timeline)
       ) {
-        return true;
+        return;
       }
     }
 
-    await sleep(DIRECT_AP_READINESS_POLL_MS);
+    await abortableSleep(
+      DIRECT_AP_READINESS_POLL_MS,
+      deployTaskRunSignal(input.taskId)
+    );
   }
 
   const now = new Date().toISOString();
@@ -673,7 +734,7 @@ async function waitForRequiredResultCards(input: {
       update: (timeline) =>
         applyResultResourceTimeout(timeline, {
           cardId: card.id,
-          failRequired: failOnTimeout,
+          failRequired: true,
           lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
           stepId: "create-resources",
           updatedAt: now,
@@ -681,12 +742,11 @@ async function waitForRequiredResultCards(input: {
     });
   }
 
-  if (!failOnTimeout) {
-    return false;
-  }
-
-  throw new Error(
-    `Timed out waiting for required result resource readiness (${latestStatus}).`
+  throw attachDeployFailureDetails(
+    new Error(
+      `Timed out waiting for required result resource readiness (${latestStatus}).`
+    ),
+    { reason: "readiness-timeout" }
   );
 }
 
@@ -763,6 +823,12 @@ function deployFailureDetails(input: {
   };
 }
 
+/**
+ * Resolves (or creates) the Deployment Target Project. Pure with respect to
+ * task state: creation calls it before inserting the row so the response and
+ * the stored row carry the resolved Project identity from the start
+ * (ADR 0023 — cached on the task, never re-created).
+ */
 export async function resolveDeploymentTaskTarget(
   task: ResolvableDeploymentTaskTarget
 ): Promise<{
@@ -780,31 +846,11 @@ export async function resolveDeploymentTaskTarget(
     };
   }
 
-  await updateDeployTaskState(task.id, {
-    phase: "resolve-target",
-    status: "running",
-  });
-  await recordDeployTaskEvent(task.id, {
-    kind: "deployment_task.target_resolve_started",
-    message: "Resolving deployment target.",
-    phase: "resolve-target",
-  });
-
   if (task.target.kind === "newProject") {
     const project = await createProject({
       description: task.target.description,
       displayName: task.target.displayName,
       namespace: task.namespace,
-    });
-    await updateDeployTaskState(task.id, {
-      projectId: project.id,
-      projectName: project.id,
-    });
-    await recordDeployTaskEvent(task.id, {
-      kind: "deployment_task.target_resolved",
-      message: `Created Project "${project.displayName}".`,
-      payload: { projectId: project.id },
-      phase: "resolve-target",
     });
     return {
       createdProject: true,
@@ -818,16 +864,6 @@ export async function resolveDeploymentTaskTarget(
     throw new Error("Project not found.");
   }
   const projectName = task.target.projectName?.trim() || project.id;
-  await updateDeployTaskState(task.id, {
-    projectId: project.id,
-    projectName,
-  });
-  await recordDeployTaskEvent(task.id, {
-    kind: "deployment_task.target_resolved",
-    message: `Resolved Project "${project.displayName}".`,
-    payload: { projectId: project.id },
-    phase: "resolve-target",
-  });
   return {
     createdProject: false,
     projectId: project.id,
@@ -1086,7 +1122,15 @@ async function waitForRunningDevbox(input: {
         phase: "prepare",
       });
     }
-    await sleep(DEVBOX_RUNTIME_READY_POLL_MS);
+    if (input.taskId == null) {
+      await sleep(DEVBOX_RUNTIME_READY_POLL_MS);
+    } else {
+      throwIfDeployTaskAborted(input.taskId);
+      await abortableSleep(
+        DEVBOX_RUNTIME_READY_POLL_MS,
+        deployTaskRunSignal(input.taskId)
+      );
+    }
   }
 
   const state = devboxStateLabel(lastInfo);
@@ -1574,16 +1618,13 @@ async function completeTaskWithArtifact(input: {
   completionEventMessage?: string;
   completionEventKind?: string;
   completionRecordMessage?: string;
-  failOnResultReadinessTimeout?: boolean;
   githubToken?: string;
   kubeconfig: string;
   outputJson?: Record<string, unknown>;
   task: DeployTaskRow;
 }) {
-  await updateDeployTaskState(input.task.id, {
-    phase: "apply",
-    status: "applying",
-  });
+  await deployTaskCheckpoint(input.task.id);
+  await deployTaskBeginApplying(input.task.id);
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.apply_started",
     message: "Applying deployment artifacts.",
@@ -1607,27 +1648,18 @@ async function completeTaskWithArtifact(input: {
       task: input.task,
     });
   } catch (error) {
-    await updateDeployTaskState(input.task.id, {
-      failureDetails: {
-        ...deployFailureDetails({
-          error,
-          phase: "apply",
-          source: "applyDeploymentArtifact",
-          task: input.task,
-        }),
-        artifactKind: input.artifact.kind,
-        resourceCount:
-          "resources" in input.artifact &&
-          Array.isArray(input.artifact.resources)
-            ? input.artifact.resources.length
-            : undefined,
-        templateName:
-          input.artifact.kind === "sealos-template"
-            ? input.artifact.templateName
-            : undefined,
-      },
+    throw attachDeployFailureDetails(error, {
+      artifactKind: input.artifact.kind,
+      resourceCount:
+        "resources" in input.artifact && Array.isArray(input.artifact.resources)
+          ? input.artifact.resources.length
+          : undefined,
+      source: "applyDeploymentArtifact",
+      templateName:
+        input.artifact.kind === "sealos-template"
+          ? input.artifact.templateName
+          : undefined,
     });
-    throw error;
   }
 
   await updateDeployTaskState(input.task.id, {
@@ -1638,9 +1670,9 @@ async function completeTaskWithArtifact(input: {
       ...(input.outputJson === undefined
         ? {}
         : { outputJson: input.outputJson }),
+      // Recorded result identities survive summary rewrites (ADR 0038).
+      ...appliedResultIdentities(input.task, input.artifact),
     },
-    phase: "apply",
-    status: "applying",
   });
 
   const resultCards = resultResourceCardsFromArtifactSummary(
@@ -1655,22 +1687,15 @@ async function completeTaskWithArtifact(input: {
     });
   }
 
+  // Reaching completed requires Deployment Result Readiness (ADR 0028): a
+  // readiness timeout throws and resolves to failed with the resources
+  // preserved — never a completed-on-timeout.
   if (resultCards.some((card) => card.required)) {
-    const ready = await waitForRequiredResultCards({
+    await waitForRequiredResultCards({
       cards: resultCards,
-      failOnTimeout: input.failOnResultReadinessTimeout ?? true,
       kubeconfig: input.kubeconfig,
       taskId: input.task.id,
     });
-    if (!ready) {
-      await recordDeployTaskEvent(input.task.id, {
-        kind: "deployment_task.result_readiness_timeout",
-        message:
-          "Required deployment result resources were created but did not all become ready before timeout.",
-        payload: { artifactSummary: applied.artifactSummary },
-        phase: "apply",
-      });
-    }
   }
 
   await markTimelineStepWithEvent({
@@ -1684,16 +1709,30 @@ async function completeTaskWithArtifact(input: {
     stepId: "create-resources",
     taskId: input.task.id,
   });
-  await updateDeployTaskState(input.task.id, {
-    phase: "completed",
-    status: "completed",
-  });
-  await recordDeployTaskEvent(input.task.id, {
+  await deployTaskComplete(input.task.id, {
     kind: "deployment_task.completed",
     message: input.completionRecordMessage ?? "Deployment task completed.",
     payload: { artifactSummary: applied.artifactSummary },
     phase: "completed",
   });
+}
+
+function appliedResultIdentities(
+  task: DeployTaskRow,
+  artifact: DeploymentArtifact
+): Pick<DeployTaskArtifactSummary, "resultIdentities"> {
+  if (artifact.kind === "sealos-template") {
+    return {
+      resultIdentities: {
+        ...task.artifactSummary.resultIdentities,
+        templateInstanceName: artifact.instanceName,
+      },
+    };
+  }
+  if (task.artifactSummary.resultIdentities == null) {
+    return {};
+  }
+  return { resultIdentities: task.artifactSummary.resultIdentities };
 }
 
 function submittedInputStringValues(
@@ -1722,6 +1761,29 @@ function deploymentPlanArgsFromTask(
   return args == null ? {} : { ...args };
 }
 
+/**
+ * Row-level secrets contract (ADR 0037): submitted values for sensitive plan
+ * inputs must never be persisted anywhere on the task row. The full args
+ * live only in process memory for the apply itself; the persisted plan keeps
+ * non-sensitive args so redeploy prefill still works.
+ */
+function deploymentPlanWithPersistableArgs<
+  T extends {
+    args?: Record<string, string>;
+    inputs: { key: string; sensitive?: boolean; type?: string }[];
+  },
+>(plan: T, args: Record<string, string>): T {
+  const sensitiveKeys = new Set(
+    plan.inputs
+      .filter((item) => item.sensitive === true || item.type === "secret")
+      .map((item) => item.key)
+  );
+  const safeArgs = Object.fromEntries(
+    Object.entries(args).filter(([key]) => !sensitiveKeys.has(key))
+  );
+  return { ...plan, args: safeArgs };
+}
+
 function outputJsonFromArtifactSummary(
   task: DeployTaskRow
 ): Record<string, unknown> | null {
@@ -1737,12 +1799,6 @@ async function blockForDeploymentInputs(input: {
   task: DeployTaskRow;
 }) {
   const blockingInputs = blockingInputsFromDeploymentPlan(input.deploymentPlan);
-  await updateDeployTaskState(input.task.id, {
-    artifactSummary: input.summary,
-    blockingInputs,
-    phase: "configure",
-    status: "blocked",
-  });
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.input_required",
     eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
@@ -1756,16 +1812,16 @@ async function blockForDeploymentInputs(input: {
     taskId: input.task.id,
     timelineStatus: "blocked",
   });
+  // The blocked transition releases the lease and ends this run — it must be
+  // the run's final write.
+  await deployTaskRequestInputs(input.task.id, {
+    blockingInputs,
+    phase: "configure",
+    state: { artifactSummary: input.summary },
+  });
 }
 
 async function blockForMissingAiDeploymentOutput(task: DeployTaskRow) {
-  await updateDeployTaskState(task.id, {
-    artifactSummary: {
-      notes: "Codex gateway completed without deployment output.",
-    },
-    phase: "generate-artifacts",
-    status: "blocked",
-  });
   await recordDeployTaskEvent(task.id, {
     kind: "deployment_task.output_missing",
     message: "Codex gateway completed without deployment output.",
@@ -1778,6 +1834,15 @@ async function blockForMissingAiDeploymentOutput(task: DeployTaskRow) {
     status: "blocked",
     stepId: "generate-deployment",
     taskId: task.id,
+  });
+  await deployTaskRequestInputs(task.id, {
+    blockingInputs: [],
+    phase: "generate-artifacts",
+    state: {
+      artifactSummary: {
+        notes: "Codex gateway completed without deployment output.",
+      },
+    },
   });
 }
 
@@ -1799,38 +1864,56 @@ async function applyAiDeploymentFromPreparedOutput(input: {
         input.outputJson,
         "deliveryManifest"
       ),
+      instanceName:
+        input.task.artifactSummary.resultIdentities?.templateInstanceName,
       routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
       task: input.task,
       templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
     });
   } catch (error) {
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
     const plan = input.task.artifactSummary.deploymentPlan;
     if (plan != null) {
-      await updateDeployTaskState(input.task.id, {
+      // Re-park on the submitted-input gate instead of failing: the values
+      // were rejected, so ask again (the legacy failed-at-configure hybrid
+      // state is gone — blocked is the only waiting state).
+      await recordDeployTaskEvent(input.task.id, {
+        kind: "deployment_task.input_rejected",
+        message: deployTaskFailureSummary(error),
+        payload: { error: errorMessage(error) },
+        phase: "configure",
+      });
+      await deployTaskRequestInputs(input.task.id, {
         blockingInputs: blockingInputsFromDeploymentPlan(plan),
         phase: "configure",
-        status: "blocked",
       });
+      return;
     }
     throw error;
   }
   const deploymentPlan =
     input.task.artifactSummary.deploymentPlan == null
       ? undefined
-      : {
-          ...input.task.artifactSummary.deploymentPlan,
-          args: input.args,
-        };
+      : deploymentPlanWithPersistableArgs(
+          input.task.artifactSummary.deploymentPlan,
+          input.args
+        );
   const summary = {
     ...sealosTemplateArtifactSummary({ artifact }),
     ...(deploymentPlan == null ? {} : { deploymentPlan }),
     outputJson: input.outputJson,
+    resultIdentities: {
+      ...input.task.artifactSummary.resultIdentities,
+      ...(artifact.kind === "sealos-template"
+        ? { templateInstanceName: artifact.instanceName }
+        : {}),
+    },
   };
   await updateDeployTaskState(input.task.id, {
     artifactSummary: summary,
-    blockingInputs: [],
     phase: "configure",
-    status: "running",
   });
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.input_ready",
@@ -1938,7 +2021,6 @@ async function runDirectDeploymentTask(input: {
   });
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
-    status: "running",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.plan_created",
@@ -1982,7 +2064,10 @@ async function runTemplateDeploymentTask(input: {
     throw new Error("Template runner requires a template source.");
   }
   const templateName = input.task.source.templateName.trim();
-  const instanceName = childResourceName(templateName, "template");
+  const instanceName = await allocateTemplateInstanceName({
+    task: input.task,
+    templateName,
+  });
 
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.template_preparation_started",
@@ -1994,7 +2079,6 @@ async function runTemplateDeploymentTask(input: {
   });
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
-    status: "running",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.plan_created",
@@ -2025,11 +2109,15 @@ async function runTemplateDeploymentTask(input: {
       completionEventMessage:
         "Template deployment resources were created. Workload readiness continues in Kubernetes.",
       completionRecordMessage: "Template deployment resources created.",
-      failOnResultReadinessTimeout: false,
       kubeconfig: input.kubeconfig,
       task: input.task,
     });
   } catch (error) {
+    // An abort is a typed cancellation outcome, never a failure: it must not
+    // reach failure cleanup, which deletes partial resources (ADR 0038).
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
     await cleanupFailedTemplateDeployment({
       encodedKubeconfig: input.encodedKubeconfig,
       instanceName,
@@ -2038,6 +2126,40 @@ async function runTemplateDeploymentTask(input: {
     });
     throw error;
   }
+}
+
+/**
+ * Result-identity contract (ADR 0038): reuse the recorded template instance
+ * name when one exists (redeploy converging on preserved resources); a fresh
+ * allocation is persisted with a fenced write before any provider call uses
+ * it, so an identity can never be allocated and then lost to a crash.
+ */
+async function allocateTemplateInstanceName(input: {
+  task: DeployTaskRow;
+  templateName: string;
+}): Promise<string> {
+  const recorded =
+    input.task.artifactSummary.resultIdentities?.templateInstanceName?.trim();
+  if (recorded) {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.result_identity_reused",
+      message: `Reusing template instance "${recorded}" from the previous run.`,
+      payload: { templateInstanceName: recorded },
+      phase: "plan",
+    });
+    return recorded;
+  }
+  const allocated = childResourceName(input.templateName, "template");
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      ...input.task.artifactSummary,
+      resultIdentities: {
+        ...input.task.artifactSummary.resultIdentities,
+        templateInstanceName: allocated,
+      },
+    },
+  });
+  return allocated;
 }
 
 function aiSourceKey(task: DeployTaskRow): string {
@@ -2099,7 +2221,6 @@ async function runAiDeploymentTask(input: {
 
   await updateDeployTaskState(input.task.id, {
     phase: "prepare",
-    status: "running",
   });
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.prepare_started",
@@ -2186,14 +2307,6 @@ async function runAiDeploymentTask(input: {
     networkId: kubernetesNetworkId,
   });
   if (buildRuntime == null && input.task.source.kind === "github") {
-    await updateDeployTaskState(input.task.id, {
-      artifactSummary: {
-        notes:
-          "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
-      },
-      phase: "prepare",
-      status: "blocked",
-    });
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.build_runtime_unavailable",
       message:
@@ -2209,6 +2322,16 @@ async function runAiDeploymentTask(input: {
       status: "blocked",
       stepId: "prepare-workspace",
       taskId: input.task.id,
+    });
+    await deployTaskRequestInputs(input.task.id, {
+      blockingInputs: [],
+      phase: "prepare",
+      state: {
+        artifactSummary: {
+          notes:
+            "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+        },
+      },
     });
     return;
   }
@@ -2266,10 +2389,6 @@ async function runAiDeploymentTask(input: {
   const outputProgressSignatures = new Set<string>();
 
   if (gatewayContext == null) {
-    await updateDeployTaskState(input.task.id, {
-      phase: "plan",
-      status: "blocked",
-    });
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.gateway_unavailable",
       message:
@@ -2284,6 +2403,10 @@ async function runAiDeploymentTask(input: {
       status: "blocked",
       stepId: "analyze-source",
       taskId: input.task.id,
+    });
+    await deployTaskRequestInputs(input.task.id, {
+      blockingInputs: [],
+      phase: "plan",
     });
     return;
   }
@@ -2375,7 +2498,16 @@ async function runAiDeploymentTask(input: {
   });
 }
 
-export async function startDeployTaskRunner(
+/**
+ * The runner body for one claimed execution (ADR 0037): invoked by the
+ * engine's launch wrapper under a lease, with the kubeconfig and any
+ * submitted Blocking Input values held in request-process memory only. Every
+ * task-state write inside goes through the fenced handle; the terminal
+ * failure transition is the run's last write. Abort errors pass through to
+ * the launch wrapper, which resolves them to `cancelled` — never `failed`.
+ */
+export async function runDeployTask(
+  handle: DeployTaskHandle,
   input: StartDeployTaskRunnerInput
 ): Promise<void> {
   const task = await getDeployTaskById(input.taskId);
@@ -2386,6 +2518,15 @@ export async function startDeployTaskRunner(
   try {
     const kubeconfig = requireKubeconfig(input);
     const target = await resolveDeploymentTaskTarget(task);
+    if (
+      task.projectId?.trim() !== target.projectId ||
+      task.projectName?.trim() !== target.projectName
+    ) {
+      await handle.setState({
+        projectId: target.projectId,
+        projectName: target.projectName,
+      });
+    }
     const resolvedTask = (await getDeployTaskById(task.id)) ?? task;
     const submittedInputValues = submittedInputStringValues(
       input.submittedInputValues
@@ -2446,35 +2587,48 @@ export async function startDeployTaskRunner(
         break;
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failureMessage = deployTaskFailureSummary(error);
-    const latestTask = (await getDeployTaskById(task.id)) ?? task;
-    const recordedFailureEvent = await markDeployTaskFailureTimeline({
-      errorMessage: message,
-      failureMessage,
-      task: latestTask,
-    });
-    await updateDeployTaskState(task.id, {
-      error: message,
-      failureDetails: {
-        ...deployFailureDetails({
-          error,
-          phase: latestTask.phase,
-          source: "startDeployTaskRunner",
-          task: latestTask,
-        }),
-        failureMessage,
-      },
-      status: "failed",
-    });
-    if (!recordedFailureEvent) {
-      await recordDeployTaskEvent(task.id, {
-        kind: "deployment_task.failed",
-        message: failureMessage,
-        payload: { error: message },
-        phase: latestTask.phase,
-      });
+    if (isDeployTaskAbortError(error) || handle.outcome() != null) {
+      throw error;
     }
-    throw error;
+    await resolveDeployTaskRunFailure({ error, handle, task });
   }
+}
+
+/**
+ * The run's single terminal failure write: timeline marking first, then the
+ * fenced `failed` transition carrying the aggregated failure details.
+ */
+async function resolveDeployTaskRunFailure(input: {
+  error: unknown;
+  handle: DeployTaskHandle;
+  task: DeployTaskRow;
+}): Promise<void> {
+  const { error, handle, task } = input;
+  const message = error instanceof Error ? error.message : String(error);
+  const failureMessage = deployTaskFailureSummary(error);
+  const latestTask = (await getDeployTaskById(task.id)) ?? task;
+  await markDeployTaskFailureTimeline({
+    errorMessage: message,
+    failureMessage,
+    task: latestTask,
+  }).catch(() => false);
+  await handle.fail({
+    error: message,
+    event: {
+      kind: "deployment_task.failed",
+      message: failureMessage,
+      payload: { error: message },
+      phase: latestTask.phase,
+    },
+    failureDetails: {
+      ...deployFailureDetails({
+        error,
+        phase: latestTask.phase,
+        source: "runDeployTask",
+        task: latestTask,
+      }),
+      ...attachedDeployFailureDetails(error),
+      failureMessage,
+    },
+  });
 }

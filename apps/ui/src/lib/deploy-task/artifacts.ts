@@ -654,6 +654,8 @@ export function prepareSealosTemplateArtifact(input: {
   buildResult: Record<string, unknown>;
   certSecretName?: string;
   deliveryManifest: Record<string, unknown>;
+  /** Recorded result identity to converge on (redeploy, ADR 0038). */
+  instanceName?: string;
   routingDomain?: string;
   task: DeployTaskArtifactContext;
   templateYaml: string;
@@ -667,11 +669,13 @@ export function prepareSealosTemplateArtifact(input: {
   assertBuildResultNotExplicitlyFailed(input.buildResult);
   const build = buildSummary(input.buildResult);
   const templateName = templateNameFromYaml(input.templateYaml) ?? projectName;
-  const instanceName = templateInstanceName({
-    deliveryManifest: input.deliveryManifest,
-    projectName,
-    templateName,
-  });
+  const instanceName =
+    input.instanceName?.trim() ||
+    templateInstanceName({
+      deliveryManifest: input.deliveryManifest,
+      projectName,
+      templateName,
+    });
 
   const rendered = renderTemplateDeploymentFromYaml({
     args: {

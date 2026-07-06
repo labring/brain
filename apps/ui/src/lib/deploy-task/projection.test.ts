@@ -36,6 +36,7 @@ function deploymentTaskSource(
 test("deployment task projection includes active project tasks", () => {
   assert.deepEqual(toDeploymentTaskProjection(deploymentTaskSource(), NOW), {
     artifactSummary: {},
+    cancelRequestedAt: null,
     canvasProjection: {},
     completedAt: null,
     display: {
@@ -47,6 +48,7 @@ test("deployment task projection includes active project tasks", () => {
     namespace: "default",
     phase: "queued",
     projectId: "project-uid",
+    retriedFromTaskId: null,
     status: "queued",
     updatedAt: "2026-06-11T10:00:00.000Z",
   });

@@ -196,7 +196,7 @@ export function useProjectCanvasModule({
     for (const task of deploymentTaskProjections) {
       nextStatusById.set(task.id, task.status);
       if (
-        task.status === "completed" &&
+        (task.status === "completed" || task.status === "cancelled") &&
         deploymentTaskCanStartCompletionNotice(previousStatusById.get(task.id))
       ) {
         completedNoticeTaskIds.push(task.id);

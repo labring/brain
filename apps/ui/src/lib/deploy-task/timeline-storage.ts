@@ -6,6 +6,7 @@ import type {
 import {
   createDeploymentTaskTimelineForRunner,
   type DeploymentTaskTimelineSnapshot,
+  updateTimelineStatus,
 } from "./timeline";
 
 export interface DeploymentTaskTimelineTaskRecord {
@@ -25,7 +26,13 @@ export function deploymentTaskTimelineFromTaskRecord(
   task: DeploymentTaskTimelineTaskRecord
 ): DeploymentTaskTimelineSnapshot {
   if (task.timelineSnapshot != null) {
-    return task.timelineSnapshot;
+    // The row's status column is the only source of truth (ADR 0037):
+    // status transitions no longer rewrite the persisted snapshot, so the
+    // display status derives from the row on every read.
+    return updateTimelineStatus(task.timelineSnapshot, {
+      status: task.status,
+      updatedAt: isoDate(task.updatedAt),
+    });
   }
 
   return createDeploymentTaskTimelineForRunner({

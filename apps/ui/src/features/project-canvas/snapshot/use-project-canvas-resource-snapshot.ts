@@ -20,6 +20,7 @@ import type {
   CanvasLayoutDocument,
   PlacementCommand,
 } from "@/features/project-canvas/layout/types";
+import { useDeploymentTasksStore } from "@/features/project-canvas/runtime/deployment-tasks-store";
 import {
   type ProjectCanvasLayoutIntent,
   projectCanvasRuntimeResourceGraph,
@@ -29,19 +30,7 @@ import {
   type ProjectRuntimeStore,
 } from "@/features/project-runtime/resource-store";
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
-import {
-  fetchProjectDeploymentTaskProjections,
-  streamProjectDeploymentTaskProjections,
-} from "@/lib/deploy-task/client";
-import {
-  type DeploymentTaskProjection,
-  type DeploymentTaskProjectionStreamEvent,
-  deploymentTaskCanvasTopologyChanged,
-  nextDeploymentTaskProjectionVisibilityChangeMs,
-  replaceDeploymentTaskProjections,
-  selectCanvasDeploymentTaskProjections,
-  upsertDeploymentTaskProjection,
-} from "@/lib/deploy-task/projection";
+import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {
   type WorkloadTransientSinceByKey,
@@ -50,7 +39,6 @@ import {
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
-const DEPLOYMENT_PROJECTION_RECONNECT_MS = 3000;
 const EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT =
   emptyMissingResourceLayoutGraceResult();
 
@@ -148,70 +136,6 @@ export function useProjectCanvasResourceSnapshot(options: {
   const [workloadReconcilePollUntil, setWorkloadReconcilePollUntil] =
     useState(0);
   const [isPageVisible, setIsPageVisible] = useState(true);
-  const [deployTasks, setDeployTasks] = useState<DeploymentTaskProjection[]>(
-    []
-  );
-  const deployTasksRef = useRef<DeploymentTaskProjection[]>([]);
-  const canvasDeployTasksRef = useRef<DeploymentTaskProjection[]>([]);
-  const [
-    deploymentProjectionVisibilityNow,
-    setDeploymentProjectionVisibilityNow,
-  ] = useState(() => new Date());
-  const [deployTasksLoading, setDeployTasksLoading] = useState(false);
-  const [deployTasksError, setDeployTasksError] = useState<Error | undefined>(
-    undefined
-  );
-  const commitDeployTasks = useCallback(
-    (nextProjections: readonly DeploymentTaskProjection[]) => {
-      const current = deployTasksRef.current;
-      const next = replaceDeploymentTaskProjections(current, nextProjections);
-      if (next === current) {
-        return { canvasTopologyChanged: false };
-      }
-      const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
-        current,
-        next,
-      });
-      deployTasksRef.current = next;
-      setDeployTasks(next);
-      return { canvasTopologyChanged };
-    },
-    []
-  );
-  const commitDeployTaskUpsert = useCallback(
-    (projection: DeploymentTaskProjection) => {
-      const current = deployTasksRef.current;
-      const next = upsertDeploymentTaskProjection(current, projection);
-      if (next === current) {
-        return { canvasTopologyChanged: false };
-      }
-      const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
-        current,
-        next,
-      });
-      deployTasksRef.current = next;
-      setDeployTasks(next);
-      return { canvasTopologyChanged };
-    },
-    []
-  );
-  const commitDeployTaskRemove = useCallback((taskId: string) => {
-    const current = deployTasksRef.current;
-    const next = current.filter((task) => task.id !== taskId);
-    if (next.length === current.length) {
-      return { canvasTopologyChanged: false };
-    }
-    const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
-      current,
-      next,
-    });
-    deployTasksRef.current = next;
-    setDeployTasks(next);
-    return { canvasTopologyChanged };
-  }, []);
-  useEffect(() => {
-    deployTasksRef.current = deployTasks;
-  }, [deployTasks]);
   const peerDbsEmpty = useCallback(
     () => apItemsFromList(dbsListRef.current).length === 0,
     []
@@ -334,190 +258,21 @@ export function useProjectCanvasResourceSnapshot(options: {
     );
     refreshWorkloadResourcesRef.current().catch(() => undefined);
   }, []);
-  const handleDeploymentProjectionEvent = useCallback(
-    (event: DeploymentTaskProjectionStreamEvent) => {
-      setDeployTasksError(undefined);
-      switch (event.type) {
-        case "snapshot": {
-          const result = commitDeployTasks(event.projections);
-          if (result.canvasTopologyChanged) {
-            requestWorkloadReconciliation();
-          }
-          return;
-        }
-        case "upsert":
-          if (commitDeployTaskUpsert(event.projection).canvasTopologyChanged) {
-            requestWorkloadReconciliation();
-          }
-          return;
-        case "remove":
-          if (commitDeployTaskRemove(event.taskId).canvasTopologyChanged) {
-            requestWorkloadReconciliation();
-          }
-          return;
-        default:
-          event satisfies never;
-      }
-    },
-    [
-      commitDeployTaskRemove,
-      commitDeployTaskUpsert,
-      commitDeployTasks,
-      requestWorkloadReconciliation,
-    ]
-  );
-
-  const refreshDeployTasks = useCallback(async () => {
-    if (
-      kubeconfig.trim() === "" ||
-      namespace.trim() === "" ||
-      uid.trim() === ""
-    ) {
-      commitDeployTasks([]);
-      setDeployTasksLoading(false);
-      setDeployTasksError(undefined);
-      return [];
-    }
-    setDeployTasksLoading(true);
-    try {
-      const projections = await fetchProjectDeploymentTaskProjections({
-        kubeconfig,
-        namespace,
-        projectId: uid,
-      });
-      commitDeployTasks(projections);
-      setDeployTasksError(undefined);
-      return projections;
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      setDeployTasksError(err);
-      throw err;
-    } finally {
-      setDeployTasksLoading(false);
-    }
-  }, [commitDeployTasks, kubeconfig, namespace, uid]);
-
-  useEffect(() => {
-    let cancelled = false;
-    commitDeployTasks([]);
-    setDeployTasksError(undefined);
-
-    if (
-      kubeconfig.trim() === "" ||
-      namespace.trim() === "" ||
-      uid.trim() === ""
-    ) {
-      setDeployTasksLoading(false);
-      return;
-    }
-
-    setDeployTasksLoading(true);
-    fetchProjectDeploymentTaskProjections({
-      kubeconfig,
-      namespace,
-      projectId: uid,
-    })
-      .then((projections) => {
-        if (cancelled) {
-          return;
-        }
-        commitDeployTasks(projections);
-        setDeployTasksError(undefined);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-        setDeployTasksError(
-          error instanceof Error ? error : new Error(String(error))
-        );
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setDeployTasksLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [commitDeployTasks, kubeconfig, namespace, uid]);
-
-  useEffect(() => {
-    if (
-      !isPageVisible ||
-      kubeconfig.trim() === "" ||
-      namespace.trim() === "" ||
-      uid.trim() === ""
-    ) {
-      return;
-    }
-
-    let reconnectTimer: number | undefined;
-    const controller = new AbortController();
-    const connect = () => {
-      streamProjectDeploymentTaskProjections({
-        kubeconfig,
-        namespace,
-        onEvent: handleDeploymentProjectionEvent,
-        projectId: uid,
-        signal: controller.signal,
-      }).catch((error: unknown) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setDeployTasksError(
-          error instanceof Error ? error : new Error(String(error))
-        );
-        reconnectTimer = window.setTimeout(
-          connect,
-          DEPLOYMENT_PROJECTION_RECONNECT_MS
-        );
-      });
-    };
-
-    connect();
-    return () => {
-      controller.abort();
-      if (reconnectTimer !== undefined) {
-        window.clearTimeout(reconnectTimer);
-      }
-    };
-  }, [
-    handleDeploymentProjectionEvent,
-    isPageVisible,
+  const deploymentTasksStore = useDeploymentTasksStore({
+    enabled: isPageVisible,
     kubeconfig,
     namespace,
-    uid,
-  ]);
-
-  useEffect(() => {
-    const nextDelay =
-      nextDeploymentTaskProjectionVisibilityChangeMs(deployTasks);
-    if (nextDelay === undefined) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setDeploymentProjectionVisibilityNow(new Date());
-    }, nextDelay + 25);
-    return () => window.clearTimeout(timer);
-  }, [deployTasks]);
-  const canvasDeployTasks = useMemo(
-    () =>
-      selectCanvasDeploymentTaskProjections({
-        current: canvasDeployTasksRef.current,
-        now: deploymentProjectionVisibilityNow,
-        projections: deployTasks,
-      }),
-    [deploymentProjectionVisibilityNow, deployTasks]
-  );
-  useEffect(() => {
-    canvasDeployTasksRef.current = canvasDeployTasks;
-  }, [canvasDeployTasks]);
+    onCanvasTopologyChanged: requestWorkloadReconciliation,
+    projectId: uid,
+  });
+  const canvasDeployTasks = deploymentTasksStore.canvasProjections;
 
   const revalidate = useCallback(() => {
-    return Promise.all([refreshWorkloadResources(), refreshDeployTasks()]);
-  }, [refreshDeployTasks, refreshWorkloadResources]);
+    return Promise.all([
+      refreshWorkloadResources(),
+      deploymentTasksStore.refresh(),
+    ]);
+  }, [deploymentTasksStore.refresh, refreshWorkloadResources]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(
@@ -545,8 +300,8 @@ export function useProjectCanvasResourceSnapshot(options: {
     };
   }, [revalidate]);
 
-  const error = apsError ?? dbsError ?? deployTasksError;
-  const isLoading = apsLoading || dbsLoading || deployTasksLoading;
+  const error = apsError ?? dbsError ?? deploymentTasksStore.error;
+  const isLoading = apsLoading || dbsLoading || deploymentTasksStore.isLoading;
 
   useEffect(() => {
     runtimeStore.commitResources({
@@ -705,7 +460,7 @@ export function useProjectCanvasResourceSnapshot(options: {
   return {
     apEnvironmentDbReferenceSources,
     canvasState: graph.canvasState,
-    deploymentTaskProjections: deployTasks,
+    deploymentTaskProjections: deploymentTasksStore.projections,
     error,
     frameState,
     isEmptyGraphLoading,

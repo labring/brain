@@ -27,7 +27,7 @@ const DEPLOYMENT_TASK_DOCK_STATUS_PRIORITY = {
   running: 3,
   queued: 4,
   completed: 5,
-  cancelled: null,
+  cancelled: 6,
 } as const satisfies Record<DeploymentTaskProjection["status"], number | null>;
 
 function taskUpdatedAtMs(task: DeploymentTaskProjection): number {
@@ -51,6 +51,7 @@ function shouldIncludeDockTask(input: {
   completedNoticeTaskIds: ReadonlySet<string>;
   dismissedTaskUpdatedAt: string | undefined;
   now: Date;
+  supersededTaskIds: ReadonlySet<string>;
   task: DeploymentTaskProjection;
 }): boolean {
   if (dockPriority(input.task) == null) {
@@ -58,6 +59,11 @@ function shouldIncludeDockTask(input: {
   }
   if (input.active) {
     return true;
+  }
+  // A redeploy dismisses its predecessor's reminder: supersession derives
+  // from the successor's lineage (ADR 0038).
+  if (input.supersededTaskIds.has(input.task.id)) {
+    return false;
   }
   if (
     taskDismissedAtCurrentVersion({
@@ -70,7 +76,9 @@ function shouldIncludeDockTask(input: {
   if (input.task.status === "failed") {
     return true;
   }
-  if (input.task.status === "completed") {
+  // Cancelled is not attention-needed: a brief dismissible notice only
+  // (ADR 0038), riding the same expiry machinery as completed.
+  if (input.task.status === "completed" || input.task.status === "cancelled") {
     return input.completedNoticeTaskIds.has(input.task.id);
   }
   return deploymentTaskProjectionIsVisible(input.task, input.now);
@@ -98,6 +106,11 @@ export function selectDeploymentTaskDock(input: {
 }): DeploymentTaskDockModel {
   const completedNoticeTaskIds = input.completedNoticeTaskIds ?? new Set();
   const now = input.now ?? new Date();
+  const supersededTaskIds = new Set(
+    input.tasks.flatMap((task) =>
+      task.retriedFromTaskId == null ? [] : [task.retriedFromTaskId]
+    )
+  );
   const tasks = sortedDockItems(
     input.tasks.flatMap((task) => {
       const active = task.id === input.activeTaskId;
@@ -106,6 +119,7 @@ export function selectDeploymentTaskDock(input: {
         completedNoticeTaskIds,
         dismissedTaskUpdatedAt: input.dismissedTaskUpdatedAtById.get(task.id),
         now,
+        supersededTaskIds,
         task,
       })
         ? [{ active, task }]

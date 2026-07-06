@@ -9,11 +9,14 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import {
+  Ban,
   Blocks,
   ChevronDown,
   Code2,
   Database,
+  LoaderCircle,
   MessageSquareText,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { Fragment, useState } from "react";
@@ -21,6 +24,14 @@ import type {
   DeploymentTaskDisplaySummary,
   DeploymentTaskProjection,
 } from "@/lib/deploy-task/projection";
+import {
+  deployTaskIsCancellable,
+  deployTaskIsCancelling,
+  deployTaskIsRedeployable,
+  deployTaskStatusDotClass,
+  deployTaskStatusLabel,
+} from "@/lib/deploy-task/status-presentation";
+import type { DeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
 import type {
   DeploymentTaskDockItem,
   DeploymentTaskDockModel,
@@ -76,46 +87,8 @@ function SourceKindIcon({
   }
 }
 
-function statusLabel(status: DeploymentTaskProjection["status"]): string {
-  switch (status) {
-    case "applying":
-      return "applying";
-    case "blocked":
-      return "blocked";
-    case "cancelled":
-      return "cancelled";
-    case "completed":
-      return "completed";
-    case "failed":
-      return "failed";
-    case "queued":
-      return "queued";
-    case "running":
-      return "running";
-    default:
-      return status satisfies never;
-  }
-}
-
-function statusDotTone(status: DeploymentTaskProjection["status"]): string {
-  switch (status) {
-    case "blocked":
-      return "bg-amber-300";
-    case "failed":
-      return "bg-red-300";
-    case "completed":
-      return "bg-emerald-300";
-    case "applying":
-    case "running":
-      return "bg-blue-300";
-    case "queued":
-      return "bg-zinc-300";
-    case "cancelled":
-      return "bg-zinc-500";
-    default:
-      return status satisfies never;
-  }
-}
+const statusLabel = deployTaskStatusLabel;
+const statusDotTone = deployTaskStatusDotClass;
 
 function TaskDismissButton({
   className,
@@ -168,11 +141,91 @@ function TaskStatusIndicator({ task }: { task: DeploymentTaskProjection }) {
   );
 }
 
+function TaskActionButtons({
+  actions,
+  task,
+}: {
+  actions: DeploymentTaskActions | undefined;
+  task: DeploymentTaskProjection;
+}) {
+  if (actions == null) {
+    return null;
+  }
+  if (deployTaskIsCancellable(task.status)) {
+    const cancelling =
+      deployTaskIsCancelling(task) || actions.cancelPendingTaskIds.has(task.id);
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <AppIconButton
+              aria-label={
+                cancelling ? "Cancelling deployment" : "Cancel deployment"
+              }
+              className="size-6 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              disabled={cancelling}
+              onClick={(event) => {
+                event.stopPropagation();
+                actions.cancel(task.id).catch(() => undefined);
+              }}
+              size="sm"
+              type="button"
+              variant="quiet"
+            >
+              {cancelling ? (
+                <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+              ) : (
+                <Ban aria-hidden className="size-3.5" />
+              )}
+            </AppIconButton>
+          }
+        />
+        <TooltipContent>
+          {cancelling ? "Cancelling…" : "Cancel deployment"}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (deployTaskIsRedeployable(task.status)) {
+    const pending = actions.redeployPendingTaskIds.has(task.id);
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <AppIconButton
+              aria-label="Redeploy"
+              className="size-6 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              disabled={pending}
+              onClick={(event) => {
+                event.stopPropagation();
+                actions.redeploy(task.id).catch(() => undefined);
+              }}
+              size="sm"
+              type="button"
+              variant="quiet"
+            >
+              {pending ? (
+                <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+              ) : (
+                <RotateCcw aria-hidden className="size-3.5" />
+              )}
+            </AppIconButton>
+          }
+        />
+        <TooltipContent>Redeploy</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return null;
+}
+
 function DeploymentTaskDockTask({
+  actions,
   item,
   onDismiss,
   onOpen,
 }: {
+  actions?: DeploymentTaskActions;
   item: DeploymentTaskDockItem;
   onDismiss: (taskId: string) => void;
   onOpen: (taskId: string) => void;
@@ -216,6 +269,7 @@ function DeploymentTaskDockTask({
         </span>
         <TaskStatusIndicator task={task} />
       </button>
+      <TaskActionButtons actions={actions} task={task} />
       <TaskDismissButton
         className="size-6 text-muted-foreground"
         onDismiss={onDismiss}
@@ -280,11 +334,13 @@ function ExpandButton({
 }
 
 export function ProjectCanvasDeploymentTaskDock({
+  actions,
   className,
   dock,
   onDismiss,
   onOpen,
 }: {
+  actions?: DeploymentTaskActions;
   className?: string;
   dock: DeploymentTaskDockModel;
   onDismiss: (taskId: string) => void;
@@ -312,6 +368,7 @@ export function ProjectCanvasDeploymentTaskDock({
         <div className={cn("min-w-0 flex-1", expanded && "flex flex-col")}>
           {mobileTasks.map((item) => (
             <DeploymentTaskDockTask
+              actions={actions}
               item={item}
               key={item.task.id}
               onDismiss={onDismiss}
@@ -330,6 +387,7 @@ export function ProjectCanvasDeploymentTaskDock({
           <Fragment key={item.task.id}>
             {index > 0 ? <DeploymentTaskDockDivider /> : null}
             <DeploymentTaskDockTask
+              actions={actions}
               item={item}
               onDismiss={onDismiss}
               onOpen={onOpen}
