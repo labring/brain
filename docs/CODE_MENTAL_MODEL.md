@@ -85,7 +85,7 @@ flowchart LR
 - `CONTEXT.md`: ubiquitous language, 定义 Project, AP, DB, Deployment Task, timeline, projection, canvas 等产品语义。
 - `docs/adr/0023-model-all-deployments-as-deployment-tasks.md`: 所有部署入口都应该创建 Deployment Task。
 - `docs/adr/0025-stream-project-deployment-task-projections.md`: Project Canvas 读 deployment projections 的方式是 bootstrap + project-scoped stream。
-- `docs/adr/0027-use-deployment-scope-brain-labels.md`: Brain ownership label contract。
+- `docs/adr/0027-use-sealos-native-product-labels-for-template-instances.md`: AP/DB 产品身份用 Sealos native labels, brain.io/* 只作 bookkeeping。
 - `docs/adr/0028-model-deployment-progress-as-task-owned-timelines.md`: 进度属于 task-owned timeline。
 - `docs/adr/0020-keep-shared-ui-free-of-product-workflows.md`: `packages/ui` 不能变成第二个产品 app 层。
 - `docs/deployment/brain-system.md`: Helm 部署 runbook。
@@ -688,7 +688,7 @@ brain.io/template-name=<templateName>
 
 - TS: `apps/ui/src/lib/brain-labels.ts`
 - Go: `apps/api/service/orchestration/labels.go`
-- ADR: `docs/adr/0027-use-deployment-scope-brain-labels.md`
+- ADR: `docs/adr/0027-use-sealos-native-product-labels-for-template-instances.md`
 
 读资源:
 
@@ -1222,7 +1222,7 @@ Agent-friendly lifecycle docs:
 9. `apps/api/main.go`
 10. `apps/api/service/orchestration/ap.go`
 11. `apps/api/service/orchestration/db.go`
-12. `docs/adr/0027-use-deployment-scope-brain-labels.md`
+12. `docs/adr/0027-use-sealos-native-product-labels-for-template-instances.md`
 
 做部署任务改动:
 

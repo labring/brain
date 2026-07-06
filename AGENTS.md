@@ -36,7 +36,7 @@ packages/
 - **UI components:** reuse `packages/ui/src/components/` first; app-specific compositions stay local until a second consumer needs them.
 - **Styling:** Tailwind v4 tokens live in `packages/ui/src/styles/globals.css` — no inline color/spacing/radius/type/shadow literals; use tokens or the Tailwind scale.
 - **Registry:** items live in `apps/registry/registry/<style>/<group>/<name>` with metadata in `preview-registry.ts`.
-- **Domain:** before changing AP, DB, EntryPoint, canvas, or settings behavior, check `CONTEXT.md` and the ADRs in `docs/adr/`.
+- **Domain:** before changing AP, DB, public access, canvas, or settings behavior, check `CONTEXT.md` and the ADRs in `docs/adr/`.
 - **Crossplane:** compatibility with Crossplane-era behavior, fields, routes, docs, or naming is out of scope — don't preserve it unless explicitly asked.
 
 ## When making changes

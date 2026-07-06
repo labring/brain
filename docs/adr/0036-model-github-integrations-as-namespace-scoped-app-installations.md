@@ -115,11 +115,13 @@ GITHUB_APP_ID
 GITHUB_APP_PRIVATE_KEY
 ```
 
-The app-owned Postgres schema is currently synchronized through
-`cd apps/ui && bun run db:push`; there is no checked-in migration directory for
-`sealai_assistant.github_connections`. Deployments that already have an old
-personal-token `github_connections` table must run the schema push or an
-equivalent SQL migration before enabling the GitHub App flow.
+The app-owned Postgres schema is synchronized through checked-in Drizzle
+migrations under `apps/ui/drizzle/` (generated with `bun run db:generate`,
+applied automatically at app startup; in production a migration failure aborts
+the boot). `sealai_assistant.github_connections` is part of those migrations.
+Deployments that already have an old personal-token `github_connections` table
+must apply the migrations or an equivalent SQL migration before enabling the
+GitHub App flow.
 
 The personal OAuth implementation is removed rather than kept as a compatibility
 path. Useful product pieces remain: namespace authentication, Desktop SDK actor

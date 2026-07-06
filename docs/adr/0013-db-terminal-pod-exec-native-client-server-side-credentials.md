@@ -9,7 +9,7 @@ The DB node's terminal must give users an interactive database session. We consi
 
 ## Consequences
 
-- Offered only for engines that ship a client in their KubeBlocks container and only while the DB Service is Running; engines without a client (kafka, qdrant, milvus, nebula, weaviate, pulsar) hide the terminal action.
+- Offered only for engines that ship a client in their KubeBlocks container and only while the DB Service is Running; on engines without a client (kafka, qdrant, milvus, nebula, weaviate, pulsar) the terminal is presented as an Unavailable Resource Affordance with an unsupported-engine reason rather than omitted.
 - Primary-pod resolution depends on KubeBlocks `InstanceSet` member roles (`status.membersStatus[].role.isLeader`); a DB Terminal always targets the writable primary.
 - The constructed command's password is visible in the target pod's own process args (`ps`); acceptable because that pod already mounts the DB secret, and can be hardened later via env (`PGPASSWORD`/`MYSQL_PWD`) or stdin.
 - No command-level audit in v1. A DB Terminal grants no privilege the user lacks: the DB node already exposes the connection string and a public-access toggle, so the user can connect directly. That makes auditing only terminal sessions both incomplete and redundant. v1 emits a lightweight session-open event (actor, DB Service, timestamp) for telemetry only; statement-level audit, if ever required, belongs at the engine (`pgaudit` / MySQL audit log), where it covers all connections rather than just the terminal.
