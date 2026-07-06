@@ -1,7 +1,9 @@
 import type {
   Edge,
+  EdgeChange,
   EdgeTypes,
   Node,
+  NodeChange,
   NodeTypes,
   ReactFlowProps,
 } from "@xyflow/react";
@@ -60,6 +62,56 @@ export interface CanvasViewportFocusRequest {
   padding?: number;
 }
 
+export interface CanvasFlowSnapshot {
+  edges: Edge[];
+  nodes: Node[];
+  /** Edge to render with the selected style; null/undefined for none. */
+  selectedEdgeId?: string | null;
+}
+
+/**
+ * Host-owned controlled store for flow nodes/edges. When provided via
+ * `CanvasMeta.flowStore`, the canvas renders from the store snapshot and
+ * routes React Flow changes back into it instead of mirroring nodes in
+ * component state.
+ */
+export interface CanvasFlowStore {
+  applyEdgeChanges?(changes: EdgeChange[]): void;
+  applyNodeChanges(changes: NodeChange[]): void;
+  getSnapshot(): CanvasFlowSnapshot;
+  subscribe(listener: () => void): () => void;
+}
+
+export interface CanvasViewportFollowRequest {
+  isFollowTarget: (node: Node) => boolean;
+  key?: number | string;
+}
+
+/**
+ * One snapshot of host-issued viewport directives. Directives describe
+ * viewport behavior only (opening fit, focus, follow, insets) and never
+ * node layout.
+ */
+export interface CanvasViewportDirectives {
+  insets?: CanvasViewportInsets;
+  /** Apply focus viewport changes without animation while set. */
+  instant?: boolean;
+  openingFitKey?: number | string;
+  viewportFocus?: CanvasViewportFocusRequest;
+  viewportFollow?: CanvasViewportFollowRequest;
+}
+
+/**
+ * Host-owned imperative channel for viewport directives. When provided via
+ * `CanvasMeta.viewportDirectives`, the canvas consumes directives from this
+ * store and the corresponding static `CanvasMeta` fields are ignored, so
+ * meta can stay referentially constant.
+ */
+export interface CanvasViewportDirectiveStore {
+  getDirectives(): CanvasViewportDirectives;
+  subscribe(listener: () => void): () => void;
+}
+
 export interface CanvasMeta {
   /**
    * Session-local canvas interaction mode. Pointer mode supports canvas element
@@ -72,6 +124,12 @@ export interface CanvasMeta {
    */
   edgeAnchorResolver?: CanvasEdgeAnchorResolver;
   edgeTypes?: EdgeTypes;
+  /**
+   * Controlled nodes/edges source. When set, the canvas is a controlled view
+   * of this store; when omitted, nodes/edges are mirrored into internal state
+   * (static/preview usage).
+   */
+  flowStore?: CanvasFlowStore;
   nodeTypes?: NodeTypes;
   /**
    * Controls the one-shot fit-to-view that runs when a canvas opens.
@@ -81,6 +139,11 @@ export interface CanvasMeta {
   };
   reactFlowProps?: CanvasReactFlowProps;
   /**
+   * Imperative viewport directive channel. Takes precedence over the static
+   * viewportFocus/viewportFollow/viewportInsets/openingFitView meta fields.
+   */
+  viewportDirectives?: CanvasViewportDirectiveStore;
+  /**
    * Temporary viewport focus for one or more nodes. This changes viewport only,
    * never node layout.
    */
@@ -89,10 +152,7 @@ export interface CanvasMeta {
    * Optional follow behavior for newly seen nodes selected by the host app.
    * The first node-set observed for each key is treated as opening state.
    */
-  viewportFollow?: {
-    isFollowTarget: (node: Node) => boolean;
-    key?: number | string;
-  };
+  viewportFollow?: CanvasViewportFollowRequest;
   /**
    * Canvas area covered by sibling chrome such as side panes or drawers.
    * Focus and controls both consume this explicit footprint.

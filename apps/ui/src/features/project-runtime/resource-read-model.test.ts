@@ -33,6 +33,7 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
     },
     status: {
       phase: "Running",
+      readyReplicas: 2,
     },
   };
 
@@ -47,7 +48,7 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
       key: "AP:default:api",
       observedUid: "ap-uid",
       ref: { kind: "AP", name: "api", namespace: "default" },
-      replicaSummary: { replicas: 2 },
+      replicaSummary: { desired: 2, ready: 2 },
       status: { label: "Running", tone: "running" },
       workload: { image: "nginx:1.27", kind: "AP" },
     },
@@ -396,6 +397,49 @@ test("Project Runtime commits one AP update without notifying unrelated models o
   assert.equal(store.selectResourceTopology(), resourceTopologyBefore);
   assert.deepEqual(apiNotifications, [apiAfter]);
   assert.deepEqual(workerNotifications, []);
+});
+
+test("Project Runtime propagates an AP replica change into the container node model", () => {
+  const store = createProjectRuntimeStore();
+  const apWithReplicas = (desired: number, ready: number) => ({
+    metadata: { name: "api", namespace: "default", uid: "api-uid" },
+    spec: {
+      input: { image: "nginx" },
+      resource: {
+        replicaStrategy: { fixed: { replicas: desired }, type: "fixed" },
+        replicas: desired,
+      },
+    },
+    status: { phase: "Running", readyReplicas: ready },
+  });
+  store.commitResources({
+    apsData: { items: [apWithReplicas(1, 1)] },
+    namespace: "default",
+  });
+
+  const apiKey = "AP:default:api";
+  const notifications: unknown[] = [];
+  store.subscribeApFact(apiKey, (fact) => notifications.push(fact));
+
+  // Scaled 1 -> 3 while only one pod is ready yet.
+  store.commitResources({
+    apsData: { items: [apWithReplicas(3, 1)] },
+    namespace: "default",
+  });
+
+  const fact = required(store.selectApFact(apiKey));
+  assert.deepEqual(fact.replicaSummary, { desired: 3, ready: 1 });
+  assert.deepEqual(notifications, [fact]);
+
+  const models = projectRuntimeNodeModelsFromFacts({
+    apFacts: [fact],
+    dbFacts: [],
+    publicAccessFacts: [],
+    relationshipIndexes: store.selectRelationshipIndexes(),
+  });
+  const states = required(models.containerModelsByKey.get(apiKey)).states;
+  assert.equal(states.replicas, 3);
+  assert.equal(states.readyReplicas, 1);
 });
 
 test("Project Runtime commits one DB update without notifying unrelated DB models or changing resource topology", () => {

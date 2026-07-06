@@ -78,5 +78,6 @@ RUN apk add --no-cache ca-certificates libgcc libstdc++
 WORKDIR /app
 COPY --from=backend-stage /core /core
 COPY --from=backend-stage /runtime-libs/ /usr/local/lib/
+COPY LICENSE NOTICE /licenses/whodb/
 
 CMD ["/core"]

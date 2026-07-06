@@ -17,6 +17,7 @@ import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetr
 import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasContainerNodeData, CanvasContainerRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
+import { useCanvasContainerNodeActions } from "./use-container-node-actions";
 
 function CanvasContainerTelemetryMetrics({
   fallbackMetrics,
@@ -46,7 +47,8 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   const model =
     useProjectRuntimeNodeModel<CanvasContainerNodeData>({ data, id, type }) ??
     data;
-  const { actions = {}, states } = model;
+  const actions = useCanvasContainerNodeActions({ id, model, type });
+  const { states } = model;
   const { name, namespace } = states;
   const telemetryTarget = useMemo(
     () =>

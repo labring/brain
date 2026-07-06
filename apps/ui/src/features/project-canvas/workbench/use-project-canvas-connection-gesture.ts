@@ -18,6 +18,7 @@ import {
   type ProjectCanvasCommandPlan,
   planProjectCanvasCommand,
 } from "@/features/project-canvas/workbench/command-model";
+import { useStableCallback } from "@/lib/use-stable-callback";
 
 export function useProjectCanvasConnectionGesture({
   executeCommandPlan,
@@ -37,30 +38,27 @@ export function useProjectCanvasConnectionGesture({
     useState<ProjectCanvasConnectionOrigin | null>(null);
   const [connectionGestureActive, setConnectionGestureActive] = useState(false);
 
-  const handleConnect = useCallback<
-    NonNullable<CanvasReactFlowProps["onConnect"]>
-  >(
-    (connection) => {
-      connectHandledInGestureRef.current = true;
-      executeCommandPlan(
-        planProjectCanvasCommand({
-          intent: { connection, kind: "connectingEdge" },
-          nodes,
-          readOnly,
-        })
-      );
-    },
-    [executeCommandPlan, nodes, readOnly]
-  );
+  const handleConnect = useStableCallback<
+    Parameters<NonNullable<CanvasReactFlowProps["onConnect"]>>,
+    void
+  >((connection) => {
+    connectHandledInGestureRef.current = true;
+    executeCommandPlan(
+      planProjectCanvasCommand({
+        intent: { connection, kind: "connectingEdge" },
+        nodes,
+        readOnly,
+      })
+    );
+  });
 
-  const isSupportedCanvasConnection = useCallback(
+  const isSupportedCanvasConnection = useStableCallback(
     (connection: Connection) =>
       isProjectCanvasConnectionSupported({
         connection,
         nodes,
         readOnly,
-      }),
-    [nodes, readOnly]
+      })
   );
 
   const handleConnectStart = useCallback<

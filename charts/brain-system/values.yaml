@@ -173,7 +173,7 @@ registry:
 whodb:
   enabled: true
   name: whodb
-  image: docker.io/aimerite/whodb:whodb-integration-2026.509.021621
+  image: ghcr.io/labring/brain-whodb:latest
   imagePullPolicy: Always
   port: 11000
   replicas: 1

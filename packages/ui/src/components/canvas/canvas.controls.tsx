@@ -8,11 +8,19 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { MiniMap, useReactFlow } from "@xyflow/react";
-import { Fullscreen, Hand, Minus, MousePointer2, Plus } from "lucide-react";
+import {
+  Fullscreen,
+  Hand,
+  LayoutGrid,
+  Minus,
+  MousePointer2,
+  Plus,
+} from "lucide-react";
 import type { FocusEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { CanvasInteractionMode } from "./canvas.types";
 import { useCanvas } from "./canvas.use";
+import { useCanvasViewportDirectives } from "./canvas.viewport-directives";
 
 const VIEWPORT_ACTION_DURATION_MS = 180;
 const CANVAS_NAVIGATION_CHROME_CLASS =
@@ -25,6 +33,11 @@ export interface CanvasViewportInsetProps {
 
 export interface CanvasControlsProps extends CanvasViewportInsetProps {
   className?: string;
+  /**
+   * Host-provided node auto-layout action. The Auto layout button renders
+   * only when set; the canvas fits the view after the host rearranges nodes.
+   */
+  onAutoLayout?: () => void;
 }
 
 export interface CanvasMiniMapProps extends CanvasViewportInsetProps {
@@ -203,7 +216,11 @@ function CanvasControlButton({
   );
 }
 
-export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
+export function CanvasControls({
+  className,
+  onAutoLayout,
+  rightInset,
+}: CanvasControlsProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { interactionMode, meta, rootRef, setInteractionMode } = useCanvas();
   const chrome = useCanvasNavigationChromePresence();
@@ -263,10 +280,10 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
       setInteractionMode(mode);
     },
   });
-  const rightOffsetPx = Math.max(
-    0,
-    rightInset ?? meta.viewportInsets?.right ?? 0
-  );
+  const directives = useCanvasViewportDirectives(meta.viewportDirectives);
+  const metaRightInset =
+    directives == null ? meta.viewportInsets?.right : directives.insets?.right;
+  const rightOffsetPx = Math.max(0, rightInset ?? metaRightInset ?? 0);
   const rightOffset = `calc(0.5rem + ${rightOffsetPx}px)`;
 
   return (
@@ -290,6 +307,22 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
       <CanvasControlButton {...modeButton("pointer", "Pointer tool")}>
         <MousePointer2 aria-hidden className="size-4" />
       </CanvasControlButton>
+      {onAutoLayout === undefined ? null : (
+        <CanvasControlButton
+          label="Auto layout"
+          onClick={() => {
+            chrome.reveal();
+            onAutoLayout();
+            window.requestAnimationFrame(() => {
+              runViewportAction(() =>
+                fitView({ duration: VIEWPORT_ACTION_DURATION_MS })
+              );
+            });
+          }}
+        >
+          <LayoutGrid aria-hidden className="size-4" />
+        </CanvasControlButton>
+      )}
       <CanvasControlButton
         label="Fit view"
         onClick={() => {

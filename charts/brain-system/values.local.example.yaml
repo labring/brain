@@ -48,6 +48,7 @@ ui:
 
 imagePullSecret:
   # App workload pods reference ghcr-cred when this chart creates it.
+  # Set useForWhodb to true if the configured brain-whodb image requires auth.
   create: true
   useForWhodb: false
   name: ghcr-cred

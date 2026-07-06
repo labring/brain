@@ -35,7 +35,6 @@ import {
 export interface CanvasNodeLayoutState {
   expanded?: boolean;
   generatedPosition?: { x: number; y: number };
-  onExpandedChange?: (node: Node, expanded: boolean) => void;
   positionSource?: "generated";
 }
 

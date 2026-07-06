@@ -14,7 +14,7 @@ import {
 } from "@workspace/ui/components/popover";
 import { cn } from "@workspace/ui/lib/utils";
 import { Clock } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 
 function buildOptions(count: number): WheelPickerOption<number>[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -54,13 +54,6 @@ const SHARED_WHEEL_CLASS_NAMES = {
   optionItem: "font-normal text-foreground text-sm",
 };
 
-// The library ships an *unlayered* CSS mask that only fades the outer ~20% of
-// each column, and unlayered CSS beats Tailwind's layered utilities — so a
-// utility override silently loses. We apply a stronger mask via inline styles
-// (which always win) once the portalled columns have mounted.
-const WHEEL_EDGE_MASK =
-  "linear-gradient(to bottom, transparent 0%, black 26%, black 74%, transparent 100%)";
-
 interface TimeWheelFieldProps {
   className?: string;
   label: string;
@@ -85,35 +78,7 @@ export function TimeWheelField({
   open,
   value,
 }: TimeWheelFieldProps) {
-  const wheelsRef = useRef<HTMLDivElement>(null);
   const [hours, minutes, seconds] = useMemo(() => parseTime(value), [value]);
-
-  // Replace the library's built-in edge mask with a stronger fade that dims the
-  // neighbouring rows, not just the outermost sliver. Inline styles beat the
-  // library's unlayered CSS rule; retry across frames until the portalled
-  // columns mount.
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    let frame = 0;
-    let tries = 0;
-    const applyMask = () => {
-      const columns =
-        wheelsRef.current?.querySelectorAll<HTMLElement>("[data-rwp]");
-      if ((!columns || columns.length === 0) && tries < 30) {
-        tries += 1;
-        frame = requestAnimationFrame(applyMask);
-        return;
-      }
-      for (const column of columns ?? []) {
-        column.style.setProperty("mask-image", WHEEL_EDGE_MASK);
-        column.style.setProperty("-webkit-mask-image", WHEEL_EDGE_MASK);
-      }
-    };
-    applyMask();
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -140,7 +105,7 @@ export function TimeWheelField({
           className="w-[150px] overflow-hidden rounded-lg border border-border bg-input/30 p-1 ring-0 backdrop-blur-xl"
           sideOffset={4}
         >
-          <div ref={wheelsRef}>
+          <div className="time-wheel-picker">
             <WheelPickerWrapper>
               <WheelPicker
                 classNames={{

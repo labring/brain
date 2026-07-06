@@ -72,6 +72,7 @@ function TableDetailViewContent({
       {state.total > 0 && (
         <DataView.Pagination
           currentPage={state.currentPage}
+          itemLabel="rows"
           loading={state.loading}
           onPageChange={actions.handlePageChange}
           onPageSizeChange={actions.handlePageSizeChange}

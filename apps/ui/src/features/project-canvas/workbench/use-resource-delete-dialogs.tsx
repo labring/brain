@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useCallback, useState } from "react";
+import { createElement, useCallback, useMemo, useState } from "react";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import {
   type ProjectResourceActions,
@@ -82,22 +82,31 @@ export function useResourceDeleteDialogs({
     runResourceAction,
   ]);
 
-  const resourceDeleteDialog = createElement(ProjectCanvasDeleteDialogs, {
-    apTarget: pendingApDeleteTarget,
-    dbTarget: pendingDbDeleteTarget,
-    onApConfirm: confirmPendingApDelete,
-    onApOpenChange: (open: boolean) => {
-      if (!open) {
-        setPendingApDeleteTarget(null);
-      }
-    },
-    onDbConfirm: confirmPendingDbDelete,
-    onDbOpenChange: (open: boolean) => {
-      if (!open) {
-        setPendingDbDeleteTarget(null);
-      }
-    },
-  });
+  const resourceDeleteDialog = useMemo(
+    () =>
+      createElement(ProjectCanvasDeleteDialogs, {
+        apTarget: pendingApDeleteTarget,
+        dbTarget: pendingDbDeleteTarget,
+        onApConfirm: confirmPendingApDelete,
+        onApOpenChange: (open: boolean) => {
+          if (!open) {
+            setPendingApDeleteTarget(null);
+          }
+        },
+        onDbConfirm: confirmPendingDbDelete,
+        onDbOpenChange: (open: boolean) => {
+          if (!open) {
+            setPendingDbDeleteTarget(null);
+          }
+        },
+      }),
+    [
+      confirmPendingApDelete,
+      confirmPendingDbDelete,
+      pendingApDeleteTarget,
+      pendingDbDeleteTarget,
+    ]
+  );
 
   return {
     requestApDelete: setPendingApDeleteTarget,

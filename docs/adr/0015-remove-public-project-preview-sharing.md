@@ -15,5 +15,4 @@ The product keeps the UI `readOnly` concept because future internal read-only su
 ## Consequences
 
 - Public share-token APIs and `X-Share-Token` clients are gone from active code.
-- Historical ADR references to Public Project Preview should be read as superseded by this decision.
 - Reintroducing public sharing later should be treated as a new feature: define the access model first, then rebuild the route, token service, and read-only API paths intentionally.

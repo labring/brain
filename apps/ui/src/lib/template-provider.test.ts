@@ -33,8 +33,10 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 test("listTemplateCatalog maps Sealos provider templates to Brain choices", async () => {
   process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
   let requestedUrl = "";
-  globalThis.fetch = ((url) => {
+  let requestedInit: RequestInit | undefined;
+  globalThis.fetch = ((url, init) => {
     requestedUrl = String(url);
+    requestedInit = init;
     return Promise.resolve(
       jsonResponse({
         code: 200,
@@ -74,6 +76,9 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
     requestedUrl,
     "https://template.example.com/api/listTemplate?language=zh"
   );
+  assert.deepEqual(requestedInit, {
+    next: { revalidate: 300 },
+  });
   assert.deepEqual(catalog, [
     {
       args: [

@@ -16,8 +16,8 @@ test("formatWorkspaceQuotaRows maps Sealos quota items to sidebar rows", () => {
 
   assert.deepEqual(formatWorkspaceQuotaRows(quota), [
     ["CPU", "0.5/16C"],
-    ["Memory", "1GB/64GB"],
-    ["Storage", "3GB/200GB"],
+    ["Memory", "1Gi/64Gi"],
+    ["Storage", "3Gi/200Gi"],
     ["Ports", "0/10"],
   ]);
 });

@@ -30,7 +30,10 @@ export interface ApFact {
   observedUid?: string;
   ref: CanvasLayoutResourceRef & { kind: "AP" };
   replicaSummary?: {
-    replicas: number;
+    /** Desired replica count from the AP replica strategy. */
+    desired?: number;
+    /** Ready pods currently serving, from workload status. */
+    ready?: number;
   };
   status: ProjectRuntimeStatusSummary;
   workload: {
@@ -577,6 +580,27 @@ function publicAccessFactFromAp(
   };
 }
 
+function finiteNumber(input: unknown): number | undefined {
+  return typeof input === "number" && Number.isFinite(input)
+    ? input
+    : undefined;
+}
+
+function apReplicaSummary(
+  ap: unknown,
+  spec: Record<string, unknown>
+): ApFact["replicaSummary"] {
+  const desired = readApReplicas(spec);
+  const ready = finiteNumber(asRecord(asRecord(ap)?.status)?.readyReplicas);
+  if (desired === undefined && ready === undefined) {
+    return undefined;
+  }
+  return {
+    ...(desired === undefined ? {} : { desired }),
+    ...(ready === undefined ? {} : { ready }),
+  };
+}
+
 function apFactFromResource(
   ap: unknown,
   namespaceFallback: string
@@ -590,13 +614,13 @@ function apFactFromResource(
   }
 
   const ref: ApFact["ref"] = { kind: "AP", name, namespace };
-  const replicas = readApReplicas(spec);
+  const replicaSummary = apReplicaSummary(ap, spec);
   return {
     displayName: name,
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),
     ref,
-    ...(typeof replicas === "number" ? { replicaSummary: { replicas } } : {}),
+    ...(replicaSummary === undefined ? {} : { replicaSummary }),
     status: apStatusSummary(ap),
     workload: {
       image: readApImage(spec) ?? "—",

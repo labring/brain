@@ -1,4 +1,6 @@
 *
+!LICENSE
+!NOTICE
 !core/
 core/**/node_modules
 core/whodb

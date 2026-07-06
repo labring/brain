@@ -97,10 +97,30 @@ function formatContainerSubtitle(kind: string | undefined) {
   return `${resolvedKind} workload`;
 }
 
-function formatContainerReplicas(replicas: number | undefined) {
-  return typeof replicas === "number" && Number.isFinite(replicas)
-    ? String(replicas)
-    : "--";
+function finiteReplicaCount(input: number | undefined): number | undefined {
+  return typeof input === "number" && Number.isFinite(input)
+    ? input
+    : undefined;
+}
+
+/**
+ * Ready pods lead the metric. While ready and desired differ (scaling,
+ * rollout, degraded), the desired count rides along as `ready/desired`;
+ * once converged the metric collapses back to one number.
+ */
+function formatContainerReplicas(
+  replicas: number | undefined,
+  readyReplicas: number | undefined
+) {
+  const desired = finiteReplicaCount(replicas);
+  const ready = finiteReplicaCount(readyReplicas);
+  if (ready === undefined) {
+    return desired === undefined ? "--" : String(desired);
+  }
+  if (desired === undefined || ready === desired) {
+    return String(ready);
+  }
+  return `${ready}/${desired}`;
 }
 
 export function ContainerNodeContent({
@@ -327,14 +347,14 @@ export function ContainerNodeMetricsContent({
 function ContainerNodeReplicasMetric() {
   const {
     state: {
-      states: { replicas },
+      states: { readyReplicas, replicas },
     },
   } = useContainerNode();
 
   return (
     <CanvasNode.Metric
       label="Replicas"
-      value={formatContainerReplicas(replicas)}
+      value={formatContainerReplicas(replicas, readyReplicas)}
     >
       <Layers aria-hidden className="size-3.5 shrink-0" />
     </CanvasNode.Metric>

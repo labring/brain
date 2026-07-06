@@ -7,6 +7,7 @@ export const WORKLOAD_LIST_FAST_REFRESH_MS = 1000;
 export const WORKLOAD_LIST_MEDIUM_REFRESH_MS = 5000;
 export const WORKLOAD_LIST_STUCK_REFRESH_MS = 10_000;
 export const WORKLOAD_LIST_BACKGROUND_REFRESH_MS = 30_000;
+export const WORKLOAD_LIST_STEADY_REFRESH_MS = 30_000;
 export const WORKLOAD_TRANSIENT_FAST_WINDOW_MS = 60_000;
 export const WORKLOAD_TRANSIENT_MEDIUM_WINDOW_MS = 5 * 60_000;
 
@@ -216,6 +217,7 @@ function hasPublicApEndpointItem(item: unknown) {
 }
 
 export function workloadListRefreshIntervalForCanvas({
+  canvasCovered = false,
   discoveryPollUntil,
   fallbackNamespace,
   isPageVisible = true,
@@ -226,6 +228,12 @@ export function workloadListRefreshIntervalForCanvas({
   transientSinceByKey = new Map<string, number>(),
   workloadReconcilePollUntil,
 }: {
+  /**
+   * True while a full-coverage surface (Main Action Surface) hides the
+   * canvas. Treated like a hidden page: polling drops to background cadence
+   * until the canvas is revealed.
+   */
+  canvasCovered?: boolean;
   discoveryPollUntil: number;
   fallbackNamespace?: string | undefined;
   isPageVisible?: boolean;
@@ -260,5 +268,19 @@ export function workloadListRefreshIntervalForCanvas({
     interval = minPositiveInterval(interval, WORKLOAD_LIST_FAST_REFRESH_MS);
   }
 
-  return applyPageVisibilityRefreshInterval({ interval, isPageVisible });
+  // Steady-state heartbeat: node metrics show live ready-pod counts, so a
+  // visible canvas with workloads keeps polling slowly even when nothing is
+  // transitioning. Hidden or covered canvases stay quiet.
+  if (
+    isPageVisible &&
+    !canvasCovered &&
+    apItemsFromList(latestData).length > 0
+  ) {
+    interval = minPositiveInterval(interval, WORKLOAD_LIST_STEADY_REFRESH_MS);
+  }
+
+  return applyPageVisibilityRefreshInterval({
+    interval,
+    isPageVisible: isPageVisible && !canvasCovered,
+  });
 }

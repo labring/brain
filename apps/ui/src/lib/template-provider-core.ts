@@ -302,7 +302,7 @@ export async function listTemplateCatalog(input?: {
     providerUrl("/api/listTemplate", {
       language,
     }),
-    { cache: "no-store" }
+    { next: { revalidate: 300 } }
   );
   const body = await readJsonResponse(response);
   if (!response.ok) {

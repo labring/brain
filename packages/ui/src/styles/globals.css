@@ -395,6 +395,30 @@
     max-width: min(34rem, calc(100vw - 2rem));
   }
 
+  /*
+   * @ncdai/react-wheel-picker ships an *unlayered* mask on [data-rwp] that only
+   * fades the outer ~20% of each column; unlayered rules beat our layered ones,
+   * so !important is required to win. The wheel is a 3D cylinder, so its outer
+   * two rows bunch close together near each edge — a plain linear ramp can't dim
+   * the outermost row without also dimming its still-crisp neighbour. The extra
+   * transparent shoulder holds full transparency across the outermost row, then
+   * ramps steeply so the ±1 neighbour stays ~opaque: the outer row melts to a
+   * faint ghost while the value and its immediate neighbours stay crisp.
+   */
+  .time-wheel-picker [data-rwp] {
+    --time-wheel-edge-mask: linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 7%,
+      #000 27%,
+      #000 73%,
+      transparent 93%,
+      transparent 100%
+    );
+    -webkit-mask-image: var(--time-wheel-edge-mask) !important;
+    mask-image: var(--time-wheel-edge-mask) !important;
+  }
+
   .monaco-editor.ap-env-raw-source-monaco .suggest-widget,
   .monaco-editor.ap-env-raw-source-monaco .suggest-details {
     overflow: hidden;

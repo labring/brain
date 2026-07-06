@@ -1,6 +1,9 @@
 import type {
+  CanvasFlowStore,
   CanvasMeta,
   CanvasReactFlowProps,
+  CanvasViewportDirectiveStore,
+  CanvasViewportFocusRequest,
 } from "@workspace/ui/components/canvas/canvas.types";
 import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-node/canvas-node";
 import type { Edge, Node } from "@xyflow/react";
@@ -81,48 +84,45 @@ export function createProjectCanvasMeta({
   clearSelection,
   connectionGestureActive,
   executeCommandPlan,
+  flowStore,
   focusCanvasSelection,
   frontCanvasNode,
+  getNodes,
   handleConnect,
   handleConnectEnd,
   handleConnectStart,
   isValidCanvasConnection,
-  nodes,
   onNodePositionChange,
   projectId,
   projectCanvasConnectionLine,
   readOnly,
-  viewportFocusKey,
-  viewportFocusActive,
-  viewportFocusNodeIds,
+  viewportDirectives,
 }: {
   clearSelection: () => void;
   connectionGestureActive: boolean;
   executeCommandPlan: (
     plan: ReturnType<typeof planProjectCanvasCommand>
   ) => void;
+  flowStore: CanvasFlowStore;
   focusCanvasSelection: (selection: ProjectCanvasSelection) => void;
   frontCanvasNode: (
     node: Node,
     options?: { persist?: boolean }
   ) => Node | undefined;
+  /** Reads the current decorated canvas nodes at event time. */
+  getNodes: () => readonly Node[];
   handleConnect: NonNullable<CanvasReactFlowProps["onConnect"]>;
   handleConnectEnd: NonNullable<CanvasReactFlowProps["onConnectEnd"]>;
   handleConnectStart: NonNullable<CanvasReactFlowProps["onConnectStart"]>;
   isValidCanvasConnection: NonNullable<
     CanvasReactFlowProps["isValidConnection"]
   >;
-  nodes: Node[];
   onNodePositionChange?: (node: Node) => void;
   projectId?: string;
   projectCanvasConnectionLine: CanvasReactFlowProps["connectionLineComponent"];
   readOnly: boolean;
-  viewportFocusKey?: number | string;
-  viewportFocusActive: boolean;
-  viewportFocusNodeIds: readonly string[];
+  viewportDirectives: CanvasViewportDirectiveStore;
 }): CanvasMeta {
-  const viewportFocusIsGroup = viewportFocusNodeIds.length > 1;
-
   return {
     edgeAnchorResolver: ({ dragging, previousPair, sourceNode, targetNode }) =>
       selectCanvasAnchorPair({
@@ -131,6 +131,7 @@ export function createProjectCanvasMeta({
         source: canvasNodeGeometryFromNode(sourceNode),
         target: canvasNodeGeometryFromNode(targetNode),
       }),
+    flowStore,
     nodeTypes: projectCanvasFlowNodeTypes,
     reactFlowProps: {
       ...projectCanvasInteractionProps({
@@ -157,7 +158,7 @@ export function createProjectCanvasMeta({
         executeCommandPlan(
           planProjectCanvasCommand({
             intent: projectCanvasNodeClickIntentFromNode(node),
-            nodes,
+            nodes: getNodes(),
             projectId,
             readOnly,
           })
@@ -175,18 +176,35 @@ export function createProjectCanvasMeta({
       },
       onPaneClick: () => clearSelection(),
     },
-    viewportFocus: {
-      active: viewportFocusActive,
-      fitMinZoom: viewportFocusIsGroup
-        ? PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_FIT_MIN_ZOOM
-        : undefined,
-      key: viewportFocusKey,
-      maxZoom: 1.05,
-      minZoom: 0.85,
-      nodeIds: viewportFocusNodeIds,
-      padding: viewportFocusIsGroup
-        ? PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_PADDING
-        : undefined,
-    },
+    viewportDirectives,
+  };
+}
+
+/**
+ * Builds the Project Canvas viewport focus directive for the current focus
+ * target set, applying group fit tuning when more than one node is focused.
+ */
+export function projectCanvasViewportFocusRequest({
+  active,
+  key,
+  nodeIds,
+}: {
+  active: boolean;
+  key?: number | string;
+  nodeIds: readonly string[];
+}): CanvasViewportFocusRequest {
+  const viewportFocusIsGroup = nodeIds.length > 1;
+  return {
+    active,
+    fitMinZoom: viewportFocusIsGroup
+      ? PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_FIT_MIN_ZOOM
+      : undefined,
+    key,
+    maxZoom: 1.05,
+    minZoom: 0.85,
+    nodeIds,
+    padding: viewportFocusIsGroup
+      ? PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_PADDING
+      : undefined,
   };
 }
