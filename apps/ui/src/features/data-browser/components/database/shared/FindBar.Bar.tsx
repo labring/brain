@@ -18,7 +18,7 @@ export function FindBarBar({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex h-11 items-center justify-between border-border border-t border-b px-2",
+        "flex h-11 items-center justify-between border-border border-t border-b bg-transparent px-2 transition-[background-color,border-color] focus-within:border-b-blue-400 focus-within:bg-input/30 hover:bg-input/30",
         className
       )}
     >
