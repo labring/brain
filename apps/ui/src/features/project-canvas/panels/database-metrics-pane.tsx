@@ -5,9 +5,7 @@ import type {
   DatabaseNodeMetricKey,
   DatabaseNodeMetricValue,
 } from "@workspace/ui/components/database-node/database-node";
-import { MetricsChart } from "@workspace/ui/components/metrics-chart/metrics-chart";
 import type { MetricDataPoint } from "@workspace/ui/components/metrics-chart/metrics-chart.types";
-import { cn } from "@workspace/ui/lib/utils";
 import type { Node } from "@xyflow/react";
 import { Activity, Cpu, HardDrive, MemoryStick } from "lucide-react";
 import { type ComponentType, type SVGProps, useMemo } from "react";
@@ -15,11 +13,11 @@ import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/databa
 import { telemetryRowsToMetricsData } from "@/features/project-canvas/telemetry/rows-to-metrics";
 import { CanvasResourcePane } from "./canvas-resource-pane";
 import {
-  formatMetricTrend,
   formatPercent,
   latestPercent,
   metricReading,
 } from "./database-metrics-format";
+import { MetricSeriesCard } from "./metric-series-card";
 import {
   databaseMetricsSeriesTarget,
   METRICS_SERIES_STEP_SECONDS,
@@ -39,7 +37,7 @@ function DatabaseMetricCard({
   capacity,
   className,
   fallback,
-  icon: Icon,
+  icon,
   label,
   metric,
   series,
@@ -56,50 +54,22 @@ function DatabaseMetricCard({
   const reading = metricReading({ capacity, kind: metric, percent });
 
   return (
-    <section
-      className={cn(
-        "flex h-54 min-h-54 min-w-0 flex-col gap-6 overflow-hidden rounded-lg bg-white/5 p-4 shadow-sm",
-        className
-      )}
-    >
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Icon aria-hidden className="size-4 shrink-0 text-foreground" />
-            <h3 className="truncate font-medium text-foreground text-sm leading-5">
-              {label}
-            </h3>
-          </div>
-          {reading === undefined ? null : (
-            <p className="shrink-0 text-foreground text-sm leading-5">
-              {reading}
-            </p>
-          )}
-        </div>
-        <div className="flex min-w-0 justify-between gap-3 text-sm leading-5">
-          <p className="truncate text-muted-foreground">
-            {formatMetricTrend(series)}
+    <MetricSeriesCard
+      bottomRight={
+        <p className="shrink-0 text-foreground">{formatPercent(percent)}</p>
+      }
+      className={className}
+      icon={icon}
+      label={label}
+      series={series}
+      topRight={
+        reading === undefined ? null : (
+          <p className="shrink-0 text-foreground text-sm leading-5">
+            {reading}
           </p>
-          <p className="shrink-0 text-foreground">{formatPercent(percent)}</p>
-        </div>
-      </div>
-      <div className="min-h-0 flex-1">
-        {series.length === 0 ? (
-          <div className="flex h-full min-h-0 items-center justify-center border-border border-y text-muted-foreground text-xs">
-            No telemetry
-          </div>
-        ) : (
-          <MetricsChart.Compact
-            chartClassName="h-full min-h-0 w-full min-w-0 aspect-auto"
-            data={series}
-          />
-        )}
-      </div>
-      <div className="flex shrink-0 justify-between text-muted-foreground text-sm leading-5">
-        <span>Now</span>
-        <span>-60m</span>
-      </div>
-    </section>
+        )
+      }
+    />
   );
 }
 

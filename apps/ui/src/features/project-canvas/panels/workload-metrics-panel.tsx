@@ -1,7 +1,6 @@
 "use client";
 
 import { useWorkloadTelemetrySeries } from "@workspace/api/hooks";
-import { MetricsChart } from "@workspace/ui/components/metrics-chart/metrics-chart";
 import type { MetricDataPoint } from "@workspace/ui/components/metrics-chart/metrics-chart.types";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
@@ -12,11 +11,8 @@ import { containerStatesFromNode } from "@/features/project-canvas/flow/containe
 import { telemetryRowsToMetricsData } from "@/features/project-canvas/telemetry/rows-to-metrics";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import { CanvasResourcePane } from "./canvas-resource-pane";
-import {
-  formatMetricTrend,
-  formatPercent,
-  latestPercent,
-} from "./database-metrics-format";
+import { formatPercent, latestPercent } from "./database-metrics-format";
+import { MetricSeriesCard } from "./metric-series-card";
 import {
   METRICS_SERIES_STEP_SECONDS,
   workloadMetricsSeriesTarget,
@@ -25,7 +21,7 @@ import {
 
 function WorkloadMetricCard({
   fallback,
-  icon: Icon,
+  icon,
   label,
   series,
 }: {
@@ -37,40 +33,16 @@ function WorkloadMetricCard({
   const percent = latestPercent(series, fallback);
 
   return (
-    <section className="flex h-54 min-h-54 min-w-0 flex-col gap-6 overflow-hidden rounded-lg bg-white/5 p-4 shadow-sm">
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Icon aria-hidden className="size-4 shrink-0 text-foreground" />
-            <h3 className="truncate font-medium text-foreground text-sm leading-5">
-              {label}
-            </h3>
-          </div>
-          <p className="shrink-0 text-foreground text-sm leading-5">
-            {formatPercent(percent)}
-          </p>
-        </div>
-        <p className="truncate text-muted-foreground text-sm leading-5">
-          {formatMetricTrend(series)}
+    <MetricSeriesCard
+      icon={icon}
+      label={label}
+      series={series}
+      topRight={
+        <p className="shrink-0 text-foreground text-sm leading-5">
+          {formatPercent(percent)}
         </p>
-      </div>
-      <div className="min-h-0 flex-1">
-        {series.length === 0 ? (
-          <div className="flex h-full min-h-0 items-center justify-center border-border border-y text-muted-foreground text-xs">
-            No telemetry
-          </div>
-        ) : (
-          <MetricsChart.Compact
-            chartClassName="h-full min-h-0 w-full min-w-0 aspect-auto"
-            data={series}
-          />
-        )}
-      </div>
-      <div className="flex shrink-0 justify-between text-muted-foreground text-sm leading-5">
-        <span>Now</span>
-        <span>-60m</span>
-      </div>
-    </section>
+      }
+    />
   );
 }
 

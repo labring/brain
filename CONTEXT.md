@@ -708,7 +708,9 @@ _Avoid_: custom range, paused relative range, snapshot mode, static last-hour vi
 
 ### Workload Telemetry Series
 
-A normalized time-series representation of workload resource usage for AP and DB workloads. It is consumed by both compact canvas node summaries and detailed metrics panels.
+A normalized time-series representation of workload resource usage for AP and DB workloads. It is consumed by both compact canvas node summaries and detailed metrics panels. Metrics panels always present it as a live trailing window whose leading edge is the present ("Now"); unlike Resource Logs there is no frozen counterpart. Absolute clock times appear only as interior reference points, never as window bounds.
+
+_Avoid_: frozen metrics window, custom metrics range.
 
 ### Workload Telemetry Snapshot
 
