@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Rocket,
   Search,
+  Settings2,
   ShieldCheck,
 } from "lucide-react";
 import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
@@ -106,7 +107,7 @@ function GithubDeployerSubtitle({ className, ...props }: ComponentProps<"p">) {
       data-slot="github-deployer-subtitle"
       {...props}
     >
-      Import repository from URL or GitHub authorization.
+      Import from a repository URL or this workspace's GitHub connection.
     </p>
   );
 }
@@ -134,14 +135,14 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
         role="status"
       >
         <Spinner aria-hidden className="size-4 shrink-0" />
-        <span>Authorizing...</span>
+        <span>Connecting...</span>
       </div>
     );
   }
 
   return (
     <AppButton
-      aria-label="Authorize GitHub"
+      aria-label="Connect workspace GitHub access"
       className={cn(
         "h-9 w-full rounded-lg bg-white/5 text-primary hover:bg-input",
         className
@@ -153,7 +154,7 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
       variant="quiet"
     >
       <ShieldCheck aria-hidden className="size-4 shrink-0" strokeWidth={2} />
-      <span>Authorize GitHub</span>
+      <span>Connect GitHub</span>
     </AppButton>
   );
 }
@@ -445,8 +446,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
 
 function GithubDeployerAccountStatus() {
   const {
-    actions: { onDisconnect },
-    requestDisconnect,
+    actions: { onAuthorize, onDisconnect },
     states: { deployedRepo, isAuthorized, isLoading },
   } = useGithubDeployer();
 
@@ -466,14 +466,26 @@ function GithubDeployerAccountStatus() {
           className="size-4 shrink-0 text-primary"
           strokeWidth={2}
         />
-        <span className="truncate">GitHub Connected</span>
+        <span className="truncate">Workspace GitHub connected</span>
       </div>
+      <Button
+        aria-label="Configure workspace GitHub access"
+        className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
+        data-slot="github-deployer-configure"
+        disabled={isLoading || !onAuthorize}
+        onClick={onAuthorize}
+        size="icon-lg"
+        type="button"
+        variant="ghost"
+      >
+        <Settings2 aria-hidden className="size-4" strokeWidth={2} />
+      </Button>
       <Button
         aria-label="Disconnect GitHub"
         className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
         data-slot="github-deployer-disconnect"
         disabled={isLoading || !onDisconnect}
-        onClick={requestDisconnect}
+        onClick={onDisconnect}
         size="icon-lg"
         type="button"
         variant="ghost"
@@ -533,9 +545,9 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
     >
       {showGithubAccount ? (
         <DeploymentSettings.Section
-          description="This is a description placeholder."
+          description="Connect GitHub repositories to this workspace."
           icon={<ShieldCheck aria-hidden className="size-4" />}
-          title="GitHub Account"
+          title="Workspace GitHub"
         >
           <DeploymentSettings.Control>
             <GithubDeployerAuthButton />
@@ -556,14 +568,14 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
       ) : null}
       {showLockedRepositorySections ? (
         <GithubDeployerLockedSection
-          description="Please authorize your GitHub account to deploy from a GitHub repository URL."
+          description="Connect GitHub for this workspace before deploying from a repository URL."
           icon={<Link2 aria-hidden className="size-4" />}
           title="Repository URL"
         />
       ) : null}
       {showLockedRepositorySections ? (
         <GithubDeployerLockedSection
-          description="Install the GitHub App for this workspace before selecting a repository."
+          description="Connect GitHub for this workspace before selecting a repository."
           icon={<GithubIcon className="size-4" />}
           title="Repository"
         />

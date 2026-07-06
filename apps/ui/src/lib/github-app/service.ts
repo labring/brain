@@ -63,11 +63,11 @@ export async function createGithubAppInstallSessionUrl(input: {
   return { installUrl: await githubAppInstallUrl(state), state };
 }
 
-/** Direct callback entry is rejected; install must start from an authenticated Desktop SDK session. */
+/** Direct setup entry is rejected; install/configure must start from an authenticated Desktop SDK session. */
 export function startAuthorize(): NextResponse {
   return jsonError(
     "install_session_required",
-    "GitHub App installation must start from an authenticated Desktop SDK session.",
+    "GitHub App installation or configuration must start from an authenticated Desktop SDK session.",
     401
   );
 }
@@ -81,7 +81,7 @@ export function handleProviderError(request: Request): NextResponse {
   return response;
 }
 
-/** Step 2 — verify state, store namespace GitHub App installation, redirect. */
+/** Verify setup state, store namespace GitHub App installation, redirect. */
 export async function completeAuthorization(
   request: Request,
   args: {

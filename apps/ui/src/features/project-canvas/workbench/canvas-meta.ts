@@ -28,6 +28,12 @@ export interface ProjectCanvasConnectionOrigin {
 
 const PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_FIT_MIN_ZOOM = 0.45;
 const PROJECT_CANVAS_GROUP_VIEWPORT_FOCUS_PADDING = 32;
+const PROJECT_CANVAS_NODE_EXTENT: NonNullable<
+  CanvasReactFlowProps["nodeExtent"]
+> = [
+  [-1000, -1000],
+  [4000, 2600],
+];
 const CANVAS_NODE_CONNECTION_SIDES = new Set<string>([
   "bottom",
   "left",
@@ -141,6 +147,7 @@ export function createProjectCanvasMeta({
       connectionLineComponent: readOnly
         ? undefined
         : projectCanvasConnectionLine,
+      nodeExtent: PROJECT_CANVAS_NODE_EXTENT,
       onEdgeClick: (_, edge: Edge) => {
         focusCanvasSelection({
           edgeId: edge.id,

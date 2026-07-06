@@ -7,10 +7,10 @@ import {
 export const runtime = "nodejs";
 
 /**
- * Single-handler GitHub App installation round-trip:
+ * GitHub App setup callback:
  *   - `?error=…`  → provider denied/failed; bounce home.
- *   - no `?installation_id=` → reject direct entry; install starts from Desktop SDK session.
- *   - with `?installation_id=` → second hop; verify state, store installation, redirect.
+ *   - no `?installation_id=` → reject direct entry; install/configure starts from Desktop SDK session.
+ *   - with `?installation_id=` → verify state, store installation, redirect.
  */
 export function GET(request: Request) {
   const { searchParams } = new URL(request.url);

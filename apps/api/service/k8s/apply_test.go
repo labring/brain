@@ -35,9 +35,16 @@ func TestRuntimeObjectsToUnstructuredPreservesServiceGVK(t *testing.T) {
 	}
 }
 
-func TestFilterUntypedObjectsSkipsTypedDeploymentAndService(t *testing.T) {
+func TestFilterUntypedObjectsSkipsTypedWorkloadsAndService(t *testing.T) {
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "ns-a",
+		},
+	}
+	statefulSet := &appsv1.StatefulSet{
+		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "app",
 			Namespace: "ns-a",
@@ -58,7 +65,7 @@ func TestFilterUntypedObjectsSkipsTypedDeploymentAndService(t *testing.T) {
 		},
 	}
 
-	filtered := filterUntypedObjects([]runtime.Object{deployment, service, hpa})
+	filtered := filterUntypedObjects([]runtime.Object{deployment, statefulSet, service, hpa})
 	if len(filtered) != 1 {
 		t.Fatalf("expected only HPA to remain, got %d objects", len(filtered))
 	}

@@ -107,8 +107,20 @@ minted server-side for `githubConnectionId`. The token may be injected into the
 Deploy Devbox clone command, but it must not be persisted on the client or
 returned through public APIs.
 
-The implementation requires a GitHub App setup callback pointing to
-`/api/callback/github` and these server-side environment variables:
+The implementation requires the GitHub App to use the setup callback flow:
+
+```text
+Setup URL: https://<app-origin>/api/callback/github
+Redirect on update: enabled
+Request user authorization (OAuth) during installation: disabled
+```
+
+The setup URL is used for both first-time installation and repository-selection
+updates. This keeps the browser popup on a same-origin completion path so the UI
+can refresh the workspace repository list and close the popup after install or
+configuration changes.
+
+These server-side environment variables are required:
 
 ```text
 GITHUB_APP_ID

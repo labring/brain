@@ -65,8 +65,8 @@ function usage() {
   return `Brain v1 import helper
 
 Usage:
-  bun scripts/brain-v1-import.mjs inventory --namespace <ns> [--kubeconfig <path>] [--context <name>] [--out <dir>]
-  bun scripts/brain-v1-import.mjs dry-run --namespace <ns> [--kubeconfig <path>] [--context <name>] [--out <dir>]
+  bun scripts/brain-v1-import.mjs inventory [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>]
+  bun scripts/brain-v1-import.mjs dry-run [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>]
   bun scripts/brain-v1-import.mjs dry-run --inventory <path> [--out <dir>]
   bun scripts/brain-v1-import.mjs apply --manifest <path> [--database-url <url>] --yes
   bun scripts/brain-v1-import.mjs rollback --manifest <path> [--database-url <url>] --yes
@@ -78,6 +78,7 @@ Modes:
   rollback  Delete inserted project rows and remove labels added by this migration.
 
 Notes:
+  - Omit --namespace to scan all namespaces visible to the kubeconfig/context.
   - DATABASE_URL is used when --database-url is omitted.
   - apply/rollback require --yes or BRAIN_V1_IMPORT_YES=1.
 `;
@@ -187,7 +188,13 @@ function runKubectl(options, args, input) {
 }
 
 function getResourceList(options, namespace, resourceType, selector) {
-  const args = ["get", resourceType, "-n", namespace, "-o", "json"];
+  const args = ["get", resourceType];
+  if (namespace) {
+    args.push("-n", namespace);
+  } else {
+    args.push("-A");
+  }
+  args.push("-o", "json");
   if (selector) {
     args.push("-l", selector);
   }
@@ -244,20 +251,12 @@ function removeResourceLabels(options, patch) {
 function resourceRef(resource, type, namespace) {
   return {
     apiVersion: resource.apiVersion ?? "",
+    creationTimestamp: resource.metadata?.creationTimestamp ?? "",
     kind: resource.kind ?? "",
     name: resourceName(resource),
     namespace: resourceNamespace(resource, namespace),
     type,
     uid: resource.metadata?.uid ?? "",
-  };
-}
-
-function patchFor(resource, type, namespace, labels, reason) {
-  return {
-    addedLabels: labels,
-    originalLabels: labelsOf(resource),
-    reason,
-    resource: resourceRef(resource, type, namespace),
   };
 }
 
@@ -325,7 +324,7 @@ function listInventoryProject(options, namespace, instance) {
 }
 
 function buildInventory(options) {
-  const namespace = required(options.namespace, "--namespace");
+  const namespace = options.namespace?.trim() || null;
   const instances = getResourceList(
     options,
     namespace,
@@ -342,7 +341,11 @@ function buildInventory(options) {
       resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
     }));
   const projects = candidateInstances.map((instance) =>
-    listInventoryProject(options, namespace, instance)
+    listInventoryProject(
+      options,
+      resourceNamespace(instance, namespace),
+      instance
+    )
   );
 
   return {
@@ -351,6 +354,7 @@ function buildInventory(options) {
     kubeconfig: options.kubeconfig ?? null,
     namespace,
     projects,
+    scope: namespace ? "namespace" : "cluster",
     skippedInstances,
     summary: {
       candidateProjects: projects.length,
@@ -409,187 +413,16 @@ function listApSupportResources(options, namespace, appName) {
   );
 }
 
-function classifyAndBuildPatches(options, namespace, instance, projectId) {
-  const instanceName = resourceName(instance);
-  const memberEntries = listProjectMembers(options, namespace, instanceName);
-  const patches = [];
-  const skipped = [];
-  const classifications = [];
-
-  const appLikeEntries = memberEntries.filter(
-    ({ resource }) => resource.kind === "App"
-  );
-  const apWorkloadEntries = memberEntries.filter(({ resource }) => {
-    const kind = resource.kind;
-    const labels = labelsOf(resource);
-    return (
-      (kind === "Deployment" || kind === "StatefulSet") &&
-      typeof labels[LEGACY_LABELS.appDeployManager] === "string" &&
-      labels[LEGACY_LABELS.appDeployManager] !== ""
-    );
-  });
-
-  if (apWorkloadEntries.length > 0) {
-    for (const entry of apWorkloadEntries) {
-      const appName = labelsOf(entry.resource)[LEGACY_LABELS.appDeployManager];
-      const labels = brainLabels(projectId, "ap", appName);
-      patches.push(
-        patchFor(entry.resource, entry.type, namespace, labels, "ap-workload")
-      );
-      classifications.push({
-        deploymentKind: "ap",
-        name: appName,
-        resource: resourceRef(entry.resource, entry.type, namespace),
-      });
-      for (const support of listApSupportResources(
-        options,
-        namespace,
-        appName
-      )) {
-        patches.push(
-          patchFor(
-            support.resource,
-            support.type,
-            namespace,
-            labels,
-            "ap-support-resource"
-          )
-        );
-      }
-    }
-  }
-
-  if (appLikeEntries.length > 0 || apWorkloadEntries.length === 0) {
-    const labels = brainLabels(projectId, "template", instanceName);
-    patches.push(
-      patchFor(
-        instance,
-        RESOURCE_TYPES.instance,
-        namespace,
-        labels,
-        appLikeEntries.length > 0
-          ? "template-instance"
-          : "legacy-empty-instance"
-      )
-    );
-    for (const entry of appLikeEntries) {
-      patches.push(
-        patchFor(entry.resource, entry.type, namespace, labels, "template-app")
-      );
-    }
-    classifications.push({
-      deploymentKind: "template",
-      name: instanceName,
-      resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-    });
-  }
-
-  for (const entry of memberEntries) {
-    if (
-      entry.resource.kind === "Devbox" ||
-      entry.type.includes("devbox") ||
-      entry.type === RESOURCE_TYPES.objectstoragebucket
-    ) {
-      skipped.push({
-        reason: "unsupported-resource-kind",
-        resource: resourceRef(entry.resource, entry.type, namespace),
-      });
-    }
-    if (entry.resource.kind === "Cluster") {
-      const labels = brainLabels(projectId, "db", resourceName(entry.resource));
-      patches.push(
-        patchFor(entry.resource, entry.type, namespace, labels, "db-cluster")
-      );
-      classifications.push({
-        deploymentKind: "db",
-        name: resourceName(entry.resource),
-        resource: resourceRef(entry.resource, entry.type, namespace),
-      });
-    }
-  }
-
-  return {
-    classifications,
-    patches: dedupePatches(patches),
-    skipped,
-  };
-}
-
 function buildManifest(options) {
   if (options.inventory) {
     return buildManifestFromInventory(loadInventory(options.inventory));
   }
-  const namespace = required(options.namespace, "--namespace");
-  const instances = getResourceList(
-    options,
-    namespace,
-    RESOURCE_TYPES.instance
-  );
-  const candidates = instances.filter(isLegacyProjectCandidate);
-  const skippedInstances = instances
-    .filter((instance) => !isLegacyProjectCandidate(instance))
-    .map((instance) => ({
-      labels: labelsOf(instance),
-      reason: isBrainManaged(instance)
-        ? "already-brain-managed"
-        : "not-a-legacy-project-candidate",
-      resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-    }));
-
-  const projects = candidates.map((instance) => {
-    const projectId = deterministicProjectId(namespace, instance);
-    const displayName = legacyDisplayName(instance);
-    const project = {
-      createdAt:
-        instance.metadata?.creationTimestamp ?? new Date().toISOString(),
-      description: `Imported from Brain v1 Instance ${resourceName(instance)}`,
-      displayName,
-      id: projectId,
-      namespace,
-    };
-    const result = classifyAndBuildPatches(
-      options,
-      namespace,
-      instance,
-      projectId
-    );
-    return {
-      classifications: result.classifications,
-      insertSql: projectInsertSql(project),
-      legacyInstance: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-      patches: result.patches,
-      project,
-      skipped: result.skipped,
-    };
-  });
-
-  return {
-    context: options.context ?? null,
-    generatedAt: new Date().toISOString(),
-    kubeconfig: options.kubeconfig ?? null,
-    mode: "dry-run",
-    namespace,
-    projects,
-    skippedInstances,
-    summary: {
-      candidateProjects: projects.length,
-      patches: projects.reduce(
-        (sum, project) => sum + project.patches.length,
-        0
-      ),
-      skippedInstances: skippedInstances.length,
-      skippedResources: projects.reduce(
-        (sum, project) => sum + project.skipped.length,
-        0
-      ),
-      totalInstances: instances.length,
-    },
-    version: MIGRATION_VERSION,
-  };
+  return buildManifestFromInventory(buildInventory(options));
 }
 
 function buildManifestFromInventory(inventory) {
   const projects = inventory.projects.map((entry) => {
+    const entryNamespace = entry.legacyInstance.resource.namespace;
     const instance = {
       apiVersion: entry.legacyInstance.resource.apiVersion,
       kind: entry.legacyInstance.resource.kind,
@@ -601,17 +434,19 @@ function buildManifestFromInventory(inventory) {
       },
     };
     const project = {
-      createdAt: inventory.generatedAt,
+      createdAt:
+        entry.legacyInstance.resource.creationTimestamp ||
+        inventory.generatedAt,
       description: `Imported from Brain v1 Instance ${entry.legacyInstance.resource.name}`,
       displayName: entry.displayName,
       id: entry.projectId,
-      namespace: inventory.namespace,
+      namespace: entryNamespace,
     };
     const memberPatches = entry.members.flatMap((member) =>
-      patchesFromInventoryMember(member, entry, inventory.namespace)
+      patchesFromInventoryMember(member, entry, entryNamespace)
     );
     const supportPatches = entry.supportResources.flatMap((support) =>
-      patchesFromInventorySupport(support, entry, inventory.namespace)
+      patchesFromInventorySupport(support, entry)
     );
     const result = classifyInventoryProject(entry);
     return {
@@ -620,7 +455,7 @@ function buildManifestFromInventory(inventory) {
       legacyInstance: resourceRef(
         instance,
         RESOURCE_TYPES.instance,
-        inventory.namespace
+        entryNamespace
       ),
       patches: dedupePatches([
         ...result.instancePatches,
@@ -639,6 +474,7 @@ function buildManifestFromInventory(inventory) {
     kubeconfig: inventory.kubeconfig ?? null,
     mode: "dry-run",
     namespace: inventory.namespace,
+    scope: inventory.scope ?? (inventory.namespace ? "namespace" : "cluster"),
     projects,
     skippedInstances: inventory.skippedInstances,
     summary: {
@@ -693,10 +529,7 @@ function classifyInventoryProject(entry) {
     });
   }
   for (const member of entry.members) {
-    if (
-      member.resource.kind === "Cluster" ||
-      member.resource.type === RESOURCE_TYPES.objectstoragebucket
-    ) {
+    if (member.resource.type === RESOURCE_TYPES.objectstoragebucket) {
       skipped.push({
         reason: "requires-manual-review",
         resource: member.resource,
@@ -773,7 +606,8 @@ function writeDryRunOutputs(manifest, outDir) {
   const sql = [
     "-- Brain v1 -> v2 project import",
     `-- Generated at: ${manifest.generatedAt}`,
-    `-- Namespace: ${manifest.namespace}`,
+    `-- Scope: ${manifest.scope ?? "namespace"}`,
+    `-- Namespace: ${manifest.namespace ?? "all-namespaces"}`,
     "begin;",
     ...manifest.projects.map((project) => project.insertSql),
     "commit;",
@@ -881,14 +715,14 @@ function requireConfirmation(options) {
 }
 
 function dryRun(options) {
-  const namespace = options.inventory
-    ? sanitizeFilePart(loadInventory(options.inventory).namespace)
-    : required(options.namespace, "--namespace");
+  const scopeName = options.inventory
+    ? (loadInventory(options.inventory).namespace ?? "all-namespaces")
+    : (options.namespace?.trim() ?? "all-namespaces");
   const outDir =
     options.out ??
     path.join(
       ".migration",
-      `brain-v1-${sanitizeFilePart(namespace)}-${Date.now()}`
+      `brain-v1-${sanitizeFilePart(scopeName)}-${Date.now()}`
     );
   const manifest = buildManifest(options);
   const outputs = writeDryRunOutputs(manifest, outDir);
@@ -896,7 +730,7 @@ function dryRun(options) {
 }
 
 function inventory(options) {
-  const namespace = required(options.namespace, "--namespace");
+  const namespace = options.namespace?.trim() || "all-namespaces";
   const outDir =
     options.out ??
     path.join(

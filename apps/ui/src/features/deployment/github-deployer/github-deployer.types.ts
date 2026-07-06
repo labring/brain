@@ -31,7 +31,7 @@ export interface GithubDeployerStates {
    */
   deployedRepo?: GithubDeployerRepo | null;
   /**
-   * True when the host has a namespace-scoped GitHub connection.
+   * True when the current workspace has a server-side GitHub App connection.
    */
   isAuthorized?: boolean;
   /**
@@ -50,10 +50,10 @@ export interface GithubDeployerStates {
 
 /**
  * Props passed into `GithubDeployer.Root`. Callbacks are invoked directly (no wrapper delays).
- * Auth behavior is entirely host-defined via `onAuthorize`.
+ * GitHub App install/configure behavior is entirely host-defined via `onAuthorize`.
  */
 export interface GithubDeployerActions {
-  /** Invoked when the user clicks “Authorize GitHub”. Omit or leave unset to show a disabled control. */
+  /** Invoked when the user connects or reconfigures workspace GitHub access. */
   onAuthorize?: () => void;
   /** Invoked when Deploy is pressed with the selected repo. */
   onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
@@ -63,21 +63,20 @@ export interface GithubDeployerActions {
     settings: TemplateDeploymentSettings;
     template: TemplateDeploymentChoice;
   }) => void | Promise<void>;
-  /** Invoked after the user confirms disconnecting the current GitHub connection. */
-  onDisconnect?: () => void | Promise<void>;
+  /** Invoked when the user disconnects the current server-side GitHub credential. */
+  onDisconnect?: () => void;
 }
 
 export interface GithubDeployerResolvedActions {
   onAuthorize?: () => void;
   onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
   onDeployTemplate?: GithubDeployerActions["onDeployTemplate"];
-  onDisconnect?: () => void | Promise<void>;
+  onDisconnect?: () => void;
 }
 
 export interface GithubDeployerValue {
   actions: GithubDeployerResolvedActions;
   requestDeploy: (repo: GithubDeployerRepo) => void;
-  requestDisconnect: () => void;
   selectedRepoId: string;
   setSelectedRepoId: (id: string) => void;
   states: GithubDeployerStates;

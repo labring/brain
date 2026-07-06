@@ -34,6 +34,17 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - Devbox runtime values (`DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`
 
+Configure the GitHub App registration to use the Brain UI origin:
+
+```text
+Setup URL: https://<ui-host>/api/callback/github
+Redirect on update: enabled
+Request user authorization (OAuth) during installation: disabled
+```
+
+`Redirect on update` lets repository-selection changes return to Brain so the
+installation popup can close and refresh the workspace repository list.
+
 The install script reads `cloudDomain` and `cloudPort` from
 `sealos-system/sealos-config` and passes them to Helm. Keep these values empty
 in private values files unless you intentionally want to override the platform
