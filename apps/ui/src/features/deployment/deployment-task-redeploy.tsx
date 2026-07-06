@@ -27,6 +27,10 @@ export interface DeploymentTaskEditRedeploy {
   source: DeploymentTaskSource;
 }
 
+/** The one-line overwrite warning (US12) — dialog and inline forms share it. */
+export const REDEPLOY_OVERWRITE_WARNING =
+  "This redeploy reapplies onto the resources the previous run created — manual edits made after that run may be overwritten.";
+
 /** The deployment pane surface able to edit a task's source, if any. */
 export function editRedeploySurfaceKind(
   sourceKind: DeploymentTaskSource["kind"]
@@ -69,8 +73,7 @@ export function DeploymentTaskRedeployOverwriteDialog({
         </AppDialog.Header>
         <AppDialog.Body>
           <AppDialog.Description>
-            This redeploy reapplies onto the resources the previous run created
-            — manual edits made after that run may be overwritten.
+            {REDEPLOY_OVERWRITE_WARNING}
           </AppDialog.Description>
         </AppDialog.Body>
         <AppDialog.Footer>

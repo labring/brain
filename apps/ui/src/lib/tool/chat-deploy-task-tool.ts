@@ -138,6 +138,13 @@ export function createDeployTaskTools(options: {
           run: (handle, task) =>
             runDeployTask(handle, {
               encodedKubeconfig,
+              // Full template args from the chat request: the engine
+              // persists a stripped copy, so sensitive values reach the
+              // runner only through this in-memory hand-off (ADR 0037).
+              sourceArgValues:
+                input.source.kind === "template"
+                  ? input.source.args
+                  : undefined,
               taskId: task.id,
             }),
         }

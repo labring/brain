@@ -4,7 +4,10 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { DeploymentTaskEditRedeploy } from "@/features/deployment/deployment-task-redeploy";
+import {
+  type DeploymentTaskEditRedeploy,
+  REDEPLOY_OVERWRITE_WARNING,
+} from "@/features/deployment/deployment-task-redeploy";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
 import type {
   GithubDeployerActions,
@@ -44,7 +47,10 @@ function githubPaneSubtitle(input: {
   overwriteWarning: boolean;
 }): string {
   if (input.overwriteWarning) {
-    return "Redeploying reapplies onto the resources the previous run created — manual edits may be overwritten.";
+    // Persistent inline form of the US12 warning: this pane's submit
+    // actions are awaited internally, where a dialog gate would break
+    // their pending states.
+    return REDEPLOY_OVERWRITE_WARNING;
   }
   return input.hasCurrentProject
     ? "Deploy a repository into the current project."

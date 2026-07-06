@@ -21,6 +21,53 @@ import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-displa
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
+function stringArrayField(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? value
+    : undefined;
+}
+
+function rowArrayField<T>(value: unknown): T[] | undefined {
+  return Array.isArray(value) &&
+    value.every((item) => item != null && typeof item === "object")
+    ? (value as T[])
+    : undefined;
+}
+
+/**
+ * The persisted docker source settings were produced by this same form, but
+ * they cross the API as an untyped record — pick fields defensively instead
+ * of trusting a cast (a malformed array would crash the deployer prefill).
+ */
+function dockerInitialSettings(
+  redeploy: DeploymentTaskEditRedeploy | undefined
+): Partial<DockerDeploymentSettings> | undefined {
+  if (redeploy?.source.kind !== "docker") {
+    return undefined;
+  }
+  const raw = redeploy.source.settings;
+  const args = stringArrayField(raw.args);
+  const command = stringArrayField(raw.command);
+  const configMaps = rowArrayField<
+    NonNullable<DockerDeploymentSettings["configMaps"]>[number]
+  >(raw.configMaps);
+  const env = rowArrayField<DockerDeploymentSettings["env"][number]>(raw.env);
+  const storage = rowArrayField<
+    NonNullable<DockerDeploymentSettings["storage"]>[number]
+  >(raw.storage);
+  return {
+    ...(typeof raw.appListeningPort === "number"
+      ? { appListeningPort: raw.appListeningPort }
+      : {}),
+    ...(args == null ? {} : { args }),
+    ...(command == null ? {} : { command }),
+    ...(configMaps == null ? {} : { configMaps }),
+    ...(env == null ? {} : { env }),
+    ...(typeof raw.image === "string" ? { image: raw.image } : {}),
+    ...(storage == null ? {} : { storage }),
+  };
+}
+
 export function DockerDeploymentPane({
   kubeconfig,
   namespace,
@@ -51,10 +98,7 @@ export function DockerDeploymentPane({
     redeploy?.overwriteWarning ?? false
   );
   const initialSettings = useMemo(
-    () =>
-      redeploy?.source.kind === "docker"
-        ? (redeploy.source.settings as unknown as DockerDeploymentSettings)
-        : undefined,
+    () => dockerInitialSettings(redeploy),
     [redeploy]
   );
 

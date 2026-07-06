@@ -34,8 +34,9 @@ function compactOptional(value: string | undefined): string | null {
  * Row-level secrets contract (ADR 0037): template source args are stripped
  * of client-declared sensitive keys and name-heuristic matches before any
  * persisted form is built. The credentialed request hands the full values
- * to the launched runner in process memory; a clone re-collects them via
- * the blocking form (US15).
+ * to the launched runner in process memory; the persisted `sensitiveKeys`
+ * records every stripped key name — never a value — so a clone knows
+ * exactly what must be re-asked (US15).
  */
 function persistableDeploymentSource(
   source: DeploymentTaskSource
@@ -47,7 +48,18 @@ function persistableDeploymentSource(
     key,
     sensitive: true,
   }));
-  return { ...source, args: withoutSensitiveArgs(source.args, declared) };
+  const args = withoutSensitiveArgs(source.args, declared);
+  const sensitiveKeys = [
+    ...new Set([
+      ...(source.sensitiveKeys ?? []),
+      ...Object.keys(source.args).filter((key) => !(key in args)),
+    ]),
+  ].sort();
+  return {
+    ...source,
+    args,
+    ...(sensitiveKeys.length === 0 ? {} : { sensitiveKeys }),
+  };
 }
 
 function deploymentSourceLabel(source: DeploymentTaskSource): string {

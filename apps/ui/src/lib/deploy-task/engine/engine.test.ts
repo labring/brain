@@ -393,7 +393,9 @@ test("create strips sensitive template args from every persisted form (ADR 0037)
     sensitiveKeys?: string[];
   };
   assert.deepEqual(source.args, { mode: "fast" });
-  assert.deepEqual(source.sensitiveKeys, ["custom_field"]);
+  // Every stripped key is recorded (names only) so clones know what to
+  // re-ask — client-declared and heuristic-matched alike.
+  assert.deepEqual(source.sensitiveKeys, ["DB_PASSWORD", "custom_field"]);
 
   const persisted = JSON.stringify({
     events: await eventsFor(result.task.id),

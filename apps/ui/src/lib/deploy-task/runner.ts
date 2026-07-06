@@ -87,11 +87,19 @@ import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
 import type {
   DeploymentTaskDeploymentPlan,
   DeployTaskArtifactSummary,
+  DeployTaskBlockingInput,
   DeployTaskEventPayload,
   DeployTaskRow,
 } from "./schema";
-import { artifactSummaryWithScrubbedYamls } from "./scrub-secrets";
-import { sensitiveArgValues, withoutSensitiveArgs } from "./sensitive-inputs";
+import {
+  artifactSummaryWithScrubbedYamls,
+  scrubSensitiveJsonValue,
+} from "./scrub-secrets";
+import {
+  type SensitiveDeploymentInputShape,
+  sensitiveArgValues,
+  withoutSensitiveArgs,
+} from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
 import {
   appendCardEvent,
@@ -1791,37 +1799,43 @@ function deploymentPlanArgsFromTask(
 function deploymentPlanWithPersistableArgs<
   T extends {
     args?: Record<string, string>;
-    inputs: { key: string; sensitive?: boolean; type?: string }[];
+    inputs: SensitiveDeploymentInputShape[];
   },
 >(plan: T, args: Record<string, string>): T {
   return { ...plan, args: withoutSensitiveArgs(args, plan.inputs) };
 }
 
 /**
- * Copies of the AI deploy output safe to persist (ADR 0037): sensitive arg
- * values are stripped from the delivery manifest and from the same manifest
- * embedded in the raw output JSON. The original objects stay in memory for
- * the immediate apply; blocked resumes re-collect sensitive values through
- * the blocking form (US15).
+ * Copies of the AI deploy output safe to persist (ADR 0037): sensitive
+ * keys are stripped from the embedded args map, and known sensitive values
+ * are scrubbed from the rest of the copy — anywhere the gateway may have
+ * echoed them (build result, template defaults). The original objects stay
+ * in memory for the immediate apply; blocked resumes re-collect sensitive
+ * values through the blocking form (US15).
  */
 function persistableAiDeployOutput(input: {
   deliveryManifest: Record<string, unknown>;
   output: Record<string, unknown>;
-  planInputs: { key: string; sensitive?: boolean; type?: string }[];
+  planInputs: SensitiveDeploymentInputShape[];
 }): {
   deliveryManifest: Record<string, unknown>;
   outputJson: Record<string, unknown>;
 } {
-  const deliveryManifest = {
-    ...input.deliveryManifest,
-    args: withoutSensitiveArgs(
-      deployTaskStringRecordValue(input.deliveryManifest.args),
-      input.planInputs
-    ),
-  };
+  const args = deployTaskStringRecordValue(input.deliveryManifest.args);
+  const sensitiveValues = sensitiveArgValues(args, input.planInputs);
+  const deliveryManifest = scrubSensitiveJsonValue(
+    {
+      ...input.deliveryManifest,
+      args: withoutSensitiveArgs(args, input.planInputs),
+    },
+    sensitiveValues
+  );
   return {
     deliveryManifest,
-    outputJson: { ...input.output, deliveryManifest },
+    outputJson: scrubSensitiveJsonValue(
+      { ...input.output, deliveryManifest },
+      sensitiveValues
+    ),
   };
 }
 
@@ -1893,7 +1907,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   githubToken?: string;
   kubeconfig: string;
   outputJson: Record<string, unknown>;
-  planInputs?: { key: string; sensitive?: boolean; type?: string }[];
+  planInputs?: SensitiveDeploymentInputShape[];
   task: DeployTaskRow;
 }) {
   const sensitiveValues = sensitiveArgValues(
@@ -2171,6 +2185,34 @@ async function templateDeploymentPlanForRun(input: {
   }
 }
 
+/**
+ * The blocking form for a template run: plan-derived inputs (missing plus
+ * every sensitive input, US15) plus synthetic secret fields for keys
+ * recorded as stripped at create but absent from the fetched declarations
+ * (or whenever declarations are unavailable).
+ */
+function templateBlockingInputs(input: {
+  plan: DeploymentTaskDeploymentPlan | null;
+  unsatisfiedSensitiveKeys: string[];
+}): DeployTaskBlockingInput[] {
+  const fromPlan =
+    input.plan == null ? [] : blockingInputsFromDeploymentPlan(input.plan);
+  const covered = new Set(fromPlan.map((item) => item.key ?? item.id));
+  return [
+    ...fromPlan,
+    ...input.unsatisfiedSensitiveKeys
+      .filter((key) => !covered.has(key))
+      .map((key) => ({
+        id: key,
+        key,
+        label: key,
+        required: true,
+        sensitive: true,
+        type: "secret" as const,
+      })),
+  ];
+}
+
 async function runTemplateDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -2229,30 +2271,48 @@ async function runTemplateDeploymentTask(input: {
         source: { ...source, args: scrubbedArgs },
       });
     }
+  }
 
-    if ((plan.missingInputKeys?.length ?? 0) > 0) {
-      const blockingInputs = blockingInputsFromDeploymentPlan(plan);
-      await markTimelineStepWithEvent({
-        eventKind: "deployment_task.input_required",
-        eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
-        eventPayload: {
-          inputKeys: blockingInputs.map((item) => item.key ?? item.id),
-        },
-        eventSeverity: "warning",
-        phase: "configure",
-        status: "blocked",
-        stepId: "prepare-template",
-        taskId: input.task.id,
-        timelineStatus: "blocked",
-      });
-      // The blocked transition releases the lease and ends this run — it
-      // must be the run's final write.
-      await deployTaskRequestInputs(input.task.id, {
-        blockingInputs,
-        phase: "configure",
-      });
-      return;
-    }
+  // Keys recorded as stripped at create (ADR 0037) whose values this run
+  // does not hold in memory: a clone must re-collect them — even when the
+  // template's declarations are unavailable — so stripped values are never
+  // silently dropped. A key explicitly present in a memory map (even empty)
+  // is the user's answer and never re-asked.
+  const unsatisfiedSensitiveKeys = (source.sensitiveKeys ?? []).filter(
+    (key) =>
+      !(
+        key in (input.sourceArgValues ?? {}) ||
+        key in (input.submittedInputValues ?? {})
+      ) && (mergedArgs[key]?.trim() ?? "") === ""
+  );
+  if (
+    (plan?.missingInputKeys?.length ?? 0) > 0 ||
+    unsatisfiedSensitiveKeys.length > 0
+  ) {
+    const blockingInputs = templateBlockingInputs({
+      plan,
+      unsatisfiedSensitiveKeys,
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.input_required",
+      eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
+      eventPayload: {
+        inputKeys: blockingInputs.map((item) => item.key ?? item.id),
+      },
+      eventSeverity: "warning",
+      phase: "configure",
+      status: "blocked",
+      stepId: "prepare-template",
+      taskId: input.task.id,
+      timelineStatus: "blocked",
+    });
+    // The blocked transition releases the lease and ends this run — it
+    // must be the run's final write.
+    await deployTaskRequestInputs(input.task.id, {
+      blockingInputs,
+      phase: "configure",
+    });
+    return;
   }
 
   await recordDeployTaskEvent(input.task.id, {

@@ -25,6 +25,28 @@ export function scrubSensitiveText(
   return scrubbed;
 }
 
+/**
+ * Scrubs known sensitive values from an arbitrary JSON-serializable value:
+ * raw, JSON-escaped, and base64 occurrences inside any nested string. The
+ * scrubbed copy is display-only; callers keep the original in memory for
+ * the apply itself.
+ */
+export function scrubSensitiveJsonValue<T>(
+  value: T,
+  values: readonly string[]
+): T {
+  if (values.length === 0) {
+    return value;
+  }
+  const escapedForms = values.flatMap((item) => {
+    const jsonForm = JSON.stringify(item).slice(1, -1);
+    return jsonForm === item ? [] : [jsonForm];
+  });
+  return JSON.parse(
+    scrubSensitiveText(JSON.stringify(value), [...values, ...escapedForms])
+  ) as T;
+}
+
 export function artifactSummaryWithScrubbedYamls(
   summary: DeployTaskArtifactSummary,
   values: readonly string[]

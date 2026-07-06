@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   artifactSummaryWithScrubbedYamls,
   SCRUBBED_VALUE_PLACEHOLDER,
+  scrubSensitiveJsonValue,
   scrubSensitiveText,
 } from "./scrub-secrets";
 import {
@@ -45,6 +46,23 @@ test("artifactSummaryWithScrubbedYamls is identity without values or yamls", () 
   const summary = { notes: "unchanged" };
   assert.equal(artifactSummaryWithScrubbedYamls(summary, []), summary);
   assert.equal(artifactSummaryWithScrubbedYamls(summary, [SECRET]), summary);
+});
+
+test("scrubSensitiveJsonValue scrubs nested strings incl. escaped forms", () => {
+  const quoted = 'pa"ss-word-1';
+  const scrubbed = scrubSensitiveJsonValue(
+    {
+      buildResult: { log: `login with ${quoted} succeeded` },
+      data: SECRET_B64,
+      nested: [{ note: `uses ${SECRET}` }],
+    },
+    [SECRET, quoted]
+  );
+  const text = JSON.stringify(scrubbed);
+  assert.ok(!text.includes(SECRET));
+  assert.ok(!text.includes(SECRET_B64));
+  assert.ok(!text.includes("ss-word-1"));
+  assert.ok(text.includes(SCRUBBED_VALUE_PLACEHOLDER));
 });
 
 test("withoutSensitiveArgs drops declared and name-heuristic keys", () => {
