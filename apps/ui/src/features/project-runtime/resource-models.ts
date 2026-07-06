@@ -117,6 +117,9 @@ function dbModelFromFact(fact: DbFact): CanvasDatabaseNodeData {
       ? {}
       : { metadata: { labels: fact.metadataLabels } }),
     states: {
+      ...(fact.deletionTimestamp === undefined
+        ? {}
+        : { deletionTimestamp: fact.deletionTimestamp }),
       displayEngine: fact.engine.displayName,
       ...(fact.engine.key === undefined ? {} : { engineKey: fact.engine.key }),
       ...(fact.version === undefined ? {} : { formattedVersion: fact.version }),

@@ -25,6 +25,7 @@ import {
   SquareTerminal,
   TableProperties,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import type { ComponentType, ReactNode, SVGProps } from "react";
 
@@ -194,6 +195,35 @@ export function DatabaseNodeContent({
         <DatabaseNodeFooterContent metricsContent={metricsContent} />
       </CanvasNode.Footer>
     </CanvasNode.Card>
+  );
+}
+
+export function DatabaseNodeDeletionDelayHint({
+  className,
+}: {
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "database-node-deletion-delay-hint pointer-events-none flex w-[267px] flex-col items-start justify-center gap-4 overflow-hidden rounded-lg border-[0.5px] border-border bg-white/5 p-2.5 text-muted-foreground backdrop-blur-[20px]",
+        className
+      )}
+      data-slot="database-node-deletion-delay-hint"
+    >
+      <div className="flex w-full items-start gap-2">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/5">
+          <TriangleAlert
+            aria-hidden
+            className="size-3.5 text-yellow-500"
+            strokeWidth={2}
+          />
+        </div>
+        <p className="min-w-0 flex-1 text-xs leading-4">
+          Your database is being deleted. This may take a few minutes.
+        </p>
+      </div>
+    </div>
   );
 }
 

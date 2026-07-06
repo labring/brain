@@ -54,6 +54,7 @@ export interface DatabaseNodeStatus {
 }
 
 export interface DatabaseNodeStates {
+  deletionTimestamp?: string;
   displayEngine: string;
   engineKey?: DatabaseEngineKey;
   formattedVersion?: string;

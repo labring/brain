@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -42,17 +43,21 @@ func DBObjectFromCluster(cluster *unstructured.Unstructured) map[string]interfac
 	}
 	statusRaw, _ := cluster.Object["status"].(map[string]interface{})
 	phase := dbPhase(statusRaw)
+	metadata := map[string]interface{}{
+		"creationTimestamp": cluster.GetCreationTimestamp().String(),
+		"labels":            labels,
+		"name":              cluster.GetName(),
+		"namespace":         cluster.GetNamespace(),
+		"uid":               string(cluster.GetUID()),
+	}
+	if deletionTimestamp := cluster.GetDeletionTimestamp(); deletionTimestamp != nil && !deletionTimestamp.IsZero() {
+		metadata["deletionTimestamp"] = deletionTimestamp.UTC().Format(time.RFC3339)
+	}
 	return map[string]interface{}{
 		"apiVersion": "brain.io/direct",
 		"kind":       "DB",
-		"metadata": map[string]interface{}{
-			"creationTimestamp": cluster.GetCreationTimestamp().String(),
-			"labels":            labels,
-			"name":              cluster.GetName(),
-			"namespace":         cluster.GetNamespace(),
-			"uid":               string(cluster.GetUID()),
-		},
-		"spec": productSpec,
+		"metadata":   metadata,
+		"spec":       productSpec,
 		"status": map[string]interface{}{
 			"observed": statusRaw,
 			"phase":    phase,

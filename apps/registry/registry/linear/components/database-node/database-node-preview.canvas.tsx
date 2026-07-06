@@ -15,6 +15,7 @@ import { memo, useMemo } from "react";
 interface CanvasDatabaseNodeData extends Record<string, unknown> {
   connections: DatabaseNodeConnection[];
   defaultExpanded: boolean;
+  showDeletionDelayHint?: boolean;
   states: DatabaseNodeStates;
 }
 
@@ -45,7 +46,12 @@ const PreviewCanvasDatabaseNode = memo(function PreviewCanvasDatabaseNode({
       quickActions={PREVIEW_QUICK_ACTIONS}
       states={data.states}
     >
-      <DatabaseNode.Content />
+      <div className="relative">
+        <DatabaseNode.Content />
+        {data.showDeletionDelayHint ? (
+          <DatabaseNode.DeletionDelayHint className="absolute top-full left-1/2 mt-2 -translate-x-1/2" />
+        ) : null}
+      </div>
     </DatabaseNode.Root>
   );
 });
@@ -65,6 +71,12 @@ const states: DatabaseNodeStates = {
   },
   name: "orders-api",
   status: { label: "Running", tone: "running" },
+};
+
+const deletingStates: DatabaseNodeStates = {
+  ...states,
+  deletionTimestamp: "2026-07-06T10:00:00Z",
+  status: { label: "Deleting", tone: "deleting" },
 };
 
 const connections: DatabaseNodeConnection[] = [
@@ -99,6 +111,17 @@ const DATABASE_NODE_CANVAS_NODES: Node<
     data: { connections, defaultExpanded: true, states },
     id: "database-node-expanded",
     position: { x: 560, y: 120 },
+    type: "databaseNode",
+  },
+  {
+    data: {
+      connections,
+      defaultExpanded: false,
+      showDeletionDelayHint: true,
+      states: deletingStates,
+    },
+    id: "database-node-deleting-delay-hint",
+    position: { x: 940, y: 130 },
     type: "databaseNode",
   },
 ];
