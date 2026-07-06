@@ -131,6 +131,63 @@ function globalCandidatePenalty(
   return bounds === undefined ? 0 : canvasShapePenalty(bounds);
 }
 
+export function footprintColumnSpan(footprint: PlacementFootprint): number {
+  const bounds = footprintBounds(footprint);
+  return Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / COLUMN_STEP));
+}
+
+/**
+ * Column budget for whole-canvas regeneration: at least the widest unit,
+ * otherwise sized so a filled grid approaches the same soft 2:1
+ * width-to-height canvas shape Incremental Canvas Placement targets.
+ */
+export function regenerationColumnCap(
+  footprints: readonly PlacementFootprint[],
+  occupiedRects: readonly CanvasNodeRect[]
+): number {
+  const spans = [
+    ...footprints.map(footprintColumnSpan),
+    ...occupiedRects.map((rect) =>
+      Math.max(1, Math.ceil(rect.width / COLUMN_STEP))
+    ),
+  ];
+  const totalSpan = spans.reduce((sum, span) => sum + span, 0);
+  const widestSpan = spans.reduce((widest, span) => Math.max(widest, span), 1);
+  return Math.max(
+    widestSpan,
+    Math.round(
+      Math.sqrt(
+        (GLOBAL_CANVAS_TARGET_RATIO * totalSpan * ROW_STEP) / COLUMN_STEP
+      )
+    )
+  );
+}
+
+/**
+ * Whole-canvas regeneration placement: row-major first-open scan from the
+ * grid origin bounded by the column cap, so gaps in earlier rows are
+ * backfilled instead of abandoned. Incremental Canvas Placement must NOT use
+ * this — ADR 0022 keeps new nodes append-only so they never fill holes in a
+ * user-arranged canvas.
+ */
+export function firstOpenRegenerationPosition(
+  occupancy: PlacementOccupancy,
+  footprint: PlacementFootprint,
+  columnCap: number
+): CanvasLayoutPosition {
+  const lastColumn = Math.max(0, columnCap - footprintColumnSpan(footprint));
+  let row = 0;
+  while (true) {
+    for (let column = 0; column <= lastColumn; column += 1) {
+      const position = { x: column * COLUMN_STEP, y: row * ROW_STEP };
+      if (occupancy.isFootprintOpen(footprint, position)) {
+        return position;
+      }
+    }
+    row += 1;
+  }
+}
+
 export function firstOpenGlobalPosition(
   occupancy: PlacementOccupancy,
   footprint: PlacementFootprint

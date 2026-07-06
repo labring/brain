@@ -11,3 +11,7 @@ Incremental Canvas Placement uses row-major global placement for new unanchored 
 ## Consequences
 
 Unanchored first placements remain deterministic and append-only: new nodes are placed without moving existing saved positions or filling arbitrary holes in the middle of a user-arranged canvas. When a new AP has desired Public Address intent, the AP and AP Public Access Node are evaluated as one Canvas Placement Group with fixed internal layout and one combined footprint; placement chooses a position for that footprint, then expands it into the individual Public Access and AP node positions.
+
+## Status
+
+The Canvas Placement Group mechanism above is generalized to Canvas Placement Clusters by [ADR-0039](0039-regenerate-auto-layout-as-clustered-row-major-grid.md), which also gives whole-canvas regeneration (the Auto layout gesture) a backfilling row-major grid. The append-only global placement rule in this record remains authoritative for Incremental Canvas Placement.

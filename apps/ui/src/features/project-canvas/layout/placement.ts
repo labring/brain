@@ -10,13 +10,20 @@ import {
   anchorCandidatePositions,
   firstAnchoredPosition,
 } from "./anchored-placement";
-import { firstOpenGlobalPosition } from "./global-placement";
+import {
+  firstOpenGlobalPosition,
+  firstOpenRegenerationPosition,
+  regenerationColumnCap,
+} from "./global-placement";
 import {
   createPlacementAnchorIndex,
-  type PlacementAnchor,
   type PlacementAnchorIndex,
 } from "./placement-anchors";
-import { rectFromPosition, singleNodeFootprint } from "./placement-geometry";
+import {
+  type PlacementFootprint,
+  rectFromPosition,
+  singleNodeFootprint,
+} from "./placement-geometry";
 import {
   isCanvasNodeGeneratedPosition as isCanvasNodeGeneratedPositionFromNode,
   isPlacedDeploymentPlaceholderNode,
@@ -35,8 +42,7 @@ import {
 } from "./placement-owner";
 import {
   buildPlacementUnits,
-  type CanvasPlacementGroupCandidate,
-  canvasPlacementGroupOriginFromApPosition,
+  type CanvasClusterCandidate,
   type DeploymentProjectionFootprintCandidate,
   type PlacementCandidate,
   type PlacementUnit,
@@ -90,22 +96,12 @@ function publicAccessAnchorPosition(
   );
 }
 
-function firstAnchoredCanvasPlacementGroupPosition(
-  group: CanvasPlacementGroupCandidate,
-  anchors: readonly PlacementAnchor[],
-  positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
-  occupancy: PlacementOccupancy
-): CanvasLayoutPosition | undefined {
-  for (const anchor of anchors) {
-    for (const apPosition of anchorCandidatePositions(anchor, positionByRef)) {
-      const origin = canvasPlacementGroupOriginFromApPosition(apPosition);
-      if (occupancy.isFootprintOpen(group.footprint, origin)) {
-        return origin;
-      }
-    }
-  }
-  return undefined;
-}
+/**
+ * Picks the global fallback strategy for one placement run: the append-only
+ * scan for Incremental Canvas Placement, or the backfilling grid scan for
+ * whole-canvas regeneration.
+ */
+type GlobalPlacement = (footprint: PlacementFootprint) => CanvasLayoutPosition;
 
 function placeCandidateAt(
   candidate: PlacementCandidate,
@@ -157,7 +153,8 @@ function placementForSingleUnit(
     | undefined,
   initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined,
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
-  occupancy: PlacementOccupancy
+  occupancy: PlacementOccupancy,
+  globalPlacement: GlobalPlacement
 ): CanvasLayoutPosition {
   const footprint = singleCandidateFootprint(candidate);
   const initialPosition =
@@ -184,16 +181,13 @@ function placementForSingleUnit(
           occupancy,
           footprint
         );
-  return (
-    publicAccessPosition ??
-    anchored ??
-    firstOpenGlobalPosition(occupancy, footprint)
-  );
+  return publicAccessPosition ?? anchored ?? globalPlacement(footprint);
 }
 
 function placementForDeploymentProjectionFootprint(
   projection: DeploymentProjectionFootprintCandidate,
-  occupancy: PlacementOccupancy
+  occupancy: PlacementOccupancy,
+  globalPlacement: GlobalPlacement
 ): CanvasLayoutPosition {
   const firstCandidate = projection.candidates[0];
   const relative =
@@ -216,36 +210,43 @@ function placementForDeploymentProjectionFootprint(
   ) {
     return initialOrigin;
   }
-  return firstOpenGlobalPosition(occupancy, projection.footprint);
+  return globalPlacement(projection.footprint);
 }
 
-function placementForCanvasPlacementGroup(
-  group: CanvasPlacementGroupCandidate,
+/**
+ * Places a Canvas Placement Cluster: tries every member's connection anchors
+ * against already-placed neighbours (offset by the member's position inside
+ * the cluster) so incremental clusters still snuggle up to their placed
+ * counterparts, then falls back to global placement.
+ */
+function placementForCluster(
+  cluster: CanvasClusterCandidate,
   anchorIndex: PlacementAnchorIndex,
-  initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined,
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
-  occupancy: PlacementOccupancy
+  occupancy: PlacementOccupancy,
+  globalPlacement: GlobalPlacement
 ): CanvasLayoutPosition {
-  const apInitialPosition = initialPositionByRef?.get(
-    canvasResourceKey(group.ap.ref)
-  );
-  const initialGroupOrigin =
-    apInitialPosition === undefined
-      ? undefined
-      : canvasPlacementGroupOriginFromApPosition(apInitialPosition);
-  if (
-    initialGroupOrigin !== undefined &&
-    occupancy.isFootprintOpen(group.footprint, initialGroupOrigin)
-  ) {
-    return initialGroupOrigin;
+  for (const member of cluster.candidates) {
+    const relative = cluster.relativePositions.get(member.index) ?? {
+      x: 0,
+      y: 0,
+    };
+    for (const anchor of anchorIndex.anchorsForRef(member.ref)) {
+      for (const anchorPosition of anchorCandidatePositions(
+        anchor,
+        positionByRef
+      )) {
+        const origin = {
+          x: anchorPosition.x - relative.x,
+          y: anchorPosition.y - relative.y,
+        };
+        if (occupancy.isFootprintOpen(cluster.footprint, origin)) {
+          return origin;
+        }
+      }
+    }
   }
-  const position = firstAnchoredCanvasPlacementGroupPosition(
-    group,
-    anchorIndex.anchorsForRef(group.ap.ref),
-    positionByRef,
-    occupancy
-  );
-  return position ?? firstOpenGlobalPosition(occupancy, group.footprint);
+  return globalPlacement(cluster.footprint);
 }
 
 function placementForUnit(
@@ -256,7 +257,8 @@ function placementForUnit(
     | undefined,
   initialPositionByRef: ReadonlyMap<string, CanvasLayoutPosition> | undefined,
   positionByRef: ReadonlyMap<string, CanvasLayoutPosition>,
-  occupancy: PlacementOccupancy
+  occupancy: PlacementOccupancy,
+  globalPlacement: GlobalPlacement
 ): CanvasLayoutPosition {
   if (unit.kind === "single") {
     return placementForSingleUnit(
@@ -265,23 +267,25 @@ function placementForUnit(
       initialPositionByNodeId,
       initialPositionByRef,
       positionByRef,
-      occupancy
+      occupancy,
+      globalPlacement
     );
   }
 
   if (unit.kind === "deploymentProjectionFootprint") {
     return placementForDeploymentProjectionFootprint(
       unit.projection,
-      occupancy
+      occupancy,
+      globalPlacement
     );
   }
 
-  return placementForCanvasPlacementGroup(
-    unit.group,
+  return placementForCluster(
+    unit.cluster,
     anchorIndex,
-    initialPositionByRef,
     positionByRef,
-    occupancy
+    occupancy,
+    globalPlacement
   );
 }
 
@@ -394,10 +398,24 @@ export function placeCanvasNodesWithLayout({
     });
   });
 
-  for (const unit of buildPlacementUnits(
+  const units = buildPlacementUnits(
     placementCandidates,
-    initialPositionByRef
-  )) {
+    initialPositionByRef,
+    connections
+  );
+  const columnCap =
+    layout === undefined
+      ? regenerationColumnCap(
+          units.map(placementUnitFootprint),
+          occupancy.rects
+        )
+      : undefined;
+  const globalPlacement: GlobalPlacement = (footprint) =>
+    columnCap === undefined
+      ? firstOpenGlobalPosition(occupancy, footprint)
+      : firstOpenRegenerationPosition(occupancy, footprint, columnCap);
+
+  for (const unit of units) {
     const footprint = placementUnitFootprint(unit);
     const placement = placementForUnit(
       unit,
@@ -405,7 +423,8 @@ export function placeCanvasNodesWithLayout({
       initialPositionByNodeId,
       initialPositionByRef,
       positionByRef,
-      occupancy
+      occupancy,
+      globalPlacement
     );
     occupancy.allocateFootprint(footprint, placement);
     placeUnitAt(unit, placement, positionByRef, placedNodes, placedLayoutNodes);

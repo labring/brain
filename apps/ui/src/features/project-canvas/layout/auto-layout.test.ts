@@ -8,6 +8,7 @@ import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+  CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
 import {
   autoLayoutCanvasNodes,
@@ -64,6 +65,23 @@ function placedDeploymentPlaceholderNode(
     id: `deployment-placeholder-${name}`,
     position,
     type: CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
+  };
+}
+
+function entryNode(apName: string, position: Node["position"]): Node {
+  return {
+    data: {
+      resource: {
+        apRef: apName,
+        name: `${apName}-entry`,
+        namespace: "default",
+      },
+      states: { name: `${apName}-entry` },
+      targets: [],
+    },
+    id: `entry-${apName}`,
+    position,
+    type: CANVAS_ENTRY_NODE_TYPE,
   };
 }
 
@@ -164,6 +182,63 @@ test("carries expansion and stack order into the persisted layout nodes", () => 
   assert.equal(entry?.expanded, false);
   assert.equal(entry?.stackOrder, 3);
   assert.equal(entry?.source, "generated");
+});
+
+function layoutPositionByKindName(
+  result: CanvasAutoLayoutResult
+): Map<string, CanvasLayoutPosition> {
+  return new Map(
+    result.layoutNodes.flatMap((node) =>
+      node.owner.kind === "resource"
+        ? ([
+            [
+              `${node.owner.ref.kind}:${node.owner.ref.name}`,
+              node.position,
+            ] as const,
+          ] as const)
+        : []
+    )
+  );
+}
+
+function scatteredMixedCanvasNodes(): Node[] {
+  return [
+    apNode("a-api", { x: 500, y: 700 }),
+    entryNode("a-api", { x: -50, y: 120 }),
+    apNode("b-api", { x: 900, y: 40 }),
+    entryNode("b-api", { x: 660, y: 400 }),
+    apNode("c-api", { x: 20, y: 940 }),
+    entryNode("c-api", { x: 310, y: 630 }),
+    dbNode("d-db", { x: 1200, y: 90 }),
+    dbNode("e-db", { x: 70, y: 1400 }),
+  ];
+}
+
+test("fills the column budget row-major so no top-right hole remains", () => {
+  const result = autoLayoutCanvasNodes({ nodes: scatteredMixedCanvasNodes() });
+  const positions = layoutPositionByKindName(result);
+
+  assert.deepEqual(positions.get("PublicAccess:a-api"), { x: 0, y: 0 });
+  assert.deepEqual(positions.get("AP:a-api"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("PublicAccess:b-api"), { x: 680, y: 0 });
+  assert.deepEqual(positions.get("AP:b-api"), { x: 1020, y: 0 });
+  assert.deepEqual(positions.get("PublicAccess:c-api"), { x: 0, y: 280 });
+  assert.deepEqual(positions.get("AP:c-api"), { x: 340, y: 280 });
+  assert.deepEqual(positions.get("DB:d-db"), { x: 680, y: 280 });
+  assert.deepEqual(positions.get("DB:e-db"), { x: 1020, y: 280 });
+});
+
+test("is idempotent for clustered PublicAccess pairs and databases", () => {
+  const nodes = scatteredMixedCanvasNodes();
+  const first = autoLayoutCanvasNodes({ nodes });
+  const settled = nodes.map((node) => {
+    const position = movedPosition(first, node.id);
+    return position === undefined ? node : { ...node, position };
+  });
+
+  const second = autoLayoutCanvasNodes({ nodes: settled });
+
+  assert.equal(second.positionChanges.length, 0);
 });
 
 test("keeps placed deployment placeholders in place and out of the persisted layout", () => {

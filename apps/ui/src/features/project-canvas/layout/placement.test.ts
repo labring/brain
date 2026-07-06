@@ -489,6 +489,123 @@ test("returns placement group layout nodes for AP and PublicAccess first placeme
   );
 });
 
+function apToDbConnection(apName: string, dbName: string) {
+  return {
+    kind: "APToDB" as const,
+    source: { kind: "AP" as const, name: apName, namespace: "default" },
+    target: { kind: "DB" as const, name: dbName, namespace: "default" },
+  };
+}
+
+test("lays out a full PublicAccess, AP, and DB cluster on one row", () => {
+  const nodes = placeCanvasNodes({
+    connections: [apToDbConnection("api", "postgres")],
+    layout: undefined,
+    nodes: [apNode("api"), entryNode("api-entry", "api"), dbNode("postgres")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("entry-api-entry"), { x: 0, y: 0 });
+  assert.deepEqual(positions.get("ap-api"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("db-postgres"), { x: 680, y: 0 });
+});
+
+test("orders cluster DB rows by barycenter to avoid edge crossings", () => {
+  const nodes = placeCanvasNodes({
+    connections: [
+      apToDbConnection("a-api", "y-db"),
+      apToDbConnection("b-api", "x-db"),
+    ],
+    layout: undefined,
+    nodes: [apNode("a-api"), apNode("b-api"), dbNode("x-db"), dbNode("y-db")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("ap-a-api"), { x: 0, y: 0 });
+  assert.deepEqual(positions.get("ap-b-api"), { x: 0, y: 280 });
+  assert.deepEqual(positions.get("db-y-db"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("db-x-db"), { x: 340, y: 280 });
+});
+
+test("settles a shared DB between the APs it serves", () => {
+  const nodes = placeCanvasNodes({
+    connections: [
+      apToDbConnection("a-api", "only-a-db"),
+      apToDbConnection("a-api", "shared-db"),
+      apToDbConnection("b-api", "shared-db"),
+      apToDbConnection("b-api", "only-b-db"),
+    ],
+    layout: undefined,
+    nodes: [
+      apNode("a-api"),
+      apNode("b-api"),
+      dbNode("only-a-db"),
+      dbNode("only-b-db"),
+      dbNode("shared-db"),
+    ],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("db-only-a-db"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("db-shared-db"), { x: 340, y: 280 });
+  assert.deepEqual(positions.get("db-only-b-db"), { x: 340, y: 560 });
+});
+
+test("stacks hub cluster DBs vertically beside their AP", () => {
+  const nodes = placeCanvasNodes({
+    connections: [
+      apToDbConnection("api", "d1-db"),
+      apToDbConnection("api", "d2-db"),
+      apToDbConnection("api", "d3-db"),
+    ],
+    layout: undefined,
+    nodes: [apNode("api"), dbNode("d1-db"), dbNode("d2-db"), dbNode("d3-db")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("ap-api"), { x: 0, y: 0 });
+  assert.deepEqual(positions.get("db-d1-db"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("db-d2-db"), { x: 340, y: 280 });
+  assert.deepEqual(positions.get("db-d3-db"), { x: 340, y: 560 });
+});
+
+test("keeps foreign nodes out of cluster bounding-box gaps", () => {
+  const nodes = placeCanvasNodes({
+    connections: [
+      apToDbConnection("a-api", "d1-db"),
+      apToDbConnection("a-api", "d2-db"),
+    ],
+    layout: undefined,
+    nodes: [apNode("a-api"), dbNode("d1-db"), dbNode("d2-db"), apNode("z-api")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("db-d2-db"), { x: 340, y: 280 });
+  assert.notDeepEqual(positions.get("ap-z-api"), { x: 0, y: 280 });
+  assert.deepEqual(positions.get("ap-z-api"), { x: 0, y: 560 });
+});
+
+test("keeps incremental placement append-only over holes in a user-arranged canvas", () => {
+  const layout: CanvasLayoutDocument = {
+    namespace: "default",
+    nodes: [
+      layoutResourceNode("AP", "first", { x: 0, y: 0 }),
+      layoutResourceNode("AP", "third", { x: 680, y: 0 }),
+    ],
+    projectId: "project-uid",
+    version: 1,
+  };
+
+  const nodes = placeCanvasNodes({
+    layout,
+    nodes: [apNode("first"), apNode("third"), apNode("new-api")],
+  });
+  const positions = positionById(nodes);
+
+  assert.notDeepEqual(positions.get("ap-new-api"), { x: 340, y: 0 });
+  assert.deepEqual(positions.get("ap-new-api"), { x: 0, y: 280 });
+});
+
 test("anchors new DB nodes to connected AP nodes before global placement", () => {
   const layout: CanvasLayoutDocument = {
     namespace: "default",
