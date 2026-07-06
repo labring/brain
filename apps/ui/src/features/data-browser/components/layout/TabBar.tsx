@@ -5,6 +5,12 @@ import {
   useDbAccessTabs,
 } from "@data-browser/state/db-access-session";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
   Tooltip,
@@ -13,6 +19,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import {
+  ChevronsRight,
   Database,
   KeyRound,
   SplitSquareHorizontal,
@@ -20,7 +27,10 @@ import {
   X,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+const activeMenuItemClassName =
+  "bg-input focus:bg-input data-highlighted:bg-input";
 
 function getTabIcon(type: DbAccessTabType, isActive: boolean) {
   const iconClassName = cn("h-4 w-4", isActive && "text-blue-400");
@@ -44,6 +54,7 @@ interface TabItemProps {
   onClose: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   tab: DbAccessTab;
+  tabRef: (element: HTMLDivElement | null) => void;
 }
 
 function TabItem({
@@ -53,11 +64,12 @@ function TabItem({
   onClose,
   onContextMenu,
   closeTitle,
+  tabRef,
 }: TabItemProps) {
   return (
     <div
       className={cn(
-        "group flex h-9 cursor-pointer select-none items-center gap-1 border-sidebar-border border-r p-2 pl-3 transition-colors duration-150",
+        "group flex h-9 cursor-pointer select-none items-center gap-2 border-sidebar-border border-r bg-clip-padding p-2 transition-colors duration-150",
         isActive ? "bg-input text-foreground" : "text-foreground hover:bg-input"
       )}
       data-qa-action="activate"
@@ -78,10 +90,9 @@ function TabItem({
       data-testid="layout.tab.item"
       onClick={onActivate}
       onContextMenu={onContextMenu}
+      ref={tabRef}
     >
-      <span className="mr-1 flex-shrink-0">
-        {getTabIcon(tab.type, isActive)}
-      </span>
+      <span className="flex-shrink-0">{getTabIcon(tab.type, isActive)}</span>
       <span className="truncate whitespace-nowrap font-normal text-sm">
         {tab.title}
         {tab.isDirty && <span className="ml-1 text-primary">•</span>}
@@ -115,6 +126,12 @@ function TabItem({
   );
 }
 
+function getScrollViewport(container: HTMLElement | null) {
+  return container?.querySelector<HTMLElement>(
+    '[data-slot="scroll-area-viewport"]'
+  );
+}
+
 export function TabBar() {
   const {
     tabs,
@@ -129,8 +146,65 @@ export function TabBar() {
     y: number;
     tabId: string;
   } | null>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const hasTabs = tabs.length > 0;
 
-  if (tabs.length === 0) {
+  const scrollTabIntoView = useCallback((tabId: string) => {
+    tabElementsRef.current
+      .get(tabId)
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, []);
+
+  useEffect(() => {
+    const viewport = getScrollViewport(containerRef.current);
+    if (!(hasTabs && viewport) || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const updateOverflow = () => {
+      setIsOverflowing(viewport.scrollWidth > viewport.clientWidth);
+    };
+    updateOverflow();
+
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(viewport);
+    if (viewport.firstElementChild) {
+      observer.observe(viewport.firstElementChild);
+    }
+    return () => observer.disconnect();
+  }, [hasTabs, tabs.length]);
+
+  useEffect(() => {
+    const viewport = getScrollViewport(containerRef.current);
+    if (!(hasTabs && viewport)) {
+      return;
+    }
+
+    const handleWheel = (e: WheelEvent) => {
+      if (
+        e.deltaY === 0 ||
+        e.shiftKey ||
+        viewport.scrollWidth <= viewport.clientWidth
+      ) {
+        return;
+      }
+      viewport.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [hasTabs]);
+
+  useEffect(() => {
+    if (activeTabId) {
+      scrollTabIntoView(activeTabId);
+    }
+  }, [activeTabId, scrollTabIntoView]);
+
+  if (!hasTabs) {
     return null;
   }
 
@@ -163,27 +237,92 @@ export function TabBar() {
     setContextMenu(null);
   };
 
+  const handleOverflowSelect = (tabId: string) => {
+    setActiveTab(tabId);
+    scrollTabIntoView(tabId);
+  };
+
   return (
-    <ScrollArea
-      className="mb-2 border-sidebar-border border-b"
+    <div
+      className="mb-2 flex items-center border-sidebar-border border-b"
       data-qa-module="layout"
       data-qa-object="tab-bar"
-      data-qa-state={tabs.length > 0 ? "ready" : "empty"}
+      data-qa-state={isOverflowing ? "ready overflowing" : "ready"}
       data-testid="layout.tab-bar"
+      ref={containerRef}
     >
-      <div className="flex items-center pr-2">
-        {tabs.map((tab) => (
-          <TabItem
-            closeTitle={"Close tab"}
-            isActive={tab.id === activeTabId}
-            key={tab.id}
-            onActivate={() => setActiveTab(tab.id)}
-            onClose={(e) => handleClose(e, tab.id)}
-            onContextMenu={(e) => handleContextMenu(e, tab.id)}
-            tab={tab}
-          />
-        ))}
-      </div>
+      <ScrollArea className="min-w-0 flex-1">
+        <div className="flex items-center pr-2">
+          {tabs.map((tab) => (
+            <TabItem
+              closeTitle={"Close tab"}
+              isActive={tab.id === activeTabId}
+              key={tab.id}
+              onActivate={() => setActiveTab(tab.id)}
+              onClose={(e) => handleClose(e, tab.id)}
+              onContextMenu={(e) => handleContextMenu(e, tab.id)}
+              tab={tab}
+              tabRef={(element) => {
+                if (element) {
+                  tabElementsRef.current.set(tab.id, element);
+                } else {
+                  tabElementsRef.current.delete(tab.id);
+                }
+              }}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+
+      {isOverflowing && (
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <AppIconButton
+                      aria-label={"All tabs"}
+                      className="shrink-0 rounded-none border-y-0 border-r-0 border-l-sidebar-border hover:bg-input data-popup-open:bg-input"
+                      data-qa-action="open"
+                      data-qa-module="layout"
+                      data-qa-object="tab-overflow"
+                      data-testid="layout.tab-bar.overflow-trigger"
+                      size="lg"
+                      variant="quiet"
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </AppIconButton>
+                  }
+                />
+              }
+            />
+            <TooltipContent>{"All tabs"}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="w-auto max-w-72">
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              return (
+                <DropdownMenuItem
+                  className={cn(isActive && activeMenuItemClassName)}
+                  data-qa-action="activate"
+                  data-qa-module="layout"
+                  data-qa-object="tab-overflow-item"
+                  data-qa-resource-id={tab.id}
+                  data-qa-state={isActive ? "active" : "inactive"}
+                  data-testid="layout.tab-bar.overflow-item"
+                  key={tab.id}
+                  onClick={() => handleOverflowSelect(tab.id)}
+                >
+                  {getTabIcon(tab.type, isActive)}
+                  <span className="truncate">{tab.title}</span>
+                  {tab.isDirty && <span className="ml-1 text-primary">•</span>}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {contextMenu && (
         <PointerContextMenu
@@ -210,6 +349,6 @@ export function TabBar() {
           y={contextMenu.y}
         />
       )}
-    </ScrollArea>
+    </div>
   );
 }
