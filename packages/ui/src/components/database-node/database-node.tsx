@@ -8,6 +8,7 @@ import {
   DatabaseNodeConnectionList,
   DatabaseNodeConnectionRow,
   DatabaseNodeContent,
+  DatabaseNodeDeletionDelayHint,
   DatabaseNodeFooterContent,
   DatabaseNodeHeaderContent,
   DatabaseNodeMetricsContent,
@@ -60,6 +61,7 @@ export const DatabaseNode = {
   ConnectionList: DatabaseNodeConnectionList,
   ConnectionRow: DatabaseNodeConnectionRow,
   Content: DatabaseNodeContent,
+  DeletionDelayHint: DatabaseNodeDeletionDelayHint,
   FooterContent: DatabaseNodeFooterContent,
   HeaderContent: DatabaseNodeHeaderContent,
   MetricsContent: DatabaseNodeMetricsContent,
@@ -72,6 +74,7 @@ const dn = (component: object, name: string) => {
 
 dn(DatabaseNodeRoot, "DatabaseNode.Root");
 dn(DatabaseNodeContent, "DatabaseNode.Content");
+dn(DatabaseNodeDeletionDelayHint, "DatabaseNode.DeletionDelayHint");
 dn(DatabaseNodeHeaderContent, "DatabaseNode.HeaderContent");
 dn(DatabaseNodeBodyContent, "DatabaseNode.BodyContent");
 dn(DatabaseNodeConnectionList, "DatabaseNode.ConnectionList");

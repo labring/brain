@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -1133,6 +1134,28 @@ func TestDBObjectFromClusterReturnsDBLikeShape(t *testing.T) {
 	status := db["status"].(map[string]interface{})
 	if got := status["phase"]; got != "Running" {
 		t.Fatalf("status.phase = %v, want Running", got)
+	}
+}
+
+func TestDBObjectFromClusterIncludesDeletionTimestamp(t *testing.T) {
+	resources, err := RenderDBResources(DBResourcesInput{
+		ClusterVersion: "postgresql-16",
+		Engine:         "postgresql",
+		Name:           "pg",
+		Namespace:      "ns-a",
+		ProjectID:      "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderDBResources returned error: %v", err)
+	}
+	deletionTimestamp := metav1.NewTime(time.Date(2026, 7, 6, 12, 34, 56, 0, time.UTC))
+	resources.Cluster.SetDeletionTimestamp(&deletionTimestamp)
+
+	db := DBObjectFromCluster(resources.Cluster)
+	metadata := db["metadata"].(map[string]interface{})
+
+	if got := metadata["deletionTimestamp"]; got != "2026-07-06T12:34:56Z" {
+		t.Fatalf("metadata.deletionTimestamp = %v, want Kubernetes deletion timestamp", got)
 	}
 }
 

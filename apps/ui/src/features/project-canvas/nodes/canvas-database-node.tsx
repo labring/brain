@@ -15,6 +15,7 @@ import {
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
 import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
+import { shouldShowDatabaseDeletionDelayHint } from "./database-deletion-warning";
 import type { CanvasDatabaseNodeData, CanvasDatabaseRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 import { useCanvasDatabaseNodeActions } from "./use-database-node-actions";
@@ -65,6 +66,10 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     positionAbsoluteY,
     type,
   });
+  const showDeletionDelayHint = shouldShowDatabaseDeletionDelayHint({
+    nowMs: Date.now(),
+    states,
+  });
 
   return (
     <DatabaseNode.Root
@@ -81,14 +86,19 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
         actions.togglePublicConnectionDisabledReason
       }
     >
-      <DatabaseNode.Content
-        metricsContent={
-          <CanvasDatabaseTelemetryMetrics
-            fallbackMetrics={states.metrics}
-            target={telemetryTarget}
-          />
-        }
-      />
+      <div className="relative">
+        <DatabaseNode.Content
+          metricsContent={
+            <CanvasDatabaseTelemetryMetrics
+              fallbackMetrics={states.metrics}
+              target={telemetryTarget}
+            />
+          }
+        />
+        {showDeletionDelayHint ? (
+          <DatabaseNode.DeletionDelayHint className="absolute top-full left-1/2 mt-2 -translate-x-1/2" />
+        ) : null}
+      </div>
     </DatabaseNode.Root>
   );
 });

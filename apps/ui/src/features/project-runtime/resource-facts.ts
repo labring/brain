@@ -57,6 +57,7 @@ export interface DbFact {
       value?: string;
     };
   };
+  deletionTimestamp?: string;
   displayName: string;
   engine: {
     displayName: string;
@@ -182,6 +183,10 @@ function metadataUid(resource: unknown): string | undefined {
   return nonEmptyString(metadataRecord(resource).uid);
 }
 
+function metadataDeletionTimestamp(resource: unknown): string | undefined {
+  return nonEmptyString(metadataRecord(resource).deletionTimestamp);
+}
+
 function metadataLabels(
   resource: unknown
 ): Record<string, unknown> | undefined {
@@ -300,6 +305,9 @@ function dbFactFromResource(
           : { value: nonEmptyString(status.connectionStringPublic) }),
       },
     },
+    ...(metadataDeletionTimestamp(db) === undefined
+      ? {}
+      : { deletionTimestamp: metadataDeletionTimestamp(db) }),
     displayName: name,
     engine: {
       displayName: displayEngineFromKey(engineKey),

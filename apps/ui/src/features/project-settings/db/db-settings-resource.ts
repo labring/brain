@@ -72,6 +72,10 @@ function metadataNamespace(item: unknown): string | undefined {
   return typeof namespace === "string" ? namespace : undefined;
 }
 
+function metadataDeletionTimestamp(item: unknown): string | undefined {
+  return nonEmptyString(asRecord(asRecord(item)?.metadata)?.deletionTimestamp);
+}
+
 function nonEmptyString(input: unknown): string | undefined {
   return typeof input === "string" && input.trim() !== ""
     ? input.trim()
@@ -286,6 +290,7 @@ export function dbResourceToSettingsData(
   const name = metadataName(db) ?? "unknown";
   const namespace = metadataNamespace(db) ?? options?.namespaceFallback ?? "";
   const uid = metadataUid(db);
+  const deletionTimestamp = metadataDeletionTimestamp(db);
   const engineKey = nonEmptyString(spec.engine);
   const telemetry = databaseTelemetryForResource({
     metricsLookup: options?.metricsLookup,
@@ -308,6 +313,7 @@ export function dbResourceToSettingsData(
   const backupPolicy = databaseBackupPolicyFromSpec(spec);
 
   const states: DatabaseNodeStates = {
+    ...(deletionTimestamp === undefined ? {} : { deletionTimestamp }),
     displayEngine: displayEngineFromKey(engineKey),
     ...(engineKey === undefined
       ? {}

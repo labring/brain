@@ -61,6 +61,7 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
 test("Project Runtime parses DB resources into app-owned read-side facts", () => {
   const rawDb = {
     metadata: {
+      deletionTimestamp: "2026-07-06T10:00:00Z",
       labels: { region: "192.168.12.53.nip.io" },
       name: "postgres",
       namespace: "default",
@@ -98,6 +99,7 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
         private: { value: "postgres://private" },
         public: { enabled: true, value: "postgres://public" },
       },
+      deletionTimestamp: "2026-07-06T10:00:00Z",
       displayName: "postgres",
       engine: { displayName: "PostgreSQL", key: "postgresql" },
       key: "DB:default:postgres",
@@ -449,6 +451,7 @@ test("Project Runtime commits one DB update without notifying unrelated DB model
       items: [
         {
           metadata: {
+            deletionTimestamp: "2026-07-06T10:00:00Z",
             labels: { region: "192.168.12.53.nip.io" },
             name: "postgres",
             namespace: "default",
@@ -597,6 +600,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
       items: [
         {
           metadata: {
+            deletionTimestamp: "2026-07-06T10:00:00Z",
             labels: { region: "192.168.12.53.nip.io" },
             name: "postgres",
             namespace: "default",
@@ -649,6 +653,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
     metadata: { labels: { region: "192.168.12.53.nip.io" } },
     states: {
       displayEngine: "PostgreSQL",
+      deletionTimestamp: "2026-07-06T10:00:00Z",
       engineKey: "postgresql",
       iconUrl: databaseModel.states.iconUrl,
       metrics: {},

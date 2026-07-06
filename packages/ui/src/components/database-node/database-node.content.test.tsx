@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { DatabaseNodeContent } from "./database-node.content";
+import {
+  DatabaseNodeContent,
+  DatabaseNodeDeletionDelayHint,
+} from "./database-node.content";
 import { DatabaseNodeRoot } from "./database-node.root";
 
 const DATABASE_STATES = {
@@ -21,6 +24,10 @@ const RAW_CONNECTION_TITLE_RE =
   /title="postgresql:\/\/alice:s3cr3t@db-main-postgresql.ns-a.svc:5432\/postgres"/;
 const PARTIAL_CONNECTION_MASK_RE =
   /postgresql:\/\/a\*\*\*\*\*\*\*:\*\*\*\*\*\*\*@db-main-postgresql/;
+const DELETION_DELAY_HINT_RE =
+  /Your database is being deleted\. This may take a few minutes\./;
+const DELETION_DELAY_HINT_SLOT_RE =
+  /data-slot="database-node-deletion-delay-hint"/;
 
 test("DatabaseNodeContent omits lifecycle menu without a family", () => {
   const html = renderToStaticMarkup(
@@ -122,4 +129,11 @@ test("DatabaseNodeContent hides connection strings until the row is hovered", ()
   assert.doesNotMatch(html, FIXED_CONNECTION_MASK_TITLE_RE);
   assert.doesNotMatch(html, RAW_CONNECTION_TITLE_RE);
   assert.doesNotMatch(html, PARTIAL_CONNECTION_MASK_RE);
+});
+
+test("DatabaseNodeDeletionDelayHint renders the Figma-specified message", () => {
+  const html = renderToStaticMarkup(<DatabaseNodeDeletionDelayHint />);
+
+  assert.match(html, DELETION_DELAY_HINT_SLOT_RE);
+  assert.match(html, DELETION_DELAY_HINT_RE);
 });
