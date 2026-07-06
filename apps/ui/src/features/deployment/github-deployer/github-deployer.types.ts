@@ -77,6 +77,7 @@ export interface GithubDeployerResolvedActions {
 export interface GithubDeployerValue {
   actions: GithubDeployerResolvedActions;
   requestDeploy: (repo: GithubDeployerRepo) => void;
+  requestDisconnect: () => void;
   selectedRepoId: string;
   setSelectedRepoId: (id: string) => void;
   states: GithubDeployerStates;
