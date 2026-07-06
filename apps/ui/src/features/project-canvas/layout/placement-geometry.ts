@@ -6,7 +6,14 @@ export const CANVAS_NODE_FALLBACK_HEIGHT = 62;
 export const CANVAS_NODE_FOOTPRINT_WIDTH = CANVAS_NODE_FALLBACK_WIDTH;
 export const CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED =
   CANVAS_NODE_FALLBACK_HEIGHT;
-export const CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED = 220;
+/**
+ * Pre-measurement fallback only: card heights are content-driven, so real
+ * heights come from `node.measured` and must win over this constant. Sized
+ * above the tallest known expanded card so fallback placement never overlaps.
+ */
+export const CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED = 300;
+/** Minimum vertical clearance between stacked cards inside a cluster. */
+export const CANVAS_NODE_VERTICAL_GAP = 60;
 export const COLUMN_STEP = 340;
 export const ROW_STEP = 280;
 export const PUBLIC_ACCESS_AP_LEFT_OFFSET = COLUMN_STEP;
@@ -43,22 +50,6 @@ export function rectFromPosition(
 
 export function singleNodeFootprint(height: number): PlacementFootprint {
   return { rects: [rectFromPosition({ x: 0, y: 0 }, height)] };
-}
-
-export function apPublicAccessFootprint(
-  apHeight: number,
-  publicAccessHeight: number
-): PlacementFootprint {
-  return {
-    rects: [
-      {
-        height: Math.max(apHeight, publicAccessHeight),
-        width: PUBLIC_ACCESS_AP_LEFT_OFFSET + CANVAS_NODE_FOOTPRINT_WIDTH,
-        x: 0,
-        y: 0,
-      },
-    ],
-  };
 }
 
 export function boundsFromRect(rect: CanvasNodeRect): CanvasRectBounds {

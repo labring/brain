@@ -42,6 +42,18 @@ test("resource canvas nodes default to expanded footprint height", () => {
   );
 });
 
+test("measured height wins over the expansion fallback", () => {
+  const node: Node = {
+    data: {},
+    id: "ap-api",
+    measured: { height: 123, width: 272 },
+    position: { x: 0, y: 0 },
+    type: CANVAS_CONTAINER_NODE_TYPE,
+  };
+
+  assert.equal(nodeFootprintHeight(node), 123);
+});
+
 test("non-resource projection nodes keep collapsed footprint by default", () => {
   const node: Node = {
     data: { taskId: "task-1" },

@@ -313,24 +313,44 @@ function savedPositionByOwner(
   );
 }
 
+function renderedNodeByOwnerKey(nodes: readonly Node[]): Map<string, Node> {
+  const byOwnerKey = new Map<string, Node>();
+  for (const node of nodes) {
+    const owner = canvasPlacementOwnerFromNode(node);
+    if (owner !== undefined) {
+      byOwnerKey.set(canvasPlacementOwnerKey(owner), node);
+    }
+  }
+  return byOwnerKey;
+}
+
 function occupancyLayoutNodes(input: {
   layout: CanvasLayoutDocument | undefined;
-  nodes: readonly Node[];
+  renderedByOwnerKey: ReadonlyMap<string, Node>;
   retainedLayoutOwnerKeys?: ReadonlySet<string>;
 }): CanvasLayoutNode[] {
-  const renderedOwnerKeys = new Set(
-    input.nodes.flatMap((node) => {
-      const owner = canvasPlacementOwnerFromNode(node);
-      return owner === undefined ? [] : [canvasPlacementOwnerKey(owner)];
-    })
-  );
   return (input.layout?.nodes ?? []).filter((node) => {
     const ownerKey = canvasLayoutNodeKey(node);
-    if (renderedOwnerKeys.has(ownerKey)) {
+    if (input.renderedByOwnerKey.has(ownerKey)) {
       return true;
     }
     return input.retainedLayoutOwnerKeys?.has(ownerKey) === true;
   });
+}
+
+/**
+ * Occupancy height for an already-placed layout entry: the rendered card is
+ * the truth (its measured height), so ghost entries without a rendered node
+ * are the only ones sized by the layout entry's expansion constants.
+ */
+function occupiedLayoutNodeHeight(
+  node: CanvasLayoutNode,
+  renderedByOwnerKey: ReadonlyMap<string, Node>
+): number {
+  const rendered = renderedByOwnerKey.get(canvasLayoutNodeKey(node));
+  return rendered === undefined
+    ? layoutNodeFootprintHeight(node)
+    : nodeFootprintHeight(rendered);
 }
 
 function placementCandidateKey(input: {
@@ -358,14 +378,18 @@ export function placeCanvasNodesWithLayout({
   const savedByOwner = savedPositionByOwner(layout);
   const positionByRef = new Map(savedByRef);
   const anchorIndex = createPlacementAnchorIndex(connections);
+  const renderedByOwnerKey = renderedNodeByOwnerKey(nodes);
   const occupiedLayoutNodes = occupancyLayoutNodes({
     layout,
-    nodes,
+    renderedByOwnerKey,
     retainedLayoutOwnerKeys,
   });
   const occupancy = new PlacementOccupancy(
     occupiedLayoutNodes.map((node) =>
-      rectFromPosition(node.position, layoutNodeFootprintHeight(node))
+      rectFromPosition(
+        node.position,
+        occupiedLayoutNodeHeight(node, renderedByOwnerKey)
+      )
     )
   );
   const placedNodes = [...nodes];

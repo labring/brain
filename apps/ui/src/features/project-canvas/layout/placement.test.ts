@@ -24,6 +24,12 @@ import type {
   CanvasLayoutResourceKind,
 } from "./types";
 
+/**
+ * Default measured card size for tests: shorter than ROW_STEP so single-row
+ * grid rhythm holds; tall-card tests override the height explicitly.
+ */
+const MEASURED_CARD = { height: 220, width: 272 };
+
 function apNode(name: string, uid?: string): Node {
   return {
     data: {
@@ -34,6 +40,7 @@ function apNode(name: string, uid?: string): Node {
       },
     },
     id: `ap-${name}`,
+    measured: MEASURED_CARD,
     position: { x: 999, y: 999 },
     type: CANVAS_CONTAINER_NODE_TYPE,
   };
@@ -51,6 +58,7 @@ function entryNode(name: string, apRef: string): Node {
       targets: [],
     },
     id: `entry-${name}`,
+    measured: MEASURED_CARD,
     position: { x: 999, y: 999 },
     type: CANVAS_ENTRY_NODE_TYPE,
   };
@@ -67,6 +75,7 @@ function dbNode(name: string): Node {
       },
     },
     id: `db-${name}`,
+    measured: MEASURED_CARD,
     position: { x: 999, y: 999 },
     type: CANVAS_DATABASE_NODE_TYPE,
   };
@@ -312,7 +321,12 @@ test("uses AABB rectangles from saved and same-run placed nodes during row-major
 
   const nodes = placeCanvasNodes({
     layout,
-    nodes: [apNode("a-api"), apNode("b-api")],
+    nodes: [
+      apNode("saved-origin"),
+      dbNode("saved-overlap"),
+      apNode("a-api"),
+      apNode("b-api"),
+    ],
     retainedLayoutOwnerKeys: new Set([
       canvasLayoutNodeKey(savedOrigin),
       canvasLayoutNodeKey(savedOverlap),
@@ -335,9 +349,14 @@ test("wraps unanchored global placement before the canvas becomes too wide", () 
     version: 1,
   };
 
-  const [node] = placeCanvasNodes({
+  const nodes = placeCanvasNodes({
     layout,
-    nodes: [dbNode("postgres")],
+    nodes: [
+      apNode("first"),
+      apNode("second"),
+      apNode("third"),
+      dbNode("postgres"),
+    ],
     retainedLayoutOwnerKeys: new Set([
       canvasLayoutNodeKey(first),
       canvasLayoutNodeKey(second),
@@ -345,7 +364,7 @@ test("wraps unanchored global placement before the canvas becomes too wide", () 
     ]),
   });
 
-  assert.deepEqual(node?.position, { x: 0, y: 280 });
+  assert.deepEqual(positionById(nodes).get("db-postgres"), { x: 0, y: 280 });
 });
 
 test("places a new AP and PublicAccess as one combined footprint", () => {
@@ -567,6 +586,89 @@ test("stacks hub cluster DBs vertically beside their AP", () => {
   assert.deepEqual(positions.get("db-d1-db"), { x: 340, y: 0 });
   assert.deepEqual(positions.get("db-d2-db"), { x: 340, y: 280 });
   assert.deepEqual(positions.get("db-d3-db"), { x: 340, y: 560 });
+});
+
+test("stretches cluster row pitch to clear the tallest measured card", () => {
+  const tallDb = (name: string): Node => ({
+    ...dbNode(name),
+    measured: { height: 285, width: 272 },
+  });
+  const nodes = placeCanvasNodes({
+    connections: [
+      apToDbConnection("api", "d1-db"),
+      apToDbConnection("api", "d2-db"),
+    ],
+    layout: undefined,
+    nodes: [apNode("api"), tallDb("d1-db"), tallDb("d2-db")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("db-d1-db"), { x: 340, y: 0 });
+  // 285px card + 60px clearance, not the 280px default pitch.
+  assert.deepEqual(positions.get("db-d2-db"), { x: 340, y: 345 });
+});
+
+test("packs regenerated shelves under tall measured cards with the minimum gap", () => {
+  const tallDb = (name: string): Node => ({
+    ...dbNode(name),
+    measured: { height: 285, width: 272 },
+  });
+  const nodes = placeCanvasNodes({
+    layout: undefined,
+    nodes: [tallDb("d1-db"), tallDb("d2-db"), tallDb("d3-db")],
+  });
+  const positions = positionById(nodes);
+
+  assert.deepEqual(positions.get("db-d1-db"), { x: 0, y: 0 });
+  assert.deepEqual(positions.get("db-d2-db"), { x: 340, y: 0 });
+  // The second shelf clears the 285px cards by 60px, not a 280px row step.
+  assert.deepEqual(positions.get("db-d3-db"), { x: 0, y: 345 });
+});
+
+test("uses the conservative expanded fallback before nodes are measured", () => {
+  const unmeasured = ({ measured: _measured, ...node }: Node): Node => node;
+  const nodes = placeCanvasNodes({
+    connections: [
+      apToDbConnection("api", "d1-db"),
+      apToDbConnection("api", "d2-db"),
+    ],
+    layout: undefined,
+    nodes: [
+      unmeasured(apNode("api")),
+      unmeasured(dbNode("d1-db")),
+      unmeasured(dbNode("d2-db")),
+    ],
+  });
+  const positions = positionById(nodes);
+
+  // 300px expanded fallback + 60px clearance.
+  assert.deepEqual(positions.get("db-d2-db"), { x: 340, y: 360 });
+});
+
+test("avoids the measured bounds of tall saved cards during incremental placement", () => {
+  const first = layoutResourceNode("DB", "first", { x: 0, y: 0 });
+  const third = layoutResourceNode("AP", "third", { x: 680, y: 0 });
+  const layout: CanvasLayoutDocument = {
+    namespace: "default",
+    nodes: [first, third],
+    projectId: "project-uid",
+    version: 1,
+  };
+
+  const nodes = placeCanvasNodes({
+    layout,
+    nodes: [
+      { ...dbNode("first"), measured: { height: 285, width: 272 } },
+      apNode("third"),
+      apNode("new-api"),
+    ],
+  });
+  const positions = positionById(nodes);
+
+  // Row 1 at y=280 would cut into the 285px-tall saved card; the layout
+  // entry alone (expansion constants) would have let the new node in.
+  assert.notDeepEqual(positions.get("ap-new-api"), { x: 0, y: 280 });
+  assert.deepEqual(positions.get("ap-new-api"), { x: 1020, y: 0 });
 });
 
 test("keeps foreign nodes out of cluster bounding-box gaps", () => {

@@ -56,7 +56,20 @@ export function layoutNodeFootprintHeight(node: CanvasLayoutNode): number {
     : CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED;
 }
 
+/**
+ * Card heights are content-driven, so the measured render is the footprint
+ * truth; the expansion-state constants only cover nodes that have not been
+ * measured yet (first layout before render).
+ */
 export function nodeFootprintHeight(node: Node): number {
+  const measured = node.measured?.height;
+  if (
+    typeof measured === "number" &&
+    Number.isFinite(measured) &&
+    measured > 0
+  ) {
+    return measured;
+  }
   return isNodeExpanded(node)
     ? CANVAS_NODE_FOOTPRINT_HEIGHT_EXPANDED
     : CANVAS_NODE_FOOTPRINT_HEIGHT_COLLAPSED;

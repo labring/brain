@@ -596,6 +596,10 @@ A temporary canvas interaction created when a user drags a line between canvas n
 
 The per-node expanded or collapsed presentation state of a canvas node card.
 
+### Canvas Node Footprint
+
+The rectangle a canvas node occupies in placement decisions. Card heights are content-driven, so a footprint's size comes from the node's rendered card; conservative expansion-state estimates stand in only for cards that have not been rendered yet.
+
 ### Canvas Node Stack Order
 
 The per-node visual layering order used when canvas node cards overlap.

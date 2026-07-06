@@ -17,6 +17,9 @@ import {
 import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "./placement-owner";
 import type { CanvasLayoutPosition } from "./types";
 
+/** Shorter than ROW_STEP so the legacy single-row grid rhythm holds. */
+const MEASURED_CARD = { height: 220, width: 272 };
+
 function apNode(
   name: string,
   position: Node["position"],
@@ -31,6 +34,7 @@ function apNode(
       },
     },
     id: `ap-${name}`,
+    measured: MEASURED_CARD,
     position,
     type: CANVAS_CONTAINER_NODE_TYPE,
   };
@@ -47,6 +51,7 @@ function dbNode(name: string, position: Node["position"]): Node {
       },
     },
     id: `db-${name}`,
+    measured: MEASURED_CARD,
     position,
     type: CANVAS_DATABASE_NODE_TYPE,
   };
@@ -80,6 +85,7 @@ function entryNode(apName: string, position: Node["position"]): Node {
       targets: [],
     },
     id: `entry-${apName}`,
+    measured: MEASURED_CARD,
     position,
     type: CANVAS_ENTRY_NODE_TYPE,
   };

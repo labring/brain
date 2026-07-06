@@ -4,6 +4,7 @@ import type { CanvasDetectedConnection } from "../flow/detected-connections";
 import { canvasResourceKey } from "../nodes/resource-identity";
 import {
   CANVAS_NODE_FOOTPRINT_WIDTH,
+  CANVAS_NODE_VERTICAL_GAP,
   COLUMN_STEP,
   type PlacementFootprint,
   PUBLIC_ACCESS_AP_LEFT_OFFSET,
@@ -268,6 +269,15 @@ function clusterUnit(
   );
   const dbs = sorted.filter((member) => member.ref.kind === "DB");
 
+  // Rows stay uniform so barycenter assignment keeps its meaning; the pitch
+  // stretches to the tallest member because card heights are content-driven
+  // and the tallest card must clear the row below it.
+  const rowPitch = Math.max(
+    ROW_STEP,
+    Math.max(...sorted.map((member) => nodeFootprintHeight(member.node))) +
+      CANVAS_NODE_VERTICAL_GAP
+  );
+
   const apRowByKey = new Map<string, number>();
   aps.forEach((ap, row) => {
     apRowByKey.set(canvasResourceKey(ap.ref), row);
@@ -279,13 +289,13 @@ function clusterUnit(
 
   const relativePositions = new Map<number, CanvasLayoutPosition>();
   aps.forEach((ap, row) => {
-    relativePositions.set(ap.index, { x: apColumnX, y: row * ROW_STEP });
+    relativePositions.set(ap.index, { x: apColumnX, y: row * rowPitch });
   });
   for (const publicAccess of publicAccesses) {
     const row = apRowByKey.get(apKeyForPublicAccessRef(publicAccess.ref)) ?? 0;
     relativePositions.set(publicAccess.index, {
       x: apColumnX - PUBLIC_ACCESS_AP_LEFT_OFFSET,
-      y: row * ROW_STEP,
+      y: row * rowPitch,
     });
   }
 
@@ -307,7 +317,7 @@ function clusterUnit(
   for (const { barycenter, db } of orderedDbs) {
     const row = Math.max(nextOpenDbRow, Math.round(barycenter));
     nextOpenDbRow = row + 1;
-    relativePositions.set(db.index, { x: dbColumnX, y: row * ROW_STEP });
+    relativePositions.set(db.index, { x: dbColumnX, y: row * rowPitch });
   }
 
   let width = CANVAS_NODE_FOOTPRINT_WIDTH;
