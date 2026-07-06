@@ -32,6 +32,12 @@ When the Last Viewed Unpinned Project becomes a Pinned Project, it leaves this s
 
 _Avoid_: Current Project Shortcut, auto-pinned Project, recent Project, temporary Pinned Project, last viewed Pinned Project.
 
+### Browser History Swipe Guard
+
+A product chrome interaction boundary that prevents touchpad horizontal overscroll inside the product from becoming browser back or forward navigation. It is a product-level navigation safety rule, not a Project Canvas gesture, Canvas Viewport movement, or a replacement for explicit browser history controls.
+
+_Avoid_: Canvas swipe guard, page swipe gesture, touchpad pagination.
+
 ### Project Shortcut Icon
 
 A presentation-only icon shown on a Project navigation shortcut. It may use a representative workload inside the Project as its visual source, but it is not Project identity, Project Aggregate Status, a persisted Project field, or a workload lifecycle state.

@@ -11,7 +11,7 @@ import AppSidebar from "@/components/app-sidebar";
  */
 export function AppShellChrome({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-svh max-h-svh min-h-0 overflow-hidden">
+    <div className="flex h-svh max-h-svh min-h-0 overflow-hidden overscroll-x-none">
       {children}
     </div>
   );
@@ -27,13 +27,13 @@ export function AppShellView({
   return (
     <main
       className={cn(
-        "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+        "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-x-none",
         className
       )}
       {...rest}
     >
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-x-none">
           {children}
         </div>
       </div>
@@ -54,11 +54,11 @@ export function AppShellSolo({
   return (
     <div
       className={cn(
-        "flex h-svh max-h-svh min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
+        "flex h-svh max-h-svh min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden overscroll-x-none",
         className
       )}
     >
-      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto overscroll-x-none">
         {children}
       </div>
     </div>
