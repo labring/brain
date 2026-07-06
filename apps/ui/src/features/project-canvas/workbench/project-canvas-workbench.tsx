@@ -83,6 +83,7 @@ export function ProjectCanvasWorkbench({
               kubeconfig={kubeconfig}
               lifecycleActivity={projectCanvas.canvas.lifecycleActivityStore}
               meta={projectCanvas.canvas.meta}
+              onAutoLayout={projectCanvas.canvas.autoLayout}
               runtimeStore={projectCanvas.canvas.runtimeStore}
             />
           </Activity>

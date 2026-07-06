@@ -202,25 +202,13 @@ KubeBlocks Cluster => DB
 TemplateNative => user-visible resource type
 ```
 
-`TemplateNative` may exist only as an internal transient implementation detail
-during removal work. It must not be part of the product model, API contract,
-label contract, or user-visible canvas model.
+`TemplateNative` is removed and must not return to the product model, API
+contract, label contract, or user-visible canvas model.
 
-## Removed Contract
-
-The following labels are not product identity labels and must not be used for
-AP/DB discovery:
-
-```text
-brain.io/deployment-kind
-brain.io/resource-kind
-brain.io/app-name
-brain.io/db-name
-brain.io/resource-name
-```
-
-They may be removed or retained only as Brain bookkeeping labels. They do not
-define product type.
+The legacy labels `brain.io/deployment-kind`, `brain.io/resource-kind`,
+`brain.io/app-name`, `brain.io/db-name`, and `brain.io/resource-name` do not
+define product type and must not be used for AP/DB discovery. They may be
+removed or retained only as Brain bookkeeping labels.
 
 ## Compatibility
 
@@ -244,20 +232,3 @@ not a query-layer fallback case.
 Canvas should render template-produced APs and DBs through the normal AP and DB
 resource paths. It should not render template workloads through a separate
 TemplateNative product path.
-
-## Verification Requirements
-
-Before this ADR is considered implemented:
-
-- A template that produces an AP must make that AP visible through the normal AP
-  list API.
-- A template that produces a DB must make that DB visible through the normal DB
-  list API.
-- A template AP must support AP lifecycle operations through the normal AP
-  lifecycle API.
-- A template DB must support DB lifecycle operations through the normal DB
-  lifecycle API.
-- Canvas must show template APs and DBs as normal AP and DB nodes.
-- Canvas must not show a user-visible TemplateNative node.
-- Tests must reject `brain.io/deployment-kind=template` as an AP/DB discovery
-  mechanism.
