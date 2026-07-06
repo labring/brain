@@ -42,6 +42,17 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - Devbox runtime values
 - `imagePullSecret.create`
 
+Configure the GitHub App registration to match the UI origin:
+
+```text
+Setup URL: https://<ui-host>/api/callback/github
+Redirect on update: enabled
+Request user authorization (OAuth) during installation: disabled
+```
+
+`Redirect on update` is required so repository-selection changes return to Brain
+and the GitHub popup can close after users add or remove repositories.
+
 The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST` and `ui.env.DEVBOX_API_BASE_URL` are also derived from the platform cloud domain when left empty.
 
 Install or upgrade:

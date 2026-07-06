@@ -85,6 +85,25 @@ func applyTypedObjects(config *rest.Config, objects []runtime.Object, implicitNa
 			if _, err := clientset.AppsV1().Deployments(ns).Update(ctx, deployment, metav1.UpdateOptions{}); err != nil {
 				return err
 			}
+		case *appsv1.StatefulSet:
+			statefulSet := typed.DeepCopy()
+			ns := resolvedNamespace(statefulSet.Namespace, implicitNamespace)
+			statefulSet.Namespace = ns
+			statefulSet.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"}
+			existing, err := clientset.AppsV1().StatefulSets(ns).Get(ctx, statefulSet.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				if _, err := clientset.AppsV1().StatefulSets(ns).Create(ctx, statefulSet, metav1.CreateOptions{}); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			statefulSet.ResourceVersion = existing.ResourceVersion
+			if _, err := clientset.AppsV1().StatefulSets(ns).Update(ctx, statefulSet, metav1.UpdateOptions{}); err != nil {
+				return err
+			}
 		case *corev1.Service:
 			service := typed.DeepCopy()
 			ns := resolvedNamespace(service.Namespace, implicitNamespace)
@@ -136,7 +155,7 @@ func filterUntypedObjects(objects []runtime.Object) []runtime.Object {
 	filtered := make([]runtime.Object, 0, len(objects))
 	for _, object := range objects {
 		switch object.(type) {
-		case *appsv1.Deployment, *corev1.Service:
+		case *appsv1.Deployment, *appsv1.StatefulSet, *corev1.Service:
 			continue
 		default:
 			filtered = append(filtered, object)

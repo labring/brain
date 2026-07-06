@@ -15,36 +15,36 @@ The script is intentionally explicit:
 cd apps/ui
 
 bun scripts/brain-v1-import.mjs inventory \
-  --namespace <namespace> \
   --kubeconfig /path/to/kubeconfig \
   --context <context> \
-  --out .migration/brain-v1-<namespace>
+  --out .migration/brain-v1-all-namespaces
 
 bun scripts/brain-v1-import.mjs dry-run \
-  --inventory .migration/brain-v1-<namespace>/inventory.json \
-  --out .migration/brain-v1-<namespace>
+  --inventory .migration/brain-v1-all-namespaces/inventory.json \
+  --out .migration/brain-v1-all-namespaces
 ```
+
+Omit `--namespace` to scan every namespace visible to the kubeconfig/context. Add `--namespace <namespace>` when you want to limit the scan to one namespace.
 
 You can also skip the separate inventory file and let `dry-run` scan Kubernetes directly:
 
 ```bash
 bun scripts/brain-v1-import.mjs dry-run \
-  --namespace <namespace> \
   --kubeconfig /path/to/kubeconfig \
   --context <context> \
-  --out .migration/brain-v1-<namespace>
+  --out .migration/brain-v1-all-namespaces
 ```
 
 After reviewing the generated SQL and manifest:
 
 ```bash
 bun scripts/brain-v1-import.mjs apply \
-  --manifest .migration/brain-v1-<namespace>/migration-manifest.json \
+  --manifest .migration/brain-v1-all-namespaces/migration-manifest.json \
   --database-url "$DATABASE_URL" \
   --yes
 
 bun scripts/brain-v1-import.mjs rollback \
-  --manifest .migration/brain-v1-<namespace>/migration-manifest.json \
+  --manifest .migration/brain-v1-all-namespaces/migration-manifest.json \
   --database-url "$DATABASE_URL" \
   --yes
 ```

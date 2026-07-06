@@ -9,6 +9,18 @@ interface GithubReposResponse {
   repos: GithubDeployerRepo[];
 }
 
+export function githubReposSWRKey(input: {
+  kubeconfig: string;
+  namespace: string;
+  userId: string;
+}) {
+  const namespace = input.namespace.trim();
+  const userId = input.userId.trim();
+  return namespace !== "" && userId !== ""
+    ? (["github-user-repos", namespace, userId, input.kubeconfig] as const)
+    : null;
+}
+
 async function fetchRepos(
   namespace: string,
   kubeconfig: string,
@@ -38,10 +50,9 @@ export function useGithubRepos(input: {
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const userId = useAtomValue(desktopUserIdAtom).trim();
   const namespace = input.namespace?.trim() ?? "";
-  const swrKey =
-    input.isAuthorized && namespace !== "" && userId !== ""
-      ? (["github-user-repos", namespace, userId, kubeconfig] as const)
-      : null;
+  const swrKey = input.isAuthorized
+    ? githubReposSWRKey({ kubeconfig, namespace, userId })
+    : null;
 
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,

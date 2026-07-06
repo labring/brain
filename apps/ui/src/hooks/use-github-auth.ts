@@ -2,8 +2,9 @@
 
 import { useAtomValue } from "jotai";
 import { useCallback } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 
+import { githubReposSWRKey } from "@/hooks/use-github-repos";
 import {
   GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
   parseInstallNamespaceParam,
@@ -146,6 +147,7 @@ export function useGithubAuth(options?: {
   const namespace = useAtomValue(namespaceAtom).trim();
   const userId = useAtomValue(desktopUserIdAtom).trim();
   const canCheck = enabled && namespace !== "" && userId !== "";
+  const { mutate: mutateCache } = useSWRConfig();
   const swrKey = canCheck
     ? (["github-connection", namespace, userId] as const)
     : null;
@@ -192,6 +194,10 @@ export function useGithubAuth(options?: {
     };
     const refreshConnection = () => {
       mutate().catch(() => undefined);
+      const reposKey = githubReposSWRKey({ kubeconfig, namespace, userId });
+      if (reposKey != null) {
+        mutateCache(reposKey).catch(() => undefined);
+      }
     };
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) {
@@ -253,7 +259,7 @@ export function useGithubAuth(options?: {
         startError
       );
     });
-  }, [kubeconfig, mutate, namespace, userId]);
+  }, [kubeconfig, mutate, mutateCache, namespace, userId]);
 
   const disconnectGithubAuth = useCallback(async () => {
     if (!canCheck) {
