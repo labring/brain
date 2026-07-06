@@ -42,6 +42,8 @@ export type DeploymentTargetPipelineRequest =
   | {
       args?: Record<string, string>;
       kind: "template";
+      /** Arg keys whose values must never be persisted (ADR 0037). */
+      sensitiveKeys?: string[];
       target: DeploymentTarget;
       templateName: string;
     };
@@ -50,6 +52,7 @@ export interface DeploymentTaskCreateInput {
   actorUserId?: string;
   githubConnectionId?: string;
   namespace: string;
+  predecessorTaskId?: string;
   prompt?: string;
   runner: DeploymentTaskRunner;
   source: DeploymentTaskSource;
@@ -76,6 +79,8 @@ export interface DeploymentTargetPipelineOptions {
   existingProjects?: readonly ProjectExplorerProject[];
   githubConnectionId?: string;
   namespace: string;
+  /** Redeploy clone (ADR 0038): lineage + identity reuse on the server. */
+  predecessorTaskId?: string;
   request: DeploymentTargetPipelineRequest;
 }
 
@@ -270,6 +275,10 @@ function deploymentTaskForRequest(
         source: {
           args: request.args,
           kind: "template",
+          ...(request.sensitiveKeys == null ||
+          request.sensitiveKeys.length === 0
+            ? {}
+            : { sensitiveKeys: request.sensitiveKeys }),
           templateName,
         },
       };
@@ -295,6 +304,7 @@ export async function runDeploymentTargetPipeline(
     options.existingProjects ?? []
   );
   const taskInput = deploymentTaskForRequest(options.request);
+  const predecessorTaskId = options.predecessorTaskId?.trim();
   const task = await options.adapters.createDeploymentTask({
     ...taskInput,
     ...(options.request.kind === "github"
@@ -304,6 +314,7 @@ export async function runDeploymentTargetPipeline(
         }
       : {}),
     namespace: options.namespace,
+    ...(predecessorTaskId ? { predecessorTaskId } : {}),
     target,
   });
   const projectId =

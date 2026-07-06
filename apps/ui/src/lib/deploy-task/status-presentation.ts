@@ -57,17 +57,17 @@ export function deployTaskStatusHue(
 export function deployTaskStatusDotClass(status: DeployTaskStatus): string {
   switch (deployTaskStatusHue(status)) {
     case "blue":
-      return "bg-blue-300";
+      return "bg-blue-500";
     case "green":
-      return "bg-emerald-300";
+      return "bg-emerald-500";
     case "neutral":
-      return status === "cancelled" ? "bg-zinc-500" : "bg-zinc-300";
+      return "bg-muted-foreground/50";
     case "red":
-      return "bg-red-300";
+      return "bg-red-500";
     case "yellow":
-      return "bg-amber-300";
+      return "bg-amber-500";
     default:
-      return "bg-zinc-300";
+      return "bg-muted-foreground/50";
   }
 }
 
@@ -99,4 +99,22 @@ export function deployTaskIsCancelling(task: {
   status: DeployTaskStatus;
 }): boolean {
   return task.cancelRequestedAt != null && deployTaskIsCancellable(task.status);
+}
+
+/**
+ * Whether a redeploy would land on resources the task already created —
+ * the overwrite-warning trigger (US12). Conservative by design: recorded
+ * resource evidence counts, with no diff detection.
+ */
+export function deployTaskHasAppliedResources(task: {
+  artifactSummary?: {
+    appliedResources?: readonly unknown[] | null;
+    resources?: readonly unknown[] | null;
+  } | null;
+}): boolean {
+  const summary = task.artifactSummary;
+  return (
+    (summary?.appliedResources?.length ?? 0) > 0 ||
+    (summary?.resources?.length ?? 0) > 0
+  );
 }

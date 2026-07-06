@@ -21,6 +21,7 @@ import {
   Copy,
   LoaderCircle,
   PackageCheck,
+  PencilLine,
   Rocket,
   RotateCcw,
   X,
@@ -38,9 +39,16 @@ import {
   useState,
 } from "react";
 import {
+  editRedeploySurfaceKind,
+  useRedeployOverwriteGate,
+} from "@/features/deployment/deployment-task-redeploy";
+import {
+  type DeployTaskStatusHue,
+  deployTaskHasAppliedResources,
   deployTaskIsCancellable,
   deployTaskIsCancelling,
   deployTaskIsRedeployable,
+  deployTaskStatusHue,
 } from "@/lib/deploy-task/status-presentation";
 import type {
   DeploymentResultResourceCard,
@@ -67,32 +75,35 @@ interface DeploymentTaskTimelinePaneProps {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
+  /** Opens the matching deployment pane prefilled from this task (US10). */
+  onEditRedeploy?: (task: DeployTaskDTO) => void;
   taskId: string;
 }
 
-type TimelineStatus =
+type StepOrCardStatus =
   | DeploymentResultResourceCardStatus
-  | DeploymentTimelineStepStatus
-  | DeployTaskStatus;
+  | DeploymentTimelineStepStatus;
 
-type StatusHue = "blue" | "green" | "neutral" | "red" | "yellow";
+type StatusHue = DeployTaskStatusHue;
 
-function statusHue(status: TimelineStatus): StatusHue {
+/**
+ * Task statuses take their hue from the shared presentation module; steps
+ * share its semantics (running is progress, so blue). Result resource cards
+ * differ on one point: a running resource is up — success, not progress.
+ */
+function stepStatusHue(status: StepOrCardStatus): StatusHue {
   switch (status) {
     case "completed":
-    case "running":
       return "green";
-    case "applying":
     case "creating":
     case "pending":
-    case "queued":
+    case "running":
       return "blue";
     case "blocked":
     case "unknown":
       return "yellow";
     case "failed":
       return "red";
-    case "cancelled":
     case "skipped":
       return "neutral";
     default:
@@ -100,20 +111,26 @@ function statusHue(status: TimelineStatus): StatusHue {
   }
 }
 
+function resourceCardStatusHue(
+  status: DeploymentResultResourceCardStatus
+): StatusHue {
+  return status === "running" ? "green" : stepStatusHue(status);
+}
+
 const STATUS_DOT_BG: Record<StatusHue, string> = {
   blue: "bg-blue-500",
-  green: "bg-green-500",
+  green: "bg-emerald-500",
   neutral: "bg-muted-foreground/50",
   red: "bg-red-500",
-  yellow: "bg-yellow-500",
+  yellow: "bg-amber-500",
 };
 
 const STATUS_ICON_TEXT: Record<StatusHue, string> = {
   blue: "text-blue-500",
-  green: "text-green-500",
+  green: "text-emerald-500",
   neutral: "text-muted-foreground",
   red: "text-red-500",
-  yellow: "text-yellow-500",
+  yellow: "text-amber-500",
 };
 
 type StepIconStatus =
@@ -124,7 +141,7 @@ type StepIconStatus =
   | "unknown";
 
 function stepStatusUsesDot(
-  status: DeploymentResultResourceCardStatus | DeploymentTimelineStepStatus
+  status: StepOrCardStatus
 ): status is "creating" | "pending" | "running" {
   return status === "creating" || status === "pending" || status === "running";
 }
@@ -171,12 +188,8 @@ function StatusPulseDot({
   );
 }
 
-function StatusMarker({
-  status,
-}: {
-  status: DeploymentResultResourceCardStatus | DeploymentTimelineStepStatus;
-}) {
-  const hue = statusHue(status);
+function StatusMarker({ status }: { status: StepOrCardStatus }) {
+  const hue = stepStatusHue(status);
   if (stepStatusUsesDot(status)) {
     return (
       <span className="relative flex size-3.5 shrink-0 items-center justify-center">
@@ -203,7 +216,7 @@ function ResourceStatusDot({
 }: {
   status: DeploymentResultResourceCardStatus;
 }) {
-  const hue = statusHue(status);
+  const hue = resourceCardStatusHue(status);
   return (
     <span
       aria-hidden
@@ -215,7 +228,7 @@ function ResourceStatusDot({
 }
 
 function TaskStatusDot({ status }: { status: DeployTaskStatus }) {
-  const hue = statusHue(status);
+  const hue = deployTaskStatusHue(status);
   return (
     <span
       aria-hidden
@@ -1083,10 +1096,12 @@ function DeploymentTaskCancelDialog({
 export function DeploymentTaskTimelineActions({
   kubeconfig,
   namespace,
+  onEditRedeploy,
   task,
 }: {
   kubeconfig: string;
   namespace: string;
+  onEditRedeploy?: (task: DeployTaskDTO) => void;
   task: DeployTaskDTO;
 }) {
   const actions = useDeploymentTaskActions({ kubeconfig, namespace });
@@ -1096,6 +1111,13 @@ export function DeploymentTaskTimelineActions({
   const cancelling =
     deployTaskIsCancelling(task) || actions.cancelPendingTaskIds.has(task.id);
   const redeployPending = actions.redeployPendingTaskIds.has(task.id);
+  const overwriteGate = useRedeployOverwriteGate(
+    deployTaskHasAppliedResources(task)
+  );
+  const editable =
+    redeployable &&
+    onEditRedeploy != null &&
+    editRedeploySurfaceKind(task.source.kind) != null;
   return (
     <div
       className="flex items-center justify-end gap-2"
@@ -1134,11 +1156,26 @@ export function DeploymentTaskTimelineActions({
           onOpenChange={setCancelConfirmOpen}
         />
       ) : null}
+      {editable ? (
+        <AppButton
+          disabled={redeployPending}
+          onClick={() => {
+            onEditRedeploy(task);
+          }}
+          type="button"
+          variant="secondary"
+        >
+          <PencilLine aria-hidden data-icon="inline-start" />
+          Edit & Redeploy
+        </AppButton>
+      ) : null}
       {redeployable ? (
         <AppButton
           disabled={redeployPending}
           onClick={() => {
-            actions.redeploy(task.id).catch(() => undefined);
+            overwriteGate.gate(() => {
+              actions.redeploy(task.id).catch(() => undefined);
+            });
           }}
           type="button"
           variant="secondary"
@@ -1160,6 +1197,7 @@ export function DeploymentTaskTimelineActions({
           )}
         </AppButton>
       ) : null}
+      {overwriteGate.dialog}
     </div>
   );
 }
@@ -1168,6 +1206,7 @@ export function DeploymentTaskTimelinePane({
   kubeconfig,
   namespace,
   onClose,
+  onEditRedeploy,
   taskId,
 }: DeploymentTaskTimelinePaneProps) {
   const timeline = useDeploymentTaskTimeline({
@@ -1214,6 +1253,7 @@ export function DeploymentTaskTimelinePane({
         <DeploymentTaskTimelineActions
           kubeconfig={kubeconfig}
           namespace={namespace}
+          onEditRedeploy={onEditRedeploy}
           task={task}
         />
       )}

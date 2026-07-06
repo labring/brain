@@ -160,6 +160,7 @@ export function DatabaseDeployer({
   databaseOptions,
   deployLabel = "Deploy",
   emptyMessage = "No database engines are available.",
+  initialSettings,
   onDeploy,
 }: {
   busy?: boolean;
@@ -167,6 +168,8 @@ export function DatabaseDeployer({
   databaseOptions: readonly DatabaseDeploymentChoice[];
   deployLabel?: string;
   emptyMessage?: string;
+  /** Prefill for edited redeploys (US10): predecessor source values. */
+  initialSettings?: Partial<DatabaseDeploymentSettings>;
   onDeploy?: (
     settings: DatabaseDeploymentSettings,
     choice: DatabaseDeploymentChoice
@@ -176,10 +179,26 @@ export function DatabaseDeployer({
     () => defaultDatabaseId(databaseOptions),
     [databaseOptions]
   );
-  const [databaseId, setDatabaseId] = useState(initialDatabaseId);
-  const [instancePreset, setInstancePreset] =
-    useState<DatabaseInstancePreset>("xs");
-  const [replicas, setReplicas] = useState("1");
+  const [databaseId, setDatabaseId] = useState(
+    initialSettings?.databaseId?.trim() || initialDatabaseId
+  );
+  const [instancePreset, setInstancePreset] = useState<DatabaseInstancePreset>(
+    () =>
+      INSTANCE_PRESETS.some(
+        (preset) => preset.id === initialSettings?.instancePreset
+      ) && initialSettings?.instancePreset != null
+        ? initialSettings.instancePreset
+        : "xs"
+  );
+  const [replicas, setReplicas] = useState(() => {
+    const initial = initialSettings?.replicas;
+    return Number.isInteger(initial) &&
+      initial != null &&
+      initial >= 1 &&
+      initial <= 10
+      ? String(initial)
+      : "1";
+  });
 
   useEffect(() => {
     setDatabaseId((current) =>

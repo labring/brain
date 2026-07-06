@@ -40,7 +40,10 @@ import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { childResourceName } from "@/lib/project-child-resource-name";
 import { createProject, getProject } from "@/lib/project-persistence/projects";
 import { applyRenderedTemplateDeployment } from "@/lib/template-k8s-apply";
-import { deployTemplateInstance } from "@/lib/template-provider-core";
+import {
+  deployTemplateInstance,
+  getTemplateSource,
+} from "@/lib/template-provider-core";
 
 import {
   blockingInputsFromDeploymentPlan,
@@ -82,10 +85,13 @@ import {
 } from "./runner-writes";
 import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
 import type {
+  DeploymentTaskDeploymentPlan,
   DeployTaskArtifactSummary,
   DeployTaskEventPayload,
   DeployTaskRow,
 } from "./schema";
+import { artifactSummaryWithScrubbedYamls } from "./scrub-secrets";
+import { sensitiveArgValues, withoutSensitiveArgs } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
 import {
   appendCardEvent,
@@ -133,6 +139,12 @@ const TEMPLATE_CLEANUP_KINDS = [
 
 export interface StartDeployTaskRunnerInput {
   encodedKubeconfig?: string;
+  /**
+   * Full create-time template args from the credentialed request (ADR
+   * 0037): the persisted row holds the stripped copy, so sensitive values
+   * only exist here, in process memory, for the launched run.
+   */
+  sourceArgValues?: Record<string, string>;
   submittedInputValues?: Record<string, unknown>;
   taskId: string;
 }
@@ -337,6 +349,7 @@ function brainProductPath(kind: string): string {
 
 async function applyBrainManifestWithKubeconfig(input: {
   kubeconfig: string;
+  taskId: string;
   yaml: string;
 }): Promise<string> {
   const YAML = await import("yaml");
@@ -351,6 +364,9 @@ async function applyBrainManifestWithKubeconfig(input: {
     "Content-Type": "application/json",
   };
   for (const doc of docs) {
+    // The direct runner stops between resource applications (ADR 0038): a
+    // cancel observed here leaves later documents unapplied.
+    throwIfDeployTaskAborted(input.taskId);
     if (doc == null || typeof doc !== "object" || Array.isArray(doc)) {
       throw new Error("Brain product manifest must be a YAML object.");
     }
@@ -465,6 +481,7 @@ async function applyDeploymentArtifact(input: {
   });
   const notes = await applyBrainManifestWithKubeconfig({
     kubeconfig: input.kubeconfig,
+    taskId: input.task.id,
     yaml: prepared.yaml,
   });
   return {
@@ -951,17 +968,15 @@ function generateDirectArtifact(input: {
 }
 
 async function generateTemplateArtifact(input: {
+  /** Full args, memory-merged — never read from the stripped row copy. */
+  args: Record<string, string>;
   encodedKubeconfig: string;
   instanceName: string;
   projectId: string;
-  task: DeployTaskRow;
   templateName: string;
 }): Promise<DeploymentArtifact> {
-  if (input.task.source.kind !== "template") {
-    throw new Error("Template runner requires a template source.");
-  }
   const deployed = await deployTemplateInstance({
-    args: input.task.source.args,
+    args: input.args,
     encodedKubeconfig: input.encodedKubeconfig,
     extraLabels: templateDeploymentExtraLabels({
       instanceName: input.instanceName,
@@ -1621,6 +1636,8 @@ async function completeTaskWithArtifact(input: {
   githubToken?: string;
   kubeconfig: string;
   outputJson?: Record<string, unknown>;
+  /** Sensitive arg values to scrub from persisted rendered YAML (ADR 0037). */
+  sensitiveValues?: string[];
   task: DeployTaskRow;
 }) {
   await deployTaskCheckpoint(input.task.id);
@@ -1662,9 +1679,15 @@ async function completeTaskWithArtifact(input: {
     });
   }
 
+  // The scrubbed copy is what every persisted form gets — the row summary
+  // and the completion event payload alike (ADR 0037 row-level contract).
+  const persistedSummary = artifactSummaryWithScrubbedYamls(
+    applied.artifactSummary,
+    input.sensitiveValues ?? []
+  );
   await updateDeployTaskState(input.task.id, {
     artifactSummary: {
-      ...applied.artifactSummary,
+      ...persistedSummary,
       ...(input.artifactSummaryExtras ?? {}),
       notes: applied.notes,
       ...(input.outputJson === undefined
@@ -1675,9 +1698,7 @@ async function completeTaskWithArtifact(input: {
     },
   });
 
-  const resultCards = resultResourceCardsFromArtifactSummary(
-    applied.artifactSummary
-  );
+  const resultCards = resultResourceCardsFromArtifactSummary(persistedSummary);
   for (const card of resultCards) {
     await upsertResultTimelineCard({
       card,
@@ -1712,7 +1733,7 @@ async function completeTaskWithArtifact(input: {
   await deployTaskComplete(input.task.id, {
     kind: "deployment_task.completed",
     message: input.completionRecordMessage ?? "Deployment task completed.",
-    payload: { artifactSummary: applied.artifactSummary },
+    payload: { artifactSummary: persistedSummary },
     phase: "completed",
   });
 }
@@ -1773,15 +1794,35 @@ function deploymentPlanWithPersistableArgs<
     inputs: { key: string; sensitive?: boolean; type?: string }[];
   },
 >(plan: T, args: Record<string, string>): T {
-  const sensitiveKeys = new Set(
-    plan.inputs
-      .filter((item) => item.sensitive === true || item.type === "secret")
-      .map((item) => item.key)
-  );
-  const safeArgs = Object.fromEntries(
-    Object.entries(args).filter(([key]) => !sensitiveKeys.has(key))
-  );
-  return { ...plan, args: safeArgs };
+  return { ...plan, args: withoutSensitiveArgs(args, plan.inputs) };
+}
+
+/**
+ * Copies of the AI deploy output safe to persist (ADR 0037): sensitive arg
+ * values are stripped from the delivery manifest and from the same manifest
+ * embedded in the raw output JSON. The original objects stay in memory for
+ * the immediate apply; blocked resumes re-collect sensitive values through
+ * the blocking form (US15).
+ */
+function persistableAiDeployOutput(input: {
+  deliveryManifest: Record<string, unknown>;
+  output: Record<string, unknown>;
+  planInputs: { key: string; sensitive?: boolean; type?: string }[];
+}): {
+  deliveryManifest: Record<string, unknown>;
+  outputJson: Record<string, unknown>;
+} {
+  const deliveryManifest = {
+    ...input.deliveryManifest,
+    args: withoutSensitiveArgs(
+      deployTaskStringRecordValue(input.deliveryManifest.args),
+      input.planInputs
+    ),
+  };
+  return {
+    deliveryManifest,
+    outputJson: { ...input.output, deliveryManifest },
+  };
 }
 
 function outputJsonFromArtifactSummary(
@@ -1852,8 +1893,13 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   githubToken?: string;
   kubeconfig: string;
   outputJson: Record<string, unknown>;
+  planInputs?: { key: string; sensitive?: boolean; type?: string }[];
   task: DeployTaskRow;
 }) {
+  const sensitiveValues = sensitiveArgValues(
+    input.args,
+    input.planInputs ?? input.task.artifactSummary.deploymentPlan?.inputs
+  );
   let artifact: DeploymentArtifact;
   try {
     artifact = prepareSealosTemplateArtifact({
@@ -1905,7 +1951,11 @@ async function applyAiDeploymentFromPreparedOutput(input: {
           input.task.artifactSummary.deploymentPlan.args ?? {}
         );
   const summary = {
-    ...sealosTemplateArtifactSummary({ artifact }),
+    // Rendered YAML embeds submitted values; scrub before persisting.
+    ...artifactSummaryWithScrubbedYamls(
+      sealosTemplateArtifactSummary({ artifact }),
+      sensitiveValues
+    ),
     ...(deploymentPlan == null ? {} : { deploymentPlan }),
     outputJson: input.outputJson,
     resultIdentities: {
@@ -1938,6 +1988,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
       githubToken: input.githubToken,
       kubeconfig: input.kubeconfig,
       outputJson: input.outputJson,
+      sensitiveValues,
       task: input.task,
     });
   } catch (error) {
@@ -1972,11 +2023,22 @@ async function applyGeneratedAiDeployOutput(input: {
     templateYaml: requiredStringValue(input.output, "templateYaml"),
   });
   const buildResult = requiredObjectValue(input.output, "buildResult");
+  // Row-level secrets contract (ADR 0037): every persisted copy of the AI
+  // output is stripped of sensitive arg values; the full manifest stays in
+  // memory for the immediate apply below.
+  const persistable = persistableAiDeployOutput({
+    deliveryManifest,
+    output: input.output,
+    planInputs: deploymentPlan.inputs,
+  });
   const baseSummary: DeployTaskArtifactSummary = {
     buildResult,
-    deliveryManifest,
-    deploymentPlan,
-    outputJson: input.output,
+    deliveryManifest: persistable.deliveryManifest,
+    deploymentPlan: deploymentPlanWithPersistableArgs(
+      deploymentPlan,
+      deploymentPlan.args ?? {}
+    ),
+    outputJson: persistable.outputJson,
   };
   if ((deploymentPlan.missingInputKeys?.length ?? 0) > 0) {
     await updateDeployTaskState(input.task.id, {
@@ -2010,7 +2072,9 @@ async function applyGeneratedAiDeployOutput(input: {
     encodedKubeconfig: input.encodedKubeconfig,
     githubToken: input.githubToken ?? undefined,
     kubeconfig: input.kubeconfig,
-    outputJson: input.output,
+    // Persisted copies must stay scrubbed; the full args ride separately.
+    outputJson: persistable.outputJson,
+    planInputs: deploymentPlan.inputs,
     task: input.task,
   });
 }
@@ -2063,16 +2127,63 @@ async function runDirectDeploymentTask(input: {
   });
 }
 
+/**
+ * Declarations for a named provider template, as a deployment plan over the
+ * merged args. A template whose source YAML cannot be fetched or parsed
+ * degrades to heuristic-only handling (null) instead of failing a deploy
+ * the provider itself would accept; a provider outage surfaces on the
+ * deploy call with its real error.
+ */
+async function templateDeploymentPlanForRun(input: {
+  args: Record<string, string>;
+  encodedKubeconfig: string;
+  taskId: string;
+  templateName: string;
+}): Promise<DeploymentTaskDeploymentPlan | null> {
+  try {
+    const templateSource = await getTemplateSource({
+      encodedKubeconfig: input.encodedKubeconfig,
+      templateName: input.templateName,
+    });
+    const templateYaml =
+      typeof templateSource.templateYaml === "string"
+        ? templateSource.templateYaml
+        : "";
+    if (templateYaml.trim() === "") {
+      return null;
+    }
+    return createSealosTemplateDeploymentPlan({
+      deliveryManifest: { args: input.args },
+      templateYaml,
+    });
+  } catch (error) {
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    await recordDeployTaskEvent(input.taskId, {
+      kind: "deployment_task.template_declarations_unavailable",
+      message:
+        "Template input declarations could not be loaded; continuing with the provided args.",
+      payload: { error: errorMessage(error) },
+      phase: "plan",
+    });
+    return null;
+  }
+}
+
 async function runTemplateDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
   projectId: string;
+  sourceArgValues?: Record<string, string>;
+  submittedInputValues?: Record<string, string>;
   task: DeployTaskRow;
 }) {
   if (input.task.source.kind !== "template") {
     throw new Error("Template runner requires a template source.");
   }
-  const templateName = input.task.source.templateName.trim();
+  const source = input.task.source;
+  const templateName = source.templateName.trim();
   const instanceName = await allocateTemplateInstanceName({
     task: input.task,
     templateName,
@@ -2089,6 +2200,61 @@ async function runTemplateDeploymentTask(input: {
   await updateDeployTaskState(input.task.id, {
     phase: "plan",
   });
+
+  // Full args exist only in memory (ADR 0037): the persisted source is the
+  // stripped copy; create-time values and blocked-input submissions ride in
+  // process memory and win over it.
+  const mergedArgs = {
+    ...(source.args ?? {}),
+    ...(input.sourceArgValues ?? {}),
+    ...(input.submittedInputValues ?? {}),
+  };
+  const plan = await templateDeploymentPlanForRun({
+    args: mergedArgs,
+    encodedKubeconfig: input.encodedKubeconfig,
+    taskId: input.task.id,
+    templateName,
+  });
+
+  if (plan != null) {
+    // Runner-side authoritative scrub: template declarations are the source
+    // of truth for sensitivity, so anything the create-side strip could not
+    // see (other callers, declaration-only sensitivity) is removed here.
+    const persistedArgs = source.args ?? {};
+    const scrubbedArgs = withoutSensitiveArgs(persistedArgs, plan.inputs);
+    if (
+      Object.keys(scrubbedArgs).length !== Object.keys(persistedArgs).length
+    ) {
+      await updateDeployTaskState(input.task.id, {
+        source: { ...source, args: scrubbedArgs },
+      });
+    }
+
+    if ((plan.missingInputKeys?.length ?? 0) > 0) {
+      const blockingInputs = blockingInputsFromDeploymentPlan(plan);
+      await markTimelineStepWithEvent({
+        eventKind: "deployment_task.input_required",
+        eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
+        eventPayload: {
+          inputKeys: blockingInputs.map((item) => item.key ?? item.id),
+        },
+        eventSeverity: "warning",
+        phase: "configure",
+        status: "blocked",
+        stepId: "prepare-template",
+        taskId: input.task.id,
+        timelineStatus: "blocked",
+      });
+      // The blocked transition releases the lease and ends this run — it
+      // must be the run's final write.
+      await deployTaskRequestInputs(input.task.id, {
+        blockingInputs,
+        phase: "configure",
+      });
+      return;
+    }
+  }
+
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.plan_created",
     message: "Prepared template deployment plan.",
@@ -2097,10 +2263,10 @@ async function runTemplateDeploymentTask(input: {
 
   try {
     const artifact = await generateTemplateArtifact({
+      args: mergedArgs,
       encodedKubeconfig: input.encodedKubeconfig,
       instanceName,
       projectId: input.projectId,
-      task: input.task,
       templateName,
     });
     await markTimelineStepWithEvent({
@@ -2119,6 +2285,7 @@ async function runTemplateDeploymentTask(input: {
         "Template deployment resources were created. Workload readiness continues in Kubernetes.",
       completionRecordMessage: "Template deployment resources created.",
       kubeconfig: input.kubeconfig,
+      sensitiveValues: sensitiveArgValues(mergedArgs, plan?.inputs),
       task: input.task,
     });
   } catch (error) {
@@ -2581,6 +2748,8 @@ export async function runDeployTask(
           encodedKubeconfig: input.encodedKubeconfig ?? "",
           kubeconfig,
           projectId: target.projectId,
+          sourceArgValues: input.sourceArgValues,
+          submittedInputValues,
           task: resolvedTask,
         });
         break;

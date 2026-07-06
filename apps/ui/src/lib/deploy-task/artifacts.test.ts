@@ -482,6 +482,21 @@ test("createSealosTemplateDeploymentPlan reports missing required inputs", () =>
   ]);
 });
 
+test("blockingInputsFromDeploymentPlan re-asks sensitive inputs even when provided", () => {
+  const plan = createSealosTemplateDeploymentPlan({
+    deliveryManifest: { args: { ai_gateway_api_key: "prefilled-secret" } },
+    templateYaml: TEMPLATE_WITH_REQUIRED_INPUT,
+  });
+  assert.equal(plan.missingInputKeys, undefined);
+
+  // Sensitive values are never persisted (ADR 0037), so a resume can only
+  // get them from a fresh submission — the form must include them (US15).
+  const blockingInputs = blockingInputsFromDeploymentPlan(plan);
+  assert.equal(blockingInputs.length, 1);
+  assert.equal(blockingInputs[0]?.key, "ai_gateway_api_key");
+  assert.equal(blockingInputs[0]?.sensitive, true);
+});
+
 test("prepareSealosTemplateArtifact uses build evidence over success spelling", () => {
   const artifact = prepareSealosTemplateArtifact({
     buildResult: {

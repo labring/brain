@@ -20,11 +20,13 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useState } from "react";
+import { useRedeployOverwriteGate } from "@/features/deployment/deployment-task-redeploy";
 import type {
   DeploymentTaskDisplaySummary,
   DeploymentTaskProjection,
 } from "@/lib/deploy-task/projection";
 import {
+  deployTaskHasAppliedResources,
   deployTaskIsCancellable,
   deployTaskIsCancelling,
   deployTaskIsRedeployable,
@@ -187,8 +189,24 @@ function TaskActionButtons({
     );
   }
   if (deployTaskIsRedeployable(task.status)) {
-    const pending = actions.redeployPendingTaskIds.has(task.id);
-    return (
+    return <RedeployActionButton actions={actions} task={task} />;
+  }
+  return null;
+}
+
+function RedeployActionButton({
+  actions,
+  task,
+}: {
+  actions: DeploymentTaskActions;
+  task: DeploymentTaskProjection;
+}) {
+  const pending = actions.redeployPendingTaskIds.has(task.id);
+  const overwriteGate = useRedeployOverwriteGate(
+    deployTaskHasAppliedResources(task)
+  );
+  return (
+    <>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -198,7 +216,9 @@ function TaskActionButtons({
               disabled={pending}
               onClick={(event) => {
                 event.stopPropagation();
-                actions.redeploy(task.id).catch(() => undefined);
+                overwriteGate.gate(() => {
+                  actions.redeploy(task.id).catch(() => undefined);
+                });
               }}
               size="sm"
               type="button"
@@ -214,9 +234,9 @@ function TaskActionButtons({
         />
         <TooltipContent>Redeploy</TooltipContent>
       </Tooltip>
-    );
-  }
-  return null;
+      {overwriteGate.dialog}
+    </>
+  );
 }
 
 function DeploymentTaskDockTask({

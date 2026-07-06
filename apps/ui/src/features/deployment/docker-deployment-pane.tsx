@@ -5,6 +5,10 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  type DeploymentTaskEditRedeploy,
+  useRedeployOverwriteGate,
+} from "@/features/deployment/deployment-task-redeploy";
+import {
   DockerDeployer,
   type DockerDeploymentSettings,
 } from "@/features/deployment/docker-deployer";
@@ -23,12 +27,14 @@ export function DockerDeploymentPane({
   onClose,
   onDeployed,
   projectId,
+  redeploy,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
   onDeployed?: () => Promise<unknown>;
   projectId: string;
+  redeploy?: DeploymentTaskEditRedeploy;
 }) {
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
@@ -41,6 +47,16 @@ export function DockerDeploymentPane({
     [kubeconfig, namespace]
   );
   const projectName = currentProject.resourceName?.trim() ?? "";
+  const overwriteGate = useRedeployOverwriteGate(
+    redeploy?.overwriteWarning ?? false
+  );
+  const initialSettings = useMemo(
+    () =>
+      redeploy?.source.kind === "docker"
+        ? (redeploy.source.settings as unknown as DockerDeploymentSettings)
+        : undefined,
+    [redeploy]
+  );
 
   const deploy = useCallback(
     async (settings: DockerDeploymentSettings) => {
@@ -50,6 +66,7 @@ export function DockerDeploymentPane({
           adapters: deploymentAdapters,
           credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
           namespace,
+          predecessorTaskId: redeploy?.predecessorTaskId,
           request: {
             kind: "docker",
             settings,
@@ -90,6 +107,7 @@ export function DockerDeploymentPane({
       onDeployed,
       projectName,
       projectId,
+      redeploy,
     ]
   );
 
@@ -107,12 +125,23 @@ export function DockerDeploymentPane({
           ? `Deploy into ${currentProject.displayName}.`
           : "Deploy into the current project."
       }
-      title="Deploy Docker Image"
+      title={
+        redeploy == null
+          ? "Deploy Docker Image"
+          : "Edit & Redeploy Docker Image"
+      }
     >
       <DockerDeployer
         busy={deploying || currentProject.isLoading}
-        onDeploy={deploy}
+        deployLabel={redeploy == null ? undefined : "Redeploy"}
+        initialSettings={initialSettings}
+        onDeploy={(settings) => {
+          overwriteGate.gate(() => {
+            deploy(settings).catch(() => undefined);
+          });
+        }}
       />
+      {overwriteGate.dialog}
     </SidePane>
   );
 }

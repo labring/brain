@@ -159,6 +159,12 @@ export interface DeploymentTaskDatabaseSource {
 export interface DeploymentTaskTemplateSource {
   args?: Record<string, string>;
   kind: "template";
+  /**
+   * Client-declared sensitive arg keys (names only — never values). The
+   * engine strips these from `args` before the row is written (ADR 0037);
+   * the name list itself is persisted so clones know what must be re-asked.
+   */
+  sensitiveKeys?: string[];
   templateName: string;
 }
 

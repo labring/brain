@@ -360,6 +360,49 @@ test("create action inserts, claims inline, launches, and completes through the 
   ]);
 });
 
+test("create strips sensitive template args from every persisted form (ADR 0037)", async () => {
+  const ctx = testCtx();
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: {
+        args: {
+          DB_PASSWORD: "s3cret-value",
+          custom_field: "also-s3cret",
+          mode: "fast",
+        },
+        kind: "template",
+        sensitiveKeys: ["custom_field"],
+        templateName: "demo",
+      },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async () => {
+      /* runner does not advance in this test */
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  const stored = await taskById(result.task.id);
+  const source = stored.source as {
+    args?: Record<string, string>;
+    sensitiveKeys?: string[];
+  };
+  assert.deepEqual(source.args, { mode: "fast" });
+  assert.deepEqual(source.sensitiveKeys, ["custom_field"]);
+
+  const persisted = JSON.stringify({
+    events: await eventsFor(result.task.id),
+    stored,
+  });
+  assert.ok(!persisted.includes("s3cret-value"));
+  assert.ok(!persisted.includes("also-s3cret"));
+});
+
 test("clone validation matrix: not-found, conflict on active/completed, unique race", async () => {
   const ctx = testCtx();
   const run = async () => {
@@ -418,6 +461,39 @@ test("clone validation matrix: not-found, conflict on active/completed, unique r
   if (cloneRace.kind === "clone-conflict") {
     assert.equal(cloneRace.activeClone?.id, cloneA.id);
   }
+});
+
+test("edited redeploy that retargets gets fresh identities", async () => {
+  const ctx = testCtx();
+  const failed = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      resultIdentities: { templateInstanceName: "demo-abc123" },
+    },
+    completedAt: new Date(),
+    status: "failed",
+  });
+
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "another-project" },
+    },
+    predecessorTaskId: failed.id,
+    run: async () => {
+      /* runner does not advance in this test */
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  const stored = await taskById(result.task.id);
+  assert.equal(stored.retriedFromTaskId, failed.id);
+  // A namespace-scoped instance name never travels to another Project.
+  assert.equal(stored.artifactSummary.resultIdentities, undefined);
 });
 
 test("clone copies recorded result identities and records lineage", async () => {

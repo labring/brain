@@ -173,6 +173,13 @@ export async function POST(request: Request) {
     run: (handle, task) =>
       runDeployTask(handle, {
         encodedKubeconfig,
+        // Full template args from the request body: the engine persists a
+        // stripped copy, so sensitive values reach the runner only through
+        // this in-memory hand-off (ADR 0037).
+        sourceArgValues:
+          parsed.data.source?.kind === "template"
+            ? parsed.data.source.args
+            : undefined,
         taskId: task.id,
       }),
   });

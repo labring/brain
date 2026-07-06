@@ -20,14 +20,10 @@ import {
   TASKS,
 } from "./sql";
 
+// The one active-status taxonomy lives in the client-safe presentation
+// module (client surfaces must not import engine code): engine callers
+// import DEPLOY_TASK_ACTIVE_STATUSES from ../status-presentation directly.
 export type { DeployTaskRowLite } from "./sql";
-
-export const DEPLOY_TASK_ACTIVE_STATUSES = [
-  "queued",
-  "running",
-  "blocked",
-  "applying",
-] as const satisfies readonly DeployTaskStatus[];
 
 export const DEPLOY_TASK_LEASED_STATUSES = [
   "running",

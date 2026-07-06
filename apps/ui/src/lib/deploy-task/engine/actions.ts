@@ -7,6 +7,8 @@ import type {
   DeployTaskRow,
 } from "../schema";
 import { deployTaskMessages, deployTasks } from "../schema";
+import { withoutSensitiveArgs } from "../sensitive-inputs";
+import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import { createDeploymentTaskTimelineForRunner } from "../timeline";
 import type { CreateDeployTaskInput } from "../types";
 import type { DeployTaskEngineContext } from "./context";
@@ -18,7 +20,6 @@ import {
 } from "./runtime";
 import {
   appendDeployTaskEvent,
-  DEPLOY_TASK_ACTIVE_STATUSES,
   isDeployTaskTerminalStatus,
   recordDeployTaskCancelRequest,
   transitionDeployTask,
@@ -27,6 +28,26 @@ import {
 function compactOptional(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/**
+ * Row-level secrets contract (ADR 0037): template source args are stripped
+ * of client-declared sensitive keys and name-heuristic matches before any
+ * persisted form is built. The credentialed request hands the full values
+ * to the launched runner in process memory; a clone re-collects them via
+ * the blocking form (US15).
+ */
+function persistableDeploymentSource(
+  source: DeploymentTaskSource
+): DeploymentTaskSource {
+  if (source.kind !== "template" || source.args == null) {
+    return source;
+  }
+  const declared = (source.sensitiveKeys ?? []).map((key) => ({
+    key,
+    sensitive: true,
+  }));
+  return { ...source, args: withoutSensitiveArgs(source.args, declared) };
 }
 
 function deploymentSourceLabel(source: DeploymentTaskSource): string {
@@ -200,6 +221,39 @@ async function resolveCreateInputs(
   };
 }
 
+/**
+ * Result identities converge a clone onto the predecessor's preserved
+ * resources (ADR 0038) — meaningful only when the clone lands on the same
+ * Project. An edited redeploy that retargets gets fresh identities instead
+ * of dragging a namespace-scoped instance name somewhere it never existed.
+ */
+function cloneInheritedIdentities(
+  create: CreateDeployTaskInput,
+  predecessor: DeployTaskRow | null
+): DeployTaskRow["artifactSummary"]["resultIdentities"] | undefined {
+  const identities = predecessor?.artifactSummary.resultIdentities;
+  if (predecessor == null || identities == null) {
+    return undefined;
+  }
+  const predecessorProjectId = predecessor.projectId?.trim();
+  if (create.target.kind === "existingProject") {
+    // Prefer the resolved Project on the row; fall back to the predecessor's
+    // declared target for rows created before resolution succeeded.
+    const matches = predecessorProjectId
+      ? create.target.projectId === predecessorProjectId
+      : predecessor.target.kind === "existingProject" &&
+        create.target.projectId === predecessor.target.projectId;
+    return matches ? identities : undefined;
+  }
+  if (predecessor.target.kind === "newProject" && !predecessorProjectId) {
+    // Verbatim clone of a predecessor that never resolved its new Project.
+    return create.target.displayName === predecessor.target.displayName
+      ? identities
+      : undefined;
+  }
+  return undefined;
+}
+
 async function resolveCreateProject(
   input: CreateDeployTaskActionInput,
   create: CreateDeployTaskInput
@@ -233,15 +287,16 @@ export async function createDeployTaskAction(
 
   const id = generateId();
   const now = new Date();
+  const persistedSource = persistableDeploymentSource(create.source);
   const timelineSnapshot = createDeploymentTaskTimelineForRunner({
     runner: create.runner,
-    source: create.source,
+    source: persistedSource,
     status: "queued",
     taskId: id,
     updatedAt: now.toISOString(),
   });
 
-  const inheritedIdentities = predecessor?.artifactSummary.resultIdentities;
+  const inheritedIdentities = cloneInheritedIdentities(create, predecessor);
   let task: DeployTaskRow;
   try {
     const [inserted] = await ctx.db
@@ -263,7 +318,7 @@ export async function createDeployTaskAction(
         prompt: compactOptional(create.prompt) ?? taskTitle(create),
         retriedFromTaskId: predecessor?.id ?? null,
         runner: create.runner,
-        source: create.source,
+        source: persistedSource,
         status: "queued",
         target: create.target,
         timelineSnapshot,

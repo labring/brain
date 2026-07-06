@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import type {
   DeploymentTaskCanvasProjection,
+  DeploymentTaskSource,
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
   DeployTaskFailureDetails,
@@ -9,6 +10,7 @@ import type {
   DeployTaskRow,
 } from "../schema";
 import { deployTasks } from "../schema";
+import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import type {
   DeploymentTaskTimelineSnapshot,
   DeploymentTaskTimelineUpdate,
@@ -21,7 +23,6 @@ import {
 } from "./errors";
 import {
   appendDeployTaskEvent,
-  DEPLOY_TASK_ACTIVE_STATUSES,
   DEPLOY_TASK_LEASED_STATUSES,
   type DeployTaskTransitionEvent,
   isDeployTaskTerminalStatus,
@@ -52,6 +53,11 @@ export interface DeployTaskHandleStateFields {
   runtimeName?: string | null;
   runtimeProvider?: string | null;
   runtimeState?: string | null;
+  /**
+   * Runner-side authoritative scrub (ADR 0037): once template declarations
+   * are fetched, sensitive keys that reached the row are stripped here.
+   */
+  source?: DeploymentTaskSource;
   timelineSnapshot?: DeploymentTaskTimelineSnapshot | null;
 }
 

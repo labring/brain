@@ -4,6 +4,10 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Blocks } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import {
+  type DeploymentTaskEditRedeploy,
+  useRedeployOverwriteGate,
+} from "@/features/deployment/deployment-task-redeploy";
 import type { TemplateDeploymentSettings } from "@/features/deployment/template-deployer";
 import { TemplateDeployer } from "@/features/deployment/template-deployer";
 import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
@@ -22,12 +26,14 @@ export function TemplateDeploymentPane({
   onClose,
   onDeployed,
   projectId,
+  redeploy,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
   onDeployed?: () => Promise<unknown>;
   projectId: string;
+  redeploy?: DeploymentTaskEditRedeploy;
 }) {
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
@@ -41,6 +47,19 @@ export function TemplateDeploymentPane({
     [kubeconfig, namespace]
   );
   const projectName = currentProject.resourceName?.trim() ?? "";
+  const overwriteGate = useRedeployOverwriteGate(
+    redeploy?.overwriteWarning ?? false
+  );
+  const initialSettings = useMemo(
+    () =>
+      redeploy?.source.kind === "template"
+        ? {
+            args: redeploy.source.args,
+            templateName: redeploy.source.templateName,
+          }
+        : undefined,
+    [redeploy]
+  );
 
   const deploy = useCallback(
     async (settings: TemplateDeploymentSettings) => {
@@ -50,9 +69,11 @@ export function TemplateDeploymentPane({
           adapters: deploymentAdapters,
           credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
           namespace,
+          predecessorTaskId: redeploy?.predecessorTaskId,
           request: {
             args: settings.args,
             kind: "template",
+            sensitiveKeys: settings.sensitiveKeys,
             target: existingProjectDeploymentTarget({
               projectName,
               projectId,
@@ -91,6 +112,7 @@ export function TemplateDeploymentPane({
       onDeployed,
       projectId,
       projectName,
+      redeploy,
     ]
   );
 
@@ -106,18 +128,25 @@ export function TemplateDeploymentPane({
           ? `Deploy into ${currentProject.displayName}.`
           : "Deploy into the current project."
       }
-      title="Deploy Template"
+      title={redeploy == null ? "Deploy Template" : "Edit & Redeploy Template"}
     >
       <TemplateDeployer
         busy={
           deploying || currentProject.isLoading || templateCatalog.isLoading
         }
+        deployLabel={redeploy == null ? undefined : "Redeploy"}
         emptyMessage={
           templateCatalog.error?.message ?? "No templates are available."
         }
-        onDeploy={deploy}
+        initialSettings={initialSettings}
+        onDeploy={(settings) => {
+          overwriteGate.gate(() => {
+            deploy(settings).catch(() => undefined);
+          });
+        }}
         templateOptions={templateCatalog.templates}
       />
+      {overwriteGate.dialog}
     </SidePane>
   );
 }

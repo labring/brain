@@ -16,6 +16,7 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
 } from "./schema";
+import { isSensitiveDeploymentInput } from "./sensitive-inputs";
 
 const SUPPORTED_API_VERSION = "brain.io/direct";
 const SUPPORTED_KINDS = new Set(["AP", "DB"]);
@@ -528,18 +529,6 @@ function assertSealosTemplateBuildBinding(input: {
   }
 }
 
-function isSensitiveTemplateInput(input: { key: string; type?: string }) {
-  const type = input.type?.trim().toLowerCase();
-  return (
-    type === "password" ||
-    type === "secret" ||
-    input.key.toLowerCase().includes("secret") ||
-    input.key.toLowerCase().includes("password") ||
-    input.key.toLowerCase().endsWith("_key") ||
-    input.key.toLowerCase().endsWith("_token")
-  );
-}
-
 function templateInputDefaults(
   inputs: DeploymentTaskDeploymentPlanInput[],
   args: Record<string, string>
@@ -597,7 +586,7 @@ export function createSealosTemplateDeploymentPlan(input: {
   const args = stringRecordValue(input.deliveryManifest.args);
   const inputs = (parsed.source.source.inputs ?? []).map((item) => ({
     ...item,
-    sensitive: isSensitiveTemplateInput(item),
+    sensitive: isSensitiveDeploymentInput(item),
   }));
   const visibleInputs = visibleTemplatePlanInputs({
     args,
@@ -627,12 +616,17 @@ export function createSealosTemplateDeploymentPlan(input: {
   };
 }
 
+/**
+ * Inputs the blocking form must (re)collect to resume: missing values, plus
+ * every sensitive input — sensitive values are never persisted (ADR 0037),
+ * so a resume can only get them from a fresh submission (US15).
+ */
 export function blockingInputsFromDeploymentPlan(
   plan: DeploymentTaskDeploymentPlan
 ): DeployTaskBlockingInput[] {
   const missing = new Set(plan.missingInputKeys ?? []);
   return plan.inputs
-    .filter((input) => missing.has(input.key))
+    .filter((input) => missing.has(input.key) || input.sensitive === true)
     .map((input) => ({
       ...(input.default === undefined ? {} : { defaultValue: input.default }),
       ...(input.description === undefined
@@ -642,7 +636,7 @@ export function blockingInputsFromDeploymentPlan(
       key: input.key,
       label: templateInputLabel(input),
       ...(input.options === undefined ? {} : { options: input.options }),
-      required: true,
+      required: missing.has(input.key) || input.required === true,
       sensitive: input.sensitive,
       type: templateInputBlockingType(input),
       valueType: input.type,

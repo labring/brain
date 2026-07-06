@@ -87,6 +87,10 @@ export const deploymentTaskSourceSchema = z.discriminatedUnion("kind", [
   z.object({
     args: z.record(z.string(), z.string()).optional(),
     kind: z.literal("template"),
+    sensitiveKeys: z
+      .array(z.string().trim().min(1).max(256))
+      .max(64)
+      .optional(),
     templateName: z.string().trim().min(1).max(256),
   }),
   z.object({
