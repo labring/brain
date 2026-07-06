@@ -6,6 +6,7 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 
 import { getDeploymentTaskDb } from "./db";
 import { getDeployTaskEngineContext } from "./engine/server";
+import { publishDeployTaskChange } from "./engine/transitions";
 import {
   type DeploymentTaskProjection,
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES,
@@ -39,11 +40,6 @@ import type {
 const MAX_DEPLOY_EVENTS = 200;
 const MAX_DEPLOY_MESSAGES = 200;
 const DEFAULT_TASK_LIST_LIMIT = 100;
-
-function compactOptional(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
 
 function nowIso(value: Date | null): string | null {
   return value == null ? null : value.toISOString();
@@ -376,17 +372,11 @@ export async function updateDeployTaskCanvasProjection(
     return existing == null ? null : toDeployTaskDTO(existing);
   }
   const dto = toDeployTaskDTO(task);
-  const ctx = getDeployTaskEngineContext();
-  await ctx.notify
-    .publish({
-      kind: "change",
-      namespace: dto.namespace,
-      projectId: dto.projectId,
-      taskId: dto.id,
-    })
-    .catch((error) => {
-      console.error("[deploy-task] projection notify failed:", error);
-    });
+  await publishDeployTaskChange(getDeployTaskEngineContext(), {
+    namespace: dto.namespace,
+    projectId: dto.projectId,
+    taskId: dto.id,
+  });
   return dto;
 }
 
@@ -417,5 +407,3 @@ export async function appendDeployTaskMessage(input: {
   }
   return toDeployTaskMessageDTO(message);
 }
-
-export { compactOptional as compactOptionalDeployTaskText };

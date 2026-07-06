@@ -3,7 +3,10 @@ import {
   resolveDeployTaskRequestNamespace,
 } from "@/lib/deploy-task/api-auth";
 import { getDeployTaskTimelineSnapshot } from "@/lib/deploy-task/service";
-import { subscribeDeploymentTaskTimelineEvents } from "@/lib/deploy-task/timeline-events";
+import {
+  type DeploymentTaskTimelineSubscription,
+  subscribeDeploymentTaskTimelineEvents,
+} from "@/lib/deploy-task/timeline-events";
 import type { DeploymentTaskTimelineStreamEvent } from "@/lib/deploy-task/types";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +51,7 @@ export async function GET(request: Request, context: RouteContext) {
       let closed = false;
       let snapshotSent = false;
       let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-      let unsubscribe: (() => void) | undefined;
+      let subscription: DeploymentTaskTimelineSubscription | undefined;
       const pendingEvents: DeploymentTaskTimelineStreamEvent[] = [];
 
       function cleanup() {
@@ -59,7 +62,7 @@ export async function GET(request: Request, context: RouteContext) {
         if (heartbeatTimer !== undefined) {
           clearInterval(heartbeatTimer);
         }
-        unsubscribe?.();
+        subscription?.unsubscribe();
         request.signal.removeEventListener("abort", close);
       }
 
@@ -94,7 +97,7 @@ export async function GET(request: Request, context: RouteContext) {
         return;
       }
 
-      unsubscribe = subscribeDeploymentTaskTimelineEvents({
+      subscription = subscribeDeploymentTaskTimelineEvents({
         listener: (timelineSnapshot) => {
           const event: DeploymentTaskTimelineStreamEvent = {
             snapshot: timelineSnapshot,
@@ -115,6 +118,9 @@ export async function GET(request: Request, context: RouteContext) {
       );
 
       try {
+        // Subscribe-before-bootstrap (ADR 0037): the bootstrap read waits
+        // for LISTEN so no update falls between snapshot and subscription.
+        await subscription.ready;
         const snapshot = await getDeployTaskTimelineSnapshot(taskId, namespace);
         if (closed) {
           return;

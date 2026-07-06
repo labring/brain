@@ -15,6 +15,7 @@ import {
 import {
   DEPLOY_TASK_LEASED_STATUSES,
   DEPLOY_TASK_TERMINAL_STATUSES,
+  publishDeployTaskChange,
 } from "./transitions";
 
 export interface DeployTaskReaperSummary {
@@ -71,16 +72,7 @@ async function sweepVerdict(
   const result = await ctx.db.execute(statement);
   const rows = rowsOf(result).map(liteOf);
   for (const row of rows) {
-    try {
-      await ctx.notify.publish({
-        kind: "change",
-        namespace: row.namespace,
-        projectId: row.projectId,
-        taskId: row.taskId,
-      });
-    } catch (error) {
-      console.error("[deploy-task-reaper] notify publish failed:", error);
-    }
+    await publishDeployTaskChange(ctx, row);
   }
   return rows;
 }

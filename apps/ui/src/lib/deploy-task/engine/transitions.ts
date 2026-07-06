@@ -96,9 +96,10 @@ function eventInsertCte(event: DeployTaskTransitionEvent): SQL {
   )`;
 }
 
-async function publishChange(
+/** Publish a task change, never failing the write that caused it. */
+export async function publishDeployTaskChange(
   ctx: DeployTaskEngineContext,
-  row: DeployTaskRowLite
+  row: { namespace: string; projectId: string | null; taskId: string }
 ): Promise<void> {
   try {
     await ctx.notify.publish({
@@ -124,7 +125,7 @@ async function runLiteStatement(
   }
   const row = liteOf(record);
   if (options.notify) {
-    await publishChange(ctx, row);
+    await publishDeployTaskChange(ctx, row);
   }
   return row;
 }

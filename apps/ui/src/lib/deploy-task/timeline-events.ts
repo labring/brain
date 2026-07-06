@@ -13,11 +13,17 @@ type DeploymentTaskTimelineListener = (
  * each matching event re-reads the timeline snapshot; a transport reset
  * re-reads unconditionally because notifications during the gap are lost.
  */
+export interface DeploymentTaskTimelineSubscription {
+  /** Resolves once LISTEN is established; reads before this can miss events. */
+  ready: Promise<void>;
+  unsubscribe: () => void;
+}
+
 export function subscribeDeploymentTaskTimelineEvents(input: {
   listener: DeploymentTaskTimelineListener;
   namespace: string;
   taskId: string;
-}): () => void {
+}): DeploymentTaskTimelineSubscription {
   const ctx = getDeployTaskEngineContext();
   let cancelled = false;
   let unsubscribe: (() => void | Promise<void>) | null = null;
@@ -34,7 +40,7 @@ export function subscribeDeploymentTaskTimelineEvents(input: {
       });
   };
 
-  ctx.notify
+  const ready = ctx.notify
     .subscribe((event) => {
       if (cancelled) {
         return;
@@ -59,10 +65,13 @@ export function subscribeDeploymentTaskTimelineEvents(input: {
       console.error("[deploy-task-timeline-events] subscribe failed:", error);
     });
 
-  return () => {
-    cancelled = true;
-    if (unsubscribe != null) {
-      unsubscribe()?.catch?.(() => undefined);
-    }
+  return {
+    ready,
+    unsubscribe: () => {
+      cancelled = true;
+      if (unsubscribe != null) {
+        unsubscribe()?.catch?.(() => undefined);
+      }
+    },
   };
 }

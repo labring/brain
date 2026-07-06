@@ -1893,12 +1893,16 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     }
     throw error;
   }
+  // Row-level secrets contract (ADR 0037): submitted Blocking Input values —
+  // sensitive or not — exist only in process memory for the apply itself.
+  // The persisted plan keeps the args it already had (declared defaults and
+  // create-time source args), defensively stripped of sensitive keys.
   const deploymentPlan =
     input.task.artifactSummary.deploymentPlan == null
       ? undefined
       : deploymentPlanWithPersistableArgs(
           input.task.artifactSummary.deploymentPlan,
-          input.args
+          input.task.artifactSummary.deploymentPlan.args ?? {}
         );
   const summary = {
     ...sealosTemplateArtifactSummary({ artifact }),
@@ -1937,6 +1941,11 @@ async function applyAiDeploymentFromPreparedOutput(input: {
       task: input.task,
     });
   } catch (error) {
+    // An abort is a typed cancellation outcome, never a failure: it must not
+    // reach failure cleanup, which deletes partial resources (ADR 0038).
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
     await cleanupFailedTemplateDeployment({
       encodedKubeconfig: input.encodedKubeconfig,
       instanceName: artifact.instanceName,

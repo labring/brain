@@ -25,6 +25,7 @@ import {
   DEPLOY_TASK_LEASED_STATUSES,
   type DeployTaskTransitionEvent,
   isDeployTaskTerminalStatus,
+  publishDeployTaskChange,
   transitionDeployTask,
 } from "./transitions";
 
@@ -314,16 +315,11 @@ export function createDeployTaskHandle(
       if (row == null) {
         throw new DeployTaskRunSupersededError();
       }
-      try {
-        await ctx.notify.publish({
-          kind: "change",
-          namespace: row.namespace,
-          projectId: row.projectId,
-          taskId: row.id,
-        });
-      } catch (error) {
-        console.error("[deploy-task-engine] notify publish failed:", error);
-      }
+      await publishDeployTaskChange(ctx, {
+        namespace: row.namespace,
+        projectId: row.projectId,
+        taskId: row.id,
+      });
     },
 
     async updateTimeline(timelineInput) {

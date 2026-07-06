@@ -1,5 +1,5 @@
 import { generateId } from "ai";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type {
   DeploymentTaskSource,
@@ -18,6 +18,7 @@ import {
 } from "./runtime";
 import {
   appendDeployTaskEvent,
+  DEPLOY_TASK_ACTIVE_STATUSES,
   isDeployTaskTerminalStatus,
   recordDeployTaskCancelRequest,
   transitionDeployTask,
@@ -281,7 +282,12 @@ export async function createDeployTaskAction(
       const [activeClone] = await ctx.db
         .select()
         .from(deployTasks)
-        .where(eq(deployTasks.retriedFromTaskId, predecessor.id))
+        .where(
+          and(
+            eq(deployTasks.retriedFromTaskId, predecessor.id),
+            inArray(deployTasks.status, [...DEPLOY_TASK_ACTIVE_STATUSES])
+          )
+        )
         .limit(1);
       return { kind: "clone-conflict", activeClone: activeClone ?? null };
     }

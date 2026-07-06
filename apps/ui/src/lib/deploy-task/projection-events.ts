@@ -18,17 +18,23 @@ type DeploymentTaskProjectionListener = (
  * purge notification is itself the removal; a transport reset re-reads the
  * whole project because notifications during the gap are lost.
  */
+export interface DeploymentTaskEventsSubscription {
+  /** Resolves once LISTEN is established; reads before this can miss events. */
+  ready: Promise<void>;
+  unsubscribe: () => void;
+}
+
 export function subscribeDeploymentTaskProjectionEvents(input: {
   listProjections: () => Promise<DeploymentTaskProjection[]>;
   listener: DeploymentTaskProjectionListener;
   namespace: string;
   projectId: string;
-}): () => void {
+}): DeploymentTaskEventsSubscription {
   const ctx = getDeployTaskEngineContext();
   let cancelled = false;
   let unsubscribe: (() => void | Promise<void>) | null = null;
 
-  ctx.notify
+  const ready = ctx.notify
     .subscribe((event) => {
       if (cancelled) {
         return;
@@ -102,10 +108,13 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
       console.error("[deploy-task-projection-events] subscribe failed:", error);
     });
 
-  return () => {
-    cancelled = true;
-    if (unsubscribe != null) {
-      unsubscribe()?.catch?.(() => undefined);
-    }
+  return {
+    ready,
+    unsubscribe: () => {
+      cancelled = true;
+      if (unsubscribe != null) {
+        unsubscribe()?.catch?.(() => undefined);
+      }
+    },
   };
 }
