@@ -11,7 +11,11 @@ import {
   useState,
 } from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
-import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
+import { autoLayoutCanvasNodes } from "@/features/project-canvas/layout/auto-layout";
+import type {
+  CanvasLayoutNode,
+  CanvasLayoutResourceRef,
+} from "@/features/project-canvas/layout/types";
 import { interactionSnapshotFromCanvasState } from "@/features/project-canvas/surface/interaction-react";
 import { createProjectCanvasInteractionStore } from "@/features/project-canvas/surface/interaction-store";
 import {
@@ -80,6 +84,8 @@ export interface UseProjectCanvasOptions {
   edges?: Edge[];
   kubeconfig?: string;
   namespace?: string;
+  /** Persist regenerated Canvas Layout entries after an Auto layout gesture. */
+  onCanvasAutoLayout?: (nodes: CanvasLayoutNode[]) => void;
   onNodeExpansionChange?: (node: Node) => void;
   onNodePositionChange?: (node: Node) => void;
   onNodeStackOrderChange?: (node: Node) => void;
@@ -341,6 +347,31 @@ export function useProjectCanvas(
   useLayoutEffect(() => {
     flowStore.reconcile({ edges: optionEdges ?? [], nodes });
   }, [flowStore, nodes, optionEdges]);
+
+  const autoLayoutCanvas = useStableCallback(() => {
+    if (readOnly) {
+      return;
+    }
+    const snapshot = flowStore.getSnapshot();
+    if (snapshot.nodes.length === 0) {
+      return;
+    }
+    const relationships = options?.runtimeStore?.selectRelationshipIndexes();
+    const { layoutNodes, positionChanges } = autoLayoutCanvasNodes({
+      connections:
+        relationships === undefined
+          ? []
+          : [...relationships.publicAccessToAp, ...relationships.apToDb],
+      nodes: snapshot.nodes,
+    });
+    if (positionChanges.length > 0) {
+      flowStore.applyNodeChanges(positionChanges);
+    }
+    if (layoutNodes.length > 0) {
+      options?.onCanvasAutoLayout?.(layoutNodes);
+    }
+  });
+
   const { apSettingsSessionEventsForAp } = useApSettingsSessionEvents({
     onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
   });
@@ -766,6 +797,7 @@ export function useProjectCanvas(
   );
 
   return {
+    autoLayoutCanvas,
     clearSelection,
     closeDrawerSurface,
     closeMainSurface,

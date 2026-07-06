@@ -47,6 +47,7 @@ interface ProjectCanvasViewportProps {
   kubeconfig: string;
   lifecycleActivity?: CanvasLifecycleActivityStore;
   meta?: CanvasMeta;
+  onAutoLayout?: () => void;
   runtimeStore: ProjectRuntimeStore;
 }
 
@@ -57,6 +58,7 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
   kubeconfig,
   lifecycleActivity,
   meta,
+  onAutoLayout,
   runtimeStore,
 }: ProjectCanvasViewportProps) {
   return (
@@ -76,7 +78,7 @@ export const ProjectCanvasViewport = memo(function ProjectCanvasViewport({
             >
               <Canvas.Flow>
                 <Canvas.MiniMap />
-                <Canvas.Controls />
+                <Canvas.Controls onAutoLayout={onAutoLayout} />
               </Canvas.Flow>
             </Canvas.Root>
           </ProjectCanvasInteractionStoreProvider>

@@ -18,7 +18,10 @@ import {
 } from "@/features/project-canvas/flow/pending-connections";
 import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
 import { resourcePlacementOwner } from "@/features/project-canvas/layout/placement-owner";
-import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
+import type {
+  CanvasLayoutNode,
+  CanvasLayoutResourceRef,
+} from "@/features/project-canvas/layout/types";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
 import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
 import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
@@ -295,6 +298,13 @@ export function useProjectCanvasModule({
     [projectCanvasLayout.savePlacementCommands]
   );
 
+  const saveAutoLayoutNodes = useCallback(
+    (nodes: CanvasLayoutNode[]) => {
+      projectCanvasLayout.saveLayoutNodes(nodes).catch(() => undefined);
+    },
+    [projectCanvasLayout.saveLayoutNodes]
+  );
+
   const onNodePositionChange = useStableCallback(
     (
       node: Parameters<typeof projectCanvasLayout.scheduleNodeLayoutSave>[0]
@@ -343,6 +353,7 @@ export function useProjectCanvasModule({
     edges: canvasEdges,
     kubeconfig,
     namespace,
+    onCanvasAutoLayout: saveAutoLayoutNodes,
     onNodeExpansionChange: projectCanvasLayout.scheduleNodeLayoutSave,
     onNodePositionChange,
     onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
@@ -528,6 +539,7 @@ export function useProjectCanvasModule({
       openDeploymentTaskDockTask,
     },
     canvas: {
+      autoLayout: workbench.autoLayoutCanvas,
       covered: canvasCovered,
       deploymentTaskDock,
       frameState,

@@ -8,7 +8,14 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { MiniMap, useReactFlow } from "@xyflow/react";
-import { Fullscreen, Hand, Minus, MousePointer2, Plus } from "lucide-react";
+import {
+  Fullscreen,
+  Hand,
+  LayoutGrid,
+  Minus,
+  MousePointer2,
+  Plus,
+} from "lucide-react";
 import type { FocusEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { CanvasInteractionMode } from "./canvas.types";
@@ -26,6 +33,11 @@ export interface CanvasViewportInsetProps {
 
 export interface CanvasControlsProps extends CanvasViewportInsetProps {
   className?: string;
+  /**
+   * Host-provided node auto-layout action. The Auto layout button renders
+   * only when set; the canvas fits the view after the host rearranges nodes.
+   */
+  onAutoLayout?: () => void;
 }
 
 export interface CanvasMiniMapProps extends CanvasViewportInsetProps {
@@ -204,7 +216,11 @@ function CanvasControlButton({
   );
 }
 
-export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
+export function CanvasControls({
+  className,
+  onAutoLayout,
+  rightInset,
+}: CanvasControlsProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { interactionMode, meta, rootRef, setInteractionMode } = useCanvas();
   const chrome = useCanvasNavigationChromePresence();
@@ -291,6 +307,22 @@ export function CanvasControls({ className, rightInset }: CanvasControlsProps) {
       <CanvasControlButton {...modeButton("pointer", "Pointer tool")}>
         <MousePointer2 aria-hidden className="size-4" />
       </CanvasControlButton>
+      {onAutoLayout === undefined ? null : (
+        <CanvasControlButton
+          label="Auto layout"
+          onClick={() => {
+            chrome.reveal();
+            onAutoLayout();
+            window.requestAnimationFrame(() => {
+              runViewportAction(() =>
+                fitView({ duration: VIEWPORT_ACTION_DURATION_MS })
+              );
+            });
+          }}
+        >
+          <LayoutGrid aria-hidden className="size-4" />
+        </CanvasControlButton>
+      )}
       <CanvasControlButton
         label="Fit view"
         onClick={() => {
