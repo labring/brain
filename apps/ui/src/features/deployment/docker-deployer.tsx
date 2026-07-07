@@ -134,7 +134,8 @@ export function DockerDeployer({
   childrenBeforeDeploy?: ReactNode;
   className?: string;
   deployLabel?: string;
-  initialSettings?: DockerDeploymentSettings;
+  /** Prefill (US10): any subset; missing fields fall back to defaults. */
+  initialSettings?: Partial<DockerDeploymentSettings>;
   onDeploy?: (settings: DockerDeploymentSettings) => void | Promise<void>;
   onSettingsChange?: (settings: DockerDeploymentSettings) => void;
 }) {
@@ -159,7 +160,7 @@ export function DockerDeployer({
   );
   const [envRows, setEnvRows] = useState<DockerDeploymentEnvRowState[]>(
     () =>
-      initialSettings?.env.map((row) => ({
+      initialSettings?.env?.map((row) => ({
         ...row,
         id: createEnvRowId(),
       })) ?? []

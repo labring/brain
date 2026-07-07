@@ -1,7 +1,8 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { Activity, useLayoutEffect, useMemo } from "react";
+import { Activity, useCallback, useLayoutEffect, useMemo } from "react";
+import { useEditRedeployController } from "@/features/deployment/deployment-task-redeploy";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
@@ -12,6 +13,7 @@ import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
+import { useDeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
 import { assistantPaneResizingAtom } from "@/store/layout-store";
 
 /**
@@ -34,6 +36,28 @@ export function ProjectCanvasWorkbench({
     kubeconfig,
     namespace,
     projectId,
+  });
+  const deploymentTaskActions = useDeploymentTaskActions({
+    kubeconfig,
+    namespace,
+  });
+  const sideModel = projectCanvas.surfaces.model.side;
+  const sideEntryKind = useMemo(() => {
+    if (sideModel == null) {
+      return null;
+    }
+    return sideModel.kind === "global" ? sideModel.entry.kind : sideModel.kind;
+  }, [sideModel]);
+  const openSurfaceIntent = projectCanvas.actions.openSurfaceIntent;
+  const editRedeployController = useEditRedeployController({
+    onOpenSurface: useCallback(
+      (entry) => {
+        openSurfaceIntent({ entry, slot: "side" });
+      },
+      [openSurfaceIntent]
+    ),
+    projectId,
+    sideEntryKind,
   });
   const { insets: canvasViewportInsets, rootRef: canvasViewportRootRef } =
     useProjectCanvasViewportInsets({
@@ -88,6 +112,7 @@ export function ProjectCanvasWorkbench({
             />
           </Activity>
           <ProjectCanvasOverlayLayer
+            deploymentTaskActions={deploymentTaskActions}
             deploymentTaskDock={projectCanvas.canvas.deploymentTaskDock}
             frameState={projectCanvas.canvas.frameState}
             onDismissDeploymentTask={
@@ -99,9 +124,11 @@ export function ProjectCanvasWorkbench({
           />
           <ProjectCanvasSurfaceHost
             actions={projectCanvas.surfaces.actions}
+            deploymentTaskRedeploy={editRedeployController.editRedeploy}
             dialogs={projectCanvas.surfaces.dialogs}
             kubeconfig={kubeconfig}
             namespace={namespace}
+            onEditRedeployTask={editRedeployController.onEditRedeploy}
             projectId={projectId}
             refreshWorkloadLists={projectCanvas.surfaces.refreshWorkloadLists}
             settingsLaunchContext={projectCanvas.surfaces.settingsLaunchContext}

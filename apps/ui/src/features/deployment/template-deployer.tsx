@@ -10,7 +10,8 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Blocks, Rocket, Upload } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { isSensitiveDeploymentInput } from "@/lib/deploy-task/sensitive-inputs";
 import { DeploymentSettings } from "./deployment-settings";
 
 export interface TemplateDeploymentInput {
@@ -33,7 +34,15 @@ export interface TemplateDeploymentChoice {
 
 export interface TemplateDeploymentSettings {
   args: Record<string, string>;
+  /** Keys the create request declares sensitive — values never at rest. */
+  sensitiveKeys: string[];
   templateName: string;
+}
+
+/** Prefill for edited redeploys (US10): predecessor source values. */
+export interface TemplateDeploymentInitialSettings {
+  args?: Record<string, string>;
+  templateName?: string;
 }
 
 function defaultTemplateName(options: readonly TemplateDeploymentChoice[]) {
@@ -130,11 +139,21 @@ function TemplateSearchSelect({
   );
 }
 
+/** Sensitive arg keys for a template choice (shared predicate, ADR 0037). */
+export function templateSensitiveKeys(
+  choice: Pick<TemplateDeploymentChoice, "args"> | null
+): string[] {
+  return (choice?.args ?? [])
+    .filter((arg) => isSensitiveDeploymentInput(arg))
+    .map((arg) => arg.key);
+}
+
 export function TemplateDeployer({
   busy = false,
   className,
   deployLabel = "Deploy",
   emptyMessage = "No templates are available.",
+  initialSettings,
   onDeploy,
   onSettingsChange,
   templateOptions: choices,
@@ -151,15 +170,29 @@ export function TemplateDeployer({
     settings: TemplateDeploymentSettings,
     choice: TemplateDeploymentChoice | null
   ) => void;
+  initialSettings?: TemplateDeploymentInitialSettings;
   templateOptions: readonly TemplateDeploymentChoice[];
 }) {
   const inputIdPrefix = useId();
   const [templateName, setTemplateName] = useState(
-    defaultTemplateName(choices)
+    () => initialSettings?.templateName?.trim() || defaultTemplateName(choices)
   );
   const choice = selectedChoice(choices, templateName);
   const [args, setArgs] = useState<Record<string, string>>(() =>
     defaultArgs(choice)
+  );
+  // Prefill args apply once, when the initial template's choice first
+  // resolves from the catalog; switching templates resets to defaults.
+  const initialArgsRef = useRef<{
+    args: Record<string, string>;
+    templateName: string;
+  } | null>(
+    initialSettings?.templateName?.trim() && initialSettings.args != null
+      ? {
+          args: initialSettings.args,
+          templateName: initialSettings.templateName.trim(),
+        }
+      : null
   );
 
   useEffect(() => {
@@ -170,12 +203,22 @@ export function TemplateDeployer({
   }, [choices]);
 
   useEffect(() => {
+    const seed = initialArgsRef.current;
+    if (seed != null && choice != null && choice.name === seed.templateName) {
+      initialArgsRef.current = null;
+      setArgs({ ...defaultArgs(choice), ...seed.args });
+      return;
+    }
     setArgs(defaultArgs(choice));
   }, [choice]);
 
   const settings = useMemo<TemplateDeploymentSettings>(
-    () => ({ args, templateName }),
-    [args, templateName]
+    () => ({
+      args,
+      sensitiveKeys: templateSensitiveKeys(choice),
+      templateName,
+    }),
+    [args, choice, templateName]
   );
   const missingRequired = (choice?.args ?? []).find(
     (arg) => arg.required && (args[arg.key]?.trim() ?? "") === ""
@@ -257,6 +300,9 @@ export function TemplateDeployer({
                         }));
                       }}
                       placeholder={arg.description || arg.type}
+                      type={
+                        isSensitiveDeploymentInput(arg) ? "password" : undefined
+                      }
                       value={args[arg.key] ?? ""}
                     />
                   </label>

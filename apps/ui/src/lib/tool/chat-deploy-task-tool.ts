@@ -2,14 +2,18 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import {
+  cancelDeployTaskAction,
+  createDeployTaskAction,
+  submitDeployTaskInputAction,
+} from "@/lib/deploy-task/engine/actions";
+import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
+import {
   resolveDeploymentTaskTarget,
-  startDeployTaskRunner,
+  runDeployTask,
 } from "@/lib/deploy-task/runner";
 import {
-  cancelDeployTask,
-  createDeployTask,
   getDeployTaskSnapshot,
-  submitDeployTaskInput,
+  toDeployTaskDTO,
 } from "@/lib/deploy-task/service";
 import {
   type DeploymentTaskTarget,
@@ -59,6 +63,10 @@ function defaultTargetFromContext(options: {
   };
 }
 
+/**
+ * Chat mirrors create, cancel, and explain through the same engine lifecycle
+ * as the UI (ADR 0038), so chat and canvas never disagree about a task.
+ */
 export function createDeployTaskTools(options: {
   assistantContext?: {
     projectName?: string;
@@ -74,6 +82,7 @@ export function createDeployTaskTools(options: {
   kubernetesNamespace: string;
 }) {
   const namespace = options.kubernetesNamespace;
+  const encodedKubeconfig = encodeURIComponent(options.kubeconfig);
 
   const createDeployTaskTool = tool({
     description: [
@@ -102,38 +111,55 @@ export function createDeployTaskTools(options: {
         };
       }
 
-      const task = await createDeployTask({
-        createdFrom: "chat",
-        namespace,
-        prompt: input.prompt,
-        runner: defaultRunnerForSource(input.source),
-        source: input.source,
-        target,
-      });
-      const resolved = await resolveDeploymentTaskTarget({
-        id: task.id,
-        namespace,
-        projectId: task.projectId,
-        projectName: task.projectName,
-        target,
-      });
-      const snapshot = await getDeployTaskSnapshot(task.id, namespace);
-      startDeployTaskRunner({
-        encodedKubeconfig: encodeURIComponent(options.kubeconfig),
-        taskId: task.id,
-      }).catch((error: unknown) => {
-        console.error("[chat-deploy-task] runner failed:", error);
-      });
+      const result = await createDeployTaskAction(
+        getDeployTaskEngineContext(),
+        {
+          create: {
+            createdFrom: "chat",
+            namespace,
+            prompt: input.prompt,
+            runner: defaultRunnerForSource(input.source),
+            source: input.source,
+            target,
+          },
+          resolveTarget: async (resolveInput) => {
+            const resolved = await resolveDeploymentTaskTarget({
+              id: "",
+              namespace: resolveInput.namespace,
+              projectId: null,
+              projectName: null,
+              target: resolveInput.target,
+            });
+            return {
+              projectId: resolved.projectId,
+              projectName: resolved.projectName,
+            };
+          },
+          run: (handle, task) =>
+            runDeployTask(handle, {
+              encodedKubeconfig,
+              // Full template args from the chat request: the engine
+              // persists a stripped copy, so sensitive values reach the
+              // runner only through this in-memory hand-off (ADR 0037).
+              sourceArgValues:
+                input.source.kind === "template"
+                  ? input.source.args
+                  : undefined,
+              taskId: task.id,
+            }),
+        }
+      );
+      if (result.kind !== "created") {
+        return {
+          ok: false,
+          error: "Could not create the deploy task.",
+        };
+      }
+      const snapshot = await getDeployTaskSnapshot(result.task.id, namespace);
       return {
         ok: true,
-        task: snapshot?.task ?? {
-          ...task,
-          phase: "resolve-target",
-          projectId: resolved.projectId,
-          projectName: resolved.projectName,
-          status: "running",
-        },
-        taskUrl: `/deploy-tasks/${task.id}`,
+        task: snapshot?.task ?? toDeployTaskDTO(result.task),
+        taskUrl: `/deploy-tasks/${result.task.id}`,
       };
     },
   });
@@ -158,41 +184,32 @@ export function createDeployTaskTools(options: {
     execute: async (input) => {
       logChatToolIntention("submitDeployTaskInput", input.intention);
       const snapshot = await getDeployTaskSnapshot(input.taskId, namespace);
-      if (snapshot == null) {
+      if (snapshot == null || snapshot.task.namespace !== namespace) {
         return { ok: false, error: "Deploy task not found." };
       }
-      const task = await submitDeployTaskInput(input.taskId, {
-        values: input.values,
-      }).catch((error: unknown) => {
-        if (
-          error instanceof Error &&
-          error.message === "Deploy task is not waiting for input."
-        ) {
-          return "not-waiting" as const;
-        }
-        throw error;
-      });
-      if (task === "not-waiting") {
-        return {
-          ok: false,
-          error: "Deploy task is not waiting for input.",
-        };
-      }
-      if (task != null) {
-        startDeployTaskRunner({
-          encodedKubeconfig: encodeURIComponent(options.kubeconfig),
-          submittedInputValues: input.values,
+      const result = await submitDeployTaskInputAction(
+        getDeployTaskEngineContext(),
+        {
+          run: (handle, task) =>
+            runDeployTask(handle, {
+              encodedKubeconfig,
+              submittedInputValues: input.values,
+              taskId: task.id,
+            }),
           taskId: input.taskId,
-        }).catch((error: unknown) => {
-          console.error(
-            "[chat-deploy-task] runner input resume failed:",
-            error
-          );
-        });
+          values: input.values,
+        }
+      );
+      switch (result.kind) {
+        case "not-found":
+          return { ok: false, error: "Deploy task not found." };
+        case "conflict":
+          return { ok: false, error: "Deploy task is not waiting for input." };
+        case "resumed":
+          return { ok: true, task: toDeployTaskDTO(result.task) };
+        default:
+          return result satisfies never;
       }
-      return task == null
-        ? { ok: false, error: "Deploy task not found." }
-        : { ok: true, task };
     },
   });
 
@@ -203,13 +220,28 @@ export function createDeployTaskTools(options: {
     execute: async (input) => {
       logChatToolIntention("cancelDeployTask", input.intention);
       const snapshot = await getDeployTaskSnapshot(input.taskId, namespace);
-      if (snapshot == null) {
+      if (snapshot == null || snapshot.task.namespace !== namespace) {
         return { ok: false, error: "Deploy task not found." };
       }
-      const task = await cancelDeployTask(input.taskId);
-      return task == null
-        ? { ok: false, error: "Deploy task not found." }
-        : { ok: true, task };
+      const result = await cancelDeployTaskAction(
+        getDeployTaskEngineContext(),
+        { taskId: input.taskId }
+      );
+      switch (result.kind) {
+        case "not-found":
+          return { ok: false, error: "Deploy task not found." };
+        case "already-terminal":
+          return {
+            ok: false,
+            error: `Deploy task already ${result.task.status}.`,
+            task: toDeployTaskDTO(result.task),
+          };
+        case "cancelled":
+        case "cancelling":
+          return { ok: true, task: toDeployTaskDTO(result.task) };
+        default:
+          return result satisfies never;
+      }
     },
   });
 

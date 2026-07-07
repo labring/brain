@@ -8,6 +8,10 @@ import {
   DatabaseDeployer,
   type DatabaseDeploymentSettings,
 } from "@/features/deployment/database-deployer";
+import {
+  type DeploymentTaskEditRedeploy,
+  useRedeployOverwriteGate,
+} from "@/features/deployment/deployment-task-redeploy";
 import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
 import {
   existingProjectDeploymentTarget,
@@ -18,18 +22,43 @@ import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
+function databaseInitialSettings(
+  redeploy: DeploymentTaskEditRedeploy | undefined
+): Partial<DatabaseDeploymentSettings> | undefined {
+  if (redeploy?.source.kind !== "database") {
+    return undefined;
+  }
+  const settings = redeploy.source.settings;
+  return {
+    ...(typeof settings.databaseId === "string"
+      ? { databaseId: settings.databaseId }
+      : {}),
+    ...(typeof settings.instancePreset === "string"
+      ? {
+          instancePreset:
+            settings.instancePreset as DatabaseDeploymentSettings["instancePreset"],
+        }
+      : {}),
+    ...(typeof settings.replicas === "number"
+      ? { replicas: settings.replicas }
+      : {}),
+  };
+}
+
 export function DatabaseDeploymentPane({
   kubeconfig,
   namespace,
   onClose,
   onDeployed,
   projectId,
+  redeploy,
 }: {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
   onDeployed?: () => Promise<unknown>;
   projectId: string;
+  redeploy?: DeploymentTaskEditRedeploy;
 }) {
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
@@ -43,6 +72,13 @@ export function DatabaseDeploymentPane({
     [kubeconfig, namespace]
   );
   const projectName = currentProject.resourceName?.trim() ?? "";
+  const overwriteGate = useRedeployOverwriteGate(
+    redeploy?.overwriteWarning ?? false
+  );
+  const initialSettings = useMemo(
+    () => databaseInitialSettings(redeploy),
+    [redeploy]
+  );
 
   const deploy = useCallback(
     async (settings: DatabaseDeploymentSettings) => {
@@ -52,6 +88,7 @@ export function DatabaseDeploymentPane({
           adapters: deploymentAdapters,
           credentialsReady: kubeconfig.trim() !== "" && namespace.trim() !== "",
           namespace,
+          predecessorTaskId: redeploy?.predecessorTaskId,
           request: {
             kind: "database",
             settings,
@@ -92,6 +129,7 @@ export function DatabaseDeploymentPane({
       onDeployed,
       projectName,
       projectId,
+      redeploy,
     ]
   );
 
@@ -107,13 +145,20 @@ export function DatabaseDeploymentPane({
           ? `Deploy into ${currentProject.displayName}.`
           : "Deploy into the current project."
       }
-      title="Deploy Database"
+      title={redeploy == null ? "Deploy Database" : "Edit & Redeploy Database"}
     >
       <DatabaseDeployer
         busy={deploying || currentProject.isLoading}
         databaseOptions={databaseOptions}
-        onDeploy={deploy}
+        deployLabel={redeploy == null ? undefined : "Redeploy"}
+        initialSettings={initialSettings}
+        onDeploy={(settings) => {
+          overwriteGate.gate(() => {
+            deploy(settings).catch(() => undefined);
+          });
+        }}
       />
+      {overwriteGate.dialog}
     </SidePane>
   );
 }

@@ -1,10 +1,12 @@
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/lib/deploy-task/api-auth";
 import { getDeployTaskTimelineSnapshot } from "@/lib/deploy-task/service";
-import { subscribeDeploymentTaskTimelineEvents } from "@/lib/deploy-task/timeline-events";
+import {
+  type DeploymentTaskTimelineSubscription,
+  subscribeDeploymentTaskTimelineEvents,
+} from "@/lib/deploy-task/timeline-events";
 import type { DeploymentTaskTimelineStreamEvent } from "@/lib/deploy-task/types";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +44,6 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const namespace = namespaceResolved.namespace;
-  const kubeconfig = decodeKubeconfig(params.encodedKubeconfig);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -50,7 +51,7 @@ export async function GET(request: Request, context: RouteContext) {
       let closed = false;
       let snapshotSent = false;
       let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-      let unsubscribe: (() => void) | undefined;
+      let subscription: DeploymentTaskTimelineSubscription | undefined;
       const pendingEvents: DeploymentTaskTimelineStreamEvent[] = [];
 
       function cleanup() {
@@ -61,7 +62,7 @@ export async function GET(request: Request, context: RouteContext) {
         if (heartbeatTimer !== undefined) {
           clearInterval(heartbeatTimer);
         }
-        unsubscribe?.();
+        subscription?.unsubscribe();
         request.signal.removeEventListener("abort", close);
       }
 
@@ -96,14 +97,19 @@ export async function GET(request: Request, context: RouteContext) {
         return;
       }
 
-      unsubscribe = subscribeDeploymentTaskTimelineEvents({
-        listener: (event) => {
+      subscription = subscribeDeploymentTaskTimelineEvents({
+        listener: (timelineSnapshot) => {
+          const event: DeploymentTaskTimelineStreamEvent = {
+            snapshot: timelineSnapshot,
+            type: "update",
+          };
           if (snapshotSent) {
             send(event.type, event);
             return;
           }
           pendingEvents.push(event);
         },
+        namespace,
         taskId,
       });
       heartbeatTimer = setInterval(
@@ -112,11 +118,10 @@ export async function GET(request: Request, context: RouteContext) {
       );
 
       try {
-        const snapshot = await getDeployTaskTimelineSnapshot(
-          taskId,
-          namespace,
-          { kubeconfig: kubeconfig ?? undefined }
-        );
+        // Subscribe-before-bootstrap (ADR 0037): the bootstrap read waits
+        // for LISTEN so no update falls between snapshot and subscription.
+        await subscription.ready;
+        const snapshot = await getDeployTaskTimelineSnapshot(taskId, namespace);
         if (closed) {
           return;
         }

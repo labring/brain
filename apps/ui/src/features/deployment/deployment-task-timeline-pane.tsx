@@ -1,6 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppSelect } from "@workspace/ui/components/app-select";
 import { Checkbox } from "@workspace/ui/components/checkbox";
@@ -13,12 +14,17 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   ChevronDown,
   Circle,
+  Copy,
   LoaderCircle,
   PackageCheck,
+  PencilLine,
   Rocket,
+  RotateCcw,
+  X,
   XCircle,
 } from "lucide-react";
 import {
@@ -29,8 +35,21 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import {
+  editRedeploySurfaceKind,
+  useRedeployOverwriteGate,
+} from "@/features/deployment/deployment-task-redeploy";
+import {
+  type DeployTaskStatusHue,
+  deployTaskHasAppliedResources,
+  deployTaskIsCancellable,
+  deployTaskIsCancelling,
+  deployTaskIsRedeployable,
+  deployTaskStatusHue,
+} from "@/lib/deploy-task/status-presentation";
 import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
@@ -46,40 +65,45 @@ import type {
   DeploymentTaskDeploymentPlanInput,
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskBlockingInput,
+  DeployTaskDTO,
   DeployTaskStatus,
 } from "@/lib/deploy-task/types";
+import { useDeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
 import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
 
 interface DeploymentTaskTimelinePaneProps {
   kubeconfig: string;
   namespace: string;
   onClose: () => void;
+  /** Opens the matching deployment pane prefilled from this task (US10). */
+  onEditRedeploy?: (task: DeployTaskDTO) => void;
   taskId: string;
 }
 
-type TimelineStatus =
+type StepOrCardStatus =
   | DeploymentResultResourceCardStatus
-  | DeploymentTimelineStepStatus
-  | DeployTaskStatus;
+  | DeploymentTimelineStepStatus;
 
-type StatusHue = "blue" | "green" | "neutral" | "red" | "yellow";
+type StatusHue = DeployTaskStatusHue;
 
-function statusHue(status: TimelineStatus): StatusHue {
+/**
+ * Task statuses take their hue from the shared presentation module; steps
+ * share its semantics (running is progress, so blue). Result resource cards
+ * differ on one point: a running resource is up — success, not progress.
+ */
+function stepStatusHue(status: StepOrCardStatus): StatusHue {
   switch (status) {
     case "completed":
-    case "running":
       return "green";
-    case "applying":
     case "creating":
     case "pending":
-    case "queued":
+    case "running":
       return "blue";
     case "blocked":
     case "unknown":
       return "yellow";
     case "failed":
       return "red";
-    case "cancelled":
     case "skipped":
       return "neutral";
     default:
@@ -87,20 +111,26 @@ function statusHue(status: TimelineStatus): StatusHue {
   }
 }
 
+function resourceCardStatusHue(
+  status: DeploymentResultResourceCardStatus
+): StatusHue {
+  return status === "running" ? "green" : stepStatusHue(status);
+}
+
 const STATUS_DOT_BG: Record<StatusHue, string> = {
   blue: "bg-blue-500",
-  green: "bg-green-500",
+  green: "bg-emerald-500",
   neutral: "bg-muted-foreground/50",
   red: "bg-red-500",
-  yellow: "bg-yellow-500",
+  yellow: "bg-amber-500",
 };
 
 const STATUS_ICON_TEXT: Record<StatusHue, string> = {
   blue: "text-blue-500",
-  green: "text-green-500",
+  green: "text-emerald-500",
   neutral: "text-muted-foreground",
   red: "text-red-500",
-  yellow: "text-yellow-500",
+  yellow: "text-amber-500",
 };
 
 type StepIconStatus =
@@ -111,7 +141,7 @@ type StepIconStatus =
   | "unknown";
 
 function stepStatusUsesDot(
-  status: DeploymentResultResourceCardStatus | DeploymentTimelineStepStatus
+  status: StepOrCardStatus
 ): status is "creating" | "pending" | "running" {
   return status === "creating" || status === "pending" || status === "running";
 }
@@ -158,12 +188,8 @@ function StatusPulseDot({
   );
 }
 
-function StatusMarker({
-  status,
-}: {
-  status: DeploymentResultResourceCardStatus | DeploymentTimelineStepStatus;
-}) {
-  const hue = statusHue(status);
+function StatusMarker({ status }: { status: StepOrCardStatus }) {
+  const hue = stepStatusHue(status);
   if (stepStatusUsesDot(status)) {
     return (
       <span className="relative flex size-3.5 shrink-0 items-center justify-center">
@@ -190,7 +216,7 @@ function ResourceStatusDot({
 }: {
   status: DeploymentResultResourceCardStatus;
 }) {
-  const hue = statusHue(status);
+  const hue = resourceCardStatusHue(status);
   return (
     <span
       aria-hidden
@@ -202,7 +228,7 @@ function ResourceStatusDot({
 }
 
 function TaskStatusDot({ status }: { status: DeployTaskStatus }) {
-  const hue = statusHue(status);
+  const hue = deployTaskStatusHue(status);
   return (
     <span
       aria-hidden
@@ -771,10 +797,7 @@ function DeploymentConfigurationForm({
   const hasBlockingInputs =
     snapshot.task.blockingInputs.length > 0 ||
     (plan?.missingInputKeys?.length ?? 0) > 0;
-  const showForm =
-    (snapshot.task.status === "blocked" || snapshot.task.status === "failed") &&
-    snapshot.task.phase === "configure" &&
-    hasBlockingInputs;
+  const showForm = snapshot.task.status === "blocked" && hasBlockingInputs;
   const [values, setValues] = useState<Record<string, string>>({});
   const inputs = useMemo(
     () =>
@@ -930,6 +953,68 @@ function timelineTaskStatusLabel(snapshot: DeploymentTaskTimelineSnapshotDTO) {
   }`;
 }
 
+const TASK_ID_COPIED_FEEDBACK_MS = 2000;
+
+function TimelineTaskIdRow({ taskId }: { taskId: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) {
+        clearTimeout(resetTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const copyTaskId = useCallback(() => {
+    if (typeof navigator === "undefined" || navigator.clipboard == null) {
+      return;
+    }
+    navigator.clipboard
+      .writeText(taskId)
+      .then(() => {
+        setCopied(true);
+        if (resetTimerRef.current !== null) {
+          clearTimeout(resetTimerRef.current);
+        }
+        resetTimerRef.current = setTimeout(() => {
+          resetTimerRef.current = null;
+          setCopied(false);
+        }, TASK_ID_COPIED_FEEDBACK_MS);
+      })
+      .catch(() => undefined);
+  }, [taskId]);
+
+  return (
+    <div
+      className="group/task-id relative mb-2.5 flex items-center justify-between gap-2 rounded-md border border-border bg-input/30 px-3 py-2 transition-colors hover:bg-input"
+      data-slot="deployment-task-id"
+    >
+      <button
+        aria-label={copied ? "Task ID copied" : "Copy task ID"}
+        className="absolute inset-0 cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        onClick={copyTaskId}
+        title={taskId}
+        type="button"
+      />
+      <p className="flex min-w-0 items-center gap-2 text-foreground text-sm leading-5">
+        <span className="shrink-0">Task ID:</span>
+        <span className="truncate">{taskId}</span>
+      </p>
+      {copied ? (
+        <Check aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <Copy
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/task-id:opacity-100"
+        />
+      )}
+    </div>
+  );
+}
+
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
@@ -955,6 +1040,7 @@ export function DeploymentTaskTimelinePaneContent({
         <Rocket aria-hidden className="size-4 text-foreground" />
         <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
       </div>
+      <TimelineTaskIdRow taskId={snapshot.task.id} />
       <div className="mb-4 flex items-center gap-2 text-muted-foreground text-sm leading-5">
         <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
@@ -976,10 +1062,151 @@ export function DeploymentTaskTimelinePaneContent({
   );
 }
 
+function DeploymentTaskCancelDialog({
+  onConfirm,
+  onOpenChange,
+}: {
+  onConfirm: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <AppDialog.Root onOpenChange={onOpenChange} open>
+      <AppDialog.Content data-slot="deployment-task-cancel-dialog">
+        <AppDialog.Header>
+          <AppDialog.WarningIcon />
+          <AppDialog.Title>Cancel this deployment?</AppDialog.Title>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <AppDialog.Description>
+            This stops the deployment. Resources that were already applied are
+            kept and never rolled back.
+          </AppDialog.Description>
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel>Keep Deploying</AppDialog.Cancel>
+          <AppDialog.Action onClick={onConfirm} type="button">
+            Cancel Deployment
+          </AppDialog.Action>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
+  );
+}
+
+export function DeploymentTaskTimelineActions({
+  kubeconfig,
+  namespace,
+  onEditRedeploy,
+  task,
+}: {
+  kubeconfig: string;
+  namespace: string;
+  onEditRedeploy?: (task: DeployTaskDTO) => void;
+  task: DeployTaskDTO;
+}) {
+  const actions = useDeploymentTaskActions({ kubeconfig, namespace });
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const cancellable = deployTaskIsCancellable(task.status);
+  const redeployable = deployTaskIsRedeployable(task.status);
+  const cancelling =
+    deployTaskIsCancelling(task) || actions.cancelPendingTaskIds.has(task.id);
+  const redeployPending = actions.redeployPendingTaskIds.has(task.id);
+  const overwriteGate = useRedeployOverwriteGate(
+    deployTaskHasAppliedResources(task)
+  );
+  const editable =
+    redeployable &&
+    onEditRedeploy != null &&
+    editRedeploySurfaceKind(task.source.kind) != null;
+  return (
+    <div
+      className="flex items-center justify-end gap-2"
+      data-slot="deployment-task-actions"
+    >
+      <AppButton
+        disabled={!cancellable || cancelling}
+        onClick={() => {
+          setCancelConfirmOpen(true);
+        }}
+        type="button"
+        variant="secondary"
+      >
+        {cancelling ? (
+          <>
+            <LoaderCircle
+              aria-hidden
+              className="animate-spin"
+              data-icon="inline-start"
+            />
+            Cancelling…
+          </>
+        ) : (
+          <>
+            <X aria-hidden data-icon="inline-start" />
+            Cancel Deployment
+          </>
+        )}
+      </AppButton>
+      {cancelConfirmOpen ? (
+        <DeploymentTaskCancelDialog
+          onConfirm={() => {
+            setCancelConfirmOpen(false);
+            actions.cancel(task.id).catch(() => undefined);
+          }}
+          onOpenChange={setCancelConfirmOpen}
+        />
+      ) : null}
+      {editable ? (
+        <AppButton
+          disabled={redeployPending}
+          onClick={() => {
+            onEditRedeploy(task);
+          }}
+          type="button"
+          variant="secondary"
+        >
+          <PencilLine aria-hidden data-icon="inline-start" />
+          Edit & Redeploy
+        </AppButton>
+      ) : null}
+      {redeployable ? (
+        <AppButton
+          disabled={redeployPending}
+          onClick={() => {
+            overwriteGate.gate(() => {
+              actions.redeploy(task.id).catch(() => undefined);
+            });
+          }}
+          type="button"
+          variant="secondary"
+        >
+          {redeployPending ? (
+            <>
+              <LoaderCircle
+                aria-hidden
+                className="animate-spin"
+                data-icon="inline-start"
+              />
+              Redeploying…
+            </>
+          ) : (
+            <>
+              <RotateCcw aria-hidden data-icon="inline-start" />
+              Redeploy
+            </>
+          )}
+        </AppButton>
+      ) : null}
+      {overwriteGate.dialog}
+    </div>
+  );
+}
+
 export function DeploymentTaskTimelinePane({
   kubeconfig,
   namespace,
   onClose,
+  onEditRedeploy,
   taskId,
 }: DeploymentTaskTimelinePaneProps) {
   const timeline = useDeploymentTaskTimeline({
@@ -1020,6 +1247,14 @@ export function DeploymentTaskTimelinePane({
           kubeconfig={kubeconfig}
           namespace={namespace}
           snapshot={timeline.data}
+        />
+      )}
+      {task == null ? null : (
+        <DeploymentTaskTimelineActions
+          kubeconfig={kubeconfig}
+          namespace={namespace}
+          onEditRedeploy={onEditRedeploy}
+          task={task}
         />
       )}
     </SidePane>

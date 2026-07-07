@@ -4,6 +4,7 @@ import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
+import type { DeploymentTaskEditRedeploy } from "@/features/deployment/deployment-task-redeploy";
 import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
 import { DockerDeploymentPane } from "@/features/deployment/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/features/deployment/github-deployment-pane";
@@ -29,6 +30,7 @@ import type {
   SettingsSessionEvents,
 } from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { DeployTaskDTO } from "@/lib/deploy-task/types";
 
 export interface ProjectCanvasSurfaceHostActions {
   closeDrawerSurface: () => void;
@@ -46,9 +48,13 @@ export interface ProjectCanvasSurfaceHostActions {
 
 export interface ProjectCanvasSurfaceHostProps {
   actions: ProjectCanvasSurfaceHostActions;
+  /** Active edited-redeploy gesture consumed by the deployment panes. */
+  deploymentTaskRedeploy?: DeploymentTaskEditRedeploy | null;
   dialogs?: ReactNode;
   kubeconfig: string;
   namespace: string;
+  /** Opens the matching deployment pane prefilled from a task (US10). */
+  onEditRedeployTask?: (task: DeployTaskDTO) => void;
   projectId: string;
   refreshWorkloadLists: () => Promise<unknown>;
   settingsLaunchContext?: SettingsLaunchContext;
@@ -59,9 +65,11 @@ export interface ProjectCanvasSurfaceHostProps {
 
 export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
   actions,
+  deploymentTaskRedeploy,
   dialogs,
   kubeconfig,
   namespace,
+  onEditRedeployTask,
   projectId,
   refreshWorkloadLists,
   settingsLaunchContext,
@@ -89,6 +97,11 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
             onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
+            redeploy={
+              deploymentTaskRedeploy?.source.kind === "database"
+                ? deploymentTaskRedeploy
+                : undefined
+            }
           />
         }
         deploymentTaskTimelinePane={
@@ -97,6 +110,7 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
               kubeconfig={kubeconfig}
               namespace={namespace}
               onClose={actions.closeResourcePane}
+              onEditRedeploy={onEditRedeployTask}
               taskId={deploymentTaskTimelineEntry.taskId}
             />
           )
@@ -108,6 +122,11 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
             onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
+            redeploy={
+              deploymentTaskRedeploy?.source.kind === "docker"
+                ? deploymentTaskRedeploy
+                : undefined
+            }
           />
         }
         entry={canvasSidePaneEntry}
@@ -118,6 +137,11 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
             onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
+            redeploy={
+              deploymentTaskRedeploy?.source.kind === "github"
+                ? deploymentTaskRedeploy
+                : undefined
+            }
           />
         }
         resourcePane={
@@ -144,6 +168,11 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
             onClose={actions.closeResourcePane}
             onDeployed={refreshWorkloadLists}
             projectId={projectId}
+            redeploy={
+              deploymentTaskRedeploy?.source.kind === "template"
+                ? deploymentTaskRedeploy
+                : undefined
+            }
           />
         }
       />

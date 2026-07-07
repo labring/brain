@@ -1,12 +1,14 @@
 import type { UIMessage } from "ai";
+import { sql } from "drizzle-orm";
 import {
+  bigint,
   index,
-  integer,
   jsonb,
   pgSchema,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 import type {
@@ -41,6 +43,16 @@ export type DeployTaskPhase =
 
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
+/**
+ * Result identities allocated by a run (e.g. the random-suffixed template
+ * instance name), recorded first-class at allocation time — before any
+ * external apply uses them — and copied onto redeploy clones so recovery
+ * converges on the same preserved resources (ADR 0038).
+ */
+export interface DeployTaskResultIdentities {
+  templateInstanceName?: string;
+}
+
 export interface DeployTaskArtifactSummary {
   appliedResources?: unknown[];
   artifacts?: unknown[];
@@ -57,6 +69,7 @@ export interface DeployTaskArtifactSummary {
     namespace: string;
   }[];
   resourceYamls?: string[];
+  resultIdentities?: DeployTaskResultIdentities;
 }
 
 export interface DeploymentTaskDeploymentPlanInput extends TemplateSourceInput {
@@ -146,6 +159,12 @@ export interface DeploymentTaskDatabaseSource {
 export interface DeploymentTaskTemplateSource {
   args?: Record<string, string>;
   kind: "template";
+  /**
+   * Client-declared sensitive arg keys (names only — never values). The
+   * engine strips these from `args` before the row is written (ADR 0037);
+   * the name list itself is persisted so clones know what must be re-asked.
+   */
+  sensitiveKeys?: string[];
   templateName: string;
 }
 
@@ -238,10 +257,21 @@ export const deployTasks = ns.table(
     previewUrl: text("preview_url"),
     resultUrl: text("result_url"),
     error: text("error"),
-    heartbeatAt: timestamp("heartbeat_at", {
+    cancelRequestedAt: timestamp("cancel_requested_at", {
       mode: "date",
       withTimezone: true,
     }),
+    leaseOwner: text("lease_owner"),
+    leaseEpoch: bigint("lease_epoch", { mode: "number" }).notNull().default(0),
+    leaseClaimedAt: timestamp("lease_claimed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    leaseExpiresAt: timestamp("lease_expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    retriedFromTaskId: text("retried_from_task_id"),
     startedAt: timestamp("started_at", { mode: "date", withTimezone: true }),
     completedAt: timestamp("completed_at", {
       mode: "date",
@@ -267,8 +297,35 @@ export const deployTasks = ns.table(
       table.status,
       table.updatedAt
     ),
+    // Reaper scans (ADR 0037): leased statuses by lease expiry, queued by
+    // age, terminal by completion time.
+    index("deploy_tasks_leased_expiry_idx")
+      .on(table.leaseExpiresAt)
+      .where(sql`${table.status} IN ('running', 'applying')`),
+    index("deploy_tasks_queued_created_idx")
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'queued'`),
+    index("deploy_tasks_terminal_completed_idx")
+      .on(table.completedAt)
+      .where(sql`${table.status} IN ('completed', 'failed', 'cancelled')`),
+    // One active clone per predecessor (ADR 0038): a concurrent redeploy
+    // loses this insert and surfaces as a conflict.
+    uniqueIndex("deploy_tasks_one_active_clone_idx")
+      .on(table.retriedFromTaskId)
+      .where(
+        sql`${table.retriedFromTaskId} IS NOT NULL AND ${table.status} IN ('queued', 'running', 'blocked', 'applying')`
+      ),
   ]
 );
+
+/**
+ * Global sequence backing `deploy_task_events.seq`, so event inserts are
+ * single-statement and lock-free (ADR 0037). Per-task ordering only needs
+ * monotonicity, not density.
+ */
+export const deployTaskEventsSeq = ns.sequence("deploy_task_events_seq", {
+  startWith: 1,
+});
 
 export const deployTaskEvents = ns.table(
   "deploy_task_events",
@@ -276,7 +333,11 @@ export const deployTaskEvents = ns.table(
     taskId: text("task_id")
       .notNull()
       .references(() => deployTasks.id, { onDelete: "cascade" }),
-    seq: integer("seq").notNull(),
+    seq: bigint("seq", { mode: "number" })
+      .notNull()
+      .default(
+        sql`nextval('sealai_deployment.deploy_task_events_seq'::regclass)`
+      ),
     kind: text("kind").notNull(),
     phase: text("phase").$type<DeployTaskPhase>(),
     message: text("message"),

@@ -16,6 +16,7 @@ import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
 } from "../github-template-match";
+import { templateSensitiveKeys } from "../template-deployer";
 import type {
   GithubDeployerActions,
   GithubDeployerRepo,
@@ -141,6 +142,9 @@ export function GithubDeployerRoot({
             repo: pendingRecommendation.repo,
             settings: {
               args: defaultTemplateArgs(pendingRecommendation.template),
+              sensitiveKeys: templateSensitiveKeys(
+                pendingRecommendation.template
+              ),
               templateName: pendingRecommendation.template.name,
             },
             template: pendingRecommendation.template,

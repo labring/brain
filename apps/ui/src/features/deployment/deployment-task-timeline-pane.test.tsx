@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { DeploymentTaskTimelinePaneContent } from "./deployment-task-timeline-pane";
+import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+import {
+  DeploymentTaskTimelineActions,
+  DeploymentTaskTimelinePaneContent,
+} from "./deployment-task-timeline-pane";
 
 const TIMELINE_SLOT_RE = /data-slot="deployment-task-timeline"/;
 const APPLY_EVENT_RE = /Applying deployment artifacts\./;
@@ -20,21 +24,24 @@ const ANALYZE_REQUEST_RE = /Analyze request/;
 const SKIPPED_RE = /skipped/;
 const DEPLOYMENT_CONFIGURATION_RE = /Deployment configuration/;
 const AI_GATEWAY_KEY_RE = /AI Gateway API key/;
-const CONTINUE_DEPLOYMENT_RE = /Continue deployment/;
+const CONTINUE_DEPLOYMENT_RE = /Continue Deployment/;
 const FIRECRAWL_API_KEY_RE = /FIRECRAWL_API_KEY/;
 const FIRECRAWL_API_KEY_DESCRIPTION_RE = /FIRECRAWL API KEY\./;
 const FIRECRAWL_API_KEY_INPUT_NAME_RE = /name="FIRECRAWL_API_KEY"/;
 const TIMELINE_DESIGN_CARD_STYLE_RE =
   /relative overflow-hidden rounded-lg bg-white\/\[0\.05\]/;
-const TIMELINE_BASE_SHADOW_RE =
-  /shadow-\[0_1px_3px_0_rgba\(0,0,0,0\.10\),0_1px_2px_0_rgba\(0,0,0,0\.06\)\]/;
 const TIMELINE_BORDER_BEAM_RE = /deployment-timeline-border-beam/;
-const TIMELINE_BASE_BORDER_RE = /border-white\/10/;
+const TIMELINE_BASE_BORDER_RE =
+  /pointer-events-none absolute inset-px rounded-\[calc\(var\(--radius-lg\)-1px\)\] border/;
 const DEPLOYMENT_CONFIGURATION_CARD_STYLE_RE =
-  /rounded-md border border-white\/8 bg-white\/\[0\.06\]/;
+  /overflow-hidden rounded-lg border border-border bg-input\/30/;
 const AMBER_FORM_BACKGROUND_RE = /bg-amber-500\/10/;
 const DEPLOYMENT_CONFIGURATION_FORM_RE =
   /<form[^>]*data-slot="deployment-configuration-form"[^>]*>(.*?)<\/form>/;
+const TASK_ID_ROW_SLOT_RE = /data-slot="deployment-task-id"/;
+const TASK_ID_LABEL_RE = /Task ID:/;
+const TASK_ID_VALUE_RE = /task-1/;
+const TASK_ID_COPY_BUTTON_RE = /aria-label="Copy task ID"/;
 
 function deploymentConfigurationFormHtml(html: string): string {
   return html.match(DEPLOYMENT_CONFIGURATION_FORM_RE)?.[1] ?? "";
@@ -152,6 +159,14 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
   );
 
   assert.match(html, TIMELINE_SLOT_RE);
+  assert.match(html, TASK_ID_ROW_SLOT_RE);
+  assert.match(html, TASK_ID_LABEL_RE);
+  assert.match(html, TASK_ID_VALUE_RE);
+  assert.match(html, TASK_ID_COPY_BUTTON_RE);
+  assert.ok(
+    html.indexOf('data-slot="deployment-task-id"') <
+      html.indexOf("Validate settings")
+  );
   assert.ok(
     html.indexOf("Validate settings") < html.indexOf("Create resources")
   );
@@ -313,7 +328,6 @@ test("deployment task timeline pane renders template input form when blocked", (
   assert.match(html, AI_GATEWAY_KEY_RE);
   assert.match(html, CONTINUE_DEPLOYMENT_RE);
   assert.match(html, TIMELINE_DESIGN_CARD_STYLE_RE);
-  assert.match(html, TIMELINE_BASE_SHADOW_RE);
   assert.match(html, TIMELINE_BORDER_BEAM_RE);
   assert.match(html, TIMELINE_BASE_BORDER_RE);
   assert.match(html, DEPLOYMENT_CONFIGURATION_CARD_STYLE_RE);
@@ -414,7 +428,7 @@ test("deployment task timeline pane restores form from blocking inputs after ref
   assert.match(html, FIRECRAWL_API_KEY_INPUT_NAME_RE);
 });
 
-test("deployment task timeline pane restores form for failed configure tasks", () => {
+test("deployment task timeline pane keeps failed tasks form-free (blocked is the only waiting state)", () => {
   const html = renderToStaticMarkup(
     <DeploymentTaskTimelinePaneContent
       kubeconfig="kubeconfig"
@@ -494,7 +508,76 @@ test("deployment task timeline pane restores form for failed configure tasks", (
     />
   );
 
-  assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
-  assert.match(html, FIRECRAWL_API_KEY_RE);
-  assert.match(html, FIRECRAWL_API_KEY_DESCRIPTION_RE);
+  // Failed is a pure terminal status (ADR 0038): recovery is Redeploy, so
+  // the input form never renders on a failed task.
+  assert.doesNotMatch(html, DEPLOYMENT_CONFIGURATION_RE);
+});
+
+const CANCEL_DEPLOYMENT_RE = /Cancel Deployment/;
+const REDEPLOY_RE = /Redeploy/;
+const DISABLED_ATTR_RE = / disabled=""/g;
+const CANCEL_DIALOG_SLOT_RE = /data-slot="deployment-task-cancel-dialog"/;
+
+function actionsTask(status: DeployTaskDTO["status"]): DeployTaskDTO {
+  return {
+    artifactSummary: {},
+    blockingInputs: [],
+    canvasProjection: {},
+    completedAt: null,
+    createdAt: "2026-06-17T10:00:00.000Z",
+    createdFrom: "ui",
+    error: null,
+    failureDetails: null,
+    gatewaySessionId: null,
+    gatewayStateSnapshot: null,
+    gatewayTurnId: null,
+    gatewayUrl: null,
+    id: "task-actions",
+    namespace: "default",
+    phase: "apply",
+    previewUrl: null,
+    projectId: "project-1",
+    projectName: "Project 1",
+    resultUrl: null,
+    runner: { kind: "direct" },
+    runtimeName: null,
+    runtimeProvider: null,
+    runtimeState: null,
+    source: { kind: "docker", settings: {} },
+    startedAt: null,
+    status,
+    target: { kind: "existingProject", projectId: "project-1" },
+    timelineSnapshot: null,
+    updatedAt: "2026-06-17T10:00:01.000Z",
+  };
+}
+
+function renderActions(status: DeployTaskDTO["status"]): string {
+  return renderToStaticMarkup(
+    <DeploymentTaskTimelineActions
+      kubeconfig="kubeconfig"
+      namespace="default"
+      task={actionsTask(status)}
+    />
+  );
+}
+
+test("deployment task timeline actions keep cancel visible but disabled on terminal statuses", () => {
+  const running = renderActions("running");
+  assert.match(running, CANCEL_DEPLOYMENT_RE);
+  assert.equal((running.match(DISABLED_ATTR_RE) ?? []).length, 0);
+  assert.doesNotMatch(running, REDEPLOY_RE);
+
+  const completed = renderActions("completed");
+  assert.match(completed, CANCEL_DEPLOYMENT_RE);
+  assert.equal((completed.match(DISABLED_ATTR_RE) ?? []).length, 1);
+  assert.doesNotMatch(completed, REDEPLOY_RE);
+
+  const failed = renderActions("failed");
+  assert.match(failed, CANCEL_DEPLOYMENT_RE);
+  assert.match(failed, REDEPLOY_RE);
+  // Cancel is the one disabled control; Redeploy stays actionable.
+  assert.equal((failed.match(DISABLED_ATTR_RE) ?? []).length, 1);
+  // The confirm dialog only mounts after a click on the enabled button.
+  assert.doesNotMatch(failed, CANCEL_DIALOG_SLOT_RE);
 });

@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { resolveDeployTaskRequestNamespace } from "@/lib/deploy-task/api-auth";
-import { startDeployTaskRunner } from "@/lib/deploy-task/runner";
+import { submitDeployTaskInputAction } from "@/lib/deploy-task/engine/actions";
+import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
+import { runDeployTask } from "@/lib/deploy-task/runner";
 import {
+  getDeployTaskById,
   getDeployTaskSnapshot,
-  submitDeployTaskInput,
+  toDeployTaskDTO,
 } from "@/lib/deploy-task/service";
 import { submitDeployTaskInputSchema } from "@/lib/deploy-task/types";
 
@@ -25,6 +28,11 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
+/**
+ * Blocking Input submission performs the blocked → running claim itself and
+ * hands the values to the resumed runner in process memory (ADR 0037);
+ * values are never persisted.
+ */
 export async function POST(request: Request, context: RouteContext) {
   const { taskId } = await context.params;
   const body = await request.json().catch(() => null);
@@ -50,41 +58,47 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Invalid deploy task namespace", 400);
   }
 
-  const snapshotBeforeInput = await getDeployTaskSnapshot(
-    taskId,
-    namespaceResolved.namespace
-  );
-  if (snapshotBeforeInput == null) {
+  const existing = await getDeployTaskById(taskId);
+  if (existing == null || existing.namespace !== namespaceResolved.namespace) {
     return jsonError("Deploy task not found", 404);
   }
 
-  const task = await submitDeployTaskInput(taskId, {
-    values: parsed.data.values,
-  }).catch((error: unknown) => {
-    if (
-      error instanceof Error &&
-      error.message === "Deploy task is not waiting for input."
-    ) {
-      return "not-waiting" as const;
+  const submittedValues = parsed.data.values;
+  const result = await submitDeployTaskInputAction(
+    getDeployTaskEngineContext(),
+    {
+      run: (handle, task) =>
+        runDeployTask(handle, {
+          encodedKubeconfig: parsed.data.encodedKubeconfig,
+          submittedInputValues: submittedValues,
+          taskId: task.id,
+        }),
+      taskId,
+      values: submittedValues,
     }
-    throw error;
-  });
-  if (task === "not-waiting") {
-    return jsonError("Deploy task is not waiting for input", 409);
-  }
-  if (task == null) {
-    return jsonError("Deploy task not found", 404);
-  }
-  startDeployTaskRunner({
-    encodedKubeconfig: parsed.data.encodedKubeconfig,
-    submittedInputValues: parsed.data.values,
-    taskId,
-  }).catch((error: unknown) => {
-    console.error("[deploy-tasks] runner input resume failed:", error);
-  });
-  const snapshot = await getDeployTaskSnapshot(
-    taskId,
-    namespaceResolved.namespace
   );
-  return NextResponse.json(snapshot ?? { task });
+
+  switch (result.kind) {
+    case "not-found":
+      return jsonError("Deploy task not found", 404);
+    case "conflict":
+      return NextResponse.json(
+        {
+          error: "Deploy task is not waiting for input",
+          task: toDeployTaskDTO(result.task),
+        },
+        { status: 409 }
+      );
+    case "resumed": {
+      const snapshot = await getDeployTaskSnapshot(
+        taskId,
+        namespaceResolved.namespace
+      );
+      return NextResponse.json(
+        snapshot ?? { task: toDeployTaskDTO(result.task) }
+      );
+    }
+    default:
+      return result satisfies never;
+  }
 }

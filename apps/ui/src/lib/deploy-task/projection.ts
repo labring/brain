@@ -42,6 +42,8 @@ export interface DeploymentTaskDisplaySummary {
 
 export interface DeploymentTaskProjection {
   artifactSummary: DeployTaskArtifactSummary;
+  /** Server-derived "cancelling" truth (ADR 0038). */
+  cancelRequestedAt?: string | null;
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: string | null;
   display?: DeploymentTaskDisplaySummary;
@@ -50,6 +52,8 @@ export interface DeploymentTaskProjection {
   phase: DeployTaskPhase;
   projectId: string;
   resultMappings?: DeploymentTaskCanvasProjectionResultMapping[];
+  /** Redeploy lineage: surfaces derive supersession from it (ADR 0038). */
+  retriedFromTaskId?: string | null;
   status: DeploymentTaskProjectionStatus;
   updatedAt: string;
 }
@@ -85,12 +89,14 @@ export type DeploymentTaskProjectionStreamServerEvent =
 
 interface DeploymentTaskProjectionSource {
   artifactSummary: DeployTaskArtifactSummary;
+  cancelRequestedAt?: Date | string | null;
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: Date | string | null;
   id: string;
   namespace: string;
   phase: DeployTaskPhase;
   projectId: string | null;
+  retriedFromTaskId?: string | null;
   source: DeploymentTaskSource;
   status: DeployTaskStatus;
   updatedAt: Date | string;
@@ -447,6 +453,7 @@ export function toDeploymentTaskProjection(
   const artifactSummary = publicDeployTaskArtifactSummary(task.artifactSummary);
   const projection: DeploymentTaskProjection = {
     artifactSummary,
+    cancelRequestedAt: dateIso(task.cancelRequestedAt ?? null),
     canvasProjection: task.canvasProjection,
     completedAt,
     display: deploymentTaskDisplaySummary(task),
@@ -454,6 +461,7 @@ export function toDeploymentTaskProjection(
     namespace: task.namespace,
     phase: task.phase,
     projectId,
+    retriedFromTaskId: task.retriedFromTaskId ?? null,
     ...((task.canvasProjection.resultMappings?.length ?? 0) === 0
       ? {}
       : { resultMappings: task.canvasProjection.resultMappings }),

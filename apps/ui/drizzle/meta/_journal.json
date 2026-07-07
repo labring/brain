@@ -8,6 +8,20 @@
       "when": 1782962978096,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783327316923,
+      "tag": "0001_deploy_task_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783327326508,
+      "tag": "0002_drop_deploy_task_heartbeat",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,13 @@
 import "server-only";
 
 import type { DevboxInfo } from "@/lib/devbox/types";
-
-import type { DeployTaskRow } from "./schema";
 import {
-  appendDeployTaskMessage,
   recordDeployTaskEvent,
+  throwIfDeployTaskAborted,
   updateDeployTaskState,
-} from "./service";
+} from "./runner-writes";
+import type { DeployTaskRow } from "./schema";
+import { appendDeployTaskMessage } from "./service";
 
 const CODEX_GATEWAY_STARTUP_TIMEOUT_MS = 60_000;
 const CODEX_GATEWAY_STARTUP_RETRY_MS = 1000;
@@ -322,7 +322,6 @@ async function projectGatewayState(input: {
     gatewayThreadId: input.state.threadId ?? null,
     gatewayTurnId: input.state.currentTurnId ?? null,
     gatewayStateSnapshot: gatewayStateSnapshot(input),
-    status: "running",
   });
 
   const assistantText = assistantTextFromState(input.state);
@@ -345,6 +344,9 @@ async function waitForGatewayTurnCompletion(input: {
   let latestState: CodexGatewayState | null = null;
 
   while (Date.now() < deadline) {
+    // A cancel request aborts the wait between polls; the gateway turn keeps
+    // running remotely, but this run stops watching and unwinds to its ack.
+    throwIfDeployTaskAborted(input.taskId);
     const sessionState = await getGatewaySessionState(
       input.context,
       input.sessionId
@@ -389,7 +391,6 @@ async function persistGatewayStateEvent(input: {
       sessionId: input.sessionId,
       state,
     }),
-    status: "running",
   });
   await recordDeployTaskEvent(input.taskId, {
     kind: "deploy_task.gateway_state",
@@ -549,7 +550,6 @@ export async function runDeployTaskGateway(input: {
   await updateDeployTaskState(input.task.id, {
     gatewayUrl: input.context.url,
     phase: "plan",
-    status: "running",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_waiting",
@@ -585,7 +585,6 @@ export async function runDeployTaskGateway(input: {
   await updateDeployTaskState(input.task.id, {
     gatewayThreadId: turn.state.threadId ?? null,
     gatewayTurnId: turn.state.currentTurnId ?? null,
-    status: "running",
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_turn_sent",

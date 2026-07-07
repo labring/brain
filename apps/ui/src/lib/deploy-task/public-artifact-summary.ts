@@ -2,6 +2,7 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskEventPayload,
 } from "./schema";
+import { withoutSensitiveArgs } from "./sensitive-inputs";
 
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -15,20 +16,11 @@ function publicDeploymentPlan(
   if (plan == null) {
     return undefined;
   }
-  const sensitiveKeys = new Set(
-    plan.inputs.filter((input) => input.sensitive).map((input) => input.key)
-  );
   return {
     ...plan,
     ...(plan.args == null
       ? {}
-      : {
-          args: Object.fromEntries(
-            Object.entries(plan.args).flatMap(([key, value]) =>
-              sensitiveKeys.has(key) ? [] : [[key, value]]
-            )
-          ),
-        }),
+      : { args: withoutSensitiveArgs(plan.args, plan.inputs) }),
   };
 }
 

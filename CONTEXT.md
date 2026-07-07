@@ -316,6 +316,30 @@ A product resource description produced or selected by a Deployment Task for app
 
 _Avoid_: task output, generated file.
 
+### Deployment Task Lease
+
+The exclusive execution right for one Deployment Task, claimed inline by the credentialed request that launches the run (creation or Blocking Input submission) and renewed by that process for as long as the run is in flight; a task without a live lease is not executing, and an expired lease on an active task means the owning process died. The lease epoch fences state writes from superseded executions. A lease is engine state, not a UI concept.
+
+_Avoid_: task lock, running flag, worker pin, heartbeat.
+
+### Deployment Task Cancel Request
+
+A recorded user intent to stop an active Deployment Task, acknowledged cooperatively by the runner at a checkpoint and resolved to `cancelled` by the engine when unacknowledged past its deadline. Cancelling stops the deploy workflow; it never deletes or reverts applied resources, and the task keeps itemized evidence of what was applied.
+
+_Avoid_: force kill, rollback, undo deployment, cancelling status.
+
+### Redeploy
+
+Recovery for a failed or cancelled Deployment Task: a new Deployment Task cloned from the predecessor's Deployment Source and Deployment Target with recorded lineage, reusing result identities the predecessor already allocated. A Redeploy may carry edited source settings; there is no in-place retry of a terminal Deployment Task.
+
+_Avoid_: retry, re-run, attempt, task restart.
+
+### Deployment Task Retention
+
+The automatic cleanup boundary for Deployment Task records: terminal tasks, their events, runner transcripts, and per-task deploy runtimes are purged after a fixed window. Active and blocked tasks are never purged, and there is no user-facing task deletion.
+
+_Avoid_: delete task, clear history, archive task.
+
 ### GitHub Connection
 
 A namespace-scoped authorization relationship that lets a workspace use a GitHub App installation to list and deploy repositories. A GitHub Connection belongs to the workspace namespace rather than one user's browser session or personal GitHub identity.

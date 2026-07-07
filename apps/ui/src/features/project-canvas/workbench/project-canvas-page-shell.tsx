@@ -20,6 +20,7 @@ import {
 } from "@/features/project-canvas/workbench/node-commands-react";
 import { ProjectRuntimeStoreProvider } from "@/features/project-runtime/resource-models-react";
 import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
+import type { DeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
 
 const PROJECT_CANVAS_LOADING_TOAST_ID = "project-canvas-loading-workloads";
 const PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID = "project-canvas-no-workloads";
@@ -145,6 +146,7 @@ function ProjectCanvasFrameStateToast({
 }
 
 interface ProjectCanvasOverlayLayerProps {
+  deploymentTaskActions?: DeploymentTaskActions;
   deploymentTaskDock: DeploymentTaskDockModel;
   frameState: ProjectCanvasFrameState;
   onDismissDeploymentTask: (taskId: string) => void;
@@ -152,6 +154,7 @@ interface ProjectCanvasOverlayLayerProps {
 }
 
 export function ProjectCanvasOverlayLayer({
+  deploymentTaskActions,
   deploymentTaskDock,
   frameState,
   onDismissDeploymentTask,
@@ -160,6 +163,7 @@ export function ProjectCanvasOverlayLayer({
   return (
     <>
       <ProjectCanvasDeploymentTaskDock
+        actions={deploymentTaskActions}
         className="absolute top-2 left-48 z-20"
         dock={deploymentTaskDock}
         onDismiss={onDismissDeploymentTask}

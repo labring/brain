@@ -87,6 +87,10 @@ export const deploymentTaskSourceSchema = z.discriminatedUnion("kind", [
   z.object({
     args: z.record(z.string(), z.string()).optional(),
     kind: z.literal("template"),
+    sensitiveKeys: z
+      .array(z.string().trim().min(1).max(256))
+      .max(64)
+      .optional(),
     templateName: z.string().trim().min(1).max(256),
   }),
   z.object({
@@ -195,6 +199,8 @@ export interface DeployTaskDTO {
   actorUserId?: string | null;
   artifactSummary: DeployTaskArtifactSummary;
   blockingInputs: DeployTaskBlockingInput[];
+  /** Server-derived "cancelling" truth (ADR 0038). */
+  cancelRequestedAt?: string | null;
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: string | null;
   createdAt: string;
@@ -213,6 +219,8 @@ export interface DeployTaskDTO {
   projectId: string | null;
   projectName: string | null;
   resultUrl: string | null;
+  /** Redeploy lineage (predecessor task id, purgeable; ADR 0038). */
+  retriedFromTaskId?: string | null;
   runner: DeploymentTaskRunner;
   runtimeName: string | null;
   runtimeProvider: string | null;

@@ -3,7 +3,10 @@ import {
   resolveDeployTaskRequestNamespace,
 } from "@/lib/deploy-task/api-auth";
 import type { DeploymentTaskProjectionStreamEvent } from "@/lib/deploy-task/projection";
-import { subscribeDeploymentTaskProjectionEvents } from "@/lib/deploy-task/projection-events";
+import {
+  type DeploymentTaskEventsSubscription,
+  subscribeDeploymentTaskProjectionEvents,
+} from "@/lib/deploy-task/projection-events";
 import { listDeploymentTaskProjections } from "@/lib/deploy-task/service";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +52,7 @@ export async function GET(request: Request) {
       let closed = false;
       let snapshotSent = false;
       let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-      let unsubscribe: (() => void) | undefined;
+      let subscription: DeploymentTaskEventsSubscription | undefined;
       const pendingEvents: DeploymentTaskProjectionStreamEvent[] = [];
 
       function cleanup() {
@@ -60,7 +63,7 @@ export async function GET(request: Request) {
         if (heartbeatTimer !== undefined) {
           clearInterval(heartbeatTimer);
         }
-        unsubscribe?.();
+        subscription?.unsubscribe();
         request.signal.removeEventListener("abort", close);
       }
 
@@ -95,7 +98,9 @@ export async function GET(request: Request) {
         return;
       }
 
-      unsubscribe = subscribeDeploymentTaskProjectionEvents({
+      subscription = subscribeDeploymentTaskProjectionEvents({
+        listProjections: () =>
+          listDeploymentTaskProjections({ namespace, projectId }),
         listener: (event) => {
           if (snapshotSent) {
             send(event.type, event);
@@ -112,6 +117,9 @@ export async function GET(request: Request) {
       );
 
       try {
+        // Subscribe-before-bootstrap (ADR 0037): the bootstrap read waits
+        // for LISTEN so no update falls between snapshot and subscription.
+        await subscription.ready;
         const projections = await listDeploymentTaskProjections({
           namespace,
           projectId,

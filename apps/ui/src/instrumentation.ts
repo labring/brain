@@ -1,6 +1,8 @@
 /**
  * Runs once when the Node server starts. Applies pending app-owned Postgres
- * migrations (`apps/ui/drizzle`) before the server takes traffic.
+ * migrations (`apps/ui/drizzle`) before the server takes traffic, then
+ * starts the deployment task engine runtime (reaper + shutdown drain,
+ * ADR 0037) alongside them.
  *
  * In production a migration failure aborts the boot (a half-migrated schema
  * must not serve traffic). In dev it degrades to a warning so the UI still
@@ -21,6 +23,24 @@ export async function register() {
     }
     console.warn(
       "[instrumentation] app Postgres migrations failed; persistence-backed features will not work:",
+      error
+    );
+    return;
+  }
+  if (!process.env.DATABASE_URL?.trim()) {
+    return;
+  }
+  try {
+    const { startDeployTaskEngine } = await import(
+      "@/lib/deploy-task/engine/server"
+    );
+    startDeployTaskEngine();
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw error;
+    }
+    console.warn(
+      "[instrumentation] deploy task engine failed to start:",
       error
     );
   }
