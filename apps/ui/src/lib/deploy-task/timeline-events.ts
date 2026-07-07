@@ -27,8 +27,19 @@ export function subscribeDeploymentTaskTimelineEvents(input: {
   const ctx = getDeployTaskEngineContext();
   let cancelled = false;
   let unsubscribe: (() => void | Promise<void>) | null = null;
+  let emitting = false;
+  let emitQueued = false;
 
+  // Single-flight with a trailing re-read: concurrent re-reads can resolve
+  // out of order and deliver an older row state after a newer one; the
+  // trailing read folds every notification that arrived mid-read into one
+  // final snapshot, so the last delivery always reflects the last write.
   const emitCurrent = () => {
+    if (emitting) {
+      emitQueued = true;
+      return;
+    }
+    emitting = true;
     getDeployTaskTimelineSnapshot(input.taskId, input.namespace)
       .then((snapshot) => {
         if (!cancelled && snapshot != null) {
@@ -37,6 +48,13 @@ export function subscribeDeploymentTaskTimelineEvents(input: {
       })
       .catch((error) => {
         console.error("[deploy-task-timeline-events] re-read failed:", error);
+      })
+      .finally(() => {
+        emitting = false;
+        if (emitQueued && !cancelled) {
+          emitQueued = false;
+          emitCurrent();
+        }
       });
   };
 
