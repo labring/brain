@@ -13,6 +13,14 @@ export const GITHUB_APP_INSTALL_COMPLETE_PATH =
 export const GITHUB_APP_INSTALL_COMPLETE_MESSAGE =
   "github-app-install-complete" as const;
 
+/** Cross-tab channel used when the GitHub App flow returns in a browser tab. */
+export const GITHUB_APP_INSTALL_COMPLETE_CHANNEL =
+  "brain-github-app-install" as const;
+
+/** Local storage key used to fan out install completion to other tabs. */
+export const GITHUB_APP_INSTALL_COMPLETE_STORAGE_KEY =
+  "brain:github-app-install-complete" as const;
+
 /** Max length for path + search stored in pending install session / `next` query. */
 export const MAX_INSTALL_RETURN_PATH_LEN = 2048;
 
@@ -41,6 +49,7 @@ export function parseInstallReturnPathParam(raw: string | null): string | null {
     decoded.length > MAX_INSTALL_RETURN_PATH_LEN ||
     !decoded.startsWith("/") ||
     decoded.startsWith("//") ||
+    decoded.includes("\\") ||
     decoded.includes("://") ||
     decoded.includes("\n") ||
     decoded.includes("\r")

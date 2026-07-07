@@ -119,7 +119,7 @@ export async function completeAuthorization(
 
   const baseUrl = getCallbackBaseUrl(request);
   const response = NextResponse.redirect(
-    buildInstallPopupCompleteUrl(baseUrl, session.returnPath)
+    buildInstallPopupCompleteUrl(baseUrl, session.returnPath, session.state)
   );
   return response;
 }
