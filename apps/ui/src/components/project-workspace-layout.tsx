@@ -190,6 +190,85 @@ function buildAssistantContextPayload(
   };
 }
 
+function ProjectAssistantComposer({
+  busy,
+  contextToggles,
+  onDatabaseIntent,
+  onDockerIntent,
+  onGithubIntent,
+  onSkillsIntent,
+  onStop,
+  onSubmit,
+}: {
+  busy: boolean;
+  contextToggles: readonly string[];
+  onDatabaseIntent: () => void;
+  onDockerIntent: () => void;
+  onGithubIntent: () => void;
+  onSkillsIntent: () => void;
+  onStop: () => void;
+  onSubmit: (text: string) => void;
+}) {
+  const [input, setInput] = useState("");
+  const { isAuthorized, isLoading: authLoading } = useGithubAuth();
+
+  const onPrimaryAction = useCallback(() => {
+    if (busy) {
+      onStop();
+      return;
+    }
+    const text = input.trim();
+    if (!text) {
+      return;
+    }
+    onSubmit(text);
+    setInput("");
+  }, [busy, input, onStop, onSubmit]);
+
+  return (
+    <div className="group flex w-full shrink-0 flex-col p-[10px]">
+      {contextToggles.length > 0 ? (
+        <div className="relative h-0 w-full overflow-visible transition-[height] duration-300 ease-out group-focus-within:h-6 motion-reduce:transition-none">
+          <div className="pointer-events-none absolute inset-x-0 top-full w-full -translate-y-full">
+            <Chat.ContextIndicator
+              className="w-full"
+              contextToggles={contextToggles}
+            />
+          </div>
+        </div>
+      ) : null}
+      <Chat.ComposerShell>
+        <Chat.ComposerTextarea
+          onPrimaryAction={onPrimaryAction}
+          onValueChange={setInput}
+          placeholder="Ask SealAI to inspect, deploy, or explain this project..."
+          responding={busy}
+          value={input}
+        />
+        <Chat.ComposerFooter>
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <Chat.GithubDeployButton
+              authLoading={authLoading}
+              isAuthorized={isAuthorized}
+              onComposerAction={onGithubIntent}
+            />
+            <Chat.SkillsWorkflowButton onComposerAction={onSkillsIntent} />
+            <Chat.DockerDeployButton onComposerAction={onDockerIntent} />
+            <Chat.DatabaseDeployButton onComposerAction={onDatabaseIntent} />
+          </div>
+          <Chat.ComposerSend
+            onPrimaryAction={onPrimaryAction}
+            responding={busy}
+            value={input}
+          />
+        </Chat.ComposerFooter>
+      </Chat.ComposerShell>
+    </div>
+  );
+}
+
+const ProjectAssistantComposerMemo = memo(ProjectAssistantComposer);
+
 function ProjectAssistantChatSession({
   bootstrap,
   freeTier,
@@ -420,9 +499,6 @@ function ProjectAssistantChatSession({
       }
     }
   }, [messages, projectId]);
-  const [input, setInput] = useState("");
-  const { isAuthorized, isLoading: authLoading } = useGithubAuth();
-
   const createThreadClicked = useCallback(() => {
     onCreateThread().catch(() => undefined);
   }, [onCreateThread]);
@@ -466,18 +542,16 @@ function ProjectAssistantChatSession({
     return toggles;
   }, [projectId, selected]);
 
-  const onPrimaryAction = useCallback(() => {
-    if (busy) {
-      stop();
-      return;
-    }
-    const text = input.trim();
-    if (!text) {
-      return;
-    }
-    sendMessage({ text }).catch(() => undefined);
-    setInput("");
-  }, [busy, input, sendMessage, stop]);
+  const submitComposerText = useCallback(
+    (text: string) => {
+      sendMessage({ text }).catch(() => undefined);
+    },
+    [sendMessage]
+  );
+
+  const stopComposerResponse = useCallback(() => {
+    stop();
+  }, [stop]);
 
   return (
     <Chat.Root>
@@ -508,46 +582,16 @@ function ProjectAssistantChatSession({
             />
           </div>
         ) : null}
-        <div className="group flex w-full shrink-0 flex-col p-[10px]">
-          {composerContextToggles.length > 0 ? (
-            <div className="relative h-0 w-full overflow-visible transition-[height] duration-300 ease-out group-focus-within:h-6 motion-reduce:transition-none">
-              <div className="pointer-events-none absolute inset-x-0 top-full w-full -translate-y-full">
-                <Chat.ContextIndicator
-                  className="w-full"
-                  contextToggles={composerContextToggles}
-                />
-              </div>
-            </div>
-          ) : null}
-          <Chat.ComposerShell>
-            <Chat.ComposerTextarea
-              onPrimaryAction={onPrimaryAction}
-              onValueChange={setInput}
-              placeholder="Ask SealAI to inspect, deploy, or explain this project..."
-              responding={busy}
-              value={input}
-            />
-            <Chat.ComposerFooter>
-              <div className="flex min-w-0 flex-1 items-center gap-1">
-                <Chat.GithubDeployButton
-                  authLoading={authLoading}
-                  isAuthorized={isAuthorized}
-                  onComposerAction={onGithubIntent}
-                />
-                <Chat.SkillsWorkflowButton onComposerAction={onSkillsIntent} />
-                <Chat.DockerDeployButton onComposerAction={onDockerIntent} />
-                <Chat.DatabaseDeployButton
-                  onComposerAction={onDatabaseIntent}
-                />
-              </div>
-              <Chat.ComposerSend
-                onPrimaryAction={onPrimaryAction}
-                responding={busy}
-                value={input}
-              />
-            </Chat.ComposerFooter>
-          </Chat.ComposerShell>
-        </div>
+        <ProjectAssistantComposerMemo
+          busy={busy}
+          contextToggles={composerContextToggles}
+          onDatabaseIntent={onDatabaseIntent}
+          onDockerIntent={onDockerIntent}
+          onGithubIntent={onGithubIntent}
+          onSkillsIntent={onSkillsIntent}
+          onStop={stopComposerResponse}
+          onSubmit={submitComposerText}
+        />
       </Chat>
     </Chat.Root>
   );

@@ -1,12 +1,14 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import { githubReposSWRKey } from "@/hooks/use-github-repos";
 import {
+  GITHUB_APP_INSTALL_COMPLETE_CHANNEL,
   GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
+  GITHUB_APP_INSTALL_COMPLETE_STORAGE_KEY,
   parseInstallNamespaceParam,
   parseInstallReturnPathParam,
 } from "@/lib/github-app/types";
@@ -99,7 +101,7 @@ async function createInstallSession(
   kubeconfig: string,
   userId: string,
   returnPath: string
-): Promise<{ installUrl: string }> {
+): Promise<{ installUrl: string; state: string }> {
   const response = await fetch("/api/github/install-session", {
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
@@ -114,11 +116,17 @@ async function createInstallSession(
   if (!response.ok) {
     throw new Error(await response.text());
   }
-  const body = (await response.json()) as { installUrl?: unknown };
+  const body = (await response.json()) as {
+    installUrl?: unknown;
+    state?: unknown;
+  };
   if (typeof body.installUrl !== "string" || body.installUrl.trim() === "") {
     throw new Error("GitHub App install URL was not returned.");
   }
-  return { installUrl: body.installUrl };
+  if (typeof body.state !== "string" || body.state.trim() === "") {
+    throw new Error("GitHub App install state was not returned.");
+  }
+  return { installUrl: body.installUrl, state: body.state };
 }
 
 function centeredPopupFeatures(): string {
@@ -137,6 +145,51 @@ function centeredPopupFeatures(): string {
 
 function sameOriginPath(raw: unknown): string | null {
   return typeof raw === "string" ? parseInstallReturnPathParam(raw) : null;
+}
+
+function isGithubInstallCompleteMessage(
+  data: unknown
+): data is { returnPath?: unknown; state: string; type: string } {
+  return (
+    typeof data === "object" &&
+    data != null &&
+    "type" in data &&
+    data.type === GITHUB_APP_INSTALL_COMPLETE_MESSAGE &&
+    "state" in data &&
+    typeof data.state === "string" &&
+    data.state.trim() !== ""
+  );
+}
+
+function parseStoredInstallCompleteMessage(
+  raw: string | null
+): { returnPath?: unknown; state: string; type: string } | null {
+  if (raw == null || raw === "") {
+    return null;
+  }
+  try {
+    const data = JSON.parse(raw) as unknown;
+    return isGithubInstallCompleteMessage(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function githubInstallReturnPathForNavigation(
+  data: unknown,
+  options?: { applyReturnPath?: boolean }
+): string | null {
+  if (
+    options?.applyReturnPath !== true ||
+    !isGithubInstallCompleteMessage(data)
+  ) {
+    return null;
+  }
+  return sameOriginPath(data.returnPath);
+}
+
+function completedState(data: unknown): string | null {
+  return isGithubInstallCompleteMessage(data) ? data.state.trim() : null;
 }
 
 export function useGithubAuth(options?: {
@@ -169,6 +222,87 @@ export function useGithubAuth(options?: {
     err = new Error(String(error));
   }
 
+  const installCleanupRef = useRef<(() => void) | null>(null);
+  const pendingInstallStateRef = useRef<string | null>(null);
+  const handledInstallStatesRef = useRef<Set<string>>(new Set());
+
+  const refreshConnection = useCallback(() => {
+    if (!canCheck) {
+      return;
+    }
+    mutate().catch(() => undefined);
+    const reposKey = githubReposSWRKey({ kubeconfig, namespace, userId });
+    if (reposKey != null) {
+      mutateCache(reposKey).catch(() => undefined);
+    }
+  }, [canCheck, kubeconfig, mutate, mutateCache, namespace, userId]);
+
+  const handleInstallComplete = useCallback(
+    (data: unknown, options?: { applyReturnPath?: boolean }) => {
+      if (!isGithubInstallCompleteMessage(data)) {
+        return;
+      }
+      const state = completedState(data);
+      if (
+        state == null ||
+        (state !== pendingInstallStateRef.current &&
+          !handledInstallStatesRef.current.has(state))
+      ) {
+        return;
+      }
+      const alreadyHandled = handledInstallStatesRef.current.has(state);
+      if (!alreadyHandled) {
+        handledInstallStatesRef.current.add(state);
+        installCleanupRef.current?.();
+      }
+      const returnPath = githubInstallReturnPathForNavigation(data, options);
+      if (
+        returnPath &&
+        returnPath !== `${window.location.pathname}${window.location.search}`
+      ) {
+        window.history.replaceState(null, "", returnPath);
+      }
+      if (!alreadyHandled) {
+        refreshConnection();
+      }
+    },
+    [refreshConnection]
+  );
+
+  useEffect(() => {
+    if (!canCheck) {
+      return;
+    }
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      handleInstallComplete(event.data, { applyReturnPath: true });
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== GITHUB_APP_INSTALL_COMPLETE_STORAGE_KEY) {
+        return;
+      }
+      handleInstallComplete(parseStoredInstallCompleteMessage(event.newValue));
+    };
+    let channel: BroadcastChannel | undefined;
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel(GITHUB_APP_INSTALL_COMPLETE_CHANNEL);
+      channel.addEventListener("message", (event) => {
+        handleInstallComplete(event.data);
+      });
+    }
+
+    window.addEventListener("message", handleMessage);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      window.removeEventListener("storage", handleStorage);
+      channel?.close();
+      installCleanupRef.current?.();
+    };
+  }, [canCheck, handleInstallComplete]);
+
   const initiateGithubAuth = useCallback(() => {
     const next = `${window.location.pathname}${window.location.search}`;
     const normalizedNamespace = parseInstallNamespaceParam(namespace);
@@ -187,39 +321,16 @@ export function useGithubAuth(options?: {
 
     let closePoll: number | undefined;
     const cleanup = () => {
-      window.removeEventListener("message", handleMessage);
       if (closePoll !== undefined) {
         window.clearInterval(closePoll);
+        closePoll = undefined;
       }
+      if (installCleanupRef.current === cleanup) {
+        installCleanupRef.current = null;
+      }
+      pendingInstallStateRef.current = null;
     };
-    const refreshConnection = () => {
-      mutate().catch(() => undefined);
-      const reposKey = githubReposSWRKey({ kubeconfig, namespace, userId });
-      if (reposKey != null) {
-        mutateCache(reposKey).catch(() => undefined);
-      }
-    };
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) {
-        return;
-      }
-      if (
-        typeof event.data !== "object" ||
-        event.data == null ||
-        event.data.type !== GITHUB_APP_INSTALL_COMPLETE_MESSAGE
-      ) {
-        return;
-      }
-      cleanup();
-      const returnPath = sameOriginPath(event.data.returnPath);
-      if (
-        returnPath &&
-        returnPath !== `${window.location.pathname}${window.location.search}`
-      ) {
-        window.history.replaceState(null, "", returnPath);
-      }
-      refreshConnection();
-    };
+    installCleanupRef.current = cleanup;
 
     const start = async (popup: Window | null) => {
       if (
@@ -231,18 +342,19 @@ export function useGithubAuth(options?: {
           "GitHub App installation requires workspace credentials and user ID."
         );
       }
-      const { installUrl } = await createInstallSession(
+      const { installUrl, state } = await createInstallSession(
         normalizedNamespace,
         kubeconfig,
         userId,
         next
       );
+      pendingInstallStateRef.current = state;
+      handledInstallStatesRef.current.delete(state);
       if (popup == null) {
         window.location.assign(installUrl);
         return;
       }
       popup.location.replace(installUrl);
-      window.addEventListener("message", handleMessage);
       closePoll = window.setInterval(() => {
         if (popup.closed) {
           cleanup();
@@ -259,7 +371,7 @@ export function useGithubAuth(options?: {
         startError
       );
     });
-  }, [kubeconfig, mutate, mutateCache, namespace, userId]);
+  }, [kubeconfig, namespace, refreshConnection, userId]);
 
   const disconnectGithubAuth = useCallback(async () => {
     if (!canCheck) {
