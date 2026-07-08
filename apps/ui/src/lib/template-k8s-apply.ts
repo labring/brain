@@ -34,6 +34,17 @@ const BRAIN_DEPLOYMENT_LABEL_KEYS = [
   BRAIN_DEPLOYMENT_NAME_LABEL,
   BRAIN_TEMPLATE_NAME_LABEL,
 ];
+const KUBERNETES_NATIVE_RESOURCE_KEYS_WITHOUT_PROJECT_SPEC = new Set([
+  "apps/v1/DaemonSet",
+  "apps/v1/Deployment",
+  "apps/v1/StatefulSet",
+  "batch/v1/CronJob",
+  "batch/v1/Job",
+  "networking.k8s.io/v1/Ingress",
+  "v1/ConfigMap",
+  "v1/Secret",
+  "v1/Service",
+]);
 const GHCR_HOST = "ghcr.io";
 const GHCR_PULL_SECRET_SUFFIX = "-ghcr-pull";
 const KUBERNETES_NAME_MAX_LENGTH = 63;
@@ -257,6 +268,23 @@ function normalizeHttpOnlyIngress(resource: TemplateK8sObject) {
   }
 }
 
+function removeNativeProjectSpec(resource: TemplateK8sObject) {
+  if (
+    resource.apiVersion == null ||
+    resource.kind == null ||
+    !KUBERNETES_NATIVE_RESOURCE_KEYS_WITHOUT_PROJECT_SPEC.has(
+      `${resource.apiVersion}/${resource.kind}`
+    )
+  ) {
+    return;
+  }
+  if (resource.spec != null) {
+    resource.spec = Object.fromEntries(
+      Object.entries(resource.spec).filter(([key]) => key !== "projectId")
+    );
+  }
+}
+
 function normalizeRenderedTemplateDeployment(input: {
   instanceName: string;
   projectId: string;
@@ -271,6 +299,7 @@ function normalizeRenderedTemplateDeployment(input: {
       resource: copy,
       templateName: input.templateName,
     });
+    removeNativeProjectSpec(copy);
     normalizeHttpOnlyIngress(copy);
     return copy;
   });

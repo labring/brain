@@ -27,6 +27,8 @@ const SSL_REDIRECT_FALSE_RE =
   /nginx\.ingress\.kubernetes\.io\/ssl-redirect: \\?"false\\?"/;
 const FORCE_HTTPS_FORWARDED_PROTO_RE =
   /proxy_set_header X-Forwarded-Proto https/;
+const PROJECT_ID_SPEC_RE = /projectId:/;
+const CUSTOM_PROJECT_ID_SPEC_RE = /projectId: custom-project/;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -297,6 +299,137 @@ test("applyRenderedTemplateDeployment normalizes HTTP-only template ingress rout
 
   assert.match(calls[2]?.body ?? "", SSL_REDIRECT_FALSE_RE);
   assert.doesNotMatch(calls[2]?.body ?? "", FORCE_HTTPS_FORWARDED_PROTO_RE);
+});
+
+test("applyRenderedTemplateDeployment removes projectId specs from native Kubernetes resources", async () => {
+  process.env.API_URL = "https://api.example.com";
+  const calls: Array<{ body?: string; url: string }> = [];
+  globalThis.fetch = ((url, init) => {
+    calls.push({
+      body: typeof init?.body === "string" ? init.body : undefined,
+      url: String(url),
+    });
+    if (String(url).includes("/api/k8s/v1alpha1/get")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            apiVersion: "app.sealos.io/v1",
+            kind: "Instance",
+            metadata: { name: "template-web", uid: "instance-uid" },
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 200 }
+        )
+      );
+    }
+    return Promise.resolve(new Response("", { status: 200 }));
+  }) as typeof fetch;
+
+  await applyRenderedTemplateDeployment({
+    encodedKubeconfig: "kubeconfig",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    rendered: {
+      dependentYamls: [],
+      instanceName: "template-web",
+      instanceYaml:
+        "apiVersion: app.sealos.io/v1\nkind: Instance\nmetadata:\n  name: template-web",
+      resources: [
+        {
+          apiVersion: "app.sealos.io/v1",
+          kind: "Instance",
+          metadata: { name: "template-web" },
+        },
+        {
+          apiVersion: "apps/v1",
+          kind: "Deployment",
+          metadata: { name: "template-web" },
+          spec: {
+            projectId: "wrong-place",
+            selector: { matchLabels: { app: "template-web" } },
+            template: {
+              metadata: { labels: { app: "template-web" } },
+              spec: {
+                containers: [
+                  {
+                    image: "docker.io/library/nginx",
+                    name: "template-web",
+                  },
+                ],
+              },
+            },
+          },
+        },
+        {
+          apiVersion: "v1",
+          kind: "Service",
+          metadata: { name: "template-web" },
+          spec: {
+            ports: [{ port: 80, targetPort: 3000 }],
+            projectId: "wrong-place",
+            selector: { app: "template-web" },
+          },
+        },
+      ],
+    },
+    templateName: "web",
+  });
+
+  assert.doesNotMatch(calls[2]?.body ?? "", PROJECT_ID_SPEC_RE);
+  assert.match(calls[2]?.body ?? "", PROJECT_LABEL_RE);
+});
+
+test("applyRenderedTemplateDeployment keeps projectId specs on custom resources with colliding kinds", async () => {
+  process.env.API_URL = "https://api.example.com";
+  const calls: Array<{ body?: string; url: string }> = [];
+  globalThis.fetch = ((url, init) => {
+    calls.push({
+      body: typeof init?.body === "string" ? init.body : undefined,
+      url: String(url),
+    });
+    if (String(url).includes("/api/k8s/v1alpha1/get")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            apiVersion: "app.sealos.io/v1",
+            kind: "Instance",
+            metadata: { name: "template-web", uid: "instance-uid" },
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 200 }
+        )
+      );
+    }
+    return Promise.resolve(new Response("", { status: 200 }));
+  }) as typeof fetch;
+
+  await applyRenderedTemplateDeployment({
+    encodedKubeconfig: "kubeconfig",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    rendered: {
+      dependentYamls: [],
+      instanceName: "template-web",
+      instanceYaml:
+        "apiVersion: app.sealos.io/v1\nkind: Instance\nmetadata:\n  name: template-web",
+      resources: [
+        {
+          apiVersion: "app.sealos.io/v1",
+          kind: "Instance",
+          metadata: { name: "template-web" },
+        },
+        {
+          apiVersion: "example.com/v1",
+          kind: "Deployment",
+          metadata: { name: "custom-deployment" },
+          spec: {
+            projectId: "custom-project",
+          },
+        },
+      ],
+    },
+    templateName: "web",
+  });
+
+  assert.match(calls[2]?.body ?? "", CUSTOM_PROJECT_ID_SPEC_RE);
 });
 
 test("applyRenderedTemplateDeployment keeps generated GHCR pull secret name within Kubernetes limits", async () => {
