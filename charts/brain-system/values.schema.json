@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "additionalProperties": true,
+  "definitions": {
+    "component": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          },
+          "type": "object"
+        },
+        "image": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "imagePullPolicy": {
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "platformAddresses": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "domainPrefix": {
+                "type": "string"
+              },
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "port": {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": ["id"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resources": {
+          "additionalProperties": true,
+          "properties": {
+            "limits": {
+              "type": "object"
+            },
+            "replicas": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "requests": {
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "staticEnv": {
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          },
+          "type": "object"
+        }
+      },
+      "required": ["enabled", "image", "imagePullPolicy", "name", "port"],
+      "type": "object"
+    },
+    "stringMap": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "properties": {
+    "api": {
+      "$ref": "#/definitions/component"
+    },
+    "database": {
+      "additionalProperties": true,
+      "properties": {
+        "cpuLimit": {
+          "type": "string"
+        },
+        "cpuRequest": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "engine": {
+          "enum": [
+            "postgresql",
+            "postgres",
+            "pg",
+            "mysql",
+            "apecloud-mysql",
+            "redis",
+            "mongodb",
+            "mongo"
+          ],
+          "type": "string"
+        },
+        "exposeNodePort": {
+          "type": "boolean"
+        },
+        "memoryLimit": {
+          "type": "string"
+        },
+        "memoryRequest": {
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "quota": {
+          "enum": ["xs", "s", "m", "l"],
+          "type": "string"
+        },
+        "replicas": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "scheduledBackup": {
+          "additionalProperties": true,
+          "properties": {
+            "cronExpression": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "repoName": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "retentionPeriod": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["enabled"],
+          "type": "object"
+        },
+        "storageClassName": {
+          "type": "string"
+        },
+        "storageSize": {
+          "type": "string"
+        },
+        "terminationPolicy": {
+          "enum": ["Delete", "WipeOut", "Halt", "DoNotTerminate"],
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "engine",
+        "name",
+        "quota",
+        "replicas",
+        "terminationPolicy"
+      ],
+      "type": "object"
+    },
+    "global": {
+      "additionalProperties": true,
+      "properties": {
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "cloudDomain": {
+          "type": "string"
+        },
+        "cloudPort": {
+          "type": ["integer", "string"]
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "region": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "imagePullSecret": {
+      "additionalProperties": true,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "dockerConfigJson": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "useForWhodb": {
+          "type": "boolean"
+        }
+      },
+      "required": ["create", "name", "useForWhodb"],
+      "type": "object"
+    },
+    "registry": {
+      "$ref": "#/definitions/component"
+    },
+    "ui": {
+      "$ref": "#/definitions/component"
+    },
+    "whodb": {
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          },
+          "type": "object"
+        },
+        "image": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "imagePullPolicy": {
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "replicas": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resources": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "enabled",
+        "image",
+        "imagePullPolicy",
+        "name",
+        "port",
+        "replicas"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api",
+    "database",
+    "global",
+    "imagePullSecret",
+    "registry",
+    "ui",
+    "whodb"
+  ],
+  "title": "brain-system values",
+  "type": "object"
+}

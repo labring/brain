@@ -53,7 +53,7 @@ config.
 
 When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart.
 
-`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST` and `ui.env.DEVBOX_API_BASE_URL` are also derived from the platform cloud domain when left empty.
+`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty.
 
 Install or upgrade:
 
@@ -74,9 +74,9 @@ kubectl -n brain-system get deploy,pod,svc,ingress,hpa,cluster -o wide
 kubectl -n brain-system rollout status deploy/whodb --timeout=5m
 ```
 
-For Brain-managed resources:
+For app and database resources:
 
 ```bash
-kubectl -n brain-system get deploy,svc,ingress,hpa -l brain.io/managed-by=brain
-kubectl -n brain-system get cluster -l brain.io/resource-kind=db
+kubectl -n brain-system get deploy,svc,ingress -l app.kubernetes.io/instance=brain-system
+kubectl -n brain-system get cluster -l sealos-db-provider-cr=brain-pg
 ```

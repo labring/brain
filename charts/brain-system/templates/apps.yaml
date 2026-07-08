@@ -2,7 +2,6 @@
 {{- $cloudDomain := include "brain-system.cloudDomain" $root -}}
 {{- range $component, $cfg := dict "api" .Values.api "ui" .Values.ui "registry" .Values.registry }}
 {{- if $cfg.enabled }}
-{{- $projectId := include "brain-system.projectId" $root -}}
 {{- $serviceName := include "brain-system.apServiceName" (dict "name" $cfg.name) -}}
 {{- $probes := default (dict) $cfg.probes -}}
 {{- $env := default (dict) $cfg.env -}}
@@ -15,12 +14,9 @@ metadata:
   namespace: {{ $root.Release.Namespace }}
   labels:
     {{- include "brain-system.labels" $root | nindent 4 }}
-    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $cloudDomain) | nindent 4 }}
+    {{- include "brain-system.apManagerLabels" (dict "name" $cfg.name "region" $cloudDomain) | nindent 4 }}
   annotations:
-    brain.io/ap-desired-network: {{ include "brain-system.networkAnnotation" (dict "namespace" $root.Release.Namespace "name" $cfg.name "port" $cfg.port "platformAddresses" $cfg.platformAddresses) | quote }}
-    brain.io/ap-replica-strategy: {{ include "brain-system.replicaStrategyAnnotation" (dict "replicas" $cfg.resources.replicas) | quote }}
     deploy.cloud.sealos.io/pause: {{ ternary "true" "false" $cfg.paused | quote }}
-    brain.io/restart-request: {{ default 0 $cfg.restartRequest | quote }}
     {{- with (include "brain-system.annotations" $root) }}
     {{- . | nindent 4 }}
     {{- end }}
@@ -38,7 +34,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "brain-system.apPodLabels" (dict "projectId" $projectId "name" $cfg.name "region" $cloudDomain) | nindent 8 }}
+        {{- include "brain-system.apPodLabels" (dict "name" $cfg.name "region" $cloudDomain) | nindent 8 }}
     spec:
       {{- if and $root.Values.imagePullSecret.create $root.Values.imagePullSecret.name }}
       imagePullSecrets:
@@ -81,7 +77,7 @@ metadata:
   namespace: {{ $root.Release.Namespace }}
   labels:
     {{- include "brain-system.labels" $root | nindent 4 }}
-    {{- include "brain-system.apManagerLabels" (dict "projectId" $projectId "name" $cfg.name "region" $cloudDomain) | nindent 4 }}
+    {{- include "brain-system.apManagerLabels" (dict "name" $cfg.name "region" $cloudDomain) | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
@@ -103,10 +99,6 @@ metadata:
   namespace: {{ $root.Release.Namespace }}
   labels:
     {{- include "brain-system.labels" $root | nindent 4 }}
-    {{- include "brain-system.brainLabels" (dict "projectId" $projectId "kind" "public-access-support" "name" (include "brain-system.publicIngressName" (dict "name" $cfg.name "id" $address.id))) | nindent 4 }}
-    brain.io/app-name: {{ $cfg.name | quote }}
-    brain.io/public-address-id: {{ $address.id | quote }}
-    brain.io/public-address-kind: "platform"
     cloud.sealos.io/app-deploy-manager: {{ $cfg.name | quote }}
     cloud.sealos.io/app-deploy-manager-domain: {{ $domainPrefix | quote }}
   annotations:
