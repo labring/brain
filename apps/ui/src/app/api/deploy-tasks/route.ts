@@ -109,22 +109,6 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (
-    parsed.data.source?.kind === "github" &&
-    (parsed.data.actorUserId?.trim() ?? "") === ""
-  ) {
-    return jsonError("Actor user ID is required for GitHub deployment.", 400);
-  }
-  if (
-    parsed.data.source?.kind === "github" &&
-    (parsed.data.githubConnectionId?.trim() ?? "") === ""
-  ) {
-    return jsonError(
-      "GitHub connection ID is required for GitHub deployment.",
-      400
-    );
-  }
-
   const namespaceResolved = await resolveDeployTaskRequestNamespace({
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     clientNamespace: parsed.data.namespace,
@@ -137,10 +121,21 @@ export async function POST(request: Request) {
   }
   const taskNamespace = namespaceResolved.namespace ?? parsed.data.namespace;
   if (parsed.data.source?.kind === "github") {
+    const actorUserId = parsed.data.actorUserId?.trim();
+    if (!actorUserId) {
+      return jsonError("Actor user ID is required for GitHub deployment.", 400);
+    }
+    const githubConnectionId = parsed.data.githubConnectionId?.trim();
+    if (!githubConnectionId) {
+      return jsonError(
+        "GitHub connection ID is required for GitHub deployment.",
+        400
+      );
+    }
     const connection = await getGithubConnectionForNamespaceById({
-      connectionId: parsed.data.githubConnectionId ?? "",
+      connectionId: githubConnectionId,
       namespace: taskNamespace,
-      userId: parsed.data.actorUserId,
+      userId: actorUserId,
     });
     if (connection == null) {
       return jsonError(
