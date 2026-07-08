@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useState } from "react";
+import { useCancelConfirmGate } from "@/features/deployment/deployment-task-cancel";
 import { useRedeployOverwriteGate } from "@/features/deployment/deployment-task-redeploy";
 import type {
   DeploymentTaskDisplaySummary,
@@ -154,9 +155,26 @@ function TaskActionButtons({
     return null;
   }
   if (deployTaskIsCancellable(task.status)) {
-    const cancelling =
-      deployTaskIsCancelling(task) || actions.cancelPendingTaskIds.has(task.id);
-    return (
+    return <CancelActionButton actions={actions} task={task} />;
+  }
+  if (deployTaskIsRedeployable(task.status)) {
+    return <RedeployActionButton actions={actions} task={task} />;
+  }
+  return null;
+}
+
+function CancelActionButton({
+  actions,
+  task,
+}: {
+  actions: DeploymentTaskActions;
+  task: DeploymentTaskProjection;
+}) {
+  const cancelGate = useCancelConfirmGate();
+  const cancelling =
+    deployTaskIsCancelling(task) || actions.cancelPendingTaskIds.has(task.id);
+  return (
+    <>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -168,7 +186,9 @@ function TaskActionButtons({
               disabled={cancelling}
               onClick={(event) => {
                 event.stopPropagation();
-                actions.cancel(task.id).catch(() => undefined);
+                cancelGate.gate(() => {
+                  actions.cancel(task.id).catch(() => undefined);
+                });
               }}
               size="sm"
               type="button"
@@ -186,12 +206,9 @@ function TaskActionButtons({
           {cancelling ? "Cancelling…" : "Cancel deployment"}
         </TooltipContent>
       </Tooltip>
-    );
-  }
-  if (deployTaskIsRedeployable(task.status)) {
-    return <RedeployActionButton actions={actions} task={task} />;
-  }
-  return null;
+      {cancelGate.dialog}
+    </>
+  );
 }
 
 function RedeployActionButton({

@@ -1,7 +1,6 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
-import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { AppSelect } from "@workspace/ui/components/app-select";
 import { Checkbox } from "@workspace/ui/components/checkbox";
@@ -38,6 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCancelConfirmGate } from "@/features/deployment/deployment-task-cancel";
 import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
@@ -1062,37 +1062,6 @@ export function DeploymentTaskTimelinePaneContent({
   );
 }
 
-function DeploymentTaskCancelDialog({
-  onConfirm,
-  onOpenChange,
-}: {
-  onConfirm: () => void;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
-      <AppDialog.Content data-slot="deployment-task-cancel-dialog">
-        <AppDialog.Header>
-          <AppDialog.WarningIcon />
-          <AppDialog.Title>Cancel this deployment?</AppDialog.Title>
-        </AppDialog.Header>
-        <AppDialog.Body>
-          <AppDialog.Description>
-            This stops the deployment. Resources that were already applied are
-            kept and never rolled back.
-          </AppDialog.Description>
-        </AppDialog.Body>
-        <AppDialog.Footer>
-          <AppDialog.Cancel>Keep Deploying</AppDialog.Cancel>
-          <AppDialog.Action onClick={onConfirm} type="button">
-            Cancel Deployment
-          </AppDialog.Action>
-        </AppDialog.Footer>
-      </AppDialog.Content>
-    </AppDialog.Root>
-  );
-}
-
 export function DeploymentTaskTimelineActions({
   kubeconfig,
   namespace,
@@ -1105,7 +1074,7 @@ export function DeploymentTaskTimelineActions({
   task: DeployTaskDTO;
 }) {
   const actions = useDeploymentTaskActions({ kubeconfig, namespace });
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const cancelGate = useCancelConfirmGate();
   const cancellable = deployTaskIsCancellable(task.status);
   const redeployable = deployTaskIsRedeployable(task.status);
   const cancelling =
@@ -1126,7 +1095,9 @@ export function DeploymentTaskTimelineActions({
       <AppButton
         disabled={!cancellable || cancelling}
         onClick={() => {
-          setCancelConfirmOpen(true);
+          cancelGate.gate(() => {
+            actions.cancel(task.id).catch(() => undefined);
+          });
         }}
         type="button"
         variant="secondary"
@@ -1147,15 +1118,7 @@ export function DeploymentTaskTimelineActions({
           </>
         )}
       </AppButton>
-      {cancelConfirmOpen ? (
-        <DeploymentTaskCancelDialog
-          onConfirm={() => {
-            setCancelConfirmOpen(false);
-            actions.cancel(task.id).catch(() => undefined);
-          }}
-          onOpenChange={setCancelConfirmOpen}
-        />
-      ) : null}
+      {cancelGate.dialog}
       {editable ? (
         <AppButton
           disabled={redeployPending}
