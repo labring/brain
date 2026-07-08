@@ -61,6 +61,12 @@ import {
   initialCanvasViewportFollowState,
   resolveCanvasViewportFollow,
 } from "./canvas.viewport-follow";
+import { CanvasGlassStoreProvider } from "./canvas-glass-context";
+import { CanvasGlassSheet } from "./canvas-glass-sheet";
+import {
+  type CanvasGlassStore,
+  createCanvasGlassStore,
+} from "./canvas-glass-store";
 
 export interface CanvasFlowProps {
   children?: ReactNode;
@@ -175,6 +181,12 @@ function CanvasFlow({ children }: CanvasFlowProps) {
   const { interactionMode, meta, navigationChrome, rootRef, state } =
     useCanvas();
   const flowStore = meta.flowStore;
+  const glassStoreRef = useRef<CanvasGlassStore | null>(null);
+  let glassStore = glassStoreRef.current;
+  if (glassStore === null) {
+    glassStore = createCanvasGlassStore();
+    glassStoreRef.current = glassStore;
+  }
   const subscribeFlowStore = useCallback(
     (listener: () => void) =>
       flowStore == null ? NOOP_UNSUBSCRIBE : flowStore.subscribe(listener),
@@ -628,29 +640,32 @@ function CanvasFlow({ children }: CanvasFlowProps) {
       >
         <CanvasUpperRightAnchor />
         <div className="canvas-surface">
-          <ReactFlow
-            {...passThrough}
-            className={
-              handMode
-                ? [userReactFlowProps.className, "canvas-interaction-hand"]
-                    .filter(Boolean)
-                    .join(" ")
-                : userReactFlowProps.className
-            }
-            edges={edgeAnchorResolution.edges}
-            edgeTypes={meta.edgeTypes}
-            nodes={nodes}
-            nodeTypes={meta.nodeTypes}
-            onEdgesChange={handleEdgesChange}
-            onNodesChange={handleNodesChange}
-          >
-            <Background
-              color="var(--color-canvas-dot)"
-              gap={32}
-              size={1}
-              variant={BackgroundVariant.Dots}
-            />
-          </ReactFlow>
+          <CanvasGlassStoreProvider store={glassStore}>
+            <ReactFlow
+              {...passThrough}
+              className={
+                handMode
+                  ? [userReactFlowProps.className, "canvas-interaction-hand"]
+                      .filter(Boolean)
+                      .join(" ")
+                  : userReactFlowProps.className
+              }
+              edges={edgeAnchorResolution.edges}
+              edgeTypes={meta.edgeTypes}
+              nodes={nodes}
+              nodeTypes={meta.nodeTypes}
+              onEdgesChange={handleEdgesChange}
+              onNodesChange={handleNodesChange}
+            >
+              <Background
+                color="var(--color-canvas-dot)"
+                gap={32}
+                size={1}
+                variant={BackgroundVariant.Dots}
+              />
+              <CanvasGlassSheet store={glassStore} />
+            </ReactFlow>
+          </CanvasGlassStoreProvider>
         </div>
         {children}
       </div>

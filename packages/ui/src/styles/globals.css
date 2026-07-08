@@ -105,6 +105,8 @@
     var(--color-zinc-400) 55%,
     transparent
   );
+  /** Shared glass-sheet blur radius; mirrors CANVAS_GLASS_BLUR_RADIUS in JS. */
+  --canvas-glass-blur-radius: 40px;
 
   /** Project chrome surface tokens. */
   --project-chrome-surface-base: #080a11;

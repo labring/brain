@@ -41,7 +41,7 @@ Source: `packages/ui/src/styles/globals.css`
 | --- | --- | --- |
 | 54-80, 92-118 | `--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--destructive`, `--border`, `--input`, `--ring`, `--sidebar-*` | shadcn semantic values for light and dark mode. |
 | 72 | `--radius: 0.5rem` | Project base radius. This drives the custom radius scale above. |
-| 82-88 | `--color-canvas-surface`, `--color-canvas-glow`, `--color-canvas-dot` | Canvas-specific runtime tokens. These are project custom even though they reference Tailwind colors. |
+| 82-88 | `--color-canvas-surface`, `--color-canvas-glow`, `--color-canvas-dot`, `--canvas-glass-blur-radius` | Canvas-specific runtime tokens. These are project custom even though they reference Tailwind colors. `--canvas-glass-blur-radius` mirrors `CANVAS_GLASS_BLUR_RADIUS` in `canvas-glass-geometry.ts`. |
 
 ## Global Custom Utilities
 
@@ -61,7 +61,7 @@ These files define selectors and values outside Tailwind utility classes.
 
 | File | Custom values |
 | --- | --- |
-| `packages/ui/src/components/canvas/canvas.css` | Canvas surface background, React Flow overrides, fixed Figma ratio `1205 / 784`, radial gradient, hidden decorative handles. |
+| `packages/ui/src/components/canvas/canvas.css` | Canvas surface background, React Flow overrides, fixed Figma ratio `1205 / 784`, radial gradient, hidden decorative handles, and the `.canvas-glass-sheet` masked backdrop-filter layer (AIM-17). Keep the sheet a leaf: never move a `filter`/`mask`/`opacity` onto `.canvas-surface` or the viewport, which would become a backdrop root and cut the glow. |
 | `packages/ui/src/components/canvas-node/canvas-node.css` | Largest custom block. Defines `--canvas-node-*` dimensions, transitions, color mixes, `0.5px` borders, handle geometry, masks, glow/drag effects, expand-button behavior. This is the main place agents may copy nonstandard styling. |
 | `packages/ui/src/components/database-node/database-node.css` | Hidden scrollbars, list max-height formula, empty row min-height. |
 | `packages/ui/src/components/container-node/container-node.css` | Custom image-row min-height. |

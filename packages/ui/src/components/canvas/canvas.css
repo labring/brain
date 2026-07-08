@@ -31,6 +31,22 @@
   background: transparent;
 }
 
+/* AIM-17 masked glass sheet — one backdrop-filter element inserted between the
+   edges and nodes layers, masked to the isolated node rounded-rects (geometry
+   set imperatively by canvas-glass-sheet.tsx). Keep it a leaf: never move a
+   filter/mask onto .canvas-surface or the viewport, which would become a
+   backdrop root and cut the glow. */
+.canvas-glass-sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(var(--canvas-glass-blur-radius));
+  backdrop-filter: blur(var(--canvas-glass-blur-radius));
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
 .react-flow__pane.draggable,
 .react-flow__pane.dragging {
   cursor: default;
