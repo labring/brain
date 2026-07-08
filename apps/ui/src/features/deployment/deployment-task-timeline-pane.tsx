@@ -248,6 +248,23 @@ function EmptyState({ children }: { children: ReactNode }) {
   );
 }
 
+const DEPLOYMENT_TIMELINE_EVENT_TIME_FORMAT = new Intl.DateTimeFormat(
+  undefined,
+  {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+  }
+);
+
+function formatDeploymentTimelineEventTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return DEPLOYMENT_TIMELINE_EVENT_TIME_FORMAT.format(new Date(timestamp));
+}
+
 function ResourceEventLine({
   event,
   showSeverity = false,
@@ -272,8 +289,11 @@ function ResourceEventLine({
         />
       ) : null}
       <div className="flex min-w-0 items-center gap-1">
-        <span className="w-[77px] shrink-0 truncate text-muted-foreground">
-          {event.createdAt}
+        <span
+          className="w-12 shrink-0 truncate text-muted-foreground"
+          title={event.createdAt}
+        >
+          {formatDeploymentTimelineEventTime(event.createdAt)}
         </span>
         <span className="min-w-0 truncate text-foreground/90">
           {event.message}
@@ -409,8 +429,8 @@ function TimelineEventList({
           className={cn(
             "grid min-w-0 items-start gap-1 text-xs",
             showSeverity
-              ? "grid-cols-[0.5rem_77px_minmax(0,1fr)]"
-              : "grid-cols-[77px_minmax(0,1fr)]"
+              ? "grid-cols-[0.5rem_3rem_minmax(0,1fr)]"
+              : "grid-cols-[3rem_minmax(0,1fr)]"
           )}
           key={event.id}
         >
@@ -423,8 +443,11 @@ function TimelineEventList({
               )}
             />
           ) : null}
-          <span className="truncate text-muted-foreground text-xs leading-4">
-            {event.createdAt}
+          <span
+            className="truncate text-muted-foreground text-xs leading-4"
+            title={event.createdAt}
+          >
+            {formatDeploymentTimelineEventTime(event.createdAt)}
           </span>
           <span className="min-w-0 text-foreground/90 leading-4">
             {event.message}

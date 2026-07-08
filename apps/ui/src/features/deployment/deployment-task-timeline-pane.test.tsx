@@ -42,9 +42,26 @@ const TASK_ID_ROW_SLOT_RE = /data-slot="deployment-task-id"/;
 const TASK_ID_LABEL_RE = /Task ID:/;
 const TASK_ID_VALUE_RE = /task-1/;
 const TASK_ID_COPY_BUTTON_RE = /aria-label="Copy task ID"/;
+const APPLY_EVENT_CREATED_AT = "2026-06-17T10:00:02.000Z";
+const AP_READY_EVENT_CREATED_AT = "2026-06-17T10:00:03.000Z";
+const RAW_EVENT_TIME_AS_TEXT_RE = />2026-06-17T10:00:0[234]\.000Z</;
+
+const TIMELINE_EVENT_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+});
 
 function deploymentConfigurationFormHtml(html: string): string {
   return html.match(DEPLOYMENT_CONFIGURATION_FORM_RE)?.[1] ?? "";
+}
+
+function timelineEventTime(value: string): string {
+  return TIMELINE_EVENT_TIME_FORMAT.format(new Date(Date.parse(value)));
+}
+
+function timelineEventTimeTitleRe(value: string): RegExp {
+  return new RegExp(`title="${value}">${timelineEventTime(value)}</span>`);
 }
 
 test("deployment task timeline pane renders ordered steps, AP card, statuses, and grouped events", () => {
@@ -92,7 +109,7 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
             {
               events: [
                 {
-                  createdAt: "2026-06-17T10:00:02.000Z",
+                  createdAt: APPLY_EVENT_CREATED_AT,
                   id: "evt-2",
                   message: "Applying deployment artifacts.",
                   source: "runner",
@@ -105,7 +122,7 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
                 {
                   events: [
                     {
-                      createdAt: "2026-06-17T10:00:03.000Z",
+                      createdAt: AP_READY_EVENT_CREATED_AT,
                       id: "evt-3",
                       message: "AP workload has 1/1 ready replicas.",
                       source: "resource-observer",
@@ -171,12 +188,15 @@ test("deployment task timeline pane renders ordered steps, AP card, statuses, an
     html.indexOf("Validate settings") < html.indexOf("Create resources")
   );
   assert.match(html, APPLY_EVENT_RE);
+  assert.match(html, timelineEventTimeTitleRe(APPLY_EVENT_CREATED_AT));
   assert.match(html, RESULT_CARD_SLOT_RE);
   assert.match(html, API_RE);
   assert.match(html, RUNNING_RE);
   assert.match(html, REQUIRED_RE);
   assert.match(html, OPTIONAL_RE);
   assert.match(html, AP_READY_EVENT_RE);
+  assert.match(html, timelineEventTimeTitleRe(AP_READY_EVENT_CREATED_AT));
+  assert.doesNotMatch(html, RAW_EVENT_TIME_AS_TEXT_RE);
   assert.match(html, PUBLIC_ACCESS_LABEL_RE);
   assert.doesNotMatch(html, PUBLIC_ACCESS_ENUM_RE);
   assert.match(html, PUBLIC_ADDRESS_ACCESSIBLE_RE);
