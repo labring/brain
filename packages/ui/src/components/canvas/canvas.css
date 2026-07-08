@@ -41,8 +41,8 @@
   top: 0;
   left: 0;
   pointer-events: none;
-  -webkit-backdrop-filter: blur(var(--canvas-glass-blur-radius));
-  backdrop-filter: blur(var(--canvas-glass-blur-radius));
+  -webkit-backdrop-filter: blur(var(--canvas-glass-blur-radius, 40px));
+  backdrop-filter: blur(var(--canvas-glass-blur-radius, 40px));
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
 }

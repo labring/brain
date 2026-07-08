@@ -56,8 +56,8 @@
    drops it for isolated nodes and restores it for overlapping ones by toggling
    data-self-blur. Uses --canvas-glass-blur-radius so it matches the sheet. */
 .canvas-node-surface[data-self-blur] {
-  -webkit-backdrop-filter: blur(var(--canvas-glass-blur-radius));
-  backdrop-filter: blur(var(--canvas-glass-blur-radius));
+  -webkit-backdrop-filter: blur(var(--canvas-glass-blur-radius, 40px));
+  backdrop-filter: blur(var(--canvas-glass-blur-radius, 40px));
 }
 
 .react-flow__node.draggable .canvas-node-surface {
