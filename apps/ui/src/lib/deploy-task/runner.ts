@@ -34,7 +34,7 @@ import {
 import type { DevboxInfo } from "@/lib/devbox/types";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
-import { getGithubInstallationToken } from "@/lib/github-app/connection-service";
+import { getGithubOAuthTokenForConnection } from "@/lib/github-app/connection-service";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { childResourceName } from "@/lib/project-child-resource-name";
@@ -2429,13 +2429,18 @@ async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
   if (githubConnectionId === "") {
     throw new Error("GitHub connection ID is required for GitHub deployment.");
   }
-  const token = await getGithubInstallationToken({
+  const actorUserId = task.actorUserId?.trim() ?? "";
+  if (actorUserId === "") {
+    throw new Error("GitHub deployment actor user ID is required.");
+  }
+  const token = await getGithubOAuthTokenForConnection({
     connectionId: githubConnectionId,
     namespace: task.namespace,
+    userId: actorUserId,
   });
   if (token == null) {
     throw new Error(
-      "GitHub App connection is not authorized for this deployment."
+      "GitHub OAuth connection is not authorized for this deployment."
     );
   }
   return token;

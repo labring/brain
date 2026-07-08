@@ -10,6 +10,7 @@ import {
   assistantEntitlements,
   githubAppInstallSessions,
   githubConnections,
+  githubOauthConnections,
 } from "./schema";
 
 const assistantSchema = {
@@ -18,6 +19,7 @@ const assistantSchema = {
   assistantEntitlements,
   githubAppInstallSessions,
   githubConnections,
+  githubOauthConnections,
 };
 
 export type AssistantPgDatabase = NodePgDatabase<typeof assistantSchema>;

@@ -21,7 +21,10 @@ export async function GET(request: Request) {
     return jsonError(identity.error, identity.status);
   }
   try {
-    const repos = await listGithubReposForNamespace(identity.namespace);
+    const repos = await listGithubReposForNamespace(
+      identity.namespace,
+      identity.userId
+    );
     return NextResponse.json({ repos });
   } catch (error) {
     return jsonError(

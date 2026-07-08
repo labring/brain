@@ -23,7 +23,10 @@ export async function GET(request: Request) {
   if (!identity.ok) {
     return jsonError(identity.error, identity.status);
   }
-  const connection = await getGithubConnectionForNamespace(identity.namespace);
+  const connection = await getGithubConnectionForNamespace(
+    identity.namespace,
+    identity.userId
+  );
   return NextResponse.json({ connection });
 }
 
@@ -37,6 +40,6 @@ export async function DELETE(request: Request) {
   if (!identity.ok) {
     return jsonError(identity.error, identity.status);
   }
-  await revokeGithubConnectionForNamespace(identity.namespace);
+  await revokeGithubConnectionForNamespace(identity.namespace, identity.userId);
   return NextResponse.json({ connection: null });
 }

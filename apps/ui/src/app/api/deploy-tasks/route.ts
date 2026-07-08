@@ -140,6 +140,7 @@ export async function POST(request: Request) {
     const connection = await getGithubConnectionForNamespaceById({
       connectionId: parsed.data.githubConnectionId ?? "",
       namespace: taskNamespace,
+      userId: parsed.data.actorUserId,
     });
     if (connection == null) {
       return jsonError(

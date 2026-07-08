@@ -76,7 +76,7 @@ export default function GithubInstallCompletePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
       <p className="text-muted-foreground text-sm">
-        GitHub App installation complete. You can close this window.
+        GitHub authorization complete. You can close this window.
       </p>
     </main>
   );

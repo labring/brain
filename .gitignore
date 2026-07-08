@@ -55,7 +55,8 @@ apps/api/api
 
 .sandcastle
 CONTEXT.md
-specs
+specs/*
+!specs/model-github-integrations-as-namespace-scoped-app-installations.md
 .playwright-mcp
 .playwright-cli
 .idea/

@@ -31,7 +31,7 @@ export interface GithubDeployerStates {
    */
   deployedRepo?: GithubDeployerRepo | null;
   /**
-   * True when the current workspace has a server-side GitHub App connection.
+   * True when the current workspace user has a server-side GitHub connection.
    */
   isAuthorized?: boolean;
   /**
@@ -50,7 +50,7 @@ export interface GithubDeployerStates {
 
 /**
  * Props passed into `GithubDeployer.Root`. Callbacks are invoked directly (no wrapper delays).
- * GitHub App install/configure behavior is entirely host-defined via `onAuthorize`.
+ * GitHub connect/configure behavior is entirely host-defined via `onAuthorize`.
  */
 export interface GithubDeployerActions {
   /** Invoked when the user connects or reconfigures workspace GitHub access. */

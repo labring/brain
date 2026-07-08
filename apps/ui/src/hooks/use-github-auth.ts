@@ -96,13 +96,13 @@ async function deleteConnection(
   }
 }
 
-async function createInstallSession(
+async function createOAuthSession(
   namespace: string,
   kubeconfig: string,
   userId: string,
   returnPath: string
-): Promise<{ installUrl: string; state: string }> {
-  const response = await fetch("/api/github/install-session", {
+): Promise<{ authorizeUrl: string; state: string }> {
+  const response = await fetch("/api/github/oauth-session", {
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
     method: "POST",
@@ -117,16 +117,19 @@ async function createInstallSession(
     throw new Error(await response.text());
   }
   const body = (await response.json()) as {
-    installUrl?: unknown;
+    authorizeUrl?: unknown;
     state?: unknown;
   };
-  if (typeof body.installUrl !== "string" || body.installUrl.trim() === "") {
-    throw new Error("GitHub App install URL was not returned.");
+  if (
+    typeof body.authorizeUrl !== "string" ||
+    body.authorizeUrl.trim() === ""
+  ) {
+    throw new Error("GitHub OAuth authorization URL was not returned.");
   }
   if (typeof body.state !== "string" || body.state.trim() === "") {
-    throw new Error("GitHub App install state was not returned.");
+    throw new Error("GitHub OAuth authorization state was not returned.");
   }
-  return { installUrl: body.installUrl, state: body.state };
+  return { authorizeUrl: body.authorizeUrl, state: body.state };
 }
 
 function centeredPopupFeatures(): string {
@@ -339,10 +342,10 @@ export function useGithubAuth(options?: {
         userId === ""
       ) {
         throw new Error(
-          "GitHub App installation requires workspace credentials and user ID."
+          "GitHub authorization requires workspace credentials and user ID."
         );
       }
-      const { installUrl, state } = await createInstallSession(
+      const { authorizeUrl, state } = await createOAuthSession(
         normalizedNamespace,
         kubeconfig,
         userId,
@@ -351,10 +354,10 @@ export function useGithubAuth(options?: {
       pendingInstallStateRef.current = state;
       handledInstallStatesRef.current.delete(state);
       if (popup == null) {
-        window.location.assign(installUrl);
+        window.location.assign(authorizeUrl);
         return;
       }
-      popup.location.replace(installUrl);
+      popup.location.replace(authorizeUrl);
       closePoll = window.setInterval(() => {
         if (popup.closed) {
           cleanup();
@@ -367,7 +370,7 @@ export function useGithubAuth(options?: {
     start(popup).catch((startError: unknown) => {
       popup?.close();
       console.error(
-        "[github-app] failed to create install session:",
+        "[github-auth] failed to create OAuth session:",
         startError
       );
     });

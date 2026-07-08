@@ -144,9 +144,42 @@ export const githubAppInstallSessions = ns.table(
   ]
 );
 
+export const githubOauthConnections = ns.table(
+  "github_oauth_connections",
+  {
+    id: text("id").primaryKey(),
+    namespace: text("namespace").notNull(),
+    userId: text("user_id").notNull(),
+    githubLogin: text("github_login").notNull(),
+    accessTokenCiphertext: text("access_token_ciphertext").notNull(),
+    tokenType: text("token_type").notNull().default("bearer"),
+    scope: text("scope").notNull().default(""),
+    lastUsedAt: timestamp("last_used_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("github_oauth_connections_updated_at_idx").on(table.updatedAt),
+    index("github_oauth_connections_github_login_idx").on(table.githubLogin),
+    uniqueIndex("github_oauth_connections_namespace_user_unique_idx").on(
+      table.namespace,
+      table.userId
+    ),
+  ]
+);
+
 export type AssistantChatRow = typeof assistantChats.$inferSelect;
 export type AssistantChatMessageRow = typeof assistantChatMessages.$inferSelect;
 export type AssistantEntitlementRow = typeof assistantEntitlements.$inferSelect;
 export type GithubAppInstallSessionRow =
   typeof githubAppInstallSessions.$inferSelect;
 export type GithubConnectionRow = typeof githubConnections.$inferSelect;
+export type GithubOauthConnectionRow =
+  typeof githubOauthConnections.$inferSelect;
