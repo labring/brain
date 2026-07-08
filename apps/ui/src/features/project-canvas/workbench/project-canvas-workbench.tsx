@@ -13,7 +13,6 @@ import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
-import { useDeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
 import { assistantPaneResizingAtom } from "@/store/layout-store";
 
 /**
@@ -36,10 +35,6 @@ export function ProjectCanvasWorkbench({
     kubeconfig,
     namespace,
     projectId,
-  });
-  const deploymentTaskActions = useDeploymentTaskActions({
-    kubeconfig,
-    namespace,
   });
   const sideModel = projectCanvas.surfaces.model.side;
   const sideEntryKind = useMemo(() => {
@@ -112,7 +107,6 @@ export function ProjectCanvasWorkbench({
             />
           </Activity>
           <ProjectCanvasOverlayLayer
-            deploymentTaskActions={deploymentTaskActions}
             deploymentTaskDock={projectCanvas.canvas.deploymentTaskDock}
             frameState={projectCanvas.canvas.frameState}
             onDismissDeploymentTask={

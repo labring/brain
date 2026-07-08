@@ -91,6 +91,17 @@ export function deployTaskIsRedeployable(status: DeployTaskStatus): boolean {
 }
 
 /**
+ * Terminal statuses — the deploy is over. Only these are dock-dismissible: a
+ * dismiss acknowledges a finished run, so an in-progress task (including
+ * `blocked`, which keeps its dock attention indefinitely) has no ✕ (ADR 0038).
+ */
+export function deployTaskIsTerminal(status: DeployTaskStatus): boolean {
+  return !(DEPLOY_TASK_ACTIVE_STATUSES as readonly DeployTaskStatus[]).includes(
+    status
+  );
+}
+
+/**
  * "Cancelling" is server-derived truth: an active task with a recorded
  * cancel request (optimistic client state only bridges the round-trip).
  */

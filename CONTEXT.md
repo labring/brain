@@ -480,6 +480,8 @@ _Avoid_: task id label, source blob, timeline summary, generated title.
 
 A Project Canvas affordance that presents the current Project's visible Deployment Task Projections so users can notice active or attention-needed deployment work and re-enter each task's Deployment Task Timeline. It is not deployment history, a task list row, a Project Canvas node, or an Assistant Chat transcript.
 
+A dock chip carries no inline lifecycle actions: it shows a source summary and status, opens the Deployment Task Timeline pane on click, and — for terminal tasks only — offers a dismiss control. Cancel and Redeploy are performed in the Deployment Task Timeline pane the chip opens, not on the chip itself.
+
 A failed Deployment Task may remain attention-needed after its run ends until its current dock reminder is dismissed.
 
 A successfully completed Deployment Task is not attention-needed merely because its projection remains available for Project Canvas handoff.
@@ -490,7 +492,7 @@ _Avoid_: canvas task list, deployment history list, task center, chat task statu
 
 ### Deployment Task Dock Dismissal
 
-A personal user acknowledgement of one Deployment Task Projection version in the Deployment Task Dock. It suppresses that task's dock reminder for that user until the projection changes; it is not shared Project state, task cancellation, task completion, task deletion, deployment history archival, or timeline deletion.
+A personal user acknowledgement of one Deployment Task Projection version in the Deployment Task Dock. It suppresses that task's dock reminder for that user until the projection changes; it is not shared Project state, task cancellation, task completion, task deletion, deployment history archival, or timeline deletion. Dismissal applies only to terminal tasks (failed, completed, or cancelled); an in-progress task — including one blocked on input — keeps its dock presence and offers no dismiss control.
 
 _Avoid_: close task, archive deployment, delete task, mark complete.
 

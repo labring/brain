@@ -105,6 +105,8 @@
     var(--color-zinc-400) 55%,
     transparent
   );
+  /** Shared glass-sheet blur radius; mirrors CANVAS_GLASS_BLUR_RADIUS in JS. */
+  --canvas-glass-blur-radius: 40px;
 
   /** Project chrome surface tokens. */
   --project-chrome-surface-base: #080a11;
@@ -234,25 +236,28 @@
     }
   }
 
+  /* Motion is opacity + transform only — compositor-only, effectively free.
+     The bloom/settle read is carried by the opacity ramp and the scaleX widen;
+     the old per-frame `filter: blur()/saturate()` was a sub-pixel modulation
+     below the perceptual floor on this low-alpha, screen-blended seam, and
+     animating `filter` while the ancestor pane is mid-transform hit a Chromium
+     flicker-trigger cluster (AIM-18 / AIM-19). The static rest softness on
+     `.side-pane-glow::after` (a one-time blur, not animated) is untouched. */
   @keyframes side-pane-glow-settle {
     0%,
     34% {
       opacity: 0;
-      filter: blur(1.1px) saturate(1.08);
       transform: scaleX(0.72);
     }
     48% {
       opacity: var(--side-pane-glow-bloom-opacity);
-      filter: blur(0.7px) saturate(1.24);
       transform: scaleX(1);
     }
     68% {
       opacity: var(--side-pane-glow-flash-opacity);
-      filter: blur(0.45px) saturate(1.1);
     }
     100% {
       opacity: var(--side-pane-glow-rest-opacity);
-      filter: blur(0) saturate(1);
       transform: scaleX(1);
     }
   }
@@ -260,17 +265,14 @@
   @keyframes side-pane-glow-release {
     0% {
       opacity: var(--side-pane-glow-rest-opacity);
-      filter: blur(0) saturate(1);
       transform: scaleX(1);
     }
     36% {
       opacity: var(--side-pane-glow-flash-opacity);
-      filter: blur(0.7px) saturate(1.1);
       transform: scaleX(0.92);
     }
     100% {
       opacity: 0;
-      filter: blur(1.4px) saturate(1.02);
       transform: scaleX(0.72);
     }
   }
@@ -362,14 +364,14 @@
   .side-pane-glow-settle {
     animation: side-pane-glow-settle var(--side-pane-glow-settle-duration)
       var(--side-pane-glow-settle-ease);
-    will-change: opacity, filter, transform;
+    will-change: opacity, transform;
   }
 
   .side-pane-glow-release {
     animation: side-pane-glow-release
       var(--project-surface-motion-exit-duration)
       var(--project-surface-motion-ease);
-    will-change: opacity, filter, transform;
+    will-change: opacity, transform;
   }
 
   .cn-toast[data-sonner-toast] {

@@ -77,7 +77,7 @@ export function DeploymentTaskRedeployOverwriteDialog({
           </AppDialog.Description>
         </AppDialog.Body>
         <AppDialog.Footer>
-          <AppDialog.Cancel>Keep Current State</AppDialog.Cancel>
+          <AppDialog.Cancel>Cancel</AppDialog.Cancel>
           <AppDialog.Action onClick={onConfirm} type="button">
             Redeploy
           </AppDialog.Action>
