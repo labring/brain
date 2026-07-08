@@ -38,7 +38,9 @@ export function DeploymentTaskCancelDialog({
  * Gate a cancel action behind the confirmation dialog: every invocation
  * opens the dialog first and the action runs only on confirm. Unlike the
  * redeploy overwrite gate this is unconditional — stopping an in-flight
- * deployment always warrants a confirm (dock and timeline pane share it).
+ * deployment always warrants a confirm. Lives in its own module, mirroring
+ * the redeploy gate; the Deployment Task Timeline pane is its only consumer,
+ * since dock chips carry no inline lifecycle actions (ADR 0038).
  */
 export function useCancelConfirmGate(): {
   dialog: ReactNode;
