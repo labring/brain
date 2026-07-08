@@ -37,7 +37,8 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 Edit `/tmp/brain-system.values.yaml`, especially:
 
 - `projectId`
-- GitHub App values
+- GitHub App and OAuth values
+- `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
 - assistant model values
 - Devbox runtime values
 - `imagePullSecret.create`

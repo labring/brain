@@ -11,6 +11,7 @@ const { Client } = pg;
 const PROJECT_DB_SCHEMA = "sealai_project";
 const PROJECT_TABLE = `${PROJECT_DB_SCHEMA}.projects`;
 const MIGRATION_VERSION = 1;
+const DEFAULT_KUBECTL_RETRIES = 3;
 
 const BRAIN_LABELS = {
   deploymentKind: "brain.io/deployment-kind",
@@ -65,8 +66,8 @@ function usage() {
   return `Brain v1 import helper
 
 Usage:
-  bun scripts/brain-v1-import.mjs inventory [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>]
-  bun scripts/brain-v1-import.mjs dry-run [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>]
+  bun scripts/brain-v1-import.mjs inventory [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>] [--retries <n>]
+  bun scripts/brain-v1-import.mjs dry-run [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>] [--retries <n>]
   bun scripts/brain-v1-import.mjs dry-run --inventory <path> [--out <dir>]
   bun scripts/brain-v1-import.mjs apply --manifest <path> [--database-url <url>] --yes
   bun scripts/brain-v1-import.mjs rollback --manifest <path> [--database-url <url>] --yes
@@ -79,6 +80,8 @@ Modes:
 
 Notes:
   - Omit --namespace to scan all namespaces visible to the kubeconfig/context.
+  - inventory writes inventory-progress.json so interrupted scans can resume.
+  - --retries defaults to ${DEFAULT_KUBECTL_RETRIES} for transient kubectl network errors.
   - DATABASE_URL is used when --database-url is omitted.
   - apply/rollback require --yes or BRAIN_V1_IMPORT_YES=1.
 `;
@@ -175,16 +178,71 @@ function kubectlBaseArgs(options) {
   return args;
 }
 
+function kubectlRetryCount(options) {
+  const raw = options.retries ?? process.env.BRAIN_V1_IMPORT_RETRIES;
+  if (raw === undefined) {
+    return DEFAULT_KUBECTL_RETRIES;
+  }
+  const value = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("--retries must be a non-negative integer");
+  }
+  return value;
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function errorText(error) {
+  return [
+    error instanceof Error ? error.message : String(error),
+    error?.stderr?.toString?.() ?? "",
+    error?.stdout?.toString?.() ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isTransientKubectlError(error) {
+  const text = errorText(error).toLowerCase();
+  return [
+    "tls handshake timeout",
+    "i/o timeout",
+    "connection reset",
+    "connection refused",
+    "temporary failure",
+    "timeout awaiting headers",
+    "context deadline exceeded",
+    "net/http: request canceled",
+    "unexpected eof",
+    "eof",
+  ].some((pattern) => text.includes(pattern));
+}
+
 function runKubectl(options, args, input) {
-  return execFileSync("kubectl", [...kubectlBaseArgs(options), ...args], {
-    encoding: "utf8",
-    input,
-    maxBuffer: 100 * 1024 * 1024,
-    stdio:
-      input === undefined
-        ? ["ignore", "pipe", "pipe"]
-        : ["pipe", "pipe", "pipe"],
-  });
+  const retries = kubectlRetryCount(options);
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return execFileSync("kubectl", [...kubectlBaseArgs(options), ...args], {
+        encoding: "utf8",
+        input,
+        maxBuffer: 100 * 1024 * 1024,
+        stdio:
+          input === undefined
+            ? ["ignore", "pipe", "pipe"]
+            : ["pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries || !isTransientKubectlError(error)) {
+        throw error;
+      }
+      sleepMs(Math.min(1000 * 2 ** attempt, 5000));
+    }
+  }
+  throw lastError;
 }
 
 function getResourceList(options, namespace, resourceType, selector) {
@@ -323,8 +381,120 @@ function listInventoryProject(options, namespace, instance) {
   };
 }
 
-function buildInventory(options) {
+function inventoryScope(options) {
   const namespace = options.namespace?.trim() || null;
+  return {
+    namespace,
+    scope: namespace ? "namespace" : "cluster",
+  };
+}
+
+function inventoryError(stage, error, details) {
+  return {
+    details,
+    message: errorText(error).split("\n").filter(Boolean).join("\n"),
+    stage,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function inventoryCandidateKey(instance, namespace) {
+  return [
+    resourceNamespace(instance, namespace),
+    resourceName(instance),
+    instance.metadata?.uid ?? "",
+  ].join("/");
+}
+
+function emptyInventoryProgress(options) {
+  const scope = inventoryScope(options);
+  return {
+    completedProjects: {},
+    context: options.context ?? null,
+    errors: [],
+    generatedAt: new Date().toISOString(),
+    kubeconfig: options.kubeconfig ?? null,
+    namespace: scope.namespace,
+    scope: scope.scope,
+    updatedAt: new Date().toISOString(),
+    version: MIGRATION_VERSION,
+  };
+}
+
+function loadInventoryProgress(progressPath, options) {
+  if (!existsSync(progressPath)) {
+    return emptyInventoryProgress(options);
+  }
+  const progress = JSON.parse(readFileSync(progressPath, "utf8"));
+  if (progress.version !== MIGRATION_VERSION) {
+    throw new Error(
+      `Unsupported inventory progress version: ${progress.version}; expected ${MIGRATION_VERSION}`
+    );
+  }
+  const scope = inventoryScope(options);
+  if (
+    progress.namespace !== scope.namespace ||
+    progress.scope !== scope.scope
+  ) {
+    throw new Error(
+      `Inventory progress scope mismatch: found ${progress.scope}/${progress.namespace ?? "all-namespaces"}, expected ${scope.scope}/${scope.namespace ?? "all-namespaces"}`
+    );
+  }
+  return {
+    ...progress,
+    completedProjects: progress.completedProjects ?? {},
+    errors: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function writeInventoryProgress(progress, progressPath) {
+  mkdirSync(path.dirname(progressPath), { recursive: true });
+  const next = {
+    ...progress,
+    updatedAt: new Date().toISOString(),
+  };
+  writeFileSync(progressPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+function inventoryFromParts(
+  options,
+  instances,
+  projects,
+  skippedInstances,
+  errors
+) {
+  const scope = inventoryScope(options);
+  return {
+    context: options.context ?? null,
+    errors,
+    generatedAt: new Date().toISOString(),
+    kubeconfig: options.kubeconfig ?? null,
+    namespace: scope.namespace,
+    projects,
+    scope: scope.scope,
+    skippedInstances,
+    summary: {
+      candidateProjects: projects.length,
+      errors: errors.length,
+      memberResources: projects.reduce(
+        (sum, project) => sum + project.members.length,
+        0
+      ),
+      skippedInstances: skippedInstances.length,
+      supportResources: projects.reduce(
+        (sum, project) => sum + project.supportResources.length,
+        0
+      ),
+      totalInstances: instances.length,
+    },
+    version: MIGRATION_VERSION,
+  };
+}
+
+function buildInventory(options) {
+  const { namespace, scope } = inventoryScope(options);
   const instances = getResourceList(
     options,
     namespace,
@@ -350,14 +520,16 @@ function buildInventory(options) {
 
   return {
     context: options.context ?? null,
+    errors: [],
     generatedAt: new Date().toISOString(),
     kubeconfig: options.kubeconfig ?? null,
     namespace,
     projects,
-    scope: namespace ? "namespace" : "cluster",
+    scope,
     skippedInstances,
     summary: {
       candidateProjects: projects.length,
+      errors: 0,
       memberResources: projects.reduce(
         (sum, project) => sum + project.members.length,
         0
@@ -371,6 +543,63 @@ function buildInventory(options) {
     },
     version: MIGRATION_VERSION,
   };
+}
+
+function buildInventoryIncremental(options, progressPath) {
+  const { namespace } = inventoryScope(options);
+  const progress = loadInventoryProgress(progressPath, options);
+  const instances = getResourceList(
+    options,
+    namespace,
+    RESOURCE_TYPES.instance
+  );
+  const candidateInstances = instances.filter(isLegacyProjectCandidate);
+  const skippedInstances = instances
+    .filter((instance) => !isLegacyProjectCandidate(instance))
+    .map((instance) => ({
+      labels: labelsOf(instance),
+      reason: isBrainManaged(instance)
+        ? "already-brain-managed"
+        : "not-a-legacy-project-candidate",
+      resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
+    }));
+
+  for (const instance of candidateInstances) {
+    const key = inventoryCandidateKey(instance, namespace);
+    if (progress.completedProjects[key] !== undefined) {
+      continue;
+    }
+    try {
+      const project = listInventoryProject(
+        options,
+        resourceNamespace(instance, namespace),
+        instance
+      );
+      progress.completedProjects[key] = project;
+    } catch (error) {
+      progress.errors.push(
+        inventoryError("project-inventory", error, {
+          instance: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
+        })
+      );
+    }
+    writeInventoryProgress(progress, progressPath);
+  }
+  writeInventoryProgress(progress, progressPath);
+
+  const projects = candidateInstances
+    .map((instance) => {
+      const key = inventoryCandidateKey(instance, namespace);
+      return progress.completedProjects[key];
+    })
+    .filter((project) => project !== undefined);
+  return inventoryFromParts(
+    options,
+    instances,
+    projects,
+    skippedInstances,
+    progress.errors
+  );
 }
 
 function dedupePatches(patches) {
@@ -421,6 +650,7 @@ function buildManifest(options) {
 }
 
 function buildManifestFromInventory(inventory) {
+  requireCompleteInventory(inventory);
   const projects = inventory.projects.map((entry) => {
     const entryNamespace = entry.legacyInstance.resource.namespace;
     const instance = {
@@ -644,6 +874,15 @@ function loadInventory(inventoryPath) {
   return inventory;
 }
 
+function requireCompleteInventory(inventory) {
+  const errors = inventory.errors ?? [];
+  if (errors.length > 0) {
+    throw new Error(
+      `Inventory has ${errors.length} unresolved error(s). Re-run inventory until errors is empty before dry-run.`
+    );
+  }
+}
+
 function loadManifest(manifestPath) {
   if (!existsSync(manifestPath)) {
     throw new Error(`Manifest not found: ${manifestPath}`);
@@ -737,9 +976,13 @@ function inventory(options) {
       ".migration",
       `brain-v1-${sanitizeFilePart(namespace)}-${Date.now()}`
     );
-  const result = buildInventory(options);
-  const outputs = writeInventoryOutput(result, outDir);
+  const progressPath = path.join(outDir, "inventory-progress.json");
+  const result = buildInventoryIncremental(options, progressPath);
+  const outputs = { ...writeInventoryOutput(result, outDir), progressPath };
   console.log(JSON.stringify({ outputs, summary: result.summary }, null, 2));
+  if ((result.errors ?? []).length > 0) {
+    process.exitCode = 1;
+  }
 }
 
 async function apply(options) {

@@ -51,6 +51,25 @@ bun scripts/brain-v1-import.mjs rollback \
 
 `apply` and `rollback` require `--yes` or `BRAIN_V1_IMPORT_YES=1`.
 
+## Inventory Resume
+
+`inventory` is resumable. It writes:
+
+```text
+.migration/brain-v1-all-namespaces/inventory-progress.json
+.migration/brain-v1-all-namespaces/inventory.json
+```
+
+If a transient Kubernetes request fails, re-run the same `inventory` command. Completed v1 `Instance` scans are reused from `inventory-progress.json`, and failed instances are retried.
+
+Only continue to `dry-run` when:
+
+```bash
+jq '.summary.errors' .migration/brain-v1-all-namespaces/inventory.json
+```
+
+returns `0`. `dry-run` rejects inventories with unresolved `errors`.
+
 ## Safety Model
 
 The script does not delete v1 labels such as:
