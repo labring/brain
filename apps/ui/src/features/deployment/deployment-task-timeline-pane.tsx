@@ -29,6 +29,7 @@ import {
 import {
   type ComponentPropsWithoutRef,
   type FormEvent,
+  memo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -490,7 +491,11 @@ function useResourceCardOpen(status: DeploymentResultResourceCardStatus) {
   };
 }
 
-function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
+const ResultResourceCard = memo(function ResultResourceCard({
+  card,
+}: {
+  card: DeploymentResultResourceCard;
+}) {
   const { onOpenChange, open } = useResourceCardOpen(card.status);
   const latestEvent = card.events.at(-1);
   const meta = resultResourceMeta(card);
@@ -547,9 +552,9 @@ function ResultResourceCard({ card }: { card: DeploymentResultResourceCard }) {
       </Collapsible>
     </DeploymentTimelineCard>
   );
-}
+});
 
-function TimelineStepItem({
+const TimelineStepItem = memo(function TimelineStepItem({
   children,
   step,
 }: {
@@ -589,7 +594,7 @@ function TimelineStepItem({
       {children ?? null}
     </section>
   );
-}
+});
 
 function inputInitialValue(input: DeploymentTaskDeploymentPlanInput): string {
   return input.default ?? "";
@@ -1024,7 +1029,10 @@ export function DeploymentTaskTimelinePaneContent({
   namespace: string;
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
-  const steps = orderedSteps(snapshot.timeline);
+  const steps = useMemo(
+    () => orderedSteps(snapshot.timeline),
+    [snapshot.timeline]
+  );
   if (steps.length === 0) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
