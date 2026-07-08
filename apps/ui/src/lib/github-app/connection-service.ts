@@ -6,14 +6,20 @@ import { and, desc, eq } from "drizzle-orm";
 import { getAssistantDb } from "@/lib/chat-persistence/db";
 import {
   type GithubConnectionRow,
+  type GithubOauthConnectionRow,
   githubConnections,
+  githubOauthConnections,
 } from "@/lib/chat-persistence/schema";
 import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
 
 import {
-  createInstallationAccessToken,
-  githubInstallationHeaders,
+  type GithubOAuthTokenResponse,
+  githubUserTokenHeaders,
 } from "./app-auth";
+import {
+  decryptGithubUserToken,
+  encryptGithubUserToken,
+} from "./user-token-crypto";
 
 const GITHUB_API = "https://api.github.com";
 
@@ -37,10 +43,6 @@ export interface GithubConnectionDTO {
   updatedAt: string;
 }
 
-interface GithubInstallationRepoResponse {
-  repositories?: GithubRepoResponse[];
-}
-
 interface GithubRepoResponse {
   description?: string | null;
   full_name?: string;
@@ -50,7 +52,22 @@ interface GithubRepoResponse {
   private?: boolean;
 }
 
-function toConnectionDTO(row: GithubConnectionRow): GithubConnectionDTO {
+function toOauthConnectionDTO(
+  row: GithubOauthConnectionRow
+): GithubConnectionDTO {
+  return {
+    accountLogin: row.githubLogin,
+    accountType: "User",
+    id: row.id,
+    installationId: "",
+    isAuthorized: true,
+    namespace: row.namespace,
+    repositorySelection: "oauth",
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toAppConnectionDTO(row: GithubConnectionRow): GithubConnectionDTO {
   return {
     accountLogin: row.accountLogin,
     accountType: row.accountType,
@@ -61,20 +78,6 @@ function toConnectionDTO(row: GithubConnectionRow): GithubConnectionDTO {
     repositorySelection: row.repositorySelection,
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-function connectionIdNamespaceWhere(input: {
-  connectionId: string;
-  namespace: string;
-}) {
-  return and(
-    eq(githubConnections.id, input.connectionId.trim()),
-    eq(
-      githubConnections.namespace,
-      normalizeAssistantNamespace(input.namespace)
-    ),
-    eq(githubConnections.type, "github_app")
-  );
 }
 
 export async function upsertGithubAppConnection(input: {
@@ -129,82 +132,142 @@ export async function upsertGithubAppConnection(input: {
   if (row == null) {
     throw new Error("Failed to store GitHub App connection.");
   }
-  return toConnectionDTO(row);
+  return toAppConnectionDTO(row);
+}
+
+export async function upsertGithubOauthConnection(input: {
+  githubLogin: string;
+  namespace: string;
+  token: GithubOAuthTokenResponse;
+  userId: string;
+}): Promise<GithubConnectionDTO> {
+  const namespace = normalizeAssistantNamespace(input.namespace);
+  const userId = input.userId.trim();
+  const githubLogin = input.githubLogin.trim();
+  if (userId === "") {
+    throw new Error("GitHub OAuth connection user ID is required.");
+  }
+  if (githubLogin === "") {
+    throw new Error("GitHub OAuth connection login is required.");
+  }
+
+  const now = new Date();
+  const [row] = await getAssistantDb()
+    .insert(githubOauthConnections)
+    .values({
+      accessTokenCiphertext: encryptGithubUserToken(input.token.accessToken),
+      githubLogin,
+      id: generateId(),
+      namespace,
+      scope: input.token.scope,
+      tokenType: input.token.tokenType,
+      updatedAt: now,
+      userId,
+    })
+    .onConflictDoUpdate({
+      set: {
+        accessTokenCiphertext: encryptGithubUserToken(input.token.accessToken),
+        githubLogin,
+        scope: input.token.scope,
+        tokenType: input.token.tokenType,
+        updatedAt: now,
+      },
+      target: [githubOauthConnections.namespace, githubOauthConnections.userId],
+    })
+    .returning();
+  if (row == null) {
+    throw new Error("Failed to store GitHub OAuth connection.");
+  }
+  return toOauthConnectionDTO(row);
 }
 
 export async function getGithubConnectionForNamespace(
-  namespace: string
+  namespace: string,
+  userId: string
 ): Promise<GithubConnectionDTO | null> {
   const [row] = await getAssistantDb()
     .select()
-    .from(githubConnections)
+    .from(githubOauthConnections)
     .where(
       and(
-        eq(githubConnections.namespace, normalizeAssistantNamespace(namespace)),
-        eq(githubConnections.type, "github_app")
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(namespace)
+        ),
+        eq(githubOauthConnections.userId, userId.trim())
       )
     )
-    .orderBy(desc(githubConnections.updatedAt))
+    .orderBy(desc(githubOauthConnections.updatedAt))
     .limit(1);
-  if (row == null || row.revokedAt != null) {
-    return null;
-  }
-  return toConnectionDTO(row);
+  return row == null ? null : toOauthConnectionDTO(row);
 }
 
 export async function getGithubConnectionForNamespaceById(input: {
   connectionId: string;
   namespace: string;
+  userId: string;
 }): Promise<GithubConnectionDTO | null> {
   const [row] = await getAssistantDb()
     .select()
-    .from(githubConnections)
-    .where(connectionIdNamespaceWhere(input))
+    .from(githubOauthConnections)
+    .where(
+      and(
+        eq(githubOauthConnections.id, input.connectionId.trim()),
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(input.namespace)
+        ),
+        eq(githubOauthConnections.userId, input.userId.trim())
+      )
+    )
     .limit(1);
-  if (row == null || row.revokedAt != null) {
-    return null;
-  }
-  return toConnectionDTO(row);
+  return row == null ? null : toOauthConnectionDTO(row);
 }
 
 export async function revokeGithubConnectionForNamespace(
-  namespace: string
+  namespace: string,
+  userId: string
 ): Promise<void> {
-  const now = new Date();
   await getAssistantDb()
-    .update(githubConnections)
-    .set({ revokedAt: now, updatedAt: now })
+    .delete(githubOauthConnections)
     .where(
       and(
-        eq(githubConnections.namespace, normalizeAssistantNamespace(namespace)),
-        eq(githubConnections.type, "github_app")
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(namespace)
+        ),
+        eq(githubOauthConnections.userId, userId.trim())
       )
     );
 }
 
-export async function getGithubInstallationToken(input: {
+export async function getGithubOAuthTokenForConnection(input: {
   connectionId: string;
   namespace: string;
+  userId: string;
 }): Promise<string | null> {
   const [row] = await getAssistantDb()
     .select()
-    .from(githubConnections)
-    .where(connectionIdNamespaceWhere(input))
+    .from(githubOauthConnections)
+    .where(
+      and(
+        eq(githubOauthConnections.id, input.connectionId.trim()),
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(input.namespace)
+        ),
+        eq(githubOauthConnections.userId, input.userId.trim())
+      )
+    )
     .limit(1);
-  if (row == null || row.revokedAt != null) {
+  if (row == null) {
     return null;
   }
-  const token = await createInstallationAccessToken(row.installationId);
   await getAssistantDb()
-    .update(githubConnections)
+    .update(githubOauthConnections)
     .set({ lastUsedAt: new Date(), updatedAt: new Date() })
-    .where(
-      connectionIdNamespaceWhere({
-        connectionId: row.id,
-        namespace: row.namespace,
-      })
-    );
-  return token;
+    .where(eq(githubOauthConnections.id, row.id));
+  return decryptGithubUserToken(row.accessTokenCiphertext);
 }
 
 function asGithubRepo(row: GithubRepoResponse): GithubRepoDTO | null {
@@ -226,38 +289,45 @@ function asGithubRepo(row: GithubRepoResponse): GithubRepoDTO | null {
 }
 
 export async function listGithubReposForNamespace(
-  namespace: string
+  namespace: string,
+  userId: string
 ): Promise<GithubRepoDTO[]> {
-  const connection = await getGithubConnectionForNamespace(namespace);
+  const connection = await getGithubConnectionForNamespace(namespace, userId);
   if (connection == null) {
-    throw new Error("GitHub App is not installed for this namespace.");
+    throw new Error("GitHub OAuth connection is not authorized.");
   }
-  const token = await getGithubInstallationToken({
+  const token = await getGithubOAuthTokenForConnection({
     connectionId: connection.id,
     namespace,
+    userId,
   });
   if (token == null) {
-    throw new Error("GitHub App connection is not authorized.");
+    throw new Error("GitHub OAuth connection is not authorized.");
   }
 
   const out: GithubRepoDTO[] = [];
   const perPage = 100;
   for (let page = 1; page <= 5; page += 1) {
-    const url = new URL("/installation/repositories", GITHUB_API);
+    const url = new URL("/user/repos", GITHUB_API);
+    url.searchParams.set(
+      "affiliation",
+      "owner,collaborator,organization_member"
+    );
     url.searchParams.set("page", String(page));
     url.searchParams.set("per_page", String(perPage));
+    url.searchParams.set("sort", "updated");
     const res = await fetch(url.toString(), {
       cache: "no-store",
-      headers: githubInstallationHeaders(token),
+      headers: githubUserTokenHeaders(token),
     });
     if (!res.ok) {
       throw new Error(
-        `GitHub installation repositories request failed with status ${res.status}.`
+        `GitHub repositories request failed with status ${res.status}.`
       );
     }
-    const payload = (await res.json()) as GithubInstallationRepoResponse;
-    const repos = Array.isArray(payload.repositories)
-      ? payload.repositories.flatMap((row) => {
+    const payload = (await res.json()) as GithubRepoResponse[];
+    const repos = Array.isArray(payload)
+      ? payload.flatMap((row) => {
           const repo = asGithubRepo(row);
           return repo == null ? [] : [repo];
         })

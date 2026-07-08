@@ -582,7 +582,7 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
       ) : null}
       {showRepositoryInput ? (
         <DeploymentSettings.Section
-          description="Select a repository from this workspace's GitHub App installation."
+          description="Select a repository from this workspace's GitHub connection."
           icon={<GithubIcon className="size-4" />}
           title="Repository"
         >
@@ -596,7 +596,7 @@ function GithubDeployerShell({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** Compound GitHub App install + deploy repo picker; state comes from `Root`. */
+/** Compound GitHub connect + deploy repo picker; state comes from `Root`. */
 const GithubDeployerBase = Object.assign(GithubDeployerShell, {
   AuthButton: GithubDeployerAuthButton,
   Complete: GithubDeployerComplete,
