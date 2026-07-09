@@ -49,6 +49,7 @@ import {
   blockingInputsFromDeploymentPlan,
   createSealosTemplateDeploymentPlan,
   type DeploymentArtifact,
+  type DeploymentTemplateInstanceArtifact,
   deployTaskStringRecordValue,
   prepareBrainManifestArtifact,
   prepareSealosTemplateArtifact,
@@ -481,6 +482,39 @@ async function applyDeploymentArtifact(input: {
   artifactSummary: DeployTaskArtifactSummary;
   notes: string;
 }> {
+  if (input.artifact.kind === "template-instance-pending") {
+    // The instance is created HERE, inside create-resources — not during
+    // prepare-template — so a provider/K8s creation failure is attributed to
+    // the step that owns creation. `input.kubeconfig` is the decoded
+    // kubeconfig; `headerSafeEncodedKubeconfig` (inside deployTemplateInstance)
+    // normalizes raw or URL-encoded input alike.
+    const deployed = await deployTemplateInstance({
+      args: input.artifact.args,
+      encodedKubeconfig: input.kubeconfig,
+      extraLabels: input.artifact.extraLabels,
+      instanceName: input.artifact.instanceName,
+      templateName: input.artifact.templateName,
+    });
+    const created: DeploymentTemplateInstanceArtifact = {
+      instanceName: deployed.instanceName,
+      kind: "template-instance",
+      resources: deployed.resources,
+      templateName: input.artifact.templateName,
+    };
+    return {
+      artifactSummary: {
+        artifacts: [created],
+        resources: created.resources.map((resource) => ({
+          apiVersion: "template.sealos.io",
+          kind: resource.resourceType,
+          name: resource.name,
+          namespace: input.task.namespace,
+        })),
+      },
+      notes: `Deployed template instance ${created.instanceName}.`,
+    };
+  }
+
   if (input.artifact.kind === "template-instance") {
     return {
       artifactSummary: {
@@ -1028,29 +1062,26 @@ function generateDirectArtifact(input: {
   }
 }
 
-async function generateTemplateArtifact(input: {
+function generateTemplateArtifact(input: {
   /** Full args, memory-merged — never read from the stripped row copy. */
   args: Record<string, string>;
-  encodedKubeconfig: string;
   instanceName: string;
   projectId: string;
   templateName: string;
-}): Promise<DeploymentArtifact> {
-  const deployed = await deployTemplateInstance({
+}): DeploymentArtifact {
+  // Only assemble the in-memory intent here. The provider POST that creates
+  // the instance runs later, inside create-resources (applyDeploymentArtifact),
+  // so a creation failure is attributed to the step that owns it. These args
+  // are sensitive (ADR 0037) and ride only in this intent — never persisted.
+  return {
     args: input.args,
-    encodedKubeconfig: input.encodedKubeconfig,
     extraLabels: templateDeploymentExtraLabels({
       instanceName: input.instanceName,
       projectId: input.projectId,
       templateName: input.templateName,
     }),
     instanceName: input.instanceName,
-    templateName: input.templateName,
-  });
-  return {
-    instanceName: deployed.instanceName,
-    kind: "template-instance",
-    resources: deployed.resources,
+    kind: "template-instance-pending",
     templateName: input.templateName,
   };
 }
@@ -1734,7 +1765,8 @@ async function completeTaskWithArtifact(input: {
           : undefined,
       source: "applyDeploymentArtifact",
       templateName:
-        input.artifact.kind === "sealos-template"
+        input.artifact.kind === "sealos-template" ||
+        input.artifact.kind === "template-instance-pending"
           ? input.artifact.templateName
           : undefined,
     });
@@ -2417,9 +2449,8 @@ async function runTemplateDeploymentTask(input: {
   });
 
   try {
-    const artifact = await generateTemplateArtifact({
+    const artifact = generateTemplateArtifact({
       args: mergedArgs,
-      encodedKubeconfig: input.encodedKubeconfig,
       instanceName,
       projectId: input.projectId,
       templateName,
