@@ -2,6 +2,7 @@
 
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 
+import { createThrottleScheduler } from "@/lib/throttle-scheduler";
 import {
   fetchDeploymentTaskTimeline,
   streamDeploymentTaskTimeline,
@@ -10,6 +11,8 @@ import { applyDeploymentTaskTimelineSnapshot } from "./timeline-client-state";
 import type { DeploymentTaskTimelineSnapshotDTO } from "./types";
 
 const STREAM_RECONNECT_DELAY_MS = 1500;
+/** Coalesce the SSE snapshot storm to at most one React commit per window (ADR 0043). */
+const TIMELINE_COALESCE_MS = 200;
 
 export interface UseDeploymentTaskTimelineInput {
   enabled?: boolean;
@@ -76,7 +79,8 @@ async function loadInitialTimeline(input: {
 async function streamTimelineUntilAbort(input: {
   kubeconfig: string;
   namespace: string;
-  setters: TimelineEffectSetters;
+  onSnapshot: (snapshot: DeploymentTaskTimelineSnapshotDTO) => void;
+  setters: Pick<TimelineEffectSetters, "setError" | "setIsReconnecting">;
   signal: AbortSignal;
   taskId: string;
 }) {
@@ -87,10 +91,7 @@ async function streamTimelineUntilAbort(input: {
         kubeconfig: input.kubeconfig,
         namespace: input.namespace,
         onEvent: (event) => {
-          input.setters.setData((current) =>
-            applyDeploymentTaskTimelineSnapshot(current, event.snapshot)
-          );
-          input.setters.setError(null);
+          input.onSnapshot(event.snapshot);
         },
         signal: input.signal,
         taskId: input.taskId,
@@ -141,6 +142,22 @@ export function useDeploymentTaskTimeline(
       setIsReconnecting,
     };
 
+    // Buffer only the latest snapshot and commit on the throttle cadence. Each
+    // event is a full snapshot and chooseWinner keeps the highest revision, so
+    // dropping intermediate frames is lossless for the rendered state.
+    let latestSnapshot: DeploymentTaskTimelineSnapshotDTO | null = null;
+    const scheduler = createThrottleScheduler(TIMELINE_COALESCE_MS, () => {
+      const snapshot = latestSnapshot;
+      if (snapshot == null) {
+        return;
+      }
+      latestSnapshot = null;
+      setData((current) =>
+        applyDeploymentTaskTimelineSnapshot(current, snapshot)
+      );
+      setError(null);
+    });
+
     async function run() {
       await loadInitialTimeline({
         kubeconfig: input.kubeconfig,
@@ -152,6 +169,10 @@ export function useDeploymentTaskTimeline(
       await streamTimelineUntilAbort({
         kubeconfig: input.kubeconfig,
         namespace: input.namespace,
+        onSnapshot: (snapshot) => {
+          latestSnapshot = snapshot;
+          scheduler.schedule();
+        },
         setters,
         signal: controller.signal,
         taskId,
@@ -166,6 +187,7 @@ export function useDeploymentTaskTimeline(
 
     return () => {
       controller.abort();
+      scheduler.cancel();
     };
   }, [enabled, input.kubeconfig, input.namespace, input.taskId]);
 

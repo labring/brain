@@ -17,9 +17,10 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useState } from "react";
-import type {
-  DeploymentTaskDisplaySummary,
-  DeploymentTaskProjection,
+import {
+  type DeploymentTaskDisplaySummary,
+  type DeploymentTaskProjection,
+  deploymentTaskShortCode,
 } from "@/lib/deploy-task/projection";
 import {
   deployTaskIsTerminal,
@@ -179,6 +180,9 @@ function DeploymentTaskDockTask({
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-[0.8125rem] text-white leading-4">
             {display.sourceSummary}
+            <span className="ml-1.5 font-mono font-normal text-[0.6875rem] text-white/45">
+              #{deploymentTaskShortCode(task.id)}
+            </span>
           </span>
         </span>
         <TaskStatusIndicator task={task} />

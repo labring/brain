@@ -22,7 +22,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import { LayoutGrid, Sparkles } from "lucide-react";
+import { PanelsTopLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -88,22 +88,22 @@ function ProjectShortcutIcon({
 }
 
 function ProjectsShortcutIcon({
-  showGridOnHover,
+  showIconOnHover,
 }: {
-  showGridOnHover: boolean;
+  showIconOnHover: boolean;
 }) {
   return (
     <span aria-hidden className="relative block size-4">
       <span
         className={cn(
           "absolute inset-0 block bg-center bg-contain bg-no-repeat transition-opacity",
-          showGridOnHover &&
+          showIconOnHover &&
             "group-hover/button:opacity-0 group-focus-visible/button:opacity-0"
         )}
         style={{ backgroundImage: `url(${JSON.stringify(sealosLogoSrc)})` }}
       />
-      {showGridOnHover ? (
-        <LayoutGrid
+      {showIconOnHover ? (
+        <PanelsTopLeft
           aria-hidden
           className="absolute top-1/2 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover/button:opacity-100 group-focus-visible/button:opacity-100"
           strokeWidth={1.33}
@@ -353,7 +353,7 @@ export default function AppSidebar() {
             tooltip="Projects"
           >
             <ProjectsShortcutIcon
-              showGridOnHover={currentProjectId !== undefined}
+              showIconOnHover={currentProjectId !== undefined}
             />
           </AppSidebarLinkButton>
 
