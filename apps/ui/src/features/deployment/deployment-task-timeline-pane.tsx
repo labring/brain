@@ -45,6 +45,10 @@ import {
 } from "@/features/deployment/deployment-task-redeploy";
 import { deployRunnerSurfacesRawFailure } from "@/lib/deploy-task/failure-summary";
 import {
+  deploymentTaskShortCode,
+  deploymentTaskSourceSummary,
+} from "@/lib/deploy-task/projection";
+import {
   type DeployTaskStatusHue,
   deployTaskHasAppliedResources,
   deployTaskIsCancellable,
@@ -1332,6 +1336,33 @@ const DEPLOYMENT_TIMELINE_PANE_ICON = (
   <PackageCheck aria-hidden className="size-4 text-blue-400" />
 );
 
+interface DeploymentTaskPaneIdentity {
+  subtitle: string;
+  title: string;
+}
+
+/**
+ * The pane's stable identity — the source summary as a human-readable title,
+ * with a short task-id code (the same one the dock chip that opened this pane
+ * shows, so the two cross-reference) and the absolute start time as the
+ * subtitle. Both parts are stable for a task's life (an absolute start time,
+ * not a drifting "3 min ago"), so the header can be resolved once and frozen
+ * (see DeploymentTaskTimelineBody: the header must not repaint on a stream
+ * tick). The destination project is intentionally omitted — the pane already
+ * renders inside that project's canvas.
+ */
+function deploymentTaskPaneIdentity(
+  task: DeployTaskDTO
+): DeploymentTaskPaneIdentity {
+  const time = formatDeploymentTimelineEventTime(
+    task.startedAt ?? task.createdAt
+  );
+  return {
+    subtitle: `#${deploymentTaskShortCode(task.id)} · ${time}`,
+    title: deploymentTaskSourceSummary(task.source),
+  };
+}
+
 /**
  * Owns the timeline subscription. It is deliberately a child of the SidePane
  * shell (not its parent): a stream tick re-renders this body in place without
@@ -1344,15 +1375,35 @@ function DeploymentTaskTimelineBody({
   kubeconfig,
   namespace,
   onEditRedeploy,
+  onIdentity,
   taskId,
 }: {
   kubeconfig: string;
   namespace: string;
   onEditRedeploy?: (task: DeployTaskDTO) => void;
+  onIdentity: (identity: DeploymentTaskPaneIdentity) => void;
   taskId: string;
 }) {
   const timeline = useDeploymentTaskTimeline({ kubeconfig, namespace, taskId });
   const task = timeline.data?.task;
+
+  // Report the header identity up once it resolves. `task` gets a fresh
+  // reference every tick, so guard on the identity value: this fires only when
+  // the (stable) identity actually changes, keeping the frozen header off the
+  // per-tick render path.
+  const sentIdentityRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (task == null) {
+      return;
+    }
+    const identity = deploymentTaskPaneIdentity(task);
+    const key = `${identity.title} ${identity.subtitle}`;
+    if (sentIdentityRef.current === key) {
+      return;
+    }
+    sentIdentityRef.current = key;
+    onIdentity(identity);
+  }, [task, onIdentity]);
 
   return (
     <>
@@ -1394,19 +1445,34 @@ export function DeploymentTaskTimelinePane({
   onEditRedeploy,
   taskId,
 }: DeploymentTaskTimelinePaneProps) {
+  // Keyed by taskId so a reused pane never shows the previous task's identity:
+  // a stale entry is ignored until the new task resolves its own.
+  const [resolved, setResolved] = useState<{
+    identity: DeploymentTaskPaneIdentity;
+    taskId: string;
+  } | null>(null);
+  const handleIdentity = useCallback(
+    (identity: DeploymentTaskPaneIdentity) => {
+      setResolved({ identity, taskId });
+    },
+    [taskId]
+  );
+  const identity = resolved?.taskId === taskId ? resolved.identity : null;
+
   return (
     <SidePane
       closeAriaLabel="Close deployment task timeline"
       icon={DEPLOYMENT_TIMELINE_PANE_ICON}
       label="Deployment task timeline pane"
       onClose={onClose}
-      subtitle={`Task ${taskId}`}
-      title="Deployment Timeline"
+      subtitle={identity?.subtitle}
+      title={identity?.title ?? "Deployment Timeline"}
     >
       <DeploymentTaskTimelineBody
         kubeconfig={kubeconfig}
         namespace={namespace}
         onEditRedeploy={onEditRedeploy}
+        onIdentity={handleIdentity}
         taskId={taskId}
       />
     </SidePane>

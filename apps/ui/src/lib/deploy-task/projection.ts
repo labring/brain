@@ -134,7 +134,9 @@ function truncateSummary(value: string, maxLength: number): string {
   return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function sourceSummary(source: DeploymentTaskSource): string {
+export function deploymentTaskSourceSummary(
+  source: DeploymentTaskSource
+): string {
   switch (source.kind) {
     case "database":
       return `${compactSummaryText(
@@ -158,6 +160,16 @@ function sourceSummary(source: DeploymentTaskSource): string {
     default:
       return source satisfies never;
   }
+}
+
+/**
+ * A short, glanceable code derived from the task id — enough to tell two
+ * same-source deployments apart in the pane header and dock chip, where the
+ * source summary alone repeats. The full task id stays available in the
+ * timeline's Task ID row for copying.
+ */
+export function deploymentTaskShortCode(taskId: string): string {
+  return taskId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6);
 }
 
 function resultKindLabel(kind: string): string {
@@ -241,7 +253,7 @@ function deploymentTaskDisplaySummary(
       canvasProjection: task.canvasProjection,
     }),
     sourceKind: task.source.kind,
-    sourceSummary: sourceSummary(task.source),
+    sourceSummary: deploymentTaskSourceSummary(task.source),
   };
 }
 
