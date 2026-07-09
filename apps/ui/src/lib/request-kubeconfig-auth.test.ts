@@ -153,10 +153,13 @@ test("rejects kubeconfig when Kubernetes verification denies access", async () =
   );
 });
 
-test("uses kubeconfig API server outside the cluster", async () => {
+test("fails closed when no trusted API server is configured", async () => {
   await withJsonServer(
     () => ({ status: { allowed: true } }),
     async (apiServer, requests) => {
+      // A client kubeconfig can name any server; without a trusted API server
+      // configured (K8S_API_URL / in-cluster env) verification must NOT fall
+      // back to that client-named server (F5: SSRF + authz bypass).
       const encodedKubeconfig = kubeconfig("ns-a").replace(
         "https%3A%2F%2Fexample.test",
         encodeURIComponent(apiServer)
@@ -164,26 +167,25 @@ test("uses kubeconfig API server outside the cluster", async () => {
 
       await withEnv(
         {
+          K8S_API_CA: undefined,
+          K8S_API_URL: undefined,
           KUBERNETES_SERVICE_HOST: undefined,
           KUBERNETES_SERVICE_PORT: undefined,
         },
         async () => {
-          assert.deepEqual(
-            await authorizeEncodedKubeconfigNamespace({
-              encodedKubeconfig,
-              namespace: "ns-a",
-              subject: "Project",
-            }),
-            {
-              encodedKubeconfig,
-              kubeconfig: decodeURIComponent(encodedKubeconfig),
-              namespace: "ns-a",
-              ok: true,
-            }
-          );
+          const result = await authorizeEncodedKubeconfigNamespace({
+            encodedKubeconfig,
+            namespace: "ns-a",
+            subject: "Project",
+          });
+          assert.equal(result.ok, false);
+          if (!result.ok) {
+            assert.equal(result.status, 500);
+          }
         }
       );
-      assert.equal(requests.length, 1);
+      // The client-named server must never be contacted.
+      assert.equal(requests.length, 0);
     }
   );
 });
@@ -195,6 +197,8 @@ test("uses in-cluster API server instead of kubeconfig server for verification",
       const trusted = new URL(trustedApiServer);
       await withEnv(
         {
+          K8S_API_CA: undefined,
+          K8S_API_URL: undefined,
           KUBERNETES_SERVICE_HOST: trusted.hostname,
           KUBERNETES_SERVICE_PORT: trusted.port,
         },
