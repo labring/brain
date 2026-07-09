@@ -55,7 +55,6 @@ import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
   DeploymentResultResourceRef,
-  DeploymentTaskTimelineSnapshot,
   DeploymentTimelineEvent,
   DeploymentTimelineEventSeverity,
   DeploymentTimelineStep,
@@ -813,27 +812,27 @@ function DeploymentInputField({
 }
 
 function DeploymentConfigurationForm({
+  blockingInputs,
   kubeconfig,
   namespace,
-  snapshot,
+  plan,
+  status,
+  taskId,
 }: {
+  blockingInputs: DeployTaskBlockingInput[];
   kubeconfig: string;
   namespace: string;
-  snapshot: DeploymentTaskTimelineSnapshotDTO;
+  plan: DeploymentTaskDeploymentPlan | undefined;
+  status: DeployTaskStatus;
+  taskId: string;
 }) {
-  const plan = snapshot.task.artifactSummary.deploymentPlan;
   const hasBlockingInputs =
-    snapshot.task.blockingInputs.length > 0 ||
-    (plan?.missingInputKeys?.length ?? 0) > 0;
-  const showForm = snapshot.task.status === "blocked" && hasBlockingInputs;
+    blockingInputs.length > 0 || (plan?.missingInputKeys?.length ?? 0) > 0;
+  const showForm = status === "blocked" && hasBlockingInputs;
   const [values, setValues] = useState<Record<string, string>>({});
   const inputs = useMemo(
-    () =>
-      blockingPlanInputs({
-        blockingInputs: snapshot.task.blockingInputs,
-        plan,
-      }),
-    [plan, snapshot.task.blockingInputs]
+    () => blockingPlanInputs({ blockingInputs, plan }),
+    [blockingInputs, plan]
   );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -879,7 +878,7 @@ function DeploymentConfigurationForm({
     setIsSubmitting(true);
     try {
       const response = await fetch(
-        `/api/deploy-tasks/${encodeURIComponent(snapshot.task.id)}/input`,
+        `/api/deploy-tasks/${encodeURIComponent(taskId)}/input`,
         {
           body: JSON.stringify({
             encodedKubeconfig: kubeconfig,
@@ -960,9 +959,9 @@ function DeploymentConfigurationForm({
 }
 
 function orderedSteps(
-  timeline: DeploymentTaskTimelineSnapshot
+  steps: readonly DeploymentTimelineStep[]
 ): DeploymentTimelineStep[] {
-  return [...timeline.steps].sort((a, b) => a.order - b.order);
+  return [...steps].sort((a, b) => a.order - b.order);
 }
 
 function deploymentConfigurationStepId(
@@ -1043,6 +1042,54 @@ function TimelineTaskIdRow({ taskId }: { taskId: string }) {
   );
 }
 
+/**
+ * Memo boundary for the step/card subtree. It consumes only values the client
+ * `reconcile` keeps referentially stable across an unchanged SSE tick (`steps`
+ * plus the form's blocking inputs / plan), so a no-op readiness tick — which
+ * still bumps `revision`/`updatedAt`/`task.updatedAt` in the envelope — bails
+ * the whole subtree instead of re-rendering every step and card. The config
+ * form takes explicit stable props rather than the churning `snapshot` so it
+ * neither drags the envelope through this memo nor resets user entry.
+ */
+const TimelineSteps = memo(function TimelineSteps({
+  blockingInputs,
+  kubeconfig,
+  namespace,
+  plan,
+  status,
+  steps,
+  taskId,
+}: {
+  blockingInputs: DeployTaskBlockingInput[];
+  kubeconfig: string;
+  namespace: string;
+  plan: DeploymentTaskDeploymentPlan | undefined;
+  status: DeployTaskStatus;
+  steps: readonly DeploymentTimelineStep[];
+  taskId: string;
+}) {
+  const ordered = useMemo(() => orderedSteps(steps), [steps]);
+  const configurationStepId = deploymentConfigurationStepId(ordered);
+  return (
+    <div className="flex flex-col gap-4">
+      {ordered.map((step) => (
+        <TimelineStepItem key={step.id} step={step}>
+          {step.id === configurationStepId ? (
+            <DeploymentConfigurationForm
+              blockingInputs={blockingInputs}
+              kubeconfig={kubeconfig}
+              namespace={namespace}
+              plan={plan}
+              status={status}
+              taskId={taskId}
+            />
+          ) : null}
+        </TimelineStepItem>
+      ))}
+    </div>
+  );
+});
+
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
@@ -1052,14 +1099,9 @@ export function DeploymentTaskTimelinePaneContent({
   namespace: string;
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
-  const steps = useMemo(
-    () => orderedSteps(snapshot.timeline),
-    [snapshot.timeline]
-  );
-  if (steps.length === 0) {
+  if (snapshot.timeline.steps.length === 0) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
-  const configurationStepId = deploymentConfigurationStepId(steps);
   return (
     <div
       className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
@@ -1076,19 +1118,15 @@ export function DeploymentTaskTimelinePaneContent({
         <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
       </div>
-      <div className="flex flex-col gap-4">
-        {steps.map((step) => (
-          <TimelineStepItem key={step.id} step={step}>
-            {step.id === configurationStepId ? (
-              <DeploymentConfigurationForm
-                kubeconfig={kubeconfig}
-                namespace={namespace}
-                snapshot={snapshot}
-              />
-            ) : null}
-          </TimelineStepItem>
-        ))}
-      </div>
+      <TimelineSteps
+        blockingInputs={snapshot.task.blockingInputs}
+        kubeconfig={kubeconfig}
+        namespace={namespace}
+        plan={snapshot.task.artifactSummary.deploymentPlan}
+        status={snapshot.task.status}
+        steps={snapshot.timeline.steps}
+        taskId={snapshot.task.id}
+      />
     </div>
   );
 }
@@ -1196,34 +1234,34 @@ export function DeploymentTaskTimelineActions({
   );
 }
 
-export function DeploymentTaskTimelinePane({
+const DEPLOYMENT_TIMELINE_PANE_ICON = (
+  <PackageCheck aria-hidden className="size-4 text-blue-400" />
+);
+
+/**
+ * Owns the timeline subscription. It is deliberately a child of the SidePane
+ * shell (not its parent): a stream tick re-renders this body in place without
+ * re-rendering the `SidePane` above it, so the header — icon, title, close
+ * button — never repaints on a tick. The live task status shows here (the
+ * status row in `DeploymentTaskTimelinePaneContent`), so the shell can keep a
+ * static subtitle.
+ */
+function DeploymentTaskTimelineBody({
   kubeconfig,
   namespace,
-  onClose,
   onEditRedeploy,
   taskId,
-}: DeploymentTaskTimelinePaneProps) {
-  const timeline = useDeploymentTaskTimeline({
-    kubeconfig,
-    namespace,
-    taskId,
-  });
+}: {
+  kubeconfig: string;
+  namespace: string;
+  onEditRedeploy?: (task: DeployTaskDTO) => void;
+  taskId: string;
+}) {
+  const timeline = useDeploymentTaskTimeline({ kubeconfig, namespace, taskId });
   const task = timeline.data?.task;
 
   return (
-    <SidePane
-      busy={timeline.isLoading}
-      closeAriaLabel="Close deployment task timeline"
-      icon={<PackageCheck aria-hidden className="size-4 text-blue-400" />}
-      label="Deployment task timeline pane"
-      onClose={onClose}
-      subtitle={
-        task == null
-          ? `Task ${taskId}`
-          : `${task.status}${task.phase ? ` - ${task.phase}` : ""}`
-      }
-      title="Deployment Timeline"
-    >
+    <>
       {timeline.error == null ? null : (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-sm">
           {timeline.error.message}
@@ -1251,6 +1289,32 @@ export function DeploymentTaskTimelinePane({
           task={task}
         />
       )}
+    </>
+  );
+}
+
+export function DeploymentTaskTimelinePane({
+  kubeconfig,
+  namespace,
+  onClose,
+  onEditRedeploy,
+  taskId,
+}: DeploymentTaskTimelinePaneProps) {
+  return (
+    <SidePane
+      closeAriaLabel="Close deployment task timeline"
+      icon={DEPLOYMENT_TIMELINE_PANE_ICON}
+      label="Deployment task timeline pane"
+      onClose={onClose}
+      subtitle={`Task ${taskId}`}
+      title="Deployment Timeline"
+    >
+      <DeploymentTaskTimelineBody
+        kubeconfig={kubeconfig}
+        namespace={namespace}
+        onEditRedeploy={onEditRedeploy}
+        taskId={taskId}
+      />
     </SidePane>
   );
 }

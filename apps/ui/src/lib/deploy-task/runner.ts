@@ -646,6 +646,8 @@ async function upsertResultTimelineCard(input: {
 async function observeResultCardReadiness(input: {
   card: DeploymentResultResourceCard;
   kubeconfig: string;
+  previousLatestStatus: string | undefined;
+  previousStatus: DeploymentResultResourceCard["status"] | undefined;
   taskId: string;
 }): Promise<{
   latestStatus: string;
@@ -657,13 +659,23 @@ async function observeResultCardReadiness(input: {
       card: input.card,
       kubeconfig: input.kubeconfig,
     });
-    await upsertResultTimelineCard({
-      card: observed.card,
-      eventMessage: observed.eventMessage,
-      eventReason: observed.eventReason,
-      eventSeverity: observed.eventSeverity,
-      taskId: input.taskId,
-    });
+    // Only write when the observed state changed. An identical re-observation
+    // would still bump the timeline revision and NOTIFY every stream client,
+    // waking the whole timeline pane to re-render for nothing; with a poll
+    // every DIRECT_AP_READINESS_POLL_MS, that is what makes a resource sitting
+    // at e.g. 0/1 pulse the UI each cycle.
+    if (
+      observed.status !== input.previousStatus ||
+      observed.latestStatus !== input.previousLatestStatus
+    ) {
+      await upsertResultTimelineCard({
+        card: observed.card,
+        eventMessage: observed.eventMessage,
+        eventReason: observed.eventReason,
+        eventSeverity: observed.eventSeverity,
+        taskId: input.taskId,
+      });
+    }
 
     if (input.card.required && observed.status === "failed") {
       throw new Error(`${resultReadinessLabel(input.card)} failed readiness.`);
@@ -713,6 +725,8 @@ async function waitForRequiredResultCards(input: {
       const observed = await observeResultCardReadiness({
         card,
         kubeconfig: input.kubeconfig,
+        previousLatestStatus: latestStatusByCard.get(card.id),
+        previousStatus: statusByCard.get(card.id),
         taskId: input.taskId,
       });
       latestStatus = observed.latestStatus;
