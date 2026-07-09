@@ -43,6 +43,11 @@ import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
 } from "@/features/deployment/deployment-task-redeploy";
+import { deployRunnerSurfacesRawFailure } from "@/lib/deploy-task/failure-summary";
+import {
+  deploymentTaskShortCode,
+  deploymentTaskSourceSummary,
+} from "@/lib/deploy-task/projection";
 import {
   type DeployTaskStatusHue,
   deployTaskHasAppliedResources,
@@ -55,7 +60,6 @@ import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
   DeploymentResultResourceRef,
-  DeploymentTaskTimelineSnapshot,
   DeploymentTimelineEvent,
   DeploymentTimelineEventSeverity,
   DeploymentTimelineStep,
@@ -577,6 +581,84 @@ const ResultResourceCard = memo(function ResultResourceCard({
   );
 });
 
+const FailureDetail = memo(function FailureDetail({
+  detail,
+}: {
+  detail: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimeout.current != null) {
+        clearTimeout(copyTimeout.current);
+      }
+    },
+    []
+  );
+
+  const copy = useCallback(() => {
+    navigator.clipboard
+      ?.writeText(detail)
+      .then(() => {
+        setCopied(true);
+        if (copyTimeout.current != null) {
+          clearTimeout(copyTimeout.current);
+        }
+        copyTimeout.current = setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => undefined);
+  }, [detail]);
+
+  return (
+    <DeploymentTimelineCard
+      className="p-4"
+      data-slot="deployment-failure-detail"
+    >
+      <Collapsible
+        className="flex flex-col gap-3"
+        onOpenChange={setOpen}
+        open={open}
+      >
+        <CollapsibleTrigger
+          className="group/failure flex w-full cursor-pointer items-center justify-between gap-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+          type="button"
+        >
+          <span className="min-w-0 truncate font-medium text-foreground text-sm leading-5">
+            {open ? "Hide error details" : "Show error details"}
+          </span>
+          <ChevronDown
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/failure:rotate-180"
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-border border-t pt-3 outline-none">
+          <div className="flex flex-col gap-2">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-input/40 p-3 font-mono text-foreground/90 text-xs leading-4">
+              {detail}
+            </pre>
+            <AppButton
+              className="self-end"
+              onClick={copy}
+              type="button"
+              variant="secondary"
+            >
+              {copied ? (
+                <Check aria-hidden data-icon="inline-start" />
+              ) : (
+                <Copy aria-hidden data-icon="inline-start" />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </AppButton>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </DeploymentTimelineCard>
+  );
+});
+
 const TimelineStepItem = memo(function TimelineStepItem({
   children,
   step,
@@ -813,27 +895,27 @@ function DeploymentInputField({
 }
 
 function DeploymentConfigurationForm({
+  blockingInputs,
   kubeconfig,
   namespace,
-  snapshot,
+  plan,
+  status,
+  taskId,
 }: {
+  blockingInputs: DeployTaskBlockingInput[];
   kubeconfig: string;
   namespace: string;
-  snapshot: DeploymentTaskTimelineSnapshotDTO;
+  plan: DeploymentTaskDeploymentPlan | undefined;
+  status: DeployTaskStatus;
+  taskId: string;
 }) {
-  const plan = snapshot.task.artifactSummary.deploymentPlan;
   const hasBlockingInputs =
-    snapshot.task.blockingInputs.length > 0 ||
-    (plan?.missingInputKeys?.length ?? 0) > 0;
-  const showForm = snapshot.task.status === "blocked" && hasBlockingInputs;
+    blockingInputs.length > 0 || (plan?.missingInputKeys?.length ?? 0) > 0;
+  const showForm = status === "blocked" && hasBlockingInputs;
   const [values, setValues] = useState<Record<string, string>>({});
   const inputs = useMemo(
-    () =>
-      blockingPlanInputs({
-        blockingInputs: snapshot.task.blockingInputs,
-        plan,
-      }),
-    [plan, snapshot.task.blockingInputs]
+    () => blockingPlanInputs({ blockingInputs, plan }),
+    [blockingInputs, plan]
   );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -879,7 +961,7 @@ function DeploymentConfigurationForm({
     setIsSubmitting(true);
     try {
       const response = await fetch(
-        `/api/deploy-tasks/${encodeURIComponent(snapshot.task.id)}/input`,
+        `/api/deploy-tasks/${encodeURIComponent(taskId)}/input`,
         {
           body: JSON.stringify({
             encodedKubeconfig: kubeconfig,
@@ -960,9 +1042,9 @@ function DeploymentConfigurationForm({
 }
 
 function orderedSteps(
-  timeline: DeploymentTaskTimelineSnapshot
+  steps: readonly DeploymentTimelineStep[]
 ): DeploymentTimelineStep[] {
-  return [...timeline.steps].sort((a, b) => a.order - b.order);
+  return [...steps].sort((a, b) => a.order - b.order);
 }
 
 function deploymentConfigurationStepId(
@@ -1043,6 +1125,59 @@ function TimelineTaskIdRow({ taskId }: { taskId: string }) {
   );
 }
 
+/**
+ * Memo boundary for the step/card subtree. It consumes only values the client
+ * `reconcile` keeps referentially stable across an unchanged SSE tick (`steps`
+ * plus the form's blocking inputs / plan), so a no-op readiness tick — which
+ * still bumps `revision`/`updatedAt`/`task.updatedAt` in the envelope — bails
+ * the whole subtree instead of re-rendering every step and card. The config
+ * form takes explicit stable props rather than the churning `snapshot` so it
+ * neither drags the envelope through this memo nor resets user entry.
+ */
+const TimelineSteps = memo(function TimelineSteps({
+  blockingInputs,
+  failureDetail,
+  kubeconfig,
+  namespace,
+  plan,
+  status,
+  steps,
+  taskId,
+}: {
+  blockingInputs: DeployTaskBlockingInput[];
+  failureDetail: string | undefined;
+  kubeconfig: string;
+  namespace: string;
+  plan: DeploymentTaskDeploymentPlan | undefined;
+  status: DeployTaskStatus;
+  steps: readonly DeploymentTimelineStep[];
+  taskId: string;
+}) {
+  const ordered = useMemo(() => orderedSteps(steps), [steps]);
+  const configurationStepId = deploymentConfigurationStepId(ordered);
+  return (
+    <div className="flex flex-col gap-4">
+      {ordered.map((step) => (
+        <TimelineStepItem key={step.id} step={step}>
+          {step.id === configurationStepId ? (
+            <DeploymentConfigurationForm
+              blockingInputs={blockingInputs}
+              kubeconfig={kubeconfig}
+              namespace={namespace}
+              plan={plan}
+              status={status}
+              taskId={taskId}
+            />
+          ) : null}
+          {step.status === "failed" && failureDetail != null ? (
+            <FailureDetail detail={failureDetail} />
+          ) : null}
+        </TimelineStepItem>
+      ))}
+    </div>
+  );
+});
+
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
@@ -1052,14 +1187,18 @@ export function DeploymentTaskTimelinePaneContent({
   namespace: string;
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
-  const steps = useMemo(
-    () => orderedSteps(snapshot.timeline),
-    [snapshot.timeline]
-  );
-  if (steps.length === 0) {
+  if (snapshot.timeline.steps.length === 0) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
-  const configurationStepId = deploymentConfigurationStepId(steps);
+  // Only surface the ground-truth error for runners whose terminal error is
+  // scrubbed (ADR 0042 "scrub ⇔ raw display"); task.error is the full scrubbed
+  // message, while the step's inline event carries the short reason.
+  const rawFailure =
+    deployRunnerSurfacesRawFailure(snapshot.task.runner) &&
+    snapshot.task.error != null &&
+    snapshot.task.error.trim() !== ""
+      ? snapshot.task.error
+      : undefined;
   return (
     <div
       className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
@@ -1076,19 +1215,16 @@ export function DeploymentTaskTimelinePaneContent({
         <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
       </div>
-      <div className="flex flex-col gap-4">
-        {steps.map((step) => (
-          <TimelineStepItem key={step.id} step={step}>
-            {step.id === configurationStepId ? (
-              <DeploymentConfigurationForm
-                kubeconfig={kubeconfig}
-                namespace={namespace}
-                snapshot={snapshot}
-              />
-            ) : null}
-          </TimelineStepItem>
-        ))}
-      </div>
+      <TimelineSteps
+        blockingInputs={snapshot.task.blockingInputs}
+        failureDetail={rawFailure}
+        kubeconfig={kubeconfig}
+        namespace={namespace}
+        plan={snapshot.task.artifactSummary.deploymentPlan}
+        status={snapshot.task.status}
+        steps={snapshot.timeline.steps}
+        taskId={snapshot.task.id}
+      />
     </div>
   );
 }
@@ -1196,34 +1332,81 @@ export function DeploymentTaskTimelineActions({
   );
 }
 
-export function DeploymentTaskTimelinePane({
+const DEPLOYMENT_TIMELINE_PANE_ICON = (
+  <PackageCheck aria-hidden className="size-4 text-blue-400" />
+);
+
+interface DeploymentTaskPaneIdentity {
+  subtitle: string;
+  title: string;
+}
+
+/**
+ * The pane's stable identity — the source summary as a human-readable title,
+ * with a short task-id code (the same one the dock chip that opened this pane
+ * shows, so the two cross-reference) and the absolute start time as the
+ * subtitle. Both parts are stable for a task's life (an absolute start time,
+ * not a drifting "3 min ago"), so the header can be resolved once and frozen
+ * (see DeploymentTaskTimelineBody: the header must not repaint on a stream
+ * tick). The destination project is intentionally omitted — the pane already
+ * renders inside that project's canvas.
+ */
+function deploymentTaskPaneIdentity(
+  task: DeployTaskDTO
+): DeploymentTaskPaneIdentity {
+  const time = formatDeploymentTimelineEventTime(
+    task.startedAt ?? task.createdAt
+  );
+  return {
+    subtitle: `#${deploymentTaskShortCode(task.id)} · ${time}`,
+    title: deploymentTaskSourceSummary(task.source),
+  };
+}
+
+/**
+ * Owns the timeline subscription. It is deliberately a child of the SidePane
+ * shell (not its parent): a stream tick re-renders this body in place without
+ * re-rendering the `SidePane` above it, so the header — icon, title, close
+ * button — never repaints on a tick. The live task status shows here (the
+ * status row in `DeploymentTaskTimelinePaneContent`), so the shell can keep a
+ * static subtitle.
+ */
+function DeploymentTaskTimelineBody({
   kubeconfig,
   namespace,
-  onClose,
   onEditRedeploy,
+  onIdentity,
   taskId,
-}: DeploymentTaskTimelinePaneProps) {
-  const timeline = useDeploymentTaskTimeline({
-    kubeconfig,
-    namespace,
-    taskId,
-  });
+}: {
+  kubeconfig: string;
+  namespace: string;
+  onEditRedeploy?: (task: DeployTaskDTO) => void;
+  onIdentity: (identity: DeploymentTaskPaneIdentity) => void;
+  taskId: string;
+}) {
+  const timeline = useDeploymentTaskTimeline({ kubeconfig, namespace, taskId });
   const task = timeline.data?.task;
 
+  // Report the header identity up once it resolves. `task` gets a fresh
+  // reference every tick, so guard on the identity value: this fires only when
+  // the (stable) identity actually changes, keeping the frozen header off the
+  // per-tick render path.
+  const sentIdentityRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (task == null) {
+      return;
+    }
+    const identity = deploymentTaskPaneIdentity(task);
+    const key = `${identity.title} ${identity.subtitle}`;
+    if (sentIdentityRef.current === key) {
+      return;
+    }
+    sentIdentityRef.current = key;
+    onIdentity(identity);
+  }, [task, onIdentity]);
+
   return (
-    <SidePane
-      busy={timeline.isLoading}
-      closeAriaLabel="Close deployment task timeline"
-      icon={<PackageCheck aria-hidden className="size-4 text-blue-400" />}
-      label="Deployment task timeline pane"
-      onClose={onClose}
-      subtitle={
-        task == null
-          ? `Task ${taskId}`
-          : `${task.status}${task.phase ? ` - ${task.phase}` : ""}`
-      }
-      title="Deployment Timeline"
-    >
+    <>
       {timeline.error == null ? null : (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-sm">
           {timeline.error.message}
@@ -1251,6 +1434,47 @@ export function DeploymentTaskTimelinePane({
           task={task}
         />
       )}
+    </>
+  );
+}
+
+export function DeploymentTaskTimelinePane({
+  kubeconfig,
+  namespace,
+  onClose,
+  onEditRedeploy,
+  taskId,
+}: DeploymentTaskTimelinePaneProps) {
+  // Keyed by taskId so a reused pane never shows the previous task's identity:
+  // a stale entry is ignored until the new task resolves its own.
+  const [resolved, setResolved] = useState<{
+    identity: DeploymentTaskPaneIdentity;
+    taskId: string;
+  } | null>(null);
+  const handleIdentity = useCallback(
+    (identity: DeploymentTaskPaneIdentity) => {
+      setResolved({ identity, taskId });
+    },
+    [taskId]
+  );
+  const identity = resolved?.taskId === taskId ? resolved.identity : null;
+
+  return (
+    <SidePane
+      closeAriaLabel="Close deployment task timeline"
+      icon={DEPLOYMENT_TIMELINE_PANE_ICON}
+      label="Deployment task timeline pane"
+      onClose={onClose}
+      subtitle={identity?.subtitle}
+      title={identity?.title ?? "Deployment Timeline"}
+    >
+      <DeploymentTaskTimelineBody
+        kubeconfig={kubeconfig}
+        namespace={namespace}
+        onEditRedeploy={onEditRedeploy}
+        onIdentity={handleIdentity}
+        taskId={taskId}
+      />
     </SidePane>
   );
 }

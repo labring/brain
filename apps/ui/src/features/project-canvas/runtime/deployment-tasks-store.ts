@@ -15,8 +15,14 @@ import {
   selectCanvasDeploymentTaskProjections,
   upsertDeploymentTaskProjection,
 } from "@/lib/deploy-task/projection";
+import {
+  createThrottleScheduler,
+  type ThrottleScheduler,
+} from "@/lib/throttle-scheduler";
 
 const DEPLOYMENT_PROJECTION_RECONNECT_MS = 4000;
+/** Coalesce the projection-delta storm to at most one React commit per window (ADR 0043). */
+const DEPLOYMENT_PROJECTION_COALESCE_MS = 200;
 
 export interface DeploymentTasksStore {
   /** Projections filtered for canvas presence (grace windows applied). */
@@ -53,6 +59,7 @@ export function useDeploymentTasksStore(options: {
     []
   );
   const projectionsRef = useRef<DeploymentTaskProjection[]>([]);
+  const publishedRef = useRef<DeploymentTaskProjection[]>([]);
   const canvasProjectionsRef = useRef<DeploymentTaskProjection[]>([]);
   const [visibilityNow, setVisibilityNow] = useState(() => new Date());
   const [isLoading, setIsLoading] = useState(false);
@@ -63,20 +70,59 @@ export function useDeploymentTasksStore(options: {
     topologyChangedRef.current = onCanvasTopologyChanged;
   }, [onCanvasTopologyChanged]);
 
-  const commit = useCallback((next: DeploymentTaskProjection[]) => {
-    const current = projectionsRef.current;
-    if (next === current) {
+  // Hand whatever is folded into projectionsRef to React, firing the topology
+  // callback if the canvas-relevant shape changed since the last publish.
+  // Diffing published-vs-next (not per event) means intra-window flaps no longer
+  // trigger spurious workload reconciliations.
+  const publish = useCallback(() => {
+    const next = projectionsRef.current;
+    const previous = publishedRef.current;
+    if (next === previous) {
       return;
     }
     const canvasTopologyChanged = deploymentTaskCanvasTopologyChanged({
-      current,
+      current: previous,
       next,
     });
-    projectionsRef.current = next;
+    publishedRef.current = next;
     setProjections(next);
     if (canvasTopologyChanged) {
       topologyChangedRef.current?.();
     }
+  }, []);
+
+  // Coalesce the projection-delta storm: many resources emit a burst of events,
+  // and publishing each one re-renders the whole canvas subtree and rebuilds the
+  // resource graph (ADR 0043). Fold every event into projectionsRef immediately
+  // but publish at most once per DEPLOYMENT_PROJECTION_COALESCE_MS.
+  const schedulerRef = useRef<ThrottleScheduler | null>(null);
+  if (schedulerRef.current === null) {
+    schedulerRef.current = createThrottleScheduler(
+      DEPLOYMENT_PROJECTION_COALESCE_MS,
+      publish
+    );
+  }
+  useEffect(() => () => schedulerRef.current?.cancel(), []);
+
+  // Bootstrap/refresh/reset are not part of the stream storm: publish now.
+  const commitNow = useCallback(
+    (next: DeploymentTaskProjection[]) => {
+      if (next === projectionsRef.current) {
+        return;
+      }
+      projectionsRef.current = next;
+      publish();
+    },
+    [publish]
+  );
+
+  // Stream deltas: fold now, hand to React on the throttle cadence.
+  const commitStreamed = useCallback((next: DeploymentTaskProjection[]) => {
+    if (next === projectionsRef.current) {
+      return;
+    }
+    projectionsRef.current = next;
+    schedulerRef.current?.schedule();
   }, []);
 
   const handleEvent = useCallback(
@@ -85,24 +131,28 @@ export function useDeploymentTasksStore(options: {
       const current = projectionsRef.current;
       switch (event.type) {
         case "snapshot":
-          commit(replaceDeploymentTaskProjections(current, event.projections));
+          commitStreamed(
+            replaceDeploymentTaskProjections(current, event.projections)
+          );
           return;
         case "upsert":
-          commit(upsertDeploymentTaskProjection(current, event.projection));
+          commitStreamed(
+            upsertDeploymentTaskProjection(current, event.projection)
+          );
           return;
         case "remove":
-          commit(current.filter((task) => task.id !== event.taskId));
+          commitStreamed(current.filter((task) => task.id !== event.taskId));
           return;
         default:
           event satisfies never;
       }
     },
-    [commit]
+    [commitStreamed]
   );
 
   const refresh = useCallback(async () => {
     if (!hasScope) {
-      commit([]);
+      commitNow([]);
       setIsLoading(false);
       setError(undefined);
       return [];
@@ -114,7 +164,9 @@ export function useDeploymentTasksStore(options: {
         namespace,
         projectId,
       });
-      commit(replaceDeploymentTaskProjections(projectionsRef.current, fetched));
+      commitNow(
+        replaceDeploymentTaskProjections(projectionsRef.current, fetched)
+      );
       setError(undefined);
       return fetched;
     } catch (refreshError) {
@@ -127,11 +179,11 @@ export function useDeploymentTasksStore(options: {
     } finally {
       setIsLoading(false);
     }
-  }, [commit, hasScope, kubeconfig, namespace, projectId]);
+  }, [commitNow, hasScope, kubeconfig, namespace, projectId]);
 
   useEffect(() => {
     let cancelled = false;
-    commit([]);
+    commitNow([]);
     setError(undefined);
     if (!hasScope) {
       setIsLoading(false);
@@ -141,7 +193,7 @@ export function useDeploymentTasksStore(options: {
     fetchProjectDeploymentTaskProjections({ kubeconfig, namespace, projectId })
       .then((fetched) => {
         if (!cancelled) {
-          commit(replaceDeploymentTaskProjections([], fetched));
+          commitNow(replaceDeploymentTaskProjections([], fetched));
           setError(undefined);
         }
       })
@@ -162,7 +214,7 @@ export function useDeploymentTasksStore(options: {
     return () => {
       cancelled = true;
     };
-  }, [commit, hasScope, kubeconfig, namespace, projectId]);
+  }, [commitNow, hasScope, kubeconfig, namespace, projectId]);
 
   useEffect(() => {
     if (!(enabled && hasScope)) {

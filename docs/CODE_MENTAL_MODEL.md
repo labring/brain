@@ -696,17 +696,13 @@ brain.io/template-name=<templateName>
 - Direct DB list/read scope: `brain.io/managed-by=brain,brain.io/deployment-kind=db`
 - Template discovery: `brain.io/managed-by=brain,brain.io/project-id=<projectId>,brain.io/deployment-kind=template`
 
-当前漂移点:
+`brain-system` Helm chart 例外:
 
-- `charts/brain-system/templates/_helpers.tpl` 仍在 helper 里生成旧 labels:
-  - `brain.io/resource-kind`
-  - `brain.io/resource-name`
-  - `brain.io/app-name`
-  - `brain.io/db-name`
-- `charts/brain-system/templates/apps.yaml` 也仍出现 `brain.io/app-name`。
-- `charts/brain-system/README.md` 有一条示例仍用 `brain.io/resource-kind=db`。
+- `charts/brain-system` 部署的是系统栈, 不是用户项目里的 Brain AP/DB 资源。
+- chart 不打 `brain.io/*` ownership / deployment labels。
+- 排障按 Helm labels、`cloud.sealos.io/app-deploy-manager`、KubeBlocks provider labels 看 rendered YAML。
 
-所以当前心智模型应该是: app code 和 ADR 已经采用 deployment-scoped labels, 但 Helm chart/docs 有旧 label 残留, 涉及部署排障时必须核对实际 rendered YAML。
+所以当前心智模型应该是: app code 和 ADR 里的 deployment-scoped labels 只适用于用户资源；系统 chart 不进入 canvas/project ownership 模型。
 
 ## 13. Helm / runtime 配置
 

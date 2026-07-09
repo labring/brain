@@ -8,12 +8,12 @@ This runbook describes the current `brain-system` deployment model after AP/DB o
 
 The chart renders:
 
-- Brain direct AP manifests for `brain-api-staging`, `brain-ui-staging`, and `brain-registry`.
-- A Brain direct DB manifest for `brain-pg`.
+- Native Kubernetes `Deployment`, `Service`, and `Ingress` resources for `brain-api-staging`, `brain-ui-staging`, and `brain-registry`.
+- Native KubeBlocks `Cluster` resources for `brain-pg`.
 - Native Kubernetes `Deployment` and `Service` for `whodb`.
-- Optional application env `Secret` objects and image pull `Secret`.
+- Optional image pull `Secret`.
 
-The Brain Go API owns the AP/DB lifecycle. It accepts `apiVersion: brain.io/direct` product manifests, renders native Kubernetes/KubeBlocks resources plus AP public access support resources, applies them, and reads observed state back into AP/DB API views.
+The chart renders system resources with Helm, Sealos, and KubeBlocks labels. It does not stamp Brain project ownership labels because `brain-system` is not a user project resource.
 
 ## Platform Prerequisites
 
@@ -36,7 +36,6 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 
 Edit `/tmp/brain-system.values.yaml`, especially:
 
-- `projectId`
 - GitHub App and OAuth values
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
 - assistant model values
@@ -54,7 +53,7 @@ Request user authorization (OAuth) during installation: disabled
 `Redirect on update` is required so repository-selection changes return to Brain
 and the GitHub popup can close after users add or remove repositories.
 
-The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST` and `ui.env.DEVBOX_API_BASE_URL` are also derived from the platform cloud domain when left empty.
+The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty.
 
 Install or upgrade:
 
@@ -64,7 +63,7 @@ charts/brain-system/install.sh /tmp/brain-system.values.yaml
 
 ## Verify
 
-Check the Brain product manifests:
+Check rendered manifests:
 
 ```bash
 helm template brain-system charts/brain-system \
@@ -72,29 +71,29 @@ helm template brain-system charts/brain-system \
   -f /tmp/brain-system.values.yaml
 ```
 
-Check rendered labels:
+Check rendered system labels:
 
 ```bash
 helm template brain-system charts/brain-system \
   -n brain-system \
   -f /tmp/brain-system.values.yaml \
-  | grep -E 'brain.io/project-id|brain.io/managed-by|cloud.sealos.io/app-deploy-manager|app.kubernetes.io/instance'
+  | grep -E 'cloud.sealos.io/app-deploy-manager|app.kubernetes.io/instance|sealos-db-provider-cr'
 ```
 
-Check live native resources after the Brain API has applied the product manifests:
+Check live native resources after Helm install or upgrade:
 
 ```bash
 kubectl -n brain-system get deploy,pod,svc,ingress,hpa,cluster -o wide
-kubectl -n brain-system get deploy,svc,ingress,hpa -l brain.io/managed-by=brain
-kubectl -n brain-system get cluster -l brain.io/deployment-kind=db
+kubectl -n brain-system get deploy,svc,ingress -l app.kubernetes.io/instance=brain-system
+kubectl -n brain-system get cluster -l sealos-db-provider-cr=brain-pg
 kubectl -n brain-system rollout status deploy/whodb --timeout=5m
 ```
 
-Project and canvas grouping are driven by `brain.io/project-id`. AP and DB resources for this stack should use the configured `projectId` value.
+`brain-system` is a system stack, not a user project. The chart intentionally does not stamp Brain ownership labels on its resources.
 
 ## Operations
 
-Durable AP and DB changes should go through the Brain API product endpoints so rendered support resources, labels, status adapters, and cleanup behavior stay consistent.
+Durable system-stack changes should go through this Helm chart so resource names, platform labels, and generated URLs stay consistent.
 
 For emergency inspection, read the native resources directly:
 
@@ -105,4 +104,4 @@ kubectl -n brain-system get cluster brain-pg -o yaml
 kubectl -n brain-system get svc brain-pg-export -o yaml
 ```
 
-For deletion, prefer the Brain API. It deletes support resources by `brain.io/*` labels and then removes the AP workload or KubeBlocks Cluster.
+For deletion, prefer Helm release operations and then inspect leftover platform resources by the labels shown above.

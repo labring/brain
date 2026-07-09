@@ -8,8 +8,6 @@ global:
   labels: {}
   annotations: {}
 
-projectId: brain-system
-
 imagePullSecret:
   create: false
   useForWhodb: false
@@ -43,7 +41,6 @@ api:
   imagePullPolicy: Always
   port: 9000
   paused: false
-  restartRequest: 0
   platformAddresses:
     - id: pa_stagingapi1
       port: 9000
@@ -58,7 +55,7 @@ api:
     VMAUTH_SECRET_NAME: ""
     DATABASE_URL: ""
     DB_PUBLIC_HOST: ""
-    WHODB_URL: "http://whodb.brain-system.svc:11000"
+    WHODB_URL: ""
   resources:
     requests:
       cpu: 250m
@@ -96,7 +93,6 @@ ui:
   imagePullPolicy: Always
   port: 3000
   paused: false
-  restartRequest: 0
   platformAddresses:
     - id: pa_uistaging1
       port: 3000
@@ -160,7 +156,6 @@ registry:
   imagePullPolicy: Always
   port: 10000
   paused: false
-  restartRequest: 0
   platformAddresses:
     - id: pa_registry1
       port: 10000

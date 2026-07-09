@@ -9,12 +9,12 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { LayoutGrid, Plus, Search, X } from "lucide-react";
+import { PanelsTopLeft, Plus, Search, X } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import { useProjectExplorer } from "./project-explorer.context";
 
-/** Title row: grid icon + “Projects” label + optional subtitle. */
+/** Title row: layout icon + “Projects” label + optional subtitle. */
 export function ProjectExplorerHeaderBrand({
   className,
   description,
@@ -28,7 +28,10 @@ export function ProjectExplorerHeaderBrand({
       {...props}
     >
       <div className="flex items-center gap-2">
-        <LayoutGrid aria-hidden className="size-5 shrink-0 text-foreground" />
+        <PanelsTopLeft
+          aria-hidden
+          className="size-5 shrink-0 text-foreground"
+        />
         <div className="text-start font-semibold text-2xl text-foreground">
           {label}
         </div>

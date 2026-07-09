@@ -1,8 +1,6 @@
 {{- if .Values.database.enabled }}
 {{- $profile := fromYaml (include "brain-system.dbProfile" .Values.database) -}}
 {{- $preset := fromYaml (include "brain-system.dbPreset" .Values.database) -}}
-{{- $projectId := include "brain-system.projectId" . -}}
-{{- $engine := lower (default "postgresql" .Values.database.engine) -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -10,7 +8,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
-    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "name" .Values.database.name "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -19,7 +17,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
-    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "name" .Values.database.name "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
 rules:
   - apiGroups:
       - "*"
@@ -35,7 +33,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
-    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "name" .Values.database.name "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -52,7 +50,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
-    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "name" .Values.database.name "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
 spec:
   clusterDefinitionRef: {{ $profile.clusterDefinition | quote }}
   clusterVersionRef: {{ $profile.clusterVersion | quote }}
@@ -109,7 +107,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "brain-system.labelsWithoutInstance" . | nindent 4 }}
-    {{- include "brain-system.dbLabels" (dict "projectId" $projectId "name" .Values.database.name "engine" $engine "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
+    {{- include "brain-system.dbLabels" (dict "name" .Values.database.name "clusterDefinition" $profile.clusterDefinition "clusterVersion" $profile.clusterVersion) | nindent 4 }}
 spec:
   type: NodePort
   selector:

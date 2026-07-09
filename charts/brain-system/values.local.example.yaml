@@ -20,7 +20,8 @@ api:
     DATABASE_URL: ""
     # Leave empty to use global.cloudDomain from sealos-config.
     DB_PUBLIC_HOST: ""
-    WHODB_URL: "http://whodb.brain-system.svc:11000"
+    # Leave empty to use the chart-created WhoDB Service in the release namespace.
+    WHODB_URL: ""
 
 ui:
   env:

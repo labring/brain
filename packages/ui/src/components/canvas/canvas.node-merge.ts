@@ -69,10 +69,40 @@ function mergeNodeData(existing: Node, incoming: Node): Node["data"] {
   };
 }
 
+function nodeDataEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) {
+    return true;
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return (
+      a.length === b.length && a.every((item, i) => nodeDataEqual(item, b[i]))
+    );
+  }
+  const recordA = asRecord(a);
+  const recordB = asRecord(b);
+  if (recordA === undefined || recordB === undefined) {
+    return false;
+  }
+  const keys = Object.keys(recordA);
+  return (
+    keys.length === Object.keys(recordB).length &&
+    keys.every(
+      (key) => key in recordB && nodeDataEqual(recordA[key], recordB[key])
+    )
+  );
+}
+
 function mergedNodeMatchesExisting(existing: Node, merged: Node): boolean {
   for (const key of Object.keys(merged) as Array<keyof Node>) {
     if (key === "position") {
       if (!positionsEqual(existing.position, merged.position)) {
+        return false;
+      }
+      continue;
+    }
+
+    if (key === "data") {
+      if (!nodeDataEqual(existing.data, merged.data)) {
         return false;
       }
       continue;

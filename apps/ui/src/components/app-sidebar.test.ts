@@ -13,7 +13,7 @@ const PROJECTS_BUTTON_LOGO_SIZE_RE = /className="relative block size-4"/;
 const PROJECTS_BUTTON_ACTIVE_BACKGROUND_OVERRIDE_RE =
   /className="aria-\[current=page\]:bg-transparent!"/;
 const PROJECTS_BUTTON_PROJECT_HOVER_RE =
-  /showGridOnHover=\{currentProjectId !== undefined\}/;
+  /showIconOnHover=\{currentProjectId !== undefined\}/;
 const WORKSPACE_QUOTA_LOADER_RE = /sealosApp\.getWorkspaceQuota\(\)/;
 const CREATE_SEALOS_APP_RE = /createSealosApp/;
 const HARDCODED_USAGE_VALUE_RE = /"0\.0\/0"/;
@@ -23,7 +23,7 @@ test("app sidebar does not reserve space for the Brain v2 logo", () => {
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, BRAIN_V2_LOGO_COMPONENT_RE);
 });
 
-test("app sidebar projects button defaults to the logo and only shows grid on project hover", () => {
+test("app sidebar projects button defaults to the logo and only shows the layout icon on project hover", () => {
   assert.match(APP_SIDEBAR_SOURCE, PROJECTS_BUTTON_LOGO_ASSET_RE);
   assert.match(APP_SIDEBAR_SOURCE, PROJECTS_BUTTON_LOGO_SIZE_RE);
   assert.match(

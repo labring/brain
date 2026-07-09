@@ -1,0 +1,37 @@
+name: Helm Chart
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/helm-chart.yml"
+      - "charts/brain-system/**"
+  push:
+    branches:
+      - main
+      - zjy365
+    paths:
+      - ".github/workflows/helm-chart.yml"
+      - "charts/brain-system/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate brain-system chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint
+        run: helm lint charts/brain-system
+
+      - name: Template defaults
+        run: helm template brain-system charts/brain-system -n brain-system
+
+      - name: Template example values
+        run: helm template brain-system charts/brain-system -n brain-system -f charts/brain-system/values.local.example.yaml

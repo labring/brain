@@ -81,17 +81,24 @@ function SelectPopup({
         className="isolate z-50"
         sideOffset={6}
       >
+        {/*
+          Flex column so the search + "All" headers stay pinned (shrink-0) and
+          only the list scrolls (min-h-0). Base UI scrolls the selected item into
+          view on open (useListNavigation); if the popup itself is scrollable it
+          gets dragged too, pushing the header out of the overflow-hidden popup
+          when reopening after a selection — the "search box disappears" bug.
+        */}
         <Combobox.Popup
           className={cn(
             popoverSurfaceClass,
-            "max-h-72 w-(--anchor-width) origin-(--transform-origin) overflow-hidden p-0",
+            "flex max-h-72 w-(--anchor-width) origin-(--transform-origin) flex-col overflow-hidden p-0",
             minWidthClassName,
             className
           )}
           initialFocus={searchable ? false : undefined}
         >
           {searchable ? (
-            <div className="relative flex h-9 items-center border-border border-b px-3 transition-colors focus-within:border-blue-400">
+            <div className="relative flex h-9 shrink-0 items-center border-border border-b px-3 transition-colors focus-within:border-blue-400">
               <SearchIcon
                 aria-hidden
                 className="pointer-events-none absolute left-3 size-4 text-muted-foreground"
@@ -103,7 +110,7 @@ function SelectPopup({
             </div>
           ) : null}
           {header}
-          <Combobox.List className="max-h-72 overflow-y-auto p-1">
+          <Combobox.List className="min-h-0 overflow-y-auto p-1">
             {children}
           </Combobox.List>
           <Combobox.Empty>
@@ -358,7 +365,7 @@ export function AppMultiSelect({
         className={contentClassName}
         emptyMessage={emptyMessage}
         header={
-          <div className="p-1 pb-0">
+          <div className="shrink-0 p-1 pb-0">
             <button
               className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none hover:bg-input/30"
               onClick={() => onValueChange?.([])}

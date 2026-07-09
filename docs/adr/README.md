@@ -34,6 +34,8 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0037 — Execute Deployment Tasks Under Leases and Guarded Transitions](0037-execute-deployment-tasks-under-leases-and-guarded-transitions.md)
 - [0038 — Model Deployment Task Lifecycle Actions as Cancel, Redeploy, and Retention](0038-model-deployment-lifecycle-actions-as-cancel-redeploy-retention.md)
 - [0039 — Regenerate Whole-Canvas Auto Layout as a Clustered Row-Major Grid](0039-regenerate-auto-layout-as-clustered-row-major-grid.md) *(generalizes ADR-0022's placement group to clusters; 0022 stays authoritative for incremental placement)*
+- [0040 — Size Canvas Placement Footprints from the Measured Render](0040-size-placement-footprints-from-measured-render.md)
+- [0041 — Preserve Canvas Node Identity by Comparing Node Data by Value](0041-preserve-canvas-node-identity-by-value.md)
 
 ## Conventions
 

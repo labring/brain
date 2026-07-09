@@ -57,20 +57,7 @@ region: {{ include "brain-system.cloudDomain" . | quote }}
   value: {{ .value | quote }}
 {{- end -}}
 
-{{- define "brain-system.projectId" -}}
-{{- default .Release.Namespace .Values.projectId -}}
-{{- end -}}
-
-{{- define "brain-system.brainLabels" -}}
-brain.io/managed-by: brain
-brain.io/project-id: {{ .projectId | quote }}
-brain.io/resource-kind: {{ .kind | quote }}
-brain.io/resource-name: {{ .name | quote }}
-{{- end -}}
-
 {{- define "brain-system.apManagerLabels" -}}
-{{- include "brain-system.brainLabels" (dict "projectId" .projectId "kind" "ap" "name" .name) }}
-brain.io/app-name: {{ .name | quote }}
 cloud.sealos.io/app-deploy-manager: {{ .name | quote }}
 {{- with .region }}
 region: {{ . | quote }}
@@ -83,9 +70,6 @@ app: {{ .name | quote }}
 {{- end -}}
 
 {{- define "brain-system.dbLabels" -}}
-{{- include "brain-system.brainLabels" (dict "projectId" .projectId "kind" "db" "name" .name) }}
-brain.io/db-engine: {{ .engine | quote }}
-brain.io/db-name: {{ .name | quote }}
 clusterdefinition.kubeblocks.io/name: {{ .clusterDefinition | quote }}
 clusterversion.kubeblocks.io/name: {{ .clusterVersion | quote }}
 sealos-db-provider-cr: {{ .name | quote }}
@@ -134,23 +118,12 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{- printf "%s-conn-credential" .Values.database.name -}}
 {{- end -}}
 
+{{- define "brain-system.whodbUrl" -}}
+{{- printf "http://%s.%s.svc:%v" .Values.whodb.name .Release.Namespace .Values.whodb.port -}}
+{{- end -}}
+
 {{- define "brain-system.publicIngressName" -}}
 {{- printf "%s-platform-%s" .name .id | lower | replace "_" "-" | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "brain-system.networkAnnotation" -}}
-{{- $addresses := list -}}
-{{- $ctx := . -}}
-{{- range $address := default (list) .platformAddresses }}
-{{- $prefix := include "brain-system.platformAddressPrefix" (dict "namespace" $ctx.namespace "name" $ctx.name "id" $address.id "domainPrefix" $address.domainPrefix) -}}
-{{- $addresses = append $addresses (dict "id" $address.id "port" (default $ctx.port $address.port) "domainPrefix" $prefix) -}}
-{{- end -}}
-{{- $network := dict "privatePort" .port "platformAddresses" $addresses -}}
-{{- toJson $network -}}
-{{- end -}}
-
-{{- define "brain-system.replicaStrategyAnnotation" -}}
-{{- toJson (dict "fixed" (dict "replicas" .replicas) "type" "fixed") -}}
 {{- end -}}
 
 {{- define "brain-system.databaseEnv" -}}
@@ -186,6 +159,9 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{ else if and (eq $component "api") (eq $key "DB_PUBLIC_HOST") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ include "brain-system.cloudDomain" $root | quote }}
+{{ else if and (eq $component "api") (eq $key "WHODB_URL") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ include "brain-system.whodbUrl" $root | quote }}
 {{ else if and (eq $component "ui") (eq $key "API_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ include "brain-system.publicUrl" (dict "root" $root "namespace" $root.Release.Namespace "name" $root.Values.api.name "platformAddresses" $root.Values.api.platformAddresses "cloudDomain" (include "brain-system.cloudDomain" $root)) | quote }}
