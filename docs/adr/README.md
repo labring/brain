@@ -40,6 +40,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0043 — Coalesce Deployment Stream Updates into Throttled React Commits](0043-coalesce-deployment-stream-updates.md)
 - [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
 - [0045 — Authorize Workload Telemetry by Reading the Target Workload](0045-authorize-workload-telemetry-by-reading-the-target-workload.md)
+- [0046 — Pin User-Credentialed Kubernetes Reads to the Trusted API Server](0046-pin-user-credentialed-kubernetes-reads-to-the-trusted-api-server.md) *(closes the server-trust residual ADR-0045 left out of scope)*
 
 ## Conventions
 
