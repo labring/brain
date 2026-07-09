@@ -43,6 +43,7 @@ import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
 } from "@/features/deployment/deployment-task-redeploy";
+import { deployRunnerSurfacesRawFailure } from "@/lib/deploy-task/failure-summary";
 import {
   type DeployTaskStatusHue,
   deployTaskHasAppliedResources,
@@ -576,6 +577,84 @@ const ResultResourceCard = memo(function ResultResourceCard({
   );
 });
 
+const FailureDetail = memo(function FailureDetail({
+  detail,
+}: {
+  detail: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimeout.current != null) {
+        clearTimeout(copyTimeout.current);
+      }
+    },
+    []
+  );
+
+  const copy = useCallback(() => {
+    navigator.clipboard
+      ?.writeText(detail)
+      .then(() => {
+        setCopied(true);
+        if (copyTimeout.current != null) {
+          clearTimeout(copyTimeout.current);
+        }
+        copyTimeout.current = setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => undefined);
+  }, [detail]);
+
+  return (
+    <DeploymentTimelineCard
+      className="p-4"
+      data-slot="deployment-failure-detail"
+    >
+      <Collapsible
+        className="flex flex-col gap-3"
+        onOpenChange={setOpen}
+        open={open}
+      >
+        <CollapsibleTrigger
+          className="group/failure flex w-full cursor-pointer items-center justify-between gap-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+          type="button"
+        >
+          <span className="min-w-0 truncate font-medium text-foreground text-sm leading-5">
+            {open ? "Hide error details" : "Show error details"}
+          </span>
+          <ChevronDown
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/failure:rotate-180"
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-border border-t pt-3 outline-none">
+          <div className="flex flex-col gap-2">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-input/40 p-3 font-mono text-foreground/90 text-xs leading-4">
+              {detail}
+            </pre>
+            <AppButton
+              className="self-end"
+              onClick={copy}
+              type="button"
+              variant="secondary"
+            >
+              {copied ? (
+                <Check aria-hidden data-icon="inline-start" />
+              ) : (
+                <Copy aria-hidden data-icon="inline-start" />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </AppButton>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </DeploymentTimelineCard>
+  );
+});
+
 const TimelineStepItem = memo(function TimelineStepItem({
   children,
   step,
@@ -1053,6 +1132,7 @@ function TimelineTaskIdRow({ taskId }: { taskId: string }) {
  */
 const TimelineSteps = memo(function TimelineSteps({
   blockingInputs,
+  failureDetail,
   kubeconfig,
   namespace,
   plan,
@@ -1061,6 +1141,7 @@ const TimelineSteps = memo(function TimelineSteps({
   taskId,
 }: {
   blockingInputs: DeployTaskBlockingInput[];
+  failureDetail: string | undefined;
   kubeconfig: string;
   namespace: string;
   plan: DeploymentTaskDeploymentPlan | undefined;
@@ -1084,6 +1165,9 @@ const TimelineSteps = memo(function TimelineSteps({
               taskId={taskId}
             />
           ) : null}
+          {step.status === "failed" && failureDetail != null ? (
+            <FailureDetail detail={failureDetail} />
+          ) : null}
         </TimelineStepItem>
       ))}
     </div>
@@ -1102,6 +1186,15 @@ export function DeploymentTaskTimelinePaneContent({
   if (snapshot.timeline.steps.length === 0) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
+  // Only surface the ground-truth error for runners whose terminal error is
+  // scrubbed (ADR 0042 "scrub ⇔ raw display"); task.error is the full scrubbed
+  // message, while the step's inline event carries the short reason.
+  const rawFailure =
+    deployRunnerSurfacesRawFailure(snapshot.task.runner) &&
+    snapshot.task.error != null &&
+    snapshot.task.error.trim() !== ""
+      ? snapshot.task.error
+      : undefined;
   return (
     <div
       className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
@@ -1120,6 +1213,7 @@ export function DeploymentTaskTimelinePaneContent({
       </div>
       <TimelineSteps
         blockingInputs={snapshot.task.blockingInputs}
+        failureDetail={rawFailure}
         kubeconfig={kubeconfig}
         namespace={namespace}
         plan={snapshot.task.artifactSummary.deploymentPlan}

@@ -58,7 +58,11 @@ import { buildRuntimeContract } from "./build-runtime-contract";
 import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
 import { isDeployTaskAbortError } from "./engine/errors";
 import type { DeployTaskHandle } from "./engine/handle";
-import { deployTaskFailureSummary } from "./failure-summary";
+import {
+  deploymentFailureReason,
+  deployRunnerSurfacesRawFailure,
+  deployTaskFailureSummary,
+} from "./failure-summary";
 import {
   DEPLOY_GATEWAY_MODEL,
   type GatewayContext,
@@ -94,6 +98,7 @@ import type {
 import {
   artifactSummaryWithScrubbedYamls,
   scrubSensitiveJsonValue,
+  scrubSensitiveText,
 } from "./scrub-secrets";
 import {
   type SensitiveDeploymentInputShape,
@@ -200,6 +205,40 @@ function attachDeployFailureDetails(
     };
   }
   return error;
+}
+
+const DEPLOY_SENSITIVE_VALUES_KEY = "__sealaiDeploySensitiveValues";
+
+/**
+ * Rides the runner's in-memory known sensitive values up to the single
+ * terminal failure write so it can scrub them out of the persisted error
+ * (ADR 0042). Never persisted: only the runner holds the plaintext, so this
+ * is the only channel to the scrub. AI runs attach nothing.
+ */
+function attachDeploySensitiveValues(
+  error: unknown,
+  values: readonly string[]
+): unknown {
+  if (error instanceof Error && values.length > 0) {
+    const carrier = error as Error & {
+      [DEPLOY_SENSITIVE_VALUES_KEY]?: string[];
+    };
+    carrier[DEPLOY_SENSITIVE_VALUES_KEY] = [
+      ...(carrier[DEPLOY_SENSITIVE_VALUES_KEY] ?? []),
+      ...values,
+    ];
+  }
+  return error;
+}
+
+function attachedDeploySensitiveValues(error: unknown): string[] {
+  if (error instanceof Error) {
+    const carrier = error as Error & {
+      [DEPLOY_SENSITIVE_VALUES_KEY]?: string[];
+    };
+    return carrier[DEPLOY_SENSITIVE_VALUES_KEY] ?? [];
+  }
+  return [];
 }
 
 function attachedDeployFailureDetails(error: unknown): Record<string, unknown> {
@@ -571,8 +610,8 @@ async function markTimelineStepWithEvent(input: {
 }
 
 async function markDeployTaskFailureTimeline(input: {
-  errorMessage: string;
-  failureMessage: string;
+  detailMessage: string;
+  reasonMessage: string;
   task: DeployTaskRow;
 }): Promise<boolean> {
   const timeline = deploymentTaskTimelineFromTaskRecord(input.task);
@@ -587,8 +626,8 @@ async function markDeployTaskFailureTimeline(input: {
 
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.failed",
-    eventMessage: input.failureMessage,
-    eventPayload: { error: input.errorMessage },
+    eventMessage: input.reasonMessage,
+    eventPayload: { error: input.detailMessage },
     eventReason: "DeploymentTaskFailed",
     eventSeverity: "error",
     phase: input.task.phase,
@@ -2107,6 +2146,28 @@ async function applyGeneratedAiDeployOutput(input: {
   });
 }
 
+/**
+ * This direct run's known sensitive values, for scrubbing an apply error that
+ * echoed one (ADR 0042). Docker env values are undeclared, so the shared
+ * name heuristic classifies them; database settings hold no user secret.
+ */
+function directSensitiveValues(task: DeployTaskRow): string[] {
+  if (task.source.kind !== "docker") {
+    return [];
+  }
+  const settings = task.source.settings as unknown as DockerDeploymentSettings;
+  const env = Array.isArray(settings.env) ? settings.env : [];
+  // Docker env is undeclared, so reuse the shared name-heuristic path: build a
+  // record and let sensitiveArgValues apply the same predicate and length
+  // guard the args path uses, instead of duplicating them here.
+  const envArgs = Object.fromEntries(
+    env
+      .filter((row) => typeof row?.value === "string")
+      .map((row) => [row.name, row.value])
+  );
+  return sensitiveArgValues(envArgs);
+}
+
 async function runDirectDeploymentTask(input: {
   kubeconfig: string;
   projectName: string;
@@ -2148,11 +2209,19 @@ async function runDirectDeploymentTask(input: {
     taskId: input.task.id,
   });
 
-  await completeTaskWithArtifact({
-    artifact,
-    kubeconfig: input.kubeconfig,
-    task: input.task,
-  });
+  try {
+    await completeTaskWithArtifact({
+      artifact,
+      kubeconfig: input.kubeconfig,
+      task: input.task,
+    });
+  } catch (error) {
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    // Scrub any docker env value the apply error echoed (ADR 0042).
+    throw attachDeploySensitiveValues(error, directSensitiveValues(input.task));
+  }
 }
 
 /**
@@ -2188,12 +2257,24 @@ async function templateDeploymentPlanForRun(input: {
     if (isDeployTaskAbortError(error)) {
       throw error;
     }
-    await recordDeployTaskEvent(input.taskId, {
-      kind: "deployment_task.template_declarations_unavailable",
-      message:
-        "Template input declarations could not be loaded; continuing with the provided args.",
-      payload: { error: errorMessage(error) },
+    // Surface the degrade as a warning on the prepare step instead of a silent
+    // task event (ADR 0042): the run proceeds without input validation, so a
+    // completed-but-unvalidated deploy still leaves a visible trace.
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.template_declarations_unavailable",
+      eventMessage:
+        "Couldn't load template input declarations; continuing with the provided values.",
+      eventPayload: {
+        error: scrubSensitiveText(
+          errorMessage(error),
+          sensitiveArgValues(input.args)
+        ),
+      },
+      eventSeverity: "warning",
       phase: "plan",
+      status: "running",
+      stepId: "prepare-template",
+      taskId: input.taskId,
     });
     return null;
   }
@@ -2374,7 +2455,12 @@ async function runTemplateDeploymentTask(input: {
       projectId: input.projectId,
       task: input.task,
     });
-    throw error;
+    // Carry this run's known sensitive values to the terminal failure write so
+    // a provider/K8s error that echoed one is scrubbed before persist (ADR 0042).
+    throw attachDeploySensitiveValues(
+      error,
+      sensitiveArgValues(mergedArgs, plan?.inputs)
+    );
   }
 }
 
@@ -2861,31 +2947,51 @@ async function resolveDeployTaskRunFailure(input: {
   task: DeployTaskRow;
 }): Promise<void> {
   const { error, handle, task } = input;
-  const message = error instanceof Error ? error.message : String(error);
-  const failureMessage = deployTaskFailureSummary(error);
+  const rawMessage = error instanceof Error ? error.message : String(error);
   const latestTask = (await getDeployTaskById(task.id)) ?? task;
+
+  // Scrub known sensitive values out of every persisted copy of the error
+  // before it is written (ADR 0042 extends the ADR 0037 secrets contract to
+  // error strings). Only the runner held the plaintext, and it rode up on the
+  // error; AI runs attach nothing, so their message is unchanged.
+  const sensitiveValues = attachedDeploySensitiveValues(error);
+  const message = scrubSensitiveText(rawMessage, sensitiveValues);
+
+  const surfacesRaw = deployRunnerSurfacesRawFailure(latestTask.runner);
+  const attachedDetails = attachedDeployFailureDetails(error);
+  const reasonCode =
+    typeof attachedDetails.reason === "string" ? attachedDetails.reason : null;
+  const reasonMessage = deploymentFailureReason({
+    rawMessage: message,
+    reasonCode,
+    surfacesRaw,
+  });
+
   await markDeployTaskFailureTimeline({
-    errorMessage: message,
-    failureMessage,
+    detailMessage: message,
+    reasonMessage,
     task: latestTask,
   }).catch(() => false);
   await handle.fail({
     error: message,
     event: {
       kind: "deployment_task.failed",
-      message: failureMessage,
+      message: reasonMessage,
       payload: { error: message },
       phase: latestTask.phase,
     },
-    failureDetails: {
-      ...deployFailureDetails({
-        error,
-        phase: latestTask.phase,
-        source: "runDeployTask",
-        task: latestTask,
-      }),
-      ...attachedDeployFailureDetails(error),
-      failureMessage,
-    },
+    failureDetails: scrubSensitiveJsonValue(
+      {
+        ...deployFailureDetails({
+          error,
+          phase: latestTask.phase,
+          source: "runDeployTask",
+          task: latestTask,
+        }),
+        ...attachedDetails,
+        failureMessage: reasonMessage,
+      },
+      sensitiveValues
+    ),
   });
 }
