@@ -30,7 +30,7 @@ export function MetricSeriesCard({
   return (
     <section
       className={cn(
-        "flex h-54 min-h-54 min-w-0 flex-col gap-6 overflow-hidden rounded-lg bg-white/5 p-4 shadow-sm",
+        "flex h-54 min-h-54 min-w-0 flex-col gap-6 overflow-hidden rounded-lg bg-input/30 p-4 shadow-sm",
         className
       )}
     >

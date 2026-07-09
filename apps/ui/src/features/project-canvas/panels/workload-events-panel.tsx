@@ -142,7 +142,7 @@ export function WorkloadEventCard({ event }: { event: APWorkloadEventItem }) {
   const resource = eventResourceLabel(event);
 
   return (
-    <article className="flex min-w-0 flex-col gap-4 overflow-hidden rounded-lg bg-white/5 p-4 shadow-sm backdrop-blur-sm">
+    <article className="flex min-w-0 flex-col gap-4 overflow-hidden rounded-lg bg-input/30 p-4 shadow-sm backdrop-blur-sm">
       <header className="flex min-w-0 items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h3 className="truncate font-medium text-foreground text-sm leading-5">
@@ -201,21 +201,21 @@ function WorkloadEventsBody({
 }) {
   if (error) {
     return (
-      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
+      <div className="rounded-lg bg-input/30 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
         Failed to load events.
       </div>
     );
   }
   if (isLoading) {
     return (
-      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
+      <div className="rounded-lg bg-input/30 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
         Loading events...
       </div>
     );
   }
   if (items.length === 0) {
     return (
-      <div className="rounded-lg bg-white/5 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
+      <div className="rounded-lg bg-input/30 p-4 text-muted-foreground text-sm leading-5 backdrop-blur-sm">
         No recent events.
       </div>
     );
