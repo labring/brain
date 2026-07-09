@@ -81,7 +81,7 @@ function SnapshotHistoryListItem({
 
   return (
     <li>
-      <article className="flex min-w-0 items-center gap-2 overflow-hidden rounded-lg bg-input/30 pr-2 shadow-sm backdrop-blur-sm">
+      <article className="flex min-w-0 items-center gap-2 overflow-hidden rounded-lg bg-input/30 pr-2 shadow-sm">
         <div className="min-w-0 flex-1 px-4 py-4 text-left">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex min-w-0 items-center gap-2">
