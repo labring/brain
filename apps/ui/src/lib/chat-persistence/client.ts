@@ -1,6 +1,8 @@
 import type { UIMessage } from "ai";
 import { z } from "zod";
 
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+
 import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
@@ -41,12 +43,21 @@ const createThreadResponseSchema = z.object({
   threads: z.array(assistantThreadDTOSchema),
 });
 
+/**
+ * Namespace-scoped chat routes authorize the caller from the kubeconfig bearer
+ * token (see `authorizeChatRequestNamespace`), so every request must carry it.
+ */
+function authHeaders(kubeconfig: string): Record<string, string> {
+  return { Authorization: kubeconfigBearerHeader(kubeconfig) };
+}
+
 async function safeJsonGet<T>(
   url: string,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
+  headers: Record<string, string>
 ): Promise<T | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       return null;
     }
@@ -60,12 +71,13 @@ async function safeJsonGet<T>(
 async function safeJsonPost<T>(
   url: string,
   body: unknown,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
+  headers: Record<string, string>
 ): Promise<T | null> {
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -79,55 +91,68 @@ async function safeJsonPost<T>(
 }
 
 export function fetchAssistantSession(
-  namespaceRaw: string
+  namespaceRaw: string,
+  kubeconfig: string
 ): Promise<AssistantSessionPayload | null> {
   return safeJsonGet(
     `/api/chat/session?namespace=${encodeURIComponent(namespaceRaw)}`,
-    sessionResponseSchema
+    sessionResponseSchema,
+    authHeaders(kubeconfig)
   );
 }
 
 /** `null` when the handler failed (HTTP error / parse failure), including DB unavailable (503). */
 export async function fetchAssistantThreads(
-  namespaceRaw: string
+  namespaceRaw: string,
+  kubeconfig: string
 ): Promise<AssistantThreadDTO[] | null> {
   const data = await safeJsonGet(
     `/api/chat/threads?namespace=${encodeURIComponent(namespaceRaw)}`,
-    threadsResponseSchema
+    threadsResponseSchema,
+    authHeaders(kubeconfig)
   );
   return data === null ? null : data.threads;
 }
 
 export async function fetchAssistantThreadMessages(
   chatId: string,
-  namespaceRaw: string
+  namespaceRaw: string,
+  kubeconfig: string
 ): Promise<UIMessage[] | null> {
   const data = await safeJsonGet(
     `/api/chat/messages?chatId=${encodeURIComponent(chatId)}&namespace=${encodeURIComponent(namespaceRaw)}`,
-    messagesResponseSchema
+    messagesResponseSchema,
+    authHeaders(kubeconfig)
   );
   return data?.messages ?? null;
 }
 
-export function createAssistantThread(namespaceRaw: string): Promise<{
+export function createAssistantThread(
+  namespaceRaw: string,
+  kubeconfig: string
+): Promise<{
   chatId: string;
   threads: AssistantThreadDTO[];
 } | null> {
   return safeJsonPost(
     "/api/chat/thread",
     { namespace: namespaceRaw },
-    createThreadResponseSchema
+    createThreadResponseSchema,
+    authHeaders(kubeconfig)
   );
 }
 
 export function appendAssistantThreadMessage(input: {
   chatId: string;
+  kubeconfig: string;
   message: UIMessage;
   namespace: string;
 }): Promise<{ ok: boolean } | null> {
+  const { kubeconfig, ...body } = input;
   return safeJsonPost(
     "/api/chat/messages",
-    input,
-    z.object({ ok: z.literal(true) })
+    body,
+    z.object({ ok: z.literal(true) }),
+    authHeaders(kubeconfig)
   );
 }

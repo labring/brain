@@ -8,9 +8,13 @@ import {
   isAppendableAssistantEventMessage,
   isPersistedUIMessage,
 } from "@/lib/chat-persistence/types";
+import { authorizeChatRequestNamespace } from "@/lib/chat-runtime/authorize-chat-request";
 import { jsonError } from "@/lib/chat-runtime/errors";
 
-/** Full ordered history for `?chatId=` (and `?namespace=` for access control). */
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+/** Full ordered history for `?chatId=`, scoped to the authenticated namespace. */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const chatId = url.searchParams.get("chatId")?.trim();
@@ -19,8 +23,16 @@ export async function GET(req: Request) {
     return jsonError("chatId query parameter required", 400);
   }
 
+  const authorized = await authorizeChatRequestNamespace(req, namespaceRaw);
+  if (!authorized.ok) {
+    return jsonError(authorized.message, authorized.status);
+  }
+
   try {
-    const messages = await loadMessagesInNamespace(chatId, namespaceRaw);
+    const messages = await loadMessagesInNamespace(
+      chatId,
+      authorized.namespace
+    );
     if (messages == null) {
       return Response.json(
         { error: "Thread not found for this namespace", messages: [] },
@@ -58,11 +70,19 @@ export async function POST(req: Request) {
     );
   }
 
+  const authorized = await authorizeChatRequestNamespace(
+    req,
+    parsed.data.namespace
+  );
+  if (!authorized.ok) {
+    return jsonError(authorized.message, authorized.status);
+  }
+
   try {
     if (
       !(await threadBelongsToNamespace(
         parsed.data.chatId,
-        parsed.data.namespace
+        authorized.namespace
       ))
     ) {
       return jsonError(

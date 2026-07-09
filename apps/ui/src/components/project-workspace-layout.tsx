@@ -613,6 +613,7 @@ function ProjectAssistantChatSession({
 
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
+  const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [creatingThread, setCreatingThread] = useState(false);
@@ -632,7 +633,7 @@ function ProjectAssistantChatPane() {
       return;
     }
 
-    fetchAssistantSession(namespaceRaw).then((payload) => {
+    fetchAssistantSession(namespaceRaw, kubeconfig).then((payload) => {
       if (cancelled) {
         return;
       }
@@ -648,7 +649,7 @@ function ProjectAssistantChatPane() {
     return () => {
       cancelled = true;
     };
-  }, [namespaceRaw, namespaceReady]);
+  }, [kubeconfig, namespaceRaw, namespaceReady]);
 
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
@@ -683,7 +684,8 @@ function ProjectAssistantChatPane() {
       }
       const messages = await fetchAssistantThreadMessages(
         threadId,
-        namespaceRaw
+        namespaceRaw,
+        kubeconfig
       );
       if (messages == null) {
         return;
@@ -692,13 +694,13 @@ function ProjectAssistantChatPane() {
         prev == null ? prev : { ...prev, chatId: threadId, messages }
       );
     },
-    [namespaceRaw, session?.chatId]
+    [kubeconfig, namespaceRaw, session?.chatId]
   );
 
   const createThread = useCallback(async () => {
     setCreatingThread(true);
     try {
-      const created = await createAssistantThread(namespaceRaw);
+      const created = await createAssistantThread(namespaceRaw, kubeconfig);
       if (created == null) {
         return;
       }
@@ -715,15 +717,15 @@ function ProjectAssistantChatPane() {
     } finally {
       setCreatingThread(false);
     }
-  }, [namespaceRaw]);
+  }, [kubeconfig, namespaceRaw]);
 
   const refreshThreads = useCallback(async () => {
-    const threads = await fetchAssistantThreads(namespaceRaw);
+    const threads = await fetchAssistantThreads(namespaceRaw, kubeconfig);
     if (threads == null || threads.length === 0) {
       return;
     }
     setSession((prev) => (prev == null ? prev : { ...prev, threads }));
-  }, [namespaceRaw]);
+  }, [kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
     sidePaneRouter
