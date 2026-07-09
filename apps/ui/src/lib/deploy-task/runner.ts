@@ -44,6 +44,7 @@ import {
   deployTemplateInstance,
   getTemplateSource,
 } from "@/lib/template-provider-core";
+import { normalizeTemplateProviderDbResources } from "@/lib/template-provider-db-labels";
 
 import {
   blockingInputsFromDeploymentPlan,
@@ -980,6 +981,7 @@ async function generateTemplateArtifact(input: {
   args: Record<string, string>;
   encodedKubeconfig: string;
   instanceName: string;
+  namespace: string;
   projectId: string;
   templateName: string;
 }): Promise<DeploymentArtifact> {
@@ -992,6 +994,14 @@ async function generateTemplateArtifact(input: {
       templateName: input.templateName,
     }),
     instanceName: input.instanceName,
+    templateName: input.templateName,
+  });
+  await normalizeTemplateProviderDbResources({
+    encodedKubeconfig: input.encodedKubeconfig,
+    instanceName: deployed.instanceName,
+    namespace: input.namespace,
+    projectId: input.projectId,
+    resources: deployed.resources,
     templateName: input.templateName,
   });
   return {
@@ -2326,6 +2336,7 @@ async function runTemplateDeploymentTask(input: {
       args: mergedArgs,
       encodedKubeconfig: input.encodedKubeconfig,
       instanceName,
+      namespace: input.task.namespace,
       projectId: input.projectId,
       templateName,
     });
