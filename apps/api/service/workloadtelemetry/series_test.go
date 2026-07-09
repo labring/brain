@@ -70,6 +70,7 @@ func TestSeriesReturnsSingleTargetRowsWithProductMetricKeys(t *testing.T) {
 func TestSeriesKeepsMetricFailuresLocal(t *testing.T) {
 	start := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
 	service := NewService(ServiceOptions{
+		APAuthorizer: fakeAPAuthorizer{"project-a/web": true},
 		RangeQuerier: fakeRangeQuerier{samples: map[string][]SeriesSample{
 			"ap:web:cpu": {{Timestamp: start.Unix(), Value: 42}},
 		}},

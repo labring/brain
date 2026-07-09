@@ -39,6 +39,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0042 — Surface Deployment Failure Reasons Behind a Per-Runner Scrub Gate](0042-surface-scrubbed-deployment-failure-reasons.md)
 - [0043 — Coalesce Deployment Stream Updates into Throttled React Commits](0043-coalesce-deployment-stream-updates.md)
 - [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
+- [0045 — Authorize Workload Telemetry by Reading the Target Workload](0045-authorize-workload-telemetry-by-reading-the-target-workload.md)
 
 ## Conventions
 

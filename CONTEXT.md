@@ -756,6 +756,12 @@ A latest-point summary of workload resource usage for one AP or DB workload. It 
 
 _Avoid_: metric refresh, node state, resource status.
 
+### Workload Telemetry Authorization
+
+The access decision for a Workload Telemetry Series or Snapshot: a caller may read a workload's telemetry only if it can read that workload itself under its own credentials. Authorization is per workload (namespace + name), not per namespace, and is a Kubernetes RBAC read of the workload's backing object — the AP's Deployment or StatefulSet, the DB's Cluster — so holding a parseable kubeconfig is never sufficient. A denial is indistinguishable from an absent workload, so it never reveals whether another tenant's workload exists.
+
+_Avoid_: namespace access check, kubeconfig validation, metrics permission.
+
 ## Assistant & Billing
 
 ### Chat Billing Mode

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -59,7 +60,30 @@ var DBMetricQueries = map[DBType]map[MetricKind]string{
 
 var (
 	ErrUncompleteParam = errors.New("at least provide both namespace and query")
+	// ErrInvalidLabelValue is returned when a namespace or resource name is not a
+	// valid RFC1123 label and therefore cannot be safely substituted into a PromQL
+	// label matcher.
+	ErrInvalidLabelValue = errors.New("namespace and name must be valid RFC1123 labels")
 )
+
+// rfc1123Label matches a single DNS-1123 label — the character set Kubernetes
+// namespaces and workload names are drawn from. Values outside it (`.*`, a stray
+// `"`, etc.) could break out of the `{namespace=~"..."}` matcher these strings are
+// pasted into, so they are rejected before any substitution happens.
+var rfc1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// validateLabelValues rejects any namespace/name that is not a valid RFC1123 label,
+// closing PromQL injection on the raw string substitution below. This is defence in
+// depth: callers are already authorized against the concrete workload, so a legitimate
+// request always carries real (hence valid) Kubernetes identifiers.
+func validateLabelValues(values ...string) error {
+	for _, value := range values {
+		if len(value) > 253 || !rfc1123Label.MatchString(value) {
+			return ErrInvalidLabelValue
+		}
+	}
+	return nil
+}
 
 // VictoriaMetricsConfigured reports whether the metrics dependency has enough
 // configuration for query endpoints to attempt work. It does not perform a live probe.
@@ -84,6 +108,9 @@ func APMetricKinds() []APMetricType {
 func APMetricQuery(metricType APMetricType, namespace string, name string) (string, error) {
 	if namespace == "" || name == "" {
 		return "", ErrUncompleteParam
+	}
+	if err := validateLabelValues(namespace, name); err != nil {
+		return "", err
 	}
 	podName := apGetPodName(name)
 	var template string
@@ -126,6 +153,9 @@ func DBMetricKinds() []MetricKind {
 func BuildDBQueries(dbType DBType, namespace string, name string) (map[string]string, error) {
 	if namespace == "" || name == "" {
 		return nil, ErrUncompleteParam
+	}
+	if err := validateLabelValues(namespace, name); err != nil {
+		return nil, err
 	}
 	dbMap, ok := DBMetricQueries[dbType]
 	if !ok {

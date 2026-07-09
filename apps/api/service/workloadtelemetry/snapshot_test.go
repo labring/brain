@@ -29,10 +29,22 @@ func (f fakeDBResolver) ResolveDBEngine(_ context.Context, _ string, namespace s
 	return engine, nil
 }
 
+// fakeAPAuthorizer authorizes only the "namespace/name" workloads it is seeded with,
+// standing in for the RBAC-enforcing GET that ClusterAPResolver performs in production.
+type fakeAPAuthorizer map[string]bool
+
+func (f fakeAPAuthorizer) AuthorizeAPWorkload(_ context.Context, _ string, namespace string, name string) error {
+	if f[namespace+"/"+name] {
+		return nil
+	}
+	return ErrInvalidTarget
+}
+
 func TestSnapshotReturnsOneItemPerTargetWithProductMetricKeys(t *testing.T) {
 	sampledAt := time.Date(2026, 5, 18, 10, 30, 0, 0, time.UTC)
 	service := NewService(ServiceOptions{
-		DBResolver: fakeDBResolver{"project-a/pg": DBPostgres},
+		APAuthorizer: fakeAPAuthorizer{"project-a/web": true},
+		DBResolver:   fakeDBResolver{"project-a/pg": DBPostgres},
 		Querier: fakeInstantQuerier{samples: map[string]InstantSample{
 			"ap:web:cpu":    {SampledAt: sampledAt, Value: 42.25},
 			"ap:web:memory": {SampledAt: sampledAt, Value: 64.5},
@@ -76,7 +88,8 @@ func TestSnapshotReturnsOneItemPerTargetWithProductMetricKeys(t *testing.T) {
 func TestSnapshotKeepsMetricAndTargetFailuresLocal(t *testing.T) {
 	sampledAt := time.Date(2026, 5, 18, 11, 0, 0, 0, time.UTC)
 	service := NewService(ServiceOptions{
-		DBResolver: fakeDBResolver{"project-a/pg": DBPostgres},
+		APAuthorizer: fakeAPAuthorizer{"project-a/web": true},
+		DBResolver:   fakeDBResolver{"project-a/pg": DBPostgres},
 		Querier: fakeInstantQuerier{samples: map[string]InstantSample{
 			"ap:web:cpu": {SampledAt: sampledAt, Value: 51},
 		}},
@@ -107,6 +120,31 @@ func TestSnapshotKeepsMetricAndTargetFailuresLocal(t *testing.T) {
 	}
 	if len(db.Metrics) != 0 {
 		t.Fatalf("DB metrics = %#v, want none", db.Metrics)
+	}
+}
+
+func TestSnapshotDeniesUnauthorizedAPWorkload(t *testing.T) {
+	service := NewService(ServiceOptions{
+		APAuthorizer: fakeAPAuthorizer{},
+		Querier: fakeInstantQuerier{samples: map[string]InstantSample{
+			"ap:web:cpu":    {Value: 99},
+			"ap:web:memory": {Value: 99},
+		}},
+	})
+
+	got, err := service.Snapshot(context.Background(), "Bearer encoded", []Target{
+		{Kind: WorkloadKindAP, Namespace: "ns-victim", Name: "web"},
+	})
+	if err != nil {
+		t.Fatalf("Snapshot returned request-level error: %v", err)
+	}
+
+	item := got.Items[0]
+	if item.Error == nil || item.Error.Code != "invalid_target" {
+		t.Fatalf("unauthorized AP item error = %#v, want invalid_target", item.Error)
+	}
+	if len(item.Metrics) != 0 {
+		t.Fatalf("unauthorized AP must expose no metrics, got %#v", item.Metrics)
 	}
 }
 
