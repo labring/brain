@@ -36,6 +36,9 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0039 — Regenerate Whole-Canvas Auto Layout as a Clustered Row-Major Grid](0039-regenerate-auto-layout-as-clustered-row-major-grid.md) *(generalizes ADR-0022's placement group to clusters; 0022 stays authoritative for incremental placement)*
 - [0040 — Size Canvas Placement Footprints from the Measured Render](0040-size-placement-footprints-from-measured-render.md)
 - [0041 — Preserve Canvas Node Identity by Comparing Node Data by Value](0041-preserve-canvas-node-identity-by-value.md)
+- [0042 — Surface Deployment Failure Reasons Behind a Per-Runner Scrub Gate](0042-surface-scrubbed-deployment-failure-reasons.md)
+- [0043 — Coalesce Deployment Stream Updates into Throttled React Commits](0043-coalesce-deployment-stream-updates.md)
+- [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
 
 ## Conventions
 

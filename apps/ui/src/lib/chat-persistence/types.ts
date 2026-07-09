@@ -43,22 +43,64 @@ export interface AssistantSessionPayload {
   threads: AssistantThreadDTO[];
 }
 
-/** Optional client-provided UI context for the model system prompt (project + selection). */
+/**
+ * Stable, per-thread project context prepended to the model system prompt.
+ *
+ * Only carries values that do not change within a thread (project name + id), so
+ * the system prompt stays a byte-stable, cacheable prefix. The volatile canvas
+ * selection is NOT here — it is pinned to individual user messages instead (see
+ * {@link SelectedResourceContext}).
+ */
 export const assistantContextPayloadSchema = z.object({
   projectName: z.string().max(512).optional(),
   projectId: z.string().max(256).optional(),
-  selectedWorkload: z
-    .object({
-      kubernetesUid: z.string().max(256).optional(),
-      name: z.string().max(512).optional(),
-      kind: z.string().max(128).optional(),
-      namespace: z.string().max(256).optional(),
-    })
-    .optional(),
 });
 export type AssistantContextPayload = z.infer<
   typeof assistantContextPayloadSchema
 >;
+
+/**
+ * Snapshot of the resource selected on the canvas when a user message was sent.
+ *
+ * Pinned to that message as a `data-selectedResource` part so the model resolves
+ * deictic references ("this" / "it") against the selection that was live at send
+ * time — not whatever happens to be selected on a later request. Absence means
+ * "nothing was selected"; we never backfill a stale target.
+ */
+export const selectedResourceContextSchema = z.object({
+  kind: z.string().max(128).optional(),
+  name: z.string().max(512).optional(),
+  namespace: z.string().max(256).optional(),
+});
+export type SelectedResourceContext = z.infer<
+  typeof selectedResourceContextSchema
+>;
+
+/** UIMessage part type carrying {@link SelectedResourceContext} on a user turn. */
+export const SELECTED_RESOURCE_CONTEXT_PART_TYPE =
+  "data-selectedResource" as const;
+
+/** Read + validate the pinned selection from a message; `null` when absent or empty. */
+export function readSelectedResourceContext(
+  message: UIMessage
+): SelectedResourceContext | null {
+  for (const part of message.parts) {
+    if (part.type !== SELECTED_RESOURCE_CONTEXT_PART_TYPE) {
+      continue;
+    }
+    const parsed = selectedResourceContextSchema.safeParse(
+      (part as { data?: unknown }).data
+    );
+    if (!parsed.success) {
+      continue;
+    }
+    const ctx = parsed.data;
+    if (ctx.kind || ctx.name || ctx.namespace) {
+      return ctx;
+    }
+  }
+  return null;
+}
 
 /** Body of `POST /api/chat`. */
 export const chatStreamRequestSchema = z.object({
