@@ -13,6 +13,19 @@ export function normalizeAssistantNamespace(namespace: string): string {
   return trimmed.length > 0 ? trimmed : DEFAULT_ASSISTANT_NAMESPACE_KEY;
 }
 
+/** Max length for a client-supplied owner tag (matches the GitHub identity cap). */
+const MAX_ASSISTANT_OWNER_LEN = 256;
+
+/**
+ * Normalize the client-supplied owner tag (Sealos `session.user.id`): trimmed and
+ * length-capped. An empty string is the shared / no-identity bucket. This value is
+ * NOT authenticated — it is a default-view partition, not a security boundary
+ * (ADR 0047).
+ */
+export function normalizeAssistantOwner(userId: string): string {
+  return userId.trim().slice(0, MAX_ASSISTANT_OWNER_LEN);
+}
+
 /** Wire shape for a thread row sent to the client. */
 export interface AssistantThreadDTO {
   id: string;
@@ -115,6 +128,8 @@ export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
 /** Body of `POST /api/chat/thread`. */
 export const createThreadBodySchema = z.object({
   namespace: z.string().optional(),
+  /** Owner tag (`session.user.id`) the new thread is created under; see {@link normalizeAssistantOwner}. */
+  userId: z.string().optional(),
 });
 
 /** Body of `POST /api/chat/messages`. Used by UI event adapters. */

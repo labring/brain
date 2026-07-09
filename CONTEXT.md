@@ -764,6 +764,12 @@ _Avoid_: namespace access check, kubeconfig validation, metrics permission.
 
 ## Assistant & Billing
 
+### Assistant Conversation
+
+A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout, GitHub Connection, or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
+
+_Avoid_: shared namespace chat, tenant chat, private/confidential conversation, per-namespace chat history.
+
 ### Chat Billing Mode
 
 Who pays for one assistant model call: `free` spends a Free Chat Turn funded by the platform, `user` bills the caller's AI Proxy. The mode is decided per turn — `free` while Free Chat Turns remain and a platform model is configured, otherwise `user` — and the handoff from `free` to `user` is automatic rather than a separate user action.
@@ -774,7 +780,7 @@ _Avoid_: subscription tier, plan, quota mode.
 
 ### Free Chat Turns
 
-A platform-funded allowance of assistant turns granted per namespace, consumed only after a turn completes successfully. Free Chat Turns are an entitlement counter, not a rate limit or a cap on AI Proxy usage.
+A platform-funded allowance of assistant turns granted per namespace, consumed only after a turn completes successfully. Free Chat Turns are an entitlement counter, not a rate limit or a cap on AI Proxy usage. Free Chat Turns remain per-namespace even though an Assistant Conversation is per-user: the allowance is a shared workspace grant, not a per-user entitlement.
 
 _Avoid_: free tier, trial credits, message quota.
 

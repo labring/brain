@@ -19,15 +19,24 @@ import { ASSISTANT_DB_SCHEMA } from "./types";
 export const ns = pgSchema(ASSISTANT_DB_SCHEMA);
 
 /**
- * Conversation thread scoped by `namespace` (e.g. K8s namespace) so assistants
- * in different workspaces do not share history unless intended.
+ * Conversation thread scoped by `namespace` (e.g. K8s namespace) and owned by the
+ * user who created it. Listing is per `(namespace, userId)`; `userId` is a
+ * default-view partition, NOT a security boundary — client-supplied and not
+ * authenticated, with namespace RBAC the only enforced access control (ADR 0047).
  */
 export const assistantChats = ns.table(
   "assistant_chats",
   {
     id: text("id").primaryKey(),
-    /** Logical owner key (UI: `namespaceAtom`); empty namespaces map to the default bucket at write time. */
+    /** Logical namespace bucket (UI: `namespaceAtom`); empty namespaces map to the default bucket at write time. */
     namespace: text("namespace").notNull(),
+    /**
+     * Personal owner tag: the Sealos `session.user.id` that created the thread;
+     * empty is the shared / no-identity bucket. Client-supplied and NOT
+     * authenticated — a default-view partition, not a security boundary
+     * (ADR 0047). Set at creation, never re-keyed.
+     */
+    userId: text("user_id").notNull().default(""),
     /** Shown in thread picker; placeholders use `chat-YYYY-MM-DD` until renamed by AI after the first turn. */
     title: text("title").notNull().default("Chat"),
     /** Once `true`, placeholder/heuristic title generation is skipped. */
@@ -41,8 +50,9 @@ export const assistantChats = ns.table(
   },
   (table) => [
     index("assistant_chats_updated_at_idx").on(table.updatedAt),
-    index("assistant_chats_namespace_updated_at_idx").on(
+    index("assistant_chats_namespace_user_updated_at_idx").on(
       table.namespace,
+      table.userId,
       table.updatedAt
     ),
   ]

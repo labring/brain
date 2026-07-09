@@ -92,10 +92,11 @@ async function safeJsonPost<T>(
 
 export function fetchAssistantSession(
   namespaceRaw: string,
-  kubeconfig: string
+  kubeconfig: string,
+  userId: string
 ): Promise<AssistantSessionPayload | null> {
   return safeJsonGet(
-    `/api/chat/session?namespace=${encodeURIComponent(namespaceRaw)}`,
+    `/api/chat/session?namespace=${encodeURIComponent(namespaceRaw)}&userId=${encodeURIComponent(userId)}`,
     sessionResponseSchema,
     authHeaders(kubeconfig)
   );
@@ -104,10 +105,11 @@ export function fetchAssistantSession(
 /** `null` when the handler failed (HTTP error / parse failure), including DB unavailable (503). */
 export async function fetchAssistantThreads(
   namespaceRaw: string,
-  kubeconfig: string
+  kubeconfig: string,
+  userId: string
 ): Promise<AssistantThreadDTO[] | null> {
   const data = await safeJsonGet(
-    `/api/chat/threads?namespace=${encodeURIComponent(namespaceRaw)}`,
+    `/api/chat/threads?namespace=${encodeURIComponent(namespaceRaw)}&userId=${encodeURIComponent(userId)}`,
     threadsResponseSchema,
     authHeaders(kubeconfig)
   );
@@ -129,14 +131,15 @@ export async function fetchAssistantThreadMessages(
 
 export function createAssistantThread(
   namespaceRaw: string,
-  kubeconfig: string
+  kubeconfig: string,
+  userId: string
 ): Promise<{
   chatId: string;
   threads: AssistantThreadDTO[];
 } | null> {
   return safeJsonPost(
     "/api/chat/thread",
-    { namespace: namespaceRaw },
+    { namespace: namespaceRaw, userId },
     createThreadResponseSchema,
     authHeaders(kubeconfig)
   );

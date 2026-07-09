@@ -99,7 +99,11 @@ import {
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
 } from "@/lib/tool/chat-refresh-frontend-swr-tool";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import {
+  desktopUserIdAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/store/auth-store";
 import {
   assistantPaneOpenAtom,
   assistantPaneResizingAtom,
@@ -614,6 +618,10 @@ function ProjectAssistantChatSession({
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
+  // Owner tag for per-user thread partitioning (ADR 0047). Hydrated together with
+  // kubeconfig/namespace in `applySealosSdkHydration`, so it is already set when
+  // `namespaceReady` gates the fetch below; empty is the shared / dev bucket.
+  const desktopUserId = useAtomValue(desktopUserIdAtom);
   const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [creatingThread, setCreatingThread] = useState(false);
@@ -633,23 +641,25 @@ function ProjectAssistantChatPane() {
       return;
     }
 
-    fetchAssistantSession(namespaceRaw, kubeconfig).then((payload) => {
-      if (cancelled) {
-        return;
+    fetchAssistantSession(namespaceRaw, kubeconfig, desktopUserId).then(
+      (payload) => {
+        if (cancelled) {
+          return;
+        }
+        if (payload == null) {
+          setSessionError(true);
+          return;
+        }
+        setSession(payload);
+        setFreeTier(payload.freeTier);
+        prevBillingRef.current = payload.freeTier.billing;
       }
-      if (payload == null) {
-        setSessionError(true);
-        return;
-      }
-      setSession(payload);
-      setFreeTier(payload.freeTier);
-      prevBillingRef.current = payload.freeTier.billing;
-    });
+    );
 
     return () => {
       cancelled = true;
     };
-  }, [kubeconfig, namespaceRaw, namespaceReady]);
+  }, [desktopUserId, kubeconfig, namespaceRaw, namespaceReady]);
 
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
@@ -700,7 +710,11 @@ function ProjectAssistantChatPane() {
   const createThread = useCallback(async () => {
     setCreatingThread(true);
     try {
-      const created = await createAssistantThread(namespaceRaw, kubeconfig);
+      const created = await createAssistantThread(
+        namespaceRaw,
+        kubeconfig,
+        desktopUserId
+      );
       if (created == null) {
         return;
       }
@@ -717,15 +731,19 @@ function ProjectAssistantChatPane() {
     } finally {
       setCreatingThread(false);
     }
-  }, [kubeconfig, namespaceRaw]);
+  }, [desktopUserId, kubeconfig, namespaceRaw]);
 
   const refreshThreads = useCallback(async () => {
-    const threads = await fetchAssistantThreads(namespaceRaw, kubeconfig);
+    const threads = await fetchAssistantThreads(
+      namespaceRaw,
+      kubeconfig,
+      desktopUserId
+    );
     if (threads == null || threads.length === 0) {
       return;
     }
     setSession((prev) => (prev == null ? prev : { ...prev, threads }));
-  }, [kubeconfig, namespaceRaw]);
+  }, [desktopUserId, kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
     sidePaneRouter

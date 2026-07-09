@@ -29,6 +29,13 @@
       "when": 1783480595744,
       "tag": "0003_awesome_firebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783594299021,
+      "tag": "0004_unknown_felicia_hardy",
+      "breakpoints": true
     }
   ]
 }

@@ -27,7 +27,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await createThreadForNamespace(authorized.namespace);
+    // Owner tag: not authenticated, only partitions the view (ADR 0047).
+    const result = await createThreadForNamespace(
+      authorized.namespace,
+      parsed.data.userId ?? ""
+    );
     return Response.json(result);
   } catch (error) {
     console.error("[api/chat/thread]", error);
