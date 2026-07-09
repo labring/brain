@@ -533,6 +533,102 @@ test("deployment task timeline pane keeps failed tasks form-free (blocked is the
   assert.doesNotMatch(html, DEPLOYMENT_CONFIGURATION_RE);
 });
 
+const FAILURE_DETAIL_SLOT_RE = /data-slot="deployment-failure-detail"/;
+const SHOW_ERROR_DETAILS_RE = /Show error details/;
+
+function failedSnapshot(
+  runner: DeployTaskDTO["runner"],
+  error: string
+): Parameters<typeof DeploymentTaskTimelinePaneContent>[0]["snapshot"] {
+  return {
+    events: [],
+    task: {
+      artifactSummary: {},
+      blockingInputs: [],
+      canvasProjection: {},
+      completedAt: "2026-06-18T07:32:22.281Z",
+      createdAt: "2026-06-17T10:00:00.000Z",
+      createdFrom: "ui",
+      error,
+      failureDetails: null,
+      gatewaySessionId: null,
+      gatewayStateSnapshot: null,
+      gatewayTurnId: null,
+      gatewayUrl: null,
+      id: "task-fail",
+      namespace: "default",
+      phase: "generate-artifacts",
+      previewUrl: null,
+      projectId: "project-1",
+      projectName: "Project 1",
+      resultUrl: null,
+      runner,
+      runtimeName: null,
+      runtimeProvider: null,
+      runtimeState: null,
+      source: { kind: "template", templateName: "open-lovable" },
+      startedAt: null,
+      status: "failed",
+      target: { kind: "existingProject", projectId: "project-1" },
+      timelineSnapshot: null,
+      updatedAt: "2026-06-18T07:32:22.614Z",
+    },
+    timeline: {
+      revision: 1,
+      status: "failed",
+      steps: [
+        {
+          events: [
+            {
+              createdAt: "2026-06-17T10:00:02.000Z",
+              id: "evt-fail",
+              message: "The deployment values were rejected as invalid.",
+              severity: "error",
+            },
+          ],
+          id: "prepare-template",
+          label: "Prepare template",
+          order: 0,
+          status: "failed",
+        },
+      ],
+      taskId: "task-fail",
+      updatedAt: "2026-06-18T07:32:22.614Z",
+    },
+  };
+}
+
+test("surfaces a failure-detail affordance under a failed template step", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      snapshot={failedSnapshot(
+        { kind: "template" },
+        'instances.app "open-lovable" already exists'
+      )}
+    />
+  );
+
+  assert.match(html, FAILURE_DETAIL_SLOT_RE);
+  assert.match(html, SHOW_ERROR_DETAILS_RE);
+});
+
+test("hides the raw failure detail for the AI runner (scrub ⇔ raw display)", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      snapshot={failedSnapshot(
+        { kind: "ai", runtimeProvider: "devbox" },
+        "some private gateway stderr"
+      )}
+    />
+  );
+
+  assert.doesNotMatch(html, FAILURE_DETAIL_SLOT_RE);
+});
+
 const CANCEL_DEPLOYMENT_RE = /Cancel Deployment/;
 const REDEPLOY_RE = /Redeploy/;
 const DISABLED_ATTR_RE = / disabled=""/g;

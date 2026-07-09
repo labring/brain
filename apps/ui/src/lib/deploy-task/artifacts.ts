@@ -93,10 +93,29 @@ export interface DeploymentSealosTemplateBuildSummary {
   statusRaw?: string | null;
 }
 
+/**
+ * In-memory-only intent to create a template instance. It carries the full,
+ * memory-merged args — sensitive material under ADR 0037 — and therefore MUST
+ * NOT be persisted. It exists so the provider POST that actually creates the
+ * instance runs inside the create-resources apply step
+ * (`applyDeploymentArtifact`), not during prepare-template: that makes a
+ * provider/K8s creation failure attributable to the step that owns creation.
+ * `applyDeploymentArtifact` turns it into a `template-instance` artifact — the
+ * only form that ever reaches the persisted row summary.
+ */
+export interface DeploymentTemplateInstancePendingArtifact {
+  args: Record<string, string>;
+  extraLabels: Record<string, string>;
+  instanceName: string;
+  kind: "template-instance-pending";
+  templateName: string;
+}
+
 export type DeploymentArtifact =
   | DeploymentBrainManifestArtifact
   | DeploymentSealosTemplateArtifact
-  | DeploymentTemplateInstanceArtifact;
+  | DeploymentTemplateInstanceArtifact
+  | DeploymentTemplateInstancePendingArtifact;
 
 function stringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) {

@@ -470,6 +470,18 @@ A Deployment Result Resource Card is not a Project Canvas node, Deployment Proje
 
 _Avoid_: Kubernetes object card, manifest card, task row, deployment placeholder card, canvas node.
 
+### Deployment Failure Reason
+
+The short, user-facing text on a failed Deployment Timeline Step explaining why the run ended. It is resolved by precedence: a recognized failure-class headline when one applies, otherwise the first line of the Deployment Failure Detail, and a generic fallback only when neither a reason nor any error text exists. It is not the full error detail, a raw stack trace, or an internal error code.
+
+_Avoid_: generic failure message, stack trace, error code.
+
+### Deployment Failure Detail
+
+The full, ground-truth provider or Kubernetes error for a failed Deployment Task, shown expandably under its failed Deployment Timeline Step. It is scrubbed of known sensitive values before it is persisted or shown, and a runner surfaces it only when that runner's terminal error is scrubbed. It is not a browser-only value, an unredacted raw error, or a separate Deployment Task.
+
+_Avoid_: raw error dump, unredacted error, server log line.
+
 ### Deployment Task Display Summary
 
 A compact user-facing description of a Deployment Task used on project surfaces where full task detail would be too heavy. It summarizes the Deployment Source and known or anticipated result resources; it is not the full source record, the Deployment Task Timeline, or the Deployment Task identity.
