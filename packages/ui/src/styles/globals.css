@@ -276,7 +276,7 @@
      the old per-frame `filter: blur()/saturate()` was a sub-pixel modulation
      below the perceptual floor on this low-alpha, screen-blended seam, and
      animating `filter` while the ancestor pane is mid-transform hit a Chromium
-     flicker-trigger cluster (AIM-18 / AIM-19). The static rest softness on
+     flicker-trigger cluster. The static rest softness on
      `.side-pane-glow::after` (a one-time blur, not animated) is untouched. */
   @keyframes side-pane-glow-settle {
     0%,

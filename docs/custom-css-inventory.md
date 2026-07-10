@@ -61,7 +61,7 @@ These files define selectors and values outside Tailwind utility classes.
 
 | File | Custom values |
 | --- | --- |
-| `packages/ui/src/components/canvas/canvas.css` | Canvas surface background, React Flow overrides, fixed Figma ratio `1205 / 784`, radial gradient, hidden decorative handles, and the `.canvas-glass-sheet` masked backdrop-filter layer (AIM-17). Keep the sheet a leaf: never move a `filter`/`mask`/`opacity` onto `.canvas-surface` or the viewport, which would become a backdrop root and cut the glow. |
+| `packages/ui/src/components/canvas/canvas.css` | Canvas surface background, React Flow overrides, fixed Figma ratio `1205 / 784`, radial gradient, hidden decorative handles, and the `.canvas-glass-sheet` masked backdrop-filter layer. Keep the sheet a leaf: never move a `filter`/`mask`/`opacity` onto `.canvas-surface` or the viewport, which would become a backdrop root and cut the glow. |
 | `packages/ui/src/components/canvas-node/canvas-node.css` | Largest custom block. Defines `--canvas-node-*` dimensions, transitions, color mixes, `0.5px` borders, handle geometry, masks, glow/drag effects, expand-button behavior. This is the main place agents may copy nonstandard styling. |
 | `packages/ui/src/components/database-node/database-node.css` | Hidden scrollbars, list max-height formula, empty row min-height. |
 | `packages/ui/src/components/container-node/container-node.css` | Custom image-row min-height. |

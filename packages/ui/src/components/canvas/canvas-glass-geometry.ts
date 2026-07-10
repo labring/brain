@@ -1,5 +1,5 @@
 /**
- * Pure geometry for the canvas "masked glass sheet" (AIM-17). One shared
+ * Pure geometry for the canvas "masked glass sheet". One shared
  * `backdrop-filter` sheet sits between the edges and nodes layers and is masked
  * to the union of node rounded-rects, so N per-node blur surfaces collapse to 1.
  * Nodes that overlap another node can't be blurred by the shared sheet (it

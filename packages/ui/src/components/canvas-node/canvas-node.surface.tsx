@@ -11,7 +11,7 @@ export function CanvasNodeSurface({
   ...props
 }: ComponentProps<"article">) {
   // When the shared glass sheet handles this node, drop the per-node blur; keep
-  // it when there's no sheet or the node overlaps another (AIM-17).
+  // it when there's no sheet or the node overlaps another.
   const selfBlur = useCanvasNodeSelfBlur(useNodeId());
   return (
     <article

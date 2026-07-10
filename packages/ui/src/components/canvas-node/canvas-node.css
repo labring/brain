@@ -52,7 +52,7 @@
     box-shadow 150ms ease-out;
 }
 
-/* Per-node backdrop blur (AIM-17). Present by default; the shared glass sheet
+/* Per-node backdrop blur. Present by default; the shared glass sheet
    drops it for isolated nodes and restores it for overlapping ones by toggling
    data-self-blur. Uses --canvas-glass-blur-radius so it matches the sheet. */
 .canvas-node-surface[data-self-blur] {

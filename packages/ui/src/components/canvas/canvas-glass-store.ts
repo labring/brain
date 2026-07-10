@@ -1,5 +1,5 @@
 /**
- * Per-node subscription store for the masked glass sheet (AIM-17). The sheet
+ * Per-node subscription store for the masked glass sheet. The sheet
  * controller writes one snapshot per animation frame; each node surface
  * subscribes by id and re-renders only when its own self-blur decision flips.
  * Mirrors the interaction-store pattern so facts flow through a store, never

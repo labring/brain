@@ -58,7 +58,7 @@ function applyGlassSheetGeometry(
 }
 
 /**
- * Renders the shared "masked glass sheet" (AIM-17): one `backdrop-filter`
+ * Renders the shared "masked glass sheet": one `backdrop-filter`
  * element inserted between the edges and nodes layers of this canvas's React
  * Flow viewport, masked to the union of isolated node rounded-rects so N
  * per-node blur surfaces collapse to one. Geometry is read from the React Flow

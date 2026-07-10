@@ -31,7 +31,7 @@
   background: transparent;
 }
 
-/* AIM-17 masked glass sheet — one backdrop-filter element inserted between the
+/* Masked glass sheet — one backdrop-filter element inserted between the
    edges and nodes layers, masked to the isolated node rounded-rects (geometry
    set imperatively by canvas-glass-sheet.tsx). Keep it a leaf: never move a
    filter/mask onto .canvas-surface or the viewport, which would become a
