@@ -34,6 +34,7 @@ const (
 	defaultLogLimitAll    = "10" // per pod+container when querying all
 	defaultLogLimitSingle = "50" // when querying specific container
 	defaultLogsRangeMin   = 60   // default time range in minutes
+	logsQueryPath         = "/select/logsql/query"
 	instanceLabel         = "app.kubernetes.io/instance"
 	appLabel              = "app"
 )
@@ -432,12 +433,20 @@ func composeDBLogsQL(namespace string, podNames []string, container, limit, sear
 }
 
 func logsQueryEndpointFromEnv() (string, error) {
-	vlURL := os.Getenv("VLSELECT_URL")
+	vlURL := strings.TrimSpace(os.Getenv("VLSELECT_URL"))
 	if vlURL == "" {
 		return "", ErrNoVLHost
 	}
-	// Expect URL like http://127.0.0.1:8482/select/logsql/query
-	return strings.TrimRight(vlURL, "/"), nil
+
+	u, err := url.Parse(vlURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid VLSELECT_URL: %w", err)
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	if u.Path == "" {
+		u.Path = logsQueryPath
+	}
+	return u.String(), nil
 }
 
 func defaultLogsRangeUnix() (string, string) {
