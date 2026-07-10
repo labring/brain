@@ -1,0 +1,248 @@
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { createRequire } from "node:module";
+
+import type { DeployTaskHandle } from "./engine/handle";
+import type { DeployTaskRow } from "./schema";
+
+// Regression harness for AIM-33: drive the real template control flow in
+// runDeployTask with the external seams mocked, and assert cleanup behavior
+// by counting k8s DELETE requests at the global-fetch seam (ADR 0037/0038).
+// Everything loads synchronously via require — top-level await in a test
+// file interleaves bun's file loading with test execution and crashes every
+// later node:test file in the same run. The fetch interception deliberately
+// stubs globalThis.fetch instead of mock.module("@workspace/api/fetch"):
+// modules evaluated while a module mock is registered keep that binding
+// forever, which would poison every cached consumer of the fetch module in
+// later test files.
+
+const requireModule = createRequire(import.meta.url);
+
+const fetchCalls: { method?: string; url: string }[] = [];
+const originalFetch = globalThis.fetch;
+
+function installFetchRecorder() {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls.push({ method: init?.method, url: String(input) });
+    return Promise.resolve(
+      new Response("{}", {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      })
+    );
+  }) as typeof fetch;
+}
+const failCalls: Record<string, unknown>[] = [];
+const completeCalls: unknown[] = [];
+const eventKinds: string[] = [];
+
+let currentRow: DeployTaskRow;
+let deployTemplateInstanceImpl: () => Promise<{
+  instanceName: string;
+  resources: { name: string; resourceType: string }[];
+}>;
+
+const abortedController = new AbortController();
+abortedController.abort();
+
+// "server-only" stays shimmed for the whole process: its real module throws
+// outside a react-server condition and exports no runtime API, so the shim
+// can never change another file's behavior.
+mock.module("server-only", () => ({}));
+
+// Real modules are captured before mocking so afterAll can restore them —
+// bun's mock.module patches the process-wide module cache, and without a
+// restore these mocks would poison every later test file in the same run.
+const realTemplateProvider = requireModule("@/lib/template-provider-core");
+const realProjects = requireModule("@/lib/project-persistence/projects");
+const realService = requireModule("./service");
+const realRunnerWrites = requireModule("./runner-writes");
+const realResultReadiness = requireModule("./result-readiness");
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+  mock.module("@/lib/template-provider-core", () => ({
+    ...realTemplateProvider,
+  }));
+  mock.module("@/lib/project-persistence/projects", () => ({
+    ...realProjects,
+  }));
+  mock.module("./service", () => ({ ...realService }));
+  mock.module("./runner-writes", () => ({ ...realRunnerWrites }));
+  mock.module("./result-readiness", () => ({ ...realResultReadiness }));
+  delete process.env.DIRECT_AP_READINESS_TIMEOUT_MS;
+});
+
+mock.module("@/lib/template-provider-core", () => ({
+  ...realTemplateProvider,
+  deployTemplateInstance: (input: { instanceName: string }) =>
+    deployTemplateInstanceImpl().then((deployed) => ({
+      ...deployed,
+      instanceName: input.instanceName,
+    })),
+  getTemplateSource: () =>
+    Promise.reject(new Error("template declarations unavailable")),
+}));
+
+mock.module("@/lib/project-persistence/projects", () => ({
+  createProject: () => Promise.reject(new Error("not used in this harness")),
+  getProject: () => Promise.reject(new Error("not used in this harness")),
+}));
+
+mock.module("./service", () => ({
+  ...realService,
+  getDeployTaskById: () => Promise.resolve(currentRow),
+  getDeployTaskTimelineSnapshot: () => Promise.resolve(null),
+}));
+
+mock.module("./runner-writes", () => ({
+  deployTaskBeginApplying: () => Promise.resolve(),
+  deployTaskCheckpoint: () => Promise.resolve(),
+  deployTaskComplete: (...input: unknown[]) => {
+    completeCalls.push(input);
+    return Promise.resolve();
+  },
+  deployTaskRequestInputs: () => Promise.resolve(),
+  deployTaskRunSignal: () => abortedController.signal,
+  recordDeployTaskEvent: (
+    _taskId: string,
+    event: { kind: string }
+  ): Promise<void> => {
+    eventKinds.push(event.kind);
+    return Promise.resolve();
+  },
+  throwIfDeployTaskAborted: () => Promise.resolve(),
+  updateDeployTaskState: () => Promise.resolve(),
+  updateDeployTaskTimeline: () => Promise.resolve(),
+}));
+
+mock.module("./result-readiness", () => ({
+  ...realResultReadiness,
+  isResultReadinessTerminalError: () => false,
+  observeDeploymentResultCardReadiness: () =>
+    Promise.reject(new Error("workload is still starting")),
+  resultReadinessLabel: (card: { title?: string }) => card?.title ?? "resource",
+  waitingForResultObservationStatus: () => "waiting for workload observation",
+}));
+
+const { runDeployTask } = requireModule("./runner") as {
+  runDeployTask: (
+    handle: DeployTaskHandle,
+    input: { encodedKubeconfig?: string; taskId: string }
+  ) => Promise<void>;
+};
+
+function templateTaskRow(input: {
+  recordedInstanceName?: string;
+}): DeployTaskRow {
+  return {
+    artifactSummary:
+      input.recordedInstanceName == null
+        ? {}
+        : {
+            resultIdentities: {
+              templateInstanceName: input.recordedInstanceName,
+            },
+          },
+    blockingInputs: [],
+    githubConnectionId: null,
+    id: "task-1",
+    namespace: "ns-demo",
+    phase: "plan",
+    projectId: "proj-1",
+    projectName: "proj-1",
+    runner: { kind: "template" },
+    source: { args: {}, kind: "template", templateName: "dify" },
+    status: "running",
+    target: { kind: "existingProject", projectId: "proj-1" },
+  } as unknown as DeployTaskRow;
+}
+
+function runnerHandle(): DeployTaskHandle {
+  return {
+    fail: (input: Record<string, unknown>) => {
+      failCalls.push(input);
+      return Promise.resolve();
+    },
+    outcome: () => null,
+    setState: () => Promise.resolve(),
+  } as unknown as DeployTaskHandle;
+}
+
+function deleteCalls() {
+  return fetchCalls.filter((call) => call.method === "DELETE");
+}
+
+function deletedKind(url: string): string | null {
+  return new URL(url, "http://fallback.test").searchParams.get("kind");
+}
+
+function attachedFailureDetails(): Record<string, unknown> {
+  const details = failCalls[0]?.failureDetails;
+  return (details ?? {}) as Record<string, unknown>;
+}
+
+async function runTemplateTask() {
+  await runDeployTask(runnerHandle(), {
+    encodedKubeconfig: "kubeconfig-for-tests",
+    taskId: "task-1",
+  });
+}
+
+describe("template deployment failure cleanup (AIM-33)", () => {
+  beforeEach(() => {
+    installFetchRecorder();
+    fetchCalls.length = 0;
+    failCalls.length = 0;
+    completeCalls.length = 0;
+    eventKinds.length = 0;
+    process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
+    currentRow = templateTaskRow({});
+    deployTemplateInstanceImpl = () =>
+      Promise.resolve({
+        instanceName: "unused",
+        resources: [{ name: "dify-api", resourceType: "StatefulSet" }],
+      });
+  });
+
+  it("preserves applied resources when readiness times out", async () => {
+    await runTemplateTask();
+
+    expect(deleteCalls()).toHaveLength(0);
+    expect(eventKinds).not.toContain(
+      "deployment_task.template_cleanup_started"
+    );
+    expect(completeCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().reason).toBe("readiness-timeout");
+    expect(attachedFailureDetails().stage).toBe("readiness");
+  });
+
+  it("cleans up a freshly allocated identity when the apply call itself fails", async () => {
+    deployTemplateInstanceImpl = () =>
+      Promise.reject(new Error("template provider returned 500"));
+
+    await runTemplateTask();
+
+    const kinds = deleteCalls().map((call) => deletedKind(call.url));
+    expect(kinds).toHaveLength(9);
+    expect(kinds).toContain("persistentvolumeclaims");
+    expect(eventKinds).toContain("deployment_task.template_cleanup_started");
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().stage).toBe("apply");
+  });
+
+  it("never deletes preserved resources when a reused identity's apply fails", async () => {
+    currentRow = templateTaskRow({ recordedInstanceName: "dify-template-1" });
+    deployTemplateInstanceImpl = () =>
+      Promise.reject(new Error("template provider returned 500"));
+
+    await runTemplateTask();
+
+    expect(deleteCalls()).toHaveLength(0);
+    expect(eventKinds).not.toContain(
+      "deployment_task.template_cleanup_started"
+    );
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().stage).toBe("apply");
+  });
+});

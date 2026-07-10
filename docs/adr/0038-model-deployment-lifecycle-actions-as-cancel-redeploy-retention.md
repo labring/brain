@@ -42,3 +42,11 @@ The original decision put cancel and redeploy actions on dock chips as well as t
 - **No confirmation dialog on dismiss.** With dismiss restricted to terminal states, the accidental-loss risk is limited to a failed chip whose task is still retained and recoverable via the deploy pane; a blocking modal is heavier than the cost warrants. A non-blocking Undo affordance was considered and also declined for v1.
 
 To stop an in-progress deployment the user cancels it in the pane; it then becomes `cancelled` and rides the brief dismissible completion notice. This keeps the invariant that a still-running deployment cannot be hidden from the dock.
+
+## Amendment (2026-07-10): Failure cleanup only for provably this-run partial applies
+
+The original runner deleted a failed template deployment's labeled resources on every non-abort failure. That polarity contradicted this ADR twice over: a readiness timeout after a successful apply swept live workloads and PVCs that ADR 0037 promises to preserve, and on a Redeploy — which reuses the recorded instance name to converge on preserved resources — the label-selector sweep deleted the predecessor's resources on any failure, including ones before this run applied anything. This amendment narrows failure cleanup to the one case where deletion is provably scoped to this run:
+
+- **Cleanup requires both a typed apply-stage failure and a freshly allocated identity.** The apply provider call marks its own errors (`stage: "apply"` on the attached failure details); cleanup runs only when that marker is present and the template instance name was allocated by this run. Only then does the selector provably match nothing but this run's partial creation.
+- **Everything else preserves resources.** Readiness timeouts (failing with the readiness-timeout reason per ADR 0037), post-apply persistence errors, pre-apply generation errors, and any failure on a reused identity leave resources untouched — their deletion stays an explicit canvas action, and a Redeploy converges on whatever remains.
+- **Misjudgment degrades toward preservation.** A lost or absent stage marker skips cleanup; the failure summary for a readiness timeout tells the user the created resources were preserved and that Redeploy reuses them.

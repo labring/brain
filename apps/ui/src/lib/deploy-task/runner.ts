@@ -60,6 +60,11 @@ import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
 import { isDeployTaskAbortError } from "./engine/errors";
 import type { DeployTaskHandle } from "./engine/handle";
 import {
+  attachDeployFailureDetails,
+  attachedDeployFailureDetails,
+  templateCleanupAllowed,
+} from "./failure-details";
+import {
   deploymentFailureReason,
   deployRunnerSurfacesRawFailure,
   deployTaskFailureSummary,
@@ -185,29 +190,6 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-const DEPLOY_FAILURE_DETAILS_KEY = "__sealaiDeployFailureDetails";
-
-/**
- * Attaches structured failure context to an error so the run's single
- * terminal `fail` transition can persist it — intermediate writes of
- * failure_details on a live run are gone with the engine.
- */
-function attachDeployFailureDetails(
-  error: unknown,
-  details: Record<string, unknown>
-): unknown {
-  if (error instanceof Error) {
-    const carrier = error as Error & {
-      [DEPLOY_FAILURE_DETAILS_KEY]?: Record<string, unknown>;
-    };
-    carrier[DEPLOY_FAILURE_DETAILS_KEY] = {
-      ...carrier[DEPLOY_FAILURE_DETAILS_KEY],
-      ...details,
-    };
-  }
-  return error;
-}
-
 const DEPLOY_SENSITIVE_VALUES_KEY = "__sealaiDeploySensitiveValues";
 
 /**
@@ -240,16 +222,6 @@ function attachedDeploySensitiveValues(error: unknown): string[] {
     return carrier[DEPLOY_SENSITIVE_VALUES_KEY] ?? [];
   }
   return [];
-}
-
-function attachedDeployFailureDetails(error: unknown): Record<string, unknown> {
-  if (error instanceof Error) {
-    const carrier = error as Error & {
-      [DEPLOY_FAILURE_DETAILS_KEY]?: Record<string, unknown>;
-    };
-    return carrier[DEPLOY_FAILURE_DETAILS_KEY] ?? {};
-  }
-  return {};
 }
 
 function shellQuote(value: string): string {
@@ -858,7 +830,7 @@ async function waitForRequiredResultCards(input: {
     new Error(
       `Timed out waiting for required result resource readiness (${latestStatus}).`
     ),
-    { reason: "readiness-timeout" }
+    { reason: "readiness-timeout", stage: "readiness" }
   );
 }
 
@@ -1764,6 +1736,9 @@ async function completeTaskWithArtifact(input: {
           ? input.artifact.resources.length
           : undefined,
       source: "applyDeploymentArtifact",
+      // The one stage where this run may have partially created resources —
+      // the only stage template failure cleanup may act on (ADR 0037/0038).
+      stage: "apply",
       templateName:
         input.artifact.kind === "sealos-template" ||
         input.artifact.kind === "template-instance-pending"
@@ -1999,6 +1974,11 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     input.args,
     input.planInputs ?? input.task.artifactSummary.deploymentPlan?.inputs
   );
+  // A recorded identity predates this run (clone copy per ADR 0038, or an
+  // earlier run's fenced allocation), so the cleanup label selector may match
+  // preserved resources this run never created.
+  const identityFreshlyAllocated =
+    recordedTemplateInstanceName(input.task) === "";
   let artifact: DeploymentArtifact;
   try {
     artifact = prepareSealosTemplateArtifact({
@@ -2096,12 +2076,16 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     if (isDeployTaskAbortError(error)) {
       throw error;
     }
-    await cleanupFailedTemplateDeployment({
-      encodedKubeconfig: input.encodedKubeconfig,
-      instanceName: artifact.instanceName,
-      projectId: input.task.projectId ?? artifact.instanceName,
-      task: input.task,
-    });
+    // Readiness timeouts and every other non-apply failure preserve the
+    // created resources (ADR 0037); see templateCleanupAllowed.
+    if (templateCleanupAllowed(error, { identityFreshlyAllocated })) {
+      await cleanupFailedTemplateDeployment({
+        encodedKubeconfig: input.encodedKubeconfig,
+        instanceName: artifact.instanceName,
+        projectId: input.task.projectId ?? artifact.instanceName,
+        task: input.task,
+      });
+    }
     throw error;
   }
 }
@@ -2353,10 +2337,11 @@ async function runTemplateDeploymentTask(input: {
   }
   const source = input.task.source;
   const templateName = source.templateName.trim();
-  const instanceName = await allocateTemplateInstanceName({
-    task: input.task,
-    templateName,
-  });
+  const { freshlyAllocated: identityFreshlyAllocated, instanceName } =
+    await allocateTemplateInstanceName({
+      task: input.task,
+      templateName,
+    });
 
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.template_preparation_started",
@@ -2480,12 +2465,16 @@ async function runTemplateDeploymentTask(input: {
     if (isDeployTaskAbortError(error)) {
       throw error;
     }
-    await cleanupFailedTemplateDeployment({
-      encodedKubeconfig: input.encodedKubeconfig,
-      instanceName,
-      projectId: input.projectId,
-      task: input.task,
-    });
+    // Readiness timeouts and every other non-apply failure preserve the
+    // created resources (ADR 0037); see templateCleanupAllowed.
+    if (templateCleanupAllowed(error, { identityFreshlyAllocated })) {
+      await cleanupFailedTemplateDeployment({
+        encodedKubeconfig: input.encodedKubeconfig,
+        instanceName,
+        projectId: input.projectId,
+        task: input.task,
+      });
+    }
     // Carry this run's known sensitive values to the terminal failure write so
     // a provider/K8s error that echoed one is scrubbed before persist (ADR 0042).
     throw attachDeploySensitiveValues(
@@ -2495,18 +2484,25 @@ async function runTemplateDeploymentTask(input: {
   }
 }
 
+function recordedTemplateInstanceName(task: DeployTaskRow): string {
+  return (
+    task.artifactSummary.resultIdentities?.templateInstanceName?.trim() ?? ""
+  );
+}
+
 /**
  * Result-identity contract (ADR 0038): reuse the recorded template instance
  * name when one exists (redeploy converging on preserved resources); a fresh
  * allocation is persisted with a fenced write before any provider call uses
  * it, so an identity can never be allocated and then lost to a crash.
+ * `freshlyAllocated` feeds cleanup eligibility: only a fresh identity proves
+ * the label selector matches nothing but this run's resources.
  */
 async function allocateTemplateInstanceName(input: {
   task: DeployTaskRow;
   templateName: string;
-}): Promise<string> {
-  const recorded =
-    input.task.artifactSummary.resultIdentities?.templateInstanceName?.trim();
+}): Promise<{ freshlyAllocated: boolean; instanceName: string }> {
+  const recorded = recordedTemplateInstanceName(input.task);
   if (recorded) {
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.result_identity_reused",
@@ -2514,7 +2510,7 @@ async function allocateTemplateInstanceName(input: {
       payload: { templateInstanceName: recorded },
       phase: "plan",
     });
-    return recorded;
+    return { freshlyAllocated: false, instanceName: recorded };
   }
   const allocated = childResourceName(input.templateName, "template");
   await updateDeployTaskState(input.task.id, {
@@ -2526,7 +2522,7 @@ async function allocateTemplateInstanceName(input: {
       },
     },
   });
-  return allocated;
+  return { freshlyAllocated: true, instanceName: allocated };
 }
 
 function aiSourceKey(task: DeployTaskRow): string {
