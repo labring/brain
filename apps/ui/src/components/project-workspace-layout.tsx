@@ -8,10 +8,8 @@ import { cn } from "@workspace/ui/lib/utils";
 import {
   DefaultChatTransport,
   generateId,
-  isToolUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
   lastAssistantMessageIsCompleteWithToolCalls,
-  type UIMessage,
 } from "ai";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -82,6 +80,7 @@ import {
   type SelectedResourceContext,
 } from "@/lib/chat-persistence/types";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
+import { scanMessagesForDeployTaskCreations } from "@/lib/deploy-task/chat-bridge-scan";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import {
@@ -129,43 +128,6 @@ type AssistantClientToolSubmission =
     };
 
 const VIEWPORT_RESIZE_SETTLE_MS = 180;
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function deployTaskDetailFromCreateToolPart(
-  part: UIMessage["parts"][number]
-): { projectId: string; taskId: string } | null {
-  if (
-    !isToolUIPart(part) ||
-    part.type !== "tool-createDeployTask" ||
-    part.state !== "output-available"
-  ) {
-    return null;
-  }
-
-  const output = recordValue(part.output);
-  if (output?.ok !== true) {
-    return null;
-  }
-  const task = recordValue(output.task);
-  const taskId = stringValue(task?.id);
-  const projectId = stringValue(task?.projectId);
-  if (projectId == null || taskId == null) {
-    return null;
-  }
-  return {
-    projectId,
-    taskId,
-  };
-}
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
@@ -317,6 +279,12 @@ function ProjectAssistantChatSession({
     ((args: AssistantClientToolSubmission) => void | PromiseLike<void>) | null
   >(null);
   const bridgedToolDeployTaskIdsRef = useRef<Set<string>>(new Set());
+  // Incremental-scan cursor for the deploy-task bridge below; keyed by project
+  // so a project switch rescans the transcript from the start.
+  const deployTaskScanCursorRef = useRef<{
+    projectId: string;
+    scannedParts: ReadonlyMap<string, number>;
+  }>({ projectId: "", scannedParts: new Map() });
 
   const params = useParams<{ uid?: string }>();
   const projectId = decodeURIComponent(params.uid ?? "");
@@ -406,6 +374,9 @@ function ProjectAssistantChatSession({
     addToolOutput,
   } = useAIChat({
     id: chatId,
+    // Cap streaming re-renders at ~20/s; without this every SSE chunk
+    // re-renders the whole chat session (AI SDK docs' recommended mitigation).
+    experimental_throttle: 50,
     messages: bootstrap.messages,
     transport,
     sendAutomaticallyWhen: ({ messages: nextMessages }) =>
@@ -495,19 +466,25 @@ function ProjectAssistantChatSession({
     if (currentProjectId === "") {
       return;
     }
-    for (const message of messages) {
-      for (const part of message.parts) {
-        const detail = deployTaskDetailFromCreateToolPart(part);
-        if (
-          detail == null ||
-          detail.projectId !== currentProjectId ||
-          bridgedToolDeployTaskIdsRef.current.has(detail.taskId)
-        ) {
-          continue;
-        }
-        bridgedToolDeployTaskIdsRef.current.add(detail.taskId);
-        dispatchDeployTaskCreatedEvent(detail);
-      }
+    if (deployTaskScanCursorRef.current.projectId !== currentProjectId) {
+      deployTaskScanCursorRef.current = {
+        projectId: currentProjectId,
+        scannedParts: new Map(),
+      };
+    }
+    const scan = scanMessagesForDeployTaskCreations({
+      messages,
+      projectId: currentProjectId,
+      scannedParts: deployTaskScanCursorRef.current.scannedParts,
+      seenTaskIds: bridgedToolDeployTaskIdsRef.current,
+    });
+    deployTaskScanCursorRef.current = {
+      projectId: currentProjectId,
+      scannedParts: scan.scannedParts,
+    };
+    for (const detail of scan.details) {
+      bridgedToolDeployTaskIdsRef.current.add(detail.taskId);
+      dispatchDeployTaskCreatedEvent(detail);
     }
   }, [messages, projectId]);
   const createThreadClicked = useCallback(() => {
