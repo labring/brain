@@ -43,24 +43,33 @@ export async function selectThreadById(
   return row ?? null;
 }
 
-export function selectThreadsByNamespace(
-  namespaceKey: string
+/** Threads owned by one user within a namespace bucket. Owner is a view partition, not a security filter (ADR 0047). */
+export function selectThreadsByNamespaceAndOwner(
+  namespaceKey: string,
+  ownerKey: string
 ): Promise<ThreadRow[]> {
   return getAssistantDb()
     .select()
     .from(assistantChats)
-    .where(eq(assistantChats.namespace, namespaceKey))
+    .where(
+      and(
+        eq(assistantChats.namespace, namespaceKey),
+        eq(assistantChats.userId, ownerKey)
+      )
+    )
     .orderBy(desc(assistantChats.updatedAt));
 }
 
 export async function insertThread(input: {
   id: string;
   namespaceKey: string;
+  ownerKey: string;
   title: string;
 }): Promise<void> {
   await getAssistantDb().insert(assistantChats).values({
     id: input.id,
     namespace: input.namespaceKey,
+    userId: input.ownerKey,
     title: input.title,
     titleAiGenerated: false,
   });

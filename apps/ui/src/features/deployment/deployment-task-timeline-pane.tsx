@@ -330,7 +330,7 @@ function DeploymentTimelineCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-border bg-input/30 shadow-none backdrop-blur-sm",
+        "overflow-hidden rounded-lg border border-border bg-input/30 shadow-none",
         className
       )}
       {...props}

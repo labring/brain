@@ -81,7 +81,7 @@ function SnapshotHistoryListItem({
 
   return (
     <li>
-      <article className="flex min-w-0 items-center gap-2 overflow-hidden rounded-lg bg-white/5 pr-2 shadow-sm backdrop-blur-sm">
+      <article className="flex min-w-0 items-center gap-2 overflow-hidden rounded-lg bg-input/30 pr-2 shadow-sm">
         <div className="min-w-0 flex-1 px-4 py-4 text-left">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex min-w-0 items-center gap-2">
@@ -382,7 +382,7 @@ export function ContainerHistoryPane({
         >
           <ul className="flex min-w-0 flex-col gap-2 p-2.5">
             {rows.length === 0 ? (
-              <li className="rounded-lg bg-white/5 px-4 py-8 text-center text-muted-foreground text-sm leading-5">
+              <li className="rounded-lg bg-input/30 px-4 py-8 text-center text-muted-foreground text-sm leading-5">
                 No image versions yet. They appear after AP image changes are
                 applied.
               </li>

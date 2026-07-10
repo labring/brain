@@ -36,6 +36,7 @@ import {
   threadTitleLanguageModel,
 } from "@/lib/chat-runtime/model";
 import { resolveAuthoritativeChatNamespace } from "@/lib/chat-runtime/resolve-chat-namespace";
+import { withSelectedResourceContext } from "@/lib/chat-runtime/selected-resource-context";
 import { buildChatToolset } from "@/lib/chat-runtime/tools";
 
 export const maxDuration = 120;
@@ -165,7 +166,10 @@ export async function POST(req: Request) {
     const result = streamText({
       model,
       system: systemPrompt,
-      messages: await convertToModelMessages(history, { tools }),
+      messages: await convertToModelMessages(
+        withSelectedResourceContext(history),
+        { tools }
+      ),
       tools,
       stopWhen: stepCountIs(CHAT_MAX_STEPS),
       experimental_transform: createInjectToolDurationStreamTransform(

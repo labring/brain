@@ -39,7 +39,10 @@ import { isAssistantChatNamespaceReady } from "@/components/project-assistant-ch
 import { Chat } from "@/features/project-assistant/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/project-assistant/chat/chat.types";
 import { FreeTurnsIndicator } from "@/features/project-assistant/free-turns-indicator";
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
+import {
+  type ProjectCanvasSelection,
+  projectCanvasSelectionTarget,
+} from "@/features/project-route-state/canvas-selection";
 import {
   PROJECT_SELECTED_QUERY_KEY,
   parseProjectCanvasSelection,
@@ -70,11 +73,13 @@ import {
   fetchAssistantThreadMessages,
   fetchAssistantThreads,
 } from "@/lib/chat-persistence/client";
-import type {
-  AssistantContextPayload,
-  AssistantSessionPayload,
-  AssistantThreadDTO,
-  FreeTierState,
+import {
+  type AssistantContextPayload,
+  type AssistantSessionPayload,
+  type AssistantThreadDTO,
+  type FreeTierState,
+  SELECTED_RESOURCE_CONTEXT_PART_TYPE,
+  type SelectedResourceContext,
 } from "@/lib/chat-persistence/types";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
@@ -94,7 +99,11 @@ import {
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
 } from "@/lib/tool/chat-refresh-frontend-swr-tool";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import {
+  desktopUserIdAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/store/auth-store";
 import {
   assistantPaneOpenAtom,
   assistantPaneResizingAtom,
@@ -159,35 +168,34 @@ function deployTaskDetailFromCreateToolPart(
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
-  projectId: string,
-  selected: ProjectCanvasSelection | null
+  projectId: string
 ): AssistantContextPayload | undefined {
   const pn = projectName?.trim() ?? "";
   const pu = projectId.trim();
-  const target = selected?.kind === "edge" ? null : selected?.target;
-  if (pn === "" && pu === "" && target == null) {
+  if (pn === "" && pu === "") {
     return undefined;
   }
   return {
     ...(pn === "" ? {} : { projectName: pn }),
     ...(pu === "" ? {} : { projectId: pu }),
-    ...(target == null
-      ? {}
-      : {
-          selectedWorkload:
-            target.kind === "PublicAccess"
-              ? {
-                  kind: target.kind,
-                  name: target.apName,
-                  namespace: target.namespace,
-                }
-              : {
-                  kind: target.kind,
-                  name: target.name,
-                  namespace: target.namespace,
-                },
-        }),
   };
+}
+
+/**
+ * Snapshot the resource selected on the canvas at send time. Pinned to the user
+ * message so the model resolves "this"/"it" against what was selected then, not
+ * whatever is selected on a later turn. `null` = nothing selected (no backfill).
+ */
+function buildSelectedResourceSnapshot(
+  selected: ProjectCanvasSelection | null
+): SelectedResourceContext | null {
+  const target = projectCanvasSelectionTarget(selected);
+  if (target == null) {
+    return null;
+  }
+  return target.kind === "PublicAccess"
+    ? { kind: target.kind, name: target.apName, namespace: target.namespace }
+    : { kind: target.kind, name: target.name, namespace: target.namespace };
 }
 
 function ProjectAssistantComposer({
@@ -325,16 +333,16 @@ function ProjectAssistantChatSession({
     [selectedQuery]
   );
 
-  // Keep a live ref so the transport memo stays stable across URL changes.
+  // Keep a live ref so the transport memo stays stable across URL changes. The
+  // volatile canvas selection is pinned per-message (see submitComposerText), so
+  // only thread-stable wire fields belong here.
   const wireRef = useRef({
     namespace: assistantNamespaceRaw,
     projectId,
-    selected,
   });
   wireRef.current = {
     namespace: assistantNamespaceRaw,
     projectId,
-    selected,
   };
 
   const billingHandlerRef = useRef(onBillingHeaders);
@@ -363,9 +371,8 @@ function ProjectAssistantChatSession({
           }
           const wire = wireRef.current;
           const assistantContext = buildAssistantContextPayload(
-            currentProject.resourceName,
-            wire.projectId,
-            wire.selected
+            currentProject.displayName,
+            wire.projectId
           );
 
           return {
@@ -383,7 +390,7 @@ function ProjectAssistantChatSession({
           };
         },
       }),
-    [currentProject.resourceName, kubeconfig]
+    [currentProject.displayName, kubeconfig]
   );
 
   const {
@@ -544,9 +551,20 @@ function ProjectAssistantChatSession({
 
   const submitComposerText = useCallback(
     (text: string) => {
-      sendMessage({ text }).catch(() => undefined);
+      const snapshot = buildSelectedResourceSnapshot(selected);
+      if (snapshot == null) {
+        sendMessage({ text }).catch(() => undefined);
+        return;
+      }
+      sendMessage({
+        role: "user",
+        parts: [
+          { type: SELECTED_RESOURCE_CONTEXT_PART_TYPE, data: snapshot },
+          { type: "text", text },
+        ],
+      }).catch(() => undefined);
     },
-    [sendMessage]
+    [sendMessage, selected]
   );
 
   const stopComposerResponse = useCallback(() => {
@@ -599,6 +617,11 @@ function ProjectAssistantChatSession({
 
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
+  const kubeconfig = useAtomValue(kubeconfigAtom);
+  // Owner tag for per-user thread partitioning (ADR 0047). Hydrated together with
+  // kubeconfig/namespace in `applySealosSdkHydration`, so it is already set when
+  // `namespaceReady` gates the fetch below; empty is the shared / dev bucket.
+  const desktopUserId = useAtomValue(desktopUserIdAtom);
   const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [creatingThread, setCreatingThread] = useState(false);
@@ -618,23 +641,25 @@ function ProjectAssistantChatPane() {
       return;
     }
 
-    fetchAssistantSession(namespaceRaw).then((payload) => {
-      if (cancelled) {
-        return;
+    fetchAssistantSession(namespaceRaw, kubeconfig, desktopUserId).then(
+      (payload) => {
+        if (cancelled) {
+          return;
+        }
+        if (payload == null) {
+          setSessionError(true);
+          return;
+        }
+        setSession(payload);
+        setFreeTier(payload.freeTier);
+        prevBillingRef.current = payload.freeTier.billing;
       }
-      if (payload == null) {
-        setSessionError(true);
-        return;
-      }
-      setSession(payload);
-      setFreeTier(payload.freeTier);
-      prevBillingRef.current = payload.freeTier.billing;
-    });
+    );
 
     return () => {
       cancelled = true;
     };
-  }, [namespaceRaw, namespaceReady]);
+  }, [desktopUserId, kubeconfig, namespaceRaw, namespaceReady]);
 
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
@@ -669,7 +694,8 @@ function ProjectAssistantChatPane() {
       }
       const messages = await fetchAssistantThreadMessages(
         threadId,
-        namespaceRaw
+        namespaceRaw,
+        kubeconfig
       );
       if (messages == null) {
         return;
@@ -678,13 +704,17 @@ function ProjectAssistantChatPane() {
         prev == null ? prev : { ...prev, chatId: threadId, messages }
       );
     },
-    [namespaceRaw, session?.chatId]
+    [kubeconfig, namespaceRaw, session?.chatId]
   );
 
   const createThread = useCallback(async () => {
     setCreatingThread(true);
     try {
-      const created = await createAssistantThread(namespaceRaw);
+      const created = await createAssistantThread(
+        namespaceRaw,
+        kubeconfig,
+        desktopUserId
+      );
       if (created == null) {
         return;
       }
@@ -701,15 +731,19 @@ function ProjectAssistantChatPane() {
     } finally {
       setCreatingThread(false);
     }
-  }, [namespaceRaw]);
+  }, [desktopUserId, kubeconfig, namespaceRaw]);
 
   const refreshThreads = useCallback(async () => {
-    const threads = await fetchAssistantThreads(namespaceRaw);
+    const threads = await fetchAssistantThreads(
+      namespaceRaw,
+      kubeconfig,
+      desktopUserId
+    );
     if (threads == null || threads.length === 0) {
       return;
     }
     setSession((prev) => (prev == null ? prev : { ...prev, threads }));
-  }, [namespaceRaw]);
+  }, [desktopUserId, kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
     sidePaneRouter

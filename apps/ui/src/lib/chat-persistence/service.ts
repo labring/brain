@@ -7,7 +7,7 @@ import {
   insertThread,
   selectMessagesByThread,
   selectThreadById,
-  selectThreadsByNamespace,
+  selectThreadsByNamespaceAndOwner,
   type ThreadRow,
   updateThreadAiTitleOnce,
   upsertMessage,
@@ -17,6 +17,7 @@ import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
+  normalizeAssistantOwner,
 } from "./types";
 
 type ChatTitleModel = Parameters<typeof generateText>[0]["model"];
@@ -34,50 +35,61 @@ function toThreadDTOs(rows: ThreadRow[]): AssistantThreadDTO[] {
   return rows.map(toThreadDTO);
 }
 
-/** List threads in a namespace bucket newest-first. */
+/** List one user's threads in a namespace bucket newest-first (owner is a view partition, ADR 0047). */
 export async function listThreadsForNamespace(
-  namespaceRaw: string
+  namespaceRaw: string,
+  userIdRaw: string
 ): Promise<AssistantThreadDTO[]> {
   const key = normalizeAssistantNamespace(namespaceRaw);
-  return toThreadDTOs(await selectThreadsByNamespace(key));
+  const owner = normalizeAssistantOwner(userIdRaw);
+  return toThreadDTOs(await selectThreadsByNamespaceAndOwner(key, owner));
 }
 
-/** Create an empty thread; returns the new id and the refreshed thread list. */
-export async function createThreadForNamespace(namespaceRaw: string): Promise<{
+/** Create an empty thread owned by the caller; returns the new id and the refreshed thread list. */
+export async function createThreadForNamespace(
+  namespaceRaw: string,
+  userIdRaw: string
+): Promise<{
   chatId: string;
   threads: AssistantThreadDTO[];
 }> {
   const key = normalizeAssistantNamespace(namespaceRaw);
+  const owner = normalizeAssistantOwner(userIdRaw);
   const chatId = generateId();
   await insertThread({
     id: chatId,
     namespaceKey: key,
+    ownerKey: owner,
     title: placeholderThreadTitle(),
   });
   return {
     chatId,
-    threads: toThreadDTOs(await selectThreadsByNamespace(key)),
+    threads: toThreadDTOs(await selectThreadsByNamespaceAndOwner(key, owner)),
   };
 }
 
-/** Latest thread + messages + thread list; bootstraps a first thread when none exists. */
+/** Latest thread + messages + thread list for one owner; bootstraps a first thread when none exists. */
 export async function bootstrapAssistantSession(
-  namespaceRaw: string
+  namespaceRaw: string,
+  userIdRaw: string
 ): Promise<AssistantSessionPayload> {
   const key = normalizeAssistantNamespace(namespaceRaw);
-  let rows = await selectThreadsByNamespace(key);
+  const owner = normalizeAssistantOwner(userIdRaw);
+  let rows = await selectThreadsByNamespaceAndOwner(key, owner);
   if (rows.length === 0) {
     await insertThread({
       id: generateId(),
       namespaceKey: key,
+      ownerKey: owner,
       title: placeholderThreadTitle(),
     });
-    rows = await selectThreadsByNamespace(key);
+    rows = await selectThreadsByNamespaceAndOwner(key, owner);
   }
   const latest = rows[0];
   if (!latest) {
     throw new Error("Failed to bootstrap assistant chat thread");
   }
+  // Entitlement (Free Chat Turns) stays per-namespace, not per-owner (ADR 0047).
   const snapshot = await getFreeTierSnapshot(key);
   const billing =
     snapshot.remaining > 0 && isSystemOpenAiConfigured() ? "free" : "user";

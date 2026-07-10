@@ -13,6 +13,19 @@ export function normalizeAssistantNamespace(namespace: string): string {
   return trimmed.length > 0 ? trimmed : DEFAULT_ASSISTANT_NAMESPACE_KEY;
 }
 
+/** Max length for a client-supplied owner tag (matches the GitHub identity cap). */
+const MAX_ASSISTANT_OWNER_LEN = 256;
+
+/**
+ * Normalize the client-supplied owner tag (Sealos `session.user.id`): trimmed and
+ * length-capped. An empty string is the shared / no-identity bucket. This value is
+ * NOT authenticated — it is a default-view partition, not a security boundary
+ * (ADR 0047).
+ */
+export function normalizeAssistantOwner(userId: string): string {
+  return userId.trim().slice(0, MAX_ASSISTANT_OWNER_LEN);
+}
+
 /** Wire shape for a thread row sent to the client. */
 export interface AssistantThreadDTO {
   id: string;
@@ -43,22 +56,64 @@ export interface AssistantSessionPayload {
   threads: AssistantThreadDTO[];
 }
 
-/** Optional client-provided UI context for the model system prompt (project + selection). */
+/**
+ * Stable, per-thread project context prepended to the model system prompt.
+ *
+ * Only carries values that do not change within a thread (project name + id), so
+ * the system prompt stays a byte-stable, cacheable prefix. The volatile canvas
+ * selection is NOT here — it is pinned to individual user messages instead (see
+ * {@link SelectedResourceContext}).
+ */
 export const assistantContextPayloadSchema = z.object({
   projectName: z.string().max(512).optional(),
   projectId: z.string().max(256).optional(),
-  selectedWorkload: z
-    .object({
-      kubernetesUid: z.string().max(256).optional(),
-      name: z.string().max(512).optional(),
-      kind: z.string().max(128).optional(),
-      namespace: z.string().max(256).optional(),
-    })
-    .optional(),
 });
 export type AssistantContextPayload = z.infer<
   typeof assistantContextPayloadSchema
 >;
+
+/**
+ * Snapshot of the resource selected on the canvas when a user message was sent.
+ *
+ * Pinned to that message as a `data-selectedResource` part so the model resolves
+ * deictic references ("this" / "it") against the selection that was live at send
+ * time — not whatever happens to be selected on a later request. Absence means
+ * "nothing was selected"; we never backfill a stale target.
+ */
+export const selectedResourceContextSchema = z.object({
+  kind: z.string().max(128).optional(),
+  name: z.string().max(512).optional(),
+  namespace: z.string().max(256).optional(),
+});
+export type SelectedResourceContext = z.infer<
+  typeof selectedResourceContextSchema
+>;
+
+/** UIMessage part type carrying {@link SelectedResourceContext} on a user turn. */
+export const SELECTED_RESOURCE_CONTEXT_PART_TYPE =
+  "data-selectedResource" as const;
+
+/** Read + validate the pinned selection from a message; `null` when absent or empty. */
+export function readSelectedResourceContext(
+  message: UIMessage
+): SelectedResourceContext | null {
+  for (const part of message.parts) {
+    if (part.type !== SELECTED_RESOURCE_CONTEXT_PART_TYPE) {
+      continue;
+    }
+    const parsed = selectedResourceContextSchema.safeParse(
+      (part as { data?: unknown }).data
+    );
+    if (!parsed.success) {
+      continue;
+    }
+    const ctx = parsed.data;
+    if (ctx.kind || ctx.name || ctx.namespace) {
+      return ctx;
+    }
+  }
+  return null;
+}
 
 /** Body of `POST /api/chat`. */
 export const chatStreamRequestSchema = z.object({
@@ -73,6 +128,8 @@ export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
 /** Body of `POST /api/chat/thread`. */
 export const createThreadBodySchema = z.object({
   namespace: z.string().optional(),
+  /** Owner tag (`session.user.id`) the new thread is created under; see {@link normalizeAssistantOwner}. */
+  userId: z.string().optional(),
 });
 
 /** Body of `POST /api/chat/messages`. Used by UI event adapters. */

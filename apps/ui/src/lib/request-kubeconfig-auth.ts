@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Agent } from "undici";
 import { parse } from "yaml";
 import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
@@ -139,18 +140,42 @@ function trimTrailingSlashes(value: string): string {
   return out;
 }
 
-function kubernetesApiServerForVerification(credentials: {
-  server: string;
-}): { ok: true; server: string } | { message: string; ok: false } {
+const IN_CLUSTER_CA_PATH =
+  "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
+
+/**
+ * The trusted Kubernetes API server that namespace access reviews are sent to.
+ *
+ * Never the client-supplied kubeconfig server: verifying a credential against a
+ * server named by that same credential is meaningless and lets an attacker point
+ * verification at a look-alike endpoint that returns `allowed: true` (SSRF +
+ * authz bypass, F5). Resolved only from operator-controlled config — an explicit
+ * `K8S_API_URL` or the in-cluster `KUBERNETES_SERVICE_HOST`/`_PORT`. When neither
+ * is present, verification fails closed.
+ */
+function trustedKubernetesApiServer():
+  | { ok: true; server: string }
+  | { message: string; ok: false } {
+  const explicit = process.env.K8S_API_URL?.trim() ?? "";
   const serviceHost = process.env.KUBERNETES_SERVICE_HOST?.trim() ?? "";
   const servicePort = process.env.KUBERNETES_SERVICE_PORT?.trim() ?? "";
-  if (serviceHost === "" || servicePort === "") {
-    return { ok: true, server: credentials.server };
+
+  let raw: string;
+  if (explicit !== "") {
+    raw = explicit;
+  } else if (serviceHost !== "" && servicePort !== "") {
+    raw = `https://${serviceHost}:${servicePort}`;
+  } else {
+    return {
+      message:
+        "Kubernetes API server is not configured (set K8S_API_URL or run in-cluster); refusing to verify namespace access.",
+      ok: false,
+    };
   }
 
   let serverUrl: URL;
   try {
-    serverUrl = new URL(`https://${serviceHost}:${servicePort}`);
+    serverUrl = new URL(raw);
   } catch {
     return { message: "Trusted Kubernetes API server is invalid.", ok: false };
   }
@@ -163,19 +188,35 @@ function kubernetesApiServerForVerification(credentials: {
   return { ok: true, server: trimTrailingSlashes(serverUrl.toString()) };
 }
 
-function k8sDispatcher(input: {
-  ca: string | undefined;
-  insecureSkipTlsVerify: boolean;
-}): Agent | undefined {
-  if (input.ca == null && !input.insecureSkipTlsVerify) {
+/**
+ * CA bundle for the trusted API server connection — the in-cluster service
+ * account CA or an explicit `K8S_API_CA` PEM. Never a CA named by the client
+ * kubeconfig. `undefined` falls back to the default trust store (verification
+ * stays enabled either way).
+ */
+function trustedApiServerCa(): string | undefined {
+  const explicit = process.env.K8S_API_CA?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  try {
+    const ca = readFileSync(IN_CLUSTER_CA_PATH, "utf8").trim();
+    return ca === "" ? undefined : ca;
+  } catch {
     return undefined;
   }
-  return new Agent({
-    connect: {
-      ca: input.ca,
-      rejectUnauthorized: !input.insecureSkipTlsVerify,
-    },
-  });
+}
+
+/**
+ * Dispatcher for the trusted API server connection. TLS verification is always
+ * enabled; the client kubeconfig's `insecure-skip-tls-verify` and CA are
+ * deliberately ignored so a client cannot weaken or redirect the channel.
+ */
+function verificationDispatcher(ca: string | undefined): Agent | undefined {
+  if (ca == null) {
+    return undefined;
+  }
+  return new Agent({ connect: { ca, rejectUnauthorized: true } });
 }
 
 export async function verifyKubeconfigNamespaceAccess(input: {
@@ -186,7 +227,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
   if (!credentials.ok) {
     return { message: credentials.message, ok: false, status: 400 };
   }
-  const apiServer = kubernetesApiServerForVerification(credentials);
+  const apiServer = trustedKubernetesApiServer();
   if (!apiServer.ok) {
     return { message: apiServer.message, ok: false, status: 500 };
   }
@@ -211,7 +252,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
           },
         },
       }),
-      dispatcher: k8sDispatcher(credentials),
+      dispatcher: verificationDispatcher(trustedApiServerCa()),
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${credentials.token}`,

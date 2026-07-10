@@ -756,7 +756,19 @@ A latest-point summary of workload resource usage for one AP or DB workload. It 
 
 _Avoid_: metric refresh, node state, resource status.
 
+### Workload Telemetry Authorization
+
+The access decision for a Workload Telemetry Series or Snapshot: a caller may read a workload's telemetry only if it can read that workload itself under its own credentials. Authorization is per workload (namespace + name), not per namespace, and is a Kubernetes RBAC read of the workload's backing object — the AP's Deployment or StatefulSet, the DB's Cluster — so holding a parseable kubeconfig is never sufficient. A denial is indistinguishable from an absent workload, so it never reveals whether another tenant's workload exists.
+
+_Avoid_: namespace access check, kubeconfig validation, metrics permission.
+
 ## Assistant & Billing
+
+### Assistant Conversation
+
+A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout, GitHub Connection, or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
+
+_Avoid_: shared namespace chat, tenant chat, private/confidential conversation, per-namespace chat history.
 
 ### Chat Billing Mode
 
@@ -768,7 +780,7 @@ _Avoid_: subscription tier, plan, quota mode.
 
 ### Free Chat Turns
 
-A platform-funded allowance of assistant turns granted per namespace, consumed only after a turn completes successfully. Free Chat Turns are an entitlement counter, not a rate limit or a cap on AI Proxy usage.
+A platform-funded allowance of assistant turns granted per namespace, consumed only after a turn completes successfully. Free Chat Turns are an entitlement counter, not a rate limit or a cap on AI Proxy usage. Free Chat Turns remain per-namespace even though an Assistant Conversation is per-user: the allowance is a shared workspace grant, not a per-user entitlement.
 
 _Avoid_: free tier, trial credits, message quota.
 

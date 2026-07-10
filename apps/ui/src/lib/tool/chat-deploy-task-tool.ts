@@ -71,12 +71,6 @@ export function createDeployTaskTools(options: {
   assistantContext?: {
     projectName?: string;
     projectId?: string;
-    selectedWorkload?: {
-      kubernetesUid?: string;
-      name?: string;
-      kind?: string;
-      namespace?: string;
-    };
   };
   kubeconfig: string;
   kubernetesNamespace: string;

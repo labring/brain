@@ -91,13 +91,22 @@ type DBResolver interface {
 	ResolveDBEngine(ctx context.Context, auth string, namespace string, name string) (DBEngine, error)
 }
 
+// APAuthorizer authorizes access to an AP workload's telemetry by reading the
+// workload with the caller's credentials, so Kubernetes RBAC — not merely a
+// parseable kubeconfig — decides whether the caller may see the metrics.
+type APAuthorizer interface {
+	AuthorizeAPWorkload(ctx context.Context, auth string, namespace string, name string) error
+}
+
 type ServiceOptions struct {
+	APAuthorizer APAuthorizer
 	DBResolver   DBResolver
 	Querier      InstantQuerier
 	RangeQuerier RangeQuerier
 }
 
 type Service struct {
+	apAuthorizer APAuthorizer
 	dbResolver   DBResolver
 	querier      InstantQuerier
 	rangeQuerier RangeQuerier
@@ -113,6 +122,7 @@ func NewDefaultService() (*Service, error) {
 		return nil, err
 	}
 	return NewService(ServiceOptions{
+		APAuthorizer: ClusterAPResolver{},
 		DBResolver:   ClusterDBResolver{},
 		Querier:      querier,
 		RangeQuerier: rangeQuerier,
@@ -121,6 +131,7 @@ func NewDefaultService() (*Service, error) {
 
 func NewService(options ServiceOptions) *Service {
 	return &Service{
+		apAuthorizer: options.APAuthorizer,
 		dbResolver:   options.DBResolver,
 		querier:      options.Querier,
 		rangeQuerier: options.RangeQuerier,
@@ -198,6 +209,12 @@ func (s *Service) metricProfiles(ctx context.Context, auth string, target Target
 	}
 	switch target.Kind {
 	case WorkloadKindAP:
+		if s.apAuthorizer == nil {
+			return nil, ErrInvalidTarget
+		}
+		if err := s.apAuthorizer.AuthorizeAPWorkload(ctx, auth, target.Namespace, target.Name); err != nil {
+			return nil, err
+		}
 		queries, err := metricssvc.BuildAPQueries(target.Namespace, target.Name)
 		if err != nil {
 			return nil, err
@@ -237,6 +254,8 @@ func itemError(err error) *ItemError {
 	case errors.Is(err, ErrInvalidTarget):
 		return &ItemError{Code: "invalid_target", Message: "invalid workload target"}
 	case errors.Is(err, metricssvc.ErrUncompleteParam):
+		return &ItemError{Code: "invalid_target", Message: "invalid workload target"}
+	case errors.Is(err, metricssvc.ErrInvalidLabelValue):
 		return &ItemError{Code: "invalid_target", Message: "invalid workload target"}
 	default:
 		return &ItemError{Code: "telemetry_error", Message: fmt.Sprint(err)}

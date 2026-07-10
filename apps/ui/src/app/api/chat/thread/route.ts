@@ -1,8 +1,12 @@
 import { createThreadForNamespace } from "@/lib/chat-persistence/service";
 import { createThreadBodySchema } from "@/lib/chat-persistence/types";
+import { authorizeChatRequestNamespace } from "@/lib/chat-runtime/authorize-chat-request";
 import { jsonError } from "@/lib/chat-runtime/errors";
 
-/** Create an empty assistant thread; returns the new id and refreshed thread list. */
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+/** Create an empty assistant thread in the authenticated namespace; returns the new id and refreshed thread list. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (body == null) {
@@ -14,8 +18,20 @@ export async function POST(req: Request) {
     return jsonError("Invalid body", 400, parsed.error.flatten());
   }
 
+  const authorized = await authorizeChatRequestNamespace(
+    req,
+    parsed.data.namespace ?? ""
+  );
+  if (!authorized.ok) {
+    return jsonError(authorized.message, authorized.status);
+  }
+
   try {
-    const result = await createThreadForNamespace(parsed.data.namespace ?? "");
+    // Owner tag: not authenticated, only partitions the view (ADR 0047).
+    const result = await createThreadForNamespace(
+      authorized.namespace,
+      parsed.data.userId ?? ""
+    );
     return Response.json(result);
   } catch (error) {
     console.error("[api/chat/thread]", error);

@@ -88,7 +88,7 @@ func registerSnapshot(grp huma.API) {
 		Description: "Batch latest AP and DB workload telemetry snapshots for canvas footer metrics.",
 		Tags:        []string{"Metrics"},
 	}, func(ctx context.Context, input *snapshotInput) (*snapshotOutput, error) {
-		authz, err := authorizeSnapshotTelemetry(input)
+		authz, err := credentialFromAuth(input.Authorization)
 		if err != nil {
 			return nil, err
 		}
@@ -105,10 +105,6 @@ func registerSnapshot(grp huma.API) {
 	})
 }
 
-func authorizeSnapshotTelemetry(input *snapshotInput) (string, error) {
-	return authorizeTelemetryNamespaces(input.Authorization, snapshotNamespaces(input.Body.Targets)...)
-}
-
 func registerSeries(grp huma.API) {
 	huma.Register(grp, huma.Operation{
 		OperationID: "metrics-series",
@@ -123,7 +119,7 @@ func registerSeries(grp huma.API) {
 			return nil, huma.Error400BadRequest("invalid sampling step", err)
 		}
 
-		authz, err := authorizeTelemetryNamespaces(input.Authorization, input.Body.Target.Namespace)
+		authz, err := credentialFromAuth(input.Authorization)
 		if err != nil {
 			return nil, err
 		}
@@ -145,40 +141,19 @@ func registerSeries(grp huma.API) {
 	})
 }
 
-func snapshotNamespaces(targets []workloadtelemetry.Target) []string {
-	seen := make(map[string]struct{}, len(targets))
-	out := make([]string, 0, len(targets))
-	for _, target := range targets {
-		ns := strings.TrimSpace(target.Namespace)
-		if ns == "" {
-			continue
-		}
-		if _, ok := seen[ns]; ok {
-			continue
-		}
-		seen[ns] = struct{}{}
-		out = append(out, ns)
-	}
-	return out
-}
-
-func authorizeTelemetryNamespaces(authHeader string, namespaces ...string) (string, error) {
+// credentialFromAuth validates that the Authorization header carries a parseable
+// kubeconfig and returns it verbatim for the service layer. Parsing here only rejects
+// malformed credentials early — it is deliberately NOT an authorization check. The real
+// per-workload authorization (an RBAC-enforcing read with the caller's credentials)
+// happens in the workload telemetry service, so it cannot be satisfied by a structurally
+// valid but otherwise unprivileged dummy kubeconfig.
+func credentialFromAuth(authHeader string) (string, error) {
 	authz := strings.TrimSpace(authHeader)
 	if authz == "" {
 		return "", huma.Error400BadRequest("Authorization is required", nil)
 	}
-	cfg, err := middleware.ConfigFromAuth(authz)
-	if err != nil {
+	if _, err := middleware.ConfigFromAuth(authz); err != nil {
 		return "", huma.Error400BadRequest("invalid kubeconfig", err)
-	}
-
-	for _, namespace := range namespaces {
-		if _, err := middleware.ResolveContext(cfg, middleware.ResolveOptions{
-			Namespace:        namespace,
-			DefaultNamespace: "",
-		}); err != nil {
-			return "", huma.Error500InternalServerError("failed to resolve request context", err)
-		}
 	}
 	return authz, nil
 }
@@ -194,6 +169,8 @@ func telemetryServiceError(err error) error {
 	case errors.Is(err, workloadtelemetry.ErrUnsupportedDBDefinition):
 		return huma.Error400BadRequest("unsupported database definition", err)
 	case errors.Is(err, metricssvc.ErrUncompleteParam):
+		return huma.Error400BadRequest("invalid workload target", err)
+	case errors.Is(err, metricssvc.ErrInvalidLabelValue):
 		return huma.Error400BadRequest("invalid workload target", err)
 	case errors.Is(err, workloadtelemetry.ErrNoVictoriaMetricsURL):
 		return huma.Error500InternalServerError("VMSELECT_URL is not configured", err)
