@@ -342,9 +342,9 @@ _Avoid_: delete task, clear history, archive task.
 
 ### GitHub Connection
 
-A namespace-scoped authorization relationship that lets a workspace use a GitHub App installation to list and deploy repositories. A GitHub Connection belongs to the workspace namespace rather than one user's browser session or personal GitHub identity.
+A per-user OAuth authorization that lets one Sealos user list and deploy from their own GitHub repositories within a namespace. A GitHub Connection is keyed by namespace and user identity: each namespace member authorizes GitHub separately, and one member's connection is not a shared namespace credential that other members deploy through. The deploying user's identity is recorded on the resulting Deployment Task.
 
-_Avoid_: personal GitHub token, user GitHub binding, browser GitHub connection.
+_Avoid_: shared namespace GitHub credential, GitHub App installation connection, browser-session GitHub connection.
 
 ### Docker Deployment Settings
 
@@ -505,6 +505,8 @@ _Avoid_: canvas task list, deployment history list, task center, chat task statu
 ### Deployment Task Dock Dismissal
 
 A personal user acknowledgement of one Deployment Task Projection version in the Deployment Task Dock. It suppresses that task's dock reminder for that user until the projection changes; it is not shared Project state, task cancellation, task completion, task deletion, deployment history archival, or timeline deletion. Dismissal applies only to terminal tasks (failed, completed, or cancelled); an in-progress task — including one blocked on input — keeps its dock presence and offers no dismiss control.
+
+While a task's Deployment Task Timeline pane is open, its dock chip stays visible as the pane's re-entry handle; dismissing that chip both records the dismissal and closes the pane, for every terminal status alike. Dismissal never requires confirmation: it is reversible in place — the task's Timeline remains reachable from its Project Canvas placeholder — and the closing pane is itself the feedback.
 
 _Avoid_: close task, archive deployment, delete task, mark complete.
 
@@ -766,7 +768,7 @@ _Avoid_: namespace access check, kubeconfig validation, metrics permission.
 
 ### Assistant Conversation
 
-A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout, GitHub Connection, or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
+A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
 
 _Avoid_: shared namespace chat, tenant chat, private/confidential conversation, per-namespace chat history.
 

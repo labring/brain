@@ -15,9 +15,9 @@ import {
 } from "@/lib/chat-persistence/free-tier";
 import {
   appendMessage,
+  ensureThreadInNamespace,
   loadThreadMessages,
   maybeAutoTitleThread,
-  threadBelongsToNamespace,
 } from "@/lib/chat-persistence/service";
 import {
   buildAssistantApprovalResponseFromPending,
@@ -104,8 +104,14 @@ export async function POST(req: Request) {
     return jsonError("Invalid chat request", 400, parsed.error.flatten());
   }
 
-  const { assistantContext, chatId, encodedKubeconfig, message, namespace } =
-    parsed.data;
+  const {
+    assistantContext,
+    chatId,
+    encodedKubeconfig,
+    message,
+    namespace,
+    userId,
+  } = parsed.data;
 
   const kubeconfig = decodeKubeconfig(encodedKubeconfig);
   if (kubeconfig == null) {
@@ -122,7 +128,14 @@ export async function POST(req: Request) {
   const authoritativeNamespace = namespaceResolved.namespace;
 
   try {
-    if (!(await threadBelongsToNamespace(chatId, authoritativeNamespace))) {
+    // Threads materialize on their first message; an id owned by another
+    // namespace bucket is the only rejection.
+    const threadReady = await ensureThreadInNamespace(
+      chatId,
+      authoritativeNamespace,
+      userId ?? ""
+    );
+    if (!threadReady) {
       return jsonError(
         "Unknown or inaccessible assistant thread for this namespace.",
         403
@@ -214,6 +227,7 @@ export async function POST(req: Request) {
           await maybeAutoTitleThread({
             chatId,
             languageModel: titleModel,
+            projectName: assistantContext?.projectName,
           });
         } catch (error) {
           console.error("[api/chat] persist assistant turn:", error);

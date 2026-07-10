@@ -236,6 +236,41 @@
     }
   }
 
+  /* Status-dot heartbeat: status-heartbeat.ts flips data-status-heartbeat
+     between "a"/"b" on <html>; the animation-name swap is what restarts the
+     one-shot pulse, so the a/b keyframes must stay identical (both copy
+     Tailwind's `ping`). Finite + forwards (held at scale(2)/opacity:0) lets
+     the compositor go fully idle between beats — an infinite animate-ping
+     keeps the frame pipeline producing at display refresh rate even for a
+     single dot. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-status-heartbeat="a"] .status-heartbeat-ping {
+      animation: status-heartbeat-ping-a var(--status-heartbeat-pulse, 1s)
+        cubic-bezier(0, 0, 0.2, 1) forwards;
+    }
+
+    [data-status-heartbeat="b"] .status-heartbeat-ping {
+      animation: status-heartbeat-ping-b var(--status-heartbeat-pulse, 1s)
+        cubic-bezier(0, 0, 0.2, 1) forwards;
+    }
+  }
+
+  @keyframes status-heartbeat-ping-a {
+    75%,
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  @keyframes status-heartbeat-ping-b {
+    75%,
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
   /* Motion is opacity + transform only — compositor-only, effectively free.
      The bloom/settle read is carried by the opacity ramp and the scaleX widen;
      the old per-frame `filter: blur()/saturate()` was a sub-pixel modulation

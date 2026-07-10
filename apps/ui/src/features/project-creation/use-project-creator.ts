@@ -34,6 +34,7 @@ import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-nam
 import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { desktopUserIdAtom } from "@/store/auth-store";
+import { requestAssistantDraftThread } from "@/store/layout-store";
 import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
@@ -254,6 +255,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     ) => {
       const projectId = outcome.projectId.trim();
       const taskId = outcome.taskId?.trim();
+      if (projectId !== "") {
+        // Pane-created project = a task switch for the assistant: whatever the
+        // user says next starts a fresh draft thread, not the old conversation.
+        // Chat-created projects never pass through here, so their conversation
+        // continues uninterrupted.
+        requestAssistantDraftThread();
+      }
       return onProjectCreated?.(
         projectId === "" ? undefined : projectId,
         taskId == null || taskId === ""

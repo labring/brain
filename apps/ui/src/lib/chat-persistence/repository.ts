@@ -60,19 +60,27 @@ export function selectThreadsByNamespaceAndOwner(
     .orderBy(desc(assistantChats.updatedAt));
 }
 
-export async function insertThread(input: {
+/**
+ * Insert a thread row unless one already exists. Threads materialize lazily on
+ * the first message of a chat, so two concurrent first messages race here —
+ * the loser must be a no-op, never an error.
+ */
+export async function insertThreadIfAbsent(input: {
   id: string;
   namespaceKey: string;
   ownerKey: string;
   title: string;
 }): Promise<void> {
-  await getAssistantDb().insert(assistantChats).values({
-    id: input.id,
-    namespace: input.namespaceKey,
-    userId: input.ownerKey,
-    title: input.title,
-    titleAiGenerated: false,
-  });
+  await getAssistantDb()
+    .insert(assistantChats)
+    .values({
+      id: input.id,
+      namespace: input.namespaceKey,
+      userId: input.ownerKey,
+      title: input.title,
+      titleAiGenerated: false,
+    })
+    .onConflictDoNothing({ target: assistantChats.id });
 }
 
 /**

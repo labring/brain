@@ -5,6 +5,7 @@ import { test } from "node:test";
 import {
   authorizeEncodedKubeconfigNamespace,
   authorizeRequestNamespace,
+  resolveTrustedKubernetesApiServer,
 } from "./request-kubeconfig-auth";
 
 function kubeconfig(namespace: string) {
@@ -43,8 +44,9 @@ async function withJsonServer<T>(
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  assert.equal(typeof address, "object");
-  assert.notEqual(address, null);
+  if (address == null || typeof address === "string") {
+    throw new Error("Expected the test server to listen on a TCP address.");
+  }
   const url = `http://127.0.0.1:${address.port}`;
   try {
     return await run(url, requests);
@@ -218,6 +220,123 @@ test("uses in-cluster API server instead of kubeconfig server for verification",
         }
       );
       assert.equal(requests.length, 0);
+    }
+  );
+});
+
+test("prefers in-cluster API server over explicit off-cluster URL", async () => {
+  await withJsonServer(
+    () => ({ status: { allowed: true } }),
+    async (inClusterApiServer, requests) => {
+      const inCluster = new URL(inClusterApiServer);
+      await withEnv(
+        {
+          K8S_API_CA: undefined,
+          // This deliberately-invalid development fallback must be ignored in a Pod.
+          K8S_API_URL: "http://off-cluster.example:6443",
+          KUBERNETES_SERVICE_HOST: inCluster.hostname,
+          KUBERNETES_SERVICE_PORT: inCluster.port,
+        },
+        async () => {
+          assert.deepEqual(
+            await authorizeEncodedKubeconfigNamespace({
+              encodedKubeconfig: kubeconfig("ns-a"),
+              namespace: "ns-a",
+              subject: "Project",
+            }),
+            {
+              message: "Kubernetes access review failed.",
+              ok: false,
+              status: 502,
+            }
+          );
+        }
+      );
+      assert.equal(requests.length, 0);
+    }
+  );
+});
+
+test("uses explicit API server only when running off-cluster", async () => {
+  await withEnv(
+    {
+      K8S_API_CA: undefined,
+      K8S_API_URL: "http://off-cluster.example:6443",
+      KUBERNETES_SERVICE_HOST: undefined,
+      KUBERNETES_SERVICE_PORT: undefined,
+    },
+    async () => {
+      assert.deepEqual(
+        await authorizeEncodedKubeconfigNamespace({
+          encodedKubeconfig: kubeconfig("ns-a"),
+          namespace: "ns-a",
+          subject: "Project",
+        }),
+        {
+          message: "Trusted Kubernetes API server must use https.",
+          ok: false,
+          status: 500,
+        }
+      );
+    }
+  );
+});
+
+test("fails closed with partial in-cluster API server coordinates", async () => {
+  await withEnv(
+    {
+      K8S_API_CA: undefined,
+      K8S_API_URL: "http://off-cluster.example:6443",
+      KUBERNETES_SERVICE_HOST: "10.0.0.1",
+      KUBERNETES_SERVICE_PORT: undefined,
+    },
+    async () => {
+      assert.deepEqual(
+        await authorizeEncodedKubeconfigNamespace({
+          encodedKubeconfig: kubeconfig("ns-a"),
+          namespace: "ns-a",
+          subject: "Project",
+        }),
+        {
+          message:
+            "In-cluster Kubernetes API server configuration is incomplete.",
+          ok: false,
+          status: 500,
+        }
+      );
+    }
+  );
+});
+
+test("pairs the mounted CA with the preferred in-cluster API server", () => {
+  assert.deepEqual(
+    resolveTrustedKubernetesApiServer({
+      explicitCa: "stale-development-ca",
+      explicitUrl: "https://off-cluster.example:6443",
+      inClusterCa: "mounted-cluster-ca",
+      serviceHost: "10.0.0.1",
+      servicePort: "6443",
+    }),
+    {
+      ca: "mounted-cluster-ca",
+      ok: true,
+      server: "https://10.0.0.1:6443",
+    }
+  );
+});
+
+test("falls back to the explicit CA when the in-cluster mount is missing", () => {
+  assert.deepEqual(
+    resolveTrustedKubernetesApiServer({
+      explicitCa: "operator-cluster-ca",
+      explicitUrl: "https://off-cluster.example:6443",
+      serviceHost: "10.0.0.1",
+      servicePort: "6443",
+    }),
+    {
+      ca: "operator-cluster-ca",
+      ok: true,
+      server: "https://10.0.0.1:6443",
     }
   );
 });

@@ -115,22 +115,21 @@ export function readSelectedResourceContext(
   return null;
 }
 
-/** Body of `POST /api/chat`. */
+/**
+ * Body of `POST /api/chat`. `chatId` may name a thread that does not exist yet:
+ * threads materialize on their first message (see `ensureThreadInNamespace`),
+ * so the id is client-minted and length-capped here.
+ */
 export const chatStreamRequestSchema = z.object({
-  chatId: z.string().min(1),
+  chatId: z.string().min(1).max(64),
   namespace: z.string(),
   message: z.unknown(),
   encodedKubeconfig: z.string().optional(),
   assistantContext: assistantContextPayloadSchema.optional(),
-});
-export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
-
-/** Body of `POST /api/chat/thread`. */
-export const createThreadBodySchema = z.object({
-  namespace: z.string().optional(),
-  /** Owner tag (`session.user.id`) the new thread is created under; see {@link normalizeAssistantOwner}. */
+  /** Owner tag (`session.user.id`) a first-message thread is created under; see {@link normalizeAssistantOwner}. */
   userId: z.string().optional(),
 });
+export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
 
 /** Body of `POST /api/chat/messages`. Used by UI event adapters. */
 export const appendMessageBodySchema = z.object({

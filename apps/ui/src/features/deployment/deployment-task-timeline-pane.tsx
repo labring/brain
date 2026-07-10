@@ -10,6 +10,7 @@ import {
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
 import { SidePane } from "@workspace/ui/components/side-pane";
+import { useStatusHeartbeat } from "@workspace/ui/lib/status-heartbeat";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   AlertTriangle,
@@ -174,13 +175,14 @@ function StatusPulseDot({
   breathing: boolean;
   hue: StatusHue;
 }) {
+  useStatusHeartbeat(breathing);
   return (
     <>
       {breathing ? (
         <span
           aria-hidden
           className={cn(
-            "absolute size-2 animate-ping rounded-full opacity-75",
+            "status-heartbeat-ping absolute size-2 rounded-full opacity-75",
             STATUS_DOT_BG[hue]
           )}
         />
