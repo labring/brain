@@ -309,9 +309,12 @@ export const deployTasks = ns.table(
       .on(table.completedAt)
       .where(sql`${table.status} IN ('completed', 'failed', 'cancelled')`),
     // One active clone per predecessor (ADR 0038): a concurrent redeploy
-    // loses this insert and surfaces as a conflict.
+    // loses this insert and surfaces as a conflict. Keyed by namespace so a
+    // stray cross-namespace row (predecessor lookups are namespace-scoped,
+    // so only legacy or hand-inserted data) can never block a legitimate
+    // redeploy with a conflict the caller can neither see nor resolve.
     uniqueIndex("deploy_tasks_one_active_clone_idx")
-      .on(table.retriedFromTaskId)
+      .on(table.namespace, table.retriedFromTaskId)
       .where(
         sql`${table.retriedFromTaskId} IS NOT NULL AND ${table.status} IN ('queued', 'running', 'blocked', 'applying')`
       ),

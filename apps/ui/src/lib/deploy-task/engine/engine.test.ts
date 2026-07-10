@@ -492,13 +492,17 @@ test("create action treats predecessors from another namespace as not found", as
   }
 });
 
-test("clone conflict does not expose an active clone from another namespace", async () => {
+test("an active clone in another namespace never blocks a redeploy", async () => {
   const ctx = testCtx();
   const predecessor = await insertTaskRow(harness.db, {
     completedAt: new Date(),
     namespace: "namespace-a",
     status: "failed",
   });
+  // Cross-namespace lineage rows cannot be created through the API
+  // (predecessor lookups are namespace-scoped); this simulates legacy or
+  // hand-inserted data, which the namespace-keyed unique index tolerates
+  // instead of surfacing an unresolvable conflict with a null activeClone.
   await insertTaskRow(harness.db, {
     namespace: "namespace-b",
     retriedFromTaskId: predecessor.id,
@@ -506,14 +510,19 @@ test("clone conflict does not expose an active clone from another namespace", as
   });
 
   const result = await createDeployTaskAction(ctx, {
-    create: { namespace: "namespace-a" },
+    create: {
+      namespace: "namespace-a",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
     predecessorTaskId: predecessor.id,
     run: async () => {
-      /* the unique active-clone guard prevents launch */
+      /* runner does not advance in this test */
     },
   });
 
-  assert.deepEqual(result, { activeClone: null, kind: "clone-conflict" });
+  assert.equal(result.kind, "created");
 });
 
 test("edited redeploy that retargets gets fresh identities", async () => {

@@ -1,6 +1,6 @@
 {
-  "id": "4cb1221e-18f0-45e8-b850-5f4e7240b95c",
-  "prevId": "2e1efe1f-07da-498a-8a3f-3de6ed76b759",
+  "id": "b383c6cb-34dc-473f-8dca-ca835413d7ae",
+  "prevId": "4cb1221e-18f0-45e8-b850-5f4e7240b95c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1164,6 +1164,12 @@
         "deploy_tasks_one_active_clone_idx": {
           "name": "deploy_tasks_one_active_clone_idx",
           "columns": [
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "retried_from_task_id",
               "isExpression": false,
