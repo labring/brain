@@ -3,6 +3,8 @@ package middleware
 import (
 	"errors"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -86,9 +88,8 @@ func TestRestConfigFromAuthFailsClosedWithoutTrustedServer(t *testing.T) {
 	}
 }
 
-func TestRestConfigFromAuthHonorsExplicitK8SAPIURL(t *testing.T) {
+func TestRestConfigFromAuthPrefersInClusterAPIServer(t *testing.T) {
 	clearTrustedServerEnv(t)
-	// Explicit override wins even when in-cluster coordinates are also present.
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
 	t.Setenv("K8S_API_URL", "https://trusted.internal:6443/")
@@ -98,15 +99,42 @@ func TestRestConfigFromAuthHonorsExplicitK8SAPIURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RestConfigFromAuth: %v", err)
 	}
+	if rc.Host != "https://10.0.0.1:6443" {
+		t.Errorf("in-cluster apiserver did not take precedence: got %q", rc.Host)
+	}
+}
+
+func TestRestConfigFromAuthUsesExplicitAPIServerOffCluster(t *testing.T) {
+	clearTrustedServerEnv(t)
+	t.Setenv("K8S_API_URL", "https://trusted.internal:6443/")
+
+	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false))
+	rc, _, err := RestConfigFromAuth(auth)
+	if err != nil {
+		t.Fatalf("RestConfigFromAuth: %v", err)
+	}
 	if rc.Host != "https://trusted.internal:6443" {
-		t.Errorf("explicit K8S_API_URL not honored (or trailing slash kept): got %q", rc.Host)
+		t.Errorf("off-cluster K8S_API_URL not honored (or trailing slash kept): got %q", rc.Host)
+	}
+	if rc.BearerToken != "caller-token" {
+		t.Errorf("caller identity not preserved: got token %q", rc.BearerToken)
+	}
+}
+
+func TestRestConfigFromAuthFailsClosedWithPartialInClusterCoordinates(t *testing.T) {
+	clearTrustedServerEnv(t)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("K8S_API_URL", "https://trusted.internal:6443")
+
+	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false))
+	if _, _, err := RestConfigFromAuth(auth); err == nil || !strings.Contains(err.Error(), "in-cluster") {
+		t.Fatalf("expected partial in-cluster configuration to fail closed, got %v", err)
 	}
 }
 
 func TestRestConfigFromAuthAppliesExplicitCAAndDropsFile(t *testing.T) {
 	clearTrustedServerEnv(t)
-	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+	t.Setenv("K8S_API_URL", "https://trusted.internal:6443")
 	pem := "-----BEGIN CERTIFICATE-----\nQUFBQQ==\n-----END CERTIFICATE-----"
 	t.Setenv("K8S_API_CA", pem)
 
@@ -166,22 +194,54 @@ func TestTrustedAPIServerRejectsNonHTTPSExplicitURL(t *testing.T) {
 	clearTrustedServerEnv(t)
 	t.Setenv("K8S_API_URL", "http://trusted.internal:6443")
 
-	_, err := trustedAPIServer()
+	_, err := resolveTrustedAPIServerTransport(inClusterCAPath)
 	if err == nil || !strings.Contains(err.Error(), "https") {
 		t.Fatalf("expected an https-required error for a plaintext K8S_API_URL, got %v", err)
 	}
 }
 
-func TestTrustedAPIServerCAPrefersExplicitPEMOverInClusterFile(t *testing.T) {
+func TestTrustedAPIServerTransportPrefersMountedCAForInClusterEndpoint(t *testing.T) {
 	clearTrustedServerEnv(t)
-	pem := "-----BEGIN CERTIFICATE-----\nQUFBQQ==\n-----END CERTIFICATE-----"
-	t.Setenv("K8S_API_CA", pem)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+	t.Setenv("K8S_API_URL", "https://off-cluster.example:6443")
+	t.Setenv("K8S_API_CA", "stale-development-ca")
 
-	caData, caFile := trustedAPIServerCA()
-	if string(caData) != pem {
-		t.Errorf("explicit CA not returned: got %q", string(caData))
+	caFile := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(caFile, []byte("mounted-cluster-ca"), 0o600); err != nil {
+		t.Fatalf("write mounted CA fixture: %v", err)
 	}
-	if caFile != "" {
-		t.Errorf("in-cluster CA file must not be used when K8S_API_CA is set: got %q", caFile)
+
+	transport, err := resolveTrustedAPIServerTransport(caFile)
+	if err != nil {
+		t.Fatalf("resolveTrustedAPIServerTransport: %v", err)
+	}
+	if transport.server != "https://10.0.0.1:6443" {
+		t.Errorf("in-cluster server not selected: got %q", transport.server)
+	}
+	if transport.caFile != caFile {
+		t.Errorf("mounted in-cluster CA not selected: got %q", transport.caFile)
+	}
+	if len(transport.caData) != 0 {
+		t.Errorf("stale explicit CA must be ignored when mounted CA exists: got %q", transport.caData)
+	}
+}
+
+func TestTrustedAPIServerTransportFallsBackToExplicitCAWhenMountIsMissing(t *testing.T) {
+	clearTrustedServerEnv(t)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+	t.Setenv("K8S_API_CA", "operator-cluster-ca")
+
+	missingCAFile := filepath.Join(t.TempDir(), "missing-ca.crt")
+	transport, err := resolveTrustedAPIServerTransport(missingCAFile)
+	if err != nil {
+		t.Fatalf("resolveTrustedAPIServerTransport: %v", err)
+	}
+	if string(transport.caData) != "operator-cluster-ca" {
+		t.Errorf("explicit CA fallback not selected: got %q", transport.caData)
+	}
+	if transport.caFile != "" {
+		t.Errorf("missing mounted CA must not be returned: got %q", transport.caFile)
 	}
 }

@@ -78,10 +78,18 @@ var ErrNoTrustedAPIServer = errors.New(
 	"no trusted Kubernetes API server configured: set K8S_API_URL or run in-cluster",
 )
 
-// trustedAPIServer resolves the apiserver the platform trusts, from operator-controlled
-// configuration ONLY — an explicit K8S_API_URL, or the in-cluster
-// KUBERNETES_SERVICE_HOST/KUBERNETES_SERVICE_PORT. It is deliberately never the
-// client-supplied kubeconfig server.
+type trustedAPIServerTransport struct {
+	server string
+	caData []byte
+	caFile string
+}
+
+// resolveTrustedAPIServerTransport resolves the apiserver and CA the platform trusts from
+// operator-controlled configuration ONLY. In-cluster coordinates and their mounted CA take
+// precedence so deployed Pods stay on the internal control-plane path; K8S_API_URL and
+// K8S_API_CA are the off-cluster development fallback. If the in-cluster CA is not mounted,
+// K8S_API_CA may supply that same cluster CA without restoring a service-account token. The
+// server and CA are deliberately never taken from the client-supplied kubeconfig.
 //
 // A caller authenticates by sending its own kubeconfig, and every namespace-scoped read is
 // authorized by making the apiserver call *as the caller* and letting Kubernetes RBAC
@@ -91,38 +99,47 @@ var ErrNoTrustedAPIServer = errors.New(
 // own access (VictoriaMetrics for telemetry, shared Postgres for AP versions, …). Pinning
 // the server closes that bypass while the caller's bearer token / client certificate still
 // supplies identity. Fails closed when no trusted server is configured.
-func trustedAPIServer() (string, error) {
+func resolveTrustedAPIServerTransport(inClusterCAFile string) (*trustedAPIServerTransport, error) {
+	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
+	port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
+	explicitCA := strings.TrimSpace(os.Getenv("K8S_API_CA"))
+	if (host == "") != (port == "") {
+		return nil, fmt.Errorf(
+			"in-cluster Kubernetes API server configuration is incomplete: KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT must both be set",
+		)
+	}
+	if host != "" && port != "" {
+		transport := &trustedAPIServerTransport{
+			server: "https://" + net.JoinHostPort(host, port),
+		}
+		if inClusterCAFile != "" {
+			if _, err := os.Stat(inClusterCAFile); err == nil {
+				transport.caFile = inClusterCAFile
+				return transport, nil
+			}
+		}
+		if explicitCA != "" {
+			transport.caData = []byte(explicitCA)
+		}
+		return transport, nil
+	}
 	if explicit := strings.TrimSpace(os.Getenv("K8S_API_URL")); explicit != "" {
 		u, err := url.Parse(explicit)
 		if err != nil || u.Host == "" {
-			return "", fmt.Errorf("invalid K8S_API_URL %q", explicit)
+			return nil, fmt.Errorf("invalid K8S_API_URL %q", explicit)
 		}
 		if u.Scheme != "https" {
-			return "", fmt.Errorf("K8S_API_URL must use https, got %q", explicit)
+			return nil, fmt.Errorf("K8S_API_URL must use https, got %q", explicit)
 		}
-		return strings.TrimRight(u.String(), "/"), nil
+		transport := &trustedAPIServerTransport{
+			server: strings.TrimRight(u.String(), "/"),
+		}
+		if explicitCA != "" {
+			transport.caData = []byte(explicitCA)
+		}
+		return transport, nil
 	}
-	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
-	port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
-	if host == "" || port == "" {
-		return "", ErrNoTrustedAPIServer
-	}
-	return "https://" + net.JoinHostPort(host, port), nil
-}
-
-// trustedAPIServerCA resolves the CA bundle used to verify the pinned apiserver's serving
-// certificate. Precedence: an explicit K8S_API_CA PEM, then the in-cluster CA file. When
-// neither is present the process's default trust store is used and TLS verification stays
-// on. The client kubeconfig's CA and insecure-skip-tls-verify are always ignored here, so a
-// caller can neither redirect nor weaken the channel. At most one of (caData, caFile) is set.
-func trustedAPIServerCA() (caData []byte, caFile string) {
-	if pem := strings.TrimSpace(os.Getenv("K8S_API_CA")); pem != "" {
-		return []byte(pem), ""
-	}
-	if _, err := os.Stat(inClusterCAPath); err == nil {
-		return nil, inClusterCAPath
-	}
-	return nil, ""
+	return nil, ErrNoTrustedAPIServer
 }
 
 // pinRestConfigToTrustedServer overwrites restConfig's server and TLS trust with the
@@ -133,18 +150,17 @@ func pinRestConfigToTrustedServer(restConfig *rest.Config) error {
 	if restConfig == nil {
 		return nil
 	}
-	server, err := trustedAPIServer()
+	transport, err := resolveTrustedAPIServerTransport(inClusterCAPath)
 	if err != nil {
 		return err
 	}
-	caData, caFile := trustedAPIServerCA()
 
-	restConfig.Host = server
+	restConfig.Host = transport.server
 	// Trust is defined by the platform, never by the client kubeconfig.
 	restConfig.TLSClientConfig.Insecure = false
 	restConfig.TLSClientConfig.ServerName = ""
-	restConfig.TLSClientConfig.CAData = caData
-	restConfig.TLSClientConfig.CAFile = caFile
+	restConfig.TLSClientConfig.CAData = transport.caData
+	restConfig.TLSClientConfig.CAFile = transport.caFile
 	return nil
 }
 

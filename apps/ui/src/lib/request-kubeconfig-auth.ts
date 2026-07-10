@@ -143,34 +143,43 @@ function trimTrailingSlashes(value: string): string {
 const IN_CLUSTER_CA_PATH =
   "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
 
-/**
- * The trusted Kubernetes API server that namespace access reviews are sent to.
- *
- * Never the client-supplied kubeconfig server: verifying a credential against a
- * server named by that same credential is meaningless and lets an attacker point
- * verification at a look-alike endpoint that returns `allowed: true` (SSRF +
- * authz bypass, F5). Resolved only from operator-controlled config — an explicit
- * `K8S_API_URL` or the in-cluster `KUBERNETES_SERVICE_HOST`/`_PORT`. When neither
- * is present, verification fails closed.
- */
-function trustedKubernetesApiServer():
-  | { ok: true; server: string }
+/** Resolves a trusted endpoint and its matching CA without reading client kubeconfig trust. */
+export function resolveTrustedKubernetesApiServer(input: {
+  explicitCa?: string;
+  explicitUrl?: string;
+  inClusterCa?: string;
+  serviceHost?: string;
+  servicePort?: string;
+}):
+  | { ca: string | undefined; ok: true; server: string }
   | { message: string; ok: false } {
-  const explicit = process.env.K8S_API_URL?.trim() ?? "";
-  const serviceHost = process.env.KUBERNETES_SERVICE_HOST?.trim() ?? "";
-  const servicePort = process.env.KUBERNETES_SERVICE_PORT?.trim() ?? "";
+  const explicitCa = input.explicitCa?.trim() ?? "";
+  const explicitUrl = input.explicitUrl?.trim() ?? "";
+  const inClusterCa = input.inClusterCa?.trim() ?? "";
+  const serviceHost = input.serviceHost?.trim() ?? "";
+  const servicePort = input.servicePort?.trim() ?? "";
+
+  if ((serviceHost === "") !== (servicePort === "")) {
+    return {
+      message: "In-cluster Kubernetes API server configuration is incomplete.",
+      ok: false,
+    };
+  }
 
   let raw: string;
-  if (explicit !== "") {
-    raw = explicit;
-  } else if (serviceHost !== "" && servicePort !== "") {
+  let ca: string | undefined;
+  if (serviceHost !== "" && servicePort !== "") {
     raw = `https://${serviceHost}:${servicePort}`;
-  } else {
+    ca = inClusterCa || explicitCa || undefined;
+  } else if (explicitUrl === "") {
     return {
       message:
         "Kubernetes API server is not configured (set K8S_API_URL or run in-cluster); refusing to verify namespace access.",
       ok: false,
     };
+  } else {
+    raw = explicitUrl;
+    ca = explicitCa || undefined;
   }
 
   let serverUrl: URL;
@@ -185,26 +194,42 @@ function trustedKubernetesApiServer():
       ok: false,
     };
   }
-  return { ok: true, server: trimTrailingSlashes(serverUrl.toString()) };
+  return {
+    ca,
+    ok: true,
+    server: trimTrailingSlashes(serverUrl.toString()),
+  };
 }
 
 /**
- * CA bundle for the trusted API server connection — the in-cluster service
- * account CA or an explicit `K8S_API_CA` PEM. Never a CA named by the client
- * kubeconfig. `undefined` falls back to the default trust store (verification
- * stays enabled either way).
+ * The trusted Kubernetes API transport for namespace access reviews. Never the
+ * client-supplied kubeconfig transport: verification against a server named by
+ * that same credential would let an attacker return `allowed: true` (F5).
+ * In-cluster coordinates and their mounted CA take precedence; K8S_API_URL/CA
+ * are the off-cluster fallback. If the CA mount is disabled, K8S_API_CA may
+ * supply the cluster CA without supplying a Pod service-account token.
  */
-function trustedApiServerCa(): string | undefined {
-  const explicit = process.env.K8S_API_CA?.trim();
-  if (explicit) {
-    return explicit;
-  }
+function trustedKubernetesApiServer(): ReturnType<
+  typeof resolveTrustedKubernetesApiServer
+> {
+  const serviceHost = process.env.KUBERNETES_SERVICE_HOST;
+  const servicePort = process.env.KUBERNETES_SERVICE_PORT;
+  let inClusterCa: string | undefined;
   try {
-    const ca = readFileSync(IN_CLUSTER_CA_PATH, "utf8").trim();
-    return ca === "" ? undefined : ca;
+    if (serviceHost?.trim() && servicePort?.trim()) {
+      inClusterCa = readFileSync(IN_CLUSTER_CA_PATH, "utf8");
+    }
   } catch {
-    return undefined;
+    // K8S_API_CA or the default trust store remains available below.
   }
+
+  return resolveTrustedKubernetesApiServer({
+    explicitCa: process.env.K8S_API_CA,
+    explicitUrl: process.env.K8S_API_URL,
+    inClusterCa,
+    serviceHost,
+    servicePort,
+  });
 }
 
 /**
@@ -252,7 +277,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
           },
         },
       }),
-      dispatcher: verificationDispatcher(trustedApiServerCa()),
+      dispatcher: verificationDispatcher(apiServer.ca),
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${credentials.token}`,
