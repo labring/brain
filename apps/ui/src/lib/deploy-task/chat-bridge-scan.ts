@@ -68,9 +68,11 @@ function isUnsettledCreateToolPart(part: UIMessage["parts"][number]): boolean {
 /**
  * Incremental scan of chat messages for deploy-task creations. `scannedParts`
  * is the previous scan's cursor: for each message id, the length of the
- * leading run of parts that can no longer produce a new creation. Only parts
- * past the cursor are re-examined, so per-update cost is O(new or pending
- * parts), not O(transcript). Pure: inputs are not mutated.
+ * leading run of parts that can no longer produce a new creation. Each update
+ * still walks every message (a Map lookup and cursor copy per settled
+ * message — pointer-cheap, and the walk is what detects replaced or
+ * truncated messages), but part inspection and detail extraction are bounded
+ * by new or pending parts. Pure: inputs are not mutated.
  */
 function scanMessageForCreations(options: {
   message: UIMessage;
