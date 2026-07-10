@@ -97,8 +97,8 @@ type trustedAPIServerTransport struct {
 // apiserver it controls that returns fabricated 200s, satisfy the authorization gate for any
 // namespace, and then have the real query run against a shared backend under the service's
 // own access (VictoriaMetrics for telemetry, shared Postgres for AP versions, …). Pinning
-// the server closes that bypass while the caller's bearer token / client certificate still
-// supplies identity. Fails closed when no trusted server is configured.
+// the server closes that bypass while the active user's inline bearer token supplies identity.
+// Fails closed when no trusted server is configured.
 func resolveTrustedAPIServerTransport(inClusterCAFile string) (*trustedAPIServerTransport, error) {
 	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
 	port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
@@ -142,10 +142,9 @@ func resolveTrustedAPIServerTransport(inClusterCAFile string) (*trustedAPIServer
 	return nil, ErrNoTrustedAPIServer
 }
 
-// pinRestConfigToTrustedServer overwrites restConfig's server and TLS trust with the
-// platform-trusted apiserver, preserving the caller's identity (bearer token or client
-// certificate). It neutralizes any client-supplied server, CA, TLS server name, and
-// insecure-skip-tls-verify. Fails closed if no trusted server is configured.
+// pinRestConfigToTrustedServer applies the platform-trusted apiserver and TLS trust to a
+// config that already contains only the caller's inline bearer token. Fails closed if no
+// trusted server is configured.
 func pinRestConfigToTrustedServer(restConfig *rest.Config) error {
 	if restConfig == nil {
 		return nil
@@ -164,15 +163,69 @@ func pinRestConfigToTrustedServer(restConfig *rest.Config) error {
 	return nil
 }
 
-// restConfigFromClientcmdConfig builds a rest.Config from a parsed kubeconfig and pins its
-// server and TLS trust to the platform-trusted apiserver (never the client's) while keeping
-// the caller's identity. Every user-credentialed apiserver access is built here, so the RBAC
-// gate a request is authorized by is always evaluated by the real cluster.
+// restConfigFromClientcmdConfig accepts only the active user's inline bearer token from a
+// parsed kubeconfig. Transport and every other rest.Config field are created by the platform,
+// so client-supplied credential plugins, file paths, proxies, and impersonation can never be
+// installed in the API process. Every user-credentialed apiserver access is built here.
 func restConfigFromClientcmdConfig(cfg *clientcmdapi.Config) (*rest.Config, error) {
-	restConfig, err := clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{}).ClientConfig()
-	if err != nil {
-		return nil, err
+	if cfg == nil {
+		return nil, errors.New("kubeconfig is required")
 	}
+
+	for _, cluster := range cfg.Clusters {
+		if cluster != nil && cluster.ProxyURL != "" {
+			return nil, errors.New("kubeconfig proxy configuration is not supported")
+		}
+	}
+
+	for _, authInfo := range cfg.AuthInfos {
+		if authInfo == nil {
+			continue
+		}
+		if authInfo.Exec != nil {
+			return nil, errors.New("kubeconfig exec credentials are not supported")
+		}
+		if authInfo.AuthProvider != nil {
+			return nil, errors.New("kubeconfig auth-provider credentials are not supported")
+		}
+		if authInfo.TokenFile != "" {
+			return nil, errors.New("kubeconfig token-file credentials are not supported")
+		}
+		if authInfo.ClientCertificate != "" || authInfo.ClientKey != "" {
+			return nil, errors.New("kubeconfig client credential files are not supported")
+		}
+		if len(authInfo.ClientCertificateData) != 0 || len(authInfo.ClientKeyData) != 0 {
+			return nil, errors.New("kubeconfig client certificate credentials are not supported")
+		}
+		if authInfo.Username != "" || authInfo.Password != "" {
+			return nil, errors.New("kubeconfig basic-auth credentials are not supported")
+		}
+		if authInfo.Impersonate != "" || authInfo.ImpersonateUID != "" ||
+			len(authInfo.ImpersonateGroups) != 0 || len(authInfo.ImpersonateUserExtra) != 0 {
+			return nil, errors.New("kubeconfig impersonation is not supported")
+		}
+	}
+
+	contextName := strings.TrimSpace(cfg.CurrentContext)
+	ctx := cfg.Contexts[contextName]
+	if contextName == "" || ctx == nil {
+		return nil, errors.New("kubeconfig current context is required")
+	}
+	clusterName := strings.TrimSpace(ctx.Cluster)
+	if clusterName == "" || cfg.Clusters[clusterName] == nil {
+		return nil, errors.New("kubeconfig current cluster is required")
+	}
+	authInfoName := strings.TrimSpace(ctx.AuthInfo)
+	authInfo := cfg.AuthInfos[authInfoName]
+	if authInfoName == "" || authInfo == nil {
+		return nil, errors.New("kubeconfig current user is required")
+	}
+	token := strings.TrimSpace(authInfo.Token)
+	if token == "" {
+		return nil, errors.New("kubeconfig current user must use an inline bearer token")
+	}
+
+	restConfig := &rest.Config{BearerToken: token}
 	if err := pinRestConfigToTrustedServer(restConfig); err != nil {
 		return nil, err
 	}

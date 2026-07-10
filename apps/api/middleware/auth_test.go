@@ -79,6 +79,169 @@ func TestRestConfigFromAuthPinsServerToInClusterAndKeepsIdentity(t *testing.T) {
 	}
 }
 
+func TestRestConfigFromAuthRejectsUnsafeKubeconfigFeatures(t *testing.T) {
+	clearTrustedServerEnv(t)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	certFile := filepath.Join(t.TempDir(), "client.crt")
+	keyFile := filepath.Join(t.TempDir(), "client.key")
+	if err := os.WriteFile(tokenFile, []byte("file-token"), 0o600); err != nil {
+		t.Fatalf("write token fixture: %v", err)
+	}
+	if err := os.WriteFile(certFile, []byte("client-certificate"), 0o600); err != nil {
+		t.Fatalf("write client certificate fixture: %v", err)
+	}
+	if err := os.WriteFile(keyFile, []byte("client-key"), 0o600); err != nil {
+		t.Fatalf("write client key fixture: %v", err)
+	}
+	const tokenLine = "    token: caller-token\n"
+	base := kubeconfigYAML("https://cluster.example:6443", "caller-token", false)
+	tests := []struct {
+		name        string
+		old         string
+		replacement string
+		wantError   string
+	}{
+		{
+			name: "exec credentials",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    exec:\n" +
+				"      apiVersion: client.authentication.k8s.io/v1\n" +
+				"      command: credential-plugin\n" +
+				"      interactiveMode: Never\n",
+			wantError: "exec credentials",
+		},
+		{
+			name: "auth provider",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    auth-provider:\n" +
+				"      name: oidc\n" +
+				"      config:\n" +
+				"        id-token: caller-token\n",
+			wantError: "auth-provider credentials",
+		},
+		{
+			name:        "token file",
+			old:         tokenLine,
+			replacement: tokenLine + "    tokenFile: " + tokenFile + "\n",
+			wantError:   "token-file credentials",
+		},
+		{
+			name: "client credential files",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    client-certificate: " + certFile + "\n" +
+				"    client-key: " + keyFile + "\n",
+			wantError: "client credential files",
+		},
+		{
+			name: "inline client certificate",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    client-certificate-data: Y2VydA==\n" +
+				"    client-key-data: a2V5\n",
+			wantError: "client certificate credentials",
+		},
+		{
+			name: "basic auth",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    username: caller\n" +
+				"    password: password\n",
+			wantError: "basic-auth credentials",
+		},
+		{
+			name: "impersonated user",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    as: system:admin\n",
+			wantError: "impersonation",
+		},
+		{
+			name: "impersonated UID",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    as-uid: \"1000\"\n",
+			wantError: "impersonation",
+		},
+		{
+			name: "impersonated groups",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    as-groups:\n" +
+				"    - system:masters\n",
+			wantError: "impersonation",
+		},
+		{
+			name: "impersonated extras",
+			old:  tokenLine,
+			replacement: tokenLine +
+				"    as-user-extra:\n" +
+				"      scopes:\n" +
+				"      - admin\n",
+			wantError: "impersonation",
+		},
+		{
+			name: "client proxy",
+			old:  "    server: https://cluster.example:6443\n",
+			replacement: "    server: https://cluster.example:6443\n" +
+				"    proxy-url: http://attacker.example:8080\n",
+			wantError: "proxy configuration",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kubeconfig := strings.Replace(base, tt.old, tt.replacement, 1)
+			if kubeconfig == base {
+				t.Fatalf("test fixture did not add %s", tt.name)
+			}
+			_, _, err := RestConfigFromAuth(bearerFromKubeconfig(kubeconfig))
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("expected %s to be rejected with %q, got %v", tt.name, tt.wantError, err)
+			}
+		})
+	}
+}
+
+func TestRestConfigFromAuthRequiresInlineBearerToken(t *testing.T) {
+	clearTrustedServerEnv(t)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+
+	kubeconfig := strings.Replace(
+		kubeconfigYAML("https://cluster.example:6443", "caller-token", false),
+		"    token: caller-token\n",
+		"",
+		1,
+	)
+
+	if _, _, err := RestConfigFromAuth(bearerFromKubeconfig(kubeconfig)); err == nil {
+		t.Fatal("expected an inline bearer token to be required")
+	}
+}
+
+func TestRestConfigFromAuthRequiresCurrentCluster(t *testing.T) {
+	clearTrustedServerEnv(t)
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+
+	kubeconfig := strings.Replace(
+		kubeconfigYAML("https://cluster.example:6443", "caller-token", false),
+		"    cluster: c\n",
+		"",
+		1,
+	)
+
+	if _, _, err := RestConfigFromAuth(bearerFromKubeconfig(kubeconfig)); err == nil {
+		t.Fatal("expected the current context cluster to be required")
+	}
+}
+
 func TestRestConfigFromAuthFailsClosedWithoutTrustedServer(t *testing.T) {
 	clearTrustedServerEnv(t)
 
