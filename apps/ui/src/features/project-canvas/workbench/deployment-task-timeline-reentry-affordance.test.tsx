@@ -113,6 +113,35 @@ test("deployment task dock shows no dismiss for in-progress tasks", () => {
   assert.doesNotMatch(html, DISMISS_LABEL_RE);
 });
 
+test("deployment task dock keeps the dismiss control on the active terminal chip", () => {
+  const activeFailed: DeploymentTaskDockModel = {
+    desktopHiddenCount: 0,
+    desktopTasks: [
+      { active: true, task: task({ id: "task-failed", status: "failed" }) },
+    ],
+    mobileHiddenCount: 0,
+    mobileTasks: [
+      { active: true, task: task({ id: "task-failed", status: "failed" }) },
+    ],
+    tasks: [
+      { active: true, task: task({ id: "task-failed", status: "failed" }) },
+    ],
+  };
+  const html = renderToStaticMarkup(
+    <ProjectCanvasDeploymentTaskDock
+      dock={activeFailed}
+      onDismiss={() => undefined}
+      onOpen={() => undefined}
+    />
+  );
+
+  // Dismissing the open pane's chip records the dismissal and closes the
+  // pane, so the control must stay available while the pane is open
+  // (CONTEXT.md: Deployment Task Dock Dismissal). Desktop + mobile trees
+  // both render, hence two matches.
+  assert.equal(countMatches(html, DISMISS_LABEL_GLOBAL_RE), 2);
+});
+
 test("deployment task dock never renders cancel or redeploy actions", () => {
   const html = renderToStaticMarkup(
     <ProjectCanvasDeploymentTaskDock

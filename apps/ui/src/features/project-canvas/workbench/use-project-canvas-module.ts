@@ -434,8 +434,20 @@ export function useProjectCanvasModule({
         next.delete(taskId);
         return next;
       });
+      // The active chip is the open timeline pane's handle, so the dismissal
+      // alone cannot remove it; close the pane so the dismissal takes visible
+      // effect (CONTEXT.md: Deployment Task Dock Dismissal).
+      if (taskId === activeDeploymentTaskTimelineTaskId) {
+        workbench.closeResourcePane();
+      }
     },
-    [deploymentTaskProjections, namespace, projectId]
+    [
+      activeDeploymentTaskTimelineTaskId,
+      deploymentTaskProjections,
+      namespace,
+      projectId,
+      workbench.closeResourcePane,
+    ]
   );
 
   const mainRenderModel = workbench.surfaceRenderModel.main;
