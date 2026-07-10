@@ -52,6 +52,14 @@ const transformers: ShikiTransformer[] = [
   },
 ];
 
+/**
+ * Preloads the shiki chunk so the first rendered code block doesn't wait on
+ * it. Safe to fire ahead of need — the module map caches the load.
+ */
+export function warmHighlightedCode(): void {
+  import("shiki").catch(() => undefined);
+}
+
 async function highlightCode(code: string, lang: string) {
   // Lazy so shiki stays out of eager route chunks; the plain-text fallback
   // in HighlightedCodeBody covers the load window.

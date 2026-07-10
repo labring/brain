@@ -1,12 +1,35 @@
 "use client";
 
 import { HighlightedCode } from "@workspace/ui/components/mdx/highlighted-code";
+import { MermaidDiagram } from "@workspace/ui/components/mdx/mermaid-diagram";
 import { cn } from "@workspace/ui/lib/utils";
 import type * as React from "react";
 import type { Components } from "streamdown";
 
 const LANGUAGE_CLASS = /language-(\w+)/;
 const TRAILING_NEWLINE = /\n$/;
+
+function MarkdownCodeBlock({
+  className,
+  code,
+  language,
+}: {
+  className?: string;
+  code: string;
+  language: string;
+}) {
+  return (
+    <HighlightedCode.Provider code={code} inline={false} language={language}>
+      <HighlightedCode.Root className={className}>
+        <HighlightedCode.Header>
+          <HighlightedCode.Language />
+          <HighlightedCode.CopyButton />
+        </HighlightedCode.Header>
+        <HighlightedCode.Body />
+      </HighlightedCode.Root>
+    </HighlightedCode.Provider>
+  );
+}
 
 type FootnoteAnchorProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   "data-footnote-ref"?: boolean;
@@ -241,28 +264,31 @@ export const markdownComponents = {
     className: codeClassName,
   }: React.HTMLAttributes<HTMLElement>) => {
     const match = LANGUAGE_CLASS.exec(codeClassName || "");
-    const language = match ? match[1] : "text";
+    const language = match?.[1] ?? "text";
     const codeString = String(children).replace(TRAILING_NEWLINE, "");
     const isBlock = Boolean(match) || codeString.includes("\n");
 
-    return (
-      <HighlightedCode.Provider
-        code={codeString}
-        inline={!isBlock}
-        language={language}
-      >
-        {isBlock ? (
-          <HighlightedCode.Root className={codeClassName}>
-            <HighlightedCode.Header>
-              <HighlightedCode.Language />
-              <HighlightedCode.CopyButton />
-            </HighlightedCode.Header>
-            <HighlightedCode.Body />
-          </HighlightedCode.Root>
-        ) : (
+    if (!isBlock) {
+      return (
+        <HighlightedCode.Provider code={codeString} inline language={language}>
           <HighlightedCode.Inline className={codeClassName} />
-        )}
-      </HighlightedCode.Provider>
+        </HighlightedCode.Provider>
+      );
+    }
+
+    const block = (
+      <MarkdownCodeBlock
+        className={codeClassName}
+        code={codeString}
+        language={language}
+      />
+    );
+    // Mermaid fences upgrade to a rendered diagram once complete; the
+    // highlighted source stays as the streaming and parse-failure fallback.
+    return language === "mermaid" ? (
+      <MermaidDiagram chart={codeString} fallback={block} />
+    ) : (
+      block
     );
   },
 } as Components;

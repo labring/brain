@@ -328,9 +328,9 @@ export const MessageResponse = memo(
     components: componentsOverride,
     ...props
   }: MessageResponseProps) => {
-    // The heavy plugins (shiki/mermaid/katex) arrive in a lazy chunk. The
-    // swap state must live inside this component: the memo comparator below
-    // ignores plugin identity, so a prop-driven upgrade would never land.
+    // The heavy math plugin (KaTeX) arrives in a lazy chunk. The swap state
+    // must live inside this component: the memo comparator below ignores
+    // plugin identity, so a prop-driven upgrade would never land.
     const [plugins, setPlugins] = useState(getStreamdownPlugins);
     useEffect(() => {
       let active = true;

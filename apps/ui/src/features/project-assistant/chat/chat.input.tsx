@@ -251,7 +251,8 @@ export function ChatComposerTextarea({
         onChange={(e) => onValueChange(e.target.value)}
         onFocus={(e) => {
           // Typing predicts an imminent markdown response; warm the
-          // highlight/diagram/math chunk before tokens arrive.
+          // highlight and math chunks before tokens arrive (mermaid loads
+          // with the first diagram, not here).
           warmStreamdownPlugins().catch(() => undefined);
           onFocus?.(e);
         }}
