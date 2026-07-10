@@ -1,9 +1,9 @@
 "use client";
 
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
+import {
+  getStreamdownPlugins,
+  warmStreamdownPlugins,
+} from "@workspace/ui/components/ai-elements/streamdown-plugins";
 import { Button } from "@workspace/ui/components/button";
 import {
   ButtonGroup,
@@ -322,28 +322,46 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-const streamdownPlugins = { cjk, code, math, mermaid };
-
 export const MessageResponse = memo(
   ({
     className,
     components: componentsOverride,
     ...props
-  }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      components={
-        componentsOverride
-          ? { ...markdownComponents, ...componentsOverride }
-          : markdownComponents
-      }
-      plugins={streamdownPlugins}
-      {...props}
-    />
-  ),
+  }: MessageResponseProps) => {
+    // The heavy plugins (shiki/mermaid/katex) arrive in a lazy chunk. The
+    // swap state must live inside this component: the memo comparator below
+    // ignores plugin identity, so a prop-driven upgrade would never land.
+    const [plugins, setPlugins] = useState(getStreamdownPlugins);
+    useEffect(() => {
+      let active = true;
+      warmStreamdownPlugins()
+        .then((loaded) => {
+          if (active) {
+            setPlugins((current) => (current === loaded ? current : loaded));
+          }
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []);
+
+    return (
+      <Streamdown
+        className={cn(
+          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          className
+        )}
+        components={
+          componentsOverride
+            ? { ...markdownComponents, ...componentsOverride }
+            : markdownComponents
+        }
+        plugins={plugins}
+        {...props}
+      />
+    );
+  },
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
     nextProps.isAnimating === prevProps.isAnimating &&

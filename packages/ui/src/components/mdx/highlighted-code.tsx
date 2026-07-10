@@ -14,7 +14,6 @@ import {
   useState,
 } from "react";
 import type { ShikiTransformer } from "shiki";
-import { codeToHtml } from "shiki";
 
 const DARK_THEME = "aurora-x";
 const LIGHT_THEME = "aurora-x";
@@ -54,6 +53,9 @@ const transformers: ShikiTransformer[] = [
 ];
 
 async function highlightCode(code: string, lang: string) {
+  // Lazy so shiki stays out of eager route chunks; the plain-text fallback
+  // in HighlightedCodeBody covers the load window.
+  const { codeToHtml } = await import("shiki");
   return await codeToHtml(code, {
     lang: lang || "text",
     themes: {
@@ -126,7 +128,9 @@ export function HighlightedCodeProvider({
     if (inline) {
       return;
     }
-    highlightCode(codeString, lang).then(setHtml);
+    highlightCode(codeString, lang)
+      .then(setHtml)
+      .catch(() => undefined);
   }, [codeString, lang, inline]);
 
   const copy = useCallback(() => {
