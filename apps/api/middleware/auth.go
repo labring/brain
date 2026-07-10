@@ -88,17 +88,13 @@ type trustedAPIServerTransport struct {
 // operator-controlled configuration ONLY. In-cluster coordinates and their mounted CA take
 // precedence so deployed Pods stay on the internal control-plane path; K8S_API_URL and
 // K8S_API_CA are the off-cluster development fallback. If the in-cluster CA is not mounted,
-// K8S_API_CA may supply that same cluster CA without restoring a service-account token. The
-// server and CA are deliberately never taken from the client-supplied kubeconfig.
+// K8S_API_CA may supply that same cluster CA without restoring a service-account token.
 //
-// A caller authenticates by sending its own kubeconfig, and every namespace-scoped read is
-// authorized by making the apiserver call *as the caller* and letting Kubernetes RBAC
-// decide. If the server named in that kubeconfig were honored, a caller could point it at an
-// apiserver it controls that returns fabricated 200s, satisfy the authorization gate for any
-// namespace, and then have the real query run against a shared backend under the service's
-// own access (VictoriaMetrics for telemetry, shared Postgres for AP versions, …). Pinning
-// the server closes that bypass while the active user's inline bearer token supplies identity.
-// Fails closed when no trusted server is configured.
+// Invariant: the apiserver, CA, and TLS trust for every user-credentialed call come from this
+// operator-controlled transport and never from the client-supplied kubeconfig. Only identity —
+// the caller's inline bearer token — is taken from the kubeconfig; its declared server and CA
+// are ignored so RBAC is always evaluated by the real cluster. Do not route user-credentialed
+// reads to a client-named server. Fails closed when no trusted server is configured.
 func resolveTrustedAPIServerTransport(inClusterCAFile string) (*trustedAPIServerTransport, error) {
 	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
 	port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
@@ -243,7 +239,7 @@ type ResolvedContext struct {
 	Namespace  string
 	// Server is the hostname the caller *declared* in its kubeconfig, kept for
 	// diagnostics only. It is not where requests go: RestConfig is pinned to the
-	// platform-trusted apiserver (see restConfigFromClientcmdConfig / ADR 0046).
+	// platform-trusted apiserver (see restConfigFromClientcmdConfig).
 	Server string
 }
 

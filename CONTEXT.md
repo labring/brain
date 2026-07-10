@@ -342,9 +342,9 @@ _Avoid_: delete task, clear history, archive task.
 
 ### GitHub Connection
 
-A namespace-scoped authorization relationship that lets a workspace use a GitHub App installation to list and deploy repositories. A GitHub Connection belongs to the workspace namespace rather than one user's browser session or personal GitHub identity.
+A per-user OAuth authorization that lets one Sealos user list and deploy from their own GitHub repositories within a namespace. A GitHub Connection is keyed by namespace and user identity: each namespace member authorizes GitHub separately, and one member's connection is not a shared namespace credential that other members deploy through. The deploying user's identity is recorded on the resulting Deployment Task.
 
-_Avoid_: personal GitHub token, user GitHub binding, browser GitHub connection.
+_Avoid_: shared namespace GitHub credential, GitHub App installation connection, browser-session GitHub connection.
 
 ### Docker Deployment Settings
 
@@ -768,7 +768,7 @@ _Avoid_: namespace access check, kubeconfig validation, metrics permission.
 
 ### Assistant Conversation
 
-A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout, GitHub Connection, or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
+A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
 
 _Avoid_: shared namespace chat, tenant chat, private/confidential conversation, per-namespace chat history.
 

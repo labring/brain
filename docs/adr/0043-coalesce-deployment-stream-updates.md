@@ -9,13 +9,12 @@ every event. The projection store sits at the top of the canvas module hook, so
 each commit re-rendered the whole workbench subtree (canvas + side pane + dock)
 and, on a topology change, rebuilt the O(N) resource graph; each timeline commit
 re-rendered the pane. With many resources the event rate is high, so the canvas
-and timeline "rapidly refreshed" and burned CPU (AIM-25) even though per-leaf
+and timeline "rapidly refreshed" and burned CPU even though per-leaf
 memoization already limited DOM writes.
 
 React 18/19 automatic batching does not help here: each SSE message is dispatched
 as its own event-loop task, and batching only groups `setState` calls within one
-task — so N messages across N tasks cause N renders. (Evidence:
-`.obsidian/research/2026-07-09-react-streaming-state-coalescing.md`.)
+task — so N messages across N tasks cause N renders.
 
 ## Decision
 
