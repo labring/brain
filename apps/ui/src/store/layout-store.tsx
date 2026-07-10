@@ -18,6 +18,19 @@ export const assistantPaneWidthAtom = atom(ASSISTANT_PANE_DEFAULT_WIDTH);
  */
 export const assistantPaneResizingAtom = atom(false);
 
+/**
+ * Bumped when a UI flow wants the assistant to switch to a fresh draft thread
+ * (e.g. the project-creation pane just created a project, so the next words the
+ * user types should start a new conversation, not extend the previous one).
+ * Drafts are unsaved: the thread row materializes on the first message.
+ */
+export const assistantDraftThreadRequestAtom = atom(0);
+
+/** Ask the Project Assistant Pane to switch to a fresh draft thread. */
+export function requestAssistantDraftThread() {
+  getDefaultStore().set(assistantDraftThreadRequestAtom, (n) => n + 1);
+}
+
 /** Toggle Project Assistant Pane visibility (uses app root default Jotai store). */
 export function toggleAssistantPaneVisibility() {
   getDefaultStore().set(assistantPaneOpenAtom, (open) => !open);

@@ -5,7 +5,7 @@ import { generateText, type UIMessage } from "ai";
 type ChatTitleModel = Parameters<typeof generateText>[0]["model"];
 
 const SYSTEM_PROMPT =
-  "Reply with only a short conversation title (maximum 6 words). No quotation marks. No trailing period. Summarize the user's topic.";
+  "Reply with only a short conversation title (maximum 6 words). No quotation marks. No trailing period. Summarize the user's topic. When a current project is given and the topic concerns it, include the project name in the title.";
 
 const LEADING_QUOTES = /^["'「『]+/;
 const TRAILING_QUOTES = /["'」』]+$/;
@@ -123,21 +123,29 @@ function fallbackTitle(firstUserMessage: string): string {
 
 /**
  * Concise title from the first user turn. Falls back to a heuristic if the model
- * call fails so the caller never has to handle an error path.
+ * call fails so the caller never has to handle an error path. `projectName` is
+ * the display name of the project the user was viewing when the thread started —
+ * a known fact handed to the model, not something it must infer from the text.
  */
 export async function deriveThreadTitle(input: {
   languageModel: ChatTitleModel;
   messages: UIMessage[];
+  projectName?: string;
 }): Promise<string> {
   const first = firstUserText(input.messages);
   if (first === "") {
     return fallbackTitle("");
   }
+  const projectName = input.projectName?.trim() ?? "";
+  const userPart = first.slice(0, FIRST_USER_PROMPT_CHARS);
   try {
     const generated = await generateText({
       model: input.languageModel,
       system: SYSTEM_PROMPT,
-      prompt: first.slice(0, FIRST_USER_PROMPT_CHARS),
+      prompt:
+        projectName === ""
+          ? userPart
+          : `Current project: ${projectName}\n\n${userPart}`,
       maxOutputTokens: TITLE_MAX_OUTPUT_TOKENS,
     });
     const raw = rawTitleFromGenerateTextResult(generated);

@@ -7,6 +7,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   DefaultChatTransport,
+  generateId,
   isToolUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
   lastAssistantMessageIsCompleteWithToolCalls,
@@ -68,7 +69,6 @@ import {
 } from "@/lib/assistant-pane-width";
 import type { BrainProjectResponse } from "@/lib/brain-projects";
 import {
-  createAssistantThread,
   fetchAssistantSession,
   fetchAssistantThreadMessages,
   fetchAssistantThreads,
@@ -105,6 +105,7 @@ import {
   namespaceAtom,
 } from "@/store/auth-store";
 import {
+  assistantDraftThreadRequestAtom,
   assistantPaneOpenAtom,
   assistantPaneResizingAtom,
   assistantPaneWidthAtom,
@@ -280,7 +281,6 @@ const ProjectAssistantComposerMemo = memo(ProjectAssistantComposer);
 function ProjectAssistantChatSession({
   bootstrap,
   freeTier,
-  creatingThread,
   threads,
   assistantNamespaceRaw,
   onAssistantStreamFinished,
@@ -294,14 +294,13 @@ function ProjectAssistantChatSession({
 }: {
   bootstrap: Pick<AssistantSessionPayload, "chatId" | "messages">;
   freeTier: FreeTierState | null;
-  creatingThread: boolean;
   threads: AssistantThreadDTO[];
   assistantNamespaceRaw: string;
   onAssistantStreamFinished?: () => Promise<void>;
   onBillingHeaders: (headers: Headers) => void;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
-  onCreateThread: () => Promise<void>;
+  onCreateThread: () => void;
   onGithubIntent: () => void;
   onSelectThread: (threadId: string) => Promise<void>;
   onSkillsIntent: () => void;
@@ -311,6 +310,8 @@ function ProjectAssistantChatSession({
   const { mutate: revalidateScopeSwr } = useSWRConfig();
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
+  // Owner tag for first-message thread materialization (ADR 0047 view partition).
+  const desktopUserId = useAtomValue(desktopUserIdAtom);
   const chatId = bootstrap.chatId;
   const addToolOutputRef = useRef<
     ((args: AssistantClientToolSubmission) => void | PromiseLike<void>) | null
@@ -339,10 +340,12 @@ function ProjectAssistantChatSession({
   const wireRef = useRef({
     namespace: assistantNamespaceRaw,
     projectId,
+    userId: desktopUserId,
   });
   wireRef.current = {
     namespace: assistantNamespaceRaw,
     projectId,
+    userId: desktopUserId,
   };
 
   const billingHandlerRef = useRef(onBillingHeaders);
@@ -386,6 +389,7 @@ function ProjectAssistantChatSession({
               encodedKubeconfig: encodeURIComponent(kubeconfig),
               message: last,
               namespace: wire.namespace,
+              userId: wire.userId,
             },
           };
         },
@@ -507,7 +511,7 @@ function ProjectAssistantChatSession({
     }
   }, [messages, projectId]);
   const createThreadClicked = useCallback(() => {
-    onCreateThread().catch(() => undefined);
+    onCreateThread();
   }, [onCreateThread]);
 
   const threadHistory = useMemo((): ChatHeaderThreadHistory | undefined => {
@@ -533,7 +537,9 @@ function ProjectAssistantChatSession({
 
   const threadLabel = useMemo(() => {
     const hit = threads.find((t) => t.id === chatId);
-    return hit?.title ?? "Assistant";
+    // No row yet = unsaved draft thread (or a just-materialized one awaiting
+    // the list refresh); label it like the fresh conversation it is.
+    return hit?.title ?? "New chat";
   }, [threads, chatId]);
 
   const busy = status === "submitted" || status === "streaming";
@@ -582,7 +588,6 @@ function ProjectAssistantChatSession({
           <Chat.NewThread
             aria-label="Create thread"
             className="size-9"
-            creating={creatingThread}
             onNewThread={createThreadClicked}
           />
         </Chat.Header>
@@ -624,7 +629,6 @@ function ProjectAssistantChatPane() {
   const desktopUserId = useAtomValue(desktopUserIdAtom);
   const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
-  const [creatingThread, setCreatingThread] = useState(false);
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
@@ -707,31 +711,26 @@ function ProjectAssistantChatPane() {
     [kubeconfig, namespaceRaw, session?.chatId]
   );
 
-  const createThread = useCallback(async () => {
-    setCreatingThread(true);
-    try {
-      const created = await createAssistantThread(
-        namespaceRaw,
-        kubeconfig,
-        desktopUserId
-      );
-      if (created == null) {
-        return;
-      }
-      setSession((prev) =>
-        prev == null
-          ? prev
-          : {
-              chatId: created.chatId,
-              messages: [],
-              threads: created.threads,
-              freeTier: prev.freeTier,
-            }
-      );
-    } finally {
-      setCreatingThread(false);
+  // Switch to a fresh draft thread: a new client-minted id with no messages.
+  // Nothing is persisted until the first message (create-on-first-message), so
+  // abandoned drafts never leave empty rows in the thread list.
+  const startDraftThread = useCallback(() => {
+    setSession((prev) =>
+      prev == null ? prev : { ...prev, chatId: generateId(), messages: [] }
+    );
+  }, []);
+
+  // Project creation (pane flow) asks for a clean conversational start; the
+  // draft evaporates unless the user actually says something.
+  const draftRequest = useAtomValue(assistantDraftThreadRequestAtom);
+  const draftRequestSeenRef = useRef(draftRequest);
+  useEffect(() => {
+    if (draftRequestSeenRef.current === draftRequest) {
+      return;
     }
-  }, [desktopUserId, kubeconfig, namespaceRaw]);
+    draftRequestSeenRef.current = draftRequest;
+    startDraftThread();
+  }, [draftRequest, startDraftThread]);
 
   const refreshThreads = useCallback(async () => {
     const threads = await fetchAssistantThreads(
@@ -792,12 +791,11 @@ function ProjectAssistantChatPane() {
     <ProjectAssistantChatSession
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
-      creatingThread={creatingThread}
       freeTier={freeTier}
       key={session.chatId}
       onAssistantStreamFinished={refreshThreads}
       onBillingHeaders={handleBillingHeaders}
-      onCreateThread={createThread}
+      onCreateThread={startDraftThread}
       onDatabaseIntent={openDatabaseIntent}
       onDockerIntent={openDockerIntent}
       onGithubIntent={openGithubIntent}

@@ -38,11 +38,6 @@ const messagesResponseSchema = z.object({
   messages: z.array(uiMessageSchema),
 });
 
-const createThreadResponseSchema = z.object({
-  chatId: z.string(),
-  threads: z.array(assistantThreadDTOSchema),
-});
-
 /**
  * Namespace-scoped chat routes authorize the caller from the kubeconfig bearer
  * token (see `authorizeChatRequestNamespace`), so every request must carry it.
@@ -127,22 +122,6 @@ export async function fetchAssistantThreadMessages(
     authHeaders(kubeconfig)
   );
   return data?.messages ?? null;
-}
-
-export function createAssistantThread(
-  namespaceRaw: string,
-  kubeconfig: string,
-  userId: string
-): Promise<{
-  chatId: string;
-  threads: AssistantThreadDTO[];
-} | null> {
-  return safeJsonPost(
-    "/api/chat/thread",
-    { namespace: namespaceRaw, userId },
-    createThreadResponseSchema,
-    authHeaders(kubeconfig)
-  );
 }
 
 export function appendAssistantThreadMessage(input: {
