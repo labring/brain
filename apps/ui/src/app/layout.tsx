@@ -10,6 +10,7 @@ import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { JotaiProvider } from "@/components/jotai-provider";
 import { DevTweaks } from "@/features/dev-tweaks/dev-tweaks";
+import { StatusHeartbeatTweaks } from "@/features/dev-tweaks/status-heartbeat-tweaks";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -67,6 +68,7 @@ export default function RootLayout({
                 {/* Outside the children Suspense so it works while the app
                     content is still streaming or blocked on data. */}
                 <DevTweaks />
+                <StatusHeartbeatTweaks />
                 <Suspense fallback={null}>{children}</Suspense>
               </TooltipProvider>
             </ThemeProvider>

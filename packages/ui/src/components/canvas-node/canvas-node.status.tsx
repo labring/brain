@@ -1,5 +1,6 @@
 "use client";
 
+import { useStatusHeartbeat } from "@workspace/ui/lib/status-heartbeat";
 import { cn } from "@workspace/ui/lib/utils";
 
 import type {
@@ -118,6 +119,7 @@ export function CanvasNodeStatusDot({
 }) {
   const resolvedStatus = resolveCanvasNodeStatus(status);
   const visual = getStatusVisual(resolvedStatus.visualTone);
+  useStatusHeartbeat(visual.breathing);
   const dotSize = size === "default" ? "size-3" : "size-2";
   const pingSize = size === "default" ? "size-2.5" : "size-2";
 
@@ -133,7 +135,7 @@ export function CanvasNodeStatusDot({
       {visual.breathing ? (
         <span
           className={cn(
-            "absolute animate-ping rounded-full opacity-75",
+            "status-heartbeat-ping absolute rounded-full opacity-75",
             pingSize,
             visual.dotClassName
           )}
