@@ -46,13 +46,9 @@ An AP Replica Strategy where the platform automatically adjusts AP replicas betw
 
 An AP-owned configuration file mounted into the application runtime through AP Settings. AP Configuration Files are user-authored file content and mount paths, not a standalone Settings Owner.
 
-_Avoid_: ConfigMap, Config Files, configuration map.
-
 ### AP Storage Mount
 
 A persistent volume an AP owns at one absolute container path, where the application's own data is kept across restarts and redeploys. An AP has zero or more AP Storage Mounts; each mount path is unique and fixed once created, and a mount's capacity can grow but never shrink. Distinct from an AP Configuration File, which mounts user-authored file content rather than application-written data.
-
-_Avoid_: Volume, PVC, disk, persistent storage, storage size.
 
 ## AP Networking & Public Access
 
@@ -104,15 +100,13 @@ AP Settings and the AP Public Access Node may present AP Public Access Health, b
 
 An AP with no Public Address intent has no AP Public Access Health entries; this is absence of public access, not a blocked or unconfigured health state.
 
-_Avoid_: EntryPoint health, AP Public Access Node health, standalone public access monitor.
+_Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
 An AP Public Access Node is a presentation-only Project Canvas node derived from an AP's Public Addresses. It is not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
 
 The node represents AP-owned public access, including pending Platform Addresses and Custom Domains; its user-visible label is Public access.
-
-_Avoid_: EntryPoint, EntryPoint resource, EntryPoint API view, AP endpoints, Ingress.
 
 ### AP Network Settings
 
@@ -123,8 +117,6 @@ AP Network Settings may appear inside the full AP Settings surface or a narrower
 ### Domain List
 
 The AP Network Settings section that lists an AP's Public Addresses — Platform Addresses and Custom Domain Bindings — with their public routing state. Domain List is a public-routing view inside the AP settings surface: it may add App Listening Ports as part of Public Address edits, but it does not display Private Addresses and is not a standalone Settings Owner.
-
-_Avoid_: EntryPoint list, Ingress list, domain manager.
 
 ## Database
 
@@ -159,8 +151,6 @@ A non-destructive workflow that creates a new DB Service from a completed DB Ser
 ### DB Access
 
 A resource workflow for inspecting, and when the product enables it editing, one DB Service's objects and data without exposing its connection credentials. DB Access is distinct from DB Settings: DB Settings changes a DB's desired configuration, while DB Access works with the Logical Databases and objects exposed by that DB Service.
-
-_Avoid_: Data Browser, database browser.
 
 ## Database Binding & AP Environment
 
