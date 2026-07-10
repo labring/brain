@@ -1,6 +1,7 @@
 import { generateId } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 
+import { getDeployTaskRowInNamespace } from "../lookup";
 import type {
   DeploymentTaskSource,
   DeployTaskBlockingInput,
@@ -193,7 +194,10 @@ async function resolveCreateInputs(
 ): Promise<CreateDeployTaskActionResult | ResolvedCreateInputs> {
   let predecessor: DeployTaskRow | null = null;
   if (input.predecessorTaskId != null) {
-    predecessor = await readTaskRow(ctx, input.predecessorTaskId);
+    predecessor = await getDeployTaskRowInNamespace(ctx.db, {
+      namespace: input.create.namespace,
+      taskId: input.predecessorTaskId,
+    });
     if (predecessor == null) {
       return { kind: "predecessor-not-found" };
     }
@@ -352,6 +356,7 @@ export async function createDeployTaskAction(
         .where(
           and(
             eq(deployTasks.retriedFromTaskId, predecessor.id),
+            eq(deployTasks.namespace, create.namespace.trim()),
             inArray(deployTasks.status, [...DEPLOY_TASK_ACTIVE_STATUSES])
           )
         )
@@ -425,6 +430,7 @@ export type CancelDeployTaskActionResult =
 async function cancelParkedTask(
   ctx: DeployTaskEngineContext,
   taskId: string,
+  namespace: string,
   from: "blocked" | "queued"
 ): Promise<CancelDeployTaskActionResult | "retry"> {
   const transitioned = await transitionDeployTask(ctx, {
@@ -440,7 +446,10 @@ async function cancelParkedTask(
   if (transitioned == null) {
     return "retry";
   }
-  const cancelled = await readTaskRow(ctx, taskId);
+  const cancelled = await getDeployTaskRowInNamespace(ctx.db, {
+    namespace,
+    taskId,
+  });
   if (cancelled == null) {
     return { kind: "not-found" };
   }
@@ -451,6 +460,7 @@ async function cancelParkedTask(
 async function requestLeasedTaskCancel(
   ctx: DeployTaskEngineContext,
   taskId: string,
+  namespace: string,
   row: DeployTaskRow
 ): Promise<CancelDeployTaskActionResult | "retry"> {
   if (row.cancelRequestedAt == null) {
@@ -460,7 +470,10 @@ async function requestLeasedTaskCancel(
     }
   }
   abortLocalRunForCancel(taskId);
-  const pending = await readTaskRow(ctx, taskId);
+  const pending = await getDeployTaskRowInNamespace(ctx.db, {
+    namespace,
+    taskId,
+  });
   if (pending == null) {
     return { kind: "not-found" };
   }
@@ -484,10 +497,10 @@ function settledCancelResult(
 
 export async function cancelDeployTaskAction(
   ctx: DeployTaskEngineContext,
-  input: { taskId: string }
+  input: { namespace: string; taskId: string }
 ): Promise<CancelDeployTaskActionResult> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const row = await readTaskRow(ctx, input.taskId);
+    const row = await getDeployTaskRowInNamespace(ctx.db, input);
     if (row == null) {
       return { kind: "not-found" };
     }
@@ -497,13 +510,18 @@ export async function cancelDeployTaskAction(
     }
     const outcome =
       row.status === "queued" || row.status === "blocked"
-        ? await cancelParkedTask(ctx, input.taskId, row.status)
-        : await requestLeasedTaskCancel(ctx, input.taskId, row);
+        ? await cancelParkedTask(ctx, input.taskId, input.namespace, row.status)
+        : await requestLeasedTaskCancel(
+            ctx,
+            input.taskId,
+            input.namespace,
+            row
+          );
     if (outcome !== "retry") {
       return outcome;
     }
   }
-  const finalRow = await readTaskRow(ctx, input.taskId);
+  const finalRow = await getDeployTaskRowInNamespace(ctx.db, input);
   if (finalRow == null) {
     return { kind: "not-found" };
   }
@@ -518,6 +536,7 @@ export type SubmitDeployTaskInputActionResult =
   | { kind: "resumed"; launched: LaunchedDeployTaskRun; task: DeployTaskRow };
 
 export interface SubmitDeployTaskInputActionInput {
+  namespace: string;
   /** Launches the resumed runner with the submitted values held in memory. */
   run: DeployTaskRunLauncher;
   taskId: string;
@@ -546,7 +565,7 @@ export async function submitDeployTaskInputAction(
   ctx: DeployTaskEngineContext,
   input: SubmitDeployTaskInputActionInput
 ): Promise<SubmitDeployTaskInputActionResult> {
-  const row = await readTaskRow(ctx, input.taskId);
+  const row = await getDeployTaskRowInNamespace(ctx.db, input);
   if (row == null) {
     return { kind: "not-found" };
   }
@@ -582,14 +601,14 @@ export async function submitDeployTaskInputAction(
     to: "running",
   });
   if (claim == null) {
-    const current = await readTaskRow(ctx, input.taskId);
+    const current = await getDeployTaskRowInNamespace(ctx.db, input);
     if (current == null) {
       return { kind: "not-found" };
     }
     return { kind: "conflict", task: current };
   }
 
-  const current = await readTaskRow(ctx, input.taskId);
+  const current = await getDeployTaskRowInNamespace(ctx.db, input);
   if (current == null) {
     return { kind: "not-found" };
   }

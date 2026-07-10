@@ -6,7 +6,7 @@ import { submitDeployTaskInputAction } from "@/lib/deploy-task/engine/actions";
 import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
 import { runDeployTask } from "@/lib/deploy-task/runner";
 import {
-  getDeployTaskById,
+  getDeployTaskByIdInNamespace,
   getDeployTaskSnapshot,
   toDeployTaskDTO,
 } from "@/lib/deploy-task/service";
@@ -58,8 +58,11 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Invalid deploy task namespace", 400);
   }
 
-  const existing = await getDeployTaskById(taskId);
-  if (existing == null || existing.namespace !== namespaceResolved.namespace) {
+  const existing = await getDeployTaskByIdInNamespace(
+    taskId,
+    namespaceResolved.namespace
+  );
+  if (existing == null) {
     return jsonError("Deploy task not found", 404);
   }
 
@@ -67,6 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
   const result = await submitDeployTaskInputAction(
     getDeployTaskEngineContext(),
     {
+      namespace: namespaceResolved.namespace,
       run: (handle, task) =>
         runDeployTask(handle, {
           encodedKubeconfig: parsed.data.encodedKubeconfig,

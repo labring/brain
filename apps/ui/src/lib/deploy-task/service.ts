@@ -7,6 +7,7 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { getDeploymentTaskDb } from "./db";
 import { getDeployTaskEngineContext } from "./engine/server";
 import { publishDeployTaskChange } from "./engine/transitions";
+import { getDeployTaskRowInNamespace } from "./lookup";
 import {
   type DeploymentTaskProjection,
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES,
@@ -118,6 +119,16 @@ export async function getDeployTaskById(
     .where(eq(deployTasks.id, taskId))
     .limit(1);
   return task ?? null;
+}
+
+export function getDeployTaskByIdInNamespace(
+  taskId: string,
+  namespace: string
+): Promise<DeployTaskRow | null> {
+  return getDeployTaskRowInNamespace(getDeploymentTaskDb(), {
+    namespace,
+    taskId,
+  });
 }
 
 export async function getDeployTaskSnapshot(

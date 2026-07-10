@@ -465,6 +465,57 @@ test("clone validation matrix: not-found, conflict on active/completed, unique r
   }
 });
 
+test("create action treats predecessors from another namespace as not found", async () => {
+  const ctx = testCtx();
+  for (const status of [
+    "failed",
+    "cancelled",
+    "running",
+    "completed",
+  ] as const) {
+    const predecessor = await insertTaskRow(harness.db, {
+      completedAt: status === "running" ? null : new Date(),
+      namespace: "namespace-a",
+      source: { kind: "template", templateName: "namespace-a-source" },
+      status,
+    });
+
+    const result = await createDeployTaskAction(ctx, {
+      create: { namespace: "namespace-b" },
+      predecessorTaskId: predecessor.id,
+      run: async () => {
+        /* must not launch for an inaccessible predecessor */
+      },
+    });
+
+    assert.deepEqual(result, { kind: "predecessor-not-found" });
+  }
+});
+
+test("clone conflict does not expose an active clone from another namespace", async () => {
+  const ctx = testCtx();
+  const predecessor = await insertTaskRow(harness.db, {
+    completedAt: new Date(),
+    namespace: "namespace-a",
+    status: "failed",
+  });
+  await insertTaskRow(harness.db, {
+    namespace: "namespace-b",
+    retriedFromTaskId: predecessor.id,
+    status: "running",
+  });
+
+  const result = await createDeployTaskAction(ctx, {
+    create: { namespace: "namespace-a" },
+    predecessorTaskId: predecessor.id,
+    run: async () => {
+      /* the unique active-clone guard prevents launch */
+    },
+  });
+
+  assert.deepEqual(result, { activeClone: null, kind: "clone-conflict" });
+});
+
 test("edited redeploy that retargets gets fresh identities", async () => {
   const ctx = testCtx();
   const failed = await insertTaskRow(harness.db, {
@@ -543,6 +594,7 @@ test("cancel action: immediate on blocked, cooperative on running, idempotent, c
     status: "blocked",
   });
   const blockedCancel = await cancelDeployTaskAction(ctx, {
+    namespace: "ns-test",
     taskId: blocked.id,
   });
   assert.equal(blockedCancel.kind, "cancelled");
@@ -555,13 +607,19 @@ test("cancel action: immediate on blocked, cooperative on running, idempotent, c
     leaseOwner: "other-proc",
     status: "running",
   });
-  const first = await cancelDeployTaskAction(ctx, { taskId: running.id });
+  const first = await cancelDeployTaskAction(ctx, {
+    namespace: "ns-test",
+    taskId: running.id,
+  });
   assert.equal(first.kind, "cancelling");
   assert.ok(
     first.kind === "cancelling" && first.task.cancelRequestedAt != null
   );
 
-  const repeat = await cancelDeployTaskAction(ctx, { taskId: running.id });
+  const repeat = await cancelDeployTaskAction(ctx, {
+    namespace: "ns-test",
+    taskId: running.id,
+  });
   assert.equal(repeat.kind, "cancelling");
 
   const requests = (await eventsFor(running.id)).filter(
@@ -573,11 +631,32 @@ test("cancel action: immediate on blocked, cooperative on running, idempotent, c
     completedAt: new Date(),
     status: "completed",
   });
-  const terminal = await cancelDeployTaskAction(ctx, { taskId: done.id });
+  const terminal = await cancelDeployTaskAction(ctx, {
+    namespace: "ns-test",
+    taskId: done.id,
+  });
   assert.equal(terminal.kind, "already-terminal");
 
-  const missing = await cancelDeployTaskAction(ctx, { taskId: "nope" });
+  const missing = await cancelDeployTaskAction(ctx, {
+    namespace: "ns-test",
+    taskId: "nope",
+  });
   assert.equal(missing.kind, "not-found");
+});
+
+test("cancel action treats a task from another namespace as not found", async () => {
+  const ctx = testCtx();
+  const task = await insertTaskRow(harness.db, {
+    namespace: "namespace-a",
+    status: "blocked",
+  });
+
+  const result = await cancelDeployTaskAction(ctx, {
+    namespace: "namespace-b",
+    taskId: task.id,
+  });
+
+  assert.deepEqual(result, { kind: "not-found" });
 });
 
 test("input submission claims blocked→running in place and hands values in memory only", async () => {
@@ -598,6 +677,7 @@ test("input submission claims blocked→running in place and hands values in mem
 
   let received: Record<string, unknown> | null = null;
   const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
     run: async (handle) => {
       received = { DB_PASSWORD: "s3cret-value" };
       await handle.beginApplying();
@@ -625,6 +705,7 @@ test("input submission claims blocked→running in place and hands values in mem
   assert.ok(!eventsJson.includes("s3cret-value"));
 
   const conflict = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
     run: async () => {
       /* unreachable */
     },
@@ -632,6 +713,35 @@ test("input submission claims blocked→running in place and hands values in mem
     values: {},
   });
   assert.equal(conflict.kind, "conflict");
+});
+
+test("input action treats a task from another namespace as not found", async () => {
+  const ctx = testCtx();
+  const task = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "db-password",
+        key: "DB_PASSWORD",
+        label: "Database password",
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    namespace: "namespace-a",
+    status: "blocked",
+  });
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "namespace-b",
+    run: async () => {
+      /* must not launch for an inaccessible task */
+    },
+    taskId: task.id,
+    values: { DB_PASSWORD: "namespace-b-value" },
+  });
+
+  assert.deepEqual(result, { kind: "not-found" });
 });
 
 test("launched run acknowledges cancel as a typed outcome, never failure", async () => {
@@ -668,6 +778,7 @@ test("launched run acknowledges cancel as a typed outcome, never failure", async
     return;
   }
   const cancelResult = await cancelDeployTaskAction(ctx, {
+    namespace: "ns-test",
     taskId: result.task.id,
   });
   assert.ok(

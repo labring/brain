@@ -184,6 +184,7 @@ export function createDeployTaskTools(options: {
       const result = await submitDeployTaskInputAction(
         getDeployTaskEngineContext(),
         {
+          namespace,
           run: (handle, task) =>
             runDeployTask(handle, {
               encodedKubeconfig,
@@ -219,7 +220,7 @@ export function createDeployTaskTools(options: {
       }
       const result = await cancelDeployTaskAction(
         getDeployTaskEngineContext(),
-        { taskId: input.taskId }
+        { namespace, taskId: input.taskId }
       );
       switch (result.kind) {
         case "not-found":
