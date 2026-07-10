@@ -2337,11 +2337,6 @@ async function runTemplateDeploymentTask(input: {
   }
   const source = input.task.source;
   const templateName = source.templateName.trim();
-  const { freshlyAllocated: identityFreshlyAllocated, instanceName } =
-    await allocateTemplateInstanceName({
-      task: input.task,
-      templateName,
-    });
 
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.template_preparation_started",
@@ -2427,6 +2422,16 @@ async function runTemplateDeploymentTask(input: {
     return;
   }
 
+  // Identity allocation must stay below the blocking-input gate: a blocked
+  // run ends above without applying anything, and an identity persisted
+  // before that point would read as "reused" on resume — gating off cleanup
+  // of the resumed run's first partial apply (ADR 0038 freshness proof).
+  const { freshlyAllocated: identityFreshlyAllocated, instanceName } =
+    await allocateTemplateInstanceName({
+      task: input.task,
+      templateName,
+    });
+
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.plan_created",
     message: "Prepared template deployment plan.",
@@ -2496,7 +2501,10 @@ function recordedTemplateInstanceName(task: DeployTaskRow): string {
  * allocation is persisted with a fenced write before any provider call uses
  * it, so an identity can never be allocated and then lost to a crash.
  * `freshlyAllocated` feeds cleanup eligibility: only a fresh identity proves
- * the label selector matches nothing but this run's resources.
+ * the label selector matches nothing but this run's resources — which is why
+ * callers must allocate only after every non-applying early exit (notably the
+ * blocking-input gate): an identity persisted by a run that never applied
+ * would be misread as reused on resume.
  */
 async function allocateTemplateInstanceName(input: {
   task: DeployTaskRow;

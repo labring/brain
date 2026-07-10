@@ -34,6 +34,8 @@ function installFetchRecorder() {
 const failCalls: Record<string, unknown>[] = [];
 const completeCalls: unknown[] = [];
 const eventKinds: string[] = [];
+const requestInputsCalls: unknown[] = [];
+const stateWrites: Record<string, unknown>[] = [];
 
 let currentRow: DeployTaskRow;
 let deployTemplateInstanceImpl: () => Promise<{
@@ -101,7 +103,10 @@ mock.module("./runner-writes", () => ({
     completeCalls.push(input);
     return Promise.resolve();
   },
-  deployTaskRequestInputs: () => Promise.resolve(),
+  deployTaskRequestInputs: (_taskId: string, input: unknown) => {
+    requestInputsCalls.push(input);
+    return Promise.resolve();
+  },
   deployTaskRunSignal: () => abortedController.signal,
   recordDeployTaskEvent: (
     _taskId: string,
@@ -111,7 +116,24 @@ mock.module("./runner-writes", () => ({
     return Promise.resolve();
   },
   throwIfDeployTaskAborted: () => Promise.resolve(),
-  updateDeployTaskState: () => Promise.resolve(),
+  // Persisted patches feed back into the row later runs read, so a
+  // blocked-then-resumed sequence sees exactly what the run persisted —
+  // the seam the identity-freshness regression travels through.
+  updateDeployTaskState: (
+    _taskId: string,
+    patch: Record<string, unknown>
+  ): Promise<void> => {
+    stateWrites.push(patch);
+    currentRow = {
+      ...currentRow,
+      ...patch,
+      artifactSummary: {
+        ...currentRow.artifactSummary,
+        ...(patch.artifactSummary as Record<string, unknown> | undefined),
+      },
+    } as DeployTaskRow;
+    return Promise.resolve();
+  },
   updateDeployTaskTimeline: () => Promise.resolve(),
 }));
 
@@ -127,12 +149,17 @@ mock.module("./result-readiness", () => ({
 const { runDeployTask } = requireModule("./runner") as {
   runDeployTask: (
     handle: DeployTaskHandle,
-    input: { encodedKubeconfig?: string; taskId: string }
+    input: {
+      encodedKubeconfig?: string;
+      submittedInputValues?: Record<string, unknown>;
+      taskId: string;
+    }
   ) => Promise<void>;
 };
 
 function templateTaskRow(input: {
   recordedInstanceName?: string;
+  sensitiveKeys?: string[];
 }): DeployTaskRow {
   return {
     artifactSummary:
@@ -151,7 +178,14 @@ function templateTaskRow(input: {
     projectId: "proj-1",
     projectName: "proj-1",
     runner: { kind: "template" },
-    source: { args: {}, kind: "template", templateName: "dify" },
+    source: {
+      args: {},
+      kind: "template",
+      templateName: "dify",
+      ...(input.sensitiveKeys == null
+        ? {}
+        : { sensitiveKeys: input.sensitiveKeys }),
+    },
     status: "running",
     target: { kind: "existingProject", projectId: "proj-1" },
   } as unknown as DeployTaskRow;
@@ -181,9 +215,12 @@ function attachedFailureDetails(): Record<string, unknown> {
   return (details ?? {}) as Record<string, unknown>;
 }
 
-async function runTemplateTask() {
+async function runTemplateTask(input?: {
+  submittedInputValues?: Record<string, unknown>;
+}) {
   await runDeployTask(runnerHandle(), {
     encodedKubeconfig: "kubeconfig-for-tests",
+    submittedInputValues: input?.submittedInputValues,
     taskId: "task-1",
   });
 }
@@ -195,6 +232,8 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     failCalls.length = 0;
     completeCalls.length = 0;
     eventKinds.length = 0;
+    requestInputsCalls.length = 0;
+    stateWrites.length = 0;
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
     currentRow = templateTaskRow({});
     deployTemplateInstanceImpl = () =>
@@ -242,6 +281,41 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     expect(eventKinds).not.toContain(
       "deployment_task.template_cleanup_started"
     );
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().stage).toBe("apply");
+  });
+
+  it("a run blocked on inputs persists no identity, so the resumed run's apply failure still cleans up", async () => {
+    // Declarations are unavailable in this harness, so a stripped sensitive
+    // key with no in-memory value parks the run on the blocking-input gate.
+    currentRow = templateTaskRow({ sensitiveKeys: ["API_KEY"] });
+    deployTemplateInstanceImpl = () =>
+      Promise.reject(new Error("template provider returned 500"));
+
+    await runTemplateTask();
+
+    // Run 1 blocked before applying anything: no failure, no deletes, and —
+    // the regression under test — no persisted instance identity.
+    expect(requestInputsCalls).toHaveLength(1);
+    expect(failCalls).toHaveLength(0);
+    expect(deleteCalls()).toHaveLength(0);
+    const persistedIdentity = stateWrites.some((patch) => {
+      const summary = patch.artifactSummary as
+        | { resultIdentities?: { templateInstanceName?: string } }
+        | undefined;
+      return Boolean(summary?.resultIdentities?.templateInstanceName);
+    });
+    expect(persistedIdentity).toBe(false);
+
+    // Run 2 resumes with the submitted value, allocates fresh, and a partial
+    // apply failure must delete this run's resources — not preserve them as
+    // if the identity had been inherited.
+    await runTemplateTask({ submittedInputValues: { API_KEY: "value" } });
+
+    expect(eventKinds).not.toContain("deployment_task.result_identity_reused");
+    const kinds = deleteCalls().map((call) => deletedKind(call.url));
+    expect(kinds).toContain("persistentvolumeclaims");
+    expect(eventKinds).toContain("deployment_task.template_cleanup_started");
     expect(failCalls).toHaveLength(1);
     expect(attachedFailureDetails().stage).toBe("apply");
   });
