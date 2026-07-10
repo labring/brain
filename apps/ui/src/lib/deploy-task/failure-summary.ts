@@ -57,7 +57,8 @@ export function deployRunnerSurfacesRawFailure(runner: {
  * are not routed through here yet.
  */
 const REASON_HEADLINES: Record<string, string> = {
-  "readiness-timeout": "Deployment resources didn't become ready in time.",
+  "readiness-timeout":
+    "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them.",
 };
 
 /**

@@ -84,6 +84,27 @@ The renderer should remain stable while markdown is incomplete:
 { "phase": "Reconciling", "ready": false,
 `.trim();
 
+const DIAGRAM_AND_MATH = `
+### Rollout topology
+
+A complete mermaid fence upgrades to a rendered diagram; a broken or
+streaming fence falls back to highlighted source.
+
+\`\`\`mermaid
+graph LR
+  ingress[Ingress] --> gw[api-gateway]
+  gw --> api[api]
+  gw --> ui[ui]
+  api --> db[(postgres)]
+\`\`\`
+
+Inline math like $p_{95} < 250\\,\\text{ms}$ and display math:
+
+$$
+\\text{error budget} = 1 - \\frac{\\text{good requests}}{\\text{total requests}}
+$$
+`.trim();
+
 const SCENARIOS = [
   {
     markdown: BASIC_RESPONSE,
@@ -104,6 +125,10 @@ const SCENARIOS = [
   {
     markdown: STREAMING_PARTIAL,
     title: "Streaming partial markdown",
+  },
+  {
+    markdown: DIAGRAM_AND_MATH,
+    title: "Mermaid diagram and math",
   },
 ] as const;
 

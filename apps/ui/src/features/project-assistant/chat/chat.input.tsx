@@ -1,6 +1,7 @@
 "use client";
 
 import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
+import { warmStreamdownPlugins } from "@workspace/ui/components/ai-elements/streamdown-plugins";
 import {
   AppIconButton,
   type AppIconButtonProps,
@@ -191,6 +192,7 @@ export type ChatComposerTextareaProps = Omit<
 export function ChatComposerTextarea({
   className,
   placeholder = "Ask SealAI to inspect, deploy, or explain this project...",
+  onFocus,
   onKeyDown,
   onPrimaryAction,
   onValueChange,
@@ -247,6 +249,13 @@ export function ChatComposerTextarea({
           className
         )}
         onChange={(e) => onValueChange(e.target.value)}
+        onFocus={(e) => {
+          // Typing predicts an imminent markdown response; warm the
+          // highlight and math chunks before tokens arrive (mermaid loads
+          // with the first diagram, not here).
+          warmStreamdownPlugins().catch(() => undefined);
+          onFocus?.(e);
+        }}
         onKeyDown={(e) => {
           if (
             e.key === "Enter" &&

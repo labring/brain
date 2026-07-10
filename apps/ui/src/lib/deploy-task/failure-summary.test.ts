@@ -77,13 +77,17 @@ describe("deploymentFailureReason", () => {
         reasonCode: "readiness-timeout",
         surfacesRaw: true,
       })
-    ).toBe("Deployment resources didn't become ready in time.");
+    ).toBe(
+      "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them."
+    );
     expect(
       deploymentFailureReason({
         reasonCode: "readiness-timeout",
         surfacesRaw: false,
       })
-    ).toBe("Deployment resources didn't become ready in time.");
+    ).toBe(
+      "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them."
+    );
   });
 
   it("preserves curated AI headlines while never leaking raw AI text", () => {

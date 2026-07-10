@@ -18,7 +18,7 @@ import type { ChatStatus, UIMessage } from "ai";
 import { isToolUIPart } from "ai";
 import { Check, Copy } from "lucide-react";
 import type { ComponentProps } from "react";
-import { useCallback, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { renderChatMessageParts } from "./chat.part";
 import { isChatToolPartStateInFlight } from "./chat.tool-group";
 import type { ChatTranscriptProps } from "./chat.types";
@@ -133,6 +133,38 @@ function MessageCopyAction({
   );
 }
 
+/**
+ * Per-message memo boundary. The AI SDK replaces only the streaming message's
+ * object on each update (settled messages keep identity), so the shallow-prop
+ * bail confines per-chunk render work to the streaming tail instead of the
+ * whole transcript. `copyDisabled` must stay a primitive for the same reason.
+ */
+const TranscriptMessage = memo(function TranscriptMessage({
+  addToolApprovalResponse,
+  copyDisabled,
+  message,
+}: {
+  addToolApprovalResponse?: ChatTranscriptProps["addToolApprovalResponse"];
+  copyDisabled: boolean;
+  message: UIMessage;
+}) {
+  return (
+    <Message
+      className={
+        message.role === "user"
+          ? userMessageClassName
+          : assistantMessageClassName
+      }
+      from={message.role}
+    >
+      <MessageContent className={messageContentClassName}>
+        {renderChatMessageParts({ addToolApprovalResponse, message })}
+      </MessageContent>
+      <MessageCopyAction disabled={copyDisabled} message={message} />
+    </Message>
+  );
+});
+
 /** Message list + scroll region; pass AI SDK message state from the host. */
 export function ChatTranscript({
   addToolApprovalResponse,
@@ -145,6 +177,7 @@ export function ChatTranscript({
   const showSubmittedLoading = status === "submitted";
   const showStreamingLoading = streamingAwaitingAssistantText(messages, status);
   const showLoadingRow = showSubmittedLoading || showStreamingLoading;
+  const lastMessage = messages.at(-1);
 
   return (
     <div
@@ -155,26 +188,12 @@ export function ChatTranscript({
       <Conversation className="min-h-0 w-full flex-1">
         <ConversationContent className="gap-5 px-4 py-5">
           {messages.map((message) => (
-            <Message
-              className={
-                message.role === "user"
-                  ? userMessageClassName
-                  : assistantMessageClassName
-              }
-              from={message.role}
+            <TranscriptMessage
+              addToolApprovalResponse={addToolApprovalResponse}
+              copyDisabled={status === "streaming" && message === lastMessage}
               key={message.id}
-            >
-              <MessageContent className={messageContentClassName}>
-                {renderChatMessageParts({
-                  addToolApprovalResponse,
-                  message,
-                })}
-              </MessageContent>
-              <MessageCopyAction
-                disabled={status === "streaming" && message === messages.at(-1)}
-                message={message}
-              />
-            </Message>
+              message={message}
+            />
           ))}
           {showLoadingRow && (
             <Message className={assistantMessageClassName} from="assistant">

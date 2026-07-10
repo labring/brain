@@ -1,0 +1,2 @@
+DROP INDEX "sealai_deployment"."deploy_tasks_one_active_clone_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "deploy_tasks_one_active_clone_idx" ON "sealai_deployment"."deploy_tasks" USING btree ("namespace","retried_from_task_id") WHERE "sealai_deployment"."deploy_tasks"."retried_from_task_id" IS NOT NULL AND "sealai_deployment"."deploy_tasks"."status" IN ('queued', 'running', 'blocked', 'applying');

@@ -11,7 +11,6 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0014 — Orchestrate Project Surfaces Separately from Canvas Selection](0014-orchestrate-project-surfaces-separately-from-canvas-selection.md)
 - [0015 — Remove Public Project Preview Sharing](0015-remove-public-project-preview-sharing.md)
 - [0016 — Model App Listening Ports as Private Addresses](0016-model-app-listening-ports-as-private-addresses.md)
-- [0017 — DB Service restore creates a new DB Service](0017-db-service-restore-creates-new-db-service.md)
 - [0018 — Model AP Environment as Raw Source and Compiled Runtime Env](0018-model-ap-environment-as-raw-source-and-compiled-runtime-env.md)
 - [0019 — Model Project Settings as Provider-Defined Side Pane Views](0019-model-project-settings-as-provider-defined-side-pane-views.md)
 - [0020 — Keep Shared UI Free of Product Workflows](0020-keep-shared-ui-free-of-product-workflows.md)
@@ -45,4 +44,4 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 
 - An ADR without a `Status` section is accepted as written.
 - When a later ADR revises or replaces part of an earlier one, give the earlier ADR a `Status` section naming the reviser (see ADR 0002), and trim the superseded text instead of leaving it to mislead.
-- Gaps in the sequence (0004–0007, 0010–0012, 0045–0046, 0048) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release.
+- Gaps in the sequence (0004–0007, 0010–0012, 0017, 0045–0046, 0048) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition.

@@ -12,6 +12,7 @@ import {
   runDeployTask,
 } from "@/lib/deploy-task/runner";
 import {
+  getDeployTaskByIdInNamespace,
   listDeploymentTaskProjections,
   listDeployTasks,
   toDeployTaskDTO,
@@ -120,6 +121,15 @@ export async function POST(request: Request) {
     );
   }
   const taskNamespace = namespaceResolved.namespace ?? parsed.data.namespace;
+  if (parsed.data.predecessorTaskId != null) {
+    const predecessor = await getDeployTaskByIdInNamespace(
+      parsed.data.predecessorTaskId,
+      taskNamespace
+    );
+    if (predecessor == null) {
+      return jsonError("Deploy task predecessor not found", 404);
+    }
+  }
   if (parsed.data.source?.kind === "github") {
     const actorUserId = parsed.data.actorUserId?.trim();
     if (!actorUserId) {

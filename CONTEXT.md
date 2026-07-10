@@ -4,12 +4,6 @@ The ubiquitous language for the Brain product domain, grouped by area.
 
 ## Project & Navigation
 
-### Project Description
-
-A user-maintained optional Project summary that explains the Project's purpose or context. A Project Description may be authored when the Project is created or maintained later; an empty Project Description means the user has not described the Project.
-
-_Avoid_: Deployment description, source description, generated summary.
-
 ### Project Display Name
 
 The human-facing Project name shown in navigation, project chrome, project creation forms, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
@@ -23,26 +17,6 @@ A derived health tone for one Project row in the project list, computed from the
 A current-user navigation preference that marks one Project for prominent access from product navigation. Pinned Projects are a small user-curated shortcut set, not a complete Project list; each entry points to Project ID and is not a shared Project property, Project Aggregate Status, recent Project, or workload lifecycle state.
 
 _Avoid_: Favorite Project, starred Project, recent Project, sidebar Project.
-
-### Last Viewed Unpinned Project Shortcut
-
-A current-user navigation memory for the most recently opened unpinned Project in a namespace. It can remain visible while the user navigates to Pinned Projects or non-Project sidebar destinations, but it is not a Pinned Project, complete recent-project list, shared Project property, Project Aggregate Status, or workload lifecycle state.
-
-When the Last Viewed Unpinned Project becomes a Pinned Project, it leaves this shortcut slot rather than falling back to an older Project.
-
-_Avoid_: Current Project Shortcut, auto-pinned Project, recent Project, temporary Pinned Project, last viewed Pinned Project.
-
-### Browser History Swipe Guard
-
-A product chrome interaction boundary that prevents touchpad horizontal overscroll inside the product from becoming browser back or forward navigation. It is a product-level navigation safety rule, not a Project Canvas gesture, Canvas Viewport movement, or a replacement for explicit browser history controls.
-
-_Avoid_: Canvas swipe guard, page swipe gesture, touchpad pagination.
-
-### Project Shortcut Icon
-
-A presentation-only icon shown on a Project navigation shortcut. It may use a representative workload inside the Project as its visual source, but it is not Project identity, Project Aggregate Status, a persisted Project field, or a workload lifecycle state.
-
-_Avoid_: Project identity icon, Project status icon, workload status icon.
 
 ## AP & Application Workloads
 
@@ -72,13 +46,9 @@ An AP Replica Strategy where the platform automatically adjusts AP replicas betw
 
 An AP-owned configuration file mounted into the application runtime through AP Settings. AP Configuration Files are user-authored file content and mount paths, not a standalone Settings Owner.
 
-_Avoid_: ConfigMap, Config Files, configuration map.
-
 ### AP Storage Mount
 
 A persistent volume an AP owns at one absolute container path, where the application's own data is kept across restarts and redeploys. An AP has zero or more AP Storage Mounts; each mount path is unique and fixed once created, and a mount's capacity can grow but never shrink. Distinct from an AP Configuration File, which mounts user-authored file content rather than application-written data.
-
-_Avoid_: Volume, PVC, disk, persistent storage, storage size.
 
 ## AP Networking & Public Access
 
@@ -130,15 +100,13 @@ AP Settings and the AP Public Access Node may present AP Public Access Health, b
 
 An AP with no Public Address intent has no AP Public Access Health entries; this is absence of public access, not a blocked or unconfigured health state.
 
-_Avoid_: EntryPoint health, AP Public Access Node health, standalone public access monitor.
+_Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
 An AP Public Access Node is a presentation-only Project Canvas node derived from an AP's Public Addresses. It is not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
 
 The node represents AP-owned public access, including pending Platform Addresses and Custom Domains; its user-visible label is Public access.
-
-_Avoid_: EntryPoint, EntryPoint resource, EntryPoint API view, AP endpoints, Ingress.
 
 ### AP Network Settings
 
@@ -149,8 +117,6 @@ AP Network Settings may appear inside the full AP Settings surface or a narrower
 ### Domain List
 
 The AP Network Settings section that lists an AP's Public Addresses — Platform Addresses and Custom Domain Bindings — with their public routing state. Domain List is a public-routing view inside the AP settings surface: it may add App Listening Ports as part of Public Address edits, but it does not display Private Addresses and is not a standalone Settings Owner.
-
-_Avoid_: EntryPoint list, Ingress list, domain manager.
 
 ## Database
 
@@ -185,8 +151,6 @@ A non-destructive workflow that creates a new DB Service from a completed DB Ser
 ### DB Access
 
 A resource workflow for inspecting, and when the product enables it editing, one DB Service's objects and data without exposing its connection credentials. DB Access is distinct from DB Settings: DB Settings changes a DB's desired configuration, while DB Access works with the Logical Databases and objects exposed by that DB Service.
-
-_Avoid_: Data Browser, database browser.
 
 ## Database Binding & AP Environment
 
@@ -366,8 +330,6 @@ _Avoid_: task list row, canvas task, placeholder source data.
 
 A task-local Project Canvas slot within one Deployment Task Projection. An unknown Deployment Projection Slot represents deployment progress before structured result evidence exists; a concrete slot may carry the anticipated result identity used for Deployment Handoff, but it is not a Canvas Resource Identity.
 
-An unknown Deployment Projection Slot uses a stable unknown slot identity within its Deployment Task. A concrete Deployment Projection Slot uses an identity derived from its anticipated result reference, while the Canvas Placement Owner combines that slot identity with the Deployment Task identity.
-
 Deployment Projection Slots are only for anticipated results that can become Project Canvas resource nodes. Template support objects may inform deployment progress, but they are not Deployment Projection Slots.
 
 _Avoid_: generic placeholder identity, result-only slot, pending resource identity, fake Canvas Resource Identity, one slot per applied Kubernetes object.
@@ -376,13 +338,7 @@ _Avoid_: generic placeholder identity, result-only slot, pending resource identi
 
 The visual group of currently visible Deployment Projection Slots for one Deployment Task Projection. A Deployment Projection Footprint may include AP, DB, AP Public Access Node, and template-visible workload slots from the same task; it is not limited to an AP-and-Public-access pair.
 
-An unknown Deployment Projection Slot may represent the Deployment Projection Footprint's visual origin before concrete slots are known. When concrete Deployment Projection Slots become known, the unknown slot's placement is consumed into concrete slot placements rather than remaining as a separate placement.
-
-Within a Deployment Projection Footprint, each AP Public Access Node slot remains visually paired with its owning AP slot; this pairing is independent of which slot anchors the whole footprint.
-
-An AP Public Access Node Deployment Projection Slot has its own Deployment Projection Placement. When it has no placement yet, its initial generated placement may be derived from its owning AP's resource or projection placement.
-
-AP-to-Public-access pairing guides generated placement; it does not override separately user-arranged placements.
+Within a Deployment Projection Footprint, each AP Public Access Node slot remains visually paired with its owning AP slot; the pairing guides generated placement and does not override separately user-arranged placements.
 
 _Avoid_: AP PublicAccess group, result pair, placeholder cluster.
 
@@ -390,11 +346,7 @@ _Avoid_: AP PublicAccess group, result pair, placeholder cluster.
 
 The project-scoped temporary visual position owned by a Deployment Projection Slot before Deployment Handoff. Deployment Projection Placement is a Canvas Layout placement owned by the deployment projection, and it may be rekeyed to a resulting resource when handoff occurs.
 
-A user-arranged Deployment Projection Placement represents the user's intended visual position for that Deployment Task Projection until Deployment Handoff; it should not be displaced by automatic footprint avoidance.
-
-A generated Deployment Projection Placement is system-proposed and may be refined by later projection evidence until a user arranges it.
-
-After concrete Deployment Projection Slots are known, arranging one concrete slot expresses intent for that slot only, not for the whole Deployment Projection Footprint.
+A user-arranged Deployment Projection Placement is authoritative and should not be displaced by automatic footprint avoidance; a generated placement is system-proposed and may be refined by later projection evidence until a user arranges it.
 
 _Avoid_: pending node layout, fake resource layout, viewport placement.
 
@@ -414,13 +366,7 @@ _Avoid_: pending connection, fake edge, draft Canvas Connection.
 
 ### Deployment Handoff
 
-The transition where a concrete Deployment Projection Slot stops being represented by a Deployment Placeholder Node and its matching result appears as a normal Project Canvas resource node. Deployment Handoff may rekey the slot's Deployment Projection Placement to the resulting resource when that resource has no existing Canvas Layout position.
-
-Deployment Handoff may complete per slot while unresolved slots remain visible as Deployment Placeholder Nodes.
-
-After Deployment Handoff, the resulting resource's placement is no longer arranged by the remaining Deployment Projection Footprint.
-
-When a user-arranged Deployment Projection Placement is handed off, the resulting resource inherits that user placement intent.
+The transition where a concrete Deployment Projection Slot stops being represented by a Deployment Placeholder Node and its matching result appears as a normal Project Canvas resource node. Deployment Handoff may rekey the slot's Deployment Projection Placement to the resulting resource when that resource has no existing Canvas Layout position, and may complete per slot while unresolved slots remain visible as Deployment Placeholder Nodes.
 
 _Avoid_: completed placeholder, ghost replacement, result takeover.
 
@@ -454,19 +400,11 @@ _Avoid_: assistant chat transcript, backend event log, fixed deploy progress bar
 
 ### Deployment Result Resource Card
 
-A Deployment Task Timeline section for one Deployment Result Resource, presenting that resource's status and events within the task's progress. It is not a separate Deployment Task or a card for every applied Kubernetes object.
-
-A Deployment Result Resource Card is based on known Deployment Result Resource evidence, not on speculative canvas projection alone.
-
-Deployment Result Resource Cards use a shared task-facing status vocabulary, while their events may retain resource-specific detail.
+A Deployment Task Timeline section for one Deployment Result Resource, presenting that resource's status and events within the task's progress. It is not a separate Deployment Task, a card for every applied Kubernetes object, or a Project Canvas node.
 
 On a Deployment Result Resource Card, blocked means the task can still proceed after an external action or changed condition; failed means the current task run has ended for that resource.
 
-Deployment Result Resource Card events are grouped by the resource they explain, not primarily by the system that observed or emitted them.
-
 Required Deployment Result Resource Cards determine whether Deployment Result Readiness has been reached; optional cards may continue to show progress or warnings without blocking task completion.
-
-A Deployment Result Resource Card is not a Project Canvas node, Deployment Projection Slot, or Deployment Placeholder Node.
 
 _Avoid_: Kubernetes object card, manifest card, task row, deployment placeholder card, canvas node.
 
@@ -494,19 +432,11 @@ A Project Canvas affordance that presents the current Project's visible Deployme
 
 A dock chip carries no inline lifecycle actions: it shows a source summary and status, opens the Deployment Task Timeline pane on click, and — for terminal tasks only — offers a dismiss control. Cancel and Redeploy are performed in the Deployment Task Timeline pane the chip opens, not on the chip itself.
 
-A failed Deployment Task may remain attention-needed after its run ends until its current dock reminder is dismissed.
-
-A successfully completed Deployment Task is not attention-needed merely because its projection remains available for Project Canvas handoff.
-
-A successfully completed Deployment Task may briefly remain in the Deployment Task Dock as a current-session completion notice when the user observes it finish. This completion notice is not restored from Project bootstrap and is not deployment history.
-
 _Avoid_: canvas task list, deployment history list, task center, chat task status.
 
 ### Deployment Task Dock Dismissal
 
-A personal user acknowledgement of one Deployment Task Projection version in the Deployment Task Dock. It suppresses that task's dock reminder for that user until the projection changes; it is not shared Project state, task cancellation, task completion, task deletion, deployment history archival, or timeline deletion. Dismissal applies only to terminal tasks (failed, completed, or cancelled); an in-progress task — including one blocked on input — keeps its dock presence and offers no dismiss control.
-
-While a task's Deployment Task Timeline pane is open, its dock chip stays visible as the pane's re-entry handle; dismissing that chip both records the dismissal and closes the pane, for every terminal status alike. Dismissal never requires confirmation: it is reversible in place — the task's Timeline remains reachable from its Project Canvas placeholder — and the closing pane is itself the feedback.
+A personal user acknowledgement of one Deployment Task Projection version in the Deployment Task Dock, available only for terminal tasks (failed, completed, or cancelled). It suppresses that task's dock reminder for that user until the projection changes; it is not shared Project state, task cancellation, task deletion, or deployment history archival.
 
 _Avoid_: close task, archive deployment, delete task, mark complete.
 
@@ -586,15 +516,9 @@ Incremental Canvas Placement prefers Canvas Placement Anchors that reflect resou
 
 ### Canvas Placement Group
 
-A set of new canvas nodes that Incremental Canvas Placement positions together because they come from one user workflow or have direct resource relationship evidence. A Canvas Placement Group is not defined merely by appearing in the same resource refresh.
+A set of new canvas nodes that Incremental Canvas Placement positions together because they come from one user workflow or have direct resource relationship evidence — for example, an AP with desired Public Address intent and its AP Public Access Node while neither has a Canvas Layout position. A Canvas Placement Group is not defined merely by appearing in the same resource refresh, and membership does not imply that later user movement of one node moves the others.
 
-Canvas Placement Groups are evaluated together so related new nodes remain near one another when they first appear.
-
-An AP with desired Public Address intent and its AP Public Access Node form a Canvas Placement Group while neither node has a Canvas Layout position. The AP is the group's primary resource node, and the AP Public Access Node is a presentation node for AP-owned public access rather than an independent resource.
-
-Deployment Projection Slots from one Deployment Task may be presented near one another while placement is generated, but that preview relationship is not a Canvas Placement Group; each slot owns its own Deployment Projection Placement.
-
-After first placement, Canvas Placement Group membership does not imply that later user movement of one node moves the other nodes. During Deployment Handoff, Canvas Placement Group membership does not override existing per-slot Deployment Projection Placements.
+Deployment Projection Slots presented near one another are not a Canvas Placement Group; each slot owns its own Deployment Projection Placement.
 
 ### Canvas Viewport Focus
 
@@ -608,25 +532,17 @@ _Avoid_: using Canvas Layout to describe temporary viewport movement.
 
 A Canvas Viewport Focus for one Deployment Task that keeps the task's visible Deployment Placeholder Node or handed-off Deployment Result Resource nodes in the currently available canvas area. It is not Canvas Selection, Canvas Layout, Deployment Projection Placement, or a command to close project surfaces.
 
-While a Deployment Placeholder Node remains visible for the Deployment Task, it is the task-facing focus target; after Deployment Handoff removes task placeholders, Deployment Result Resource nodes may stand in as the focus target.
-
-When one Deployment Task has multiple visible focus targets, Deployment Task Viewport Focus keeps the target footprint visible rather than choosing only one node.
-
-Deployment Task Viewport Focus is a one-shot focus caused by explicit task re-entry or by the first appearance of a focus target. Routine Deployment Task Timeline streaming updates should not repeatedly move the user's canvas viewport.
+It is a one-shot focus caused by explicit task re-entry or by the first appearance of a focus target; routine Deployment Task Timeline streaming updates should not repeatedly move the user's canvas viewport.
 
 _Avoid_: deployment task selection, deployment task layout focus, close panels to focus task.
 
 ### Canvas Pointer Mode
 
-The Project Canvas interaction mode for selecting resources, opening resource-scoped surfaces, moving canvas nodes, and starting Connecting Edge gestures.
-
-Canvas Pointer Mode may change Canvas Layout when a canvas node is moved, depending on the Project Canvas read/write state. It is distinct from Canvas Viewport movement, which changes only the user's current view. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
+The Project Canvas interaction mode for selecting resources, opening resource-scoped surfaces, moving canvas nodes, and starting Connecting Edge gestures. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
 
 ### Canvas Hand Mode
 
-The Project Canvas interaction mode for browsing the canvas by moving the viewport without selecting resources, using resource quick actions, opening resource-scoped surfaces, moving canvas nodes, or starting Connecting Edge gestures.
-
-Canvas Hand Mode preserves the current canvas selection and active project surfaces, and does not change Canvas Layout. Canvas interaction mode is session-local and is not part of URL state or Canvas Layout.
+The Project Canvas interaction mode for browsing the canvas by moving the viewport only. Canvas Hand Mode preserves the current canvas selection and active project surfaces, and does not change Canvas Layout.
 
 ### Canvas Connection
 
@@ -638,17 +554,9 @@ Canvas Connections are derived from saved resource state. Removing Database Bind
 
 A temporary canvas interaction created when a user drags a line between canvas nodes. A Connecting Edge may become a domain command only when its endpoints match a supported resource relationship, regardless of drag direction.
 
-### Canvas Node Expansion State
-
-The per-node expanded or collapsed presentation state of a canvas node card.
-
 ### Canvas Node Footprint
 
 The rectangle a canvas node occupies in placement decisions. Card heights are content-driven, so a footprint's size comes from the node's rendered card; conservative expansion-state estimates stand in only for cards that have not been rendered yet.
-
-### Canvas Node Stack Order
-
-The per-node visual layering order used when canvas node cards overlap.
 
 ## Resource Actions & Affordances
 
@@ -707,14 +615,6 @@ A bottom temporary project surface for one interactive resource session, such as
 ### Project Assistant Pane
 
 The persistent right-side project layout region that hosts assistant chat and related chat controls. It can trigger Side Panes, but is not itself a Side Pane.
-
-### Assistant Pane Width
-
-A per-device personal presentation preference for how wide the docked Project Assistant Pane is. It is not Canvas Layout, shared Project state, or the pane's open/closed visibility. The remembered width preserves the user's intent; presentation clamps it to what the current workspace can afford, without rewriting the remembered value.
-
-While the user is resizing the Project Assistant Pane, Canvas Viewport Focus keeps following its target within the shrinking or growing canvas area; resizing does not count as the user taking manual control of the viewport.
-
-_Avoid_: chat pane size, pane layout, shared pane width, Canvas Layout width.
 
 ## Sessions & Observability
 
