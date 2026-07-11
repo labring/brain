@@ -651,7 +651,29 @@ function buildManifest(options) {
 
 function buildManifestFromInventory(inventory) {
   requireCompleteInventory(inventory);
-  const projects = inventory.projects.map((entry) => {
+  const ignoredProjects = [];
+  const importableProjects = [];
+  for (const entry of inventory.projects) {
+    if (isAppOnlyInventoryProject(entry)) {
+      ignoredProjects.push({
+        displayName: entry.displayName,
+        legacyInstance: entry.legacyInstance.resource,
+        reason: "app-crd-only",
+      });
+      continue;
+    }
+    importableProjects.push(entry);
+  }
+  const displayNamePlan = resolveProjectDisplayNames(importableProjects);
+  const projects = importableProjects.map((entry) => {
+    const displayName = displayNamePlan.displayNames.get(
+      inventoryProjectKey(entry)
+    );
+    if (displayName === undefined) {
+      throw new Error(
+        `Missing display name for ${entry.legacyInstance.resource.namespace}/${entry.legacyInstance.resource.name}`
+      );
+    }
     const entryNamespace = entry.legacyInstance.resource.namespace;
     const instance = {
       apiVersion: entry.legacyInstance.resource.apiVersion,
@@ -668,9 +690,12 @@ function buildManifestFromInventory(inventory) {
         entry.legacyInstance.resource.creationTimestamp ||
         inventory.generatedAt,
       description: `Imported from Brain v1 Instance ${entry.legacyInstance.resource.name}`,
-      displayName: entry.displayName,
+      displayName: displayName.value,
       id: entry.projectId,
       namespace: entryNamespace,
+      ...(displayName.original === displayName.value
+        ? {}
+        : { originalDisplayName: displayName.original }),
     };
     const memberPatches = entry.members.flatMap((member) =>
       patchesFromInventoryMember(member, entry, entryNamespace)
@@ -704,9 +729,11 @@ function buildManifestFromInventory(inventory) {
     kubeconfig: inventory.kubeconfig ?? null,
     mode: "dry-run",
     namespace: inventory.namespace,
+    displayNameAdjustments: displayNamePlan.adjustments,
     scope: inventory.scope ?? (inventory.namespace ? "namespace" : "cluster"),
     projects,
     skippedInstances: inventory.skippedInstances,
+    skippedProjects: ignoredProjects,
     summary: {
       candidateProjects: projects.length,
       patches: projects.reduce(
@@ -714,6 +741,8 @@ function buildManifestFromInventory(inventory) {
         0
       ),
       skippedInstances: inventory.skippedInstances.length,
+      displayNameAdjustments: displayNamePlan.adjustments.length,
+      skippedProjects: ignoredProjects.length,
       skippedResources: projects.reduce(
         (sum, project) => sum + project.skipped.length,
         0
@@ -723,6 +752,77 @@ function buildManifestFromInventory(inventory) {
     },
     version: MIGRATION_VERSION,
   };
+}
+
+function isAppOnlyInventoryProject(entry) {
+  return (
+    entry.members.length === 1 &&
+    entry.members[0]?.resource.kind === "App" &&
+    entry.supportResources.length === 0
+  );
+}
+
+function inventoryProjectKey(entry) {
+  const resource = entry.legacyInstance.resource;
+  return `${resource.namespace}\0${resource.name}\0${resource.uid}`;
+}
+
+function normalizeProjectDisplayName(entry) {
+  const instanceName = entry.legacyInstance.resource.name;
+  const displayName = String(entry.displayName ?? "").trim();
+  return displayName === "" ? instanceName : displayName;
+}
+
+function resolveProjectDisplayNames(entries) {
+  const usedByNamespace = new Map();
+  const displayNames = new Map();
+  const adjustments = [];
+
+  for (const entry of entries) {
+    const namespace = entry.legacyInstance.resource.namespace;
+    const original = normalizeProjectDisplayName(entry);
+    let used = usedByNamespace.get(namespace);
+    if (used === undefined) {
+      used = new Set();
+      usedByNamespace.set(namespace, used);
+    }
+
+    const value = nextUniqueProjectDisplayName(original, entry, used);
+    used.add(value);
+    displayNames.set(inventoryProjectKey(entry), { original, value });
+
+    if (value !== original) {
+      adjustments.push({
+        displayName: value,
+        legacyInstance: entry.legacyInstance.resource,
+        originalDisplayName: original,
+        reason: "namespace-display-name-conflict",
+      });
+    }
+  }
+
+  return { adjustments, displayNames };
+}
+
+function nextUniqueProjectDisplayName(displayName, entry, used) {
+  if (!used.has(displayName)) {
+    return displayName;
+  }
+
+  const instanceName = entry.legacyInstance.resource.name;
+  const candidateBase = `${displayName} (${instanceName})`;
+  if (!used.has(candidateBase)) {
+    return candidateBase;
+  }
+
+  const shortProjectId = entry.projectId.slice(0, 8);
+  let candidate = `${candidateBase} ${shortProjectId}`;
+  let counter = 2;
+  while (used.has(candidate)) {
+    candidate = `${candidateBase} ${shortProjectId}-${counter}`;
+    counter += 1;
+  }
+  return candidate;
 }
 
 function classifyInventoryProject(entry) {

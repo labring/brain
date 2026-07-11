@@ -82,3 +82,7 @@ cloud.sealos.io/app-deploy-manager
 It only adds or removes the `brain.io/*` labels recorded in the manifest.
 
 One v1 `Instance` maps to one v2 project row. Individual Kubernetes resources are patched with labels; they do not create separate project rows.
+
+Instances whose only member is an `apps.app.sealos.io` App CRD are skipped during `dry-run`. They represent App CRD-only entries such as desktop shortcuts, not Brain v2 Projects.
+
+If multiple importable Instances in the same namespace have the same display name, `dry-run` keeps the first name and appends the legacy Instance name to later duplicates, for example `N8N (n8n-example)`. The final value is used only for the v2 Project `display_name`; resource ownership still uses `brain.io/project-id`.
