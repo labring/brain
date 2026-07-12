@@ -202,7 +202,6 @@ export function CanvasNodeMetric({
             isolate
             locales="en-US"
             value={percentValue / 100}
-            willChange
           />
         )}
       </span>

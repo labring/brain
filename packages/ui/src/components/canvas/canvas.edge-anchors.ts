@@ -41,6 +41,7 @@ export function resolveCanvasEdgeAnchors({
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const anchorPairs = new Map<string, CanvasEdgeAnchorPair>();
   const resolvedEdges: Edge[] = [];
+  let changed = false;
 
   for (const edge of edges) {
     const sourceNode = nodeById.get(edge.source);
@@ -61,11 +62,25 @@ export function resolveCanvasEdgeAnchors({
     }
 
     anchorPairs.set(edge.id, pair);
+    if (
+      edge.sourceHandle === pair.sourceSide &&
+      edge.targetHandle === pair.targetSide
+    ) {
+      resolvedEdges.push(edge);
+      continue;
+    }
+
+    changed = true;
     resolvedEdges.push({
       ...edge,
       sourceHandle: pair.sourceSide,
       targetHandle: pair.targetSide,
     });
+  }
+
+  if (!changed && resolvedEdges.length === edges.length) {
+    // Keep input identity so unchanged node commits preserve xyflow's per-edge memo.
+    return { anchorPairs, edges: edges as Edge[] };
   }
 
   return { anchorPairs, edges: resolvedEdges };

@@ -3,6 +3,7 @@
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useMemo,
   useSyncExternalStore,
@@ -97,8 +98,13 @@ export function useProjectRuntimeNodeModel<
     () => projectRuntimeShellLookupFromNodeData(source.data),
     [source.data]
   );
+  const subscribe = useCallback(
+    (onStoreChange: () => void) =>
+      subscribeRuntimeFact(store, lookup, onStoreChange),
+    [store, lookup]
+  );
   const fact = useSyncExternalStore(
-    (onStoreChange) => subscribeRuntimeFact(store, lookup, onStoreChange),
+    subscribe,
     () => selectRuntimeFact(store, lookup),
     () => undefined
   );

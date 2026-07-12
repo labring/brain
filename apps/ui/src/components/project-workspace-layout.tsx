@@ -25,6 +25,7 @@ import {
   memo,
   type PointerEvent,
   type ReactNode,
+  type TransitionEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -128,6 +129,9 @@ type AssistantClientToolSubmission =
     };
 
 const VIEWPORT_RESIZE_SETTLE_MS = 180;
+// --project-surface-motion-enter-duration (340ms) plus scheduling slack;
+// `transitionend` normally settles the pane first, this is the fallback.
+const ASSISTANT_PANE_ENTER_SETTLE_MS = 420;
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
@@ -163,7 +167,7 @@ function buildSelectedResourceSnapshot(
 
 function ProjectAssistantComposer({
   busy,
-  contextToggles,
+  projectId,
   onDatabaseIntent,
   onDockerIntent,
   onGithubIntent,
@@ -172,16 +176,38 @@ function ProjectAssistantComposer({
   onSubmit,
 }: {
   busy: boolean;
-  contextToggles: readonly string[];
+  projectId: string;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
   onGithubIntent: () => void;
   onSkillsIntent: () => void;
   onStop: () => void;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, selected: ProjectCanvasSelection | null) => void;
 }) {
   const [input, setInput] = useState("");
   const { isAuthorized, isLoading: authLoading } = useGithubAuth();
+  // The volatile canvas selection is subscribed here, in the smallest
+  // component that displays it, so select/deselect re-renders stop at the
+  // composer instead of the whole chat session. Submit hands the same value
+  // up, keeping the pinned snapshot in sync with the visible toggle.
+  const [selectedQuery] = useQueryState(
+    PROJECT_SELECTED_QUERY_KEY,
+    parseAsString
+  );
+  const selected = useMemo(
+    () => parseProjectCanvasSelection(selectedQuery),
+    [selectedQuery]
+  );
+  const contextToggles = useMemo(() => {
+    const toggles: string[] = [];
+    if (projectId.trim() !== "") {
+      toggles.push("Current Project");
+    }
+    if (selected != null && selected.kind !== "edge") {
+      toggles.push("Current Service");
+    }
+    return toggles;
+  }, [projectId, selected]);
 
   const onPrimaryAction = useCallback(() => {
     if (busy) {
@@ -192,9 +218,9 @@ function ProjectAssistantComposer({
     if (!text) {
       return;
     }
-    onSubmit(text);
+    onSubmit(text, selected);
     setInput("");
-  }, [busy, input, onStop, onSubmit]);
+  }, [busy, input, onStop, onSubmit, selected]);
 
   return (
     <div className="group flex w-full shrink-0 flex-col p-[10px]">
@@ -293,15 +319,6 @@ function ProjectAssistantChatSession({
     namespace,
     projectId,
   });
-  const [selectedQuery] = useQueryState(
-    PROJECT_SELECTED_QUERY_KEY,
-    parseAsString
-  );
-  const selected = useMemo(
-    () => parseProjectCanvasSelection(selectedQuery),
-    [selectedQuery]
-  );
-
   // Keep a live ref so the transport memo stays stable across URL changes. The
   // volatile canvas selection is pinned per-message (see submitComposerText), so
   // only thread-stable wire fields belong here.
@@ -521,19 +538,8 @@ function ProjectAssistantChatSession({
 
   const busy = status === "submitted" || status === "streaming";
 
-  const composerContextToggles = useMemo(() => {
-    const toggles: string[] = [];
-    if (projectId.trim() !== "") {
-      toggles.push("Current Project");
-    }
-    if (selected != null && selected.kind !== "edge") {
-      toggles.push("Current Service");
-    }
-    return toggles;
-  }, [projectId, selected]);
-
   const submitComposerText = useCallback(
-    (text: string) => {
+    (text: string, selected: ProjectCanvasSelection | null) => {
       const snapshot = buildSelectedResourceSnapshot(selected);
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
@@ -547,7 +553,7 @@ function ProjectAssistantChatSession({
         ],
       }).catch(() => undefined);
     },
-    [sendMessage, selected]
+    [sendMessage]
   );
 
   const stopComposerResponse = useCallback(() => {
@@ -584,13 +590,13 @@ function ProjectAssistantChatSession({
         ) : null}
         <ProjectAssistantComposerMemo
           busy={busy}
-          contextToggles={composerContextToggles}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
           onSkillsIntent={onSkillsIntent}
           onStop={stopComposerResponse}
           onSubmit={submitComposerText}
+          projectId={projectId}
         />
       </Chat>
     </Chat.Root>
@@ -846,39 +852,44 @@ function ProjectRouteTopBar({
 
   return (
     <>
+      {/* The bar itself stays filter-free: frost is clipped to the content
+          chip so canvas pan/zoom frames never re-filter a full-width strip. */}
       <header
         className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 bg-[#09090B]/10 pr-2 pl-6 backdrop-blur-lg",
+          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 pr-2 pl-6",
           !assistantPaneOpen && "pr-12"
         )}
       >
-        <div className="pointer-events-auto flex min-w-0 shrink-0 basis-40 items-center gap-1">
-          {showProjectName && currentProject.isLoading ? (
-            <Skeleton className="h-5 w-36 max-w-full" />
-          ) : null}
-          {showProjectName && !currentProject.isLoading ? (
-            <>
-              <button
-                aria-label={`Edit project name: ${projectName}`}
-                className="flex min-w-0 shrink-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-                onClick={() => setEditOpen(true)}
-                type="button"
-              >
-                <h1 className="truncate font-medium text-foreground text-sm leading-5">
-                  {projectName}
-                </h1>
-                <SquarePen
-                  aria-hidden
-                  className="size-3.5 shrink-0 text-foreground"
-                  strokeWidth={2}
-                />
-              </button>
-              <ChevronRight
-                aria-hidden
-                className="size-4 shrink-0 text-muted-foreground"
-                strokeWidth={2}
-              />
-            </>
+        <div className="pointer-events-auto flex min-w-0 shrink-0 basis-40 items-center">
+          {showProjectName ? (
+            <div className="flex min-w-0 items-center gap-1 rounded-lg bg-background/10 backdrop-blur-lg">
+              {currentProject.isLoading ? (
+                <Skeleton className="h-5 w-36 max-w-full" />
+              ) : (
+                <>
+                  <button
+                    aria-label={`Edit project name: ${projectName}`}
+                    className="flex min-w-0 shrink-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                    onClick={() => setEditOpen(true)}
+                    type="button"
+                  >
+                    <h1 className="truncate font-medium text-foreground text-sm leading-5">
+                      {projectName}
+                    </h1>
+                    <SquarePen
+                      aria-hidden
+                      className="size-3.5 shrink-0 text-foreground"
+                      strokeWidth={2}
+                    />
+                  </button>
+                  <ChevronRight
+                    aria-hidden
+                    className="size-4 shrink-0 text-muted-foreground"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
+            </div>
           ) : null}
         </div>
       </header>
@@ -908,6 +919,12 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   const [paneResizing, setPaneResizing] = useAtom(assistantPaneResizingAtom);
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const [viewportResizing, setViewportResizing] = useState(false);
+  // Open/close animates the pane as a transform+opacity overlay; layout width
+  // is reserved in one snap once the enter transition settles (and released at
+  // close start), so the canvas reflows once per toggle instead of per frame.
+  // Mounting with the pane already open reserves immediately — there is no
+  // enter transition to wait for.
+  const [paneEnterSettled, setPaneEnterSettled] = useState(assistantPaneOpen);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const workspaceWidthRef = useRef(workspaceWidth);
   const viewportResizingRef = useRef(false);
@@ -999,6 +1016,39 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       visualViewport?.removeEventListener("resize", handleViewportResize);
     };
   }, []);
+
+  useEffect(() => {
+    if (!assistantPaneOpen) {
+      setPaneEnterSettled(false);
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPaneEnterSettled(true);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setPaneEnterSettled(true);
+    }, ASSISTANT_PANE_ENTER_SETTLE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [assistantPaneOpen]);
+
+  const handlePaneTransitionEnd = useCallback(
+    (event: TransitionEvent<HTMLElement>) => {
+      if (event.target !== event.currentTarget) {
+        return;
+      }
+      if (
+        event.propertyName !== "transform" &&
+        event.propertyName !== "opacity"
+      ) {
+        return;
+      }
+      if (assistantPaneOpen) {
+        setPaneEnterSettled(true);
+      }
+    },
+    [assistantPaneOpen]
+  );
 
   const cancelPaneResize = useCallback(() => {
     if (dragRef.current == null) {
@@ -1108,9 +1158,12 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
     writeStoredAssistantPaneWidth(null);
   }, [setPaneWidth]);
 
-  // Rendered as plain px: transitioning between clamp() values wedges the CSS
-  // width transition in Chrome, so the workspace clamp is resolved here.
+  // Resolved to plain px in JS so the overlay pane and the layout reserve
+  // below always agree on the same value (drag and viewport resizes keep
+  // tracking it live; only open/close snaps).
   const renderedPaneWidth = clampAssistantPaneWidth(paneWidth, workspaceWidth);
+  const paneReservedWidth =
+    assistantPaneOpen && paneEnterSettled ? renderedPaneWidth : 0;
 
   return (
     <div
@@ -1130,9 +1183,9 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
           {children}
         </div>
       </section>
-      {assistantPaneOpen ? (
+      {assistantPaneOpen && paneEnterSettled ? (
         <div
-          className="relative z-30 w-0 shrink-0"
+          className="relative z-40 w-0 shrink-0"
           data-slot="assistant-pane-resizer"
         >
           {/* biome-ignore lint/a11y/useSemanticElements: WAI-ARIA window-splitter pattern needs a focusable `role="separator"` widget; `<hr>` is a static, void separator. */}
@@ -1162,20 +1215,43 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : null}
+      {/* Layout reserve for the overlay pane: never transitions — it snaps
+          once the enter transition settles and releases at close start, so
+          the reflow always happens underneath the opaque pane. */}
+      <div
+        aria-hidden
+        className="shrink-0"
+        data-slot="assistant-pane-reserve"
+        style={{ width: paneReservedWidth }}
+      />
+      {/* Same two-layer recipe as side-pane.tsx: the outer clip box nudges
+          and fades while the inner chrome surface slides its full width, so
+          the panel emerges from the right edge instead of fading in place. */}
       <aside
         aria-hidden={!assistantPaneOpen}
         className={cn(
-          "project-chrome-surface project-surface-slide-x box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          "project-surface-slide-x absolute inset-y-0 right-0 z-30 overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
           assistantPaneOpen
-            ? "project-surface-slide-x-open border-border opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
-            : "project-surface-slide-x-offset pointer-events-none border-transparent opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
+            ? "project-surface-slide-x-open opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
+            : "project-surface-slide-x-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
           (paneResizing || viewportResizing) && "transition-none"
         )}
         data-slot="project-assistant-pane"
         id="project-assistant-pane"
-        style={{ width: assistantPaneOpen ? renderedPaneWidth : 0 }}
+        onTransitionEnd={handlePaneTransitionEnd}
+        style={{ width: renderedPaneWidth }}
       >
-        <ProjectAssistantChatPaneMemo />
+        <div
+          className={cn(
+            "project-chrome-surface project-surface-slide-x absolute inset-y-0 right-0 box-border flex min-h-0 w-full flex-col overflow-hidden border-border border-l transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+            assistantPaneOpen
+              ? "project-surface-slide-x-open duration-[var(--project-surface-motion-enter-duration)]"
+              : "project-surface-slide-x-full duration-[var(--project-surface-motion-exit-duration)]",
+            (paneResizing || viewportResizing) && "transition-none"
+          )}
+        >
+          <ProjectAssistantChatPaneMemo />
+        </div>
       </aside>
       <AppIconButton
         aria-controls="project-assistant-pane"

@@ -4,7 +4,14 @@ import { SidePanePresence } from "@workspace/ui/components/side-pane";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 
 import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
@@ -24,6 +31,63 @@ import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import styles from "./project-index.module.css";
 import { ProjectIndexHorizon } from "./project-index-horizon";
+
+/**
+ * FLIP the centered explorer column when the side-pane reserve snaps: the new
+ * layout (width, container-query padding) lands in a single pass instead of
+ * per animation frame, then the column glides from its old position in sync
+ * with the pane's motion. Position is measured via `offsetLeft` so the
+ * in-flight transform never skews the baseline.
+ */
+function useSidePaneReserveFlip(sidePaneOpen: boolean) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const prevLeftRef = useRef<number | null>(null);
+  const prevOpenRef = useRef(sidePaneOpen);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container == null) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      const column = container.firstElementChild;
+      if (column instanceof HTMLElement) {
+        prevLeftRef.current = column.offsetLeft;
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (prevOpenRef.current === sidePaneOpen) {
+      return;
+    }
+    prevOpenRef.current = sidePaneOpen;
+    const column = containerRef.current?.firstElementChild;
+    if (!(column instanceof HTMLElement)) {
+      return;
+    }
+    const newLeft = column.offsetLeft;
+    const prevLeft = prevLeftRef.current;
+    prevLeftRef.current = newLeft;
+    if (prevLeft == null || prevLeft === newLeft) {
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    column.style.transition = "none";
+    column.style.transform = `translateX(${prevLeft - newLeft}px)`;
+    // Flush the inverted position so the next assignment animates from it.
+    column.getBoundingClientRect();
+    column.style.transition =
+      "transform var(--project-surface-motion-enter-duration) var(--project-surface-motion-ease)";
+    column.style.transform = "";
+  }, [sidePaneOpen]);
+
+  return containerRef;
+}
 
 export default function ProjectIndexPage() {
   const router = useRouter();
@@ -134,6 +198,7 @@ export default function ProjectIndexPage() {
   const creationPaneOpen = creationSideEntry != null;
   const skillsPaneOpen = projectSideRouteEntry?.kind === "skillsWorkflow";
   const sidePaneOpen = creationPaneOpen || skillsPaneOpen;
+  const explorerFlipRef = useSidePaneReserveFlip(sidePaneOpen);
 
   const sidePaneContent = useMemo((): ReactNode => {
     if (creationPaneOpen) {
@@ -192,7 +257,10 @@ export default function ProjectIndexPage() {
         )}
       >
         <section className="@container/project-index-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex min-h-0 flex-1 flex-col items-center gap-4 px-[clamp(1rem,4cqw,3.25rem)] pt-13 pb-6 transition-[padding] duration-200 ease-out motion-reduce:transition-none">
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center gap-4 px-[clamp(1rem,4cqw,3.25rem)] pt-13 pb-6"
+            ref={explorerFlipRef}
+          >
             <ProjectExplorer.Root actions={explorerActions} states={states}>
               <ProjectExplorer.Variant1
                 className="w-full min-w-0 max-w-6xl flex-1"
