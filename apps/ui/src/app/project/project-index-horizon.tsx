@@ -1,8 +1,24 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import {
+  Component,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
+
 import type { DevTweaksGroupDef } from "@/features/dev-tweaks/dev-tweaks-store";
-import { useDevTweaks } from "@/features/dev-tweaks/use-dev-tweaks";
+import {
+  type DevTweakValues,
+  useDevTweaks,
+} from "@/features/dev-tweaks/use-dev-tweaks";
+import type { HorizonWebglPhase } from "./horizon-webgl";
 import styles from "./project-index.module.css";
+
+const HorizonWebgl = dynamic(() => import("./horizon-webgl"), { ssr: false });
 
 /** Defaults mirror the `.horizon` custom-property block in the CSS module. */
 const HORIZON_TWEAKS = {
@@ -16,6 +32,27 @@ const HORIZON_TWEAKS = {
       min: 0,
       unit: "%",
       value: 12,
+    },
+    canvasFps: {
+      label: "Canvas frame cap",
+      max: 60,
+      min: 6,
+      step: 1,
+      value: 24,
+    },
+    canvasScale: {
+      label: "Canvas render scale",
+      max: 1,
+      min: 0.25,
+      step: 0.05,
+      value: 0.5,
+    },
+    engineWebgl: {
+      label: "Engine (0 static · 1 WebGL)",
+      max: 1,
+      min: 0,
+      step: 1,
+      value: 1,
     },
     glowCore: {
       cssVar: "--horizon-glow-core",
@@ -231,18 +268,108 @@ const HORIZON_TWEAKS = {
   },
 } satisfies DevTweaksGroupDef;
 
+export type HorizonTweakValues = DevTweakValues<
+  (typeof HORIZON_TWEAKS)["tweaks"]
+>;
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+let reducedMotionQuery: MediaQueryList | null = null;
+const getReducedMotionQuery = (): MediaQueryList => {
+  reducedMotionQuery ??= window.matchMedia(REDUCED_MOTION_QUERY);
+  return reducedMotionQuery;
+};
+const subscribeReducedMotion = (onChange: () => void): (() => void) => {
+  const query = getReducedMotionQuery();
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+};
+const getReducedMotion = (): boolean => getReducedMotionQuery().matches;
+const getServerReducedMotion = (): boolean => true;
+
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotion,
+    getServerReducedMotion
+  );
+}
+
+/**
+ * Render-error boundary so a failed lazy chunk (e.g. deploy skew) degrades
+ * to the static glow instead of bubbling to the route error boundary —
+ * chunk-load failure is one of the four AIM-77 static-fallback cases.
+ */
+class HorizonCanvasBoundary extends Component<
+  { children: ReactNode; onError: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch() {
+    this.props.onError();
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/**
+ * Ambient glow behind the project index. The WebGL engine (default) renders
+ * the animated layers at a capped frame rate; the DOM gradient layers are
+ * the static fallback for reduced-motion, canvas load, WebGL-init failure,
+ * context loss, and the ⌃⌥T engine knob's 0 position (AIM-77).
+ */
 export function ProjectIndexHorizon() {
-  const { style } = useDevTweaks("project-index-horizon", HORIZON_TWEAKS);
+  const { style, values } = useDevTweaks(
+    "project-index-horizon",
+    HORIZON_TWEAKS
+  );
+  const reducedMotion = usePrefersReducedMotion();
+  const [canvasPhase, setCanvasPhase] = useState<"active" | "failed" | "idle">(
+    "idle"
+  );
+
+  const wantsWebgl = !reducedMotion && values.engineWebgl >= 0.5;
+  useEffect(() => {
+    if (!wantsWebgl) {
+      // Leaving the WebGL engine (dev knob / reduced-motion) resets the
+      // attempt; a context-loss "failed" stays sticky otherwise.
+      setCanvasPhase("idle");
+    }
+  }, [wantsWebgl]);
+
+  const handlePhase = useCallback((phase: HorizonWebglPhase) => {
+    setCanvasPhase(phase);
+  }, []);
+  const handleCanvasError = useCallback(() => {
+    setCanvasPhase("failed");
+  }, []);
+
+  const webglActive = wantsWebgl && canvasPhase !== "failed";
 
   return (
     <div
       className={styles.horizon}
+      data-canvas={
+        webglActive && canvasPhase === "active" ? "active" : undefined
+      }
       data-slot="project-index-horizon"
       style={style}
     >
       <div className={styles.horizonGlow} />
       <div className={styles.horizonHues} />
       <div className={styles.horizonSurge} />
+      {webglActive ? (
+        <HorizonCanvasBoundary onError={handleCanvasError}>
+          <HorizonWebgl onPhase={handlePhase} values={values} />
+        </HorizonCanvasBoundary>
+      ) : null}
       <div className={styles.horizonNoise} />
     </div>
   );

@@ -41,6 +41,7 @@
   --horizon-swell-scale-max: 1.12;
   --horizon-swell-scale-min: 0.9;
   --horizon-bleed-x: 12%;
+  --horizon-crossfade-dur: 400ms;
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -76,11 +77,6 @@
     transparent 78%
   );
   transform-origin: 50% 100%;
-  animation-name: horizon-swell;
-  animation-duration: var(--horizon-swell-dur);
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
 }
 
 .horizonHues {
@@ -110,12 +106,6 @@
   mix-blend-mode: screen;
   filter: blur(var(--horizon-hues-blur));
   transform-origin: 50% 100%;
-  animation-name: horizon-swell;
-  animation-duration: var(--horizon-hues-dur);
-  animation-timing-function: ease-in-out;
-  animation-delay: calc(-1 * var(--horizon-hues-dur));
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
 }
 
 /* One huge ultra-soft wash swells far above the base haze and recedes,
@@ -143,11 +133,42 @@
   mix-blend-mode: screen;
   opacity: var(--horizon-surge-base-opacity);
   transform-origin: 50% 100%;
-  animation-name: horizon-surge;
-  animation-duration: var(--horizon-surge-dur);
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
+}
+
+/* The gradient layers above idle as the static fallback (reduced motion,
+   canvas loading, WebGL-init failure, context loss). Motion comes solely
+   from the WebGL engine (AIM-77) — no infinite CSS animation path exists,
+   so nothing can force refresh-rate frame production. The swell/surge
+   motion parameters (durations, scale/opacity ranges) are consumed by
+   horizon-webgl as shader-pose inputs. */
+
+/* The canvas crossfades in over the static layers, which then drop out
+   entirely so nothing composites twice. */
+.horizonCanvas {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--horizon-crossfade-dur) ease-out;
+}
+
+.horizonCanvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.horizon[data-canvas="active"] .horizonCanvas {
+  opacity: 1;
+}
+
+.horizon[data-canvas="active"] .horizonGlow,
+.horizon[data-canvas="active"] .horizonHues,
+.horizon[data-canvas="active"] .horizonSurge {
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--horizon-crossfade-dur) ease-out,
+    visibility 0s var(--horizon-crossfade-dur);
 }
 
 /* Fine noise dithers the large dark gradients so they don't band. */
@@ -160,38 +181,6 @@
   opacity: var(--horizon-noise-opacity);
 }
 
-@keyframes horizon-swell {
-  from {
-    opacity: var(--horizon-swell-op-min);
-    transform: scale(var(--horizon-swell-scale-min));
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(var(--horizon-swell-scale-max));
-  }
-}
-
-@keyframes horizon-surge {
-  from {
-    opacity: var(--horizon-surge-op-min);
-    transform: scale(var(--horizon-surge-scale-min));
-  }
-
-  to {
-    opacity: var(--horizon-surge-op-max);
-    transform: scale(var(--horizon-surge-scale-max));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .horizonGlow,
-  .horizonHues,
-  .horizonSurge {
-    animation: none;
-  }
-}
-
 @container project-index-layout (min-width: 60rem) {
   .sidePaneReserve[data-open="true"] {
     width: min(40rem, 100cqw);
@@ -199,7 +188,6 @@
     transition-duration: var(--project-surface-motion-enter-duration);
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .sidePaneReserve {
     transition: none;
