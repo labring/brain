@@ -1,122 +1,53 @@
 import type { DataFlowTableData } from "@data-browser/api/access-types";
+import { ColumnResizeHandle } from "@data-browser/components/database/shared/ColumnResizeHandle";
 import type { DataViewSortDirection } from "@data-browser/components/database/shared/DataViewSortMenu";
-import type { FindBarModel } from "@data-browser/components/database/shared/FindBar";
 import {
-  type DbAccessSortState,
-  useDbAccessViewState,
-} from "@data-browser/state/db-access-view-state";
+  type FindBarModel,
+  type FindHighlight,
+  findCellHighlight,
+} from "@data-browser/components/database/shared/FindBar";
+import {
+  columnWidthStyle,
+  type useColumnResize,
+} from "@data-browser/components/database/shared/useColumnResize";
+import type { DbAccessSortState } from "@data-browser/state/db-access-view-state";
 import { cn } from "@workspace/ui/lib/utils";
-import { useAtomValue } from "jotai";
 import { EyeOff, Loader2 } from "lucide-react";
-import { type MouseEvent, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { TableViewColumnHeader } from "./TableView.ColumnHeader";
 import type { RenderedTableRow } from "./types";
-import { defaultColumnWidth } from "./useColumnResize";
 
 interface TableViewDataGridProps {
   data: DataFlowTableData | null;
   find: FindBarModel;
   loading: boolean;
   onClearSort: () => void;
-  onResizeHandleEnter: (column: string) => void;
-  onResizeHandleLeave: (column: string) => void;
-  onResizeStart: (event: MouseEvent, column: string) => void;
   onSort: (column: string, direction: DataViewSortDirection) => void;
   renderedRows: RenderedTableRow[];
+  resize: ReturnType<typeof useColumnResize>;
   sort: DbAccessSortState;
-  viewKey: string;
   visibleColumnNames: string[];
 }
 
-interface SubscribedColumnHeaderProps {
+interface DataCellProps {
   column: string;
-  columnType?: string;
-  index: number;
-  isForeignKey: boolean;
-  isPrimaryKey: boolean;
-  onClearSort: () => void;
-  onResizeHandleEnter: (column: string) => void;
-  onResizeHandleLeave: (column: string) => void;
-  onResizeStart: (event: MouseEvent, column: string) => void;
-  onSort: (column: string, direction: DataViewSortDirection) => void;
-  sort: DbAccessSortState;
-  viewKey: string;
-}
-
-function SubscribedColumnHeader({
-  column,
-  columnType,
-  index,
-  isForeignKey,
-  isPrimaryKey,
-  onClearSort,
-  onResizeHandleEnter,
-  onResizeHandleLeave,
-  onResizeStart,
-  onSort,
-  sort,
-  viewKey,
-}: SubscribedColumnHeaderProps) {
-  const viewState = useDbAccessViewState(viewKey);
-  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
-
-  return (
-    <TableViewColumnHeader
-      column={column}
-      columnType={columnType}
-      index={index}
-      isForeignKey={isForeignKey}
-      isPrimaryKey={isPrimaryKey}
-      onClearSort={onClearSort}
-      onResizeHandleEnter={onResizeHandleEnter}
-      onResizeHandleLeave={onResizeHandleLeave}
-      onResizeStart={onResizeStart}
-      onSort={onSort}
-      resized={committedWidth != null}
-      sort={sort}
-      width={committedWidth ?? defaultColumnWidth(column)}
-    />
-  );
-}
-
-interface SubscribedDataCellProps {
-  column: string;
+  columnIndex: number;
   displayValue: string | null;
-  find: FindBarModel;
-  onResizeHandleEnter: (column: string) => void;
-  onResizeHandleLeave: (column: string) => void;
-  onResizeStart: (event: MouseEvent, column: string) => void;
-  rowIndex: number;
+  highlight: FindHighlight;
+  resize: ReturnType<typeof useColumnResize>;
   rowKey: string;
-  viewKey: string;
+  targetId: string;
 }
 
-function SubscribedDataCell({
+const DataCell = memo(function DataCell({
   column,
+  columnIndex,
   displayValue,
-  find,
-  onResizeHandleEnter,
-  onResizeHandleLeave,
-  onResizeStart,
-  rowIndex,
+  highlight,
+  resize,
   rowKey,
-  viewKey,
-}: SubscribedDataCellProps) {
-  const viewState = useDbAccessViewState(viewKey);
-  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
-  const width = committedWidth ?? defaultColumnWidth(column);
-  const highlight = find.state.total
-    ? find.state.matches.findIndex(
-        (match) => match.rowIndex === rowIndex && match.columnKey === column
-      ) === find.state.currentMatchIndex
-      ? "current"
-      : find.state.matches.some(
-            (match) => match.rowIndex === rowIndex && match.columnKey === column
-          )
-        ? "match"
-        : null
-    : null;
-
+  targetId,
+}: DataCellProps) {
   return (
     <td
       className={cn(
@@ -135,10 +66,8 @@ function SubscribedDataCell({
       data-qa-resource-type="table-row"
       data-qa-state="read_only"
       data-testid="sql.table.cell"
-      style={{
-        minWidth: `${width}px`,
-        ...(committedWidth != null && { maxWidth: `${width}px` }),
-      }}
+      id={targetId}
+      style={columnWidthStyle(column, columnIndex)}
     >
       <span className="block truncate" title={displayValue ?? "NULL"}>
         {displayValue == null ? (
@@ -147,16 +76,14 @@ function SubscribedDataCell({
           String(displayValue)
         )}
       </span>
-      <div
-        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
-        data-db-access-resize-handle={column}
-        onMouseDown={(event) => onResizeStart(event, column)}
-        onMouseEnter={() => onResizeHandleEnter(column)}
-        onMouseLeave={() => onResizeHandleLeave(column)}
+      <ColumnResizeHandle
+        column={column}
+        columnIndex={columnIndex}
+        resize={resize}
       />
     </td>
   );
-}
+});
 
 /** Renders the SQL grid and subscribes only to committed column widths. */
 export function TableViewDataGrid({
@@ -164,13 +91,10 @@ export function TableViewDataGrid({
   find,
   loading,
   onClearSort,
-  onResizeHandleEnter,
-  onResizeHandleLeave,
-  onResizeStart,
   onSort,
   renderedRows,
+  resize,
   sort,
-  viewKey,
   visibleColumnNames,
 }: TableViewDataGridProps) {
   const visibleColumns = useMemo(
@@ -212,6 +136,7 @@ export function TableViewDataGrid({
   return (
     <div
       className="flex-1 overflow-auto"
+      data-db-access-grid-scroll=""
       data-qa-module="sql"
       data-qa-object="table-grid"
       data-qa-row-count={renderedRows.length}
@@ -232,13 +157,11 @@ export function TableViewDataGrid({
         <thead className="border-border border-b bg-transparent">
           <tr>
             <th
-              className="sticky top-0 left-0 z-50 overflow-hidden border-border border-r border-b bg-transparent px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
+              className="sticky top-0 left-0 z-50 overflow-hidden border-border border-r border-b bg-db-access-sticky-header-surface px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
               style={{ width: 48, minWidth: 48, maxWidth: 48 }}
-            >
-              <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
-            </th>
+            />
             {visibleColumns.map((column, index) => (
-              <SubscribedColumnHeader
+              <TableViewColumnHeader
                 column={column}
                 columnType={data?.columnTypes[column]}
                 index={index}
@@ -246,29 +169,23 @@ export function TableViewDataGrid({
                 isPrimaryKey={data?.primaryKey === column}
                 key={column}
                 onClearSort={onClearSort}
-                onResizeHandleEnter={onResizeHandleEnter}
-                onResizeHandleLeave={onResizeHandleLeave}
-                onResizeStart={onResizeStart}
                 onSort={onSort}
+                resize={resize}
                 sort={sort}
-                viewKey={viewKey}
               />
             ))}
             {hiddenColumnCount > 0 && (
               <th
-                className="sticky top-0 z-40 overflow-hidden border-border border-b bg-transparent px-4 py-2 text-center font-medium text-muted-foreground text-xs"
+                className="sticky top-0 z-40 overflow-hidden border-border border-b bg-db-access-sticky-header-surface px-4 py-2 text-center font-medium text-muted-foreground text-xs"
                 title={`${hiddenColumnCount} hidden column(s)`}
               >
-                <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
                 <div className="relative z-10 flex items-center justify-center gap-1">
                   <EyeOff className="h-3.5 w-3.5" />
                   <span>{hiddenColumnCount}</span>
                 </div>
               </th>
             )}
-            <th className="sticky top-0 z-40 w-full overflow-hidden border-border border-b bg-transparent">
-              <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
-            </th>
+            <th className="sticky top-0 z-40 w-full overflow-hidden border-border border-b bg-db-access-sticky-header-surface" />
           </tr>
         </thead>
         <tbody className="bg-transparent">
@@ -296,18 +213,21 @@ export function TableViewDataGrid({
                 {row.rowNumber ?? ""}
               </td>
 
-              {visibleColumns.map((column) => (
-                <SubscribedDataCell
+              {visibleColumns.map((column, columnIndex) => (
+                <DataCell
                   column={column}
+                  columnIndex={columnIndex}
                   displayValue={row.values[column] ?? null}
-                  find={find}
+                  highlight={findCellHighlight(
+                    find.state.highlightIndex,
+                    find.state.currentMatch,
+                    rowIndex,
+                    column
+                  )}
                   key={column}
-                  onResizeHandleEnter={onResizeHandleEnter}
-                  onResizeHandleLeave={onResizeHandleLeave}
-                  onResizeStart={onResizeStart}
-                  rowIndex={rowIndex}
+                  resize={resize}
                   rowKey={row.rowKey}
-                  viewKey={viewKey}
+                  targetId={find.meta.getTargetId(rowIndex, column)}
                 />
               ))}
 

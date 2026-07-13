@@ -6,6 +6,7 @@ import type {
 import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
 import { useDbAccessService } from "@data-browser/state/db-access-session";
 import { dbAccessExpandedStorageKey } from "@data-browser/state/db-service";
+import { useAtomValue, useStore } from "jotai";
 import {
   createContext,
   use,
@@ -13,19 +14,23 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
+import {
+  sidebarTreeAnyLoadingAtom,
+  sidebarTreeNodeChildrenAtom,
+  sidebarTreeNodeExpandedAtom,
+  sidebarTreeNodeLoadingAtom,
+  sidebarTreeStateAtom,
+} from "./sidebar-tree-state";
 import type { NodeType, TreeNodeData } from "./types";
 import { dbServiceToNode } from "./types";
 
 interface SidebarTreeContextValue {
   collapseNode: (nodeId: string) => void;
-  expandedItems: Set<string>;
   fetchNodeChildren: (node: TreeNodeData) => Promise<TreeNodeData[]>;
-  isLoading: Record<string, boolean>;
+  isExpanded: (nodeId: string) => boolean;
   refreshNode: (node: TreeNodeData) => Promise<void>;
   toggleItem: (node: TreeNodeData) => Promise<void>;
-  treeData: Record<string, TreeNodeData[]>;
 }
 
 const SidebarTreeContext = createContext<SidebarTreeContextValue | null>(null);
@@ -36,6 +41,31 @@ export function useSidebarTree(): SidebarTreeContextValue {
     throw new Error("useSidebarTree must be used within SidebarTreeProvider");
   }
   return context;
+}
+
+export function useSidebarTreeIsAnyLoading() {
+  return useAtomValue(sidebarTreeAnyLoadingAtom);
+}
+
+export function useSidebarTreeNodeState(nodeId: string) {
+  const childrenAtom = useMemo(
+    () => sidebarTreeNodeChildrenAtom(nodeId),
+    [nodeId]
+  );
+  const expandedAtom = useMemo(
+    () => sidebarTreeNodeExpandedAtom(nodeId),
+    [nodeId]
+  );
+  const loadingAtom = useMemo(
+    () => sidebarTreeNodeLoadingAtom(nodeId),
+    [nodeId]
+  );
+
+  return {
+    children: useAtomValue(childrenAtom),
+    isExpanded: useAtomValue(expandedAtom),
+    isLoading: useAtomValue(loadingAtom),
+  };
 }
 
 function scopedStorageKey(
@@ -220,36 +250,41 @@ export function SidebarTreeProvider({
   children: React.ReactNode;
 }) {
   const dbService = useDbAccessService();
+  const { dbServiceKey, engineType, runtime } = dbService;
 
-  const storageKey = useMemo(
-    () => scopedStorageKey(dbService.runtime),
-    [dbService.runtime]
-  );
-
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [treeData, setTreeData] = useState<Record<string, TreeNodeData[]>>({});
-  const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
-  const [isRestoring, setIsRestoring] = useState(true);
+  const storageKey = useMemo(() => scopedStorageKey(runtime), [runtime]);
+  const store = useStore();
   const restoredStorageKey = useRef<string | null>(null);
 
   useEffect(() => {
-    if (
-      !canPersistExpandedTreeState({
-        isRestoring,
-        restoredStorageKey: restoredStorageKey.current,
-        storageKey,
-      })
-    ) {
-      return;
-    }
+    let lastPersistedValue = localStorage.getItem(storageKey);
+    const persistExpandedItems = () => {
+      const state = store.get(sidebarTreeStateAtom);
+      if (
+        !canPersistExpandedTreeState({
+          isRestoring: state.isRestoring,
+          restoredStorageKey: restoredStorageKey.current,
+          storageKey,
+        })
+      ) {
+        return;
+      }
 
-    localStorage.setItem(storageKey, JSON.stringify(Array.from(expandedItems)));
-  }, [expandedItems, isRestoring, storageKey]);
+      const nextValue = JSON.stringify(Array.from(state.expandedItems));
+      if (nextValue !== lastPersistedValue) {
+        localStorage.setItem(storageKey, nextValue);
+        lastPersistedValue = nextValue;
+      }
+    };
+
+    persistExpandedItems();
+    return store.sub(sidebarTreeStateAtom, persistExpandedItems);
+  }, [storageKey, store]);
 
   const buildChildren = useCallback(
     async (node: TreeNodeData): Promise<TreeNodeData[]> => {
       const runtime =
-        node.dbServiceKey === dbService.dbServiceKey ? dbService.runtime : null;
+        node.dbServiceKey === dbServiceKey ? dbService.runtime : null;
 
       if (!runtime) {
         return [];
@@ -272,7 +307,7 @@ export function SidebarTreeProvider({
         return dataBrowserPostgresSchemaFolders(node);
       }
 
-      if (node.type === "database" && dbService.engineType === "REDIS") {
+      if (node.type === "database" && engineType === "REDIS") {
         return dataBrowserRedisKeysFolder(node);
       }
 
@@ -322,21 +357,30 @@ export function SidebarTreeProvider({
 
       return [];
     },
-    [dbService]
+    [dbService.runtime, dbServiceKey, engineType]
   );
 
   const loadNodeChildren = useCallback(
     async (node: TreeNodeData) => {
-      setIsLoading((previous) => ({ ...previous, [node.id]: true }));
+      store.set(sidebarTreeStateAtom, (previous) => ({
+        ...previous,
+        isLoading: { ...previous.isLoading, [node.id]: true },
+      }));
       try {
         const childNodes = await buildChildren(node);
-        setTreeData((previous) => ({ ...previous, [node.id]: childNodes }));
+        store.set(sidebarTreeStateAtom, (previous) => ({
+          ...previous,
+          treeData: { ...previous.treeData, [node.id]: childNodes },
+        }));
         return childNodes;
       } finally {
-        setIsLoading((previous) => ({ ...previous, [node.id]: false }));
+        store.set(sidebarTreeStateAtom, (previous) => ({
+          ...previous,
+          isLoading: { ...previous.isLoading, [node.id]: false },
+        }));
       }
     },
-    [buildChildren]
+    [buildChildren, store]
   );
 
   const fetchNodeChildren = useCallback(
@@ -354,7 +398,10 @@ export function SidebarTreeProvider({
   const expandDefaultTree = useCallback(
     async (rootNode: TreeNodeData) => {
       const expandedIds = new Set<string>([rootNode.id]);
-      setExpandedItems(new Set(expandedIds));
+      store.set(sidebarTreeStateAtom, (previous) => ({
+        ...previous,
+        expandedItems: new Set(expandedIds),
+      }));
 
       let rootChildren: TreeNodeData[] = [];
       try {
@@ -373,7 +420,10 @@ export function SidebarTreeProvider({
       for (const databaseNode of logicalDatabases) {
         expandedIds.add(databaseNode.id);
       }
-      setExpandedItems(new Set(expandedIds));
+      store.set(sidebarTreeStateAtom, (previous) => ({
+        ...previous,
+        expandedItems: new Set(expandedIds),
+      }));
 
       for (const databaseNode of logicalDatabases) {
         try {
@@ -387,60 +437,74 @@ export function SidebarTreeProvider({
         }
       }
     },
-    [loadNodeChildren]
+    [loadNodeChildren, store]
   );
 
   const toggleItem = useCallback(
     async (node: TreeNodeData) => {
-      const newExpanded = new Set(expandedItems);
+      const state = store.get(sidebarTreeStateAtom);
 
-      if (newExpanded.has(node.id)) {
-        newExpanded.delete(node.id);
+      if (state.expandedItems.has(node.id)) {
+        store.set(sidebarTreeStateAtom, (previous) => {
+          const expandedItems = new Set(previous.expandedItems);
+          expandedItems.delete(node.id);
+          return { ...previous, expandedItems };
+        });
       } else {
-        newExpanded.add(node.id);
-        if (!treeData[node.id] || node.type !== "db_service") {
+        if (!state.treeData[node.id] || node.type !== "db_service") {
           await fetchNodeChildren(node);
         }
+        store.set(sidebarTreeStateAtom, (previous) => ({
+          ...previous,
+          expandedItems: new Set([...previous.expandedItems, node.id]),
+        }));
       }
-
-      setExpandedItems(newExpanded);
     },
-    [expandedItems, fetchNodeChildren, treeData]
+    [fetchNodeChildren, store]
   );
 
   const refreshNode = useCallback(
     async (node: TreeNodeData) => {
-      setTreeData((previous) => {
-        const next = { ...previous };
-        const childrenForNode = previous[node.id];
+      store.set(sidebarTreeStateAtom, (previous) => {
+        const nextTreeData = { ...previous.treeData };
+        const childrenForNode = previous.treeData[node.id];
         if (childrenForNode) {
           for (const child of childrenForNode) {
-            delete next[child.id];
+            delete nextTreeData[child.id];
           }
         }
-        delete next[node.id];
-        return next;
+        delete nextTreeData[node.id];
+        return { ...previous, treeData: nextTreeData };
       });
 
-      if (expandedItems.has(node.id)) {
+      if (store.get(sidebarTreeStateAtom).expandedItems.has(node.id)) {
         const childNodes = await fetchNodeChildren(node);
         for (const child of childNodes) {
-          if (expandedItems.has(child.id)) {
+          if (store.get(sidebarTreeStateAtom).expandedItems.has(child.id)) {
             await fetchNodeChildren(child);
           }
         }
       }
     },
-    [expandedItems, fetchNodeChildren]
+    [fetchNodeChildren, store]
   );
 
-  const collapseNode = useCallback((nodeId: string) => {
-    setExpandedItems((previous) => {
-      const next = new Set(previous);
-      next.delete(nodeId);
-      return next;
-    });
-  }, []);
+  const collapseNode = useCallback(
+    (nodeId: string) => {
+      store.set(sidebarTreeStateAtom, (previous) => {
+        const expandedItems = new Set(previous.expandedItems);
+        expandedItems.delete(nodeId);
+        return { ...previous, expandedItems };
+      });
+    },
+    [store]
+  );
+
+  const isExpanded = useCallback(
+    (nodeId: string) =>
+      store.get(sidebarTreeStateAtom).expandedItems.has(nodeId),
+    [store]
+  );
 
   useEffect(() => {
     if (restoredStorageKey.current === storageKey) {
@@ -448,8 +512,11 @@ export function SidebarTreeProvider({
     }
 
     const restoreState = async () => {
-      setIsRestoring(true);
-      setTreeData({});
+      store.set(sidebarTreeStateAtom, (previous) => ({
+        ...previous,
+        isRestoring: true,
+        treeData: {},
+      }));
 
       const stored = localStorage.getItem(storageKey);
       try {
@@ -470,7 +537,10 @@ export function SidebarTreeProvider({
         }
 
         const restoredExpandedIds = expandedIds;
-        setExpandedItems(restoredExpandedIds);
+        store.set(sidebarTreeStateAtom, (previous) => ({
+          ...previous,
+          expandedItems: restoredExpandedIds,
+        }));
 
         const fetchRecursively = async (nodes: TreeNodeData[]) => {
           for (const node of nodes) {
@@ -492,28 +562,30 @@ export function SidebarTreeProvider({
       } catch (error) {
         console.error("Failed to restore expanded items", error);
       } finally {
-        setIsRestoring(false);
+        store.set(sidebarTreeStateAtom, (previous) => ({
+          ...previous,
+          isRestoring: false,
+        }));
       }
     };
 
     restoredStorageKey.current = storageKey;
     restoreState();
-  }, [dbService, expandDefaultTree, loadNodeChildren, storageKey]);
+  }, [dbService, expandDefaultTree, loadNodeChildren, storageKey, store]);
+
+  const contextValue = useMemo(
+    () => ({
+      collapseNode,
+      fetchNodeChildren,
+      isExpanded,
+      refreshNode,
+      toggleItem,
+    }),
+    [collapseNode, fetchNodeChildren, isExpanded, refreshNode, toggleItem]
+  );
 
   return (
-    <SidebarTreeContext
-      value={{
-        collapseNode,
-        expandedItems,
-        fetchNodeChildren,
-        isLoading,
-        refreshNode,
-        toggleItem,
-        treeData,
-      }}
-    >
-      {children}
-    </SidebarTreeContext>
+    <SidebarTreeContext value={contextValue}>{children}</SidebarTreeContext>
   );
 }
 

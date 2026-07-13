@@ -7,17 +7,21 @@ import type {
   AccessRowsSort,
   DataFlowTableData,
 } from "@data-browser/api/access-types";
+import { ColumnResizeGuide } from "@data-browser/components/database/shared/ColumnResizeGuide";
+import { ColumnResizeHandle } from "@data-browser/components/database/shared/ColumnResizeHandle";
 import { DataView } from "@data-browser/components/database/shared/DataView";
 import { DataViewSortMenu } from "@data-browser/components/database/shared/DataViewSortMenu";
 import {
   FindBar,
+  type FindHighlight,
+  findCellHighlight,
   useFindInView,
 } from "@data-browser/components/database/shared/FindBar";
 import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
 import {
-  defaultColumnWidth,
+  columnWidthStyle,
   useColumnResize,
-} from "@data-browser/components/database/sql/TableView/useColumnResize";
+} from "@data-browser/components/database/shared/useColumnResize";
 import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
 import {
   type DbAccessSortState,
@@ -232,14 +236,13 @@ const RedisKeyToolbar = memo(function RedisKeyToolbar({
   );
 });
 
-function RedisColumnHeader({
+const RedisColumnHeader = memo(function RedisColumnHeader({
   column,
   columnIndex,
   onClearSort,
   onSort,
   resize,
   sort,
-  viewKey,
 }: {
   column: string;
   columnIndex: number;
@@ -247,20 +250,12 @@ function RedisColumnHeader({
   onSort: (column: string, direction: "asc" | "desc") => void;
   resize: ReturnType<typeof useColumnResize>;
   sort: DbAccessSortState;
-  viewKey: string;
 }) {
-  const viewState = useDbAccessViewState(viewKey);
-  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
-  const width = committedWidth ?? defaultColumnWidth(column);
-
   return (
     <th
       className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border/50 border-r bg-background px-6 py-2 text-left font-medium text-muted-foreground text-sm"
       data-db-access-column={column}
-      style={{
-        minWidth: `${width}px`,
-        ...(committedWidth != null && { maxWidth: `${width}px` }),
-      }}
+      style={columnWidthStyle(column, columnIndex)}
     >
       <div className="flex h-full items-center justify-between">
         <div className="mr-6 flex items-center gap-1 overflow-hidden">
@@ -288,49 +283,34 @@ function RedisColumnHeader({
         />
       </div>
 
-      <div
-        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
-        data-db-access-resize-handle={column}
-        onMouseDown={(event) => resize.handleResizeStart(event, column)}
-        onMouseEnter={() => resize.handleResizeHandleEnter(column)}
-        onMouseLeave={() => resize.handleResizeHandleLeave(column)}
+      <ColumnResizeHandle
+        column={column}
+        columnIndex={columnIndex}
+        resize={resize}
       />
     </th>
   );
-}
+});
 
-function RedisDataCell({
+const RedisDataCell = memo(function RedisDataCell({
   column,
-  find,
+  columnIndex,
+  highlight,
   keyName,
   resize,
   rowIndex,
+  targetId,
   value,
-  viewKey,
 }: {
   column: string;
-  find: ReturnType<typeof useFindInView>;
+  columnIndex: number;
+  highlight: FindHighlight;
   keyName: string;
   resize: ReturnType<typeof useColumnResize>;
   rowIndex: number;
+  targetId: string;
   value: string | null;
-  viewKey: string;
 }) {
-  const viewState = useDbAccessViewState(viewKey);
-  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
-  const width = committedWidth ?? defaultColumnWidth(column);
-  const highlight = find.state.total
-    ? find.state.matches.findIndex(
-        (match) => match.rowIndex === rowIndex && match.columnKey === column
-      ) === find.state.currentMatchIndex
-      ? "current"
-      : find.state.matches.some(
-            (match) => match.rowIndex === rowIndex && match.columnKey === column
-          )
-        ? "match"
-        : null
-    : null;
-
   return (
     <td
       className={cn(
@@ -349,24 +329,20 @@ function RedisDataCell({
       data-qa-resource-type="redis_key_row"
       data-qa-state="read_only"
       data-testid="redis.key.cell"
-      style={{
-        minWidth: `${width}px`,
-        ...(committedWidth != null && { maxWidth: `${width}px` }),
-      }}
+      id={targetId}
+      style={columnWidthStyle(column, columnIndex)}
     >
       <span className="block truncate" title={value ?? ""}>
         {value ?? ""}
       </span>
-      <div
-        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
-        data-db-access-resize-handle={column}
-        onMouseDown={(event) => resize.handleResizeStart(event, column)}
-        onMouseEnter={() => resize.handleResizeHandleEnter(column)}
-        onMouseLeave={() => resize.handleResizeHandleLeave(column)}
+      <ColumnResizeHandle
+        column={column}
+        columnIndex={columnIndex}
+        resize={resize}
       />
     </td>
   );
-}
+});
 
 function RedisFindRegion({
   active,
@@ -438,6 +414,7 @@ function RedisFindRegion({
 
       <div
         className="flex-1 overflow-auto"
+        data-db-access-grid-scroll=""
         data-qa-module="redis"
         data-qa-object="key-grid"
         data-qa-row-count={rows.length}
@@ -473,7 +450,6 @@ function RedisFindRegion({
                   onSort={onSort}
                   resize={resize}
                   sort={sort}
-                  viewKey={viewKey}
                 />
               ))}
 
@@ -506,16 +482,22 @@ function RedisFindRegion({
                   {(currentPage - 1) * pageSize + rowIndex + 1}
                 </td>
 
-                {columns.map((column) => (
+                {columns.map((column, columnIndex) => (
                   <RedisDataCell
                     column={column}
-                    find={find}
+                    columnIndex={columnIndex}
+                    highlight={findCellHighlight(
+                      find.state.highlightIndex,
+                      find.state.currentMatch,
+                      rowIndex,
+                      column
+                    )}
                     key={column}
                     keyName={keyName}
                     resize={resize}
                     rowIndex={rowIndex}
+                    targetId={find.meta.getTargetId(rowIndex, column)}
                     value={row[column] ?? null}
-                    viewKey={viewKey}
                   />
                 ))}
 
@@ -607,7 +589,7 @@ export function RedisKeyDetailView({
 
   return (
     <div
-      className="flex h-full flex-col bg-background"
+      className="relative flex h-full flex-col bg-background"
       data-qa-database={databaseName}
       data-qa-db-service-key={dbServiceKey}
       data-qa-key-type={keyType}
@@ -621,7 +603,9 @@ export function RedisKeyDetailView({
       }
       data-testid="redis.key.detail"
       ref={rootRef}
+      style={resize.getRootStyle(columns)}
     >
+      <ColumnResizeGuide />
       <RedisKeyToolbar
         keyName={keyName}
         loading={query.loading}

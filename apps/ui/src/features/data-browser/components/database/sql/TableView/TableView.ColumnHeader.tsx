@@ -1,10 +1,16 @@
+import { ColumnResizeHandle } from "@data-browser/components/database/shared/ColumnResizeHandle";
 import {
   type DataViewSortDirection,
   DataViewSortMenu,
 } from "@data-browser/components/database/shared/DataViewSortMenu";
+import {
+  columnWidthStyle,
+  type useColumnResize,
+} from "@data-browser/components/database/shared/useColumnResize";
 import type { DbAccessSortState } from "@data-browser/state/db-access-view-state";
 import { Badge } from "@workspace/ui/components/badge";
 import { ArrowDownAZ, ArrowUpAZ } from "lucide-react";
+import { memo } from "react";
 
 interface ColumnHeaderProps {
   column: string;
@@ -13,13 +19,9 @@ interface ColumnHeaderProps {
   isForeignKey: boolean;
   isPrimaryKey: boolean;
   onClearSort: () => void;
-  onResizeHandleEnter: (column: string) => void;
-  onResizeHandleLeave: (column: string) => void;
-  onResizeStart: (event: React.MouseEvent, column: string) => void;
   onSort: (column: string, direction: DataViewSortDirection) => void;
-  resized: boolean;
+  resize: ReturnType<typeof useColumnResize>;
   sort: DbAccessSortState;
-  width: number;
 }
 
 /** Simplify verbose PostgreSQL column type names for display. */
@@ -34,31 +36,23 @@ function simplifyColumnType(typeStr: string): string {
 }
 
 /** Renders one SQL column header and subscribes only through its grid owner. */
-export function TableViewColumnHeader({
+export const TableViewColumnHeader = memo(function TableViewColumnHeader({
   column,
   columnType,
   index,
   isForeignKey,
   isPrimaryKey,
   onClearSort,
-  onResizeHandleEnter,
-  onResizeHandleLeave,
-  onResizeStart,
   onSort,
-  resized,
+  resize,
   sort,
-  width,
 }: ColumnHeaderProps) {
   return (
     <th
-      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border border-r bg-transparent py-2 pr-0 pl-4 text-left font-medium text-muted-foreground text-sm"
+      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border border-r bg-db-access-sticky-header-surface py-2 pr-0 pl-4 text-left font-medium text-muted-foreground text-sm"
       data-db-access-column={column}
-      style={{
-        minWidth: `${width}px`,
-        ...(resized && { maxWidth: `${width}px` }),
-      }}
+      style={columnWidthStyle(column, index)}
     >
-      <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
       <div className="relative z-10 flex h-full items-center justify-between">
         <div className="mr-10 flex flex-col overflow-hidden">
           <div className="flex items-center gap-1">
@@ -107,13 +101,7 @@ export function TableViewColumnHeader({
         />
       </div>
 
-      <div
-        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
-        data-db-access-resize-handle={column}
-        onMouseDown={(event) => onResizeStart(event, column)}
-        onMouseEnter={() => onResizeHandleEnter(column)}
-        onMouseLeave={() => onResizeHandleLeave(column)}
-      />
+      <ColumnResizeHandle column={column} columnIndex={index} resize={resize} />
     </th>
   );
-}
+});

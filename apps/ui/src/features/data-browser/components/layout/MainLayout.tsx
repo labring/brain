@@ -1,7 +1,8 @@
+import { usePointerResizeGesture } from "@data-browser/components/shared/usePointerResizeGesture";
 import { Sidebar } from "@data-browser/components/sidebar/Sidebar";
 import { useDbAccessTabs } from "@data-browser/state/db-access-session";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ServiceTabBar } from "./ServiceTabBar";
 import { TabBar } from "./TabBar";
 import { TabContent } from "./TabContent";
@@ -10,45 +11,52 @@ const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_DEFAULT_WIDTH = 256;
 
+interface SidebarResizeOrigin {
+  startWidth: number;
+  startX: number;
+}
+
+export function sidebarWidthDuringResize(
+  origin: SidebarResizeOrigin,
+  clientX: number
+) {
+  return Math.min(
+    SIDEBAR_MAX_WIDTH,
+    Math.max(SIDEBAR_MIN_WIDTH, origin.startWidth + (clientX - origin.startX))
+  );
+}
+
 export function MainLayout() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const { activeSurface } = useDbAccessTabs();
-  const isResizing = useRef(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const pointerResize = usePointerResizeGesture();
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, []);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current) {
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      const sidebar = sidebarRef.current;
+      if (!sidebar) {
         return;
       }
-      const newWidth = e.clientX;
-      setSidebarWidth(
-        Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, newWidth))
-      );
-    };
 
-    const handleMouseUp = () => {
-      if (!isResizing.current) {
-        return;
-      }
-      isResizing.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
+      const origin = {
+        startWidth: sidebar.getBoundingClientRect().width,
+        startX: event.clientX,
+      } satisfies SidebarResizeOrigin;
+      pointerResize.start(event, {
+        cancel: () => {
+          sidebar.style.width = `${sidebarWidth}px`;
+        },
+        commit: (clientX) => {
+          setSidebarWidth(sidebarWidthDuringResize(origin, clientX));
+        },
+        preview: (clientX) => {
+          sidebar.style.width = `${sidebarWidthDuringResize(origin, clientX)}px`;
+        },
+      });
+    },
+    [pointerResize, sidebarWidth]
+  );
 
   return (
     <TooltipProvider>
@@ -65,6 +73,7 @@ export function MainLayout() {
           data-qa-object="sidebar"
           data-qa-state="db-access-session"
           data-testid="layout.sidebar-region"
+          ref={sidebarRef}
           style={{ width: sidebarWidth }}
         >
           <Sidebar />
@@ -74,7 +83,11 @@ export function MainLayout() {
             data-qa-module="layout"
             data-qa-object="sidebar"
             data-testid="layout.sidebar-resize-handle"
-            onMouseDown={handleMouseDown}
+            onLostPointerCapture={pointerResize.cancel}
+            onPointerCancel={pointerResize.cancel}
+            onPointerDown={handlePointerDown}
+            onPointerMove={pointerResize.move}
+            onPointerUp={pointerResize.finish}
           />
         </div>
 

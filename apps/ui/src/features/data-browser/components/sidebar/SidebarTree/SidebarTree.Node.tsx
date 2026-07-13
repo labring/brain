@@ -1,3 +1,4 @@
+import { useDbAccessIsSelected } from "@data-browser/state/db-access-session";
 import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -17,8 +18,8 @@ import {
   Type,
 } from "lucide-react";
 import type React from "react";
-import { createContext, use } from "react";
-import { useSidebarTree } from "./SidebarTreeProvider";
+import { createContext, memo, use } from "react";
+import { useSidebarTreeNodeState } from "./SidebarTreeProvider";
 import type { NodeType, TreeNodeData } from "./types";
 import { EXPANDABLE_TYPES } from "./types";
 
@@ -28,7 +29,6 @@ export interface TreeNodeContextValue {
   onContextMenu: (e: React.MouseEvent, node: TreeNodeData) => void;
   onItemClick: (node: TreeNodeData) => void;
   onToggle: (node: TreeNodeData) => void;
-  selectedItemId: string | null;
 }
 
 const TreeNodeCtx = createContext<TreeNodeContextValue | null>(null);
@@ -75,22 +75,18 @@ interface TreeNodeProps {
   node: TreeNodeData;
 }
 
-export function TreeNode({ node, depth }: TreeNodeProps) {
-  const { expandedItems, isLoading: loadingItems, treeData } = useSidebarTree();
+export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
   const {
-    dbServiceEngineType,
-    selectedItemId,
-    onItemClick,
-    onToggle,
-    onContextMenu,
-  } = useTreeNodeContext();
+    children,
+    isExpanded,
+    isLoading: nodeIsLoading,
+  } = useSidebarTreeNodeState(node.id);
+  const { dbServiceEngineType, onItemClick, onToggle, onContextMenu } =
+    useTreeNodeContext();
 
   const isExpandable = EXPANDABLE_TYPES.has(node.type);
   const isRoot = depth === 0;
-  const isExpanded = expandedItems.has(node.id);
-  const isSelected = selectedItemId === node.id;
-  const nodeIsLoading = !!loadingItems[node.id];
-  const children = treeData[node.id];
+  const isSelected = useDbAccessIsSelected(node.id);
 
   const Icon =
     node.type === "redis_key" && node.metadata.redisKeyType
@@ -207,4 +203,4 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
       )}
     </div>
   );
-}
+});

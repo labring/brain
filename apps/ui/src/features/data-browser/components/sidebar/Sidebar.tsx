@@ -3,13 +3,19 @@ import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
 import type { Alert } from "@data-browser/components/database/shared/types";
 import { PointerContextMenu } from "@data-browser/components/shared/PointerContextMenu";
 import {
-  useDbAccessSelection,
   useDbAccessService,
   useDbAccessTabs,
+  useSelectDbAccessItem,
 } from "@data-browser/state/db-access-session";
 import { useTriggerDbAccessViewRefresh } from "@data-browser/state/db-access-view-state";
 import { dbAccessObjectTabId } from "@data-browser/state/session";
-import { type MouseEvent, useCallback, useReducer, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useMemo,
+  useReducer,
+  useState,
+} from "react";
 import {
   getCollectionMenuItems,
   getDatabaseMenuItems,
@@ -28,6 +34,7 @@ import {
   TreeNode,
   TreeNodeProvider,
   useSidebarTree,
+  useSidebarTreeIsAnyLoading,
 } from "./SidebarTree";
 import type { TreeNodeData } from "./SidebarTree/types";
 import { dbServiceToNode, EXPANDABLE_TYPES } from "./SidebarTree/types";
@@ -76,17 +83,13 @@ function modalReducer(
 
 function SidebarInner() {
   const dbService = useDbAccessService();
-  const { selectedItem, selectItem } = useDbAccessSelection();
+  const selectItem = useSelectDbAccessItem();
   const triggerViewRefresh = useTriggerDbAccessViewRefresh();
   const { openTab, setActiveServiceTab } = useDbAccessTabs();
 
-  const {
-    expandedItems,
-    isLoading,
-    toggleItem,
-    fetchNodeChildren,
-    refreshNode,
-  } = useSidebarTree();
+  const { fetchNodeChildren, isExpanded, refreshNode, toggleItem } =
+    useSidebarTree();
+  const isAnyTreeNodeLoading = useSidebarTreeIsAnyLoading();
 
   const [activeModal, dispatch] = useReducer(modalReducer, null);
   const [alert, setAlert] = useState<Alert | null>(null);
@@ -250,7 +253,7 @@ function SidebarInner() {
           }
           break;
         case "refresh":
-          if (expandedItems.has(node.id)) {
+          if (isExpanded(node.id)) {
             fetchNodeChildren(node);
           } else if (EXPANDABLE_TYPES.has(node.type)) {
             toggleItem(node);
@@ -270,8 +273,8 @@ function SidebarInner() {
     },
     [
       contextMenu,
-      expandedItems,
       fetchNodeChildren,
+      isExpanded,
       openModal,
       toggleItem,
       triggerViewRefresh,
@@ -314,15 +317,26 @@ function SidebarInner() {
         return [];
     }
   })();
+  const rootNode = useMemo(
+    () => dbServiceToNode(dbService),
+    [dbService.dbServiceKey, dbService.displayName]
+  );
+  const treeNodeContext = useMemo(
+    () => ({
+      dbServiceEngineType: dbService.engineType,
+      onContextMenu: handleContextMenu,
+      onItemClick: handleItemClick,
+      onToggle: toggleItem,
+    }),
+    [dbService.engineType, handleContextMenu, handleItemClick, toggleItem]
+  );
 
   return (
     <div
       className="flex h-full w-full flex-col border-sidebar-border border-r"
       data-qa-module="database"
       data-qa-object="sidebar"
-      data-qa-state={
-        Object.values(isLoading).some(Boolean) ? "loading" : "ready"
-      }
+      data-qa-state={isAnyTreeNodeLoading ? "loading" : "ready"}
       data-testid="database.sidebar"
     >
       <div
@@ -332,16 +346,8 @@ function SidebarInner() {
         data-qa-state="ready"
         data-testid="database.sidebar.tree"
       >
-        <TreeNodeProvider
-          value={{
-            dbServiceEngineType: dbService.engineType,
-            onContextMenu: handleContextMenu,
-            onItemClick: handleItemClick,
-            onToggle: toggleItem,
-            selectedItemId: selectedItem?.id ?? null,
-          }}
-        >
-          <TreeNode depth={0} node={dbServiceToNode(dbService)} />
+        <TreeNodeProvider value={treeNodeContext}>
+          <TreeNode depth={0} node={rootNode} />
         </TreeNodeProvider>
       </div>
 

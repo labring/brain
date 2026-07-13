@@ -2,11 +2,13 @@ import type {
   AccessObjectRef,
   DataFlowTableData,
 } from "@data-browser/api/access-types";
+import { ColumnResizeGuide } from "@data-browser/components/database/shared/ColumnResizeGuide";
 import { DataView } from "@data-browser/components/database/shared/DataView";
 import {
   FindBar,
   useFindInView,
 } from "@data-browser/components/database/shared/FindBar";
+import { useColumnResize } from "@data-browser/components/database/shared/useColumnResize";
 import {
   type DbAccessSortState,
   useDbAccessViewState,
@@ -16,7 +18,6 @@ import { type RefObject, useCallback, useMemo, useRef } from "react";
 import { TableViewDataGrid } from "./TableView/TableView.DataGrid";
 import { TableViewToolbar } from "./TableView/TableView.Toolbar";
 import type { RenderedTableRow } from "./TableView/types";
-import { useColumnResize } from "./TableView/useColumnResize";
 import { useDataQuery } from "./TableView/useDataQuery";
 
 interface TableDetailViewProps {
@@ -84,13 +85,10 @@ function TableFindRegion({
         find={find}
         loading={loading}
         onClearSort={onClearSort}
-        onResizeHandleEnter={resize.handleResizeHandleEnter}
-        onResizeHandleLeave={resize.handleResizeHandleLeave}
-        onResizeStart={resize.handleResizeStart}
         onSort={onSort}
         renderedRows={renderedRows}
+        resize={resize}
         sort={sort}
-        viewKey={viewKey}
         visibleColumnNames={visibleColumns}
       />
     </>
@@ -161,7 +159,7 @@ export function TableDetailView({
 
   return (
     <div
-      className="flex h-full flex-col"
+      className="relative flex h-full flex-col"
       data-qa-database={databaseName}
       data-qa-db-service-key={dbServiceKey}
       data-qa-loading={queryState.loading ? "true" : "false"}
@@ -175,7 +173,9 @@ export function TableDetailView({
       }
       data-testid="sql.table.detail"
       ref={rootRef}
+      style={resize.getRootStyle(visibleColumns)}
     >
+      <ColumnResizeGuide />
       <TableViewToolbar
         databaseName={databaseName}
         dbServiceKey={dbServiceKey}

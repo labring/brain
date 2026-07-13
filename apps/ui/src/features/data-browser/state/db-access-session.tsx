@@ -3,6 +3,7 @@
 import type { DataBrowserHostContext } from "@data-browser/api/access-types";
 import type { DataBrowserEngine } from "@data-browser/api/engine";
 import { atom, createStore, Provider, useAtomValue, useSetAtom } from "jotai";
+import { selectAtom } from "jotai/utils";
 import {
   createContext,
   type ReactNode,
@@ -281,6 +282,22 @@ export function useDbAccessSelection() {
     selectItem: setSelectedItem,
     selectedItem,
   };
+}
+
+export function useSelectDbAccessItem() {
+  return useSetAtom(dbAccessSelectedItemAtom);
+}
+
+export function useDbAccessIsSelected(itemId: string) {
+  const isSelectedAtom = useMemo(
+    () =>
+      selectAtom(
+        dbAccessSelectedItemAtom,
+        (selectedItem) => selectedItem?.id === itemId
+      ),
+    [itemId]
+  );
+  return useAtomValue(isSelectedAtom);
 }
 
 export function useDbAccessActivity() {

@@ -1,7 +1,11 @@
-import type { FindBarModel } from "@data-browser/components/database/shared/FindBar";
+import {
+  type FindBarModel,
+  type FindHighlight,
+  findRowHighlight,
+} from "@data-browser/components/database/shared/FindBar";
 import { cn } from "@workspace/ui/lib/utils";
 import { FileJson } from "lucide-react";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 const LEADING_OBJECT_BRACE_PATTERN = /^\{\n/;
 const TRAILING_OBJECT_BRACE_PATTERN = /\n\}$/;
@@ -9,6 +13,50 @@ const TRAILING_OBJECT_BRACE_PATTERN = /\n\}$/;
 function buildDocumentRowKey(pageOffset: number, sourceRowIndex: number) {
   return `existing-${pageOffset + sourceRowIndex}`;
 }
+
+function formatDocument(document: Record<string, unknown>) {
+  return JSON.stringify(document, null, 2)
+    .replace(LEADING_OBJECT_BRACE_PATTERN, "")
+    .replace(TRAILING_OBJECT_BRACE_PATTERN, "");
+}
+
+const DocumentCard = memo(function DocumentCard({
+  formattedDocument,
+  highlight,
+  rowKey,
+  targetId,
+}: {
+  formattedDocument: string;
+  highlight: FindHighlight;
+  rowKey: string;
+  targetId: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "group relative rounded-xl p-4 transition-colors duration-200",
+        highlight === "current" && "border border-input bg-input shadow-sm",
+        highlight === "match" && "border border-input/30 bg-input/30",
+        !highlight &&
+          "border border-border/50 bg-background hover:bg-input/30 hover:shadow-sm"
+      )}
+      data-find-current={highlight === "current" ? "true" : undefined}
+      data-qa-module="mongodb"
+      data-qa-object="document"
+      data-qa-resource-id={rowKey}
+      data-qa-resource-type="document"
+      data-qa-state="ready"
+      data-testid="mongodb.collection.document-card"
+      id={targetId}
+    >
+      <div className="relative">
+        <pre className="overflow-x-auto font-mono text-foreground/80 text-sm">
+          {formattedDocument}
+        </pre>
+      </div>
+    </div>
+  );
+});
 
 /** List of MongoDB document cards. */
 export function CollectionViewDocumentList({
@@ -27,7 +75,7 @@ export function CollectionViewDocumentList({
   const renderedDocs = useMemo(() => {
     return documents.map((doc, sourceRowIndex) => {
       return {
-        doc,
+        formattedDocument: formatDocument(doc),
         rowKey: buildDocumentRowKey(pageOffset, sourceRowIndex),
         sourceRowIndex,
       };
@@ -51,48 +99,19 @@ export function CollectionViewDocumentList({
 
   return (
     <>
-      {renderedDocs.map((item) => {
-        // FindBar matching only applies to existing documents (not pending inserts)
-        const hasMatch = find.state.total
-          ? find.state.matches.some(
-              (match) => match.rowIndex === item.sourceRowIndex
-            )
-          : false;
-        const hasCurrentMatch = find.state.total
-          ? find.state.matches[find.state.currentMatchIndex]?.rowIndex ===
+      {renderedDocs.map((item) => (
+        <DocumentCard
+          formattedDocument={item.formattedDocument}
+          highlight={findRowHighlight(
+            find.state.highlightIndex,
+            find.state.currentMatch,
             item.sourceRowIndex
-          : false;
-
-        return (
-          <div
-            className={cn(
-              "group relative rounded-xl p-4 transition-colors duration-200",
-              hasCurrentMatch && "border border-input bg-input shadow-sm",
-              !hasCurrentMatch &&
-                hasMatch &&
-                "border border-input/30 bg-input/30",
-              !(hasCurrentMatch || hasMatch) &&
-                "border border-border/50 bg-background hover:bg-input/30 hover:shadow-sm"
-            )}
-            data-find-current={hasCurrentMatch ? "true" : undefined}
-            data-qa-module="mongodb"
-            data-qa-object="document"
-            data-qa-resource-id={item.rowKey}
-            data-qa-resource-type="document"
-            data-qa-state="ready"
-            data-testid="mongodb.collection.document-card"
-            key={item.rowKey}
-          >
-            <div className="relative">
-              <pre className="overflow-x-auto font-mono text-foreground/80 text-sm">
-                {JSON.stringify(item.doc, null, 2)
-                  .replace(LEADING_OBJECT_BRACE_PATTERN, "")
-                  .replace(TRAILING_OBJECT_BRACE_PATTERN, "")}
-              </pre>
-            </div>
-          </div>
-        );
-      })}
+          )}
+          key={item.rowKey}
+          rowKey={item.rowKey}
+          targetId={find.meta.getTargetId(item.sourceRowIndex, "")}
+        />
+      ))}
     </>
   );
 }

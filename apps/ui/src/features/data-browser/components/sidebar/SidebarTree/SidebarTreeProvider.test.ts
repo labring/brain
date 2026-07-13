@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { AccessObject } from "@data-browser/api/access-types";
+import { createStore } from "jotai";
 import {
   dataBrowserCanPersistExpandedTreeState,
   dataBrowserExpandedStorageKey,
@@ -11,6 +12,11 @@ import {
   dataBrowserRedisKeysFolder,
   dataBrowserShouldUseDefaultExpandedTree,
 } from "./SidebarTreeProvider";
+import {
+  sidebarTreeNodeChildrenAtom,
+  sidebarTreeNodeExpandedAtom,
+  sidebarTreeStateAtom,
+} from "./sidebar-tree-state";
 import { dbServiceToNode, type TreeNodeData } from "./types";
 
 const dbServiceKey = "project-uid:database-system:postgres-main";
@@ -189,4 +195,40 @@ test("default expanded tree is used only for missing or old empty state", () => 
     dataBrowserShouldUseDefaultExpandedTree(new Set([dbServiceKey])),
     false
   );
+});
+
+test("per-node tree selectors ignore updates to unrelated branches", () => {
+  const store = createStore();
+  const nodeAExpandedAtom = sidebarTreeNodeExpandedAtom("node-a");
+  const nodeAChildrenAtom = sidebarTreeNodeChildrenAtom("node-a");
+  let expandedNotifications = 0;
+  let childrenNotifications = 0;
+  const unsubscribeExpanded = store.sub(nodeAExpandedAtom, () => {
+    expandedNotifications += 1;
+  });
+  const unsubscribeChildren = store.sub(nodeAChildrenAtom, () => {
+    childrenNotifications += 1;
+  });
+
+  store.set(sidebarTreeStateAtom, (previous) => ({
+    ...previous,
+    expandedItems: new Set(["node-b"]),
+    treeData: { "node-b": [] },
+  }));
+  assert.equal(expandedNotifications, 0);
+  assert.equal(childrenNotifications, 0);
+
+  const nodeAChildren: TreeNodeData[] = [];
+  store.set(sidebarTreeStateAtom, (previous) => ({
+    ...previous,
+    expandedItems: new Set([...previous.expandedItems, "node-a"]),
+    treeData: { ...previous.treeData, "node-a": nodeAChildren },
+  }));
+  assert.equal(expandedNotifications, 1);
+  assert.equal(childrenNotifications, 1);
+  assert.equal(store.get(nodeAExpandedAtom), true);
+  assert.equal(store.get(nodeAChildrenAtom), nodeAChildren);
+
+  unsubscribeExpanded();
+  unsubscribeChildren();
 });

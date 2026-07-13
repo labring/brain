@@ -42,6 +42,7 @@ function CollectionFindRegion({
     columns,
     rootRef,
     rows: documents,
+    scrollTarget: "row",
     viewKey,
   });
 

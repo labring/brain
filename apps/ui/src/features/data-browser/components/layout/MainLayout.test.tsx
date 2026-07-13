@@ -8,7 +8,7 @@ import type {
 import { DbAccessSessionProvider } from "@data-browser/state/db-access-session";
 import { dbAccessObjectTabId } from "@data-browser/state/session";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MainLayout } from "./MainLayout";
+import { MainLayout, sidebarWidthDuringResize } from "./MainLayout";
 
 const tableRef = {
   kind: "table",
@@ -65,4 +65,11 @@ test("layout provides tooltip context for tab controls", () => {
     );
   });
   assert.match(html, /data-testid="layout\.tab\.close-button"/);
+});
+
+test("sidebar resize is relative to its starting width and stays bounded", () => {
+  const origin = { startWidth: 256, startX: 400 };
+  assert.equal(sidebarWidthDuringResize(origin, 440), 296);
+  assert.equal(sidebarWidthDuringResize(origin, 0), 180);
+  assert.equal(sidebarWidthDuringResize(origin, 1000), 480);
 });

@@ -48,6 +48,9 @@
   --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
   --color-brand-primary: var(--sealai-brand-primary);
   --color-project-chrome-surface: var(--project-chrome-surface);
+  --color-db-access-sticky-header-surface: var(
+    --db-access-sticky-header-surface
+  );
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -99,6 +102,7 @@
 
   /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);
+  --db-access-sticky-header-surface: #161e33;
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
     in oklab,
