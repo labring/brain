@@ -10,7 +10,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowDownAZ, ArrowUpAZ, MoreHorizontal, X } from "lucide-react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useState } from "react";
 
 export type DataViewSortDirection = "asc" | "desc";
 
@@ -18,9 +18,7 @@ interface DataViewSortMenuProps {
   align?: ComponentProps<typeof DropdownMenuContent>["align"];
   column: string;
   onClearSort: () => void;
-  onOpenChange: (open: boolean) => void;
   onSort: (column: string, direction: DataViewSortDirection) => void;
-  open: boolean;
   sortColumn: string | null;
   sortDirection: DataViewSortDirection | null;
 }
@@ -37,18 +35,17 @@ export function DataViewSortMenu({
   align = "end",
   column,
   onClearSort,
-  onOpenChange,
   onSort,
-  open,
   sortColumn,
   sortDirection,
 }: DataViewSortMenuProps) {
+  const [open, setOpen] = useState(false);
   const ascendingActive = sortColumn === column && sortDirection === "asc";
   const descendingActive = sortColumn === column && sortDirection === "desc";
   const clearEnabled = sortColumn === column;
 
   return (
-    <DropdownMenu onOpenChange={onOpenChange} open={open}>
+    <DropdownMenu onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger
         render={
           <AppIconButton

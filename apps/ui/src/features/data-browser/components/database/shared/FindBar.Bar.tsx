@@ -6,13 +6,21 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
-import { useFindBar } from "./FindBar.Provider";
+import type { FindBarModel } from "./FindBar";
 
 /** Always-visible find-in-page search bar matching the Figma toolbar design. */
-export function FindBarBar({ className }: { className?: string }) {
-  const { state, actions, meta } = useFindBar();
+export function FindBarBar({
+  className,
+  find,
+}: {
+  className?: string;
+  find: FindBarModel;
+}) {
+  const { state, actions, meta } = find;
 
-  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  const isMac =
+    typeof navigator !== "undefined" &&
+    navigator.platform.toUpperCase().includes("MAC");
   const shortcutLabel = isMac ? "⌘F" : "Ctrl+F";
 
   return (

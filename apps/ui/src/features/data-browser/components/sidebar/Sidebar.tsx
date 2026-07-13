@@ -3,11 +3,12 @@ import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
 import type { Alert } from "@data-browser/components/database/shared/types";
 import { PointerContextMenu } from "@data-browser/components/shared/PointerContextMenu";
 import {
-  useDbAccessRefresh,
   useDbAccessSelection,
   useDbAccessService,
   useDbAccessTabs,
 } from "@data-browser/state/db-access-session";
+import { useTriggerDbAccessViewRefresh } from "@data-browser/state/db-access-view-state";
+import { dbAccessObjectTabId } from "@data-browser/state/session";
 import { type MouseEvent, useCallback, useReducer, useState } from "react";
 import {
   getCollectionMenuItems,
@@ -76,8 +77,7 @@ function modalReducer(
 function SidebarInner() {
   const dbService = useDbAccessService();
   const { selectedItem, selectItem } = useDbAccessSelection();
-  const { triggerCollectionRefresh, triggerTableRefresh } =
-    useDbAccessRefresh();
+  const triggerViewRefresh = useTriggerDbAccessViewRefresh();
   const { openTab, setActiveServiceTab } = useDbAccessTabs();
 
   const {
@@ -160,7 +160,7 @@ function SidebarInner() {
           title: collectionTitle,
           type: "collection",
         });
-        triggerCollectionRefresh();
+        triggerViewRefresh(dbAccessObjectTabId(node.metadata.objectRef));
       } else if (node.type === "redis_key" && node.metadata.objectRef) {
         const redisDatabase = node.metadata.database ?? "";
         openTab({
@@ -179,7 +179,7 @@ function SidebarInner() {
       setActiveServiceTab,
       showAlert,
       toggleItem,
-      triggerCollectionRefresh,
+      triggerViewRefresh,
     ]
   );
 
@@ -254,14 +254,14 @@ function SidebarInner() {
             fetchNodeChildren(node);
           } else if (EXPANDABLE_TYPES.has(node.type)) {
             toggleItem(node);
-          } else if (node.type === "collection") {
-            triggerCollectionRefresh();
           } else if (
-            node.type === "table" ||
-            node.type === "view" ||
-            node.type === "redis_key"
+            (node.type === "collection" ||
+              node.type === "table" ||
+              node.type === "view" ||
+              node.type === "redis_key") &&
+            node.metadata.objectRef
           ) {
-            triggerTableRefresh();
+            triggerViewRefresh(dbAccessObjectTabId(node.metadata.objectRef));
           }
           break;
       }
@@ -274,8 +274,7 @@ function SidebarInner() {
       fetchNodeChildren,
       openModal,
       toggleItem,
-      triggerCollectionRefresh,
-      triggerTableRefresh,
+      triggerViewRefresh,
     ]
   );
 

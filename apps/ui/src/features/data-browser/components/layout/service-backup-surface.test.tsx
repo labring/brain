@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { DataBrowserHostContext } from "@data-browser/api/access-types";
+import type {
+  AccessObjectRef,
+  DataBrowserHostContext,
+} from "@data-browser/api/access-types";
 import { DbAccessSessionProvider } from "@data-browser/state/db-access-session";
+import { dbAccessObjectTabId } from "@data-browser/state/session";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MainLayout } from "./MainLayout";
 
@@ -69,6 +73,11 @@ const runtime = {
   namespace: "project-ns",
   projectId: "project-uid",
 } satisfies DataBrowserHostContext;
+
+const usersRef = {
+  kind: "table",
+  path: ["orders", "public", "users"],
+} satisfies AccessObjectRef;
 
 function assertDefaultSecondaryButton(
   html: string,
@@ -244,6 +253,41 @@ test("DB Service root renders a service-level Backup tab without close controls"
   );
   assert.match(html, /data-qa-state="enabled"/);
   assert.doesNotMatch(html, /data-testid="layout\.tab\.close-button"/);
+});
+
+test("DB Service Backup keeps open Object Views mounted and inactive", () => {
+  const html = renderToStaticMarkup(
+    <DbAccessSessionProvider
+      initialSession={{
+        activeSurface: { kind: "service", tab: "backup" },
+        activeTabId: null,
+        dbServiceKey: "project-uid:database-system:orders-db",
+        tabs: [
+          {
+            databaseName: "orders",
+            dbServiceKey: "project-uid:database-system:orders-db",
+            id: dbAccessObjectTabId(usersRef),
+            objectRef: usersRef,
+            schemaName: "public",
+            tableName: "users",
+            title: "orders.users",
+            type: "table",
+          },
+        ],
+      }}
+      runtime={runtime}
+    >
+      <MainLayout />
+    </DbAccessSessionProvider>
+  );
+
+  assert.match(html, /data-testid="database\.backup\.surface"/);
+  assert.match(html, /data-testid="layout\.tab-content\.panel"/);
+  assert.match(html, /data-testid="sql\.table\.grid-loading"/);
+  assert.match(
+    html,
+    /data-qa-object="tab-content"[^>]*data-qa-state="inactive"/
+  );
 });
 
 test("DB Service backup method toggle keeps inactive text stable and switch padding compact", () => {

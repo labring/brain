@@ -11,13 +11,18 @@ import { DataView } from "@data-browser/components/database/shared/DataView";
 import { DataViewSortMenu } from "@data-browser/components/database/shared/DataViewSortMenu";
 import {
   FindBar,
-  useFindBar,
+  useFindInView,
 } from "@data-browser/components/database/shared/FindBar";
 import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
 import {
-  useDbAccessRefresh,
-  useDbAccessRuntime,
-} from "@data-browser/state/db-access-session";
+  defaultColumnWidth,
+  useColumnResize,
+} from "@data-browser/components/database/sql/TableView/useColumnResize";
+import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
+import {
+  type DbAccessSortState,
+  useDbAccessViewState,
+} from "@data-browser/state/db-access-view-state";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Tooltip,
@@ -25,6 +30,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   ArrowDownAZ,
   ArrowUpAZ,
@@ -34,18 +40,33 @@ import {
   X,
 } from "lucide-react";
 import {
-  type ReactNode,
+  memo,
+  type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
-// ---------------------------------------------------------------------------
-// Types & helpers
-// ---------------------------------------------------------------------------
-
 type RedisKeyType = "string" | "hash" | "list" | "set" | "zset";
+
+interface RedisKeyDetailViewProps {
+  active: boolean;
+  databaseName: string;
+  dbServiceKey: string;
+  keyName: string;
+  objectRef: AccessObjectRef;
+  viewKey: string;
+}
+
+interface UseRedisKeyQueryParams {
+  currentPage: number;
+  objectRef: AccessObjectRef;
+  pageSize: number;
+  sort: DbAccessSortState;
+  viewKey: string;
+}
 
 function detectRedisKeyType(
   columns: string[],
@@ -63,260 +84,509 @@ function detectRedisKeyType(
   return "string";
 }
 
-/** Render-prop consumer for FindBar context — allows inline access to find state. */
-function FindBarConsumer({
-  children,
-}: {
-  children: (state: ReturnType<typeof useFindBar>["state"]) => ReactNode;
-}) {
-  const { state } = useFindBar();
-  return <>{children(state)}</>;
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-interface RedisKeyDetailViewProps {
-  databaseName: string;
-  dbServiceKey: string;
-  keyName: string;
-  objectRef: AccessObjectRef;
-}
-
-/** Displays a single Redis key's contents in the read-only DB Access surface. */
-export function RedisKeyDetailView({
-  databaseName,
-  dbServiceKey,
-  keyName,
+function useRedisKeyQuery({
+  currentPage,
   objectRef,
-}: RedisKeyDetailViewProps) {
+  pageSize,
+  sort,
+  viewKey,
+}: UseRedisKeyQueryParams) {
   const runtime = useDbAccessRuntime();
-  const { tableRefreshKey } = useDbAccessRefresh();
-
-  // ---- Data state ----
+  const viewState = useDbAccessViewState(viewKey);
+  const refreshVersion = useAtomValue(viewState.refreshVersionAtom);
+  const refresh = useSetAtom(viewState.triggerRefreshAtom);
   const [data, setData] = useState<DataFlowTableData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  // ---- Derived ----
-  const columns = data?.columns ?? [];
-  const rows = data?.rows ?? [];
-  const total = data?.total ?? 0;
-  const disableUpdate = data?.disableUpdate ?? false;
-  const keyType =
-    columns.length > 0 ? detectRedisKeyType(columns, disableUpdate) : "string";
-
-  // ---- Pagination ----
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
-  const totalPages = Math.ceil(total / pageSize);
-
-  // ---- Sort ----
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc" | null>(
-    null
-  );
-  const [activeColumnMenu, setActiveColumnMenu] = useState<string | null>(null);
-
-  // ---- Column resize ----
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
-  const [resizedColumns, setResizedColumns] = useState<Set<string>>(new Set());
-  const resizingRef = useRef<{
-    column: string;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
-
-  // ---- Export state ----
-  const [showExport, setShowExport] = useState(false);
-
-  // ---- Ref for race-condition prevention ----
+  const [loading, setLoading] = useState(true);
   const latestRequestIdRef = useRef(0);
-
-  // =========================================================================
-  // Data fetching
-  // =========================================================================
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     latestRequestIdRef.current += 1;
-    const thisRequestId = latestRequestIdRef.current;
-
-    const sort: AccessRowsSort[] | undefined =
-      sortColumn && sortDirection
+    const requestId = latestRequestIdRef.current;
+    const querySort: AccessRowsSort[] | undefined =
+      sort.column && sort.direction
         ? [
             {
-              column: sortColumn,
-              direction: sortDirection === "asc" ? "ASC" : "DESC",
+              column: sort.column,
+              direction: sort.direction === "asc" ? "ASC" : "DESC",
             },
           ]
         : undefined;
 
     try {
       const result = await getRows({
-        runtime,
-        ref: objectRef,
-        sort,
-        pageSize,
         pageOffset: (currentPage - 1) * pageSize,
+        pageSize,
+        ref: objectRef,
+        runtime,
+        sort: querySort,
       });
-
-      if (thisRequestId !== latestRequestIdRef.current) {
+      if (requestId !== latestRequestIdRef.current) {
         return;
       }
-
-      const tableData = accessRowsToDataFlowTableData(result);
-      setData(tableData);
-
-      // Initialize column widths on first load
-      if (Object.keys(columnWidths).length === 0) {
-        const widths: Record<string, number> = {};
-        tableData.columns.forEach((col) => {
-          widths[col] = Math.max(120, col.length * 10 + 60);
-        });
-        setColumnWidths(widths);
-      }
-    } catch (err) {
-      if (thisRequestId !== latestRequestIdRef.current) {
+      setData(accessRowsToDataFlowTableData(result));
+    } catch (caught) {
+      if (requestId !== latestRequestIdRef.current) {
         return;
       }
-      const message = err instanceof Error ? err.message.trim() : "";
+      const message = caught instanceof Error ? caught.message.trim() : "";
       setError(message || "Failed to fetch Redis key");
     } finally {
-      if (thisRequestId === latestRequestIdRef.current) {
+      if (requestId === latestRequestIdRef.current) {
         setLoading(false);
       }
     }
-  }, [runtime, sortColumn, sortDirection, pageSize, currentPage, objectRef]);
+  }, [currentPage, objectRef, pageSize, runtime, sort.column, sort.direction]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, refreshKey, tableRefreshKey]);
+  }, [fetchData, refreshVersion]);
 
-  const refresh = useCallback(() => {
-    setRefreshKey((key) => key + 1);
-  }, []);
+  return {
+    data,
+    dismissError: () => setError(null),
+    error,
+    loading,
+    refresh,
+  };
+}
 
-  // =========================================================================
-  // Column resize (copied pattern from SQL TableView)
-  // =========================================================================
+const RedisKeyToolbar = memo(function RedisKeyToolbar({
+  keyName,
+  loading,
+  objectRef,
+  onRefresh,
+}: {
+  keyName: string;
+  loading: boolean;
+  objectRef: AccessObjectRef;
+  onRefresh: () => void;
+}) {
+  const [showExport, setShowExport] = useState(false);
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizingRef.current) {
-        return;
-      }
-      const { column, startX, startWidth } = resizingRef.current;
-      const newWidth = Math.max(60, startWidth + (e.clientX - startX));
-      document
-        .querySelectorAll<HTMLElement>(`[data-col="${column}"]`)
-        .forEach((el) => {
-          el.style.minWidth = `${newWidth}px`;
-          el.style.maxWidth = `${newWidth}px`;
-        });
-    };
-    const handleMouseUp = (e: MouseEvent) => {
-      if (!resizingRef.current) {
-        return;
-      }
-      const { column, startX, startWidth } = resizingRef.current;
-      const finalWidth = Math.max(60, startWidth + (e.clientX - startX));
-      setColumnWidths((prev) => ({ ...prev, [column]: finalWidth }));
-      setResizedColumns((prev) => {
-        if (prev.has(column)) {
-          return prev;
-        }
-        const next = new Set(prev);
-        next.add(column);
-        return next;
-      });
-      resizingRef.current = null;
-      setResizingColumn(null);
-      document.body.style.cursor = "default";
-      document
-        .querySelectorAll<HTMLElement>("[data-resize-active]")
-        .forEach((el) => {
-          delete el.dataset.resizeActive;
-        });
-    };
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
+  return (
+    <>
+      <div
+        className="flex h-12 items-center justify-between px-2"
+        data-qa-module="redis"
+        data-qa-object="key-toolbar"
+        data-qa-state={loading ? "loading" : "ready"}
+        data-testid="redis.key.toolbar"
+      >
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <AppIconButton
+                  aria-label="Refresh"
+                  data-qa-action="refresh"
+                  data-qa-disabled-reason={loading ? "loading" : undefined}
+                  data-qa-module="redis"
+                  data-qa-object="key-data"
+                  data-qa-state={loading ? "loading" : "ready"}
+                  data-testid="redis.key.refresh-button"
+                  disabled={loading}
+                  onClick={onRefresh}
+                  size="md"
+                  variant="quiet"
+                >
+                  <RefreshCw
+                    className={cn("h-4 w-4", loading && "animate-spin")}
+                  />
+                </AppIconButton>
+              }
+            />
+            <TooltipContent>{"Refresh"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <AppIconButton
+                  aria-label="Export"
+                  data-qa-action="export"
+                  data-qa-module="redis"
+                  data-qa-object="key-data"
+                  data-testid="redis.key.export-button"
+                  onClick={() => setShowExport(true)}
+                  size="md"
+                  variant="quiet"
+                >
+                  <Download className="h-4 w-4" />
+                </AppIconButton>
+              }
+            />
+            <TooltipContent>{"Export"}</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
 
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent, column: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-      resizingRef.current = {
-        column,
-        startX: e.clientX,
-        startWidth: columnWidths[column] || 120,
-      };
-      setResizingColumn(column);
-      document.body.style.cursor = "col-resize";
-    },
-    [columnWidths]
+      <SingleObjectExportModal
+        objectRef={objectRef}
+        onOpenChange={setShowExport}
+        open={showExport}
+        title={keyName}
+      />
+    </>
   );
+});
 
-  // =========================================================================
-  // Sort handlers
-  // =========================================================================
+function RedisColumnHeader({
+  column,
+  columnIndex,
+  onClearSort,
+  onSort,
+  resize,
+  sort,
+  viewKey,
+}: {
+  column: string;
+  columnIndex: number;
+  onClearSort: () => void;
+  onSort: (column: string, direction: "asc" | "desc") => void;
+  resize: ReturnType<typeof useColumnResize>;
+  sort: DbAccessSortState;
+  viewKey: string;
+}) {
+  const viewState = useDbAccessViewState(viewKey);
+  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
+  const width = committedWidth ?? defaultColumnWidth(column);
 
-  const handleSort = useCallback((col: string, dir: "asc" | "desc") => {
-    setSortColumn(col);
-    setSortDirection(dir);
-    setCurrentPage(1);
-    setActiveColumnMenu(null);
-  }, []);
+  return (
+    <th
+      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border/50 border-r bg-background px-6 py-2 text-left font-medium text-muted-foreground text-sm"
+      data-db-access-column={column}
+      style={{
+        minWidth: `${width}px`,
+        ...(committedWidth != null && { maxWidth: `${width}px` }),
+      }}
+    >
+      <div className="flex h-full items-center justify-between">
+        <div className="mr-6 flex items-center gap-1 overflow-hidden">
+          <span className="truncate" title={column}>
+            {column}
+          </span>
+          {sort.column === column && (
+            <span className="shrink-0 text-primary">
+              {sort.direction === "asc" ? (
+                <ArrowUpAZ className="h-3 w-3" />
+              ) : (
+                <ArrowDownAZ className="h-3 w-3" />
+              )}
+            </span>
+          )}
+        </div>
 
-  const clearSort = useCallback(() => {
-    setSortColumn(null);
-    setSortDirection(null);
-    setCurrentPage(1);
-    setActiveColumnMenu(null);
-  }, []);
+        <DataViewSortMenu
+          align={columnIndex === 0 ? "start" : "end"}
+          column={column}
+          onClearSort={onClearSort}
+          onSort={onSort}
+          sortColumn={sort.column}
+          sortDirection={sort.direction}
+        />
+      </div>
 
-  // =========================================================================
-  // Pagination handlers
-  // =========================================================================
+      <div
+        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
+        data-db-access-resize-handle={column}
+        onMouseDown={(event) => resize.handleResizeStart(event, column)}
+        onMouseEnter={() => resize.handleResizeHandleEnter(column)}
+        onMouseLeave={() => resize.handleResizeHandleLeave(column)}
+      />
+    </th>
+  );
+}
 
-  const handlePageChange = useCallback((page: number) => {
-    setCurrentPage(page);
-  }, []);
-  const handlePageSizeChange = useCallback((size: number) => {
-    setPageSize(size);
-    setCurrentPage(1);
-  }, []);
+function RedisDataCell({
+  column,
+  find,
+  keyName,
+  resize,
+  rowIndex,
+  value,
+  viewKey,
+}: {
+  column: string;
+  find: ReturnType<typeof useFindInView>;
+  keyName: string;
+  resize: ReturnType<typeof useColumnResize>;
+  rowIndex: number;
+  value: string | null;
+  viewKey: string;
+}) {
+  const viewState = useDbAccessViewState(viewKey);
+  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
+  const width = committedWidth ?? defaultColumnWidth(column);
+  const highlight = find.state.total
+    ? find.state.matches.findIndex(
+        (match) => match.rowIndex === rowIndex && match.columnKey === column
+      ) === find.state.currentMatchIndex
+      ? "current"
+      : find.state.matches.some(
+            (match) => match.rowIndex === rowIndex && match.columnKey === column
+          )
+        ? "match"
+        : null
+    : null;
 
-  // =========================================================================
-  // Scroll shadow tracking
-  // =========================================================================
+  return (
+    <td
+      className={cn(
+        "relative scroll-mt-14 overflow-hidden border-border/50 border-r border-b text-foreground/80 text-sm",
+        "px-6 py-2",
+        highlight === "current" && "bg-input",
+        highlight === "match" && "bg-input/30"
+      )}
+      data-db-access-column={column}
+      data-find-current={highlight === "current" ? "true" : undefined}
+      data-qa-disabled-reason="read_only"
+      data-qa-field={column}
+      data-qa-module="redis"
+      data-qa-object="key-cell"
+      data-qa-resource-id={`${keyName}:${rowIndex}`}
+      data-qa-resource-type="redis_key_row"
+      data-qa-state="read_only"
+      data-testid="redis.key.cell"
+      style={{
+        minWidth: `${width}px`,
+        ...(committedWidth != null && { maxWidth: `${width}px` }),
+      }}
+    >
+      <span className="block truncate" title={value ?? ""}>
+        {value ?? ""}
+      </span>
+      <div
+        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
+        data-db-access-resize-handle={column}
+        onMouseDown={(event) => resize.handleResizeStart(event, column)}
+        onMouseEnter={() => resize.handleResizeHandleEnter(column)}
+        onMouseLeave={() => resize.handleResizeHandleLeave(column)}
+      />
+    </td>
+  );
+}
 
+function RedisFindRegion({
+  active,
+  columns,
+  currentPage,
+  error,
+  keyName,
+  onClearSort,
+  onDismissError,
+  onSort,
+  pageSize,
+  resize,
+  rootRef,
+  rows,
+  sort,
+  viewKey,
+}: {
+  active: boolean;
+  columns: string[];
+  currentPage: number;
+  error: string | null;
+  keyName: string;
+  onClearSort: () => void;
+  onDismissError: () => void;
+  onSort: (column: string, direction: "asc" | "desc") => void;
+  pageSize: number;
+  resize: ReturnType<typeof useColumnResize>;
+  rootRef: RefObject<HTMLDivElement | null>;
+  rows: Array<Record<string, string | null>>;
+  sort: DbAccessSortState;
+  viewKey: string;
+}) {
+  const find = useFindInView({ active, columns, rootRef, rows, viewKey });
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isScrolledX, setIsScrolledX] = useState(false);
   const [isScrolledY, setIsScrolledY] = useState(false);
   const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) {
-      setIsScrolledX(el.scrollLeft > 0);
-      setIsScrolledY(el.scrollTop > 0);
+    const element = scrollRef.current;
+    if (element) {
+      setIsScrolledX(element.scrollLeft > 0);
+      setIsScrolledY(element.scrollTop > 0);
     }
   }, []);
 
-  // =========================================================================
-  // Render
-  // =========================================================================
+  return (
+    <>
+      <FindBar.Bar find={find} />
 
-  if (loading && !data) {
+      {error && (
+        <div
+          className="flex items-center justify-between border-destructive/20 border-b bg-destructive/10 px-4 py-2 text-destructive text-sm"
+          data-qa-error-code="redis_key_operation_failed"
+          data-qa-module="redis"
+          data-qa-object="key-data"
+          data-qa-state="error"
+          data-testid="redis.key.error"
+        >
+          <span>{error}</span>
+          <AppIconButton
+            aria-label="Dismiss error"
+            onClick={onDismissError}
+            size="sm"
+            variant="quiet"
+          >
+            <X className="h-3 w-3" />
+          </AppIconButton>
+        </div>
+      )}
+
+      <div
+        className="flex-1 overflow-auto"
+        data-qa-module="redis"
+        data-qa-object="key-grid"
+        data-qa-row-count={rows.length}
+        data-qa-state={rows.length > 0 ? "ready" : "empty"}
+        data-scrolled-x={isScrolledX || undefined}
+        data-scrolled-y={isScrolledY || undefined}
+        data-testid="redis.key.grid-scroll"
+        onScroll={handleScroll}
+        ref={scrollRef}
+      >
+        <table
+          className="min-w-full border-collapse text-sm"
+          data-qa-module="redis"
+          data-qa-object="key-grid"
+          data-qa-state={rows.length > 0 ? "ready" : "empty"}
+          data-testid="redis.key.grid"
+        >
+          <thead className="border-border border-b bg-background">
+            <tr>
+              <th
+                className="sticky top-0 left-0 z-50 border-border/50 border-r border-b bg-background px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
+                style={{ width: 64, minWidth: 64, maxWidth: 64 }}
+              >
+                {" "}
+              </th>
+
+              {columns.map((column, columnIndex) => (
+                <RedisColumnHeader
+                  column={column}
+                  columnIndex={columnIndex}
+                  key={column}
+                  onClearSort={onClearSort}
+                  onSort={onSort}
+                  resize={resize}
+                  sort={sort}
+                  viewKey={viewKey}
+                />
+              ))}
+
+              <th className="sticky top-0 z-40 w-full border-border/50 border-b bg-background" />
+            </tr>
+          </thead>
+          <tbody className="bg-background">
+            {rows.map((row, rowIndex) => (
+              <tr
+                className="group transition-colors hover:bg-input/30"
+                data-qa-module="redis"
+                data-qa-object="key-row"
+                data-qa-resource-id={`${keyName}:${rowIndex}`}
+                data-qa-resource-type="redis_key_row"
+                data-qa-state="ready"
+                data-testid="redis.key.row"
+                key={`${currentPage}:${rowIndex}`}
+              >
+                <td
+                  className="sticky left-0 z-30 border-border/50 border-r border-b bg-background px-2 py-2 text-center font-medium text-xs"
+                  data-qa-disabled-reason="read_only"
+                  data-qa-module="redis"
+                  data-qa-object="key-row"
+                  data-qa-resource-id={`${keyName}:${rowIndex}`}
+                  data-qa-resource-type="redis_key_row"
+                  data-qa-state="ready"
+                  data-testid="redis.key.row-selector"
+                  style={{ width: 64, minWidth: 64, maxWidth: 64 }}
+                >
+                  {(currentPage - 1) * pageSize + rowIndex + 1}
+                </td>
+
+                {columns.map((column) => (
+                  <RedisDataCell
+                    column={column}
+                    find={find}
+                    key={column}
+                    keyName={keyName}
+                    resize={resize}
+                    rowIndex={rowIndex}
+                    value={row[column] ?? null}
+                    viewKey={viewKey}
+                  />
+                ))}
+
+                <td className="w-full border-border/50 border-b bg-background" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {rows.length === 0 && (
+          <div
+            className="flex items-center justify-center py-12 text-muted-foreground text-sm"
+            data-qa-module="redis"
+            data-qa-object="key-grid"
+            data-qa-state="empty"
+            data-testid="redis.key.empty"
+          >
+            {"No values found"}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Displays a single Redis key's contents in the read-only DB Access surface. */
+export function RedisKeyDetailView({
+  active,
+  databaseName,
+  dbServiceKey,
+  keyName,
+  objectRef,
+  viewKey,
+}: RedisKeyDetailViewProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const viewState = useDbAccessViewState(viewKey);
+  const pagination = useAtomValue(viewState.paginationAtom);
+  const sort = useAtomValue(viewState.sortAtom);
+  const setCurrentPage = useSetAtom(viewState.setCurrentPageAtom);
+  const setPageSize = useSetAtom(viewState.setPageSizeAtom);
+  const setSort = useSetAtom(viewState.setSortAtom);
+  const clearSortState = useSetAtom(viewState.clearSortAtom);
+  const resize = useColumnResize({ rootRef, viewKey });
+  const query = useRedisKeyQuery({
+    currentPage: pagination.currentPage,
+    objectRef,
+    pageSize: pagination.pageSize,
+    sort,
+    viewKey,
+  });
+  const columns = useMemo(() => query.data?.columns ?? [], [query.data]);
+  const rows = useMemo(() => query.data?.rows ?? [], [query.data]);
+  const total = query.data?.total ?? 0;
+  const totalPages = Math.ceil(total / pagination.pageSize);
+  const keyType =
+    columns.length > 0
+      ? detectRedisKeyType(columns, query.data?.disableUpdate ?? false)
+      : "string";
+  const handleSort = useCallback(
+    (column: string, direction: "asc" | "desc") => {
+      setSort({ column, direction });
+      setCurrentPage(1);
+    },
+    [setCurrentPage, setSort]
+  );
+  const clearSort = useCallback(() => {
+    clearSortState();
+    setCurrentPage(1);
+  }, [clearSortState, setCurrentPage]);
+
+  if (query.loading && !query.data) {
     return (
       <div
         className="flex flex-1 items-center justify-center"
@@ -336,375 +606,58 @@ export function RedisKeyDetailView({
   }
 
   return (
-    <FindBar.Provider columns={columns} rows={rows}>
-      <div
-        className="flex h-full flex-col bg-background"
-        data-qa-database={databaseName}
-        data-qa-db-service-key={dbServiceKey}
-        data-qa-key-type={keyType}
-        data-qa-loading={loading ? "true" : "false"}
-        data-qa-module="redis"
-        data-qa-object="key-detail"
-        data-qa-resource-id={keyName}
-        data-qa-resource-type="redis_key"
-        data-qa-state={error ? "error" : loading ? "loading" : "ready"}
-        data-testid="redis.key.detail"
-      >
-        {/* ---- Toolbar ---- */}
-        <div
-          className="flex h-12 items-center justify-between px-2"
-          data-qa-module="redis"
-          data-qa-object="key-toolbar"
-          data-qa-state={loading ? "loading" : "ready"}
-          data-testid="redis.key.toolbar"
-        >
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <AppIconButton
-                    aria-label="Refresh"
-                    data-qa-action="refresh"
-                    data-qa-disabled-reason={loading ? "loading" : undefined}
-                    data-qa-module="redis"
-                    data-qa-object="key-data"
-                    data-qa-state={loading ? "loading" : "ready"}
-                    data-testid="redis.key.refresh-button"
-                    disabled={loading}
-                    onClick={refresh}
-                    size="md"
-                    variant="quiet"
-                  >
-                    <RefreshCw
-                      className={cn("h-4 w-4", loading && "animate-spin")}
-                    />
-                  </AppIconButton>
-                }
-              />
-              <TooltipContent>{"Refresh"}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <AppIconButton
-                    aria-label="Export"
-                    data-qa-action="export"
-                    data-qa-module="redis"
-                    data-qa-object="key-data"
-                    data-testid="redis.key.export-button"
-                    onClick={() => setShowExport(true)}
-                    size="md"
-                    variant="quiet"
-                  >
-                    <Download className="h-4 w-4" />
-                  </AppIconButton>
-                }
-              />
-              <TooltipContent>{"Export"}</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+    <div
+      className="flex h-full flex-col bg-background"
+      data-qa-database={databaseName}
+      data-qa-db-service-key={dbServiceKey}
+      data-qa-key-type={keyType}
+      data-qa-loading={query.loading ? "true" : "false"}
+      data-qa-module="redis"
+      data-qa-object="key-detail"
+      data-qa-resource-id={keyName}
+      data-qa-resource-type="redis_key"
+      data-qa-state={
+        query.error ? "error" : query.loading ? "loading" : "ready"
+      }
+      data-testid="redis.key.detail"
+      ref={rootRef}
+    >
+      <RedisKeyToolbar
+        keyName={keyName}
+        loading={query.loading}
+        objectRef={objectRef}
+        onRefresh={query.refresh}
+      />
 
-        <FindBar.Bar />
+      <RedisFindRegion
+        active={active}
+        columns={columns}
+        currentPage={pagination.currentPage}
+        error={query.error}
+        keyName={keyName}
+        onClearSort={clearSort}
+        onDismissError={query.dismissError}
+        onSort={handleSort}
+        pageSize={pagination.pageSize}
+        resize={resize}
+        rootRef={rootRef}
+        rows={rows}
+        sort={sort}
+        viewKey={viewKey}
+      />
 
-        {/* ---- Error banner ---- */}
-        {error && (
-          <div
-            className="flex items-center justify-between border-destructive/20 border-b bg-destructive/10 px-4 py-2 text-destructive text-sm"
-            data-qa-error-code="redis_key_operation_failed"
-            data-qa-module="redis"
-            data-qa-object="key-data"
-            data-qa-state="error"
-            data-testid="redis.key.error"
-          >
-            <span>{error}</span>
-            <AppIconButton
-              aria-label="Dismiss error"
-              onClick={() => setError(null)}
-              size="sm"
-              variant="quiet"
-            >
-              <X className="h-3 w-3" />
-            </AppIconButton>
-          </div>
-        )}
-
-        {/* ---- Data grid ---- */}
-        <div
-          className="flex-1 overflow-auto"
-          data-qa-module="redis"
-          data-qa-object="key-grid"
-          data-qa-row-count={rows.length}
-          data-qa-state={rows.length > 0 ? "ready" : "empty"}
-          data-scrolled-x={isScrolledX || undefined}
-          data-scrolled-y={isScrolledY || undefined}
-          data-testid="redis.key.grid-scroll"
-          onScroll={handleScroll}
-          ref={scrollRef}
-        >
-          <table
-            className="min-w-full border-collapse text-sm"
-            data-qa-module="redis"
-            data-qa-object="key-grid"
-            data-qa-state={rows.length > 0 ? "ready" : "empty"}
-            data-testid="redis.key.grid"
-          >
-            <thead className="border-border border-b bg-background">
-              <tr>
-                {/* Row number column */}
-                <th
-                  className="sticky top-0 left-0 z-50 border-border/50 border-r border-b bg-background px-2 py-2 text-center font-semibold text-muted-foreground text-xs"
-                  style={{ width: 64, minWidth: 64, maxWidth: 64 }}
-                >
-                  {" "}
-                </th>
-
-                {/* Data columns */}
-                {columns.map((col, colIdx) => {
-                  const width = columnWidths[col] || 120;
-                  return (
-                    <th
-                      className="group/header relative sticky top-0 z-40 select-none overflow-hidden whitespace-nowrap border-border/50 border-r bg-background px-6 py-2 text-left font-medium text-muted-foreground text-sm"
-                      data-col={col}
-                      key={col}
-                      style={{
-                        minWidth: `${width}px`,
-                        ...(resizedColumns.has(col) && {
-                          maxWidth: `${width}px`,
-                        }),
-                      }}
-                    >
-                      <div className="flex h-full items-center justify-between">
-                        <div className="mr-6 flex items-center gap-1 overflow-hidden">
-                          <span className="truncate" title={col}>
-                            {col}
-                          </span>
-                          {sortColumn === col && (
-                            <span className="shrink-0 text-primary">
-                              {sortDirection === "asc" ? (
-                                <ArrowUpAZ className="h-3 w-3" />
-                              ) : (
-                                <ArrowDownAZ className="h-3 w-3" />
-                              )}
-                            </span>
-                          )}
-                        </div>
-
-                        <DataViewSortMenu
-                          align={colIdx === 0 ? "start" : "end"}
-                          column={col}
-                          onClearSort={clearSort}
-                          onOpenChange={(open) =>
-                            setActiveColumnMenu(open ? col : null)
-                          }
-                          onSort={handleSort}
-                          open={activeColumnMenu === col}
-                          sortColumn={sortColumn}
-                          sortDirection={sortDirection}
-                        />
-                      </div>
-
-                      {/* Resize handle */}
-                      <div
-                        className={cn(
-                          "absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50",
-                          resizingColumn === col && "bg-primary/50"
-                        )}
-                        data-resize-col={col}
-                        onMouseDown={(e) => handleResizeStart(e, col)}
-                        onMouseEnter={() => {
-                          if (!resizingColumn) {
-                            document
-                              .querySelectorAll<HTMLElement>(
-                                `[data-resize-col="${col}"]`
-                              )
-                              .forEach((el) => {
-                                el.dataset.resizeActive = "";
-                              });
-                          }
-                        }}
-                        onMouseLeave={() => {
-                          if (!resizingColumn) {
-                            document
-                              .querySelectorAll<HTMLElement>(
-                                `[data-resize-col="${col}"]`
-                              )
-                              .forEach((el) => {
-                                delete el.dataset.resizeActive;
-                              });
-                          }
-                        }}
-                      />
-                    </th>
-                  );
-                })}
-
-                <th className="sticky top-0 z-40 w-full border-border/50 border-b bg-background" />
-              </tr>
-            </thead>
-            <FindBarConsumer>
-              {(findState) => (
-                <tbody className="bg-background">
-                  {rows.map((row, rowIdx) => {
-                    return (
-                      <tr
-                        className="group transition-colors hover:bg-input/30"
-                        data-qa-module="redis"
-                        data-qa-object="key-row"
-                        data-qa-resource-id={`${keyName}:${rowIdx}`}
-                        data-qa-resource-type="redis_key_row"
-                        data-qa-state="ready"
-                        data-testid="redis.key.row"
-                        key={rowIdx}
-                      >
-                        {/* Row number — click to toggle selection */}
-                        <td
-                          className={cn(
-                            "sticky left-0 z-30 border-border/50 border-r border-b bg-background px-2 py-2 text-center font-medium text-xs"
-                          )}
-                          data-qa-disabled-reason="read_only"
-                          data-qa-module="redis"
-                          data-qa-object="key-row"
-                          data-qa-resource-id={`${keyName}:${rowIdx}`}
-                          data-qa-resource-type="redis_key_row"
-                          data-qa-state="ready"
-                          data-testid="redis.key.row-selector"
-                          style={{ width: 64, minWidth: 64, maxWidth: 64 }}
-                        >
-                          {(currentPage - 1) * pageSize + rowIdx + 1}
-                        </td>
-
-                        {/* Data cells */}
-                        {columns.map((col) => {
-                          const width = columnWidths[col] || 120;
-                          const highlight = findState.total
-                            ? findState.matches.findIndex(
-                                (m) =>
-                                  m.rowIndex === rowIdx && m.columnKey === col
-                              ) === findState.currentMatchIndex
-                              ? "current"
-                              : findState.matches.some(
-                                    (m) =>
-                                      m.rowIndex === rowIdx &&
-                                      m.columnKey === col
-                                  )
-                                ? "match"
-                                : null
-                            : null;
-
-                          return (
-                            <td
-                              className={cn(
-                                "relative scroll-mt-14 overflow-hidden border-border/50 border-r border-b text-foreground/80 text-sm",
-                                "px-6 py-2",
-                                highlight === "current" && "bg-input",
-                                highlight === "match" && "bg-input/30"
-                              )}
-                              data-col={col}
-                              data-find-current={
-                                highlight === "current" ? "true" : undefined
-                              }
-                              data-qa-disabled-reason="read_only"
-                              data-qa-field={col}
-                              data-qa-module="redis"
-                              data-qa-object="key-cell"
-                              data-qa-resource-id={`${keyName}:${rowIdx}`}
-                              data-qa-resource-type="redis_key_row"
-                              data-qa-state="read_only"
-                              data-testid="redis.key.cell"
-                              key={col}
-                              style={{
-                                minWidth: `${width}px`,
-                                ...(resizedColumns.has(col) && {
-                                  maxWidth: `${width}px`,
-                                }),
-                              }}
-                            >
-                              <span
-                                className="block truncate"
-                                title={row[col] ?? ""}
-                              >
-                                {row[col] ?? ""}
-                              </span>
-
-                              {/* Resize guide on cells */}
-                              <div
-                                className={cn(
-                                  "absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50",
-                                  resizingColumn === col && "bg-primary/50"
-                                )}
-                                data-resize-col={col}
-                                onMouseDown={(e) => handleResizeStart(e, col)}
-                                onMouseEnter={() => {
-                                  if (!resizingColumn) {
-                                    document
-                                      .querySelectorAll<HTMLElement>(
-                                        `[data-resize-col="${col}"]`
-                                      )
-                                      .forEach((el) => {
-                                        el.dataset.resizeActive = "";
-                                      });
-                                  }
-                                }}
-                                onMouseLeave={() => {
-                                  if (!resizingColumn) {
-                                    document
-                                      .querySelectorAll<HTMLElement>(
-                                        `[data-resize-col="${col}"]`
-                                      )
-                                      .forEach((el) => {
-                                        delete el.dataset.resizeActive;
-                                      });
-                                  }
-                                }}
-                              />
-                            </td>
-                          );
-                        })}
-
-                        <td className="w-full border-border/50 border-b bg-background" />
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              )}
-            </FindBarConsumer>
-          </table>
-
-          {rows.length === 0 && (
-            <div
-              className="flex items-center justify-center py-12 text-muted-foreground text-sm"
-              data-qa-module="redis"
-              data-qa-object="key-grid"
-              data-qa-state="empty"
-              data-testid="redis.key.empty"
-            >
-              {"No values found"}
-            </div>
-          )}
-        </div>
-
-        {/* ---- Pagination ---- */}
-        {total > 0 && (
-          <DataView.Pagination
-            currentPage={currentPage}
-            itemLabel="entries"
-            loading={loading}
-            onPageChange={handlePageChange}
-            onPageSizeChange={handlePageSizeChange}
-            pageSize={pageSize}
-            total={total}
-            totalPages={totalPages}
-          />
-        )}
-
-        <SingleObjectExportModal
-          objectRef={objectRef}
-          onOpenChange={setShowExport}
-          open={showExport}
-          title={keyName}
+      {total > 0 && (
+        <DataView.Pagination
+          currentPage={pagination.currentPage}
+          itemLabel="entries"
+          loading={query.loading}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSize={pagination.pageSize}
+          total={total}
+          totalPages={totalPages}
         />
-      </div>
-    </FindBar.Provider>
+      )}
+    </div>
   );
 }

@@ -4,10 +4,7 @@ import type {
   AccessObjectRef,
 } from "@data-browser/api/access-types";
 import { DATA_BROWSER_CAPABILITIES } from "@data-browser/capabilities";
-import {
-  useDbAccessRefresh,
-  useDbAccessService,
-} from "@data-browser/state/db-access-session";
+import { useDbAccessService } from "@data-browser/state/db-access-session";
 import { dbAccessExpandedStorageKey } from "@data-browser/state/db-service";
 import {
   createContext,
@@ -223,7 +220,6 @@ export function SidebarTreeProvider({
   children: React.ReactNode;
 }) {
   const dbService = useDbAccessService();
-  const { sidebarRefreshKey } = useDbAccessRefresh();
 
   const storageKey = useMemo(
     () => scopedStorageKey(dbService.runtime),
@@ -503,18 +499,6 @@ export function SidebarTreeProvider({
     restoredStorageKey.current = storageKey;
     restoreState();
   }, [dbService, expandDefaultTree, loadNodeChildren, storageKey]);
-
-  const previousRefreshKey = useRef(sidebarRefreshKey);
-  useEffect(() => {
-    if (sidebarRefreshKey === previousRefreshKey.current) {
-      return;
-    }
-    previousRefreshKey.current = sidebarRefreshKey;
-    const rootNode = dbServiceToNode(dbService);
-    if (expandedItems.has(rootNode.id)) {
-      refreshNode(rootNode);
-    }
-  }, [dbService, expandedItems, refreshNode, sidebarRefreshKey]);
 
   return (
     <SidebarTreeContext

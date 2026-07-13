@@ -7,10 +7,9 @@ import type {
   AccessRowsSort,
   DataFlowTableData,
 } from "@data-browser/api/access-types";
-import {
-  useDbAccessRefresh,
-  useDbAccessRuntime,
-} from "@data-browser/state/db-access-session";
+import { useDbAccessRuntime } from "@data-browser/state/db-access-session";
+import { useDbAccessViewState } from "@data-browser/state/db-access-view-state";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseDataQueryParams {
@@ -21,6 +20,7 @@ interface UseDataQueryParams {
   pageSize: number;
   sortColumn: string | null;
   sortDirection: "asc" | "desc" | null;
+  viewKey: string;
   visibleColumnsCount: number;
 }
 
@@ -28,11 +28,7 @@ interface UseDataQueryParams {
 export interface DataQueryState {
   data: DataFlowTableData | null;
   error: string | null;
-  foreignKeyColumns: string[];
   loading: boolean;
-  primaryKey: string | null;
-  total: number;
-  totalPages: number;
 }
 
 /** Actions returned by useDataQuery. */
@@ -51,20 +47,20 @@ export function useDataQuery(params: UseDataQueryParams): {
     pageSize,
     sortColumn,
     sortDirection,
+    viewKey,
     objectRef,
     visibleColumnsCount,
     onInitVisibleColumns,
   } = params;
 
   const runtime = useDbAccessRuntime();
-  const { tableRefreshKey } = useDbAccessRefresh();
+  const viewState = useDbAccessViewState(viewKey);
+  const refreshVersion = useAtomValue(viewState.refreshVersionAtom);
+  const refresh = useSetAtom(viewState.triggerRefreshAtom);
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DataFlowTableData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [primaryKey, setPrimaryKey] = useState<string | null>(null);
-  const [foreignKeyColumns, setForeignKeyColumns] = useState<string[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   const latestRequestIdRef = useRef(0);
   const visibleColumnsCountRef = useRef(visibleColumnsCount);
@@ -103,19 +99,19 @@ export function useDataQuery(params: UseDataQueryParams): {
 
         const tableData = accessRowsToDataFlowTableData(result);
         setData(tableData);
-        setPrimaryKey(tableData.primaryKey);
-        setForeignKeyColumns(tableData.foreignKeyColumns);
         if (
           visibleColumnsCountRef.current === 0 &&
           tableData.columns.length > 0
         ) {
           onInitVisibleColumns(tableData.columns);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (thisRequestId !== latestRequestIdRef.current) {
           return;
         }
-        setError(err.message || "Failed to fetch table data");
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch table data"
+        );
       } finally {
         if (thisRequestId === latestRequestIdRef.current) {
           setLoading(false);
@@ -136,25 +132,14 @@ export function useDataQuery(params: UseDataQueryParams): {
   // Fetch on mount and when data-changing params change
   useEffect(() => {
     handleSubmitRequest();
-  }, [handleSubmitRequest, refreshKey, tableRefreshKey]);
-
-  const refresh = useCallback(() => {
-    setRefreshKey((prev) => prev + 1);
-  }, []);
-
-  const total = data?.total || 0;
-  const totalPages = Math.ceil(total / pageSize);
+  }, [handleSubmitRequest, refreshVersion]);
 
   return {
     state: {
       loading,
       data,
       error,
-      primaryKey,
-      foreignKeyColumns,
-      total,
-      totalPages,
     },
-    actions: { refresh, handleSubmitRequest },
+    actions: { handleSubmitRequest, refresh },
   };
 }

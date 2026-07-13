@@ -1,8 +1,7 @@
-import { FindBarContext } from "@data-browser/components/database/shared/FindBar.Provider";
+import type { FindBarModel } from "@data-browser/components/database/shared/FindBar";
 import { cn } from "@workspace/ui/lib/utils";
 import { FileJson } from "lucide-react";
-import { use, useMemo } from "react";
-import { useCollectionView } from "./CollectionViewProvider";
+import { useMemo } from "react";
 
 const LEADING_OBJECT_BRACE_PATTERN = /^\{\n/;
 const TRAILING_OBJECT_BRACE_PATTERN = /\n\}$/;
@@ -12,22 +11,30 @@ function buildDocumentRowKey(pageOffset: number, sourceRowIndex: number) {
 }
 
 /** List of MongoDB document cards. */
-export function CollectionViewDocumentList() {
-  const { state } = useCollectionView();
-  const findBar = use(FindBarContext);
-
-  const pageOffset = (state.currentPage - 1) * state.pageSize;
+export function CollectionViewDocumentList({
+  currentPage,
+  documents,
+  find,
+  pageSize,
+}: {
+  currentPage: number;
+  documents: Record<string, unknown>[];
+  find: FindBarModel;
+  pageSize: number;
+}) {
+  const pageOffset = (currentPage - 1) * pageSize;
 
   const renderedDocs = useMemo(() => {
-    return state.documents.map((doc, idx) => {
+    return documents.map((doc, sourceRowIndex) => {
       return {
-        rowKey: buildDocumentRowKey(pageOffset, idx),
         doc,
+        rowKey: buildDocumentRowKey(pageOffset, sourceRowIndex),
+        sourceRowIndex,
       };
     });
-  }, [state.documents, pageOffset]);
+  }, [documents, pageOffset]);
 
-  if (state.documents.length === 0) {
+  if (documents.length === 0) {
     return (
       <div
         className="py-12 text-center"
@@ -46,17 +53,15 @@ export function CollectionViewDocumentList() {
     <>
       {renderedDocs.map((item) => {
         // FindBar matching only applies to existing documents (not pending inserts)
-        const existingIdx = state.documents.indexOf(item.doc);
-        const findBarIdx = existingIdx >= 0 ? existingIdx : -1;
-        const hasMatch =
-          findBarIdx >= 0 && findBar?.state.total
-            ? findBar.state.matches.some((m) => m.rowIndex === findBarIdx)
-            : false;
-        const hasCurrentMatch =
-          findBarIdx >= 0 && findBar?.state.total
-            ? findBar.state.matches[findBar.state.currentMatchIndex]
-                ?.rowIndex === findBarIdx
-            : false;
+        const hasMatch = find.state.total
+          ? find.state.matches.some(
+              (match) => match.rowIndex === item.sourceRowIndex
+            )
+          : false;
+        const hasCurrentMatch = find.state.total
+          ? find.state.matches[find.state.currentMatchIndex]?.rowIndex ===
+            item.sourceRowIndex
+          : false;
 
         return (
           <div

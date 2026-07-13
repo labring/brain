@@ -11,6 +11,11 @@ import {
   useEffect,
   useMemo,
 } from "react";
+import {
+  createDbAccessViewStateRegistry,
+  DbAccessViewStateRegistryContext,
+  useDbAccessViewStateRegistry,
+} from "./db-access-view-state";
 import { dbAccessSessionKeyFromRuntime } from "./db-service";
 import {
   closeAllDbAccessTabs,
@@ -75,12 +80,6 @@ export interface DDLResult {
   success: boolean;
 }
 
-interface DbAccessRefreshState {
-  collectionRefreshKey: number;
-  sidebarRefreshKey: number;
-  tableRefreshKey: number;
-}
-
 const ENGINE_TYPE_BY_RUNTIME_ENGINE: Record<
   Exclude<DataBrowserEngine, "UNSUPPORTED">,
   DbAccessEngineType
@@ -95,11 +94,6 @@ const dbAccessSessionAtom = atom<DbAccessSessionState>(
   createDbAccessSession("")
 );
 const dbAccessSelectedItemAtom = atom<DbAccessSelectedItem | null>(null);
-const dbAccessRefreshAtom = atom<DbAccessRefreshState>({
-  collectionRefreshKey: 0,
-  sidebarRefreshKey: 0,
-  tableRefreshKey: 0,
-});
 const dbAccessActivityTabAtom = atom<DbAccessActivityTab>("db_service");
 const DbAccessRuntimeContext = createContext<DataBrowserHostContext | null>(
   null
@@ -149,6 +143,10 @@ export function DbAccessSessionProvider({
     }),
     [dbServiceKey, runtime.database.name, runtime.databaseWorkloadName]
   );
+  const viewStateRegistry = useMemo(
+    () => createDbAccessViewStateRegistry(),
+    [dbServiceKey]
+  );
   const store = useMemo(() => {
     const nextStore = createStore();
     nextStore.set(
@@ -165,10 +163,19 @@ export function DbAccessSessionProvider({
     );
   }, [dbServiceKey, store]);
 
+  useEffect(
+    () => () => {
+      viewStateRegistry.disposeAll();
+    },
+    [viewStateRegistry]
+  );
+
   return (
-    <DbAccessRuntimeContext.Provider value={runtime}>
-      <Provider store={store}>{children}</Provider>
-    </DbAccessRuntimeContext.Provider>
+    <DbAccessViewStateRegistryContext value={viewStateRegistry}>
+      <DbAccessRuntimeContext.Provider value={runtime}>
+        <Provider store={store}>{children}</Provider>
+      </DbAccessRuntimeContext.Provider>
+    </DbAccessViewStateRegistryContext>
   );
 }
 
@@ -189,6 +196,7 @@ export function useDbAccessService(): DbAccessService {
 export function useDbAccessTabs() {
   const session = useAtomValue(dbAccessSessionAtom);
   const setSession = useSetAtom(dbAccessSessionAtom);
+  const viewStateRegistry = useDbAccessViewStateRegistry();
 
   const openTab = useCallback(
     (
@@ -209,21 +217,29 @@ export function useDbAccessTabs() {
   );
 
   const closeTab = useCallback(
-    (tabId: string) =>
-      setSession((current) => closeDbAccessTab(current, tabId)),
-    [setSession]
+    (tabId: string) => {
+      viewStateRegistry.disposeView(tabId);
+      setSession((current) => closeDbAccessTab(current, tabId));
+    },
+    [setSession, viewStateRegistry]
   );
 
   const closeOtherTabs = useCallback(
-    (tabId: string) =>
-      setSession((current) => closeOtherDbAccessTabs(current, tabId)),
-    [setSession]
+    (tabId: string) => {
+      for (const tab of session.tabs) {
+        if (tab.id !== tabId) {
+          viewStateRegistry.disposeView(tab.id);
+        }
+      }
+      setSession((current) => closeOtherDbAccessTabs(current, tabId));
+    },
+    [session.tabs, setSession, viewStateRegistry]
   );
 
-  const closeAllTabs = useCallback(
-    () => setSession((current) => closeAllDbAccessTabs(current)),
-    [setSession]
-  );
+  const closeAllTabs = useCallback(() => {
+    viewStateRegistry.disposeAll();
+    setSession((current) => closeAllDbAccessTabs(current));
+  }, [setSession, viewStateRegistry]);
 
   const setActiveTab = useCallback(
     (tabId: string) =>
@@ -264,45 +280,6 @@ export function useDbAccessSelection() {
   return {
     selectItem: setSelectedItem,
     selectedItem,
-  };
-}
-
-export function useDbAccessRefresh() {
-  const refreshState = useAtomValue(dbAccessRefreshAtom);
-  const setRefreshState = useSetAtom(dbAccessRefreshAtom);
-
-  const triggerTableRefresh = useCallback(
-    () =>
-      setRefreshState((current) => ({
-        ...current,
-        tableRefreshKey: current.tableRefreshKey + 1,
-      })),
-    [setRefreshState]
-  );
-
-  const triggerCollectionRefresh = useCallback(
-    () =>
-      setRefreshState((current) => ({
-        ...current,
-        collectionRefreshKey: current.collectionRefreshKey + 1,
-      })),
-    [setRefreshState]
-  );
-
-  const triggerSidebarRefresh = useCallback(
-    () =>
-      setRefreshState((current) => ({
-        ...current,
-        sidebarRefreshKey: current.sidebarRefreshKey + 1,
-      })),
-    [setRefreshState]
-  );
-
-  return {
-    ...refreshState,
-    triggerCollectionRefresh,
-    triggerSidebarRefresh,
-    triggerTableRefresh,
   };
 }
 

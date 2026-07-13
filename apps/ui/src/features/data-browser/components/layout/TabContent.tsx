@@ -14,13 +14,10 @@ export function TabContent() {
   const activeTab = useMemo(() => {
     return tabs.find((t) => t.id === activeTabId);
   }, [tabs, activeTabId]);
-
-  if (activeSurface.kind === "service") {
-    return <BackupServiceSurface />;
-  }
+  const serviceActive = activeSurface.kind === "service";
 
   // When no tabs are open, show empty state
-  if (!activeTab) {
+  if (!(serviceActive || activeTab)) {
     return (
       <div
         className="flex flex-1 flex-col items-center justify-center text-muted-foreground"
@@ -51,12 +48,14 @@ export function TabContent() {
         }
         return (
           <TableDetailView
+            active={tab.id === activeTabId}
             databaseName={tab.databaseName}
             dbServiceKey={tab.dbServiceKey}
             key={tab.id}
             objectRef={tab.objectRef}
             schema={tab.schemaName}
             tableName={tab.tableName}
+            viewKey={tab.id}
           />
         );
       case "collection":
@@ -69,11 +68,13 @@ export function TabContent() {
         }
         return (
           <CollectionDetailView
+            active={tab.id === activeTabId}
             collectionName={tab.collectionName}
             databaseName={tab.databaseName}
             dbServiceKey={tab.dbServiceKey}
             key={tab.id}
             objectRef={tab.objectRef}
+            viewKey={tab.id}
           />
         );
       case "redis_key_detail":
@@ -86,11 +87,13 @@ export function TabContent() {
         }
         return (
           <RedisKeyDetailView
+            active={tab.id === activeTabId}
             databaseName={tab.databaseName}
             dbServiceKey={tab.dbServiceKey}
             key={tab.id}
             keyName={tab.tableName}
             objectRef={tab.objectRef}
+            viewKey={tab.id}
           />
         );
       default:
@@ -105,29 +108,40 @@ export function TabContent() {
   // Render all tabs but only show the active one
   // This preserves state for inactive tabs
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden p-2 pt-0">
-      {tabs.map((tab) => (
+    <>
+      {serviceActive && <BackupServiceSurface />}
+      {tabs.length > 0 && (
         <div
           className={
-            tab.id === activeTabId
-              ? "flex flex-1 flex-col overflow-hidden rounded-lg border border-border bg-transparent"
-              : "hidden"
+            serviceActive
+              ? "hidden"
+              : "relative flex flex-1 flex-col overflow-hidden p-2 pt-0"
           }
-          data-qa-database={tab.databaseName}
-          data-qa-db-service-key={tab.dbServiceKey}
-          data-qa-module="layout"
-          data-qa-object="tab-content"
-          data-qa-resource-id={tab.id}
-          data-qa-resource-type="tab"
-          data-qa-schema={tab.schemaName}
-          data-qa-state={tab.id === activeTabId ? "active" : "inactive"}
-          data-qa-tab-type={tab.type}
-          data-testid="layout.tab-content.panel"
-          key={tab.id}
         >
-          {renderTabContent(tab)}
+          {tabs.map((tab) => (
+            <div
+              className={
+                tab.id === activeTabId
+                  ? "flex flex-1 flex-col overflow-hidden rounded-lg border border-border bg-transparent"
+                  : "hidden"
+              }
+              data-qa-database={tab.databaseName}
+              data-qa-db-service-key={tab.dbServiceKey}
+              data-qa-module="layout"
+              data-qa-object="tab-content"
+              data-qa-resource-id={tab.id}
+              data-qa-resource-type="tab"
+              data-qa-schema={tab.schemaName}
+              data-qa-state={tab.id === activeTabId ? "active" : "inactive"}
+              data-qa-tab-type={tab.type}
+              data-testid="layout.tab-content.panel"
+              key={tab.id}
+            >
+              {renderTabContent(tab)}
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }

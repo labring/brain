@@ -39,9 +39,11 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0043 — Coalesce Deployment Stream Updates into Throttled React Commits](0043-coalesce-deployment-stream-updates.md)
 - [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
 - [0047 — Partition Assistant Conversations Per User as a View, Not a Security Boundary](0047-partition-assistant-conversations-per-user-as-a-view.md)
+- [0048 — Side Panes Animate as Overlays; Layout Width Snaps Once](0048-side-panes-animate-as-overlays-layout-width-snaps-once.md)
+- [0049 — Scope DB Access View State to Each Session](0049-scope-db-access-view-state-to-each-session.md)
 
 ## Conventions
 
 - An ADR without a `Status` section is accepted as written.
 - When a later ADR revises or replaces part of an earlier one, give the earlier ADR a `Status` section naming the reviser (see ADR 0002), and trim the superseded text instead of leaving it to mislead.
-- Gaps in the sequence (0004–0007, 0010–0012, 0017, 0045–0046, 0048) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition.
+- Gaps in the sequence (0004–0007, 0010–0012, 0017, 0045–0046) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition.

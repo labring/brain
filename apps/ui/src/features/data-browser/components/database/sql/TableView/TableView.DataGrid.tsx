@@ -1,34 +1,200 @@
-import { FindBarContext } from "@data-browser/components/database/shared/FindBar.Provider";
+import type { DataFlowTableData } from "@data-browser/api/access-types";
+import type { DataViewSortDirection } from "@data-browser/components/database/shared/DataViewSortMenu";
+import type { FindBarModel } from "@data-browser/components/database/shared/FindBar";
+import {
+  type DbAccessSortState,
+  useDbAccessViewState,
+} from "@data-browser/state/db-access-view-state";
 import { cn } from "@workspace/ui/lib/utils";
+import { useAtomValue } from "jotai";
 import { EyeOff, Loader2 } from "lucide-react";
-import { use, useCallback, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useMemo, useRef, useState } from "react";
 import { TableViewColumnHeader } from "./TableView.ColumnHeader";
-import { useTableView } from "./TableViewProvider";
+import type { RenderedTableRow } from "./types";
+import { defaultColumnWidth } from "./useColumnResize";
 
-/** Renders the SQL table data grid with column resizing and find highlighting. */
-export function TableViewDataGrid() {
-  const { state, actions } = useTableView();
-  const findBar = use(FindBarContext);
+interface TableViewDataGridProps {
+  data: DataFlowTableData | null;
+  find: FindBarModel;
+  loading: boolean;
+  onClearSort: () => void;
+  onResizeHandleEnter: (column: string) => void;
+  onResizeHandleLeave: (column: string) => void;
+  onResizeStart: (event: MouseEvent, column: string) => void;
+  onSort: (column: string, direction: DataViewSortDirection) => void;
+  renderedRows: RenderedTableRow[];
+  sort: DbAccessSortState;
+  viewKey: string;
+  visibleColumnNames: string[];
+}
 
-  const visibleColumns =
-    state.data?.columns?.filter((col) => state.visibleColumns.includes(col)) ??
-    [];
-  const hiddenColumnCount = state.data?.columns
-    ? state.data.columns.length - state.visibleColumns.length
+interface SubscribedColumnHeaderProps {
+  column: string;
+  columnType?: string;
+  index: number;
+  isForeignKey: boolean;
+  isPrimaryKey: boolean;
+  onClearSort: () => void;
+  onResizeHandleEnter: (column: string) => void;
+  onResizeHandleLeave: (column: string) => void;
+  onResizeStart: (event: MouseEvent, column: string) => void;
+  onSort: (column: string, direction: DataViewSortDirection) => void;
+  sort: DbAccessSortState;
+  viewKey: string;
+}
+
+function SubscribedColumnHeader({
+  column,
+  columnType,
+  index,
+  isForeignKey,
+  isPrimaryKey,
+  onClearSort,
+  onResizeHandleEnter,
+  onResizeHandleLeave,
+  onResizeStart,
+  onSort,
+  sort,
+  viewKey,
+}: SubscribedColumnHeaderProps) {
+  const viewState = useDbAccessViewState(viewKey);
+  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
+
+  return (
+    <TableViewColumnHeader
+      column={column}
+      columnType={columnType}
+      index={index}
+      isForeignKey={isForeignKey}
+      isPrimaryKey={isPrimaryKey}
+      onClearSort={onClearSort}
+      onResizeHandleEnter={onResizeHandleEnter}
+      onResizeHandleLeave={onResizeHandleLeave}
+      onResizeStart={onResizeStart}
+      onSort={onSort}
+      resized={committedWidth != null}
+      sort={sort}
+      width={committedWidth ?? defaultColumnWidth(column)}
+    />
+  );
+}
+
+interface SubscribedDataCellProps {
+  column: string;
+  displayValue: string | null;
+  find: FindBarModel;
+  onResizeHandleEnter: (column: string) => void;
+  onResizeHandleLeave: (column: string) => void;
+  onResizeStart: (event: MouseEvent, column: string) => void;
+  rowIndex: number;
+  rowKey: string;
+  viewKey: string;
+}
+
+function SubscribedDataCell({
+  column,
+  displayValue,
+  find,
+  onResizeHandleEnter,
+  onResizeHandleLeave,
+  onResizeStart,
+  rowIndex,
+  rowKey,
+  viewKey,
+}: SubscribedDataCellProps) {
+  const viewState = useDbAccessViewState(viewKey);
+  const committedWidth = useAtomValue(viewState.columnWidthAtom(column));
+  const width = committedWidth ?? defaultColumnWidth(column);
+  const highlight = find.state.total
+    ? find.state.matches.findIndex(
+        (match) => match.rowIndex === rowIndex && match.columnKey === column
+      ) === find.state.currentMatchIndex
+      ? "current"
+      : find.state.matches.some(
+            (match) => match.rowIndex === rowIndex && match.columnKey === column
+          )
+        ? "match"
+        : null
+    : null;
+
+  return (
+    <td
+      className={cn(
+        "relative scroll-mt-14 overflow-hidden border-border border-r border-b text-foreground/80 text-sm",
+        "px-4 py-2",
+        highlight === "current" && "bg-input",
+        highlight === "match" && "bg-input/30"
+      )}
+      data-db-access-column={column}
+      data-find-current={highlight === "current" ? "true" : undefined}
+      data-qa-disabled-reason="read_only"
+      data-qa-field={column}
+      data-qa-module="sql"
+      data-qa-object="table-cell"
+      data-qa-resource-id={rowKey}
+      data-qa-resource-type="table-row"
+      data-qa-state="read_only"
+      data-testid="sql.table.cell"
+      style={{
+        minWidth: `${width}px`,
+        ...(committedWidth != null && { maxWidth: `${width}px` }),
+      }}
+    >
+      <span className="block truncate" title={displayValue ?? "NULL"}>
+        {displayValue == null ? (
+          <span className="text-muted-foreground italic">NULL</span>
+        ) : (
+          String(displayValue)
+        )}
+      </span>
+      <div
+        className="absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50"
+        data-db-access-resize-handle={column}
+        onMouseDown={(event) => onResizeStart(event, column)}
+        onMouseEnter={() => onResizeHandleEnter(column)}
+        onMouseLeave={() => onResizeHandleLeave(column)}
+      />
+    </td>
+  );
+}
+
+/** Renders the SQL grid and subscribes only to committed column widths. */
+export function TableViewDataGrid({
+  data,
+  find,
+  loading,
+  onClearSort,
+  onResizeHandleEnter,
+  onResizeHandleLeave,
+  onResizeStart,
+  onSort,
+  renderedRows,
+  sort,
+  viewKey,
+  visibleColumnNames,
+}: TableViewDataGridProps) {
+  const visibleColumns = useMemo(
+    () =>
+      data?.columns.filter((column) => visibleColumnNames.includes(column)) ??
+      [],
+    [data, visibleColumnNames]
+  );
+  const hiddenColumnCount = data
+    ? data.columns.length - visibleColumns.length
     : 0;
-
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isScrolledX, setIsScrolledX] = useState(false);
   const [isScrolledY, setIsScrolledY] = useState(false);
+
   const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) {
-      setIsScrolledX(el.scrollLeft > 0);
-      setIsScrolledY(el.scrollTop > 0);
+    const element = scrollRef.current;
+    if (element) {
+      setIsScrolledX(element.scrollLeft > 0);
+      setIsScrolledY(element.scrollTop > 0);
     }
   }, []);
 
-  if (state.loading && !state.data) {
+  if (loading && !data) {
     return (
       <div
         className="flex flex-1 items-center justify-center"
@@ -48,8 +214,8 @@ export function TableViewDataGrid() {
       className="flex-1 overflow-auto"
       data-qa-module="sql"
       data-qa-object="table-grid"
-      data-qa-row-count={state.renderedRows.length}
-      data-qa-state={state.renderedRows.length > 0 ? "ready" : "empty"}
+      data-qa-row-count={renderedRows.length}
+      data-qa-state={renderedRows.length > 0 ? "ready" : "empty"}
       data-scrolled-x={isScrolledX || undefined}
       data-scrolled-y={isScrolledY || undefined}
       data-testid="sql.table.grid-scroll"
@@ -60,7 +226,7 @@ export function TableViewDataGrid() {
         className="min-w-full border-collapse text-sm"
         data-qa-module="sql"
         data-qa-object="table-grid"
-        data-qa-state={state.renderedRows.length > 0 ? "ready" : "empty"}
+        data-qa-state={renderedRows.length > 0 ? "ready" : "empty"}
         data-testid="sql.table.grid"
       >
         <thead className="border-border border-b bg-transparent">
@@ -71,8 +237,22 @@ export function TableViewDataGrid() {
             >
               <div className="pointer-events-none absolute inset-0 bg-input/30 backdrop-blur-lg" />
             </th>
-            {visibleColumns.map((col, idx) => (
-              <TableViewColumnHeader column={col} index={idx} key={col} />
+            {visibleColumns.map((column, index) => (
+              <SubscribedColumnHeader
+                column={column}
+                columnType={data?.columnTypes[column]}
+                index={index}
+                isForeignKey={data?.foreignKeyColumns.includes(column) ?? false}
+                isPrimaryKey={data?.primaryKey === column}
+                key={column}
+                onClearSort={onClearSort}
+                onResizeHandleEnter={onResizeHandleEnter}
+                onResizeHandleLeave={onResizeHandleLeave}
+                onResizeStart={onResizeStart}
+                onSort={onSort}
+                sort={sort}
+                viewKey={viewKey}
+              />
             ))}
             {hiddenColumnCount > 0 && (
               <th
@@ -92,7 +272,7 @@ export function TableViewDataGrid() {
           </tr>
         </thead>
         <tbody className="bg-transparent">
-          {state.renderedRows.map((row, rowIdx) => (
+          {renderedRows.map((row, rowIndex) => (
             <tr
               className="group transition-colors hover:bg-input/30"
               data-qa-module="sql"
@@ -116,97 +296,20 @@ export function TableViewDataGrid() {
                 {row.rowNumber ?? ""}
               </td>
 
-              {visibleColumns.map((col) => {
-                const width = state.columnWidths[col] || 120;
-                const highlight = findBar?.state.total
-                  ? findBar.state.matches.findIndex(
-                      (match) =>
-                        match.rowIndex === rowIdx && match.columnKey === col
-                    ) === findBar.state.currentMatchIndex
-                    ? "current"
-                    : findBar.state.matches.some(
-                          (match) =>
-                            match.rowIndex === rowIdx && match.columnKey === col
-                        )
-                      ? "match"
-                      : null
-                  : null;
-                const displayValue = row.values[col];
-
-                return (
-                  <td
-                    className={cn(
-                      "relative scroll-mt-14 overflow-hidden border-border border-r border-b text-foreground/80 text-sm",
-                      "px-4 py-2",
-                      highlight === "current" && "bg-input",
-                      highlight === "match" && "bg-input/30"
-                    )}
-                    data-find-current={
-                      highlight === "current" ? "true" : undefined
-                    }
-                    data-qa-disabled-reason="read_only"
-                    data-qa-field={col}
-                    data-qa-module="sql"
-                    data-qa-object="table-cell"
-                    data-qa-resource-id={row.rowKey}
-                    data-qa-resource-type="table-row"
-                    data-qa-state="read_only"
-                    data-testid="sql.table.cell"
-                    key={col}
-                    style={{
-                      minWidth: `${width}px`,
-                      ...(state.resizedColumns.has(col) && {
-                        maxWidth: `${width}px`,
-                      }),
-                    }}
-                  >
-                    <span
-                      className="block truncate"
-                      title={displayValue ?? "NULL"}
-                    >
-                      {displayValue == null ? (
-                        <span className="text-muted-foreground italic">
-                          NULL
-                        </span>
-                      ) : (
-                        String(displayValue)
-                      )}
-                    </span>
-                    <div
-                      className={cn(
-                        "absolute top-0 right-0 -bottom-px z-20 w-1 cursor-col-resize data-[resize-active]:bg-primary/50",
-                        state.resizingColumn === col && "bg-primary/50"
-                      )}
-                      data-resize-col={col}
-                      onMouseDown={(e) => actions.handleResizeStart(e, col)}
-                      onMouseEnter={() => {
-                        if (state.resizingColumn) {
-                          return;
-                        }
-                        document
-                          .querySelectorAll<HTMLElement>(
-                            `[data-resize-col="${col}"]`
-                          )
-                          .forEach((el) => {
-                            el.dataset.resizeActive = "";
-                          });
-                      }}
-                      onMouseLeave={() => {
-                        if (state.resizingColumn) {
-                          return;
-                        }
-                        document
-                          .querySelectorAll<HTMLElement>(
-                            `[data-resize-col="${col}"]`
-                          )
-                          .forEach((el) => {
-                            delete el.dataset.resizeActive;
-                          });
-                      }}
-                    />
-                  </td>
-                );
-              })}
+              {visibleColumns.map((column) => (
+                <SubscribedDataCell
+                  column={column}
+                  displayValue={row.values[column] ?? null}
+                  find={find}
+                  key={column}
+                  onResizeHandleEnter={onResizeHandleEnter}
+                  onResizeHandleLeave={onResizeHandleLeave}
+                  onResizeStart={onResizeStart}
+                  rowIndex={rowIndex}
+                  rowKey={row.rowKey}
+                  viewKey={viewKey}
+                />
+              ))}
 
               {hiddenColumnCount > 0 && (
                 <td className="border-border border-b bg-transparent" />

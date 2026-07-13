@@ -1,90 +1,183 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useDbAccessViewState } from "@data-browser/state/db-access-view-state";
+import { useStore } from "jotai";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
+
+const DEFAULT_COLUMN_WIDTH = 120;
+const MIN_COLUMN_WIDTH = 60;
+const COLUMN_ELEMENT_SELECTOR = "[data-db-access-column]";
+const RESIZE_HANDLE_SELECTOR = "[data-db-access-resize-handle]";
+
+interface ColumnResizeOrigin {
+  startWidth: number;
+  startX: number;
+}
+
+interface UseColumnResizeParams {
+  rootRef: RefObject<HTMLElement | null>;
+  viewKey: string;
+}
+
+export function defaultColumnWidth(column: string): number {
+  return Math.max(DEFAULT_COLUMN_WIDTH, column.length * 10 + 60);
+}
+
+export function columnWidthDuringResize(
+  origin: ColumnResizeOrigin,
+  clientX: number
+): number {
+  return Math.max(
+    MIN_COLUMN_WIDTH,
+    origin.startWidth + (clientX - origin.startX)
+  );
+}
+
+function forColumnElements(
+  root: HTMLElement,
+  selector: string,
+  datasetKey: "dbAccessColumn" | "dbAccessResizeHandle",
+  column: string,
+  visit: (element: HTMLElement) => void
+) {
+  for (const element of root.querySelectorAll<HTMLElement>(selector)) {
+    if (element.dataset[datasetKey] === column) {
+      visit(element);
+    }
+  }
+}
+
+function applyColumnWidth(root: HTMLElement, column: string, width: number) {
+  forColumnElements(
+    root,
+    COLUMN_ELEMENT_SELECTOR,
+    "dbAccessColumn",
+    column,
+    (element) => {
+      element.style.minWidth = `${width}px`;
+      element.style.maxWidth = `${width}px`;
+    }
+  );
+}
+
+function setResizeHandleActive(
+  root: HTMLElement,
+  column: string,
+  active: boolean
+) {
+  forColumnElements(
+    root,
+    RESIZE_HANDLE_SELECTOR,
+    "dbAccessResizeHandle",
+    column,
+    (element) => {
+      if (active) {
+        element.dataset.resizeActive = "";
+      } else {
+        delete element.dataset.resizeActive;
+      }
+    }
+  );
+}
 
 /**
- * Manages column resize state and document-level mouse event listeners for drag resizing.
- * Returns current column widths and a handler to initiate resizing on mousedown.
+ * Keeps live resize coordinates in refs/DOM and commits the final width once.
+ * Document listeners exist only while one resize gesture is active.
  */
-export function useColumnResize(columns: string[] | undefined): {
-  columnWidths: Record<string, number>;
-  resizingColumn: string | null;
-  resizedColumns: Set<string>;
-  handleResizeStart: (e: React.MouseEvent, column: string) => void;
-} {
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
-  const [resizedColumns, setResizedColumns] = useState<Set<string>>(new Set());
-  const resizingRef = useRef<{
-    column: string;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
+export function useColumnResize({ rootRef, viewKey }: UseColumnResizeParams) {
+  const store = useStore();
+  const viewState = useDbAccessViewState(viewKey);
+  const activeColumnRef = useRef<string | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
-  // Initialize widths when columns first arrive
-  useEffect(() => {
-    if (columns && Object.keys(columnWidths).length === 0) {
-      const initialWidths: Record<string, number> = {};
-      columns.forEach((col) => {
-        initialWidths[col] = Math.max(120, col.length * 10 + 60);
-      });
-      setColumnWidths(initialWidths);
-    }
-  }, [columns]);
-
-  // Document-level mousemove/mouseup for drag resizing
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (resizingRef.current) {
-        const { column, startX, startWidth } = resizingRef.current;
-        const diff = e.clientX - startX;
-        const newWidth = Math.max(60, startWidth + diff);
-        setColumnWidths((prev) => ({ ...prev, [column]: newWidth }));
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (resizingRef.current) {
-        const col = resizingRef.current.column;
-        setResizedColumns((prev) => {
-          if (prev.has(col)) {
-            return prev;
-          }
-          const next = new Set(prev);
-          next.add(col);
-          return next;
-        });
-        resizingRef.current = null;
-        setResizingColumn(null);
-        document.body.style.cursor = "default";
-        document
-          .querySelectorAll<HTMLElement>("[data-resize-active]")
-          .forEach((el) => {
-            delete el.dataset.resizeActive;
-          });
-      }
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
-
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent, column: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-      resizingRef.current = {
-        column,
-        startX: e.clientX,
-        startWidth: columnWidths[column] || 120,
-      };
-      setResizingColumn(column);
-      document.body.style.cursor = "col-resize";
+  useEffect(
+    () => () => {
+      cleanupRef.current?.();
     },
-    [columnWidths]
+    []
   );
 
-  return { columnWidths, resizingColumn, resizedColumns, handleResizeStart };
+  const handleResizeStart = useCallback(
+    (event: ReactMouseEvent, column: string) => {
+      const root = rootRef.current;
+      if (!root) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      cleanupRef.current?.();
+
+      const widthAtom = viewState.columnWidthAtom(column);
+      const origin = {
+        startWidth: store.get(widthAtom) ?? defaultColumnWidth(column),
+        startX: event.clientX,
+      } satisfies ColumnResizeOrigin;
+
+      activeColumnRef.current = column;
+      setResizeHandleActive(root, column, true);
+      document.body.style.cursor = "col-resize";
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        applyColumnWidth(
+          root,
+          column,
+          columnWidthDuringResize(origin, moveEvent.clientX)
+        );
+      };
+
+      const cleanup = () => {
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        setResizeHandleActive(root, column, false);
+        activeColumnRef.current = null;
+        document.body.style.cursor = "default";
+        if (cleanupRef.current === cleanup) {
+          cleanupRef.current = null;
+        }
+      };
+
+      const handleMouseUp = (upEvent: MouseEvent) => {
+        const finalWidth = columnWidthDuringResize(origin, upEvent.clientX);
+        applyColumnWidth(root, column, finalWidth);
+        store.set(widthAtom, finalWidth);
+        cleanup();
+      };
+
+      cleanupRef.current = cleanup;
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [rootRef, store, viewState]
+  );
+
+  const handleResizeHandleEnter = useCallback(
+    (column: string) => {
+      const root = rootRef.current;
+      if (root && activeColumnRef.current === null) {
+        setResizeHandleActive(root, column, true);
+      }
+    },
+    [rootRef]
+  );
+
+  const handleResizeHandleLeave = useCallback(
+    (column: string) => {
+      const root = rootRef.current;
+      if (root && activeColumnRef.current === null) {
+        setResizeHandleActive(root, column, false);
+      }
+    },
+    [rootRef]
+  );
+
+  return {
+    handleResizeHandleEnter,
+    handleResizeHandleLeave,
+    handleResizeStart,
+  };
 }

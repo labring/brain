@@ -152,6 +152,18 @@ A non-destructive workflow that creates a new DB Service from a completed DB Ser
 
 A resource workflow for inspecting, and when the product enables it editing, one DB Service's objects and data without exposing its connection credentials. DB Access is distinct from DB Settings: DB Settings changes a DB's desired configuration, while DB Access works with the Logical Databases and objects exposed by that DB Service.
 
+### DB Access Session
+
+A browser-local DB Access workspace for one DB Service, containing its open DB Access Object Views and their interaction state. Switching to a different DB Service ends the current DB Access Session; returning starts a new session with no retained tabs or view state.
+
+_Avoid_: Database connection, DB Terminal session.
+
+### DB Access Object View
+
+An open-tab presentation of one Logical Database object within DB Access. Within one DB Service's DB Access surface, an object has at most one open DB Access Object View; opening it again activates the existing view rather than creating an independent view.
+
+Its interaction state is retained while the tab remains open, including while another tab is active; closing the tab discards that state, so reopening the object starts from the default view state.
+
 ## Database Binding & AP Environment
 
 ### Database Binding

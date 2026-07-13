@@ -1,97 +1,222 @@
-import type { AccessObjectRef } from "@data-browser/api/access-types";
+import type {
+  AccessObjectRef,
+  DataFlowTableData,
+} from "@data-browser/api/access-types";
 import { DataView } from "@data-browser/components/database/shared/DataView";
-import { FindBar } from "@data-browser/components/database/shared/FindBar";
-import { SingleObjectExportModal } from "@data-browser/components/database/shared/SingleObjectExportModal";
+import {
+  FindBar,
+  useFindInView,
+} from "@data-browser/components/database/shared/FindBar";
+import {
+  type DbAccessSortState,
+  useDbAccessViewState,
+} from "@data-browser/state/db-access-view-state";
+import { useAtomValue, useSetAtom } from "jotai";
+import { type RefObject, useCallback, useMemo, useRef } from "react";
 import { TableViewDataGrid } from "./TableView/TableView.DataGrid";
 import { TableViewToolbar } from "./TableView/TableView.Toolbar";
-import { TableViewProvider, useTableView } from "./TableView/TableViewProvider";
+import type { RenderedTableRow } from "./TableView/types";
+import { useColumnResize } from "./TableView/useColumnResize";
+import { useDataQuery } from "./TableView/useDataQuery";
 
 interface TableDetailViewProps {
+  active: boolean;
   databaseName: string;
   dbServiceKey: string;
   objectRef: AccessObjectRef;
   schema?: string;
   tableName: string;
+  viewKey: string;
 }
 
-export function TableDetailView(props: TableDetailViewProps) {
+interface TableFindRegionProps {
+  active: boolean;
+  data: DataFlowTableData | null;
+  loading: boolean;
+  onClearSort: () => void;
+  onSort: (column: string, direction: "asc" | "desc") => void;
+  renderedRows: RenderedTableRow[];
+  resize: ReturnType<typeof useColumnResize>;
+  rootRef: RefObject<HTMLDivElement | null>;
+  sort: DbAccessSortState;
+  viewKey: string;
+  visibleColumns: string[];
+}
+
+function buildExistingRowKey(pageOffset: number, sourceRowIndex: number) {
+  return `existing-${pageOffset + sourceRowIndex}`;
+}
+
+function normalizeCellValue(value: unknown) {
+  return value == null ? null : String(value);
+}
+
+function TableFindRegion({
+  active,
+  data,
+  loading,
+  onClearSort,
+  onSort,
+  renderedRows,
+  resize,
+  rootRef,
+  sort,
+  viewKey,
+  visibleColumns,
+}: TableFindRegionProps) {
+  const findRows = useMemo(
+    () => renderedRows.map((row) => row.values),
+    [renderedRows]
+  );
+  const find = useFindInView({
+    active,
+    columns: visibleColumns,
+    rootRef,
+    rows: findRows,
+    viewKey,
+  });
+
   return (
-    <TableViewProvider {...props}>
-      <TableDetailViewContent {...props} />
-    </TableViewProvider>
+    <>
+      <FindBar.Bar find={find} />
+      <TableViewDataGrid
+        data={data}
+        find={find}
+        loading={loading}
+        onClearSort={onClearSort}
+        onResizeHandleEnter={resize.handleResizeHandleEnter}
+        onResizeHandleLeave={resize.handleResizeHandleLeave}
+        onResizeStart={resize.handleResizeStart}
+        onSort={onSort}
+        renderedRows={renderedRows}
+        sort={sort}
+        viewKey={viewKey}
+        visibleColumnNames={visibleColumns}
+      />
+    </>
   );
 }
 
-function TableDetailViewContent({
+export function TableDetailView({
+  active,
   databaseName,
   dbServiceKey,
   objectRef,
-  tableName,
   schema,
+  tableName,
+  viewKey,
 }: TableDetailViewProps) {
-  const { state, actions } = useTableView();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const viewState = useDbAccessViewState(viewKey);
+  const pagination = useAtomValue(viewState.paginationAtom);
+  const sort = useAtomValue(viewState.sortAtom);
+  const visibleColumns = useAtomValue(viewState.visibleColumnsAtom);
+  const setCurrentPage = useSetAtom(viewState.setCurrentPageAtom);
+  const setPageSize = useSetAtom(viewState.setPageSizeAtom);
+  const setSort = useSetAtom(viewState.setSortAtom);
+  const clearSort = useSetAtom(viewState.clearSortAtom);
+  const setVisibleColumns = useSetAtom(viewState.visibleColumnsAtom);
+  const resize = useColumnResize({ rootRef, viewKey });
+
+  const { state: queryState, actions: queryActions } = useDataQuery({
+    currentPage: pagination.currentPage,
+    objectRef,
+    onInitVisibleColumns: setVisibleColumns,
+    pageSize: pagination.pageSize,
+    sortColumn: sort.column,
+    sortDirection: sort.direction,
+    viewKey,
+    visibleColumnsCount: visibleColumns.length,
+  });
+
+  const pageOffset = (pagination.currentPage - 1) * pagination.pageSize;
+  const renderedRows = useMemo<RenderedTableRow[]>(
+    () =>
+      (queryState.data?.rows ?? []).map((row, sourceRowIndex) => {
+        const originalRow = Object.fromEntries(
+          Object.entries(row).map(([column, value]) => [
+            column,
+            normalizeCellValue(value),
+          ])
+        );
+
+        return {
+          originalRow,
+          rowKey: buildExistingRowKey(pageOffset, sourceRowIndex),
+          rowNumber: pageOffset + sourceRowIndex + 1,
+          sourceRowIndex,
+          values: originalRow,
+        };
+      }),
+    [pageOffset, queryState.data?.rows]
+  );
+  const total = queryState.data?.total ?? 0;
+  const totalPages = Math.ceil(total / pagination.pageSize);
+  const handleSort = useCallback(
+    (column: string, direction: "asc" | "desc") => {
+      setSort({ column, direction });
+    },
+    [setSort]
+  );
 
   return (
     <div
       className="flex h-full flex-col"
       data-qa-database={databaseName}
       data-qa-db-service-key={dbServiceKey}
-      data-qa-loading={state.loading ? "true" : "false"}
+      data-qa-loading={queryState.loading ? "true" : "false"}
       data-qa-module="sql"
       data-qa-object="table-detail"
       data-qa-resource-id={tableName}
       data-qa-resource-type="table"
       data-qa-schema={schema}
       data-qa-state={
-        state.error ? "error" : state.loading ? "loading" : "ready"
+        queryState.error ? "error" : queryState.loading ? "loading" : "ready"
       }
       data-testid="sql.table.detail"
+      ref={rootRef}
     >
       <TableViewToolbar
         databaseName={databaseName}
         dbServiceKey={dbServiceKey}
+        loading={queryState.loading}
+        objectRef={objectRef}
+        onRefresh={queryActions.refresh}
         schema={schema}
         tableName={tableName}
       />
 
-      {state.error ? (
+      {queryState.error ? (
         <DataView.Error
-          message={state.error}
-          onRetry={() => actions.handleSubmitRequest()}
+          message={queryState.error}
+          onRetry={() => queryActions.handleSubmitRequest()}
         />
       ) : (
-        <FindBar.Provider
-          columns={state.visibleColumns}
-          rows={state.renderedRows.map((row) => row.values)}
-        >
-          <FindBar.Bar />
-          <TableViewDataGrid />
-        </FindBar.Provider>
-      )}
-
-      {state.total > 0 && (
-        <DataView.Pagination
-          currentPage={state.currentPage}
-          itemLabel="rows"
-          loading={state.loading}
-          onPageChange={actions.handlePageChange}
-          onPageSizeChange={actions.handlePageSizeChange}
-          pageSize={state.pageSize}
-          total={state.total}
-          totalPages={state.totalPages}
+        <TableFindRegion
+          active={active}
+          data={queryState.data}
+          loading={queryState.loading}
+          onClearSort={clearSort}
+          onSort={handleSort}
+          renderedRows={renderedRows}
+          resize={resize}
+          rootRef={rootRef}
+          sort={sort}
+          viewKey={viewKey}
+          visibleColumns={visibleColumns}
         />
       )}
 
-      {state.showExportModal && (
-        <SingleObjectExportModal
-          objectRef={objectRef}
-          onOpenChange={(open) => {
-            if (!open) {
-              actions.setShowExportModal(false);
-            }
-          }}
-          open={state.showExportModal}
-          title={tableName}
+      {total > 0 && (
+        <DataView.Pagination
+          currentPage={pagination.currentPage}
+          itemLabel="rows"
+          loading={queryState.loading}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSize={pagination.pageSize}
+          total={total}
+          totalPages={totalPages}
         />
       )}
     </div>
