@@ -15,6 +15,11 @@ import {
   glassRectsSignature,
   splitGlassOverlaps,
 } from "./canvas-glass-geometry";
+import {
+  CANVAS_GLASS_MODE_DATASET_KEY,
+  createGlassSnapshotController,
+  detectGlassSnapshotSupport,
+} from "./canvas-glass-snapshot";
 import type { CanvasGlassStore } from "./canvas-glass-store";
 
 const EMPTY_OVERLAPPING: ReadonlySet<string> = new Set();
@@ -93,19 +98,40 @@ export function CanvasGlassSheet({ store }: { store: CanvasGlassStore }) {
     sheet.setAttribute("aria-hidden", "true");
     viewport.insertBefore(sheet, nodesLayer);
 
+    // Snapshot glass replaces the live backdrop-filter with a pre-blurred
+    // texture when supported; unsupported browsers (and the test escape
+    // hatch on <html data-canvas-glass="live">) keep the live blur.
+    const surface = domNode.closest<HTMLElement>(".canvas-surface");
+    const snapshot =
+      surface != null &&
+      document.documentElement.dataset[CANVAS_GLASS_MODE_DATASET_KEY] !==
+        "live" &&
+      detectGlassSnapshotSupport(document)
+        ? createGlassSnapshotController({ sheet, surface })
+        : null;
+
     let frame = 0;
     let signature = "";
+    let geometry: GlassSheetGeometry | null = null;
     const sync = () => {
       frame = 0;
-      const rects = readGlassNodeRects(rfStore.getState().nodeLookup);
+      const state = rfStore.getState();
+      const rects = readGlassNodeRects(state.nodeLookup);
       const nextSignature = glassRectsSignature(rects);
-      if (nextSignature === signature) {
-        return;
+      if (nextSignature !== signature) {
+        signature = nextSignature;
+        const { isolated, overlapping } = splitGlassOverlaps(rects);
+        geometry = buildGlassSheetGeometry(isolated);
+        applyGlassSheetGeometry(sheet, geometry);
+        store.setSnapshot({ active: true, overlapping });
       }
-      signature = nextSignature;
-      const { isolated, overlapping } = splitGlassOverlaps(rects);
-      applyGlassSheetGeometry(sheet, buildGlassSheetGeometry(isolated));
-      store.setSnapshot({ active: true, overlapping });
+      snapshot?.observe({
+        edges: state.edges,
+        geometry,
+        height: state.height,
+        transform: state.transform,
+        width: state.width,
+      });
     };
     const schedule = () => {
       if (frame === 0) {
@@ -121,6 +147,7 @@ export function CanvasGlassSheet({ store }: { store: CanvasGlassStore }) {
       if (frame !== 0) {
         cancelAnimationFrame(frame);
       }
+      snapshot?.dispose();
       sheet.remove();
       store.setSnapshot({ active: false, overlapping: EMPTY_OVERLAPPING });
     };

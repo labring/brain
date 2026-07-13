@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "check": "npx ultracite check",
-    "fix": "npx ultracite fix"
+    "fix": "npx ultracite fix",
+    "e2e:glass": "node e2e/glass-equivalence.mjs"
   },
   "dependencies": {
     "@json-render/core": "^0.18.0",
@@ -52,6 +53,9 @@
     "@types/react-window": "^2.0.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.6",
+    "pixelmatch": "^7.2.0",
+    "playwright-core": "^1.61.1",
+    "pngjs": "^7.0.0",
     "postcss": "^8",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",

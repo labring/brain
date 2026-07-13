@@ -47,6 +47,36 @@
   mask-repeat: no-repeat;
 }
 
+/* Snapshot glass (canvas-glass-snapshot.ts): once a pre-blurred backdrop
+   texture is mounted and painted, the live backdrop-filter turns off — the
+   texture child shows through the same mask windows. Browsers that fail
+   support detection never get data-snapshot and keep the live blur above. */
+.canvas-glass-sheet[data-snapshot="ready"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Flow-space content plane (dots + edges), pinned to its captured flow rect
+   (inline left/top/size); the sheet's mask clips it to the node windows. */
+.canvas-glass-sheet > .canvas-glass-sheet-texture {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+/* Screen-space ambient plane (surface color + bloom). Counter-transformed
+   against the viewport every frame (inline transform, origin 0 0) so it
+   stays fixed on screen while the canvas pans/zooms — the bloom must flow
+   through the windows continuously, exactly like live backdrop sampling. */
+.canvas-glass-sheet > .canvas-glass-sheet-ambient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
 .react-flow__pane.draggable,
 .react-flow__pane.dragging {
   cursor: default;
