@@ -25,7 +25,6 @@ import {
   memo,
   type PointerEvent,
   type ReactNode,
-  type TransitionEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -56,7 +55,6 @@ import {
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { useEnterMotionFrames } from "@/hooks/use-enter-motion-frames";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
   ASSISTANT_PANE_DEFAULT_WIDTH,
@@ -130,9 +128,6 @@ type AssistantClientToolSubmission =
     };
 
 const VIEWPORT_RESIZE_SETTLE_MS = 180;
-// --project-surface-motion-enter-duration (340ms) plus scheduling slack;
-// `transitionend` normally settles the pane first, this is the fallback.
-const ASSISTANT_PANE_ENTER_SETTLE_MS = 420;
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
@@ -920,15 +915,6 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   const [paneResizing, setPaneResizing] = useAtom(assistantPaneResizingAtom);
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const [viewportResizing, setViewportResizing] = useState(false);
-  // Open/close animates the pane as a transform+opacity overlay; layout width
-  // is reserved in one snap once the enter transition settles (and released at
-  // close start), so the canvas reflows once per toggle instead of per frame.
-  // Mounting with the pane already open reserves immediately — there is no
-  // enter transition to wait for.
-  const [paneEnterSettled, setPaneEnterSettled] = useState(assistantPaneOpen);
-  // The enter beat paints the closed (offscreen) pose before motion starts —
-  // without it the shared ease-out is caught mid-flight and reads as a fade.
-  const paneMotionOpen = useEnterMotionFrames(assistantPaneOpen);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const workspaceWidthRef = useRef(workspaceWidth);
   const viewportResizingRef = useRef(false);
@@ -1020,39 +1006,6 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       visualViewport?.removeEventListener("resize", handleViewportResize);
     };
   }, []);
-
-  useEffect(() => {
-    if (!assistantPaneOpen) {
-      setPaneEnterSettled(false);
-      return;
-    }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setPaneEnterSettled(true);
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      setPaneEnterSettled(true);
-    }, ASSISTANT_PANE_ENTER_SETTLE_MS);
-    return () => window.clearTimeout(timeout);
-  }, [assistantPaneOpen]);
-
-  const handlePaneTransitionEnd = useCallback(
-    (event: TransitionEvent<HTMLElement>) => {
-      if (event.target !== event.currentTarget) {
-        return;
-      }
-      if (
-        event.propertyName !== "transform" &&
-        event.propertyName !== "opacity"
-      ) {
-        return;
-      }
-      if (assistantPaneOpen) {
-        setPaneEnterSettled(true);
-      }
-    },
-    [assistantPaneOpen]
-  );
 
   const cancelPaneResize = useCallback(() => {
     if (dragRef.current == null) {
@@ -1162,12 +1115,9 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
     writeStoredAssistantPaneWidth(null);
   }, [setPaneWidth]);
 
-  // Resolved to plain px in JS so the overlay pane and the layout reserve
-  // below always agree on the same value (drag and viewport resizes keep
-  // tracking it live; only open/close snaps).
+  // Rendered as plain px: transitioning between clamp() values wedges the CSS
+  // width transition in Chrome, so the workspace clamp is resolved here.
   const renderedPaneWidth = clampAssistantPaneWidth(paneWidth, workspaceWidth);
-  const paneReservedWidth =
-    assistantPaneOpen && paneEnterSettled ? renderedPaneWidth : 0;
 
   return (
     <div
@@ -1187,9 +1137,9 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
           {children}
         </div>
       </section>
-      {assistantPaneOpen && paneEnterSettled ? (
+      {assistantPaneOpen ? (
         <div
-          className="relative z-40 w-0 shrink-0"
+          className="relative z-30 w-0 shrink-0"
           data-slot="assistant-pane-resizer"
         >
           {/* biome-ignore lint/a11y/useSemanticElements: WAI-ARIA window-splitter pattern needs a focusable `role="separator"` widget; `<hr>` is a static, void separator. */}
@@ -1219,43 +1169,20 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : null}
-      {/* Layout reserve for the overlay pane: never transitions — it snaps
-          once the enter transition settles and releases at close start, so
-          the reflow always happens underneath the opaque pane. */}
-      <div
-        aria-hidden
-        className="shrink-0"
-        data-slot="assistant-pane-reserve"
-        style={{ width: paneReservedWidth }}
-      />
-      {/* Same two-layer recipe as side-pane.tsx: the outer clip box nudges
-          and fades while the inner chrome surface slides its full width, so
-          the panel emerges from the right edge instead of fading in place. */}
       <aside
-        aria-hidden={!paneMotionOpen}
+        aria-hidden={!assistantPaneOpen}
         className={cn(
-          "project-surface-slide-x absolute inset-y-0 right-0 z-30 overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
-          paneMotionOpen
-            ? "project-surface-slide-x-open opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
-            : "project-surface-slide-x-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
+          "project-chrome-surface project-surface-slide-x box-border flex min-h-0 shrink-0 flex-col overflow-hidden border-l transition-[width,opacity,transform,border-color] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          assistantPaneOpen
+            ? "project-surface-slide-x-open border-border opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
+            : "project-surface-slide-x-offset pointer-events-none border-transparent opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
           (paneResizing || viewportResizing) && "transition-none"
         )}
         data-slot="project-assistant-pane"
         id="project-assistant-pane"
-        onTransitionEnd={handlePaneTransitionEnd}
-        style={{ width: renderedPaneWidth }}
+        style={{ width: assistantPaneOpen ? renderedPaneWidth : 0 }}
       >
-        <div
-          className={cn(
-            "project-chrome-surface project-surface-slide-x absolute inset-y-0 right-0 box-border flex min-h-0 w-full flex-col overflow-hidden border-border border-l shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
-            paneMotionOpen
-              ? "project-surface-slide-x-open duration-[var(--project-surface-motion-enter-duration)]"
-              : "project-surface-slide-x-full duration-[var(--project-surface-motion-exit-duration)]",
-            (paneResizing || viewportResizing) && "transition-none"
-          )}
-        >
-          <ProjectAssistantChatPaneMemo />
-        </div>
+        <ProjectAssistantChatPaneMemo />
       </aside>
       <AppIconButton
         aria-controls="project-assistant-pane"
