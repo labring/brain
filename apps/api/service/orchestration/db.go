@@ -315,12 +315,16 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 // KubeBlocks Cluster's pods run as. The Cluster's componentSpec references this account through
 // serviceAccountName, so KubeBlocks lifecycle, probe, and reconfigure sidecars get the in-namespace
 // permissions they need. This mirrors the legacy sealos dbprovider account template; the objects
-// carry Brain ownership labels so db-delete's label sweep reclaims them with the Cluster.
+// carry Brain ownership labels so db-delete's label sweep reclaims them with the Cluster, plus
+// app.kubernetes.io/managed-by=kbcli for parity with the legacy sealos dbprovider account objects.
 func RenderDBAccountResources(name, namespace string, labels map[string]string) (*corev1.ServiceAccount, *rbacv1.Role, *rbacv1.RoleBinding) {
+	accountLabels := mergeStringMap(labels, map[string]string{
+		DBProviderManagedByLabel: DBProviderManagedByValue,
+	})
 	serviceAccount := &corev1.ServiceAccount{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:    labels,
+			Labels:    accountLabels,
 			Name:      name,
 			Namespace: namespace,
 		},
@@ -328,7 +332,7 @@ func RenderDBAccountResources(name, namespace string, labels map[string]string) 
 	role := &rbacv1.Role{
 		TypeMeta: metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "Role"},
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:    labels,
+			Labels:    accountLabels,
 			Name:      name,
 			Namespace: namespace,
 		},
@@ -339,7 +343,7 @@ func RenderDBAccountResources(name, namespace string, labels map[string]string) 
 	roleBinding := &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "RoleBinding"},
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:    labels,
+			Labels:    accountLabels,
 			Name:      name,
 			Namespace: namespace,
 		},

@@ -914,6 +914,10 @@ func TestRenderDBResourcesRendersAccountRBAC(t *testing.T) {
 		if got := meta.Labels[DBProviderCRLabel]; got != "pg" {
 			t.Fatalf("%s = %q, want pg", DBProviderCRLabel, got)
 		}
+		// dbprovider-parity label sits alongside the accurate brain.io/managed-by.
+		if got := meta.Labels[DBProviderManagedByLabel]; got != DBProviderManagedByValue {
+			t.Fatalf("%s = %q, want %q", DBProviderManagedByLabel, got, DBProviderManagedByValue)
+		}
 	}
 
 	// GVK must be set so ApplyObjects can route these through the dynamic apply path.
