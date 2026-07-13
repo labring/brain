@@ -117,6 +117,14 @@ function ToolStatusIcon({ state }: { state: string }) {
       />
     );
   }
+  if (state === "approval-requested") {
+    return (
+      <AlertCircleIcon
+        aria-hidden
+        className="size-3.5 shrink-0 text-amber-400"
+      />
+    );
+  }
   return <Spinner className="size-3.5 shrink-0 text-blue-300/80" />;
 }
 
@@ -141,11 +149,9 @@ function toolStatusText(state: string): string {
 
 /** One tool-call row inside a `ChatToolGroup`. */
 function ChatToolGroupItem({
-  addToolApprovalResponse,
   part,
   partKeyPrefix,
 }: {
-  addToolApprovalResponse?: ChatAddToolApproveResponseFunction;
   part: ChatToolPart;
   partKeyPrefix: string;
 }) {
@@ -153,8 +159,6 @@ function ChatToolGroupItem({
   const fallbackLabel = humanizeToolType(part.type);
   const label = intention ?? fallbackLabel;
   const active = isToolActive(part.state);
-  const pendingApprovalId =
-    part.state === "approval-requested" ? part.approval?.id : undefined;
   const durationMs = readDurationMsFromToolMetadata(part.toolMetadata);
   const settled = isToolSettled(part.state);
 
@@ -215,40 +219,86 @@ function ChatToolGroupItem({
                 : "."}
             </p>
           )}
-          {pendingApprovalId !== undefined && (
-            <div className="flex flex-wrap gap-2">
-              <AppButton
-                onClick={() =>
-                  addToolApprovalResponse?.({
-                    approved: true,
-                    id: pendingApprovalId,
-                  })
-                }
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                Approve
-              </AppButton>
-              <AppButton
-                onClick={() =>
-                  addToolApprovalResponse?.({
-                    approved: false,
-                    id: pendingApprovalId,
-                    reason: "User declined.",
-                  })
-                }
-                size="sm"
-                type="button"
-                variant="quiet"
-              >
-                Deny
-              </AppButton>
-            </div>
-          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** Approval id + human label for a tool part awaiting the user's decision. */
+interface PendingApproval {
+  id: string;
+  key: string;
+  label: string;
+}
+
+function collectPendingApprovals(parts: ChatToolPart[]): PendingApproval[] {
+  return parts.flatMap((part) => {
+    if (part.state !== "approval-requested") {
+      return [];
+    }
+    const id = part.approval?.id;
+    if (id === undefined) {
+      return [];
+    }
+    return [
+      {
+        id,
+        key: part.toolCallId,
+        label: readIntention(part.input) ?? humanizeToolType(part.type),
+      },
+    ];
+  });
+}
+
+/**
+ * Approval prompt for a pending tool call. Rendered OUTSIDE the collapsible
+ * `Task` group so it stays visible even when the group is collapsed — an
+ * approval gate the user must act on should never hide behind a disclosure.
+ */
+function ChatToolApprovalCard({
+  approval,
+  onRespond,
+}: {
+  approval: PendingApproval;
+  onRespond?: ChatAddToolApproveResponseFunction;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3"
+      data-slot="chat-tool-approval"
+    >
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <p className="text-foreground text-xs">Apply this change?</p>
+        <p className="truncate text-muted-foreground text-xs">
+          {approval.label}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <AppButton
+          onClick={() => onRespond?.({ approved: true, id: approval.id })}
+          size="sm"
+          type="button"
+          variant="secondary"
+        >
+          Approve
+        </AppButton>
+        <AppButton
+          onClick={() =>
+            onRespond?.({
+              approved: false,
+              id: approval.id,
+              reason: "User declined.",
+            })
+          }
+          size="sm"
+          type="button"
+          variant="quiet"
+        >
+          Deny
+        </AppButton>
+      </div>
+    </div>
   );
 }
 
@@ -267,6 +317,7 @@ export function ChatToolGroup({
 }): ReactNode {
   const anyActive = parts.some((p) => isToolActive(p.state));
   const allSettled = parts.every((p) => isToolSettled(p.state));
+  const pendingApprovals = collectPendingApprovals(parts);
 
   const [userTouched, setUserTouched] = useState(false);
   const [open, setOpen] = useState(
@@ -343,7 +394,6 @@ export function ChatToolGroup({
         <TaskContent className="mt-1">
           {parts.map((p, i) => (
             <ChatToolGroupItem
-              addToolApprovalResponse={addToolApprovalResponse}
               key={p.toolCallId}
               part={p}
               partKeyPrefix={`${partKeyPrefix}-${i}`}
@@ -351,6 +401,17 @@ export function ChatToolGroup({
           ))}
         </TaskContent>
       </Task>
+      {pendingApprovals.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          {pendingApprovals.map((approval) => (
+            <ChatToolApprovalCard
+              approval={approval}
+              key={`${approval.key}-approval`}
+              onRespond={addToolApprovalResponse}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
