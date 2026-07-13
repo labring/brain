@@ -1,27 +1,8 @@
 "use client";
 
 import { cn } from "@workspace/ui/lib/utils";
-import type { MotionProps } from "motion/react";
-import { motion } from "motion/react";
-import type { CSSProperties, ElementType, JSX } from "react";
-import { memo, useMemo } from "react";
-
-type MotionHTMLProps = MotionProps & Record<string, unknown>;
-
-// Cache motion components at module level to avoid creating during render
-const motionComponentCache = new Map<
-  keyof JSX.IntrinsicElements,
-  React.ComponentType<MotionHTMLProps>
->();
-
-const getMotionComponent = (element: keyof JSX.IntrinsicElements) => {
-  let component = motionComponentCache.get(element);
-  if (!component) {
-    component = motion.create(element);
-    motionComponentCache.set(element, component);
-  }
-  return component;
-};
+import type { CSSProperties, ElementType } from "react";
+import { memo } from "react";
 
 export interface TextShimmerProps {
   as?: ElementType;
@@ -31,6 +12,12 @@ export interface TextShimmerProps {
   spread?: number;
 }
 
+/**
+ * CSS-driven text shimmer (`.shimmer-text` keyframes in globals.css), so the
+ * browser owns frame scheduling — no per-frame rAF style-writes from JS.
+ * Under `prefers-reduced-motion: reduce` the animation never runs and the
+ * parked gradient leaves the text on its static muted base layer.
+ */
 const ShimmerComponent = ({
   children,
   as: Component = "p",
@@ -38,39 +25,26 @@ const ShimmerComponent = ({
   duration = 2,
   spread = 2,
 }: TextShimmerProps) => {
-  const MotionComponent = getMotionComponent(
-    Component as keyof JSX.IntrinsicElements
-  );
-
-  const dynamicSpread = useMemo(
-    () => (children?.length ?? 0) * spread,
-    [children, spread]
-  );
+  const dynamicSpread = (children?.length ?? 0) * spread;
 
   return (
-    <MotionComponent
-      animate={{ backgroundPosition: "0% center" }}
+    <Component
       className={cn(
-        "relative inline-block bg-[length:250%_100%,auto] bg-clip-text text-transparent",
+        "shimmer-text relative inline-block bg-[length:250%_100%,auto] bg-clip-text text-transparent [background-position:100%_center]",
         "[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--color-foreground),#0000_calc(50%+var(--spread)))] [background-repeat:no-repeat,padding-box]",
         className
       )}
-      initial={{ backgroundPosition: "100% center" }}
       style={
         {
+          "--shimmer-duration": `${duration}s`,
           "--spread": `${dynamicSpread}px`,
           backgroundImage:
             "var(--bg), linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground))",
         } as CSSProperties
       }
-      transition={{
-        duration,
-        ease: "linear",
-        repeat: Number.POSITIVE_INFINITY,
-      }}
     >
       {children}
-    </MotionComponent>
+    </Component>
   );
 };
 

@@ -236,6 +236,26 @@
     }
   }
 
+  /* Text shimmer (ai-elements/shimmer.tsx): CSS-owned so no JS touches styles
+     per frame. background-position isn't compositor-animatable — a small
+     glyph repaint per frame remains, bounded to the short streaming labels —
+     and reduced-motion skips the animation entirely, parking the gradient off
+     the glyphs so the static muted base layer shows through. */
+  @media (prefers-reduced-motion: no-preference) {
+    .shimmer-text {
+      animation: shimmer-text-sweep var(--shimmer-duration, 2s) linear infinite;
+    }
+  }
+
+  @keyframes shimmer-text-sweep {
+    from {
+      background-position: 100% center;
+    }
+    to {
+      background-position: 0% center;
+    }
+  }
+
   /* Status-dot heartbeat: status-heartbeat.ts flips data-status-heartbeat
      between "a"/"b" on <html>; the animation-name swap is what restarts the
      one-shot pulse, so the a/b keyframes must stay identical (both copy

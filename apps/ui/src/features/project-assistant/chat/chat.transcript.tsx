@@ -23,10 +23,19 @@ import { renderChatMessageParts } from "./chat.part";
 import { isChatToolPartStateInFlight } from "./chat.tool-group";
 import type { ChatTranscriptProps } from "./chat.types";
 
-const assistantMessageClassName = "max-w-full";
-const userMessageClassName = "max-w-[82%] sm:max-w-[78%]";
+/**
+ * Threads are (namespace,owner)-global and unbounded, so off-screen history
+ * must leave layout/paint scope while the tail streams. `auto` in
+ * `contain-intrinsic-size` makes the browser remember each row's rendered
+ * height — the 120px estimate only sizes rows that have never been on screen,
+ * so scroll position can't jump across already-visited history.
+ */
+const messageRowContainmentClassName =
+  "[contain-intrinsic-size:auto_120px] [content-visibility:auto]";
+const assistantMessageClassName = `${messageRowContainmentClassName} max-w-full`;
+const userMessageClassName = `${messageRowContainmentClassName} max-w-[82%] sm:max-w-[78%]`;
 const messageContentClassName =
-  "group-[.is-assistant]:w-full group-[.is-assistant]:gap-3 group-[.is-assistant]:text-foreground group-[.is-assistant]:leading-6 group-[.is-user]:rounded-2xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:border-border/45 group-[.is-user]:bg-input/25 group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:leading-5 group-[.is-user]:backdrop-blur-sm";
+  "group-[.is-assistant]:w-full group-[.is-assistant]:gap-3 group-[.is-assistant]:text-foreground group-[.is-assistant]:leading-6 group-[.is-user]:rounded-2xl group-[.is-user]:rounded-br-md group-[.is-user]:border group-[.is-user]:border-border/45 group-[.is-user]:bg-input/25 group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:leading-5";
 
 const COPIED_FEEDBACK_MS = 1500;
 

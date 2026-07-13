@@ -4,7 +4,7 @@ import { AppButton } from "@workspace/ui/components/app-button";
 import { Spinner } from "@workspace/ui/components/spinner";
 import type { ChatAddToolApproveResponseFunction, UIMessage } from "ai";
 import { isToolUIPart } from "ai";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, memo, Suspense, useEffect } from "react";
 import type { EmitGenUISpecToolOutput } from "@/features/project-assistant/agui/gen-ui-tool";
 
 import {
@@ -40,15 +40,61 @@ function GenUIPendingIndicator() {
   );
 }
 
-export function ChatTool({
-  addToolApprovalResponse,
-  part,
-  partKeyPrefix,
-}: {
+interface ChatToolProps {
   addToolApprovalResponse?: ChatAddToolApproveResponseFunction;
   part: UIMessage["parts"][number];
   partKeyPrefix: string;
-}) {
+}
+
+/**
+ * The AI SDK re-parses tool `input`/`output` on every chunk of the streaming
+ * message, so those references churn even for settled calls — but a settled
+ * tool's rendered values are frozen: `output` is written once when the call
+ * completes, and the `state` flip is what triggers the render that reads it.
+ * Comparing lifecycle plus the stable `toolMetadata`/`approval` references
+ * keeps the gen-UI subtree (a full json-render Renderer walk) out of the
+ * per-chunk render loop.
+ */
+function areChatToolPropsEqual(
+  prev: ChatToolProps,
+  next: ChatToolProps
+): boolean {
+  if (
+    prev.addToolApprovalResponse !== next.addToolApprovalResponse ||
+    prev.partKeyPrefix !== next.partKeyPrefix
+  ) {
+    return false;
+  }
+  if (prev.part === next.part) {
+    return true;
+  }
+  if (!(isToolUIPart(prev.part) && isToolUIPart(next.part))) {
+    return false;
+  }
+  const a = prev.part as typeof prev.part & {
+    toolMetadata?: unknown;
+    approval?: unknown;
+  };
+  const b = next.part as typeof next.part & {
+    toolMetadata?: unknown;
+    approval?: unknown;
+  };
+  return (
+    a.type === b.type &&
+    a.toolCallId === b.toolCallId &&
+    a.state === b.state &&
+    a.errorText === b.errorText &&
+    a.toolMetadata === b.toolMetadata &&
+    a.approval === b.approval
+  );
+}
+
+/** Memoized so settled gen-UI parts skip the per-chunk streaming re-render. */
+export const ChatTool = memo(function ChatTool({
+  addToolApprovalResponse,
+  part,
+  partKeyPrefix,
+}: ChatToolProps) {
   if (!(isToolUIPart(part) && part.type === "tool-emitGenUISpec")) {
     return null;
   }
@@ -163,4 +209,4 @@ export function ChatTool({
     default:
       return null;
   }
-}
+}, areChatToolPropsEqual);

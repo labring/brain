@@ -23,7 +23,6 @@ import {
   type ComponentProps,
   type ReactElement,
   type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
   useLayoutEffect,
   useRef,
 } from "react";
@@ -202,29 +201,9 @@ export function ChatComposerTextarea({
 }: ChatComposerTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    const adjustHeight = () => {
-      textarea.style.height = "auto";
-      const minHeight = 20;
-      const maxHeight = 96;
-      const scrollHeight = textarea.scrollHeight;
-      const nextHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
-      textarea.style.height = `${nextHeight}px`;
-      textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
-    };
-
-    requestAnimationFrame(adjustHeight);
-    textarea.addEventListener("input", adjustHeight);
-    return () => {
-      textarea.removeEventListener("input", adjustHeight);
-    };
-  }, []);
-
+  // Autogrow lives solely on `value`: the textarea is controlled, so every
+  // input path (typing, IME, paste, programmatic clear) lands here — a native
+  // `input` listener would remeasure the same keystroke a second time.
   // biome-ignore lint/correctness/useExhaustiveDependencies: controlled `value` changes require a remeasure (e.g. clear after send).
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
