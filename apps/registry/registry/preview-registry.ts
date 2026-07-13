@@ -430,7 +430,6 @@ export const Index: RegistryIndex = {
       "chart",
       "command",
       "preview",
-      "input-group",
       "popover",
       "tooltip",
     ],

@@ -12,7 +12,8 @@
     "fix": "npx ultracite fix",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:reset": "bun scripts/reset-local-db.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",

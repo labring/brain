@@ -121,7 +121,6 @@
         "chart",
         "command",
         "preview",
-        "input-group",
         "popover",
         "tooltip",
         "faceted"
@@ -231,11 +230,6 @@
           "path": "../../packages/ui/src/components/container-node/container-node.status.ts",
           "type": "registry:lib",
           "target": "components/container-node/container-node.status.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/container-node/container-node.menu-visibility.ts",
-          "type": "registry:lib",
-          "target": "components/container-node/container-node.menu-visibility.ts"
         },
         {
           "path": "../../packages/ui/src/components/container-node/container-node.css",
