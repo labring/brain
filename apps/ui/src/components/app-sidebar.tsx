@@ -25,6 +25,7 @@ import { usePathname } from "next/navigation";
 import {
   type ComponentProps,
   Fragment,
+  memo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -32,15 +33,21 @@ import {
   useRef,
   useState,
 } from "react";
-import { createProjectSidebarShortcutItems } from "@/components/app-sidebar.shortcuts";
+import {
+  createProjectSidebarShortcutItems,
+  type ProjectSidebarShortcutItem,
+} from "@/components/app-sidebar.shortcuts";
 import {
   type AppSidebarUpgradeUsageRow,
   formatWorkspaceQuotaRows,
   type WorkspaceQuotaItem,
 } from "@/components/app-sidebar-upgrade";
 import { useLastViewedProject } from "@/hooks/use-last-viewed-project";
-import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
-import type { ProjectShortcutIconKey } from "@/lib/project-shortcut-icons";
+import { useProjectsExplorerReadModel } from "@/hooks/use-projects-explorer";
+import type {
+  ProjectShortcutIconKey,
+  ProjectShortcutIconKeyMap,
+} from "@/lib/project-shortcut-icons";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 function projectIdFromPathname(pathname: string): string | undefined {
@@ -319,17 +326,88 @@ function AppSidebarUpgrade() {
   );
 }
 
-export default function AppSidebar() {
-  const pathname = usePathname();
+interface AppSidebarProjectShortcutsProps {
+  currentProjectId: string | undefined;
+  projectShortcutIconKeys: ProjectShortcutIconKeyMap | undefined;
+  projectShortcutItems: readonly ProjectSidebarShortcutItem[];
+}
+
+const AppSidebarProjectShortcuts = memo(function AppSidebarProjectShortcuts({
+  currentProjectId,
+  projectShortcutIconKeys,
+  projectShortcutItems,
+}: AppSidebarProjectShortcutsProps) {
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto"
+      data-slot="app-sidebar-project-shortcuts"
+    >
+      {projectShortcutItems.length === 0 && (
+        <Separator
+          aria-hidden
+          className="my-1.5 w-9 rounded-full bg-border"
+          data-slot="app-sidebar-project-separator"
+        />
+      )}
+      {projectShortcutItems.map((item, index) => {
+        const { project } = item;
+        const iconKey = projectShortcutIconKeys?.get(project.id) ?? "docker";
+        const active = currentProjectId === project.id;
+        const ariaLabel =
+          item.kind === "lastViewed"
+            ? `Last viewed unpinned project: ${project.name}`
+            : `Pinned project: ${project.name}`;
+        const showSeparatorBeforeItem =
+          index === 0 && item.kind !== "lastViewed";
+        const showSeparatorAfterItem = item.kind === "lastViewed";
+
+        return (
+          <Fragment key={`${item.kind}:${project.id}`}>
+            {showSeparatorBeforeItem && (
+              <Separator
+                aria-hidden
+                className="my-1.5 w-9 rounded-full bg-border"
+                data-slot="app-sidebar-project-separator"
+              />
+            )}
+            <AppSidebarLinkButton
+              active={active}
+              aria-label={ariaLabel}
+              href={`/project/${encodeURIComponent(project.id)}`}
+              tooltip={project.name}
+            >
+              <ProjectShortcutIcon active={active} iconKey={iconKey} />
+            </AppSidebarLinkButton>
+            {showSeparatorAfterItem && (
+              <Separator
+                aria-hidden
+                className="my-1.5 w-9 rounded-full bg-border"
+                data-slot="app-sidebar-project-separator"
+              />
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+});
+
+interface AppSidebarChromeProps {
+  currentProjectId: string | undefined;
+  projectsActive: boolean;
+}
+
+const AppSidebarChrome = memo(function AppSidebarChrome({
+  currentProjectId,
+  projectsActive,
+}: AppSidebarChromeProps) {
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom);
-  const currentProjectId = projectIdFromPathname(pathname);
-  const projectsActive = pathname === "/project";
   const { lastViewedProjectId, setLastViewedProject } =
     useLastViewedProject(namespace);
   const handledProjectRouteId = useRef<string | undefined>(undefined);
 
-  const { states } = useProjectsExplorer({
+  const { states } = useProjectsExplorerReadModel({
     kubeconfig,
     ns: namespace,
   });
@@ -400,58 +478,11 @@ export default function AppSidebar() {
             />
           </AppSidebarLinkButton>
 
-          <div
-            className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto"
-            data-slot="app-sidebar-project-shortcuts"
-          >
-            {projectShortcutItems.length === 0 && (
-              <Separator
-                aria-hidden
-                className="my-1.5 w-9 rounded-full bg-border"
-                data-slot="app-sidebar-project-separator"
-              />
-            )}
-            {projectShortcutItems.map((item, index) => {
-              const { project } = item;
-              const iconKey =
-                projectShortcutIconKeys?.get(project.id) ?? "docker";
-              const active = currentProjectId === project.id;
-              const ariaLabel =
-                item.kind === "lastViewed"
-                  ? `Last viewed unpinned project: ${project.name}`
-                  : `Pinned project: ${project.name}`;
-              const showSeparatorBeforeItem =
-                index === 0 && item.kind !== "lastViewed";
-              const showSeparatorAfterItem = item.kind === "lastViewed";
-
-              return (
-                <Fragment key={`${item.kind}:${project.id}`}>
-                  {showSeparatorBeforeItem && (
-                    <Separator
-                      aria-hidden
-                      className="my-1.5 w-9 rounded-full bg-border"
-                      data-slot="app-sidebar-project-separator"
-                    />
-                  )}
-                  <AppSidebarLinkButton
-                    active={active}
-                    aria-label={ariaLabel}
-                    href={`/project/${encodeURIComponent(project.id)}`}
-                    tooltip={project.name}
-                  >
-                    <ProjectShortcutIcon active={active} iconKey={iconKey} />
-                  </AppSidebarLinkButton>
-                  {showSeparatorAfterItem && (
-                    <Separator
-                      aria-hidden
-                      className="my-1.5 w-9 rounded-full bg-border"
-                      data-slot="app-sidebar-project-separator"
-                    />
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
+          <AppSidebarProjectShortcuts
+            currentProjectId={currentProjectId}
+            projectShortcutIconKeys={projectShortcutIconKeys}
+            projectShortcutItems={projectShortcutItems}
+          />
         </nav>
 
         <div
@@ -468,5 +499,16 @@ export default function AppSidebar() {
         </div>
       </div>
     </aside>
+  );
+});
+
+export default function AppSidebar() {
+  const pathname = usePathname();
+
+  return (
+    <AppSidebarChrome
+      currentProjectId={projectIdFromPathname(pathname)}
+      projectsActive={pathname === "/project"}
+    />
   );
 }

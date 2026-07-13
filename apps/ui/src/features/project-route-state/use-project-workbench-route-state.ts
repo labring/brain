@@ -53,6 +53,54 @@ function supportedWorkbenchState(
   };
 }
 
+type ProjectWorkbenchRouteQuery = Parameters<
+  typeof parseProjectWorkbenchRouteState
+>[0];
+
+export function planInvalidProjectWorkbenchRouteRepair(options: {
+  isSideEntrySupported: (entry: ProjectSideSurfaceEntry) => boolean;
+  parsedState: ProjectWorkbenchRouteState;
+  query: ProjectWorkbenchRouteQuery;
+  state: ProjectWorkbenchRouteState;
+}): { history: "replace"; next: ProjectWorkbenchRouteState } | null {
+  const { isSideEntrySupported, parsedState, query, state } = options;
+  if (query.selected != null && parsedState.canvasSelection == null) {
+    return {
+      history: "replace",
+      next: { ...state, canvasSelection: null },
+    };
+  }
+  if (query.side != null && parsedState.surfaces.side == null) {
+    return {
+      history: "replace",
+      next: { ...state, surfaces: { ...state.surfaces, side: null } },
+    };
+  }
+  if (
+    query.side != null &&
+    parsedState.surfaces.side != null &&
+    !isSideEntrySupported(parsedState.surfaces.side)
+  ) {
+    return {
+      history: "replace",
+      next: { ...state, surfaces: { ...state.surfaces, side: null } },
+    };
+  }
+  if (query.main != null && parsedState.surfaces.main == null) {
+    return {
+      history: "replace",
+      next: { ...state, surfaces: { ...state.surfaces, main: null } },
+    };
+  }
+  if (query.drawer != null && parsedState.surfaces.drawer == null) {
+    return {
+      history: "replace",
+      next: { ...state, surfaces: { ...state.surfaces, drawer: null } },
+    };
+  }
+  return null;
+}
+
 export function useProjectWorkbenchRouteState(options: {
   canvasSelectionExists: (selection: ProjectCanvasSelection) => boolean;
   isSideEntrySupported: (entry: ProjectSideSurfaceEntry) => boolean;
@@ -84,12 +132,22 @@ export function useProjectWorkbenchRouteState(options: {
   );
   const stateRef = useRef(state);
   stateRef.current = state;
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   const commit = useCallback(
     (next: ProjectWorkbenchRouteState, history: ProjectRouteHistoryMode) => {
-      setQuery(serializeProjectWorkbenchRouteState(next), { history }).catch(
-        () => undefined
-      );
+      const nextQuery = serializeProjectWorkbenchRouteState(next);
+      const currentQuery = queryRef.current;
+      if (
+        nextQuery.selected === currentQuery.selected &&
+        nextQuery.side === currentQuery.side &&
+        nextQuery.main === currentQuery.main &&
+        nextQuery.drawer === currentQuery.drawer
+      ) {
+        return;
+      }
+      setQuery(nextQuery, { history }).catch(() => undefined);
     },
     [setQuery]
   );
@@ -117,58 +175,14 @@ export function useProjectWorkbenchRouteState(options: {
   );
 
   useEffect(() => {
-    if (query.selected != null && parsedState.canvasSelection == null) {
-      commit(
-        {
-          ...state,
-          canvasSelection: null,
-        },
-        "replace"
-      );
-      return;
-    }
-    if (query.side != null && parsedState.surfaces.side == null) {
-      commit(
-        {
-          ...state,
-          surfaces: { ...state.surfaces, side: null },
-        },
-        "replace"
-      );
-      return;
-    }
-    if (
-      query.side != null &&
-      parsedState.surfaces.side != null &&
-      !isSideEntrySupported(parsedState.surfaces.side)
-    ) {
-      commit(
-        {
-          ...state,
-          surfaces: { ...state.surfaces, side: null },
-        },
-        "replace"
-      );
-      return;
-    }
-    if (query.main != null && parsedState.surfaces.main == null) {
-      commit(
-        {
-          ...state,
-          surfaces: { ...state.surfaces, main: null },
-        },
-        "replace"
-      );
-      return;
-    }
-    if (query.drawer != null && parsedState.surfaces.drawer == null) {
-      commit(
-        {
-          ...state,
-          surfaces: { ...state.surfaces, drawer: null },
-        },
-        "replace"
-      );
+    const repair = planInvalidProjectWorkbenchRouteRepair({
+      isSideEntrySupported,
+      parsedState,
+      query,
+      state,
+    });
+    if (repair != null) {
+      commit(repair.next, repair.history);
     }
   }, [commit, isSideEntrySupported, parsedState, query, state]);
 

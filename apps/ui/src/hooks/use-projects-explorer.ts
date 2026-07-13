@@ -5,7 +5,7 @@ import { fetcher } from "@workspace/api/fetch";
 import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -101,28 +101,35 @@ export function projectHistoryErrorEmptyState(error: unknown):
   };
 }
 
-export function useProjectsExplorer(options: {
+interface ProjectsExplorerReadModelOptions {
   /** URL-encoded kubeconfig string (Bearer token body). */
   kubeconfig: string;
   /** Kubernetes namespace for list / patch / delete calls. */
   ns: string;
+}
+
+interface ProjectsExplorerOptions extends ProjectsExplorerReadModelOptions {
   /** When set, replaces the default “open assistant pane” handler for New Project. */
   onNewProject?: () => void;
-}): {
-  actions: ProjectExplorerActions;
+}
+
+interface ProjectsExplorerReadModel {
   data: {
     aps: K8sGetResponse | undefined;
     dbs: K8sGetResponse | undefined;
   };
-  states: ProjectExplorerStates;
   /** Revalidate the projects list (e.g. after creating a project). */
   refreshProjects: () => Promise<unknown>;
-} {
-  const router = useRouter();
-  const pathname = usePathname();
+  states: ProjectExplorerStates;
+}
+
+interface ProjectsExplorerResult extends ProjectsExplorerReadModel {
+  actions: ProjectExplorerActions;
+}
+
+function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
   const kubeconfig = options.kubeconfig.trim();
   const ns = options.ns;
-  const onNewProjectOverride = options.onNewProject;
   const hasKubeconfig = kubeconfig !== "";
   const credentialKey = useMemo(
     () => kubeconfigCredentialKey(kubeconfig),
@@ -227,6 +234,54 @@ export function useProjectsExplorer(options: {
     ]
   );
 
+  const data = useMemo(
+    () => ({
+      aps: apsData,
+      dbs: dbsData,
+    }),
+    [apsData, dbsData]
+  );
+
+  return {
+    data,
+    hasKubeconfig,
+    kubeconfig,
+    mutate,
+    ns,
+    pinnedProjectLimit,
+    projects,
+    states,
+    togglePinnedProject,
+  };
+}
+
+export function useProjectsExplorerReadModel(
+  options: ProjectsExplorerReadModelOptions
+): ProjectsExplorerReadModel {
+  const { data, mutate, states } = useProjectsExplorerModel(options);
+  return useMemo(
+    () => ({ data, refreshProjects: mutate, states }),
+    [data, mutate, states]
+  );
+}
+
+export function useProjectsExplorer(
+  options: ProjectsExplorerOptions
+): ProjectsExplorerResult {
+  const router = useRouter();
+  const onNewProjectOverride = options.onNewProject;
+  const {
+    data,
+    hasKubeconfig,
+    kubeconfig,
+    mutate,
+    ns,
+    pinnedProjectLimit,
+    projects,
+    states,
+    togglePinnedProject,
+  } = useProjectsExplorerModel(options);
+
   const onProjectClick = useCallback(
     (p: ProjectExplorerProject) => {
       router.push(`/project/${encodeURIComponent(p.id)}`);
@@ -305,7 +360,7 @@ export function useProjectsExplorer(options: {
         await mutate();
         toast.success(`Deleted "${p.name}".`);
         const uidEnc = encodeURIComponent(p.id);
-        if (pathname === `/project/${uidEnc}`) {
+        if (window.location.pathname === `/project/${uidEnc}`) {
           router.push("/project");
         }
       } catch (e) {
@@ -316,7 +371,7 @@ export function useProjectsExplorer(options: {
         throw e;
       }
     },
-    [hasKubeconfig, kubeconfig, mutate, ns, pathname, router]
+    [hasKubeconfig, kubeconfig, mutate, ns, router]
   );
 
   const onProjectPinToggle = useCallback(
@@ -357,14 +412,6 @@ export function useProjectsExplorer(options: {
       onProjectPinToggle,
       onProjectUpdate,
     ]
-  );
-
-  const data = useMemo(
-    () => ({
-      aps: apsData,
-      dbs: dbsData,
-    }),
-    [apsData, dbsData]
   );
 
   return { actions, data, states, refreshProjects: mutate };

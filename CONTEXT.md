@@ -18,6 +18,18 @@ A current-user navigation preference that marks one Project for prominent access
 
 _Avoid_: Favorite Project, starred Project, recent Project, sidebar Project.
 
+### App Sidebar
+
+The persistent left-edge product navigation surface containing product-level navigation, Project Shortcuts, and app-level actions. It is outside the Project Canvas and is not a Project List, Side Pane, or Project Assistant Pane.
+
+_Avoid_: Project list, left Side Pane, sidebar Project.
+
+### Project Shortcut
+
+A Project navigation entry in the App Sidebar. Project Shortcuts comprise the current user's Pinned Projects and at most one last-viewed unpinned Project; they are not the complete Project List or Project List rows.
+
+_Avoid_: Sidebar Project, Project List row.
+
 ## AP & Application Workloads
 
 ### AP (Application)

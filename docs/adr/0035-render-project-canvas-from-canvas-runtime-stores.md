@@ -27,6 +27,8 @@ The node decorator array layer, the runtime model decorators context, the flow-l
 
 Rendering scope becomes a testable invariant rather than an emergent outcome: opening or closing a Side Pane, Main Action Surface, or Session Drawer re-renders surface hosts and affected nodes only; a resource fact change re-renders its node; a telemetry tick re-renders that node's metrics subtree; a fully covered canvas renders nothing beneath the surface.
 
+Canvas route-state transitions are local to the project workbench for rendering purposes. Changes to `selected`, `side`, `main`, or `drawer` must not re-render the App Sidebar or its Project Shortcuts unless their own pathname or Project inputs changed, and value-equal Canvas transitions must not enqueue URL or browser-history writes. This preserves the URL and Back behavior from ADR 0014 while keeping app chrome outside the Canvas rendering scope.
+
 Resource sync, layout persistence, and route sync become mount-point controllers that write into stores. Command plan functions and layout/stack-order/merge helpers keep their pure-function form and existing tests; the refactor rewires React composition, not domain logic.
 
 The shared `packages/ui` canvas stays product-free per ADR 0020: it accepts static configuration and controlled state and exposes an imperative viewport bridge. Product stores, command execution, and surface orchestration remain in the app's Canvas Runtime feature layer.
