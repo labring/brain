@@ -4,6 +4,10 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import {
+  isEffectivelyVisible,
+  subscribeEffectiveVisibility,
+} from "@workspace/ui/lib/effective-visibility";
+import {
   createContext,
   type ReactNode,
   useCallback,
@@ -60,12 +64,21 @@ export function WorkloadTelemetryProvider({
       return;
     }
     const id = window.setInterval(() => {
-      if (!store.hasActiveTargets()) {
+      // Skip while the tab or the embedding desktop window hides the app.
+      if (!(isEffectivelyVisible() && store.hasActiveTargets())) {
         return;
       }
       store.refresh().catch(() => undefined);
     }, refreshIntervalMs);
-    return () => window.clearInterval(id);
+    const unsubscribe = subscribeEffectiveVisibility((visible) => {
+      if (visible && store.hasActiveTargets()) {
+        store.refresh().catch(() => undefined);
+      }
+    });
+    return () => {
+      window.clearInterval(id);
+      unsubscribe();
+    };
   }, [refreshIntervalMs, store]);
 
   return (

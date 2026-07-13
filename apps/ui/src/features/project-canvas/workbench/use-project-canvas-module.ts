@@ -1,5 +1,6 @@
 "use client";
 
+import { isEffectivelyVisible } from "@workspace/ui/lib/effective-visibility";
 import {
   createElement,
   Fragment,
@@ -60,7 +61,7 @@ function deploymentTaskCanStartCompletionNotice(
 }
 
 function currentPageVisible(): boolean {
-  return typeof document === "undefined" ? true : !document.hidden;
+  return isEffectivelyVisible();
 }
 
 function pruneExpiredCompletionNotices(
