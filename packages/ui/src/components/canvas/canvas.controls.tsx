@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { MiniMap, useReactFlow } from "@xyflow/react";
+import { useReactFlow } from "@xyflow/react";
 import {
   Fullscreen,
   Hand,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { FocusEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CanvasMiniMapViewport } from "./canvas.minimap";
 import type { CanvasInteractionMode } from "./canvas.types";
 import { useCanvas } from "./canvas.use";
 import { useCanvasViewportDirectives } from "./canvas.viewport-directives";
@@ -403,28 +404,7 @@ export function CanvasMiniMap({
       {...chrome.interactionProps}
       style={{ right: rightInset > 0 ? `${rightInset}px` : undefined }}
     >
-      {contentsMounted ? (
-        <MiniMap
-          ariaLabel="Canvas mini map"
-          bgColor="color-mix(in oklab, var(--input) 30%, transparent)"
-          className="overflow-hidden bg-input/30 shadow-none"
-          maskColor="color-mix(in oklab, var(--input) 30%, transparent)"
-          maskStrokeColor="var(--color-border)"
-          maskStrokeWidth={1}
-          nodeBorderRadius={10}
-          nodeColor="color-mix(in oklab, #09090b 80%, transparent)"
-          nodeStrokeColor="transparent"
-          nodeStrokeWidth={0}
-          pannable
-          position="top-left"
-          style={{
-            height: 130,
-            margin: 0,
-            width: 223,
-          }}
-          zoomable
-        />
-      ) : null}
+      {contentsMounted ? <CanvasMiniMapViewport /> : null}
     </div>
   );
 }

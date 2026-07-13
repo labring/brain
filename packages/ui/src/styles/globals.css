@@ -102,6 +102,7 @@
 
   /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);
+  --canvas-minimap-node-radius: 0.625rem;
   --db-access-sticky-header-surface: #161e33;
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
