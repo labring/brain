@@ -82,8 +82,10 @@ app.kubernetes.io/instance: {{ .name | quote }}
 
 {{- define "brain-system.platformAddressPrefix" -}}
 {{- $provided := default "" .domainPrefix | lower -}}
-{{- if or (eq $provided "brain") (regexMatch "^[a-z]{6}$" $provided) -}}
+{{- if and $provided (regexMatch "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" $provided) -}}
 {{- $provided -}}
+{{- else if $provided -}}
+{{- fail (printf "invalid platform address domainPrefix %q: expected a DNS-1123 label" $provided) -}}
 {{- else -}}
 {{- $source := printf "%s/%s/%s" .namespace .name .id -}}
 {{- $letters := regexReplaceAll "[^a-f]" (sha256sum $source | lower) "" -}}

@@ -51,6 +51,11 @@ The install script reads `cloudDomain` and `cloudPort` from
 in private values files unless you intentionally want to override the platform
 config.
 
+Each `platformAddresses[].domainPrefix`, when set, must be a DNS-1123 label.
+Leave it empty for a deterministic generated prefix. This allows an isolated
+release to use a temporary hostname and later switch to the production prefix
+without renaming its Kubernetes resources.
+
 When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart.
 
 `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty.
