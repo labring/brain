@@ -17,7 +17,7 @@ import {
   Plus,
 } from "lucide-react";
 import type { FocusEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasInteractionMode } from "./canvas.types";
 import { useCanvas } from "./canvas.use";
 import { useCanvasViewportDirectives } from "./canvas.viewport-directives";
@@ -360,11 +360,33 @@ export function CanvasControls({
   );
 }
 
+// Matches the wrapper's 200ms opacity fade, with slack so the exit finishes
+// before the subscribed MiniMap unmounts.
+const CANVAS_MINIMAP_EXIT_MS = 250;
+
+function useCanvasMiniMapContentsMounted(hidden: boolean) {
+  const [mounted, setMounted] = useState(!hidden);
+
+  useEffect(() => {
+    if (!hidden) {
+      setMounted(true);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setMounted(false);
+    }, CANVAS_MINIMAP_EXIT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [hidden]);
+
+  return mounted || !hidden;
+}
+
 export function CanvasMiniMap({
   className,
   rightInset = 0,
 }: CanvasMiniMapProps) {
   const chrome = useCanvasNavigationChromePresence();
+  const contentsMounted = useCanvasMiniMapContentsMounted(chrome.hidden);
 
   return (
     <div
@@ -381,26 +403,28 @@ export function CanvasMiniMap({
       {...chrome.interactionProps}
       style={{ right: rightInset > 0 ? `${rightInset}px` : undefined }}
     >
-      <MiniMap
-        ariaLabel="Canvas mini map"
-        bgColor="color-mix(in oklab, var(--input) 30%, transparent)"
-        className="overflow-hidden bg-input/30 shadow-none"
-        maskColor="color-mix(in oklab, var(--input) 30%, transparent)"
-        maskStrokeColor="var(--color-border)"
-        maskStrokeWidth={1}
-        nodeBorderRadius={10}
-        nodeColor="color-mix(in oklab, #09090b 80%, transparent)"
-        nodeStrokeColor="transparent"
-        nodeStrokeWidth={0}
-        pannable
-        position="top-left"
-        style={{
-          height: 130,
-          margin: 0,
-          width: 223,
-        }}
-        zoomable
-      />
+      {contentsMounted ? (
+        <MiniMap
+          ariaLabel="Canvas mini map"
+          bgColor="color-mix(in oklab, var(--input) 30%, transparent)"
+          className="overflow-hidden bg-input/30 shadow-none"
+          maskColor="color-mix(in oklab, var(--input) 30%, transparent)"
+          maskStrokeColor="var(--color-border)"
+          maskStrokeWidth={1}
+          nodeBorderRadius={10}
+          nodeColor="color-mix(in oklab, #09090b 80%, transparent)"
+          nodeStrokeColor="transparent"
+          nodeStrokeWidth={0}
+          pannable
+          position="top-left"
+          style={{
+            height: 130,
+            margin: 0,
+            width: 223,
+          }}
+          zoomable
+        />
+      ) : null}
     </div>
   );
 }

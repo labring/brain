@@ -163,7 +163,7 @@ function buildSelectedResourceSnapshot(
 
 function ProjectAssistantComposer({
   busy,
-  contextToggles,
+  projectId,
   onDatabaseIntent,
   onDockerIntent,
   onGithubIntent,
@@ -172,16 +172,38 @@ function ProjectAssistantComposer({
   onSubmit,
 }: {
   busy: boolean;
-  contextToggles: readonly string[];
+  projectId: string;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
   onGithubIntent: () => void;
   onSkillsIntent: () => void;
   onStop: () => void;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, selected: ProjectCanvasSelection | null) => void;
 }) {
   const [input, setInput] = useState("");
   const { isAuthorized, isLoading: authLoading } = useGithubAuth();
+  // The volatile canvas selection is subscribed here, in the smallest
+  // component that displays it, so select/deselect re-renders stop at the
+  // composer instead of the whole chat session. Submit hands the same value
+  // up, keeping the pinned snapshot in sync with the visible toggle.
+  const [selectedQuery] = useQueryState(
+    PROJECT_SELECTED_QUERY_KEY,
+    parseAsString
+  );
+  const selected = useMemo(
+    () => parseProjectCanvasSelection(selectedQuery),
+    [selectedQuery]
+  );
+  const contextToggles = useMemo(() => {
+    const toggles: string[] = [];
+    if (projectId.trim() !== "") {
+      toggles.push("Current Project");
+    }
+    if (selected != null && selected.kind !== "edge") {
+      toggles.push("Current Service");
+    }
+    return toggles;
+  }, [projectId, selected]);
 
   const onPrimaryAction = useCallback(() => {
     if (busy) {
@@ -192,9 +214,9 @@ function ProjectAssistantComposer({
     if (!text) {
       return;
     }
-    onSubmit(text);
+    onSubmit(text, selected);
     setInput("");
-  }, [busy, input, onStop, onSubmit]);
+  }, [busy, input, onStop, onSubmit, selected]);
 
   return (
     <div className="group flex w-full shrink-0 flex-col p-[10px]">
@@ -293,15 +315,6 @@ function ProjectAssistantChatSession({
     namespace,
     projectId,
   });
-  const [selectedQuery] = useQueryState(
-    PROJECT_SELECTED_QUERY_KEY,
-    parseAsString
-  );
-  const selected = useMemo(
-    () => parseProjectCanvasSelection(selectedQuery),
-    [selectedQuery]
-  );
-
   // Keep a live ref so the transport memo stays stable across URL changes. The
   // volatile canvas selection is pinned per-message (see submitComposerText), so
   // only thread-stable wire fields belong here.
@@ -521,19 +534,8 @@ function ProjectAssistantChatSession({
 
   const busy = status === "submitted" || status === "streaming";
 
-  const composerContextToggles = useMemo(() => {
-    const toggles: string[] = [];
-    if (projectId.trim() !== "") {
-      toggles.push("Current Project");
-    }
-    if (selected != null && selected.kind !== "edge") {
-      toggles.push("Current Service");
-    }
-    return toggles;
-  }, [projectId, selected]);
-
   const submitComposerText = useCallback(
-    (text: string) => {
+    (text: string, selected: ProjectCanvasSelection | null) => {
       const snapshot = buildSelectedResourceSnapshot(selected);
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
@@ -547,7 +549,7 @@ function ProjectAssistantChatSession({
         ],
       }).catch(() => undefined);
     },
-    [sendMessage, selected]
+    [sendMessage]
   );
 
   const stopComposerResponse = useCallback(() => {
@@ -584,13 +586,13 @@ function ProjectAssistantChatSession({
         ) : null}
         <ProjectAssistantComposerMemo
           busy={busy}
-          contextToggles={composerContextToggles}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
           onSkillsIntent={onSkillsIntent}
           onStop={stopComposerResponse}
           onSubmit={submitComposerText}
+          projectId={projectId}
         />
       </Chat>
     </Chat.Root>
@@ -846,39 +848,44 @@ function ProjectRouteTopBar({
 
   return (
     <>
+      {/* The bar itself stays filter-free: frost is clipped to the content
+          chip so canvas pan/zoom frames never re-filter a full-width strip. */}
       <header
         className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 bg-[#09090B]/10 pr-2 pl-6 backdrop-blur-lg",
+          "pointer-events-none absolute inset-x-0 top-0 z-10 flex h-13 items-center gap-2 pr-2 pl-6",
           !assistantPaneOpen && "pr-12"
         )}
       >
-        <div className="pointer-events-auto flex min-w-0 shrink-0 basis-40 items-center gap-1">
-          {showProjectName && currentProject.isLoading ? (
-            <Skeleton className="h-5 w-36 max-w-full" />
-          ) : null}
-          {showProjectName && !currentProject.isLoading ? (
-            <>
-              <button
-                aria-label={`Edit project name: ${projectName}`}
-                className="flex min-w-0 shrink-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-                onClick={() => setEditOpen(true)}
-                type="button"
-              >
-                <h1 className="truncate font-medium text-foreground text-sm leading-5">
-                  {projectName}
-                </h1>
-                <SquarePen
-                  aria-hidden
-                  className="size-3.5 shrink-0 text-foreground"
-                  strokeWidth={2}
-                />
-              </button>
-              <ChevronRight
-                aria-hidden
-                className="size-4 shrink-0 text-muted-foreground"
-                strokeWidth={2}
-              />
-            </>
+        <div className="pointer-events-auto flex min-w-0 shrink-0 basis-40 items-center">
+          {showProjectName ? (
+            <div className="flex min-w-0 items-center gap-1 rounded-lg bg-background/10 backdrop-blur-lg">
+              {currentProject.isLoading ? (
+                <Skeleton className="h-5 w-36 max-w-full" />
+              ) : (
+                <>
+                  <button
+                    aria-label={`Edit project name: ${projectName}`}
+                    className="flex min-w-0 shrink-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                    onClick={() => setEditOpen(true)}
+                    type="button"
+                  >
+                    <h1 className="truncate font-medium text-foreground text-sm leading-5">
+                      {projectName}
+                    </h1>
+                    <SquarePen
+                      aria-hidden
+                      className="size-3.5 shrink-0 text-foreground"
+                      strokeWidth={2}
+                    />
+                  </button>
+                  <ChevronRight
+                    aria-hidden
+                    className="size-4 shrink-0 text-muted-foreground"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
+            </div>
           ) : null}
         </div>
       </header>

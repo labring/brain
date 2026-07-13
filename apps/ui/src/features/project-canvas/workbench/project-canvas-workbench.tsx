@@ -1,6 +1,6 @@
 "use client";
 
-import { useAtomValue } from "jotai";
+import { useStore } from "jotai";
 import { Activity, useCallback, useLayoutEffect, useMemo } from "react";
 import { useEditRedeployController } from "@/features/deployment/deployment-task-redeploy";
 import {
@@ -59,14 +59,21 @@ export function ProjectCanvasWorkbench({
       drawerOpen: projectCanvas.surfaces.model.drawer != null,
       sideOpen: projectCanvas.surfaces.model.side != null,
     });
-  const assistantPaneResizing = useAtomValue(assistantPaneResizingAtom);
+  const jotaiStore = useStore();
   const viewportDirectives = projectCanvas.canvas.viewportDirectives;
   useLayoutEffect(() => {
     viewportDirectives.setInsets(canvasViewportInsets);
   }, [canvasViewportInsets, viewportDirectives]);
+  // Store-level bridge: the resizing flag feeds an imperative directive store,
+  // so subscribing outside React keeps pane drags from re-rendering the
+  // workbench controller.
   useLayoutEffect(() => {
-    viewportDirectives.setInstant(assistantPaneResizing);
-  }, [assistantPaneResizing, viewportDirectives]);
+    const syncInstant = () => {
+      viewportDirectives.setInstant(jotaiStore.get(assistantPaneResizingAtom));
+    };
+    syncInstant();
+    return jotaiStore.sub(assistantPaneResizingAtom, syncInstant);
+  }, [jotaiStore, viewportDirectives]);
   const projectCanvasSidePaneSurface = useMemo<ProjectSidePaneAssistantSurface>(
     () => ({
       id: `project-canvas:${projectId}`,
