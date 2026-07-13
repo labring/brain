@@ -7,6 +7,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -195,8 +196,11 @@ func dbOpsRequest(clusterName, namespace, operation, suffix string, spec map[str
 }
 
 type DBResources struct {
-	Cluster       *unstructured.Unstructured
-	ExportService *corev1.Service
+	Cluster        *unstructured.Unstructured
+	ExportService  *corev1.Service
+	ServiceAccount *corev1.ServiceAccount
+	Role           *rbacv1.Role
+	RoleBinding    *rbacv1.RoleBinding
 }
 
 func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
@@ -228,9 +232,10 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 		componentResources = dbComponentResources(profile.Engine, DBResourcesInput{Quota: input.Quota})
 	}
 	componentSpec := map[string]interface{}{
-		"componentDefRef": profile.ComponentName,
-		"name":            profile.ComponentName,
-		"replicas":        replicas,
+		"componentDefRef":    profile.ComponentName,
+		"name":               profile.ComponentName,
+		"replicas":           replicas,
+		"serviceAccountName": name,
 		"volumeClaimTemplates": []interface{}{
 			map[string]interface{}{
 				"name": "data",
@@ -295,7 +300,63 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 		exportService = RenderDBExportService(name, namespace, engine, labels)
 	}
 
-	return &DBResources{Cluster: cluster, ExportService: exportService}, nil
+	serviceAccount, role, roleBinding := RenderDBAccountResources(name, namespace, labels)
+
+	return &DBResources{
+		Cluster:        cluster,
+		ExportService:  exportService,
+		ServiceAccount: serviceAccount,
+		Role:           role,
+		RoleBinding:    roleBinding,
+	}, nil
+}
+
+// RenderDBAccountResources renders the per-DB ServiceAccount, Role, and RoleBinding that the
+// KubeBlocks Cluster's pods run as. The Cluster's componentSpec references this account through
+// serviceAccountName, so KubeBlocks lifecycle, probe, and reconfigure sidecars get the in-namespace
+// permissions they need. This mirrors the legacy sealos dbprovider account template; the objects
+// carry Brain ownership labels so db-delete's label sweep reclaims them with the Cluster, plus
+// app.kubernetes.io/managed-by=kbcli for parity with the legacy sealos dbprovider account objects.
+func RenderDBAccountResources(name, namespace string, labels map[string]string) (*corev1.ServiceAccount, *rbacv1.Role, *rbacv1.RoleBinding) {
+	accountLabels := mergeStringMap(labels, map[string]string{
+		DBProviderManagedByLabel: DBProviderManagedByValue,
+	})
+	serviceAccount := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:    accountLabels,
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	role := &rbacv1.Role{
+		TypeMeta: metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "Role"},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:    accountLabels,
+			Name:      name,
+			Namespace: namespace,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{"*"}, Resources: []string{"*"}, Verbs: []string{"*"}},
+		},
+	}
+	roleBinding := &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "RoleBinding"},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:    accountLabels,
+			Name:      name,
+			Namespace: namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     name,
+		},
+		Subjects: []rbacv1.Subject{
+			{Kind: "ServiceAccount", Name: name, Namespace: namespace},
+		},
+	}
+	return serviceAccount, role, roleBinding
 }
 
 func applyDBRestoreFromBackupAnnotation(cluster *unstructured.Unstructured, componentName string, input *DBRestoreFromBackupInput) error {

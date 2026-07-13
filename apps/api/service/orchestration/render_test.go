@@ -874,6 +874,85 @@ func TestRenderDBResourcesLabelsAndNames(t *testing.T) {
 	}
 }
 
+func TestRenderDBResourcesRendersAccountRBAC(t *testing.T) {
+	resources, err := RenderDBResources(DBResourcesInput{
+		Engine:    "postgresql",
+		Name:      "pg",
+		Namespace: "ns-a",
+		ProjectID: "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderDBResources returned error: %v", err)
+	}
+
+	// The Cluster's pods must run as the rendered ServiceAccount.
+	spec := resources.Cluster.Object["spec"].(map[string]interface{})
+	component := spec["componentSpecs"].([]interface{})[0].(map[string]interface{})
+	if got := component["serviceAccountName"]; got != "pg" {
+		t.Fatalf("componentSpec serviceAccountName = %v, want pg", got)
+	}
+
+	if resources.ServiceAccount == nil || resources.Role == nil || resources.RoleBinding == nil {
+		t.Fatalf("account RBAC must be rendered: sa=%v role=%v rb=%v", resources.ServiceAccount, resources.Role, resources.RoleBinding)
+	}
+
+	for _, meta := range []metav1.ObjectMeta{
+		resources.ServiceAccount.ObjectMeta,
+		resources.Role.ObjectMeta,
+		resources.RoleBinding.ObjectMeta,
+	} {
+		if meta.Name != "pg" || meta.Namespace != "ns-a" {
+			t.Fatalf("account object name/namespace = %q/%q, want pg/ns-a", meta.Name, meta.Namespace)
+		}
+		// Brain ownership labels are what db-delete's label sweep selects on.
+		if got := meta.Labels[BrainDeploymentNameLabel]; got != "pg" {
+			t.Fatalf("%s = %q, want pg", BrainDeploymentNameLabel, got)
+		}
+		if got := meta.Labels[BrainManagedByLabel]; got != BrainManagedByValue {
+			t.Fatalf("%s = %q, want %q", BrainManagedByLabel, got, BrainManagedByValue)
+		}
+		if got := meta.Labels[DBProviderCRLabel]; got != "pg" {
+			t.Fatalf("%s = %q, want pg", DBProviderCRLabel, got)
+		}
+		// dbprovider-parity label sits alongside the accurate brain.io/managed-by.
+		if got := meta.Labels[DBProviderManagedByLabel]; got != DBProviderManagedByValue {
+			t.Fatalf("%s = %q, want %q", DBProviderManagedByLabel, got, DBProviderManagedByValue)
+		}
+	}
+
+	// GVK must be set so ApplyObjects can route these through the dynamic apply path.
+	if resources.ServiceAccount.APIVersion != "v1" || resources.ServiceAccount.Kind != "ServiceAccount" {
+		t.Fatalf("service account TypeMeta = %q/%q", resources.ServiceAccount.APIVersion, resources.ServiceAccount.Kind)
+	}
+	if resources.Role.APIVersion != "rbac.authorization.k8s.io/v1" || resources.Role.Kind != "Role" {
+		t.Fatalf("role TypeMeta = %q/%q", resources.Role.APIVersion, resources.Role.Kind)
+	}
+	if resources.RoleBinding.APIVersion != "rbac.authorization.k8s.io/v1" || resources.RoleBinding.Kind != "RoleBinding" {
+		t.Fatalf("role binding TypeMeta = %q/%q", resources.RoleBinding.APIVersion, resources.RoleBinding.Kind)
+	}
+
+	if len(resources.Role.Rules) != 1 {
+		t.Fatalf("role rules = %d, want 1", len(resources.Role.Rules))
+	}
+	rule := resources.Role.Rules[0]
+	if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "*" ||
+		len(rule.Resources) != 1 || rule.Resources[0] != "*" ||
+		len(rule.Verbs) != 1 || rule.Verbs[0] != "*" {
+		t.Fatalf("role rule = %+v, want */*/*", rule)
+	}
+
+	if resources.RoleBinding.RoleRef.Kind != "Role" || resources.RoleBinding.RoleRef.Name != "pg" {
+		t.Fatalf("role binding roleRef = %+v, want Role/pg", resources.RoleBinding.RoleRef)
+	}
+	if len(resources.RoleBinding.Subjects) != 1 {
+		t.Fatalf("role binding subjects = %d, want 1", len(resources.RoleBinding.Subjects))
+	}
+	subject := resources.RoleBinding.Subjects[0]
+	if subject.Kind != "ServiceAccount" || subject.Name != "pg" || subject.Namespace != "ns-a" {
+		t.Fatalf("role binding subject = %+v, want ServiceAccount/pg/ns-a", subject)
+	}
+}
+
 func TestRenderDBResourcesOmitsExportServiceWhenPublicAccessDisabled(t *testing.T) {
 	resources, err := RenderDBResources(DBResourcesInput{
 		Engine:    "postgresql",

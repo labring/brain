@@ -34,6 +34,8 @@ const (
 	DBProviderClusterDefinitionLabel = "clusterdefinition.kubeblocks.io/name"
 	DBProviderClusterVersionLabel    = "clusterversion.kubeblocks.io/name"
 	DBProviderCRLabel                = "sealos-db-provider-cr"
+	DBProviderManagedByLabel         = "app.kubernetes.io/managed-by"
+	DBProviderManagedByValue         = "kbcli"
 )
 
 func mergeStringMap(maps ...map[string]string) map[string]string {

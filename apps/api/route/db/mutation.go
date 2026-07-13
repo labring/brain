@@ -114,6 +114,15 @@ spec:
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid DB direct resource request", err)
 		}
+		// Apply the account RBAC before the Cluster so the ServiceAccount referenced by
+		// componentSpec.serviceAccountName exists before KubeBlocks provisions the DB pods.
+		if err := k8ssvc.ApplyObjects(restConfig, []runtime.Object{
+			resources.ServiceAccount,
+			resources.Role,
+			resources.RoleBinding,
+		}, ns); err != nil {
+			return nil, huma.Error500InternalServerError("failed to create DB access resources", err)
+		}
 		if err := k8ssvc.ApplyUnstructured(restConfig, []*unstructured.Unstructured{resources.Cluster}, ns); err != nil {
 			return nil, huma.Error500InternalServerError("failed to create DB", err)
 		}
@@ -1341,7 +1350,7 @@ func deleteDBDirectResources(cfg *clientcmdapi.Config, name string, namespace st
 		return apierrors.NewNotFound(schema.GroupResource{Group: "apps.kubeblocks.io", Resource: "clusters"}, name)
 	}
 	selector := orchestration.BrainManagedByLabel + "=" + orchestration.BrainManagedByValue + "," + orchestration.BrainDeploymentKindLabel + "=" + orchestration.DeploymentKindDB + "," + orchestration.BrainDeploymentNameLabel + "=" + name
-	for _, resource := range []string{"services", "opsrequests", "configmaps", "secrets"} {
+	for _, resource := range []string{"services", "opsrequests", "configmaps", "secrets", "serviceaccounts", "roles", "rolebindings"} {
 		_, err := k8ssvc.Delete(cfg, k8ssvc.DeleteOptions{
 			LabelSelector: selector,
 			Namespace:     namespace,
