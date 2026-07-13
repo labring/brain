@@ -5,6 +5,10 @@ import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import {
+  isEffectivelyVisible,
+  subscribeEffectiveVisibility,
+} from "@workspace/ui/lib/effective-visibility";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -283,21 +287,15 @@ export function useProjectCanvasResourceSnapshot(options: {
   }, [revalidate, resetWorkloadDiscoveryPollWindow]);
 
   useEffect(() => {
-    const nextIsPageVisible =
-      typeof document === "undefined" ? true : !document.hidden;
-    setIsPageVisible(nextIsPageVisible);
-
-    const onVisibilityChange = () => {
-      const visible = !document.hidden;
+    // Effective visibility also covers being hidden by the Sealos desktop
+    // (opacity-0 iframe), which `document.hidden` never reports.
+    setIsPageVisible(isEffectivelyVisible());
+    return subscribeEffectiveVisibility((visible) => {
       setIsPageVisible(visible);
       if (visible) {
         revalidate().catch(() => undefined);
       }
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    });
   }, [revalidate]);
 
   const error = apsError ?? dbsError ?? deploymentTasksStore.error;

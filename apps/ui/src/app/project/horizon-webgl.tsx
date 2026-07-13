@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  isEffectivelyVisible,
+  subscribeEffectiveVisibility,
+} from "@workspace/ui/lib/effective-visibility";
 import { Mesh, Program, Renderer, Triangle } from "ogl";
 import { useEffect, useRef } from "react";
 
@@ -493,8 +497,16 @@ export default function HorizonWebgl({ onPhase, values }: HorizonWebglProps) {
     // which measured nearly as expensive as drawing (~129 wakes/s ≈ +180ms/s
     // task time on a 120Hz display).
     const RAF_HANDOFF_MS = 4;
+    let parked = false;
     const schedule = () => {
       if (disposed) {
+        return;
+      }
+      // Park while hidden. A hidden tab starves rAF on its own, but a
+      // Sealos-desktop window hidden with opacity 0 keeps rAF firing at
+      // full rate — the loop has to gate itself.
+      if (!isEffectivelyVisible()) {
+        parked = true;
         return;
       }
       const waitMs = nextDueMs - performance.now();
@@ -558,9 +570,16 @@ export default function HorizonWebgl({ onPhase, values }: HorizonWebglProps) {
       schedule();
     };
     rafId = requestAnimationFrame(tick);
+    const unsubscribeVisibility = subscribeEffectiveVisibility((visible) => {
+      if (visible && parked && !disposed) {
+        parked = false;
+        schedule();
+      }
+    });
 
     return () => {
       disposed = true;
+      unsubscribeVisibility();
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
       resizeObserver.disconnect();

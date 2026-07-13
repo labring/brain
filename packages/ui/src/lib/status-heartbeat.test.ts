@@ -65,6 +65,51 @@ test("beat survives while any ref remains", async () => {
   releaseB();
 });
 
+test("setSuspended pauses beats and resuming restarts them immediately", async () => {
+  const root = fakeRoot();
+  const heartbeat = createStatusHeartbeat(root, FAST);
+
+  const release = heartbeat.acquire();
+  heartbeat.setSuspended(true);
+  const paused = root.attributes.get("data-status-heartbeat");
+  await sleep(40);
+  assert.equal(root.attributes.get("data-status-heartbeat"), paused);
+
+  heartbeat.setSuspended(false);
+  assert.notEqual(root.attributes.get("data-status-heartbeat"), paused);
+
+  release();
+});
+
+test("acquire while suspended defers the first beat to resume", async () => {
+  const root = fakeRoot();
+  const heartbeat = createStatusHeartbeat(root, FAST);
+
+  heartbeat.setSuspended(true);
+  const release = heartbeat.acquire();
+  await sleep(40);
+  assert.equal(root.attributes.has("data-status-heartbeat"), false);
+
+  heartbeat.setSuspended(false);
+  assert.equal(root.attributes.has("data-status-heartbeat"), true);
+
+  release();
+});
+
+test("releasing the last ref while suspended clears the attribute", async () => {
+  const root = fakeRoot();
+  const heartbeat = createStatusHeartbeat(root, FAST);
+
+  const release = heartbeat.acquire();
+  heartbeat.setSuspended(true);
+  release();
+  assert.equal(root.attributes.has("data-status-heartbeat"), false);
+
+  heartbeat.setSuspended(false);
+  await sleep(40);
+  assert.equal(root.attributes.has("data-status-heartbeat"), false);
+});
+
 test("setPeriodMs clamps to the minimum period", async () => {
   const root = fakeRoot();
   const heartbeat = createStatusHeartbeat(root, {

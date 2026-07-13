@@ -2,6 +2,11 @@
 
 import { useEffect } from "react";
 
+import {
+  isEffectivelyVisible,
+  subscribeEffectiveVisibility,
+} from "./effective-visibility";
+
 /**
  * Shared scheduler for status-dot ping pulses. Breathing dots opt in with
  * `useStatusHeartbeat` plus the `status-heartbeat-ping` class (globals.css):
@@ -36,6 +41,7 @@ export function createStatusHeartbeat(
   let periodMs = Math.max(minPeriodMs, options?.periodMs ?? DEFAULT_PERIOD_MS);
   let phase: "a" | "b" = "b";
   let refCount = 0;
+  let suspended = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   function beat() {
@@ -43,7 +49,18 @@ export function createStatusHeartbeat(
     root.setAttribute(ATTRIBUTE, phase);
   }
 
+  function stopTimer() {
+    if (timer === null) {
+      return;
+    }
+    clearTimeout(timer);
+    timer = null;
+  }
+
   function schedule() {
+    if (suspended) {
+      return;
+    }
     timer = setTimeout(() => {
       beat();
       schedule();
@@ -54,19 +71,37 @@ export function createStatusHeartbeat(
     /** Starts beating on first acquire; returns the matching release. */
     acquire() {
       refCount += 1;
-      if (refCount === 1) {
+      if (refCount === 1 && !suspended) {
         beat();
         schedule();
       }
       return () => {
         refCount -= 1;
-        if (refCount > 0 || timer === null) {
+        if (refCount > 0) {
           return;
         }
-        clearTimeout(timer);
-        timer = null;
+        stopTimer();
         root.removeAttribute(ATTRIBUTE);
       };
+    },
+    /**
+     * Pauses beats while the app is not effectively visible (hidden tab or
+     * hidden desktop window); each flip forces a root-attribute style recalc
+     * that nobody can see. Resuming beats immediately.
+     */
+    setSuspended(next: boolean) {
+      if (next === suspended) {
+        return;
+      }
+      suspended = next;
+      if (suspended) {
+        stopTimer();
+        return;
+      }
+      if (refCount > 0) {
+        beat();
+        schedule();
+      }
     },
     setPeriodMs(nextMs: number) {
       const clamped = Math.max(minPeriodMs, Math.round(nextMs));
@@ -87,7 +122,14 @@ type StatusHeartbeat = ReturnType<typeof createStatusHeartbeat>;
 let sharedHeartbeat: StatusHeartbeat | null = null;
 
 function getSharedHeartbeat(): StatusHeartbeat {
-  sharedHeartbeat ??= createStatusHeartbeat(document.documentElement);
+  if (sharedHeartbeat === null) {
+    const heartbeat = createStatusHeartbeat(document.documentElement);
+    heartbeat.setSuspended(!isEffectivelyVisible());
+    subscribeEffectiveVisibility((visible) => {
+      heartbeat.setSuspended(!visible);
+    });
+    sharedHeartbeat = heartbeat;
+  }
   return sharedHeartbeat;
 }
 
