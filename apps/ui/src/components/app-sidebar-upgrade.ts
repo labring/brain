@@ -58,7 +58,7 @@ function formatBinaryQuotaNumberFromMi(value: number) {
 function formatQuotaValue(item: WorkspaceQuotaItem) {
   switch (item.type) {
     case "cpu":
-      return `${formatCpuQuotaNumber(item.used)}/${formatCpuQuotaNumber(
+      return `${formatCpuQuotaNumber(item.used)}C/${formatCpuQuotaNumber(
         item.limit
       )}C`;
     case "memory":

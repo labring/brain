@@ -17,6 +17,12 @@ const PROJECTS_BUTTON_PROJECT_HOVER_RE =
 const WORKSPACE_QUOTA_LOADER_RE = /sealosApp\.getWorkspaceQuota\(\)/;
 const CREATE_SEALOS_APP_RE = /createSealosApp/;
 const HARDCODED_USAGE_VALUE_RE = /"0\.0\/0"/;
+const CLOSE_BRAIN_EVENT_RE =
+  /sealosApp\.runEvents\("closeDesktopApp",\s*\{\s*appKey: "system-brain",?\s*\}\s*\)/s;
+const DESKTOP_RETURN_BUTTON_RE = /aria-label="Back to Sealos Desktop"/;
+const DESKTOP_RETURN_BEFORE_UPGRADE_RE =
+  /data-slot="app-sidebar-bottom-actions"[\s\S]*<AppSidebarDesktopReturn \/>[\s\S]*<AppSidebarUpgrade \/>/;
+const EMBEDDED_WINDOW_CHECK_RE = /window\.(?:self|top)/;
 
 test("app sidebar does not reserve space for the Brain v2 logo", () => {
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, BRAIN_V2_ARIA_LABEL_RE);
@@ -37,4 +43,14 @@ test("app sidebar upgrade popover reads workspace quota from the Sealos SDK", ()
   assert.match(APP_SIDEBAR_SOURCE, WORKSPACE_QUOTA_LOADER_RE);
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, CREATE_SEALOS_APP_RE);
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, HARDCODED_USAGE_VALUE_RE);
+});
+
+test("app sidebar requests that Desktop close Brain", () => {
+  assert.match(APP_SIDEBAR_SOURCE, CLOSE_BRAIN_EVENT_RE);
+});
+
+test("app sidebar always renders the Desktop return button above Upgrade", () => {
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_BUTTON_RE);
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_BEFORE_UPGRADE_RE);
+  assert.doesNotMatch(APP_SIDEBAR_SOURCE, EMBEDDED_WINDOW_CHECK_RE);
 });

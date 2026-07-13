@@ -22,7 +22,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import { PanelsTopLeft, Sparkles } from "lucide-react";
+import { House, PanelsTopLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -157,6 +157,12 @@ async function openCostCenterApp() {
   });
 }
 
+async function closeBrain() {
+  await sealosApp.runEvents("closeDesktopApp", {
+    appKey: "system-brain",
+  });
+}
+
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
   "aria-label" | "children" | "className"
@@ -192,6 +198,34 @@ function AppSidebarLinkButton({
         }
       />
       <TooltipContent side="right">{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function AppSidebarDesktopReturn() {
+  const handleClick = () => {
+    closeBrain().catch((error: unknown) => {
+      console.warn("[AppSidebarDesktopReturn] close Brain failed:", error);
+    });
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <AppIconButton
+            aria-label="Back to Sealos Desktop"
+            className={APP_SIDEBAR_LINK_CLASS}
+            onClick={handleClick}
+            size="lg"
+            type="button"
+            variant="quiet"
+          >
+            <House aria-hidden className="size-4" strokeWidth={1.8} />
+          </AppIconButton>
+        }
+      />
+      <TooltipContent side="right">Back to Sealos Desktop</TooltipContent>
     </Tooltip>
   );
 }
@@ -420,6 +454,7 @@ export default function AppSidebar() {
             className="w-9 rounded-full bg-border"
             data-slot="app-sidebar-bottom-separator"
           />
+          <AppSidebarDesktopReturn />
           <AppSidebarUpgrade />
         </div>
       </div>
