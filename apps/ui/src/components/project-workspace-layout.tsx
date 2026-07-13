@@ -18,7 +18,7 @@ import {
   PanelRightOpen,
   SquarePen,
 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import {
   type KeyboardEvent,
@@ -43,6 +43,10 @@ import {
   type ProjectCanvasSelection,
   projectCanvasSelectionTarget,
 } from "@/features/project-route-state/canvas-selection";
+import {
+  ProjectIdProvider,
+  useProjectId,
+} from "@/features/project-route-state/use-project-id";
 import {
   PROJECT_SELECTED_QUERY_KEY,
   parseProjectCanvasSelection,
@@ -313,8 +317,7 @@ function ProjectAssistantChatSession({
     scannedParts: ReadonlyMap<string, number>;
   }>({ projectId: "", scannedParts: new Map() });
 
-  const params = useParams<{ uid?: string }>();
-  const projectId = decodeURIComponent(params.uid ?? "");
+  const projectId = useProjectId();
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
@@ -797,8 +800,7 @@ function ProjectRouteTopBar({
 }: {
   assistantPaneOpen: boolean;
 }) {
-  const params = useParams<{ uid?: string }>();
-  const projectId = decodeURIComponent(params.uid ?? "");
+  const projectId = useProjectId();
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
   const currentProject = useCurrentProjectDisplayName({
@@ -1286,7 +1288,11 @@ export default function ProjectWorkspaceLayout({
 }) {
   return (
     <ProjectSidePaneProvider>
-      <ProjectWorkspaceLayoutContent>{children}</ProjectWorkspaceLayoutContent>
+      <ProjectIdProvider>
+        <ProjectWorkspaceLayoutContent>
+          {children}
+        </ProjectWorkspaceLayoutContent>
+      </ProjectIdProvider>
     </ProjectSidePaneProvider>
   );
 }

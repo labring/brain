@@ -42,6 +42,7 @@ import {
   formatWorkspaceQuotaRows,
   type WorkspaceQuotaItem,
 } from "@/components/app-sidebar-upgrade";
+import { projectIdFromPathname } from "@/features/project-route-state/use-project-id";
 import { useLastViewedProject } from "@/hooks/use-last-viewed-project";
 import { useProjectsExplorerReadModel } from "@/hooks/use-projects-explorer";
 import type {
@@ -49,22 +50,6 @@ import type {
   ProjectShortcutIconKeyMap,
 } from "@/lib/project-shortcut-icons";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
-
-function projectIdFromPathname(pathname: string): string | undefined {
-  const prefix = "/project/";
-  if (!pathname.startsWith(prefix)) {
-    return undefined;
-  }
-  const encoded = pathname.slice(prefix.length).split("/")[0];
-  if (!encoded) {
-    return undefined;
-  }
-  try {
-    return decodeURIComponent(encoded);
-  } catch {
-    return encoded;
-  }
-}
 
 function ProjectShortcutIcon({
   active,
