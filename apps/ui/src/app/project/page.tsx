@@ -27,6 +27,7 @@ import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { serializeProjectSideSurfaceEntry } from "@/features/project-surfaces/url-codec";
 import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
+import { useEnterMotionFrames } from "@/hooks/use-enter-motion-frames";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import styles from "./project-index.module.css";
@@ -198,7 +199,11 @@ export default function ProjectIndexPage() {
   const creationPaneOpen = creationSideEntry != null;
   const skillsPaneOpen = projectSideRouteEntry?.kind === "skillsWorkflow";
   const sidePaneOpen = creationPaneOpen || skillsPaneOpen;
-  const explorerFlipRef = useSidePaneReserveFlip(sidePaneOpen);
+  // The reserve snap + FLIP ride the side pane's enter beat: the pane's mount
+  // commit and the layout snap land in separate frames, so the open hitch
+  // doesn't stack into one long frame.
+  const reserveOpen = useEnterMotionFrames(sidePaneOpen);
+  const explorerFlipRef = useSidePaneReserveFlip(reserveOpen);
 
   const sidePaneContent = useMemo((): ReactNode => {
     if (creationPaneOpen) {
@@ -272,7 +277,7 @@ export default function ProjectIndexPage() {
         <div
           aria-hidden
           className={cn(styles.sidePaneReserve, "min-h-0 shrink-0")}
-          data-open={sidePaneOpen}
+          data-open={reserveOpen}
           data-slot="project-index-side-pane-reserve"
         />
       </div>

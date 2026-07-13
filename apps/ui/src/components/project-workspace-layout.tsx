@@ -56,6 +56,7 @@ import {
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
+import { useEnterMotionFrames } from "@/hooks/use-enter-motion-frames";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
   ASSISTANT_PANE_DEFAULT_WIDTH,
@@ -925,6 +926,9 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   // Mounting with the pane already open reserves immediately — there is no
   // enter transition to wait for.
   const [paneEnterSettled, setPaneEnterSettled] = useState(assistantPaneOpen);
+  // The enter beat paints the closed (offscreen) pose before motion starts —
+  // without it the shared ease-out is caught mid-flight and reads as a fade.
+  const paneMotionOpen = useEnterMotionFrames(assistantPaneOpen);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const workspaceWidthRef = useRef(workspaceWidth);
   const viewportResizingRef = useRef(false);
@@ -1228,10 +1232,10 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
           and fades while the inner chrome surface slides its full width, so
           the panel emerges from the right edge instead of fading in place. */}
       <aside
-        aria-hidden={!assistantPaneOpen}
+        aria-hidden={!paneMotionOpen}
         className={cn(
           "project-surface-slide-x absolute inset-y-0 right-0 z-30 overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
-          assistantPaneOpen
+          paneMotionOpen
             ? "project-surface-slide-x-open opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
             : "project-surface-slide-x-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]",
           (paneResizing || viewportResizing) && "transition-none"
@@ -1243,8 +1247,8 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
       >
         <div
           className={cn(
-            "project-chrome-surface project-surface-slide-x absolute inset-y-0 right-0 box-border flex min-h-0 w-full flex-col overflow-hidden border-border border-l transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
-            assistantPaneOpen
+            "project-chrome-surface project-surface-slide-x absolute inset-y-0 right-0 box-border flex min-h-0 w-full flex-col overflow-hidden border-border border-l shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+            paneMotionOpen
               ? "project-surface-slide-x-open duration-[var(--project-surface-motion-enter-duration)]"
               : "project-surface-slide-x-full duration-[var(--project-surface-motion-exit-duration)]",
             (paneResizing || viewportResizing) && "transition-none"
