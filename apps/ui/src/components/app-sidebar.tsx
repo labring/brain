@@ -80,9 +80,7 @@ function ProjectShortcutIcon({
   }
 
   const icon = devicons[iconKey];
-  const src = deviconSrc(
-    active || iconKey === "mysql" ? icon.original : icon.plain
-  );
+  const src = deviconSrc(active ? icon.original : icon.plain);
 
   return (
     <span
