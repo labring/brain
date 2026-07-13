@@ -121,18 +121,35 @@
         "chart",
         "command",
         "preview",
-        "input-group",
         "popover",
         "tooltip",
-        "faceted",
-        "refresh-controls",
-        "time-range-selector"
+        "faceted"
       ],
       "files": [
         {
           "path": "../../packages/ui/src/components/log-viewer/log-viewer.tsx",
           "type": "registry:component",
           "target": "components/log-viewer/log-viewer.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/log-viewer/log-window.ts",
+          "type": "registry:lib",
+          "target": "components/log-viewer/log-window.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/log-viewer/log-window-selector.tsx",
+          "type": "registry:component",
+          "target": "components/log-viewer/log-window-selector.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/log-viewer/log-viewer.live-control.tsx",
+          "type": "registry:component",
+          "target": "components/log-viewer/log-viewer.live-control.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/time-wheel-field.tsx",
+          "type": "registry:component",
+          "target": "components/time-wheel-field.tsx"
         },
         {
           "path": "../../packages/ui/src/components/log-viewer/log-viewer.context.tsx",
@@ -195,6 +212,11 @@
           "target": "components/container-node/container-node.types.ts"
         },
         {
+          "path": "../../packages/ui/src/components/container-node/container-node.availability.ts",
+          "type": "registry:lib",
+          "target": "components/container-node/container-node.availability.ts"
+        },
+        {
           "path": "../../packages/ui/src/components/container-node/container-node.context.ts",
           "type": "registry:component",
           "target": "components/container-node/container-node.context.ts"
@@ -213,11 +235,6 @@
           "path": "../../packages/ui/src/components/container-node/container-node.status.ts",
           "type": "registry:lib",
           "target": "components/container-node/container-node.status.ts"
-        },
-        {
-          "path": "../../packages/ui/src/components/container-node/container-node.menu-visibility.ts",
-          "type": "registry:lib",
-          "target": "components/container-node/container-node.menu-visibility.ts"
         },
         {
           "path": "../../packages/ui/src/components/container-node/container-node.css",
@@ -247,12 +264,34 @@
       "title": "Canvas Node",
       "description": "Shared canvas node chrome with frame, surface, layout, status, drag, expand, connector, copyable-row, metrics, actions, and card primitives",
       "dependencies": ["lucide-react"],
-      "registryDependencies": ["button"],
+      "registryDependencies": [
+        "app-icon-button",
+        "button",
+        "dropdown-menu",
+        "skeleton",
+        "spinner",
+        "tooltip"
+      ],
       "files": [
         {
           "path": "../../packages/ui/src/components/canvas-node/canvas-node.types.ts",
           "type": "registry:lib",
           "target": "components/canvas-node/canvas-node.types.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/canvas-node/canvas-node.availability.ts",
+          "type": "registry:lib",
+          "target": "components/canvas-node/canvas-node.availability.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/canvas/canvas-glass-store.ts",
+          "type": "registry:lib",
+          "target": "components/canvas/canvas-glass-store.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/canvas/canvas-glass-context.tsx",
+          "type": "registry:component",
+          "target": "components/canvas/canvas-glass-context.tsx"
         },
         {
           "path": "../../packages/ui/src/components/canvas-node/canvas-node.context.ts",
@@ -416,13 +455,19 @@
         "button",
         "canvas-node",
         "dropdown-menu",
-        "switch"
+        "switch",
+        "tooltip"
       ],
       "files": [
         {
           "path": "../../packages/ui/src/components/database-node/database-node.types.ts",
           "type": "registry:lib",
           "target": "components/database-node/database-node.types.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/database-node/database-node.availability.ts",
+          "type": "registry:lib",
+          "target": "components/database-node/database-node.availability.ts"
         },
         {
           "path": "../../packages/ui/src/components/database-node/database-node.context.ts",

@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 10000",
-    "registry:build": "shadcn build registry.json -o public/r",
+    "registry:build": "shadcn build registry.json -o public/r && biome format --write public/r && bun run registry:test",
+    "registry:test": "node --test registry-artifacts.test.mjs",
     "build": "next build",
     "start": "next start",
     "check": "npx ultracite check",
