@@ -18,7 +18,7 @@ import {
   PanelRightOpen,
   SquarePen,
 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
 import {
   type KeyboardEvent,
@@ -43,6 +43,10 @@ import {
   type ProjectCanvasSelection,
   projectCanvasSelectionTarget,
 } from "@/features/project-route-state/canvas-selection";
+import {
+  ProjectIdProvider,
+  useProjectId,
+} from "@/features/project-route-state/use-project-id";
 import {
   PROJECT_SELECTED_QUERY_KEY,
   parseProjectCanvasSelection,
@@ -166,6 +170,63 @@ function buildSelectedResourceSnapshot(
     : { kind: target.kind, name: target.name, namespace: target.namespace };
 }
 
+/**
+ * The one part of the composer that depends on the canvas selection: the
+ * "Current Project" / "Current Service" context chips. Isolating the `selected`
+ * subscription here means selecting or clearing a canvas node re-renders only
+ * this chip — not the composer's textarea or the deploy buttons below it.
+ *
+ * It also mirrors the live selection into `selectedRef` so the composer can pin
+ * the selection snapshot at send time (ADR 0044) without subscribing to it.
+ */
+function ComposerContextIndicator({
+  projectId,
+  selectedRef,
+}: {
+  projectId: string;
+  selectedRef: { current: ProjectCanvasSelection | null };
+}) {
+  const [selectedQuery] = useQueryState(
+    PROJECT_SELECTED_QUERY_KEY,
+    parseAsString
+  );
+  const selected = useMemo(
+    () => parseProjectCanvasSelection(selectedQuery),
+    [selectedQuery]
+  );
+  // The composer reads `selectedRef.current` at submit time; keep it current
+  // without forcing the composer to re-render on every select/deselect.
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected, selectedRef]);
+
+  const contextToggles = useMemo(() => {
+    const toggles: string[] = [];
+    if (projectId.trim() !== "") {
+      toggles.push("Current Project");
+    }
+    if (selected != null && selected.kind !== "edge") {
+      toggles.push("Current Service");
+    }
+    return toggles;
+  }, [projectId, selected]);
+
+  if (contextToggles.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="relative h-0 w-full overflow-visible transition-[height] duration-300 ease-out group-focus-within:h-6 motion-reduce:transition-none">
+      <div className="pointer-events-none absolute inset-x-0 top-full w-full -translate-y-full">
+        <Chat.ContextIndicator
+          className="w-full"
+          contextToggles={contextToggles}
+        />
+      </div>
+    </div>
+  );
+}
+
 function ProjectAssistantComposer({
   busy,
   projectId,
@@ -187,28 +248,12 @@ function ProjectAssistantComposer({
 }) {
   const [input, setInput] = useState("");
   const { isAuthorized, isLoading: authLoading } = useGithubAuth();
-  // The volatile canvas selection is subscribed here, in the smallest
-  // component that displays it, so select/deselect re-renders stop at the
-  // composer instead of the whole chat session. Submit hands the same value
-  // up, keeping the pinned snapshot in sync with the visible toggle.
-  const [selectedQuery] = useQueryState(
-    PROJECT_SELECTED_QUERY_KEY,
-    parseAsString
-  );
-  const selected = useMemo(
-    () => parseProjectCanvasSelection(selectedQuery),
-    [selectedQuery]
-  );
-  const contextToggles = useMemo(() => {
-    const toggles: string[] = [];
-    if (projectId.trim() !== "") {
-      toggles.push("Current Project");
-    }
-    if (selected != null && selected.kind !== "edge") {
-      toggles.push("Current Service");
-    }
-    return toggles;
-  }, [projectId, selected]);
+  // The volatile canvas selection lives in `ComposerContextIndicator` below, so
+  // select/deselect re-renders stop at that tiny chip instead of sweeping the
+  // composer body (textarea + deploy buttons). The indicator keeps this ref in
+  // sync; submit reads it to pin the selection snapshot (ADR 0044) without
+  // subscribing the composer itself to the selection.
+  const selectedRef = useRef<ProjectCanvasSelection | null>(null);
 
   const onPrimaryAction = useCallback(() => {
     if (busy) {
@@ -219,22 +264,16 @@ function ProjectAssistantComposer({
     if (!text) {
       return;
     }
-    onSubmit(text, selected);
+    onSubmit(text, selectedRef.current);
     setInput("");
-  }, [busy, input, onStop, onSubmit, selected]);
+  }, [busy, input, onStop, onSubmit]);
 
   return (
     <div className="group flex w-full shrink-0 flex-col p-[10px]">
-      {contextToggles.length > 0 ? (
-        <div className="relative h-0 w-full overflow-visible transition-[height] duration-300 ease-out group-focus-within:h-6 motion-reduce:transition-none">
-          <div className="pointer-events-none absolute inset-x-0 top-full w-full -translate-y-full">
-            <Chat.ContextIndicator
-              className="w-full"
-              contextToggles={contextToggles}
-            />
-          </div>
-        </div>
-      ) : null}
+      <ComposerContextIndicator
+        projectId={projectId}
+        selectedRef={selectedRef}
+      />
       <Chat.ComposerShell>
         <Chat.ComposerTextarea
           onPrimaryAction={onPrimaryAction}
@@ -313,8 +352,7 @@ function ProjectAssistantChatSession({
     scannedParts: ReadonlyMap<string, number>;
   }>({ projectId: "", scannedParts: new Map() });
 
-  const params = useParams<{ uid?: string }>();
-  const projectId = decodeURIComponent(params.uid ?? "");
+  const projectId = useProjectId();
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
@@ -797,8 +835,7 @@ function ProjectRouteTopBar({
 }: {
   assistantPaneOpen: boolean;
 }) {
-  const params = useParams<{ uid?: string }>();
-  const projectId = decodeURIComponent(params.uid ?? "");
+  const projectId = useProjectId();
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
   const currentProject = useCurrentProjectDisplayName({
@@ -1286,7 +1323,11 @@ export default function ProjectWorkspaceLayout({
 }) {
   return (
     <ProjectSidePaneProvider>
-      <ProjectWorkspaceLayoutContent>{children}</ProjectWorkspaceLayoutContent>
+      <ProjectIdProvider>
+        <ProjectWorkspaceLayoutContent>
+          {children}
+        </ProjectWorkspaceLayoutContent>
+      </ProjectIdProvider>
     </ProjectSidePaneProvider>
   );
 }
