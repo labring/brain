@@ -122,6 +122,8 @@ It only adds or removes the `brain.io/*` labels recorded in the manifest.
 
 The snapshot phase opens no local listening port and issues only API discovery plus enumerated Kubernetes collection `GET` requests. It validates configured API group versions before capture. Secrets use Kubernetes `PartialObjectMetadataList`; if metadata-only negotiation is not honored, the snapshot fails without writing Secret contents.
 
+Instances are listed without a server-side label selector because some large CRD stores scan extremely slowly when filtering this collection. The snapshot client filters legacy candidates before persisting projected Instance metadata/display fields, and `inventory` validates the candidate labels again. Other resource collections retain server-side label selectors.
+
 One eligible v1 `Instance` maps to one v2 project row. The migration does not query or migrate Devbox resources. The Template Instance remains the ownership anchor; AP workloads and DB Clusters determine whether the project has resources supported by Brain v2.
 
 Classification is explicit:

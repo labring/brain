@@ -13,6 +13,9 @@ node_modules
 # Testing
 coverage
 
+# Local migration snapshots and manifests
+apps/ui/.migration/
+
 # Turbo
 .turbo
 

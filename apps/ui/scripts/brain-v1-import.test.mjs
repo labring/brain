@@ -254,6 +254,15 @@ users:
                 }),
                 spec: { title: "Project A" },
               },
+              {
+                apiVersion: "app.sealos.io/v1",
+                kind: "Instance",
+                metadata: metadata("unrelated-instance", "ns-a"),
+                spec: {
+                  gitRepo: "https://private.example/internal/repository",
+                  title: "Must not be persisted",
+                },
+              },
             ],
             kind: "InstanceList",
             metadata: {
@@ -310,6 +319,21 @@ users:
     expect(
       requests.filter((request) => request.pathname.endsWith("/instances"))
     ).toHaveLength(2);
+    expect(
+      requests
+        .filter((request) => request.pathname.endsWith("/instances"))
+        .every((request) => !request.search.includes("labelSelector="))
+    ).toBe(true);
+
+    const instancePath = path.join(
+      result.snapshotDir,
+      "resources",
+      "instances.ndjson"
+    );
+    const instanceSnapshot = readFileSync(instancePath, "utf8");
+    expect(instanceSnapshot).toContain("project-a");
+    expect(instanceSnapshot).not.toContain("unrelated-instance");
+    expect(instanceSnapshot).not.toContain("private.example");
 
     const secretRequest = requests.find((request) =>
       request.pathname.endsWith("/secrets")

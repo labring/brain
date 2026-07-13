@@ -151,6 +151,8 @@ psql "$DATABASE_URL" -c '\dt sealai_project.projects'
 
 先把集群资源分页保存为可续跑的本地快照。此阶段在进程内读取指定 kubeconfig，不启动本地代理或监听端口，只对脚本枚举的集合路径发起 GET，不执行写操作；Secret 只接受 metadata-only 响应：
 
+Instance 集合不使用服务端 labelSelector，避免大型 CRD 存储对标签筛选进行极慢的全量扫描；快照客户端会先在本地筛选 legacy candidate，再保存受限的 Instance metadata/展示字段，后续 inventory 会再次校验候选标签。其他资源集合继续使用服务端标签筛选。
+
 ```bash
 cd apps/ui
 

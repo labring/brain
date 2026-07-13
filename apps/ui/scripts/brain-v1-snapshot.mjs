@@ -60,7 +60,7 @@ export const SNAPSHOT_DEFINITIONS = Object.freeze([
     metadataOnly: false,
     path: "/apis/app.sealos.io/v1/instances",
     role: "instance",
-    selector: LEGACY_LABELS.deployOnSealos,
+    selector: null,
     type: "instances.app.sealos.io",
   }),
   definition({
@@ -498,7 +498,9 @@ function snapshotUrl(baseUrl, definitionValue, options, continueToken) {
     namespacePath(definitionValue, options.namespace),
     baseUrl
   );
-  url.searchParams.set("labelSelector", definitionValue.selector);
+  if (definitionValue.selector) {
+    url.searchParams.set("labelSelector", definitionValue.selector);
+  }
   url.searchParams.set("limit", String(options.pageSize));
   if (continueToken) {
     url.searchParams.set("continue", continueToken);
@@ -755,13 +757,17 @@ async function captureDefinitionAttempt(
       definitionValue.id
     );
     const items = Array.isArray(body.items) ? body.items : [];
-    const lines = items
+    const persistedItems =
+      definitionValue.role === "instance"
+        ? items.filter(isLegacyCandidate)
+        : items;
+    const lines = persistedItems
       .map((item) => JSON.stringify(normalizeResource(item, definitionValue)))
       .join("\n");
     if (lines !== "") {
       appendFileSync(partialPath, `${lines}\n`, "utf8");
     }
-    count += items.length;
+    count += persistedItems.length;
     continueToken = nextContinueToken(
       body,
       seenContinueTokens,
