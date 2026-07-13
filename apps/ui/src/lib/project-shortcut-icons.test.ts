@@ -79,6 +79,24 @@ test("project shortcut icons use the earliest DB engine when no AP exists", () =
   assert.equal(iconKeys.get("project-a"), "postgresql");
 });
 
+test("project shortcut icons use a generic database for an unknown DB engine", () => {
+  const iconKeys = projectShortcutIconKeysFromWorkloads({
+    aps: undefined,
+    dbs: {
+      items: [
+        resource({
+          createdAt: "2026-05-26T01:00:00.000Z",
+          engine: "clickhouse",
+          name: "analytics",
+          projectId: "project-a",
+        }),
+      ],
+    },
+  });
+
+  assert.equal(iconKeys.get("project-a"), "database");
+});
+
 test("project shortcut icon asset URLs include plain and original variants", () => {
   const urls = projectShortcutIconAssetUrls(["mysql"]);
 

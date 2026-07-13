@@ -40,15 +40,6 @@ export const EXPANDABLE_TYPES: ReadonlySet<NodeType> = new Set([
   "redis_keys_folder",
 ]);
 
-/** Database brand icons keyed by DB Service engine type. */
-export const DB_ICONS: Record<string, string> = {
-  MYSQL: "/images/mysql.svg",
-  POSTGRES: "/images/postgresql.svg",
-  MONGODB: "/images/mongodb.svg",
-  REDIS: "/images/redis.svg",
-  // ClickHouse has no brand icon — falls through to default Database icon
-};
-
 /** Convert a DB Service to a root-level TreeNodeData. */
 export function dbServiceToNode(dbService: DbAccessService): TreeNodeData {
   return {

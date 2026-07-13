@@ -5,6 +5,7 @@ import {
   type CanvasNodeMetricListItem,
 } from "@workspace/ui/components/canvas-node/canvas-node";
 import { canvasNodeActionWithAvailability } from "@workspace/ui/components/canvas-node/canvas-node.availability";
+import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { Switch } from "@workspace/ui/components/switch";
 import {
   Tooltip,
@@ -15,7 +16,6 @@ import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
   Cpu,
-  Database,
   FileText,
   HardDrive,
   MemoryStick,
@@ -152,32 +152,6 @@ function databaseNodeConnectionTitle(
   return displayValue ?? undefined;
 }
 
-function DatabaseNodeHeaderIcon({ iconUrl }: { iconUrl?: string }) {
-  const resolvedIconUrl = iconUrl?.trim();
-
-  if (resolvedIconUrl) {
-    return (
-      <img
-        alt=""
-        className="size-4 object-contain"
-        decoding="async"
-        height={16}
-        loading="lazy"
-        src={resolvedIconUrl}
-        width={16}
-      />
-    );
-  }
-
-  return (
-    <Database
-      aria-hidden
-      className="size-4 shrink-0 text-blue-400"
-      strokeWidth={2}
-    />
-  );
-}
-
 export function DatabaseNodeContent({
   metricsContent,
 }: {
@@ -241,7 +215,11 @@ export function DatabaseNodeHeaderContent({
     <div className={cn("flex min-w-0 flex-1 items-center gap-1.5", className)}>
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/5">
-          <DatabaseNodeHeaderIcon iconUrl={states.iconUrl} />
+          <DatabaseEngineIcon
+            className="size-4 shrink-0 object-contain text-blue-400"
+            engine={states.engineKey}
+            iconUrl={states.iconUrl}
+          />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span

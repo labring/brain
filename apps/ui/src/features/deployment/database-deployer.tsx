@@ -1,19 +1,14 @@
 "use client";
 
-import {
-  type DeviconKey,
-  deviconSrc,
-  devicons,
-} from "@workspace/ui/assets/devicons";
 import { AppButton } from "@workspace/ui/components/app-button";
 import {
   AppSelect,
   type AppSelectOption,
 } from "@workspace/ui/components/app-select";
+import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { DeploymentSettings } from "./deployment-settings";
 
@@ -120,35 +115,17 @@ function choiceLabel(choice: DatabaseDeploymentChoice | null): string {
   return choice?.label.trim() || "Database";
 }
 
-function deviconKeyFromEngine(engine: string): DeviconKey | null {
-  const normalized = normalizedEngine(engine);
-  if (normalized in devicons && normalized !== "docker") {
-    return normalized as DeviconKey;
-  }
-  return null;
-}
-
 export function databaseReplicaOptionLabel(replica: number): string {
   return String(replica);
 }
 
 function DatabaseChoiceIcon({ choice }: { choice: DatabaseDeploymentChoice }) {
-  const deviconKey = deviconKeyFromEngine(choice.engine);
-  const iconUrl =
-    choice.iconUrl?.trim() ||
-    (deviconKey ? deviconSrc(devicons[deviconKey].original) : "");
-  if (!iconUrl) {
-    return <Database aria-hidden className="size-4 text-blue-500" />;
-  }
   return (
     <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden">
-      <Image
-        alt=""
-        className="size-4 object-contain"
-        height={16}
-        src={iconUrl}
-        unoptimized
-        width={16}
+      <DatabaseEngineIcon
+        className="size-4 object-contain text-blue-500"
+        engine={choice.engine}
+        iconUrl={choice.iconUrl}
       />
     </span>
   );

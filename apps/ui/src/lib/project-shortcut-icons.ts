@@ -2,6 +2,7 @@ import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import {
   type DeviconKey,
+  databaseDeviconKey,
   deviconSrc,
   devicons,
 } from "@workspace/ui/assets/devicons";
@@ -10,11 +11,16 @@ import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 
 interface WorkloadShortcutCandidate {
   createdAt: string;
-  iconKey: DeviconKey;
+  iconKey: ProjectShortcutIconKey;
   name: string;
 }
 
-export type ProjectShortcutIconKeyMap = ReadonlyMap<string, DeviconKey>;
+export type ProjectShortcutIconKey = DeviconKey | "database";
+
+export type ProjectShortcutIconKeyMap = ReadonlyMap<
+  string,
+  ProjectShortcutIconKey
+>;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -45,13 +51,10 @@ function projectIdFromResource(value: unknown): string | undefined {
   return nonEmptyString(labels?.[BRAIN_PROJECT_ID_LABEL]);
 }
 
-function databaseIconKeyFromSpec(spec: Record<string, unknown>): DeviconKey {
-  const engine = nonEmptyString(spec.engine)?.toLowerCase();
-  if (engine && engine in devicons && engine !== "docker") {
-    return engine as DeviconKey;
-  }
-
-  return "docker";
+function databaseIconKeyFromSpec(
+  spec: Record<string, unknown>
+): ProjectShortcutIconKey {
+  return databaseDeviconKey(nonEmptyString(spec.engine)) ?? "database";
 }
 
 function compareWorkloadCandidates(
@@ -138,7 +141,7 @@ export function projectShortcutIconKeysFromWorkloads({
 }): ProjectShortcutIconKeyMap {
   const apByProject = selectedApByProject(aps);
   const dbByProject = selectedDbByProject(dbs);
-  const iconKeys = new Map<string, DeviconKey>();
+  const iconKeys = new Map<string, ProjectShortcutIconKey>();
 
   for (const [projectId, candidate] of dbByProject) {
     iconKeys.set(projectId, candidate.iconKey);
@@ -151,10 +154,13 @@ export function projectShortcutIconKeysFromWorkloads({
 }
 
 export function projectShortcutIconAssetUrls(
-  iconKeys: Iterable<DeviconKey>
+  iconKeys: Iterable<ProjectShortcutIconKey>
 ): string[] {
   const urls = new Set<string>();
   for (const iconKey of iconKeys) {
+    if (iconKey === "database") {
+      continue;
+    }
     const icon = devicons[iconKey];
     urls.add(deviconSrc(icon.original));
     urls.add(deviconSrc(icon.plain));

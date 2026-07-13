@@ -16,10 +16,14 @@ export type DeviconKey =
   | "postgresql"
   | "redis";
 
+export type DatabaseDeviconKey = Exclude<DeviconKey, "docker">;
+
 export interface DeviconAsset {
   original: string | { src: string };
   plain: string | { src: string };
 }
+
+export type DeviconVariant = keyof DeviconAsset;
 
 export const devicons = {
   docker: {
@@ -43,6 +47,37 @@ export const devicons = {
     plain: redisPlain,
   },
 } as const satisfies Record<DeviconKey, DeviconAsset>;
+
+const DATABASE_DEVICON_KEY_BY_ENGINE: Readonly<
+  Record<string, DatabaseDeviconKey>
+> = {
+  mongo: "mongodb",
+  mongodb: "mongodb",
+  mysql: "mysql",
+  pg: "postgresql",
+  postgres: "postgresql",
+  postgresql: "postgresql",
+  redis: "redis",
+};
+
+export function databaseDeviconKey(
+  engine: string | null | undefined
+): DatabaseDeviconKey | undefined {
+  if (engine == null) {
+    return undefined;
+  }
+  return DATABASE_DEVICON_KEY_BY_ENGINE[engine.trim().toLowerCase()];
+}
+
+export function databaseDeviconSrc(
+  engine: string | null | undefined,
+  variant: DeviconVariant = "original"
+): string | undefined {
+  const iconKey = databaseDeviconKey(engine);
+  return iconKey === undefined
+    ? undefined
+    : deviconSrc(devicons[iconKey][variant]);
+}
 
 export function deviconSrc(src: string | { src: string }): string {
   return typeof src === "string" ? src : src.src;

@@ -2,13 +2,10 @@
 
 import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { sealosLogoSrc } from "@workspace/ui/assets/brand";
-import {
-  type DeviconKey,
-  deviconSrc,
-  devicons,
-} from "@workspace/ui/assets/devicons";
+import { deviconSrc, devicons } from "@workspace/ui/assets/devicons";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import {
   Popover,
   PopoverContent,
@@ -43,6 +40,7 @@ import {
 } from "@/components/app-sidebar-upgrade";
 import { useLastViewedProject } from "@/hooks/use-last-viewed-project";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
+import type { ProjectShortcutIconKey } from "@/lib/project-shortcut-icons";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 function projectIdFromPathname(pathname: string): string | undefined {
@@ -66,8 +64,21 @@ function ProjectShortcutIcon({
   iconKey,
 }: {
   active?: boolean;
-  iconKey: DeviconKey;
+  iconKey: ProjectShortcutIconKey;
 }) {
+  if (iconKey !== "docker") {
+    return (
+      <DatabaseEngineIcon
+        className={cn(
+          "block size-4 shrink-0 object-contain transition-[filter]",
+          iconKey !== "database" && !active && "brightness-0 invert"
+        )}
+        engine={iconKey === "database" ? undefined : iconKey}
+        variant={active || iconKey === "mysql" ? "original" : "plain"}
+      />
+    );
+  }
+
   const icon = devicons[iconKey];
   const src = deviconSrc(
     active || iconKey === "mysql" ? icon.original : icon.plain

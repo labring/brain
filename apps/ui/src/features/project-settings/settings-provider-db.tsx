@@ -4,7 +4,7 @@ import {
   useBrainProductResource,
   useDbSettingsOperations,
 } from "@workspace/api/hooks";
-import { Database } from "lucide-react";
+import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { useCallback, useEffect, useMemo } from "react";
 import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
 import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
@@ -21,25 +21,6 @@ import type {
 } from "./settings-types";
 
 const DB_SETTINGS_FULL_VIEW = "full";
-
-function DatabaseSettingsIcon({ iconUrl }: { iconUrl?: string }) {
-  const resolvedIconUrl = iconUrl?.trim();
-  if (resolvedIconUrl) {
-    return (
-      // biome-ignore lint/performance/noImgElement: DB icons are arbitrary remote URLs that are not covered by Next image domain config.
-      <img
-        alt=""
-        className="size-4 object-contain"
-        decoding="async"
-        height={16}
-        loading="lazy"
-        src={resolvedIconUrl}
-        width={16}
-      />
-    );
-  }
-  return <Database aria-hidden className="size-4 shrink-0 text-blue-400" />;
-}
 
 export function dbSettingsDataFromExactResource(
   data: ReturnType<typeof useBrainProductResource>["data"],
@@ -164,7 +145,9 @@ export function DbSettingsProvider({
     if (target.kind !== "DB") {
       return {
         closeAriaLabel: "Close database settings",
-        icon: <DatabaseSettingsIcon />,
+        icon: (
+          <DatabaseEngineIcon className="size-4 shrink-0 object-contain text-blue-400" />
+        ),
         resolvedView,
         sections: [
           {
@@ -186,7 +169,9 @@ export function DbSettingsProvider({
       const loading = dbResource.isLoading || dbResource.isValidating;
       return {
         closeAriaLabel: "Close database settings",
-        icon: <DatabaseSettingsIcon />,
+        icon: (
+          <DatabaseEngineIcon className="size-4 shrink-0 object-contain text-blue-400" />
+        ),
         resolvedView,
         sections: [
           {
@@ -208,7 +193,13 @@ export function DbSettingsProvider({
 
     return {
       closeAriaLabel: "Close database settings",
-      icon: <DatabaseSettingsIcon iconUrl={data.states.iconUrl} />,
+      icon: (
+        <DatabaseEngineIcon
+          className="size-4 shrink-0 object-contain text-blue-400"
+          engine={data.states.engineKey}
+          iconUrl={data.states.iconUrl}
+        />
+      ),
       footer: sectionsModel.footer,
       leaveGuard: sectionsModel.leaveGuard,
       resolvedView,

@@ -2,6 +2,7 @@
 
 import { useDbSettingsOperations } from "@workspace/api/hooks";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
+import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import {
   canCopyDatabaseNodeConnection,
   type DatabaseNodeConnection,
@@ -19,7 +20,6 @@ import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Cpu,
-  Database,
   HardDrive,
   type LucideIcon,
   MemoryStick,
@@ -297,25 +297,6 @@ function databaseSettingsConnectionTitle(
 
 function shouldShowConnectionAddress(connection: DatabaseNodeConnection) {
   return connection.kind === "private" || connection.kind === "public";
-}
-
-function DatabaseSettingsHeaderIcon({ iconUrl }: { iconUrl?: string }) {
-  const resolvedIconUrl = iconUrl?.trim();
-  if (resolvedIconUrl) {
-    return (
-      // biome-ignore lint/performance/noImgElement: DB icons are arbitrary remote URLs that are not covered by Next image domain config.
-      <img
-        alt=""
-        className="size-4 object-contain"
-        decoding="async"
-        height={16}
-        loading="lazy"
-        src={resolvedIconUrl}
-        width={16}
-      />
-    );
-  }
-  return <Database aria-hidden className="size-4 shrink-0 text-blue-400" />;
 }
 
 function DatabaseSettingsConnectionAddressRow({
@@ -1162,7 +1143,11 @@ export function DatabaseSettingsPaneContent({
   return (
     <section aria-label={data.states.name} data-slot="database-settings-pane">
       <header className="sr-only">
-        <DatabaseSettingsHeaderIcon iconUrl={data.states.iconUrl} />
+        <DatabaseEngineIcon
+          className="size-4 shrink-0 object-contain text-blue-400"
+          engine={data.states.engineKey}
+          iconUrl={data.states.iconUrl}
+        />
         <span>{subtitle}</span>
       </header>
       {content}

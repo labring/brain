@@ -1,3 +1,4 @@
+import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ArrowUpDown,
@@ -19,7 +20,7 @@ import type React from "react";
 import { createContext, use } from "react";
 import { useSidebarTree } from "./SidebarTreeProvider";
 import type { NodeType, TreeNodeData } from "./types";
-import { DB_ICONS, EXPANDABLE_TYPES } from "./types";
+import { EXPANDABLE_TYPES } from "./types";
 
 /** Interaction context passed by Sidebar to each service tree. */
 export interface TreeNodeContextValue {
@@ -95,7 +96,6 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
     node.type === "redis_key" && node.metadata.redisKeyType
       ? (REDIS_TYPE_ICONS[node.metadata.redisKeyType] ?? NODE_ICONS[node.type])
       : NODE_ICONS[node.type];
-  const brandIcon = isRoot ? DB_ICONS[dbServiceEngineType] : null;
 
   return (
     <div>
@@ -158,11 +158,13 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
           </span>
         )}
 
-        {brandIcon ? (
-          <img
-            alt={dbServiceEngineType}
-            className="h-4 w-4 shrink-0"
-            src={brandIcon}
+        {isRoot ? (
+          <DatabaseEngineIcon
+            className={cn(
+              "size-4 shrink-0 object-contain",
+              isSelected ? "text-blue-400" : "text-primary"
+            )}
+            engine={dbServiceEngineType}
           />
         ) : (
           <Icon
