@@ -87,9 +87,14 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 ```bash
 helm lint charts/brain-system
 
+CLOUD_DOMAIN="$(kubectl get configmap sealos-config -n sealos-system -o jsonpath='{.data.cloudDomain}')"
+CLOUD_PORT="$(kubectl get configmap sealos-config -n sealos-system -o jsonpath='{.data.cloudPort}')"
+
 helm template brain-system charts/brain-system \
   -n brain-system \
-  -f /tmp/brain-system.values.yaml
+  -f /tmp/brain-system.values.yaml \
+  --set-string "global.cloudDomain=${CLOUD_DOMAIN}" \
+  --set-string "global.cloudPort=${CLOUD_PORT}"
 ```
 
 确认：
@@ -122,7 +127,21 @@ UI 启动时会执行 `apps/ui/drizzle` 里的 schema migration。迁移 v1 数�
 kubectl -n brain-system get secret brain-pg-conn-credential
 ```
 
-获取生产 `DATABASE_URL` 后执行：
+保持一个终端执行 port-forward：
+
+```bash
+kubectl -n brain-system port-forward svc/brain-pg-postgresql 15432:5432
+```
+
+另一个终端生成迁移用 `DATABASE_URL`：
+
+```bash
+PGUSER="$(kubectl -n brain-system get secret brain-pg-conn-credential -o jsonpath='{.data.username}' | base64 -d)"
+PGPASSWORD="$(kubectl -n brain-system get secret brain-pg-conn-credential -o jsonpath='{.data.password}' | base64 -d)"
+DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@127.0.0.1:15432/postgres"
+```
+
+确认表存在：
 
 ```bash
 psql "$DATABASE_URL" -c '\dt sealai_project.projects'
@@ -130,18 +149,36 @@ psql "$DATABASE_URL" -c '\dt sealai_project.projects'
 
 ### 6. 生成 v1 数据迁移清单
 
+先把集群资源分页保存为可续跑的本地快照。此阶段在进程内读取指定 kubeconfig，不启动本地代理或监听端口，只对脚本枚举的集合路径发起 GET，不执行写操作；Secret 只接受 metadata-only 响应：
+
 ```bash
 cd apps/ui
 
-bun scripts/brain-v1-import.mjs inventory \
+bun scripts/brain-v1-import.mjs snapshot \
   --kubeconfig /path/to/kubeconfig \
   --context <context> \
   --out .migration/brain-v1-all-namespaces
 
+bun scripts/brain-v1-import.mjs inventory \
+  --snapshot .migration/brain-v1-all-namespaces/snapshot-v1 \
+  --out .migration/brain-v1-all-namespaces
+
 jq '.summary.errors' .migration/brain-v1-all-namespaces/inventory.json
+jq '.summary.manualReview' .migration/brain-v1-all-namespaces/classification-report.json
 ```
 
-`summary.errors` 必须为 `0`。
+两个结果都必须为 `0`。`inventory` 和后续 `dry-run` 都只读本地文件，不再访问集群。V2 不迁移 Devbox；每个候选项目仍以 V1 Template Instance 为锚点，仅含 AP 工作负载或 DB Cluster 的项目会自动进入迁移，其他特殊资源形态进入排除或人工复核报告。
+
+如需处理人工复核项，或排除技术上 eligible 但业务上不需要迁移的项目，按 `classification-report.json` 中的 `projectId` 和 `classificationHash` 另建 `classification-decisions.json`，schema 为 `brain-v1-classification-decisions/v1`，每条 decision 只能是 `include` 或 `exclude`，然后重新生成本地 inventory：
+
+```bash
+bun scripts/brain-v1-import.mjs inventory \
+  --snapshot .migration/brain-v1-all-namespaces/snapshot-v1 \
+  --decisions .migration/brain-v1-all-namespaces/classification-decisions.json \
+  --out .migration/brain-v1-all-namespaces
+```
+
+旧版 inventory 会被拒绝，不能绕过新的分类规则。
 
 生成 SQL 和 manifest：
 
@@ -155,6 +192,7 @@ bun scripts/brain-v1-import.mjs dry-run \
 
 - `apps/ui/.migration/brain-v1-all-namespaces/migration.sql`
 - `apps/ui/.migration/brain-v1-all-namespaces/migration-manifest.json`
+- `apps/ui/.migration/brain-v1-all-namespaces/classification-report.json`
 
 ### 7. 执行 v1 数据迁移
 
@@ -172,6 +210,8 @@ bun scripts/brain-v1-import.mjs apply \
 - 写入 `sealai_project.projects`
 - 给存量 K8s 资源补 `brain.io/*` label
 
+`apply` 会在连接数据库或修改资源前，仅从本地重新计算 manifest 中 kubeconfig/context 的来源指纹；如果它与生成快照时的来源不一致，命令会直接停止。`rollback` 也执行同样校验，且无来源指纹的旧版 manifest 会被拒绝。校验后的配置及其引用的证书/密钥文件会冻结在内存中，并通过标准输入交给 `kubectl`，既避免执行过程中原文件被替换后改变目标集群，也不会留下含凭据的临时 kubeconfig。
+
 迁移不会删除 v1 的 `cloud.sealos.io/*` label。
 
 ### 8. 迁移后检查
@@ -185,7 +225,8 @@ psql "$DATABASE_URL" -c 'select namespace, id, display_name from sealai_project.
 检查资源 label：
 
 ```bash
-kubectl get deploy,statefulset,svc,ingress,configmap,secret -A -l brain.io/managed-by=brain
+kubectl get deploy,statefulset,svc,ingress,configmap,pvc,secret -A -l brain.io/managed-by=brain
+kubectl get apps.app.sealos.io,clusters.apps.kubeblocks.io,objectstoragebuckets.objectstorage.sealos.io,issuers.cert-manager.io,certificates.cert-manager.io -A -l brain.io/managed-by=brain
 ```
 
 检查服务：

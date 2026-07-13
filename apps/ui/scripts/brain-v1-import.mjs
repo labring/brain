@@ -1,17 +1,28 @@
 #!/usr/bin/env bun
 
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import pg from "pg";
+
+import {
+  buildInventoryFromSnapshot,
+  captureSnapshotWithKubeconfig,
+  verifiedKubeconfigContents,
+} from "./brain-v1-snapshot.mjs";
 
 const { Client } = pg;
 
 const PROJECT_DB_SCHEMA = "sealai_project";
 const PROJECT_TABLE = `${PROJECT_DB_SCHEMA}.projects`;
-const MIGRATION_VERSION = 1;
+const INVENTORY_SCHEMA = "brain-v1-inventory/v2";
+const INVENTORY_VERSION = 2;
+const MIGRATION_SCHEMA = "brain-v1-migration/v2";
+const MIGRATION_VERSION = 2;
 const DEFAULT_KUBECTL_RETRIES = 3;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 const BRAIN_LABELS = {
   deploymentKind: "brain.io/deployment-kind",
@@ -43,45 +54,28 @@ const RESOURCE_TYPES = {
   statefulset: "statefulsets",
 };
 
-const PROJECT_MEMBER_RESOURCE_TYPES = [
-  RESOURCE_TYPES.deployment,
-  RESOURCE_TYPES.statefulset,
-  RESOURCE_TYPES.configmap,
-  RESOURCE_TYPES.app,
-  RESOURCE_TYPES.cluster,
-  RESOURCE_TYPES.objectstoragebucket,
-];
-
-const AP_SUPPORT_RESOURCE_TYPES = [
-  RESOURCE_TYPES.service,
-  RESOURCE_TYPES.ingress,
-  RESOURCE_TYPES.configmap,
-  RESOURCE_TYPES.persistentvolumeclaim,
-  RESOURCE_TYPES.secret,
-  RESOURCE_TYPES.issuer,
-  RESOURCE_TYPES.certificate,
-];
-
 function usage() {
   return `Brain v1 import helper
 
 Usage:
-  bun scripts/brain-v1-import.mjs inventory [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>] [--retries <n>]
-  bun scripts/brain-v1-import.mjs dry-run [--namespace <ns>] [--kubeconfig <path>] [--context <name>] [--out <dir>] [--retries <n>]
+  bun scripts/brain-v1-import.mjs snapshot --kubeconfig <path> --context <name> --out <dir> [--namespace <ns>] [--page-size <n>] [--request-timeout-ms <n>] [--retries <n>]
+  bun scripts/brain-v1-import.mjs inventory --snapshot <dir> [--decisions <path>] [--out <dir>]
   bun scripts/brain-v1-import.mjs dry-run --inventory <path> [--out <dir>]
   bun scripts/brain-v1-import.mjs apply --manifest <path> [--database-url <url>] --yes
   bun scripts/brain-v1-import.mjs rollback --manifest <path> [--database-url <url>] --yes
 
 Modes:
-  inventory Read Kubernetes and write inventory.json. No SQL, DB, or K8s writes.
-  dry-run   Read Kubernetes and write migration.sql + migration-manifest.json. No DB/K8s writes.
+  snapshot  Read enumerated Kubernetes collection paths with in-process kubeconfig auth and write a resumable local snapshot.
+  inventory Read only a completed local snapshot and write inventory.json + classification-report.json.
+  dry-run   Read inventory.json and write migration.sql + migration-manifest.json. No DB/K8s writes.
   apply     Insert v2 project rows, then patch Kubernetes resources with brain.io/* labels.
   rollback  Delete inserted project rows and remove labels added by this migration.
 
 Notes:
-  - Omit --namespace to scan all namespaces visible to the kubeconfig/context.
-  - inventory writes inventory-progress.json so interrupted scans can resume.
-  - --retries defaults to ${DEFAULT_KUBECTL_RETRIES} for transient kubectl network errors.
+  - Omit --namespace from snapshot to scan all namespaces visible to the kubeconfig/context.
+  - snapshot writes snapshot-v1/snapshot-manifest.json and normalized NDJSON resource files.
+  - inventory rejects kubeconfig/context flags and never contacts Kubernetes.
+  - --retries defaults to ${DEFAULT_KUBECTL_RETRIES} for transient Kubernetes GET errors.
   - DATABASE_URL is used when --database-url is omitted.
   - apply/rollback require --yes or BRAIN_V1_IMPORT_YES=1.
 `;
@@ -118,6 +112,17 @@ function required(value, name) {
   return value.trim();
 }
 
+function integerOption(value, name, fallback, minimum) {
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < minimum) {
+    throw new Error(`${name} must be an integer >= ${minimum}`);
+  }
+  return parsed;
+}
+
 function sqlString(value) {
   if (value == null) {
     return "null";
@@ -125,28 +130,8 @@ function sqlString(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-function deterministicProjectId(namespace, instance) {
-  const source = `${namespace}\0${instance.metadata?.uid ?? instance.metadata?.name ?? ""}`;
-  const hex = createHash("sha256")
-    .update(`brain-v1-import\0${source}`)
-    .digest("hex");
-  const chars = hex.slice(0, 32).split("");
-  chars[12] = "5";
-  chars[16] = String((Number.parseInt(chars[16], 16) % 4) + 8);
-  const id = chars.join("");
-  return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
-}
-
 function sanitizeFilePart(value) {
   return value.replace(/[^a-zA-Z0-9_.-]/g, "-");
-}
-
-function labelsOf(resource) {
-  return resource.metadata?.labels ?? {};
-}
-
-function annotationsOf(resource) {
-  return resource.metadata?.annotations ?? {};
 }
 
 function resourceName(resource) {
@@ -157,19 +142,11 @@ function resourceNamespace(resource, fallback) {
   return resource.metadata?.namespace ?? fallback;
 }
 
-function legacyDisplayName(instance) {
-  const annotations = annotationsOf(instance);
-  return (
-    annotations[LEGACY_LABELS.displayName] ||
-    instance.spec?.title ||
-    instance.spec?.defaults?.app_name?.value ||
-    resourceName(instance)
-  );
-}
-
 function kubectlBaseArgs(options) {
   const args = [];
-  if (options.kubeconfig) {
+  if (options.kubeconfigContents) {
+    args.push("--kubeconfig", "/dev/stdin");
+  } else if (options.kubeconfig) {
     args.push("--kubeconfig", options.kubeconfig);
   }
   if (options.context) {
@@ -222,15 +199,16 @@ function isTransientKubectlError(error) {
 
 function runKubectl(options, args, input) {
   const retries = kubectlRetryCount(options);
+  const commandInput = options.kubeconfigContents ?? input;
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
       return execFileSync("kubectl", [...kubectlBaseArgs(options), ...args], {
         encoding: "utf8",
-        input,
+        input: commandInput,
         maxBuffer: 100 * 1024 * 1024,
         stdio:
-          input === undefined
+          commandInput === undefined
             ? ["ignore", "pipe", "pipe"]
             : ["pipe", "pipe", "pipe"],
       });
@@ -243,34 +221,6 @@ function runKubectl(options, args, input) {
     }
   }
   throw lastError;
-}
-
-function getResourceList(options, namespace, resourceType, selector) {
-  const args = ["get", resourceType];
-  if (namespace) {
-    args.push("-n", namespace);
-  } else {
-    args.push("-A");
-  }
-  args.push("-o", "json");
-  if (selector) {
-    args.push("-l", selector);
-  }
-  try {
-    const raw = runKubectl(options, args);
-    return JSON.parse(raw).items ?? [];
-  } catch (error) {
-    const stderr = error?.stderr?.toString?.() ?? "";
-    if (
-      stderr.includes("the server doesn't have a resource type") ||
-      stderr.includes("the server could not find the requested resource") ||
-      stderr.includes("NotFound") ||
-      stderr.includes("no matches for kind")
-    ) {
-      return [];
-    }
-    throw error;
-  }
 }
 
 function patchResourceLabels(options, patch) {
@@ -327,281 +277,6 @@ function brainLabels(projectId, deploymentKind, deploymentName) {
   };
 }
 
-function isBrainManaged(resource) {
-  const labels = labelsOf(resource);
-  return (
-    labels[BRAIN_LABELS.managedBy] === "brain" ||
-    typeof labels[BRAIN_LABELS.projectId] === "string"
-  );
-}
-
-function isLegacyProjectCandidate(instance) {
-  const labels = labelsOf(instance);
-  const name = resourceName(instance);
-  return (
-    name !== "" &&
-    !isBrainManaged(instance) &&
-    labels[LEGACY_LABELS.deployOnSealos] === name
-  );
-}
-
-function listInventoryProject(options, namespace, instance) {
-  const instanceName = resourceName(instance);
-  const projectId = deterministicProjectId(namespace, instance);
-  const members = listProjectMembers(options, namespace, instanceName).map(
-    (entry) => ({
-      labels: labelsOf(entry.resource),
-      resource: resourceRef(entry.resource, entry.type, namespace),
-    })
-  );
-  const appNames = [
-    ...new Set(
-      members
-        .map((entry) => entry.labels[LEGACY_LABELS.appDeployManager])
-        .filter((value) => typeof value === "string" && value !== "")
-    ),
-  ];
-  const supportResources = appNames.flatMap((appName) =>
-    listApSupportResources(options, namespace, appName).map((entry) => ({
-      labels: labelsOf(entry.resource),
-      reason: `app-manager:${appName}`,
-      resource: resourceRef(entry.resource, entry.type, namespace),
-    }))
-  );
-
-  return {
-    displayName: legacyDisplayName(instance),
-    legacyInstance: {
-      labels: labelsOf(instance),
-      resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-    },
-    members,
-    projectId,
-    supportResources,
-  };
-}
-
-function inventoryScope(options) {
-  const namespace = options.namespace?.trim() || null;
-  return {
-    namespace,
-    scope: namespace ? "namespace" : "cluster",
-  };
-}
-
-function inventoryError(stage, error, details) {
-  return {
-    details,
-    message: errorText(error).split("\n").filter(Boolean).join("\n"),
-    stage,
-    timestamp: new Date().toISOString(),
-  };
-}
-
-function inventoryCandidateKey(instance, namespace) {
-  return [
-    resourceNamespace(instance, namespace),
-    resourceName(instance),
-    instance.metadata?.uid ?? "",
-  ].join("/");
-}
-
-function emptyInventoryProgress(options) {
-  const scope = inventoryScope(options);
-  return {
-    completedProjects: {},
-    context: options.context ?? null,
-    errors: [],
-    generatedAt: new Date().toISOString(),
-    kubeconfig: options.kubeconfig ?? null,
-    namespace: scope.namespace,
-    scope: scope.scope,
-    updatedAt: new Date().toISOString(),
-    version: MIGRATION_VERSION,
-  };
-}
-
-function loadInventoryProgress(progressPath, options) {
-  if (!existsSync(progressPath)) {
-    return emptyInventoryProgress(options);
-  }
-  const progress = JSON.parse(readFileSync(progressPath, "utf8"));
-  if (progress.version !== MIGRATION_VERSION) {
-    throw new Error(
-      `Unsupported inventory progress version: ${progress.version}; expected ${MIGRATION_VERSION}`
-    );
-  }
-  const scope = inventoryScope(options);
-  if (
-    progress.namespace !== scope.namespace ||
-    progress.scope !== scope.scope
-  ) {
-    throw new Error(
-      `Inventory progress scope mismatch: found ${progress.scope}/${progress.namespace ?? "all-namespaces"}, expected ${scope.scope}/${scope.namespace ?? "all-namespaces"}`
-    );
-  }
-  return {
-    ...progress,
-    completedProjects: progress.completedProjects ?? {},
-    errors: [],
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function writeInventoryProgress(progress, progressPath) {
-  mkdirSync(path.dirname(progressPath), { recursive: true });
-  const next = {
-    ...progress,
-    updatedAt: new Date().toISOString(),
-  };
-  writeFileSync(progressPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next;
-}
-
-function inventoryFromParts(
-  options,
-  instances,
-  projects,
-  skippedInstances,
-  errors
-) {
-  const scope = inventoryScope(options);
-  return {
-    context: options.context ?? null,
-    errors,
-    generatedAt: new Date().toISOString(),
-    kubeconfig: options.kubeconfig ?? null,
-    namespace: scope.namespace,
-    projects,
-    scope: scope.scope,
-    skippedInstances,
-    summary: {
-      candidateProjects: projects.length,
-      errors: errors.length,
-      memberResources: projects.reduce(
-        (sum, project) => sum + project.members.length,
-        0
-      ),
-      skippedInstances: skippedInstances.length,
-      supportResources: projects.reduce(
-        (sum, project) => sum + project.supportResources.length,
-        0
-      ),
-      totalInstances: instances.length,
-    },
-    version: MIGRATION_VERSION,
-  };
-}
-
-function buildInventory(options) {
-  const { namespace, scope } = inventoryScope(options);
-  const instances = getResourceList(
-    options,
-    namespace,
-    RESOURCE_TYPES.instance
-  );
-  const candidateInstances = instances.filter(isLegacyProjectCandidate);
-  const skippedInstances = instances
-    .filter((instance) => !isLegacyProjectCandidate(instance))
-    .map((instance) => ({
-      labels: labelsOf(instance),
-      reason: isBrainManaged(instance)
-        ? "already-brain-managed"
-        : "not-a-legacy-project-candidate",
-      resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-    }));
-  const projects = candidateInstances.map((instance) =>
-    listInventoryProject(
-      options,
-      resourceNamespace(instance, namespace),
-      instance
-    )
-  );
-
-  return {
-    context: options.context ?? null,
-    errors: [],
-    generatedAt: new Date().toISOString(),
-    kubeconfig: options.kubeconfig ?? null,
-    namespace,
-    projects,
-    scope,
-    skippedInstances,
-    summary: {
-      candidateProjects: projects.length,
-      errors: 0,
-      memberResources: projects.reduce(
-        (sum, project) => sum + project.members.length,
-        0
-      ),
-      skippedInstances: skippedInstances.length,
-      supportResources: projects.reduce(
-        (sum, project) => sum + project.supportResources.length,
-        0
-      ),
-      totalInstances: instances.length,
-    },
-    version: MIGRATION_VERSION,
-  };
-}
-
-function buildInventoryIncremental(options, progressPath) {
-  const { namespace } = inventoryScope(options);
-  const progress = loadInventoryProgress(progressPath, options);
-  const instances = getResourceList(
-    options,
-    namespace,
-    RESOURCE_TYPES.instance
-  );
-  const candidateInstances = instances.filter(isLegacyProjectCandidate);
-  const skippedInstances = instances
-    .filter((instance) => !isLegacyProjectCandidate(instance))
-    .map((instance) => ({
-      labels: labelsOf(instance),
-      reason: isBrainManaged(instance)
-        ? "already-brain-managed"
-        : "not-a-legacy-project-candidate",
-      resource: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-    }));
-
-  for (const instance of candidateInstances) {
-    const key = inventoryCandidateKey(instance, namespace);
-    if (progress.completedProjects[key] !== undefined) {
-      continue;
-    }
-    try {
-      const project = listInventoryProject(
-        options,
-        resourceNamespace(instance, namespace),
-        instance
-      );
-      progress.completedProjects[key] = project;
-    } catch (error) {
-      progress.errors.push(
-        inventoryError("project-inventory", error, {
-          instance: resourceRef(instance, RESOURCE_TYPES.instance, namespace),
-        })
-      );
-    }
-    writeInventoryProgress(progress, progressPath);
-  }
-  writeInventoryProgress(progress, progressPath);
-
-  const projects = candidateInstances
-    .map((instance) => {
-      const key = inventoryCandidateKey(instance, namespace);
-      return progress.completedProjects[key];
-    })
-    .filter((project) => project !== undefined);
-  return inventoryFromParts(
-    options,
-    instances,
-    projects,
-    skippedInstances,
-    progress.errors
-  );
-}
-
 function dedupePatches(patches) {
   const seen = new Set();
   const out = [];
@@ -620,33 +295,6 @@ function projectInsertSql(project) {
   return `insert into ${PROJECT_TABLE} (namespace, id, display_name, description, created_at, updated_at)
 values (${sqlString(project.namespace)}, ${sqlString(project.id)}, ${sqlString(project.displayName)}, ${sqlString(project.description)}, ${sqlString(project.createdAt)}, now())
 on conflict (namespace, id) do nothing;`;
-}
-
-function listProjectMembers(options, namespace, instanceName) {
-  const selector = `${LEGACY_LABELS.deployOnSealos}=${instanceName}`;
-  return PROJECT_MEMBER_RESOURCE_TYPES.flatMap((type) =>
-    getResourceList(options, namespace, type, selector).map((resource) => ({
-      resource,
-      type,
-    }))
-  );
-}
-
-function listApSupportResources(options, namespace, appName) {
-  const selector = `${LEGACY_LABELS.appDeployManager}=${appName}`;
-  return AP_SUPPORT_RESOURCE_TYPES.flatMap((type) =>
-    getResourceList(options, namespace, type, selector).map((resource) => ({
-      resource,
-      type,
-    }))
-  );
-}
-
-function buildManifest(options) {
-  if (options.inventory) {
-    return buildManifestFromInventory(loadInventory(options.inventory));
-  }
-  return buildManifestFromInventory(buildInventory(options));
 }
 
 function buildManifestFromInventory(inventory) {
@@ -731,9 +379,11 @@ function buildManifestFromInventory(inventory) {
     namespace: inventory.namespace,
     displayNameAdjustments: displayNamePlan.adjustments,
     scope: inventory.scope ?? (inventory.namespace ? "namespace" : "cluster"),
+    schema: MIGRATION_SCHEMA,
     projects,
     skippedInstances: inventory.skippedInstances,
     skippedProjects: ignoredProjects,
+    sourceFingerprint: inventory.sourceFingerprint,
     summary: {
       candidateProjects: projects.length,
       patches: projects.reduce(
@@ -826,42 +476,47 @@ function nextUniqueProjectDisplayName(displayName, entry, used) {
 }
 
 function classifyInventoryProject(entry) {
-  const classifications = [];
-  const instancePatches = [];
-  const skipped = [];
-  const apMembers = entry.members.filter(
-    (member) =>
-      (member.resource.kind === "Deployment" ||
-        member.resource.kind === "StatefulSet") &&
-      typeof member.labels[LEGACY_LABELS.appDeployManager] === "string" &&
-      member.labels[LEGACY_LABELS.appDeployManager] !== ""
+  const labels = brainLabels(
+    entry.projectId,
+    "template",
+    entry.legacyInstance.resource.name
   );
-  const appMembers = entry.members.filter(
-    (member) => member.resource.kind === "App"
-  );
-  if (appMembers.length > 0 || apMembers.length === 0) {
-    const labels = brainLabels(
-      entry.projectId,
-      "template",
-      entry.legacyInstance.resource.name
-    );
-    instancePatches.push({
-      addedLabels: labels,
-      originalLabels: entry.legacyInstance.labels,
-      reason:
-        appMembers.length > 0 ? "template-instance" : "legacy-empty-instance",
-      resource: entry.legacyInstance.resource,
-    });
-    classifications.push({
+  const classifications = [
+    {
       deploymentKind: "template",
       name: entry.legacyInstance.resource.name,
       resource: entry.legacyInstance.resource,
-    });
-  }
+    },
+  ];
+  const instancePatches = [
+    {
+      addedLabels: labels,
+      originalLabels: entry.legacyInstance.labels,
+      reason: "template-instance",
+      resource: entry.legacyInstance.resource,
+    },
+  ];
+  const skipped = [];
   for (const member of entry.members) {
     if (member.resource.type === RESOURCE_TYPES.objectstoragebucket) {
       skipped.push({
         reason: "requires-manual-review",
+        resource: member.resource,
+      });
+      continue;
+    }
+    const isApWorkload =
+      (member.resource.kind === "Deployment" ||
+        member.resource.kind === "StatefulSet") &&
+      typeof member.labels[LEGACY_LABELS.appDeployManager] === "string" &&
+      member.labels[LEGACY_LABELS.appDeployManager] !== "";
+    if (
+      !isApWorkload &&
+      member.resource.kind !== "App" &&
+      member.resource.kind !== "Cluster"
+    ) {
+      skipped.push({
+        reason: "not-migrated-unsupported-member",
         resource: member.resource,
       });
     }
@@ -950,25 +605,19 @@ function writeDryRunOutputs(manifest, outDir) {
   return { manifestPath, sqlPath };
 }
 
-function writeInventoryOutput(inventory, outDir) {
-  mkdirSync(outDir, { recursive: true });
-  const inventoryPath = path.join(outDir, "inventory.json");
-  writeFileSync(
-    inventoryPath,
-    `${JSON.stringify(inventory, null, 2)}\n`,
-    "utf8"
-  );
-  return { inventoryPath };
-}
-
 function loadInventory(inventoryPath) {
   if (!existsSync(inventoryPath)) {
     throw new Error(`Inventory not found: ${inventoryPath}`);
   }
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-  if (inventory.version !== MIGRATION_VERSION) {
+  if (
+    inventory.version !== INVENTORY_VERSION ||
+    inventory.schema !== INVENTORY_SCHEMA ||
+    inventory.source !== "snapshot-v1" ||
+    !SHA256_PATTERN.test(inventory.sourceFingerprint ?? "")
+  ) {
     throw new Error(
-      `Unsupported inventory version: ${inventory.version}; expected ${MIGRATION_VERSION}`
+      `Unsupported inventory schema/version: ${inventory.schema ?? "legacy"}/${inventory.version}; expected ${INVENTORY_SCHEMA}/${INVENTORY_VERSION}`
     );
   }
   return inventory;
@@ -981,6 +630,57 @@ function requireCompleteInventory(inventory) {
       `Inventory has ${errors.length} unresolved error(s). Re-run inventory until errors is empty before dry-run.`
     );
   }
+  const manualReviewProjects = inventory.manualReviewProjects ?? [];
+  if (
+    manualReviewProjects.length > 0 ||
+    inventory.classification?.complete !== true ||
+    inventory.classification?.unresolvedCount !== 0
+  ) {
+    throw new Error(
+      "Inventory has unresolved classification decisions. Resolve classification-report.json before dry-run."
+    );
+  }
+}
+
+function validateManifestPatch(patch) {
+  const allowedLabelKeys = new Set(Object.values(BRAIN_LABELS));
+  const allowedResourceTypes = new Set(Object.values(RESOURCE_TYPES));
+  const resource = patch?.resource;
+  const labels = patch?.addedLabels;
+  if (
+    !resource ||
+    typeof resource.name !== "string" ||
+    resource.name === "" ||
+    typeof resource.namespace !== "string" ||
+    resource.namespace === "" ||
+    !allowedResourceTypes.has(resource.type) ||
+    !labels ||
+    Object.keys(labels).length === 0 ||
+    !Object.entries(labels).every(
+      ([key, value]) => allowedLabelKeys.has(key) && typeof value === "string"
+    )
+  ) {
+    throw new Error("Unsafe or malformed migration manifest patch");
+  }
+}
+
+function validateManifestShape(manifest) {
+  if (manifest.mode !== "dry-run" || !Array.isArray(manifest.projects)) {
+    throw new Error("Malformed migration manifest");
+  }
+  for (const entry of manifest.projects) {
+    if (
+      typeof entry?.project?.namespace !== "string" ||
+      entry.project.namespace === "" ||
+      !UUID_PATTERN.test(entry.project.id) ||
+      !Array.isArray(entry.patches)
+    ) {
+      throw new Error("Malformed migration manifest project");
+    }
+    for (const patch of entry.patches) {
+      validateManifestPatch(patch);
+    }
+  }
 }
 
 function loadManifest(manifestPath) {
@@ -988,19 +688,30 @@ function loadManifest(manifestPath) {
     throw new Error(`Manifest not found: ${manifestPath}`);
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  if (manifest.version !== MIGRATION_VERSION) {
+  const isCurrent =
+    manifest.version === MIGRATION_VERSION &&
+    manifest.schema === MIGRATION_SCHEMA;
+  if (!isCurrent) {
     throw new Error(
-      `Unsupported manifest version: ${manifest.version}; expected ${MIGRATION_VERSION}`
+      `Unsupported manifest schema/version: ${manifest.schema ?? "legacy"}/${manifest.version}; expected ${MIGRATION_SCHEMA}/${MIGRATION_VERSION}`
     );
   }
+  if (isCurrent && !SHA256_PATTERN.test(manifest.sourceFingerprint ?? "")) {
+    throw new Error("Malformed migration manifest source fingerprint");
+  }
+  validateManifestShape(manifest);
   return manifest;
 }
 
-function applyOptionsFromManifest(manifest) {
-  return {
-    context: manifest.context ?? undefined,
-    kubeconfig: manifest.kubeconfig ?? undefined,
-  };
+function withVerifiedManifestSource(manifest, callback) {
+  const kubeconfig = required(manifest.kubeconfig, "manifest kubeconfig");
+  const context = required(manifest.context, "manifest context");
+  const contents = verifiedKubeconfigContents(
+    kubeconfig,
+    context,
+    manifest.sourceFingerprint
+  );
+  return callback({ context, kubeconfigContents: contents });
 }
 
 async function withDb(databaseUrl, callback) {
@@ -1017,8 +728,20 @@ async function insertProjects(databaseUrl, manifest) {
   await withDb(databaseUrl, async (client) => {
     await client.query("begin");
     try {
-      for (const project of manifest.projects) {
-        await client.query(project.insertSql);
+      for (const entry of manifest.projects) {
+        const project = entry.project;
+        await client.query(
+          `insert into ${PROJECT_TABLE} (namespace, id, display_name, description, created_at, updated_at)
+values ($1, $2, $3, $4, $5, now())
+on conflict (namespace, id) do nothing`,
+          [
+            project.namespace,
+            project.id,
+            project.displayName,
+            project.description,
+            project.createdAt,
+          ]
+        );
       }
       await client.query("commit");
     } catch (error) {
@@ -1054,35 +777,89 @@ function requireConfirmation(options) {
 }
 
 function dryRun(options) {
-  const scopeName = options.inventory
-    ? (loadInventory(options.inventory).namespace ?? "all-namespaces")
-    : (options.namespace?.trim() ?? "all-namespaces");
+  const inventoryPath = required(options.inventory, "--inventory");
+  const inventoryValue = loadInventory(inventoryPath);
+  const scopeName = inventoryValue.namespace ?? "all-namespaces";
   const outDir =
     options.out ??
     path.join(
       ".migration",
       `brain-v1-${sanitizeFilePart(scopeName)}-${Date.now()}`
     );
-  const manifest = buildManifest(options);
+  const manifest = buildManifestFromInventory(inventoryValue);
   const outputs = writeDryRunOutputs(manifest, outDir);
   console.log(JSON.stringify({ outputs, summary: manifest.summary }, null, 2));
 }
 
-function inventory(options) {
-  const namespace = options.namespace?.trim() || "all-namespaces";
-  const outDir =
-    options.out ??
-    path.join(
-      ".migration",
-      `brain-v1-${sanitizeFilePart(namespace)}-${Date.now()}`
+async function snapshot(options) {
+  const kubeconfig = required(options.kubeconfig, "--kubeconfig");
+  const context = required(options.context, "--context");
+  const outDir = required(options.out, "--out");
+  const result = await captureSnapshotWithKubeconfig({
+    context,
+    kubeconfig,
+    namespace: options.namespace,
+    outDir,
+    pageSize: integerOption(options["page-size"], "--page-size", 200, 1),
+    requestTimeoutMs: integerOption(
+      options["request-timeout-ms"],
+      "--request-timeout-ms",
+      60_000,
+      1000
+    ),
+    retries: integerOption(
+      options.retries,
+      "--retries",
+      DEFAULT_KUBECTL_RETRIES,
+      0
+    ),
+  });
+  console.log(
+    JSON.stringify(
+      {
+        manifest: result.manifestPath,
+        snapshot: result.snapshotDir,
+        summary: {
+          resources: result.manifest.resources.length,
+          totalRecords: result.manifest.resources.reduce(
+            (sum, resource) => sum + (resource.count ?? 0),
+            0
+          ),
+        },
+      },
+      null,
+      2
+    )
+  );
+}
+
+async function inventory(options) {
+  if (options.kubeconfig || options.context || options.namespace) {
+    throw new Error(
+      "inventory is local-only; use snapshot for Kubernetes access and pass --snapshot"
     );
-  const progressPath = path.join(outDir, "inventory-progress.json");
-  const result = buildInventoryIncremental(options, progressPath);
-  const outputs = { ...writeInventoryOutput(result, outDir), progressPath };
-  console.log(JSON.stringify({ outputs, summary: result.summary }, null, 2));
-  if ((result.errors ?? []).length > 0) {
-    process.exitCode = 1;
   }
+  const snapshotDir = required(options.snapshot, "--snapshot");
+  const outDir = options.out ?? path.dirname(snapshotDir);
+  const result = await buildInventoryFromSnapshot({
+    decisionsPath: options.decisions,
+    outDir,
+    snapshotDir,
+  });
+  console.log(
+    JSON.stringify(
+      {
+        outputs: {
+          classificationReport: result.reportPath,
+          inventory: result.inventoryPath,
+          snapshotIndex: result.indexPath,
+        },
+        summary: result.report.summary,
+      },
+      null,
+      2
+    )
+  );
 }
 
 async function apply(options) {
@@ -1090,16 +867,17 @@ async function apply(options) {
   const manifest = loadManifest(required(options.manifest, "--manifest"));
   const databaseUrl = options["database-url"] ?? process.env.DATABASE_URL ?? "";
   required(databaseUrl, "--database-url or DATABASE_URL");
-  await insertProjects(databaseUrl, manifest);
-  const kubeOptions = applyOptionsFromManifest(manifest);
-  for (const project of manifest.projects) {
-    for (const patch of project.patches) {
-      patchResourceLabels(kubeOptions, patch);
-      console.log(
-        `patched ${patch.resource.type}/${patch.resource.name} ${patch.resource.namespace}`
-      );
+  await withVerifiedManifestSource(manifest, async (kubeOptions) => {
+    await insertProjects(databaseUrl, manifest);
+    for (const project of manifest.projects) {
+      for (const patch of project.patches) {
+        patchResourceLabels(kubeOptions, patch);
+        console.log(
+          `patched ${patch.resource.type}/${patch.resource.name} ${patch.resource.namespace}`
+        );
+      }
     }
-  }
+  });
   console.log("apply complete");
 }
 
@@ -1108,21 +886,22 @@ async function rollback(options) {
   const manifest = loadManifest(required(options.manifest, "--manifest"));
   const databaseUrl = options["database-url"] ?? process.env.DATABASE_URL ?? "";
   required(databaseUrl, "--database-url or DATABASE_URL");
-  const kubeOptions = applyOptionsFromManifest(manifest);
-  for (const project of [...manifest.projects].reverse()) {
-    for (const patch of [...project.patches].reverse()) {
-      removeResourceLabels(kubeOptions, patch);
-      console.log(
-        `removed labels from ${patch.resource.type}/${patch.resource.name} ${patch.resource.namespace}`
-      );
+  await withVerifiedManifestSource(manifest, async (kubeOptions) => {
+    for (const project of [...manifest.projects].reverse()) {
+      for (const patch of [...project.patches].reverse()) {
+        removeResourceLabels(kubeOptions, patch);
+        console.log(
+          `removed labels from ${patch.resource.type}/${patch.resource.name} ${patch.resource.namespace}`
+        );
+      }
     }
-  }
-  await deleteProjects(databaseUrl, manifest);
+    await deleteProjects(databaseUrl, manifest);
+  });
   console.log("rollback complete");
 }
 
-async function main() {
-  const { mode, options } = parseArgs(process.argv.slice(2));
+export async function main(argv = process.argv.slice(2)) {
+  const { mode, options } = parseArgs(argv);
   if (!mode || mode === "help" || options.help) {
     console.log(usage());
     return;
@@ -1131,8 +910,12 @@ async function main() {
     dryRun(options);
     return;
   }
+  if (mode === "snapshot") {
+    await snapshot(options);
+    return;
+  }
   if (mode === "inventory") {
-    inventory(options);
+    await inventory(options);
     return;
   }
   if (mode === "apply") {
@@ -1146,7 +929,9 @@ async function main() {
   throw new Error(`Unknown mode: ${mode}`);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}
