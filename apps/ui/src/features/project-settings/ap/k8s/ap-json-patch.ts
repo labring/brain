@@ -370,7 +370,10 @@ export function mibToMemoryLimit(mib: number): string {
 function buildEnvArray(
   originalEnv: unknown,
   edited: ApEnvVar[],
-  options: { preserveOmittedValueFrom?: boolean } = {}
+  options: {
+    dropOmittedValueFromNames?: ReadonlySet<string>;
+    preserveOmittedValueFrom?: boolean;
+  } = {}
 ): Record<string, unknown>[] {
   const originalRecords = namedEnvRecords(originalEnv);
   const originalByName = envRecordsByName(originalRecords);
@@ -378,7 +381,8 @@ function buildEnvArray(
   const merged = mergeExistingEnvRecords(
     originalRecords,
     editedByName,
-    options.preserveOmittedValueFrom === true
+    options.preserveOmittedValueFrom === true,
+    options.dropOmittedValueFromNames
   );
   appendNewEditedEnvRecords(merged.out, edited, editedByName, merged.emitted);
   return merged.out;
@@ -431,7 +435,8 @@ function editedEnvRecordsByName(
 function mergeExistingEnvRecords(
   originalRecords: readonly Record<string, unknown>[],
   editedByName: ReadonlyMap<string, Record<string, unknown>>,
-  preserveOmittedValueFrom: boolean
+  preserveOmittedValueFrom: boolean,
+  dropOmittedValueFromNames: ReadonlySet<string> | undefined
 ): { emitted: Set<string>; out: Record<string, unknown>[] } {
   const out: Record<string, unknown>[] = [];
   const emitted = new Set<string>();
@@ -442,11 +447,36 @@ function mergeExistingEnvRecords(
     if (editedRecord !== undefined && name !== undefined) {
       out.push(editedRecord);
       emitted.add(name);
-    } else if (preserveOmittedValueFrom && name !== undefined) {
+    } else if (
+      preserveOmittedValueFrom &&
+      name !== undefined &&
+      !dropOmittedValueFromNames?.has(name)
+    ) {
       appendPreservedValueFromRecord(out, name, record);
     }
   }
   return { emitted, out };
+}
+
+function compiledAutomaticHelperNames(
+  rawSource: unknown,
+  dbDsnReferenceSources: readonly ApEnvDbDsnSource[] | undefined
+): ReadonlySet<string> {
+  if (typeof rawSource !== "string" || rawSource === "") {
+    return new Set();
+  }
+  const compiled = compileApEnvRawSourceForRuntime(
+    rawSource,
+    dbDsnReferenceSources
+  );
+  if (!compiled.valid) {
+    return new Set();
+  }
+  return new Set(
+    compiled.env
+      .filter((row) => row.helper?.automatic === true)
+      .map((row) => row.name)
+  );
 }
 
 function appendPreservedValueFromRecord(
@@ -991,6 +1021,10 @@ export function patchOpsForApEnvSettings(
     }
     return patchOpsForApInput(spec, {
       env: buildEnvArray(input.env, result.env, {
+        dropOmittedValueFromNames: compiledAutomaticHelperNames(
+          input.envRawSource,
+          options.dbDsnReferenceSources
+        ),
         preserveOmittedValueFrom: true,
       }),
       envRawSource: result.envRawSource,
@@ -1249,6 +1283,10 @@ function patchOpsForApSettingsDraftInput(
         );
       }
       inputPatch.env = buildEnvArray(readApInput(spec ?? {}).env, result.env, {
+        dropOmittedValueFromNames: compiledAutomaticHelperNames(
+          readApInput(spec ?? {}).envRawSource,
+          options.dbDsnReferenceSources
+        ),
         preserveOmittedValueFrom: true,
       });
       inputPatch.envRawSource = result.envRawSource;

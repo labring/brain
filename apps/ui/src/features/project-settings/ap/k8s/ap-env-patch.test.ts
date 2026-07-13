@@ -152,6 +152,74 @@ test("AP env settings patch preserves existing valueFrom rows omitted by raw sou
   ]);
 });
 
+test("AP settings draft removes unused compiled DB helpers with a deleted reference", () => {
+  const dbSecretRefs = {
+    host: { key: "endpoint", name: "postgres-conn-credential" },
+    password: { key: "passwd", name: "postgres-conn-credential" },
+    port: { key: "port", name: "postgres-conn-credential" },
+    username: { key: "user", name: "postgres-conn-credential" },
+  };
+  const unrelatedSecretRef = {
+    secretKeyRef: { key: "token", name: "app-secret" },
+  };
+  const previousRawSource = `DATABASE_URL=${referenceExpression(
+    "postgres",
+    "DATABASE_URL"
+  )}`;
+  const previousEnv = [
+    {
+      name: "DATABASE_URL",
+      value:
+        "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)",
+    },
+    {
+      name: "POSTGRES_USERNAME",
+      valueFrom: { secretKeyRef: dbSecretRefs.username },
+    },
+    {
+      name: "POSTGRES_PASSWORD",
+      valueFrom: { secretKeyRef: dbSecretRefs.password },
+    },
+    {
+      name: "POSTGRES_HOST",
+      valueFrom: { secretKeyRef: dbSecretRefs.host },
+    },
+    {
+      name: "POSTGRES_PORT",
+      valueFrom: { secretKeyRef: dbSecretRefs.port },
+    },
+    { name: "SECRET_TOKEN", valueFrom: unrelatedSecretRef },
+  ];
+
+  const ops = patchOpsForApSettingsDraft(
+    { input: { env: previousEnv, envRawSource: previousRawSource } },
+    { env: [], envRawSource: "" },
+    { env: previousEnv, envRawSource: previousRawSource },
+    {
+      dbDsnReferenceSources: [
+        {
+          name: "postgres",
+          namespace: "default",
+          primitiveSecretRefs: dbSecretRefs,
+        },
+      ],
+    }
+  );
+
+  assert.deepEqual(ops, [
+    {
+      op: "replace",
+      path: "/spec/input/env",
+      value: [{ name: "SECRET_TOKEN", valueFrom: unrelatedSecretRef }],
+    },
+    {
+      op: "replace",
+      path: "/spec/input/envRawSource",
+      value: "",
+    },
+  ]);
+});
+
 test("AP env settings patch compiles raw DB references into runtime env helpers", () => {
   const secretRefs = {
     host: { key: "endpoint", name: "postgres-conn-credential" },
