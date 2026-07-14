@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type {
   ProjectApTarget,
   ProjectDbTarget,
-} from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/target-identity";
 import {
   planClearProjectWorkbenchCanvasFocus,
   planFocusProjectWorkbenchCanvasSelection,

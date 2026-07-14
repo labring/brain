@@ -1,4 +1,4 @@
-import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
+import type { SettingsOwnerTarget } from "@/features/panes/target-identity";
 import type { PendingSettingsOwnerIdentity } from "./pending-settings-updates";
 
 function stableClusterFingerprint(value: string): string {

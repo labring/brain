@@ -1,7 +1,7 @@
 import type {
   ProjectSideSurfaceEntry,
   ProjectSurfaceIntent,
-} from "@/features/project-surfaces/surface-state";
+} from "@/features/panes/surface-state";
 import type { ProjectSidePaneAssistantIntent } from "./assistant-router";
 
 export type ProjectSidePaneEntry = Extract<

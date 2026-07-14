@@ -1,9 +1,9 @@
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
   ProjectSideSurfaceEntry,
-} from "@/features/project-surfaces/surface-state";
+} from "@/features/panes/surface-state";
 
 export type ProjectCanvasCommandSurfacePlan =
   | { entry: ProjectSideSurfaceEntry; slot: "side" }

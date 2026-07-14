@@ -1,4 +1,4 @@
-import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
+import type { ProjectSurfaceState } from "@/features/panes/surface-state";
 import type { ProjectCanvasSelection } from "./canvas-selection";
 
 export interface ProjectWorkbenchRouteState {

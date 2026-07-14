@@ -8,11 +8,11 @@ import {
 } from "@workspace/api/hooks";
 import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components/database-node/database-node";
 import { useCallback } from "react";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import type {
   ProjectApTarget,
   ProjectDbTarget,
-} from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/target-identity";
+import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
 import { errorDescription, toastPromiseDetail } from "@/lib/toast-utils";
 
 export interface ProjectResourceActionCopy {

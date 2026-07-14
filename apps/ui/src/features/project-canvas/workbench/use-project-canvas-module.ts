@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
+import type { ProjectSurfaceIntent } from "@/features/panes/surface-state";
 import {
   addPendingApDbCanvasReferences,
   type PendingApDbCanvasReference,
@@ -44,7 +45,6 @@ import {
   useProjectCanvas,
 } from "@/features/project-canvas/workbench/use-project-canvas";
 import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
-import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
 import { useStableCallback } from "@/lib/use-stable-callback";
 
 const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<

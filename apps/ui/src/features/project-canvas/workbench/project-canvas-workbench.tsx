@@ -3,6 +3,10 @@
 import { useStore } from "jotai";
 import { Activity, useCallback, useLayoutEffect, useMemo } from "react";
 import { useEditRedeployController } from "@/features/deploy/deployment-task-redeploy";
+import type { ProjectSidePaneAssistantSurface } from "@/features/panes/assistant-router";
+import { assistantPaneResizingAtom } from "@/features/panes/layout-store";
+import { useProjectSidePaneSurface } from "@/features/panes/react";
+import { projectCanvasEntryForAssistantIntent } from "@/features/panes/surface-intents";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,
@@ -10,10 +14,6 @@ import {
 import { useProjectCanvasViewportInsets } from "@/features/project-canvas/workbench/project-canvas-viewport-insets";
 import { ProjectCanvasSurfaceHost } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
-import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
-import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
-import { projectCanvasEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
-import { assistantPaneResizingAtom } from "@/store/layout-store";
 
 /**
  * Project Canvas workbench controller: hosts the canvas module (the single

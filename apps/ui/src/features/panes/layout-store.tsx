@@ -1,6 +1,6 @@
 import { atom, getDefaultStore } from "jotai";
 
-import { ASSISTANT_PANE_DEFAULT_WIDTH } from "@/lib/assistant-pane-width";
+import { ASSISTANT_PANE_DEFAULT_WIDTH } from "@/features/panes/assistant-pane-width";
 
 /** When true, the project layout shows the persistent Project Assistant Pane. */
 export const assistantPaneOpenAtom = atom(true);

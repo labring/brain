@@ -2,9 +2,9 @@
 
 import type { LucideIcon } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
+import type { SettingsOwnerTarget } from "@/features/panes/target-identity";
 import type { SettingsLaunchContext } from "@/features/project-runtime/settings-launch-context";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
 import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,

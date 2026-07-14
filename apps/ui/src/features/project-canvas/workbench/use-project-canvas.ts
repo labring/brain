@@ -10,6 +10,9 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
+import { useProjectWorkbenchRouteState } from "@/features/panes/use-project-workbench-route-state";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import { autoLayoutCanvasNodes } from "@/features/project-canvas/layout/auto-layout";
 import type {
@@ -48,8 +51,6 @@ import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/us
 import { useResourceLifecycleDialogs } from "@/features/project-canvas/workbench/use-resource-lifecycle-dialogs";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
-import { useProjectWorkbenchRouteState } from "@/features/project-route-state/use-project-workbench-route-state";
 import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
 import {
   createSettingsLaunchContextStore,
@@ -57,7 +58,6 @@ import {
   type SettingsLaunchSource,
   type SettingsSurfaceEntry,
 } from "@/features/project-runtime/settings-launch-context";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { ApEnvironmentDbReferenceSource } from "@/features/resource-settings/ap/k8s/db-dsn-reference-sources";
 import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {

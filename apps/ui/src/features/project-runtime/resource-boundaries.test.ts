@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-
+import type { ProjectSurfaceState } from "@/features/panes/surface-state";
 import type {
   CanvasContainerNodeData,
   CanvasDatabaseNodeData,
@@ -9,7 +9,6 @@ import type {
 } from "@/features/project-canvas/nodes/types";
 import { projectCanvasRuntimeShellNodesFromResources } from "@/features/project-canvas/runtime/resource-graph";
 import { createProjectCanvasSurfaceRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
-import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
 import type { ApFact, DbFact, PublicAccessFact } from "./resource-facts";
 import { projectRuntimeFactsFromResources } from "./resource-facts";
 import { projectRuntimeFallbackNodeModelFromLookup } from "./resource-models";

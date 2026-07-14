@@ -1,12 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import { WORKLOAD_PANE } from "@/features/project-canvas/canvas-store";
 import type {
   ProjectCanvasApResourcePaneKind,
   ProjectCanvasResourcePaneRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import { SettingsHost } from "@/features/resource-settings/settings-host";
 import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
 import type {

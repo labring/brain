@@ -6,7 +6,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   continueSidePaneLeave,
   shouldPromptSidePaneLeave,
-} from "@/features/project-surfaces/leave-guard";
+} from "@/features/panes/leave-guard";
 import type {
   SettingsLeaveGuardAction,
   SettingsLeaveGuardDecision,

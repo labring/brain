@@ -1,4 +1,20 @@
 import type { Node } from "@xyflow/react";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
+import type {
+  ProjectDrawerSurfaceEntry,
+  ProjectMainSurfaceEntry,
+  ProjectSideSurfaceEntry,
+} from "@/features/panes/surface-state";
+import {
+  type ProjectApTarget,
+  type ProjectDbTarget,
+  type ProjectResourceTarget,
+  type ProjectSurfaceTarget,
+  projectApBoundPublicAccessTarget,
+  projectApTarget,
+  projectDbTarget,
+  targetsEqual,
+} from "@/features/panes/target-identity";
 import {
   DATABASE_PANE,
   WORKLOAD_PANE,
@@ -9,22 +25,6 @@ import {
   canvasResourceIdentityFromNode,
   canvasResourceLastSeenUidFromNode,
 } from "@/features/project-canvas/nodes/resource-identity";
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
-import type {
-  ProjectDrawerSurfaceEntry,
-  ProjectMainSurfaceEntry,
-  ProjectSideSurfaceEntry,
-} from "@/features/project-surfaces/surface-state";
-import {
-  type ProjectApTarget,
-  type ProjectDbTarget,
-  type ProjectResourceTarget,
-  type ProjectSurfaceTarget,
-  projectApBoundPublicAccessTarget,
-  projectApTarget,
-  projectDbTarget,
-  targetsEqual,
-} from "@/features/project-surfaces/target-identity";
 
 export function projectSurfaceTargetFromCanvasNode(
   node: Node

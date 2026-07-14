@@ -42,7 +42,7 @@ import {
   formatWorkspaceQuotaRows,
   type WorkspaceQuotaItem,
 } from "@/components/app-sidebar-upgrade";
-import { projectIdFromPathname } from "@/features/project-route-state/use-project-id";
+import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
   ProjectShortcutIconKey,

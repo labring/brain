@@ -1,7 +1,7 @@
 import {
   parseProjectTarget,
   serializeProjectTarget,
-} from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/target-identity";
 import {
   parseProjectDrawerSurfaceEntry,
   parseProjectMainSurfaceEntry,
@@ -9,7 +9,7 @@ import {
   serializeProjectDrawerSurfaceEntry,
   serializeProjectMainSurfaceEntry,
   serializeProjectSideSurfaceEntry,
-} from "@/features/project-surfaces/url-codec";
+} from "@/features/panes/url-codec";
 import type { ProjectCanvasSelection } from "./canvas-selection";
 import { PROJECT_SIDE_QUERY_KEY } from "./side-url-codec";
 import type { ProjectWorkbenchRouteState } from "./workbench-state";

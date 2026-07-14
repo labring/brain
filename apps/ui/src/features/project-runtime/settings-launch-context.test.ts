@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { serializeProjectSideSurfaceEntry } from "@/features/project-surfaces/url-codec";
+import { serializeProjectSideSurfaceEntry } from "@/features/panes/url-codec";
 import {
   createSettingsLaunchContextStore,
   settingsLaunchContextKey,

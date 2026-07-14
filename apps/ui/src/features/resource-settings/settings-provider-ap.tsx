@@ -3,8 +3,8 @@
 import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
 import { Router, Settings2, SquarePen } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
+import type { ProjectApTarget } from "@/features/panes/target-identity";
 import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/resource-settings/ap/ap-settings-context";
 import {
   type ApNetwork,

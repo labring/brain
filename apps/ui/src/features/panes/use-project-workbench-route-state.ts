@@ -7,8 +7,8 @@ import type {
   ProjectMainSurfaceEntry,
   ProjectSideSurfaceEntry,
   ProjectSurfaceSlot,
-} from "@/features/project-surfaces/surface-state";
-import type { ProjectSurfaceTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/surface-state";
+import type { ProjectSurfaceTarget } from "@/features/panes/target-identity";
 import type { ProjectCanvasSelection } from "./canvas-selection";
 import type { ProjectRouteTransition } from "./side-reducer";
 import { PROJECT_SIDE_QUERY_KEY } from "./side-url-codec";

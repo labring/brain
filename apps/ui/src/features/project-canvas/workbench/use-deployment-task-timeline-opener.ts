@@ -7,7 +7,7 @@ import {
   type DeployTaskCreatedEvent,
   pendingDeployTaskCreatedEvents,
 } from "@/features/deploy/task/browser-events";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 
 export function useDeploymentTaskTimelineOpener({
   openSideSurface,

@@ -1,8 +1,8 @@
 import type {
   ProjectSideSurfaceEntry,
   ProjectSurfaceSlot,
-} from "@/features/project-surfaces/surface-state";
-import { serializeSettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/surface-state";
+import { serializeSettingsOwnerTarget } from "@/features/panes/target-identity";
 
 export type SettingsLaunchSource = "assistant" | "canvas" | "route" | "toolbar";
 

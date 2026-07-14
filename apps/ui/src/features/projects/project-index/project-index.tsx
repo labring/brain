@@ -5,12 +5,12 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
-import { PROJECT_SIDE_QUERY_KEY } from "@/features/project-route-state/side-url-codec";
-import { useProjectSideRouteState } from "@/features/project-route-state/use-project-side-route-state";
-import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
-import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
-import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
-import { serializeProjectSideSurfaceEntry } from "@/features/project-surfaces/url-codec";
+import type { ProjectSidePaneAssistantSurface } from "@/features/panes/assistant-router";
+import { useProjectSidePaneSurface } from "@/features/panes/react";
+import { PROJECT_SIDE_QUERY_KEY } from "@/features/panes/side-url-codec";
+import { projectListEntryForAssistantIntent } from "@/features/panes/surface-intents";
+import { serializeProjectSideSurfaceEntry } from "@/features/panes/url-codec";
+import { useProjectSideRouteState } from "@/features/panes/use-project-side-route-state";
 import { ProjectCreationPane } from "@/features/projects/creation/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/features/projects/creation/project-creation-pane-state";
 import {

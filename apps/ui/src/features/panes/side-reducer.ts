@@ -1,4 +1,4 @@
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectSideRouteState } from "./side-state";
 
 export type ProjectRouteLeaveRequirement = {

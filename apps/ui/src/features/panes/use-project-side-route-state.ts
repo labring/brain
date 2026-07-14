@@ -2,7 +2,7 @@
 
 import { parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useMemo } from "react";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import {
   type ProjectRouteLeaveRequirement,
   type ProjectRouteTransition,

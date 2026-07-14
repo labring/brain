@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { openAssistantPane } from "@/features/panes/layout-store";
 import {
   type BrainProjectResponse,
   type BrainProjectsResponse,
@@ -30,7 +31,6 @@ import { useProjectShortcutIconPreload } from "@/features/projects/use-project-s
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
-import { openAssistantPane } from "@/store/layout-store";
 
 /**
  * Extracts `{ projectId, phase, paused }` per workload from an AP or DB list

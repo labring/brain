@@ -1,7 +1,7 @@
 import {
   closeProjectSurfaceSlot,
   openProjectSurface,
-} from "@/features/project-surfaces/orchestrator";
+} from "@/features/panes/orchestrator";
 import {
   mainSurfaceFocusPolicy,
   type ProjectDrawerSurfaceEntry,
@@ -11,8 +11,8 @@ import {
   type ProjectSurfaceSlot,
   projectSideSurfaceVisible,
   projectSurfaceEntryTarget,
-} from "@/features/project-surfaces/surface-state";
-import type { ProjectSurfaceTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/surface-state";
+import type { ProjectSurfaceTarget } from "@/features/panes/target-identity";
 import {
   type ProjectCanvasSelection,
   projectCanvasSelectionTarget,

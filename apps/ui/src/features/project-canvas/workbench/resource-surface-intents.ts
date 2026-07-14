@@ -1,6 +1,16 @@
 import type { ContainerNodeQuickActionKey } from "@workspace/ui/components/container-node/container-node";
 import type { DatabaseNodeQuickActionKey } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
+import type {
+  ProjectDrawerSurfaceEntry,
+  ProjectMainSurfaceEntry,
+  ProjectSideSurfaceEntry,
+} from "@/features/panes/surface-state";
+import type {
+  ProjectApTarget,
+  ProjectDbTarget,
+} from "@/features/panes/target-identity";
 import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "@/features/project-canvas/nodes/constants";
 import type { CanvasDeploymentPlaceholderRfNode } from "@/features/project-canvas/nodes/types";
 import {
@@ -13,16 +23,6 @@ import {
   sideSurfaceForDatabasePane,
   sideSurfaceForWorkloadPane,
 } from "@/features/project-canvas/surface/selection";
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
-import type {
-  ProjectDrawerSurfaceEntry,
-  ProjectMainSurfaceEntry,
-  ProjectSideSurfaceEntry,
-} from "@/features/project-surfaces/surface-state";
-import type {
-  ProjectApTarget,
-  ProjectDbTarget,
-} from "@/features/project-surfaces/target-identity";
 import type {
   ProjectCanvasCommandPlan,
   ProjectCanvasCommandSurfacePlan,

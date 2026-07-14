@@ -19,6 +19,7 @@ import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
 } from "@/features/deployment/github-template-match";
+import { requestAssistantDraftThread } from "@/features/panes/layout-store";
 import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
 import type {
   ProjectCreatorActions,
@@ -38,7 +39,6 @@ import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { desktopUserIdAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
-import { requestAssistantDraftThread } from "@/store/layout-store";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
 const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [

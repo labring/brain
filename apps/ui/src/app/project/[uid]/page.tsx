@@ -1,8 +1,8 @@
 "use client";
 
 import { useAtomValue } from "jotai";
+import { useProjectId } from "@/features/panes/use-project-id";
 import { ProjectCanvasWorkbench } from "@/features/project-canvas/workbench/project-canvas-workbench";
-import { useProjectId } from "@/features/project-route-state/use-project-id";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 export default function ProjectIdPage() {

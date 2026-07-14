@@ -10,8 +10,8 @@ import {
   DataBrowserPane,
   type DataBrowserPaneProps,
 } from "@/features/db-browser/DataBrowserPane";
+import { assistantPaneOpenAtom } from "@/features/panes/layout-store";
 import type { ProjectCanvasMainRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
-import { assistantPaneOpenAtom } from "@/store/layout-store";
 
 export interface MainActionSurfaceFrameProps {
   bodyClassName?: string;

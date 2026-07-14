@@ -9,6 +9,7 @@ import { DockerDeploymentPane } from "@/features/deploy/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/features/deploy/github-deployment-pane";
 import type { DeployTaskDTO } from "@/features/deploy/task/types";
 import { TemplateDeploymentPane } from "@/features/deploy/template-deployment-pane";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";
@@ -23,7 +24,6 @@ import type {
   ProjectCanvasSideRenderModel,
   ProjectCanvasSurfaceRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
 import type {
   SettingsLaunchContext,

@@ -1,10 +1,10 @@
 import type { Connection, Node } from "@xyflow/react";
+import { projectApTarget } from "@/features/panes/target-identity";
 import {
   classifyProjectCanvasConnectionCommand,
   type ProjectCanvasConnectionCommand,
 } from "@/features/project-canvas/flow/connection-command";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
-import { projectApTarget } from "@/features/project-surfaces/target-identity";
 import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,

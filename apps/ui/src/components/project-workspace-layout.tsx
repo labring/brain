@@ -71,28 +71,6 @@ import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-e
 import { scanMessagesForDeployTaskCreations } from "@/features/deploy/task/chat-bridge-scan";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import {
-  type ProjectCanvasSelection,
-  projectCanvasSelectionTarget,
-} from "@/features/project-route-state/canvas-selection";
-import {
-  ProjectIdProvider,
-  useProjectId,
-} from "@/features/project-route-state/use-project-id";
-import {
-  PROJECT_SELECTED_QUERY_KEY,
-  parseProjectCanvasSelection,
-} from "@/features/project-route-state/workbench-url-codec";
-import {
-  ProjectSidePaneProvider,
-  useProjectSidePaneAssistantRouter,
-} from "@/features/project-surfaces/react";
-import type { BrainProjectResponse } from "@/features/projects/brain-projects";
-import {
-  ProjectEditDialog,
-  type ProjectEditDialogValues,
-} from "@/features/projects/project-edit-dialog";
-import { useGithubAuth } from "@/hooks/use-github-auth";
-import {
   ASSISTANT_PANE_DEFAULT_WIDTH,
   ASSISTANT_PANE_MIN_WIDTH,
   ASSISTANT_PANE_RESIZE_STEP,
@@ -100,7 +78,35 @@ import {
   clampAssistantPaneWidth,
   readStoredAssistantPaneWidth,
   writeStoredAssistantPaneWidth,
-} from "@/lib/assistant-pane-width";
+} from "@/features/panes/assistant-pane-width";
+import {
+  type ProjectCanvasSelection,
+  projectCanvasSelectionTarget,
+} from "@/features/panes/canvas-selection";
+import {
+  assistantDraftThreadRequestAtom,
+  assistantPaneOpenAtom,
+  assistantPaneResizingAtom,
+  assistantPaneWidthAtom,
+} from "@/features/panes/layout-store";
+import {
+  ProjectSidePaneProvider,
+  useProjectSidePaneAssistantRouter,
+} from "@/features/panes/react";
+import {
+  ProjectIdProvider,
+  useProjectId,
+} from "@/features/panes/use-project-id";
+import {
+  PROJECT_SELECTED_QUERY_KEY,
+  parseProjectCanvasSelection,
+} from "@/features/panes/workbench-url-codec";
+import type { BrainProjectResponse } from "@/features/projects/brain-projects";
+import {
+  ProjectEditDialog,
+  type ProjectEditDialogValues,
+} from "@/features/projects/project-edit-dialog";
+import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
   desktopUserIdAtom,
   kubeconfigAtom,
@@ -109,12 +115,6 @@ import {
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
-import {
-  assistantDraftThreadRequestAtom,
-  assistantPaneOpenAtom,
-  assistantPaneResizingAtom,
-  assistantPaneWidthAtom,
-} from "@/store/layout-store";
 
 type AssistantClientToolSubmission =
   | {

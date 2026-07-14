@@ -6,8 +6,8 @@ import {
 } from "@workspace/api/hooks";
 import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { useCallback, useEffect, useMemo } from "react";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { ProjectDbTarget } from "@/features/project-surfaces/target-identity";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
+import type { ProjectDbTarget } from "@/features/panes/target-identity";
 import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { dbResourceToSettingsData } from "@/features/resource-settings/db/db-settings-resource";
 import { useDatabaseSettingsSections } from "@/features/resource-settings/db/db-settings-sections";

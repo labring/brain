@@ -1,7 +1,7 @@
 import {
   parseProjectSideSurfaceEntry,
   serializeProjectSideSurfaceEntry,
-} from "@/features/project-surfaces/url-codec";
+} from "@/features/panes/url-codec";
 import type { ProjectSideRouteState } from "./side-state";
 
 export const PROJECT_SIDE_QUERY_KEY = "side" as const;

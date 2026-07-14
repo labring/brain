@@ -13,7 +13,7 @@ import type {
   DeploymentTaskSource,
   DeployTaskDTO,
 } from "@/features/deploy/task/types";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 
 /**
  * One edited-redeploy gesture (US10): held in React state at the workbench

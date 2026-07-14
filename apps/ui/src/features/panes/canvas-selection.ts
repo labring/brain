@@ -2,7 +2,7 @@ import type {
   ProjectApBoundPublicAccessTarget,
   ProjectResourceTarget,
   ProjectSurfaceTarget,
-} from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/target-identity";
 
 export type ProjectCanvasSelection =
   | { kind: "edge"; edgeId: string }

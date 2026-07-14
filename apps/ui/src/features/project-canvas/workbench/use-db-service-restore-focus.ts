@@ -2,10 +2,10 @@
 
 import type { Node } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
+import type { ProjectMainSurfaceEntry } from "@/features/panes/surface-state";
+import type { ProjectDbTarget } from "@/features/panes/target-identity";
 import { findCanvasNodeForProjectTarget } from "@/features/project-canvas/surface/selection";
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
-import type { ProjectMainSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { ProjectDbTarget } from "@/features/project-surfaces/target-identity";
 import {
   canvasSelectionForRestoredDbService,
   DB_RESTORE_CANVAS_FOCUS_TIMEOUT_MS,

@@ -7,7 +7,7 @@ import {
 import type {
   ProjectSidePaneAssistantIntent,
   ProjectSidePaneAssistantRouter,
-} from "@/features/project-surfaces/assistant-router";
+} from "@/features/panes/assistant-router";
 
 export const OPEN_PROJECT_SURFACE_TOOL_NAME = "openProjectSurface" as const;
 
