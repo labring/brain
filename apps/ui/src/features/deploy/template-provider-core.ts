@@ -1,4 +1,4 @@
-import { headerSafeEncodedKubeconfig } from "./kubeconfig-header";
+import { headerSafeEncodedKubeconfig } from "@/lib/kubeconfig-header";
 
 export interface TemplateCatalogInput {
   default?: string;

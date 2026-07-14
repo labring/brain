@@ -7,8 +7,8 @@ import {
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { Blocks, Database, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
-import type { GithubDeployerStates } from "@/features/deployment/github-deployer/github-deployer.types";
+import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
+import type { GithubDeployerStates } from "@/features/deploy/github-deployer/github-deployer.types";
 import { ProjectCreator } from "@/features/projects/creation/creator/project-creator";
 import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
 import type { ProjectCreatorSourceKind } from "@/features/projects/creation/creator/project-creator.types";

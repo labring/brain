@@ -1,17 +1,17 @@
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
-} from "@/features/deployment/database-deployer";
-import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
+} from "@/features/deploy/database-deployer";
+import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
 import type {
   GithubDeployerActions,
   GithubDeployerRepo,
   GithubDeployerStates,
-} from "@/features/deployment/github-deployer/github-deployer.types";
+} from "@/features/deploy/github-deployer/github-deployer.types";
 import type {
   TemplateDeploymentChoice,
   TemplateDeploymentSettings,
-} from "@/features/deployment/template-deployer";
+} from "@/features/deploy/template-deployer";
 
 /** First step for project creation (breadcrumb + body). */
 export type ProjectCreatorSourceKind =

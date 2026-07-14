@@ -3,20 +3,22 @@
 import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
-import type { DatabaseDeploymentSettings } from "@/features/deployment/database-deployer";
-import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
-import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
-import {
-  findTemplateForGithubRepo,
-  templateCanDeployWithDefaults,
-} from "@/features/deployment/github-template-match";
-import type { TemplateDeploymentSettings } from "@/features/deployment/template-deployer";
-import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
+import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
+import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
+import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
 import {
   type DeploymentTargetPipelineOutcome,
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
-} from "@/features/deployment-target/pipeline";
+} from "@/features/deploy/pipeline";
+import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
+import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
+import {
+  findTemplateForGithubRepo,
+  templateCanDeployWithDefaults,
+} from "@/features/deployment/github-template-match";
 import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
 import type {
   ProjectCreatorActions,
@@ -34,9 +36,7 @@ import {
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
-import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { desktopUserIdAtom } from "@/lib/auth-store";
-import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { requestAssistantDraftThread } from "@/store/layout-store";
 

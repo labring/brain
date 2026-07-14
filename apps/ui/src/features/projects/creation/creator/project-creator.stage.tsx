@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { DatabaseDeployer } from "@/features/deployment/database-deployer";
+import { DatabaseDeployer } from "@/features/deploy/database-deployer";
 import {
   DockerDeployer,
   type DockerDeploymentSettings,
-} from "@/features/deployment/docker-deployer";
-import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
-import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
+} from "@/features/deploy/docker-deployer";
+import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
+import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
 import {
   TemplateDeployer,
   type TemplateDeploymentSettings,
-} from "@/features/deployment/template-deployer";
+} from "@/features/deploy/template-deployer";
 
 import { useProjectCreator } from "./project-creator.context";
 import { ProjectCreatorOptionPicker } from "./project-creator.pick";

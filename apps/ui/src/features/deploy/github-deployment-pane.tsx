@@ -4,30 +4,29 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   type DeploymentTaskEditRedeploy,
   REDEPLOY_OVERWRITE_WARNING,
-} from "@/features/deployment/deployment-task-redeploy";
-import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
+} from "@/features/deploy/deployment-task-redeploy";
+import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
 import type {
   GithubDeployerActions,
   GithubDeployerRepo,
   GithubDeployerStates,
-} from "@/features/deployment/github-deployer/github-deployer.types";
+} from "@/features/deploy/github-deployer/github-deployer.types";
+import {
+  existingProjectDeploymentTarget,
+  runDeploymentTargetPipeline,
+} from "@/features/deploy/pipeline";
+import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
 } from "@/features/deployment/github-template-match";
-
-import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
-import {
-  existingProjectDeploymentTarget,
-  runDeploymentTargetPipeline,
-} from "@/features/deployment-target/pipeline";
-import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
-import { useTemplateCatalog } from "@/hooks/use-template-catalog";
 import { desktopUserIdAtom } from "@/lib/auth-store";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";

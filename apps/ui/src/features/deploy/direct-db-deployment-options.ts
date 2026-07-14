@@ -1,4 +1,4 @@
-import type { DatabaseDeploymentChoice } from "@/features/deployment/database-deployer";
+import type { DatabaseDeploymentChoice } from "@/features/deploy/database-deployer";
 
 export const DIRECT_DB_DEPLOYMENT_OPTIONS = [
   {

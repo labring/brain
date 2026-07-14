@@ -1,5 +1,5 @@
 import YAML from "yaml";
-import type { DatabaseInstancePreset } from "@/features/deployment/database-deployer";
+import type { DatabaseInstancePreset } from "@/features/deploy/database-deployer";
 import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";

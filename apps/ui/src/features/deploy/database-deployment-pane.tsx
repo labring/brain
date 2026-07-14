@@ -4,22 +4,22 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Database } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   DatabaseDeployer,
   type DatabaseDeploymentSettings,
-} from "@/features/deployment/database-deployer";
+} from "@/features/deploy/database-deployer";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
-} from "@/features/deployment/deployment-task-redeploy";
-import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+} from "@/features/deploy/deployment-task-redeploy";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
 import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
-} from "@/features/deployment-target/pipeline";
-import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
+} from "@/features/deploy/pipeline";
+import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
-import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function databaseInitialSettings(

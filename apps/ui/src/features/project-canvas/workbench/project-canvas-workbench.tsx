@@ -2,7 +2,7 @@
 
 import { useStore } from "jotai";
 import { Activity, useCallback, useLayoutEffect, useMemo } from "react";
-import { useEditRedeployController } from "@/features/deployment/deployment-task-redeploy";
+import { useEditRedeployController } from "@/features/deploy/deployment-task-redeploy";
 import {
   ProjectCanvasOverlayLayer,
   ProjectCanvasViewport,

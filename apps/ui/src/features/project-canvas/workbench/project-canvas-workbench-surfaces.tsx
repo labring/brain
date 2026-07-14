@@ -2,12 +2,12 @@
 
 import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
-import type { DeploymentTaskEditRedeploy } from "@/features/deployment/deployment-task-redeploy";
-import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
-import { DockerDeploymentPane } from "@/features/deployment/docker-deployment-pane";
-import { GitHubDeploymentPane } from "@/features/deployment/github-deployment-pane";
-import { TemplateDeploymentPane } from "@/features/deployment/template-deployment-pane";
+import { DatabaseDeploymentPane } from "@/features/deploy/database-deployment-pane";
+import type { DeploymentTaskEditRedeploy } from "@/features/deploy/deployment-task-redeploy";
+import { DeploymentTaskTimelinePane } from "@/features/deploy/deployment-task-timeline-pane";
+import { DockerDeploymentPane } from "@/features/deploy/docker-deployment-pane";
+import { GitHubDeploymentPane } from "@/features/deploy/github-deployment-pane";
+import { TemplateDeploymentPane } from "@/features/deploy/template-deployment-pane";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";

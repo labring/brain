@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DEFAULT_DOCKER_APP_LISTENING_PORT } from "@/features/deployment/docker-deployment-settings";
+import { DEFAULT_DOCKER_APP_LISTENING_PORT } from "@/features/deploy/docker-deployment-settings";
 
 import { createDeployTaskToolInputSchema } from "./chat-deploy-task-input";
 

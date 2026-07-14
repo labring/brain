@@ -1,14 +1,14 @@
 import YAML from "yaml";
 
-import { childResourceName } from "@/lib/project-child-resource-name";
-import { joinKubeYamlDocuments } from "@/lib/render-yaml-template";
+import { childResourceName } from "@/features/deploy/project-child-resource-name";
+import { joinKubeYamlDocuments } from "@/features/deploy/render-yaml-template";
 import {
   evaluateTemplateCondition,
   type RenderedTemplateDeployment,
   renderTemplateDeploymentFromYaml,
   type TemplateEvaluationContext,
   templateSourceFromInlineYaml,
-} from "@/lib/template-renderer";
+} from "@/features/deploy/template-renderer";
 
 import type {
   DeploymentTaskDeploymentPlan,

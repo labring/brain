@@ -39,11 +39,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { useCancelConfirmGate } from "@/features/deployment/deployment-task-cancel";
+import { useCancelConfirmGate } from "@/features/deploy/deployment-task-cancel";
 import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
-} from "@/features/deployment/deployment-task-redeploy";
+} from "@/features/deploy/deployment-task-redeploy";
 import { deployRunnerSurfacesRawFailure } from "@/lib/deploy-task/failure-summary";
 import {
   deploymentTaskShortCode,

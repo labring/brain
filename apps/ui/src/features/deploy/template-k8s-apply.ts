@@ -8,7 +8,7 @@ import {
   BRAIN_TEMPLATE_NAME_LABEL,
   templateDeploymentExtraLabels,
 } from "@/lib/brain-labels";
-import { kubeconfigBearerHeader } from "./kubeconfig-header";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import {
   addTemplateInstanceOwnerReferences,
   generateTemplateInstanceOwnerReference,

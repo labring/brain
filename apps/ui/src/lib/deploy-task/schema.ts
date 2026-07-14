@@ -14,7 +14,7 @@ import {
 import type {
   TemplateDefaultValue,
   TemplateSourceInput,
-} from "@/lib/template-provider-core";
+} from "@/features/deploy/template-provider-core";
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 export const DEPLOYMENT_TASK_DB_SCHEMA = "sealai_deployment";

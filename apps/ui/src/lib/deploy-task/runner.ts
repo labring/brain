@@ -8,16 +8,25 @@ import { ApiUrl } from "@workspace/api/utils";
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
-} from "@/features/deployment/database-deployer";
-import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
-import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
+} from "@/features/deploy/database-deployer";
+import { renderDbDeploymentYaml } from "@/features/deploy/db-deployment-yaml";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
+import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
+import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
+import { renderDockerDeploymentYaml } from "@/features/deploy/docker-deployment-yaml";
+import { childResourceName } from "@/features/deploy/project-child-resource-name";
+import { applyRenderedTemplateDeployment } from "@/features/deploy/template-k8s-apply";
+import {
+  deployTemplateInstance,
+  getTemplateSource,
+} from "@/features/deploy/template-provider-core";
+import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_DEPLOYMENT_NAME_LABEL,
   BRAIN_PROJECT_ID_LABEL,
   templateDeploymentExtraLabels,
 } from "@/lib/brain-labels";
-import { renderDbDeploymentYaml } from "@/lib/db-deployment-yaml";
 import {
   createDevbox,
   DevboxApiError,
@@ -32,19 +41,10 @@ import {
   getDevboxDefaultImage,
 } from "@/lib/devbox/config";
 import type { DevboxInfo } from "@/lib/devbox/types";
-import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
-import { renderDockerDeploymentYaml } from "@/lib/docker-deployment-yaml";
 import { getGithubOAuthTokenForConnection } from "@/lib/github-app/connection-service";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { childResourceName } from "@/lib/project-child-resource-name";
 import { createProject, getProject } from "@/lib/project-persistence/projects";
-import { applyRenderedTemplateDeployment } from "@/lib/template-k8s-apply";
-import {
-  deployTemplateInstance,
-  getTemplateSource,
-} from "@/lib/template-provider-core";
-import { normalizeTemplateProviderDbResources } from "@/lib/template-provider-db-labels";
 
 import {
   blockingInputsFromDeploymentPlan,

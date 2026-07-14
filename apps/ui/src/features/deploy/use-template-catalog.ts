@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import type { TemplateDeploymentChoice } from "@/features/deployment/template-deployer";
+import type { TemplateDeploymentChoice } from "@/features/deploy/template-deployer";
 
 const TEMPLATE_CATALOG_LANGUAGE = "en";
 

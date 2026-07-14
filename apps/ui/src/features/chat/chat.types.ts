@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import type {
   GithubDeployerActions,
   GithubDeployerStates,
-} from "@/features/deployment/github-deployer/github-deployer.types";
+} from "@/features/deploy/github-deployer/github-deployer.types";
 
 export type { UIMessage } from "ai";
 

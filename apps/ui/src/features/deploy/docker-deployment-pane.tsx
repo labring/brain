@@ -4,20 +4,20 @@ import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-ico
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
-} from "@/features/deployment/deployment-task-redeploy";
+} from "@/features/deploy/deployment-task-redeploy";
 import {
   DockerDeployer,
   type DockerDeploymentSettings,
-} from "@/features/deployment/docker-deployer";
-import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+} from "@/features/deploy/docker-deployer";
 import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
-} from "@/features/deployment-target/pipeline";
-import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
+} from "@/features/deploy/pipeline";
+import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 

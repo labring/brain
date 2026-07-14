@@ -15,7 +15,7 @@ import {
   defaultTemplateArgs,
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
-} from "../github-template-match";
+} from "@/features/deployment/github-template-match";
 import { templateSensitiveKeys } from "../template-deployer";
 import type {
   GithubDeployerActions,

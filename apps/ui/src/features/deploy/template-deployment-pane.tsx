@@ -4,19 +4,19 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Blocks } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
-} from "@/features/deployment/deployment-task-redeploy";
-import type { TemplateDeploymentSettings } from "@/features/deployment/template-deployer";
-import { TemplateDeployer } from "@/features/deployment/template-deployer";
-import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
+} from "@/features/deploy/deployment-task-redeploy";
 import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
-} from "@/features/deployment-target/pipeline";
-import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { useTemplateCatalog } from "@/hooks/use-template-catalog";
+} from "@/features/deploy/pipeline";
+import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
+import { TemplateDeployer } from "@/features/deploy/template-deployer";
+import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 

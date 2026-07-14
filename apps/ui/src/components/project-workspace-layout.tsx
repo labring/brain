@@ -67,6 +67,7 @@ import {
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
 } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
+import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import {
   type ProjectCanvasSelection,
   projectCanvasSelectionTarget,
@@ -88,7 +89,6 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
-import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
   ASSISTANT_PANE_DEFAULT_WIDTH,

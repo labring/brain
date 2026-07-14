@@ -2,7 +2,7 @@
 
 import { type ComponentContext, defineRegistry } from "@json-render/react";
 import { MetricsChart } from "@workspace/ui/components/metrics-chart/metrics-chart";
-import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
+import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
 
 import { catalog } from "./catalog";
 

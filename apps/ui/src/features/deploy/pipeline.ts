@@ -1,15 +1,15 @@
-import type { DatabaseDeploymentSettings } from "@/features/deployment/database-deployer";
-import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
-import { validateDockerDeploymentSettings } from "@/features/deployment/docker-deployment-settings";
-import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
+import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
+import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
+import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
+import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
+import { isProjectDisplayNameTaken } from "@/features/deploy/projects-to-explorer-projects";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import type {
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeploymentTaskTarget,
 } from "@/lib/deploy-task/types";
-import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
-import { isProjectDisplayNameTaken } from "@/lib/projects-to-explorer-projects";
 
 export type DeploymentTarget =
   | {

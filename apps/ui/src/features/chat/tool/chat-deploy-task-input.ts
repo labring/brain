@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DEFAULT_DOCKER_APP_LISTENING_PORT } from "@/features/deployment/docker-deployment-settings";
+import { DEFAULT_DOCKER_APP_LISTENING_PORT } from "@/features/deploy/docker-deployment-settings";
 import {
   type DeploymentTaskRunner,
   type DeploymentTaskSource,

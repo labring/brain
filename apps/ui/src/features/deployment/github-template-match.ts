@@ -1,5 +1,5 @@
-import type { GithubDeployerRepo } from "./github-deployer/github-deployer.types";
-import type { TemplateDeploymentChoice } from "./template-deployer";
+import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
+import type { TemplateDeploymentChoice } from "@/features/deploy/template-deployer";
 
 const GIT_SUFFIX_RE = /\.git$/i;
 const GITHUB_SSH_RE = /^git@github\.com:([^/]+)\/(.+)$/i;

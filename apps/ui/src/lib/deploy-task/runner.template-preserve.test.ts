@@ -54,7 +54,9 @@ mock.module("server-only", () => ({}));
 // Real modules are captured before mocking so afterAll can restore them —
 // bun's mock.module patches the process-wide module cache, and without a
 // restore these mocks would poison every later test file in the same run.
-const realTemplateProvider = requireModule("@/lib/template-provider-core");
+const realTemplateProvider = requireModule(
+  "@/features/deploy/template-provider-core"
+);
 const realProjects = requireModule("@/lib/project-persistence/projects");
 const realService = requireModule("./service");
 const realRunnerWrites = requireModule("./runner-writes");
@@ -62,7 +64,7 @@ const realResultReadiness = requireModule("./result-readiness");
 
 afterAll(() => {
   globalThis.fetch = originalFetch;
-  mock.module("@/lib/template-provider-core", () => ({
+  mock.module("@/features/deploy/template-provider-core", () => ({
     ...realTemplateProvider,
   }));
   mock.module("@/lib/project-persistence/projects", () => ({
@@ -74,7 +76,7 @@ afterAll(() => {
   delete process.env.DIRECT_AP_READINESS_TIMEOUT_MS;
 });
 
-mock.module("@/lib/template-provider-core", () => ({
+mock.module("@/features/deploy/template-provider-core", () => ({
   ...realTemplateProvider,
   deployTemplateInstance: (input: { instanceName: string }) =>
     deployTemplateInstanceImpl().then((deployed) => ({
