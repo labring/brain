@@ -1,6 +1,6 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
-import { customDomainBindingIdFromValue } from "@/features/project-settings/ap/lib/platform-address";
+import { customDomainBindingIdFromValue } from "@/features/resource-settings/ap/lib/platform-address";
 
 export interface ExistingCustomDomainBinding {
   apRef: string;

@@ -5,12 +5,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   type ApSettingsSectionsModel,
   useApSettingsSections,
-} from "@/features/project-settings/ap/ap-settings-sections";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 import {
   type DatabaseSettingsSectionsModel,
   useDatabaseSettingsSections,
-} from "@/features/project-settings/db/db-settings-sections";
-import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+} from "@/features/resource-settings/db/db-settings-sections";
+import type { DbSettingsData } from "@/features/resource-settings/db/db-settings-types";
 import { dbSettingsDataFromExactResource } from "./settings-provider-db";
 
 const noop = () => {

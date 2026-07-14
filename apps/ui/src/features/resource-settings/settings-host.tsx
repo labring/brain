@@ -2,9 +2,9 @@
 
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
+import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
 import { ApSettingsProvider } from "./settings-provider-ap";
 import { DbSettingsProvider } from "./settings-provider-db";
 import type {

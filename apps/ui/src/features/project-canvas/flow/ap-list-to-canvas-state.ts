@@ -17,8 +17,8 @@ import {
   readApImage,
   readApIsPaused,
   readApReplicas,
-} from "@/features/project-settings/ap/k8s/ap-spec-access";
-import { dbResourceToSettingsData } from "@/features/project-settings/db/db-settings-resource";
+} from "@/features/resource-settings/ap/k8s/ap-spec-access";
+import { dbResourceToSettingsData } from "@/features/resource-settings/db/db-settings-resource";
 
 import {
   CANVAS_CONTAINER_NODE_TYPE,

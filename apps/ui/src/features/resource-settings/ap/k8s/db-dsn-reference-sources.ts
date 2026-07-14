@@ -6,7 +6,7 @@ import {
   type ApEnvDbReferenceVariable,
   type ApEnvSecretKeyRef,
   apEnvDbPrimitiveFieldForSecretKey,
-} from "@/features/project-settings/ap/lib/ap-env-rows";
+} from "@/features/resource-settings/ap/lib/ap-env-rows";
 
 export type ApEnvironmentDbReferenceSource = ApEnvDbDsnSource;
 

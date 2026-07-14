@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   type ApSettingsSectionsProps,
   useApSettingsSections,
-} from "@/features/project-settings/ap/ap-settings-sections";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 
 import { claimToApSettings } from "./claim-mapper";
 import { dbDsnReferenceSourcesFromDbsData } from "./db-dsn-reference-sources";

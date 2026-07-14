@@ -9,7 +9,7 @@ import {
   readApImage,
   readApIsPaused,
   readApReplicas,
-} from "@/features/project-settings/ap/k8s/ap-spec-access";
+} from "@/features/resource-settings/ap/k8s/ap-spec-access";
 import {
   type ProjectRuntimeRelationshipIndexes,
   projectRuntimeRelationshipIndexesFromResources,

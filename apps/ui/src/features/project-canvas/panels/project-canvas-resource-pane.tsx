@@ -6,14 +6,14 @@ import type {
   ProjectCanvasApResourcePaneKind,
   ProjectCanvasResourcePaneRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import { SettingsHost } from "@/features/project-settings/settings-host";
-import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import { SettingsHost } from "@/features/resource-settings/settings-host";
+import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
 import type {
   SettingsLaunchContext,
   SettingsReadModelHints,
   SettingsSessionEvents,
-} from "@/features/project-settings/settings-types";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+} from "@/features/resource-settings/settings-types";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { WorkloadResourcePane } from "./workload-resource-pane";
 

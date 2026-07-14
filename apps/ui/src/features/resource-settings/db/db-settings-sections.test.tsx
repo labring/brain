@@ -3,8 +3,8 @@ import { test } from "node:test";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
-import { createPendingSettingsStore } from "@/features/project-settings/pending-settings-updates";
+import type { DbSettingsData } from "@/features/resource-settings/db/db-settings-types";
+import { createPendingSettingsStore } from "@/features/resource-settings/pending-settings-updates";
 import { DatabaseSettingsPaneContent } from "./db-settings-sections";
 
 const noop = () => {

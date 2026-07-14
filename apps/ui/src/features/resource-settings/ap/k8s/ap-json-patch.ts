@@ -2,22 +2,22 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import { parse as parseYaml } from "yaml";
-import { apNetworkSaveDraftFromNetwork } from "@/features/project-settings/ap/ap-network-model";
+import { apNetworkSaveDraftFromNetwork } from "@/features/resource-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
   ApEnvVar,
   ApNetwork,
   ApStorageMount,
-} from "@/features/project-settings/ap/ap-settings-sections";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 import {
   canonicalApEnvRawSource,
   compileApEnvRawSourceForRuntime,
-} from "@/features/project-settings/ap/lib/ap-env-raw-source";
+} from "@/features/resource-settings/ap/lib/ap-env-raw-source";
 import {
   AP_ENV_VALUE_FROM_PLACEHOLDER,
   type ApEnvDbDsnSource,
-} from "@/features/project-settings/ap/lib/ap-env-rows";
-import { normalizeApEnvTokenRowsForSave } from "@/features/project-settings/ap/lib/ap-env-tokens";
+} from "@/features/resource-settings/ap/lib/ap-env-rows";
+import { normalizeApEnvTokenRowsForSave } from "@/features/resource-settings/ap/lib/ap-env-tokens";
 import {
   CUSTOM_DOMAIN_BINDING_ID_PATTERN,
   generatePlatformAddressId,
@@ -29,7 +29,7 @@ import {
   PLATFORM_ADDRESS_DOMAIN_PREFIX_RE,
   PLATFORM_ADDRESS_ID_PATTERN,
   stablePlatformAddressDomainPrefix,
-} from "@/features/project-settings/ap/lib/platform-address";
+} from "@/features/resource-settings/ap/lib/platform-address";
 import {
   isRoutingDomainLabelValue,
   routingDomainFromKubeconfig,

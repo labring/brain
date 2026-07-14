@@ -1,30 +1,30 @@
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { clampScale } from "@workspace/ui/components/settings-slider/settings-slider.utils";
-import type { ApNetworkCustomDomainDetail } from "@/features/project-settings/ap/ap-network-model";
+import type { ApNetworkCustomDomainDetail } from "@/features/resource-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
   ApEnvVar,
   ApNetwork,
   ApStorageMount,
   ApWorkloadKind,
-} from "@/features/project-settings/ap/ap-settings-sections";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 import {
   apEnvRawSourceFromRows,
   apEnvRawSourceRows,
-} from "@/features/project-settings/ap/lib/ap-env-raw-source";
+} from "@/features/resource-settings/ap/lib/ap-env-raw-source";
 import {
   AP_ENV_VALUE_FROM_PLACEHOLDER,
   type ApEnvDbDsnSource,
   apEnvDbDsnReferenceFromValue,
   apEnvDbSecretReferenceFromValueFrom,
-} from "@/features/project-settings/ap/lib/ap-env-rows";
-import { apEnvRowsFromSavedEnv } from "@/features/project-settings/ap/lib/ap-env-tokens";
+} from "@/features/resource-settings/ap/lib/ap-env-rows";
+import { apEnvRowsFromSavedEnv } from "@/features/resource-settings/ap/lib/ap-env-tokens";
 import {
   customDomainBindingIdFromValue,
   platformAddressEndpoint,
   platformAddressIdFromValue,
   platformAddressIdsFromRows,
-} from "@/features/project-settings/ap/lib/platform-address";
+} from "@/features/resource-settings/ap/lib/platform-address";
 import { normalizeCustomDomainName } from "./ap-public-access";
 import {
   type ApReplicaStrategy,

@@ -13,7 +13,7 @@ import type {
   EntryNodeTarget,
 } from "@workspace/ui/components/entry-node/entry-node";
 import type { Node } from "@xyflow/react";
-import type { DbSettingsData } from "@/features/project-settings/db/db-settings-types";
+import type { DbSettingsData } from "@/features/resource-settings/db/db-settings-types";
 import type {
   DeploymentTaskCanvasProjectionEdge,
   DeploymentTaskCanvasProjectionExpectedRef,

@@ -3,14 +3,14 @@
 import type { LucideIcon } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import type { SettingsLaunchContext } from "@/features/project-runtime/settings-launch-context";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
 import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,
-} from "@/features/project-settings/ap/ap-settings-sections";
-import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
-import type { SettingsLeaveGuardHandle } from "@/features/project-settings/settings-leave-guard";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { SettingsOwnerTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/resource-settings/ap/ap-settings-sections";
+import type { ApEnvDbDsnSource } from "@/features/resource-settings/ap/lib/ap-env-rows";
+import type { SettingsLeaveGuardHandle } from "@/features/resource-settings/settings-leave-guard";
 
 export type { SettingsLaunchContext } from "@/features/project-runtime/settings-launch-context";
 

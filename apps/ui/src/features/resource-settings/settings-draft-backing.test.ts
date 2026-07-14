@@ -5,8 +5,8 @@ import {
   apSettingsDraftDomainIsDirty,
   apSettingsDraftIsDirty,
   mergeApSettingsDraftDomains,
-} from "@/features/project-settings/ap/ap-settings-draft";
-import type { ApSettingsDraft } from "@/features/project-settings/ap/ap-settings-sections";
+} from "@/features/resource-settings/ap/ap-settings-draft";
+import type { ApSettingsDraft } from "@/features/resource-settings/ap/ap-settings-sections";
 import {
   commitSettingsDraftBackingState,
   createSettingsDraftBackingState,
@@ -15,14 +15,14 @@ import {
   prepareSettingsDraftSubmit,
   reloadSettingsDraftBackingState,
   syncSettingsDraftBackingState,
-} from "@/features/project-settings/ap/lib/settings-draft-backing";
+} from "@/features/resource-settings/ap/lib/settings-draft-backing";
 import {
   DATABASE_SETTINGS_DRAFT_DOMAINS,
   type DatabaseSettingsDraft,
   dbSettingsDraftDomainIsDirty,
   dbSettingsDraftIsDirty,
   mergeDbSettingsDraftDomains,
-} from "@/features/project-settings/db/db-settings-draft";
+} from "@/features/resource-settings/db/db-settings-draft";
 
 const DRAFT_AVAILABLE_RE = /draft is still available/;
 const DATABASE_CONFIGURATION_CHANGED_RE = /Database configuration changed/;

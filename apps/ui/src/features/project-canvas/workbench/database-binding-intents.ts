@@ -4,11 +4,11 @@ import {
   type ProjectCanvasConnectionCommand,
 } from "@/features/project-canvas/flow/connection-command";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
+import { projectApTarget } from "@/features/project-surfaces/target-identity";
 import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,
-} from "@/features/project-settings/ap/ap-settings-sections";
-import { projectApTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 import type { ProjectCanvasCommandPlan } from "./command-plan";
 
 export interface PendingApDbReferenceDraftRegistration {

@@ -9,7 +9,7 @@ import {
   pendingApDbReferenceDraftKey,
   pendingApDbReferenceDraftSignature,
 } from "@/features/project-canvas/workbench/database-binding-intents";
-import type { ApSettingsPendingDbReference } from "@/features/project-settings/ap/ap-settings-sections";
+import type { ApSettingsPendingDbReference } from "@/features/resource-settings/ap/ap-settings-sections";
 
 /**
  * Bridges AP Settings pending DB reference drafts into pending canvas

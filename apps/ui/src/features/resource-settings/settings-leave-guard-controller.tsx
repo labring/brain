@@ -3,17 +3,17 @@
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Upload } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  continueSidePaneLeave,
+  shouldPromptSidePaneLeave,
+} from "@/features/project-surfaces/leave-guard";
 import type {
   SettingsLeaveGuardAction,
   SettingsLeaveGuardDecision,
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
   SettingsLeaveGuardScope,
-} from "@/features/project-settings/settings-leave-guard";
-import {
-  continueSidePaneLeave,
-  shouldPromptSidePaneLeave,
-} from "@/features/project-surfaces/leave-guard";
+} from "@/features/resource-settings/settings-leave-guard";
 
 export type {
   SettingsLeaveGuardAction,
@@ -21,7 +21,7 @@ export type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
   SettingsLeaveGuardScope,
-} from "@/features/project-settings/settings-leave-guard";
+} from "@/features/resource-settings/settings-leave-guard";
 
 interface PendingSettingsLeave {
   action: SettingsLeaveGuardAction;

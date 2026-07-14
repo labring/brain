@@ -57,13 +57,13 @@ import {
   type SettingsLaunchSource,
   type SettingsSurfaceEntry,
 } from "@/features/project-runtime/settings-launch-context";
-import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-import { useSettingsLeaveGuardController } from "@/features/project-settings/settings-leave-guard-controller";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ApEnvironmentDbReferenceSource } from "@/features/resource-settings/ap/k8s/db-dsn-reference-sources";
+import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {
   SettingsReadModelHints,
   SettingsSessionEvents,
-} from "@/features/project-settings/settings-types";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+} from "@/features/resource-settings/settings-types";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { useStableCallback } from "@/lib/use-stable-callback";
 

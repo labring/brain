@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { PLATFORM_ADDRESS_ID_RE } from "@/features/project-settings/ap/lib/platform-address";
+import { PLATFORM_ADDRESS_ID_RE } from "@/features/resource-settings/ap/lib/platform-address";
 import {
   apMergePatchFromJsonPatchOps,
   patchOpsForApEnvSettings,

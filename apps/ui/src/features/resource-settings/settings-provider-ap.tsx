@@ -3,18 +3,18 @@
 import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
 import { Router, Settings2, SquarePen } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/project-settings/ap/ap-settings-context";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
+import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/resource-settings/ap/ap-settings-context";
 import {
   type ApNetwork,
   useApPublicAddressesSettingsSections,
   useApSettingsSections,
-} from "@/features/project-settings/ap/ap-settings-sections";
-import { verifyCustomDomainCnameFromApi } from "@/features/project-settings/ap/custom-domain-cname-client";
-import { useApWorkloadSettings } from "@/features/project-settings/ap/hooks/use-ap-workload-settings";
-import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
-import { settingsOwnerIdentity } from "@/features/project-settings/settings-owner-identity";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { ProjectApTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/resource-settings/ap/ap-settings-sections";
+import { verifyCustomDomainCnameFromApi } from "@/features/resource-settings/ap/custom-domain-cname-client";
+import { useApWorkloadSettings } from "@/features/resource-settings/ap/hooks/use-ap-workload-settings";
+import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
+import { settingsOwnerIdentity } from "@/features/resource-settings/settings-owner-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { SettingsSections } from "./settings-sections";
 import type {

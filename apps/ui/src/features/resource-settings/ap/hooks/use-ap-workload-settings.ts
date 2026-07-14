@@ -12,7 +12,7 @@ import type {
   ApSettingsDraft,
   ApSettingsDraftCommitMeta,
   ApSettingsEnvChangeMeta,
-} from "@/features/project-settings/ap/ap-settings-sections";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 import {
   applyApEnv,
   applyApImage,
@@ -20,20 +20,20 @@ import {
   applyApPublicAddresses,
   applyApResourceQuotas,
   applyApSettingsDraft,
-} from "@/features/project-settings/ap/k8s/ap-json-patch";
-import { existingCustomDomainBindingsFromAps } from "@/features/project-settings/ap/k8s/ap-public-access";
+} from "@/features/resource-settings/ap/k8s/ap-json-patch";
+import { existingCustomDomainBindingsFromAps } from "@/features/resource-settings/ap/k8s/ap-public-access";
 import {
   type ApReplicaStrategy,
   canonicalFixedReplicaStrategy,
-} from "@/features/project-settings/ap/k8s/ap-replica-strategy";
+} from "@/features/resource-settings/ap/k8s/ap-replica-strategy";
 import {
   type ClaimApSettings,
   claimToApSettings,
   k8sGetClaimBody,
   type WorkloadClaimKind,
-} from "@/features/project-settings/ap/k8s/claim-mapper";
-import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
-import { settingsDraftSaveFailureMessage } from "@/features/project-settings/ap/lib/settings-draft-backing";
+} from "@/features/resource-settings/ap/k8s/claim-mapper";
+import type { ApEnvDbDsnSource } from "@/features/resource-settings/ap/lib/ap-env-rows";
+import { settingsDraftSaveFailureMessage } from "@/features/resource-settings/ap/lib/settings-draft-backing";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;

@@ -1,7 +1,7 @@
 import type { Node } from "@xyflow/react";
 import YAML from "yaml";
-import { resolveApEnvRawSourceReferences } from "@/features/project-settings/ap/lib/ap-env-raw-source";
-import type { ApEnvDbDsnSource } from "@/features/project-settings/ap/lib/ap-env-rows";
+import { resolveApEnvRawSourceReferences } from "@/features/resource-settings/ap/lib/ap-env-raw-source";
+import type { ApEnvDbDsnSource } from "@/features/resource-settings/ap/lib/ap-env-rows";
 import {
   DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS,
   type DeploymentTaskProjection,

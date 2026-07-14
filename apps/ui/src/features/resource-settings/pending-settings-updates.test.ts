@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { PendingSettingsUpdateEntry } from "@/features/project-settings/pending-settings-updates";
+import type { PendingSettingsUpdateEntry } from "@/features/resource-settings/pending-settings-updates";
 import {
   classifyPendingSettingsEntry,
   createPendingSettingsStore,
@@ -8,7 +8,7 @@ import {
   PENDING_SETTINGS_SCHEMA_VERSION,
   PENDING_SETTINGS_STORAGE_KEY,
   pendingSettingsClusterFingerprint,
-} from "@/features/project-settings/pending-settings-updates";
+} from "@/features/resource-settings/pending-settings-updates";
 
 const SECRET_TOKEN_RE = /secret-token/;
 

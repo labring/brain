@@ -39,23 +39,23 @@ import {
   reloadSettingsDraftBackingState,
   settingsDraftSaveFailureMessage,
   syncSettingsDraftBackingState,
-} from "@/features/project-settings/ap/lib/settings-draft-backing";
+} from "@/features/resource-settings/ap/lib/settings-draft-backing";
 import {
   classifyPendingSettingsEntry,
   getBrowserPendingSettingsStore,
   type PendingSettingsOwnerIdentity,
   type PendingSettingsUpdateEntry,
-} from "@/features/project-settings/pending-settings-updates";
+} from "@/features/resource-settings/pending-settings-updates";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
-} from "@/features/project-settings/settings-leave-guard";
+} from "@/features/resource-settings/settings-leave-guard";
 import {
   getBrowserSettingsSubmissionStore,
   latestRejectedSettingsSubmission,
   type SettingsSubmissionDomainUpdate,
   useSettingsSubmissionEntries,
-} from "@/features/project-settings/settings-submissions";
+} from "@/features/resource-settings/settings-submissions";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { toastErrorDetail } from "@/lib/toast-utils";
 import {

@@ -2,14 +2,14 @@ import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import { isPlatformAddressId } from "@/features/project-canvas/platform-addresses";
-import type { ApEnvironmentDbReferenceSource } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-import { dbDsnReferenceSourceFromDb } from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-import { resolveApEnvRawSourceReferences } from "@/features/project-settings/ap/lib/ap-env-raw-source";
+import type { ApEnvironmentDbReferenceSource } from "@/features/resource-settings/ap/k8s/db-dsn-reference-sources";
+import { dbDsnReferenceSourceFromDb } from "@/features/resource-settings/ap/k8s/db-dsn-reference-sources";
+import { resolveApEnvRawSourceReferences } from "@/features/resource-settings/ap/lib/ap-env-raw-source";
 import {
   type ApEnvDbDsnSource,
   apEnvDbDsnReferenceFromValue,
   apEnvDbSecretReferenceFromValueFrom,
-} from "@/features/project-settings/ap/lib/ap-env-rows";
+} from "@/features/resource-settings/ap/lib/ap-env-rows";
 
 export interface ProjectRuntimeApDbRelationship {
   kind: "APToDB";

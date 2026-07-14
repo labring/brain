@@ -4,13 +4,13 @@ import type { Edge, Node } from "@xyflow/react";
 import {
   type ApEnvironmentDbReferenceSource,
   dbDsnReferenceSourceFromDb,
-} from "@/features/project-settings/ap/k8s/db-dsn-reference-sources";
-import { resolveApEnvRawSourceReferences } from "@/features/project-settings/ap/lib/ap-env-raw-source";
+} from "@/features/resource-settings/ap/k8s/db-dsn-reference-sources";
+import { resolveApEnvRawSourceReferences } from "@/features/resource-settings/ap/lib/ap-env-raw-source";
 import {
   type ApEnvDbDsnSource,
   apEnvDbDsnReferenceFromValue,
   apEnvDbSecretReferenceFromValueFrom,
-} from "@/features/project-settings/ap/lib/ap-env-rows";
+} from "@/features/resource-settings/ap/lib/ap-env-rows";
 import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,

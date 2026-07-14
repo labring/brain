@@ -22,13 +22,13 @@ import type {
   ProjectCanvasSideRenderModel,
   ProjectCanvasSurfaceRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
 import type {
   SettingsLaunchContext,
   SettingsReadModelHints,
   SettingsSessionEvents,
-} from "@/features/project-settings/settings-types";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
+} from "@/features/resource-settings/settings-types";
 import type { DeployTaskDTO } from "@/lib/deploy-task/types";
 import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 
