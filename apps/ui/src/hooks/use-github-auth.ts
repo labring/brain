@@ -6,17 +6,17 @@ import useSWR, { useSWRConfig } from "swr";
 
 import { githubReposSWRKey } from "@/hooks/use-github-repos";
 import {
+  desktopUserIdAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/lib/auth-store";
+import {
   GITHUB_APP_INSTALL_COMPLETE_CHANNEL,
   GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
   GITHUB_APP_INSTALL_COMPLETE_STORAGE_KEY,
   parseInstallNamespaceParam,
   parseInstallReturnPathParam,
 } from "@/lib/github-app/types";
-import {
-  desktopUserIdAtom,
-  kubeconfigAtom,
-  namespaceAtom,
-} from "@/store/auth-store";
 
 const GITHUB_APP_INSTALL_POPUP_NAME = "brain-github-app-install";
 const GITHUB_APP_INSTALL_POPUP_FEATURES = [

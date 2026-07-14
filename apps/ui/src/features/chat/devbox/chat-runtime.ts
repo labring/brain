@@ -10,12 +10,12 @@ import {
   listDevboxes,
   refreshDevboxPause,
   resumeDevbox,
-} from "./client";
+} from "@/lib/devbox/client";
 import {
   getDevboxArchiveAfterPauseTime,
   getDevboxDefaultImage,
-} from "./config";
-import type { DevboxInfo } from "./types";
+} from "@/lib/devbox/config";
+import type { DevboxInfo } from "@/lib/devbox/types";
 
 const DEVBOX_NAME_PREFIX = "sealai-chat";
 const DEVBOX_RUNTIME_READY_TIMEOUT_MS = 60_000;

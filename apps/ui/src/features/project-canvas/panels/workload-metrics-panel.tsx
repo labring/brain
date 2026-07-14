@@ -9,7 +9,7 @@ import { type ComponentType, memo, type SVGProps, useMemo } from "react";
 
 import { containerStatesFromNode } from "@/features/project-canvas/flow/container-node-workload";
 import { telemetryRowsToMetricsData } from "@/features/project-canvas/telemetry/rows-to-metrics";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { CanvasResourcePane } from "./canvas-resource-pane";
 import { formatPercent, latestPercent } from "./database-metrics-format";
 import { MetricSeriesCard } from "./metric-series-card";

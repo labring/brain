@@ -5,7 +5,7 @@ import type { UIMessage } from "ai";
 import {
   readSelectedResourceContext,
   type SelectedResourceContext,
-} from "@/lib/chat-persistence/types";
+} from "@/features/chat/persistence/types";
 
 /**
  * Bridge the per-message `data-selectedResource` snapshot into model-visible text.

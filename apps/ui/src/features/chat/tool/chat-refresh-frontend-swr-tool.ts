@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   chatToolIntentionField,
   logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
+} from "@/features/chat/tool/chat-tool-intention";
 
 /** AI tool id; handlers run only in `useChat` `onToolCall` — no backend `execute`. */
 export const REFRESH_FRONTEND_SWR_TOOL_NAME =

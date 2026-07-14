@@ -5,7 +5,7 @@ import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
 import {
   type ResolveChatNamespaceOutcome,
   resolveAuthoritativeChatNamespace,
-} from "./resolve-chat-namespace";
+} from "@/lib/resolve-chat-namespace";
 
 /**
  * Authorize a namespace-scoped chat BFF request (session / threads / messages /

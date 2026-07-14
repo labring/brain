@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { Agent } from "undici";
 import { parse } from "yaml";
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
-import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
+import { decodeKubeconfig } from "@/lib/kubeconfig";
+import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 type FetchInitWithDispatcher = RequestInit & {
   dispatcher?: Agent;

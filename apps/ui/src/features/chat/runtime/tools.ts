@@ -5,25 +5,25 @@ import {
   buildEmitGenUISpecDescription,
   executeEmitGenUISpec,
   genUISpecInputSchema,
-} from "@/features/project-assistant/agui/gen-ui-tool";
-import type { AssistantContextPayload } from "@/lib/chat-persistence/types";
-import { createChatBashTool } from "@/lib/tool/chat-bash-tool";
-import { createDeployTaskTools } from "@/lib/tool/chat-deploy-task-tool";
-import { navigateAppTool } from "@/lib/tool/chat-navigate-app-tool";
-import { openProjectSurfaceTool } from "@/lib/tool/chat-open-project-surface-tool";
-import { createChatProductTools } from "@/lib/tool/chat-product-tools";
-import { refreshFrontendSwrCachesTool } from "@/lib/tool/chat-refresh-frontend-swr-tool";
+} from "@/features/chat/agui/gen-ui-tool";
+import type { AssistantContextPayload } from "@/features/chat/persistence/types";
+import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
+import { createDeployTaskTools } from "@/features/chat/tool/chat-deploy-task-tool";
+import { navigateAppTool } from "@/features/chat/tool/chat-navigate-app-tool";
+import { openProjectSurfaceTool } from "@/features/chat/tool/chat-open-project-surface-tool";
+import { createChatProductTools } from "@/features/chat/tool/chat-product-tools";
+import { refreshFrontendSwrCachesTool } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
 import {
   buildChatSkillsDiscoveryPrompt,
   createLoadSkillTool,
   discoverPublicSkills,
-} from "@/lib/tool/chat-skill-tool";
+} from "@/features/chat/tool/chat-skill-tool";
 import {
   chatToolIntentionField,
   logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
-import { sliceOpenApiDocsTool } from "@/lib/tool/openapi-doc-slice-tool";
-import { readApiOpenApiDocsTool } from "@/lib/tool/read-api-openapi-docs-tool";
+} from "@/features/chat/tool/chat-tool-intention";
+import { sliceOpenApiDocsTool } from "@/features/chat/tool/openapi-doc-slice-tool";
+import { readApiOpenApiDocsTool } from "@/features/chat/tool/read-api-openapi-docs-tool";
 
 import { CHAT_BASE_SYSTEM_PROMPT } from "./model";
 import { buildAssistantWorkspaceContextPrompt } from "./workspace-context-prompt";

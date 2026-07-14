@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   chatToolIntentionField,
   logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
+} from "@/features/chat/tool/chat-tool-intention";
 
 const FETCH_TIMEOUT_MS = 30_000;
 const OPERATION_JSON_MAX_CHARS = 200_000;

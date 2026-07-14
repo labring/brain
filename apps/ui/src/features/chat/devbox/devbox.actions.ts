@@ -1,9 +1,8 @@
 "use server";
 
 import { after } from "next/server";
-
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
-import { bootstrapChatDevboxIfNeeded } from "@/lib/devbox/chat-runtime";
+import { bootstrapChatDevboxIfNeeded } from "@/features/chat/devbox/chat-runtime";
+import { decodeKubeconfig } from "@/lib/kubeconfig";
 
 /**
  * Schedules Devbox create/reuse + kubectl permission bootstrap after the action

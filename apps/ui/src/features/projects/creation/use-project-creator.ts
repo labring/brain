@@ -35,9 +35,9 @@ import type { ProjectExplorerProject } from "@/features/projects/explorer/projec
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
+import { desktopUserIdAtom } from "@/lib/auth-store";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
-import { desktopUserIdAtom } from "@/store/auth-store";
 import { requestAssistantDraftThread } from "@/store/layout-store";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];

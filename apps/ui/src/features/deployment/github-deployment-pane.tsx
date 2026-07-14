@@ -28,9 +28,9 @@ import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-displa
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
+import { desktopUserIdAtom } from "@/lib/auth-store";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
-import { desktopUserIdAtom } from "@/store/auth-store";
 
 function githubPaneTitle(input: {
   hasCurrentProject: boolean;

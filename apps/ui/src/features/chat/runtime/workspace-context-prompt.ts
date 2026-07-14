@@ -1,4 +1,4 @@
-import type { AssistantContextPayload } from "@/lib/chat-persistence/types";
+import type { AssistantContextPayload } from "@/features/chat/persistence/types";
 
 /**
  * Human-readable snippet prepended to the model system prompt with the stable,

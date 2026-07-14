@@ -5,7 +5,7 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import type { ChatAddToolApproveResponseFunction, UIMessage } from "ai";
 import { isToolUIPart } from "ai";
 import { lazy, memo, Suspense, useEffect } from "react";
-import type { EmitGenUISpecToolOutput } from "@/features/project-assistant/agui/gen-ui-tool";
+import type { EmitGenUISpecToolOutput } from "@/features/chat/agui/gen-ui-tool";
 
 import {
   formatToolDurationMs,

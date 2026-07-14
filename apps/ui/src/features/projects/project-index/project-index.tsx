@@ -19,9 +19,9 @@ import {
 } from "@/features/projects/creation/use-project-creator";
 import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
 import { useProjectsExplorer } from "@/features/projects/explorer/use-projects-explorer";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import { ProjectIndexHorizon } from "./horizon/project-index-horizon";
 import styles from "./project-index.module.css";
 import { useSidePaneReserveFlip } from "./use-side-pane-reserve-flip";

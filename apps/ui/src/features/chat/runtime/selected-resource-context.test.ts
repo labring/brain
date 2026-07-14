@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { UIMessage } from "ai";
 
-import { SELECTED_RESOURCE_CONTEXT_PART_TYPE } from "@/lib/chat-persistence/types";
+import { SELECTED_RESOURCE_CONTEXT_PART_TYPE } from "@/features/chat/persistence/types";
 
 // The module under test is marked `server-only`; neutralize it (repo pattern),
 // then load it dynamically so the mock is registered before evaluation.

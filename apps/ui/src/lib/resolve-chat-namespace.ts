@@ -1,6 +1,6 @@
 import "server-only";
 
-import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
+import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
 import {
   type VerifyKubeconfigNamespace,
   verifyKubeconfigNamespaceAccess,

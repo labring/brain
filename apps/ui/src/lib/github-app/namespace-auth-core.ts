@@ -1,6 +1,6 @@
-import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
-import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
+import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
+import { decodeKubeconfig } from "@/lib/kubeconfig";
+import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 import {
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,

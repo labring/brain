@@ -5,7 +5,7 @@ import { useAtomValue } from "jotai";
 import { memo, useMemo } from "react";
 
 import { containerStatesFromNode } from "@/features/project-canvas/flow/container-node-workload";
-import { namespaceAtom } from "@/store/auth-store";
+import { namespaceAtom } from "@/lib/auth-store";
 import {
   type ExecTerminalDescriptor,
   ExecTerminalPane,

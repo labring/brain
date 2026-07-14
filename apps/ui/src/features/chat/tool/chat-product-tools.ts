@@ -7,7 +7,7 @@ import { z } from "zod";
 import {
   chatToolIntentionField,
   logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
+} from "@/features/chat/tool/chat-tool-intention";
 
 export type BrainProductToolResourceKind = "AP" | "DB";
 

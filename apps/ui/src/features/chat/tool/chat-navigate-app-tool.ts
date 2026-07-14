@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   chatToolIntentionField,
   logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
+} from "@/features/chat/tool/chat-tool-intention";
 
 export const NAVIGATE_APP_TOOL_NAME = "navigateApp" as const;
 

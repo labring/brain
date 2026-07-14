@@ -3,7 +3,7 @@
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
-import { desktopUserIdAtom, kubeconfigAtom } from "@/store/auth-store";
+import { desktopUserIdAtom, kubeconfigAtom } from "@/lib/auth-store";
 
 interface GithubReposResponse {
   repos: GithubDeployerRepo[];

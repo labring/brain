@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ChatOpenAiConnection } from "@/lib/chat-runtime/model";
+import type { ChatOpenAiConnection } from "@/features/chat/runtime/model";
 
 import { fetchOrCreateAiProxyToken } from "./create-token";
 import { aiProxyOpenAiBaseUrl } from "./endpoints";

@@ -1,6 +1,6 @@
 "use client";
 
-import "@/store/auth-store";
+import "@/lib/auth-store";
 import { getDefaultStore, Provider } from "jotai";
 import type { ReactNode } from "react";
 

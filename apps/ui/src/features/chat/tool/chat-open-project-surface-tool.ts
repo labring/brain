@@ -1,13 +1,13 @@
 import { tool } from "ai";
 import { z } from "zod";
+import {
+  chatToolIntentionField,
+  logChatToolIntention,
+} from "@/features/chat/tool/chat-tool-intention";
 import type {
   ProjectSidePaneAssistantIntent,
   ProjectSidePaneAssistantRouter,
 } from "@/features/project-surfaces/assistant-router";
-import {
-  chatToolIntentionField,
-  logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
 
 export const OPEN_PROJECT_SURFACE_TOOL_NAME = "openProjectSurface" as const;
 

@@ -49,7 +49,7 @@ import type {
   ProjectShortcutIconKeyMap,
 } from "@/features/projects/project-shortcut-icons";
 import { useLastViewedProject } from "@/features/projects/use-last-viewed-project";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 function ProjectShortcutIcon({
   active,

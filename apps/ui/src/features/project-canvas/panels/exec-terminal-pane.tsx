@@ -14,7 +14,7 @@ import type {
 } from "react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-import { kubeconfigAtom } from "@/store/auth-store";
+import { kubeconfigAtom } from "@/lib/auth-store";
 import { workloadTerminalWebSocketUrl } from "./workload-terminal-url";
 
 type TerminalStatus = "connecting" | "closed" | "error" | "ready";

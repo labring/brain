@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   chatToolIntentionField,
   logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
+} from "@/features/chat/tool/chat-tool-intention";
 import { type PublicSkillMeta, stripSkillFrontmatter } from "./public-skills";
 
 // biome-ignore lint/performance/noBarrelFile: single import surface for chat route (discovery + tool)

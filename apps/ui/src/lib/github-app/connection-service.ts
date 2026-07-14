@@ -3,14 +3,14 @@ import "server-only";
 import { generateId } from "ai";
 import { and, desc, eq } from "drizzle-orm";
 
-import { getAssistantDb } from "@/lib/chat-persistence/db";
+import { getAssistantDb } from "@/features/chat/persistence/db";
 import {
   type GithubConnectionRow,
   type GithubOauthConnectionRow,
   githubConnections,
   githubOauthConnections,
-} from "@/lib/chat-persistence/schema";
-import { normalizeAssistantNamespace } from "@/lib/chat-persistence/types";
+} from "@/features/chat/persistence/schema";
+import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
 
 import {
   type GithubOAuthTokenResponse,

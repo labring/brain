@@ -1,5 +1,5 @@
 import { atom } from "jotai";
-import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
+import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 function devKubeconfigFromEnv(): string {
   try {

@@ -36,9 +36,37 @@ import {
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { isAssistantChatNamespaceReady } from "@/components/project-assistant-chat-readiness";
-import { Chat } from "@/features/project-assistant/chat/chat";
-import type { ChatHeaderThreadHistory } from "@/features/project-assistant/chat/chat.types";
-import { FreeTurnsIndicator } from "@/features/project-assistant/free-turns-indicator";
+import { Chat } from "@/features/chat/chat";
+import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
+import { FreeTurnsIndicator } from "@/features/chat/free-turns-indicator";
+import {
+  fetchAssistantSession,
+  fetchAssistantThreadMessages,
+  fetchAssistantThreads,
+} from "@/features/chat/persistence/client";
+import {
+  type AssistantContextPayload,
+  type AssistantSessionPayload,
+  type AssistantThreadDTO,
+  type FreeTierState,
+  SELECTED_RESOURCE_CONTEXT_PART_TYPE,
+  type SelectedResourceContext,
+} from "@/features/chat/persistence/types";
+import {
+  NAVIGATE_APP_TOOL_NAME,
+  type NavigateAppToolOutput,
+  runNavigateAppTool,
+} from "@/features/chat/tool/chat-navigate-app-tool";
+import {
+  OPEN_PROJECT_SURFACE_TOOL_NAME,
+  type OpenProjectSurfaceToolOutput,
+  runOpenProjectSurfaceTool,
+} from "@/features/chat/tool/chat-open-project-surface-tool";
+import {
+  REFRESH_FRONTEND_SWR_TOOL_NAME,
+  type RefreshFrontendSwrCachesToolOutput,
+  runRefreshFrontendSwrCachesTool,
+} from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
 import {
   type ProjectCanvasSelection,
   projectCanvasSelectionTarget,
@@ -72,43 +100,15 @@ import {
   writeStoredAssistantPaneWidth,
 } from "@/lib/assistant-pane-width";
 import {
-  fetchAssistantSession,
-  fetchAssistantThreadMessages,
-  fetchAssistantThreads,
-} from "@/lib/chat-persistence/client";
-import {
-  type AssistantContextPayload,
-  type AssistantSessionPayload,
-  type AssistantThreadDTO,
-  type FreeTierState,
-  SELECTED_RESOURCE_CONTEXT_PART_TYPE,
-  type SelectedResourceContext,
-} from "@/lib/chat-persistence/types";
+  desktopUserIdAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/lib/auth-store";
 import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { scanMessagesForDeployTaskCreations } from "@/lib/deploy-task/chat-bridge-scan";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
-import {
-  NAVIGATE_APP_TOOL_NAME,
-  type NavigateAppToolOutput,
-  runNavigateAppTool,
-} from "@/lib/tool/chat-navigate-app-tool";
-import {
-  OPEN_PROJECT_SURFACE_TOOL_NAME,
-  type OpenProjectSurfaceToolOutput,
-  runOpenProjectSurfaceTool,
-} from "@/lib/tool/chat-open-project-surface-tool";
-import {
-  REFRESH_FRONTEND_SWR_TOOL_NAME,
-  type RefreshFrontendSwrCachesToolOutput,
-  runRefreshFrontendSwrCachesTool,
-} from "@/lib/tool/chat-refresh-frontend-swr-tool";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
-import {
-  desktopUserIdAtom,
-  kubeconfigAtom,
-  namespaceAtom,
-} from "@/store/auth-store";
 import {
   assistantDraftThreadRequestAtom,
   assistantPaneOpenAtom,

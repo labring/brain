@@ -1,6 +1,6 @@
-import { bootstrapAssistantSession } from "@/lib/chat-persistence/service";
-import { authorizeChatRequestNamespace } from "@/lib/chat-runtime/authorize-chat-request";
-import { jsonError } from "@/lib/chat-runtime/errors";
+import { bootstrapAssistantSession } from "@/features/chat/persistence/service";
+import { authorizeChatRequestNamespace } from "@/features/chat/runtime/authorize-chat-request";
+import { jsonError } from "@/features/chat/runtime/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

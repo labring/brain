@@ -1,6 +1,6 @@
 import "server-only";
 
-import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
+import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 function envTrimDecoded(raw: string | undefined): string {
   try {

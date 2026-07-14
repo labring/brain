@@ -7,37 +7,37 @@ import {
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
-} from "@/lib/ai-proxy/resolve-chat-open-ai-connection";
+} from "@/features/chat/ai-proxy/resolve-chat-open-ai-connection";
 import {
   consumeFreeTurnIfAvailable,
   getFreeTierSnapshot,
   isSystemOpenAiConfigured,
-} from "@/lib/chat-persistence/free-tier";
+} from "@/features/chat/persistence/free-tier";
 import {
   appendMessage,
   ensureThreadInNamespace,
   loadThreadMessages,
   maybeAutoTitleThread,
-} from "@/lib/chat-persistence/service";
+} from "@/features/chat/persistence/service";
 import {
   buildAssistantApprovalResponseFromPending,
   chatStreamRequestSchema,
   findPendingApprovalMessageForResponse,
   isAssistantApprovalResponseMessage,
   isPersistedUIMessage,
-} from "@/lib/chat-persistence/types";
-import { attachToolDurationMetrics } from "@/lib/chat-runtime/attach-tool-duration-metrics";
-import { jsonError } from "@/lib/chat-runtime/errors";
-import { createInjectToolDurationStreamTransform } from "@/lib/chat-runtime/inject-tool-duration-stream";
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
+} from "@/features/chat/persistence/types";
+import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
+import { jsonError } from "@/features/chat/runtime/errors";
+import { createInjectToolDurationStreamTransform } from "@/features/chat/runtime/inject-tool-duration-stream";
 import {
   CHAT_MAX_STEPS,
   chatLanguageModel,
   threadTitleLanguageModel,
-} from "@/lib/chat-runtime/model";
-import { resolveAuthoritativeChatNamespace } from "@/lib/chat-runtime/resolve-chat-namespace";
-import { withSelectedResourceContext } from "@/lib/chat-runtime/selected-resource-context";
-import { buildChatToolset } from "@/lib/chat-runtime/tools";
+} from "@/features/chat/runtime/model";
+import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
+import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { decodeKubeconfig } from "@/lib/kubeconfig";
+import { resolveAuthoritativeChatNamespace } from "@/lib/resolve-chat-namespace";
 
 export const maxDuration = 120;
 

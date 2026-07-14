@@ -6,14 +6,14 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useEffect } from "react";
 import { applySealosSdkHydration } from "@/components/auth-bootstrap-core";
-import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
-import { scheduleChatDevboxWarmup } from "@/lib/devbox.actions";
+import { scheduleChatDevboxWarmup } from "@/features/chat/devbox/devbox.actions";
 import {
   desktopLanguageAtom,
   desktopUserIdAtom,
   kubeconfigAtom,
   namespaceAtom,
-} from "@/store/auth-store";
+} from "@/lib/auth-store";
+import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 /** Hydrates kubeconfig / namespace into Jotai from server props or dev env overrides. */
 

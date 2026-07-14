@@ -4,7 +4,7 @@ import type { Spec } from "@json-render/core";
 import { JSONUIProvider, Renderer } from "@json-render/react";
 import { memo } from "react";
 
-import { registry } from "@/features/project-assistant/agui/registry";
+import { registry } from "@/features/chat/agui/registry";
 
 /**
  * Renders catalog-backed json-render output from assistant tool calls.

@@ -1,6 +1,13 @@
 import { tool } from "ai";
 import { z } from "zod";
-
+import {
+  createDeployTaskToolInputSchema,
+  defaultRunnerForSource,
+} from "@/features/chat/tool/chat-deploy-task-input";
+import {
+  chatToolIntentionField,
+  logChatToolIntention,
+} from "@/features/chat/tool/chat-tool-intention";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -19,14 +26,6 @@ import {
   type DeploymentTaskTarget,
   submitDeployTaskInputSchema,
 } from "@/lib/deploy-task/types";
-import {
-  createDeployTaskToolInputSchema,
-  defaultRunnerForSource,
-} from "@/lib/tool/chat-deploy-task-input";
-import {
-  chatToolIntentionField,
-  logChatToolIntention,
-} from "@/lib/tool/chat-tool-intention";
 
 const getDeployTaskStatusToolInputSchema = z.object({
   intention: chatToolIntentionField,

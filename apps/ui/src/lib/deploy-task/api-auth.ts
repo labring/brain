@@ -1,8 +1,8 @@
 import "server-only";
 
-import { decodeKubeconfig } from "@/lib/chat-runtime/kubeconfig";
-import { resolveAuthoritativeChatNamespace } from "@/lib/chat-runtime/resolve-chat-namespace";
+import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
+import { resolveAuthoritativeChatNamespace } from "@/lib/resolve-chat-namespace";
 
 export interface DeployTaskRequestNamespace {
   message?: string;

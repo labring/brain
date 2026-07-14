@@ -1,4 +1,4 @@
-import { namespaceFromKubeconfigText } from "@/lib/chat-runtime/kubeconfig-namespace-core";
+import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 export function applySealosSdkHydration(input: {
   language: { lng: string } | null;
