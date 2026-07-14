@@ -2,7 +2,7 @@
 
 import { cn } from "@workspace/ui/lib/utils";
 import type { ComponentProps, ReactNode } from "react";
-import AppSidebar from "@/components/app-sidebar";
+import AppSidebar from "@/features/shell/app-sidebar";
 
 /**
  * Composable app chrome. Use **named exports** from this file in Server Components

@@ -5,8 +5,8 @@ import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useEffect } from "react";
-import { applySealosSdkHydration } from "@/components/auth-bootstrap-core";
 import { scheduleChatDevboxWarmup } from "@/features/chat/devbox/devbox.actions";
+import { applySealosSdkHydration } from "@/features/shell/auth-bootstrap-core";
 import {
   desktopLanguageAtom,
   desktopUserIdAtom,

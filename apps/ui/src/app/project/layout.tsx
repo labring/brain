@@ -2,9 +2,11 @@ import {
   AppShellChrome,
   AppShellSidebar,
   AppShellView,
-} from "@/components/app-shell";
-import AuthBootstrap, { SealosSdkBootstrap } from "@/components/auth-bootstrap";
-import ProjectWorkspaceLayout from "@/components/project-workspace-layout";
+} from "@/features/shell/app-shell";
+import AuthBootstrap, {
+  SealosSdkBootstrap,
+} from "@/features/shell/auth-bootstrap";
+import ProjectWorkspaceLayout from "@/features/shell/project-workspace-layout";
 
 /** Desktop iframe auth is resolved on the client through the Sealos SDK. */
 export const dynamic = "force-dynamic";

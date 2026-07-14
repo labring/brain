@@ -33,15 +33,6 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  createProjectSidebarShortcutItems,
-  type ProjectSidebarShortcutItem,
-} from "@/components/app-sidebar.shortcuts";
-import {
-  type AppSidebarUpgradeUsageRow,
-  formatWorkspaceQuotaRows,
-  type WorkspaceQuotaItem,
-} from "@/components/app-sidebar-upgrade";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -49,6 +40,15 @@ import type {
   ProjectShortcutIconKeyMap,
 } from "@/features/projects/project-shortcut-icons";
 import { useLastViewedProject } from "@/features/projects/use-last-viewed-project";
+import {
+  createProjectSidebarShortcutItems,
+  type ProjectSidebarShortcutItem,
+} from "@/features/shell/app-sidebar.shortcuts";
+import {
+  type AppSidebarUpgradeUsageRow,
+  formatWorkspaceQuotaRows,
+  type WorkspaceQuotaItem,
+} from "@/features/shell/app-sidebar-upgrade";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 function ProjectShortcutIcon({

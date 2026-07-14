@@ -35,7 +35,6 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { isAssistantChatNamespaceReady } from "@/components/project-assistant-chat-readiness";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
 import { FreeTurnsIndicator } from "@/features/chat/free-turns-indicator";
@@ -107,6 +106,7 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
+import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
 import {
   desktopUserIdAtom,
   kubeconfigAtom,
