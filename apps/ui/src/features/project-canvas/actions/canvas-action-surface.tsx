@@ -9,7 +9,7 @@ import { type ReactNode, useEffect } from "react";
 import {
   DataBrowserPane,
   type DataBrowserPaneProps,
-} from "@/features/data-browser/DataBrowserPane";
+} from "@/features/db-browser/DataBrowserPane";
 import type { ProjectCanvasMainRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { assistantPaneOpenAtom } from "@/store/layout-store";
 

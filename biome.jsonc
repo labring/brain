@@ -25,7 +25,7 @@
     },
     {
       // DataFlow migration shim preserves the old `useI18n` call-site name from the plan.
-      "includes": ["apps/ui/src/features/data-browser/i18n/useI18n.ts"],
+      "includes": ["apps/ui/src/features/db-browser/i18n/useI18n.ts"],
       "linter": {
         "rules": {
           "style": { "useFilenamingConvention": "off" }
@@ -34,7 +34,7 @@
     },
     {
       // DataFlow browser migration preserves copied shell/components for parity.
-      "includes": ["apps/ui/src/features/data-browser/**"],
+      "includes": ["apps/ui/src/features/db-browser/**"],
       "linter": {
         "rules": {
           "a11y": {
