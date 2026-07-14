@@ -21,12 +21,12 @@ import {
   type DeploymentTaskDisplaySummary,
   type DeploymentTaskProjection,
   deploymentTaskShortCode,
-} from "@/lib/deploy-task/projection";
+} from "@/features/deploy/task/projection";
 import {
   deployTaskIsTerminal,
   deployTaskStatusDotClass,
   deployTaskStatusLabel,
-} from "@/lib/deploy-task/status-presentation";
+} from "@/features/deploy/task/status-presentation";
 import type {
   DeploymentTaskDockItem,
   DeploymentTaskDockModel,

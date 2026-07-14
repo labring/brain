@@ -11,7 +11,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Blocks, Rocket, Upload } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { isSensitiveDeploymentInput } from "@/lib/deploy-task/sensitive-inputs";
+import { isSensitiveDeploymentInput } from "@/features/deploy/task/sensitive-inputs";
 import { DeploymentSettings } from "./deployment-settings";
 
 export interface TemplateDeploymentInput {

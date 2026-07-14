@@ -4,12 +4,12 @@ import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer
 import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
 import { isProjectDisplayNameTaken } from "@/features/deploy/projects-to-explorer-projects";
-import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import type {
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeploymentTaskTarget,
-} from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/types";
+import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 
 export type DeploymentTarget =
   | {

@@ -4,22 +4,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { DEPLOY_TASK_ENGINE_CADENCE } from "@/lib/deploy-task/engine/constants";
-import type { DeployTaskEngineContext } from "@/lib/deploy-task/engine/context";
-import type { DeployTaskHandle } from "@/lib/deploy-task/engine/handle";
-import { stopDeployTaskEngineRuntimeForTests } from "@/lib/deploy-task/engine/runtime";
-import { insertTaskRow } from "@/lib/deploy-task/engine/testing/fixtures";
+import { DEPLOY_TASK_ENGINE_CADENCE } from "@/features/deploy/task/engine/constants";
+import type { DeployTaskEngineContext } from "@/features/deploy/task/engine/context";
+import type { DeployTaskHandle } from "@/features/deploy/task/engine/handle";
+import { stopDeployTaskEngineRuntimeForTests } from "@/features/deploy/task/engine/runtime";
+import { insertTaskRow } from "@/features/deploy/task/engine/testing/fixtures";
 import {
   createDeployTaskTestHarness,
   type DeployTaskTestHarness,
-} from "@/lib/deploy-task/engine/testing/harness";
+} from "@/features/deploy/task/engine/testing/harness";
 
 let testDb: DeployTaskTestHarness["db"] | undefined;
 let testEngineContext: DeployTaskEngineContext | undefined;
 let runDone: Promise<void> | undefined;
 
 mock.module("server-only", () => ({}));
-mock.module("@/lib/deploy-task/api-auth", () => ({
+mock.module("@/features/deploy/task/api-auth", () => ({
   deployTaskRequestParams: () => ({}),
   resolveDeployTaskRequestNamespace: async () => ({
     namespace: "namespace-b",
@@ -35,13 +35,13 @@ mock.module(
     },
   })
 );
-mock.module("@/lib/deploy-task/engine/server", () => ({
+mock.module("@/features/deploy/task/engine/server", () => ({
   getDeployTaskEngineContext: () => {
     assert.ok(testEngineContext);
     return testEngineContext;
   },
 }));
-mock.module("@/lib/deploy-task/runner", () => ({
+mock.module("@/features/deploy/task/runner", () => ({
   resolveDeploymentTaskTarget: async () => ({
     projectId: "project-test",
     projectName: "Project Test",

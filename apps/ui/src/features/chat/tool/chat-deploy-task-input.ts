@@ -4,7 +4,7 @@ import {
   type DeploymentTaskRunner,
   type DeploymentTaskSource,
   deploymentTaskTargetSchema,
-} from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/types";
 import { chatToolIntentionField } from "./chat-tool-intention";
 
 const boundedString = z.string().trim().min(1).max(512);

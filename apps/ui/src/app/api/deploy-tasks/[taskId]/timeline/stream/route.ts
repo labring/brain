@@ -1,13 +1,13 @@
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
-} from "@/lib/deploy-task/api-auth";
-import { getDeployTaskTimelineSnapshot } from "@/lib/deploy-task/service";
+} from "@/features/deploy/task/api-auth";
+import { getDeployTaskTimelineSnapshot } from "@/features/deploy/task/service";
 import {
   type DeploymentTaskTimelineSubscription,
   subscribeDeploymentTaskTimelineEvents,
-} from "@/lib/deploy-task/timeline-events";
-import type { DeploymentTaskTimelineStreamEvent } from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/timeline-events";
+import type { DeploymentTaskTimelineStreamEvent } from "@/features/deploy/task/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

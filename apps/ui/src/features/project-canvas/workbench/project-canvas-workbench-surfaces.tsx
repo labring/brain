@@ -7,6 +7,7 @@ import type { DeploymentTaskEditRedeploy } from "@/features/deploy/deployment-ta
 import { DeploymentTaskTimelinePane } from "@/features/deploy/deployment-task-timeline-pane";
 import { DockerDeploymentPane } from "@/features/deploy/docker-deployment-pane";
 import { GitHubDeploymentPane } from "@/features/deploy/github-deployment-pane";
+import type { DeployTaskDTO } from "@/features/deploy/task/types";
 import { TemplateDeploymentPane } from "@/features/deploy/template-deployment-pane";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
@@ -29,7 +30,6 @@ import type {
   SettingsReadModelHints,
   SettingsSessionEvents,
 } from "@/features/resource-settings/settings-types";
-import type { DeployTaskDTO } from "@/lib/deploy-task/types";
 import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 
 export interface ProjectCanvasSurfaceHostActions {

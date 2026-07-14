@@ -67,6 +67,8 @@ import {
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
 } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
+import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
+import { scanMessagesForDeployTaskCreations } from "@/features/deploy/task/chat-bridge-scan";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import {
   type ProjectCanvasSelection,
@@ -104,8 +106,6 @@ import {
   kubeconfigAtom,
   namespaceAtom,
 } from "@/lib/auth-store";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
-import { scanMessagesForDeployTaskCreations } from "@/lib/deploy-task/chat-bridge-scan";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";

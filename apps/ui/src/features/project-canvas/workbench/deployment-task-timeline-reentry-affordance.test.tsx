@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import type { DeploymentTaskDockModel } from "./deployment-task-timeline-reentry";
 import { ProjectCanvasDeploymentTaskDock } from "./deployment-task-timeline-reentry-affordance";
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import { selectDeploymentTaskDock } from "./deployment-task-timeline-reentry";
 
 const NOW = new Date("2026-06-17T10:04:00.000Z");

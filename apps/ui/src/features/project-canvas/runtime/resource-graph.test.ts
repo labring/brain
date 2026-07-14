@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
@@ -8,7 +8,6 @@ import {
 } from "@/features/project-canvas/nodes/constants";
 import { projectRuntimeFactsFromResources } from "@/features/project-runtime/resource-facts";
 import { projectRuntimeResourceTopologyFromFacts } from "@/features/project-runtime/resource-store";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import type { CanvasLayoutDocument, CanvasLayoutNode } from "../layout/types";
 import {

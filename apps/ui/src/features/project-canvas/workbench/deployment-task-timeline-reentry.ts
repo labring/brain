@@ -1,7 +1,7 @@
 import {
   type DeploymentTaskProjection,
   deploymentTaskProjectionIsVisible,
-} from "@/lib/deploy-task/projection";
+} from "@/features/deploy/task/projection";
 
 export const DEPLOYMENT_TASK_DOCK_DESKTOP_LIMIT = 3;
 export const DEPLOYMENT_TASK_DOCK_MOBILE_LIMIT = 1;

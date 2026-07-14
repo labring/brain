@@ -8,12 +8,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import { deployTaskHasAppliedResources } from "@/lib/deploy-task/status-presentation";
+import { deployTaskHasAppliedResources } from "@/features/deploy/task/status-presentation";
 import type {
   DeploymentTaskSource,
   DeployTaskDTO,
-} from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/types";
+import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 
 /**
  * One edited-redeploy gesture (US10): held in React state at the workbench

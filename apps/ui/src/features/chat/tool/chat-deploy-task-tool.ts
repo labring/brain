@@ -12,20 +12,20 @@ import {
   cancelDeployTaskAction,
   createDeployTaskAction,
   submitDeployTaskInputAction,
-} from "@/lib/deploy-task/engine/actions";
-import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
+} from "@/features/deploy/task/engine/actions";
+import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
   resolveDeploymentTaskTarget,
   runDeployTask,
-} from "@/lib/deploy-task/runner";
+} from "@/features/deploy/task/runner";
 import {
   getDeployTaskSnapshot,
   toDeployTaskDTO,
-} from "@/lib/deploy-task/service";
+} from "@/features/deploy/task/service";
 import {
   type DeploymentTaskTarget,
   submitDeployTaskInputSchema,
-} from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/types";
 
 const getDeployTaskStatusToolInputSchema = z.object({
   intention: chatToolIntentionField,

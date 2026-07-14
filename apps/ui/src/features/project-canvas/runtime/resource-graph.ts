@@ -1,5 +1,6 @@
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import type { Node } from "@xyflow/react";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import {
   type CanvasDetectedConnection,
   canvasConnectionEdgesFromDetectedConnections,
@@ -26,7 +27,6 @@ import type {
   ProjectRuntimeShellKind,
   ProjectRuntimeShellNodeData,
 } from "@/features/project-runtime/resource-store";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderPendingResultKeys,

@@ -13,11 +13,11 @@ import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deploy/pipeline";
+import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
 import { TemplateDeployer } from "@/features/deploy/template-deployer";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 export function TemplateDeploymentPane({

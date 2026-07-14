@@ -34,10 +34,10 @@ export interface DeployTaskTestHarness {
 }
 
 function migrationsFolder(): string {
-  // src/lib/deploy-task/engine/testing → apps/ui
+  // src/features/deploy/task/engine/testing → apps/ui
   return path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../../../../drizzle"
+    "../../../../../../drizzle"
   );
 }
 

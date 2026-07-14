@@ -44,11 +44,11 @@ import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
 } from "@/features/deploy/deployment-task-redeploy";
-import { deployRunnerSurfacesRawFailure } from "@/lib/deploy-task/failure-summary";
+import { deployRunnerSurfacesRawFailure } from "@/features/deploy/task/failure-summary";
 import {
   deploymentTaskShortCode,
   deploymentTaskSourceSummary,
-} from "@/lib/deploy-task/projection";
+} from "@/features/deploy/task/projection";
 import {
   type DeployTaskStatusHue,
   deployTaskHasAppliedResources,
@@ -56,7 +56,7 @@ import {
   deployTaskIsCancelling,
   deployTaskIsRedeployable,
   deployTaskStatusHue,
-} from "@/lib/deploy-task/status-presentation";
+} from "@/features/deploy/task/status-presentation";
 import type {
   DeploymentResultResourceCard,
   DeploymentResultResourceCardStatus,
@@ -65,7 +65,7 @@ import type {
   DeploymentTimelineEventSeverity,
   DeploymentTimelineStep,
   DeploymentTimelineStepStatus,
-} from "@/lib/deploy-task/timeline";
+} from "@/features/deploy/task/timeline";
 import type {
   DeploymentTaskDeploymentPlan,
   DeploymentTaskDeploymentPlanInput,
@@ -73,9 +73,9 @@ import type {
   DeployTaskBlockingInput,
   DeployTaskDTO,
   DeployTaskStatus,
-} from "@/lib/deploy-task/types";
-import { useDeploymentTaskActions } from "@/lib/deploy-task/use-deployment-task-actions";
-import { useDeploymentTaskTimeline } from "@/lib/deploy-task/use-deployment-task-timeline";
+} from "@/features/deploy/task/types";
+import { useDeploymentTaskActions } from "@/features/deploy/task/use-deployment-task-actions";
+import { useDeploymentTaskTimeline } from "@/features/deploy/task/use-deployment-task-timeline";
 
 interface DeploymentTaskTimelinePaneProps {
   kubeconfig: string;

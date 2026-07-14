@@ -17,8 +17,8 @@ import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deploy/pipeline";
+import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function stringArrayField(value: unknown): string[] | undefined {

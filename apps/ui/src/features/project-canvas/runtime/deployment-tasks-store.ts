@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchProjectDeploymentTaskProjections,
   streamProjectDeploymentTaskProjections,
-} from "@/lib/deploy-task/client";
+} from "@/features/deploy/task/client";
 import {
   type DeploymentTaskProjection,
   type DeploymentTaskProjectionStreamEvent,
@@ -14,7 +14,7 @@ import {
   replaceDeploymentTaskProjections,
   selectCanvasDeploymentTaskProjections,
   upsertDeploymentTaskProjection,
-} from "@/lib/deploy-task/projection";
+} from "@/features/deploy/task/projection";
 import {
   createThrottleScheduler,
   type ThrottleScheduler,

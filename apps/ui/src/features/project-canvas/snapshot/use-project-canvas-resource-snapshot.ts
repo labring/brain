@@ -16,6 +16,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import {
   CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
   resolveMissingResourceLayoutGrace,
@@ -34,7 +35,6 @@ import {
   type ProjectRuntimeStore,
 } from "@/features/project-runtime/resource-store";
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {
   type WorkloadTransientSinceByKey,

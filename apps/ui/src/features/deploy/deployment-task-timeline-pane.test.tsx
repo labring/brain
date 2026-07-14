@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+import type { DeployTaskDTO } from "@/features/deploy/task/types";
 import {
   DeploymentTaskTimelineActions,
   DeploymentTaskTimelinePaneContent,

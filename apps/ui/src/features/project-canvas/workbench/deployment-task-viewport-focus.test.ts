@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Node } from "@xyflow/react";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,

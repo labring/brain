@@ -19,6 +19,7 @@ import {
   existingProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deploy/pipeline";
+import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import {
@@ -28,7 +29,6 @@ import {
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { desktopUserIdAtom } from "@/lib/auth-store";
-import { dispatchDeployTaskCreatedEvent } from "@/lib/deploy-task/browser-events";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function githubPaneTitle(input: {

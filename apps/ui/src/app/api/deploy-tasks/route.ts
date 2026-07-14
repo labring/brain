@@ -4,23 +4,23 @@ import { z } from "zod";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
-} from "@/lib/deploy-task/api-auth";
-import { createDeployTaskAction } from "@/lib/deploy-task/engine/actions";
-import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
+} from "@/features/deploy/task/api-auth";
+import { createDeployTaskAction } from "@/features/deploy/task/engine/actions";
+import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
   resolveDeploymentTaskTarget,
   runDeployTask,
-} from "@/lib/deploy-task/runner";
+} from "@/features/deploy/task/runner";
 import {
   getDeployTaskByIdInNamespace,
   listDeploymentTaskProjections,
   listDeployTasks,
   toDeployTaskDTO,
-} from "@/lib/deploy-task/service";
+} from "@/features/deploy/task/service";
 import {
   createDeployTaskInputSchema,
   deployTaskStatusSchema,
-} from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/types";
 import { getGithubConnectionForNamespaceById } from "@/lib/github-app/connection-service";
 
 export const dynamic = "force-dynamic";
