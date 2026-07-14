@@ -34,7 +34,9 @@ COPY --from=pruner /app/out/full/ .
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 
-RUN cd apps/ui && bun run build && \
+# Docker COPY requires the source path even when the app has no public assets.
+RUN mkdir -p apps/ui/public && \
+    cd apps/ui && bun run build && \
     rm -rf node_modules/.cache && \
     rm -rf .next/cache
 
