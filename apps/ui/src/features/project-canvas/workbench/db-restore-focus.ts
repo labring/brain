@@ -1,10 +1,10 @@
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
-import type { ProjectMainSurfaceEntry } from "@/features/project-surfaces/surface-state";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
+import type { ProjectMainSurfaceEntry } from "@/features/panes/surface-state";
 import {
   type ProjectDbTarget,
   projectDbTarget,
   targetsEqual,
-} from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/target-identity";
 
 export const DB_RESTORE_CANVAS_FOCUS_TIMEOUT_MS = 10_000;
 

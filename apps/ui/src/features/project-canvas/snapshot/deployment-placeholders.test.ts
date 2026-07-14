@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Node } from "@xyflow/react";
-import { DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS } from "@/lib/deploy-task/projection";
-import type { DeploymentTaskCanvasProjectionSlot } from "@/lib/deploy-task/types";
+import { DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS } from "@/features/deploy/task/projection";
+import type { DeploymentTaskCanvasProjectionSlot } from "@/features/deploy/task/types";
 import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import {
   CANVAS_CONTAINER_NODE_TYPE,

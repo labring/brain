@@ -1,6 +1,6 @@
 "use client";
 
-import type { ApCustomDomainCnameVerifier } from "@/features/project-settings/ap/ap-settings-sections";
+import type { ApCustomDomainCnameVerifier } from "@/features/resource-settings/ap/ap-settings-sections";
 
 const CNAME_VERIFY_PATH = "/api/project-canvas/custom-domain/cname";
 

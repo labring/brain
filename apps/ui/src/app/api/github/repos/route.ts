@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { listGithubReposForNamespace } from "@/lib/github-app/connection-service";
-import { resolveGithubConnectionIdentity } from "@/lib/github-app/namespace-auth";
+import { listGithubReposForNamespace } from "@/features/deploy/github/connection-service";
+import { resolveGithubConnectionIdentity } from "@/features/deploy/github/namespace-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

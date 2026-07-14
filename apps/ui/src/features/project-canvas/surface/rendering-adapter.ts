@@ -1,16 +1,4 @@
 import type { Node } from "@xyflow/react";
-import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/database-node-data";
-import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import {
-  type ProjectRuntimeNodeModel,
-  type ProjectRuntimeNodeModels,
-  projectRuntimeNodeModelFromFact,
-  projectRuntimeShellLookupFromNodeData,
-} from "@/features/project-runtime/resource-models";
-import type {
-  ProjectRuntimeShellLookup,
-  ProjectRuntimeStore,
-} from "@/features/project-runtime/resource-store";
 import {
   type ProjectDrawerSurfaceEntry,
   type ProjectGlobalSidePaneEntry,
@@ -18,12 +6,24 @@ import {
   type ProjectSideSurfaceEntry,
   type ProjectSurfaceState,
   projectSideSurfaceVisible,
-} from "@/features/project-surfaces/surface-state";
+} from "@/features/panes/surface-state";
 import type {
   ProjectApTarget,
   ProjectDbTarget,
   ProjectSurfaceTarget,
-} from "@/features/project-surfaces/target-identity";
+} from "@/features/panes/target-identity";
+import { databaseNodeDataFromNode } from "@/features/project-canvas/nodes/database-node-data";
+import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
+import {
+  type ProjectRuntimeNodeModel,
+  type ProjectRuntimeNodeModels,
+  projectRuntimeNodeModelFromFact,
+  projectRuntimeShellLookupFromNodeData,
+} from "@/features/project-canvas/runtime/resource-models";
+import type {
+  ProjectRuntimeShellLookup,
+  ProjectRuntimeStore,
+} from "@/features/project-canvas/runtime/resource-store";
 import { findCanvasNodeForProjectTarget } from "./selection";
 
 type ProjectCanvasTargetedSideEntry = Extract<

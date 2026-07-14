@@ -7,6 +7,7 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import { useMemo } from "react";
+import { dbLifecycleWorkloadRefFromTarget } from "@/features/project-canvas/actions/resource-actions";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
 import {
   databaseLiveSessionUnavailableReasons,
@@ -25,7 +26,6 @@ import {
   useCanvasDbLifecycleActivity,
   useProjectCanvasNodeCommands,
 } from "@/features/project-canvas/workbench/node-commands-react";
-import { dbLifecycleWorkloadRefFromTarget } from "@/features/project-resource-actions/resource-actions";
 
 export interface CanvasDatabaseNodeViewModel {
   actions: DatabaseNodeActions;

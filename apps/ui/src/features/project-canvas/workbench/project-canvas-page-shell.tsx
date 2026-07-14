@@ -7,6 +7,8 @@ import type {
 } from "@workspace/ui/components/canvas/canvas.types";
 import { memo, useEffect, useLayoutEffect } from "react";
 import { toast } from "sonner";
+import { ProjectRuntimeStoreProvider } from "@/features/project-canvas/runtime/resource-models-react";
+import type { ProjectRuntimeStore } from "@/features/project-canvas/runtime/resource-store";
 import type { ProjectCanvasFrameState } from "@/features/project-canvas/snapshot/project-canvas-page-state";
 import { ProjectCanvasInteractionStoreProvider } from "@/features/project-canvas/surface/interaction-react";
 import type { ProjectCanvasInteractionStore } from "@/features/project-canvas/surface/interaction-store";
@@ -18,8 +20,6 @@ import {
   type ProjectCanvasNodeCommands,
   ProjectCanvasNodeCommandsProvider,
 } from "@/features/project-canvas/workbench/node-commands-react";
-import { ProjectRuntimeStoreProvider } from "@/features/project-runtime/resource-models-react";
-import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
 
 const PROJECT_CANVAS_LOADING_TOAST_ID = "project-canvas-loading-workloads";
 const PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID = "project-canvas-no-workloads";

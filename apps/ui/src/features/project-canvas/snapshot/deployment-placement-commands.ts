@@ -1,6 +1,6 @@
 import type { Node } from "@xyflow/react";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
-import type { DeploymentTaskCanvasProjectionSlot } from "@/lib/deploy-task/types";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
+import type { DeploymentTaskCanvasProjectionSlot } from "@/features/deploy/task/types";
 import {
   canvasLayoutNodeFromOwner,
   canvasPlacementOwnerKey,

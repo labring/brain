@@ -2,12 +2,14 @@
 
 import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
-import type { DeploymentTaskEditRedeploy } from "@/features/deployment/deployment-task-redeploy";
-import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
-import { DockerDeploymentPane } from "@/features/deployment/docker-deployment-pane";
-import { GitHubDeploymentPane } from "@/features/deployment/github-deployment-pane";
-import { TemplateDeploymentPane } from "@/features/deployment/template-deployment-pane";
+import { DatabaseDeploymentPane } from "@/features/deploy/database-deployment-pane";
+import type { DeploymentTaskEditRedeploy } from "@/features/deploy/deployment-task-redeploy";
+import { DeploymentTaskTimelinePane } from "@/features/deploy/deployment-task-timeline-pane";
+import { DockerDeploymentPane } from "@/features/deploy/docker-deployment-pane";
+import { GitHubDeploymentPane } from "@/features/deploy/github-deployment-pane";
+import type { DeployTaskDTO } from "@/features/deploy/task/types";
+import { TemplateDeploymentPane } from "@/features/deploy/template-deployment-pane";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";
@@ -22,14 +24,12 @@ import type {
   ProjectCanvasSideRenderModel,
   ProjectCanvasSurfaceRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
-import type { SettingsLeaveGuardRegistration } from "@/features/project-settings/settings-leave-guard";
+import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
 import type {
   SettingsLaunchContext,
   SettingsReadModelHints,
   SettingsSessionEvents,
-} from "@/features/project-settings/settings-types";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
-import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+} from "@/features/resource-settings/settings-types";
 import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 
 export interface ProjectCanvasSurfaceHostActions {

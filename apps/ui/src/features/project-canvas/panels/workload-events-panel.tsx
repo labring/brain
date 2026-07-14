@@ -11,7 +11,7 @@ import { CalendarDays } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import { containerStatesFromNode } from "@/features/project-canvas/flow/container-node-workload";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { CanvasResourcePane } from "./canvas-resource-pane";
 
 export const EVENT_LIMIT = 50;

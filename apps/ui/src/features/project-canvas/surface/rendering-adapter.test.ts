@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { Node } from "@xyflow/react";
-
+import type { ProjectSurfaceState } from "@/features/panes/surface-state";
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import type { ProjectRuntimeNodeModels } from "@/features/project-runtime/resource-models";
-import type { ProjectSurfaceState } from "@/features/project-surfaces/surface-state";
+import type { ProjectRuntimeNodeModels } from "@/features/project-canvas/runtime/resource-models";
 import {
   createProjectCanvasDrawerRenderModel,
   createProjectCanvasMainRenderModel,

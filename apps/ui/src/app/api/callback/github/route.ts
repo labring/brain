@@ -3,7 +3,7 @@ import {
   completeOAuthAuthorization,
   handleProviderError,
   startAuthorize,
-} from "@/lib/github-app/service";
+} from "@/features/deploy/github/service";
 
 export const runtime = "nodejs";
 

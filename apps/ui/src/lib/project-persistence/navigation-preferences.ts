@@ -2,7 +2,7 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { normalizePinnedProjectIds } from "@/lib/pinned-projects";
+import { normalizePinnedProjectIds } from "@/features/projects/pinned-projects";
 
 import { getProjectDb } from "./db";
 import {

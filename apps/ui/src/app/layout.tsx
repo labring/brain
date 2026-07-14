@@ -8,9 +8,9 @@ import { Toaster } from "@workspace/ui/components/sonner";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { JotaiProvider } from "@/components/jotai-provider";
 import { DevTweaks } from "@/features/dev-tweaks/dev-tweaks";
 import { StatusHeartbeatTweaks } from "@/features/dev-tweaks/status-heartbeat-tweaks";
+import { JotaiProvider } from "@/features/shell/jotai-provider";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 

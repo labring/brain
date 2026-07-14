@@ -1,5 +1,5 @@
 import type { Node } from "@xyflow/react";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import type { CanvasLayoutDocument, CanvasLayoutNode } from "../layout/types";
 import { CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE } from "../nodes/constants";
 import { canvasResourceIdentityFromNode } from "../nodes/resource-identity";

@@ -11,6 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
+import type { ProjectSurfaceIntent } from "@/features/panes/surface-state";
 import {
   addPendingApDbCanvasReferences,
   type PendingApDbCanvasReference,
@@ -24,10 +26,12 @@ import type {
   CanvasLayoutResourceRef,
 } from "@/features/project-canvas/layout/types";
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
+import type { SettingsLaunchSource } from "@/features/project-canvas/runtime/settings-launch-context";
 import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
 import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
 import { deploymentTaskViewportFocusNodeIds } from "@/features/project-canvas/snapshot/deployment-viewport-focus";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
+import { useStableCallback } from "@/features/project-canvas/use-stable-callback";
 import {
   deploymentTaskDockDismissalsStorageKey,
   readBrowserDeploymentTaskDockDismissals,
@@ -42,10 +46,6 @@ import {
   type ProjectCanvasSideViewportFocusResolver,
   useProjectCanvas,
 } from "@/features/project-canvas/workbench/use-project-canvas";
-import type { SettingsLaunchSource } from "@/features/project-runtime/settings-launch-context";
-import type { ProjectSurfaceIntent } from "@/features/project-surfaces/surface-state";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
-import { useStableCallback } from "@/lib/use-stable-callback";
 
 const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
   DeploymentTaskProjection["status"]

@@ -1,4 +1,4 @@
-import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
+import type { ProjectResourceActions } from "@/features/project-canvas/actions/resource-actions";
 
 type DbLifecycleOperations = ProjectResourceActions["dbLifecycle"];
 type DbLifecycleWorkloadRefInput = Parameters<

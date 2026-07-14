@@ -1,5 +1,6 @@
 import type { CanvasState } from "@workspace/ui/components/canvas/canvas.types";
 import type { Node } from "@xyflow/react";
+import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import {
   type CanvasDetectedConnection,
   canvasConnectionEdgesFromDetectedConnections,
@@ -20,13 +21,12 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import type { ProjectRuntimeRelationshipIndexes } from "@/features/project-runtime/resource-relationships";
+import type { ProjectRuntimeRelationshipIndexes } from "@/features/project-canvas/runtime/resource-relationships";
 import type {
   ProjectRuntimeResourceTopologyItem,
   ProjectRuntimeShellKind,
   ProjectRuntimeShellNodeData,
-} from "@/features/project-runtime/resource-store";
-import type { DeploymentTaskProjection } from "@/lib/deploy-task/projection";
+} from "@/features/project-canvas/runtime/resource-store";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderPendingResultKeys,

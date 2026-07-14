@@ -32,7 +32,7 @@ export async function register() {
   }
   try {
     const { startDeployTaskEngine } = await import(
-      "@/lib/deploy-task/engine/server"
+      "@/features/deploy/task/engine/server"
     );
     startDeployTaskEngine();
   } catch (error) {

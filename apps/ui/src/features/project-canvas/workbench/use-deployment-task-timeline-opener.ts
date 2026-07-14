@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import {
   acknowledgePendingDeployTaskCreatedEvent,
   DEPLOY_TASK_CREATED_EVENT,
   type DeployTaskCreatedEvent,
   pendingDeployTaskCreatedEvents,
-} from "@/lib/deploy-task/browser-events";
+} from "@/features/deploy/task/browser-events";
+import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 
 export function useDeploymentTaskTimelineOpener({
   openSideSurface,

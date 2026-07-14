@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import {
   getGithubConnectionForNamespace,
   revokeGithubConnectionForNamespace,
-} from "@/lib/github-app/connection-service";
-import { resolveGithubConnectionIdentity } from "@/lib/github-app/namespace-auth";
+} from "@/features/deploy/github/connection-service";
+import { resolveGithubConnectionIdentity } from "@/features/deploy/github/namespace-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

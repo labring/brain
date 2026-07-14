@@ -1,4 +1,5 @@
 import type { Connection, Node } from "@xyflow/react";
+import { projectApTarget } from "@/features/panes/target-identity";
 import {
   classifyProjectCanvasConnectionCommand,
   type ProjectCanvasConnectionCommand,
@@ -7,8 +8,7 @@ import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/
 import type {
   ApSettingsConfirmedAddDbDsnReference,
   ApSettingsPendingDbReference,
-} from "@/features/project-settings/ap/ap-settings-sections";
-import { projectApTarget } from "@/features/project-surfaces/target-identity";
+} from "@/features/resource-settings/ap/ap-settings-sections";
 import type { ProjectCanvasCommandPlan } from "./command-plan";
 
 export interface PendingApDbReferenceDraftRegistration {

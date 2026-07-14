@@ -5,6 +5,7 @@ import type {
   ContainerNodeQuickActionKey,
 } from "@workspace/ui/components/container-node/container-node";
 import { useMemo } from "react";
+import { apLifecycleWorkloadRefFromTarget } from "@/features/project-canvas/actions/resource-actions";
 import {
   MISSING_RESOURCE_TARGET_REASON,
   resourceActionDisabledReason,
@@ -21,7 +22,6 @@ import {
   useCanvasApLifecycleActivity,
   useProjectCanvasNodeCommands,
 } from "@/features/project-canvas/workbench/node-commands-react";
-import { apLifecycleWorkloadRefFromTarget } from "@/features/project-resource-actions/resource-actions";
 
 /**
  * Builds container node actions from the stable canvas command surface plus

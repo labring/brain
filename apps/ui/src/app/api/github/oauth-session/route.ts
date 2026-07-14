@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { authorizeGithubConnectionIdentity } from "@/lib/github-app/namespace-auth-core";
-import { createGithubOAuthSessionUrl } from "@/lib/github-app/service";
-import { getCallbackBaseUrl } from "@/lib/github-app/urls";
+import { authorizeGithubConnectionIdentity } from "@/features/deploy/github/namespace-auth-core";
+import { createGithubOAuthSessionUrl } from "@/features/deploy/github/service";
+import { getCallbackBaseUrl } from "@/features/deploy/github/urls";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

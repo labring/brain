@@ -6,7 +6,7 @@ import {
 } from "@workspace/ui/components/container-node/container-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo, useMemo } from "react";
-
+import { useProjectRuntimeNodeModel } from "@/features/project-canvas/runtime/resource-models-react";
 import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
 import {
   containerMetricsWithTelemetrySnapshot,
@@ -14,7 +14,6 @@ import {
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
-import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasContainerNodeData, CanvasContainerRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 import { useCanvasContainerNodeActions } from "./use-container-node-actions";

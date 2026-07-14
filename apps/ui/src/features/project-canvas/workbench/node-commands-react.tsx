@@ -9,6 +9,7 @@ import {
   useContext,
   useSyncExternalStore,
 } from "react";
+import type { ProjectResourceActions } from "@/features/project-canvas/actions/resource-actions";
 import type { ProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/command-model";
 import {
   type CanvasApLifecycleActivity,
@@ -24,7 +25,6 @@ import type {
   ProjectCanvasApLifecycleTarget,
   ProjectCanvasDbLifecycleTarget,
 } from "@/features/project-canvas/workbench/project-canvas-lifecycle-dialog";
-import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 
 interface WorkloadRef {
   name: string;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { authorizeGithubConnectionIdentity } from "@/lib/github-app/namespace-auth-core";
-import { createGithubAppInstallSessionUrl } from "@/lib/github-app/service";
+import { authorizeGithubConnectionIdentity } from "@/features/deploy/github/namespace-auth-core";
+import { createGithubAppInstallSessionUrl } from "@/features/deploy/github/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

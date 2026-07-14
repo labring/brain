@@ -19,4 +19,4 @@ export {
   platformAddressIdFromValue,
   platformAddressIdsFromRows,
   stablePlatformAddressDomainPrefix,
-} from "@/features/project-settings/ap/lib/platform-address";
+} from "@/features/resource-settings/ap/lib/platform-address";

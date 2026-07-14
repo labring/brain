@@ -7,6 +7,7 @@ import type {
 } from "@workspace/ui/components/canvas/canvas.types";
 import type { CanvasNodeConnectionSide } from "@workspace/ui/components/canvas-node/canvas-node";
 import type { Edge, Node } from "@xyflow/react";
+import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
 import { projectCanvasFlowNodeTypes } from "@/features/project-canvas/canvas-store";
 import {
   canvasNodeGeometryFromNode,
@@ -19,7 +20,6 @@ import {
 import type { ProjectCanvasSideRenderModel } from "@/features/project-canvas/surface/rendering-adapter";
 import { planProjectCanvasCommand } from "@/features/project-canvas/workbench/command-model";
 import { projectCanvasNodeClickIntentFromNode } from "@/features/project-canvas/workbench/resource-surface-intents";
-import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
 
 export interface ProjectCanvasConnectionOrigin {
   nodeId: string;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ProjectDbTarget } from "@/features/project-surfaces/target-identity";
+import type { ProjectDbTarget } from "@/features/panes/target-identity";
 import {
   canvasSelectionForRestoredDbService,
   DB_RESTORE_CANVAS_FOCUS_TIMEOUT_MS,

@@ -1,0 +1,65 @@
+"use client";
+
+import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
+import { fetcher } from "@workspace/api/fetch";
+import { useMemo } from "react";
+import useSWR from "swr";
+
+import type { BrainProjectsResponse } from "@/features/projects/brain-projects";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+
+export function useCurrentProjectDisplayName(options: {
+  kubeconfig: string;
+  namespace: string;
+  projectId: string;
+}) {
+  const kubeconfig = options.kubeconfig.trim();
+  const namespace = options.namespace.trim();
+  const projectId = options.projectId.trim();
+  const enabled = kubeconfig !== "" && projectId !== "";
+
+  const projectsQuery = useMemo(() => ({ namespace }), [namespace]);
+  const credentialKey = useMemo(
+    () => kubeconfigCredentialKey(kubeconfig),
+    [kubeconfig]
+  );
+
+  const { data, error, isLoading } = useSWR(
+    enabled && namespace !== ""
+      ? (["/api/projects", projectsQuery, credentialKey] as const)
+      : null,
+    () =>
+      fetcher<BrainProjectsResponse>({
+        base: window.location.origin,
+        header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
+        path: "/api/projects",
+        query: projectsQuery,
+      })
+  );
+
+  const currentProject = useMemo(() => {
+    const hit = (data?.projects ?? []).find(
+      (project) => project.id === projectId
+    );
+    if (hit == null) {
+      return {
+        description: undefined,
+        displayName: undefined,
+        resourceName: undefined,
+      };
+    }
+    return {
+      description: hit.description,
+      displayName: hit.displayName,
+      resourceName: hit.id,
+    };
+  }, [data, projectId]);
+
+  return {
+    description: currentProject.description,
+    displayName: currentProject.displayName,
+    error: error instanceof Error ? error : undefined,
+    isLoading: enabled && isLoading,
+    resourceName: currentProject.resourceName,
+  };
+}

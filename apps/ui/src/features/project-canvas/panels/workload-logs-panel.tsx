@@ -10,7 +10,7 @@ import { memo, useCallback, useMemo, useState } from "react";
 
 import { MainActionSurfaceFrame } from "@/features/project-canvas/actions/canvas-action-surface";
 import { containerStatesFromNode } from "@/features/project-canvas/flow/container-node-workload";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import {
   RESOURCE_LOGS_DEFAULT_LIMIT,
   RESOURCE_LOGS_DEFAULT_WINDOW,

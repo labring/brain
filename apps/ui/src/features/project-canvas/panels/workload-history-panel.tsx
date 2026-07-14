@@ -24,15 +24,15 @@ import {
   containerStatesFromNode,
   workloadClaimKindFromStates,
 } from "@/features/project-canvas/flow/container-node-workload";
-import { applyApImage } from "@/features/project-settings/ap/k8s/ap-json-patch";
-import { readApImage } from "@/features/project-settings/ap/k8s/ap-spec-access";
-import { k8sGetClaimBody } from "@/features/project-settings/ap/k8s/claim-mapper";
+import { applyApImage } from "@/features/resource-settings/ap/k8s/ap-json-patch";
+import { readApImage } from "@/features/resource-settings/ap/k8s/ap-spec-access";
+import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import {
   errorDescription,
   toastErrorDetail,
   toastPromiseDetail,
 } from "@/lib/toast-utils";
-import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import {
   CanvasResourcePane,
   type CanvasResourcePaneProps,

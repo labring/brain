@@ -3,13 +3,13 @@ import { NextResponse } from "next/server";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
-} from "@/lib/deploy-task/api-auth";
-import { cancelDeployTaskAction } from "@/lib/deploy-task/engine/actions";
-import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
+} from "@/features/deploy/task/api-auth";
+import { cancelDeployTaskAction } from "@/features/deploy/task/engine/actions";
+import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
   getDeployTaskByIdInNamespace,
   toDeployTaskDTO,
-} from "@/lib/deploy-task/service";
+} from "@/features/deploy/task/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

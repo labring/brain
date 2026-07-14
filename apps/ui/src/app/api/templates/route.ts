@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listTemplateCatalog } from "@/lib/template-provider-core";
+import { listTemplateCatalog } from "@/features/deploy/template-provider-core";
 
 export const runtime = "nodejs";
 

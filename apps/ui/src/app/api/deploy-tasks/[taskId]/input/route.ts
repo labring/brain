@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { resolveDeployTaskRequestNamespace } from "@/lib/deploy-task/api-auth";
-import { submitDeployTaskInputAction } from "@/lib/deploy-task/engine/actions";
-import { getDeployTaskEngineContext } from "@/lib/deploy-task/engine/server";
-import { runDeployTask } from "@/lib/deploy-task/runner";
+import { resolveDeployTaskRequestNamespace } from "@/features/deploy/task/api-auth";
+import { submitDeployTaskInputAction } from "@/features/deploy/task/engine/actions";
+import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
+import { runDeployTask } from "@/features/deploy/task/runner";
 import {
   getDeployTaskByIdInNamespace,
   getDeployTaskSnapshot,
   toDeployTaskDTO,
-} from "@/lib/deploy-task/service";
-import { submitDeployTaskInputSchema } from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/service";
+import { submitDeployTaskInputSchema } from "@/features/deploy/task/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

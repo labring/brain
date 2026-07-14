@@ -3,13 +3,13 @@ import { NextResponse } from "next/server";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
-} from "@/lib/deploy-task/api-auth";
+} from "@/features/deploy/task/api-auth";
 import {
   getCodexGatewayContextFromDevboxInfo,
   getCodexGatewayEventStreamUrl,
   persistDeployGatewayEvent,
-} from "@/lib/deploy-task/gateway";
-import { getDeployTaskSnapshot } from "@/lib/deploy-task/service";
+} from "@/features/deploy/task/gateway";
+import { getDeployTaskSnapshot } from "@/features/deploy/task/service";
 import { getDevbox } from "@/lib/devbox/client";
 
 export const dynamic = "force-dynamic";

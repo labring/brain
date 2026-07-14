@@ -3,9 +3,8 @@
 import { EntryNode } from "@workspace/ui/components/entry-node/entry-node";
 import type { NodeProps } from "@xyflow/react";
 import { memo } from "react";
-
+import { useProjectRuntimeNodeModel } from "@/features/project-canvas/runtime/resource-models-react";
 import { useProjectCanvasNodeInteraction } from "@/features/project-canvas/surface/interaction-react";
-import { useProjectRuntimeNodeModel } from "@/features/project-runtime/resource-models-react";
 import type { CanvasEntryNodeData, CanvasEntryRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 

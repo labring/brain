@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ZodError, z } from "zod";
 
-import { MAX_PINNED_PROJECTS } from "@/lib/pinned-projects";
+import { MAX_PINNED_PROJECTS } from "@/features/projects/pinned-projects";
 import {
   getProjectNavigationPreferences,
   updateProjectNavigationPreferences,

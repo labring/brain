@@ -1,0 +1,3043 @@
+import "server-only";
+
+import { createHash, randomUUID } from "node:crypto";
+
+import { API_ROUTES } from "@workspace/api/constants";
+import { fetcher } from "@workspace/api/fetch";
+import { ApiUrl } from "@workspace/api/utils";
+import type {
+  DatabaseDeploymentChoice,
+  DatabaseDeploymentSettings,
+} from "@/features/deploy/database-deployer";
+import { renderDbDeploymentYaml } from "@/features/deploy/db-deployment-yaml";
+import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
+import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
+import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
+import { renderDockerDeploymentYaml } from "@/features/deploy/docker-deployment-yaml";
+import { getGithubOAuthTokenForConnection } from "@/features/deploy/github/connection-service";
+import { childResourceName } from "@/features/deploy/project-child-resource-name";
+import { applyRenderedTemplateDeployment } from "@/features/deploy/template-k8s-apply";
+import {
+  deployTemplateInstance,
+  getTemplateSource,
+} from "@/features/deploy/template-provider-core";
+import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
+import {
+  BRAIN_DEPLOYMENT_KIND_LABEL,
+  BRAIN_DEPLOYMENT_NAME_LABEL,
+  BRAIN_PROJECT_ID_LABEL,
+  templateDeploymentExtraLabels,
+} from "@/lib/brain-labels";
+import {
+  createDevbox,
+  DevboxApiError,
+  execDevbox,
+  getDevbox,
+  listDevboxes,
+  refreshDevboxPause,
+  resumeDevbox,
+} from "@/lib/devbox/client";
+import {
+  getDevboxArchiveAfterPauseTime,
+  getDevboxDefaultImage,
+} from "@/lib/devbox/config";
+import type { DevboxInfo } from "@/lib/devbox/types";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { createProject, getProject } from "@/lib/project-persistence/projects";
+
+import {
+  blockingInputsFromDeploymentPlan,
+  createSealosTemplateDeploymentPlan,
+  type DeploymentArtifact,
+  type DeploymentTemplateInstanceArtifact,
+  deployTaskStringRecordValue,
+  prepareBrainManifestArtifact,
+  prepareSealosTemplateArtifact,
+  sealosTemplateArtifactSummary,
+} from "./artifacts";
+import { buildRuntimeContract } from "./build-runtime-contract";
+import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
+import { isDeployTaskAbortError } from "./engine/errors";
+import type { DeployTaskHandle } from "./engine/handle";
+import {
+  attachDeployFailureDetails,
+  attachedDeployFailureDetails,
+  templateCleanupAllowed,
+} from "./failure-details";
+import {
+  deploymentFailureReason,
+  deployRunnerSurfacesRawFailure,
+  deployTaskFailureSummary,
+} from "./failure-summary";
+import {
+  DEPLOY_GATEWAY_MODEL,
+  type GatewayContext,
+  getCodexGatewayContextFromDevboxInfo,
+  runDeployTaskGateway,
+} from "./gateway";
+import { deployOutputProgressSummary } from "./output-progress";
+import {
+  isResultReadinessTerminalError,
+  observeDeploymentResultCardReadiness,
+  resultReadinessLabel,
+  waitingForResultObservationStatus,
+} from "./result-readiness";
+import {
+  deployTaskBeginApplying,
+  deployTaskCheckpoint,
+  deployTaskComplete,
+  deployTaskRequestInputs,
+  deployTaskRunSignal,
+  recordDeployTaskEvent,
+  throwIfDeployTaskAborted,
+  updateDeployTaskState,
+  updateDeployTaskTimeline,
+} from "./runner-writes";
+import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
+import type {
+  DeploymentTaskDeploymentPlan,
+  DeployTaskArtifactSummary,
+  DeployTaskBlockingInput,
+  DeployTaskEventPayload,
+  DeployTaskRow,
+} from "./schema";
+import {
+  artifactSummaryWithScrubbedYamls,
+  scrubSensitiveJsonValue,
+  scrubSensitiveText,
+} from "./scrub-secrets";
+import {
+  type SensitiveDeploymentInputShape,
+  sensitiveArgValues,
+  withoutSensitiveArgs,
+} from "./sensitive-inputs";
+import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
+import {
+  appendCardEvent,
+  appendStepEvent,
+  applyDeploymentOutputProgressToTimeline,
+  applyResultResourceTimeout,
+  type DeploymentResultResourceCard,
+  deploymentTimelineFailureStepId,
+  deploymentTimelineResultReadinessReached,
+  markTimelineStep,
+  updateTimelineStatus,
+  upsertResultResourceCard,
+} from "./timeline";
+import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
+
+const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
+const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
+const DEVBOX_RUNTIME_WAIT_EVENT_MS = 30_000;
+const DEVBOX_SECRET_READY_MAX_RETRIES = 3;
+const DEVBOX_SECRET_READY_RETRY_DELAY_MS = 2000;
+const DEVBOX_SDK_READY_MAX_RETRIES = 90;
+const DEVBOX_SDK_READY_RETRY_DELAY_MS = 2000;
+const DEVBOX_DEFAULT_MAX_DURATION_MINUTES = 300;
+const DEPLOY_WORKSPACE_DIR = "/home/devbox/project";
+const DEPLOY_DELIVERY_MANIFEST_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/delivery-manifest.json`;
+const DEPLOY_BUILD_RESULT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-result.json`;
+const DEPLOY_BUILD_RUNTIME_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-runtime.json`;
+const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/index.yaml`;
+const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
+const READ_OUTPUT_TIMEOUT_SECONDS = 30;
+const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
+const DIRECT_AP_READINESS_POLL_MS = 5000;
+const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const TEMPLATE_CLEANUP_KINDS = [
+  "instances",
+  "jobs",
+  "deployments",
+  "statefulsets",
+  "services",
+  "ingresses",
+  "clusters",
+  "pods",
+  "persistentvolumeclaims",
+] as const;
+
+export interface StartDeployTaskRunnerInput {
+  encodedKubeconfig?: string;
+  /**
+   * Full create-time template args from the credentialed request (ADR
+   * 0037): the persisted row holds the stripped copy, so sensitive values
+   * only exist here, in process memory, for the launched run.
+   */
+  sourceArgValues?: Record<string, string>;
+  submittedInputValues?: Record<string, unknown>;
+  taskId: string;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Sleep that unblocks immediately when the run's abort signal fires. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+const DEPLOY_SENSITIVE_VALUES_KEY = "__sealaiDeploySensitiveValues";
+
+/**
+ * Rides the runner's in-memory known sensitive values up to the single
+ * terminal failure write so it can scrub them out of the persisted error
+ * (ADR 0042). Never persisted: only the runner holds the plaintext, so this
+ * is the only channel to the scrub. AI runs attach nothing.
+ */
+function attachDeploySensitiveValues(
+  error: unknown,
+  values: readonly string[]
+): unknown {
+  if (error instanceof Error && values.length > 0) {
+    const carrier = error as Error & {
+      [DEPLOY_SENSITIVE_VALUES_KEY]?: string[];
+    };
+    carrier[DEPLOY_SENSITIVE_VALUES_KEY] = [
+      ...(carrier[DEPLOY_SENSITIVE_VALUES_KEY] ?? []),
+      ...values,
+    ];
+  }
+  return error;
+}
+
+function attachedDeploySensitiveValues(error: unknown): string[] {
+  if (error instanceof Error) {
+    const carrier = error as Error & {
+      [DEPLOY_SENSITIVE_VALUES_KEY]?: string[];
+    };
+    return carrier[DEPLOY_SENSITIVE_VALUES_KEY] ?? [];
+  }
+  return [];
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function runtimeHash(input: {
+  namespace: string;
+  sourceKey: string;
+  taskId: string;
+}): string {
+  return createHash("sha256")
+    .update(`${input.namespace}|${input.sourceKey}|${input.taskId}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function runtimeName(hash: string): string {
+  return `${DEPLOY_DEVBOX_NAME_PREFIX}-${hash.slice(0, 20)}`;
+}
+
+function runtimeUpstreamId(hash: string): string {
+  return `${DEPLOY_DEVBOX_NAME_PREFIX}-${hash}`;
+}
+
+function getPauseAt(): string {
+  return new Date(
+    Date.now() + DEVBOX_DEFAULT_MAX_DURATION_MINUTES * 60 * 1000
+  ).toISOString();
+}
+
+function compactEnvValue(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function decodeRunnerKubeconfig(encoded: string | undefined): string {
+  if (encoded == null || encoded.trim() === "") {
+    return "";
+  }
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return "";
+  }
+}
+
+function requireKubeconfig(input: StartDeployTaskRunnerInput): string {
+  const kubeconfig = decodeRunnerKubeconfig(input.encodedKubeconfig);
+  if (kubeconfig.trim() === "") {
+    throw new Error("Kubeconfig is required to run deployment task.");
+  }
+  return kubeconfig;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function directApReadinessTimeoutMs(): number {
+  const configured = Number(process.env.DIRECT_AP_READINESS_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function nestedStringValue(
+  value: unknown,
+  path: readonly string[]
+): string | null {
+  let current: unknown = value;
+  for (const key of path) {
+    const record = objectValue(current);
+    if (record == null) {
+      return null;
+    }
+    current = record[key];
+  }
+  return stringValue(current);
+}
+
+function requiredObjectValue(
+  output: Record<string, unknown>,
+  key: string
+): Record<string, unknown> {
+  const value = objectValue(output[key]);
+  if (value == null) {
+    throw new Error(`Deploy output did not include ${key}.`);
+  }
+  return value;
+}
+
+function requiredStringValue(
+  output: Record<string, unknown>,
+  key: string
+): string {
+  const value = stringValue(output[key]);
+  if (value == null) {
+    throw new Error(`Deploy output did not include ${key}.`);
+  }
+  return value;
+}
+
+function sealosCertSecretName(): string | undefined {
+  return (
+    compactEnvValue(process.env.SEALOS_CERT_SECRET_NAME) ??
+    compactEnvValue(process.env.SEALOS_CERT_SECRET) ??
+    undefined
+  );
+}
+
+function templateDeploymentLabelSelector(input: {
+  instanceName: string;
+  projectId: string;
+}): string {
+  return [
+    `${BRAIN_PROJECT_ID_LABEL}=${input.projectId}`,
+    `${BRAIN_DEPLOYMENT_KIND_LABEL}=template`,
+    `${BRAIN_DEPLOYMENT_NAME_LABEL}=${input.instanceName}`,
+  ].join(",");
+}
+
+function brainProductPath(kind: string): string {
+  switch (kind) {
+    case "AP":
+      return API_ROUTES.ap.root;
+    case "DB":
+      return API_ROUTES.db.root;
+    default:
+      throw new Error(
+        `Unsupported Brain direct product ${kind || "<missing>"}.`
+      );
+  }
+}
+
+async function applyBrainManifestWithKubeconfig(input: {
+  kubeconfig: string;
+  taskId: string;
+  yaml: string;
+}): Promise<string> {
+  const YAML = await import("yaml");
+  const docs = YAML.parseAllDocuments(input.yaml)
+    .map((doc) => doc.toJS())
+    .filter((doc) => doc != null);
+  if (docs.length === 0) {
+    throw new Error("Brain product manifest is empty.");
+  }
+  const header = {
+    Authorization: `Bearer ${encodeURIComponent(input.kubeconfig)}`,
+    "Content-Type": "application/json",
+  };
+  for (const doc of docs) {
+    // The direct runner stops between resource applications (ADR 0038): a
+    // cancel observed here leaves later documents unapplied.
+    throwIfDeployTaskAborted(input.taskId);
+    if (doc == null || typeof doc !== "object" || Array.isArray(doc)) {
+      throw new Error("Brain product manifest must be a YAML object.");
+    }
+    const record = doc as Record<string, unknown>;
+    const kind = typeof record.kind === "string" ? record.kind.trim() : "";
+    await fetcher({
+      base: ApiUrl(),
+      body: { yaml: YAML.stringify(doc).trimEnd() },
+      header,
+      method: "PUT",
+      path: brainProductPath(kind),
+    });
+  }
+  return `Applied ${docs.length} Brain direct resource${docs.length === 1 ? "" : "s"}.`;
+}
+
+async function deleteTemplateResourcesBySelector(input: {
+  encodedKubeconfig: string;
+  kind: string;
+  labelSelector: string;
+  namespace: string;
+}): Promise<void> {
+  await fetcher({
+    base: ApiUrl(),
+    header: {
+      Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
+    },
+    method: "DELETE",
+    path: API_ROUTES.k8s.delete,
+    query: {
+      kind: input.kind,
+      "label-selector": input.labelSelector,
+      namespace: input.namespace,
+    },
+  });
+}
+
+async function getDevboxNetworkIdFromKubernetes(input: {
+  encodedKubeconfig: string;
+  name: string;
+  namespace: string;
+}): Promise<string | null> {
+  const result = await fetcher<unknown>({
+    base: ApiUrl(),
+    header: {
+      Authorization: kubeconfigBearerHeader(input.encodedKubeconfig),
+    },
+    method: "GET",
+    path: API_ROUTES.k8s.get,
+    query: {
+      kind: "devboxes",
+      name: input.name,
+      namespace: input.namespace,
+    },
+  });
+  return nestedStringValue(result, ["status", "network", "uniqueID"]);
+}
+
+async function applyDeploymentArtifact(input: {
+  artifact: DeploymentArtifact;
+  githubToken?: string;
+  kubeconfig: string;
+  task: DeployTaskRow;
+}): Promise<{
+  artifactSummary: DeployTaskArtifactSummary;
+  notes: string;
+}> {
+  if (input.artifact.kind === "template-instance-pending") {
+    // The instance is created HERE, inside create-resources — not during
+    // prepare-template — so a provider/K8s creation failure is attributed to
+    // the step that owns creation. `input.kubeconfig` is the decoded
+    // kubeconfig; `headerSafeEncodedKubeconfig` (inside deployTemplateInstance)
+    // normalizes raw or URL-encoded input alike.
+    const deployed = await deployTemplateInstance({
+      args: input.artifact.args,
+      encodedKubeconfig: input.kubeconfig,
+      extraLabels: input.artifact.extraLabels,
+      instanceName: input.artifact.instanceName,
+      templateName: input.artifact.templateName,
+    });
+    await normalizeTemplateProviderDbResources({
+      encodedKubeconfig: input.kubeconfig,
+      instanceName: deployed.instanceName,
+      namespace: input.task.namespace,
+      projectId: input.task.projectId ?? deployed.instanceName,
+      resources: deployed.resources,
+      templateName: input.artifact.templateName,
+    });
+    const created: DeploymentTemplateInstanceArtifact = {
+      instanceName: deployed.instanceName,
+      kind: "template-instance",
+      resources: deployed.resources,
+      templateName: input.artifact.templateName,
+    };
+    return {
+      artifactSummary: {
+        artifacts: [created],
+        resources: created.resources.map((resource) => ({
+          apiVersion: "template.sealos.io",
+          kind: resource.resourceType,
+          name: resource.name,
+          namespace: input.task.namespace,
+        })),
+      },
+      notes: `Deployed template instance ${created.instanceName}.`,
+    };
+  }
+
+  if (input.artifact.kind === "template-instance") {
+    return {
+      artifactSummary: {
+        artifacts: [input.artifact],
+        resources: input.artifact.resources.map((resource) => ({
+          apiVersion: "template.sealos.io",
+          kind: resource.resourceType,
+          name: resource.name,
+          namespace: input.task.namespace,
+        })),
+      },
+      notes: `Deployed template instance ${input.artifact.instanceName}.`,
+    };
+  }
+
+  if (input.artifact.kind === "sealos-template") {
+    const applied = await applyRenderedTemplateDeployment({
+      encodedKubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.task.projectId ?? input.artifact.instanceName,
+      registryAuth:
+        input.githubToken == null
+          ? undefined
+          : {
+              buildDigest: input.artifact.build.digest,
+              buildImage: input.artifact.build.image,
+              githubToken: input.githubToken,
+            },
+      rendered: input.artifact.rendered,
+      templateName: input.artifact.templateName,
+    });
+    return {
+      artifactSummary: sealosTemplateArtifactSummary({
+        appliedResources: applied.resources,
+        artifact: input.artifact,
+        notes: `Deployed Sealos template ${applied.instanceName}.`,
+      }),
+      notes: `Deployed Sealos template ${applied.instanceName}.`,
+    };
+  }
+
+  const prepared = prepareBrainManifestArtifact({
+    artifact: input.artifact,
+    task: input.task,
+  });
+  const notes = await applyBrainManifestWithKubeconfig({
+    kubeconfig: input.kubeconfig,
+    taskId: input.task.id,
+    yaml: prepared.yaml,
+  });
+  return {
+    artifactSummary: {
+      artifacts: [input.artifact],
+      resources: prepared.resources,
+      resourceYamls: [prepared.yaml],
+    },
+    notes,
+  };
+}
+
+function timelineEvent(input: {
+  dedupeKey?: string;
+  message: string;
+  reason?: string;
+  severity?: "info" | "success" | "warning" | "error";
+  source?: "runner" | "resource-observer" | "kubernetes-event" | "health-check";
+}) {
+  return {
+    createdAt: new Date().toISOString(),
+    dedupeKey: input.dedupeKey,
+    id: randomUUID(),
+    message: input.message,
+    reason: input.reason,
+    severity: input.severity,
+    source: input.source,
+  };
+}
+
+async function markTimelineStepWithEvent(input: {
+  eventKind: string;
+  eventMessage: string;
+  eventPayload?: DeployTaskEventPayload;
+  eventReason?: string;
+  eventSeverity?: "info" | "success" | "warning" | "error";
+  phase: DeployTaskRow["phase"];
+  status: Parameters<typeof markTimelineStep>[1]["status"];
+  stepId: string;
+  taskId: string;
+  timelineStatus?: DeployTaskRow["status"];
+}) {
+  const now = new Date().toISOString();
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind: input.eventKind,
+      message: input.eventMessage,
+      payload: input.eventPayload,
+      phase: input.phase,
+    },
+    update: (timeline) =>
+      appendStepEvent(
+        markTimelineStep(
+          input.timelineStatus == null
+            ? timeline
+            : updateTimelineStatus(timeline, {
+                status: input.timelineStatus,
+                updatedAt: now,
+              }),
+          {
+            status: input.status,
+            stepId: input.stepId,
+            updatedAt: now,
+          }
+        ),
+        {
+          event: timelineEvent({
+            dedupeKey: input.eventKind,
+            message: input.eventMessage,
+            reason: input.eventReason,
+            severity: input.eventSeverity,
+            source: "runner",
+          }),
+          stepId: input.stepId,
+          updatedAt: now,
+        }
+      ),
+  });
+}
+
+async function markDeployTaskFailureTimeline(input: {
+  detailMessage: string;
+  reasonMessage: string;
+  task: DeployTaskRow;
+}): Promise<boolean> {
+  const timeline = deploymentTaskTimelineFromTaskRecord(input.task);
+  const stepId = deploymentTimelineFailureStepId({
+    phase: input.task.phase,
+    runner: input.task.runner,
+    timeline,
+  });
+  if (stepId == null) {
+    return false;
+  }
+
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.failed",
+    eventMessage: input.reasonMessage,
+    eventPayload: { error: input.detailMessage },
+    eventReason: "DeploymentTaskFailed",
+    eventSeverity: "error",
+    phase: input.task.phase,
+    status: "failed",
+    stepId,
+    taskId: input.task.id,
+    timelineStatus: "failed",
+  });
+  return true;
+}
+
+async function upsertResultTimelineCard(input: {
+  card: DeploymentResultResourceCard;
+  eventMessage: string;
+  eventReason: string;
+  eventSeverity?: "info" | "success" | "warning" | "error";
+  taskId: string;
+}) {
+  const now = new Date().toISOString();
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind: "deployment_task.result_resource_observed",
+      message: input.eventMessage,
+      phase: "apply",
+      payload: {
+        cardId: input.card.id,
+        latestStatusText: input.card.latestStatusText,
+        resultRef: input.card.resultRef,
+        status: input.card.status,
+      },
+    },
+    update: (timeline) =>
+      appendCardEvent(
+        upsertResultResourceCard(timeline, {
+          card: input.card,
+          stepId: "create-resources",
+          updatedAt: now,
+        }),
+        {
+          cardId: input.card.id,
+          event: timelineEvent({
+            dedupeKey: `${input.card.id}:${input.card.status}:${input.card.latestStatusText ?? ""}`,
+            message: input.eventMessage,
+            reason: input.eventReason,
+            severity: input.eventSeverity,
+            source: "resource-observer",
+          }),
+          stepId: "create-resources",
+          updatedAt: now,
+        }
+      ),
+  });
+}
+
+async function observeResultCardReadiness(input: {
+  card: DeploymentResultResourceCard;
+  kubeconfig: string;
+  previousLatestStatus: string | undefined;
+  previousStatus: DeploymentResultResourceCard["status"] | undefined;
+  taskId: string;
+}): Promise<{
+  latestStatus: string;
+  running: boolean;
+  status: DeploymentResultResourceCard["status"];
+}> {
+  try {
+    const observed = await observeDeploymentResultCardReadiness({
+      card: input.card,
+      kubeconfig: input.kubeconfig,
+    });
+    // Only write when the observed state changed. An identical re-observation
+    // would still bump the timeline revision and NOTIFY every stream client,
+    // waking the whole timeline pane to re-render for nothing; with a poll
+    // every DIRECT_AP_READINESS_POLL_MS, that is what makes a resource sitting
+    // at e.g. 0/1 pulse the UI each cycle.
+    if (
+      observed.status !== input.previousStatus ||
+      observed.latestStatus !== input.previousLatestStatus
+    ) {
+      await upsertResultTimelineCard({
+        card: observed.card,
+        eventMessage: observed.eventMessage,
+        eventReason: observed.eventReason,
+        eventSeverity: observed.eventSeverity,
+        taskId: input.taskId,
+      });
+    }
+
+    if (input.card.required && observed.status === "failed") {
+      throw new Error(`${resultReadinessLabel(input.card)} failed readiness.`);
+    }
+    if (input.card.required && observed.status === "blocked") {
+      throw new Error(
+        `${resultReadinessLabel(input.card)} readiness is blocked.`
+      );
+    }
+    return {
+      latestStatus: observed.latestStatus,
+      running: observed.running,
+      status: observed.status,
+    };
+  } catch (error) {
+    if (isResultReadinessTerminalError(error)) {
+      throw error;
+    }
+    return {
+      latestStatus: waitingForResultObservationStatus(input.card, error),
+      running: !input.card.required,
+      status: "unknown",
+    };
+  }
+}
+
+async function waitForRequiredResultCards(input: {
+  cards: DeploymentResultResourceCard[];
+  kubeconfig: string;
+  taskId: string;
+}): Promise<void> {
+  const startedAt = Date.now();
+  const timeoutMs = directApReadinessTimeoutMs();
+  let latestStatus = "waiting for required result resource observation";
+  const latestStatusByCard = new Map<string, string>();
+  const statusByCard = new Map<
+    string,
+    DeploymentResultResourceCard["status"]
+  >();
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    // Cancel means "stop waiting" during verify (ADR 0038).
+    await deployTaskCheckpoint(input.taskId);
+    let requiredCardsRunning = true;
+
+    for (const card of input.cards) {
+      const observed = await observeResultCardReadiness({
+        card,
+        kubeconfig: input.kubeconfig,
+        previousLatestStatus: latestStatusByCard.get(card.id),
+        previousStatus: statusByCard.get(card.id),
+        taskId: input.taskId,
+      });
+      latestStatus = observed.latestStatus;
+      latestStatusByCard.set(card.id, observed.latestStatus);
+      statusByCard.set(card.id, observed.status);
+      if (card.required) {
+        requiredCardsRunning = requiredCardsRunning && observed.running;
+      }
+    }
+
+    if (requiredCardsRunning) {
+      const snapshot = await getDeployTaskTimelineSnapshot(input.taskId);
+      if (
+        snapshot == null ||
+        deploymentTimelineResultReadinessReached(snapshot.timeline)
+      ) {
+        return;
+      }
+    }
+
+    await abortableSleep(
+      DIRECT_AP_READINESS_POLL_MS,
+      deployTaskRunSignal(input.taskId)
+    );
+  }
+
+  const now = new Date().toISOString();
+  const unresolvedCards = input.cards.filter(
+    (card) => (statusByCard.get(card.id) ?? card.status) !== "running"
+  );
+  for (const card of unresolvedCards) {
+    await updateDeployTaskTimeline(input.taskId, {
+      event: {
+        kind: "deployment_task.result_resource_timeout",
+        message: `${resultReadinessLabel(card)} did not reach readiness before timeout.`,
+        phase: "apply",
+        payload: {
+          cardId: card.id,
+          lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
+          required: card.required,
+          resultRef: card.resultRef,
+        },
+      },
+      update: (timeline) =>
+        applyResultResourceTimeout(timeline, {
+          cardId: card.id,
+          failRequired: true,
+          lastObservedStatus: latestStatusByCard.get(card.id) ?? latestStatus,
+          stepId: "create-resources",
+          updatedAt: now,
+        }),
+    });
+  }
+
+  throw attachDeployFailureDetails(
+    new Error(
+      `Timed out waiting for required result resource readiness (${latestStatus}).`
+    ),
+    { reason: "readiness-timeout", stage: "readiness" }
+  );
+}
+
+function codexGatewayEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const apiKey =
+    compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
+    compactEnvValue(process.env.SYSTEM_OPENAI_API_KEY);
+  const baseUrl =
+    compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
+    compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL);
+  const model =
+    compactEnvValue(process.env.CODEX_GATEWAY_MODEL) ?? DEPLOY_GATEWAY_MODEL;
+
+  if (apiKey != null) {
+    env.CODEX_GATEWAY_OPENAI_API_KEY = apiKey;
+  }
+  if (baseUrl != null) {
+    env.CODEX_GATEWAY_OPENAI_BASE_URL = baseUrl;
+  }
+  if (model != null) {
+    env.CODEX_GATEWAY_MODEL = model;
+  }
+
+  return env;
+}
+
+function isDevboxSecretPendingError(error: unknown): error is DevboxApiError {
+  return (
+    error instanceof DevboxApiError &&
+    error.status >= 500 &&
+    error.message.includes("get devbox private key failed") &&
+    error.message.includes("not found")
+  );
+}
+
+function isDevboxSdkPendingError(error: unknown): error is DevboxApiError {
+  if (!(error instanceof DevboxApiError) || error.status < 500) {
+    return false;
+  }
+
+  const message = error.message;
+  return (
+    (message.includes("sdk server") &&
+      message.includes("is not reachable yet")) ||
+    (message.includes("exec command failed") &&
+      message.includes(":9757") &&
+      message.includes("connect: connection refused"))
+  );
+}
+
+type ResolvableDeploymentTaskTarget = Pick<
+  DeployTaskRow,
+  "id" | "namespace" | "projectId" | "projectName" | "target"
+>;
+
+function deployFailureDetails(input: {
+  error: unknown;
+  phase: DeployTaskRow["phase"];
+  source: string;
+  task: DeployTaskRow;
+}): Record<string, unknown> {
+  return {
+    errorMessage:
+      input.error instanceof Error ? input.error.message : String(input.error),
+    errorName: input.error instanceof Error ? input.error.name : null,
+    phase: input.phase,
+    projectId: input.task.projectId,
+    projectName: input.task.projectName,
+    runner: input.task.runner,
+    source: input.source,
+    taskId: input.task.id,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Resolves (or creates) the Deployment Target Project. Pure with respect to
+ * task state: creation calls it before inserting the row so the response and
+ * the stored row carry the resolved Project identity from the start
+ * (ADR 0023 — cached on the task, never re-created).
+ */
+export async function resolveDeploymentTaskTarget(
+  task: ResolvableDeploymentTaskTarget
+): Promise<{
+  createdProject: boolean;
+  projectId: string;
+  projectName: string;
+}> {
+  const cachedProjectId = task.projectId?.trim();
+  const cachedProjectName = task.projectName?.trim();
+  if (cachedProjectId && cachedProjectName) {
+    return {
+      createdProject: false,
+      projectId: cachedProjectId,
+      projectName: cachedProjectName,
+    };
+  }
+
+  if (task.target.kind === "newProject") {
+    const project = await createProject({
+      description: task.target.description,
+      displayName: task.target.displayName,
+      namespace: task.namespace,
+    });
+    return {
+      createdProject: true,
+      projectId: project.id,
+      projectName: project.id,
+    };
+  }
+
+  const project = await getProject(task.namespace, task.target.projectId);
+  if (project == null) {
+    throw new Error("Project not found.");
+  }
+  const projectName = task.target.projectName?.trim() || project.id;
+  return {
+    createdProject: false,
+    projectId: project.id,
+    projectName,
+  };
+}
+
+function databaseChoice(databaseId: string): DatabaseDeploymentChoice {
+  const choice = DIRECT_DB_DEPLOYMENT_OPTIONS.find(
+    (option) => option.id === databaseId
+  );
+  if (choice == null) {
+    throw new Error("Choose a database engine.");
+  }
+  return choice;
+}
+
+function dockerSettings(sourceSettings: Record<string, unknown>) {
+  const settings = sourceSettings as unknown as DockerDeploymentSettings;
+  const validation = validateDockerDeploymentSettings(settings);
+  if (!validation.valid) {
+    throw new Error(
+      validation.errors[0]?.message ?? "Docker deployment settings are invalid."
+    );
+  }
+  return settings;
+}
+
+function databaseSettings(
+  sourceSettings: Record<string, unknown>
+): DatabaseDeploymentSettings {
+  const settings = sourceSettings as unknown as DatabaseDeploymentSettings;
+  if (!settings.databaseId?.trim()) {
+    throw new Error("Choose a database engine.");
+  }
+  if (!settings.instancePreset) {
+    throw new Error("Choose a database resource preset.");
+  }
+  if (!Number.isFinite(settings.replicas)) {
+    throw new Error("Choose database replicas.");
+  }
+  return settings;
+}
+
+function generateDirectArtifact(input: {
+  kubeconfig: string;
+  projectName: string;
+  task: DeployTaskRow;
+}): DeploymentArtifact {
+  switch (input.task.source.kind) {
+    case "docker": {
+      const settings = dockerSettings(input.task.source.settings);
+      return {
+        kind: "brain-manifest",
+        yaml: renderDockerDeploymentYaml({
+          name: childResourceName(input.projectName, "ap"),
+          namespace: input.task.namespace,
+          projectName: input.projectName,
+          routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+          settings,
+        }),
+      };
+    }
+    case "database": {
+      const settings = databaseSettings(input.task.source.settings);
+      const choice = databaseChoice(settings.databaseId);
+      return {
+        kind: "brain-manifest",
+        yaml: renderDbDeploymentYaml({
+          engine: choice.engine,
+          name: childResourceName(input.projectName, "db"),
+          namespace: input.task.namespace,
+          projectName: input.projectName,
+          quota: settings.instancePreset,
+          replicas: settings.replicas,
+          template: choice.template ?? choice.id,
+        }),
+      };
+    }
+    default:
+      throw new Error(
+        `Direct runner does not support ${input.task.source.kind} deployments.`
+      );
+  }
+}
+
+function generateTemplateArtifact(input: {
+  /** Full args, memory-merged — never read from the stripped row copy. */
+  args: Record<string, string>;
+  instanceName: string;
+  namespace: string;
+  projectId: string;
+  templateName: string;
+}): DeploymentArtifact {
+  // Only assemble the in-memory intent here. The provider POST that creates
+  // the instance runs later, inside create-resources (applyDeploymentArtifact),
+  // so a creation failure is attributed to the step that owns it. These args
+  // are sensitive (ADR 0037) and ride only in this intent — never persisted.
+  return {
+    args: input.args,
+    extraLabels: templateDeploymentExtraLabels({
+      instanceName: input.instanceName,
+      projectId: input.projectId,
+      templateName: input.templateName,
+    }),
+    instanceName: input.instanceName,
+    kind: "template-instance-pending",
+    templateName: input.templateName,
+  };
+}
+
+async function cleanupFailedTemplateDeployment(input: {
+  encodedKubeconfig: string;
+  instanceName: string;
+  projectId: string;
+  task: DeployTaskRow;
+}): Promise<void> {
+  const labelSelector = templateDeploymentLabelSelector({
+    instanceName: input.instanceName,
+    projectId: input.projectId,
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.template_cleanup_started",
+    message: `Cleaning up partial template resources for ${input.instanceName}.`,
+    payload: { instanceName: input.instanceName, labelSelector },
+    phase: "plan",
+  });
+
+  const results: Array<{ error?: string; kind: string; ok: boolean }> = [];
+  for (const kind of TEMPLATE_CLEANUP_KINDS) {
+    try {
+      await deleteTemplateResourcesBySelector({
+        encodedKubeconfig: input.encodedKubeconfig,
+        kind,
+        labelSelector,
+        namespace: input.task.namespace,
+      });
+      results.push({ kind, ok: true });
+    } catch (error) {
+      results.push({ error: errorMessage(error), kind, ok: false });
+    }
+  }
+
+  const failures = results.filter((result) => !result.ok);
+  await recordDeployTaskEvent(input.task.id, {
+    kind:
+      failures.length === 0
+        ? "deployment_task.template_cleanup_completed"
+        : "deployment_task.template_cleanup_failed",
+    message:
+      failures.length === 0
+        ? "Cleaned up partial template resources."
+        : `Template cleanup completed with ${failures.length} failed kind(s).`,
+    payload: {
+      failures,
+      instanceName: input.instanceName,
+      labelSelector,
+      results,
+    },
+    phase: "plan",
+  });
+}
+
+function isDevboxRuntimePendingError(error: unknown): error is DevboxApiError {
+  return (
+    error instanceof DevboxApiError &&
+    (error.status === 404 || error.status >= 500)
+  );
+}
+
+function devboxStateLabel(info: DevboxInfo | null): string {
+  if (info == null) {
+    return "unknown";
+  }
+  return (
+    [info.state.phase, info.state.status]
+      .map((value) => value.trim())
+      .filter((value) => value !== "")
+      .join("/") || "unknown"
+  );
+}
+
+async function getDevboxWithSecretRetry(
+  authNamespace: string,
+  name: string
+): Promise<DevboxInfo> {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return (await getDevbox(authNamespace, name)).data;
+    } catch (error) {
+      if (
+        !isDevboxSecretPendingError(error) ||
+        attempt >= DEVBOX_SECRET_READY_MAX_RETRIES
+      ) {
+        throw error;
+      }
+      attempt += 1;
+      await sleep(DEVBOX_SECRET_READY_RETRY_DELAY_MS);
+    }
+  }
+}
+
+async function waitForRunningDevbox(input: {
+  name: string;
+  namespace: string;
+  taskId?: string;
+}): Promise<DevboxInfo> {
+  const startedAt = Date.now();
+  let lastInfo: DevboxInfo | null = null;
+  let lastError: unknown;
+  let lastEventAt = startedAt;
+
+  while (Date.now() - startedAt < DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
+    try {
+      const info = await getDevboxWithSecretRetry(input.namespace, input.name);
+      lastInfo = info;
+      lastError = undefined;
+      if (info.state.phase === "Running") {
+        return info;
+      }
+    } catch (error) {
+      if (!isDevboxRuntimePendingError(error)) {
+        throw error;
+      }
+      lastError = error;
+    }
+
+    const now = Date.now();
+    if (
+      input.taskId != null &&
+      now - lastEventAt >= DEVBOX_RUNTIME_WAIT_EVENT_MS
+    ) {
+      lastEventAt = now;
+      const elapsedSeconds = Math.round((now - startedAt) / 1000);
+      const state = devboxStateLabel(lastInfo);
+      await updateDeployTaskState(input.taskId, {
+        runtimeName: input.name,
+        runtimeProvider: "devbox",
+        runtimeState: state,
+      });
+      await recordDeployTaskEvent(input.taskId, {
+        kind: "deployment_task.runtime_waiting",
+        message: `Still waiting for deploy Devbox runtime (${elapsedSeconds}s, state: ${state}).`,
+        payload: {
+          elapsedSeconds,
+          lastError: lastError instanceof Error ? lastError.message : null,
+          runtimeName: input.name,
+          state,
+        },
+        phase: "prepare",
+      });
+    }
+    if (input.taskId == null) {
+      await sleep(DEVBOX_RUNTIME_READY_POLL_MS);
+    } else {
+      throwIfDeployTaskAborted(input.taskId);
+      await abortableSleep(
+        DEVBOX_RUNTIME_READY_POLL_MS,
+        deployTaskRunSignal(input.taskId)
+      );
+    }
+  }
+
+  const state = devboxStateLabel(lastInfo);
+  const lastErrorMessage =
+    lastError instanceof Error ? ` Last error: ${lastError.message}` : "";
+  throw new Error(
+    `Timed out waiting for deploy Devbox runtime after ${Math.round(
+      DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS / 1000
+    )}s (last state: ${state}).${lastErrorMessage}`
+  );
+}
+
+async function ensureRunningDevbox(
+  authNamespace: string,
+  name: string,
+  taskId?: string
+): Promise<DevboxInfo> {
+  const info = await getDevboxWithSecretRetry(authNamespace, name);
+  if (info.state.phase === "Running") {
+    return info;
+  }
+
+  try {
+    await resumeDevbox(authNamespace, name);
+  } catch (error) {
+    if (!(error instanceof DevboxApiError && error.status === 409)) {
+      throw error;
+    }
+  }
+
+  return await waitForRunningDevbox({
+    name,
+    namespace: authNamespace,
+    taskId,
+  });
+}
+
+function authenticatedRepoUrl(repoUrl: string, githubToken?: string): string {
+  if (!githubToken?.trim()) {
+    return repoUrl;
+  }
+  const url = new URL(repoUrl);
+  if (url.hostname !== "github.com") {
+    return repoUrl;
+  }
+  url.username = "x-access-token";
+  url.password = githubToken.trim();
+  return url.toString();
+}
+
+function cloneWorkspaceCommand(input: {
+  branch: string | null;
+  githubToken?: string;
+  repoUrl: string;
+}): string {
+  const repo = authenticatedRepoUrl(input.repoUrl, input.githubToken);
+  const branch = input.branch?.trim();
+  const cloneLine = branch
+    ? `git clone --depth 1 --branch ${shellQuote(branch)} ${shellQuote(repo)} "$tmpdir/repo"`
+    : `git clone --depth 1 ${shellQuote(repo)} "$tmpdir/repo"`;
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'mkdir -p "$workspace_dir"',
+    'if [ ! -d "$workspace_dir/.git" ]; then',
+    '  tmpdir="$(mktemp -d)"',
+    '  cleanup() { rm -rf "$tmpdir"; }',
+    "  trap cleanup EXIT",
+    `  ${cloneLine}`,
+    '  find "$workspace_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
+    '  cp -a "$tmpdir/repo"/. "$workspace_dir"/',
+    "fi",
+    "if id devbox >/dev/null 2>&1; then",
+    '  if [ "$(id -u)" = "0" ]; then',
+    '    chown -R devbox:devbox "$workspace_dir"',
+    "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+    '    sudo chown -R devbox:devbox "$workspace_dir"',
+    "  fi",
+    "fi",
+  ].join("\n");
+}
+
+function prepareWorkspaceOutputCommand(): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'mkdir -p "$workspace_dir/.sealos/template"',
+    'rm -f "$workspace_dir/.sealos/delivery-manifest.json"',
+    'rm -f "$workspace_dir/.sealos/build-result.json"',
+    `rm -f ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)}`,
+    'rm -f "$workspace_dir/.sealos/template/index.yaml"',
+    "if id devbox >/dev/null 2>&1; then",
+    '  if [ "$(id -u)" = "0" ]; then',
+    '    chown -R devbox:devbox "$workspace_dir/.sealos"',
+    "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+    '    sudo chown -R devbox:devbox "$workspace_dir/.sealos"',
+    "  fi",
+    "fi",
+  ].join("\n");
+}
+
+function writeBuildRuntimeContractCommand(
+  contract: Record<string, unknown>
+): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'mkdir -p "$workspace_dir/.sealos"',
+    `cat > ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)} <<'EOF'`,
+    JSON.stringify(contract, null, 2),
+    "EOF",
+    "if id devbox >/dev/null 2>&1; then",
+    '  if [ "$(id -u)" = "0" ]; then',
+    `    chown devbox:devbox ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)}`,
+    "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+    `    sudo chown devbox:devbox ${shellQuote(DEPLOY_BUILD_RUNTIME_PATH)}`,
+    "  fi",
+    "fi",
+  ].join("\n");
+}
+
+function prepareEmptyWorkspaceCommand(): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'mkdir -p "$workspace_dir"',
+    'find "$workspace_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
+    'mkdir -p "$workspace_dir/.sealos/template"',
+    "if id devbox >/dev/null 2>&1; then",
+    '  if [ "$(id -u)" = "0" ]; then',
+    '    chown -R devbox:devbox "$workspace_dir"',
+    "  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then",
+    '    sudo chown -R devbox:devbox "$workspace_dir"',
+    "  fi",
+    "fi",
+  ].join("\n");
+}
+
+function installSkillsCommand(): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'agent_skill_marker="$workspace_dir/.agents/skills/sealos-deploy/SKILL.md"',
+    'codex_skill_marker="$workspace_dir/.codex/skills/sealos-deploy/SKILL.md"',
+    'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
+    "if command -v npx >/dev/null 2>&1; then",
+    '  cd "$workspace_dir"',
+    "  timeout 120 npx --yes skills add https://github.com/labring/sealos-skills/tree/brain-deploy -y",
+    "else",
+    "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
+    "  exit 1",
+    "fi",
+    "fi",
+    'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
+    "  printf 'ERROR: sealos-deploy skill not found after install\\n' >&2",
+    "  exit 1",
+    "fi",
+  ].join("\n");
+}
+
+function deployOutputReadScript(): string {
+  return [
+    "const fs = require('fs');",
+    "const readJson = (path) => fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : null;",
+    "const readText = (path) => fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : null;",
+    "const deliveryManifest = readJson(process.env.MANIFEST_PATH);",
+    "const buildResult = readJson(process.env.BUILD_RESULT_PATH);",
+    "const templateYaml = readText(process.env.TEMPLATE_PATH);",
+    "const output = {};",
+    "if (deliveryManifest != null) output.deliveryManifest = deliveryManifest;",
+    "if (buildResult != null) output.buildResult = buildResult;",
+    "if (typeof templateYaml === 'string' && templateYaml.trim()) output.templateYaml = templateYaml;",
+    "process.stdout.write(JSON.stringify(output));",
+  ].join(" ");
+}
+
+function readDeployOutputCommand(input?: { allowPartial?: boolean }): string {
+  const requiredFileChecks =
+    input?.allowPartial === true
+      ? []
+      : [
+          'test -f "$manifest_path"',
+          'test -f "$build_result_path"',
+          'test -f "$template_path"',
+        ];
+  return [
+    "set -euo pipefail",
+    `manifest_path=${shellQuote(DEPLOY_DELIVERY_MANIFEST_PATH)}`,
+    `build_result_path=${shellQuote(DEPLOY_BUILD_RESULT_PATH)}`,
+    `template_path=${shellQuote(DEPLOY_TEMPLATE_YAML_PATH)}`,
+    ...requiredFileChecks,
+    `MANIFEST_PATH="$manifest_path" BUILD_RESULT_PATH="$build_result_path" TEMPLATE_PATH="$template_path" node -e ${shellQuote(
+      deployOutputReadScript()
+    )}`,
+  ].join("\n");
+}
+
+async function ensureDeployDevbox(input: {
+  existingRuntimeName?: string | null;
+  githubToken?: string;
+  namespace: string;
+  repoUrl: string;
+  taskId: string;
+}): Promise<{ info: DevboxInfo; name: string }> {
+  const existingRuntimeName = input.existingRuntimeName?.trim();
+  if (existingRuntimeName) {
+    const info = await ensureRunningDevbox(
+      input.namespace,
+      existingRuntimeName,
+      input.taskId
+    );
+    await refreshDevboxPause(input.namespace, existingRuntimeName, {
+      pauseAt: getPauseAt(),
+    });
+    return { info, name: existingRuntimeName };
+  }
+
+  const hash = runtimeHash({
+    namespace: input.namespace,
+    sourceKey: input.repoUrl,
+    taskId: input.taskId,
+  });
+  const name = runtimeName(hash);
+  const upstreamID = runtimeUpstreamId(hash);
+  const existing = (await listDevboxes(input.namespace, upstreamID)).data
+    .items[0];
+
+  if (existing != null) {
+    const info = await ensureRunningDevbox(
+      input.namespace,
+      existing.name,
+      input.taskId
+    );
+    await refreshDevboxPause(input.namespace, existing.name, {
+      pauseAt: getPauseAt(),
+    });
+    return { info, name: existing.name };
+  }
+
+  await createDevbox(input.namespace, {
+    archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
+    env: {
+      ...codexGatewayEnv(),
+      ...(input.githubToken?.trim()
+        ? { GITHUB_TOKEN: input.githubToken.trim() }
+        : {}),
+      SEALAI_DEPLOY_TASK_ID: input.taskId,
+      SEALAI_DEPLOY_WORKSPACE: DEPLOY_WORKSPACE_DIR,
+    },
+    image: getDevboxDefaultImage(),
+    kubeAccess: {
+      enabled: true,
+      roleTemplate: "edit",
+    },
+    labels: [
+      { key: "app.kubernetes.io/managed-by", value: "sealai" },
+      { key: "app.kubernetes.io/component", value: "deploy-runtime" },
+    ],
+    name,
+    pauseAt: getPauseAt(),
+    upstreamID,
+  });
+
+  const info = await waitForRunningDevbox({
+    name,
+    namespace: input.namespace,
+    taskId: input.taskId,
+  });
+  return { info, name };
+}
+
+async function execOrThrow(input: {
+  command: string;
+  namespace: string;
+  runtimeName: string;
+  timeoutSeconds?: number;
+}): Promise<void> {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      const result = (
+        await execDevbox(input.namespace, input.runtimeName, {
+          command: ["bash", "-lc", input.command],
+          timeoutSeconds: input.timeoutSeconds,
+        })
+      ).data;
+      if (result.exitCode !== 0) {
+        throw new Error(result.stderr.trim() || result.stdout.trim());
+      }
+      return;
+    } catch (error) {
+      if (
+        !isDevboxSdkPendingError(error) ||
+        attempt >= DEVBOX_SDK_READY_MAX_RETRIES
+      ) {
+        throw error;
+      }
+      attempt += 1;
+      await sleep(DEVBOX_SDK_READY_RETRY_DELAY_MS);
+    }
+  }
+}
+
+async function readDeployOutput(input: {
+  allowPartial?: boolean;
+  namespace: string;
+  runtimeName: string;
+}): Promise<Record<string, unknown> | null> {
+  const result = (
+    await execDevbox(input.namespace, input.runtimeName, {
+      command: [
+        "bash",
+        "-lc",
+        readDeployOutputCommand({ allowPartial: input.allowPartial }),
+      ],
+      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+    })
+  ).data;
+
+  if (result.exitCode !== 0 || result.stdout.trim() === "") {
+    return null;
+  }
+
+  const parsed = JSON.parse(result.stdout) as unknown;
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const output = parsed as Record<string, unknown>;
+  return Object.keys(output).length === 0 ? null : output;
+}
+
+async function recordDeployOutputProgress(input: {
+  summary: Record<string, unknown>;
+  taskId: string;
+}): Promise<string> {
+  const complete = input.summary.complete === true;
+  const kind = complete
+    ? "deployment_task.output_ready"
+    : "deployment_task.output_partial";
+  const message = complete
+    ? "Deployment output files are ready."
+    : "Deployment output files are partially available.";
+  const signature = JSON.stringify(input.summary);
+  const now = new Date().toISOString();
+
+  await updateDeployTaskTimeline(input.taskId, {
+    event: {
+      kind,
+      message,
+      payload: input.summary,
+      phase: "generate-artifacts",
+    },
+    update: (timeline) =>
+      applyDeploymentOutputProgressToTimeline(timeline, {
+        complete,
+        event: timelineEvent({
+          dedupeKey: `${kind}:${signature}`,
+          message,
+          severity: complete ? "success" : "info",
+          source: "runner",
+        }),
+        updatedAt: now,
+      }),
+  });
+  return signature;
+}
+
+async function recordDeployOutputProgressIfPresent(input: {
+  output: Record<string, unknown> | null;
+  seenSignatures?: Set<string>;
+  taskId: string;
+}): Promise<void> {
+  const summary = deployOutputProgressSummary(input.output);
+  if (summary == null) {
+    return;
+  }
+  const signature = JSON.stringify(summary);
+  if (input.seenSignatures?.has(signature)) {
+    return;
+  }
+  input.seenSignatures?.add(signature);
+  await recordDeployOutputProgress({
+    summary,
+    taskId: input.taskId,
+  });
+}
+
+async function monitorDeployOutputProgress(input: {
+  namespace: string;
+  runtimeName: string;
+  seenSignatures: Set<string>;
+  stop: Promise<void>;
+  taskId: string;
+}): Promise<void> {
+  while (true) {
+    try {
+      const output = await readDeployOutput({
+        allowPartial: true,
+        namespace: input.namespace,
+        runtimeName: input.runtimeName,
+      });
+      const summary = deployOutputProgressSummary(output);
+      if (summary != null) {
+        const signature = JSON.stringify(summary);
+        if (!input.seenSignatures.has(signature)) {
+          input.seenSignatures.add(signature);
+          await recordDeployOutputProgress({
+            summary,
+            taskId: input.taskId,
+          });
+        }
+        if (summary.complete === true) {
+          return;
+        }
+      }
+    } catch {
+      // Progress polling is best-effort; the gateway turn remains authoritative.
+    }
+
+    const nextTick = sleep(DEPLOY_OUTPUT_PROGRESS_POLL_MS);
+    const shouldStop = await Promise.race([
+      input.stop.then(() => true),
+      nextTick.then(() => false),
+    ]);
+    if (shouldStop) {
+      return;
+    }
+  }
+}
+
+async function runDeployTaskGatewayWithOutputProgress(input: {
+  context: GatewayContext;
+  namespace: string;
+  repairOutput?: boolean;
+  runtimeName: string;
+  seenSignatures: Set<string>;
+  task: DeployTaskRow;
+}): Promise<void> {
+  let stopMonitor!: () => void;
+  const stop = new Promise<void>((resolve) => {
+    stopMonitor = resolve;
+  });
+  const monitor = monitorDeployOutputProgress({
+    namespace: input.namespace,
+    runtimeName: input.runtimeName,
+    seenSignatures: input.seenSignatures,
+    stop,
+    taskId: input.task.id,
+  });
+
+  try {
+    await runDeployTaskGateway({
+      context: input.context,
+      repairOutput: input.repairOutput,
+      task: input.task,
+    });
+  } finally {
+    stopMonitor();
+    await monitor;
+  }
+}
+
+async function markDeploymentGenerationStartedIfNeeded(input: {
+  seenOutputProgress: Set<string>;
+  taskId: string;
+}) {
+  if (input.seenOutputProgress.size > 0) {
+    return;
+  }
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.deployment_generation_started",
+    eventMessage: "Generating deployment artifacts.",
+    phase: "generate-artifacts",
+    status: "running",
+    stepId: "generate-deployment",
+    taskId: input.taskId,
+  });
+}
+
+async function completeTaskWithArtifact(input: {
+  artifact: DeploymentArtifact;
+  artifactSummaryExtras?: Partial<DeployTaskArtifactSummary>;
+  completionEventMessage?: string;
+  completionEventKind?: string;
+  completionRecordMessage?: string;
+  githubToken?: string;
+  kubeconfig: string;
+  outputJson?: Record<string, unknown>;
+  /** Sensitive arg values to scrub from persisted rendered YAML (ADR 0037). */
+  sensitiveValues?: string[];
+  task: DeployTaskRow;
+}) {
+  await deployTaskCheckpoint(input.task.id);
+  await deployTaskBeginApplying(input.task.id);
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.apply_started",
+    message: "Applying deployment artifacts.",
+    phase: "apply",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.apply_started",
+    eventMessage: "Applying deployment artifacts.",
+    phase: "apply",
+    status: "running",
+    stepId: "create-resources",
+    taskId: input.task.id,
+  });
+
+  let applied: Awaited<ReturnType<typeof applyDeploymentArtifact>>;
+  try {
+    applied = await applyDeploymentArtifact({
+      artifact: input.artifact,
+      githubToken: input.githubToken,
+      kubeconfig: input.kubeconfig,
+      task: input.task,
+    });
+  } catch (error) {
+    throw attachDeployFailureDetails(error, {
+      artifactKind: input.artifact.kind,
+      resourceCount:
+        "resources" in input.artifact && Array.isArray(input.artifact.resources)
+          ? input.artifact.resources.length
+          : undefined,
+      source: "applyDeploymentArtifact",
+      // The one stage where this run may have partially created resources —
+      // the only stage template failure cleanup may act on (ADR 0037/0038).
+      stage: "apply",
+      templateName:
+        input.artifact.kind === "sealos-template" ||
+        input.artifact.kind === "template-instance-pending"
+          ? input.artifact.templateName
+          : undefined,
+    });
+  }
+
+  // The scrubbed copy is what every persisted form gets — the row summary
+  // and the completion event payload alike (ADR 0037 row-level contract).
+  const persistedSummary = artifactSummaryWithScrubbedYamls(
+    applied.artifactSummary,
+    input.sensitiveValues ?? []
+  );
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      ...persistedSummary,
+      ...(input.artifactSummaryExtras ?? {}),
+      notes: applied.notes,
+      ...(input.outputJson === undefined
+        ? {}
+        : { outputJson: input.outputJson }),
+      // Recorded result identities survive summary rewrites (ADR 0038).
+      ...appliedResultIdentities(input.task, input.artifact),
+    },
+  });
+
+  const resultCards = resultResourceCardsFromArtifactSummary(persistedSummary);
+  for (const card of resultCards) {
+    await upsertResultTimelineCard({
+      card,
+      eventMessage: `${resultReadinessLabel(card)} result resource was created.`,
+      eventReason: "ResultResourceKnown",
+      taskId: input.task.id,
+    });
+  }
+
+  // Reaching completed requires Deployment Result Readiness (ADR 0028): a
+  // readiness timeout throws and resolves to failed with the resources
+  // preserved — never a completed-on-timeout.
+  if (resultCards.some((card) => card.required)) {
+    await waitForRequiredResultCards({
+      cards: resultCards,
+      kubeconfig: input.kubeconfig,
+      taskId: input.task.id,
+    });
+  }
+
+  await markTimelineStepWithEvent({
+    eventKind:
+      input.completionEventKind ?? "deployment_task.result_readiness_reached",
+    eventMessage:
+      input.completionEventMessage ??
+      "Required deployment result resources are running.",
+    phase: "completed",
+    status: "completed",
+    stepId: "create-resources",
+    taskId: input.task.id,
+  });
+  await deployTaskComplete(input.task.id, {
+    kind: "deployment_task.completed",
+    message: input.completionRecordMessage ?? "Deployment task completed.",
+    payload: { artifactSummary: persistedSummary },
+    phase: "completed",
+  });
+}
+
+function appliedResultIdentities(
+  task: DeployTaskRow,
+  artifact: DeploymentArtifact
+): Pick<DeployTaskArtifactSummary, "resultIdentities"> {
+  if (artifact.kind === "sealos-template") {
+    return {
+      resultIdentities: {
+        ...task.artifactSummary.resultIdentities,
+        templateInstanceName: artifact.instanceName,
+      },
+    };
+  }
+  if (task.artifactSummary.resultIdentities == null) {
+    return {};
+  }
+  return { resultIdentities: task.artifactSummary.resultIdentities };
+}
+
+function submittedInputStringValues(
+  value: Record<string, unknown> | undefined
+): Record<string, string> {
+  if (value == null) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => {
+      if (typeof item === "string") {
+        return [[key, item]];
+      }
+      if (typeof item === "number" || typeof item === "boolean") {
+        return [[key, String(item)]];
+      }
+      return [];
+    })
+  );
+}
+
+function deploymentPlanArgsFromTask(
+  task: DeployTaskRow
+): Record<string, string> {
+  const args = task.artifactSummary.deploymentPlan?.args;
+  return args == null ? {} : { ...args };
+}
+
+/**
+ * Row-level secrets contract (ADR 0037): submitted values for sensitive plan
+ * inputs must never be persisted anywhere on the task row. The full args
+ * live only in process memory for the apply itself; the persisted plan keeps
+ * non-sensitive args so redeploy prefill still works.
+ */
+function deploymentPlanWithPersistableArgs<
+  T extends {
+    args?: Record<string, string>;
+    inputs: SensitiveDeploymentInputShape[];
+  },
+>(plan: T, args: Record<string, string>): T {
+  return { ...plan, args: withoutSensitiveArgs(args, plan.inputs) };
+}
+
+/**
+ * Copies of the AI deploy output safe to persist (ADR 0037): sensitive
+ * keys are stripped from the embedded args map, and known sensitive values
+ * are scrubbed from the rest of the copy — anywhere the gateway may have
+ * echoed them (build result, template defaults). The original objects stay
+ * in memory for the immediate apply; blocked resumes re-collect sensitive
+ * values through the blocking form (US15).
+ */
+function persistableAiDeployOutput(input: {
+  deliveryManifest: Record<string, unknown>;
+  output: Record<string, unknown>;
+  planInputs: SensitiveDeploymentInputShape[];
+}): {
+  deliveryManifest: Record<string, unknown>;
+  outputJson: Record<string, unknown>;
+} {
+  const args = deployTaskStringRecordValue(input.deliveryManifest.args);
+  const sensitiveValues = sensitiveArgValues(args, input.planInputs);
+  const deliveryManifest = scrubSensitiveJsonValue(
+    {
+      ...input.deliveryManifest,
+      args: withoutSensitiveArgs(args, input.planInputs),
+    },
+    sensitiveValues
+  );
+  return {
+    deliveryManifest,
+    outputJson: scrubSensitiveJsonValue(
+      { ...input.output, deliveryManifest },
+      sensitiveValues
+    ),
+  };
+}
+
+function outputJsonFromArtifactSummary(
+  task: DeployTaskRow
+): Record<string, unknown> | null {
+  const output = task.artifactSummary.outputJson;
+  return output != null && typeof output === "object" && !Array.isArray(output)
+    ? (output as Record<string, unknown>)
+    : null;
+}
+
+async function blockForDeploymentInputs(input: {
+  deploymentPlan: ReturnType<typeof createSealosTemplateDeploymentPlan>;
+  summary: DeployTaskArtifactSummary;
+  task: DeployTaskRow;
+}) {
+  const blockingInputs = blockingInputsFromDeploymentPlan(input.deploymentPlan);
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.input_required",
+    eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
+    eventPayload: {
+      inputKeys: blockingInputs.map((item) => item.key ?? item.id),
+    },
+    eventSeverity: "warning",
+    phase: "configure",
+    status: "blocked",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
+    timelineStatus: "blocked",
+  });
+  // The blocked transition releases the lease and ends this run — it must be
+  // the run's final write.
+  await deployTaskRequestInputs(input.task.id, {
+    blockingInputs,
+    phase: "configure",
+    state: { artifactSummary: input.summary },
+  });
+}
+
+async function blockForMissingAiDeploymentOutput(task: DeployTaskRow) {
+  await recordDeployTaskEvent(task.id, {
+    kind: "deployment_task.output_missing",
+    message: "Codex gateway completed without deployment output.",
+    phase: "generate-artifacts",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.output_missing",
+    eventMessage: "Codex gateway completed without deployment output.",
+    phase: "generate-artifacts",
+    status: "blocked",
+    stepId: "generate-deployment",
+    taskId: task.id,
+  });
+  await deployTaskRequestInputs(task.id, {
+    blockingInputs: [],
+    phase: "generate-artifacts",
+    state: {
+      artifactSummary: {
+        notes: "Codex gateway completed without deployment output.",
+      },
+    },
+  });
+}
+
+async function applyAiDeploymentFromPreparedOutput(input: {
+  args: Record<string, string>;
+  encodedKubeconfig: string;
+  githubToken?: string;
+  kubeconfig: string;
+  outputJson: Record<string, unknown>;
+  planInputs?: SensitiveDeploymentInputShape[];
+  task: DeployTaskRow;
+}) {
+  const sensitiveValues = sensitiveArgValues(
+    input.args,
+    input.planInputs ?? input.task.artifactSummary.deploymentPlan?.inputs
+  );
+  // A recorded identity predates this run (clone copy per ADR 0038, or an
+  // earlier run's fenced allocation), so the cleanup label selector may match
+  // preserved resources this run never created.
+  const identityFreshlyAllocated =
+    recordedTemplateInstanceName(input.task) === "";
+  let artifact: DeploymentArtifact;
+  try {
+    artifact = prepareSealosTemplateArtifact({
+      args: input.args,
+      buildResult: requiredObjectValue(input.outputJson, "buildResult"),
+      certSecretName: sealosCertSecretName(),
+      deliveryManifest: requiredObjectValue(
+        input.outputJson,
+        "deliveryManifest"
+      ),
+      instanceName:
+        input.task.artifactSummary.resultIdentities?.templateInstanceName,
+      routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+      task: input.task,
+      templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
+    });
+  } catch (error) {
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    const plan = input.task.artifactSummary.deploymentPlan;
+    if (plan != null) {
+      // Re-park on the submitted-input gate instead of failing: the values
+      // were rejected, so ask again (the legacy failed-at-configure hybrid
+      // state is gone — blocked is the only waiting state).
+      await recordDeployTaskEvent(input.task.id, {
+        kind: "deployment_task.input_rejected",
+        message: deployTaskFailureSummary(error),
+        payload: { error: errorMessage(error) },
+        phase: "configure",
+      });
+      await deployTaskRequestInputs(input.task.id, {
+        blockingInputs: blockingInputsFromDeploymentPlan(plan),
+        phase: "configure",
+      });
+      return;
+    }
+    throw error;
+  }
+  // Row-level secrets contract (ADR 0037): submitted Blocking Input values —
+  // sensitive or not — exist only in process memory for the apply itself.
+  // The persisted plan keeps the args it already had (declared defaults and
+  // create-time source args), defensively stripped of sensitive keys.
+  const deploymentPlan =
+    input.task.artifactSummary.deploymentPlan == null
+      ? undefined
+      : deploymentPlanWithPersistableArgs(
+          input.task.artifactSummary.deploymentPlan,
+          input.task.artifactSummary.deploymentPlan.args ?? {}
+        );
+  const summary = {
+    // Rendered YAML embeds submitted values; scrub before persisting.
+    ...artifactSummaryWithScrubbedYamls(
+      sealosTemplateArtifactSummary({ artifact }),
+      sensitiveValues
+    ),
+    ...(deploymentPlan == null ? {} : { deploymentPlan }),
+    outputJson: input.outputJson,
+    resultIdentities: {
+      ...input.task.artifactSummary.resultIdentities,
+      ...(artifact.kind === "sealos-template"
+        ? { templateInstanceName: artifact.instanceName }
+        : {}),
+    },
+  };
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: summary,
+    phase: "configure",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.input_ready",
+    eventMessage: "Deployment configuration is ready.",
+    eventSeverity: "success",
+    phase: "configure",
+    status: "completed",
+    stepId: "generate-deployment",
+    taskId: input.task.id,
+    timelineStatus: "running",
+  });
+
+  try {
+    await completeTaskWithArtifact({
+      artifact,
+      artifactSummaryExtras:
+        deploymentPlan == null ? undefined : { deploymentPlan },
+      githubToken: input.githubToken,
+      kubeconfig: input.kubeconfig,
+      outputJson: input.outputJson,
+      sensitiveValues,
+      task: input.task,
+    });
+  } catch (error) {
+    // An abort is a typed cancellation outcome, never a failure: it must not
+    // reach failure cleanup, which deletes partial resources (ADR 0038).
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    // Readiness timeouts and every other non-apply failure preserve the
+    // created resources (ADR 0037); see templateCleanupAllowed.
+    if (templateCleanupAllowed(error, { identityFreshlyAllocated })) {
+      await cleanupFailedTemplateDeployment({
+        encodedKubeconfig: input.encodedKubeconfig,
+        instanceName: artifact.instanceName,
+        projectId: input.task.projectId ?? artifact.instanceName,
+        task: input.task,
+      });
+    }
+    throw error;
+  }
+}
+
+async function applyGeneratedAiDeployOutput(input: {
+  encodedKubeconfig: string;
+  githubToken?: string;
+  kubeconfig: string;
+  output: Record<string, unknown>;
+  task: DeployTaskRow;
+}) {
+  const deliveryManifest = requiredObjectValue(
+    input.output,
+    "deliveryManifest"
+  );
+  const deploymentPlan = createSealosTemplateDeploymentPlan({
+    deliveryManifest,
+    templateYaml: requiredStringValue(input.output, "templateYaml"),
+  });
+  const buildResult = requiredObjectValue(input.output, "buildResult");
+  // Row-level secrets contract (ADR 0037): every persisted copy of the AI
+  // output is stripped of sensitive arg values; the full manifest stays in
+  // memory for the immediate apply below.
+  const persistable = persistableAiDeployOutput({
+    deliveryManifest,
+    output: input.output,
+    planInputs: deploymentPlan.inputs,
+  });
+  const baseSummary: DeployTaskArtifactSummary = {
+    buildResult,
+    deliveryManifest: persistable.deliveryManifest,
+    deploymentPlan: deploymentPlanWithPersistableArgs(
+      deploymentPlan,
+      deploymentPlan.args ?? {}
+    ),
+    outputJson: persistable.outputJson,
+  };
+  if ((deploymentPlan.missingInputKeys?.length ?? 0) > 0) {
+    await updateDeployTaskState(input.task.id, {
+      artifactSummary: baseSummary,
+      phase: "generate-artifacts",
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.artifacts_generated",
+      message: "Generated Sealos template deployment artifact.",
+      payload: { requiredInputs: deploymentPlan.missingInputKeys },
+      phase: "generate-artifacts",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.artifacts_generated",
+      eventMessage: "Generated Sealos template deployment artifact.",
+      phase: "generate-artifacts",
+      status: "completed",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
+    });
+    await blockForDeploymentInputs({
+      deploymentPlan,
+      summary: baseSummary,
+      task: input.task,
+    });
+    return;
+  }
+
+  await applyAiDeploymentFromPreparedOutput({
+    args: deployTaskStringRecordValue(deliveryManifest.args),
+    encodedKubeconfig: input.encodedKubeconfig,
+    githubToken: input.githubToken ?? undefined,
+    kubeconfig: input.kubeconfig,
+    // Persisted copies must stay scrubbed; the full args ride separately.
+    outputJson: persistable.outputJson,
+    planInputs: deploymentPlan.inputs,
+    task: input.task,
+  });
+}
+
+/**
+ * This direct run's known sensitive values, for scrubbing an apply error that
+ * echoed one (ADR 0042). Docker env values are undeclared, so the shared
+ * name heuristic classifies them; database settings hold no user secret.
+ */
+function directSensitiveValues(task: DeployTaskRow): string[] {
+  if (task.source.kind !== "docker") {
+    return [];
+  }
+  const settings = task.source.settings as unknown as DockerDeploymentSettings;
+  const env = Array.isArray(settings.env) ? settings.env : [];
+  // Docker env is undeclared, so reuse the shared name-heuristic path: build a
+  // record and let sensitiveArgValues apply the same predicate and length
+  // guard the args path uses, instead of duplicating them here.
+  const envArgs = Object.fromEntries(
+    env
+      .filter((row) => typeof row?.value === "string")
+      .map((row) => [row.name, row.value])
+  );
+  return sensitiveArgValues(envArgs);
+}
+
+async function runDirectDeploymentTask(input: {
+  kubeconfig: string;
+  projectName: string;
+  task: DeployTaskRow;
+}) {
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.direct_validation_started",
+    eventMessage: "Validating direct deployment settings.",
+    phase: "plan",
+    status: "running",
+    stepId: "validate-settings",
+    taskId: input.task.id,
+  });
+  await updateDeployTaskState(input.task.id, {
+    phase: "plan",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.plan_created",
+    message: "Prepared direct deployment plan.",
+    phase: "plan",
+  });
+
+  const artifact = generateDirectArtifact(input);
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: { artifacts: [artifact] },
+    phase: "generate-artifacts",
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.artifacts_generated",
+    message: "Generated deployment artifacts.",
+    phase: "generate-artifacts",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.direct_validation_completed",
+    eventMessage: "Direct deployment settings are ready.",
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "validate-settings",
+    taskId: input.task.id,
+  });
+
+  try {
+    await completeTaskWithArtifact({
+      artifact,
+      kubeconfig: input.kubeconfig,
+      task: input.task,
+    });
+  } catch (error) {
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    // Scrub any docker env value the apply error echoed (ADR 0042).
+    throw attachDeploySensitiveValues(error, directSensitiveValues(input.task));
+  }
+}
+
+/**
+ * Declarations for a named provider template, as a deployment plan over the
+ * merged args. A template whose source YAML cannot be fetched or parsed
+ * degrades to heuristic-only handling (null) instead of failing a deploy
+ * the provider itself would accept; a provider outage surfaces on the
+ * deploy call with its real error.
+ */
+async function templateDeploymentPlanForRun(input: {
+  args: Record<string, string>;
+  encodedKubeconfig: string;
+  taskId: string;
+  templateName: string;
+}): Promise<DeploymentTaskDeploymentPlan | null> {
+  try {
+    const templateSource = await getTemplateSource({
+      encodedKubeconfig: input.encodedKubeconfig,
+      templateName: input.templateName,
+    });
+    const templateYaml =
+      typeof templateSource.templateYaml === "string"
+        ? templateSource.templateYaml
+        : "";
+    if (templateYaml.trim() === "") {
+      return null;
+    }
+    return createSealosTemplateDeploymentPlan({
+      deliveryManifest: { args: input.args },
+      templateYaml,
+    });
+  } catch (error) {
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    // Surface the degrade as a warning on the prepare step instead of a silent
+    // task event (ADR 0042): the run proceeds without input validation, so a
+    // completed-but-unvalidated deploy still leaves a visible trace.
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.template_declarations_unavailable",
+      eventMessage:
+        "Couldn't load template input declarations; continuing with the provided values.",
+      eventPayload: {
+        error: scrubSensitiveText(
+          errorMessage(error),
+          sensitiveArgValues(input.args)
+        ),
+      },
+      eventSeverity: "warning",
+      phase: "plan",
+      status: "running",
+      stepId: "prepare-template",
+      taskId: input.taskId,
+    });
+    return null;
+  }
+}
+
+/**
+ * The blocking form for a template run: plan-derived inputs (missing plus
+ * every sensitive input, US15) plus synthetic secret fields for keys
+ * recorded as stripped at create but absent from the fetched declarations
+ * (or whenever declarations are unavailable).
+ */
+function templateBlockingInputs(input: {
+  plan: DeploymentTaskDeploymentPlan | null;
+  unsatisfiedSensitiveKeys: string[];
+}): DeployTaskBlockingInput[] {
+  const fromPlan =
+    input.plan == null ? [] : blockingInputsFromDeploymentPlan(input.plan);
+  const covered = new Set(fromPlan.map((item) => item.key ?? item.id));
+  return [
+    ...fromPlan,
+    ...input.unsatisfiedSensitiveKeys
+      .filter((key) => !covered.has(key))
+      .map((key) => ({
+        id: key,
+        key,
+        label: key,
+        required: true,
+        sensitive: true,
+        type: "secret" as const,
+      })),
+  ];
+}
+
+async function runTemplateDeploymentTask(input: {
+  encodedKubeconfig: string;
+  kubeconfig: string;
+  projectId: string;
+  sourceArgValues?: Record<string, string>;
+  submittedInputValues?: Record<string, string>;
+  task: DeployTaskRow;
+}) {
+  if (input.task.source.kind !== "template") {
+    throw new Error("Template runner requires a template source.");
+  }
+  const source = input.task.source;
+  const templateName = source.templateName.trim();
+
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.template_preparation_started",
+    eventMessage: "Preparing template deployment.",
+    phase: "plan",
+    status: "running",
+    stepId: "prepare-template",
+    taskId: input.task.id,
+  });
+  await updateDeployTaskState(input.task.id, {
+    phase: "plan",
+  });
+
+  // Full args exist only in memory (ADR 0037): the persisted source is the
+  // stripped copy; create-time values and blocked-input submissions ride in
+  // process memory and win over it.
+  const mergedArgs = {
+    ...(source.args ?? {}),
+    ...(input.sourceArgValues ?? {}),
+    ...(input.submittedInputValues ?? {}),
+  };
+  const plan = await templateDeploymentPlanForRun({
+    args: mergedArgs,
+    encodedKubeconfig: input.encodedKubeconfig,
+    taskId: input.task.id,
+    templateName,
+  });
+
+  if (plan != null) {
+    // Runner-side authoritative scrub: template declarations are the source
+    // of truth for sensitivity, so anything the create-side strip could not
+    // see (other callers, declaration-only sensitivity) is removed here.
+    const persistedArgs = source.args ?? {};
+    const scrubbedArgs = withoutSensitiveArgs(persistedArgs, plan.inputs);
+    if (
+      Object.keys(scrubbedArgs).length !== Object.keys(persistedArgs).length
+    ) {
+      await updateDeployTaskState(input.task.id, {
+        source: { ...source, args: scrubbedArgs },
+      });
+    }
+  }
+
+  // Keys recorded as stripped at create (ADR 0037) whose values this run
+  // does not hold in memory: a clone must re-collect them — even when the
+  // template's declarations are unavailable — so stripped values are never
+  // silently dropped. A key explicitly present in a memory map (even empty)
+  // is the user's answer and never re-asked.
+  const unsatisfiedSensitiveKeys = (source.sensitiveKeys ?? []).filter(
+    (key) =>
+      !(
+        key in (input.sourceArgValues ?? {}) ||
+        key in (input.submittedInputValues ?? {})
+      ) && (mergedArgs[key]?.trim() ?? "") === ""
+  );
+  if (
+    (plan?.missingInputKeys?.length ?? 0) > 0 ||
+    unsatisfiedSensitiveKeys.length > 0
+  ) {
+    const blockingInputs = templateBlockingInputs({
+      plan,
+      unsatisfiedSensitiveKeys,
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.input_required",
+      eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
+      eventPayload: {
+        inputKeys: blockingInputs.map((item) => item.key ?? item.id),
+      },
+      eventSeverity: "warning",
+      phase: "configure",
+      status: "blocked",
+      stepId: "prepare-template",
+      taskId: input.task.id,
+      timelineStatus: "blocked",
+    });
+    // The blocked transition releases the lease and ends this run — it
+    // must be the run's final write.
+    await deployTaskRequestInputs(input.task.id, {
+      blockingInputs,
+      phase: "configure",
+    });
+    return;
+  }
+
+  // Identity allocation must stay below the blocking-input gate: a blocked
+  // run ends above without applying anything, and an identity persisted
+  // before that point would read as "reused" on resume — gating off cleanup
+  // of the resumed run's first partial apply (ADR 0038 freshness proof).
+  const { freshlyAllocated: identityFreshlyAllocated, instanceName } =
+    await allocateTemplateInstanceName({
+      task: input.task,
+      templateName,
+    });
+
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.plan_created",
+    message: "Prepared template deployment plan.",
+    phase: "plan",
+  });
+
+  try {
+    const artifact = generateTemplateArtifact({
+      args: mergedArgs,
+      instanceName,
+      namespace: input.task.namespace,
+      projectId: input.projectId,
+      templateName,
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.template_preparation_completed",
+      eventMessage: "Template deployment is ready.",
+      phase: "generate-artifacts",
+      status: "completed",
+      stepId: "prepare-template",
+      taskId: input.task.id,
+    });
+
+    await completeTaskWithArtifact({
+      artifact,
+      completionEventKind: "deployment_task.resources_created",
+      completionEventMessage:
+        "Template deployment resources were created. Workload readiness continues in Kubernetes.",
+      completionRecordMessage: "Template deployment resources created.",
+      kubeconfig: input.kubeconfig,
+      sensitiveValues: sensitiveArgValues(mergedArgs, plan?.inputs),
+      task: input.task,
+    });
+  } catch (error) {
+    // An abort is a typed cancellation outcome, never a failure: it must not
+    // reach failure cleanup, which deletes partial resources (ADR 0038).
+    if (isDeployTaskAbortError(error)) {
+      throw error;
+    }
+    // Readiness timeouts and every other non-apply failure preserve the
+    // created resources (ADR 0037); see templateCleanupAllowed.
+    if (templateCleanupAllowed(error, { identityFreshlyAllocated })) {
+      await cleanupFailedTemplateDeployment({
+        encodedKubeconfig: input.encodedKubeconfig,
+        instanceName,
+        projectId: input.projectId,
+        task: input.task,
+      });
+    }
+    // Carry this run's known sensitive values to the terminal failure write so
+    // a provider/K8s error that echoed one is scrubbed before persist (ADR 0042).
+    throw attachDeploySensitiveValues(
+      error,
+      sensitiveArgValues(mergedArgs, plan?.inputs)
+    );
+  }
+}
+
+function recordedTemplateInstanceName(task: DeployTaskRow): string {
+  return (
+    task.artifactSummary.resultIdentities?.templateInstanceName?.trim() ?? ""
+  );
+}
+
+/**
+ * Result-identity contract (ADR 0038): reuse the recorded template instance
+ * name when one exists (redeploy converging on preserved resources); a fresh
+ * allocation is persisted with a fenced write before any provider call uses
+ * it, so an identity can never be allocated and then lost to a crash.
+ * `freshlyAllocated` feeds cleanup eligibility: only a fresh identity proves
+ * the label selector matches nothing but this run's resources — which is why
+ * callers must allocate only after every non-applying early exit (notably the
+ * blocking-input gate): an identity persisted by a run that never applied
+ * would be misread as reused on resume.
+ */
+async function allocateTemplateInstanceName(input: {
+  task: DeployTaskRow;
+  templateName: string;
+}): Promise<{ freshlyAllocated: boolean; instanceName: string }> {
+  const recorded = recordedTemplateInstanceName(input.task);
+  if (recorded) {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.result_identity_reused",
+      message: `Reusing template instance "${recorded}" from the previous run.`,
+      payload: { templateInstanceName: recorded },
+      phase: "plan",
+    });
+    return { freshlyAllocated: false, instanceName: recorded };
+  }
+  const allocated = childResourceName(input.templateName, "template");
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: {
+      ...input.task.artifactSummary,
+      resultIdentities: {
+        ...input.task.artifactSummary.resultIdentities,
+        templateInstanceName: allocated,
+      },
+    },
+  });
+  return { freshlyAllocated: true, instanceName: allocated };
+}
+
+function aiSourceKey(task: DeployTaskRow): string {
+  switch (task.source.kind) {
+    case "github":
+      return task.source.repo.url;
+    case "prompt":
+      return `prompt:${task.id}`;
+    default:
+      return `${task.source.kind}:${task.id}`;
+  }
+}
+
+function aiAnalyzeSourceMessage(task: DeployTaskRow): string {
+  return task.source.kind === "github"
+    ? "Analyzing repository."
+    : "Analyzing deployment request.";
+}
+
+function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
+  return task.source.kind === "github"
+    ? "Repository analysis is complete."
+    : "Deployment request analysis is complete.";
+}
+
+async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
+  if (task.source.kind !== "github") {
+    return null;
+  }
+  const githubConnectionId = task.githubConnectionId?.trim() ?? "";
+  if (githubConnectionId === "") {
+    throw new Error("GitHub connection ID is required for GitHub deployment.");
+  }
+  const actorUserId = task.actorUserId?.trim() ?? "";
+  if (actorUserId === "") {
+    throw new Error("GitHub deployment actor user ID is required.");
+  }
+  const token = await getGithubOAuthTokenForConnection({
+    connectionId: githubConnectionId,
+    namespace: task.namespace,
+    userId: actorUserId,
+  });
+  if (token == null) {
+    throw new Error(
+      "GitHub OAuth connection is not authorized for this deployment."
+    );
+  }
+  return token;
+}
+
+async function runAiDeploymentTask(input: {
+  encodedKubeconfig: string;
+  kubeconfig: string;
+  task: DeployTaskRow;
+}) {
+  if (
+    input.task.source.kind !== "github" &&
+    input.task.source.kind !== "prompt"
+  ) {
+    throw new Error(
+      `AI runner does not support ${input.task.source.kind} deployments.`
+    );
+  }
+
+  await updateDeployTaskState(input.task.id, {
+    phase: "prepare",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.prepare_started",
+    eventMessage: "Preparing deploy runtime.",
+    phase: "prepare",
+    status: "running",
+    stepId: "prepare-workspace",
+    taskId: input.task.id,
+  });
+
+  const githubToken = await githubTokenForTask(input.task);
+
+  const runtime = await ensureDeployDevbox({
+    existingRuntimeName: input.task.runtimeName,
+    githubToken: githubToken ?? undefined,
+    namespace: input.task.namespace,
+    repoUrl: aiSourceKey(input.task),
+    taskId: input.task.id,
+  });
+
+  await updateDeployTaskState(input.task.id, {
+    runtimeName: runtime.name,
+    runtimeProvider: "devbox",
+    runtimeState: runtime.info.state.phase,
+  });
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.runtime_ready",
+    message: "Deploy runtime is ready.",
+    payload: { runtimeName: runtime.name },
+    phase: "prepare",
+  });
+
+  if (input.task.source.kind === "github") {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.workspace_clone_started",
+      message: "Cloning repository into deploy workspace.",
+      phase: "prepare",
+    });
+    await execOrThrow({
+      command: cloneWorkspaceCommand({
+        branch: input.task.source.branch ?? null,
+        githubToken: githubToken ?? undefined,
+        repoUrl: input.task.source.repo.url,
+      }),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.workspace_clone_ready",
+      message: "Repository clone is ready.",
+      phase: "prepare",
+    });
+  } else {
+    await execOrThrow({
+      command: prepareEmptyWorkspaceCommand(),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+    });
+  }
+
+  await execOrThrow({
+    command: prepareWorkspaceOutputCommand(),
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+    timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+  });
+
+  const runtimeInfoForBuild = await getDevboxWithSecretRetry(
+    input.task.namespace,
+    runtime.name
+  );
+  const apiNetworkId = runtimeInfoForBuild.network?.uniqueID?.trim() || null;
+  const kubernetesNetworkId =
+    apiNetworkId ??
+    (await getDevboxNetworkIdFromKubernetes({
+      encodedKubeconfig: input.encodedKubeconfig,
+      name: runtime.name,
+      namespace: input.task.namespace,
+    }));
+  const buildRuntime = buildRuntimeContract({
+    devbox: runtimeInfoForBuild,
+    networkId: kubernetesNetworkId,
+  });
+  if (buildRuntime == null && input.task.source.kind === "github") {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.build_runtime_unavailable",
+      message:
+        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+      payload: { runtimeName: runtime.name },
+      phase: "prepare",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.build_runtime_unavailable",
+      eventMessage:
+        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+      phase: "prepare",
+      status: "blocked",
+      stepId: "prepare-workspace",
+      taskId: input.task.id,
+    });
+    await deployTaskRequestInputs(input.task.id, {
+      blockingInputs: [],
+      phase: "prepare",
+      state: {
+        artifactSummary: {
+          notes:
+            "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
+        },
+      },
+    });
+    return;
+  }
+  if (buildRuntime != null) {
+    await execOrThrow({
+      command: writeBuildRuntimeContractCommand(buildRuntime),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.build_runtime_ready",
+      message: "Build runtime contract is ready.",
+      payload: {
+        devboxName: runtime.name,
+        networkSource: apiNetworkId == null ? "kubernetes" : "devbox-api",
+        s3Endpoint: buildRuntime.s3Endpoint,
+      },
+      phase: "prepare",
+    });
+  }
+
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.skill_install_started",
+    message: "Installing deploy skills into workspace.",
+    phase: "prepare",
+  });
+  await execOrThrow({
+    command: installSkillsCommand(),
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+    timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+  });
+
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.workspace_ready",
+    message: "Deployment workspace is ready.",
+    phase: "prepare",
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.workspace_ready",
+    eventMessage: "Deployment workspace is ready.",
+    phase: "prepare",
+    status: "completed",
+    stepId: "prepare-workspace",
+    taskId: input.task.id,
+  });
+
+  const latestRuntimeInfo = await getDevboxWithSecretRetry(
+    input.task.namespace,
+    runtime.name
+  );
+  const gatewayContext =
+    getCodexGatewayContextFromDevboxInfo(latestRuntimeInfo);
+  const outputProgressSignatures = new Set<string>();
+
+  if (gatewayContext == null) {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.gateway_unavailable",
+      message:
+        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
+      phase: "plan",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.gateway_unavailable",
+      eventMessage:
+        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
+      phase: "plan",
+      status: "blocked",
+      stepId: "analyze-source",
+      taskId: input.task.id,
+    });
+    await deployTaskRequestInputs(input.task.id, {
+      blockingInputs: [],
+      phase: "plan",
+    });
+    return;
+  }
+
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.source_analysis_started",
+    eventMessage: aiAnalyzeSourceMessage(input.task),
+    phase: "plan",
+    status: "running",
+    stepId: "analyze-source",
+    taskId: input.task.id,
+  });
+  await runDeployTaskGatewayWithOutputProgress({
+    context: gatewayContext,
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+    seenSignatures: outputProgressSignatures,
+    task: input.task,
+  });
+  await markTimelineStepWithEvent({
+    eventKind: "deployment_task.source_analysis_completed",
+    eventMessage: aiAnalyzeSourceCompletedMessage(input.task),
+    phase: "generate-artifacts",
+    status: "completed",
+    stepId: "analyze-source",
+    taskId: input.task.id,
+  });
+  await markDeploymentGenerationStartedIfNeeded({
+    seenOutputProgress: outputProgressSignatures,
+    taskId: input.task.id,
+  });
+
+  const deployOutput = await readDeployOutput({
+    namespace: input.task.namespace,
+    runtimeName: runtime.name,
+  });
+  await recordDeployOutputProgressIfPresent({
+    output: deployOutput,
+    seenSignatures: outputProgressSignatures,
+    taskId: input.task.id,
+  });
+  let finalDeployOutput = deployOutput;
+  if (finalDeployOutput == null) {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.output_repair_started",
+      message:
+        "Codex gateway completed without deployment output; requesting a repair turn.",
+      phase: "generate-artifacts",
+    });
+    await markTimelineStepWithEvent({
+      eventKind: "deployment_task.output_repair_started",
+      eventMessage:
+        "Codex gateway completed without deployment output; requesting a repair turn.",
+      phase: "generate-artifacts",
+      status: "running",
+      stepId: "generate-deployment",
+      taskId: input.task.id,
+    });
+    await runDeployTaskGatewayWithOutputProgress({
+      context: gatewayContext,
+      namespace: input.task.namespace,
+      repairOutput: true,
+      runtimeName: runtime.name,
+      seenSignatures: outputProgressSignatures,
+      task: input.task,
+    });
+    finalDeployOutput = await readDeployOutput({
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+    });
+    await recordDeployOutputProgressIfPresent({
+      output: finalDeployOutput,
+      seenSignatures: outputProgressSignatures,
+      taskId: input.task.id,
+    });
+  }
+
+  if (finalDeployOutput == null) {
+    await blockForMissingAiDeploymentOutput(input.task);
+    return;
+  }
+
+  await applyGeneratedAiDeployOutput({
+    encodedKubeconfig: input.encodedKubeconfig,
+    githubToken: githubToken ?? undefined,
+    kubeconfig: input.kubeconfig,
+    output: finalDeployOutput,
+    task: input.task,
+  });
+}
+
+/**
+ * The runner body for one claimed execution (ADR 0037): invoked by the
+ * engine's launch wrapper under a lease, with the kubeconfig and any
+ * submitted Blocking Input values held in request-process memory only. Every
+ * task-state write inside goes through the fenced handle; the terminal
+ * failure transition is the run's last write. Abort errors pass through to
+ * the launch wrapper, which resolves them to `cancelled` — never `failed`.
+ */
+export async function runDeployTask(
+  handle: DeployTaskHandle,
+  input: StartDeployTaskRunnerInput
+): Promise<void> {
+  const task = await getDeployTaskById(input.taskId);
+  if (task == null) {
+    throw new Error("Deploy task not found.");
+  }
+
+  try {
+    const kubeconfig = requireKubeconfig(input);
+    const target = await resolveDeploymentTaskTarget(task);
+    if (
+      task.projectId?.trim() !== target.projectId ||
+      task.projectName?.trim() !== target.projectName
+    ) {
+      await handle.setState({
+        projectId: target.projectId,
+        projectName: target.projectName,
+      });
+    }
+    const resolvedTask = (await getDeployTaskById(task.id)) ?? task;
+    const submittedInputValues = submittedInputStringValues(
+      input.submittedInputValues
+    );
+    if (
+      Object.keys(submittedInputValues).length > 0 &&
+      resolvedTask.runner.kind === "ai"
+    ) {
+      const outputJson = outputJsonFromArtifactSummary(resolvedTask);
+      if (outputJson == null) {
+        throw new Error("Deploy task has no generated deployment output.");
+      }
+      await applyAiDeploymentFromPreparedOutput({
+        args: {
+          ...deployTaskStringRecordValue(
+            requiredObjectValue(outputJson, "deliveryManifest").args
+          ),
+          ...deploymentPlanArgsFromTask(resolvedTask),
+          ...submittedInputValues,
+        },
+        encodedKubeconfig: input.encodedKubeconfig ?? "",
+        githubToken:
+          resolvedTask.source.kind === "github"
+            ? ((await githubTokenForTask(resolvedTask)) ?? undefined)
+            : undefined,
+        kubeconfig,
+        outputJson,
+        task: resolvedTask,
+      });
+      return;
+    }
+
+    switch (resolvedTask.runner.kind) {
+      case "direct":
+        await runDirectDeploymentTask({
+          kubeconfig,
+          projectName: target.projectName,
+          task: resolvedTask,
+        });
+        break;
+      case "template":
+        await runTemplateDeploymentTask({
+          encodedKubeconfig: input.encodedKubeconfig ?? "",
+          kubeconfig,
+          projectId: target.projectId,
+          sourceArgValues: input.sourceArgValues,
+          submittedInputValues,
+          task: resolvedTask,
+        });
+        break;
+      case "ai":
+        await runAiDeploymentTask({
+          encodedKubeconfig: input.encodedKubeconfig ?? "",
+          kubeconfig,
+          task: resolvedTask,
+        });
+        break;
+      default:
+        resolvedTask.runner satisfies never;
+        break;
+    }
+  } catch (error) {
+    if (isDeployTaskAbortError(error) || handle.outcome() != null) {
+      throw error;
+    }
+    await resolveDeployTaskRunFailure({ error, handle, task });
+  }
+}
+
+/**
+ * The run's single terminal failure write: timeline marking first, then the
+ * fenced `failed` transition carrying the aggregated failure details.
+ */
+async function resolveDeployTaskRunFailure(input: {
+  error: unknown;
+  handle: DeployTaskHandle;
+  task: DeployTaskRow;
+}): Promise<void> {
+  const { error, handle, task } = input;
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const latestTask = (await getDeployTaskById(task.id)) ?? task;
+
+  // Scrub known sensitive values out of every persisted copy of the error
+  // before it is written (ADR 0042 extends the ADR 0037 secrets contract to
+  // error strings). Only the runner held the plaintext, and it rode up on the
+  // error; AI runs attach nothing, so their message is unchanged.
+  const sensitiveValues = attachedDeploySensitiveValues(error);
+  const message = scrubSensitiveText(rawMessage, sensitiveValues);
+
+  const surfacesRaw = deployRunnerSurfacesRawFailure(latestTask.runner);
+  const attachedDetails = attachedDeployFailureDetails(error);
+  const reasonCode =
+    typeof attachedDetails.reason === "string" ? attachedDetails.reason : null;
+  const reasonMessage = deploymentFailureReason({
+    rawMessage: message,
+    reasonCode,
+    surfacesRaw,
+  });
+
+  await markDeployTaskFailureTimeline({
+    detailMessage: message,
+    reasonMessage,
+    task: latestTask,
+  }).catch(() => false);
+  await handle.fail({
+    error: message,
+    event: {
+      kind: "deployment_task.failed",
+      message: reasonMessage,
+      payload: { error: message },
+      phase: latestTask.phase,
+    },
+    failureDetails: scrubSensitiveJsonValue(
+      {
+        ...deployFailureDetails({
+          error,
+          phase: latestTask.phase,
+          source: "runDeployTask",
+          task: latestTask,
+        }),
+        ...attachedDetails,
+        failureMessage: reasonMessage,
+      },
+      sensitiveValues
+    ),
+  });
+}

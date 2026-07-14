@@ -10,6 +10,7 @@ import {
   connectionHandleFromConnectStartParams,
   type ProjectCanvasConnectionHandle,
 } from "@/features/project-canvas/flow/interaction";
+import { useStableCallback } from "@/features/project-canvas/use-stable-callback";
 import {
   connectionOriginFromHandle,
   type ProjectCanvasConnectionOrigin,
@@ -18,7 +19,6 @@ import {
   type ProjectCanvasCommandPlan,
   planProjectCanvasCommand,
 } from "@/features/project-canvas/workbench/command-model";
-import { useStableCallback } from "@/lib/use-stable-callback";
 
 export function useProjectCanvasConnectionGesture({
   executeCommandPlan,

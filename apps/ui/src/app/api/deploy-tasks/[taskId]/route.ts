@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
-} from "@/lib/deploy-task/api-auth";
+} from "@/features/deploy/task/api-auth";
 import {
   getDeployTaskSnapshot,
   updateDeployTaskCanvasProjection,
-} from "@/lib/deploy-task/service";
-import { updateDeployTaskCanvasProjectionInputSchema } from "@/lib/deploy-task/types";
+} from "@/features/deploy/task/service";
+import { updateDeployTaskCanvasProjectionInputSchema } from "@/features/deploy/task/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

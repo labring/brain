@@ -3,9 +3,8 @@ import { test } from "node:test";
 import type { Node } from "@xyflow/react";
 import { createStore, Provider as JotaiProvider } from "jotai";
 import { renderToStaticMarkup } from "react-dom/server";
-
+import { assistantPaneOpenAtom } from "@/features/panes/layout-store";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import { assistantPaneOpenAtom } from "@/store/layout-store";
 import {
   MainActionSurface,
   MainActionSurfaceFrame,
