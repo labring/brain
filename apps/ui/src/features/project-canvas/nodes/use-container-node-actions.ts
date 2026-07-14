@@ -106,13 +106,12 @@ export function useCanvasContainerNodeActions({
             },
             restart: {
               onClick: () =>
-                commands.runResourceAction(
-                  () => commands.restartApWorkload(ref),
-                  {
-                    loading: `Restarting "${displayName}"...`,
-                    success: `Restarted "${displayName}"`,
-                  }
-                ),
+                commands.requestApRestart({
+                  displayName,
+                  kind: states.kind,
+                  name: ref.name,
+                  namespace: ref.namespace,
+                }),
             },
             start: {
               onClick: () =>

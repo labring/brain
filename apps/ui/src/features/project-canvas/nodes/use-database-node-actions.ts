@@ -132,14 +132,15 @@ export function useCanvasDatabaseNodeActions({
                   namespace: mutableWorkload.namespace,
                 }),
             },
-            restart: dbLifecycleAction(
-              activity.loadingRestart,
-              () => commands.restartDbWorkload(mutableWorkload),
-              {
-                loading: `Restarting "${displayName}"...`,
-                success: `Restart requested for "${displayName}"`,
-              }
-            ),
+            restart: {
+              loading: activity.loadingRestart,
+              onClick: () =>
+                commands.requestDbRestart({
+                  displayName,
+                  name: mutableWorkload.name,
+                  namespace: mutableWorkload.namespace,
+                }),
+            },
             start: dbLifecycleAction(
               activity.loadingStart,
               () => commands.startDbWorkload(mutableWorkload),

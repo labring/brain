@@ -512,13 +512,13 @@ export function useProjectCanvasModule({
       ),
       createElement(
         Fragment,
-        { key: "resource-stop" },
-        workbench.resourceStopDialog
+        { key: "resource-lifecycle" },
+        workbench.resourceLifecycleDialogs
       ),
     ],
     [
       workbench.resourceDeleteDialog,
-      workbench.resourceStopDialog,
+      workbench.resourceLifecycleDialogs,
       workbench.settingsLeaveGuardDialog,
     ]
   );

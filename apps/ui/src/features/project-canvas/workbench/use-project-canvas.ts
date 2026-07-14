@@ -45,7 +45,7 @@ import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workb
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
-import { useResourceStopDialogs } from "@/features/project-canvas/workbench/use-resource-stop-dialogs";
+import { useResourceLifecycleDialogs } from "@/features/project-canvas/workbench/use-resource-lifecycle-dialogs";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 import type { ProjectCanvasSelection } from "@/features/project-route-state/canvas-selection";
@@ -306,12 +306,19 @@ export function useProjectCanvas(
       onResourceLayoutDelete: options?.onResourceLayoutDelete,
       runResourceAction: resourceActions.runResourceAction,
     });
-  const { requestApStop, requestDbStop, resourceStopDialog } =
-    useResourceStopDialogs({
-      runResourceAction: resourceActions.runResourceAction,
-      stopApWorkload: resourceActions.apLifecycle.pauseWorkload,
-      stopDbWorkload: resourceActions.dbLifecycle.stopWorkload,
-    });
+  const {
+    requestApRestart,
+    requestApStop,
+    requestDbRestart,
+    requestDbStop,
+    resourceLifecycleDialogs,
+  } = useResourceLifecycleDialogs({
+    restartApWorkload: resourceActions.apLifecycle.restartWorkload,
+    restartDbWorkload: resourceActions.dbLifecycle.restartWorkload,
+    runResourceAction: resourceActions.runResourceAction,
+    stopApWorkload: resourceActions.apLifecycle.pauseWorkload,
+    stopDbWorkload: resourceActions.dbLifecycle.stopWorkload,
+  });
 
   const executeCommandPlan = useStableCallback(
     (plan: ProjectCanvasCommandPlan) => {
@@ -388,14 +395,8 @@ export function useProjectCanvas(
   const copyDatabaseConnection = useStableCallback(
     resourceActions.copyDatabaseConnection
   );
-  const restartApWorkload = useStableCallback(
-    resourceActions.apLifecycle.restartWorkload
-  );
   const startApWorkload = useStableCallback(
     resourceActions.apLifecycle.startWorkload
-  );
-  const restartDbWorkload = useStableCallback(
-    resourceActions.dbLifecycle.restartWorkload
   );
   const startDbWorkload = useStableCallback(
     resourceActions.dbLifecycle.startWorkload
@@ -414,11 +415,11 @@ export function useProjectCanvas(
       projectId: options?.projectId,
       readOnly,
       requestApDelete,
+      requestApRestart,
       requestApStop,
       requestDbDelete,
+      requestDbRestart,
       requestDbStop,
-      restartApWorkload,
-      restartDbWorkload,
       runResourceAction,
       startApWorkload,
       startDbWorkload,
@@ -433,11 +434,11 @@ export function useProjectCanvas(
       options?.projectId,
       readOnly,
       requestApDelete,
+      requestApRestart,
       requestApStop,
       requestDbDelete,
+      requestDbRestart,
       requestDbStop,
-      restartApWorkload,
-      restartDbWorkload,
       runResourceAction,
       startApWorkload,
       startDbWorkload,
@@ -815,7 +816,7 @@ export function useProjectCanvas(
     openMainSurface,
     openSideSurface,
     resourceDeleteDialog,
-    resourceStopDialog,
+    resourceLifecycleDialogs,
     registerSettingsLeaveGuard,
     repairSide,
     requestResourcePaneReplacement,

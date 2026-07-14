@@ -21,9 +21,9 @@ import type {
   ProjectCanvasDbDeleteTarget,
 } from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
 import type {
-  ProjectCanvasApStopTarget,
-  ProjectCanvasDbStopTarget,
-} from "@/features/project-canvas/workbench/project-canvas-stop-dialog";
+  ProjectCanvasApLifecycleTarget,
+  ProjectCanvasDbLifecycleTarget,
+} from "@/features/project-canvas/workbench/project-canvas-lifecycle-dialog";
 import type { ProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
 
 interface WorkloadRef {
@@ -48,11 +48,11 @@ export interface ProjectCanvasNodeCommands {
   projectId?: string;
   readOnly: boolean;
   requestApDelete: (target: ProjectCanvasApDeleteTarget) => void;
-  requestApStop: (target: ProjectCanvasApStopTarget) => void;
+  requestApRestart: (target: ProjectCanvasApLifecycleTarget) => void;
+  requestApStop: (target: ProjectCanvasApLifecycleTarget) => void;
   requestDbDelete: (target: ProjectCanvasDbDeleteTarget) => void;
-  requestDbStop: (target: ProjectCanvasDbStopTarget) => void;
-  restartApWorkload: (ref: WorkloadRef) => Promise<unknown>;
-  restartDbWorkload: (ref: WorkloadRef) => Promise<unknown>;
+  requestDbRestart: (target: ProjectCanvasDbLifecycleTarget) => void;
+  requestDbStop: (target: ProjectCanvasDbLifecycleTarget) => void;
   runResourceAction: ProjectResourceActions["runResourceAction"];
   startApWorkload: (ref: WorkloadRef) => Promise<unknown>;
   startDbWorkload: (ref: WorkloadRef) => Promise<unknown>;
