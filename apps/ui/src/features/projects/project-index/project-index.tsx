@@ -5,8 +5,6 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
-
-import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
 import {
@@ -20,8 +18,9 @@ import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { serializeProjectSideSurfaceEntry } from "@/features/project-surfaces/url-codec";
 import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
-import { useEnterMotionFrames } from "@/hooks/use-enter-motion-frames";
 import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
+import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
+import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 import { ProjectIndexHorizon } from "./horizon/project-index-horizon";
 import styles from "./project-index.module.css";

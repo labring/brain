@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { StorageSizeInput } from "@/components/storage-size-input";
+import { StorageSizeInput } from "@/lib/storage-size-input";
 import { DeploymentSettings } from "./deployment-settings";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,

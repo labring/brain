@@ -60,7 +60,6 @@ import {
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
 import { useCurrentProjectDisplayName } from "@/hooks/use-current-project-display-name";
-import { useEnterMotionFrames } from "@/hooks/use-enter-motion-frames";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
   ASSISTANT_PANE_DEFAULT_WIDTH,
@@ -104,6 +103,7 @@ import {
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
 } from "@/lib/tool/chat-refresh-frontend-swr-tool";
+import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 import {
   desktopUserIdAtom,
   kubeconfigAtom,

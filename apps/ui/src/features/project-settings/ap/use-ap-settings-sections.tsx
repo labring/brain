@@ -26,7 +26,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { isStorageShrink } from "@/components/storage-size";
+import { isStorageShrink } from "@/lib/storage-size";
 import { toastErrorDetail } from "@/lib/toast-utils";
 import {
   classifyPendingSettingsEntry,

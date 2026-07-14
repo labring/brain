@@ -14,8 +14,8 @@ import {
   isStorageShrink,
   maxGiForStorage,
   parseStorageSizeToGi,
-} from "@/components/storage-size";
-import { StorageSizeInput } from "@/components/storage-size-input";
+} from "@/lib/storage-size";
+import { StorageSizeInput } from "@/lib/storage-size-input";
 
 export interface ApConfigMapMount {
   path: string;

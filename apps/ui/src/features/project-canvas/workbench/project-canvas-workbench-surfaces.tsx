@@ -2,7 +2,6 @@
 
 import { projectSurfaceMotionMs } from "@workspace/ui/lib/project-surface-motion";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import { SealosSkillsWorkflowPane } from "@/components/sealos-skills-workflow-pane";
 import { DatabaseDeploymentPane } from "@/features/deployment/database-deployment-pane";
 import type { DeploymentTaskEditRedeploy } from "@/features/deployment/deployment-task-redeploy";
 import { DeploymentTaskTimelinePane } from "@/features/deployment/deployment-task-timeline-pane";
@@ -31,6 +30,7 @@ import type {
 } from "@/features/project-settings/settings-types";
 import type { ProjectSideSurfaceEntry } from "@/features/project-surfaces/surface-state";
 import type { DeployTaskDTO } from "@/lib/deploy-task/types";
+import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 
 export interface ProjectCanvasSurfaceHostActions {
   closeDrawerSurface: () => void;
