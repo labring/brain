@@ -1,0 +1,20 @@
+.layout {
+  container-name: project-index-layout;
+  container-type: inline-size;
+}
+
+/* The reserve never transitions: it snaps in one layout pass while the pane
+   overlay fades/slides, and the explorer column FLIPs from its old position
+   (see useSidePaneReserveFlip). Animating this width re-runs layout and the
+   container queries on every frame. */
+.sidePaneReserve {
+  width: 0;
+  max-width: 0;
+}
+
+@container project-index-layout (min-width: 60rem) {
+  .sidePaneReserve[data-open="true"] {
+    width: min(40rem, 100cqw);
+    max-width: min(40rem, 100cqw);
+  }
+}

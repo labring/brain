@@ -15,14 +15,14 @@ import {
   type DevTweakValues,
   useDevTweaks,
 } from "@/features/dev-tweaks/use-dev-tweaks";
+import styles from "./horizon.module.css";
 import type { HorizonWebglPhase } from "./horizon-webgl";
-import styles from "./project-index.module.css";
 
 const HorizonWebgl = dynamic(() => import("./horizon-webgl"), { ssr: false });
 
-/** Defaults mirror the `.horizon` custom-property block in the CSS module. */
+/** Defaults mirror the `.horizon` custom-property block in horizon.module.css. */
 const HORIZON_TWEAKS = {
-  note: "project-index.module.css → .horizon",
+  note: "horizon.module.css → .horizon",
   title: "Project · horizon glow",
   tweaks: {
     bleedX: {

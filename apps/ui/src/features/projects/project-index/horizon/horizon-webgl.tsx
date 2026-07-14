@@ -7,7 +7,13 @@ import {
 import { Mesh, Program, Renderer, Triangle } from "ogl";
 import { useEffect, useRef } from "react";
 
-import { glowPose, huesPose, type LayerPose, surgePose } from "./horizon-anim";
+import styles from "./horizon.module.css";
+import {
+  glowPose,
+  huesPose,
+  type LayerPose,
+  surgePose,
+} from "./horizon-animation";
 import {
   clamp01,
   type OklabColor,
@@ -15,7 +21,6 @@ import {
   oklabToGamma,
   parseCssColorToOklab,
 } from "./horizon-color";
-import styles from "./project-index.module.css";
 import type { HorizonTweakValues } from "./project-index-horizon";
 
 /**

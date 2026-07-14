@@ -8,7 +8,7 @@ import {
   type HorizonMotionValues,
   huesPose,
   surgePose,
-} from "./horizon-anim";
+} from "./horizon-animation";
 
 const MOTION: HorizonMotionValues = {
   huesDuration: 5,
