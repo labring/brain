@@ -67,6 +67,7 @@ import {
   type RefreshFrontendSwrCachesToolOutput,
   runRefreshFrontendSwrCachesTool,
 } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
+import { useGithubAuth } from "@/features/deploy/github/use-github-auth";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { scanMessagesForDeployTaskCreations } from "@/features/deploy/task/chat-bridge-scan";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
@@ -106,7 +107,6 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
-import { useGithubAuth } from "@/hooks/use-github-auth";
 import {
   desktopUserIdAtom,
   kubeconfigAtom,

@@ -7,7 +7,7 @@ import {
   GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
   GITHUB_APP_INSTALL_COMPLETE_STORAGE_KEY,
   parseInstallReturnPathParam,
-} from "@/lib/github-app/types";
+} from "@/features/deploy/github/types";
 
 function installReturnPath(): string {
   if (typeof window === "undefined") {

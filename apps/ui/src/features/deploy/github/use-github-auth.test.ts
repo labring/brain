@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { GITHUB_APP_INSTALL_COMPLETE_MESSAGE } from "../lib/github-app/types";
+import { GITHUB_APP_INSTALL_COMPLETE_MESSAGE } from "./types";
 import { githubInstallReturnPathForNavigation } from "./use-github-auth";
 
 test("githubInstallReturnPathForNavigation only applies targeted return paths", () => {

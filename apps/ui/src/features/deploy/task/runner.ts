@@ -14,6 +14,7 @@ import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deploy
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
 import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
 import { renderDockerDeploymentYaml } from "@/features/deploy/docker-deployment-yaml";
+import { getGithubOAuthTokenForConnection } from "@/features/deploy/github/connection-service";
 import { childResourceName } from "@/features/deploy/project-child-resource-name";
 import { applyRenderedTemplateDeployment } from "@/features/deploy/template-k8s-apply";
 import {
@@ -41,7 +42,6 @@ import {
   getDevboxDefaultImage,
 } from "@/lib/devbox/config";
 import type { DevboxInfo } from "@/lib/devbox/types";
-import { getGithubOAuthTokenForConnection } from "@/lib/github-app/connection-service";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 import { createProject, getProject } from "@/lib/project-persistence/projects";

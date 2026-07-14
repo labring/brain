@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-
+import { getGithubConnectionForNamespaceById } from "@/features/deploy/github/connection-service";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -21,7 +21,6 @@ import {
   createDeployTaskInputSchema,
   deployTaskStatusSchema,
 } from "@/features/deploy/task/types";
-import { getGithubConnectionForNamespaceById } from "@/lib/github-app/connection-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

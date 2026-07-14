@@ -7,6 +7,12 @@ import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-a
 import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
+import {
+  findTemplateForGithubRepo,
+  templateCanDeployWithDefaults,
+} from "@/features/deploy/github/github-template-match";
+import { useGithubAuth } from "@/features/deploy/github/use-github-auth";
+import { useGithubRepos } from "@/features/deploy/github/use-github-repos";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
 import {
   type DeploymentTargetPipelineOutcome,
@@ -15,10 +21,6 @@ import {
 } from "@/features/deploy/pipeline";
 import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
-import {
-  findTemplateForGithubRepo,
-  templateCanDeployWithDefaults,
-} from "@/features/deployment/github-template-match";
 import { requestAssistantDraftThread } from "@/features/panes/layout-store";
 import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
 import type {
@@ -35,8 +37,6 @@ import {
   projectCreationPaneStateReducer,
 } from "@/features/projects/creation/project-creation-pane-state";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
-import { useGithubAuth } from "@/hooks/use-github-auth";
-import { useGithubRepos } from "@/hooks/use-github-repos";
 import { desktopUserIdAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 

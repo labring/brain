@@ -9,6 +9,12 @@ import {
   type DeploymentTaskEditRedeploy,
   REDEPLOY_OVERWRITE_WARNING,
 } from "@/features/deploy/deployment-task-redeploy";
+import {
+  findTemplateForGithubRepo,
+  templateCanDeployWithDefaults,
+} from "@/features/deploy/github/github-template-match";
+import { useGithubAuth } from "@/features/deploy/github/use-github-auth";
+import { useGithubRepos } from "@/features/deploy/github/use-github-repos";
 import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
 import type {
   GithubDeployerActions,
@@ -22,12 +28,6 @@ import {
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
-import {
-  findTemplateForGithubRepo,
-  templateCanDeployWithDefaults,
-} from "@/features/deployment/github-template-match";
-import { useGithubAuth } from "@/hooks/use-github-auth";
-import { useGithubRepos } from "@/hooks/use-github-repos";
 import { desktopUserIdAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
