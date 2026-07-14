@@ -6,6 +6,10 @@ import { toast } from "sonner";
 import type { DatabaseDeploymentSettings } from "@/features/deployment/database-deployer";
 import type { DockerDeploymentSettings } from "@/features/deployment/docker-deployer";
 import type { GithubDeployerRepo } from "@/features/deployment/github-deployer/github-deployer.types";
+import {
+  findTemplateForGithubRepo,
+  templateCanDeployWithDefaults,
+} from "@/features/deployment/github-template-match";
 import type { TemplateDeploymentSettings } from "@/features/deployment/template-deployer";
 import { createDeploymentTargetClientAdapters } from "@/features/deployment-target/client-adapters";
 import {
@@ -13,32 +17,28 @@ import {
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deployment-target/pipeline";
-import type { ProjectCreatorRootProps } from "@/features/project-creation/creator/project-creator.context";
+import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
 import type {
   ProjectCreatorActions,
   ProjectCreatorDatabaseChoice,
   ProjectCreatorSourceKind,
-} from "@/features/project-creation/creator/project-creator.types";
+} from "@/features/projects/creation/creator/project-creator.types";
+import { deriveDatabaseProjectDisplayName } from "@/features/projects/creation/database-project-display-name";
+import { deriveDockerProjectDisplayName } from "@/features/projects/creation/docker-project-display-name";
+import { deriveGithubProjectDisplayName } from "@/features/projects/creation/github-project-display-name";
 import {
   initialProjectCreationPaneState,
   type ProjectCreationPaneEntryMode,
   projectCreationPaneStateReducer,
-} from "@/features/project-creation/project-creation-pane-state";
+} from "@/features/projects/creation/project-creation-pane-state";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import { useGithubAuth } from "@/hooks/use-github-auth";
 import { useGithubRepos } from "@/hooks/use-github-repos";
 import { useTemplateCatalog } from "@/hooks/use-template-catalog";
-import { deriveDatabaseProjectDisplayName } from "@/lib/database-project-display-name";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/lib/direct-db-deployment-options";
-import { deriveDockerProjectDisplayName } from "@/lib/docker-project-display-name";
-import { deriveGithubProjectDisplayName } from "@/lib/github-project-display-name";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { desktopUserIdAtom } from "@/store/auth-store";
 import { requestAssistantDraftThread } from "@/store/layout-store";
-import {
-  findTemplateForGithubRepo,
-  templateCanDeployWithDefaults,
-} from "../deployment/github-template-match";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
 const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [

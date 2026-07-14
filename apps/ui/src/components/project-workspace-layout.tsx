@@ -55,6 +55,7 @@ import {
   ProjectSidePaneProvider,
   useProjectSidePaneAssistantRouter,
 } from "@/features/project-surfaces/react";
+import type { BrainProjectResponse } from "@/features/projects/brain-projects";
 import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
@@ -70,7 +71,6 @@ import {
   readStoredAssistantPaneWidth,
   writeStoredAssistantPaneWidth,
 } from "@/lib/assistant-pane-width";
-import type { BrainProjectResponse } from "@/lib/brain-projects";
 import {
   fetchAssistantSession,
   fetchAssistantThreadMessages,

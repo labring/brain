@@ -6,7 +6,7 @@ import {
   LAST_VIEWED_PROJECT_STORAGE_PREFIX,
   lastViewedProjectStorageKey,
   normalizeLastViewedProjectId,
-} from "@/lib/project-navigation-memory";
+} from "@/features/projects/project-navigation-memory";
 
 const LAST_VIEWED_PROJECT_CHANGED_EVENT = "sealai:last-viewed-project-changed";
 

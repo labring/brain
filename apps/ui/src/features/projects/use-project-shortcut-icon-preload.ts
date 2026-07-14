@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import {
   type ProjectShortcutIconKeyMap,
   projectShortcutIconAssetUrls,
-} from "@/lib/project-shortcut-icons";
+} from "@/features/projects/project-shortcut-icons";
 
 const preloadedProjectShortcutIconUrls = new Set<string>();
 

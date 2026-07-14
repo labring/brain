@@ -5,20 +5,20 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
-import { ProjectCreationPane } from "@/features/project-creation/project-creation-pane";
-import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
-import {
-  type ProjectCreatedContext,
-  useProjectCreator,
-} from "@/features/project-creation/use-project-creator";
 import { PROJECT_SIDE_QUERY_KEY } from "@/features/project-route-state/side-url-codec";
 import { useProjectSideRouteState } from "@/features/project-route-state/use-project-side-route-state";
 import type { ProjectSidePaneAssistantSurface } from "@/features/project-surfaces/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/project-surfaces/react";
 import { projectListEntryForAssistantIntent } from "@/features/project-surfaces/surface-intents";
 import { serializeProjectSideSurfaceEntry } from "@/features/project-surfaces/url-codec";
+import { ProjectCreationPane } from "@/features/projects/creation/project-creation-pane";
+import type { ProjectCreationPaneEntryMode } from "@/features/projects/creation/project-creation-pane-state";
+import {
+  type ProjectCreatedContext,
+  useProjectCreator,
+} from "@/features/projects/creation/use-project-creator";
 import { ProjectExplorer } from "@/features/projects/explorer/project-explorer";
-import { useProjectsExplorer } from "@/hooks/use-projects-explorer";
+import { useProjectsExplorer } from "@/features/projects/explorer/use-projects-explorer";
 import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";

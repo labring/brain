@@ -1,7 +1,7 @@
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 
-import type { VisualTone } from "./project-aggregate-status";
+import type { VisualTone } from "@/features/projects/project-aggregate-status";
 
 /** Key on `metadata.annotations` for the UI display name in legacy Project CR rows. */
 export const PROJECT_DISPLAY_NAME_ANNOTATION_KEY = "displayName";

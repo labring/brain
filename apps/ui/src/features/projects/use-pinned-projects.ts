@@ -4,8 +4,6 @@ import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import { fetcher } from "@workspace/api/fetch";
 import { useCallback, useMemo } from "react";
 import useSWR from "swr";
-
-import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import {
   MAX_PINNED_PROJECTS,
   normalizePinnedProjectIds,
@@ -13,7 +11,8 @@ import {
   prunePinnedProjectIds,
   type TogglePinnedProjectIdStatus,
   togglePinnedProjectId,
-} from "@/lib/pinned-projects";
+} from "@/features/projects/pinned-projects";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 
 const PROJECT_NAVIGATION_PREFERENCES_API =
   "/api/project-navigation-preferences";

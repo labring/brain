@@ -9,9 +9,9 @@ import { Blocks, Database, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GithubDeployer } from "@/features/deployment/github-deployer/github-deployer";
 import type { GithubDeployerStates } from "@/features/deployment/github-deployer/github-deployer.types";
-import { ProjectCreator } from "@/features/project-creation/creator/project-creator";
-import type { ProjectCreatorRootProps } from "@/features/project-creation/creator/project-creator.context";
-import type { ProjectCreatorSourceKind } from "@/features/project-creation/creator/project-creator.types";
+import { ProjectCreator } from "@/features/projects/creation/creator/project-creator";
+import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
+import type { ProjectCreatorSourceKind } from "@/features/projects/creation/creator/project-creator.types";
 import type { ProjectCreationPaneEntryMode } from "./project-creation-pane-state";
 
 export type { ProjectCreationPaneEntryMode } from "./project-creation-pane-state";

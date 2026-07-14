@@ -5,7 +5,7 @@ import { fetcher } from "@workspace/api/fetch";
 import { useMemo } from "react";
 import useSWR from "swr";
 
-import type { BrainProjectsResponse } from "@/lib/brain-projects";
+import type { BrainProjectsResponse } from "@/features/projects/brain-projects";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 
 export function useCurrentProjectDisplayName(options: {

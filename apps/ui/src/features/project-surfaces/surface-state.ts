@@ -1,4 +1,4 @@
-import type { ProjectCreationPaneEntryMode } from "@/features/project-creation/project-creation-pane-state";
+import type { ProjectCreationPaneEntryMode } from "@/features/projects/creation/project-creation-pane-state";
 import type {
   ProjectApTarget,
   ProjectDbTarget,

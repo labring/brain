@@ -43,12 +43,12 @@ import {
   type WorkspaceQuotaItem,
 } from "@/components/app-sidebar-upgrade";
 import { projectIdFromPathname } from "@/features/project-route-state/use-project-id";
-import { useLastViewedProject } from "@/hooks/use-last-viewed-project";
-import { useProjectsExplorerReadModel } from "@/hooks/use-projects-explorer";
+import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
   ProjectShortcutIconKey,
   ProjectShortcutIconKeyMap,
-} from "@/lib/project-shortcut-icons";
+} from "@/features/projects/project-shortcut-icons";
+import { useLastViewedProject } from "@/features/projects/use-last-viewed-project";
 import { kubeconfigAtom, namespaceAtom } from "@/store/auth-store";
 
 function ProjectShortcutIcon({

@@ -1,5 +1,5 @@
 import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas-node/canvas-node.types";
-import type { ProjectShortcutIconKeyMap } from "@/lib/project-shortcut-icons";
+import type { ProjectShortcutIconKeyMap } from "@/features/projects/project-shortcut-icons";
 
 export interface ProjectExplorerProject {
   createdAt: Date | string;

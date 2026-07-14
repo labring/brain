@@ -9,26 +9,26 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import type {
-  ProjectExplorerActions,
-  ProjectExplorerProject,
-  ProjectExplorerStates,
-} from "@/features/projects/explorer/project-explorer";
-import { usePinnedProjects } from "@/hooks/use-pinned-projects";
-import { useProjectShortcutIconPreload } from "@/hooks/use-project-shortcut-icon-preload";
-import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import {
   type BrainProjectResponse,
   type BrainProjectsResponse,
   brainProjectsToExplorerProjects,
   isProjectDisplayNameTaken,
-} from "@/lib/brain-projects";
-import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+} from "@/features/projects/brain-projects";
+import type {
+  ProjectExplorerActions,
+  ProjectExplorerProject,
+  ProjectExplorerStates,
+} from "@/features/projects/explorer/project-explorer";
 import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
-} from "@/lib/project-aggregate-status";
-import { projectShortcutIconKeysFromWorkloads } from "@/lib/project-shortcut-icons";
+} from "@/features/projects/project-aggregate-status";
+import { projectShortcutIconKeysFromWorkloads } from "@/features/projects/project-shortcut-icons";
+import { usePinnedProjects } from "@/features/projects/use-pinned-projects";
+import { useProjectShortcutIconPreload } from "@/features/projects/use-project-shortcut-icon-preload";
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
+import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { openAssistantPane } from "@/store/layout-store";
 
