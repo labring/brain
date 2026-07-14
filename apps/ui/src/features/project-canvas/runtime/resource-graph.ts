@@ -21,12 +21,12 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import type { ProjectRuntimeRelationshipIndexes } from "@/features/project-runtime/resource-relationships";
+import type { ProjectRuntimeRelationshipIndexes } from "@/features/project-canvas/runtime/resource-relationships";
 import type {
   ProjectRuntimeResourceTopologyItem,
   ProjectRuntimeShellKind,
   ProjectRuntimeShellNodeData,
-} from "@/features/project-runtime/resource-store";
+} from "@/features/project-canvas/runtime/resource-store";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderPendingResultKeys,

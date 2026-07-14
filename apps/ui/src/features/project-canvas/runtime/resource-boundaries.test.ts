@@ -172,7 +172,7 @@ test("Settings surface entries resolve without constructing source context from 
 test("legacy full resource snapshot builder is not available as a runtime entry point", () => {
   const hookSource = readFileSync(
     new URL(
-      "../project-canvas/snapshot/use-project-canvas-resource-snapshot.ts",
+      "../snapshot/use-project-canvas-resource-snapshot.ts",
       import.meta.url
     ),
     "utf8"
@@ -188,16 +188,13 @@ test("legacy full resource snapshot builder is not available as a runtime entry 
 test("real Project Canvas path provides runtime store instead of a whole node model map", () => {
   const hookSource = readFileSync(
     new URL(
-      "../project-canvas/snapshot/use-project-canvas-resource-snapshot.ts",
+      "../snapshot/use-project-canvas-resource-snapshot.ts",
       import.meta.url
     ),
     "utf8"
   );
   const shellSource = readFileSync(
-    new URL(
-      "../project-canvas/workbench/project-canvas-page-shell.tsx",
-      import.meta.url
-    ),
+    new URL("../workbench/project-canvas-page-shell.tsx", import.meta.url),
     "utf8"
   );
 

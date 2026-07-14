@@ -9,7 +9,7 @@ import {
   canvasNodeStackOrder,
   nodeWithCanvasStackOrder,
 } from "@/features/project-canvas/layout/node-stack-order";
-import { useStableCallback } from "@/lib/use-stable-callback";
+import { useStableCallback } from "@/features/project-canvas/use-stable-callback";
 
 export function useProjectCanvasStackOrder({
   nodes,

@@ -2,7 +2,7 @@
 
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 
-import { createThrottleScheduler } from "@/lib/throttle-scheduler";
+import { createThrottleScheduler } from "@/features/project-canvas/throttle-scheduler";
 import {
   fetchDeploymentTaskTimeline,
   streamDeploymentTaskTimeline,

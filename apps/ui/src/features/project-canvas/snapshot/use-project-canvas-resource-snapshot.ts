@@ -33,7 +33,7 @@ import {
 import {
   createProjectRuntimeStore,
   type ProjectRuntimeStore,
-} from "@/features/project-runtime/resource-store";
+} from "@/features/project-canvas/runtime/resource-store";
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { projectCanvasFrameState } from "./project-canvas-page-state";
 import {

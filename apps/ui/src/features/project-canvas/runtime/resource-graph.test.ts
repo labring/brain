@@ -6,8 +6,8 @@ import {
   CANVAS_DEPLOYMENT_PLACEHOLDER_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import { projectRuntimeFactsFromResources } from "@/features/project-runtime/resource-facts";
-import { projectRuntimeResourceTopologyFromFacts } from "@/features/project-runtime/resource-store";
+import { projectRuntimeFactsFromResources } from "@/features/project-canvas/runtime/resource-facts";
+import { projectRuntimeResourceTopologyFromFacts } from "@/features/project-canvas/runtime/resource-store";
 import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import type { CanvasLayoutDocument, CanvasLayoutNode } from "../layout/types";
 import {

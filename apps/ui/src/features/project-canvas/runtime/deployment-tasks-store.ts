@@ -18,7 +18,7 @@ import {
 import {
   createThrottleScheduler,
   type ThrottleScheduler,
-} from "@/lib/throttle-scheduler";
+} from "@/features/project-canvas/throttle-scheduler";
 
 const DEPLOYMENT_PROJECTION_RECONNECT_MS = 4000;
 /** Coalesce the projection-delta storm to at most one React commit per window (ADR 0043). */

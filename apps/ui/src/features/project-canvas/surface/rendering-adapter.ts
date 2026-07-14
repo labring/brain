@@ -19,11 +19,11 @@ import {
   type ProjectRuntimeNodeModels,
   projectRuntimeNodeModelFromFact,
   projectRuntimeShellLookupFromNodeData,
-} from "@/features/project-runtime/resource-models";
+} from "@/features/project-canvas/runtime/resource-models";
 import type {
   ProjectRuntimeShellLookup,
   ProjectRuntimeStore,
-} from "@/features/project-runtime/resource-store";
+} from "@/features/project-canvas/runtime/resource-store";
 import { findCanvasNodeForProjectTarget } from "./selection";
 
 type ProjectCanvasTargetedSideEntry = Extract<

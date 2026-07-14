@@ -1,12 +1,12 @@
 "use client";
 
 import { createElement, useCallback, useMemo, useState } from "react";
-import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import {
   type ProjectResourceActions,
   resourceLayoutRefsForApDelete,
   resourceLayoutRefsForDbDelete,
-} from "@/features/project-resource-actions/resource-actions";
+} from "@/features/project-canvas/actions/resource-actions";
+import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import {
   type ProjectCanvasApDeleteTarget,
   type ProjectCanvasDbDeleteTarget,

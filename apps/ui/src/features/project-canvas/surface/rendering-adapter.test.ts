@@ -8,7 +8,7 @@ import {
   CANVAS_DATABASE_NODE_TYPE,
   CANVAS_ENTRY_NODE_TYPE,
 } from "@/features/project-canvas/nodes/constants";
-import type { ProjectRuntimeNodeModels } from "@/features/project-runtime/resource-models";
+import type { ProjectRuntimeNodeModels } from "@/features/project-canvas/runtime/resource-models";
 import {
   createProjectCanvasDrawerRenderModel,
   createProjectCanvasMainRenderModel,

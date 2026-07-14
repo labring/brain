@@ -13,12 +13,20 @@ import {
 import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import { useProjectWorkbenchRouteState } from "@/features/panes/use-project-workbench-route-state";
+import { useProjectResourceActions } from "@/features/project-canvas/actions/resource-actions";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import { autoLayoutCanvasNodes } from "@/features/project-canvas/layout/auto-layout";
 import type {
   CanvasLayoutNode,
   CanvasLayoutResourceRef,
 } from "@/features/project-canvas/layout/types";
+import type { ProjectRuntimeStore } from "@/features/project-canvas/runtime/resource-store";
+import {
+  createSettingsLaunchContextStore,
+  type SettingsLaunchContext,
+  type SettingsLaunchSource,
+  type SettingsSurfaceEntry,
+} from "@/features/project-canvas/runtime/settings-launch-context";
 import { interactionSnapshotFromCanvasState } from "@/features/project-canvas/surface/interaction-react";
 import { createProjectCanvasInteractionStore } from "@/features/project-canvas/surface/interaction-store";
 import {
@@ -32,6 +40,7 @@ import {
   projectSelectionTargetExists,
   projectTargetExistsOnCanvas,
 } from "@/features/project-canvas/surface/selection";
+import { useStableCallback } from "@/features/project-canvas/use-stable-callback";
 import {
   createProjectCanvasMeta,
   projectCanvasViewportFocusRequest,
@@ -50,14 +59,6 @@ import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/
 import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
 import { useResourceLifecycleDialogs } from "@/features/project-canvas/workbench/use-resource-lifecycle-dialogs";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
-import { useProjectResourceActions } from "@/features/project-resource-actions/resource-actions";
-import type { ProjectRuntimeStore } from "@/features/project-runtime/resource-store";
-import {
-  createSettingsLaunchContextStore,
-  type SettingsLaunchContext,
-  type SettingsLaunchSource,
-  type SettingsSurfaceEntry,
-} from "@/features/project-runtime/settings-launch-context";
 import type { ApEnvironmentDbReferenceSource } from "@/features/resource-settings/ap/k8s/db-dsn-reference-sources";
 import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {
@@ -65,7 +66,6 @@ import type {
   SettingsSessionEvents,
 } from "@/features/resource-settings/settings-types";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { useStableCallback } from "@/lib/use-stable-callback";
 
 export interface ProjectCanvasSideViewportFocus {
   active?: boolean;
