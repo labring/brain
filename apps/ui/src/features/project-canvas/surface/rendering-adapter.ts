@@ -24,6 +24,11 @@ import type {
   ProjectRuntimeShellLookup,
   ProjectRuntimeStore,
 } from "@/features/project-canvas/runtime/resource-store";
+import type { SettingsLaunchContext } from "@/features/project-canvas/runtime/settings-launch-context";
+import type {
+  SettingsReadModelHints,
+  SettingsSessionEvents,
+} from "@/features/resource-settings/settings-types";
 import { findCanvasNodeForProjectTarget } from "./selection";
 
 type ProjectCanvasTargetedSideEntry = Extract<
@@ -42,6 +47,18 @@ interface ProjectCanvasSurfaceRenderModelInput {
   nodes: readonly Node[];
   runtimeNodeModels?: ProjectRuntimeNodeModels;
   runtimeStore?: ProjectRuntimeStore;
+  /**
+   * What a settings entry needs beyond its target. Project Runtime still owns
+   * the Settings Launch Context; the render model only presents it, so hosts
+   * read it off the settings content instead of taking side channels.
+   */
+  settings?: ProjectCanvasSettingsPresentation;
+}
+
+export interface ProjectCanvasSettingsPresentation {
+  launchContext?: SettingsLaunchContext;
+  readModelHints?: SettingsReadModelHints;
+  sessionEvents?: SettingsSessionEvents;
 }
 
 export type ProjectCanvasApResourcePaneKind =
@@ -63,13 +80,13 @@ export type ProjectCanvasResourcePaneRenderModel =
       node: Node;
       target: ProjectDbTarget;
     }
-  | {
+  | ({
       databaseData?: CanvasDatabaseNodeData;
       entryNode?: Node | null;
       kind: "settings";
       node?: Node | null;
       target: ProjectSideSurfaceEntry & { kind: "settings" };
-    };
+    } & ProjectCanvasSettingsPresentation);
 
 export interface ProjectCanvasPendingTargetRenderModel<
   TEntry extends
@@ -286,7 +303,8 @@ function dbResourcePaneModel(
 function settingsPaneModel(
   nodes: readonly Node[],
   entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>,
-  runtime: ProjectRuntimeModelReader
+  runtime: ProjectRuntimeModelReader,
+  settings: ProjectCanvasSettingsPresentation
 ): ProjectCanvasSideRenderModel {
   const node = findCanvasNodeForProjectTarget(nodes, entry.target);
   const dbRenderNode =
@@ -315,6 +333,15 @@ function settingsPaneModel(
     content: {
       ...(databaseData == null ? {} : { databaseData }),
       ...(entryNode === undefined ? {} : { entryNode }),
+      ...(settings.launchContext === undefined
+        ? {}
+        : { launchContext: settings.launchContext }),
+      ...(settings.readModelHints === undefined
+        ? {}
+        : { readModelHints: settings.readModelHints }),
+      ...(settings.sessionEvents === undefined
+        ? {}
+        : { sessionEvents: settings.sessionEvents }),
       kind: "settings",
       node: renderNode,
       target: entry,
@@ -326,10 +353,12 @@ function settingsPaneModel(
 function sideRenderModel({
   nodes,
   runtime,
+  settings,
   surfaceState,
 }: {
   nodes: readonly Node[];
   runtime: ProjectRuntimeModelReader;
+  settings: ProjectCanvasSettingsPresentation;
   surfaceState: Pick<ProjectSurfaceState, "main" | "side">;
 }): ProjectCanvasSideRenderModel {
   const entry = surfaceState.side;
@@ -345,7 +374,7 @@ function sideRenderModel({
     case "dbMetrics":
       return dbResourcePaneModel(nodes, entry, runtime);
     case "settings":
-      return settingsPaneModel(nodes, entry, runtime);
+      return settingsPaneModel(nodes, entry, runtime, settings);
     case "databaseDeployment":
     case "deploymentTaskTimeline":
     case "dockerDeployment":
@@ -448,12 +477,18 @@ export function createProjectCanvasSideRenderModel({
   nodes,
   runtimeNodeModels,
   runtimeStore,
+  settings,
   surfaceState,
 }: ProjectCanvasSurfaceRenderModelInput & {
   surfaceState: Pick<ProjectSurfaceState, "main" | "side">;
 }): ProjectCanvasSideRenderModel {
   const runtime = { runtimeNodeModels, runtimeStore };
-  return sideRenderModel({ nodes, runtime, surfaceState });
+  return sideRenderModel({
+    nodes,
+    runtime,
+    settings: settings ?? {},
+    surfaceState,
+  });
 }
 
 export function createProjectCanvasMainRenderModel({
@@ -484,6 +519,7 @@ export function createProjectCanvasSurfaceRenderModel({
   nodes,
   runtimeNodeModels,
   runtimeStore,
+  settings,
   surfaceState,
 }: ProjectCanvasSurfaceRenderModelInput & {
   surfaceState: ProjectSurfaceState;
@@ -492,6 +528,11 @@ export function createProjectCanvasSurfaceRenderModel({
   return {
     drawer: drawerRenderModel(nodes, surfaceState.drawer, runtime),
     main: mainRenderModel(nodes, surfaceState.main, runtime),
-    side: sideRenderModel({ nodes, runtime, surfaceState }),
+    side: sideRenderModel({
+      nodes,
+      runtime,
+      settings: settings ?? {},
+      surfaceState,
+    }),
   };
 }

@@ -563,9 +563,6 @@ export function useProjectCanvasModule({
       dialogs: surfaceDialogs,
       model: workbench.surfaceRenderModel,
       refreshWorkloadLists: refresh,
-      settingsLaunchContext: workbench.settingsLaunchContext,
-      settingsReadModelHints: workbench.settingsReadModelHints,
-      settingsSessionEvents: workbench.settingsSessionEvents,
     },
   };
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { useProjectCanvasModule } from "./use-project-canvas-module";
 import {
   apItem,
   dbItem,
@@ -8,6 +9,8 @@ import {
   mountWorkbench,
   taskProjection,
 } from "./workbench-test-harness";
+
+type Workbench = ReturnType<typeof useProjectCanvasModule>;
 
 const DB_TARGET = {
   kind: "DB",
@@ -28,6 +31,15 @@ function openLeaveGuardDialog(dialogs: unknown) {
     dialogs,
     (props) => props.open === true && typeof props.onDecision === "function"
   );
+}
+
+/** The Settings Launch Context as the side render model presents it. */
+function settingsLaunchContext(harness: { latest: () => Workbench }) {
+  const side = harness.latest().surfaces.model.side;
+  if (side?.kind !== "resource" || side.content.kind !== "settings") {
+    return undefined;
+  }
+  return side.content.launchContext;
 }
 
 test("opening a Project Surface publishes it to the render model and the URL", async () => {
@@ -195,7 +207,7 @@ test("a dirty Settings Draft holds the leave guard dialog before any route write
   }
 });
 
-test("discarding a Settings Draft writes the route and drops the launch context", async () => {
+test("discarding a Settings Draft commits the close and writes the route", async () => {
   const harness = await mountWorkbench({
     aps: APS,
     searchParams: SETTINGS_QUERY,
@@ -226,11 +238,6 @@ test("discarding a Settings Draft writes the route and drops the launch context"
     assert.ok(discarded, "the draft is discarded");
     assert.equal(harness.latest().surfaces.model.side, null, "the pane closes");
     assert.equal(harness.updates.at(-1)?.queryString, "");
-    assert.equal(
-      harness.latest().surfaces.settingsLaunchContext,
-      undefined,
-      "the launch context is cleaned up after the close commits"
-    );
   } finally {
     await harness.unmount();
   }
@@ -263,6 +270,11 @@ test("staying on a dirty Settings Draft leaves the route untouched", async () =>
 
     assert.ok(harness.latest().surfaces.model.side, "the pane stays open");
     assert.deepEqual(harness.updates, []);
+    assert.equal(
+      settingsLaunchContext(harness)?.launchSource,
+      "route",
+      "staying must not clean up the launch context the pane is still using"
+    );
   } finally {
     await harness.unmount();
   }
@@ -312,10 +324,7 @@ test("a settings surface opened from the canvas carries its launch context", asy
         );
     });
 
-    assert.equal(
-      harness.latest().surfaces.settingsLaunchContext?.launchSource,
-      "assistant"
-    );
+    assert.equal(settingsLaunchContext(harness)?.launchSource, "assistant");
   } finally {
     await harness.unmount();
   }
@@ -327,10 +336,7 @@ test("a route-restored settings surface reports a restored launch context", asyn
     searchParams: SETTINGS_QUERY,
   });
   try {
-    assert.equal(
-      harness.latest().surfaces.settingsLaunchContext?.launchSource,
-      "route"
-    );
+    assert.equal(settingsLaunchContext(harness)?.launchSource, "route");
   } finally {
     await harness.unmount();
   }

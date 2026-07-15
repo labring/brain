@@ -485,17 +485,67 @@ export function useProjectCanvas(
         : null,
     [options?.edges, selected]
   );
+  const activeSettingsEntry =
+    surfaceState.side?.kind === "settings" ? surfaceState.side : null;
+  const settingsReadModelHints = useMemo<SettingsReadModelHints>(
+    () => ({
+      ap: {
+        dbDsnReferenceSources: options?.apEnvironmentDbReferenceSources,
+      },
+    }),
+    [options?.apEnvironmentDbReferenceSources]
+  );
+  const settingsSessionEvents = useMemo<
+    SettingsSessionEvents | undefined
+  >(() => {
+    const target = activeSettingsEntry?.target;
+    if (target?.kind !== "AP") {
+      return undefined;
+    }
+    return {
+      ap: apSettingsSessionEventsForAp({
+        name: target.name,
+        namespace: target.namespace,
+      }),
+    };
+  }, [activeSettingsEntry, apSettingsSessionEventsForAp]);
+  const activeSettingsLaunchContext =
+    activeSettingsEntry == null
+      ? undefined
+      : settingsLaunchContextStore.get({
+          entry: activeSettingsEntry,
+          slot: "side",
+        });
+  const settingsPresentation = useMemo(
+    () => ({
+      ...(activeSettingsLaunchContext === undefined
+        ? {}
+        : { launchContext: activeSettingsLaunchContext }),
+      readModelHints: settingsReadModelHints,
+      ...(settingsSessionEvents === undefined
+        ? {}
+        : { sessionEvents: settingsSessionEvents }),
+    }),
+    [activeSettingsLaunchContext, settingsReadModelHints, settingsSessionEvents]
+  );
   const sideSurfaceRenderModel = useMemo(
     () =>
       createProjectCanvasSideRenderModel({
         nodes,
         runtimeStore: options?.runtimeStore,
+        settings: settingsPresentation,
         surfaceState: {
           main: surfaceState.main,
           side: surfaceState.side,
         },
       }),
-    [nodes, options?.runtimeStore, surfaceState.main, surfaceState.side]
+    [
+      nodes,
+      options?.runtimeStore,
+      settingsPresentation,
+      surfaceState.main,
+      surfaceState.side,
+    ]
   );
   const mainSurfaceRenderModel = useMemo(
     () =>
@@ -523,9 +573,6 @@ export function useProjectCanvas(
     }),
     [drawerSurfaceRenderModel, mainSurfaceRenderModel, sideSurfaceRenderModel]
   );
-  const activeSettingsEntry =
-    surfaceState.side?.kind === "settings" ? surfaceState.side : null;
-
   useEffect(() => {
     if (activeSettingsEntry == null) {
       return;
@@ -548,14 +595,6 @@ export function useProjectCanvas(
     bumpSettingsLaunchContextRevision,
     settingsLaunchContextStore,
   ]);
-
-  const activeSettingsLaunchContext =
-    activeSettingsEntry == null
-      ? undefined
-      : settingsLaunchContextStore.get({
-          entry: activeSettingsEntry,
-          slot: "side",
-        });
 
   const {
     clearRestoredDbServiceViewportFocus,
@@ -712,32 +751,6 @@ export function useProjectCanvas(
 
   const closeResourcePane = closeSideSurface;
   const closeResourceLogsSurface = closeMainSurface;
-  const settingsReadModelHints = useMemo<SettingsReadModelHints>(
-    () => ({
-      ap: {
-        dbDsnReferenceSources: options?.apEnvironmentDbReferenceSources,
-      },
-    }),
-    [options?.apEnvironmentDbReferenceSources]
-  );
-  const settingsSessionEvents = useMemo<
-    SettingsSessionEvents | undefined
-  >(() => {
-    const side = surfaceRenderModel.side;
-    if (side?.kind !== "resource" || side.content.kind !== "settings") {
-      return undefined;
-    }
-    const target = side.content.target.target;
-    if (target.kind !== "AP") {
-      return undefined;
-    }
-    return {
-      ap: apSettingsSessionEventsForAp({
-        name: target.name,
-        namespace: target.namespace,
-      }),
-    };
-  }, [apSettingsSessionEventsForAp, surfaceRenderModel.side]);
   const consumeSettingsLaunchContext = useCallback(() => {
     const entry = activeSettingsEntry;
     if (entry == null) {
@@ -826,10 +839,7 @@ export function useProjectCanvas(
     selected,
     selectedEdge,
     selectedNode,
-    settingsLaunchContext: activeSettingsLaunchContext,
     settingsLeaveGuardDialog,
-    settingsReadModelHints,
-    settingsSessionEvents,
     consumeSettingsLaunchContext,
     surfaceRenderModel,
     viewportDirectives,

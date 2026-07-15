@@ -132,11 +132,6 @@ export function ProjectCanvasWorkbench({
             onEditRedeployTask={editRedeployController.onEditRedeploy}
             projectId={projectId}
             refreshWorkloadLists={projectCanvas.surfaces.refreshWorkloadLists}
-            settingsLaunchContext={projectCanvas.surfaces.settingsLaunchContext}
-            settingsReadModelHints={
-              projectCanvas.surfaces.settingsReadModelHints
-            }
-            settingsSessionEvents={projectCanvas.surfaces.settingsSessionEvents}
             surfaceModel={projectCanvas.surfaces.model}
           />
         </div>
