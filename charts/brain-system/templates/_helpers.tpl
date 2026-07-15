@@ -48,6 +48,24 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- end -}}
 
+{{- define "brain-system.apUserDomain" -}}
+{{- $domains := default (list) .Values.apPublicAccess.userDomains -}}
+{{- if gt (len $domains) 0 -}}
+{{- required "apPublicAccess.userDomains[0].name is required" (get (first $domains) "name") -}}
+{{- else -}}
+{{- include "brain-system.cloudDomain" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "brain-system.apUserDomainTLSSecretName" -}}
+{{- $domains := default (list) .Values.apPublicAccess.userDomains -}}
+{{- if gt (len $domains) 0 -}}
+{{- required "apPublicAccess.userDomains[0].secretName is required" (get (first $domains) "secretName") -}}
+{{- else -}}
+wildcard-cert
+{{- end -}}
+{{- end -}}
+
 {{- define "brain-system.regionLabel" -}}
 region: {{ include "brain-system.cloudDomain" . | quote }}
 {{- end -}}
@@ -158,6 +176,12 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{ range $key, $value := .env }}
 {{ if and $root.Values.database.enabled (eq $key "DATABASE_URL") (eq (toString $value) "") }}
 {{ include "brain-system.databaseEnv" (dict "root" $root) }}
+{{ else if and (eq $key "AP_USER_DOMAIN") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ include "brain-system.apUserDomain" $root | quote }}
+{{ else if and (eq $key "AP_USER_DOMAIN_TLS_SECRET_NAME") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ include "brain-system.apUserDomainTLSSecretName" $root | quote }}
 {{ else if and (eq $component "api") (eq $key "DB_PUBLIC_HOST") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ include "brain-system.cloudDomain" $root | quote }}

@@ -8,6 +8,11 @@ global:
   labels: {}
   annotations: {}
 
+apPublicAccess:
+  # Brain-created APs use the first entry. Additional entries are reserved for
+  # future user-selectable domain support.
+  userDomains: []
+
 imagePullSecret:
   create: false
   useForWhodb: false
@@ -47,6 +52,8 @@ api:
     - id: pa_stagingapi2
       port: 9000
   env:
+    AP_USER_DOMAIN: ""
+    AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471/select/logsql/query"
     VLSELECT_USERNAME: ""
@@ -100,6 +107,8 @@ ui:
     - id: pa_uistaging2
       port: 3000
   env:
+    AP_USER_DOMAIN: ""
+    AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     API_URL: ""
     NEXT_PUBLIC_APP_URL: ""
     DATABASE_URL: ""
