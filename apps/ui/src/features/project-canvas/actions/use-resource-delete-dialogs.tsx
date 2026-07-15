@@ -1,17 +1,17 @@
 "use client";
 
 import { createElement, useCallback, useMemo, useState } from "react";
-import {
-  type ProjectResourceActions,
-  resourceLayoutRefsForApDelete,
-  resourceLayoutRefsForDbDelete,
-} from "@/features/project-canvas/actions/resource-actions";
 import type { CanvasLayoutResourceRef } from "@/features/project-canvas/layout/types";
 import {
   type ProjectCanvasApDeleteTarget,
   type ProjectCanvasDbDeleteTarget,
   ProjectCanvasDeleteDialogs,
-} from "./project-canvas-delete-dialog";
+} from "@/features/project-canvas/workbench/project-canvas-delete-dialog";
+import {
+  type ProjectResourceActions,
+  resourceLayoutRefsForApDelete,
+  resourceLayoutRefsForDbDelete,
+} from "./resource-actions";
 
 export function useResourceDeleteDialogs({
   deleteApWorkload,

@@ -20,7 +20,7 @@ import type {
   ProjectSurfaceIntent,
 } from "@/features/panes/surface-state";
 import { useProjectWorkbenchRouteState } from "@/features/panes/use-project-workbench-route-state";
-import { useProjectResourceActions } from "@/features/project-canvas/actions/resource-actions";
+import { useProjectCanvasResourceActions } from "@/features/project-canvas/actions/use-project-canvas-resource-actions";
 import {
   addPendingApDbCanvasReferences,
   type PendingApDbCanvasReference,
@@ -73,7 +73,6 @@ import {
   DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS,
   selectDeploymentTaskDock,
 } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
-import { createCanvasLifecycleActivityStore } from "@/features/project-canvas/workbench/lifecycle-activity-store";
 import type { ProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
 import { executeUnguardedProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/project-canvas-command-executor";
 import { createProjectCanvasFlowStore } from "@/features/project-canvas/workbench/project-canvas-flow-store";
@@ -83,15 +82,12 @@ import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/us
 import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workbench/use-deployment-task-timeline-opener";
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
-import { useResourceDeleteDialogs } from "@/features/project-canvas/workbench/use-resource-delete-dialogs";
-import { useResourceLifecycleDialogs } from "@/features/project-canvas/workbench/use-resource-lifecycle-dialogs";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {
   SettingsReadModelHints,
   SettingsSessionEvents,
 } from "@/features/resource-settings/settings-types";
-import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
   DeploymentTaskProjection["status"]
@@ -396,10 +392,6 @@ export function useProjectCanvasModule({
   );
 
   const rawNodes = canvasState.nodes;
-  const routingDomain = useMemo(
-    () => routingDomainFromKubeconfig(kubeconfig),
-    [kubeconfig]
-  );
   const {
     registerSettingsLeaveGuard,
     requestSettingsLeave,
@@ -546,11 +538,10 @@ export function useProjectCanvasModule({
     shouldOpenTask: shouldAutoOpenDeploymentTaskTimeline,
   });
 
-  const resourceActions = useProjectResourceActions({
+  const resourceActions = useProjectCanvasResourceActions({
     kubeconfig,
-    readOnly: false,
+    onResourceLayoutDelete: deleteResourceLayoutRefs,
     refreshWorkloadLists: refresh,
-    routingDomain,
   });
 
   const { bringNodeToFrontById, frontCanvasNode, stackOrderedNodes } =
@@ -559,27 +550,6 @@ export function useProjectCanvasModule({
       onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
       readOnly: false,
     });
-
-  const { requestApDelete, requestDbDelete, resourceDeleteDialog } =
-    useResourceDeleteDialogs({
-      deleteApWorkload: resourceActions.apLifecycle.deleteWorkload,
-      deleteDbWorkload: resourceActions.dbLifecycle.deleteWorkload,
-      onResourceLayoutDelete: deleteResourceLayoutRefs,
-      runResourceAction: resourceActions.runResourceAction,
-    });
-  const {
-    requestApRestart,
-    requestApStop,
-    requestDbRestart,
-    requestDbStop,
-    resourceLifecycleDialogs,
-  } = useResourceLifecycleDialogs({
-    restartApWorkload: resourceActions.apLifecycle.restartWorkload,
-    restartDbWorkload: resourceActions.dbLifecycle.restartWorkload,
-    runResourceAction: resourceActions.runResourceAction,
-    stopApWorkload: resourceActions.apLifecycle.pauseWorkload,
-    stopDbWorkload: resourceActions.dbLifecycle.stopWorkload,
-  });
 
   const executeCommandPlan = useStableCallback(
     (plan: ProjectCanvasCommandPlan) => {
@@ -643,88 +613,25 @@ export function useProjectCanvasModule({
     flowStore.applyNodeChanges([{ id: node.id, item: node, type: "replace" }]);
     projectCanvasLayout.scheduleNodeLayoutSave(node);
   });
-  const runResourceAction = useStableCallback(
-    resourceActions.runResourceAction
-  );
-  const toggleDatabasePublicAccess = useStableCallback(
-    resourceActions.toggleDatabasePublicAccess
-  );
-  const copyDatabaseConnection = useStableCallback(
-    resourceActions.copyDatabaseConnection
-  );
-  const startApWorkload = useStableCallback(
-    resourceActions.apLifecycle.startWorkload
-  );
-  const startDbWorkload = useStableCallback(
-    resourceActions.dbLifecycle.startWorkload
-  );
-  const clearDbPublicAccessPendingTarget = useStableCallback(
-    resourceActions.dbLifecycle.clearPublicAccessPendingTarget
-  );
 
+  const resourceActionCommands = resourceActions.commands;
   const nodeCommands = useMemo<ProjectCanvasNodeCommands>(
     () => ({
-      clearDbPublicAccessPendingTarget,
       commitNodeLayout,
-      copyDatabaseConnection,
+      ...resourceActionCommands,
       executeCommandPlan,
       getNodes,
       projectId,
       readOnly: false,
-      requestApDelete,
-      requestApRestart,
-      requestApStop,
-      requestDbDelete,
-      requestDbRestart,
-      requestDbStop,
-      runResourceAction,
-      startApWorkload,
-      startDbWorkload,
-      toggleDatabasePublicAccess,
     }),
     [
-      clearDbPublicAccessPendingTarget,
       commitNodeLayout,
-      copyDatabaseConnection,
       executeCommandPlan,
       getNodes,
       projectId,
-      requestApDelete,
-      requestApRestart,
-      requestApStop,
-      requestDbDelete,
-      requestDbRestart,
-      requestDbStop,
-      runResourceAction,
-      startApWorkload,
-      startDbWorkload,
-      toggleDatabasePublicAccess,
+      resourceActionCommands,
     ]
   );
-
-  const lifecycleActivityStore = useMemo(
-    () => createCanvasLifecycleActivityStore(),
-    []
-  );
-  const apAuthReady = resourceActions.apLifecycle.authReady;
-  const dbAuthReady = resourceActions.dbLifecycle.authReady;
-  const getDbPublicAccessPendingTarget =
-    resourceActions.dbLifecycle.getPublicAccessPendingTarget;
-  const isDbLifecycleLoading = resourceActions.dbLifecycle.isLoading;
-  useLayoutEffect(() => {
-    lifecycleActivityStore.publish({
-      apAuthReady,
-      dbAuthReady,
-      getDbPublicAccessPendingTarget,
-      isDbLifecycleLoading,
-    });
-  }, [
-    apAuthReady,
-    dbAuthReady,
-    getDbPublicAccessPendingTarget,
-    isDbLifecycleLoading,
-    lifecycleActivityStore,
-  ]);
 
   const selectedNode = useMemo<CanvasSelectedNode>(
     () => projectSelectionNode(nodes, selected),
@@ -1187,6 +1094,7 @@ export function useProjectCanvasModule({
     ]
   );
 
+  const resourceActionDialogs = resourceActions.dialogs;
   const surfaceDialogs = useMemo(
     () => [
       createElement(
@@ -1194,14 +1102,9 @@ export function useProjectCanvasModule({
         { key: "settings-leave-guard" },
         settingsLeaveGuardDialog
       ),
-      createElement(Fragment, { key: "resource-delete" }, resourceDeleteDialog),
-      createElement(
-        Fragment,
-        { key: "resource-lifecycle" },
-        resourceLifecycleDialogs
-      ),
+      ...resourceActionDialogs,
     ],
-    [resourceDeleteDialog, resourceLifecycleDialogs, settingsLeaveGuardDialog]
+    [resourceActionDialogs, settingsLeaveGuardDialog]
   );
 
   const openSurfaceIntent = useCallback(
@@ -1234,7 +1137,7 @@ export function useProjectCanvasModule({
       deploymentTaskDock,
       frameState,
       interactionStore,
-      lifecycleActivityStore,
+      lifecycleActivityStore: resourceActions.lifecycleActivityStore,
       meta,
       nodeCommands,
       runtimeStore,
