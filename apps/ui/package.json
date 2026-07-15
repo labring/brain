@@ -64,11 +64,13 @@
     "@types/pg": "^8.20.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/react-test-renderer": "^19.1.0",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9.39.2",
+    "react-test-renderer": "19.2.6",
     "typescript": "^5.9.3"
   },
   "overrides": {
