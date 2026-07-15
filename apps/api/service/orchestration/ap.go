@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -166,7 +167,7 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 			LaunchpadAppLabel:              name,
 		},
 	)
-	if domain := strings.TrimSpace(input.RoutingDomain); domain != "" {
+	if domain := APUserDomain(input.RoutingDomain); domain != "" {
 		managerLabels[APRoutingDomainLabel] = domain
 		labels[APRoutingDomainLabel] = domain
 	}
@@ -934,6 +935,8 @@ var apPlatformAddressDomainPrefixPattern = regexp.MustCompile(`^(brain|[a-z]{6})
 
 const shortNameAlphabet = "abcdefghijklmnopqrstuvwxyz"
 const DefaultPlatformTLSSecretName = "wildcard-cert"
+const apUserDomainEnv = "AP_USER_DOMAIN"
+const apUserDomainTLSSecretNameEnv = "AP_USER_DOMAIN_TLS_SECRET_NAME"
 const ingressClassAnnotation = "kubernetes.io/ingress.class"
 const ingressClassName = "nginx"
 const nginxProxyBodySizeAnnotation = "nginx.ingress.kubernetes.io/proxy-body-size"
@@ -961,7 +964,7 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 	apName := strings.TrimSpace(input.APName)
 	namespace := strings.TrimSpace(input.Namespace)
 	projectID := strings.TrimSpace(input.ProjectID)
-	routingDomain := strings.TrimSpace(input.RoutingDomain)
+	routingDomain := APUserDomain(input.RoutingDomain)
 	if apName == "" || namespace == "" || projectID == "" {
 		return nil, fmt.Errorf("apName, namespace, and projectID are required")
 	}
@@ -995,7 +998,7 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 			ProjectID:     projectID,
 			ResourceName:  APPublicAddressResourceName(apName, id),
 			ServicePort:   port,
-			TLSSecretName: DefaultPlatformTLSSecretName,
+			TLSSecretName: APUserDomainTLSSecretName(),
 		})
 		if err != nil {
 			return nil, err
@@ -1034,6 +1037,20 @@ func RenderAPPublicRoutingResources(input APNetworkIngressInput) ([]runtime.Obje
 	}
 
 	return objects, nil
+}
+
+func APUserDomain(explicit string) string {
+	if domain := strings.TrimSpace(explicit); domain != "" {
+		return domain
+	}
+	return strings.TrimSpace(os.Getenv(apUserDomainEnv))
+}
+
+func APUserDomainTLSSecretName() string {
+	if name := strings.TrimSpace(os.Getenv(apUserDomainTLSSecretNameEnv)); name != "" {
+		return name
+	}
+	return DefaultPlatformTLSSecretName
 }
 
 func APPlatformAddressDomainPrefix(namespace string, name string, id string, domainPrefix string) string {

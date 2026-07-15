@@ -443,6 +443,29 @@ func TestRenderAPPublicIngressesFromNetworkIntent(t *testing.T) {
 	}
 }
 
+func TestRenderAPPublicIngressesUsesConfiguredUserDomainDefaults(t *testing.T) {
+	t.Setenv(apUserDomainEnv, "gzg.sealos.run")
+	t.Setenv(apUserDomainTLSSecretNameEnv, "gzg-wildcard-cert")
+
+	ingresses, err := RenderAPPublicIngresses(APNetworkIngressInput{
+		APName:    "api",
+		Namespace: "default",
+		PlatformAddresses: []APPlatformAddressRequest{
+			{DomainPrefix: "cbwfiu", ID: "pa_abc123", Port: 8080},
+		},
+		ProjectID: "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPPublicIngresses returned error: %v", err)
+	}
+	if got := ingresses[0].Spec.Rules[0].Host; got != "cbwfiu.gzg.sealos.run" {
+		t.Fatalf("platform host = %q, want configured user domain", got)
+	}
+	if got := ingresses[0].Spec.TLS[0].SecretName; got != "gzg-wildcard-cert" {
+		t.Fatalf("platform TLS secret = %q, want configured secret", got)
+	}
+}
+
 func TestAPPlatformAddressDomainPrefixKeepsBrainPrefix(t *testing.T) {
 	if got := APPlatformAddressDomainPrefix("default", "web", "pa_abc123", "brain"); got != "brain" {
 		t.Fatalf("domain prefix = %q, want brain", got)
@@ -834,6 +857,39 @@ func TestAPObjectFromDeploymentRestoresDesiredNetworkAnnotation(t *testing.T) {
 	}
 	if got := resources.Deployment.Annotations[APEnvRawSourceAnnotation]; got != envRawSource {
 		t.Fatalf("env raw source annotation = %q, want raw source", got)
+	}
+}
+
+func TestRenderAPResourcesUsesConfiguredUserDomainWhenRoutingDomainIsMissing(t *testing.T) {
+	t.Setenv(apUserDomainEnv, "gzg.sealos.run")
+
+	resources, err := RenderAPResources(APResourcesInput{
+		Image:       "nginx:1.27",
+		Name:        "web",
+		Namespace:   "ns-a",
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if got := resources.Deployment.Labels[APRoutingDomainLabel]; got != "gzg.sealos.run" {
+		t.Fatalf("routing domain label = %q, want configured user domain", got)
+	}
+
+	resources, err = RenderAPResources(APResourcesInput{
+		Image:         "nginx:1.27",
+		Name:          "web",
+		Namespace:     "ns-a",
+		PrivatePort:   8080,
+		ProjectID:     "project-a",
+		RoutingDomain: "existing.example.com",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources with explicit domain returned error: %v", err)
+	}
+	if got := resources.Deployment.Labels[APRoutingDomainLabel]; got != "existing.example.com" {
+		t.Fatalf("routing domain label = %q, want explicit domain", got)
 	}
 }
 
