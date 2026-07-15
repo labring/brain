@@ -91,6 +91,40 @@ export function useProjectCanvasLayout(options: {
     },
     []
   );
+  const savePatchWithConflictRefresh = useCallback(
+    async (
+      input: Pick<
+        Parameters<typeof patchProjectCanvasLayoutNodes>[0],
+        "commands" | "expectedVersion" | "intent" | "nodes"
+      >
+    ) => {
+      if (!enabled) {
+        return;
+      }
+      try {
+        const next = await patchProjectCanvasLayoutNodes({
+          ...input,
+          kubeconfig,
+          namespace,
+          projectId,
+        });
+        rememberSavedLayout(next.nodes);
+        await mutate(next, { revalidate: false });
+      } catch (error) {
+        if (!isCanvasLayoutRevisionConflictError(error)) {
+          throw error;
+        }
+        const latest = await fetchProjectCanvasLayout({
+          kubeconfig,
+          namespace,
+          projectId,
+        });
+        rememberSavedLayout(latest.nodes);
+        await mutate(latest, { revalidate: false });
+      }
+    },
+    [enabled, kubeconfig, mutate, namespace, projectId, rememberSavedLayout]
+  );
   const saveNodes = useCallback(
     async (
       nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"],
@@ -146,34 +180,34 @@ export function useProjectCanvasLayout(options: {
       commands: PlacementCommand[],
       options?: { expectedVersion?: number }
     ) => {
-      if (!enabled || commands.length === 0) {
+      if (commands.length === 0) {
         return;
       }
-      try {
-        const next = await patchProjectCanvasLayoutNodes({
-          commands,
-          expectedVersion: options?.expectedVersion,
-          kubeconfig,
-          namespace,
-          nodes: [],
-          projectId,
-        });
-        rememberSavedLayout(next.nodes);
-        await mutate(next, { revalidate: false });
-      } catch (error) {
-        if (!isCanvasLayoutRevisionConflictError(error)) {
-          throw error;
-        }
-        const latest = await fetchProjectCanvasLayout({
-          kubeconfig,
-          namespace,
-          projectId,
-        });
-        rememberSavedLayout(latest.nodes);
-        await mutate(latest, { revalidate: false });
-      }
+      await savePatchWithConflictRefresh({
+        commands,
+        expectedVersion: options?.expectedVersion,
+        nodes: [],
+      });
     },
-    [enabled, kubeconfig, mutate, namespace, projectId, rememberSavedLayout]
+    [savePatchWithConflictRefresh]
+  );
+  const saveLayoutTransaction = useCallback(
+    async (input: {
+      commands: PlacementCommand[];
+      expectedVersion: number;
+      nodes: CanvasLayoutDocument["nodes"];
+    }) => {
+      if (input.commands.length === 0 && input.nodes.length === 0) {
+        return;
+      }
+      await savePatchWithConflictRefresh({
+        commands: input.commands,
+        expectedVersion: input.expectedVersion,
+        intent: "layout",
+        nodes: input.nodes,
+      });
+    },
+    [savePatchWithConflictRefresh]
   );
   const saveFirstPlacementNodes = useCallback(
     (nodes: Parameters<typeof patchProjectCanvasLayoutNodes>[0]["nodes"]) =>
@@ -213,6 +247,7 @@ export function useProjectCanvasLayout(options: {
     layoutLoadError: error instanceof Error ? error : undefined,
     layoutReady: !(enabled && isLoading) || error != null,
     saveFirstPlacementNodes,
+    saveLayoutTransaction,
     saveLayoutNodes: saveNodes,
     savePlacementCommands,
     scheduleNodeLayoutSave,

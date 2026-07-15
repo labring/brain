@@ -28,7 +28,7 @@ import type {
 import { useProjectCanvasLayout } from "@/features/project-canvas/layout/use-project-canvas-layout";
 import type { SettingsLaunchSource } from "@/features/project-canvas/runtime/settings-launch-context";
 import { isDeploymentPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placeholder-nodes";
-import { deploymentProjectionPlacementNodesFromPlaceholderNode } from "@/features/project-canvas/snapshot/deployment-placement-commands";
+import { deploymentProjectionPlacementNodeFromUserDrag } from "@/features/project-canvas/snapshot/deployment-user-placement";
 import { deploymentTaskViewportFocusNodeIds } from "@/features/project-canvas/snapshot/deployment-viewport-focus";
 import { useProjectCanvasResourceSnapshot } from "@/features/project-canvas/snapshot/use-project-canvas-resource-snapshot";
 import { useStableCallback } from "@/features/project-canvas/use-stable-callback";
@@ -142,24 +142,23 @@ export function useProjectCanvasModule({
     if (resourceSnapshotLoading || layoutIntent == null) {
       return;
     }
-    if (layoutIntent.kind === "placement-commands") {
+    if (layoutIntent.kind === "transaction") {
       projectCanvasLayout
-        .savePlacementCommands(layoutIntent.commands, {
+        .saveLayoutTransaction({
+          commands: layoutIntent.commands,
           expectedVersion: layoutIntent.expectedVersion,
+          nodes: layoutIntent.nodes,
         })
         .catch(() => undefined);
       return;
     }
-    const save =
-      layoutIntent.kind === "first-placement"
-        ? projectCanvasLayout.saveFirstPlacementNodes
-        : projectCanvasLayout.saveLayoutNodes;
-    save(layoutIntent.nodes).catch(() => undefined);
+    projectCanvasLayout
+      .saveFirstPlacementNodes(layoutIntent.nodes)
+      .catch(() => undefined);
   }, [
     layoutIntent,
     projectCanvasLayout.saveFirstPlacementNodes,
-    projectCanvasLayout.saveLayoutNodes,
-    projectCanvasLayout.savePlacementCommands,
+    projectCanvasLayout.saveLayoutTransaction,
     resourceSnapshotLoading,
   ]);
 
@@ -311,15 +310,11 @@ export function useProjectCanvasModule({
       node: Parameters<typeof projectCanvasLayout.scheduleNodeLayoutSave>[0]
     ) => {
       if (isDeploymentPlaceholderNode(node)) {
-        const placementNodes =
-          deploymentProjectionPlacementNodesFromPlaceholderNode({
-            node,
-            nodes: canvasState.nodes,
-            source: "user",
-          });
-        if (placementNodes.length > 0) {
+        const placementNode =
+          deploymentProjectionPlacementNodeFromUserDrag(node);
+        if (placementNode !== undefined) {
           projectCanvasLayout
-            .saveLayoutNodes(placementNodes)
+            .saveLayoutNodes([placementNode])
             .catch(() => undefined);
         }
         return;

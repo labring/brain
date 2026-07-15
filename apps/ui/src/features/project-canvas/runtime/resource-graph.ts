@@ -27,6 +27,7 @@ import type {
   ProjectRuntimeShellKind,
   ProjectRuntimeShellNodeData,
 } from "@/features/project-canvas/runtime/resource-store";
+import { deploymentHandoffReconciliations } from "../snapshot/deployment-handoff-reconciliation";
 import {
   deploymentPlaceholderHandoffs,
   deploymentPlaceholderPendingResultKeys,
@@ -43,11 +44,11 @@ import { deploymentResultPreviewsFromTasks } from "../snapshot/deployment-projec
 
 export type ProjectCanvasLayoutIntent =
   | { kind: "first-placement"; nodes: CanvasLayoutNode[] }
-  | { kind: "merge"; nodes: CanvasLayoutNode[] }
   | {
       commands: PlacementCommand[];
       expectedVersion: number;
-      kind: "placement-commands";
+      kind: "transaction";
+      nodes: CanvasLayoutNode[];
     };
 
 export interface ProjectCanvasRuntimeResourceGraph {
@@ -60,9 +61,16 @@ export interface ProjectCanvasRuntimeResourceGraphInput {
   canvasLayoutReady?: boolean;
   deployTasks?: DeploymentTaskProjection[];
   layoutCommands?: PlacementCommand[];
+  now: Date;
   relationshipIndexes: ProjectRuntimeRelationshipIndexes;
   resourceTopology: readonly ProjectRuntimeResourceTopologyItem[];
   retainedLayoutOwnerKeys?: ReadonlySet<string>;
+}
+
+interface ProjectCanvasResourceGraphMaterialization {
+  edges: CanvasState["edges"];
+  layoutIntent: ProjectCanvasLayoutIntent | null;
+  nodes: CanvasState["nodes"];
 }
 
 const FALLBACK_COLUMNS = 3;
@@ -81,6 +89,15 @@ function fallbackGeneratedCanvasPosition(index: number): {
 
 function stableNodeName(name: string): string {
   return name.replace(/\s+/g, "-");
+}
+
+function canvasLayoutWithPersistedState(
+  layout: CanvasLayoutDocument | undefined
+): CanvasLayoutDocument | undefined {
+  // The repository represents an absent row as an empty version-zero document.
+  return layout?.version === 0 && layout.nodes.length === 0
+    ? undefined
+    : layout;
 }
 
 function resourceShellData(
@@ -149,25 +166,54 @@ export function projectCanvasRuntimeShellNodesFromResources(
   });
 }
 
-export function projectCanvasRuntimeResourceGraph({
+export function projectCanvasRuntimeResourceGraph(
+  input: ProjectCanvasRuntimeResourceGraphInput
+): ProjectCanvasRuntimeResourceGraph {
+  const materialized = materializeProjectCanvasResourceGraph(input);
+  return {
+    canvasState: {
+      edges: materialized.edges,
+      nodes: materialized.nodes,
+      selectedEdge: null,
+      selectedNode: null,
+    },
+    layoutIntent: materialized.layoutIntent,
+  };
+}
+
+function materializeProjectCanvasResourceGraph({
   canvasLayout,
   canvasLayoutReady = true,
   deployTasks,
   layoutCommands,
+  now,
   relationshipIndexes,
   resourceTopology,
   retainedLayoutOwnerKeys,
-}: ProjectCanvasRuntimeResourceGraphInput): ProjectCanvasRuntimeResourceGraph {
+}: ProjectCanvasRuntimeResourceGraphInput): ProjectCanvasResourceGraphMaterialization {
+  if (!canvasLayoutReady) {
+    return {
+      edges: [],
+      layoutIntent: null,
+      nodes: [],
+    };
+  }
+
+  const persistedCanvasLayout = canvasLayoutWithPersistedState(canvasLayout);
+
   const shellNodes =
     projectCanvasRuntimeShellNodesFromResources(resourceTopology);
   const deploymentResultPreviews =
     deploymentResultPreviewsFromTasks(deployTasks);
   const rawDeploymentProjectionContext = createDeploymentProjectionContext({
-    layout: canvasLayout,
+    layout: persistedCanvasLayout,
     nodes: shellNodes,
     previews: deploymentResultPreviews,
     tasks: deployTasks,
   });
+  const handoffReconciliations = deploymentHandoffReconciliations(
+    rawDeploymentProjectionContext
+  );
   const pendingResultKeys = deploymentPlaceholderPendingResultKeys({
     context: rawDeploymentProjectionContext,
   });
@@ -185,6 +231,7 @@ export function projectCanvasRuntimeResourceGraph({
     deployTasks,
     {
       context: rawDeploymentProjectionContext,
+      now,
     }
   ).filter((node) => {
     if (!deployTaskById.has(node.data.taskId)) {
@@ -195,66 +242,72 @@ export function projectCanvasRuntimeResourceGraph({
       node,
     });
   });
-  const initialPositions = deploymentPlaceholderHandoffs({
+  const initialPositionByRef = deploymentPlaceholderHandoffs({
     context: rawDeploymentProjectionContext,
+    reconciliations: handoffReconciliations,
   });
-  const detectedConnections: CanvasDetectedConnection[] = canvasLayoutReady
-    ? [...relationshipIndexes.publicAccessToAp, ...relationshipIndexes.apToDb]
-    : [];
-  const merge = canvasLayoutReady
-    ? mergeCanvasLayoutWithDetectedNodes({
-        connections: detectedConnections,
-        initialPositionByNodeId: initialPositions.byNodeId,
-        initialPositionByRef: initialPositions.byRef,
-        layout: canvasLayout,
-        nodes: [...detectedNodes, ...deploymentPlaceholderNodes],
-        retainedLayoutOwnerKeys,
-      })
-    : {
-        changed: false,
-        layout: canvasLayout,
-        nodes: [],
-        placedLayoutNodes: [],
-      };
-  const edges = canvasLayoutReady
-    ? canvasConnectionEdgesFromDetectedConnections(
-        detectedConnections,
-        merge.nodes
-      )
-    : [];
+  const detectedConnections: CanvasDetectedConnection[] = [
+    ...relationshipIndexes.publicAccessToAp,
+    ...relationshipIndexes.apToDb,
+  ];
+  const merge = mergeCanvasLayoutWithDetectedNodes({
+    connections: detectedConnections,
+    initialPositionByRef,
+    layout: persistedCanvasLayout,
+    nodes: [...detectedNodes, ...deploymentPlaceholderNodes],
+    now,
+    retainedLayoutOwnerKeys,
+  });
+  const edges = canvasConnectionEdgesFromDetectedConnections(
+    detectedConnections,
+    merge.nodes
+  );
   const mergedDeploymentProjectionContext = createDeploymentProjectionContext({
-    layout: canvasLayout,
+    layout: persistedCanvasLayout,
     nodes: merge.nodes,
     previews: deploymentResultPreviews,
     tasks: deployTasks,
   });
-  const deploymentPreviewEdges = canvasLayoutReady
-    ? deploymentPreviewEdgesFromTasks({
-        context: mergedDeploymentProjectionContext,
-        existingEdges: edges,
-      })
-    : [];
-  const canvasState: CanvasState = {
-    edges: [...edges, ...deploymentPreviewEdges],
-    nodes: merge.nodes,
-    selectedEdge: null,
-    selectedNode: null,
-  };
+  const deploymentPreviewEdges = deploymentPreviewEdgesFromTasks({
+    context: mergedDeploymentProjectionContext,
+    existingEdges: edges,
+  });
+  const commands = [
+    ...(layoutCommands ?? []),
+    ...deploymentProjectionPlacementCommands({
+      context: mergedDeploymentProjectionContext,
+      now,
+      reconciliations: handoffReconciliations,
+    }),
+  ];
+  const commandSourceByOwnerKey = new Map(
+    commands.flatMap((command) =>
+      command.kind === "create" || command.kind === "move"
+        ? [[canvasPlacementOwnerKey(command.owner), command.source] as const]
+        : []
+    )
+  );
+  const placedLayoutNodes = merge.placedLayoutNodes.map((node) => {
+    const reconciliation = handoffReconciliations.get(
+      canvasPlacementOwnerKey(node.owner)
+    );
+    const source =
+      reconciliation === undefined
+        ? commandSourceByOwnerKey.get(canvasPlacementOwnerKey(node.owner))
+        : (reconciliation.source ?? node.source);
+    return source === undefined ? node : { ...node, source };
+  });
   const layoutIntent = layoutIntentFromMerge({
     changed: merge.changed,
-    commands: [
-      ...(layoutCommands ?? []),
-      ...deploymentProjectionPlacementCommands({
-        context: mergedDeploymentProjectionContext,
-      }),
-    ],
+    commands,
     layout: merge.layout,
-    placedLayoutNodes: merge.placedLayoutNodes,
+    placedLayoutNodes,
   });
 
   return {
-    canvasState,
+    edges: [...edges, ...deploymentPreviewEdges],
     layoutIntent,
+    nodes: merge.nodes,
   };
 }
 
@@ -264,18 +317,23 @@ function layoutIntentFromMerge(input: {
   layout: CanvasLayoutDocument | undefined;
   placedLayoutNodes: CanvasLayoutNode[];
 }): ProjectCanvasLayoutIntent | null {
-  if (input.commands.length > 0 && input.layout !== undefined) {
+  if (input.layout === undefined) {
+    return input.placedLayoutNodes.length === 0
+      ? null
+      : { kind: "first-placement", nodes: input.placedLayoutNodes };
+  }
+
+  const nodes = [
+    ...(input.changed ? input.layout.nodes : []),
+    ...input.placedLayoutNodes,
+  ];
+  if (input.commands.length > 0 || nodes.length > 0) {
     return {
       commands: input.commands,
       expectedVersion: input.layout.version,
-      kind: "placement-commands",
+      kind: "transaction",
+      nodes,
     };
   }
-  if (input.placedLayoutNodes.length > 0) {
-    return { kind: "first-placement", nodes: input.placedLayoutNodes };
-  }
-  if (!(input.changed && input.layout !== undefined)) {
-    return null;
-  }
-  return { kind: "merge", nodes: input.layout.nodes };
+  return null;
 }

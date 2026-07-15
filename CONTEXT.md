@@ -394,6 +394,12 @@ The transition where a concrete Deployment Projection Slot stops being represent
 
 _Avoid_: completed placeholder, ghost replacement, result takeover.
 
+### Deployment Handoff Placement Conflict
+
+The condition where multiple matching Deployment Projection Slots offer incompatible Deployment Projection Placements to the same unplaced Deployment Result Resource and no single user-arranged placement unambiguously outranks the others. Task ordering does not resolve the conflict; the resource receives First Canvas Placement and the conflicting projection placements are consumed.
+
+_Avoid_: task-order winner, last projection wins, placement race.
+
 ### Deployment Result Resource
 
 A user-visible Project result that a Deployment Task creates or changes, such as an AP, DB, AP-owned Public Address, or template-visible workload. Support objects may explain a Deployment Result Resource's progress, but they are not Deployment Result Resources.
@@ -509,6 +515,12 @@ A Project-scoped visual arrangement of the canvas, shared by everyone who opens 
 The stable Project Canvas identity that owns one visual placement. A Canvas Placement Owner may be a real resource or a Deployment Task projection, but a deployment-owned placement does not make the projection a resource.
 
 A Project has one authoritative Canvas Placement Store, so resource placements and Deployment Projection Placements belong to the same Canvas Layout rather than separate stores.
+
+### Missing Resource Layout Grace
+
+A reconciliation window during which a resource-owned Canvas Layout placement remains retained after the Project Resource Read Model stops reporting that resource. It protects shared placement from transient read-side absence; continuous absence beyond the window may remove the placement.
+
+_Avoid_: resource deletion grace, Deployment Handoff grace, missing node grace.
 
 ### Generated Canvas Position
 

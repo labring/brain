@@ -16,11 +16,11 @@ import type {
   CanvasPlacementSource,
   PlacementCommand,
 } from "../layout/types";
-import type { CanvasDeploymentPlaceholderNodeData } from "../nodes/types";
+import { canvasResourceKey } from "../nodes/resource-identity";
 import {
-  hasProjectionSlotGroup,
-  isDeploymentPlaceholderNode,
-} from "./deployment-placeholder-nodes";
+  type DeploymentHandoffReconciliation,
+  deploymentHandoffReconciliations,
+} from "./deployment-handoff-reconciliation";
 import {
   createDeploymentProjectionContext,
   type DeploymentProjectionContext,
@@ -37,103 +37,6 @@ import {
   resultRefForSlot,
   shouldShowDeploymentPlaceholder,
 } from "./deployment-projection-model";
-
-function projectionPlacementNode(input: {
-  position: CanvasLayoutPosition;
-  slotId: string;
-  source: CanvasPlacementSource;
-  taskId: string;
-}): CanvasLayoutNode {
-  return canvasLayoutNodeFromOwner({
-    owner: deploymentProjectionPlacementOwner({
-      slotId: input.slotId,
-      taskId: input.taskId,
-    }),
-    position: input.position,
-    source: input.source,
-  });
-}
-
-function projectionSlotPlacementSource(input: {
-  anchorSource: CanvasDeploymentPlaceholderNodeData["projectionPlacementSource"];
-  anchorSlotId: string | undefined;
-  saveSource: CanvasPlacementSource;
-  slot: NonNullable<
-    CanvasDeploymentPlaceholderNodeData["projectionSlots"]
-  >[number];
-}): CanvasPlacementSource {
-  if (input.saveSource === "user") {
-    return "user";
-  }
-  return input.anchorSource === "user" && input.slot.id === input.anchorSlotId
-    ? "user"
-    : "generated";
-}
-
-export function deploymentProjectionPlacementNodesFromPlaceholderNode(input: {
-  node: Node;
-  nodes: readonly Node[];
-  source: CanvasPlacementSource;
-}): CanvasLayoutNode[] {
-  if (!isDeploymentPlaceholderNode(input.node)) {
-    return [];
-  }
-  const placeholderNode = input.node;
-  if (!hasProjectionSlotGroup(placeholderNode.data)) {
-    return [
-      projectionPlacementNode({
-        position: placeholderNode.position,
-        slotId: placeholderNode.data.slotId ?? DEPLOYMENT_UNKNOWN_SLOT_ID,
-        source: input.source,
-        taskId: placeholderNode.data.taskId,
-      }),
-    ];
-  }
-
-  if (input.source === "user") {
-    const slotId = placeholderNode.data.slotId;
-    return slotId === undefined
-      ? []
-      : [
-          projectionPlacementNode({
-            position: placeholderNode.position,
-            slotId,
-            source: input.source,
-            taskId: placeholderNode.data.taskId,
-          }),
-        ];
-  }
-
-  const groupNodes = input.nodes.filter(
-    (node) =>
-      isDeploymentPlaceholderNode(node) &&
-      node.data.taskId === placeholderNode.data.taskId &&
-      hasProjectionSlotGroup(node.data)
-  );
-  const anchorSlotId =
-    placeholderNode.data.projectionSlots.find((slot) => slot.anchor === true)
-      ?.id ??
-    (placeholderNode.data.anchor === true
-      ? placeholderNode.data.slotId
-      : undefined);
-  return placeholderNode.data.projectionSlots.map((slot) => {
-    const node =
-      groupNodes.find((candidate) => candidate.data.slotId === slot.id) ??
-      (placeholderNode.data.slotId === slot.id ? placeholderNode : undefined);
-    const position = node?.position ?? slot.position ?? { x: 0, y: 0 };
-    return projectionPlacementNode({
-      position,
-      slotId: slot.id,
-      source: projectionSlotPlacementSource({
-        anchorSource: placeholderNode.data.projectionPlacementSource,
-        anchorSlotId,
-        saveSource: input.source,
-        slot,
-      }),
-      taskId: placeholderNode.data.taskId,
-    });
-  });
-}
 
 function projectionSlotPlacementOwner(slot: {
   id: string;
@@ -311,6 +214,7 @@ function addUnknownSlotRefinementCommands(input: {
   context: DeploymentProjectionContext;
   draft: PlacementCommandDraft;
   preview: DeploymentResultPreview;
+  reconciliations: ReadonlyMap<string, DeploymentHandoffReconciliation>;
   task: DeploymentTaskProjection;
 }): void {
   const fromOwner = deploymentProjectionPlacementOwner({
@@ -328,6 +232,13 @@ function addUnknownSlotRefinementCommands(input: {
     task: input.task,
   });
   for (const slot of input.preview.slots) {
+    const resultRef = resultRefForSlot({ slot, task: input.task });
+    if (
+      resultRef !== undefined &&
+      input.reconciliations.has(canvasResourceKey(resultRef))
+    ) {
+      continue;
+    }
     const owner = visiblePlacementOwnerForSlot({
       context: input.context,
       slot,
@@ -336,7 +247,6 @@ function addUnknownSlotRefinementCommands(input: {
     if (input.draft.hasOwner(owner)) {
       continue;
     }
-    const resultRef = resultRefForSlot({ slot, task: input.task });
     const position =
       (resultRef === undefined
         ? undefined
@@ -405,12 +315,59 @@ function addUnknownSlotExpiryCommand(input: {
   input.draft.delete(owner);
 }
 
+function addDeploymentHandoffReconciliationCommands(input: {
+  draft: PlacementCommandDraft;
+  reconciliation: DeploymentHandoffReconciliation;
+}): void {
+  const resourceOwner = resourcePlacementOwner(input.reconciliation.ref);
+  const projectionOwners = input.reconciliation.candidates
+    .map((candidate) => candidate.owner)
+    .filter((owner, index, owners) => {
+      const key = canvasPlacementOwnerKey(owner);
+      return (
+        input.draft.hasOwner(owner) &&
+        owners.findIndex(
+          (candidate) => canvasPlacementOwnerKey(candidate) === key
+        ) === index
+      );
+    });
+
+  if (
+    input.reconciliation.resourceAlreadyPlaced ||
+    input.draft.hasOwner(resourceOwner)
+  ) {
+    for (const owner of projectionOwners) {
+      input.draft.delete(owner);
+    }
+    return;
+  }
+
+  let rekeyedOwnerKey: string | undefined;
+  if (
+    !input.reconciliation.conflict &&
+    input.reconciliation.selectedOwner !== undefined &&
+    input.draft.hasOwner(input.reconciliation.selectedOwner)
+  ) {
+    input.draft.rekey(input.reconciliation.selectedOwner, resourceOwner);
+    rekeyedOwnerKey = canvasPlacementOwnerKey(
+      input.reconciliation.selectedOwner
+    );
+  }
+
+  for (const owner of projectionOwners) {
+    if (canvasPlacementOwnerKey(owner) !== rekeyedOwnerKey) {
+      input.draft.delete(owner);
+    }
+  }
+}
+
 export function deploymentProjectionPlacementCommands(input: {
   context?: DeploymentProjectionContext;
   layout?: CanvasLayoutDocument;
   nodes?: readonly Node[];
   now?: Date;
   previews?: readonly DeploymentTaskResultPreview[];
+  reconciliations?: ReadonlyMap<string, DeploymentHandoffReconciliation>;
   tasks?: readonly DeploymentTaskProjection[];
 }): PlacementCommand[] {
   const now = input.now ?? new Date();
@@ -423,8 +380,12 @@ export function deploymentProjectionPlacementCommands(input: {
       tasks: input.tasks,
     });
   const draft = new PlacementCommandDraft(context);
+  const reconciliations =
+    input.reconciliations ?? deploymentHandoffReconciliations(context);
 
-  for (const task of context.tasks) {
+  for (const task of [...context.tasks].sort((left, right) =>
+    left.id.localeCompare(right.id)
+  )) {
     const preview = context.previewByTaskId.get(task.id);
     if (preview === undefined) {
       addUnknownSlotExpiryCommand({
@@ -439,9 +400,17 @@ export function deploymentProjectionPlacementCommands(input: {
       context,
       draft,
       preview,
+      reconciliations,
       task,
     });
     for (const slot of preview.slots) {
+      const resultRef = resultRefForSlot({ slot, task });
+      if (
+        resultRef !== undefined &&
+        reconciliations.has(canvasResourceKey(resultRef))
+      ) {
+        continue;
+      }
       addSlotHandoffOrExpiryCommand({
         context,
         draft,
@@ -450,6 +419,10 @@ export function deploymentProjectionPlacementCommands(input: {
         task,
       });
     }
+  }
+
+  for (const reconciliation of reconciliations.values()) {
+    addDeploymentHandoffReconciliationCommands({ draft, reconciliation });
   }
 
   return draft.toCommands();

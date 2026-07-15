@@ -164,14 +164,24 @@ test("merge reuses ranked nodes when layout is unavailable", () => {
   assert.equal(reranked[1], ranked[1]);
 });
 
-test("merge does not persist first placements when layout is unavailable", () => {
+test("merge returns First Placement nodes when layout is unavailable", () => {
   const result = mergeCanvasLayoutWithDetectedNodes({
     layout: undefined,
     nodes: [apNode("api")],
   });
 
   assert.deepEqual(result.nodes[0]?.position, { x: 0, y: 0 });
-  assert.deepEqual(result.placedLayoutNodes, []);
+  assert.deepEqual(result.placedLayoutNodes, [
+    {
+      expanded: true,
+      owner: {
+        kind: "resource",
+        ref: { kind: "AP", name: "api", namespace: "default" },
+      },
+      position: { x: 0, y: 0 },
+      source: "generated",
+    },
+  ]);
 });
 
 test("merge lets explicit Canvas Node Stack Order render above default layers", () => {

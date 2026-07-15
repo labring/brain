@@ -1,6 +1,3 @@
-import type { Node } from "@xyflow/react";
-
-import { canvasResourceIdentityFromNode } from "../nodes/resource-identity";
 import {
   canvasLayoutNodeKey,
   canvasLayoutNodeResourceRef,
@@ -25,25 +22,22 @@ function resourceOwnerKey(ref: CanvasLayoutResourceRef): string {
   return canvasPlacementOwnerKey(resourcePlacementOwner(ref));
 }
 
-function renderedResourceOwnerKeys(nodes: readonly Node[]): Set<string> {
-  return new Set(
-    nodes.flatMap((node) => {
-      const ref = canvasResourceIdentityFromNode(node);
-      return ref === undefined ? [] : [resourceOwnerKey(ref)];
-    })
-  );
+function resourceIdentityOwnerKeys(
+  resourceIdentities: readonly CanvasLayoutResourceRef[]
+): Set<string> {
+  return new Set(resourceIdentities.map(resourceOwnerKey));
 }
 
 export function resolveMissingResourceLayoutGrace(input: {
   graceMs?: number;
   layout: CanvasLayoutDocument | undefined;
-  nodes: readonly Node[];
   nowMs?: number;
   previousMissingSinceByOwnerKey?: ReadonlyMap<string, number>;
+  resourceIdentities: readonly CanvasLayoutResourceRef[];
 }): MissingResourceLayoutGraceResult {
   const graceMs = input.graceMs ?? CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS;
   const nowMs = input.nowMs ?? Date.now();
-  const renderedOwnerKeys = renderedResourceOwnerKeys(input.nodes);
+  const runtimeOwnerKeys = resourceIdentityOwnerKeys(input.resourceIdentities);
   const nextMissingSinceByOwnerKey = new Map<string, number>();
   const retainedLayoutOwnerKeys = new Set<string>();
   const deleteCommands: PlacementCommand[] = [];
@@ -54,7 +48,7 @@ export function resolveMissingResourceLayoutGrace(input: {
       continue;
     }
     const ownerKey = canvasLayoutNodeKey(node);
-    if (renderedOwnerKeys.has(ownerKey)) {
+    if (runtimeOwnerKeys.has(ownerKey)) {
       continue;
     }
 
@@ -62,7 +56,7 @@ export function resolveMissingResourceLayoutGrace(input: {
       input.previousMissingSinceByOwnerKey?.get(ownerKey) ?? nowMs;
     nextMissingSinceByOwnerKey.set(ownerKey, firstMissingAt);
 
-    if (Math.max(0, nowMs - firstMissingAt) < graceMs) {
+    if (Math.max(0, nowMs - firstMissingAt) <= graceMs) {
       retainedLayoutOwnerKeys.add(ownerKey);
       continue;
     }

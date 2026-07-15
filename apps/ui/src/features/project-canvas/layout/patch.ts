@@ -272,12 +272,6 @@ export function applyCanvasLayoutPatch(
     upsertNormalizedNode(nextByRef, order, node);
   }
 
-  let commandChanged = false;
-  for (const command of patch.commands ?? []) {
-    commandChanged =
-      applyPlacementCommand(nextByRef, order, command) || commandChanged;
-  }
-
   let firstPlacementInserted = false;
   for (const node of patch.nodes) {
     if (patch.intent === "first-placement") {
@@ -287,6 +281,12 @@ export function applyCanvasLayoutPatch(
     } else {
       upsertNormalizedNode(nextByRef, order, node);
     }
+  }
+
+  let commandChanged = false;
+  for (const command of patch.commands ?? []) {
+    commandChanged =
+      applyPlacementCommand(nextByRef, order, command) || commandChanged;
   }
 
   if (

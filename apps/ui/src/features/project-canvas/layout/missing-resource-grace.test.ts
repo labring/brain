@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { Node } from "@xyflow/react";
-
-import {
-  CANVAS_CONTAINER_NODE_TYPE,
-  CANVAS_DATABASE_NODE_TYPE,
-} from "../nodes/constants";
 import {
   CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
   resolveMissingResourceLayoutGrace,
@@ -16,12 +10,13 @@ import type {
   CanvasLayoutDocument,
   CanvasLayoutNode,
   CanvasLayoutResourceKind,
+  CanvasResourceLayoutNode,
 } from "./types";
 
 function layoutResourceNode(
   kind: CanvasLayoutResourceKind,
   name: string
-): CanvasLayoutNode {
+): CanvasResourceLayoutNode {
   return {
     owner: {
       kind: "resource",
@@ -40,30 +35,12 @@ function layout(nodes: CanvasLayoutNode[]): CanvasLayoutDocument {
   };
 }
 
-function apNode(name: string): Node {
-  return {
-    data: { states: { name, namespace: "default" } },
-    id: `ap-${name}`,
-    position: { x: 0, y: 0 },
-    type: CANVAS_CONTAINER_NODE_TYPE,
-  };
-}
-
-function dbNode(name: string): Node {
-  return {
-    data: { workload: { name, namespace: "default" } },
-    id: `db-${name}`,
-    position: { x: 0, y: 0 },
-    type: CANVAS_DATABASE_NODE_TYPE,
-  };
-}
-
 test("missing resource layout stays retained during local grace", () => {
   const missing = layoutResourceNode("AP", "api");
   const result = resolveMissingResourceLayoutGrace({
     layout: layout([missing]),
-    nodes: [],
     nowMs: 1000,
+    resourceIdentities: [],
   });
 
   assert.deepEqual(result.deleteCommands, []);
@@ -77,15 +54,33 @@ test("missing resource layout stays retained during local grace", () => {
   );
 });
 
-test("missing resource layout emits delete command after grace", () => {
+test("missing resource layout stays retained at the grace boundary", () => {
   const missing = layoutResourceNode("DB", "postgres");
   const result = resolveMissingResourceLayoutGrace({
     layout: layout([missing]),
-    nodes: [],
     nowMs: 1000 + CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
     previousMissingSinceByOwnerKey: new Map([
       [canvasLayoutNodeKey(missing), 1000],
     ]),
+    resourceIdentities: [],
+  });
+
+  assert.deepEqual(
+    [...result.retainedLayoutOwnerKeys],
+    [canvasLayoutNodeKey(missing)]
+  );
+  assert.deepEqual(result.deleteCommands, []);
+});
+
+test("missing resource layout emits delete command after grace", () => {
+  const missing = layoutResourceNode("DB", "postgres");
+  const result = resolveMissingResourceLayoutGrace({
+    layout: layout([missing]),
+    nowMs: 1001 + CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
+    previousMissingSinceByOwnerKey: new Map([
+      [canvasLayoutNodeKey(missing), 1000],
+    ]),
+    resourceIdentities: [],
   });
 
   assert.deepEqual([...result.retainedLayoutOwnerKeys], []);
@@ -105,12 +100,26 @@ test("detected resources clear missing layout grace state", () => {
   const postgres = layoutResourceNode("DB", "postgres");
   const result = resolveMissingResourceLayoutGrace({
     layout: layout([api, postgres]),
-    nodes: [apNode("api"), dbNode("postgres")],
     nowMs: 1000 + CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
     previousMissingSinceByOwnerKey: new Map([
       [canvasLayoutNodeKey(api), 1000],
       [canvasLayoutNodeKey(postgres), 1000],
     ]),
+    resourceIdentities: [api.owner.ref, postgres.owner.ref],
+  });
+
+  assert.deepEqual(result.deleteCommands, []);
+  assert.deepEqual([...result.retainedLayoutOwnerKeys], []);
+  assert.deepEqual([...result.nextMissingSinceByOwnerKey], []);
+});
+
+test("runtime identity keeps presentation-hidden resource layout after grace", () => {
+  const api = layoutResourceNode("AP", "api");
+  const result = resolveMissingResourceLayoutGrace({
+    layout: layout([api]),
+    nowMs: 1000 + CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
+    previousMissingSinceByOwnerKey: new Map([[canvasLayoutNodeKey(api), 1000]]),
+    resourceIdentities: [api.owner.ref],
   });
 
   assert.deepEqual(result.deleteCommands, []);
