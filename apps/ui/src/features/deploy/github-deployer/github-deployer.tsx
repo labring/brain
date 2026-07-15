@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Rocket,
   Search,
-  Settings2,
   ShieldCheck,
 } from "lucide-react";
 import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
@@ -446,7 +445,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
 
 function GithubDeployerAccountStatus() {
   const {
-    actions: { onAuthorize, onDisconnect },
+    actions: { onDisconnect },
     states: { deployedRepo, isAuthorized, isLoading },
   } = useGithubDeployer();
 
@@ -468,18 +467,8 @@ function GithubDeployerAccountStatus() {
         />
         <span className="truncate">Workspace GitHub connected</span>
       </div>
-      <Button
-        aria-label="Configure workspace GitHub access"
-        className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
-        data-slot="github-deployer-configure"
-        disabled={isLoading || !onAuthorize}
-        onClick={onAuthorize}
-        size="icon-lg"
-        type="button"
-        variant="ghost"
-      >
-        <Settings2 aria-hidden className="size-4" strokeWidth={2} />
-      </Button>
+      {/* OAuth connections cannot configure repository-level access. Restore a
+          configure control only when it is backed by a GitHub App installation. */}
       <Button
         aria-label="Disconnect GitHub"
         className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"

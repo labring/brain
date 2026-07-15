@@ -76,7 +76,7 @@ test("GithubDeployer keeps URL input while showing authorized repo choices", () 
   assert.match(html, REPOSITORY_SECTION_RE);
   assert.doesNotMatch(html, URL_AUTH_REQUIRED_RE);
   assert.match(html, AUTHORIZED_RE);
-  assert.match(html, CONFIGURE_BUTTON_RE);
+  assert.doesNotMatch(html, CONFIGURE_BUTTON_RE);
   assert.match(html, DISCONNECT_BUTTON_RE);
   assert.match(html, REPO_SELECT_RE);
   assert.match(html, REPO_CARD_RE);
@@ -151,7 +151,7 @@ test("GithubDeployer shows authorized empty repository state", () => {
   );
 
   assert.match(html, AUTHORIZED_RE);
-  assert.match(html, CONFIGURE_BUTTON_RE);
+  assert.doesNotMatch(html, CONFIGURE_BUTTON_RE);
   assert.match(html, REPO_EMPTY_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
 });
@@ -172,7 +172,7 @@ test("GithubDeployer shows repository load errors after authorization", () => {
   );
 
   assert.match(html, AUTHORIZED_RE);
-  assert.match(html, CONFIGURE_BUTTON_RE);
+  assert.doesNotMatch(html, CONFIGURE_BUTTON_RE);
   assert.match(html, REPO_ERROR_RE);
   assert.match(html, BAD_CREDENTIALS_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
