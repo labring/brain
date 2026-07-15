@@ -1,17 +1,11 @@
 import type { Node } from "@xyflow/react";
 import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
-import { canvasResourceKey } from "../nodes/resource-identity";
+import {
+  canvasResourceIdentityFromNode,
+  canvasResourceKey,
+} from "../nodes/resource-identity";
 import { isDeploymentPlaceholderNode } from "./deployment-placeholder-nodes";
-import {
-  createDeploymentProjectionContext,
-  nodeForResultRefInDeploymentProjectionContext,
-} from "./deployment-projection-context";
-import {
-  type DeploymentTaskResultResourceRef,
-  deploymentResultPreview,
-  expectedRefToResultRef,
-  resultRefForSlot,
-} from "./deployment-projection-model";
+import { deploymentTaskResultResourceRefs } from "./deployment-result-query";
 
 function uniqueNodeIds(nodes: readonly Node[]): string[] {
   const seen = new Set<string>();
@@ -24,30 +18,6 @@ function uniqueNodeIds(nodes: readonly Node[]): string[] {
     nodeIds.push(node.id);
   }
   return nodeIds;
-}
-
-function deploymentTaskResultRefs(
-  task: DeploymentTaskProjection
-): DeploymentTaskResultResourceRef[] {
-  const refs = new Map<string, DeploymentTaskResultResourceRef>();
-  const addRef = (ref: DeploymentTaskResultResourceRef | undefined) => {
-    if (ref === undefined) {
-      return;
-    }
-    refs.set(canvasResourceKey(ref), ref);
-  };
-
-  const preview = deploymentResultPreview(task);
-  for (const slot of preview?.slots ?? []) {
-    addRef(resultRefForSlot({ slot, task }));
-  }
-  for (const mapping of task.resultMappings ??
-    task.canvasProjection.resultMappings ??
-    []) {
-    addRef(expectedRefToResultRef(mapping.actualRef));
-  }
-
-  return [...refs.values()];
 }
 
 export function deploymentTaskViewportFocusNodeIds(input: {
@@ -67,18 +37,21 @@ export function deploymentTaskViewportFocusNodeIds(input: {
     return uniqueNodeIds(visiblePlaceholderNodes);
   }
 
-  const context = createDeploymentProjectionContext({
-    nodes: input.nodes,
-    tasks: input.tasks,
-  });
-  const task = context.tasks.find((item) => item.id === taskId);
+  const task = input.tasks.find((item) => item.id === taskId);
   if (task === undefined) {
     return [];
   }
 
+  const nodeByResourceKey = new Map(
+    input.nodes.flatMap((node) => {
+      const ref = canvasResourceIdentityFromNode(node);
+      return ref === undefined ? [] : [[canvasResourceKey(ref), node] as const];
+    })
+  );
+
   return uniqueNodeIds(
-    deploymentTaskResultRefs(task).flatMap((ref) => {
-      const node = nodeForResultRefInDeploymentProjectionContext(context, ref);
+    deploymentTaskResultResourceRefs(task).flatMap((ref) => {
+      const node = nodeByResourceKey.get(canvasResourceKey(ref));
       return node === undefined ? [] : [node];
     })
   );

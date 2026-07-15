@@ -209,6 +209,9 @@ function restoredLayoutNodeFromDetectedNode(
   if (lastSeenUid !== undefined) {
     restored.lastSeenUid = lastSeenUid;
   }
+  if (saved.source !== undefined) {
+    restored.source = saved.source;
+  }
   if (saved.stackOrder !== undefined) {
     restored.stackOrder = saved.stackOrder;
   }
@@ -237,7 +240,7 @@ export function mergeCanvasLayoutWithDetectedNodes({
       changed: false,
       layout: undefined,
       nodes: applyCanvasStackOrderToNodes(placed.nodes),
-      placedLayoutNodes: [],
+      placedLayoutNodes: placed.placedLayoutNodes,
     };
   }
 

@@ -1,6 +1,5 @@
 import type { Node } from "@xyflow/react";
 import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
-import { DEPLOYMENT_UNKNOWN_SLOT_ID } from "../layout/placement-owner";
 import type {
   CanvasLayoutDocument,
   CanvasLayoutPosition,
@@ -9,6 +8,10 @@ import {
   canvasResourceIdentityFromNode,
   canvasResourceKey,
 } from "../nodes/resource-identity";
+import {
+  type DeploymentHandoffReconciliation,
+  deploymentHandoffReconciliations,
+} from "./deployment-handoff-reconciliation";
 import {
   createDeploymentProjectionContext,
   type DeploymentProjectionContext,
@@ -20,7 +23,6 @@ import {
   type DeploymentResultPreview,
   type DeploymentTaskResultPreview,
   type DeploymentTaskResultResourceRef,
-  materializedSlotPositions,
   resultRefForSlot,
 } from "./deployment-projection-model";
 
@@ -30,11 +32,8 @@ export function deploymentPlaceholderHandoffs(input: {
   previews?: readonly DeploymentTaskResultPreview[];
   tasks?: readonly DeploymentTaskProjection[];
   context?: DeploymentProjectionContext;
-}): {
-  byNodeId: Map<string, CanvasLayoutPosition>;
-  byRef: Map<string, CanvasLayoutPosition>;
-} {
-  const byNodeId = new Map<string, CanvasLayoutPosition>();
+  reconciliations?: ReadonlyMap<string, DeploymentHandoffReconciliation>;
+}): Map<string, CanvasLayoutPosition> {
   const byRef = new Map<string, CanvasLayoutPosition>();
   const context =
     input.context ??
@@ -44,79 +43,17 @@ export function deploymentPlaceholderHandoffs(input: {
       previews: input.previews,
       tasks: input.tasks,
     });
-  for (const { preview, task } of context.previews) {
-    addPreviewHandoffs({
-      byNodeId,
-      byRef,
-      context,
-      preview,
-      task,
-    });
-  }
-  return { byNodeId, byRef };
-}
-
-function addResultRefHandoff(input: {
-  byNodeId: Map<string, CanvasLayoutPosition>;
-  byRef: Map<string, CanvasLayoutPosition>;
-  context: DeploymentProjectionContext;
-  position: CanvasLayoutPosition;
-  ref: DeploymentTaskResultResourceRef;
-}): void {
-  if (layoutHasRefInDeploymentProjectionContext(input.context, input.ref)) {
-    return;
-  }
-  if (
-    resultRefHasLiveNodeInDeploymentProjectionContext(input.context, input.ref)
-  ) {
-    input.byRef.set(canvasResourceKey(input.ref), input.position);
-  }
-}
-
-function addPreviewHandoffs(input: {
-  byNodeId: Map<string, CanvasLayoutPosition>;
-  byRef: Map<string, CanvasLayoutPosition>;
-  context: DeploymentProjectionContext;
-  preview: DeploymentResultPreview;
-  task: DeploymentTaskProjection;
-}): void {
-  const materialized = materializedSlotPositions({
-    layout: input.context.layout,
-    slots: input.preview.slots,
-    task: input.task,
-  });
-  const unknownSlotPlacement = deploymentProjectionPlacementFromContext(
-    input.context,
-    {
-      slotId: DEPLOYMENT_UNKNOWN_SLOT_ID,
-      taskId: input.task.id,
+  const reconciliations =
+    input.reconciliations ?? deploymentHandoffReconciliations(context);
+  for (const [key, reconciliation] of reconciliations) {
+    if (
+      !reconciliation.resourceAlreadyPlaced &&
+      reconciliation.position !== undefined
+    ) {
+      byRef.set(key, reconciliation.position);
     }
-  );
-  for (const slot of input.preview.slots) {
-    const slotPlacement = deploymentProjectionPlacementFromContext(
-      input.context,
-      {
-        slotId: slot.id,
-        taskId: input.task.id,
-      }
-    );
-    const position =
-      slotPlacement?.position ??
-      (unknownSlotPlacement === undefined
-        ? undefined
-        : materialized.positions.get(slot.id));
-    const expectedRef = resultRefForSlot({ slot, task: input.task });
-    if (position === undefined || expectedRef === undefined) {
-      continue;
-    }
-    addResultRefHandoff({
-      byNodeId: input.byNodeId,
-      byRef: input.byRef,
-      context: input.context,
-      position,
-      ref: expectedRef,
-    });
   }
+  return byRef;
 }
 
 export function deploymentPlaceholderPendingResultKeys(input: {

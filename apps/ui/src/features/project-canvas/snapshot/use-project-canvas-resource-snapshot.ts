@@ -17,19 +17,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
-import {
-  CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS,
-  resolveMissingResourceLayoutGrace,
-} from "@/features/project-canvas/layout/missing-resource-grace";
-import type {
-  CanvasLayoutDocument,
-  PlacementCommand,
-} from "@/features/project-canvas/layout/types";
+import { CANVAS_MISSING_RESOURCE_LAYOUT_GRACE_MS } from "@/features/project-canvas/layout/missing-resource-grace";
+import type { CanvasLayoutDocument } from "@/features/project-canvas/layout/types";
 import { useDeploymentTasksStore } from "@/features/project-canvas/runtime/deployment-tasks-store";
-import {
-  type ProjectCanvasLayoutIntent,
-  projectCanvasRuntimeResourceGraph,
-} from "@/features/project-canvas/runtime/resource-graph";
+import type { ProjectCanvasLayoutIntent } from "@/features/project-canvas/runtime/resource-graph";
 import {
   createProjectRuntimeStore,
   type ProjectRuntimeStore,
@@ -40,24 +31,12 @@ import {
   type WorkloadTransientSinceByKey,
   workloadListRefreshIntervalForCanvas,
 } from "./project-services-refresh";
+import { projectCanvasResourceSnapshotFrame } from "./resource-snapshot-frame";
 
 const WORKLOAD_DISCOVERY_POLL_WINDOW_MS = 8000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 60_000;
-const EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT =
-  emptyMissingResourceLayoutGraceResult();
-
 function createTransientSinceMap(): WorkloadTransientSinceByKey {
   return new Map<string, number>();
-}
-
-function emptyMissingResourceLayoutGraceResult(): ReturnType<
-  typeof resolveMissingResourceLayoutGrace
-> {
-  return {
-    deleteCommands: [],
-    nextMissingSinceByOwnerKey: new Map(),
-    retainedLayoutOwnerKeys: new Set(),
-  };
 }
 
 function nextMissingResourceGraceDelayMs(
@@ -321,23 +300,6 @@ export function useProjectCanvasResourceSnapshot(options: {
   const apEnvironmentDbReferenceSources =
     relationshipIndexes.apEnvironmentDbReferenceSources;
 
-  const baseGraph = useMemo(
-    () =>
-      projectCanvasRuntimeResourceGraph({
-        canvasLayout,
-        canvasLayoutReady,
-        deployTasks: canvasDeployTasks,
-        relationshipIndexes,
-        resourceTopology,
-      }),
-    [
-      canvasLayout,
-      canvasLayoutReady,
-      canvasDeployTasks,
-      relationshipIndexes,
-      resourceTopology,
-    ]
-  );
   const missingResourceLayoutGraceReady =
     canvasLayoutReady &&
     canvasLayout !== undefined &&
@@ -347,23 +309,29 @@ export function useProjectCanvasResourceSnapshot(options: {
     dbsError == null &&
     !apsLoading &&
     !dbsLoading;
-  const missingResourceLayoutGrace = useMemo(() => {
-    if (!missingResourceLayoutGraceReady) {
-      return EMPTY_MISSING_RESOURCE_LAYOUT_GRACE_RESULT;
-    }
-    const nowMs = Math.max(Date.now(), missingLayoutGraceClock);
-    return resolveMissingResourceLayoutGrace({
-      layout: canvasLayout,
-      nodes: baseGraph.canvasState.nodes,
-      nowMs,
-      previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
-    });
-  }, [
-    baseGraph.canvasState.nodes,
-    canvasLayout,
-    missingLayoutGraceClock,
-    missingResourceLayoutGraceReady,
-  ]);
+  const snapshotFrame = useMemo(
+    () =>
+      projectCanvasResourceSnapshotFrame({
+        canvasLayout,
+        canvasLayoutReady,
+        deployTasks: canvasDeployTasks,
+        missingResourceLayoutGraceReady,
+        nowMs: Math.max(Date.now(), missingLayoutGraceClock),
+        previousMissingSinceByOwnerKey: missingLayoutSinceByOwnerKeyRef.current,
+        relationshipIndexes,
+        resourceTopology,
+      }),
+    [
+      canvasLayout,
+      canvasLayoutReady,
+      canvasDeployTasks,
+      missingLayoutGraceClock,
+      missingResourceLayoutGraceReady,
+      relationshipIndexes,
+      resourceTopology,
+    ]
+  );
+  const missingResourceLayoutGrace = snapshotFrame.missingResourceLayoutGrace;
   useEffect(() => {
     if (!missingResourceLayoutGraceReady) {
       return;
@@ -373,7 +341,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     const nextDelay = nextMissingResourceGraceDelayMs(
       missingResourceLayoutGrace.nextMissingSinceByOwnerKey,
       missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-      Date.now()
+      snapshotFrame.nowMs
     );
     if (nextDelay === undefined) {
       return;
@@ -383,31 +351,12 @@ export function useProjectCanvasResourceSnapshot(options: {
       nextDelay + 25
     );
     return () => window.clearTimeout(timer);
-  }, [missingResourceLayoutGrace, missingResourceLayoutGraceReady]);
-  const missingLayoutCommands: PlacementCommand[] =
-    missingResourceLayoutGrace.deleteCommands;
-  const graph = useMemo(
-    () =>
-      projectCanvasRuntimeResourceGraph({
-        canvasLayout,
-        canvasLayoutReady,
-        deployTasks: canvasDeployTasks,
-        layoutCommands: missingLayoutCommands,
-        relationshipIndexes,
-        resourceTopology,
-        retainedLayoutOwnerKeys:
-          missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-      }),
-    [
-      canvasLayout,
-      canvasLayoutReady,
-      canvasDeployTasks,
-      relationshipIndexes,
-      resourceTopology,
-      missingLayoutCommands,
-      missingResourceLayoutGrace.retainedLayoutOwnerKeys,
-    ]
-  );
+  }, [
+    missingResourceLayoutGrace,
+    missingResourceLayoutGraceReady,
+    snapshotFrame.nowMs,
+  ]);
+  const graph = snapshotFrame.graph;
   const graphEmpty =
     graph.canvasState.nodes.length === 0 &&
     graph.canvasState.edges.length === 0;
