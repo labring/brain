@@ -368,9 +368,13 @@ function workbenchIdentityChanged(
     effects: [{ delayMs: null, kind: "rescheduleNoticeExpiry" }],
     state: {
       ...state,
+      canvasCovered: false,
       completedNoticeExpiresAtByTaskId: new Map(),
       dismissedDeploymentTaskUpdatedAtById: dismissedTaskUpdatedAtById,
+      localCanvasStackOrderByRef: new Map(),
+      manuallyClosedDeploymentTaskTimelineTaskIds: new Set(),
       previousDeploymentTaskStatusById: new Map(),
+      sideViewportFocusRequestSeq: 0,
     },
   };
 }

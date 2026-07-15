@@ -102,6 +102,13 @@ export interface WorkbenchHarness {
   latest: () => Workbench;
   /** Reads what the dismissal storage currently holds. */
   readStorage: (key: string) => string | null;
+  /** Rerenders the mounted workbench under another namespace/project identity. */
+  setIdentity: (identity: {
+    namespace: string;
+    projectId: string;
+  }) => Promise<void>;
+  /** Simulates an external URL restoration such as Back or a shared link. */
+  setSearchParams: (searchParams: string) => Promise<void>;
   /** Changes the deployment task projections the API serves from now on. */
   setTasks: (tasks: unknown[]) => void;
   unmount: () => Promise<void>;
@@ -151,9 +158,12 @@ export async function mountWorkbench(
 ): Promise<WorkbenchHarness> {
   const dom = installTestDom();
   const kubeconfig = options.kubeconfig ?? "test-kubeconfig";
-  const namespace = options.namespace ?? "default";
-  const projectId = options.projectId ?? "p1";
-  const served: WorkbenchHarnessOptions = { ...options, namespace, projectId };
+  let identity = {
+    namespace: options.namespace ?? "default",
+    projectId: options.projectId ?? "p1",
+  };
+  const served: WorkbenchHarnessOptions = { ...options, ...identity };
+  let searchParams = options.searchParams ?? "";
 
   const previousActEnvironment = setActEnvironment(true);
 
@@ -170,8 +180,8 @@ export async function mountWorkbench(
     latest = useProjectCanvasModule({
       clock,
       kubeconfig,
-      namespace,
-      projectId,
+      namespace: identity.namespace,
+      projectId: identity.projectId,
     });
     return null;
   }
@@ -194,7 +204,7 @@ export async function mountWorkbench(
           hasMemory
           onUrlUpdate={(event) => updates.push(event)}
           resetUrlUpdateQueueOnMount={false}
-          searchParams={options.searchParams ?? ""}
+          searchParams={searchParams}
         >
           {children}
         </NuqsTestingAdapter>
@@ -234,6 +244,28 @@ export async function mountWorkbench(
     readStorage: (key: string) => localStorage.getItem(key),
     setTasks: (tasks: unknown[]) => {
       served.tasks = tasks;
+    },
+    setIdentity: async (nextIdentity) => {
+      identity = nextIdentity;
+      served.namespace = nextIdentity.namespace;
+      served.projectId = nextIdentity.projectId;
+      await runAct(() => {
+        rendered?.rerender(
+          <Tree>
+            <Harness />
+          </Tree>
+        );
+      });
+    },
+    setSearchParams: async (nextSearchParams) => {
+      searchParams = nextSearchParams;
+      await runAct(() => {
+        rendered?.rerender(
+          <Tree>
+            <Harness />
+          </Tree>
+        );
+      });
     },
     writeStorage: (key: string, value: string) => {
       localStorage.setItem(key, value);

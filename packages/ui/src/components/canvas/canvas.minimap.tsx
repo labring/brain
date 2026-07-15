@@ -15,14 +15,7 @@ import {
   type XYMinimapInstance,
 } from "@xyflow/system";
 import type { CSSProperties } from "react";
-import {
-  memo,
-  Profiler,
-  type ProfilerOnRenderCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 
 const MINIMAP_ARIA_LABEL = "Canvas mini map";
 const MINIMAP_HEIGHT = 130;
@@ -220,13 +213,7 @@ function CanvasMiniMapNodes() {
   ));
 }
 
-interface CanvasMiniMapViewportProps {
-  onProfileRender?: ProfilerOnRenderCallback;
-}
-
-function CanvasMiniMapViewportComponent({
-  onProfileRender,
-}: CanvasMiniMapViewportProps) {
+function CanvasMiniMapViewportComponent() {
   const store = useStoreApi();
   const projection = useStore(
     selectCanvasMiniMapViewport,
@@ -308,7 +295,7 @@ function CanvasMiniMapViewportComponent({
     projection.translateMinY,
   ]);
 
-  const viewport = (
+  return (
     <Panel
       className="react-flow__minimap overflow-hidden bg-input/30 shadow-none"
       data-testid="rf__minimap"
@@ -335,14 +322,6 @@ function CanvasMiniMapViewportComponent({
         />
       </svg>
     </Panel>
-  );
-
-  return onProfileRender === undefined ? (
-    viewport
-  ) : (
-    <Profiler id="canvas-minimap-viewport" onRender={onProfileRender}>
-      {viewport}
-    </Profiler>
   );
 }
 

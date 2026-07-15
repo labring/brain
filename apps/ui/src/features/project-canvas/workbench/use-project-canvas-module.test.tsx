@@ -85,6 +85,37 @@ test("closing a Project Surface clears the slot and the query", async () => {
   }
 });
 
+test("closing a covered canvas after an identity change revalidates the new project", async () => {
+  const harness = await mountWorkbench({ dbs: DBS });
+  try {
+    await harness.act(() => {
+      harness.latest().actions.openSurfaceIntent({
+        entry: { kind: "resourceLogs", target: DB_TARGET },
+        slot: "main",
+      });
+    });
+    assert.equal(harness.latest().canvas.covered, true);
+
+    await harness.setIdentity({ namespace: "other", projectId: "p2" });
+    assert.equal(harness.latest().canvas.covered, true);
+    harness.fetchCalls.length = 0;
+
+    await harness.act(() => {
+      harness.latest().surfaces.actions.closeMainSurface();
+    });
+
+    assert.equal(harness.latest().canvas.covered, false);
+    assert.ok(
+      harness.fetchCalls.some(
+        (call) => call.url.includes("/api/ap/") || call.url.includes("/api/db/")
+      ),
+      "revealing the new project's canvas revalidates its resource snapshot"
+    );
+  } finally {
+    await harness.unmount();
+  }
+});
+
 test("a Session Drawer coexists with an open side surface", async () => {
   const harness = await mountWorkbench();
   try {
@@ -333,12 +364,72 @@ test("a settings surface opened from the canvas carries its launch context", asy
   }
 });
 
+test("an AP-to-DB command carries Pending Database Binding Intent into Settings", async () => {
+  const harness = await mountWorkbench({ aps: APS, dbs: DBS });
+  try {
+    await harness.act(() => {
+      harness.latest().canvas.nodeCommands.executeCommandPlan({
+        guard: { action: "switch", kind: "settingsLeave" },
+        pendingDbReference: {
+          apNodeId: "ap:default:api",
+          dbName: "orders-db",
+          dbNamespace: "default",
+        },
+        selection: { kind: "resource", target: AP_TARGET },
+        surface: {
+          entry: {
+            kind: "settings",
+            target: AP_TARGET,
+            view: "environment",
+          },
+          slot: "side",
+        },
+      });
+    });
+
+    assert.deepEqual(settingsLaunchContext(harness), {
+      launchSource: "canvas",
+      pendingDatabaseBindingIntent: {
+        dbName: "orders-db",
+        dbNamespace: "default",
+        id: "ap-db-1",
+      },
+    });
+  } finally {
+    await harness.unmount();
+  }
+});
+
 test("a route-restored settings surface reports a restored launch context", async () => {
   const harness = await mountWorkbench({
     aps: APS,
     searchParams: SETTINGS_QUERY,
   });
   try {
+    assert.equal(settingsLaunchContext(harness)?.launchSource, "route");
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("closing Settings clears its launch context before route restoration", async () => {
+  const harness = await mountWorkbench({ aps: APS });
+  try {
+    await harness.act(() => {
+      harness
+        .latest()
+        .actions.openSurfaceIntent(
+          { entry: { kind: "settings", target: AP_TARGET }, slot: "side" },
+          "assistant"
+        );
+    });
+    assert.equal(settingsLaunchContext(harness)?.launchSource, "assistant");
+
+    await harness.act(() => {
+      harness.latest().surfaces.actions.closeResourcePane();
+    });
+    await harness.setSearchParams(SETTINGS_QUERY);
+
     assert.equal(settingsLaunchContext(harness)?.launchSource, "route");
   } finally {
     await harness.unmount();
@@ -616,6 +707,38 @@ test("a manually closed Deployment Task Timeline does not auto-open again", asyn
       harness.latest().surfaces.model.side,
       null,
       "the manual close suppresses the auto-open"
+    );
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("a workbench identity change clears manual timeline-close suppression", async () => {
+  const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
+  try {
+    await harness.act(() => {
+      harness.emitWindowEvent(DEPLOY_TASK_CREATED_EVENT, {
+        projectId: "p1",
+        taskId: "task-1",
+      });
+    });
+    await harness.act(() => {
+      harness.latest().surfaces.actions.closeResourcePane();
+    });
+
+    await harness.setIdentity({ namespace: "other", projectId: "p2" });
+    await harness.act(() => {
+      harness.emitWindowEvent(DEPLOY_TASK_CREATED_EVENT, {
+        projectId: "p2",
+        taskId: "task-1",
+      });
+    });
+
+    const side = harness.latest().surfaces.model.side;
+    assert.equal(side?.kind, "global");
+    assert.equal(
+      side?.kind === "global" ? side.entry.kind : null,
+      "deploymentTaskTimeline"
     );
   } finally {
     await harness.unmount();

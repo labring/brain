@@ -8,7 +8,7 @@ import {
   type ReactFlowState,
   useStoreApi,
 } from "@xyflow/react";
-import { act } from "react";
+import { act, memo, Profiler, type ProfilerOnRenderCallback } from "react";
 
 import { Canvas } from "./canvas";
 import { CanvasMiniMapViewport } from "./canvas.minimap";
@@ -35,6 +35,20 @@ function installCanvasTestDom() {
   GlobalRegistrator.register({ url: "https://canvas.test" });
   return () => GlobalRegistrator.unregister();
 }
+
+const ProfiledCanvasMiniMapViewport = memo(
+  function ProfiledCanvasMiniMapViewport({
+    onRender,
+  }: {
+    onRender: ProfilerOnRenderCallback;
+  }) {
+    return (
+      <Profiler id="canvas-minimap-viewport" onRender={onRender}>
+        <CanvasMiniMapViewport />
+      </Profiler>
+    );
+  }
+);
 
 test("Canvas.MiniMap renders only when its visible projection changes", async () => {
   const restoreDom = installCanvasTestDom();
@@ -66,7 +80,7 @@ test("Canvas.MiniMap renders only when its visible projection changes", async ()
       >
         <Canvas.Root state={state}>
           <CaptureStore />
-          <CanvasMiniMapViewport onProfileRender={recordMiniMapCommit} />
+          <ProfiledCanvasMiniMapViewport onRender={recordMiniMapCommit} />
         </Canvas.Root>
       </ReactFlowProvider>
     );

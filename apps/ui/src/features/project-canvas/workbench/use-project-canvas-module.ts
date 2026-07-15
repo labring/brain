@@ -250,6 +250,7 @@ export function useProjectCanvasModule({
   });
 
   const canvasCoveredRef = useRef(false);
+  const canvasCoverageIdentityRef = useRef({ namespace, projectId });
   const isCanvasCovered = useCallback(() => canvasCoveredRef.current, []);
   const {
     apEnvironmentDbReferenceSources,
@@ -1098,6 +1099,20 @@ export function useProjectCanvasModule({
     surfaceRenderModel.main != null &&
     surfaceRenderModel.main.kind !== "pendingTarget";
   canvasCoveredRef.current = canvasCovered;
+  useEffect(() => {
+    const previousIdentity = canvasCoverageIdentityRef.current;
+    if (
+      previousIdentity.namespace === namespace &&
+      previousIdentity.projectId === projectId
+    ) {
+      return;
+    }
+    canvasCoverageIdentityRef.current = { namespace, projectId };
+    submitOrchestrationEvent({
+      covered: canvasCoveredRef.current,
+      kind: "canvasCoveredChanged",
+    });
+  }, [namespace, projectId, submitOrchestrationEvent]);
   useEffect(() => {
     submitOrchestrationEvent({
       covered: canvasCovered,
