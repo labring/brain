@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { DEPLOY_TASK_CREATED_EVENT } from "@/features/deploy/task/browser-events";
+import { DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS } from "./deployment-task-timeline-reentry";
 import type { useProjectCanvasModule } from "./use-project-canvas-module";
 import {
   apItem,
@@ -479,6 +481,115 @@ test("a dismissal seeded before mount keeps the task out of the dock", async () 
   });
   try {
     assert.deepEqual(harness.latest().canvas.deploymentTaskDock.tasks, []);
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("a task that completes raises a dock notice that expires on the clock", async () => {
+  const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
+  try {
+    assert.deepEqual(
+      harness.latest().canvas.deploymentTaskDock.tasks.map((i) => i.task.id),
+      ["task-1"],
+      "the running task is docked"
+    );
+
+    // A completed task is only docked while its completion notice is live, so
+    // its presence below is the notice, not the task.
+    harness.setTasks([
+      taskProjection({
+        id: "task-1",
+        status: "completed",
+        updatedAt: "2026-06-17T10:05:00.000Z",
+      }),
+    ]);
+    await harness.act(async () => {
+      await harness.latest().surfaces.refreshWorkloadLists();
+    });
+
+    assert.deepEqual(
+      harness.latest().canvas.deploymentTaskDock.tasks.map((i) => i.task.id),
+      ["task-1"],
+      "the completion notice is docked"
+    );
+
+    await harness.advanceClock(DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS - 500);
+    assert.deepEqual(
+      harness.latest().canvas.deploymentTaskDock.tasks.map((i) => i.task.id),
+      ["task-1"],
+      "the notice is still live before its window closes"
+    );
+
+    await harness.advanceClock(600);
+
+    assert.deepEqual(
+      harness.latest().canvas.deploymentTaskDock.tasks,
+      [],
+      "the notice expires off the dock"
+    );
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("a manually closed Deployment Task Timeline does not auto-open again", async () => {
+  const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
+  try {
+    await harness.act(() => {
+      harness.emitWindowEvent(DEPLOY_TASK_CREATED_EVENT, {
+        projectId: "p1",
+        taskId: "task-1",
+      });
+    });
+    assert.ok(
+      harness.latest().surfaces.model.side,
+      "a created task auto-opens its timeline"
+    );
+
+    await harness.act(() => {
+      harness.latest().surfaces.actions.closeResourcePane();
+    });
+    assert.equal(harness.latest().surfaces.model.side, null);
+
+    await harness.act(() => {
+      harness.emitWindowEvent(DEPLOY_TASK_CREATED_EVENT, {
+        projectId: "p1",
+        taskId: "task-1",
+      });
+    });
+
+    assert.equal(
+      harness.latest().surfaces.model.side,
+      null,
+      "the manual close suppresses the auto-open"
+    );
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("clicking a dock chip reopens a manually closed timeline", async () => {
+  const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
+  try {
+    await harness.act(() => {
+      harness.emitWindowEvent(DEPLOY_TASK_CREATED_EVENT, {
+        projectId: "p1",
+        taskId: "task-1",
+      });
+    });
+    await harness.act(() => {
+      harness.latest().surfaces.actions.closeResourcePane();
+    });
+
+    await harness.act(() => {
+      harness.latest().actions.openDeploymentTaskDockTask("task-1");
+    });
+
+    assert.ok(
+      harness.latest().surfaces.model.side,
+      "an explicit chip click still opens the timeline"
+    );
   } finally {
     await harness.unmount();
   }

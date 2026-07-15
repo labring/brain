@@ -11,6 +11,9 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { SWRConfig } from "swr";
 
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
+import { createManualWorkbenchClock } from "@/features/project-canvas/workbench/workbench-clock";
+
+const START_MS = 1_760_000_000_000;
 
 export interface WorkbenchFetchCall {
   body: string | undefined;
@@ -115,14 +118,20 @@ type Workbench = ReturnType<typeof useProjectCanvasModule>;
 export interface WorkbenchHarness {
   /** Runs `fn` inside `act`, flushing effects and state updates. */
   act: (fn: () => Promise<void> | void) => Promise<void>;
+  /** Moves the workbench clock forward, firing anything that comes due. */
+  advanceClock: (ms: number) => Promise<void>;
   /** Fires a cross-tab storage event at the workbench. */
   emitStorage: (key: string | null) => void;
+  /** Dispatches a window event at the workbench, as the browser would. */
+  emitWindowEvent: (type: string, detail: unknown) => void;
   /** Every fetch the workbench issued, in order. */
   fetchCalls: WorkbenchFetchCall[];
   /** The latest value the workbench interface returned. */
   latest: () => Workbench;
   /** Reads what the dismissal storage currently holds. */
   readStorage: (key: string) => string | null;
+  /** Changes the deployment task projections the API serves from now on. */
+  setTasks: (tasks: unknown[]) => void;
   unmount: () => Promise<void>;
   /** The URL update stream captured from the router adapter. */
   updates: UrlUpdateEvent[];
@@ -207,6 +216,7 @@ export async function mountWorkbench(
   const kubeconfig = options.kubeconfig ?? "test-kubeconfig";
   const namespace = options.namespace ?? "default";
   const projectId = options.projectId ?? "p1";
+  const served: WorkbenchHarnessOptions = { ...options, namespace, projectId };
 
   const reactGlobals = globalThis as typeof globalThis & {
     IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -228,6 +238,12 @@ export async function mountWorkbench(
   };
   const listeners = new Map<string, Set<(event: unknown) => void>>();
   const fetchCalls: WorkbenchFetchCall[] = [];
+  const clock = createManualWorkbenchClock(START_MS);
+  const emit = (type: string, event: unknown) => {
+    for (const fn of [...(listeners.get(type) ?? [])]) {
+      fn(event);
+    }
+  };
 
   const overrides = [
     defineGlobal("window", {
@@ -237,6 +253,10 @@ export async function mountWorkbench(
         listeners.set(type, set);
       },
       clearTimeout: globalThis.clearTimeout,
+      dispatchEvent: (event: { type: string }) => {
+        emit(event.type, event);
+        return true;
+      },
       localStorage: storage,
       location: { origin: "https://workbench.test" },
       removeEventListener: (type: string, fn: (event: unknown) => void) => {
@@ -252,15 +272,18 @@ export async function mountWorkbench(
         method: init?.method ?? "GET",
         url,
       });
-      return Promise.resolve(
-        routeRequest(url, { ...options, namespace, projectId })
-      );
+      return Promise.resolve(routeRequest(url, served));
     }),
   ];
 
   let latest: Workbench | undefined;
   function Harness() {
-    latest = useProjectCanvasModule({ kubeconfig, namespace, projectId });
+    latest = useProjectCanvasModule({
+      clock,
+      kubeconfig,
+      namespace,
+      projectId,
+    });
     return null;
   }
 
@@ -313,10 +336,12 @@ export async function mountWorkbench(
 
   return {
     act: runAct,
+    advanceClock: (ms: number) => runAct(() => clock.advance(ms)),
     emitStorage: (key: string | null) => {
-      for (const fn of listeners.get("storage") ?? []) {
-        fn({ key });
-      }
+      emit("storage", { key });
+    },
+    emitWindowEvent: (type: string, detail: unknown) => {
+      emit(type, { detail, type });
     },
     fetchCalls,
     latest: () => {
@@ -326,6 +351,9 @@ export async function mountWorkbench(
       return latest;
     },
     readStorage: (key: string) => storageItems.get(key) ?? null,
+    setTasks: (tasks: unknown[]) => {
+      served.tasks = tasks;
+    },
     writeStorage: (key: string, value: string) => {
       storageItems.set(key, value);
     },

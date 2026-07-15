@@ -83,6 +83,10 @@ import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workb
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
 import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
+import {
+  realWorkbenchClock,
+  type WorkbenchClock,
+} from "@/features/project-canvas/workbench/workbench-clock";
 import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {
   SettingsReadModelHints,
@@ -149,10 +153,13 @@ function sideEntrySupportedForProject(
  * Timeline, Resource Actions, and viewport directives on top of them.
  */
 export function useProjectCanvasModule({
+  clock = realWorkbenchClock,
   kubeconfig,
   namespace,
   projectId,
 }: {
+  /** Defaults to real timers; tests pass a manual clock to drive notice expiry. */
+  clock?: WorkbenchClock;
   kubeconfig: string;
   namespace: string;
   projectId: string;
@@ -275,7 +282,7 @@ export function useProjectCanvasModule({
       return;
     }
 
-    const expiresAt = Date.now() + DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS;
+    const expiresAt = clock.now() + DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS;
     setCompletedNoticeExpiresAtByTaskId((current) => {
       const next = new Map(current);
       for (const taskId of completedNoticeTaskIds) {
@@ -283,17 +290,14 @@ export function useProjectCanvasModule({
       }
       return next;
     });
-  }, [deploymentTaskProjections]);
+  }, [clock, deploymentTaskProjections]);
 
   useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      completedNoticeExpiresAtByTaskId.size === 0
-    ) {
+    if (completedNoticeExpiresAtByTaskId.size === 0) {
       return;
     }
 
-    const now = Date.now();
+    const now = clock.now();
     const pruned = pruneExpiredCompletionNotices(
       completedNoticeExpiresAtByTaskId,
       now
@@ -312,15 +316,12 @@ export function useProjectCanvasModule({
       return;
     }
 
-    const timer = window.setTimeout(() => {
+    return clock.schedule(() => {
       setCompletedNoticeExpiresAtByTaskId((current) =>
-        pruneExpiredCompletionNotices(current, Date.now())
+        pruneExpiredCompletionNotices(current, clock.now())
       );
     }, nextDelay + 25);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [completedNoticeExpiresAtByTaskId]);
+  }, [clock, completedNoticeExpiresAtByTaskId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -972,7 +973,7 @@ export function useProjectCanvasModule({
   );
 
   const completedNoticeTaskIds = useMemo(() => {
-    const now = Date.now();
+    const now = clock.now();
     const taskIds = new Set<string>();
     for (const [taskId, expiresAt] of completedNoticeExpiresAtByTaskId) {
       if (expiresAt > now) {
@@ -980,7 +981,7 @@ export function useProjectCanvasModule({
       }
     }
     return taskIds;
-  }, [completedNoticeExpiresAtByTaskId]);
+  }, [clock, completedNoticeExpiresAtByTaskId]);
   const deploymentTaskDock = useMemo(
     () =>
       selectDeploymentTaskDock({
