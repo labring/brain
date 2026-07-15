@@ -348,8 +348,10 @@ export function useProjectCanvas(
   );
 
   const nodes = stackOrderedNodes;
-  const getNodes = useStableCallback((): readonly Node[] => nodes);
   const flowStore = useMemo(() => createProjectCanvasFlowStore(), []);
+  const getNodes = useStableCallback(
+    (): readonly Node[] => flowStore.getSnapshot().nodes
+  );
   const optionEdges = options?.edges;
   useLayoutEffect(() => {
     flowStore.reconcile({ edges: optionEdges ?? [], nodes });
@@ -383,7 +385,8 @@ export function useProjectCanvas(
     onPendingApDbReferencesStart: options?.onPendingApDbReferencesStart,
   });
 
-  const persistNodeLayout = useStableCallback((node: Node) => {
+  const commitNodeLayout = useStableCallback((node: Node) => {
+    flowStore.applyNodeChanges([{ id: node.id, item: node, type: "replace" }]);
     options?.onNodeExpansionChange?.(node);
   });
   const runResourceAction = useStableCallback(
@@ -408,10 +411,10 @@ export function useProjectCanvas(
   const nodeCommands = useMemo<ProjectCanvasNodeCommands>(
     () => ({
       clearDbPublicAccessPendingTarget,
+      commitNodeLayout,
       copyDatabaseConnection,
       executeCommandPlan,
       getNodes,
-      persistNodeLayout,
       projectId: options?.projectId,
       readOnly,
       requestApDelete,
@@ -427,10 +430,10 @@ export function useProjectCanvas(
     }),
     [
       clearDbPublicAccessPendingTarget,
+      commitNodeLayout,
       copyDatabaseConnection,
       executeCommandPlan,
       getNodes,
-      persistNodeLayout,
       options?.projectId,
       readOnly,
       requestApDelete,

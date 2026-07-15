@@ -68,6 +68,7 @@ export const CanvasContainerNode = memo(function CanvasContainerNode({
   return (
     <ContainerNode.Root
       defaultExpanded={expansion.defaultExpanded}
+      expanded={expansion.expanded}
       interaction={{ ...interaction, connectable: isConnectable, dragging }}
       lifecycleActions={actions.lifecycleActions}
       onExpandedChange={expansion.onExpandedChange}

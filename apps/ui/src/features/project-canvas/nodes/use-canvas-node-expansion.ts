@@ -1,6 +1,6 @@
 "use client";
 
-import { type Node, useReactFlow } from "@xyflow/react";
+import type { Node } from "@xyflow/react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
@@ -54,7 +54,6 @@ export function useCanvasNodeExpansion({
   positionAbsoluteY,
   type,
 }: UseCanvasNodeExpansionOptions) {
-  const { getNode, updateNodeData } = useReactFlow<Node>();
   const commands = useProjectCanvasNodeCommands();
   const defaultExpanded =
     data.layout?.expanded ?? CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED;
@@ -70,20 +69,6 @@ export function useCanvasNodeExpansion({
       setExpandedState((current) =>
         current === expanded ? current : expanded
       );
-      updateNodeData(id, (node) => {
-        const nodeData = node.data as Record<string, unknown>;
-        const layout = layoutFromData(nodeData);
-        if (layout.expanded === expanded) {
-          return {};
-        }
-        return {
-          layout: {
-            ...layout,
-            expanded,
-          },
-        };
-      });
-
       const fallbackNode: Node = {
         data,
         id,
@@ -91,24 +76,16 @@ export function useCanvasNodeExpansion({
         type,
       };
       const node = nodeWithExpandedState(
-        getNode(id) ?? fallbackNode,
+        commands?.getNodes().find((candidate) => candidate.id === id) ??
+          fallbackNode,
         expanded,
         data
       );
       if (commands != null && !commands.readOnly) {
-        commands.persistNodeLayout(node);
+        commands.commitNodeLayout(node);
       }
     },
-    [
-      commands,
-      data,
-      getNode,
-      id,
-      positionAbsoluteX,
-      positionAbsoluteY,
-      type,
-      updateNodeData,
-    ]
+    [commands, data, id, positionAbsoluteX, positionAbsoluteY, type]
   );
 
   return { defaultExpanded, expanded: expandedState, onExpandedChange };

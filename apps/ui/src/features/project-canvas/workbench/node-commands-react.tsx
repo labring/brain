@@ -40,11 +40,11 @@ interface WorkloadRef {
  */
 export interface ProjectCanvasNodeCommands {
   clearDbPublicAccessPendingTarget: (ref: WorkloadRef) => void;
+  /** Commits node presentation state to Canvas Runtime and schedules persistence. */
+  commitNodeLayout: (node: Node) => void;
   copyDatabaseConnection: DatabaseNodeCopyConnectionHandler;
   executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
   getNodes: () => readonly Node[];
-  /** Persists node presentation state (expansion) via the layout scheduler. */
-  persistNodeLayout: (node: Node) => void;
   projectId?: string;
   readOnly: boolean;
   requestApDelete: (target: ProjectCanvasApDeleteTarget) => void;
