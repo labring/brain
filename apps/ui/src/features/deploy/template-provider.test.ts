@@ -10,6 +10,8 @@ const originalFetch = globalThis.fetch;
 const originalProviderUrl = process.env.TEMPLATE_PROVIDER_URL;
 const MISSING_PROVIDER_URL_RE = /TEMPLATE_PROVIDER_URL is not configured/;
 const NESTED_PROVIDER_ERROR_RE = /statefulsets\.apps "affine" is invalid/;
+const PROVIDER_KUBERNETES_DIAGNOSTIC =
+  'deployments.apps "affine" is forbidden: exceeded quota: limits.cpu';
 
 function restoreGlobals() {
   globalThis.fetch = originalFetch;
@@ -337,5 +339,34 @@ test("deployTemplateInstance surfaces nested provider errors", async () => {
         templateName: "affine",
       }),
     NESTED_PROVIDER_ERROR_RE
+  );
+});
+
+test("deployTemplateInstance prefers the provider Kubernetes diagnostic", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com/";
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      jsonResponse(
+        {
+          error: {
+            details: PROVIDER_KUBERNETES_DIAGNOSTIC,
+            message: "Failed to create instance in Kubernetes.",
+          },
+        },
+        { status: 500 }
+      )
+    )) as typeof fetch;
+
+  await assert.rejects(
+    () =>
+      deployTemplateInstance({
+        encodedKubeconfig: "kubeconfig",
+        instanceName: "affine-demo",
+        templateName: "affine",
+      }),
+    (error: Error) => {
+      assert.equal(error.message, PROVIDER_KUBERNETES_DIAGNOSTIC);
+      return true;
+    }
   );
 });

@@ -229,6 +229,11 @@ function providerErrorMessage(body: unknown, fallback: string) {
   return providerErrorCandidates(body)[0] ?? fallback;
 }
 
+function deploymentProviderErrorMessage(body: unknown, fallback: string) {
+  const error = objectValue(objectValue(body)?.error);
+  return stringValue(error?.details) || providerErrorMessage(body, fallback);
+}
+
 function readJsonResponse(response: Response): Promise<unknown> {
   return response.json().catch(() => null);
 }
@@ -380,7 +385,9 @@ export async function deployTemplateInstance(input: {
   );
   const body = await readJsonResponse(response);
   if (!response.ok) {
-    throw new Error(providerErrorMessage(body, "Could not deploy template."));
+    throw new Error(
+      deploymentProviderErrorMessage(body, "Could not deploy template.")
+    );
   }
   const wrapped = objectValue(body) as ProviderTemplateSourceResponse | null;
   const payload = templateDeploymentPayload(wrapped?.data ?? body);
