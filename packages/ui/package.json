@@ -51,16 +51,17 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.10.6",
     "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@turbo/gen": "^2.8.1",
     "@types/node": "^25.1.0",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
-    "@types/react-test-renderer": "^19.1.0",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^9.39.2",
-    "react-test-renderer": "19.2.6",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3"
   },

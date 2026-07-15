@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { fireEvent, render } from "@testing-library/react/pure";
+import { act } from "react";
+
+import { installTestDom } from "@/features/project-canvas/react-test-harness";
 
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 
@@ -24,32 +27,36 @@ function ExpansionProbe() {
 }
 
 test("canvas node expansion mounts without a React Flow provider", async () => {
+  const dom = installTestDom();
   const reactTestGlobals = globalThis as typeof globalThis & {
     IS_REACT_ACT_ENVIRONMENT?: boolean;
   };
   const previousActEnvironment = reactTestGlobals.IS_REACT_ACT_ENVIRONMENT;
   reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true;
-  let renderer: ReactTestRenderer | undefined;
+  let rendered: ReturnType<typeof render> | undefined;
 
   try {
     await act(() => {
-      renderer = create(<ExpansionProbe />);
+      rendered = render(<ExpansionProbe />);
     });
 
-    const button = renderer?.root.findByType("button");
-    assert.deepEqual(button?.children, ["true"]);
+    const button = rendered?.getByRole("button");
+    assert.equal(button?.textContent, "true");
 
     await act(() => {
-      button?.props.onClick();
+      if (button !== undefined) {
+        fireEvent.click(button);
+      }
     });
 
-    assert.deepEqual(button?.children, ["false"]);
+    assert.equal(button?.textContent, "false");
   } finally {
-    if (renderer !== undefined) {
+    if (rendered !== undefined) {
       await act(() => {
-        renderer?.unmount();
+        rendered?.unmount();
       });
     }
     reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    await dom.restore();
   }
 });

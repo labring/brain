@@ -25,11 +25,6 @@ import type {
   ProjectCanvasSurfaceRenderModel,
 } from "@/features/project-canvas/surface/rendering-adapter";
 import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
-import type {
-  SettingsLaunchContext,
-  SettingsReadModelHints,
-  SettingsSessionEvents,
-} from "@/features/resource-settings/settings-types";
 import { SealosSkillsWorkflowPane } from "@/lib/sealos-skills-workflow-pane";
 
 export interface ProjectCanvasSurfaceHostActions {
@@ -57,9 +52,6 @@ export interface ProjectCanvasSurfaceHostProps {
   onEditRedeployTask?: (task: DeployTaskDTO) => void;
   projectId: string;
   refreshWorkloadLists: () => Promise<unknown>;
-  settingsLaunchContext?: SettingsLaunchContext;
-  settingsReadModelHints?: SettingsReadModelHints;
-  settingsSessionEvents?: SettingsSessionEvents;
   surfaceModel: ProjectCanvasSurfaceRenderModel;
 }
 
@@ -72,9 +64,6 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
   onEditRedeployTask,
   projectId,
   refreshWorkloadLists,
-  settingsLaunchContext,
-  settingsReadModelHints,
-  settingsSessionEvents,
   surfaceModel,
 }: ProjectCanvasSurfaceHostProps) {
   const { drawer, main, side } = surfaceModel;
@@ -153,9 +142,6 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
             onRepairSideEntry={actions.repairSide}
             onSettingsLeaveGuardChange={actions.registerSettingsLeaveGuard}
             onUpdated={refreshWorkloadLists}
-            settingsLaunchContext={settingsLaunchContext}
-            settingsReadModelHints={settingsReadModelHints}
-            settingsSessionEvents={settingsSessionEvents}
           />
         }
         skillsWorkflowPane={

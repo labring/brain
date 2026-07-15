@@ -9,11 +9,6 @@ import type {
 } from "@/features/project-canvas/surface/rendering-adapter";
 import { SettingsHost } from "@/features/resource-settings/settings-host";
 import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
-import type {
-  SettingsLaunchContext,
-  SettingsReadModelHints,
-  SettingsSessionEvents,
-} from "@/features/resource-settings/settings-types";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { WorkloadResourcePane } from "./workload-resource-pane";
 
@@ -39,9 +34,6 @@ export interface ProjectCanvasResourcePaneContentProps {
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
   readOnly?: boolean;
-  settingsLaunchContext?: SettingsLaunchContext;
-  settingsReadModelHints?: SettingsReadModelHints;
-  settingsSessionEvents?: SettingsSessionEvents;
 }
 
 export function renderProjectCanvasResourcePaneContent({
@@ -53,9 +45,6 @@ export function renderProjectCanvasResourcePaneContent({
   onSettingsLeaveGuardChange,
   onUpdated,
   readOnly = false,
-  settingsLaunchContext,
-  settingsReadModelHints,
-  settingsSessionEvents,
 }: ProjectCanvasResourcePaneContentProps): ReactNode {
   if (
     content?.kind === "apEvents" ||
@@ -87,15 +76,15 @@ export function renderProjectCanvasResourcePaneContent({
       <SettingsHost
         entry={content.target}
         kubeconfig={kubeconfig}
-        launchContext={settingsLaunchContext}
+        launchContext={content.launchContext}
         onClose={onClose}
         onLaunchContextConsumed={onLaunchContextConsumed}
         onRepairSideEntry={onRepairSideEntry}
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
         onUpdated={onUpdated}
-        readModelHints={settingsReadModelHints}
+        readModelHints={content.readModelHints}
         readOnly={readOnly}
-        sessionEvents={settingsSessionEvents}
+        sessionEvents={content.sessionEvents}
       />
     );
   }
