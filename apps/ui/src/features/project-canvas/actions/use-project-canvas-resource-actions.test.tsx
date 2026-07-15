@@ -1,82 +1,38 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isValidElement, type ReactElement } from "react";
-import { act, create } from "react-test-renderer";
+import { create } from "react-test-renderer";
 
+import {
+  actAndDrain,
+  defineGlobal,
+  findDialog,
+  jsonResponse,
+  restoreActEnvironment,
+  restoreGlobal,
+  setActEnvironment,
+  stubFetch,
+} from "@/features/project-canvas/react-test-harness";
 import {
   apLifecycleWorkloadRefFromTarget,
   dbLifecycleWorkloadRefFromTarget,
 } from "./resource-actions";
 import { useProjectCanvasResourceActions } from "./use-project-canvas-resource-actions";
 
-interface FetchCall {
-  method: string;
-  url: string;
-}
-
-function* walkElements(node: unknown): Generator<ReactElement> {
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      yield* walkElements(child);
-    }
-    return;
-  }
-  if (!isValidElement(node)) {
-    return;
-  }
-  yield node;
-  yield* walkElements((node.props as { children?: unknown }).children);
-}
-
-function findDialogProps(
-  dialogs: unknown,
-  match: (props: Record<string, unknown>) => boolean
-): Record<string, unknown> | null {
-  for (const element of walkElements(dialogs)) {
-    const props = element.props as Record<string, unknown>;
-    if (match(props)) {
-      return props;
-    }
-  }
-  return null;
-}
-
 type Model = ReturnType<typeof useProjectCanvasResourceActions>;
 
 async function mountResourceActions() {
-  const reactGlobals = globalThis as typeof globalThis & {
-    IS_REACT_ACT_ENVIRONMENT?: boolean;
-  };
-  const previousAct = reactGlobals.IS_REACT_ACT_ENVIRONMENT;
-  reactGlobals.IS_REACT_ACT_ENVIRONMENT = true;
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  const previousFetch = Object.getOwnPropertyDescriptor(globalThis, "fetch");
-
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
+  const previousAct = setActEnvironment(true);
+  const fetchStub = stubFetch(() => jsonResponse({ items: [] }));
+  const overrides = [
+    defineGlobal("window", {
       clearTimeout: globalThis.clearTimeout,
       location: { origin: "https://workbench.test" },
       setTimeout: globalThis.setTimeout,
-    },
-  });
-  const fetchCalls: FetchCall[] = [];
-  Object.defineProperty(globalThis, "fetch", {
-    configurable: true,
-    value: (input: unknown, init?: RequestInit) => {
-      fetchCalls.push({
-        method: init?.method ?? "GET",
-        url: String(input instanceof URL ? input.toString() : input),
-      });
-      return Promise.resolve(
-        new Response(JSON.stringify({ items: [] }), {
-          headers: { "content-type": "application/json" },
-          status: 200,
-        })
-      );
-    },
-  });
+    }),
+    fetchStub.override,
+  ];
+  const fetchCalls = fetchStub.calls;
 
   const layoutDeletes: unknown[][] = [];
   let refreshes = 0;
@@ -95,14 +51,7 @@ async function mountResourceActions() {
     return null;
   }
 
-  const runAct = async (fn: () => Promise<void> | void) => {
-    await act(async () => {
-      await fn();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
-  };
+  const runAct = actAndDrain;
 
   let renderer: ReturnType<typeof create> | undefined;
   await runAct(() => {
@@ -124,17 +73,10 @@ async function mountResourceActions() {
       await runAct(() => {
         renderer?.unmount();
       });
-      if (previousWindow === undefined) {
-        Reflect.deleteProperty(globalThis, "window");
-      } else {
-        Object.defineProperty(globalThis, "window", previousWindow);
+      for (const override of overrides) {
+        restoreGlobal(override);
       }
-      if (previousFetch === undefined) {
-        Reflect.deleteProperty(globalThis, "fetch");
-      } else {
-        Object.defineProperty(globalThis, "fetch", previousFetch);
-      }
-      reactGlobals.IS_REACT_ACT_ENVIRONMENT = previousAct;
+      restoreActEnvironment(previousAct);
     },
   };
 }
@@ -153,7 +95,7 @@ test("a destructive Resource Action confirms before it executes anything", async
       });
     });
 
-    const dialog = findDialogProps(
+    const dialog = findDialog(
       harness.latest().dialogs,
       (props) => props.dbTarget != null
     );
@@ -176,7 +118,7 @@ test("confirming a DB delete runs the whole pipeline: API, layout cleanup, refre
         namespace: "default",
       });
     });
-    const dialog = findDialogProps(
+    const dialog = findDialog(
       harness.latest().dialogs,
       (props) => props.dbTarget != null
     );
@@ -211,7 +153,7 @@ test("dismissing a confirmation executes nothing", async () => {
         namespace: "default",
       });
     });
-    const dialog = findDialogProps(
+    const dialog = findDialog(
       harness.latest().dialogs,
       (props) => props.dbTarget != null
     );
@@ -222,7 +164,7 @@ test("dismissing a confirmation executes nothing", async () => {
     });
 
     assert.equal(
-      findDialogProps(harness.latest().dialogs, (p) => p.dbTarget != null),
+      findDialog(harness.latest().dialogs, (p) => p.dbTarget != null),
       null,
       "the confirmation closes"
     );
@@ -243,7 +185,7 @@ test("confirming an AP delete drops both the AP and its Public Access layout ent
         namespace: "default",
       });
     });
-    const dialog = findDialogProps(
+    const dialog = findDialog(
       harness.latest().dialogs,
       (props) => props.apTarget != null
     );
@@ -276,7 +218,7 @@ test("an interrupting Resource Action confirms before it stops a workload", asyn
     });
 
     assert.ok(
-      findDialogProps(
+      findDialog(
         harness.latest().dialogs,
         (props) => props.apStopTarget != null
       ),

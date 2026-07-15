@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { DEPLOY_TASK_CREATED_EVENT } from "@/features/deploy/task/browser-events";
+import { findDialog } from "@/features/project-canvas/react-test-harness";
 import { DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS } from "./deployment-task-timeline-reentry";
 import type { useProjectCanvasModule } from "./use-project-canvas-module";
 import {
   apItem,
   dbItem,
-  findDialog,
   mountWorkbench,
   taskProjection,
 } from "./workbench-test-harness";
@@ -174,6 +174,7 @@ test("route restoration rebuilds the render model from the query string", async 
 
 const SETTINGS_QUERY = "?side=settings:ap:default:api";
 const DELETED_DB_URL_RE = /orders-db/;
+const DEPLOYMENT_TASK_FOCUS_KEY_RE = /deployment-task:task-1/;
 
 test("a dirty Settings Draft holds the leave guard dialog before any route write", async () => {
   const harness = await mountWorkbench({
@@ -419,6 +420,58 @@ test("clicking a dock chip opens the Deployment Task Timeline and marks it activ
     assert.equal(
       harness.latest().canvas.deploymentTaskDock.tasks[0]?.active,
       true
+    );
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("opening a Deployment Task Timeline focuses the canvas on that task", async () => {
+  const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
+  try {
+    assert.equal(
+      harness.latest().canvas.viewportDirectives.getDirectives().viewportFocus
+        ?.active,
+      false,
+      "nothing is focused before the timeline opens"
+    );
+
+    await harness.act(() => {
+      harness.latest().actions.openDeploymentTaskDockTask("task-1");
+    });
+
+    const focus = harness
+      .latest()
+      .canvas.viewportDirectives.getDirectives().viewportFocus;
+    assert.equal(focus?.active, true, "the timeline requests a viewport focus");
+    assert.match(String(focus?.key), DEPLOYMENT_TASK_FOCUS_KEY_RE);
+  } finally {
+    await harness.unmount();
+  }
+});
+
+test("reopening the same Deployment Task Timeline re-requests focus", async () => {
+  const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
+  try {
+    await harness.act(() => {
+      harness.latest().actions.openDeploymentTaskDockTask("task-1");
+    });
+    const firstKey = harness.latest().canvas.viewportDirectives.getDirectives()
+      .viewportFocus?.key;
+
+    await harness.act(() => {
+      harness.latest().surfaces.actions.closeResourcePane();
+    });
+    await harness.act(() => {
+      harness.latest().actions.openDeploymentTaskDockTask("task-1");
+    });
+
+    const secondKey = harness.latest().canvas.viewportDirectives.getDirectives()
+      .viewportFocus?.key;
+    assert.notEqual(
+      secondKey,
+      firstKey,
+      "a fresh request key re-fires the focus even for the same task"
     );
   } finally {
     await harness.unmount();

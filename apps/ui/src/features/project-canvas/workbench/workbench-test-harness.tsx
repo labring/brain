@@ -6,53 +6,25 @@
  * observable outcomes only, so they survive internal restructuring.
  */
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
-import { isValidElement, type ReactElement, type ReactNode } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import type { ReactNode } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
 import { SWRConfig } from "swr";
+
+import {
+  actAndDrain,
+  defineGlobal,
+  jsonResponse,
+  restoreActEnvironment,
+  restoreGlobal,
+  type StubbedFetchCall,
+  setActEnvironment,
+  stubFetch,
+} from "@/features/project-canvas/react-test-harness";
 
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
 import { createManualWorkbenchClock } from "@/features/project-canvas/workbench/workbench-clock";
 
 const START_MS = 1_760_000_000_000;
-
-export interface WorkbenchFetchCall {
-  body: string | undefined;
-  method: string;
-  url: string;
-}
-
-/**
- * Walks the dialog elements the workbench publishes. Dialogs are part of its
- * interface, so scenarios assert their presence and drive their decisions from
- * their props rather than mounting a DOM.
- */
-function* walkElements(node: unknown): Generator<ReactElement> {
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      yield* walkElements(child);
-    }
-    return;
-  }
-  if (!isValidElement(node)) {
-    return;
-  }
-  yield node;
-  yield* walkElements((node.props as { children?: unknown }).children);
-}
-
-/** Finds the single published dialog whose props match, or null if none is open. */
-export function findDialog<T extends Record<string, unknown>>(
-  dialogs: unknown,
-  match: (props: Record<string, unknown>) => boolean
-): T | null {
-  for (const element of walkElements(dialogs)) {
-    const props = element.props as Record<string, unknown>;
-    if (match(props)) {
-      return props as T;
-    }
-  }
-  return null;
-}
 
 /** A deployment task projection, as the deploy-tasks endpoint returns it. */
 export function taskProjection(
@@ -125,7 +97,7 @@ export interface WorkbenchHarness {
   /** Dispatches a window event at the workbench, as the browser would. */
   emitWindowEvent: (type: string, detail: unknown) => void;
   /** Every fetch the workbench issued, in order. */
-  fetchCalls: WorkbenchFetchCall[];
+  fetchCalls: StubbedFetchCall[];
   /** The latest value the workbench interface returned. */
   latest: () => Workbench;
   /** Reads what the dismissal storage currently holds. */
@@ -137,42 +109,6 @@ export interface WorkbenchHarness {
   updates: UrlUpdateEvent[];
   /** Writes storage as another tab would, before emitting the storage event. */
   writeStorage: (key: string, value: string) => void;
-}
-
-interface GlobalOverride {
-  key: string;
-  previous: PropertyDescriptor | undefined;
-}
-
-function defineGlobal(key: string, value: unknown): GlobalOverride {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, key);
-  Object.defineProperty(globalThis, key, { configurable: true, value });
-  return { key, previous };
-}
-
-function restoreGlobal(override: GlobalOverride) {
-  if (override.previous === undefined) {
-    Reflect.deleteProperty(globalThis, override.key);
-    return;
-  }
-  Object.defineProperty(globalThis, override.key, override.previous);
-}
-
-function requestUrl(input: unknown): string {
-  if (typeof input === "string") {
-    return input;
-  }
-  if (input instanceof URL) {
-    return input.toString();
-  }
-  return String((input as { url?: string }).url);
-}
-
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status: 200,
-  });
 }
 
 /**
@@ -218,11 +154,7 @@ export async function mountWorkbench(
   const projectId = options.projectId ?? "p1";
   const served: WorkbenchHarnessOptions = { ...options, namespace, projectId };
 
-  const reactGlobals = globalThis as typeof globalThis & {
-    IS_REACT_ACT_ENVIRONMENT?: boolean;
-  };
-  const previousActEnvironment = reactGlobals.IS_REACT_ACT_ENVIRONMENT;
-  reactGlobals.IS_REACT_ACT_ENVIRONMENT = true;
+  const previousActEnvironment = setActEnvironment(true);
 
   const storageItems = new Map<string, string>(
     Object.entries(options.dismissals ?? {})
@@ -237,7 +169,8 @@ export async function mountWorkbench(
     },
   };
   const listeners = new Map<string, Set<(event: unknown) => void>>();
-  const fetchCalls: WorkbenchFetchCall[] = [];
+  const fetchStub = stubFetch((url) => routeRequest(url, served));
+  const fetchCalls = fetchStub.calls;
   const clock = createManualWorkbenchClock(START_MS);
   const emit = (type: string, event: unknown) => {
     for (const fn of [...(listeners.get(type) ?? [])]) {
@@ -265,15 +198,7 @@ export async function mountWorkbench(
       setTimeout: globalThis.setTimeout,
     }),
     defineGlobal("localStorage", storage),
-    defineGlobal("fetch", (input: unknown, init?: RequestInit) => {
-      const url = requestUrl(input);
-      fetchCalls.push({
-        body: typeof init?.body === "string" ? init.body : undefined,
-        method: init?.method ?? "GET",
-        url,
-      });
-      return Promise.resolve(routeRequest(url, served));
-    }),
+    fetchStub.override,
   ];
 
   let latest: Workbench | undefined;
@@ -314,17 +239,7 @@ export async function mountWorkbench(
   }
 
   let renderer: ReactTestRenderer | undefined;
-  // nuqs commits URL writes through a queue that drains on a timer, so an act()
-  // pass alone would settle React but leave the update stream empty — every
-  // "writes no URL update" assertion would pass vacuously. Drain it here.
-  const runAct = async (fn: () => Promise<void> | void) => {
-    await act(async () => {
-      await fn();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-  };
+  const runAct = actAndDrain;
 
   await runAct(() => {
     renderer = create(
@@ -364,7 +279,7 @@ export async function mountWorkbench(
       for (const override of overrides) {
         restoreGlobal(override);
       }
-      reactGlobals.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+      restoreActEnvironment(previousActEnvironment);
     },
     updates,
   };
