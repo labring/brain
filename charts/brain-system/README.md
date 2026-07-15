@@ -34,6 +34,7 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
 - Devbox runtime values (`DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`
+- `apPublicAccess.userDomains`: AP platform domain suffixes and their wildcard TLS Secrets; AP creation currently uses the first entry
 
 Configure the GitHub App registration to use the Brain UI origin:
 
@@ -50,6 +51,22 @@ The install script reads `cloudDomain` and `cloudPort` from
 `sealos-system/sealos-config` and passes them to Helm. Keep these values empty
 in private values files unless you intentionally want to override the platform
 config.
+
+Configure the domain suffix and TLS Secret used by Brain-created AP Ingresses:
+
+```yaml
+apPublicAccess:
+  userDomains:
+    - name: gzg.sealos.run
+      secretName: wildcard-cert
+    - name: sealosgzg.site
+      secretName: wildcard-cert
+```
+
+AP creation currently uses `userDomains[0]`; the remaining entries are reserved
+for future user-selectable domain support. When the list is empty, the chart
+uses `global.cloudDomain` and `wildcard-cert`. Each configured Secret must exist
+in the namespace where the AP is created.
 
 Each `platformAddresses[].domainPrefix`, when set, must be a DNS-1123 label.
 Leave it empty for a deterministic generated prefix. This allows an isolated

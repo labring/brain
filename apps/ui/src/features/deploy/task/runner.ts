@@ -338,9 +338,17 @@ function requiredStringValue(
 
 function sealosCertSecretName(): string | undefined {
   return (
+    compactEnvValue(process.env.AP_USER_DOMAIN_TLS_SECRET_NAME) ??
     compactEnvValue(process.env.SEALOS_CERT_SECRET_NAME) ??
     compactEnvValue(process.env.SEALOS_CERT_SECRET) ??
     undefined
+  );
+}
+
+function apUserDomain(kubeconfig: string): string {
+  return (
+    compactEnvValue(process.env.AP_USER_DOMAIN) ??
+    routingDomainFromKubeconfig(kubeconfig)
   );
 }
 
@@ -1015,7 +1023,7 @@ function generateDirectArtifact(input: {
           name: childResourceName(input.projectName, "ap"),
           namespace: input.task.namespace,
           projectName: input.projectName,
-          routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+          routingDomain: apUserDomain(input.kubeconfig),
           settings,
         }),
       };
@@ -2001,7 +2009,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
       ),
       instanceName:
         input.task.artifactSummary.resultIdentities?.templateInstanceName,
-      routingDomain: routingDomainFromKubeconfig(input.kubeconfig),
+      routingDomain: apUserDomain(input.kubeconfig),
       task: input.task,
       templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
     });
