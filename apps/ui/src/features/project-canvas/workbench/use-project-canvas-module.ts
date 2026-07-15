@@ -12,8 +12,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
-import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
+import {
+  acknowledgePendingDeployTaskCreatedEvent,
+  DEPLOY_TASK_CREATED_EVENT,
+  type DeployTaskCreatedEvent,
+  pendingDeployTaskCreatedEvents,
+} from "@/features/deploy/task/browser-events";
 import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
 import type {
   ProjectSideSurfaceEntry,
@@ -28,6 +34,13 @@ import {
   removePendingApDbCanvasReferences,
 } from "@/features/project-canvas/flow/pending-connections";
 import { autoLayoutCanvasNodes } from "@/features/project-canvas/layout/auto-layout";
+import {
+  applyCanvasStackOrderToNodes,
+  bringCanvasNodeToFrontInStackOrder,
+  canvasNodeResourceStackKey,
+  canvasNodeStackOrder,
+  nodeWithCanvasStackOrder,
+} from "@/features/project-canvas/layout/node-stack-order";
 import { isCanvasNodeGeneratedPosition } from "@/features/project-canvas/layout/placement";
 import { resourcePlacementOwner } from "@/features/project-canvas/layout/placement-owner";
 import type {
@@ -69,61 +82,33 @@ import {
   readBrowserDeploymentTaskDockDismissals,
   writeBrowserDeploymentTaskDockDismissals,
 } from "@/features/project-canvas/workbench/deployment-task-dock-dismissals";
-import {
-  DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS,
-  selectDeploymentTaskDock,
-} from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
+import { selectDeploymentTaskDock } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 import type { ProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
 import { executeUnguardedProjectCanvasCommandPlan } from "@/features/project-canvas/workbench/project-canvas-command-executor";
 import { createProjectCanvasFlowStore } from "@/features/project-canvas/workbench/project-canvas-flow-store";
 import type { ProjectCanvasSurfaceHostActions } from "@/features/project-canvas/workbench/project-canvas-workbench-surfaces";
 import { useApSettingsSessionEvents } from "@/features/project-canvas/workbench/use-ap-settings-session-events";
 import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/use-db-service-restore-focus";
-import { useDeploymentTaskTimelineOpener } from "@/features/project-canvas/workbench/use-deployment-task-timeline-opener";
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
-import { useProjectCanvasStackOrder } from "@/features/project-canvas/workbench/use-project-canvas-stack-order";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import {
   realWorkbenchClock,
   type WorkbenchClock,
 } from "@/features/project-canvas/workbench/workbench-clock";
+import {
+  createWorkbenchOrchestrationStore,
+  type WorkbenchOrchestrationEffect,
+  type WorkbenchOrchestrationEvent,
+  type WorkbenchOrchestrationStore,
+} from "@/features/project-canvas/workbench/workbench-orchestration";
 import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {
   SettingsReadModelHints,
   SettingsSessionEvents,
 } from "@/features/resource-settings/settings-types";
 
-const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
-  DeploymentTaskProjection["status"]
->(["applying", "blocked", "queued", "running"]);
-
-function deploymentTaskCanStartCompletionNotice(
-  previousStatus: DeploymentTaskProjection["status"] | undefined
-): boolean {
-  return (
-    previousStatus !== undefined &&
-    DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES.has(previousStatus)
-  );
-}
-
 function currentPageVisible(): boolean {
   return isEffectivelyVisible();
-}
-
-function pruneExpiredCompletionNotices(
-  notices: ReadonlyMap<string, number>,
-  now: number
-): ReadonlyMap<string, number> {
-  let changed = false;
-  const next = new Map<string, number>();
-  for (const [taskId, expiresAt] of notices) {
-    if (expiresAt <= now) {
-      changed = true;
-      continue;
-    }
-    next.set(taskId, expiresAt);
-  }
-  return changed ? next : notices;
 }
 
 function sideEntrySupportedForProject(
@@ -146,11 +131,14 @@ function sideEntrySupportedForProject(
 }
 
 /**
- * The Project Canvas Workbench: three identifiers in, three semantic groups
- * out. It privately instantiates Project Runtime observation and Canvas Layout
- * persistence, then orchestrates Project Surfaces, canvas selection and route
- * sync, Settings Launch Context, leave guards, the Deployment Task Dock and
- * Timeline, Resource Actions, and viewport directives on top of them.
+ * The Project Canvas Workbench: three identifiers in (plus an optional clock
+ * seam), three semantic groups out. It privately instantiates Project Runtime
+ * observation and Canvas Layout persistence, then orchestrates Project
+ * Surfaces, canvas selection and route sync, Settings Launch Context, leave
+ * guards, the Deployment Task Dock and Timeline, Resource Actions, and
+ * viewport directives on top of them. Orchestration decisions live in the
+ * workbench-orchestration core as pure transitions; this hook is the effect
+ * boundary that reads facts, submits events, and executes effect plans.
  */
 export function useProjectCanvasModule({
   clock = realWorkbenchClock,
@@ -167,23 +155,93 @@ export function useProjectCanvasModule({
   const [pendingApDbReferences, setPendingApDbReferences] = useState<
     PendingApDbCanvasReference[]
   >([]);
-  const [
-    dismissedDeploymentTaskUpdatedAtById,
-    setDismissedDeploymentTaskUpdatedAtById,
-  ] = useState<ReadonlyMap<string, string>>(() =>
-    readBrowserDeploymentTaskDockDismissals({ namespace, projectId })
+  const orchestrationRef = useRef<WorkbenchOrchestrationStore | null>(null);
+  orchestrationRef.current ??= createWorkbenchOrchestrationStore({
+    dismissedTaskUpdatedAtById: readBrowserDeploymentTaskDockDismissals({
+      namespace,
+      projectId,
+    }),
+  });
+  const orchestration = orchestrationRef.current;
+  const orchestrationState = useSyncExternalStore(
+    orchestration.subscribe,
+    orchestration.getSnapshot,
+    orchestration.getSnapshot
+  );
+  const noticeExpiryCancelRef = useRef<(() => void) | null>(null);
+  const runOrchestrationEffects = useStableCallback(
+    (effects: readonly WorkbenchOrchestrationEffect[]) => {
+      for (const effect of effects) {
+        switch (effect.kind) {
+          case "acknowledgeDeployTaskCreated": {
+            acknowledgePendingDeployTaskCreatedEvent(effect.taskId);
+            break;
+          }
+          case "closeSideSurface": {
+            closeSideSurface();
+            break;
+          }
+          case "openDeploymentTaskTimelineRoute": {
+            openSideRoute(effect.entry, effect.canvasSelection, () => {
+              submitOrchestrationEvent({
+                kind: "deploymentTaskTimelineRouteCommitted",
+              });
+            });
+            break;
+          }
+          case "persistCanvasNodeLayout": {
+            projectCanvasLayout.scheduleNodeLayoutSave(effect.node);
+            break;
+          }
+          case "persistDeploymentTaskDockDismissals": {
+            writeBrowserDeploymentTaskDockDismissals({
+              dismissedTaskUpdatedAtById: effect.dismissedTaskUpdatedAtById,
+              namespace,
+              projectId,
+            });
+            break;
+          }
+          case "rescheduleNoticeExpiry": {
+            noticeExpiryCancelRef.current?.();
+            noticeExpiryCancelRef.current =
+              effect.delayMs == null
+                ? null
+                : clock.schedule(() => {
+                    noticeExpiryCancelRef.current = null;
+                    submitOrchestrationEvent({
+                      kind: "noticeExpiryDue",
+                      now: clock.now(),
+                    });
+                  }, effect.delayMs);
+            break;
+          }
+          case "revalidateResourceSnapshot": {
+            revalidate().catch(() => undefined);
+            break;
+          }
+          default: {
+            effect satisfies never;
+          }
+        }
+      }
+    }
+  );
+  const submitOrchestrationEvent = useStableCallback(
+    (event: WorkbenchOrchestrationEvent) => {
+      runOrchestrationEffects(orchestration.dispatch(event));
+    }
+  );
+  useEffect(
+    () => () => {
+      noticeExpiryCancelRef.current?.();
+      noticeExpiryCancelRef.current = null;
+    },
+    []
   );
   const deploymentTaskDockDismissalsKey = useMemo(
     () => deploymentTaskDockDismissalsStorageKey({ namespace, projectId }),
     [namespace, projectId]
   );
-  const previousDeploymentTaskStatusByIdRef = useRef<
-    ReadonlyMap<string, DeploymentTaskProjection["status"]>
-  >(new Map());
-  const [
-    completedNoticeExpiresAtByTaskId,
-    setCompletedNoticeExpiresAtByTaskId,
-  ] = useState<ReadonlyMap<string, number>>(() => new Map());
   const projectCanvasLayout = useProjectCanvasLayout({
     enabled: kubeconfig.trim() !== "",
     kubeconfig,
@@ -254,74 +312,23 @@ export function useProjectCanvasModule({
 
   useEffect(() => {
     setPendingApDbReferences([]);
-    setDismissedDeploymentTaskUpdatedAtById(
-      readBrowserDeploymentTaskDockDismissals({ namespace, projectId })
-    );
-    setCompletedNoticeExpiresAtByTaskId(new Map());
-    previousDeploymentTaskStatusByIdRef.current = new Map();
-  }, [namespace, projectId]);
-
-  useEffect(() => {
-    const previousStatusById = previousDeploymentTaskStatusByIdRef.current;
-    const nextStatusById = new Map<
-      string,
-      DeploymentTaskProjection["status"]
-    >();
-    const completedNoticeTaskIds: string[] = [];
-    for (const task of deploymentTaskProjections) {
-      nextStatusById.set(task.id, task.status);
-      if (
-        (task.status === "completed" || task.status === "cancelled") &&
-        deploymentTaskCanStartCompletionNotice(previousStatusById.get(task.id))
-      ) {
-        completedNoticeTaskIds.push(task.id);
-      }
-    }
-    previousDeploymentTaskStatusByIdRef.current = nextStatusById;
-    if (completedNoticeTaskIds.length === 0 || !currentPageVisible()) {
-      return;
-    }
-
-    const expiresAt = clock.now() + DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS;
-    setCompletedNoticeExpiresAtByTaskId((current) => {
-      const next = new Map(current);
-      for (const taskId of completedNoticeTaskIds) {
-        next.set(taskId, expiresAt);
-      }
-      return next;
+    submitOrchestrationEvent({
+      dismissedTaskUpdatedAtById: readBrowserDeploymentTaskDockDismissals({
+        namespace,
+        projectId,
+      }),
+      kind: "workbenchIdentityChanged",
     });
-  }, [clock, deploymentTaskProjections]);
+  }, [namespace, projectId, submitOrchestrationEvent]);
 
   useEffect(() => {
-    if (completedNoticeExpiresAtByTaskId.size === 0) {
-      return;
-    }
-
-    const now = clock.now();
-    const pruned = pruneExpiredCompletionNotices(
-      completedNoticeExpiresAtByTaskId,
-      now
-    );
-    if (pruned !== completedNoticeExpiresAtByTaskId) {
-      setCompletedNoticeExpiresAtByTaskId(pruned);
-      return;
-    }
-
-    let nextDelay: number | undefined;
-    for (const expiresAt of completedNoticeExpiresAtByTaskId.values()) {
-      const delay = Math.max(0, expiresAt - now);
-      nextDelay = nextDelay === undefined ? delay : Math.min(nextDelay, delay);
-    }
-    if (nextDelay === undefined) {
-      return;
-    }
-
-    return clock.schedule(() => {
-      setCompletedNoticeExpiresAtByTaskId((current) =>
-        pruneExpiredCompletionNotices(current, clock.now())
-      );
-    }, nextDelay + 25);
-  }, [clock, completedNoticeExpiresAtByTaskId]);
+    submitOrchestrationEvent({
+      kind: "deploymentTasksArrived",
+      now: clock.now(),
+      pageVisible: currentPageVisible(),
+      tasks: deploymentTaskProjections,
+    });
+  }, [clock, deploymentTaskProjections, submitOrchestrationEvent]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -332,16 +339,25 @@ export function useProjectCanvasModule({
       if (event.key !== null && event.key !== deploymentTaskDockDismissalsKey) {
         return;
       }
-      setDismissedDeploymentTaskUpdatedAtById(
-        readBrowserDeploymentTaskDockDismissals({ namespace, projectId })
-      );
+      submitOrchestrationEvent({
+        dismissedTaskUpdatedAtById: readBrowserDeploymentTaskDockDismissals({
+          namespace,
+          projectId,
+        }),
+        kind: "deploymentTaskDockDismissalsReloaded",
+      });
     };
 
     window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("storage", onStorage);
     };
-  }, [deploymentTaskDockDismissalsKey, namespace, projectId]);
+  }, [
+    deploymentTaskDockDismissalsKey,
+    namespace,
+    projectId,
+    submitOrchestrationEvent,
+  ]);
 
   const canvasEdges = useMemo(() => {
     const pendingEdges = pendingApDbCanvasConnectionEdges({
@@ -467,12 +483,6 @@ export function useProjectCanvasModule({
     },
     [bumpSettingsLaunchContextRevision, settingsLaunchContextStore]
   );
-  const [
-    manuallyClosedDeploymentTaskTimelineTaskIds,
-    setManuallyClosedDeploymentTaskTimelineTaskIds,
-  ] = useState<ReadonlySet<string>>(() => new Set());
-  const [sideViewportFocusRequestKey, setSideViewportFocusRequestKey] =
-    useState(0);
   const openSideSurface = useCallback(
     (
       entry: ProjectSideSurfaceEntry,
@@ -483,16 +493,10 @@ export function useProjectCanvasModule({
       >
     ) => {
       if (entry.kind === "deploymentTaskTimeline") {
-        setManuallyClosedDeploymentTaskTimelineTaskIds((current) => {
-          if (!current.has(entry.taskId)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.delete(entry.taskId);
-          return next;
-        });
-        openSideRoute(entry, canvasSelection, () => {
-          setSideViewportFocusRequestKey((current) => current + 1);
+        submitOrchestrationEvent({
+          canvasSelection,
+          entry,
+          kind: "deploymentTaskTimelineOpenRequested",
         });
         return;
       }
@@ -525,19 +529,39 @@ export function useProjectCanvasModule({
       }
       openSideRoute(entry, canvasSelection);
     },
-    [openSideRoute, settingsLaunchContextStore, writeSettingsLaunchContext]
-  );
-  const shouldAutoOpenDeploymentTaskTimeline = useCallback(
-    (taskId: string) =>
-      !manuallyClosedDeploymentTaskTimelineTaskIds.has(taskId),
-    [manuallyClosedDeploymentTaskTimelineTaskIds]
+    [
+      openSideRoute,
+      settingsLaunchContextStore,
+      submitOrchestrationEvent,
+      writeSettingsLaunchContext,
+    ]
   );
 
-  useDeploymentTaskTimelineOpener({
-    openSideSurface,
-    projectId,
-    shouldOpenTask: shouldAutoOpenDeploymentTaskTimeline,
-  });
+  useEffect(() => {
+    const submitDeployTaskCreated = (
+      detail: DeployTaskCreatedEvent["detail"]
+    ) => {
+      submitOrchestrationEvent({
+        detail,
+        kind: "deployTaskCreatedEventReceived",
+        workbenchProjectId: projectId,
+      });
+    };
+    const onDeployTaskCreated = (event: Event) => {
+      submitDeployTaskCreated((event as DeployTaskCreatedEvent).detail);
+    };
+
+    for (const pending of pendingDeployTaskCreatedEvents()) {
+      submitDeployTaskCreated(pending);
+    }
+    window.addEventListener(DEPLOY_TASK_CREATED_EVENT, onDeployTaskCreated);
+    return () => {
+      window.removeEventListener(
+        DEPLOY_TASK_CREATED_EVENT,
+        onDeployTaskCreated
+      );
+    };
+  }, [projectId, submitOrchestrationEvent]);
 
   const resourceActions = useProjectCanvasResourceActions({
     kubeconfig,
@@ -545,12 +569,49 @@ export function useProjectCanvasModule({
     refreshWorkloadLists: refresh,
   });
 
-  const { bringNodeToFrontById, frontCanvasNode, stackOrderedNodes } =
-    useProjectCanvasStackOrder({
-      nodes: rawNodes,
-      onNodeStackOrderChange: projectCanvasLayout.scheduleNodeLayoutSave,
-      readOnly: false,
+  const localCanvasStackOrderByRef =
+    orchestrationState.localCanvasStackOrderByRef;
+  const stackOrderedNodes = useMemo(() => {
+    const overridden = rawNodes.map((node) => {
+      const key = canvasNodeResourceStackKey(node);
+      const stackOrder =
+        key === undefined ? undefined : localCanvasStackOrderByRef.get(key);
+      return stackOrder === undefined
+        ? node
+        : nodeWithCanvasStackOrder(node, stackOrder);
     });
+    return applyCanvasStackOrderToNodes(overridden);
+  }, [localCanvasStackOrderByRef, rawNodes]);
+
+  const frontCanvasNode = useStableCallback(
+    (node: Node, options?: { persist?: boolean }) => {
+      const sourceNodes = stackOrderedNodes.map((candidate) =>
+        candidate.id === node.id
+          ? { ...candidate, position: { ...node.position } }
+          : candidate
+      );
+      const result = bringCanvasNodeToFrontInStackOrder(sourceNodes, node.id);
+      const nextNode = result.node;
+      if (!result.changed || nextNode === undefined) {
+        return;
+      }
+      submitOrchestrationEvent({
+        kind: "canvasNodeBroughtToFront",
+        node: nextNode,
+        persist: options?.persist !== false,
+        stackKey: canvasNodeResourceStackKey(nextNode),
+        stackOrder: canvasNodeStackOrder(nextNode),
+      });
+      return nextNode;
+    }
+  );
+
+  const bringNodeToFrontById = useStableCallback((nodeId: string) => {
+    const node = stackOrderedNodes.find((candidate) => candidate.id === nodeId);
+    if (node !== undefined) {
+      frontCanvasNode(node);
+    }
+  });
 
   const executeCommandPlan = useStableCallback(
     (plan: ProjectCanvasCommandPlan) => {
@@ -774,12 +835,14 @@ export function useProjectCanvasModule({
       ? side.entry.taskId
       : null;
   }, [surfaceRenderModel.side]);
+  const sideViewportFocusRequestSeq =
+    orchestrationState.sideViewportFocusRequestSeq;
   const sideViewportFocus = useMemo(() => {
     if (activeDeploymentTaskTimelineTaskId == null) {
       return null;
     }
     return {
-      key: `deployment-task:${activeDeploymentTaskTimelineTaskId}:${sideViewportFocusRequestKey}`,
+      key: `deployment-task:${activeDeploymentTaskTimelineTaskId}:${sideViewportFocusRequestSeq}`,
       nodeIds: deploymentTaskViewportFocusNodeIds({
         nodes,
         taskId: activeDeploymentTaskTimelineTaskId,
@@ -790,7 +853,7 @@ export function useProjectCanvasModule({
     activeDeploymentTaskTimelineTaskId,
     deploymentTaskProjections,
     nodes,
-    sideViewportFocusRequestKey,
+    sideViewportFocusRequestSeq,
   ]);
   const viewportFocusNodeIds = useMemo(() => {
     const sideNodeId = viewportFocusNodeIdFromSideRenderModel(
@@ -873,11 +936,9 @@ export function useProjectCanvasModule({
   const closeSideSurface = useCallback(() => {
     const side = surfaceState.side;
     if (side?.kind === "deploymentTaskTimeline") {
-      setManuallyClosedDeploymentTaskTimelineTaskIds((current) => {
-        if (current.has(side.taskId)) {
-          return current;
-        }
-        return new Set(current).add(side.taskId);
+      submitOrchestrationEvent({
+        kind: "deploymentTaskTimelineManuallyClosed",
+        taskId: side.taskId,
       });
     }
     if (side?.kind !== "settings") {
@@ -893,6 +954,7 @@ export function useProjectCanvasModule({
     bumpSettingsLaunchContextRevision,
     closeSideRoute,
     settingsLaunchContextStore,
+    submitOrchestrationEvent,
     surfaceState.side,
   ]);
 
@@ -972,6 +1034,8 @@ export function useProjectCanvasModule({
     ]
   );
 
+  const completedNoticeExpiresAtByTaskId =
+    orchestrationState.completedNoticeExpiresAtByTaskId;
   const completedNoticeTaskIds = useMemo(() => {
     const now = clock.now();
     const taskIds = new Set<string>();
@@ -982,6 +1046,8 @@ export function useProjectCanvasModule({
     }
     return taskIds;
   }, [clock, completedNoticeExpiresAtByTaskId]);
+  const dismissedDeploymentTaskUpdatedAtById =
+    orchestrationState.dismissedDeploymentTaskUpdatedAtById;
   const deploymentTaskDock = useMemo(
     () =>
       selectDeploymentTaskDock({
@@ -1013,40 +1079,18 @@ export function useProjectCanvasModule({
       if (task == null) {
         return;
       }
-      setDismissedDeploymentTaskUpdatedAtById((current) => {
-        if (current.get(taskId) === task.updatedAt) {
-          return current;
-        }
-        const next = new Map(current);
-        next.set(taskId, task.updatedAt);
-        writeBrowserDeploymentTaskDockDismissals({
-          dismissedTaskUpdatedAtById: next,
-          namespace,
-          projectId,
-        });
-        return next;
+      submitOrchestrationEvent({
+        activeTimelineTaskId: activeDeploymentTaskTimelineTaskId,
+        kind: "deploymentTaskDismissRequested",
+        now: clock.now(),
+        task,
       });
-      setCompletedNoticeExpiresAtByTaskId((current) => {
-        if (!current.has(taskId)) {
-          return current;
-        }
-        const next = new Map(current);
-        next.delete(taskId);
-        return next;
-      });
-      // The active chip is the open timeline pane's handle, so the dismissal
-      // alone cannot remove it; close the pane so the dismissal takes visible
-      // effect (CONTEXT.md: Deployment Task Dock Dismissal).
-      if (taskId === activeDeploymentTaskTimelineTaskId) {
-        closeResourcePane();
-      }
     },
     [
       activeDeploymentTaskTimelineTaskId,
-      closeResourcePane,
+      clock,
       deploymentTaskProjections,
-      namespace,
-      projectId,
+      submitOrchestrationEvent,
     ]
   );
 
@@ -1054,14 +1098,12 @@ export function useProjectCanvasModule({
     surfaceRenderModel.main != null &&
     surfaceRenderModel.main.kind !== "pendingTarget";
   canvasCoveredRef.current = canvasCovered;
-  const previousCanvasCoveredRef = useRef(canvasCovered);
   useEffect(() => {
-    const wasCovered = previousCanvasCoveredRef.current;
-    previousCanvasCoveredRef.current = canvasCovered;
-    if (wasCovered && !canvasCovered) {
-      revalidate().catch(() => undefined);
-    }
-  }, [canvasCovered, revalidate]);
+    submitOrchestrationEvent({
+      covered: canvasCovered,
+      kind: "canvasCoveredChanged",
+    });
+  }, [canvasCovered, submitOrchestrationEvent]);
 
   const openingKey = `${namespace}:${projectId}`;
   useLayoutEffect(() => {
