@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { create } from "react-test-renderer";
+import { render } from "@testing-library/react/pure";
 
 import {
   actAndDrain,
-  defineGlobal,
   findDialog,
+  installTestDom,
   jsonResponse,
   restoreActEnvironment,
   restoreGlobal,
@@ -22,16 +22,9 @@ import { useProjectCanvasResourceActions } from "./use-project-canvas-resource-a
 type Model = ReturnType<typeof useProjectCanvasResourceActions>;
 
 async function mountResourceActions() {
+  const dom = installTestDom();
   const previousAct = setActEnvironment(true);
   const fetchStub = stubFetch(() => jsonResponse({ items: [] }));
-  const overrides = [
-    defineGlobal("window", {
-      clearTimeout: globalThis.clearTimeout,
-      location: { origin: "https://workbench.test" },
-      setTimeout: globalThis.setTimeout,
-    }),
-    fetchStub.override,
-  ];
   const fetchCalls = fetchStub.calls;
 
   const layoutDeletes: unknown[][] = [];
@@ -53,9 +46,9 @@ async function mountResourceActions() {
 
   const runAct = actAndDrain;
 
-  let renderer: ReturnType<typeof create> | undefined;
+  let rendered: ReturnType<typeof render> | undefined;
   await runAct(() => {
-    renderer = create(<Harness />);
+    rendered = render(<Harness />);
   });
 
   return {
@@ -71,12 +64,11 @@ async function mountResourceActions() {
     refreshCount: () => refreshes,
     unmount: async () => {
       await runAct(() => {
-        renderer?.unmount();
+        rendered?.unmount();
       });
-      for (const override of overrides) {
-        restoreGlobal(override);
-      }
+      restoreGlobal(fetchStub.override);
       restoreActEnvironment(previousAct);
+      await dom.restore();
     },
   };
 }

@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { render } from "@testing-library/react/pure";
 import {
   type Node,
   ReactFlowProvider,
   type ReactFlowState,
   useStoreApi,
 } from "@xyflow/react";
-import { Profiler } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act } from "react";
 
 import { Canvas } from "./canvas";
+import { CanvasMiniMapViewport } from "./canvas.minimap";
 import type { CanvasState } from "./canvas.types";
 
 const EMPTY_CANVAS_STATE: CanvasState = {
@@ -26,23 +28,28 @@ const MINIMAP_NODE: Node = {
   width: 96,
 };
 
+function installCanvasTestDom() {
+  if (GlobalRegistrator.isRegistered) {
+    throw new Error("a test DOM is already registered");
+  }
+  GlobalRegistrator.register({ url: "https://canvas.test" });
+  return () => GlobalRegistrator.unregister();
+}
+
 test("Canvas.MiniMap renders only when its visible projection changes", async () => {
+  const restoreDom = installCanvasTestDom();
   const reactTestGlobals = globalThis as typeof globalThis & {
     IS_REACT_ACT_ENVIRONMENT?: boolean;
   };
   const previousActEnvironment = reactTestGlobals.IS_REACT_ACT_ENVIRONMENT;
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true;
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      clearTimeout: globalThis.clearTimeout,
-      setTimeout: globalThis.setTimeout,
-    },
-  });
   let store: ReturnType<typeof useStoreApi> | undefined;
-  let renderer: ReactTestRenderer | undefined;
+  let rendered: ReturnType<typeof render> | undefined;
   let commits = 0;
+
+  function recordMiniMapCommit() {
+    commits += 1;
+  }
 
   function CaptureStore() {
     store = useStoreApi();
@@ -59,14 +66,7 @@ test("Canvas.MiniMap renders only when its visible projection changes", async ()
       >
         <Canvas.Root state={state}>
           <CaptureStore />
-          <Profiler
-            id="canvas-minimap"
-            onRender={() => {
-              commits += 1;
-            }}
-          >
-            <Canvas.MiniMap />
-          </Profiler>
+          <CanvasMiniMapViewport onProfileRender={recordMiniMapCommit} />
         </Canvas.Root>
       </ReactFlowProvider>
     );
@@ -74,15 +74,7 @@ test("Canvas.MiniMap renders only when its visible projection changes", async ()
 
   try {
     await act(() => {
-      renderer = create(renderCanvas(EMPTY_CANVAS_STATE));
-    });
-
-    const mountedRenderer = renderer;
-    assert.ok(mountedRenderer);
-    await act(() => {
-      mountedRenderer.root
-        .findByProps({ "data-slot": "canvas-minimap" })
-        .props.onPointerEnter();
+      rendered = render(renderCanvas(EMPTY_CANVAS_STATE));
     });
 
     commits = 0;
@@ -102,12 +94,10 @@ test("Canvas.MiniMap renders only when its visible projection changes", async ()
 
     assert.equal(commits, 0);
 
-    const minimapSvg = mountedRenderer.root.findByProps({
-      className: "react-flow__minimap-svg",
-    });
-    const svgPropsBeforeSelection = minimapSvg.props;
+    const mounted = rendered;
+    assert.ok(mounted);
     await act(() => {
-      mountedRenderer.update(
+      mounted.rerender(
         renderCanvas({
           ...EMPTY_CANVAS_STATE,
           selectedNode: MINIMAP_NODE,
@@ -116,21 +106,19 @@ test("Canvas.MiniMap renders only when its visible projection changes", async ()
     });
 
     assert.equal(
-      minimapSvg.props,
-      svgPropsBeforeSelection,
+      commits,
+      0,
       "selection-only Canvas context updates must not enter the MiniMap SVG subtree"
     );
-    const svgPropsBeforePaneClear = minimapSvg.props;
     await act(() => {
-      mountedRenderer.update(renderCanvas(EMPTY_CANVAS_STATE));
+      mounted.rerender(renderCanvas(EMPTY_CANVAS_STATE));
     });
 
     assert.equal(
-      minimapSvg.props,
-      svgPropsBeforePaneClear,
+      commits,
+      0,
       "clearing selection from an empty-pane click must not enter the MiniMap SVG subtree"
     );
-    commits = 0;
 
     await act(() => {
       flowStore.getState().setNodes([
@@ -151,16 +139,12 @@ test("Canvas.MiniMap renders only when its visible projection changes", async ()
 
     assert.equal(commits, 1);
   } finally {
-    if (renderer !== undefined) {
+    if (rendered !== undefined) {
       await act(() => {
-        renderer?.unmount();
+        rendered?.unmount();
       });
     }
     reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
-    if (previousWindow === undefined) {
-      Reflect.deleteProperty(globalThis, "window");
-    } else {
-      Object.defineProperty(globalThis, "window", previousWindow);
-    }
+    await restoreDom();
   }
 });

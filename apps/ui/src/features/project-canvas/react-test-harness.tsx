@@ -1,14 +1,29 @@
 /**
  * Shared primitives for mounting Project Canvas React modules in tests: global
- * stubbing per repo convention (hand-stubbed window, no DOM library), an act()
- * pass that also drains pending timers, and dialog-element inspection.
+ * stubbing, a suite-local DOM, an act() pass that also drains pending timers,
+ * and dialog-element inspection.
  *
  * Modules publish dialogs as React elements on their interface, so scenarios
  * read a dialog's props to assert its presence and drive its decisions rather
  * than rendering it into a DOM.
  */
-import { isValidElement, type ReactElement } from "react";
-import { act } from "react-test-renderer";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { act, isValidElement, type ReactElement } from "react";
+
+const TEST_ORIGIN = "https://workbench.test";
+
+export interface TestDom {
+  restore: () => Promise<void>;
+}
+
+/** Installs a real DOM only for the lifetime of one mounted React harness. */
+export function installTestDom(): TestDom {
+  if (GlobalRegistrator.isRegistered) {
+    throw new Error("a test DOM is already registered");
+  }
+  GlobalRegistrator.register({ url: TEST_ORIGIN });
+  return { restore: () => GlobalRegistrator.unregister() };
+}
 
 export interface GlobalOverride {
   key: string;

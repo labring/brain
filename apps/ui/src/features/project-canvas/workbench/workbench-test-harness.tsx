@@ -1,18 +1,18 @@
 /**
  * Mounts the Project Canvas Workbench for interface tests: an in-memory router
- * adapter (nuqs testing adapter with memory), a hand-stubbed window/localStorage
- * per repo convention, and a routed fetch stub standing in for the network the
- * held modules reach. Tests drive the returned workbench interface and assert
- * observable outcomes only, so they survive internal restructuring.
+ * adapter (nuqs testing adapter with memory), a suite-local DOM, and a routed
+ * fetch stub standing in for the network the held modules reach. Tests drive
+ * the returned workbench interface and assert observable outcomes only, so they
+ * survive internal restructuring.
  */
+import { render } from "@testing-library/react/pure";
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
 import type { ReactNode } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
 import { SWRConfig } from "swr";
 
 import {
   actAndDrain,
-  defineGlobal,
+  installTestDom,
   jsonResponse,
   restoreActEnvironment,
   restoreGlobal,
@@ -149,6 +149,7 @@ function routeRequest(url: string, options: WorkbenchHarnessOptions): Response {
 export async function mountWorkbench(
   options: WorkbenchHarnessOptions = {}
 ): Promise<WorkbenchHarness> {
+  const dom = installTestDom();
   const kubeconfig = options.kubeconfig ?? "test-kubeconfig";
   const namespace = options.namespace ?? "default";
   const projectId = options.projectId ?? "p1";
@@ -156,50 +157,13 @@ export async function mountWorkbench(
 
   const previousActEnvironment = setActEnvironment(true);
 
-  const storageItems = new Map<string, string>(
-    Object.entries(options.dismissals ?? {})
-  );
-  const storage = {
-    getItem: (key: string) => storageItems.get(key) ?? null,
-    removeItem: (key: string) => {
-      storageItems.delete(key);
-    },
-    setItem: (key: string, value: string) => {
-      storageItems.set(key, value);
-    },
-  };
-  const listeners = new Map<string, Set<(event: unknown) => void>>();
+  localStorage.clear();
+  for (const [key, value] of Object.entries(options.dismissals ?? {})) {
+    localStorage.setItem(key, value);
+  }
   const fetchStub = stubFetch((url) => routeRequest(url, served));
   const fetchCalls = fetchStub.calls;
   const clock = createManualWorkbenchClock(START_MS);
-  const emit = (type: string, event: unknown) => {
-    for (const fn of [...(listeners.get(type) ?? [])]) {
-      fn(event);
-    }
-  };
-
-  const overrides = [
-    defineGlobal("window", {
-      addEventListener: (type: string, fn: (event: unknown) => void) => {
-        const set = listeners.get(type) ?? new Set();
-        set.add(fn);
-        listeners.set(type, set);
-      },
-      clearTimeout: globalThis.clearTimeout,
-      dispatchEvent: (event: { type: string }) => {
-        emit(event.type, event);
-        return true;
-      },
-      localStorage: storage,
-      location: { origin: "https://workbench.test" },
-      removeEventListener: (type: string, fn: (event: unknown) => void) => {
-        listeners.get(type)?.delete(fn);
-      },
-      setTimeout: globalThis.setTimeout,
-    }),
-    defineGlobal("localStorage", storage),
-    fetchStub.override,
-  ];
 
   let latest: Workbench | undefined;
   function Harness() {
@@ -238,11 +202,11 @@ export async function mountWorkbench(
     );
   }
 
-  let renderer: ReactTestRenderer | undefined;
+  let rendered: ReturnType<typeof render> | undefined;
   const runAct = actAndDrain;
 
   await runAct(() => {
-    renderer = create(
+    rendered = render(
       <Tree>
         <Harness />
       </Tree>
@@ -253,10 +217,12 @@ export async function mountWorkbench(
     act: runAct,
     advanceClock: (ms: number) => runAct(() => clock.advance(ms)),
     emitStorage: (key: string | null) => {
-      emit("storage", { key });
+      window.dispatchEvent(
+        new StorageEvent("storage", { key, storageArea: localStorage })
+      );
     },
     emitWindowEvent: (type: string, detail: unknown) => {
-      emit(type, { detail, type });
+      window.dispatchEvent(new CustomEvent(type, { detail }));
     },
     fetchCalls,
     latest: () => {
@@ -265,21 +231,20 @@ export async function mountWorkbench(
       }
       return latest;
     },
-    readStorage: (key: string) => storageItems.get(key) ?? null,
+    readStorage: (key: string) => localStorage.getItem(key),
     setTasks: (tasks: unknown[]) => {
       served.tasks = tasks;
     },
     writeStorage: (key: string, value: string) => {
-      storageItems.set(key, value);
+      localStorage.setItem(key, value);
     },
     unmount: async () => {
       await runAct(() => {
-        renderer?.unmount();
+        rendered?.unmount();
       });
-      for (const override of overrides) {
-        restoreGlobal(override);
-      }
+      restoreGlobal(fetchStub.override);
       restoreActEnvironment(previousActEnvironment);
+      await dom.restore();
     },
     updates,
   };
