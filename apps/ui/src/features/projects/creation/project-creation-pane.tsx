@@ -79,7 +79,11 @@ export function ProjectCreationPane({
     | "enabledSources"
     | "existingProjectDisplayNames"
     | "githubDeployer"
+    | "initialTemplateArgs"
+    | "initialTemplateName"
     | "templateOptions"
+    | "templateOptionsError"
+    | "templateOptionsLoading"
   >;
   entryMode?: ProjectCreationPaneEntryMode;
   onActiveSourceChange?: (source: ProjectCreatorSourceKind | null) => void;

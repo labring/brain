@@ -136,6 +136,37 @@ Failure handling:
 
 ## 4. Template Catalog And Parameters
 
+### TC-TPL-CAT-00 Open A Preselected Template From URL
+
+Goal: 验证公开 Template URL 使用 `templateForm` 预填参数并自动部署。
+
+Preconditions:
+
+- 从 `GET /api/templates` 选择一个存在的 template name，例如 `<template-name>`。
+- 打开浏览器 Network 面板或等价请求捕获工具。
+
+Steps:
+
+1. 为目标 Template 准备完整参数 JSON，例如 `{"PORT":"3000","ENABLE_AUTH":true}`。
+2. 打开 `/deploy?templateName=<template-name>&templateForm=<encoded-json>`。
+3. 等待 Brain 跳转到 Project 页面并加载 Template catalog。
+4. 记录 Network 请求和创建结果。
+
+Expected:
+
+- 没有 URL 专用确认页或额外部署 UI，也不需要再次点击 Deploy。
+- `<template-name>` 被精确选中，`templateForm` 的值覆盖对应模板 defaults。
+- catalog 和参数初始化完成后自动创建一个 Template Deployment Task。
+- boolean 参数按 `"true"` / `"false"` 传入 Template 部署参数；其他表单值保持字符串。
+- Task 的 `source.templateName = <template-name>`、`source.kind = "template"`、`runner.kind = "template"`、`target.kind = "newProject"`。
+- 成功后进入新 Project Canvas，并打开对应 Deployment Task Timeline。
+
+Evidence:
+
+- 公开入口 URL。
+- `/api/deploy-tasks` 请求数量和包含预填参数的 request body 摘要。
+- Project Canvas URL、task id 和 Timeline 截图。
+
 ### TC-TPL-CAT-01 Load Template Catalog
 
 Goal: 验证 Template 入口可以加载模板列表，并展示 Agent 可理解的模板信息。
@@ -847,4 +878,3 @@ List only failing or blocked cases here, with the exact UI state, Network status
 - Resources remaining:
 - Evidence:
 ```
-

@@ -1,3 +1,4 @@
+import { normalizeTemplateName } from "@/features/deploy/template-deployment-intent";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
@@ -137,8 +138,19 @@ export function serializeProjectSideSurfaceEntry(
       return `docker-deployment:${encodePart(entry.projectId)}`;
     case "githubDeployment":
       return `github-deployment:${encodePart(entry.projectId)}`;
-    case "projectCreation":
-      return `project-creation:${encodePart(entry.entryMode)}`;
+    case "projectCreation": {
+      const templateName =
+        entry.entryMode === "templateDirect"
+          ? normalizeTemplateName(entry.templateName)
+          : null;
+      const templateForm =
+        entry.entryMode === "templateDirect" && templateName != null
+          ? entry.templateForm
+          : undefined;
+      return `project-creation:${encodePart(entry.entryMode)}${
+        templateName == null ? "" : `:${encodePart(templateName)}`
+      }${templateForm == null ? "" : `:${encodePart(templateForm)}`}`;
+    }
     case "skillsWorkflow":
       return "skills-workflow";
     case "templateDeployment":
@@ -193,7 +205,7 @@ function parseResourceSideSurfaceEntry(
 function parseProjectCreationSideEntry(
   parts: readonly string[]
 ): ProjectSideSurfaceEntry | null {
-  if (parts.length !== 2) {
+  if (parts.length !== 2 && parts.length !== 3 && parts.length !== 4) {
     return null;
   }
   const entryMode = decodePart(parts[1]);
@@ -205,6 +217,22 @@ function parseProjectCreationSideEntry(
     entryMode !== "templateDirect"
   ) {
     return null;
+  }
+  if (parts.length >= 3) {
+    if (entryMode !== "templateDirect") {
+      return null;
+    }
+    const templateName = normalizeTemplateName(decodePart(parts[2]));
+    const templateForm = decodePart(parts[3]);
+    if (templateName == null || (parts.length === 4 && templateForm == null)) {
+      return null;
+    }
+    return {
+      entryMode,
+      kind: "projectCreation",
+      templateName,
+      ...(templateForm == null ? {} : { templateForm }),
+    };
   }
   return { entryMode, kind: "projectCreation" };
 }

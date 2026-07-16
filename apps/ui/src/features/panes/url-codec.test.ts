@@ -154,3 +154,72 @@ test("project surface URL codec preserves template direct project creation", () 
     side: "project-creation:templateDirect",
   });
 });
+
+test("project surface URL codec preserves a template name on direct creation", () => {
+  const parsed = parseProjectSurfaceUrlState({
+    side: "project-creation:templateDirect:team%3Aflow%20v1",
+  });
+
+  assert.deepEqual(parsed.side, {
+    entryMode: "templateDirect",
+    kind: "projectCreation",
+    templateName: "team:flow v1",
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    side: "project-creation:templateDirect:team%3Aflow%20v1",
+  });
+});
+
+test("project surface URL codec preserves a template form on direct creation", () => {
+  const templateForm = JSON.stringify({ enabled: "true", port: "3000" });
+  const encodedTemplateForm = encodeURIComponent(templateForm);
+  const parsed = parseProjectSurfaceUrlState({
+    side: `project-creation:templateDirect:flowise:${encodedTemplateForm}`,
+  });
+
+  assert.deepEqual(parsed.side, {
+    entryMode: "templateDirect",
+    kind: "projectCreation",
+    templateForm,
+    templateName: "flowise",
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(parsed), {
+    side: `project-creation:templateDirect:flowise:${encodedTemplateForm}`,
+  });
+});
+
+test("project surface URL codec rejects template names on other creation modes", () => {
+  assert.equal(
+    parseProjectSurfaceUrlState({
+      side: "project-creation:dockerDirect:flowise",
+    }).side,
+    null
+  );
+});
+
+test("project surface URL codec rejects blank and overlong template names", () => {
+  assert.equal(
+    parseProjectSurfaceUrlState({
+      side: "project-creation:templateDirect:%20%20",
+    }).side,
+    null
+  );
+  assert.equal(
+    parseProjectSurfaceUrlState({
+      side: `project-creation:templateDirect:${"x".repeat(257)}`,
+    }).side,
+    null
+  );
+  assert.deepEqual(
+    serializeProjectSurfaceUrlState({
+      drawer: null,
+      main: null,
+      side: {
+        entryMode: "templateDirect",
+        kind: "projectCreation",
+        templateName: "   ",
+      },
+    }),
+    { side: "project-creation:templateDirect" }
+  );
+});

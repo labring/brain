@@ -5,6 +5,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import { parseTemplateForm } from "@/features/deploy/template-deployment-intent";
 import type { ProjectSidePaneAssistantSurface } from "@/features/panes/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/panes/react";
 import { PROJECT_SIDE_QUERY_KEY } from "@/features/panes/side-url-codec";
@@ -48,6 +49,16 @@ export function ProjectIndex() {
       ? projectSideRouteEntry
       : null;
   const creationSideEntryMode = creationSideEntry?.entryMode ?? null;
+  const creationSideTemplateName =
+    creationSideEntry?.entryMode === "templateDirect"
+      ? creationSideEntry.templateName
+      : undefined;
+  const creationSideTemplateArgs = useMemo(() => {
+    if (creationSideEntry?.entryMode !== "templateDirect") {
+      return undefined;
+    }
+    return parseTemplateForm(creationSideEntry.templateForm) ?? undefined;
+  }, [creationSideEntry]);
 
   const onProjectCreated = useCallback(
     async (projectId: string | undefined, context?: ProjectCreatedContext) => {
@@ -99,15 +110,26 @@ export function ProjectIndex() {
       onCreationPaneOpenChange(false);
       return;
     }
-    prepareCreationPane(creationSideEntryMode);
-  }, [creationSideEntryMode, onCreationPaneOpenChange, prepareCreationPane]);
+    prepareCreationPane(
+      creationSideEntryMode,
+      creationSideTemplateName,
+      creationSideTemplateArgs
+    );
+  }, [
+    creationSideEntryMode,
+    creationSideTemplateArgs,
+    creationSideTemplateName,
+    onCreationPaneOpenChange,
+    prepareCreationPane,
+  ]);
 
   const openProjectCreationPane = useCallback(
     (entryMode: ProjectCreationPaneEntryMode = "general") => {
-      openProjectSideRoute({
-        entryMode,
-        kind: "projectCreation",
-      });
+      if (entryMode === "templateDirect") {
+        openProjectSideRoute({ entryMode, kind: "projectCreation" });
+        return;
+      }
+      openProjectSideRoute({ entryMode, kind: "projectCreation" });
     },
     [openProjectSideRoute]
   );

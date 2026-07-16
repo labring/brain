@@ -36,6 +36,7 @@ import {
   type ProjectCreationPaneEntryMode,
   projectCreationPaneStateReducer,
 } from "@/features/projects/creation/project-creation-pane-state";
+import { deriveTemplateProjectDisplayName } from "@/features/projects/creation/template-project-display-name";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import { desktopUserIdAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -88,7 +89,11 @@ type CreatorRootPropsForCreationPane = Pick<
   | "enabledSources"
   | "existingProjectDisplayNames"
   | "githubDeployer"
+  | "initialTemplateArgs"
+  | "initialTemplateName"
   | "templateOptions"
+  | "templateOptionsError"
+  | "templateOptionsLoading"
 >;
 
 export interface ProjectCreatedContext {
@@ -122,7 +127,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   lastConfirmedKind: string | null;
   onCreationPaneSourceChange: (source: ProjectCreatorSourceKind | null) => void;
   onCreationPaneOpenChange: (open: boolean) => void;
-  openCreationPane: (entryMode?: ProjectCreationPaneEntryMode) => void;
+  openCreationPane: (
+    entryMode?: ProjectCreationPaneEntryMode,
+    templateName?: string,
+    templateArgs?: Record<string, string>
+  ) => void;
 } {
   const kubeconfig = options?.kubeconfig?.trim() ?? "";
   const namespace = options?.namespace?.trim() ?? "";
@@ -168,10 +177,19 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   });
 
   const openCreationPane = useCallback(
-    (entryMode: ProjectCreationPaneEntryMode = "general") => {
+    (
+      entryMode: ProjectCreationPaneEntryMode = "general",
+      templateName?: string,
+      templateArgs?: Record<string, string>
+    ) => {
       setConfirmApplying(false);
       setActiveSource(sourceKindFromEntryMode(entryMode));
-      dispatchCreationPaneState({ entryMode, type: "open" });
+      dispatchCreationPaneState({
+        entryMode,
+        templateArgs,
+        templateName,
+        type: "open",
+      });
     },
     []
   );
@@ -288,6 +306,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           ),
           imageRef,
         }),
+      deriveTemplateProjectDisplayName: (choice) =>
+        deriveTemplateProjectDisplayName({
+          choice,
+          existingProjectDisplayNames: existingProjects.map(
+            (project) => project.name
+          ),
+        }),
       onDockerConfirm: async (
         settings: DockerDeploymentSettings,
         projectDisplayName,
@@ -352,6 +377,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           const outcome = await runDeployment({
             args: settings.args,
             kind: "template",
+            sensitiveKeys: settings.sensitiveKeys,
             target: newProjectDeploymentTarget(displayName, description),
             templateName: settings.templateName,
           });
@@ -476,6 +502,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         const outcome = await runDeployment({
           args: input.settings.args,
           kind: "template",
+          sensitiveKeys: input.settings.sensitiveKeys,
           target: newProjectDeploymentTarget(displayName),
           templateName: input.settings.templateName,
         });
@@ -545,7 +572,19 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ),
       enabledSources: CREATION_PANE_SOURCES,
       githubDeployer,
+      ...(creationPaneState.entryMode === "templateDirect" &&
+      creationPaneState.templateName != null
+        ? { initialTemplateName: creationPaneState.templateName }
+        : {}),
+      ...(creationPaneState.entryMode === "templateDirect" &&
+      creationPaneState.templateArgs != null
+        ? { initialTemplateArgs: creationPaneState.templateArgs }
+        : {}),
       templateOptions: templateCatalog.templates,
+      ...(templateCatalog.error?.message == null
+        ? {}
+        : { templateOptionsError: templateCatalog.error.message }),
+      templateOptionsLoading: templateCatalog.isLoading,
     }),
     [
       actions,
@@ -553,6 +592,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       databaseOptions,
       existingProjects,
       githubDeployer,
+      creationPaneState.entryMode,
+      creationPaneState.templateArgs,
+      creationPaneState.templateName,
+      templateCatalog.error,
+      templateCatalog.isLoading,
       templateCatalog.templates,
     ]
   );

@@ -75,6 +75,17 @@ test("project creation pane can open directly into template creation", () => {
   assert.equal(directOpen.open, true);
   assert.equal(directOpen.entryMode, "templateDirect");
   assert.equal(directOpen.resetKey, 1);
+  assert.equal(directOpen.templateName, undefined);
+
+  const prefilledOpen = projectCreationPaneStateReducer(directOpen, {
+    entryMode: "templateDirect",
+    templateArgs: { port: "3000" },
+    templateName: "flowise",
+    type: "open",
+  });
+  assert.equal(prefilledOpen.templateName, "flowise");
+  assert.deepEqual(prefilledOpen.templateArgs, { port: "3000" });
+  assert.equal(prefilledOpen.resetKey, 2);
 });
 
 test("project creation pane close hides the pane without mutating the next reset key", () => {
