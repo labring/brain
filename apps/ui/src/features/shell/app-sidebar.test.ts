@@ -17,9 +17,12 @@ const PROJECTS_BUTTON_PROJECT_HOVER_RE =
 const WORKSPACE_QUOTA_LOADER_RE = /sealosApp\.getWorkspaceQuota\(\)/;
 const CREATE_SEALOS_APP_RE = /createSealosApp/;
 const HARDCODED_USAGE_VALUE_RE = /"0\.0\/0"/;
-const CLOSE_BRAIN_EVENT_RE =
-  /sealosApp\.runEvents\("closeDesktopApp",\s*\{\s*appKey: "system-brain",?\s*\}\s*\)/s;
 const DESKTOP_RETURN_BUTTON_RE = /aria-label="Back to Sealos Desktop"/;
+const DESKTOP_RETURN_URL_RE =
+  /const SEALOS_DESKTOP_URL = "https:\/\/usw-1\.sealos\.io"/;
+const DESKTOP_RETURN_NEW_TAB_RE =
+  /href=\{SEALOS_DESKTOP_URL\}[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"/;
+const CLOSE_BRAIN_EVENT_RE = /closeDesktopApp/;
 const DESKTOP_RETURN_BEFORE_UPGRADE_RE =
   /data-slot="app-sidebar-bottom-actions"[\s\S]*<AppSidebarDesktopReturn \/>[\s\S]*<AppSidebarUpgrade \/>/;
 const EMBEDDED_WINDOW_CHECK_RE = /window\.(?:self|top)/;
@@ -45,8 +48,10 @@ test("app sidebar upgrade popover reads workspace quota from the Sealos SDK", ()
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, HARDCODED_USAGE_VALUE_RE);
 });
 
-test("app sidebar requests that Desktop close Brain", () => {
-  assert.match(APP_SIDEBAR_SOURCE, CLOSE_BRAIN_EVENT_RE);
+test("app sidebar opens Sealos Desktop in a new tab", () => {
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_URL_RE);
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_NEW_TAB_RE);
+  assert.doesNotMatch(APP_SIDEBAR_SOURCE, CLOSE_BRAIN_EVENT_RE);
 });
 
 test("app sidebar always renders the Desktop return button above Upgrade", () => {
