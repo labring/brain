@@ -96,6 +96,14 @@ const dbAccessSessionAtom = atom<DbAccessSessionState>(
 );
 const dbAccessSelectedItemAtom = atom<DbAccessSelectedItem | null>(null);
 const dbAccessActivityTabAtom = atom<DbAccessActivityTab>("db_service");
+/**
+ * Logical Database names whose System Objects are revealed. Lives in the
+ * per-session store (never persisted), so switching DB Services resets every
+ * database to the clean default view (ADR 0049/0053).
+ */
+export const dbAccessRevealedSystemObjectsAtom = atom<ReadonlySet<string>>(
+  new Set<string>()
+);
 const DbAccessRuntimeContext = createContext<DataBrowserHostContext | null>(
   null
 );
@@ -310,6 +318,28 @@ export function useDbAccessActivity() {
   };
 }
 
+export function useDbAccessSystemObjectsReveal() {
+  const revealedDatabases = useAtomValue(dbAccessRevealedSystemObjectsAtom);
+  const setRevealedDatabases = useSetAtom(dbAccessRevealedSystemObjectsAtom);
+
+  const toggleSystemObjects = useCallback(
+    (database: string) => {
+      setRevealedDatabases((current) => {
+        const next = new Set(current);
+        if (next.has(database)) {
+          next.delete(database);
+        } else {
+          next.add(database);
+        }
+        return next;
+      });
+    },
+    [setRevealedDatabases]
+  );
+
+  return { revealedDatabases, toggleSystemObjects };
+}
+
 export function useDbAccessReadOnlyActions() {
   const dbService = useDbAccessService();
 
@@ -327,15 +357,11 @@ export function useDbAccessReadOnlyActions() {
         dbService.databaseName,
       ],
       fetchSchemas: async (..._args: unknown[]): Promise<string[]> => [],
-      fetchSystemSchemas: async () => undefined,
       fetchTables: async (
         ..._args: unknown[]
       ): Promise<{ name: string; type: string }[]> => [],
       renameDatabase: disabledMutation,
       renameTable: disabledMutation,
-      showSystemObjectsFor: new Set<string>(),
-      systemSchemas: [] as string[],
-      toggleSystemObjects: () => undefined,
     }),
     [dbService.databaseName]
   );

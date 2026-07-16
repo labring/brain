@@ -11,6 +11,7 @@ import {
   dataBrowserPostgresSchemaFolders,
   dataBrowserRedisKeysFolder,
   dataBrowserShouldUseDefaultExpandedTree,
+  dataBrowserVisibleTreeChildren,
 } from "./SidebarTreeProvider";
 import {
   sidebarTreeNodeChildrenAtom,
@@ -85,6 +86,64 @@ test("tree maps access object refs to DB Service scoped node types", () => {
       dataBrowserObjectNodeId(dbServiceKey, accessObject.ref)
     );
   }
+});
+
+test("tree nodes carry the access object's system classification", () => {
+  const systemNode = dataBrowserObjectToTreeNode({
+    dbServiceKey,
+    object: {
+      ...object("table", ["app", "public", "postgres_log"]),
+      system: true,
+    },
+    parentId: "parent",
+  });
+  const userNode = dataBrowserObjectToTreeNode({
+    dbServiceKey,
+    object: object("table", ["app", "public", "users"]),
+    parentId: "parent",
+  });
+
+  assert.equal(systemNode?.metadata.system, true);
+  assert.equal(userNode?.metadata.system, undefined);
+});
+
+test("system objects stay hidden until their own Logical Database is revealed", () => {
+  const userTable = dataBrowserObjectToTreeNode({
+    dbServiceKey,
+    object: object("table", ["app", "public", "users"]),
+    parentId: "parent",
+  });
+  const systemTable = dataBrowserObjectToTreeNode({
+    dbServiceKey,
+    object: {
+      ...object("table", ["app", "public", "postgres_log"]),
+      system: true,
+    },
+    parentId: "parent",
+  });
+  const otherDatabaseSystemTable = dataBrowserObjectToTreeNode({
+    dbServiceKey,
+    object: {
+      ...object("table", ["other", "public", "postgres_log"]),
+      system: true,
+    },
+    parentId: "other-parent",
+  });
+  const children = [userTable, systemTable, otherDatabaseSystemTable].filter(
+    (node): node is NonNullable<typeof node> => node !== null
+  );
+
+  assert.deepEqual(dataBrowserVisibleTreeChildren(children, new Set()), [
+    userTable,
+  ]);
+  assert.deepEqual(dataBrowserVisibleTreeChildren(children, new Set(["app"])), [
+    userTable,
+    systemTable,
+  ]);
+  assert.deepEqual(
+    dataBrowserVisibleTreeChildren(children, new Set(["app", "other"])),
+    children
+  );
 });
 
 test("postgres schema children are Tables and Views virtual folders", () => {
