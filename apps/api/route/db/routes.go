@@ -22,6 +22,7 @@ import (
 func Register(api huma.API) {
 	grp := huma.NewGroup(api, "/api/db/v1alpha1")
 	registerGet(grp)
+	registerConnectionString(grp)
 	registerAccessHealth(grp)
 	registerAccessObjects(grp)
 	registerAccessObject(grp)

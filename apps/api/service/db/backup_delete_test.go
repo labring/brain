@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 
-	transformdb "sealos/api/service/transform/db"
+	"sealos/api/service/orchestration"
 )
 
 func TestDeleteBackupForDBDeletesOnlySelectedCompletedBackup(t *testing.T) {
@@ -166,7 +166,7 @@ func backupDeleteBackup(name string, namespace string, clusterUID string, phase 
 	obj.SetName(name)
 	obj.SetNamespace(namespace)
 	obj.SetLabels(map[string]string{
-		transformdb.KubeBlocksBackupClusterUIDLabel: clusterUID,
+		orchestration.KubeBlocksBackupClusterUIDLabel: clusterUID,
 	})
 	_ = unstructured.SetNestedField(obj.Object, phase, "status", "phase")
 	return obj

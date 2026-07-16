@@ -36,6 +36,10 @@ const (
 	DBProviderCRLabel                = "sealos-db-provider-cr"
 	DBProviderManagedByLabel         = "app.kubernetes.io/managed-by"
 	DBProviderManagedByValue         = "kbcli"
+
+	// KubeBlocksBackupClusterUIDLabel is the label on Backup resources that
+	// references the KubeBlocks Cluster UID.
+	KubeBlocksBackupClusterUIDLabel = "dataprotection.kubeblocks.io/cluster-uid"
 )
 
 func mergeStringMap(maps ...map[string]string) map[string]string {

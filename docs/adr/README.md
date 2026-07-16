@@ -44,6 +44,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0050 — Snapshot Glass: Replace the Live Backdrop-Filter Sheet with a Pre-Blurred Texture](0050-snapshot-glass-pre-blurred-backdrop-texture.md)
 - [0051 — Express Workbench Orchestration as Pure Transitions](0051-express-workbench-orchestration-as-pure-transitions.md)
 - [0052 — Use In-Cluster Kubernetes Transport in Pods and Kubeconfig Transport Off-Cluster](0052-use-kubeconfig-transport-off-cluster.md)
+- [0052 — Serve DB connection strings as credential-free templates with explicit reveal](0052-serve-db-connection-strings-as-credential-free-templates.md)
 
 ## Conventions
 

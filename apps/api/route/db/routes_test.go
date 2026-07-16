@@ -899,6 +899,225 @@ func TestBackupDeleteErrorStatusMapping(t *testing.T) {
 	}
 }
 
+func TestRegisterIncludesDBConnectionStringRevealRoute(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/connection-string"]
+	if path == nil || path.Get == nil {
+		t.Fatalf("expected GET /api/db/v1alpha1/connection-string to be registered")
+	}
+	if path.Get.OperationID != "db-connection-string" {
+		t.Fatalf("unexpected operation ID: %q", path.Get.OperationID)
+	}
+	description := path.Get.Description
+	for _, want := range []string{
+		"complete DB Connection DSN",
+		"not cacheable",
+		"reveal or copy",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("expected connection-string docs to mention %q, got: %s", want, description)
+		}
+	}
+}
+
+func TestDBConnectionStringRevealRejectsInvalidKindAtHTTPBoundary(t *testing.T) {
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+	Register(api)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/db/v1alpha1/connection-string?name=pg&kind=internal", nil)
+	req.Header.Set("Authorization", "Bearer not-a-kubeconfig")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected invalid kind to be rejected before auth, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("kind")) {
+		t.Fatalf("expected schema validation to reference kind, got: %s", w.Body.String())
+	}
+}
+
+func TestDBConnectionStringRevealSetsNoStoreCacheHeaders(t *testing.T) {
+	if got := dbConnectionStringNoCacheHeader(); got != "no-cache, no-store, must-revalidate" {
+		t.Fatalf("reveal Cache-Control = %q, want no-store directives", got)
+	}
+
+	router := chi.NewRouter()
+	api := humachi.New(router, huma.DefaultConfig("test", "0.0.0"))
+	Register(api)
+
+	path := api.OpenAPI().Paths["/api/db/v1alpha1/connection-string"]
+	if path == nil || path.Get == nil {
+		t.Fatal("expected GET /api/db/v1alpha1/connection-string to be registered")
+	}
+	response := path.Get.Responses["200"]
+	if response == nil {
+		t.Fatal("expected a 200 response contract for the reveal route")
+	}
+	for _, header := range []string{"Cache-Control", "Pragma"} {
+		if response.Headers[header] == nil {
+			t.Fatalf("expected the reveal response contract to declare the %s header", header)
+		}
+	}
+}
+
+func TestApplyDBConnectionStateComposesCredentialFreeTemplate(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{"engine": "postgresql"},
+	}
+
+	applyDBConnectionState(nil, db, "db-main", "ns-a")
+
+	status, ok := db["status"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("status is %T, want map", db["status"])
+	}
+	private, _ := status["connectionStringPrivate"].(string)
+	if private != "postgresql://<username>:<password>@db-main-postgresql.ns-a.svc:5432/postgres" {
+		t.Fatalf("connectionStringPrivate = %q, want the credential-free template", private)
+	}
+	if !strings.Contains(private, dbConnectionTemplateUserInfo) {
+		t.Fatalf("connectionStringPrivate %q must carry the literal placeholder userinfo", private)
+	}
+	if _, ok := status["connectionStringPublic"]; ok {
+		t.Fatalf("connectionStringPublic should be absent without public access, got %v", status["connectionStringPublic"])
+	}
+}
+
+func TestDBRevealedConnectionStringComposesPrivateKind(t *testing.T) {
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{"engine": "postgresql"},
+	}
+
+	got, err := dbRevealedConnectionString(nil, db, "private", "db-main", "ns-a")
+	if err != nil {
+		t.Fatalf("dbRevealedConnectionString returned error: %v", err)
+	}
+	if got != "postgresql://db-main-postgresql.ns-a.svc:5432/postgres" {
+		t.Fatalf("revealed private DSN = %q, want composed service DSN", got)
+	}
+}
+
+func TestDBRevealedConnectionStringRejectsUnknownKind(t *testing.T) {
+	_, err := dbRevealedConnectionString(nil, map[string]interface{}{}, "internal", "db-main", "ns-a")
+	statusErr, ok := err.(huma.StatusError)
+	if !ok {
+		t.Fatalf("expected Huma status error, got %T", err)
+	}
+	if statusErr.GetStatus() != http.StatusBadRequest {
+		t.Fatalf("unknown kind status = %d, want 400", statusErr.GetStatus())
+	}
+}
+
+func TestDBConnectionTemplatesCarryPlaceholderCredentialsPerEngine(t *testing.T) {
+	tests := []struct {
+		engine   string
+		database string
+		want     string
+	}{
+		{
+			engine: "postgresql",
+			want:   "postgresql://<username>:<password>@db-main.ns-a.svc:5432/postgres",
+		},
+		{
+			engine:   "postgresql",
+			database: "appdb",
+			want:     "postgresql://<username>:<password>@db-main.ns-a.svc:5432/appdb",
+		},
+		{
+			engine: "mysql",
+			want:   "mysql://<username>:<password>@db-main.ns-a.svc:5432/mysql",
+		},
+		{
+			engine: "mongodb",
+			want:   "mongodb://<username>:<password>@db-main.ns-a.svc:5432/admin",
+		},
+		{
+			engine: "redis",
+			want:   "redis://<username>:<password>@db-main.ns-a.svc:5432/",
+		},
+		{
+			engine: "unknown",
+			want:   "db-main.ns-a.svc:5432",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.engine+"/"+tt.database, func(t *testing.T) {
+			db := map[string]interface{}{
+				"spec": map[string]interface{}{"engine": tt.engine},
+			}
+			got := dbConnectionTemplate(db, "db-main.ns-a.svc:5432", tt.database)
+			if got != tt.want {
+				t.Fatalf("connection template = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDBDatabaseNameFromSecretReadsOnlyNonCredentialKeys(t *testing.T) {
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"data": map[string]interface{}{
+			"database": "YXBwZGI=",
+			"password": "czNjcjN0",
+			"username": "YWxpY2U=",
+		},
+	}}
+
+	if got := dbDatabaseNameFromSecret(secret); got != "appdb" {
+		t.Fatalf("database name = %q, want appdb", got)
+	}
+
+	db := map[string]interface{}{
+		"spec": map[string]interface{}{"engine": "postgresql"},
+	}
+	template := dbConnectionTemplate(db, "pg.ns-a.svc:5432", dbDatabaseNameFromSecret(secret))
+	if template != "postgresql://<username>:<password>@pg.ns-a.svc:5432/appdb" {
+		t.Fatalf("connection template = %q, want placeholder credentials with real database", template)
+	}
+	for _, credential := range []string{"alice", "s3cr3t"} {
+		if strings.Contains(template, credential) {
+			t.Fatalf("connection template %q leaked decoded credential %q", template, credential)
+		}
+	}
+}
+
+func TestDBRevealedConnectionStringComposesCredentialsPerEngine(t *testing.T) {
+	secret := &unstructured.Unstructured{Object: map[string]interface{}{
+		"data": map[string]interface{}{
+			"password": "czNjcjN0",
+			"username": "YWxpY2U=",
+		},
+	}}
+	tests := []struct {
+		engine string
+		want   string
+	}{
+		{engine: "postgresql", want: "postgresql://alice:s3cr3t@db.ns-a.svc:5432/postgres"},
+		{engine: "mysql", want: "mysql://alice:s3cr3t@db.ns-a.svc:5432/mysql"},
+		{engine: "mongodb", want: "mongodb://alice:s3cr3t@db.ns-a.svc:5432/admin"},
+		{engine: "redis", want: "redis://alice:s3cr3t@db.ns-a.svc:5432/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.engine, func(t *testing.T) {
+			db := map[string]interface{}{
+				"spec": map[string]interface{}{"engine": tt.engine},
+			}
+			got := dbConnectionString(db, "db.ns-a.svc:5432", dbConnectionCredentialsFromSecret(secret))
+			if got != tt.want {
+				t.Fatalf("revealed connection string = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDBConnectionStringsUseComponentPrivateAddressesWithoutSecrets(t *testing.T) {
 	t.Setenv("DB_PUBLIC_HOST", "192.168.10.189.nip.io")
 

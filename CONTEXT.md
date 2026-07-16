@@ -204,9 +204,15 @@ _Avoid_: UI-only token, hidden binding metadata.
 
 ### DB Connection DSN
 
-A complete connection string for one DB Service, including the credentials needed by an application to connect when the DB engine requires credentials.
+A complete connection string for one DB Service, including the credentials needed by an application to connect when the DB engine requires credentials. A DB Connection DSN is produced only by an explicit reveal or copy action; default DB read surfaces carry a DB Connection Template instead.
 
 _Avoid_: Address-only DSN, credential-free DATABASE_URL.
+
+### DB Connection Template
+
+A credential-free connection string for one DB Service whose username and password segments are literal placeholders and whose address and database name are real. The DB Connection Template identifies which DB Service a value points at without containing credentials, and is what DB read surfaces carry by default.
+
+_Avoid_: Masked DSN, redacted connection string.
 
 ## Settings
 

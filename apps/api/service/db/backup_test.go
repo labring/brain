@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/dynamic/fake"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	transformdb "sealos/api/service/transform/db"
+	"sealos/api/service/orchestration"
 )
 
 func testBackupDynamicClient(objects ...runtime.Object) dynamic.Interface {
@@ -84,7 +84,7 @@ func TestCreateBackupForDBWithClientCreatesManualBackupMetadata(t *testing.T) {
 		t.Fatalf("backup type annotation = %v, want manual", got)
 	}
 	labels := metadata["labels"].(map[string]interface{})
-	if got := labels[transformdb.KubeBlocksBackupClusterUIDLabel]; got != "cluster-uid-1" {
+	if got := labels[orchestration.KubeBlocksBackupClusterUIDLabel]; got != "cluster-uid-1" {
 		t.Fatalf("cluster UID label = %v, want cluster-uid-1", got)
 	}
 	spec := backup["spec"].(map[string]interface{})
