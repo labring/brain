@@ -1368,6 +1368,7 @@ func TestAccessHealthErrorStatusMapping(t *testing.T) {
 		{name: "unsupported engine", err: dbsvc.ErrAccessHealthUnsupported, want: http.StatusUnprocessableEntity},
 		{name: "missing whodb config", err: dbsvc.ErrAccessHealthWhoDBMissing, want: http.StatusServiceUnavailable},
 		{name: "unavailable whodb", err: fmt.Errorf("%w: refused", dbsvc.ErrAccessHealthWhoDBUnavailable), want: http.StatusServiceUnavailable},
+		{name: "query-level database error", err: &dbsvc.WhoDBQueryError{Message: "connection to database failed"}, want: http.StatusServiceUnavailable},
 		{name: "timeout", err: fmt.Errorf("%w: deadline", dbsvc.ErrAccessHealthWhoDBTimeout), want: http.StatusGatewayTimeout},
 	}
 
@@ -1382,6 +1383,22 @@ func TestAccessHealthErrorStatusMapping(t *testing.T) {
 				t.Fatalf("expected status %d, got %d", tt.want, statusErr.GetStatus())
 			}
 		})
+	}
+}
+
+func TestAccessObjectsErrorCarriesDatabaseMessageForQueryFailures(t *testing.T) {
+	queryErr := &dbsvc.WhoDBQueryError{Message: `ERROR: could not open file "postgresql-2.csv" for reading (SQLSTATE 58P01)`}
+
+	err := accessObjectsError(queryErr)
+	model, ok := err.(*huma.ErrorModel)
+	if !ok {
+		t.Fatalf("expected Huma error model, got %T", err)
+	}
+	if model.GetStatus() != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for a query-level database error, got %d", model.GetStatus())
+	}
+	if model.Detail != queryErr.Message {
+		t.Fatalf("expected detail to carry the database's own message, got %q", model.Detail)
 	}
 }
 
@@ -1400,6 +1417,8 @@ func TestAccessObjectsErrorStatusMapping(t *testing.T) {
 		{name: "invalid export format", err: dbsvc.ErrAccessExportInvalidFormat, want: http.StatusBadRequest},
 		{name: "unsupported engine", err: dbsvc.ErrAccessHealthUnsupported, want: http.StatusUnprocessableEntity},
 		{name: "missing whodb config", err: dbsvc.ErrAccessHealthWhoDBMissing, want: http.StatusServiceUnavailable},
+		{name: "unavailable whodb", err: fmt.Errorf("%w: refused", dbsvc.ErrAccessHealthWhoDBUnavailable), want: http.StatusServiceUnavailable},
+		{name: "query-level database error", err: &dbsvc.WhoDBQueryError{Message: "ERROR: relation does not exist"}, want: http.StatusUnprocessableEntity},
 		{name: "timeout", err: fmt.Errorf("%w: deadline", dbsvc.ErrAccessHealthWhoDBTimeout), want: http.StatusGatewayTimeout},
 	}
 

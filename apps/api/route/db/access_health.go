@@ -75,7 +75,12 @@ func registerAccessHealth(grp huma.API) {
 }
 
 func accessHealthError(err error) error {
+	var whoDBQueryErr *dbsvc.WhoDBQueryError
 	switch {
+	case errors.As(err, &whoDBQueryErr):
+		// The health check asks whether access is wired up at all, so a
+		// query-level failure still reads as unavailability here.
+		return huma.Error503ServiceUnavailable("WhoDB is unavailable", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthProjectID):
 		return huma.Error400BadRequest("Brain Project ID is required", err)
 	case errors.Is(err, dbsvc.ErrAccessHealthDBNotFound):

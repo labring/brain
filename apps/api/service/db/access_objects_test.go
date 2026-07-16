@@ -645,6 +645,64 @@ func TestAccessObjectsListsChildrenUnderReturnedRef(t *testing.T) {
 	}
 }
 
+func TestAccessObjectsPromoteSystemMarkerToTypedBoolean(t *testing.T) {
+	store := readyAccessObjectsStore()
+	whodb := &recordingWhoDBObjectClient{
+		objects: []WhoDBObject{
+			{
+				Ref:  WhoDBObjectRef{Kind: "Table", Path: []string{"postgres", "public", "users"}},
+				Kind: "Table",
+				Name: "users",
+				Path: []string{"postgres", "public", "users"},
+				Metadata: map[string]string{
+					"Type": "BASE TABLE",
+				},
+			},
+			{
+				Ref:  WhoDBObjectRef{Kind: "Table", Path: []string{"postgres", "public", "postgres_log"}},
+				Kind: "Table",
+				Name: "postgres_log",
+				Path: []string{"postgres", "public", "postgres_log"},
+				Metadata: map[string]string{
+					"Type":                       "BASE TABLE",
+					whoDBSystemObjectMetadataKey: "true",
+				},
+			},
+		},
+	}
+	svc := AccessObjectsService{Store: store, WhoDB: whodb}
+
+	result, err := svc.List(context.Background(), AccessObjectsRequest{
+		Name:      "pg-main",
+		Namespace: "ns-a",
+		ProjectID: "project-1",
+		Parent:    &AccessObjectRef{Kind: "schema", Path: []string{"postgres", "public"}},
+	})
+	if err != nil {
+		t.Fatalf("expected object browsing to succeed: %v", err)
+	}
+	if len(result.Objects) != 2 {
+		t.Fatalf("expected both objects listed, got %+v", result.Objects)
+	}
+	if result.Objects[0].System {
+		t.Fatalf("expected user table to stay non-system: %+v", result.Objects[0])
+	}
+	if !result.Objects[1].System {
+		t.Fatalf("expected marked object promoted to system: %+v", result.Objects[1])
+	}
+	if result.Objects[1].Metadata["Type"] != "BASE TABLE" {
+		t.Fatalf("expected remaining metadata preserved: %+v", result.Objects[1].Metadata)
+	}
+
+	body, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("failed to marshal result: %v", err)
+	}
+	if strings.Contains(string(body), whoDBSystemObjectMetadataKey) {
+		t.Fatalf("expected transport marker stripped from the response: %s", string(body))
+	}
+}
+
 func TestAccessObjectsNarrowsResultsByKind(t *testing.T) {
 	store := readyAccessObjectsStore()
 	whodb := &recordingWhoDBObjectClient{

@@ -20,6 +20,19 @@ type WhoDBHTTPClient struct {
 	timeout time.Duration
 }
 
+// WhoDBQueryError is a query-level database error surfaced by WhoDB as a
+// GraphQL error: the access backend answered, but the database rejected the
+// operation. It carries the database's own message so routes can put it in
+// the response detail, keeping these failures distinct from transport-level
+// unavailability (ErrAccessHealthWhoDBUnavailable).
+type WhoDBQueryError struct {
+	Message string
+}
+
+func (e *WhoDBQueryError) Error() string {
+	return "db access query failed: " + e.Message
+}
+
 type whoDBObjectPayload struct {
 	Ref struct {
 		Kind string   `json:"Kind"`
@@ -320,7 +333,7 @@ func (c *WhoDBHTTPClient) query(ctx context.Context, credentials WhoDBSourceCred
 		if isWhoDBObjectNotFound(message) {
 			return fmt.Errorf("%w: %s", ErrAccessObjectsNotFound, message)
 		}
-		return fmt.Errorf("%w: %s", ErrAccessHealthWhoDBUnavailable, message)
+		return &WhoDBQueryError{Message: message}
 	}
 	if out != nil {
 		if err := json.Unmarshal(response.Data, out); err != nil {
