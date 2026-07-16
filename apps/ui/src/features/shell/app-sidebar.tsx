@@ -116,6 +116,7 @@ function ProjectsShortcutIcon({
 
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
+const SEALOS_DESKTOP_URL = "https://usw-1.sealos.io";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
@@ -155,12 +156,6 @@ async function openCostCenterApp() {
       type: "InternalAppCall",
       mode: "upgrade",
     },
-  });
-}
-
-async function closeBrain() {
-  await sealosApp.runEvents("closeDesktopApp", {
-    appKey: "system-brain",
   });
 }
 
@@ -204,12 +199,6 @@ function AppSidebarLinkButton({
 }
 
 function AppSidebarDesktopReturn() {
-  const handleClick = () => {
-    closeBrain().catch((error: unknown) => {
-      console.warn("[AppSidebarDesktopReturn] close Brain failed:", error);
-    });
-  };
-
   return (
     <Tooltip>
       <TooltipTrigger
@@ -217,9 +206,15 @@ function AppSidebarDesktopReturn() {
           <AppIconButton
             aria-label="Back to Sealos Desktop"
             className={APP_SIDEBAR_LINK_CLASS}
-            onClick={handleClick}
+            nativeButton={false}
+            render={
+              <Link
+                href={SEALOS_DESKTOP_URL}
+                rel="noopener noreferrer"
+                target="_blank"
+              />
+            }
             size="lg"
-            type="button"
             variant="quiet"
           >
             <House aria-hidden className="size-4" strokeWidth={1.8} />
