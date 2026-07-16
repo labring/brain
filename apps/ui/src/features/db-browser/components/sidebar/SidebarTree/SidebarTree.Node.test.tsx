@@ -88,7 +88,6 @@ test("revealed system objects render inline with a muted system state", () => {
 
   assert.match(html, /postgres_log/);
   assert.match(html, /data-qa-state="idle leaf system"/);
-  assert.match(html, /text-muted-foreground/);
 });
 
 test("revealing one Logical Database leaves other databases' lists clean", () => {

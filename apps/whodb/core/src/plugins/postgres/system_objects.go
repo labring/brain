@@ -94,10 +94,15 @@ func (p *PostgresPlugin) querySystemObjectNames(config *engine.PluginConfig, sch
 }
 
 // markSystemObjects appends the System Object attribute to every classified
-// unit. It fails open: any classification error leaves the listing intact and
-// unmarked, which also shields the plugins that inherit this listing
-// (CockroachDB, QuestDB, YugabyteDB) from catalog incompatibilities.
+// unit. Classification is scoped to PostgreSQL proper: the plugins inheriting
+// this listing (CockroachDB, QuestDB, YugabyteDB) keep their current behavior
+// — a fingerprint that happened to succeed there would hide objects the UI
+// offers no reveal toggle for. It also fails open: any classification error
+// leaves the listing intact and unmarked.
 func (p *PostgresPlugin) markSystemObjects(config *engine.PluginConfig, schema string, units []engine.StorageUnit) {
+	if p.Type != engine.DatabaseType_Postgres {
+		return
+	}
 	classify := p.classifySystemObjects
 	if classify == nil {
 		classify = p.querySystemObjectNames

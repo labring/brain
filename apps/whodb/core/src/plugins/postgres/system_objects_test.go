@@ -89,6 +89,46 @@ func TestMarkSystemObjectsFailsOpenOnClassificationError(t *testing.T) {
 	}
 }
 
+func TestMarkSystemObjectsSkipsPluginsInheritingThePostgresListing(t *testing.T) {
+	inheritors := map[string]*engine.Plugin{
+		"cockroachdb": NewCockroachDBPlugin(),
+		"questdb":     NewQuestDBPlugin(),
+		"yugabytedb":  NewYugabyteDBPlugin(),
+	}
+	for name, pluginDef := range inheritors {
+		t.Run(name, func(t *testing.T) {
+			postgres := postgresPluginOf(t, pluginDef)
+			postgres.classifySystemObjects = func(config *engine.PluginConfig, schema string) (map[string]bool, error) {
+				t.Fatal("expected classification to be skipped for non-PostgreSQL plugins")
+				return nil, nil
+			}
+
+			units := []engine.StorageUnit{{Name: "postgres_log"}}
+			postgres.markSystemObjects(engine.NewPluginConfig(&engine.Credentials{}), "public", units)
+
+			if hasSystemObjectAttribute(units[0]) {
+				t.Fatal("expected no System Object marks outside PostgreSQL proper")
+			}
+		})
+	}
+}
+
+func postgresPluginOf(t *testing.T, pluginDef *engine.Plugin) *PostgresPlugin {
+	t.Helper()
+
+	switch plugin := pluginDef.PluginFunctions.(type) {
+	case *CockroachDBPlugin:
+		return &plugin.PostgresPlugin
+	case *QuestDBPlugin:
+		return &plugin.PostgresPlugin
+	case *YugabyteDBPlugin:
+		return &plugin.PostgresPlugin
+	default:
+		t.Fatalf("unexpected plugin type %T", pluginDef.PluginFunctions)
+		return nil
+	}
+}
+
 func TestMarkSystemObjectsLeavesUnitsUntouchedWhenNoneClassified(t *testing.T) {
 	plugin := systemObjectsTestPlugin(t)
 	plugin.classifySystemObjects = func(config *engine.PluginConfig, schema string) (map[string]bool, error) {
