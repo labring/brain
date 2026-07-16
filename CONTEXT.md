@@ -176,6 +176,12 @@ An open-tab presentation of one Logical Database object within DB Access. Within
 
 Its interaction state is retained while the tab remains open, including while another tab is active; closing the tab discards that state, so reopening the object starts from the default view state.
 
+### System Object
+
+A Logical Database object provisioned by the database engine, an installed extension, or platform operator tooling rather than authored by the user. System Objects are not part of the user's own data model: DB Access omits them from the default object list and shows them only on explicit request within a DB Access Session.
+
+_Avoid_: operator object, Spilo object, internal table, system table.
+
 ## Database Binding & AP Environment
 
 ### Database Binding
