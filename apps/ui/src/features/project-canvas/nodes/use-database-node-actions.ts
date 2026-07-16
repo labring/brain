@@ -190,7 +190,10 @@ export function useCanvasDatabaseNodeActions({
 
     const actions: DatabaseNodeActions = {
       ...base,
-      copyConnection: commands.copyDatabaseConnection,
+      // Copy fetches the complete DB Connection DSN on demand (ADR-0052);
+      // the node's connection rows only ever hold the template.
+      copyConnection: (connection) =>
+        commands.copyDatabaseConnection(connection, workload),
       ...(togglePublicConnection === undefined
         ? {}
         : { togglePublicConnection }),

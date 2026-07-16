@@ -1,6 +1,10 @@
 "use client";
 
-import { useDbSettingsOperations } from "@workspace/api/hooks";
+import {
+  useDbConnectionStringResolver,
+  useDbSettingsOperations,
+} from "@workspace/api/hooks";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
 import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import {
@@ -8,7 +12,6 @@ import {
   type DatabaseNodeConnection,
   type DatabaseNodePublicConnection,
   getDatabaseNodeConnectionKey,
-  maskDatabaseConnectionString,
 } from "@workspace/ui/components/database-node/database-node";
 import {
   ResourceSettingsDraftFooter,
@@ -20,6 +23,8 @@ import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Cpu,
+  Eye,
+  EyeClosed,
   HardDrive,
   type LucideIcon,
   MemoryStick,
@@ -46,6 +51,10 @@ import {
   type PendingSettingsOwnerIdentity,
   type PendingSettingsUpdateEntry,
 } from "@/features/resource-settings/pending-settings-updates";
+import {
+  copyResolvedSecretValue,
+  SETTINGS_REVEAL_DURATION_MS,
+} from "@/features/resource-settings/reveal";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
@@ -178,6 +187,12 @@ interface DatabaseSettingsPaneProps {
 export interface DatabaseSettingsSectionsProps {
   data: DbSettingsData;
   editable?: boolean;
+  /**
+   * Enables the explicit reveal/copy actions on connection rows: rows display
+   * credential-free DB Connection Templates, and the complete DB Connection
+   * DSN is fetched on demand under this kubeconfig (ADR-0052).
+   */
+  kubeconfig?: string;
   onSubmitPatch?: (patch: DatabaseSettingsPatch) => Promise<unknown> | unknown;
   onUpdated?: () => Promise<unknown>;
   routingDomain?: string;
@@ -239,6 +254,9 @@ function displayConnectionLabel(connection: DatabaseNodeConnection) {
   return "Public Connection";
 }
 
+// Connection values are credential-free DB Connection Templates (ADR-0052).
+// The complete DB Connection DSN appears only through the explicit reveal
+// action and is fetched on demand by copy; page state keeps the template.
 function getConnectionAddressDisplayValue(
   connection: DatabaseNodeConnection,
   publicConnectionEnabled = connection.kind === "public"
@@ -250,9 +268,7 @@ function getConnectionAddressDisplayValue(
   }
 
   if (connection.value) {
-    return (
-      connection.displayValue ?? maskDatabaseConnectionString(connection.value)
-    );
+    return connection.displayValue ?? connection.value;
   }
 
   if (connection.kind === "public") {
@@ -262,76 +278,85 @@ function getConnectionAddressDisplayValue(
   return connection.unavailableMessage ?? "Connection unavailable";
 }
 
-function DatabaseSettingsConnectionValueText({
-  displayValue,
-  value,
-}: {
-  displayValue: string;
-  value?: string;
-}) {
-  if (!value || displayValue !== maskDatabaseConnectionString(value)) {
-    return <span className="min-w-0 truncate">{displayValue}</span>;
-  }
-
-  return (
-    <>
-      <span className="min-w-0 truncate group-focus-within/copyable-row:hidden group-hover/copyable-row:hidden">
-        {displayValue}
-      </span>
-      <span className="hidden min-w-0 truncate group-focus-within/copyable-row:inline group-hover/copyable-row:inline">
-        {value}
-      </span>
-    </>
-  );
-}
-
-function databaseSettingsConnectionTitle(
-  displayValue: string | null,
-  value?: string
-) {
-  if (value && displayValue === maskDatabaseConnectionString(value)) {
-    return "";
-  }
-  return displayValue ?? undefined;
-}
-
 function shouldShowConnectionAddress(connection: DatabaseNodeConnection) {
   return connection.kind === "private" || connection.kind === "public";
 }
+
+type DatabaseSettingsConnectionCopyHandler = (
+  connection: DatabaseNodeConnection
+) => Promise<void>;
+
+type DatabaseSettingsConnectionRevealHandler = (
+  connection: DatabaseNodeConnection,
+  rowKey: string
+) => void;
 
 function DatabaseSettingsConnectionAddressRow({
   connection,
   controlsDisabled,
   index,
+  onCopyConnection,
   onPublicConnectionChange,
+  onRevealConnection,
   publicConnectionEnabled,
+  revealAvailable,
+  revealedValue,
 }: {
   connection: DatabaseNodeConnection;
   controlsDisabled: boolean;
   index: number;
+  onCopyConnection: DatabaseSettingsConnectionCopyHandler;
   onPublicConnectionChange: (nextEnabled: boolean) => void;
+  onRevealConnection: DatabaseSettingsConnectionRevealHandler;
   publicConnectionEnabled: boolean;
+  revealAvailable: boolean;
+  revealedValue?: string;
 }) {
-  const displayValue = getConnectionAddressDisplayValue(
+  const templateDisplayValue = getConnectionAddressDisplayValue(
     connection,
     publicConnectionEnabled
   );
+  const displayValue = revealedValue ?? templateDisplayValue;
+  const revealed = revealedValue !== undefined;
   const displayLabel = displayConnectionLabel(connection);
   const copyable =
     connection.kind === "public"
       ? publicConnectionEnabled && Boolean(connection.value)
       : canCopyDatabaseNodeConnection(connection);
-  const copyValue = copyable ? connection.value : undefined;
-  const title = databaseSettingsConnectionTitle(displayValue, connection.value);
+  const rowKey = getDatabaseNodeConnectionKey(connection, index);
+  const title = displayValue ?? undefined;
   const publicSwitch =
     connection.kind === "public" ? (
-      <CanvasNode.CopyableRowControl className="pointer-events-auto relative z-20 flex shrink-0 items-center">
-        <DatabaseSettingsPublicConnectionSwitch
-          connection={connection}
-          controlsDisabled={controlsDisabled}
-          onCheckedChange={onPublicConnectionChange}
-          publicConnectionEnabled={publicConnectionEnabled}
-        />
+      <DatabaseSettingsPublicConnectionSwitch
+        connection={connection}
+        controlsDisabled={controlsDisabled}
+        onCheckedChange={onPublicConnectionChange}
+        publicConnectionEnabled={publicConnectionEnabled}
+      />
+    ) : null;
+  const revealButton =
+    revealAvailable && copyable ? (
+      <AppIconButton
+        aria-label={`${revealed ? "Hide" : "Reveal"} ${displayLabel}`}
+        aria-pressed={revealed}
+        className="text-muted-foreground hover:text-foreground"
+        onClick={() => onRevealConnection(connection, rowKey)}
+        size="sm"
+        type="button"
+        variant="quiet"
+      >
+        {revealed ? (
+          <EyeClosed aria-hidden className="size-4" />
+        ) : (
+          <Eye aria-hidden className="size-4" />
+        )}
+      </AppIconButton>
+    ) : null;
+  const rowControls =
+    publicSwitch != null || revealButton != null ? (
+      <CanvasNode.CopyableRowControl className="pointer-events-auto relative z-20 flex shrink-0 items-center gap-1">
+        {revealButton}
+        {publicSwitch}
       </CanvasNode.CopyableRowControl>
     ) : null;
 
@@ -343,9 +368,10 @@ function DatabaseSettingsConnectionAddressRow({
       )}
       copyAriaLabel={`Copy ${displayLabel}`}
       copyable={copyable}
-      copyValue={copyValue}
+      copyValue={connection.value}
       data-slot="database-settings-connection-address-row"
-      rowKey={getDatabaseNodeConnectionKey(connection, index)}
+      onCopy={() => onCopyConnection(connection)}
+      rowKey={rowKey}
       title={title}
     >
       {({ copied, copyable: rowCopyable }) => (
@@ -359,7 +385,7 @@ function DatabaseSettingsConnectionAddressRow({
             <span className="min-w-0 truncate text-muted-foreground text-sm leading-5">
               {displayLabel}
             </span>
-            {publicSwitch}
+            {rowControls}
           </div>
           {displayValue === null ? null : (
             <div
@@ -371,13 +397,11 @@ function DatabaseSettingsConnectionAddressRow({
                   : "text-muted-foreground"
               )}
               data-copied={copied ? "true" : undefined}
+              data-revealed={revealed ? "true" : undefined}
               data-slot="database-settings-connection-address-value"
               title={title}
             >
-              <DatabaseSettingsConnectionValueText
-                displayValue={displayValue}
-                value={connection.value}
-              />
+              <span className="min-w-0 truncate">{displayValue}</span>
               <CanvasNode.CopyableRowIndicator />
             </div>
           )}
@@ -414,13 +438,21 @@ function DatabaseSettingsPublicConnectionSwitch({
 function DatabaseSettingsConnectionAddressList({
   connections,
   controlsDisabled,
+  onCopyConnection,
   onPublicConnectionChange,
+  onRevealConnection,
   publicConnectionEnabled,
+  revealAvailable,
+  revealedValues,
 }: {
   connections: readonly DatabaseNodeConnection[];
   controlsDisabled: boolean;
+  onCopyConnection: DatabaseSettingsConnectionCopyHandler;
   onPublicConnectionChange: (nextEnabled: boolean) => void;
+  onRevealConnection: DatabaseSettingsConnectionRevealHandler;
   publicConnectionEnabled: boolean;
+  revealAvailable: boolean;
+  revealedValues: ReadonlyMap<string, string>;
 }) {
   const visibleConnections = connections.filter(shouldShowConnectionAddress);
 
@@ -447,8 +479,14 @@ function DatabaseSettingsConnectionAddressList({
             controlsDisabled={controlsDisabled}
             index={index}
             key={getDatabaseNodeConnectionKey(connection, index)}
+            onCopyConnection={onCopyConnection}
             onPublicConnectionChange={onPublicConnectionChange}
+            onRevealConnection={onRevealConnection}
             publicConnectionEnabled={publicConnectionEnabled}
+            revealAvailable={revealAvailable}
+            revealedValue={revealedValues.get(
+              getDatabaseNodeConnectionKey(connection, index)
+            )}
           />
         ))}
       </div>
@@ -528,6 +566,7 @@ export function DatabaseSettingsPane({
     <DatabaseSettingsPaneContent
       data={data}
       editable={!readOnly && authReady}
+      kubeconfig={readOnly ? undefined : kubeconfig}
       onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
       onSubmitPatch={!readOnly && authReady ? handleSubmitPatch : undefined}
       onUpdated={onUpdated}
@@ -540,6 +579,7 @@ export function DatabaseSettingsPane({
 export function useDatabaseSettingsSections({
   data,
   editable = true,
+  kubeconfig,
   onSubmitPatch,
   onUpdated,
   routingDomain,
@@ -551,6 +591,100 @@ export function useDatabaseSettingsSections({
   const desired = data.desired;
   const workloadName = data.workload.name.trim();
   const workloadNamespace = data.workload.namespace.trim();
+  const workload = data.workload;
+  const { authReady: revealAvailable, resolveConnectionString } =
+    useDbConnectionStringResolver({
+      kubeconfig: readOnly ? undefined : kubeconfig,
+    });
+  const [revealedConnectionValues, setRevealedConnectionValues] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
+  const connectionRevealTimeouts = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>()
+  );
+  useEffect(
+    () => () => {
+      for (const timeout of connectionRevealTimeouts.current.values()) {
+        clearTimeout(timeout);
+      }
+    },
+    []
+  );
+  const hideRevealedConnection = useCallback((rowKey: string) => {
+    const timeout = connectionRevealTimeouts.current.get(rowKey);
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+      connectionRevealTimeouts.current.delete(rowKey);
+    }
+    setRevealedConnectionValues((current) => {
+      if (!current.has(rowKey)) {
+        return current;
+      }
+      const next = new Map(current);
+      next.delete(rowKey);
+      return next;
+    });
+  }, []);
+  const revealConnection = useCallback<DatabaseSettingsConnectionRevealHandler>(
+    async (connection, rowKey) => {
+      if (revealedConnectionValues.has(rowKey)) {
+        hideRevealedConnection(rowKey);
+        return;
+      }
+      let value: string;
+      try {
+        value = await resolveConnectionString(workload, connection.kind);
+      } catch {
+        return;
+      }
+      if (value === "") {
+        return;
+      }
+      const existingTimeout = connectionRevealTimeouts.current.get(rowKey);
+      if (existingTimeout !== undefined) {
+        clearTimeout(existingTimeout);
+      }
+      setRevealedConnectionValues((current) =>
+        new Map(current).set(rowKey, value)
+      );
+      connectionRevealTimeouts.current.set(
+        rowKey,
+        setTimeout(() => {
+          connectionRevealTimeouts.current.delete(rowKey);
+          setRevealedConnectionValues((current) => {
+            const next = new Map(current);
+            next.delete(rowKey);
+            return next;
+          });
+        }, SETTINGS_REVEAL_DURATION_MS)
+      );
+    },
+    [
+      hideRevealedConnection,
+      resolveConnectionString,
+      revealedConnectionValues,
+      workload,
+    ]
+  );
+  const copyConnection = useCallback<DatabaseSettingsConnectionCopyHandler>(
+    async (connection) => {
+      try {
+        await copyResolvedSecretValue({
+          placeholderValue: connection.value ?? "",
+          resolveAvailable: revealAvailable,
+          resolveValue: () =>
+            resolveConnectionString(workload, connection.kind),
+        });
+      } catch (error) {
+        toastErrorDetail(
+          "Copy failed.",
+          "The connection string could not be fetched."
+        );
+        throw error;
+      }
+    },
+    [resolveConnectionString, revealAvailable, workload]
+  );
   const desiredCpuLimit = desired?.cpuLimit;
   const desiredExposeNodePort = desired?.exposeNodePort === true;
   const desiredMemoryLimit = desired?.memoryLimit;
@@ -1065,13 +1199,17 @@ export function useDatabaseSettingsSections({
           <DatabaseSettingsConnectionAddressList
             connections={data.connections}
             controlsDisabled={controlsDisabled}
+            onCopyConnection={copyConnection}
             onPublicConnectionChange={(nextEnabled) => {
               setDraft((current) => ({
                 ...current,
                 exposeNodePort: nextEnabled,
               }));
             }}
+            onRevealConnection={revealConnection}
             publicConnectionEnabled={draft.exposeNodePort}
+            revealAvailable={revealAvailable}
+            revealedValues={revealedConnectionValues}
           />
         ),
         icon: Network,
@@ -1085,6 +1223,7 @@ export function useDatabaseSettingsSections({
 export function DatabaseSettingsPaneContent({
   data,
   editable = true,
+  kubeconfig,
   renderShell = true,
   onSettingsLeaveGuardChange,
   onSubmitPatch,
@@ -1097,6 +1236,7 @@ export function DatabaseSettingsPaneContent({
   const model = useDatabaseSettingsSections({
     data,
     editable,
+    kubeconfig,
     onSubmitPatch,
     onUpdated,
     routingDomain,

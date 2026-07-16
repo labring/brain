@@ -490,11 +490,6 @@
           "target": "components/database-node/database-node.status.ts"
         },
         {
-          "path": "../../packages/ui/src/components/database-node/database-node.mask.ts",
-          "type": "registry:lib",
-          "target": "components/database-node/database-node.mask.ts"
-        },
-        {
           "path": "../../packages/ui/src/components/database-node/database-node.content.tsx",
           "type": "registry:component",
           "target": "components/database-node/database-node.content.tsx"

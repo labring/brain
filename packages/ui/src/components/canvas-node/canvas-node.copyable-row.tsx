@@ -219,14 +219,14 @@ export function CanvasNodeCopyableRow({
       return;
     }
 
-    showCopiedFeedback(rowKey);
-
+    // Feedback follows the copy: an onCopy handler may fetch the real value
+    // on demand, and a rejected copy must not read as "copied".
     if (onCopy) {
       await onCopy(copyValue, rowKey);
-      return;
+    } else {
+      await copyTextToClipboard(copyValue);
     }
-
-    await copyTextToClipboard(copyValue);
+    showCopiedFeedback(rowKey);
   }, [copyValue, onCopy, resolvedCopyable, rowKey, showCopiedFeedback]);
 
   return (

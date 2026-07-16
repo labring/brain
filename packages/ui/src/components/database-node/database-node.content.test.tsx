@@ -17,13 +17,8 @@ const OPEN_DATABASE_ACTIONS_RE = /Open database actions/;
 const DATABASE_NOT_RUNNING_RE = /Database is not running\./;
 const READ_ONLY_REASON_RE = /This project is read-only\./;
 const FIXED_CONNECTION_MASK_RE = />\*{12}</;
-const HOVER_REVEALED_CONNECTION_RE =
-  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>postgresql:\/\/alice:s3cr3t@db-main-postgresql.ns-a.svc:5432\/postgres</;
-const FIXED_CONNECTION_MASK_TITLE_RE = /title="\*{12}"/;
-const RAW_CONNECTION_TITLE_RE =
-  /title="postgresql:\/\/alice:s3cr3t@db-main-postgresql.ns-a.svc:5432\/postgres"/;
-const PARTIAL_CONNECTION_MASK_RE =
-  /postgresql:\/\/a\*\*\*\*\*\*\*:\*\*\*\*\*\*\*@db-main-postgresql/;
+const CONNECTION_TEMPLATE_RE =
+  />postgresql:\/\/&lt;username&gt;:&lt;password&gt;@db-main-postgresql.ns-a.svc:5432\/postgres</;
 const DELETION_DELAY_HINT_RE =
   /Your database is being deleted\. This may take a few minutes\./;
 const DELETION_DELAY_HINT_SLOT_RE =
@@ -106,7 +101,7 @@ test("DatabaseNodeContent explains the unavailable public access toggle", () => 
   assert.match(html, READ_ONLY_REASON_RE);
 });
 
-test("DatabaseNodeContent hides connection strings until the row is hovered", () => {
+test("DatabaseNodeContent displays the credential-free connection template directly", () => {
   const html = renderToStaticMarkup(
     <DatabaseNodeRoot
       connections={[
@@ -115,7 +110,7 @@ test("DatabaseNodeContent hides connection strings until the row is hovered", ()
           kind: "private",
           label: "Private connection",
           value:
-            "postgresql://alice:s3cr3t@db-main-postgresql.ns-a.svc:5432/postgres",
+            "postgresql://<username>:<password>@db-main-postgresql.ns-a.svc:5432/postgres",
         },
       ]}
       states={DATABASE_STATES}
@@ -124,11 +119,8 @@ test("DatabaseNodeContent hides connection strings until the row is hovered", ()
     </DatabaseNodeRoot>
   );
 
-  assert.match(html, FIXED_CONNECTION_MASK_RE);
-  assert.match(html, HOVER_REVEALED_CONNECTION_RE);
-  assert.doesNotMatch(html, FIXED_CONNECTION_MASK_TITLE_RE);
-  assert.doesNotMatch(html, RAW_CONNECTION_TITLE_RE);
-  assert.doesNotMatch(html, PARTIAL_CONNECTION_MASK_RE);
+  assert.match(html, CONNECTION_TEMPLATE_RE);
+  assert.doesNotMatch(html, FIXED_CONNECTION_MASK_RE);
 });
 
 test("DatabaseNodeDeletionDelayHint renders the Figma-specified message", () => {

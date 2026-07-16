@@ -20,7 +20,6 @@ export {
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
 } from "./database-node.availability";
-export { maskDatabaseConnectionString } from "./database-node.mask";
 export {
   canCopyDatabaseNodeConnection,
   getDatabaseNodeConnectionKey,

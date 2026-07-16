@@ -1,6 +1,5 @@
 "use client";
 
-import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components/database-node/database-node";
 import {
   createElement,
   Fragment,
@@ -29,7 +28,7 @@ import { useResourceLifecycleDialogs } from "./use-resource-lifecycle-dialogs";
  */
 export interface ProjectCanvasResourceActionCommands {
   clearDbPublicAccessPendingTarget: ProjectResourceActions["dbLifecycle"]["clearPublicAccessPendingTarget"];
-  copyDatabaseConnection: DatabaseNodeCopyConnectionHandler;
+  copyDatabaseConnection: ProjectResourceActions["copyDatabaseConnection"];
   requestApDelete: ReturnType<
     typeof useResourceDeleteDialogs
   >["requestApDelete"];

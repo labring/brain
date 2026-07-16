@@ -4,21 +4,32 @@ import {
   type ApLifecycleWorkloadRef,
   type DbLifecycleWorkloadRef,
   useApLifecycleOperations,
+  useDbConnectionStringResolver,
   useDbLifecycleOperations,
 } from "@workspace/api/hooks";
-import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components/database-node/database-node";
+import type { DatabaseNodeConnection } from "@workspace/ui/components/database-node/database-node";
 import { useCallback } from "react";
 import type {
   ProjectApTarget,
   ProjectDbTarget,
 } from "@/features/panes/target-identity";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import { errorDescription, toastPromiseDetail } from "@/lib/toast-utils";
+import { copyResolvedSecretValue } from "@/features/resource-settings/reveal";
+import {
+  errorDescription,
+  toastErrorDetail,
+  toastPromiseDetail,
+} from "@/lib/toast-utils";
 
 export interface ProjectResourceActionCopy {
   loading: string;
   success: string;
 }
+
+export type ProjectDbConnectionCopyHandler = (
+  connection: DatabaseNodeConnection,
+  workload: DbLifecycleWorkloadRef | null
+) => Promise<void>;
 
 export interface RunProjectResourceActionOptions {
   onSettled?: () => void;
@@ -130,20 +141,34 @@ export function useProjectResourceActions({
     [refreshAfterResourceAction]
   );
 
-  const copyDatabaseConnection = useCallback<DatabaseNodeCopyConnectionHandler>(
-    async (connection) => {
-      const value = connection.value;
-      if (!value || typeof navigator === "undefined" || !navigator.clipboard) {
-        return;
-      }
+  const { authReady: revealReady, resolveConnectionString } =
+    useDbConnectionStringResolver({
+      kubeconfig: readOnly ? undefined : kubeconfig,
+    });
 
+  const copyDatabaseConnection = useCallback<ProjectDbConnectionCopyHandler>(
+    async (connection, workload) => {
+      // Connection rows carry credential-free DB Connection Templates; copy
+      // fetches the complete DB Connection DSN on demand (ADR-0052). The
+      // template is copied only when no resolver backs the canvas at all.
       try {
-        await navigator.clipboard.writeText(value);
-      } catch {
-        // Copy feedback is handled by the row; clipboard failures should not break canvas interactions.
+        await copyResolvedSecretValue({
+          placeholderValue: connection.value ?? "",
+          resolveAvailable: workload != null && revealReady,
+          resolveValue: () =>
+            workload == null
+              ? Promise.reject(new Error("DB workload is unavailable."))
+              : resolveConnectionString(workload, connection.kind),
+        });
+      } catch (error) {
+        toastErrorDetail(
+          "Copy failed.",
+          "The connection string could not be fetched."
+        );
+        throw error;
       }
     },
-    []
+    [resolveConnectionString, revealReady]
   );
 
   const toggleDatabasePublicAccess = useCallback(

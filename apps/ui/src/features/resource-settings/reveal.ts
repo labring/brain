@@ -15,3 +15,32 @@ export async function writeTextToClipboard(value: string): Promise<void> {
     // Clipboard permissions are best-effort UI affordances.
   }
 }
+
+/**
+ * Copies a secret-bearing value that page state only holds as a credential-free
+ * placeholder (e.g. a DB Connection Template, ADR-0052): when a resolver is
+ * available the complete value is fetched on demand and copied; without one the
+ * placeholder — exactly what the row displays — is copied instead. A failed
+ * resolve rejects so callers surface the error rather than silently copying a
+ * value that will not work.
+ */
+export async function copyResolvedSecretValue({
+  placeholderValue,
+  resolveAvailable,
+  resolveValue,
+}: {
+  placeholderValue: string;
+  resolveAvailable: boolean;
+  resolveValue: () => Promise<string>;
+}): Promise<void> {
+  if (!resolveAvailable) {
+    if (placeholderValue !== "") {
+      await writeTextToClipboard(placeholderValue);
+    }
+    return;
+  }
+  const value = await resolveValue();
+  if (value !== "") {
+    await writeTextToClipboard(value);
+  }
+}

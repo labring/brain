@@ -26,6 +26,10 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import {
+  SETTINGS_REVEAL_DURATION_MS,
+  writeTextToClipboard,
+} from "@/features/resource-settings/reveal";
 import { isStorageShrink } from "@/lib/storage-size";
 import { toastErrorDetail } from "@/lib/toast-utils";
 import {
@@ -112,7 +116,6 @@ import {
   dbDsnSourceFromAddReferenceIntent,
   EditableEnvRows,
   ENV_EDITOR_MODE_TOGGLE_OPTIONS,
-  ENV_REVEAL_DURATION_MS,
   type EnvDraftRow,
   type EnvEditorMode,
   envDraftRowsFromRawParse,
@@ -122,7 +125,6 @@ import {
   pendingDbReferencesFromEnvRawSourceDraft,
   ReadOnlyEnvRows,
   resizeEnvDraftKeys,
-  writeTextToClipboard,
 } from "./environment-section";
 import {
   appendApEnvRawSourceRow,
@@ -1261,7 +1263,7 @@ export function useApSettingsSections({
             next.delete(index);
             return next;
           });
-        }, ENV_REVEAL_DURATION_MS)
+        }, SETTINGS_REVEAL_DURATION_MS)
       );
     },
     [hideResolvedEnvValue, resolveSavedEnvValue, revealedEnvValues]

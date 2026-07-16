@@ -24,10 +24,6 @@ export function workloadClaimKindFromStates(
   return states?.kind?.trim().toUpperCase() === "DB" ? "DB" : "AP";
 }
 
-export function k8sPluralKindForWorkload(wk: WorkloadClaimKind): string {
-  return wk === "DB" ? "dbs" : "aps";
-}
-
 export function telemetryKindFromWorkload(wk: WorkloadClaimKind): "ap" | "db" {
   return wk === "DB" ? "db" : "ap";
 }

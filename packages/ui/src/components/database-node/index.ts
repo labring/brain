@@ -30,7 +30,6 @@ export {
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
   getDatabaseNodeConnectionKey,
-  maskDatabaseConnectionString,
   resolveDatabaseNodeStatus,
   resolveDatabaseNodeVisualTone,
 } from "./database-node";
