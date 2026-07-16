@@ -96,14 +96,6 @@ export const AP_ENV_VALUE_FROM_PLACEHOLDER = "(valueFrom)";
 
 const K8S_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const DEFAULT_ROW_NAME = "NEW_VARIABLE";
-const DB_REFERENCE_ROW_NAMES: Record<ApEnvDbReferenceField, string> = {
-  host: "DATABASE_HOST",
-  password: "DATABASE_PASSWORD",
-  port: "DATABASE_PORT",
-  private: "DATABASE_URL",
-  public: "DATABASE_PUBLIC_URL",
-  username: "DATABASE_USER",
-};
 const PRIMITIVE_FIELD_LABELS: Record<ApEnvDbPrimitiveField, string> = {
   host: "Host",
   password: "Password",
@@ -139,16 +131,6 @@ function nextAvailableEnvRowName(
     suffix += 1;
   }
   return `${baseName}_${suffix}`;
-}
-
-export function defaultApEnvDbReferenceRowName(
-  rows: readonly ApEnvRow[],
-  field: ApEnvDbReferenceField | undefined
-): string {
-  return nextAvailableEnvRowName(
-    rows,
-    field == null ? "DATABASE_REFERENCE" : DB_REFERENCE_ROW_NAMES[field]
-  );
 }
 
 function nonEmptyValue(value: string | undefined): string | undefined {
@@ -194,13 +176,54 @@ export function apEnvDbDsnFieldOptions(
   return [...options, ...apEnvDbPrimitiveFieldOptions(source)];
 }
 
+const CONNECTION_ADDRESS_RE =
+  /^([A-Za-z][A-Za-z0-9+.-]*):\/\/(?:[^@/?#]*@)?([^/?#]+)/;
+
+/**
+ * Extracts the `scheme://host:port` address from a connection-string value.
+ * Works for both complete DB Connection DSNs and DB Connection Templates
+ * (whose `<username>:<password>` userinfo is stripped like any other).
+ */
+function connectionAddressFromDsnValue(value: string): string | undefined {
+  const match = CONNECTION_ADDRESS_RE.exec(value.trim());
+  const scheme = match?.[1];
+  const hostPort = match?.[2];
+  if (scheme === undefined || hostPort === undefined) {
+    return undefined;
+  }
+  return `${scheme.toLowerCase()}://${hostPort.toLowerCase()}`;
+}
+
+/**
+ * Connection evidence (ADR-0002, revised by ADR-0052): a literal env value
+ * points at a DB DSN field when its address matches, so pasted complete DSNs
+ * keep matching the credential-free templates that DB read surfaces carry,
+ * and survive password rotation.
+ */
+function dsnValueMatchesFieldOption(
+  field: ApEnvDbDsnFieldOption,
+  value: string
+): boolean {
+  if (field.value === undefined) {
+    return false;
+  }
+  if (field.value === value) {
+    return true;
+  }
+  const fieldAddress = connectionAddressFromDsnValue(field.value);
+  return (
+    fieldAddress !== undefined &&
+    fieldAddress === connectionAddressFromDsnValue(value)
+  );
+}
+
 export function apEnvDbDsnReferenceFromValue(
   value: string,
   sources: readonly ApEnvDbDsnSource[]
 ): Pick<ApEnvRow, "dbDsn" | "value" | "valueSource"> | undefined {
   for (const source of sources) {
     for (const field of apEnvDbDsnFieldOptions(source)) {
-      if (field.value !== value) {
+      if (!dsnValueMatchesFieldOption(field, value)) {
         continue;
       }
       return {
@@ -250,34 +273,6 @@ export function normalizeApEnvRowsForSave(
 
 export function addApEnvRow(rows: readonly ApEnvRow[]): ApEnvRow[] {
   return [...rows, { name: nextDefaultRowName(rows), value: "" }];
-}
-
-export function addApEnvDbDsnReferenceRow(
-  rows: readonly ApEnvRow[],
-  sources: readonly ApEnvDbDsnSource[],
-  target?: ApEnvDbDsnReferenceTarget
-): ApEnvRow[] {
-  for (const source of sources) {
-    if (
-      target !== undefined &&
-      (source.name !== target.name || source.namespace !== target.namespace)
-    ) {
-      continue;
-    }
-    const field = apEnvDbDsnFieldOptions(source)[0];
-    if (field === undefined) {
-      continue;
-    }
-    return [
-      ...rows,
-      {
-        name: defaultApEnvDbReferenceRowName(rows, field.field),
-        ...apEnvDbReferenceRowPatch(source, field),
-      },
-    ];
-  }
-
-  return [...rows];
 }
 
 export function updateApEnvRow(
