@@ -5,16 +5,16 @@ import { test } from "node:test";
 import {
   authorizeEncodedKubeconfigNamespace,
   authorizeRequestNamespace,
-  resolveTrustedKubernetesApiServer,
+  resolveKubernetesApiServer,
 } from "./request-kubeconfig-auth";
 
-function kubeconfig(namespace: string) {
+function kubeconfig(namespace: string, server = "https://example.test") {
   return encodeURIComponent(`
 apiVersion: v1
 clusters:
   - name: cluster
     cluster:
-      server: https://example.test
+      server: ${server}
 contexts:
   - name: current
     context:
@@ -155,129 +155,31 @@ test("rejects kubeconfig when Kubernetes verification denies access", async () =
   );
 });
 
-test("fails closed when no trusted API server is configured", async () => {
+test("uses the current kubeconfig API server when running off-cluster", async () => {
   await withJsonServer(
     () => ({ status: { allowed: true } }),
     async (apiServer, requests) => {
-      // A client kubeconfig can name any server; without a trusted API server
-      // configured (K8S_API_URL / in-cluster env) verification must NOT fall
-      // back to that client-named server (F5: SSRF + authz bypass).
-      const encodedKubeconfig = kubeconfig("ns-a").replace(
-        "https%3A%2F%2Fexample.test",
-        encodeURIComponent(apiServer)
-      );
-
       await withEnv(
         {
-          K8S_API_CA: undefined,
-          K8S_API_URL: undefined,
           KUBERNETES_SERVICE_HOST: undefined,
           KUBERNETES_SERVICE_PORT: undefined,
+          NODE_ENV: "development",
         },
         async () => {
           const result = await authorizeEncodedKubeconfigNamespace({
-            encodedKubeconfig,
+            encodedKubeconfig: kubeconfig("ns-a", `${apiServer}/proxy/cluster`),
             namespace: "ns-a",
             subject: "Project",
           });
-          assert.equal(result.ok, false);
-          if (!result.ok) {
-            assert.equal(result.status, 500);
-          }
+          assert.equal(result.ok, true);
         }
       );
-      // The client-named server must never be contacted.
-      assert.equal(requests.length, 0);
-    }
-  );
-});
-
-test("uses in-cluster API server instead of kubeconfig server for verification", async () => {
-  await withJsonServer(
-    () => ({ status: { allowed: true } }),
-    async (trustedApiServer, requests) => {
-      const trusted = new URL(trustedApiServer);
-      await withEnv(
-        {
-          K8S_API_CA: undefined,
-          K8S_API_URL: undefined,
-          KUBERNETES_SERVICE_HOST: trusted.hostname,
-          KUBERNETES_SERVICE_PORT: trusted.port,
-        },
-        async () => {
-          assert.deepEqual(
-            await authorizeEncodedKubeconfigNamespace({
-              encodedKubeconfig: kubeconfig("ns-a"),
-              namespace: "ns-a",
-              subject: "Project",
-            }),
-            {
-              message: "Kubernetes access review failed.",
-              ok: false,
-              status: 502,
-            }
-          );
-        }
+      assert.equal(requests.length, 1);
+      assert.equal(
+        requests[0]?.url,
+        "/proxy/cluster/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
       );
-      assert.equal(requests.length, 0);
-    }
-  );
-});
-
-test("prefers in-cluster API server over explicit off-cluster URL", async () => {
-  await withJsonServer(
-    () => ({ status: { allowed: true } }),
-    async (inClusterApiServer, requests) => {
-      const inCluster = new URL(inClusterApiServer);
-      await withEnv(
-        {
-          K8S_API_CA: undefined,
-          // This deliberately-invalid development fallback must be ignored in a Pod.
-          K8S_API_URL: "http://off-cluster.example:6443",
-          KUBERNETES_SERVICE_HOST: inCluster.hostname,
-          KUBERNETES_SERVICE_PORT: inCluster.port,
-        },
-        async () => {
-          assert.deepEqual(
-            await authorizeEncodedKubeconfigNamespace({
-              encodedKubeconfig: kubeconfig("ns-a"),
-              namespace: "ns-a",
-              subject: "Project",
-            }),
-            {
-              message: "Kubernetes access review failed.",
-              ok: false,
-              status: 502,
-            }
-          );
-        }
-      );
-      assert.equal(requests.length, 0);
-    }
-  );
-});
-
-test("uses explicit API server only when running off-cluster", async () => {
-  await withEnv(
-    {
-      K8S_API_CA: undefined,
-      K8S_API_URL: "http://off-cluster.example:6443",
-      KUBERNETES_SERVICE_HOST: undefined,
-      KUBERNETES_SERVICE_PORT: undefined,
-    },
-    async () => {
-      assert.deepEqual(
-        await authorizeEncodedKubeconfigNamespace({
-          encodedKubeconfig: kubeconfig("ns-a"),
-          namespace: "ns-a",
-          subject: "Project",
-        }),
-        {
-          message: "Trusted Kubernetes API server must use https.",
-          ok: false,
-          status: 500,
-        }
-      );
+      assert.equal(requests[0]?.headers.authorization, "Bearer token");
     }
   );
 });
@@ -285,8 +187,6 @@ test("uses explicit API server only when running off-cluster", async () => {
 test("fails closed with partial in-cluster API server coordinates", async () => {
   await withEnv(
     {
-      K8S_API_CA: undefined,
-      K8S_API_URL: "http://off-cluster.example:6443",
       KUBERNETES_SERVICE_HOST: "10.0.0.1",
       KUBERNETES_SERVICE_PORT: undefined,
     },
@@ -310,33 +210,111 @@ test("fails closed with partial in-cluster API server coordinates", async () => 
 
 test("pairs the mounted CA with the preferred in-cluster API server", () => {
   assert.deepEqual(
-    resolveTrustedKubernetesApiServer({
-      explicitCa: "stale-development-ca",
-      explicitUrl: "https://off-cluster.example:6443",
+    resolveKubernetesApiServer({
       inClusterCa: "mounted-cluster-ca",
+      kubeconfigCa: "kubeconfig-ca",
+      kubeconfigInsecureSkipTlsVerify: true,
+      kubeconfigServer: "https://kubeconfig.example:6443",
       serviceHost: "10.0.0.1",
       servicePort: "6443",
     }),
     {
       ca: "mounted-cluster-ca",
+      insecureSkipTlsVerify: false,
       ok: true,
       server: "https://10.0.0.1:6443",
+      serverName: undefined,
     }
   );
 });
 
-test("falls back to the explicit CA when the in-cluster mount is missing", () => {
+test("rejects an in-cluster transport when the mounted CA is missing", () => {
   assert.deepEqual(
-    resolveTrustedKubernetesApiServer({
-      explicitCa: "operator-cluster-ca",
-      explicitUrl: "https://off-cluster.example:6443",
+    resolveKubernetesApiServer({
+      kubeconfigServer: "https://kubeconfig.example:6443",
       serviceHost: "10.0.0.1",
       servicePort: "6443",
     }),
     {
-      ca: "operator-cluster-ca",
+      message: "In-cluster Kubernetes API server CA is unavailable.",
+      ok: false,
+    }
+  );
+});
+
+test("formats an IPv6 in-cluster API server", () => {
+  assert.deepEqual(
+    resolveKubernetesApiServer({
+      inClusterCa: "mounted-cluster-ca",
+      kubeconfigServer: "https://kubeconfig.example:6443",
+      serviceHost: "fd00::1",
+      servicePort: "443",
+    }),
+    {
+      ca: "mounted-cluster-ca",
+      insecureSkipTlsVerify: false,
       ok: true,
-      server: "https://10.0.0.1:6443",
+      server: "https://[fd00::1]",
+      serverName: undefined,
+    }
+  );
+});
+
+test("uses kubeconfig TLS transport when running off-cluster", () => {
+  assert.deepEqual(
+    resolveKubernetesApiServer({
+      allowKubeconfigTransport: true,
+      kubeconfigCa: "kubeconfig-ca",
+      kubeconfigInsecureSkipTlsVerify: true,
+      kubeconfigServer: "https://kubeconfig.example:6443/",
+      kubeconfigServerName: "api.internal",
+    }),
+    {
+      ca: undefined,
+      insecureSkipTlsVerify: true,
+      ok: true,
+      server: "https://kubeconfig.example:6443",
+      serverName: "api.internal",
+    }
+  );
+});
+
+test("uses kubeconfig CA when TLS verification is enabled", () => {
+  assert.deepEqual(
+    resolveKubernetesApiServer({
+      allowKubeconfigTransport: true,
+      kubeconfigCa: "kubeconfig-ca",
+      kubeconfigServer: "https://kubeconfig.example:6443",
+    }),
+    {
+      ca: "kubeconfig-ca",
+      insecureSkipTlsVerify: false,
+      ok: true,
+      server: "https://kubeconfig.example:6443",
+      serverName: undefined,
+    }
+  );
+});
+
+test("restricts off-cluster kubeconfig transport to safe development endpoints", () => {
+  assert.deepEqual(
+    resolveKubernetesApiServer({
+      kubeconfigServer: "https://kubeconfig.example:6443",
+    }),
+    {
+      message:
+        "Off-cluster Kubernetes API access is available only in development.",
+      ok: false,
+    }
+  );
+  assert.deepEqual(
+    resolveKubernetesApiServer({
+      allowKubeconfigTransport: true,
+      kubeconfigServer: "http://kubeconfig.example:6443",
+    }),
+    {
+      message: "Kubernetes API server must use HTTPS unless it is loopback.",
+      ok: false,
     }
   );
 });

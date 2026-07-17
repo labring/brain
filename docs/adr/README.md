@@ -43,6 +43,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0049 — Scope DB Access View State to Each Session](0049-scope-db-access-view-state-to-each-session.md)
 - [0050 — Snapshot Glass: Replace the Live Backdrop-Filter Sheet with a Pre-Blurred Texture](0050-snapshot-glass-pre-blurred-backdrop-texture.md)
 - [0051 — Express Workbench Orchestration as Pure Transitions](0051-express-workbench-orchestration-as-pure-transitions.md)
+- [0052 — Use In-Cluster Kubernetes Transport in Pods and Kubeconfig Transport Off-Cluster](0052-use-kubeconfig-transport-off-cluster.md)
 
 ## Conventions
 

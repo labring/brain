@@ -2,7 +2,7 @@
   "name": "@sealai/api",
   "type": "module",
   "scripts": {
-    "dev": "go run github.com/air-verse/air@latest",
+    "dev": "NODE_ENV=development go run github.com/air-verse/air@latest",
     "run": "go run main.go",
     "build": "go build -o main .",
     "test": "go test ./...",
