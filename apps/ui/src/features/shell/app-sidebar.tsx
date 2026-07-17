@@ -116,7 +116,7 @@ function ProjectsShortcutIcon({
 
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
-const SEALOS_DESKTOP_URL = "https://usw-1.sealos.io";
+const SEALOS_DESKTOP_URL = "https://usw-1.sealos.io/?openapp=";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
