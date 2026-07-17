@@ -20,6 +20,9 @@ const COMMAND_HIGHLIGHT_BACKGROUND_RE = /isCommandHighlighted && "bg-input"/;
 const COMMAND_HIGHLIGHT_TEXT_RE = /isCommandHighlighted && "text-foreground"/;
 const COMMAND_ROW_HOVER_BACKGROUND_RE = /group[\s\S]*hover:bg-input/;
 const COMMAND_ROW_HOVER_TEXT_RE = /group-hover:text-foreground/;
+const CURRENT_INSTALL_COMMAND_RE =
+  /SEALOS_SKILLS_INSTALL_COMMAND[\s\S]{0,80}npx skills add labring\/sealos-skills/;
+const LEGACY_INSTALL_COMMAND_RE = /labring\/seakills/;
 const INSTALL_COMMAND_ROW_SOURCE =
   SKILLS_WORKFLOW_CONTENT_SOURCE.match(
     /function SealosSkillsInstallCommandRow[\s\S]*?function SealosSkillsSectionHeader/
@@ -27,6 +30,14 @@ const INSTALL_COMMAND_ROW_SOURCE =
 
 test("skills workflow pane subtitle stays concise enough for the header", () => {
   assert.match(SKILLS_WORKFLOW_PANE_SOURCE, CONCISE_SUBTITLE_RE);
+});
+
+test("skills workflow install command points to the renamed repository", () => {
+  assert.match(SKILLS_WORKFLOW_CONTENT_SOURCE, CURRENT_INSTALL_COMMAND_RE);
+  assert.doesNotMatch(
+    SKILLS_WORKFLOW_CONTENT_SOURCE,
+    LEGACY_INSTALL_COMMAND_RE
+  );
 });
 
 test("skills workflow flow step titles use continuous numbering", () => {
