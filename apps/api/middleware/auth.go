@@ -71,106 +71,97 @@ func ConfigFromAuth(auth string) (*clientcmdapi.Config, error) {
 // path rest.InClusterConfig trusts. It verifies the pinned apiserver's serving certificate.
 const inClusterCAPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
-// ErrNoTrustedAPIServer is returned when no platform-trusted apiserver can be resolved, so a
-// caller's kubeconfig server cannot be safely overridden. User-credentialed requests then
-// fail closed rather than trusting a client-supplied server.
-var ErrNoTrustedAPIServer = errors.New(
-	"no trusted Kubernetes API server configured: set K8S_API_URL or run in-cluster",
-)
-
-type trustedAPIServerTransport struct {
+type kubernetesAPIServerTransport struct {
 	server string
 	caData []byte
 	caFile string
 }
 
-// resolveTrustedAPIServerTransport resolves the apiserver and CA the platform trusts from
-// operator-controlled configuration ONLY. In-cluster coordinates and their mounted CA take
-// precedence so deployed Pods stay on the internal control-plane path; K8S_API_URL and
-// K8S_API_CA are the off-cluster development fallback. If the in-cluster CA is not mounted,
-// K8S_API_CA may supply that same cluster CA without restoring a service-account token.
-//
-// Invariant: the apiserver, CA, and TLS trust for every user-credentialed call come from this
-// operator-controlled transport and never from the client-supplied kubeconfig. Only identity —
-// the caller's inline bearer token — is taken from the kubeconfig; its declared server and CA
-// are ignored so RBAC is always evaluated by the real cluster. Do not route user-credentialed
-// reads to a client-named server. Fails closed when no trusted server is configured.
-func resolveTrustedAPIServerTransport(inClusterCAFile string) (*trustedAPIServerTransport, error) {
+// resolveInClusterAPIServerTransport reports whether the process is running in a Pod. When it
+// is, both the Kubernetes-injected endpoint and mounted CA are mandatory; callers must not fall
+// back to a client-declared server from an in-cluster process.
+func resolveInClusterAPIServerTransport(inClusterCAFile string) (*kubernetesAPIServerTransport, bool, error) {
 	host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
 	port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
-	explicitCA := strings.TrimSpace(os.Getenv("K8S_API_CA"))
 	if (host == "") != (port == "") {
-		return nil, fmt.Errorf(
+		return nil, false, fmt.Errorf(
 			"in-cluster Kubernetes API server configuration is incomplete: KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT must both be set",
 		)
 	}
-	if host != "" && port != "" {
-		transport := &trustedAPIServerTransport{
-			server: "https://" + net.JoinHostPort(host, port),
-		}
-		if inClusterCAFile != "" {
-			if _, err := os.Stat(inClusterCAFile); err == nil {
-				transport.caFile = inClusterCAFile
-				return transport, nil
-			}
-		}
-		if explicitCA != "" {
-			transport.caData = []byte(explicitCA)
-		}
-		return transport, nil
+	if host == "" {
+		return nil, false, nil
 	}
-	if explicit := strings.TrimSpace(os.Getenv("K8S_API_URL")); explicit != "" {
-		u, err := url.Parse(explicit)
-		if err != nil || u.Host == "" {
-			return nil, fmt.Errorf("invalid K8S_API_URL %q", explicit)
-		}
-		if u.Scheme != "https" {
-			return nil, fmt.Errorf("K8S_API_URL must use https, got %q", explicit)
-		}
-		transport := &trustedAPIServerTransport{
-			server: strings.TrimRight(u.String(), "/"),
-		}
-		if explicitCA != "" {
-			transport.caData = []byte(explicitCA)
-		}
-		return transport, nil
+	if inClusterCAFile == "" {
+		return nil, true, errors.New("in-cluster Kubernetes API server CA path is empty")
 	}
-	return nil, ErrNoTrustedAPIServer
+	if _, err := os.Stat(inClusterCAFile); err != nil {
+		return nil, true, fmt.Errorf("in-cluster Kubernetes API server CA is unavailable: %w", err)
+	}
+	return &kubernetesAPIServerTransport{
+		server: "https://" + net.JoinHostPort(host, port),
+		caFile: inClusterCAFile,
+	}, true, nil
 }
 
-// pinRestConfigToTrustedServer applies the platform-trusted apiserver and TLS trust to a
-// config that already contains only the caller's inline bearer token. Fails closed if no
-// trusted server is configured.
-func pinRestConfigToTrustedServer(restConfig *rest.Config) error {
-	if restConfig == nil {
-		return nil
-	}
-	transport, err := resolveTrustedAPIServerTransport(inClusterCAPath)
-	if err != nil {
-		return err
-	}
-
+func applyInClusterTransport(restConfig *rest.Config, transport *kubernetesAPIServerTransport) {
 	restConfig.Host = transport.server
-	// Trust is defined by the platform, never by the client kubeconfig.
 	restConfig.TLSClientConfig.Insecure = false
 	restConfig.TLSClientConfig.ServerName = ""
 	restConfig.TLSClientConfig.CAData = transport.caData
 	restConfig.TLSClientConfig.CAFile = transport.caFile
+}
+
+func applyKubeconfigTransport(restConfig *rest.Config, cluster *clientcmdapi.Cluster) error {
+	server := strings.TrimSpace(cluster.Server)
+	u, err := url.Parse(server)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("kubeconfig current cluster server is invalid")
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackURL(u)) {
+		return errors.New("kubeconfig current cluster server must use HTTPS unless it is loopback")
+	}
+
+	restConfig.Host = strings.TrimRight(u.String(), "/")
+	restConfig.TLSClientConfig.Insecure = cluster.InsecureSkipTLSVerify
+	restConfig.TLSClientConfig.ServerName = cluster.TLSServerName
+	if !cluster.InsecureSkipTLSVerify {
+		restConfig.TLSClientConfig.CAData = append([]byte(nil), cluster.CertificateAuthorityData...)
+	}
+	restConfig.TLSClientConfig.CAFile = ""
 	return nil
 }
 
+func isLoopbackURL(u *url.URL) bool {
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // restConfigFromClientcmdConfig accepts only the active user's inline bearer token from a
-// parsed kubeconfig. Transport and every other rest.Config field are created by the platform,
-// so client-supplied credential plugins, file paths, proxies, and impersonation can never be
-// installed in the API process. Every user-credentialed apiserver access is built here.
+// parsed kubeconfig. In a Pod, transport is pinned to the Kubernetes-injected endpoint and CA;
+// off-cluster development uses the active kubeconfig cluster transport. Credential plugins,
+// file paths, proxies, and impersonation are never installed in the API process.
 func restConfigFromClientcmdConfig(cfg *clientcmdapi.Config) (*rest.Config, error) {
+	return restConfigFromClientcmdConfigWithCAFile(cfg, inClusterCAPath)
+}
+
+func restConfigFromClientcmdConfigWithCAFile(cfg *clientcmdapi.Config, inClusterCAFile string) (*rest.Config, error) {
 	if cfg == nil {
 		return nil, errors.New("kubeconfig is required")
 	}
 
 	for _, cluster := range cfg.Clusters {
-		if cluster != nil && cluster.ProxyURL != "" {
+		if cluster == nil {
+			continue
+		}
+		if cluster.ProxyURL != "" {
 			return nil, errors.New("kubeconfig proxy configuration is not supported")
+		}
+		if cluster.CertificateAuthority != "" {
+			return nil, errors.New("kubeconfig certificate-authority files are not supported")
 		}
 	}
 
@@ -208,7 +199,8 @@ func restConfigFromClientcmdConfig(cfg *clientcmdapi.Config) (*rest.Config, erro
 		return nil, errors.New("kubeconfig current context is required")
 	}
 	clusterName := strings.TrimSpace(ctx.Cluster)
-	if clusterName == "" || cfg.Clusters[clusterName] == nil {
+	cluster := cfg.Clusters[clusterName]
+	if clusterName == "" || cluster == nil {
 		return nil, errors.New("kubeconfig current cluster is required")
 	}
 	authInfoName := strings.TrimSpace(ctx.AuthInfo)
@@ -222,8 +214,19 @@ func restConfigFromClientcmdConfig(cfg *clientcmdapi.Config) (*rest.Config, erro
 	}
 
 	restConfig := &rest.Config{BearerToken: token}
-	if err := pinRestConfigToTrustedServer(restConfig); err != nil {
+	transport, inCluster, err := resolveInClusterAPIServerTransport(inClusterCAFile)
+	if err != nil {
 		return nil, err
+	}
+	if inCluster {
+		applyInClusterTransport(restConfig, transport)
+	} else {
+		if strings.TrimSpace(os.Getenv("NODE_ENV")) != "development" {
+			return nil, errors.New("off-cluster kubeconfig transport is available only in development")
+		}
+		if err := applyKubeconfigTransport(restConfig, cluster); err != nil {
+			return nil, err
+		}
 	}
 	SuppressK8sRESTWarnings(restConfig)
 	return restConfig, nil
@@ -237,9 +240,8 @@ type ResolveOptions struct {
 type ResolvedContext struct {
 	RestConfig *rest.Config
 	Namespace  string
-	// Server is the hostname the caller *declared* in its kubeconfig, kept for
-	// diagnostics only. It is not where requests go: RestConfig is pinned to the
-	// platform-trusted apiserver (see restConfigFromClientcmdConfig).
+	// Server is the hostname declared in the kubeconfig, retained for routing-domain
+	// diagnostics. In a Pod, RestConfig is pinned to the internal apiserver instead.
 	Server string
 }
 

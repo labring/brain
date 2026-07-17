@@ -1,12 +1,13 @@
 package middleware
 
 import (
-	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"k8s.io/client-go/rest"
 )
 
 // bearerFromKubeconfig url-encodes a kubeconfig and wraps it the way ConfigFromAuth /
@@ -41,26 +42,46 @@ func kubeconfigYAML(server, token string, insecure bool) string {
 		"    token: " + token + "\n"
 }
 
-// clearTrustedServerEnv blanks every source trustedAPIServer/CA reads so a test starts from a
-// known "off-cluster, unconfigured" baseline regardless of where it runs (a CI pod would
-// otherwise leak KUBERNETES_SERVICE_HOST into the assertions).
-func clearTrustedServerEnv(t *testing.T) {
+// clearInClusterEnv gives tests a deterministic off-cluster baseline even in CI Pods.
+func clearInClusterEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("K8S_API_URL", "")
-	t.Setenv("K8S_API_CA", "")
+	t.Setenv("NODE_ENV", "development")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 }
 
+func mountedCAFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(path, []byte("mounted-cluster-ca"), 0o600); err != nil {
+		t.Fatalf("write mounted CA fixture: %v", err)
+	}
+	return path
+}
+
+func restConfigFromAuthWithCAFile(auth, caFile string) (*rest.Config, error) {
+	cfg, err := ConfigFromAuth(auth)
+	if err != nil {
+		return nil, err
+	}
+	return restConfigFromClientcmdConfigWithCAFile(cfg, caFile)
+}
+
 func TestRestConfigFromAuthPinsServerToInClusterAndKeepsIdentity(t *testing.T) {
-	clearTrustedServerEnv(t)
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
+	caFile := mountedCAFile(t)
 
 	// A caller pointing its kubeconfig at an apiserver it controls, with TLS verification
 	// switched off — the exact fake-apiserver bypass the pin exists to defeat.
-	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", true))
-	rc, _, err := RestConfigFromAuth(auth)
+	kubeconfig := strings.Replace(
+		kubeconfigYAML("https://attacker.example:6443", "caller-token", true),
+		"    server: https://attacker.example:6443\n",
+		"    server: https://attacker.example:6443\n    certificate-authority-data: YXR0YWNrZXItY2E=\n    tls-server-name: attacker.internal\n",
+		1,
+	)
+	rc, err := restConfigFromAuthWithCAFile(bearerFromKubeconfig(kubeconfig), caFile)
 	if err != nil {
 		t.Fatalf("RestConfigFromAuth: %v", err)
 	}
@@ -77,10 +98,16 @@ func TestRestConfigFromAuthPinsServerToInClusterAndKeepsIdentity(t *testing.T) {
 	if rc.TLSClientConfig.ServerName != "" {
 		t.Errorf("client-supplied TLS server name not cleared: got %q", rc.TLSClientConfig.ServerName)
 	}
+	if rc.TLSClientConfig.CAFile != caFile {
+		t.Errorf("mounted in-cluster CA not selected: got %q", rc.TLSClientConfig.CAFile)
+	}
+	if len(rc.TLSClientConfig.CAData) != 0 {
+		t.Errorf("client-supplied CA data not cleared: got %q", rc.TLSClientConfig.CAData)
+	}
 }
 
 func TestRestConfigFromAuthRejectsUnsafeKubeconfigFeatures(t *testing.T) {
-	clearTrustedServerEnv(t)
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
 
@@ -209,7 +236,7 @@ func TestRestConfigFromAuthRejectsUnsafeKubeconfigFeatures(t *testing.T) {
 }
 
 func TestRestConfigFromAuthRequiresInlineBearerToken(t *testing.T) {
-	clearTrustedServerEnv(t)
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
 
@@ -226,7 +253,7 @@ func TestRestConfigFromAuthRequiresInlineBearerToken(t *testing.T) {
 }
 
 func TestRestConfigFromAuthRequiresCurrentCluster(t *testing.T) {
-	clearTrustedServerEnv(t)
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
 
@@ -242,23 +269,93 @@ func TestRestConfigFromAuthRequiresCurrentCluster(t *testing.T) {
 	}
 }
 
-func TestRestConfigFromAuthFailsClosedWithoutTrustedServer(t *testing.T) {
-	clearTrustedServerEnv(t)
-
-	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false))
-	if _, _, err := RestConfigFromAuth(auth); !errors.Is(err, ErrNoTrustedAPIServer) {
-		t.Fatalf("expected ErrNoTrustedAPIServer when no trusted server is configured, got %v", err)
+func TestRestConfigFromAuthUsesCurrentKubeconfigTransportOffCluster(t *testing.T) {
+	clearInClusterEnv(t)
+	kubeconfig := strings.Replace(
+		kubeconfigYAML("https://cluster.example:6443/", "caller-token", true),
+		"    server: https://cluster.example:6443/\n",
+		"    server: https://cluster.example:6443/\n    certificate-authority-data: bG9jYWwtY2E=\n    tls-server-name: api.internal\n",
+		1,
+	)
+	rc, _, err := RestConfigFromAuth(bearerFromKubeconfig(kubeconfig))
+	if err != nil {
+		t.Fatalf("RestConfigFromAuth: %v", err)
+	}
+	if rc.Host != "https://cluster.example:6443" {
+		t.Errorf("kubeconfig server not selected off-cluster: got %q", rc.Host)
+	}
+	if rc.BearerToken != "caller-token" {
+		t.Errorf("caller identity not preserved: got token %q", rc.BearerToken)
+	}
+	if !rc.TLSClientConfig.Insecure {
+		t.Error("off-cluster kubeconfig insecure-skip-tls-verify was not preserved")
+	}
+	if len(rc.TLSClientConfig.CAData) != 0 {
+		t.Errorf("off-cluster kubeconfig CA must be ignored when TLS verification is disabled: got %q", string(rc.TLSClientConfig.CAData))
+	}
+	if rc.TLSClientConfig.ServerName != "api.internal" {
+		t.Errorf("off-cluster kubeconfig TLS server name not preserved: got %q", rc.TLSClientConfig.ServerName)
+	}
+	if _, err := rest.TransportFor(rc); err != nil {
+		t.Fatalf("off-cluster rest config cannot create a transport: %v", err)
 	}
 }
 
+func TestRestConfigFromAuthUsesKubeconfigCAOffCluster(t *testing.T) {
+	clearInClusterEnv(t)
+	kubeconfig := strings.Replace(
+		kubeconfigYAML("https://cluster.example:6443", "caller-token", false),
+		"    server: https://cluster.example:6443\n",
+		"    server: https://cluster.example:6443\n    certificate-authority-data: bG9jYWwtY2E=\n",
+		1,
+	)
+	rc, _, err := RestConfigFromAuth(bearerFromKubeconfig(kubeconfig))
+	if err != nil {
+		t.Fatalf("RestConfigFromAuth: %v", err)
+	}
+	if string(rc.TLSClientConfig.CAData) != "local-ca" {
+		t.Errorf("off-cluster kubeconfig CA not preserved: got %q", string(rc.TLSClientConfig.CAData))
+	}
+}
+
+func TestRestConfigFromAuthRestrictsOffClusterTransport(t *testing.T) {
+	t.Run("production", func(t *testing.T) {
+		clearInClusterEnv(t)
+		t.Setenv("NODE_ENV", "production")
+		auth := bearerFromKubeconfig(kubeconfigYAML("https://cluster.example:6443", "caller-token", false))
+		if _, _, err := RestConfigFromAuth(auth); err == nil || !strings.Contains(err.Error(), "only in development") {
+			t.Fatalf("expected off-cluster production to fail closed, got %v", err)
+		}
+	})
+
+	t.Run("remote HTTP", func(t *testing.T) {
+		clearInClusterEnv(t)
+		auth := bearerFromKubeconfig(kubeconfigYAML("http://cluster.example:6443", "caller-token", false))
+		if _, _, err := RestConfigFromAuth(auth); err == nil || !strings.Contains(err.Error(), "HTTPS") {
+			t.Fatalf("expected remote HTTP server to be rejected, got %v", err)
+		}
+	})
+
+	t.Run("loopback HTTP", func(t *testing.T) {
+		clearInClusterEnv(t)
+		auth := bearerFromKubeconfig(kubeconfigYAML("http://127.0.0.1:6443", "caller-token", false))
+		rc, _, err := RestConfigFromAuth(auth)
+		if err != nil {
+			t.Fatalf("expected loopback HTTP server to be accepted in development: %v", err)
+		}
+		if rc.Host != "http://127.0.0.1:6443" {
+			t.Fatalf("unexpected loopback server: %q", rc.Host)
+		}
+	})
+}
+
 func TestRestConfigFromAuthPrefersInClusterAPIServer(t *testing.T) {
-	clearTrustedServerEnv(t)
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
-	t.Setenv("K8S_API_URL", "https://trusted.internal:6443/")
 
 	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false))
-	rc, _, err := RestConfigFromAuth(auth)
+	rc, err := restConfigFromAuthWithCAFile(auth, mountedCAFile(t))
 	if err != nil {
 		t.Fatalf("RestConfigFromAuth: %v", err)
 	}
@@ -267,27 +364,9 @@ func TestRestConfigFromAuthPrefersInClusterAPIServer(t *testing.T) {
 	}
 }
 
-func TestRestConfigFromAuthUsesExplicitAPIServerOffCluster(t *testing.T) {
-	clearTrustedServerEnv(t)
-	t.Setenv("K8S_API_URL", "https://trusted.internal:6443/")
-
-	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false))
-	rc, _, err := RestConfigFromAuth(auth)
-	if err != nil {
-		t.Fatalf("RestConfigFromAuth: %v", err)
-	}
-	if rc.Host != "https://trusted.internal:6443" {
-		t.Errorf("off-cluster K8S_API_URL not honored (or trailing slash kept): got %q", rc.Host)
-	}
-	if rc.BearerToken != "caller-token" {
-		t.Errorf("caller identity not preserved: got token %q", rc.BearerToken)
-	}
-}
-
 func TestRestConfigFromAuthFailsClosedWithPartialInClusterCoordinates(t *testing.T) {
-	clearTrustedServerEnv(t)
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
-	t.Setenv("K8S_API_URL", "https://trusted.internal:6443")
 
 	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false))
 	if _, _, err := RestConfigFromAuth(auth); err == nil || !strings.Contains(err.Error(), "in-cluster") {
@@ -295,30 +374,8 @@ func TestRestConfigFromAuthFailsClosedWithPartialInClusterCoordinates(t *testing
 	}
 }
 
-func TestRestConfigFromAuthAppliesExplicitCAAndDropsFile(t *testing.T) {
-	clearTrustedServerEnv(t)
-	t.Setenv("K8S_API_URL", "https://trusted.internal:6443")
-	pem := "-----BEGIN CERTIFICATE-----\nQUFBQQ==\n-----END CERTIFICATE-----"
-	t.Setenv("K8S_API_CA", pem)
-
-	auth := bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", true))
-	rc, _, err := RestConfigFromAuth(auth)
-	if err != nil {
-		t.Fatalf("RestConfigFromAuth: %v", err)
-	}
-	if string(rc.TLSClientConfig.CAData) != pem {
-		t.Errorf("explicit K8S_API_CA not applied: got CAData %q", string(rc.TLSClientConfig.CAData))
-	}
-	if rc.TLSClientConfig.CAFile != "" {
-		t.Errorf("CAFile should be empty when CAData is set: got %q", rc.TLSClientConfig.CAFile)
-	}
-	if rc.TLSClientConfig.Insecure {
-		t.Error("insecure-skip-tls-verify must be neutralized even with an explicit CA")
-	}
-}
-
-func TestResolveContextPinsServerAndResolvesNamespace(t *testing.T) {
-	clearTrustedServerEnv(t)
+func TestRestConfigPinsServerToInClusterTransport(t *testing.T) {
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
 
@@ -326,58 +383,49 @@ func TestResolveContextPinsServerAndResolvesNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConfigFromAuth: %v", err)
 	}
+	restConfig, err := restConfigFromClientcmdConfigWithCAFile(cfg, mountedCAFile(t))
+	if err != nil {
+		t.Fatalf("restConfigFromClientcmdConfigWithCAFile: %v", err)
+	}
+	if restConfig.Host != "https://10.0.0.1:6443" {
+		t.Errorf("rest config did not pin the server: got %q", restConfig.Host)
+	}
+	if restConfig.TLSClientConfig.Insecure {
+		t.Error("rest config did not neutralize insecure-skip-tls-verify")
+	}
+}
+
+func TestResolveContextUsesKubeconfigNamespaceOffCluster(t *testing.T) {
+	clearInClusterEnv(t)
+
+	cfg, err := ConfigFromAuth(bearerFromKubeconfig(kubeconfigYAML("https://cluster.example:6443", "caller-token", false)))
+	if err != nil {
+		t.Fatalf("ConfigFromAuth: %v", err)
+	}
 	resolved, err := ResolveContext(cfg, ResolveOptions{DefaultNamespace: "fallback"})
 	if err != nil {
 		t.Fatalf("ResolveContext: %v", err)
 	}
-	if resolved.RestConfig.Host != "https://10.0.0.1:6443" {
-		t.Errorf("ResolveContext did not pin the server: got %q", resolved.RestConfig.Host)
-	}
-	if resolved.RestConfig.TLSClientConfig.Insecure {
-		t.Error("ResolveContext did not neutralize insecure-skip-tls-verify")
+	if resolved.RestConfig.Host != "https://cluster.example:6443" {
+		t.Errorf("ResolveContext did not use kubeconfig server: got %q", resolved.RestConfig.Host)
 	}
 	if resolved.Namespace != "ns-victim" {
-		t.Errorf("namespace resolution changed: got %q, want the kubeconfig context namespace", resolved.Namespace)
+		t.Errorf("namespace resolution changed: got %q, want ns-victim", resolved.Namespace)
 	}
 }
 
-func TestResolveContextFailsClosedWithoutTrustedServer(t *testing.T) {
-	clearTrustedServerEnv(t)
-
-	cfg, err := ConfigFromAuth(bearerFromKubeconfig(kubeconfigYAML("https://attacker.example:6443", "caller-token", false)))
-	if err != nil {
-		t.Fatalf("ConfigFromAuth: %v", err)
-	}
-	if _, err := ResolveContext(cfg, ResolveOptions{DefaultNamespace: "fallback"}); !errors.Is(err, ErrNoTrustedAPIServer) {
-		t.Fatalf("expected ErrNoTrustedAPIServer, got %v", err)
-	}
-}
-
-func TestTrustedAPIServerRejectsNonHTTPSExplicitURL(t *testing.T) {
-	clearTrustedServerEnv(t)
-	t.Setenv("K8S_API_URL", "http://trusted.internal:6443")
-
-	_, err := resolveTrustedAPIServerTransport(inClusterCAPath)
-	if err == nil || !strings.Contains(err.Error(), "https") {
-		t.Fatalf("expected an https-required error for a plaintext K8S_API_URL, got %v", err)
-	}
-}
-
-func TestTrustedAPIServerTransportPrefersMountedCAForInClusterEndpoint(t *testing.T) {
-	clearTrustedServerEnv(t)
+func TestInClusterAPIServerTransportUsesMountedCA(t *testing.T) {
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
-	t.Setenv("K8S_API_URL", "https://off-cluster.example:6443")
-	t.Setenv("K8S_API_CA", "stale-development-ca")
+	caFile := mountedCAFile(t)
 
-	caFile := filepath.Join(t.TempDir(), "ca.crt")
-	if err := os.WriteFile(caFile, []byte("mounted-cluster-ca"), 0o600); err != nil {
-		t.Fatalf("write mounted CA fixture: %v", err)
-	}
-
-	transport, err := resolveTrustedAPIServerTransport(caFile)
+	transport, inCluster, err := resolveInClusterAPIServerTransport(caFile)
 	if err != nil {
-		t.Fatalf("resolveTrustedAPIServerTransport: %v", err)
+		t.Fatalf("resolveInClusterAPIServerTransport: %v", err)
+	}
+	if !inCluster {
+		t.Fatal("expected in-cluster transport")
 	}
 	if transport.server != "https://10.0.0.1:6443" {
 		t.Errorf("in-cluster server not selected: got %q", transport.server)
@@ -385,26 +433,15 @@ func TestTrustedAPIServerTransportPrefersMountedCAForInClusterEndpoint(t *testin
 	if transport.caFile != caFile {
 		t.Errorf("mounted in-cluster CA not selected: got %q", transport.caFile)
 	}
-	if len(transport.caData) != 0 {
-		t.Errorf("stale explicit CA must be ignored when mounted CA exists: got %q", transport.caData)
-	}
 }
 
-func TestTrustedAPIServerTransportFallsBackToExplicitCAWhenMountIsMissing(t *testing.T) {
-	clearTrustedServerEnv(t)
+func TestInClusterAPIServerTransportRejectsMissingMountedCA(t *testing.T) {
+	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
-	t.Setenv("K8S_API_CA", "operator-cluster-ca")
 
 	missingCAFile := filepath.Join(t.TempDir(), "missing-ca.crt")
-	transport, err := resolveTrustedAPIServerTransport(missingCAFile)
-	if err != nil {
-		t.Fatalf("resolveTrustedAPIServerTransport: %v", err)
-	}
-	if string(transport.caData) != "operator-cluster-ca" {
-		t.Errorf("explicit CA fallback not selected: got %q", transport.caData)
-	}
-	if transport.caFile != "" {
-		t.Errorf("missing mounted CA must not be returned: got %q", transport.caFile)
+	if _, _, err := resolveInClusterAPIServerTransport(missingCAFile); err == nil || !strings.Contains(err.Error(), "CA") {
+		t.Fatalf("expected missing in-cluster CA error, got %v", err)
 	}
 }

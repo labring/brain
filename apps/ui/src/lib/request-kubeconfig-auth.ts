@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { Agent } from "undici";
 import { parse } from "yaml";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -14,6 +15,7 @@ interface KubeconfigCluster {
   "certificate-authority-data"?: string;
   "insecure-skip-tls-verify"?: boolean;
   server?: string;
+  "tls-server-name"?: string;
 }
 
 interface KubeconfigContext {
@@ -61,6 +63,7 @@ function activeKubeconfigCredentials(kubeconfig: string):
       insecureSkipTlsVerify: boolean;
       ok: true;
       server: string;
+      serverName: string | undefined;
       token: string;
     }
   | { message: string; ok: false } {
@@ -106,7 +109,7 @@ function activeKubeconfigCredentials(kubeconfig: string):
   } catch {
     return { message: "Kubeconfig cluster server is invalid.", ok: false };
   }
-  if (serverUrl.protocol !== "https:" && serverUrl.protocol !== "http:") {
+  if (!isAllowedKubernetesServerUrl(serverUrl)) {
     return { message: "Kubeconfig cluster server is invalid.", ok: false };
   }
 
@@ -128,6 +131,7 @@ function activeKubeconfigCredentials(kubeconfig: string):
     insecureSkipTlsVerify: cluster?.["insecure-skip-tls-verify"] === true,
     ok: true,
     server: trimTrailingSlashes(serverUrl.toString()),
+    serverName: cluster?.["tls-server-name"]?.trim() || undefined,
     token,
   };
 }
@@ -140,22 +144,69 @@ function trimTrailingSlashes(value: string): string {
   return out;
 }
 
+function isAllowedKubernetesServerUrl(serverUrl: URL): boolean {
+  if (serverUrl.protocol === "https:") {
+    return true;
+  }
+  if (serverUrl.protocol !== "http:") {
+    return false;
+  }
+  let hostname = serverUrl.hostname.toLowerCase();
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    hostname = hostname.slice(1, -1);
+  }
+  if (hostname === "localhost" || hostname === "::1") {
+    return true;
+  }
+  return isIP(hostname) === 4 && hostname.startsWith("127.");
+}
+
+function joinHostPort(host: string, port: string): string {
+  const unwrappedHost =
+    host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  return isIP(unwrappedHost) === 6
+    ? `[${unwrappedHost}]:${port}`
+    : `${host}:${port}`;
+}
+
+function kubernetesApiUrl(server: string, path: string): URL {
+  const url = new URL(server);
+  let relativePath = path;
+  while (relativePath.startsWith("/")) {
+    relativePath = relativePath.slice(1);
+  }
+  url.pathname = `${trimTrailingSlashes(url.pathname)}/${relativePath}`;
+  url.search = "";
+  url.hash = "";
+  return url;
+}
+
 const IN_CLUSTER_CA_PATH =
   "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
 
-/** Resolves a trusted endpoint and its matching CA without reading client kubeconfig trust. */
-export function resolveTrustedKubernetesApiServer(input: {
-  explicitCa?: string;
-  explicitUrl?: string;
+/** Pins Pods to their internal API transport and otherwise uses the active kubeconfig cluster. */
+export function resolveKubernetesApiServer(input: {
+  allowKubeconfigTransport?: boolean;
   inClusterCa?: string;
+  kubeconfigCa?: string;
+  kubeconfigInsecureSkipTlsVerify?: boolean;
+  kubeconfigServer: string;
+  kubeconfigServerName?: string;
   serviceHost?: string;
   servicePort?: string;
 }):
-  | { ca: string | undefined; ok: true; server: string }
+  | {
+      ca: string | undefined;
+      insecureSkipTlsVerify: boolean;
+      ok: true;
+      server: string;
+      serverName: string | undefined;
+    }
   | { message: string; ok: false } {
-  const explicitCa = input.explicitCa?.trim() ?? "";
-  const explicitUrl = input.explicitUrl?.trim() ?? "";
   const inClusterCa = input.inClusterCa?.trim() ?? "";
+  const kubeconfigCa = input.kubeconfigCa?.trim() ?? "";
+  const kubeconfigServer = input.kubeconfigServer.trim();
+  const kubeconfigServerName = input.kubeconfigServerName?.trim() || undefined;
   const serviceHost = input.serviceHost?.trim() ?? "";
   const servicePort = input.servicePort?.trim() ?? "";
 
@@ -166,52 +217,66 @@ export function resolveTrustedKubernetesApiServer(input: {
     };
   }
 
+  let insecureSkipTlsVerify: boolean;
   let raw: string;
   let ca: string | undefined;
+  let serverName: string | undefined;
   if (serviceHost !== "" && servicePort !== "") {
-    raw = `https://${serviceHost}:${servicePort}`;
-    ca = inClusterCa || explicitCa || undefined;
-  } else if (explicitUrl === "") {
-    return {
-      message:
-        "Kubernetes API server is not configured (set K8S_API_URL or run in-cluster); refusing to verify namespace access.",
-      ok: false,
-    };
+    if (inClusterCa === "") {
+      return {
+        message: "In-cluster Kubernetes API server CA is unavailable.",
+        ok: false,
+      };
+    }
+    raw = `https://${joinHostPort(serviceHost, servicePort)}`;
+    ca = inClusterCa;
+    insecureSkipTlsVerify = false;
+    serverName = undefined;
   } else {
-    raw = explicitUrl;
-    ca = explicitCa || undefined;
+    if (input.allowKubeconfigTransport !== true) {
+      return {
+        message:
+          "Off-cluster Kubernetes API access is available only in development.",
+        ok: false,
+      };
+    }
+    raw = kubeconfigServer;
+    insecureSkipTlsVerify = input.kubeconfigInsecureSkipTlsVerify === true;
+    ca = insecureSkipTlsVerify ? undefined : kubeconfigCa || undefined;
+    serverName = kubeconfigServerName;
   }
 
   let serverUrl: URL;
   try {
     serverUrl = new URL(raw);
   } catch {
-    return { message: "Trusted Kubernetes API server is invalid.", ok: false };
+    return { message: "Kubernetes API server is invalid.", ok: false };
   }
-  if (serverUrl.protocol !== "https:") {
+  if (!isAllowedKubernetesServerUrl(serverUrl)) {
     return {
-      message: "Trusted Kubernetes API server must use https.",
+      message: "Kubernetes API server must use HTTPS unless it is loopback.",
       ok: false,
     };
   }
   return {
     ca,
+    insecureSkipTlsVerify,
     ok: true,
     server: trimTrailingSlashes(serverUrl.toString()),
+    serverName,
   };
 }
 
 /**
- * The trusted Kubernetes API transport for namespace access reviews. Never the
- * client-supplied kubeconfig transport: verification against a server named by
- * that same credential would let an attacker return `allowed: true` (F5).
- * In-cluster coordinates and their mounted CA take precedence; K8S_API_URL/CA
- * are the off-cluster fallback. If the CA mount is disabled, K8S_API_CA may
- * supply the cluster CA without supplying a Pod service-account token.
+ * Production Pods use only their Kubernetes-injected endpoint and mounted CA.
+ * Off-cluster development follows the active kubeconfig cluster transport.
  */
-function trustedKubernetesApiServer(): ReturnType<
-  typeof resolveTrustedKubernetesApiServer
-> {
+function kubernetesApiServer(
+  credentials: Extract<
+    ReturnType<typeof activeKubeconfigCredentials>,
+    { ok: true }
+  >
+): ReturnType<typeof resolveKubernetesApiServer> {
   const serviceHost = process.env.KUBERNETES_SERVICE_HOST;
   const servicePort = process.env.KUBERNETES_SERVICE_PORT;
   let inClusterCa: string | undefined;
@@ -220,28 +285,40 @@ function trustedKubernetesApiServer(): ReturnType<
       inClusterCa = readFileSync(IN_CLUSTER_CA_PATH, "utf8");
     }
   } catch {
-    // K8S_API_CA or the default trust store remains available below.
+    // The resolver fails closed for an in-cluster process without its mounted CA.
   }
 
-  return resolveTrustedKubernetesApiServer({
-    explicitCa: process.env.K8S_API_CA,
-    explicitUrl: process.env.K8S_API_URL,
+  return resolveKubernetesApiServer({
+    allowKubeconfigTransport: process.env.NODE_ENV === "development",
     inClusterCa,
+    kubeconfigCa: credentials.ca,
+    kubeconfigInsecureSkipTlsVerify: credentials.insecureSkipTlsVerify,
+    kubeconfigServer: credentials.server,
+    kubeconfigServerName: credentials.serverName,
     serviceHost,
     servicePort,
   });
 }
 
-/**
- * Dispatcher for the trusted API server connection. TLS verification is always
- * enabled; the client kubeconfig's `insecure-skip-tls-verify` and CA are
- * deliberately ignored so a client cannot weaken or redirect the channel.
- */
-function verificationDispatcher(ca: string | undefined): Agent | undefined {
-  if (ca == null) {
+function verificationDispatcher(input: {
+  ca: string | undefined;
+  insecureSkipTlsVerify: boolean;
+  serverName: string | undefined;
+}): Agent | undefined {
+  if (
+    input.ca == null &&
+    !input.insecureSkipTlsVerify &&
+    input.serverName == null
+  ) {
     return undefined;
   }
-  return new Agent({ connect: { ca, rejectUnauthorized: true } });
+  return new Agent({
+    connect: {
+      ca: input.ca,
+      rejectUnauthorized: !input.insecureSkipTlsVerify,
+      servername: input.serverName,
+    },
+  });
 }
 
 export async function verifyKubeconfigNamespaceAccess(input: {
@@ -252,17 +329,18 @@ export async function verifyKubeconfigNamespaceAccess(input: {
   if (!credentials.ok) {
     return { message: credentials.message, ok: false, status: 400 };
   }
-  const apiServer = trustedKubernetesApiServer();
+  const apiServer = kubernetesApiServer(credentials);
   if (!apiServer.ok) {
     return { message: apiServer.message, ok: false, status: 500 };
   }
 
   const controller = new AbortController();
+  const dispatcher = verificationDispatcher(apiServer);
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const url = new URL(
-      "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
-      apiServer.server
+    const url = kubernetesApiUrl(
+      apiServer.server,
+      "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
     );
     const init: FetchInitWithDispatcher = {
       body: JSON.stringify({
@@ -277,7 +355,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
           },
         },
       }),
-      dispatcher: verificationDispatcher(apiServer.ca),
+      dispatcher,
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${credentials.token}`,
@@ -287,6 +365,9 @@ export async function verifyKubeconfigNamespaceAccess(input: {
       signal: controller.signal,
     };
     const response = await fetch(url, init as RequestInit);
+    if (!response.ok) {
+      await response.body?.cancel();
+    }
 
     if (response.status === 401) {
       return {
@@ -337,6 +418,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
     };
   } finally {
     clearTimeout(timeout);
+    await dispatcher?.close();
   }
 }
 
