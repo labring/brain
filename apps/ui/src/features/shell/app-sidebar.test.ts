@@ -19,7 +19,7 @@ const CREATE_SEALOS_APP_RE = /createSealosApp/;
 const HARDCODED_USAGE_VALUE_RE = /"0\.0\/0"/;
 const DESKTOP_RETURN_BUTTON_RE = /aria-label="Back to Sealos Desktop"/;
 const DESKTOP_RETURN_URL_RE =
-  /const SEALOS_DESKTOP_URL = "https:\/\/usw-1\.sealos\.io"/;
+  /const SEALOS_DESKTOP_URL = "https:\/\/usw-1\.sealos\.io\/\?openapp="/;
 const DESKTOP_RETURN_NEW_TAB_RE =
   /href=\{SEALOS_DESKTOP_URL\}[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"/;
 const CLOSE_BRAIN_EVENT_RE = /closeDesktopApp/;
