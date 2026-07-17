@@ -278,7 +278,7 @@ function ProjectAssistantComposer({
         <Chat.ComposerTextarea
           onPrimaryAction={onPrimaryAction}
           onValueChange={setInput}
-          placeholder="Ask SealAI to inspect, deploy, or explain this project..."
+          placeholder="Ask Sealos Agent to inspect, deploy, or explain this project..."
           responding={busy}
           value={input}
         />
