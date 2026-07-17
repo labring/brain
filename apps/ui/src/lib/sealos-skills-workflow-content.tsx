@@ -6,7 +6,8 @@ import { Check, Copy } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
-export const SEALOS_SKILLS_INSTALL_COMMAND = "npx skills add labring/seakills";
+export const SEALOS_SKILLS_INSTALL_COMMAND =
+  "npx skills add labring/sealos-skills";
 
 export const SEALOS_SKILLS_FLOW_STEPS = [
   {
