@@ -26,7 +26,16 @@ export type ProjectGlobalSidePaneEntry =
   | { kind: "deploymentTaskTimeline"; projectId: string; taskId: string }
   | { kind: "dockerDeployment"; projectId: string }
   | { kind: "githubDeployment"; projectId: string }
-  | { kind: "projectCreation"; entryMode: ProjectCreationPaneEntryMode }
+  | {
+      kind: "projectCreation";
+      entryMode: Exclude<ProjectCreationPaneEntryMode, "templateDirect">;
+    }
+  | {
+      kind: "projectCreation";
+      entryMode: "templateDirect";
+      templateForm?: string;
+      templateName?: string;
+    }
   | { kind: "skillsWorkflow" }
   | { kind: "templateDeployment"; projectId: string };
 

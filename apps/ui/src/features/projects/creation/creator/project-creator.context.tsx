@@ -101,12 +101,20 @@ export interface ProjectCreatorRootProps {
   githubDeployer?: ProjectCreatorGithubDeployerSlot;
   /** Optional initial source step for direct assistant/tool entry paths. */
   initialStep?: ProjectCreatorSourceKind | null;
+  /** Template form values supplied by a direct URL entry. */
+  initialTemplateArgs?: Record<string, string>;
+  /** Template requested by a direct URL entry. */
+  initialTemplateName?: string;
   /** Reports active source changes to outer chrome such as pane headers. */
   onStepChange?: (step: ProjectCreatorSourceKind | null) => void;
   /** Direct Template entry derives the Project Display Name from the selected template. */
   templateDirect?: boolean;
   /** Options for the template step combobox. */
   templateOptions?: ProjectCreatorTemplateChoice[];
+  /** Catalog error shown within the existing Template deployment form. */
+  templateOptionsError?: string;
+  /** Disables Template deployment while the catalog is loading. */
+  templateOptionsLoading?: boolean;
 }
 
 function normalizeProjectCreatorDisplayName(name: string): string {
@@ -158,9 +166,13 @@ export function ProjectCreatorRoot({
   existingProjectDisplayNames = [],
   githubDeployer: githubDeployerProp,
   initialStep = null,
+  initialTemplateArgs,
+  initialTemplateName,
   onStepChange,
   templateDirect = false,
   templateOptions = [],
+  templateOptionsError,
+  templateOptionsLoading = false,
 }: ProjectCreatorRootProps) {
   const [step, setStep] = useState<ProjectCreatorSourceKind | null>(
     initialStep
@@ -330,6 +342,8 @@ export function ProjectCreatorRoot({
           actionsProp?.deriveDatabaseProjectDisplayName,
         deriveDockerProjectDisplayName:
           actionsProp?.deriveDockerProjectDisplayName,
+        deriveTemplateProjectDisplayName:
+          actionsProp?.deriveTemplateProjectDisplayName,
         onGithubConfirm: actionsProp?.onGithubConfirm,
         onDockerConfirm: actionsProp?.onDockerConfirm,
         onDatabaseConfirm: actionsProp?.onDatabaseConfirm,
@@ -341,8 +355,12 @@ export function ProjectCreatorRoot({
         dockerDirect,
         enabledSources,
         githubDeployer: githubDeployerProp,
+        initialTemplateArgs,
+        initialTemplateName,
         templateDirect,
         templateOptions,
+        templateOptionsError,
+        templateOptionsLoading,
       },
     }),
     [
@@ -356,6 +374,8 @@ export function ProjectCreatorRoot({
       dockerDirect,
       enabledSources,
       githubDeployerProp,
+      initialTemplateArgs,
+      initialTemplateName,
       projectDisplayName,
       projectDisplayNameError,
       projectDescription,
@@ -364,6 +384,8 @@ export function ProjectCreatorRoot({
       setProjectDisplayName,
       templateDirect,
       templateOptions,
+      templateOptionsError,
+      templateOptionsLoading,
       validateAndSetProjectDescriptionError,
       validateAndSetProjectDisplayNameError,
     ]

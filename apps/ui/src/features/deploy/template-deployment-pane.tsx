@@ -135,10 +135,9 @@ export function TemplateDeploymentPane({
           deploying || currentProject.isLoading || templateCatalog.isLoading
         }
         deployLabel={redeploy == null ? undefined : "Redeploy"}
-        emptyMessage={
-          templateCatalog.error?.message ?? "No templates are available."
-        }
+        errorMessage={templateCatalog.error?.message}
         initialSettings={initialSettings}
+        loading={templateCatalog.isLoading}
         onDeploy={(settings) => {
           overwriteGate.gate(() => {
             deploy(settings).catch(() => undefined);

@@ -53,11 +53,7 @@ function selectedChoice(
   options: readonly TemplateDeploymentChoice[],
   selectedName: string
 ) {
-  return (
-    options.find((option) => option.name === selectedName) ??
-    options.find((option) => option.name === defaultTemplateName(options)) ??
-    null
-  );
+  return options.find((option) => option.name === selectedName) ?? null;
 }
 
 function defaultArgs(choice: TemplateDeploymentChoice | null) {
@@ -149,19 +145,24 @@ export function templateSensitiveKeys(
 }
 
 export function TemplateDeployer({
+  autoDeploy = false,
   busy = false,
   className,
   deployLabel = "Deploy",
   emptyMessage = "No templates are available.",
+  errorMessage,
   initialSettings,
+  loading = false,
   onDeploy,
   onSettingsChange,
   templateOptions: choices,
 }: {
+  autoDeploy?: boolean;
   busy?: boolean;
   className?: string;
   deployLabel?: string;
   emptyMessage?: string;
+  errorMessage?: string;
   onDeploy?: (
     settings: TemplateDeploymentSettings,
     choice: TemplateDeploymentChoice
@@ -171,6 +172,7 @@ export function TemplateDeployer({
     choice: TemplateDeploymentChoice | null
   ) => void;
   initialSettings?: TemplateDeploymentInitialSettings;
+  loading?: boolean;
   templateOptions: readonly TemplateDeploymentChoice[];
 }) {
   const inputIdPrefix = useId();
@@ -181,6 +183,10 @@ export function TemplateDeployer({
   const [args, setArgs] = useState<Record<string, string>>(() =>
     defaultArgs(choice)
   );
+  const [initialSettingsReady, setInitialSettingsReady] = useState(false);
+  const autoDeployStateRef = useRef<
+    "cancelled" | "eligible" | "pending" | "triggered"
+  >("pending");
   // Prefill args apply once, when the initial template's choice first
   // resolves from the catalog; switching templates resets to defaults.
   const initialArgsRef = useRef<{
@@ -194,22 +200,51 @@ export function TemplateDeployer({
         }
       : null
   );
+  const appliedInitialSettingsRef = useRef(initialSettings);
 
   useEffect(() => {
-    setTemplateName(
-      (current) =>
-        selectedChoice(choices, current)?.name ?? defaultTemplateName(choices)
+    setTemplateName((current) =>
+      current.trim() === "" ? defaultTemplateName(choices) : current
     );
   }, [choices]);
+
+  useEffect(() => {
+    if (appliedInitialSettingsRef.current === initialSettings) {
+      return;
+    }
+    setInitialSettingsReady(false);
+    appliedInitialSettingsRef.current = initialSettings;
+    const nextTemplateName = initialSettings?.templateName?.trim() ?? "";
+    initialArgsRef.current =
+      nextTemplateName !== "" && initialSettings?.args != null
+        ? { args: initialSettings.args, templateName: nextTemplateName }
+        : null;
+    const nextSelectedName = nextTemplateName || defaultTemplateName(choices);
+    const nextChoice = selectedChoice(choices, nextSelectedName);
+    const seed = initialArgsRef.current;
+    if (nextChoice != null) {
+      setArgs(
+        seed?.templateName === nextChoice.name
+          ? { ...defaultArgs(nextChoice), ...seed.args }
+          : defaultArgs(nextChoice)
+      );
+      if (seed?.templateName === nextChoice.name) {
+        initialArgsRef.current = null;
+      }
+    }
+    setTemplateName(nextSelectedName);
+  }, [choices, initialSettings]);
 
   useEffect(() => {
     const seed = initialArgsRef.current;
     if (seed != null && choice != null && choice.name === seed.templateName) {
       initialArgsRef.current = null;
       setArgs({ ...defaultArgs(choice), ...seed.args });
+      setInitialSettingsReady(true);
       return;
     }
     setArgs(defaultArgs(choice));
+    setInitialSettingsReady(choice != null);
   }, [choice]);
 
   const settings = useMemo<TemplateDeploymentSettings>(
@@ -223,13 +258,54 @@ export function TemplateDeployer({
   const missingRequired = (choice?.args ?? []).find(
     (arg) => arg.required && (args[arg.key]?.trim() ?? "") === ""
   );
-  const canDeploy = !busy && choice != null && missingRequired == null;
+  const requiredArgsComplete = missingRequired == null;
+  const catalogError = errorMessage?.trim() ?? "";
+  const canDeploy =
+    !(busy || loading) &&
+    catalogError === "" &&
+    choice != null &&
+    missingRequired == null;
 
   useEffect(() => {
     onSettingsChange?.(settings, choice);
   }, [choice, onSettingsChange, settings]);
 
+  useEffect(() => {
+    if (!(autoDeploy && initialSettingsReady) || choice == null) {
+      return;
+    }
+
+    if (autoDeployStateRef.current === "pending") {
+      const requestedTemplateName = initialSettings?.templateName?.trim();
+      autoDeployStateRef.current =
+        requestedTemplateName === choice.name && requiredArgsComplete
+          ? "eligible"
+          : "cancelled";
+    }
+
+    if (
+      autoDeployStateRef.current !== "eligible" ||
+      !canDeploy ||
+      onDeploy == null
+    ) {
+      return;
+    }
+    autoDeployStateRef.current = "triggered";
+    onDeploy(settings, choice);
+  }, [
+    autoDeploy,
+    canDeploy,
+    choice,
+    initialSettings,
+    initialSettingsReady,
+    onDeploy,
+    requiredArgsComplete,
+    settings,
+  ]);
+
   if (choices.length === 0) {
+    const statusMessage =
+      catalogError || (loading ? "Loading templates..." : emptyMessage);
     return (
       <div
         className={cn(
@@ -239,7 +315,7 @@ export function TemplateDeployer({
         data-slot="template-deployer-empty"
         data-testid="template.deployer.empty"
       >
-        {emptyMessage}
+        {statusMessage}
       </div>
     );
   }
@@ -257,12 +333,22 @@ export function TemplateDeployer({
         <DeploymentSettings.Control>
           <TemplateSearchSelect
             choices={choices}
-            disabled={busy}
-            onValueChange={setTemplateName}
+            disabled={busy || loading}
+            onValueChange={(nextTemplateName) => {
+              initialArgsRef.current = null;
+              setTemplateName(nextTemplateName);
+            }}
             value={templateName}
           />
-          <p className="text-muted-foreground text-sm leading-5">
-            {choice?.description || "Choose a template to deploy."}
+          <p
+            className="text-muted-foreground text-sm leading-5"
+            data-testid="template.deployer.status"
+          >
+            {catalogError ||
+              choice?.description ||
+              (templateName.trim() === ""
+                ? "Choose a template to deploy."
+                : `Template "${templateName}" is unavailable. Choose another template.`)}
           </p>
         </DeploymentSettings.Control>
       </DeploymentSettings.Section>
@@ -290,10 +376,9 @@ export function TemplateDeployer({
                       aria-label={arg.key}
                       data-template-arg={arg.key}
                       data-testid="template.deployer.parameter-input"
-                      disabled={busy}
+                      disabled={busy || loading}
                       id={inputId}
-                      onChange={(event) => {
-                        const nextValue = event.currentTarget.value;
+                      onValueChange={(nextValue) => {
                         setArgs((current) => ({
                           ...current,
                           [arg.key]: nextValue,

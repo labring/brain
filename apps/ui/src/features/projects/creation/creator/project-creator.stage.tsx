@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DatabaseDeployer } from "@/features/deploy/database-deployer";
 import {
   DockerDeployer,
@@ -212,16 +212,19 @@ function DatabasePanel({
 
 function TemplatePanel() {
   const { actions, meta, states } = useProjectCreator();
-  const [templateTitle, setTemplateTitle] = useState("");
-  const { setProjectDisplayName } = actions;
   const busy = states.confirmApplying;
-
-  useEffect(() => {
-    if (!meta.templateDirect || templateTitle.trim() === "") {
-      return;
-    }
-    setProjectDisplayName(templateTitle.trim());
-  }, [meta.templateDirect, setProjectDisplayName, templateTitle]);
+  const initialSettings = useMemo(
+    () =>
+      meta.initialTemplateName == null
+        ? undefined
+        : {
+            ...(meta.initialTemplateArgs == null
+              ? {}
+              : { args: meta.initialTemplateArgs }),
+            templateName: meta.initialTemplateName,
+          },
+    [meta.initialTemplateArgs, meta.initialTemplateName]
+  );
 
   return (
     <div
@@ -229,10 +232,15 @@ function TemplatePanel() {
       data-slot="project-creator-template"
     >
       <TemplateDeployer
+        autoDeploy={meta.templateDirect && meta.initialTemplateArgs != null}
         busy={busy}
+        errorMessage={meta.templateOptionsError}
+        initialSettings={initialSettings}
+        loading={meta.templateOptionsLoading}
         onDeploy={(settings: TemplateDeploymentSettings, choice) => {
           const projectDisplayName = meta.templateDirect
-            ? choice.title.trim() || choice.name.trim() || "Template Project"
+            ? (actions.deriveTemplateProjectDisplayName?.(choice) ??
+              (choice.title.trim() || choice.name.trim() || "Template Project"))
             : states.projectDisplayName.trim();
           const projectDescription = meta.templateDirect
             ? ""
@@ -250,9 +258,6 @@ function TemplatePanel() {
             projectDisplayName,
             projectDescription
           );
-        }}
-        onSettingsChange={(_settings, choice) => {
-          setTemplateTitle(choice?.title ?? "");
         }}
         templateOptions={meta.templateOptions}
       />

@@ -41,6 +41,9 @@ export interface ProjectCreatorActions {
     choice: ProjectCreatorDatabaseChoice
   ) => string;
   deriveDockerProjectDisplayName?: (imageRef: string) => string;
+  deriveTemplateProjectDisplayName?: (
+    choice: ProjectCreatorTemplateChoice
+  ) => string;
   onDatabaseConfirm?: (
     settings: DatabaseDeploymentSettings,
     projectDisplayName: string,
@@ -96,7 +99,11 @@ export interface ProjectCreatorValue {
   meta: {
     databaseOptions: ProjectCreatorDatabaseChoice[];
     enabledSources: readonly ProjectCreatorSourceKind[];
+    initialTemplateArgs?: Record<string, string>;
     templateOptions: ProjectCreatorTemplateChoice[];
+    initialTemplateName?: string;
+    templateOptionsError?: string;
+    templateOptionsLoading: boolean;
     /** Direct Database entry derives the Project Display Name from the selected engine. */
     databaseDirect: boolean;
     dockerDirect: boolean;

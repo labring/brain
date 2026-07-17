@@ -66,6 +66,7 @@ test("project creator description field warns on soft over-limit drafts", () => 
           enabledSources: [],
           templateDirect: false,
           templateOptions: [],
+          templateOptionsLoading: false,
         },
         states: {
           confirmApplying: false,
