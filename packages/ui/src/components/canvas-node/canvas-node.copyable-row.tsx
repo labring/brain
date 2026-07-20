@@ -38,6 +38,12 @@ export interface CanvasNodeCopyFeedbackScopeProps {
 export interface CanvasNodeCopyableRowState {
   copied: boolean;
   copyable: boolean;
+  /**
+   * Runs the row's copy action — the injected onCopy or the clipboard
+   * fallback — followed by copied feedback, exactly like the row hit-area.
+   * Lets custom controls inside the row copy without a second pipeline.
+   */
+  copyRow: () => Promise<void>;
 }
 
 type CanvasNodeCopyableRowChildren =
@@ -206,13 +212,6 @@ export function CanvasNodeCopyableRow({
   const { copiedKey, showCopiedFeedback } = useCanvasNodeCopyFeedback();
   const hasCopyValue = typeof copyValue === "string" && copyValue.length > 0;
   const resolvedCopyable = (copyable ?? hasCopyValue) && hasCopyValue;
-  const state = useMemo(
-    (): CanvasNodeCopyableRowState => ({
-      copied: copiedKey === rowKey,
-      copyable: resolvedCopyable,
-    }),
-    [copiedKey, resolvedCopyable, rowKey]
-  );
 
   const copyRow = useCallback(async () => {
     if (!(resolvedCopyable && copyValue)) {
@@ -228,6 +227,15 @@ export function CanvasNodeCopyableRow({
     }
     showCopiedFeedback(rowKey);
   }, [copyValue, onCopy, resolvedCopyable, rowKey, showCopiedFeedback]);
+
+  const state = useMemo(
+    (): CanvasNodeCopyableRowState => ({
+      copied: copiedKey === rowKey,
+      copyable: resolvedCopyable,
+      copyRow,
+    }),
+    [copiedKey, copyRow, resolvedCopyable, rowKey]
+  );
 
   return (
     <CanvasNodeCopyableRowContext value={state}>

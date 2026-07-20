@@ -17,7 +17,6 @@ export interface RevealedRow {
  * stays silent, matching the AP Environment editor.
  */
 export function useRevealedRow(): {
-  hideRevealedRow: () => void;
   revealedRow: RevealedRow | null;
   toggleRevealedRow: (
     key: string,
@@ -70,5 +69,5 @@ export function useRevealedRow(): {
     [clearHideTimeout, hideRevealedRow]
   );
 
-  return { hideRevealedRow, revealedRow, toggleRevealedRow };
+  return { revealedRow, toggleRevealedRow };
 }

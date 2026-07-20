@@ -1,5 +1,6 @@
 "use client";
 
+import type { DbLifecycleWorkloadRef } from "@workspace/api/hooks";
 import type {
   DatabaseNodeActions,
   DatabaseNodeConnection,
@@ -48,7 +49,7 @@ function databaseNodeRevealActions({
   commands: NonNullable<ReturnType<typeof useProjectCanvasNodeCommands>>;
   revealAvailable: boolean;
   toggleRevealedRow: ReturnType<typeof useRevealedRow>["toggleRevealedRow"];
-  workload: { name: string; namespace: string } | null;
+  workload: DbLifecycleWorkloadRef | null;
 }): Pick<DatabaseNodeActions, "revealConnection"> {
   if (workload == null || !revealAvailable) {
     return {};

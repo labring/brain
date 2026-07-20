@@ -4,7 +4,7 @@ import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   CanvasNodeCopyableRow,
   CanvasNodeCopyableRowControl,
-  useCanvasNodeCopyFeedback,
+  useCanvasNodeCopyableRow,
 } from "@workspace/ui/components/canvas-node/canvas-node.copyable-row";
 import {
   Tooltip,
@@ -13,7 +13,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { Check, Copy, Eye, EyeClosed } from "lucide-react";
-import { type ReactNode, useCallback } from "react";
+import type { ReactNode } from "react";
 
 import { MASKED_CONNECTION_VALUE } from "./database-node.mask";
 import type { DatabaseNodeConnection } from "./database-node.types";
@@ -95,13 +95,6 @@ function databaseConnectionRowValueKind(
   };
 }
 
-async function writeClipboardText(value: string): Promise<void> {
-  if (typeof navigator === "undefined" || !navigator.clipboard) {
-    return;
-  }
-  await navigator.clipboard.writeText(value);
-}
-
 /**
  * The one DB connection row anatomy shared by the canvas DB node and DB
  * Settings (ADR-0054): label plus optional public switch on the top line;
@@ -130,22 +123,6 @@ export function DatabaseConnectionRow({
       : true;
   const valueKind = databaseConnectionRowValueKind(connection, publicEnabled);
   const copyable = valueKind?.kind === "secret";
-  const { showCopiedFeedback } = useCanvasNodeCopyFeedback();
-
-  const connectionValue = connection.value;
-  const copyRowValue = useCallback(async () => {
-    if (onCopy) {
-      await onCopy();
-    } else if (connectionValue) {
-      await writeClipboardText(connectionValue);
-    } else {
-      return;
-    }
-    showCopiedFeedback(rowKey);
-  }, [connectionValue, onCopy, rowKey, showCopiedFeedback]);
-  const handleCopyClick = useCallback(() => {
-    copyRowValue().catch(() => undefined);
-  }, [copyRowValue]);
 
   return (
     <CanvasNodeCopyableRow
@@ -192,7 +169,6 @@ export function DatabaseConnectionRow({
             <DatabaseConnectionRowValueLine
               copied={copied}
               label={label}
-              onCopyClick={handleCopyClick}
               onToggleReveal={onToggleReveal}
               revealedValue={revealedValue}
               rowCopyable={rowCopyable}
@@ -209,7 +185,6 @@ export function DatabaseConnectionRow({
 function DatabaseConnectionRowValueLine({
   copied,
   label,
-  onCopyClick,
   onToggleReveal,
   revealedValue,
   rowCopyable,
@@ -218,7 +193,6 @@ function DatabaseConnectionRowValueLine({
 }: {
   copied: boolean;
   label: string;
-  onCopyClick: () => void;
   onToggleReveal?: () => Promise<void> | void;
   revealedValue?: string;
   rowCopyable: boolean;
@@ -226,6 +200,10 @@ function DatabaseConnectionRowValueLine({
   valueKind: NonNullable<DatabaseConnectionRowValueKind>;
 }) {
   const revealed = revealedValue !== undefined;
+  const { copyRow } = useCanvasNodeCopyableRow();
+  const handleCopyClick = () => {
+    copyRow().catch(() => undefined);
+  };
 
   return (
     <div
@@ -243,7 +221,7 @@ function DatabaseConnectionRowValueLine({
       {valueKind.kind === "secret" ? (
         <>
           <DatabaseConnectionRowSecretValue
-            onCopyClick={onCopyClick}
+            onCopyClick={handleCopyClick}
             revealedValue={revealedValue}
           />
           <CanvasNodeCopyableRowControl className="pointer-events-auto relative z-20 flex shrink-0 items-center gap-0.5">
@@ -274,7 +252,7 @@ function DatabaseConnectionRowValueLine({
                 copied && "text-foreground"
               )}
               data-slot="database-connection-copy-button"
-              onClick={onCopyClick}
+              onClick={handleCopyClick}
               size="sm"
               type="button"
               variant="quiet"

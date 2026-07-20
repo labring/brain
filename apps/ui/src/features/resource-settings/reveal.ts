@@ -20,7 +20,8 @@ export async function writeTextToClipboard(value: string): Promise<void> {
  * Copies a secret-bearing value that page state only holds as a credential-free
  * placeholder (e.g. a DB Connection Template, ADR-0052): when a resolver is
  * available the complete value is fetched on demand and copied; without one the
- * placeholder — exactly what the row displays — is copied instead. A failed
+ * placeholder is copied instead — the most useful value a resolver-less surface
+ * can offer, even though the row itself renders a mask (ADR-0054). A failed
  * resolve rejects so callers surface the error rather than silently copying a
  * value that will not work.
  */
