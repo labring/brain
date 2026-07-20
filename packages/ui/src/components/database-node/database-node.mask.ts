@@ -1,6 +1,7 @@
 /**
- * Fixed-width mask rendered instead of a secret-bearing value — DB connection
- * rows and the AP Environment editor share it so the product keeps one visual
- * language for "value with a secret behind it" (ADR-0054).
+ * Fixed-width mask rendered in place of a DB connection DSN, so the row never
+ * varies with the secret behind it (ADR-0054). The AP Environment editor owns
+ * its own mask sized to its own rows; the two surfaces share the reveal
+ * interaction, not this string.
  */
-export const MASKED_SECRET_VALUE = "*******";
+export const DATABASE_CONNECTION_MASK = "************";

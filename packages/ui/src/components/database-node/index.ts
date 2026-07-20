@@ -30,12 +30,12 @@ export type {
 // biome-ignore lint/performance/noBarrelFile: database-node public package surface
 export {
   canCopyDatabaseNodeConnection,
+  DATABASE_CONNECTION_MASK,
   DatabaseConnectionRow,
   DatabaseNode,
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
   getDatabaseNodeConnectionKey,
-  MASKED_SECRET_VALUE,
   resolveDatabaseNodeStatus,
   resolveDatabaseNodeVisualTone,
 } from "./database-node";

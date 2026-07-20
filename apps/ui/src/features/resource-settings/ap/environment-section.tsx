@@ -7,7 +7,6 @@ import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { Badge } from "@workspace/ui/components/badge";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
-import { MASKED_SECRET_VALUE } from "@workspace/ui/components/database-node/database-node.mask";
 import {
   Popover,
   PopoverContent,
@@ -135,6 +134,9 @@ const DB_REFERENCE_FIELD_LABELS: Record<ApEnvDbReferenceField, string> = {
   public: "Public DSN",
   username: "Username",
 };
+// Sized to this editor's own rows; DB connection rows keep a separate, wider
+// mask — ADR-0054 shares the reveal interaction between them, not this string.
+const MASKED_ENV_VALUE = "*******";
 function envDbDsnFieldLabel(field: ApEnvDbReferenceField): string {
   return DB_REFERENCE_FIELD_LABELS[field];
 }
@@ -923,7 +925,7 @@ function SavedEnvValueControl({
   row,
 }: SavedEnvValueControlProps) {
   const displayValue = resolvedValuesAvailable
-    ? (revealedValue ?? MASKED_SECRET_VALUE)
+    ? (revealedValue ?? MASKED_ENV_VALUE)
     : envRowDisplayValue(row);
   const revealed = resolvedValuesAvailable && revealedValue !== undefined;
   const revealIcon = revealed ? (

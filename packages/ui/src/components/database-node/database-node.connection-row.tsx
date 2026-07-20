@@ -15,7 +15,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Check, Copy, Eye, EyeClosed } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { MASKED_SECRET_VALUE } from "./database-node.mask";
+import { DATABASE_CONNECTION_MASK } from "./database-node.mask";
 import type { DatabaseNodeConnection } from "./database-node.types";
 
 export type DatabaseConnectionRowVariant = "node" | "settings";
@@ -98,7 +98,7 @@ function databaseConnectionRowValueKind(
 /**
  * The one DB connection row anatomy shared by the canvas DB node and DB
  * Settings (ADR-0054): label plus optional public switch on the top line;
- * fixed `*******` mask, eye, and copy on the value line. The eye swaps the
+ * fixed-width mask, eye, and copy on the value line. The eye swaps the
  * revealed DSN into the row in place, hovering the revealed value reads the
  * full DSN in a tooltip, and copy (whole-row click or the button) runs the
  * injected on-demand fetch — the row never renders the DB Connection
@@ -294,7 +294,7 @@ function DatabaseConnectionRowSecretValue({
   if (revealedValue === undefined) {
     return (
       <span aria-hidden className="min-w-0 flex-1 truncate">
-        {MASKED_SECRET_VALUE}
+        {DATABASE_CONNECTION_MASK}
       </span>
     );
   }
