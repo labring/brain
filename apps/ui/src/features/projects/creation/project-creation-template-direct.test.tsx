@@ -76,6 +76,10 @@ test("template URL intent prefills parameters and deploys automatically", async 
         .textContent ?? "",
       FLOWISE_RE
     );
+    assert.ok(
+      rendered?.container.querySelector("header .lucide-panels-top-left"),
+      "template creation uses the PanelsTopLeft header icon"
+    );
     assert.equal(
       (rendered?.getByLabelText("port") as HTMLInputElement).value,
       "8080"
