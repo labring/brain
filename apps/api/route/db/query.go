@@ -481,6 +481,25 @@ func dbEnvKey(key string) string {
 // connection-string parse time rather than at authentication (ADR-0052).
 const dbConnectionTemplateUserInfo = "<username>:<password>"
 
+// dbConnectionShape describes how one engine's connection string is composed.
+// Engines without a shape have no DSN form and expose the bare address —
+// dbConnectionTemplate and dbConnectionString share this one table so the two
+// compositions cannot drift apart.
+type dbConnectionShape struct {
+	// includeDatabase puts the database name in the DSN path; redis addresses
+	// databases by index, not name.
+	includeDatabase bool
+	// allowPasswordOnly permits password-only userinfo, matching redis AUTH.
+	allowPasswordOnly bool
+}
+
+var dbConnectionShapes = map[string]dbConnectionShape{
+	"postgresql": {includeDatabase: true},
+	"mysql":      {includeDatabase: true},
+	"mongodb":    {includeDatabase: true},
+	"redis":      {allowPasswordOnly: true},
+}
+
 // dbConnectionTemplate composes the credential-free DB Connection Template for
 // DB read responses: placeholder userinfo, real address and database name.
 // Composed by string concatenation because url.URL would percent-encode the
@@ -491,18 +510,16 @@ func dbConnectionTemplate(db map[string]interface{}, address string, database st
 		return ""
 	}
 	profile := dbEngineProfileFromDBObject(db)
-	switch profile.Engine {
-	case "postgresql", "mysql", "mongodb":
-		database = strings.TrimSpace(database)
-		if database == "" {
-			database = profile.DefaultDatabase
-		}
-		return profile.Engine + "://" + dbConnectionTemplateUserInfo + "@" + address + dbConnectionPath(database)
-	case "redis":
-		return profile.Engine + "://" + dbConnectionTemplateUserInfo + "@" + address + dbConnectionPath("")
-	default:
+	shape, ok := dbConnectionShapes[profile.Engine]
+	if !ok {
 		return address
 	}
+	if !shape.includeDatabase {
+		database = ""
+	} else if strings.TrimSpace(database) == "" {
+		database = profile.DefaultDatabase
+	}
+	return profile.Engine + "://" + dbConnectionTemplateUserInfo + "@" + address + dbConnectionPath(database)
 }
 
 func dbConnectionString(db map[string]interface{}, address string, credentials ...dbConnectionCredentials) string {
@@ -511,26 +528,22 @@ func dbConnectionString(db map[string]interface{}, address string, credentials .
 		return ""
 	}
 	profile := dbEngineProfileFromDBObject(db)
+	shape, ok := dbConnectionShapes[profile.Engine]
+	if !ok {
+		return address
+	}
 	credential := dbConnectionCredentials{}
 	if len(credentials) > 0 {
 		credential = credentials[0]
 	}
-	database := strings.TrimSpace(credential.database)
-	if database == "" {
-		database = profile.DefaultDatabase
+	database := ""
+	if shape.includeDatabase {
+		database = strings.TrimSpace(credential.database)
+		if database == "" {
+			database = profile.DefaultDatabase
+		}
 	}
-	switch profile.Engine {
-	case "postgresql":
-		return dbConnectionURL("postgresql", address, database, credential, false)
-	case "mysql":
-		return dbConnectionURL("mysql", address, database, credential, false)
-	case "mongodb":
-		return dbConnectionURL("mongodb", address, database, credential, false)
-	case "redis":
-		return dbConnectionURL("redis", address, "", credential, true)
-	default:
-		return address
-	}
+	return dbConnectionURL(profile.Engine, address, database, credential, shape.allowPasswordOnly)
 }
 
 func dbConnectionURL(scheme string, address string, database string, credential dbConnectionCredentials, allowPasswordOnly bool) string {

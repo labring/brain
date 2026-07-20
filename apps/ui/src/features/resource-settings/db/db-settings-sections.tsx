@@ -47,7 +47,6 @@ import {
   type PendingSettingsOwnerIdentity,
   type PendingSettingsUpdateEntry,
 } from "@/features/resource-settings/pending-settings-updates";
-import { copyResolvedSecretValue } from "@/features/resource-settings/reveal";
 import type {
   SettingsLeaveGuardHandle,
   SettingsLeaveGuardRegistration,
@@ -58,12 +57,10 @@ import {
   type SettingsSubmissionDomainUpdate,
   useSettingsSubmissionEntries,
 } from "@/features/resource-settings/settings-submissions";
-import {
-  type RevealedRow,
-  useRevealedRow,
-} from "@/features/resource-settings/use-revealed-row";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { copyDbConnectionValue } from "@/lib/secret-reveal";
 import { toastErrorDetail } from "@/lib/toast-utils";
+import { type RevealedRow, useRevealedRow } from "@/lib/use-revealed-row";
 import {
   applyDbPendingTargets,
   type DbPendingSettingsTarget,
@@ -515,22 +512,12 @@ export function useDatabaseSettingsSections({
     [resolveConnectionString, toggleRevealedRow, workload]
   );
   const copyConnection = useCallback<DatabaseSettingsConnectionCopyHandler>(
-    async (connection) => {
-      try {
-        await copyResolvedSecretValue({
-          placeholderValue: connection.value ?? "",
-          resolveAvailable: revealAvailable,
-          resolveValue: () =>
-            resolveConnectionString(workload, connection.kind),
-        });
-      } catch (error) {
-        toastErrorDetail(
-          "Copy failed.",
-          "The connection string could not be fetched."
-        );
-        throw error;
-      }
-    },
+    (connection) =>
+      copyDbConnectionValue({
+        placeholderValue: connection.value ?? "",
+        resolveAvailable: revealAvailable,
+        resolveValue: () => resolveConnectionString(workload, connection.kind),
+      }),
     [resolveConnectionString, revealAvailable, workload]
   );
   const desiredCpuLimit = desired?.cpuLimit;

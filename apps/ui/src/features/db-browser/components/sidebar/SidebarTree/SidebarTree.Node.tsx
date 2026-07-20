@@ -1,6 +1,6 @@
 import {
+  useDbAccessDatabaseSystemObjectsRevealed,
   useDbAccessIsSelected,
-  useDbAccessSystemObjectsReveal,
 } from "@db-browser/state/db-access-session";
 import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { cn } from "@workspace/ui/lib/utils";
@@ -38,6 +38,8 @@ export interface TreeNodeContextValue {
 }
 
 const TreeNodeCtx = createContext<TreeNodeContextValue | null>(null);
+
+const NO_REVEALED_DATABASES: ReadonlySet<string> = new Set();
 
 export const TreeNodeProvider = TreeNodeCtx.Provider;
 
@@ -94,9 +96,20 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
   const isRoot = depth === 0;
   const isSelected = useDbAccessIsSelected(node.id);
   const isSystem = node.metadata.system === true;
-  const { revealedDatabases } = useDbAccessSystemObjectsReveal();
+  // System children always share one Logical Database (a node's descendants
+  // all come from its own database), so the node subscribes to that single
+  // database's reveal state instead of the whole aggregate (ADR-0049).
+  const systemChildDatabase = children?.find((child) => child.metadata.system)
+    ?.metadata.database;
+  const systemObjectsRevealed =
+    useDbAccessDatabaseSystemObjectsRevealed(systemChildDatabase);
   const visibleChildren = children
-    ? dataBrowserVisibleTreeChildren(children, revealedDatabases)
+    ? dataBrowserVisibleTreeChildren(
+        children,
+        systemObjectsRevealed && systemChildDatabase !== undefined
+          ? new Set([systemChildDatabase])
+          : NO_REVEALED_DATABASES
+      )
     : children;
 
   const Icon =

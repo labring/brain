@@ -340,6 +340,25 @@ export function useDbAccessSystemObjectsReveal() {
   return { revealedDatabases, toggleSystemObjects };
 }
 
+/**
+ * Per-node selector on the reveal aggregate (ADR-0049): a Tree Node subscribes
+ * only to whether one Logical Database has its System Objects revealed, so a
+ * toggle re-renders that database's nodes instead of broadcasting the whole
+ * set to every rendered node.
+ */
+export function useDbAccessDatabaseSystemObjectsRevealed(
+  database: string | undefined
+): boolean {
+  const revealedAtom = useMemo(
+    () =>
+      selectAtom(dbAccessRevealedSystemObjectsAtom, (revealedDatabases) =>
+        database === undefined ? false : revealedDatabases.has(database)
+      ),
+    [database]
+  );
+  return useAtomValue(revealedAtom);
+}
+
 export function useDbAccessReadOnlyActions() {
   const dbService = useDbAccessService();
 

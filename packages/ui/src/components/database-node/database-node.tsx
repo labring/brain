@@ -25,7 +25,7 @@ export {
   type DatabaseConnectionRowProps,
   type DatabaseConnectionRowVariant,
 } from "./database-node.connection-row";
-export { MASKED_CONNECTION_VALUE } from "./database-node.mask";
+export { MASKED_SECRET_VALUE } from "./database-node.mask";
 export {
   canCopyDatabaseNodeConnection,
   getDatabaseNodeConnectionKey,

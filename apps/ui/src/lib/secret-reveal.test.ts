@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
-import { copyResolvedSecretValue } from "./reveal";
+import { copyResolvedSecretValue } from "./secret-reveal";
 
 const REVEAL_FAILED_RE = /reveal failed/;
 

@@ -14,12 +14,8 @@ import type {
   ProjectDbTarget,
 } from "@/features/panes/target-identity";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
-import { copyResolvedSecretValue } from "@/features/resource-settings/reveal";
-import {
-  errorDescription,
-  toastErrorDetail,
-  toastPromiseDetail,
-} from "@/lib/toast-utils";
+import { copyDbConnectionValue } from "@/lib/secret-reveal";
+import { errorDescription, toastPromiseDetail } from "@/lib/toast-utils";
 
 export interface ProjectResourceActionCopy {
   loading: string;
@@ -152,27 +148,18 @@ export function useProjectResourceActions({
     });
 
   const copyDatabaseConnection = useCallback<ProjectDbConnectionCopyHandler>(
-    async (connection, workload) => {
+    (connection, workload) =>
       // Connection rows carry credential-free DB Connection Templates; copy
       // fetches the complete DB Connection DSN on demand (ADR-0052). The
       // template is copied only when no resolver backs the canvas at all.
-      try {
-        await copyResolvedSecretValue({
-          placeholderValue: connection.value ?? "",
-          resolveAvailable: workload != null && revealReady,
-          resolveValue: () =>
-            workload == null
-              ? Promise.reject(new Error("DB workload is unavailable."))
-              : resolveConnectionString(workload, connection.kind),
-        });
-      } catch (error) {
-        toastErrorDetail(
-          "Copy failed.",
-          "The connection string could not be fetched."
-        );
-        throw error;
-      }
-    },
+      copyDbConnectionValue({
+        placeholderValue: connection.value ?? "",
+        resolveAvailable: workload != null && revealReady,
+        resolveValue: () =>
+          workload == null
+            ? Promise.reject(new Error("DB workload is unavailable."))
+            : resolveConnectionString(workload, connection.kind),
+      }),
     [resolveConnectionString, revealReady]
   );
 

@@ -30,7 +30,7 @@ import {
   useCanvasDbLifecycleActivity,
   useProjectCanvasNodeCommands,
 } from "@/features/project-canvas/workbench/node-commands-react";
-import { useRevealedRow } from "@/features/resource-settings/use-revealed-row";
+import { useRevealedRow } from "@/lib/use-revealed-row";
 
 export interface CanvasDatabaseNodeViewModel {
   actions: DatabaseNodeActions;

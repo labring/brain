@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { SETTINGS_REVEAL_DURATION_MS } from "./reveal";
+import { REVEAL_DURATION_MS } from "./secret-reveal";
 
 export interface RevealedRow {
   key: string;
@@ -12,7 +12,7 @@ export interface RevealedRow {
 /**
  * One revealed secret row at a time (ADR-0054): revealing a row replaces any
  * previously revealed one, the reveal auto-hides after
- * SETTINGS_REVEAL_DURATION_MS, and toggling the revealed row hides it early.
+ * REVEAL_DURATION_MS, and toggling the revealed row hides it early.
  * Resolve failures and empty values leave the mask in place — reveal failure
  * stays silent, matching the AP Environment editor.
  */
@@ -64,7 +64,7 @@ export function useRevealedRow(): {
         hideTimeoutRef.current = null;
         revealedKeyRef.current = null;
         setRevealedRow(null);
-      }, SETTINGS_REVEAL_DURATION_MS);
+      }, REVEAL_DURATION_MS);
     },
     [clearHideTimeout, hideRevealedRow]
   );

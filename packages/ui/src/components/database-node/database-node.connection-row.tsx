@@ -15,7 +15,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Check, Copy, Eye, EyeClosed } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { MASKED_CONNECTION_VALUE } from "./database-node.mask";
+import { MASKED_SECRET_VALUE } from "./database-node.mask";
 import type { DatabaseNodeConnection } from "./database-node.types";
 
 export type DatabaseConnectionRowVariant = "node" | "settings";
@@ -294,7 +294,7 @@ function DatabaseConnectionRowSecretValue({
   if (revealedValue === undefined) {
     return (
       <span aria-hidden className="min-w-0 flex-1 truncate">
-        {MASKED_CONNECTION_VALUE}
+        {MASKED_SECRET_VALUE}
       </span>
     );
   }

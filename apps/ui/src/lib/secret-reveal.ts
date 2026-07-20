@@ -1,9 +1,11 @@
+import { toastErrorDetail } from "@/lib/toast-utils";
+
 /**
  * How long an explicitly revealed secret value stays on screen before
  * auto-hiding again. Shared by the AP Environment editor and the DB Settings
  * connection panel so every reveal surface behaves the same (ADR-0052).
  */
-export const SETTINGS_REVEAL_DURATION_MS = 30_000;
+export const REVEAL_DURATION_MS = 30_000;
 
 export async function writeTextToClipboard(value: string): Promise<void> {
   if (typeof navigator === "undefined" || !navigator.clipboard) {
@@ -43,5 +45,27 @@ export async function copyResolvedSecretValue({
   const value = await resolveValue();
   if (value !== "") {
     await writeTextToClipboard(value);
+  }
+}
+
+/**
+ * The DB connection rows' copy pipeline (ADR-0054), shared by the canvas DB
+ * node and DB Settings: copyResolvedSecretValue plus the rows' one failure
+ * surface — a failed on-demand fetch shows a toast and rethrows so the row's
+ * copied feedback never fires on a value that was never copied.
+ */
+export async function copyDbConnectionValue(options: {
+  placeholderValue: string;
+  resolveAvailable: boolean;
+  resolveValue: () => Promise<string>;
+}): Promise<void> {
+  try {
+    await copyResolvedSecretValue(options);
+  } catch (error) {
+    toastErrorDetail(
+      "Copy failed.",
+      "The connection string could not be fetched."
+    );
+    throw error;
   }
 }

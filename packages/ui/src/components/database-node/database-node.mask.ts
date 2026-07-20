@@ -1,6 +1,6 @@
 /**
- * Fixed-width mask DB connection rows render instead of the DB Connection
- * Template (ADR-0054). Matches the AP Environment editor's masked value so
- * the product keeps one visual language for "value with a secret behind it".
+ * Fixed-width mask rendered instead of a secret-bearing value — DB connection
+ * rows and the AP Environment editor share it so the product keeps one visual
+ * language for "value with a secret behind it" (ADR-0054).
  */
-export const MASKED_CONNECTION_VALUE = "*******";
+export const MASKED_SECRET_VALUE = "*******";

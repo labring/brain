@@ -26,10 +26,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import {
-  SETTINGS_REVEAL_DURATION_MS,
-  writeTextToClipboard,
-} from "@/features/resource-settings/reveal";
+import { REVEAL_DURATION_MS, writeTextToClipboard } from "@/lib/secret-reveal";
 import { isStorageShrink } from "@/lib/storage-size";
 import { toastErrorDetail } from "@/lib/toast-utils";
 import {
@@ -1263,7 +1260,7 @@ export function useApSettingsSections({
             next.delete(index);
             return next;
           });
-        }, SETTINGS_REVEAL_DURATION_MS)
+        }, REVEAL_DURATION_MS)
       );
     },
     [hideResolvedEnvValue, resolveSavedEnvValue, revealedEnvValues]

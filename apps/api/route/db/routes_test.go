@@ -944,8 +944,15 @@ func TestDBConnectionStringRevealRejectsInvalidKindAtHTTPBoundary(t *testing.T) 
 }
 
 func TestDBConnectionStringRevealSetsNoStoreCacheHeaders(t *testing.T) {
-	if got := dbConnectionStringNoCacheHeader(); got != "no-cache, no-store, must-revalidate" {
-		t.Fatalf("reveal Cache-Control = %q, want no-store directives", got)
+	output := connectionStringRevealOutput("postgresql://u:p@db-main.ns-a.svc:5432/app")
+	if output.CacheControl != "no-cache, no-store, must-revalidate" {
+		t.Fatalf("reveal Cache-Control = %q, want no-store directives", output.CacheControl)
+	}
+	if output.Pragma != "no-cache" {
+		t.Fatalf("reveal Pragma = %q, want no-cache", output.Pragma)
+	}
+	if output.Body.Value != "postgresql://u:p@db-main.ns-a.svc:5432/app" {
+		t.Fatalf("reveal body value = %q, want the composed DSN", output.Body.Value)
 	}
 
 	router := chi.NewRouter()

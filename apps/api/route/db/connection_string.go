@@ -29,14 +29,6 @@ func registerConnectionString(grp huma.API) {
 		Name      string `query:"name" required:"true" doc:"DB instance name."`
 		Namespace string `query:"namespace" doc:"Namespace (default from kubeconfig)"`
 	}
-	type connectionStringOutput struct {
-		CacheControl string `header:"Cache-Control"`
-		Pragma       string `header:"Pragma"`
-		Body         struct {
-			Value string `json:"value"`
-		}
-	}
-
 	huma.Register(grp, huma.Operation{
 		OperationID: "db-connection-string",
 		Method:      http.MethodGet,
@@ -86,17 +78,27 @@ func registerConnectionString(grp huma.API) {
 		if err != nil {
 			return nil, err
 		}
-		output := &connectionStringOutput{
-			CacheControl: dbConnectionStringNoCacheHeader(),
-			Pragma:       "no-cache",
-		}
-		output.Body.Value = value
-		return output, nil
+		return connectionStringRevealOutput(value), nil
 	})
 }
 
-func dbConnectionStringNoCacheHeader() string {
-	return dbConnectionStringCacheControl
+type connectionStringOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Pragma       string `header:"Pragma"`
+	Body         struct {
+		Value string `json:"value"`
+	}
+}
+
+// connectionStringRevealOutput assembles the reveal response: the composed DSN
+// plus the no-store headers every reveal response must carry (ADR-0052).
+func connectionStringRevealOutput(value string) *connectionStringOutput {
+	output := &connectionStringOutput{
+		CacheControl: dbConnectionStringCacheControl,
+		Pragma:       "no-cache",
+	}
+	output.Body.Value = value
+	return output
 }
 
 // dbRevealedConnectionString composes the complete DB Connection DSN with the

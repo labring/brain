@@ -35,7 +35,7 @@ export {
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
   getDatabaseNodeConnectionKey,
-  MASKED_CONNECTION_VALUE,
+  MASKED_SECRET_VALUE,
   resolveDatabaseNodeStatus,
   resolveDatabaseNodeVisualTone,
 } from "./database-node";
