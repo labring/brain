@@ -80,11 +80,8 @@ export function EntryNodeTargetRow({
       title={target.value}
     >
       {({ copied }) => (
-        <div
-          aria-hidden
-          className="entry-node-target-content pointer-events-none relative z-10 flex min-w-0 flex-1 flex-col gap-2"
-        >
-          <div className="flex min-w-0 items-center gap-1.5">
+        <div className="entry-node-target-content pointer-events-none relative z-10 flex min-w-0 flex-1 flex-col gap-2">
+          <div aria-hidden className="flex min-w-0 items-center gap-1.5">
             <CanvasNode.StatusDot size="small" status={visualStatus} />
             <span className="min-w-0 truncate font-normal text-muted-foreground text-xs leading-4">
               {target.label}
@@ -94,10 +91,11 @@ export function EntryNodeTargetRow({
             className="flex h-7 w-full min-w-0 items-center justify-between gap-2 py-1.5 text-left font-normal text-xs text-zinc-50 leading-4"
             data-copied={copied ? "true" : undefined}
             data-slot="entry-node-target-value"
-            title={target.value}
           >
-            <span className="min-w-0 truncate">{target.value}</span>
-            <CanvasNode.CopyableRowIndicator />
+            <CanvasNode.CopyableRowValue href={target.value}>
+              {target.value}
+            </CanvasNode.CopyableRowValue>
+            <CanvasNode.CopyableRowActions label={target.label} />
           </span>
         </div>
       )}

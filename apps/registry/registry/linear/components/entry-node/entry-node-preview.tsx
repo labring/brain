@@ -22,30 +22,30 @@ const accessDomain: EntryNodeAccessDomain = {
 
 const accessibleTarget: EntryNodeTarget = {
   id: "public",
-  label: "Public Domain",
+  label: "Platform Address",
   status: { label: "Accessible", tone: "accessible" },
-  value: "orders.demo.sealos.run",
+  value: "https://orders.demo.sealos.run/",
 };
 
 const secondAccessibleTarget: EntryNodeTarget = {
   id: "public-secondary",
-  label: "Public Domain",
+  label: "Platform Address",
   status: { label: "Accessible", tone: "accessible" },
-  value: "api.orders.demo.sealos.run",
+  value: "https://api.orders.demo.sealos.run/",
 };
 
 const progressingTarget: EntryNodeTarget = {
   id: "progressing",
-  label: "Public Domain",
+  label: "Platform Address",
   status: { label: "Progressing", tone: "progressing" },
-  value: "orders-preview.demo.sealos.run",
+  value: "https://orders-preview.demo.sealos.run/",
 };
 
 const failedTarget: EntryNodeTarget = {
   id: "failed",
-  label: "Public Domain",
+  label: "Platform Address",
   status: { label: "Inaccessible", tone: "inaccessible" },
-  value: "orders-failed.demo.sealos.run",
+  value: "https://orders-failed.demo.sealos.run/",
 };
 
 const longAccessDomain: EntryNodeAccessDomain = {
@@ -55,9 +55,10 @@ const longAccessDomain: EntryNodeAccessDomain = {
 
 const longTarget: EntryNodeTarget = {
   id: "long-target",
-  label: "Public Domain",
+  label: "Platform Address",
   status: { label: "Accessible", tone: "accessible" },
-  value: "orders-public-domain-with-a-very-long-target-value.demo.sealos.run",
+  value:
+    "https://orders-public-domain-with-a-very-long-target-value.demo.sealos.run/",
 };
 
 const aggregateSamples: {
@@ -74,7 +75,7 @@ const aggregateSamples: {
   { title: "Inaccessible", targets: [failedTarget] },
   {
     title: "Missing status",
-    targets: [{ id: "missing", label: "Public Domain", value: "pending" }],
+    targets: [{ id: "missing", label: "Platform Address", value: "Pending" }],
   },
 ];
 

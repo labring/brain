@@ -16,6 +16,7 @@ import {
   CanvasNodeCopyableRowIndicator,
   CanvasNodeCopyFeedbackScope,
 } from "./canvas-node.copyable-row";
+import { CanvasNodeCopyableRowValue } from "./canvas-node.copyable-row-value";
 import {
   CanvasNodeDragFrame,
   CanvasNodeDragStateFrame,
@@ -35,6 +36,7 @@ import {
 } from "./canvas-node.metrics";
 import { CanvasNodePlaceholder } from "./canvas-node.placeholder";
 import { CanvasNodeRoot } from "./canvas-node.root";
+import { CanvasNodeCopyableRowActions } from "./canvas-node.row-actions";
 import {
   CanvasNodeStatus,
   CanvasNodeStatusDot,
@@ -50,6 +52,7 @@ export type {
   CanvasNodeCopyFeedbackScopeProps,
   CanvasNodeCopyFeedbackValue,
 } from "./canvas-node.copyable-row";
+export type { CanvasNodeCopyableRowValueProps } from "./canvas-node.copyable-row-value";
 export type {
   CanvasNodeMetricListItem,
   CanvasNodeMetricListProps,
@@ -58,6 +61,7 @@ export type {
   CanvasNodeMetricValueFormat,
 } from "./canvas-node.metrics";
 export type { CanvasNodePlaceholderProps } from "./canvas-node.placeholder";
+export type { CanvasNodeCopyableRowActionsProps } from "./canvas-node.row-actions";
 export type {
   CanvasNodeActions,
   CanvasNodeConnectionSide,
@@ -80,8 +84,10 @@ export const CanvasNode = {
   Card: CanvasNodeCard,
   ConnectionAnchor: CanvasNodeConnectionAnchor,
   CopyableRow: CanvasNodeCopyableRow,
+  CopyableRowActions: CanvasNodeCopyableRowActions,
   CopyableRowControl: CanvasNodeCopyableRowControl,
   CopyableRowIndicator: CanvasNodeCopyableRowIndicator,
+  CopyableRowValue: CanvasNodeCopyableRowValue,
   CopyFeedbackScope: CanvasNodeCopyFeedbackScope,
   DragFrame: CanvasNodeDragFrame,
   DragStateFrame: CanvasNodeDragStateFrame,
@@ -124,8 +130,10 @@ dn(CanvasNodePlaceholder, "CanvasNode.Placeholder");
 dn(CanvasNodeConnectionAnchor, "CanvasNode.ConnectionAnchor");
 dn(CanvasNodeCopyFeedbackScope, "CanvasNode.CopyFeedbackScope");
 dn(CanvasNodeCopyableRow, "CanvasNode.CopyableRow");
+dn(CanvasNodeCopyableRowActions, "CanvasNode.CopyableRowActions");
 dn(CanvasNodeCopyableRowControl, "CanvasNode.CopyableRowControl");
 dn(CanvasNodeCopyableRowIndicator, "CanvasNode.CopyableRowIndicator");
+dn(CanvasNodeCopyableRowValue, "CanvasNode.CopyableRowValue");
 dn(CanvasNodeExpandButton, "CanvasNode.ExpandButton");
 dn(CanvasNodeDragFrame, "CanvasNode.DragFrame");
 dn(CanvasNodeDragStateFrame, "CanvasNode.DragStateFrame");

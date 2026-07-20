@@ -390,23 +390,32 @@ function PublicAddressRow({
       {({ copyable: rowCopyable }) => (
         <>
           <div
-            aria-hidden={rowCopyable ? true : undefined}
             className={cn(
               "relative z-10 grid min-w-0 flex-1 gap-2",
               rowCopyable ? "pointer-events-none" : "pointer-events-auto"
             )}
           >
             <div className="flex min-w-0 items-center gap-1.5 text-foreground text-sm leading-5">
-              <PublicAddressStatusDot
-                address={address}
-                ariaLabel={`Public Address status: ${publicAddressStatusLabel(address)}`}
-              />
-              <span className="min-w-0 truncate">
-                {value === "" ? "Pending domain" : value}
+              <span
+                aria-hidden={rowCopyable ? true : undefined}
+                className="flex items-center"
+              >
+                <PublicAddressStatusDot
+                  address={address}
+                  ariaLabel={`Public Address status: ${publicAddressStatusLabel(address)}`}
+                />
               </span>
-              <CanvasNode.CopyableRowIndicator className="text-muted-foreground" />
+              <CanvasNode.CopyableRowValue
+                href={publicAddressReadinessURLForAddress(address)}
+              >
+                {value === "" ? "Pending domain" : value}
+              </CanvasNode.CopyableRowValue>
+              <CanvasNode.CopyableRowActions label="Public Address" />
             </div>
-            <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
+            <div
+              aria-hidden={rowCopyable ? true : undefined}
+              className="min-w-0 truncate text-muted-foreground text-sm leading-5"
+            >
               {address.port}
             </div>
           </div>

@@ -364,6 +364,16 @@
           "target": "components/canvas-node/canvas-node.copyable-row.tsx"
         },
         {
+          "path": "../../packages/ui/src/components/canvas-node/canvas-node.copyable-row-value.tsx",
+          "type": "registry:component",
+          "target": "components/canvas-node/canvas-node.copyable-row-value.tsx"
+        },
+        {
+          "path": "../../packages/ui/src/components/canvas-node/canvas-node.row-actions.tsx",
+          "type": "registry:component",
+          "target": "components/canvas-node/canvas-node.row-actions.tsx"
+        },
+        {
           "path": "../../packages/ui/src/components/canvas-node/canvas-node.metrics.tsx",
           "type": "registry:component",
           "target": "components/canvas-node/canvas-node.metrics.tsx"
