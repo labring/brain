@@ -20,12 +20,12 @@ const PENDING_TARGET: EntryNodeTarget = {
   value: "Pending",
 };
 
-const OPEN_LINK_SLOT_RE = /data-slot="canvas-node-row-open-link"/;
-const OPEN_PLATFORM_ADDRESS_RE = /aria-label="Open Platform Address"/;
+const VALUE_LINK_RE = /<a [^>]*data-slot="canvas-node-row-value"/;
 const PLATFORM_HREF_RE =
   /href="https:\/\/hbxiix\.192\.168\.10\.189\.nip\.io\/"/;
 const NEW_TAB_RE = /target="_blank"/;
 const NO_OPENER_RE = /rel="noopener noreferrer"/;
+const VALUE_TEXT_RE = /<span [^>]*data-slot="canvas-node-row-value"/;
 const COPY_BUTTON_SLOT_RE = /data-slot="canvas-node-row-copy-button"/;
 const COPY_PLATFORM_ADDRESS_RE = /aria-label="Copy Platform Address"/;
 const COPIED_PLATFORM_ADDRESS_RE = /aria-label="Copied Platform Address"/;
@@ -45,11 +45,10 @@ function renderTargets(
   );
 }
 
-test("EntryNode target row links out to an http(s) target in a new tab", () => {
+test("EntryNode target row renders an http(s) value as a new-tab link", () => {
   const html = renderTargets([PLATFORM_TARGET]);
 
-  assert.match(html, OPEN_LINK_SLOT_RE);
-  assert.match(html, OPEN_PLATFORM_ADDRESS_RE);
+  assert.match(html, VALUE_LINK_RE);
   assert.match(html, PLATFORM_HREF_RE);
   assert.match(html, NEW_TAB_RE);
   assert.match(html, NO_OPENER_RE);
@@ -62,18 +61,20 @@ test("EntryNode target row renders an explicit copy button", () => {
   assert.match(html, COPY_PLATFORM_ADDRESS_RE);
 });
 
-test("EntryNode target row renders no open link for a pending target", () => {
+test("EntryNode target row keeps a pending value as plain text", () => {
   const html = renderTargets([PENDING_TARGET]);
 
-  assert.doesNotMatch(html, OPEN_LINK_SLOT_RE);
+  assert.doesNotMatch(html, VALUE_LINK_RE);
+  assert.match(html, VALUE_TEXT_RE);
 });
 
-test("EntryNode target row renders no open link for a non-http value", () => {
+test("EntryNode target row keeps a non-http value as plain text", () => {
   const html = renderTargets([
     { ...PLATFORM_TARGET, value: "ftp://hbxiix.192.168.10.189.nip.io/" },
   ]);
 
-  assert.doesNotMatch(html, OPEN_LINK_SLOT_RE);
+  assert.doesNotMatch(html, VALUE_LINK_RE);
+  assert.match(html, VALUE_TEXT_RE);
 });
 
 test("EntryNode target row pins copied feedback on the copy button", () => {

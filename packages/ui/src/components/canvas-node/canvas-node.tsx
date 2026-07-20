@@ -16,6 +16,7 @@ import {
   CanvasNodeCopyableRowIndicator,
   CanvasNodeCopyFeedbackScope,
 } from "./canvas-node.copyable-row";
+import { CanvasNodeCopyableRowValue } from "./canvas-node.copyable-row-value";
 import {
   CanvasNodeDragFrame,
   CanvasNodeDragStateFrame,
@@ -51,6 +52,7 @@ export type {
   CanvasNodeCopyFeedbackScopeProps,
   CanvasNodeCopyFeedbackValue,
 } from "./canvas-node.copyable-row";
+export type { CanvasNodeCopyableRowValueProps } from "./canvas-node.copyable-row-value";
 export type {
   CanvasNodeMetricListItem,
   CanvasNodeMetricListProps,
@@ -85,6 +87,7 @@ export const CanvasNode = {
   CopyableRowActions: CanvasNodeCopyableRowActions,
   CopyableRowControl: CanvasNodeCopyableRowControl,
   CopyableRowIndicator: CanvasNodeCopyableRowIndicator,
+  CopyableRowValue: CanvasNodeCopyableRowValue,
   CopyFeedbackScope: CanvasNodeCopyFeedbackScope,
   DragFrame: CanvasNodeDragFrame,
   DragStateFrame: CanvasNodeDragStateFrame,
@@ -130,6 +133,7 @@ dn(CanvasNodeCopyableRow, "CanvasNode.CopyableRow");
 dn(CanvasNodeCopyableRowActions, "CanvasNode.CopyableRowActions");
 dn(CanvasNodeCopyableRowControl, "CanvasNode.CopyableRowControl");
 dn(CanvasNodeCopyableRowIndicator, "CanvasNode.CopyableRowIndicator");
+dn(CanvasNodeCopyableRowValue, "CanvasNode.CopyableRowValue");
 dn(CanvasNodeExpandButton, "CanvasNode.ExpandButton");
 dn(CanvasNodeDragFrame, "CanvasNode.DragFrame");
 dn(CanvasNodeDragStateFrame, "CanvasNode.DragStateFrame");

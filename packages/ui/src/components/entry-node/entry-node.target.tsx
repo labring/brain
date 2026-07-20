@@ -91,15 +91,11 @@ export function EntryNodeTargetRow({
             className="flex h-7 w-full min-w-0 items-center justify-between gap-2 py-1.5 text-left font-normal text-xs text-zinc-50 leading-4"
             data-copied={copied ? "true" : undefined}
             data-slot="entry-node-target-value"
-            title={target.value}
           >
-            <span aria-hidden className="min-w-0 truncate">
+            <CanvasNode.CopyableRowValue href={target.value}>
               {target.value}
-            </span>
-            <CanvasNode.CopyableRowActions
-              label={target.label}
-              openHref={target.value}
-            />
+            </CanvasNode.CopyableRowValue>
+            <CanvasNode.CopyableRowActions label={target.label} />
           </span>
         </div>
       )}

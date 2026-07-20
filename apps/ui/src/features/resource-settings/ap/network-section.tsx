@@ -398,20 +398,19 @@ function PublicAddressRow({
             <div className="flex min-w-0 items-center gap-1.5 text-foreground text-sm leading-5">
               <span
                 aria-hidden={rowCopyable ? true : undefined}
-                className="flex min-w-0 items-center gap-1.5"
+                className="flex items-center"
               >
                 <PublicAddressStatusDot
                   address={address}
                   ariaLabel={`Public Address status: ${publicAddressStatusLabel(address)}`}
                 />
-                <span className="min-w-0 truncate">
-                  {value === "" ? "Pending domain" : value}
-                </span>
               </span>
-              <CanvasNode.CopyableRowActions
-                label="Public Address"
-                openHref={publicAddressReadinessURLForAddress(address)}
-              />
+              <CanvasNode.CopyableRowValue
+                href={publicAddressReadinessURLForAddress(address)}
+              >
+                {value === "" ? "Pending domain" : value}
+              </CanvasNode.CopyableRowValue>
+              <CanvasNode.CopyableRowActions label="Public Address" />
             </div>
             <div
               aria-hidden={rowCopyable ? true : undefined}

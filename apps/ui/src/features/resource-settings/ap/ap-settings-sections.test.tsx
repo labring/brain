@@ -197,9 +197,8 @@ const CUSTOM_DOMAIN_DETAIL_REASON_RE = /IssuerNotReady/;
 const CUSTOM_DOMAIN_DETAIL_MESSAGE_RE = /Certificate request failed/;
 const UNBIND_CUSTOM_DOMAIN_RE = /aria-label="Unbind Custom Domain"/;
 const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
-const OPEN_PUBLIC_ADDRESS_RE = /aria-label="Open Public Address"/;
-const OPEN_PUBLIC_ADDRESS_HREF_RE = /href="https:\/\/api\.example\.com\/"/;
-const OPEN_LINK_SLOT_RE = /data-slot="canvas-node-row-open-link"/;
+const PUBLIC_ADDRESS_LINK_RE = /<a [^>]*data-slot="canvas-node-row-value"/;
+const PUBLIC_ADDRESS_LINK_HREF_RE = /href="https:\/\/api\.example\.com\/"/;
 const COPY_ENV_VALUE_RE = /aria-label="Copy environment variable DATABASE_URL"/;
 const REVEAL_ENV_VALUE_RE =
   /aria-label="Reveal environment variable DATABASE_URL"/;
@@ -486,8 +485,8 @@ test("AP settings pane renders editable public address rows", () => {
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, PUBLIC_ADDRESS_STATUS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
-  assert.match(html, OPEN_PUBLIC_ADDRESS_RE);
-  assert.match(html, OPEN_PUBLIC_ADDRESS_HREF_RE);
+  assert.match(html, PUBLIC_ADDRESS_LINK_RE);
+  assert.match(html, PUBLIC_ADDRESS_LINK_HREF_RE);
   assert.doesNotMatch(html, CNAME_RE);
   assert.match(html, EDIT_PUBLIC_ADDRESS_RE);
   assert.match(html, DELETE_PUBLIC_ADDRESS_RE);
@@ -496,7 +495,7 @@ test("AP settings pane renders editable public address rows", () => {
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
 });
 
-test("AP settings pane derives the open link from host-only Public Addresses", () => {
+test("AP settings pane derives the value link from host-only Public Addresses", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -521,11 +520,11 @@ test("AP settings pane derives the open link from host-only Public Addresses", (
     />
   );
 
-  assert.match(html, OPEN_PUBLIC_ADDRESS_RE);
-  assert.match(html, OPEN_PUBLIC_ADDRESS_HREF_RE);
+  assert.match(html, PUBLIC_ADDRESS_LINK_RE);
+  assert.match(html, PUBLIC_ADDRESS_LINK_HREF_RE);
 });
 
-test("AP settings pane renders no open link for pending Public Addresses", () => {
+test("AP settings pane keeps pending Public Addresses as plain text", () => {
   const html = renderToStaticMarkup(
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
@@ -549,7 +548,7 @@ test("AP settings pane renders no open link for pending Public Addresses", () =>
     />
   );
 
-  assert.doesNotMatch(html, OPEN_LINK_SLOT_RE);
+  assert.doesNotMatch(html, PUBLIC_ADDRESS_LINK_RE);
 });
 
 test("AP settings pane collapses overflowing public address rows by default", () => {
@@ -1209,7 +1208,7 @@ test("read-only network view renders addresses without mutation controls", () =>
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, COPY_PRIVATE_ADDRESS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
-  assert.match(html, OPEN_PUBLIC_ADDRESS_RE);
+  assert.match(html, PUBLIC_ADDRESS_LINK_RE);
   assert.doesNotMatch(html, ADD_PUBLIC_ADDRESS_RE);
   assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
 });
