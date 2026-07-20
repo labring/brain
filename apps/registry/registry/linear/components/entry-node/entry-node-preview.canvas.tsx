@@ -49,9 +49,9 @@ const accessDomain: EntryNodeAccessDomain = {
 const targets: EntryNodeTarget[] = [
   {
     id: "public",
-    label: "Public Domain",
+    label: "Platform Address",
     status: { label: "Accessible", tone: "accessible" },
-    value: "orders.demo.sealos.run",
+    value: "https://orders.demo.sealos.run/",
   },
 ];
 
