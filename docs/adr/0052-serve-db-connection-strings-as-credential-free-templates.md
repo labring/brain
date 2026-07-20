@@ -1,5 +1,9 @@
 # Serve DB connection strings as credential-free templates with explicit reveal
 
+## Status
+
+Display layer revised by ADR-0054: UI DB connection rows mask the whole value and reveal on demand. The API contract decided here — templates on read paths, the reveal endpoint, the no-credential-decoding invariant — is unchanged.
+
 DB read responses previously embedded decoded Secret credentials in `status.connectionStringPrivate` / `status.connectionStringPublic`, so plaintext passwords traveled with every project canvas snapshot and projects explorer poll and sat in browser state — while DB Access and the DB Terminal (ADR-0013) deliberately keep credentials server-side. DB read surfaces now carry a DB Connection Template instead: the same fields, with literal `<username>:<password>` placeholders and a real address and database name. The complete DB Connection DSN is returned only by an explicit reveal endpoint modeled on the existing `ap-env-value` route — explicit user action, server-side composition, `no-store` response. The invariant this buys: DB read paths never decode the credential Secret's username or password keys.
 
 This is not a privilege-escalation fix. Callers authenticate with their own kubeconfig and could read the same Secret directly under the same RBAC; the change removes the needless amplification of plaintext credentials into polling responses, frontend caches, and screenshots, and aligns the DB node and DB Settings with the credential-isolation posture the rest of the product already follows.
@@ -7,7 +11,7 @@ This is not a privilege-escalation fix. Callers authenticate with their own kube
 ## Considered Options
 
 - **`***` as the placeholder text.** Rejected because `*` is valid URL userinfo — a pasted template would parse and fail late at authentication. `<username>` / `<password>` fail at parse time and read as fill-me-in placeholders (the convention Supabase uses), not as a redacted real value.
-- **Masking the whole connection string.** Rejected because the address is not a secret (the private address is composed deterministically from the DB name and namespace) and it is exactly what canvas connection derivation and users need at a glance. Full masking would force separate address fields and restructure every consumer.
+- **Masking the whole connection string in the API response.** Rejected at the data layer because the address is not a secret (the private address is composed deterministically from the DB name and namespace) and canvas connection derivation needs it. Display-layer masking was later adopted by ADR-0054 — the API keeps serving the template; only the UI rows render a mask.
 - **Real username with only the password as a placeholder.** Rejected to keep the no-credential-decoding invariant clean; the username's informational value (almost always `postgres`/`root`) does not justify the exception.
 - **Client-side DSN composition at reveal time** (reading the Secret through the generic k8s route). Rejected because the engine-profile composition logic would be duplicated in the frontend and the response would lack `no-store` semantics.
 - **Reveal hardening: project-ownership checks, short TTL, rate limits.** Rejected as ceremony — the caller's kubeconfig already grants direct Secret reads under the same RBAC, mirroring ADR-0013's audit reasoning.
