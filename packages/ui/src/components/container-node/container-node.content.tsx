@@ -6,6 +6,11 @@ import {
   type CanvasNodeMetricListItem,
 } from "@workspace/ui/components/canvas-node/canvas-node";
 import { canvasNodeActionWithAvailability } from "@workspace/ui/components/canvas-node/canvas-node.availability";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
@@ -217,9 +222,9 @@ export function ContainerNodeImageRow({ className }: { className?: string }) {
       copyValue={copyValue}
       data-slot="container-node-image-row"
       rowKey="image"
-      title={copyable ? copyValue : undefined}
+      title=""
     >
-      {({ copied, copyable: rowCopyable }) => (
+      {({ copied, copyable: rowCopyable, copyRow }) => (
         <>
           <div
             className={cn(
@@ -232,7 +237,6 @@ export function ContainerNodeImageRow({ className }: { className?: string }) {
             </span>
           </div>
           <div
-            aria-hidden={rowCopyable ? true : undefined}
             className={cn(
               "relative z-10 flex h-6 min-w-0 items-center justify-between gap-2 py-1 text-left font-mono text-xs leading-4",
               rowCopyable
@@ -241,10 +245,27 @@ export function ContainerNodeImageRow({ className }: { className?: string }) {
             )}
             data-copied={copied ? "true" : undefined}
             data-slot="container-node-image-value"
-            title={copyable ? copyValue : undefined}
           >
-            <span className="min-w-0 truncate">{displayImage}</span>
-            <CanvasNode.CopyableRowIndicator />
+            {rowCopyable ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <CanvasNode.CopyableRowControl
+                      className="pointer-events-auto relative z-20 min-w-0 cursor-pointer truncate"
+                      onClick={() => {
+                        copyRow().catch(() => undefined);
+                      }}
+                    >
+                      {displayImage}
+                    </CanvasNode.CopyableRowControl>
+                  }
+                />
+                <TooltipContent>{copyValue}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <span className="min-w-0 truncate">{displayImage}</span>
+            )}
+            <CanvasNode.CopyableRowActions label="Image" />
           </div>
         </>
       )}

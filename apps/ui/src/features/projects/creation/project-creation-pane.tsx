@@ -5,7 +5,7 @@ import {
   ProjectSourceGithubIcon,
 } from "@workspace/ui/assets/project-source-icons";
 import { SidePane } from "@workspace/ui/components/side-pane";
-import { Blocks, Database, Plus } from "lucide-react";
+import { Database, PanelsTopLeft, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
 import type { GithubDeployerStates } from "@/features/deploy/github-deployer/github-deployer.types";
@@ -56,7 +56,7 @@ function projectCreationHeaderIcon(source: ProjectCreatorSourceKind | null) {
     case "database":
       return <Database aria-hidden className="size-4 text-blue-400" />;
     case "template":
-      return <Blocks aria-hidden className="size-4 text-blue-400" />;
+      return <PanelsTopLeft aria-hidden className="size-4 text-blue-400" />;
     default:
       return <Plus aria-hidden className="size-4 text-blue-400" />;
   }
