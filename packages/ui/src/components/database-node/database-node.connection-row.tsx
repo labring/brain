@@ -224,7 +224,17 @@ function DatabaseConnectionRowValueLine({
             onCopyClick={handleCopyClick}
             revealedValue={revealedValue}
           />
-          <CanvasNodeCopyableRowControl className="pointer-events-auto relative z-20 flex shrink-0 items-center gap-0.5">
+          <CanvasNodeCopyableRowControl
+            className={cn(
+              "pointer-events-auto relative z-20 flex shrink-0 items-center gap-0.5 transition-opacity",
+              // Progressive disclosure: controls surface on row hover/focus.
+              // Pinned while revealed (the closed eye is the only early-hide
+              // affordance for the on-screen DSN) and during copy feedback.
+              revealed || copied
+                ? "opacity-100"
+                : "opacity-0 group-focus-within/copyable-row:opacity-100 group-hover/copyable-row:opacity-100"
+            )}
+          >
             {onToggleReveal ? (
               <AppIconButton
                 aria-label={`${revealed ? "Hide" : "Reveal"} ${label}`}

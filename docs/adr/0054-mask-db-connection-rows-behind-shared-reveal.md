@@ -2,7 +2,7 @@
 
 ADR-0052 made DB read responses carry a credential-free DB Connection Template, and the first UI iteration displayed that template text (`postgresql://<username>:<password>@…`) directly in the canvas DB node and DB Settings rows. In practice the template text earns nothing on screen: the constant placeholder prefix consumes the narrow node row before the address becomes visible, and it introduces a second visual language for "value with a secret behind it" alongside the AP Environment editor's established `*******` mask. DB connection rows now render a fixed `*******` mask by default and adopt the product's single secret-value interaction, with one shared row anatomy on both surfaces:
 
-- Label on the top line (plus the public-access switch on public rows); masked value + eye + copy on the value line.
+- Label on the top line (plus the public-access switch on public rows); masked value + eye + copy on the value line. The value-line controls appear on row hover or focus and stay pinned while a reveal is active and during copy feedback — an accepted visibility divergence from the AP Environment editor's always-visible controls (space is reserved, so text truncation never shifts).
 - The eye fetches the complete DB Connection DSN from the reveal route and swaps it into the row for 30 seconds (one revealed row at a time, auto-hidden; toggling the eye hides it early).
 - Rows truncate, so hovering the revealed value shows the full DSN in a standard tooltip — the tooltip is a reading surface only; nothing opens without hover.
 - Copy (whole-row click or the copy button) fetches the complete DSN on demand; the page never holds it outside an active reveal.
