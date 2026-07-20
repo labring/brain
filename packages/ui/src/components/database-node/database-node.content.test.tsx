@@ -6,6 +6,7 @@ import {
   DatabaseNodeContent,
   DatabaseNodeDeletionDelayHint,
 } from "./database-node.content";
+import { DATABASE_CONNECTION_MASK } from "./database-node.mask";
 import { DatabaseNodeRoot } from "./database-node.root";
 
 const DATABASE_STATES = {
@@ -16,7 +17,11 @@ const DATABASE_STATES = {
 const OPEN_DATABASE_ACTIONS_RE = /Open database actions/;
 const DATABASE_NOT_RUNNING_RE = /Database is not running\./;
 const READ_ONLY_REASON_RE = /This project is read-only\./;
-const FIXED_CONNECTION_MASK_RE = />\*{7}</;
+// Derived from the mask itself: a hard-coded width silently went stale when
+// the constant changed, which is what this assertion exists to catch.
+const FIXED_CONNECTION_MASK_RE = new RegExp(
+  `>\\*{${DATABASE_CONNECTION_MASK.length}}<`
+);
 const CONNECTION_TEMPLATE_RE =
   /postgresql:\/\/&lt;username&gt;:&lt;password&gt;@db-main-postgresql.ns-a.svc:5432\/postgres/;
 const REVEALED_DSN_RE =

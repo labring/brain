@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DATABASE_CONNECTION_MASK } from "@workspace/ui/components/database-node/database-node";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -49,7 +50,12 @@ function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
 const CONNECTION_ADDRESS_RE = /Connection Address/;
 const PRIVATE_CONNECTION_RE = /Private Connection/;
 const PUBLIC_CONNECTION_RE = /Public Connection/;
-const FIXED_CONNECTION_MASK_RE = />\*{7}</g;
+// Derived from the mask itself: a hard-coded width silently went stale when
+// the constant changed, which is what this assertion exists to catch.
+const FIXED_CONNECTION_MASK_RE = new RegExp(
+  `>\\*{${DATABASE_CONNECTION_MASK.length}}<`,
+  "g"
+);
 const PRIVATE_CONNECTION_TEMPLATE_RE =
   /postgres:\/\/&lt;username&gt;:&lt;password&gt;@postgres.default.svc:5432\/app/;
 const PUBLIC_CONNECTION_TEMPLATE_RE =
