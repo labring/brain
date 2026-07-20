@@ -166,7 +166,7 @@ test("AP env rows model comparison preserves editor reference rows", () => {
   );
 });
 
-test("AP env rows expose DSN field options and keep DSN reference rows literal on save", () => {
+test("AP env rows expose DSN field options for matching and keep matched pasted values literal on save", () => {
   const dbs = [
     {
       name: "postgres",
@@ -181,6 +181,9 @@ test("AP env rows expose DSN field options and keep DSN reference rows literal o
     { field: "public", label: "Public DSN", value: "postgres://public" },
   ]);
 
+  // A DSN-matched row only ever holds text the user authored (pasted DSN);
+  // saving keeps that text. Inserting a DSN by reference goes through the
+  // raw-source ${{db.DATABASE_URL}} compile instead and never lands here.
   assert.deepEqual(
     normalizeApEnvRowsForSave([
       {
@@ -190,11 +193,11 @@ test("AP env rows expose DSN field options and keep DSN reference rows literal o
           field: "private",
         },
         name: "DATABASE_URL",
-        value: "postgres://private",
+        value: "postgres://alice:s3cr3t@private",
         valueSource: "dbDsn",
       },
     ]),
-    [{ name: "DATABASE_URL", value: "postgres://private" }]
+    [{ name: "DATABASE_URL", value: "postgres://alice:s3cr3t@private" }]
   );
 });
 

@@ -71,6 +71,12 @@ export interface ApEnvDbDsnFieldOption {
   valueFrom?: { secretKeyRef: ApEnvSecretKeyRef };
 }
 
+export interface ApEnvDbPrimitiveFieldOption {
+  field: ApEnvDbPrimitiveField;
+  label: string;
+  valueFrom: { secretKeyRef: ApEnvSecretKeyRef };
+}
+
 export type ApEnvDbReferenceRowPatch = Pick<
   ApEnvRow,
   "dbDsn" | "value" | "valueFrom" | "valueSource"
@@ -143,14 +149,17 @@ function isPrimitiveDbReferenceField(
   return field !== "private" && field !== "public";
 }
 
-function valueForDbReferenceField(field: ApEnvDbDsnFieldOption): string {
-  return field.value ?? AP_ENV_VALUE_FROM_PLACEHOLDER;
-}
-
 export function isKubernetesEnvName(name: string): boolean {
   return K8S_ENV_NAME_RE.test(name);
 }
 
+/**
+ * The private/public entries carry the DB Connection Template as `value` for
+ * address matching only (connection evidence, pasted-DSN recognition). They
+ * are not an insertion vocabulary: inserting a DSN as an AP Environment
+ * Reference goes through the raw-source `${{db.DATABASE_URL}}` compile, which
+ * composes it from the primitive Secret references.
+ */
 export function apEnvDbDsnFieldOptions(
   source: ApEnvDbDsnSource | undefined
 ): ApEnvDbDsnFieldOption[] {
@@ -328,21 +337,9 @@ function rowValueSource(row: ApEnvRow): NonNullable<ApEnvRow["valueSource"]> {
   return row.valueSource ?? "direct";
 }
 
-function apEnvDbReferenceValuePatch(
-  field: ApEnvDbDsnFieldOption
-): Pick<ApEnvRow, "value" | "valueFrom"> {
-  if (field.valueFrom === undefined) {
-    return { value: valueForDbReferenceField(field) };
-  }
-  return {
-    value: AP_ENV_VALUE_FROM_PLACEHOLDER,
-    valueFrom: field.valueFrom,
-  };
-}
-
 export function apEnvDbReferenceRowPatch(
   source: ApEnvDbDsnSource,
-  field: ApEnvDbDsnFieldOption
+  field: ApEnvDbPrimitiveFieldOption
 ): ApEnvDbReferenceRowPatch {
   return {
     dbDsn: {
@@ -350,7 +347,8 @@ export function apEnvDbReferenceRowPatch(
       dbNamespace: source.namespace,
       field: field.field,
     },
-    ...apEnvDbReferenceValuePatch(field),
+    value: AP_ENV_VALUE_FROM_PLACEHOLDER,
+    valueFrom: field.valueFrom,
     valueSource: "dbDsn",
   };
 }
@@ -401,10 +399,10 @@ export function apEnvDbPrimitiveFieldForSecretKey(
   return undefined;
 }
 
-function apEnvDbPrimitiveFieldOptions(
+export function apEnvDbPrimitiveFieldOptions(
   source: ApEnvDbDsnSource | undefined
-): ApEnvDbDsnFieldOption[] {
-  const options: ApEnvDbDsnFieldOption[] = [];
+): ApEnvDbPrimitiveFieldOption[] {
+  const options: ApEnvDbPrimitiveFieldOption[] = [];
   for (const field of AP_ENV_DB_PRIMITIVE_FIELD_ORDER) {
     const secretKeyRef = source?.primitiveSecretRefs?.[field];
     if (secretKeyRef === undefined) {
@@ -429,8 +427,8 @@ export function apEnvDbSecretReferenceFromValueFrom(
   }
   for (const source of sources) {
     for (const field of apEnvDbPrimitiveFieldOptions(source)) {
-      const fieldRef = field.valueFrom?.secretKeyRef;
-      if (fieldRef?.name !== ref.name || fieldRef.key !== ref.key) {
+      const fieldRef = field.valueFrom.secretKeyRef;
+      if (fieldRef.name !== ref.name || fieldRef.key !== ref.key) {
         continue;
       }
       return {

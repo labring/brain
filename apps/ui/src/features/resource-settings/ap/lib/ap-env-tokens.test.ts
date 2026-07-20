@@ -374,6 +374,31 @@ test("AP env tokens report unresolved tokens before save", () => {
   ]);
 });
 
+test("AP env tokens never materialize DSN helper rows from the DB Connection Template", () => {
+  for (const tokenName of ["POSTGRES_PRIVATE_DSN", "DATABASE_PRIVATE_URL"]) {
+    const result = normalizeApEnvTokenRowsForSave(
+      [
+        {
+          name: "DATABASE_URL",
+          referenceDbKey: "default/postgres",
+          value: editorToken(tokenName),
+        },
+      ],
+      [postgresSource]
+    );
+
+    assert.equal(result.valid, false);
+    assert.deepEqual(result.diagnostics, [
+      {
+        message: `${tokenName} is not available from the selected Reference.`,
+        rowIndex: 0,
+        token: tokenName,
+        type: "unresolved-token",
+      },
+    ]);
+  }
+});
+
 test("AP env tokens use fallback DB helper names on conflicts", () => {
   const menuItems = buildApEnvTokenMenuItems({
     dbSources: [postgresSource],

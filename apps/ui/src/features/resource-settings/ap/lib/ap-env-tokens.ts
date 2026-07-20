@@ -1,9 +1,9 @@
 import {
-  type ApEnvDbDsnFieldOption,
   type ApEnvDbDsnSource,
-  type ApEnvDbReferenceField,
+  type ApEnvDbPrimitiveField,
+  type ApEnvDbPrimitiveFieldOption,
   type ApEnvRow,
-  apEnvDbDsnFieldOptions,
+  apEnvDbPrimitiveFieldOptions,
   apEnvDbReferenceRowPatch,
   isKubernetesEnvName,
   normalizeApEnvRowsForSave,
@@ -12,12 +12,10 @@ import {
 
 const EDITOR_TOKEN_RE = /\$\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}/g;
 const K8S_ENV_EXPANSION_RE = /\$\(([A-Za-z_][A-Za-z0-9_.-]*)\)/g;
-const DB_HELPER_NAMES: Record<ApEnvDbReferenceField, string> = {
+const DB_HELPER_NAMES: Record<ApEnvDbPrimitiveField, string> = {
   host: "PGHOST",
   password: "PGPASSWORD",
   port: "PGPORT",
-  private: "DATABASE_PRIVATE_URL",
-  public: "DATABASE_PUBLIC_URL",
   username: "PGUSER",
 };
 
@@ -56,13 +54,13 @@ interface TokenMatch {
 
 interface HelperSpec {
   dbKey: string;
-  field: ApEnvDbReferenceField;
+  field: ApEnvDbPrimitiveField;
   name: string;
   patch: Pick<ApEnvRow, "dbDsn" | "value" | "valueFrom" | "valueSource">;
 }
 
 interface SourceFieldMatch {
-  field: ApEnvDbDsnFieldOption;
+  field: ApEnvDbPrimitiveFieldOption;
   helperName: string;
   source: ApEnvDbDsnSource;
 }
@@ -95,18 +93,6 @@ function dbIdentityForName(source: ApEnvDbDsnSource): string {
     .replace(/^_+|_+$/g, "");
 }
 
-function helperNameForField(
-  source: ApEnvDbDsnSource,
-  field: ApEnvDbReferenceField
-): string {
-  if (field === "private" || field === "public") {
-    const identity = dbIdentityForName(source);
-    const suffix = field === "private" ? "PRIVATE_DSN" : "PUBLIC_DSN";
-    return identity === "" ? DB_HELPER_NAMES[field] : `${identity}_${suffix}`;
-  }
-  return DB_HELPER_NAMES[field];
-}
-
 function helperNameWithConflicts({
   existingNames,
   field,
@@ -114,12 +100,12 @@ function helperNameWithConflicts({
   source,
 }: {
   existingNames: ReadonlySet<string>;
-  field: ApEnvDbReferenceField;
+  field: ApEnvDbPrimitiveField;
   ownerByName: ReadonlyMap<string, string>;
   source: ApEnvDbDsnSource;
 }): string {
   const dbKey = apEnvDbSourceKey(source);
-  const base = helperNameForField(source, field);
+  const base = DB_HELPER_NAMES[field];
   const owner = ownerByName.get(base);
   if ((!existingNames.has(base) && owner === undefined) || owner === dbKey) {
     return base;
@@ -197,7 +183,7 @@ function fieldOptionByName(
   existingNames: ReadonlySet<string>,
   ownerByName: ReadonlyMap<string, string>
 ): SourceFieldMatch | undefined {
-  for (const field of apEnvDbDsnFieldOptions(source)) {
+  for (const field of apEnvDbPrimitiveFieldOptions(source)) {
     const helperName = helperNameWithConflicts({
       existingNames,
       field: field.field,
@@ -722,7 +708,7 @@ export function buildApEnvTokenMenuItems({
         .filter(Boolean)
     );
     const ownerByName = automaticHelperOwnerByName(rows);
-    for (const field of apEnvDbDsnFieldOptions(selectedSource)) {
+    for (const field of apEnvDbPrimitiveFieldOptions(selectedSource)) {
       const token = helperNameWithConflicts({
         existingNames,
         field: field.field,
@@ -730,10 +716,7 @@ export function buildApEnvTokenMenuItems({
         source: selectedSource,
       });
       items.set(token, {
-        description:
-          field.valueFrom == null
-            ? selectedSource.name
-            : `${selectedSource.name} secret`,
+        description: `${selectedSource.name} secret`,
         label: token,
         source: "db",
         token,
