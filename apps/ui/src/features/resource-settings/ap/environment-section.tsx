@@ -135,7 +135,7 @@ const DB_REFERENCE_FIELD_LABELS: Record<ApEnvDbReferenceField, string> = {
   username: "Username",
 };
 // Sized to this editor's own rows; DB connection rows keep a separate, wider
-// mask — ADR-0054 shares the reveal interaction between them, not this string.
+// mask — ADR-0055 shares the reveal interaction between them, not this string.
 const MASKED_ENV_VALUE = "*******";
 function envDbDsnFieldLabel(field: ApEnvDbReferenceField): string {
   return DB_REFERENCE_FIELD_LABELS[field];

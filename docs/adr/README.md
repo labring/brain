@@ -44,9 +44,9 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0050 — Snapshot Glass: Replace the Live Backdrop-Filter Sheet with a Pre-Blurred Texture](0050-snapshot-glass-pre-blurred-backdrop-texture.md)
 - [0051 — Express Workbench Orchestration as Pure Transitions](0051-express-workbench-orchestration-as-pure-transitions.md)
 - [0052 — Use In-Cluster Kubernetes Transport in Pods and Kubeconfig Transport Off-Cluster](0052-use-kubeconfig-transport-off-cluster.md)
-- [0052 — Serve DB connection strings as credential-free templates with explicit reveal](0052-serve-db-connection-strings-as-credential-free-templates.md)
-- [0053 — Reveal DB Access System Objects Only on Request](0053-reveal-db-access-system-objects-only-on-request.md)
-- [0054 — Mask DB Connection Rows Behind One Shared Reveal Interaction](0054-mask-db-connection-rows-behind-shared-reveal.md) *(revises the display layer of ADR-0052; the API contract stands)*
+- [0053 — Serve DB connection strings as credential-free templates with explicit reveal](0053-serve-db-connection-strings-as-credential-free-templates.md)
+- [0054 — Reveal DB Access System Objects Only on Request](0054-reveal-db-access-system-objects-only-on-request.md)
+- [0055 — Mask DB Connection Rows Behind One Shared Reveal Interaction](0055-mask-db-connection-rows-behind-shared-reveal.md) *(revises the display layer of ADR-0053; the API contract stands)*
 
 ## Conventions
 

@@ -10,7 +10,7 @@ export interface RevealedRow {
 }
 
 /**
- * One revealed secret row at a time (ADR-0054): revealing a row replaces any
+ * One revealed secret row at a time (ADR-0055): revealing a row replaces any
  * previously revealed one, the reveal auto-hides after
  * REVEAL_DURATION_MS, and toggling the revealed row hides it early.
  * Resolve failures and empty values leave the mask in place — reveal failure

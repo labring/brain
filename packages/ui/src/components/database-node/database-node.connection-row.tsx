@@ -97,7 +97,7 @@ function databaseConnectionRowValueKind(
 
 /**
  * The one DB connection row anatomy shared by the canvas DB node and DB
- * Settings (ADR-0054): label plus optional public switch on the top line;
+ * Settings (ADR-0055): label plus optional public switch on the top line;
  * fixed-width mask, eye, and copy on the value line. The eye swaps the
  * revealed DSN into the row in place, hovering the revealed value reads the
  * full DSN in a tooltip, and copy (whole-row click or the button) runs the
@@ -140,7 +140,7 @@ export function DatabaseConnectionRow({
       rowKey={rowKey}
       // Suppress the hit-area's native tooltip: it would fall back to the
       // copy value, and the DB Connection Template must never reach the
-      // screen (ADR-0054). The revealed-value tooltip is the reading surface.
+      // screen (ADR-0055). The revealed-value tooltip is the reading surface.
       title=""
     >
       {({ copied, copyable: rowCopyable }) => (

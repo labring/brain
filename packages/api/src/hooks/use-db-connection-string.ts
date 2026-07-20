@@ -16,7 +16,7 @@ export interface UseDbConnectionStringResolverOptions {
  * Resolves the complete DB Connection DSN for one DB Service on demand.
  *
  * Default DB read responses carry credential-free DB Connection Templates
- * (ADR-0052); this resolver backs the explicit reveal and copy actions,
+ * (ADR-0053); this resolver backs the explicit reveal and copy actions,
  * mirroring the AP env-value resolve pattern: fetched only on user action,
  * never cached (`no-store` on both request and response).
  */

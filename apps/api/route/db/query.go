@@ -278,7 +278,7 @@ func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{},
 	secret := dbConnectionSecret(cfg, name, namespace)
 	status["variables"] = dbVariablesFromSecret(db, secret)
 	// Read paths carry credential-free DB Connection Templates: the credential
-	// Secret's username and password keys are never decoded here (ADR-0052).
+	// Secret's username and password keys are never decoded here (ADR-0053).
 	// The complete DB Connection DSN is served only by the reveal route.
 	database := dbDatabaseNameFromSecret(secret)
 	if privateTemplate := dbConnectionTemplate(db, dbPrivateConnectionAddress(db, name, namespace), database); privateTemplate != "" {
@@ -397,7 +397,7 @@ func dbVariablesFromSecret(db map[string]interface{}, secret *unstructured.Unstr
 
 // dbConnectionCredentialsFromSecret decodes the credential Secret for reveal
 // responses only; DB read paths use dbDatabaseNameFromSecret instead so the
-// username and password keys stay undecoded there (ADR-0052).
+// username and password keys stay undecoded there (ADR-0053).
 func dbConnectionCredentialsFromSecret(secret *unstructured.Unstructured) dbConnectionCredentials {
 	return dbConnectionCredentials{
 		database: dbDecodedSecretValue(secret, "database", "dbname", "databaseName"),
@@ -478,7 +478,7 @@ func dbEnvKey(key string) string {
 // dbConnectionTemplateUserInfo is the literal userinfo a DB Connection
 // Template carries instead of decoded credentials. `<` and `>` are invalid in
 // URL userinfo, so a template pasted unmodified into an application fails at
-// connection-string parse time rather than at authentication (ADR-0052).
+// connection-string parse time rather than at authentication (ADR-0053).
 const dbConnectionTemplateUserInfo = "<username>:<password>"
 
 // dbConnectionShape describes how one engine's connection string is composed.

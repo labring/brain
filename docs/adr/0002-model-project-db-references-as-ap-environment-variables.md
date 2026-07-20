@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted; partially revised by ADR-0018 and ADR-0052.
+Accepted; partially revised by ADR-0018 and ADR-0053.
 
 ADR-0018 revises the AP Environment editor source model, AP Environment Reference syntax, and compiled runtime environment behavior. The Database Binding boundary remains: Project DB references still live inside AP environment configuration rather than a separate binding record.
 
-ADR-0052 revises the connection evidence below: literal env values are matched against the DB's address (scheme, host, port) rather than by equality with the complete DSN, because default DB read responses carry a credential-free DB Connection Template.
+ADR-0053 revises the connection evidence below: literal env values are matched against the DB's address (scheme, host, port) rather than by equality with the complete DSN, because default DB read responses carry a credential-free DB Connection Template.
 
 Project DB references are authored through the AP Environment editor and persisted as standard AP `spec.input.env` entries. This keeps Database Binding inside AP desired state, avoids a second binding persistence model, and lets the same editor handle ordinary external database credentials and Project DB references.
 

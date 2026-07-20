@@ -184,7 +184,7 @@ export interface DatabaseSettingsSectionsProps {
   /**
    * Enables the explicit reveal/copy actions on connection rows: rows display
    * credential-free DB Connection Templates, and the complete DB Connection
-   * DSN is fetched on demand under this kubeconfig (ADR-0052).
+   * DSN is fetched on demand under this kubeconfig (ADR-0053).
    */
   kubeconfig?: string;
   onSubmitPatch?: (patch: DatabaseSettingsPatch) => Promise<unknown> | unknown;

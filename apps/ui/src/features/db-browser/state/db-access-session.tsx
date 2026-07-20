@@ -99,7 +99,7 @@ const dbAccessActivityTabAtom = atom<DbAccessActivityTab>("db_service");
 /**
  * Logical Database names whose System Objects are revealed. Lives in the
  * per-session store (never persisted), so switching DB Services resets every
- * database to the clean default view (ADR 0049/0053).
+ * database to the clean default view (ADR 0049/0054).
  */
 export const dbAccessRevealedSystemObjectsAtom = atom<ReadonlySet<string>>(
   new Set<string>()

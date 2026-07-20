@@ -204,7 +204,7 @@ function connectionAddressFromDsnValue(value: string): string | undefined {
 }
 
 /**
- * Connection evidence (ADR-0002, revised by ADR-0052): a literal env value
+ * Connection evidence (ADR-0002, revised by ADR-0053): a literal env value
  * points at a DB DSN field when its address matches, so pasted complete DSNs
  * keep matching the credential-free templates that DB read surfaces carry,
  * and survive password rotation.

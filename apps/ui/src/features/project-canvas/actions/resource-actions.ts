@@ -150,7 +150,7 @@ export function useProjectResourceActions({
   const copyDatabaseConnection = useCallback<ProjectDbConnectionCopyHandler>(
     (connection, workload) =>
       // Connection rows carry credential-free DB Connection Templates; copy
-      // fetches the complete DB Connection DSN on demand (ADR-0052). The
+      // fetches the complete DB Connection DSN on demand (ADR-0053). The
       // template is copied only when no resolver backs the canvas at all.
       copyDbConnectionValue({
         placeholderValue: connection.value ?? "",
@@ -163,7 +163,7 @@ export function useProjectResourceActions({
     [resolveConnectionString, revealReady]
   );
 
-  // Backs the connection-row eye (ADR-0054): fetches the complete DB
+  // Backs the connection-row eye (ADR-0055): fetches the complete DB
   // Connection DSN on demand so revealed values never persist in page state.
   const resolveDatabaseConnectionString =
     useCallback<ProjectDbConnectionResolveHandler>(

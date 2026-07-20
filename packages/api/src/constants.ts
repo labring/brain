@@ -52,7 +52,7 @@ export const API_ROUTES = {
     root: "/api/db/v1alpha1",
     /**
      * Explicitly reveal/copy one complete DB Connection DSN. Default DB read
-     * responses carry credential-free DB Connection Templates (ADR-0052).
+     * responses carry credential-free DB Connection Templates (ADR-0053).
      */
     connectionString: "/api/db/v1alpha1/connection-string",
     backup: "/api/db/v1alpha1/backup",

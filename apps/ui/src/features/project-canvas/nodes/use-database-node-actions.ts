@@ -38,7 +38,7 @@ export interface CanvasDatabaseNodeViewModel {
   revealedConnection: DatabaseNodeRevealedConnection | null;
 }
 
-// The eye swaps the on-demand DSN into one row at a time (ADR-0054); the
+// The eye swaps the on-demand DSN into one row at a time (ADR-0055); the
 // handler is omitted when no resolver backs the canvas, which hides the eye.
 function databaseNodeRevealActions({
   commands,
@@ -223,7 +223,7 @@ export function useCanvasDatabaseNodeActions({
 
     const actions: DatabaseNodeActions = {
       ...base,
-      // Copy fetches the complete DB Connection DSN on demand (ADR-0052);
+      // Copy fetches the complete DB Connection DSN on demand (ADR-0053);
       // the node's connection rows only ever hold the template.
       copyConnection: (connection) =>
         commands.copyDatabaseConnection(connection, workload),

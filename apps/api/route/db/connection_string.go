@@ -19,7 +19,7 @@ import (
 const dbConnectionStringCacheControl = "no-cache, no-store, must-revalidate"
 
 // registerConnectionString serves the explicit reveal/copy path for DB
-// Connection DSNs, modeled on the AP env-value route (ADR-0052): server-side
+// Connection DSNs, modeled on the AP env-value route (ADR-0053): server-side
 // composition, no-store response, reachable only through explicit user action.
 // Default DB read responses carry credential-free DB Connection Templates.
 func registerConnectionString(grp huma.API) {
@@ -91,7 +91,7 @@ type connectionStringOutput struct {
 }
 
 // connectionStringRevealOutput assembles the reveal response: the composed DSN
-// plus the no-store headers every reveal response must carry (ADR-0052).
+// plus the no-store headers every reveal response must carry (ADR-0053).
 func connectionStringRevealOutput(value string) *connectionStringOutput {
 	output := &connectionStringOutput{
 		CacheControl: dbConnectionStringCacheControl,

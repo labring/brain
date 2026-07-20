@@ -105,7 +105,7 @@ export type DatabaseNodeRevealConnectionHandler = (
   index: number
 ) => Promise<void> | void;
 
-/** The single revealed connection row (ADR-0054: one at a time). */
+/** The single revealed connection row (ADR-0055: one at a time). */
 export interface DatabaseNodeRevealedConnection {
   key: DatabaseNodeConnectionKey;
   value: string;

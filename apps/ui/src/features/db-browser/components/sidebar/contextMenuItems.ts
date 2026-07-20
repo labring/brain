@@ -64,7 +64,7 @@ export function getDatabaseMenuItems(
   const items: PointerContextMenuItem[] = [refreshItem(onAction)];
 
   // Only the PostgreSQL plugin classifies System Objects; other engines keep
-  // their existing behavior (ADR 0053).
+  // their existing behavior (ADR 0054).
   if (dbServiceEngineType === "POSTGRES") {
     const revealed = options?.systemObjectsRevealed === true;
     items.push({
