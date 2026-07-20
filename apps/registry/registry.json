@@ -452,6 +452,7 @@
       "description": "Managed database canvas node with connection rows, public-access toggle, lifecycle and quick actions, footer metrics, and metadata-driven icons",
       "dependencies": ["lucide-react"],
       "registryDependencies": [
+        "app-icon-button",
         "button",
         "canvas-node",
         "dropdown-menu",
@@ -463,6 +464,11 @@
           "path": "../../packages/ui/src/components/database-node/database-node.types.ts",
           "type": "registry:lib",
           "target": "components/database-node/database-node.types.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/database-node/database-node.mask.ts",
+          "type": "registry:lib",
+          "target": "components/database-node/database-node.mask.ts"
         },
         {
           "path": "../../packages/ui/src/components/database-node/database-node.availability.ts",
@@ -488,6 +494,11 @@
           "path": "../../packages/ui/src/components/database-node/database-node.status.ts",
           "type": "registry:lib",
           "target": "components/database-node/database-node.status.ts"
+        },
+        {
+          "path": "../../packages/ui/src/components/database-node/database-node.connection-row.tsx",
+          "type": "registry:component",
+          "target": "components/database-node/database-node.connection-row.tsx"
         },
         {
           "path": "../../packages/ui/src/components/database-node/database-node.content.tsx",

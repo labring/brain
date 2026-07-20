@@ -1,4 +1,6 @@
 export type {
+  DatabaseConnectionRowProps,
+  DatabaseConnectionRowVariant,
   DatabaseEngineKey,
   DatabaseNodeAction,
   DatabaseNodeActions,
@@ -16,6 +18,8 @@ export type {
   DatabaseNodePublicConnection,
   DatabaseNodeQuickActionKey,
   DatabaseNodeQuickActions,
+  DatabaseNodeRevealConnectionHandler,
+  DatabaseNodeRevealedConnection,
   DatabaseNodeRootProps,
   DatabaseNodeState,
   DatabaseNodeStates,
@@ -26,10 +30,12 @@ export type {
 // biome-ignore lint/performance/noBarrelFile: database-node public package surface
 export {
   canCopyDatabaseNodeConnection,
+  DatabaseConnectionRow,
   DatabaseNode,
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
   getDatabaseNodeConnectionKey,
+  MASKED_CONNECTION_VALUE,
   resolveDatabaseNodeStatus,
   resolveDatabaseNodeVisualTone,
 } from "./database-node";

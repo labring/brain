@@ -4,8 +4,11 @@ import type {
   DatabaseNodeActions,
   DatabaseNodeConnection,
   DatabaseNodeQuickActionKey,
+  DatabaseNodeRevealConnectionHandler,
+  DatabaseNodeRevealedConnection,
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
+import { getDatabaseNodeConnectionKey } from "@workspace/ui/components/database-node/database-node";
 import { useMemo } from "react";
 import { dbLifecycleWorkloadRefFromTarget } from "@/features/project-canvas/actions/resource-actions";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
@@ -26,10 +29,38 @@ import {
   useCanvasDbLifecycleActivity,
   useProjectCanvasNodeCommands,
 } from "@/features/project-canvas/workbench/node-commands-react";
+import { useRevealedRow } from "@/features/resource-settings/use-revealed-row";
 
 export interface CanvasDatabaseNodeViewModel {
   actions: DatabaseNodeActions;
   connections: DatabaseNodeConnection[];
+  revealedConnection: DatabaseNodeRevealedConnection | null;
+}
+
+// The eye swaps the on-demand DSN into one row at a time (ADR-0054); the
+// handler is omitted when no resolver backs the canvas, which hides the eye.
+function databaseNodeRevealActions({
+  commands,
+  revealAvailable,
+  toggleRevealedRow,
+  workload,
+}: {
+  commands: NonNullable<ReturnType<typeof useProjectCanvasNodeCommands>>;
+  revealAvailable: boolean;
+  toggleRevealedRow: ReturnType<typeof useRevealedRow>["toggleRevealedRow"];
+  workload: { name: string; namespace: string } | null;
+}): Pick<DatabaseNodeActions, "revealConnection"> {
+  if (workload == null || !revealAvailable) {
+    return {};
+  }
+  const revealConnection: DatabaseNodeRevealConnectionHandler = (
+    connection,
+    index
+  ) =>
+    toggleRevealedRow(getDatabaseNodeConnectionKey(connection, index), () =>
+      commands.resolveDatabaseConnectionString(connection, workload)
+    );
+  return { revealConnection };
 }
 
 /**
@@ -60,8 +91,9 @@ export function useCanvasDatabaseNodeActions({
   const activity = useCanvasDbLifecycleActivity(
     workloadRef.name === "" ? null : workloadRef
   );
+  const { revealedRow, toggleRevealedRow } = useRevealedRow();
 
-  return useMemo(() => {
+  const viewModel = useMemo(() => {
     const base = model.actions ?? {};
     if (commands == null) {
       return { actions: base, connections: model.connections };
@@ -194,6 +226,12 @@ export function useCanvasDatabaseNodeActions({
       // the node's connection rows only ever hold the template.
       copyConnection: (connection) =>
         commands.copyDatabaseConnection(connection, workload),
+      ...databaseNodeRevealActions({
+        commands,
+        revealAvailable: activity.authReady && !readOnly,
+        toggleRevealedRow,
+        workload,
+      }),
       ...(togglePublicConnection === undefined
         ? {}
         : { togglePublicConnection }),
@@ -213,5 +251,7 @@ export function useCanvasDatabaseNodeActions({
     };
 
     return { actions, connections };
-  }, [activity, commands, id, model, type]);
+  }, [activity, commands, id, model, toggleRevealedRow, type]);
+
+  return { ...viewModel, revealedConnection: revealedRow };
 }

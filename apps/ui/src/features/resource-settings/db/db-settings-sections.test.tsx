@@ -49,11 +49,11 @@ function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
 const CONNECTION_ADDRESS_RE = /Connection Address/;
 const PRIVATE_CONNECTION_RE = /Private Connection/;
 const PUBLIC_CONNECTION_RE = /Public Connection/;
-const FIXED_CONNECTION_MASK_RE = />\*{12}</g;
+const FIXED_CONNECTION_MASK_RE = />\*{7}</g;
 const PRIVATE_CONNECTION_TEMPLATE_RE =
-  />postgres:\/\/&lt;username&gt;:&lt;password&gt;@postgres.default.svc:5432\/app</;
+  /postgres:\/\/&lt;username&gt;:&lt;password&gt;@postgres.default.svc:5432\/app/;
 const PUBLIC_CONNECTION_TEMPLATE_RE =
-  />postgres:\/\/&lt;username&gt;:&lt;password&gt;@db.example.com:30432\/app</;
+  /postgres:\/\/&lt;username&gt;:&lt;password&gt;@db.example.com:30432\/app/;
 const COPY_PRIVATE_CONNECTION_RE = /aria-label="Copy Private Connection"/;
 const COPY_PUBLIC_CONNECTION_RE = /aria-label="Copy Public Connection"/;
 const REVEAL_PRIVATE_CONNECTION_RE = /aria-label="Reveal Private Connection"/;
@@ -68,9 +68,9 @@ const REPLICA_VALUE_RE = />2</;
 const PENDING_REPLICA_VALUE_RE = />3</;
 const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
 const PRIVATE_MYSQL_TEMPLATE_RE =
-  />mysql:\/\/&lt;username&gt;:&lt;password&gt;@db.default.svc:3306\/mydb</;
+  /mysql:\/\/&lt;username&gt;:&lt;password&gt;@db.default.svc:3306\/mydb/;
 const PUBLIC_MYSQL_TEMPLATE_RE =
-  />mysql:\/\/&lt;username&gt;:&lt;password&gt;@192.168.10.189.nip.io:45211\/mydb</;
+  /mysql:\/\/&lt;username&gt;:&lt;password&gt;@192.168.10.189.nip.io:45211\/mydb/;
 const INVISIBLE_UNSAVED_CHANGES_RE =
   /<p class="[^"]*\binvisible\b[^"]*" role="status">.*Unsaved changes.*<\/p>/;
 
@@ -114,15 +114,15 @@ function renderPane(
   return renderToStaticMarkup(element);
 }
 
-test("database settings pane displays connection templates on copyable rows", () => {
+test("database settings pane masks connection rows behind the fixed mask", () => {
   const html = renderPane();
 
   assert.match(html, CONNECTION_ADDRESS_RE);
   assert.match(html, PRIVATE_CONNECTION_RE);
   assert.match(html, PUBLIC_CONNECTION_RE);
-  assert.equal([...html.matchAll(FIXED_CONNECTION_MASK_RE)].length, 0);
-  assert.match(html, PRIVATE_CONNECTION_TEMPLATE_RE);
-  assert.match(html, PUBLIC_CONNECTION_TEMPLATE_RE);
+  assert.equal([...html.matchAll(FIXED_CONNECTION_MASK_RE)].length, 2);
+  assert.doesNotMatch(html, PRIVATE_CONNECTION_TEMPLATE_RE);
+  assert.doesNotMatch(html, PUBLIC_CONNECTION_TEMPLATE_RE);
   assert.match(html, COPY_PRIVATE_CONNECTION_RE);
   assert.match(html, COPY_PUBLIC_CONNECTION_RE);
 });
@@ -141,9 +141,9 @@ test("database settings pane offers reveal actions only when a kubeconfig backs 
   );
   assert.match(withKubeconfig, REVEAL_PRIVATE_CONNECTION_RE);
   assert.match(withKubeconfig, REVEAL_PUBLIC_CONNECTION_RE);
-  // Revealed values are fetched on demand; the rendered page state only ever
-  // carries the credential-free template.
-  assert.match(withKubeconfig, PRIVATE_CONNECTION_TEMPLATE_RE);
+  // The revealed DSN is fetched on demand and swapped in for one row at a
+  // time; rendered page state never carries more than the fixed mask.
+  assert.doesNotMatch(withKubeconfig, PRIVATE_CONNECTION_TEMPLATE_RE);
 });
 
 test("database settings pane renders shared draft actions", () => {
@@ -269,7 +269,7 @@ test("database settings pane shows pending public connection text while public a
   assert.doesNotMatch(html, COPY_PUBLIC_CONNECTION_RE);
 });
 
-test("database settings pane renders private and public connection templates", () => {
+test("database settings pane masks provisioned rows for every engine template", () => {
   const html = renderPane(
     <DatabaseSettingsPaneContent
       data={{
@@ -295,8 +295,9 @@ test("database settings pane renders private and public connection templates", (
     />
   );
 
-  assert.match(html, PRIVATE_MYSQL_TEMPLATE_RE);
-  assert.match(html, PUBLIC_MYSQL_TEMPLATE_RE);
+  assert.doesNotMatch(html, PRIVATE_MYSQL_TEMPLATE_RE);
+  assert.doesNotMatch(html, PUBLIC_MYSQL_TEMPLATE_RE);
+  assert.equal([...html.matchAll(FIXED_CONNECTION_MASK_RE)].length, 2);
   assert.match(html, COPY_PRIVATE_CONNECTION_RE);
   assert.match(html, COPY_PUBLIC_CONNECTION_RE);
 });

@@ -52,6 +52,7 @@ export interface ProjectCanvasNodeCommands {
   requestDbDelete: (target: ProjectCanvasDbDeleteTarget) => void;
   requestDbRestart: (target: ProjectCanvasDbLifecycleTarget) => void;
   requestDbStop: (target: ProjectCanvasDbLifecycleTarget) => void;
+  resolveDatabaseConnectionString: ProjectResourceActions["resolveDatabaseConnectionString"];
   runResourceAction: ProjectResourceActions["runResourceAction"];
   startApWorkload: (ref: WorkloadRef) => Promise<unknown>;
   startDbWorkload: (ref: WorkloadRef) => Promise<unknown>;

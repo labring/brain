@@ -31,6 +31,11 @@ export type ProjectDbConnectionCopyHandler = (
   workload: DbLifecycleWorkloadRef | null
 ) => Promise<void>;
 
+export type ProjectDbConnectionResolveHandler = (
+  connection: DatabaseNodeConnection,
+  workload: DbLifecycleWorkloadRef | null
+) => Promise<string>;
+
 export interface RunProjectResourceActionOptions {
   onSettled?: () => void;
   onSuccess?: () => void;
@@ -171,6 +176,19 @@ export function useProjectResourceActions({
     [resolveConnectionString, revealReady]
   );
 
+  // Backs the connection-row eye (ADR-0054): fetches the complete DB
+  // Connection DSN on demand so revealed values never persist in page state.
+  const resolveDatabaseConnectionString =
+    useCallback<ProjectDbConnectionResolveHandler>(
+      (connection, workload) =>
+        workload == null || !revealReady
+          ? Promise.reject(
+              new Error("Connection string reveal is unavailable.")
+            )
+          : resolveConnectionString(workload, connection.kind),
+      [resolveConnectionString, revealReady]
+    );
+
   const toggleDatabasePublicAccess = useCallback(
     ({
       metadata,
@@ -193,6 +211,7 @@ export function useProjectResourceActions({
     copyDatabaseConnection,
     dbLifecycle,
     refreshAfterResourceAction,
+    resolveDatabaseConnectionString,
     runResourceAction,
     toggleDatabasePublicAccess,
   };

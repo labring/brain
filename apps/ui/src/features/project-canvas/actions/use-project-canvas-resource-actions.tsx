@@ -47,6 +47,7 @@ export interface ProjectCanvasResourceActionCommands {
   requestDbStop: ReturnType<
     typeof useResourceLifecycleDialogs
   >["requestDbStop"];
+  resolveDatabaseConnectionString: ProjectResourceActions["resolveDatabaseConnectionString"];
   runResourceAction: ProjectResourceActions["runResourceAction"];
   startApWorkload: ProjectResourceActions["apLifecycle"]["startWorkload"];
   startDbWorkload: ProjectResourceActions["dbLifecycle"]["startWorkload"];
@@ -144,6 +145,9 @@ export function useProjectCanvasResourceActions({
   const copyDatabaseConnection = useStableCallback(
     resourceActions.copyDatabaseConnection
   );
+  const resolveDatabaseConnectionString = useStableCallback(
+    resourceActions.resolveDatabaseConnectionString
+  );
   const startApWorkload = useStableCallback(
     resourceActions.apLifecycle.startWorkload
   );
@@ -164,6 +168,7 @@ export function useProjectCanvasResourceActions({
       requestDbDelete,
       requestDbRestart,
       requestDbStop,
+      resolveDatabaseConnectionString,
       runResourceAction,
       startApWorkload,
       startDbWorkload,
@@ -178,6 +183,7 @@ export function useProjectCanvasResourceActions({
       requestDbDelete,
       requestDbRestart,
       requestDbStop,
+      resolveDatabaseConnectionString,
       runResourceAction,
       startApWorkload,
       startDbWorkload,
