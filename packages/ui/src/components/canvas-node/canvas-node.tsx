@@ -35,6 +35,7 @@ import {
 } from "./canvas-node.metrics";
 import { CanvasNodePlaceholder } from "./canvas-node.placeholder";
 import { CanvasNodeRoot } from "./canvas-node.root";
+import { CanvasNodeCopyableRowActions } from "./canvas-node.row-actions";
 import {
   CanvasNodeStatus,
   CanvasNodeStatusDot,
@@ -58,6 +59,7 @@ export type {
   CanvasNodeMetricValueFormat,
 } from "./canvas-node.metrics";
 export type { CanvasNodePlaceholderProps } from "./canvas-node.placeholder";
+export type { CanvasNodeCopyableRowActionsProps } from "./canvas-node.row-actions";
 export type {
   CanvasNodeActions,
   CanvasNodeConnectionSide,
@@ -80,6 +82,7 @@ export const CanvasNode = {
   Card: CanvasNodeCard,
   ConnectionAnchor: CanvasNodeConnectionAnchor,
   CopyableRow: CanvasNodeCopyableRow,
+  CopyableRowActions: CanvasNodeCopyableRowActions,
   CopyableRowControl: CanvasNodeCopyableRowControl,
   CopyableRowIndicator: CanvasNodeCopyableRowIndicator,
   CopyFeedbackScope: CanvasNodeCopyFeedbackScope,
@@ -124,6 +127,7 @@ dn(CanvasNodePlaceholder, "CanvasNode.Placeholder");
 dn(CanvasNodeConnectionAnchor, "CanvasNode.ConnectionAnchor");
 dn(CanvasNodeCopyFeedbackScope, "CanvasNode.CopyFeedbackScope");
 dn(CanvasNodeCopyableRow, "CanvasNode.CopyableRow");
+dn(CanvasNodeCopyableRowActions, "CanvasNode.CopyableRowActions");
 dn(CanvasNodeCopyableRowControl, "CanvasNode.CopyableRowControl");
 dn(CanvasNodeCopyableRowIndicator, "CanvasNode.CopyableRowIndicator");
 dn(CanvasNodeExpandButton, "CanvasNode.ExpandButton");

@@ -197,6 +197,9 @@ const CUSTOM_DOMAIN_DETAIL_REASON_RE = /IssuerNotReady/;
 const CUSTOM_DOMAIN_DETAIL_MESSAGE_RE = /Certificate request failed/;
 const UNBIND_CUSTOM_DOMAIN_RE = /aria-label="Unbind Custom Domain"/;
 const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
+const OPEN_PUBLIC_ADDRESS_RE = /aria-label="Open Public Address"/;
+const OPEN_PUBLIC_ADDRESS_HREF_RE = /href="https:\/\/api\.example\.com\/"/;
+const OPEN_LINK_SLOT_RE = /data-slot="canvas-node-row-open-link"/;
 const COPY_ENV_VALUE_RE = /aria-label="Copy environment variable DATABASE_URL"/;
 const REVEAL_ENV_VALUE_RE =
   /aria-label="Reveal environment variable DATABASE_URL"/;
@@ -483,12 +486,70 @@ test("AP settings pane renders editable public address rows", () => {
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, PUBLIC_ADDRESS_STATUS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
+  assert.match(html, OPEN_PUBLIC_ADDRESS_RE);
+  assert.match(html, OPEN_PUBLIC_ADDRESS_HREF_RE);
   assert.doesNotMatch(html, CNAME_RE);
   assert.match(html, EDIT_PUBLIC_ADDRESS_RE);
   assert.match(html, DELETE_PUBLIC_ADDRESS_RE);
   assert.match(html, ADD_PUBLIC_ADDRESS_RE);
   assert.match(html, ADD_DOMAIN_LABEL_RE);
   assert.doesNotMatch(html, NO_PUBLIC_ADDRESSES_RE);
+});
+
+test("AP settings pane derives the open link from host-only Public Addresses", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, OPEN_PUBLIC_ADDRESS_RE);
+  assert.match(html, OPEN_PUBLIC_ADDRESS_HREF_RE);
+});
+
+test("AP settings pane renders no open link for pending Public Addresses", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privateAddress: "http://api-service.default.svc:8080",
+        privatePort: 8080,
+        publicAddresses: [
+          {
+            port: 8080,
+            status: "pending",
+            type: "platform",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.doesNotMatch(html, OPEN_LINK_SLOT_RE);
 });
 
 test("AP settings pane collapses overflowing public address rows by default", () => {
@@ -1148,6 +1209,7 @@ test("read-only network view renders addresses without mutation controls", () =>
   assert.match(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.match(html, COPY_PRIVATE_ADDRESS_RE);
   assert.match(html, COPY_PUBLIC_ADDRESS_RE);
+  assert.match(html, OPEN_PUBLIC_ADDRESS_RE);
   assert.doesNotMatch(html, ADD_PUBLIC_ADDRESS_RE);
   assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
 });

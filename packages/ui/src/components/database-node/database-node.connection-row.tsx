@@ -226,7 +226,7 @@ function DatabaseConnectionRowValueLine({
           />
           <CanvasNodeCopyableRowControl
             className={cn(
-              "pointer-events-auto relative z-20 flex shrink-0 items-center gap-0.5 transition-opacity",
+              "pointer-events-auto relative z-20 -mr-1.5 flex shrink-0 items-center gap-0.5 transition-opacity",
               // Progressive disclosure: controls surface on row hover/focus.
               // Pinned while revealed (the closed eye is the only early-hide
               // affordance for the on-screen DSN) and during copy feedback.
