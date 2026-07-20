@@ -134,20 +134,9 @@ const DB_REFERENCE_FIELD_LABELS: Record<ApEnvDbReferenceField, string> = {
   public: "Public DSN",
   username: "Username",
 };
+// Sized to this editor's own rows; DB connection rows keep a separate, wider
+// mask — ADR-0055 shares the reveal interaction between them, not this string.
 const MASKED_ENV_VALUE = "*******";
-export const ENV_REVEAL_DURATION_MS = 30_000;
-
-export async function writeTextToClipboard(value: string): Promise<void> {
-  if (typeof navigator === "undefined" || !navigator.clipboard) {
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(value);
-  } catch {
-    // Clipboard permissions are best-effort UI affordances.
-  }
-}
-
 function envDbDsnFieldLabel(field: ApEnvDbReferenceField): string {
   return DB_REFERENCE_FIELD_LABELS[field];
 }

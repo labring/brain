@@ -172,6 +172,148 @@ test("canvas connections detect public DB bindings only after resource status ha
   );
 });
 
+test("canvas connections match pasted DSN env values against DB Connection Templates by address", () => {
+  const apsData = {
+    items: [
+      {
+        metadata: { name: "api", namespace: "default" },
+        spec: {
+          input: {
+            env: [
+              {
+                name: "DATABASE_URL",
+                value:
+                  "postgresql://alice:s3cr3t@postgres-postgresql.default.svc:5432/postgres",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  const dbsData = {
+    items: [
+      {
+        metadata: { name: "postgres", namespace: "default" },
+        status: {
+          connectionStringPrivate:
+            "postgresql://<username>:<password>@postgres-postgresql.default.svc:5432/postgres",
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    detectCanvasConnections({
+      apsData,
+      dbsData,
+    }),
+    [
+      {
+        kind: "APToDB",
+        source: { kind: "AP", name: "api", namespace: "default" },
+        target: { kind: "DB", name: "postgres", namespace: "default" },
+      },
+    ]
+  );
+});
+
+test("canvas connections keep pasted DSN edges across a DB password rotation", () => {
+  const apsData = {
+    items: [
+      {
+        metadata: { name: "api", namespace: "default" },
+        spec: {
+          input: {
+            env: [
+              {
+                name: "DATABASE_URL",
+                value:
+                  "postgresql://alice:stale-password@postgres-postgresql.default.svc:5432/postgres",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  const dbsData = {
+    items: [
+      {
+        metadata: { name: "postgres", namespace: "default" },
+        status: {
+          connectionStringPrivate:
+            "postgresql://alice:rotated-password@postgres-postgresql.default.svc:5432/postgres",
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    detectCanvasConnections({
+      apsData,
+      dbsData,
+    }),
+    [
+      {
+        kind: "APToDB",
+        source: { kind: "AP", name: "api", namespace: "default" },
+        target: { kind: "DB", name: "postgres", namespace: "default" },
+      },
+    ]
+  );
+});
+
+test("canvas connections do not match DSN env values against unrelated addresses", () => {
+  const apsData = {
+    items: [
+      {
+        metadata: { name: "api", namespace: "default" },
+        spec: {
+          input: {
+            env: [
+              {
+                name: "DATABASE_URL",
+                value: "postgresql://alice:s3cr3t@db.external.example:5432/app",
+              },
+              {
+                name: "OTHER_PORT_URL",
+                value:
+                  "postgresql://alice:s3cr3t@postgres-postgresql.default.svc:5433/postgres",
+              },
+              {
+                name: "OTHER_SCHEME_URL",
+                value:
+                  "mysql://alice:s3cr3t@postgres-postgresql.default.svc:5432/postgres",
+              },
+              { name: "NOT_A_URL", value: "plain-text" },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  const dbsData = {
+    items: [
+      {
+        metadata: { name: "postgres", namespace: "default" },
+        status: {
+          connectionStringPrivate:
+            "postgresql://<username>:<password>@postgres-postgresql.default.svc:5432/postgres",
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    detectCanvasConnections({
+      apsData,
+      dbsData,
+    }),
+    []
+  );
+});
+
 test("canvas connections detect primitive Secret-backed AP to DB edges and de-duplicate each pair", () => {
   const apsData = {
     items: [

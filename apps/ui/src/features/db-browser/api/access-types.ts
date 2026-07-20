@@ -13,6 +13,12 @@ export interface AccessObject {
   metadata?: Record<string, string>;
   name: string;
   ref: AccessObjectRef;
+  /**
+   * True for System Objects — objects provisioned by the database engine, an
+   * installed extension, or platform operator tooling rather than authored by
+   * the user. The UI hides them from the default object list.
+   */
+  system?: boolean;
 }
 
 export interface AccessObjectsResult {

@@ -176,6 +176,12 @@ An open-tab presentation of one Logical Database object within DB Access. Within
 
 Its interaction state is retained while the tab remains open, including while another tab is active; closing the tab discards that state, so reopening the object starts from the default view state.
 
+### System Object
+
+A Logical Database object provisioned by the database engine, an installed extension, or platform operator tooling rather than authored by the user. System Objects are not part of the user's own data model: DB Access omits them from the default object list and shows them only on explicit request within a DB Access Session.
+
+_Avoid_: operator object, Spilo object, internal table, system table.
+
 ## Database Binding & AP Environment
 
 ### Database Binding
@@ -204,9 +210,15 @@ _Avoid_: UI-only token, hidden binding metadata.
 
 ### DB Connection DSN
 
-A complete connection string for one DB Service, including the credentials needed by an application to connect when the DB engine requires credentials.
+A complete connection string for one DB Service, including the credentials needed by an application to connect when the DB engine requires credentials. A DB Connection DSN is produced only by an explicit reveal or copy action; default DB read surfaces carry a DB Connection Template instead.
 
 _Avoid_: Address-only DSN, credential-free DATABASE_URL.
+
+### DB Connection Template
+
+A credential-free connection string for one DB Service whose username and password segments are literal placeholders and whose address and database name are real. The DB Connection Template identifies which DB Service a value points at without containing credentials, and is what DB read surfaces carry by default.
+
+_Avoid_: Masked DSN, redacted connection string.
 
 ## Settings
 

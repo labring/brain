@@ -28,6 +28,11 @@ export {
 } from "./use-ap-workload-events";
 export { useApsK8sList } from "./use-aps-k8s-list";
 export {
+  type DbConnectionStringKind,
+  type UseDbConnectionStringResolverOptions,
+  useDbConnectionStringResolver,
+} from "./use-db-connection-string";
+export {
   type DbLifecycleActionKey,
   type DbLifecycleWorkloadRef,
   type DbPublicAccessPendingTarget,

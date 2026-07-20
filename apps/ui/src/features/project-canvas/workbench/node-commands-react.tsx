@@ -1,6 +1,5 @@
 "use client";
 
-import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components/database-node/database-node";
 import type { Node } from "@xyflow/react";
 import {
   createContext,
@@ -42,7 +41,7 @@ export interface ProjectCanvasNodeCommands {
   clearDbPublicAccessPendingTarget: (ref: WorkloadRef) => void;
   /** Commits node presentation state to Canvas Runtime and schedules persistence. */
   commitNodeLayout: (node: Node) => void;
-  copyDatabaseConnection: DatabaseNodeCopyConnectionHandler;
+  copyDatabaseConnection: ProjectResourceActions["copyDatabaseConnection"];
   executeCommandPlan: (plan: ProjectCanvasCommandPlan) => void;
   getNodes: () => readonly Node[];
   projectId?: string;
@@ -53,6 +52,7 @@ export interface ProjectCanvasNodeCommands {
   requestDbDelete: (target: ProjectCanvasDbDeleteTarget) => void;
   requestDbRestart: (target: ProjectCanvasDbLifecycleTarget) => void;
   requestDbStop: (target: ProjectCanvasDbLifecycleTarget) => void;
+  resolveDatabaseConnectionString: ProjectResourceActions["resolveDatabaseConnectionString"];
   runResourceAction: ProjectResourceActions["runResourceAction"];
   startApWorkload: (ref: WorkloadRef) => Promise<unknown>;
   startDbWorkload: (ref: WorkloadRef) => Promise<unknown>;

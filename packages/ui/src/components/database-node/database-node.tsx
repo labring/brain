@@ -20,7 +20,12 @@ export {
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
 } from "./database-node.availability";
-export { maskDatabaseConnectionString } from "./database-node.mask";
+export {
+  DatabaseConnectionRow,
+  type DatabaseConnectionRowProps,
+  type DatabaseConnectionRowVariant,
+} from "./database-node.connection-row";
+export { DATABASE_CONNECTION_MASK } from "./database-node.mask";
 export {
   canCopyDatabaseNodeConnection,
   getDatabaseNodeConnectionKey,
@@ -47,6 +52,8 @@ export type {
   DatabaseNodePublicConnection,
   DatabaseNodeQuickActionKey,
   DatabaseNodeQuickActions,
+  DatabaseNodeRevealConnectionHandler,
+  DatabaseNodeRevealedConnection,
   DatabaseNodeRootProps,
   DatabaseNodeState,
   DatabaseNodeStates,

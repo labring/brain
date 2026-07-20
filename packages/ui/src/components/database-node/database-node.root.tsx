@@ -46,8 +46,10 @@ export function DatabaseNodeRoot({
   lifecycleActions,
   onCopyConnection,
   onExpandedChange,
+  onRevealConnection,
   onTogglePublicConnection,
   quickActions,
+  revealedConnection,
   states,
   togglePublicConnectionDisabledReason,
 }: DatabaseNodeRootProps) {
@@ -68,6 +70,7 @@ export function DatabaseNodeRoot({
               copyConnection: onCopyConnection,
               lifecycleActions,
               quickActions,
+              revealConnection: onRevealConnection,
               togglePublicConnection: onTogglePublicConnection,
               togglePublicConnectionDisabledReason,
             },
@@ -78,6 +81,7 @@ export function DatabaseNodeRoot({
               connections,
               copiedConnectionKey:
                 copiedKey as DatabaseNodeConnectionKey | null,
+              revealedConnection,
               states,
             },
           };

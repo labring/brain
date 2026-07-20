@@ -8,7 +8,6 @@ export const DATA_BROWSER_CAPABILITIES = {
     query: false,
     refresh: true,
     singleObjectExport: true,
-    systemObjectsToggle: false,
     write: false,
   },
   visibleEngines: new Set<DataBrowserEngine>([

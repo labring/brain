@@ -1,4 +1,7 @@
-import { useDbAccessIsSelected } from "@db-browser/state/db-access-session";
+import {
+  useDbAccessDatabaseSystemObjectsRevealed,
+  useDbAccessIsSelected,
+} from "@db-browser/state/db-access-session";
 import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -19,7 +22,10 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { createContext, memo, use } from "react";
-import { useSidebarTreeNodeState } from "./SidebarTreeProvider";
+import {
+  dataBrowserVisibleTreeChildren,
+  useSidebarTreeNodeState,
+} from "./SidebarTreeProvider";
 import type { NodeType, TreeNodeData } from "./types";
 import { EXPANDABLE_TYPES } from "./types";
 
@@ -32,6 +38,8 @@ export interface TreeNodeContextValue {
 }
 
 const TreeNodeCtx = createContext<TreeNodeContextValue | null>(null);
+
+const NO_REVEALED_DATABASES: ReadonlySet<string> = new Set();
 
 export const TreeNodeProvider = TreeNodeCtx.Provider;
 
@@ -87,6 +95,22 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
   const isExpandable = EXPANDABLE_TYPES.has(node.type);
   const isRoot = depth === 0;
   const isSelected = useDbAccessIsSelected(node.id);
+  const isSystem = node.metadata.system === true;
+  // System children always share one Logical Database (a node's descendants
+  // all come from its own database), so the node subscribes to that single
+  // database's reveal state instead of the whole aggregate (ADR-0049).
+  const systemChildDatabase = children?.find((child) => child.metadata.system)
+    ?.metadata.database;
+  const systemObjectsRevealed =
+    useDbAccessDatabaseSystemObjectsRevealed(systemChildDatabase);
+  const visibleChildren = children
+    ? dataBrowserVisibleTreeChildren(
+        children,
+        systemObjectsRevealed && systemChildDatabase !== undefined
+          ? new Set([systemChildDatabase])
+          : NO_REVEALED_DATABASES
+      )
+    : children;
 
   const Icon =
     node.type === "redis_key" && node.metadata.redisKeyType
@@ -98,9 +122,12 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
       <div
         className={cn(
           "group flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
-          isSelected
-            ? "bg-input font-medium text-foreground"
-            : "text-primary hover:bg-input hover:text-foreground"
+          isSelected && "bg-input font-medium text-foreground",
+          !isSelected &&
+            isSystem &&
+            "text-muted-foreground hover:bg-input hover:text-foreground",
+          !(isSelected || isSystem) &&
+            "text-primary hover:bg-input hover:text-foreground"
         )}
         data-qa-database={node.metadata.database}
         data-qa-db-service-key={node.dbServiceKey || node.id}
@@ -113,6 +140,7 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
           isSelected ? "selected" : "idle",
           isExpandable ? (isExpanded ? "expanded" : "collapsed") : "leaf",
           nodeIsLoading ? "loading" : null,
+          isSystem ? "system" : null,
         ]
           .filter(Boolean)
           .join(" ")}
@@ -166,7 +194,9 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
           <Icon
             className={cn(
               "h-4 w-4 shrink-0",
-              isSelected ? "text-blue-400" : "text-primary"
+              isSelected && "text-blue-400",
+              !isSelected && isSystem && "text-muted-foreground",
+              !(isSelected || isSystem) && "text-primary"
             )}
           />
         )}
@@ -186,7 +216,7 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
         )}
       </div>
 
-      {isExpanded && children && children.length > 0 && (
+      {isExpanded && visibleChildren && visibleChildren.length > 0 && (
         <div
           className="mt-1 ml-3 space-y-0.5 border-border border-l pl-3"
           data-qa-module="database"
@@ -196,7 +226,7 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
           data-qa-state="expanded"
           data-testid="database.sidebar.tree-node-children"
         >
-          {children.map((child) => (
+          {visibleChildren.map((child) => (
             <TreeNode depth={depth + 1} key={child.id} node={child} />
           ))}
         </div>

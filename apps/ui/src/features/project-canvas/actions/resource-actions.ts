@@ -4,21 +4,33 @@ import {
   type ApLifecycleWorkloadRef,
   type DbLifecycleWorkloadRef,
   useApLifecycleOperations,
+  useDbConnectionStringResolver,
   useDbLifecycleOperations,
 } from "@workspace/api/hooks";
-import type { DatabaseNodeCopyConnectionHandler } from "@workspace/ui/components/database-node/database-node";
+import type { DatabaseNodeConnection } from "@workspace/ui/components/database-node/database-node";
 import { useCallback } from "react";
 import type {
   ProjectApTarget,
   ProjectDbTarget,
 } from "@/features/panes/target-identity";
 import type { CanvasDatabaseNodeData } from "@/features/project-canvas/nodes/types";
+import { copyDbConnectionValue } from "@/lib/secret-reveal";
 import { errorDescription, toastPromiseDetail } from "@/lib/toast-utils";
 
 export interface ProjectResourceActionCopy {
   loading: string;
   success: string;
 }
+
+export type ProjectDbConnectionCopyHandler = (
+  connection: DatabaseNodeConnection,
+  workload: DbLifecycleWorkloadRef | null
+) => Promise<void>;
+
+export type ProjectDbConnectionResolveHandler = (
+  connection: DatabaseNodeConnection,
+  workload: DbLifecycleWorkloadRef | null
+) => Promise<string>;
 
 export interface RunProjectResourceActionOptions {
   onSettled?: () => void;
@@ -130,21 +142,39 @@ export function useProjectResourceActions({
     [refreshAfterResourceAction]
   );
 
-  const copyDatabaseConnection = useCallback<DatabaseNodeCopyConnectionHandler>(
-    async (connection) => {
-      const value = connection.value;
-      if (!value || typeof navigator === "undefined" || !navigator.clipboard) {
-        return;
-      }
+  const { authReady: revealReady, resolveConnectionString } =
+    useDbConnectionStringResolver({
+      kubeconfig: readOnly ? undefined : kubeconfig,
+    });
 
-      try {
-        await navigator.clipboard.writeText(value);
-      } catch {
-        // Copy feedback is handled by the row; clipboard failures should not break canvas interactions.
-      }
-    },
-    []
+  const copyDatabaseConnection = useCallback<ProjectDbConnectionCopyHandler>(
+    (connection, workload) =>
+      // Connection rows carry credential-free DB Connection Templates; copy
+      // fetches the complete DB Connection DSN on demand (ADR-0053). The
+      // template is copied only when no resolver backs the canvas at all.
+      copyDbConnectionValue({
+        placeholderValue: connection.value ?? "",
+        resolveAvailable: workload != null && revealReady,
+        resolveValue: () =>
+          workload == null
+            ? Promise.reject(new Error("DB workload is unavailable."))
+            : resolveConnectionString(workload, connection.kind),
+      }),
+    [resolveConnectionString, revealReady]
   );
+
+  // Backs the connection-row eye (ADR-0055): fetches the complete DB
+  // Connection DSN on demand so revealed values never persist in page state.
+  const resolveDatabaseConnectionString =
+    useCallback<ProjectDbConnectionResolveHandler>(
+      (connection, workload) =>
+        workload == null || !revealReady
+          ? Promise.reject(
+              new Error("Connection string reveal is unavailable.")
+            )
+          : resolveConnectionString(workload, connection.kind),
+      [resolveConnectionString, revealReady]
+    );
 
   const toggleDatabasePublicAccess = useCallback(
     ({
@@ -168,6 +198,7 @@ export function useProjectResourceActions({
     copyDatabaseConnection,
     dbLifecycle,
     refreshAfterResourceAction,
+    resolveDatabaseConnectionString,
     runResourceAction,
     toggleDatabasePublicAccess,
   };

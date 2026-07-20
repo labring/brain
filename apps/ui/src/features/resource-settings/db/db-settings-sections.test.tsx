@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DATABASE_CONNECTION_MASK } from "@workspace/ui/components/database-node/database-node";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -49,18 +50,20 @@ function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
 const CONNECTION_ADDRESS_RE = /Connection Address/;
 const PRIVATE_CONNECTION_RE = /Private Connection/;
 const PUBLIC_CONNECTION_RE = /Public Connection/;
-const FIXED_CONNECTION_MASK_RE = />\*{12}</g;
-const HOVER_REVEALED_PRIVATE_CONNECTION_RE =
-  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>postgres:\/\/user:secret@postgres.default.svc:5432\/app</;
-const HOVER_REVEALED_PUBLIC_CONNECTION_RE =
-  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>postgres:\/\/user:secret@db.example.com:30432\/app</;
-const FIXED_CONNECTION_MASK_TITLE_RE = /title="\*{12}"/;
-const RAW_PRIVATE_CONNECTION_TITLE_RE =
-  /title="postgres:\/\/user:secret@postgres.default.svc:5432\/app"/;
-const RAW_PUBLIC_CONNECTION_TITLE_RE =
-  /title="postgres:\/\/user:secret@db.example.com:30432\/app"/;
+// Derived from the mask itself: a hard-coded width silently went stale when
+// the constant changed, which is what this assertion exists to catch.
+const FIXED_CONNECTION_MASK_RE = new RegExp(
+  `>\\*{${DATABASE_CONNECTION_MASK.length}}<`,
+  "g"
+);
+const PRIVATE_CONNECTION_TEMPLATE_RE =
+  /postgres:\/\/&lt;username&gt;:&lt;password&gt;@postgres.default.svc:5432\/app/;
+const PUBLIC_CONNECTION_TEMPLATE_RE =
+  /postgres:\/\/&lt;username&gt;:&lt;password&gt;@db.example.com:30432\/app/;
 const COPY_PRIVATE_CONNECTION_RE = /aria-label="Copy Private Connection"/;
 const COPY_PUBLIC_CONNECTION_RE = /aria-label="Copy Public Connection"/;
+const REVEAL_PRIVATE_CONNECTION_RE = /aria-label="Reveal Private Connection"/;
+const REVEAL_PUBLIC_CONNECTION_RE = /aria-label="Reveal Public Connection"/;
 const PUBLIC_CONNECTION_SWITCH_RE = /aria-label="Public connection"/;
 const DISABLED_RE = /disabled=""/;
 const UPDATE_BUTTON_RE = />Update</;
@@ -70,10 +73,10 @@ const REPLICA_COUNT_RE = /Number of Replicas/;
 const REPLICA_VALUE_RE = />2</;
 const PENDING_REPLICA_VALUE_RE = />3</;
 const NUMERIC_REPLICA_UNIT_VALUE_RE = />\d+ Replicas?</;
-const PRIVATE_DSN_RE =
-  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>mysql:\/\/root:secret@db.default.svc:3306\/mydb</;
-const PUBLIC_DSN_RE =
-  /class="[^"]*\bhidden\b[^"]*\bgroup-hover\/copyable-row:inline\b[^"]*"[^>]*>mysql:\/\/root:secret@192.168.10.189.nip.io:45211\/mydb</;
+const PRIVATE_MYSQL_TEMPLATE_RE =
+  /mysql:\/\/&lt;username&gt;:&lt;password&gt;@db.default.svc:3306\/mydb/;
+const PUBLIC_MYSQL_TEMPLATE_RE =
+  /mysql:\/\/&lt;username&gt;:&lt;password&gt;@192.168.10.189.nip.io:45211\/mydb/;
 const INVISIBLE_UNSAVED_CHANGES_RE =
   /<p class="[^"]*\binvisible\b[^"]*" role="status">.*Unsaved changes.*<\/p>/;
 
@@ -81,7 +84,7 @@ const PRIVATE_CONNECTION = {
   id: "private",
   kind: "private",
   label: "Private connection",
-  value: "postgres://user:secret@postgres.default.svc:5432/app",
+  value: "postgres://<username>:<password>@postgres.default.svc:5432/app",
 } satisfies DbSettingsData["connections"][number];
 
 const PUBLIC_CONNECTION = {
@@ -89,7 +92,7 @@ const PUBLIC_CONNECTION = {
   kind: "public",
   label: "Public connection",
   publicAccess: { enabled: true },
-  value: "postgres://user:secret@db.example.com:30432/app",
+  value: "postgres://<username>:<password>@db.example.com:30432/app",
 } satisfies DbSettingsData["connections"][number];
 
 const BASE_DATA = {
@@ -117,20 +120,36 @@ function renderPane(
   return renderToStaticMarkup(element);
 }
 
-test("database settings pane renders copyable connection address rows", () => {
+test("database settings pane masks connection rows behind the fixed mask", () => {
   const html = renderPane();
 
   assert.match(html, CONNECTION_ADDRESS_RE);
   assert.match(html, PRIVATE_CONNECTION_RE);
   assert.match(html, PUBLIC_CONNECTION_RE);
   assert.equal([...html.matchAll(FIXED_CONNECTION_MASK_RE)].length, 2);
-  assert.match(html, HOVER_REVEALED_PRIVATE_CONNECTION_RE);
-  assert.match(html, HOVER_REVEALED_PUBLIC_CONNECTION_RE);
-  assert.doesNotMatch(html, FIXED_CONNECTION_MASK_TITLE_RE);
-  assert.doesNotMatch(html, RAW_PRIVATE_CONNECTION_TITLE_RE);
-  assert.doesNotMatch(html, RAW_PUBLIC_CONNECTION_TITLE_RE);
+  assert.doesNotMatch(html, PRIVATE_CONNECTION_TEMPLATE_RE);
+  assert.doesNotMatch(html, PUBLIC_CONNECTION_TEMPLATE_RE);
   assert.match(html, COPY_PRIVATE_CONNECTION_RE);
   assert.match(html, COPY_PUBLIC_CONNECTION_RE);
+});
+
+test("database settings pane offers reveal actions only when a kubeconfig backs the pane", () => {
+  const withoutKubeconfig = renderPane();
+  assert.doesNotMatch(withoutKubeconfig, REVEAL_PRIVATE_CONNECTION_RE);
+  assert.doesNotMatch(withoutKubeconfig, REVEAL_PUBLIC_CONNECTION_RE);
+
+  const withKubeconfig = renderPane(
+    <DatabaseSettingsPaneContent
+      data={BASE_DATA}
+      kubeconfig="kubeconfig-content"
+      onSubmitPatch={noop}
+    />
+  );
+  assert.match(withKubeconfig, REVEAL_PRIVATE_CONNECTION_RE);
+  assert.match(withKubeconfig, REVEAL_PUBLIC_CONNECTION_RE);
+  // The revealed DSN is fetched on demand and swapped in for one row at a
+  // time; rendered page state never carries more than the fixed mask.
+  assert.doesNotMatch(withKubeconfig, PRIVATE_CONNECTION_TEMPLATE_RE);
 });
 
 test("database settings pane renders shared draft actions", () => {
@@ -256,7 +275,7 @@ test("database settings pane shows pending public connection text while public a
   assert.doesNotMatch(html, COPY_PUBLIC_CONNECTION_RE);
 });
 
-test("database settings pane renders private and public DSNs", () => {
+test("database settings pane masks provisioned rows for every engine template", () => {
   const html = renderPane(
     <DatabaseSettingsPaneContent
       data={{
@@ -266,14 +285,15 @@ test("database settings pane renders private and public DSNs", () => {
             id: "private",
             kind: "private",
             label: "Private connection",
-            value: "mysql://root:secret@db.default.svc:3306/mydb",
+            value: "mysql://<username>:<password>@db.default.svc:3306/mydb",
           },
           {
             id: "public",
             kind: "public",
             label: "Public connection",
             publicAccess: { enabled: true },
-            value: "mysql://root:secret@192.168.10.189.nip.io:45211/mydb",
+            value:
+              "mysql://<username>:<password>@192.168.10.189.nip.io:45211/mydb",
           },
         ],
       }}
@@ -281,8 +301,9 @@ test("database settings pane renders private and public DSNs", () => {
     />
   );
 
-  assert.match(html, PRIVATE_DSN_RE);
-  assert.match(html, PUBLIC_DSN_RE);
+  assert.doesNotMatch(html, PRIVATE_MYSQL_TEMPLATE_RE);
+  assert.doesNotMatch(html, PUBLIC_MYSQL_TEMPLATE_RE);
+  assert.equal([...html.matchAll(FIXED_CONNECTION_MASK_RE)].length, 2);
   assert.match(html, COPY_PRIVATE_CONNECTION_RE);
   assert.match(html, COPY_PUBLIC_CONNECTION_RE);
 });

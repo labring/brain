@@ -22,7 +22,6 @@ import (
 
 	"sealos/api/middleware"
 	aptransform "sealos/api/service/transform/ap"
-	dbtransform "sealos/api/service/transform/db"
 )
 
 const (
@@ -104,17 +103,6 @@ func Get(cfg *clientcmdapi.Config, opts GetOptions) ([]byte, error) {
 			return nil, err
 		}
 		outObj := obj.Object
-		if isDBObject(outObj) {
-			secrets, err := listSecretsByDB(resolvedCtx.RestConfig, outObj)
-			if err != nil {
-				return nil, err
-			}
-			backups, err := listBackupsByDB(resolvedCtx.RestConfig, outObj)
-			if err != nil {
-				return nil, err
-			}
-			outObj = dbtransform.DBWithSecretsAndBackupsFromList(outObj, secrets, backups)
-		}
 		if isAPObject(outObj) {
 			ingresses, err := listIngressesByComposite(resolvedCtx.RestConfig, outObj)
 			if err != nil {
@@ -155,17 +143,6 @@ func Get(cfg *clientcmdapi.Config, opts GetOptions) ([]byte, error) {
 	items := make([]map[string]interface{}, 0, len(list.Items))
 	for i := range list.Items {
 		item := list.Items[i].Object
-		if isDBObject(item) {
-			secrets, err := listSecretsByDB(resolvedCtx.RestConfig, item)
-			if err != nil {
-				return nil, err
-			}
-			backups, err := listBackupsByDB(resolvedCtx.RestConfig, item)
-			if err != nil {
-				return nil, err
-			}
-			item = dbtransform.DBWithSecretsAndBackupsFromList(item, secrets, backups)
-		}
 		if isAPObject(item) {
 			ingresses, err := listIngressesByComposite(resolvedCtx.RestConfig, item)
 			if err != nil {
@@ -205,94 +182,12 @@ func stripManagedFields(v interface{}) {
 	}
 }
 
-func isDBObject(obj map[string]interface{}) bool {
-	if obj == nil {
-		return false
-	}
-	kind, _ := obj["kind"].(string)
-	return kind == "DB"
-}
-
 func isAPObject(obj map[string]interface{}) bool {
 	if obj == nil {
 		return false
 	}
 	kind, _ := obj["kind"].(string)
 	return kind == "AP"
-}
-
-// listSecretsByDB returns corev1 Secrets in the DB namespace labeled app.kubernetes.io/instance=<DB name>.
-func listSecretsByDB(restConfig *rest.Config, db map[string]interface{}) ([]map[string]interface{}, error) {
-	meta, _ := db["metadata"].(map[string]interface{})
-	if meta == nil {
-		return nil, nil
-	}
-	dbName, _ := meta["name"].(string)
-	dbNamespace, _ := meta["namespace"].(string)
-	if dbName == "" || dbNamespace == "" {
-		return nil, nil
-	}
-	client, err := dynamic.NewForConfig(restConfig)
-	if err != nil {
-		return nil, err
-	}
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
-	labelSelector := dbtransform.DBInstanceLabel + "=" + dbName
-	list, err := client.Resource(gvr).Namespace(dbNamespace).List(context.Background(), metav1.ListOptions{
-		LabelSelector: labelSelector,
-	})
-	if err != nil {
-		return nil, err
-	}
-	items := make([]map[string]interface{}, 0, len(list.Items))
-	for i := range list.Items {
-		items = append(items, list.Items[i].Object)
-	}
-	return items, nil
-}
-
-// listBackupsByDB returns KubeBlocks Backup resources that have label dataprotection.kubeblocks.io/cluster-uid
-// equal to the composed KubeBlocks Cluster's UID (the Cluster has the same name/namespace as the DB).
-func listBackupsByDB(restConfig *rest.Config, db map[string]interface{}) ([]map[string]interface{}, error) {
-	meta, _ := db["metadata"].(map[string]interface{})
-	if meta == nil {
-		return nil, nil
-	}
-	dbName, _ := meta["name"].(string)
-	dbNamespace, _ := meta["namespace"].(string)
-	if dbName == "" || dbNamespace == "" {
-		return nil, nil
-	}
-	client, err := dynamic.NewForConfig(restConfig)
-	if err != nil {
-		return nil, err
-	}
-	clusterGVR := schema.GroupVersionResource{Group: "apps.kubeblocks.io", Version: "v1alpha1", Resource: "clusters"}
-	cluster, err := client.Resource(clusterGVR).Namespace(dbNamespace).Get(context.Background(), dbName, metav1.GetOptions{})
-	if err != nil {
-		return nil, nil
-	}
-	clusterMeta, _ := cluster.Object["metadata"].(map[string]interface{})
-	if clusterMeta == nil {
-		return nil, nil
-	}
-	clusterUID, _ := clusterMeta["uid"].(string)
-	if clusterUID == "" {
-		return nil, nil
-	}
-	backupGVR := schema.GroupVersionResource{Group: "dataprotection.kubeblocks.io", Version: "v1alpha1", Resource: "backups"}
-	labelSelector := dbtransform.KubeBlocksBackupClusterUIDLabel + "=" + clusterUID
-	list, err := client.Resource(backupGVR).Namespace(dbNamespace).List(context.Background(), metav1.ListOptions{
-		LabelSelector: labelSelector,
-	})
-	if err != nil {
-		return nil, err
-	}
-	items := make([]map[string]interface{}, 0, len(list.Items))
-	for i := range list.Items {
-		items = append(items, list.Items[i].Object)
-	}
-	return items, nil
 }
 
 func listIngressesByComposite(restConfig *rest.Config, ap map[string]interface{}) ([]map[string]interface{}, error) {

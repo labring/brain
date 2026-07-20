@@ -18,7 +18,6 @@ import (
 
 	"sealos/api/middleware"
 	"sealos/api/service/orchestration"
-	transformdb "sealos/api/service/transform/db"
 )
 
 const (
@@ -218,7 +217,7 @@ func newManualBackupObject(opts CreateBackupForDBOptions, backupPolicyName, back
 			"namespace":   opts.Namespace,
 			"annotations": manualBackupAnnotations(opts.Description),
 			"labels": map[string]interface{}{
-				transformdb.KubeBlocksBackupClusterUIDLabel: clusterUID,
+				orchestration.KubeBlocksBackupClusterUIDLabel: clusterUID,
 			},
 		},
 		"spec": map[string]interface{}{
@@ -282,7 +281,7 @@ func deleteBackupForDBWithClient(ctx context.Context, client dynamic.Interface, 
 	if err != nil {
 		return DeleteBackupForDBResult{}, err
 	}
-	if backup.GetLabels()[transformdb.KubeBlocksBackupClusterUIDLabel] != clusterUID {
+	if backup.GetLabels()[orchestration.KubeBlocksBackupClusterUIDLabel] != clusterUID {
 		return DeleteBackupForDBResult{}, apierrors.NewNotFound(kubeBlocksBackupGVR.GroupResource(), opts.BackupName)
 	}
 

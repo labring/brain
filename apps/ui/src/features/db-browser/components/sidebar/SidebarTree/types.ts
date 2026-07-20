@@ -24,6 +24,8 @@ export interface TreeNodeData {
     objectRef?: AccessObjectRef;
     parentRef?: AccessObjectRef;
     kindFilter?: string[];
+    /** True for System Objects; hidden until their Logical Database is revealed. */
+    system?: boolean;
   };
   name: string;
   parentId?: string;

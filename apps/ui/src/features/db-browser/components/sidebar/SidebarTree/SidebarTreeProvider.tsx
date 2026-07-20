@@ -138,6 +138,7 @@ function objectToNode({
       objectRef: object.ref,
       redisKeyType: object.metadata?.type,
       schema,
+      system: object.system ? true : undefined,
       table:
         type === "table" || type === "view" || type === "collection"
           ? name
@@ -147,6 +148,23 @@ function objectToNode({
     parentId,
     type,
   };
+}
+
+/**
+ * The default object list contains only user-authored objects: a System
+ * Object node renders only after its own Logical Database was revealed via
+ * the database node's context menu.
+ */
+export function dataBrowserVisibleTreeChildren(
+  children: TreeNodeData[],
+  revealedDatabases: ReadonlySet<string>
+): TreeNodeData[] {
+  return children.filter(
+    (child) =>
+      !child.metadata.system ||
+      (child.metadata.database !== undefined &&
+        revealedDatabases.has(child.metadata.database))
+  );
 }
 
 export function dataBrowserObjectToTreeNode(params: {

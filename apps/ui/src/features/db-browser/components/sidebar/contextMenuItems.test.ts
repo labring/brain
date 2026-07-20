@@ -46,7 +46,7 @@ function callbacks(actions: string[]) {
   };
 }
 
-test("context menus expose only refresh and single-object export actions", () => {
+test("context menus expose only refresh, export, and system-objects actions", () => {
   const menuFactories = [
     () => getDbServiceMenuItems("POSTGRES", callbacks(actions)),
     () => getDatabaseMenuItems("POSTGRES", callbacks(actions)),
@@ -64,10 +64,41 @@ test("context menus expose only refresh and single-object export actions", () =>
 
   assert.deepEqual(
     [...new Set(actions)].sort(),
-    ["export_collection", "export_data", "export_redis_key", "refresh"].sort()
+    [
+      "export_collection",
+      "export_data",
+      "export_redis_key",
+      "refresh",
+      "show_system_objects",
+    ].sort()
   );
   assert.equal(
     actions.some((action) => forbiddenActions.has(action)),
     false
   );
+});
+
+test("only postgres database menus offer the system objects reveal toggle", () => {
+  const labelsFor = (items: ReturnType<typeof getDatabaseMenuItems>) =>
+    items.flatMap((item) =>
+      "separator" in item && item.separator ? [] : [item.label]
+    );
+
+  const hidden = getDatabaseMenuItems("POSTGRES", callbacks([]), {
+    systemObjectsRevealed: false,
+  });
+  assert.ok(labelsFor(hidden).includes("Show system objects"));
+
+  const revealed = getDatabaseMenuItems("POSTGRES", callbacks([]), {
+    systemObjectsRevealed: true,
+  });
+  assert.ok(labelsFor(revealed).includes("Hide system objects"));
+
+  for (const engine of ["MONGODB", "REDIS", "MYSQL"] as const) {
+    const items = getDatabaseMenuItems(engine, callbacks([]));
+    assert.equal(
+      labelsFor(items).some((label) => label.includes("system objects")),
+      false
+    );
+  }
 });

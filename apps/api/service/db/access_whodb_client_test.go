@@ -222,6 +222,71 @@ func TestWhoDBHTTPClientMapsSourceObjectNotFound(t *testing.T) {
 	}
 }
 
+func TestWhoDBHTTPClientMapsQueryLevelDatabaseErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":null,"errors":[{"message":"ERROR: could not open file \"postgresql-2.csv\" for reading (SQLSTATE 58P01)"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewWhoDBHTTPClient(server.URL, server.Client(), time.Second)
+	_, err := client.ReadRows(
+		context.Background(),
+		WhoDBSourceCredentials{SourceType: "Postgres"},
+		WhoDBObjectRef{Kind: "Table", Path: []string{"postgres", "public", "postgres_log"}},
+		100,
+		0,
+		nil,
+	)
+	var queryErr *WhoDBQueryError
+	if !errors.As(err, &queryErr) {
+		t.Fatalf("expected query-level database error, got %v", err)
+	}
+	if !strings.Contains(queryErr.Message, "could not open file") {
+		t.Fatalf("expected the database's own message preserved, got %q", queryErr.Message)
+	}
+	if errors.Is(err, ErrAccessHealthWhoDBUnavailable) {
+		t.Fatalf("expected query-level error not to read as unavailability, got %v", err)
+	}
+	if errors.Is(err, ErrAccessObjectsNotFound) {
+		t.Fatalf("expected query-level error not to read as not-found, got %v", err)
+	}
+}
+
+func TestWhoDBHTTPClientKeepsTransportFailuresUnavailable(t *testing.T) {
+	handlers := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{name: "http 5xx", handler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }},
+		{name: "http 4xx", handler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) }},
+		{name: "undecodable response", handler: func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("not json")) }},
+	}
+	for _, tt := range handlers {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
+
+			client := NewWhoDBHTTPClient(server.URL, server.Client(), time.Second)
+			_, err := client.ListObjects(context.Background(), WhoDBSourceCredentials{SourceType: "Postgres"}, nil, nil)
+			if !errors.Is(err, ErrAccessHealthWhoDBUnavailable) {
+				t.Fatalf("expected transport failure to stay unavailable, got %v", err)
+			}
+		})
+	}
+
+	t.Run("connection refused", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		client := NewWhoDBHTTPClient(server.URL, server.Client(), time.Second)
+		server.Close()
+
+		_, err := client.ListObjects(context.Background(), WhoDBSourceCredentials{SourceType: "Postgres"}, nil, nil)
+		if !errors.Is(err, ErrAccessHealthWhoDBUnavailable) {
+			t.Fatalf("expected connection failure to stay unavailable, got %v", err)
+		}
+	})
+}
+
 func TestWhoDBHTTPClientListsSourceColumnsWithRefVariable(t *testing.T) {
 	var gotBody struct {
 		OperationName string         `json:"operationName"`

@@ -113,6 +113,7 @@ export function DbSettingsProvider({
         },
       } satisfies DbSettingsData),
     editable: data != null && !effectiveReadOnly && authReady,
+    kubeconfig: effectiveReadOnly ? undefined : kubeconfig,
     onSubmitPatch:
       data != null && !effectiveReadOnly && authReady
         ? handleSubmitPatch

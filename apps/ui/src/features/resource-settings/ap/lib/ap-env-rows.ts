@@ -71,6 +71,12 @@ export interface ApEnvDbDsnFieldOption {
   valueFrom?: { secretKeyRef: ApEnvSecretKeyRef };
 }
 
+export interface ApEnvDbPrimitiveFieldOption {
+  field: ApEnvDbPrimitiveField;
+  label: string;
+  valueFrom: { secretKeyRef: ApEnvSecretKeyRef };
+}
+
 export type ApEnvDbReferenceRowPatch = Pick<
   ApEnvRow,
   "dbDsn" | "value" | "valueFrom" | "valueSource"
@@ -96,14 +102,6 @@ export const AP_ENV_VALUE_FROM_PLACEHOLDER = "(valueFrom)";
 
 const K8S_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const DEFAULT_ROW_NAME = "NEW_VARIABLE";
-const DB_REFERENCE_ROW_NAMES: Record<ApEnvDbReferenceField, string> = {
-  host: "DATABASE_HOST",
-  password: "DATABASE_PASSWORD",
-  port: "DATABASE_PORT",
-  private: "DATABASE_URL",
-  public: "DATABASE_PUBLIC_URL",
-  username: "DATABASE_USER",
-};
 const PRIMITIVE_FIELD_LABELS: Record<ApEnvDbPrimitiveField, string> = {
   host: "Host",
   password: "Password",
@@ -141,16 +139,6 @@ function nextAvailableEnvRowName(
   return `${baseName}_${suffix}`;
 }
 
-export function defaultApEnvDbReferenceRowName(
-  rows: readonly ApEnvRow[],
-  field: ApEnvDbReferenceField | undefined
-): string {
-  return nextAvailableEnvRowName(
-    rows,
-    field == null ? "DATABASE_REFERENCE" : DB_REFERENCE_ROW_NAMES[field]
-  );
-}
-
 function nonEmptyValue(value: string | undefined): string | undefined {
   return value === undefined || value === "" ? undefined : value;
 }
@@ -161,14 +149,17 @@ function isPrimitiveDbReferenceField(
   return field !== "private" && field !== "public";
 }
 
-function valueForDbReferenceField(field: ApEnvDbDsnFieldOption): string {
-  return field.value ?? AP_ENV_VALUE_FROM_PLACEHOLDER;
-}
-
 export function isKubernetesEnvName(name: string): boolean {
   return K8S_ENV_NAME_RE.test(name);
 }
 
+/**
+ * The private/public entries carry the DB Connection Template as `value` for
+ * address matching only (connection evidence, pasted-DSN recognition). They
+ * are not an insertion vocabulary: inserting a DSN as an AP Environment
+ * Reference goes through the raw-source `${{db.DATABASE_URL}}` compile, which
+ * composes it from the primitive Secret references.
+ */
 export function apEnvDbDsnFieldOptions(
   source: ApEnvDbDsnSource | undefined
 ): ApEnvDbDsnFieldOption[] {
@@ -194,13 +185,54 @@ export function apEnvDbDsnFieldOptions(
   return [...options, ...apEnvDbPrimitiveFieldOptions(source)];
 }
 
+const CONNECTION_ADDRESS_RE =
+  /^([A-Za-z][A-Za-z0-9+.-]*):\/\/(?:[^@/?#]*@)?([^/?#]+)/;
+
+/**
+ * Extracts the `scheme://host:port` address from a connection-string value.
+ * Works for both complete DB Connection DSNs and DB Connection Templates
+ * (whose `<username>:<password>` userinfo is stripped like any other).
+ */
+function connectionAddressFromDsnValue(value: string): string | undefined {
+  const match = CONNECTION_ADDRESS_RE.exec(value.trim());
+  const scheme = match?.[1];
+  const hostPort = match?.[2];
+  if (scheme === undefined || hostPort === undefined) {
+    return undefined;
+  }
+  return `${scheme.toLowerCase()}://${hostPort.toLowerCase()}`;
+}
+
+/**
+ * Connection evidence (ADR-0002, revised by ADR-0053): a literal env value
+ * points at a DB DSN field when its address matches, so pasted complete DSNs
+ * keep matching the credential-free templates that DB read surfaces carry,
+ * and survive password rotation.
+ */
+function dsnValueMatchesFieldOption(
+  field: ApEnvDbDsnFieldOption,
+  value: string
+): boolean {
+  if (field.value === undefined) {
+    return false;
+  }
+  if (field.value === value) {
+    return true;
+  }
+  const fieldAddress = connectionAddressFromDsnValue(field.value);
+  return (
+    fieldAddress !== undefined &&
+    fieldAddress === connectionAddressFromDsnValue(value)
+  );
+}
+
 export function apEnvDbDsnReferenceFromValue(
   value: string,
   sources: readonly ApEnvDbDsnSource[]
 ): Pick<ApEnvRow, "dbDsn" | "value" | "valueSource"> | undefined {
   for (const source of sources) {
     for (const field of apEnvDbDsnFieldOptions(source)) {
-      if (field.value !== value) {
+      if (!dsnValueMatchesFieldOption(field, value)) {
         continue;
       }
       return {
@@ -250,34 +282,6 @@ export function normalizeApEnvRowsForSave(
 
 export function addApEnvRow(rows: readonly ApEnvRow[]): ApEnvRow[] {
   return [...rows, { name: nextDefaultRowName(rows), value: "" }];
-}
-
-export function addApEnvDbDsnReferenceRow(
-  rows: readonly ApEnvRow[],
-  sources: readonly ApEnvDbDsnSource[],
-  target?: ApEnvDbDsnReferenceTarget
-): ApEnvRow[] {
-  for (const source of sources) {
-    if (
-      target !== undefined &&
-      (source.name !== target.name || source.namespace !== target.namespace)
-    ) {
-      continue;
-    }
-    const field = apEnvDbDsnFieldOptions(source)[0];
-    if (field === undefined) {
-      continue;
-    }
-    return [
-      ...rows,
-      {
-        name: defaultApEnvDbReferenceRowName(rows, field.field),
-        ...apEnvDbReferenceRowPatch(source, field),
-      },
-    ];
-  }
-
-  return [...rows];
 }
 
 export function updateApEnvRow(
@@ -333,21 +337,9 @@ function rowValueSource(row: ApEnvRow): NonNullable<ApEnvRow["valueSource"]> {
   return row.valueSource ?? "direct";
 }
 
-function apEnvDbReferenceValuePatch(
-  field: ApEnvDbDsnFieldOption
-): Pick<ApEnvRow, "value" | "valueFrom"> {
-  if (field.valueFrom === undefined) {
-    return { value: valueForDbReferenceField(field) };
-  }
-  return {
-    value: AP_ENV_VALUE_FROM_PLACEHOLDER,
-    valueFrom: field.valueFrom,
-  };
-}
-
 export function apEnvDbReferenceRowPatch(
   source: ApEnvDbDsnSource,
-  field: ApEnvDbDsnFieldOption
+  field: ApEnvDbPrimitiveFieldOption
 ): ApEnvDbReferenceRowPatch {
   return {
     dbDsn: {
@@ -355,7 +347,8 @@ export function apEnvDbReferenceRowPatch(
       dbNamespace: source.namespace,
       field: field.field,
     },
-    ...apEnvDbReferenceValuePatch(field),
+    value: AP_ENV_VALUE_FROM_PLACEHOLDER,
+    valueFrom: field.valueFrom,
     valueSource: "dbDsn",
   };
 }
@@ -406,10 +399,10 @@ export function apEnvDbPrimitiveFieldForSecretKey(
   return undefined;
 }
 
-function apEnvDbPrimitiveFieldOptions(
+export function apEnvDbPrimitiveFieldOptions(
   source: ApEnvDbDsnSource | undefined
-): ApEnvDbDsnFieldOption[] {
-  const options: ApEnvDbDsnFieldOption[] = [];
+): ApEnvDbPrimitiveFieldOption[] {
+  const options: ApEnvDbPrimitiveFieldOption[] = [];
   for (const field of AP_ENV_DB_PRIMITIVE_FIELD_ORDER) {
     const secretKeyRef = source?.primitiveSecretRefs?.[field];
     if (secretKeyRef === undefined) {
@@ -434,8 +427,8 @@ export function apEnvDbSecretReferenceFromValueFrom(
   }
   for (const source of sources) {
     for (const field of apEnvDbPrimitiveFieldOptions(source)) {
-      const fieldRef = field.valueFrom?.secretKeyRef;
-      if (fieldRef?.name !== ref.name || fieldRef.key !== ref.key) {
+      const fieldRef = field.valueFrom.secretKeyRef;
+      if (fieldRef.name !== ref.name || fieldRef.key !== ref.key) {
         continue;
       }
       return {

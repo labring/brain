@@ -4,6 +4,7 @@ import type { Alert } from "@db-browser/components/database/shared/types";
 import { PointerContextMenu } from "@db-browser/components/shared/PointerContextMenu";
 import {
   useDbAccessService,
+  useDbAccessSystemObjectsReveal,
   useDbAccessTabs,
   useSelectDbAccessItem,
 } from "@db-browser/state/db-access-session";
@@ -90,6 +91,8 @@ function SidebarInner() {
   const { fetchNodeChildren, isExpanded, refreshNode, toggleItem } =
     useSidebarTree();
   const isAnyTreeNodeLoading = useSidebarTreeIsAnyLoading();
+  const { revealedDatabases, toggleSystemObjects } =
+    useDbAccessSystemObjectsReveal();
 
   const [activeModal, dispatch] = useReducer(modalReducer, null);
   const [alert, setAlert] = useState<Alert | null>(null);
@@ -267,6 +270,11 @@ function SidebarInner() {
             triggerViewRefresh(dbAccessObjectTabId(node.metadata.objectRef));
           }
           break;
+        case "show_system_objects":
+          if (node.type === "database" && node.metadata.database) {
+            toggleSystemObjects(node.metadata.database);
+          }
+          break;
       }
 
       setContextMenu(null);
@@ -277,6 +285,7 @@ function SidebarInner() {
       isExpanded,
       openModal,
       toggleItem,
+      toggleSystemObjects,
       triggerViewRefresh,
     ]
   );
@@ -296,7 +305,11 @@ function SidebarInner() {
       case "db_service":
         return getDbServiceMenuItems(dbServiceEngineType, callbacks);
       case "database":
-        return getDatabaseMenuItems(dbServiceEngineType, callbacks);
+        return getDatabaseMenuItems(dbServiceEngineType, callbacks, {
+          systemObjectsRevealed:
+            node.metadata.database !== undefined &&
+            revealedDatabases.has(node.metadata.database),
+        });
       case "schema":
         return getSchemaMenuItems(callbacks);
       case "table_folder":

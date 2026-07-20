@@ -47,11 +47,12 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
   const model =
     useProjectRuntimeNodeModel<CanvasDatabaseNodeData>({ data, id, type }) ??
     data;
-  const { actions, connections } = useCanvasDatabaseNodeActions({
-    id,
-    model,
-    type,
-  });
+  const { actions, connections, revealedConnection } =
+    useCanvasDatabaseNodeActions({
+      id,
+      model,
+      type,
+    });
   const { states } = model;
   const telemetryTarget = useMemo(
     () => databaseTelemetryTargetFromWorkload(model.workload),
@@ -79,8 +80,10 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
       lifecycleActions={actions.lifecycleActions}
       onCopyConnection={actions.copyConnection}
       onExpandedChange={expansion.onExpandedChange}
+      onRevealConnection={actions.revealConnection}
       onTogglePublicConnection={actions.togglePublicConnection}
       quickActions={actions.quickActions}
+      revealedConnection={revealedConnection}
       states={states}
       togglePublicConnectionDisabledReason={
         actions.togglePublicConnectionDisabledReason

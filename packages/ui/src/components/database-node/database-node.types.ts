@@ -100,6 +100,17 @@ export type DatabaseNodeCopyConnectionHandler = (
   index: number
 ) => Promise<void> | void;
 
+export type DatabaseNodeRevealConnectionHandler = (
+  connection: DatabaseNodeConnection,
+  index: number
+) => Promise<void> | void;
+
+/** The single revealed connection row (ADR-0055: one at a time). */
+export interface DatabaseNodeRevealedConnection {
+  key: DatabaseNodeConnectionKey;
+  value: string;
+}
+
 export type DatabaseNodeTogglePublicConnectionHandler = (
   connection: DatabaseNodePublicConnection,
   index: number,
@@ -137,6 +148,8 @@ export interface DatabaseNodeActions {
   copyConnection?: DatabaseNodeCopyConnectionHandler;
   lifecycleActions?: DatabaseNodeLifecycleActions;
   quickActions?: DatabaseNodeQuickActions;
+  /** Toggles the reveal of one connection row; absent when no resolver backs the canvas. */
+  revealConnection?: DatabaseNodeRevealConnectionHandler;
   togglePublicConnection?: DatabaseNodeTogglePublicConnectionHandler;
   /** User-facing reason shown when the public access toggle is unavailable. */
   togglePublicConnectionDisabledReason?: string;
@@ -149,6 +162,7 @@ export interface DatabaseNodeMeta {
 export interface DatabaseNodeState {
   connections?: DatabaseNodeConnection[];
   copiedConnectionKey?: DatabaseNodeConnectionKey | null;
+  revealedConnection?: DatabaseNodeRevealedConnection | null;
   states: DatabaseNodeStates;
 }
 
@@ -174,8 +188,10 @@ export interface DatabaseNodeRootProps {
   lifecycleActions?: DatabaseNodeLifecycleActions;
   onCopyConnection?: DatabaseNodeCopyConnectionHandler;
   onExpandedChange?: (expanded: boolean) => void;
+  onRevealConnection?: DatabaseNodeRevealConnectionHandler;
   onTogglePublicConnection?: DatabaseNodeTogglePublicConnectionHandler;
   quickActions?: DatabaseNodeQuickActions;
+  revealedConnection?: DatabaseNodeRevealedConnection | null;
   states: DatabaseNodeStates;
   togglePublicConnectionDisabledReason?: string;
 }

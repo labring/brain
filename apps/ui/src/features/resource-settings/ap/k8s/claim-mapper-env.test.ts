@@ -753,7 +753,7 @@ test("AP claim settings maps canonical Memory elastic replica strategy", () => {
   assert.equal(settings.replicas, 4);
 });
 
-test("AP claim settings reconstruct DB DSN references only from exact current DB connection strings", () => {
+test("AP claim settings reconstruct DB DSN references from address evidence", () => {
   const dbDsnReferenceSources = dbDsnReferenceSourcesFromDbsData(
     {
       items: [
@@ -836,7 +836,21 @@ test("AP claim settings reconstruct DB DSN references only from exact current DB
       value: "postgres://public",
       valueSource: "dbDsn",
     },
-    { name: "ALMOST_DATABASE_URL", value: "postgres://private " },
+    {
+      dbDsn: {
+        dbName: "postgres",
+        dbNamespace: "default",
+        field: "private",
+      },
+      helper: {
+        automatic: false,
+        sourceDbKey: "default/postgres",
+        sourceField: "private",
+      },
+      name: "ALMOST_DATABASE_URL",
+      value: "postgres://private ",
+      valueSource: "dbDsn",
+    },
   ]);
 });
 

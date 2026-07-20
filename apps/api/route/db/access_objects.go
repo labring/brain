@@ -290,7 +290,13 @@ func accessObjectsServiceFromAuthWithTimeout(authorization, namespace, projectID
 }
 
 func accessObjectsError(err error) error {
+	var whoDBQueryErr *dbsvc.WhoDBQueryError
 	switch {
+	case errors.As(err, &whoDBQueryErr):
+		// Query-level database errors are object-level failures, not service
+		// outages: surface the database's own message and keep 503 meaning
+		// "WhoDB is genuinely unreachable".
+		return huma.Error422UnprocessableEntity(whoDBQueryErr.Message, err)
 	case errors.Is(err, dbsvc.ErrAccessObjectsInvalidRef):
 		return huma.Error422UnprocessableEntity("invalid DB object ref", err)
 	case errors.Is(err, dbsvc.ErrAccessObjectsNotFound):

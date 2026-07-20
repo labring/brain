@@ -23,7 +23,6 @@ import (
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
 	orchestration "sealos/api/service/orchestration"
-	transformdb "sealos/api/service/transform/db"
 )
 
 var kubeBlocksBackupGVR = schema.GroupVersionResource{
@@ -232,7 +231,7 @@ func dbBackupsForCluster(cfg *clientcmdapi.Config, cluster *unstructured.Unstruc
 	list, err := client.Resource(kubeBlocksBackupGVR).Namespace(cluster.GetNamespace()).List(
 		context.Background(),
 		metav1.ListOptions{
-			LabelSelector: transformdb.KubeBlocksBackupClusterUIDLabel + "=" + string(cluster.GetUID()),
+			LabelSelector: orchestration.KubeBlocksBackupClusterUIDLabel + "=" + string(cluster.GetUID()),
 		},
 	)
 	if err != nil {
@@ -278,9 +277,12 @@ func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{},
 	}
 	secret := dbConnectionSecret(cfg, name, namespace)
 	status["variables"] = dbVariablesFromSecret(db, secret)
-	credentials := dbConnectionCredentialsFromSecret(secret)
-	if privateDSN := dbConnectionString(db, dbPrivateConnectionAddress(db, name, namespace), credentials); privateDSN != "" {
-		status["connectionStringPrivate"] = privateDSN
+	// Read paths carry credential-free DB Connection Templates: the credential
+	// Secret's username and password keys are never decoded here (ADR-0053).
+	// The complete DB Connection DSN is served only by the reveal route.
+	database := dbDatabaseNameFromSecret(secret)
+	if privateTemplate := dbConnectionTemplate(db, dbPrivateConnectionAddress(db, name, namespace), database); privateTemplate != "" {
+		status["connectionStringPrivate"] = privateTemplate
 	}
 	if !enabled {
 		return
@@ -291,8 +293,8 @@ func applyDBConnectionState(cfg *clientcmdapi.Config, db map[string]interface{},
 	}
 	if nodePort := firstServiceNodePort(service); nodePort > 0 {
 		status["nodePort"] = nodePort
-		if publicDSN := dbConnectionString(db, dbPublicConnectionAddress(nodePort), credentials); publicDSN != "" {
-			status["connectionStringPublic"] = publicDSN
+		if publicTemplate := dbConnectionTemplate(db, dbPublicConnectionAddress(nodePort), database); publicTemplate != "" {
+			status["connectionStringPublic"] = publicTemplate
 		}
 	}
 }
@@ -393,50 +395,42 @@ func dbVariablesFromSecret(db map[string]interface{}, secret *unstructured.Unstr
 	return variables
 }
 
+// dbConnectionCredentialsFromSecret decodes the credential Secret for reveal
+// responses only; DB read paths use dbDatabaseNameFromSecret instead so the
+// username and password keys stay undecoded there (ADR-0053).
 func dbConnectionCredentialsFromSecret(secret *unstructured.Unstructured) dbConnectionCredentials {
-	data := dbDecodedSecretData(secret)
 	return dbConnectionCredentials{
-		database: dbDecodedValue(data, "database", "dbname", "databaseName"),
-		password: dbDecodedValue(data, "password", "passwd"),
-		username: dbDecodedValue(data, "username", "user"),
+		database: dbDecodedSecretValue(secret, "database", "dbname", "databaseName"),
+		password: dbDecodedSecretValue(secret, "password", "passwd"),
+		username: dbDecodedSecretValue(secret, "username", "user"),
 	}
 }
 
-func dbDecodedSecretData(secret *unstructured.Unstructured) map[string]string {
-	out := map[string]string{}
+// dbDatabaseNameFromSecret reads the database name (not a credential) from the
+// credential Secret without decoding any other key.
+func dbDatabaseNameFromSecret(secret *unstructured.Unstructured) string {
+	return dbDecodedSecretValue(secret, "database", "dbname", "databaseName")
+}
+
+func dbDecodedSecretValue(secret *unstructured.Unstructured, keys ...string) string {
 	if secret == nil {
-		return out
+		return ""
 	}
-	if data, _ := secret.Object["data"].(map[string]interface{}); len(data) > 0 {
-		for key, value := range data {
-			encoded, ok := value.(string)
-			if !ok {
-				continue
-			}
-			decoded, err := base64.StdEncoding.DecodeString(encoded)
-			if err != nil {
-				out[key] = encoded
-				continue
-			}
-			out[key] = string(decoded)
-		}
-	}
-	if stringData, _ := secret.Object["stringData"].(map[string]interface{}); len(stringData) > 0 {
-		for key, value := range stringData {
-			text, ok := value.(string)
-			if ok {
-				out[key] = text
-			}
-		}
-	}
-	return out
-}
-
-func dbDecodedValue(data map[string]string, keys ...string) string {
+	data, _ := secret.Object["data"].(map[string]interface{})
+	stringData, _ := secret.Object["stringData"].(map[string]interface{})
 	for _, key := range keys {
-		if value := data[key]; value != "" {
-			return value
+		if text, ok := stringData[key].(string); ok && text != "" {
+			return text
 		}
+		encoded, ok := data[key].(string)
+		if !ok || encoded == "" {
+			continue
+		}
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return encoded
+		}
+		return string(decoded)
 	}
 	return ""
 }
@@ -481,32 +475,75 @@ func dbEnvKey(key string) string {
 	return key
 }
 
+// dbConnectionTemplateUserInfo is the literal userinfo a DB Connection
+// Template carries instead of decoded credentials. `<` and `>` are invalid in
+// URL userinfo, so a template pasted unmodified into an application fails at
+// connection-string parse time rather than at authentication (ADR-0053).
+const dbConnectionTemplateUserInfo = "<username>:<password>"
+
+// dbConnectionShape describes how one engine's connection string is composed.
+// Engines without a shape have no DSN form and expose the bare address —
+// dbConnectionTemplate and dbConnectionString share this one table so the two
+// compositions cannot drift apart.
+type dbConnectionShape struct {
+	// includeDatabase puts the database name in the DSN path; redis addresses
+	// databases by index, not name.
+	includeDatabase bool
+	// allowPasswordOnly permits password-only userinfo, matching redis AUTH.
+	allowPasswordOnly bool
+}
+
+var dbConnectionShapes = map[string]dbConnectionShape{
+	"postgresql": {includeDatabase: true},
+	"mysql":      {includeDatabase: true},
+	"mongodb":    {includeDatabase: true},
+	"redis":      {allowPasswordOnly: true},
+}
+
+// dbConnectionTemplate composes the credential-free DB Connection Template for
+// DB read responses: placeholder userinfo, real address and database name.
+// Composed by string concatenation because url.URL would percent-encode the
+// placeholder brackets.
+func dbConnectionTemplate(db map[string]interface{}, address string, database string) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	profile := dbEngineProfileFromDBObject(db)
+	shape, ok := dbConnectionShapes[profile.Engine]
+	if !ok {
+		return address
+	}
+	if !shape.includeDatabase {
+		database = ""
+	} else if strings.TrimSpace(database) == "" {
+		database = profile.DefaultDatabase
+	}
+	return profile.Engine + "://" + dbConnectionTemplateUserInfo + "@" + address + dbConnectionPath(database)
+}
+
 func dbConnectionString(db map[string]interface{}, address string, credentials ...dbConnectionCredentials) string {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		return ""
 	}
 	profile := dbEngineProfileFromDBObject(db)
+	shape, ok := dbConnectionShapes[profile.Engine]
+	if !ok {
+		return address
+	}
 	credential := dbConnectionCredentials{}
 	if len(credentials) > 0 {
 		credential = credentials[0]
 	}
-	database := strings.TrimSpace(credential.database)
-	if database == "" {
-		database = profile.DefaultDatabase
+	database := ""
+	if shape.includeDatabase {
+		database = strings.TrimSpace(credential.database)
+		if database == "" {
+			database = profile.DefaultDatabase
+		}
 	}
-	switch profile.Engine {
-	case "postgresql":
-		return dbConnectionURL("postgresql", address, database, credential, false)
-	case "mysql":
-		return dbConnectionURL("mysql", address, database, credential, false)
-	case "mongodb":
-		return dbConnectionURL("mongodb", address, database, credential, false)
-	case "redis":
-		return dbConnectionURL("redis", address, "", credential, true)
-	default:
-		return address
-	}
+	return dbConnectionURL(profile.Engine, address, database, credential, shape.allowPasswordOnly)
 }
 
 func dbConnectionURL(scheme string, address string, database string, credential dbConnectionCredentials, allowPasswordOnly bool) string {

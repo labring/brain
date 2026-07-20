@@ -1,6 +1,6 @@
 import { DATA_BROWSER_CAPABILITIES } from "@db-browser/capabilities";
 import type { PointerContextMenuItem } from "@db-browser/components/shared/PointerContextMenu";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, Eye, EyeOff, RefreshCw } from "lucide-react";
 import React from "react";
 
 type DbServiceEngineType =
@@ -14,9 +14,8 @@ interface MenuCallbacks {
   onAction: (action: string) => void;
 }
 
-interface SystemObjectsState {
-  showSystemObjects: boolean;
-  systemSchemas: string[];
+interface DatabaseMenuOptions {
+  systemObjectsRevealed?: boolean;
 }
 
 function refreshItem(
@@ -50,20 +49,34 @@ function exportItem(
 
 export function getDbServiceMenuItems(
   _dbServiceEngineType: DbServiceEngineType,
-  callbacks: MenuCallbacks,
-  _systemObjectsState?: SystemObjectsState
+  callbacks: MenuCallbacks
 ): PointerContextMenuItem[] {
   const { onAction } = callbacks;
   return [refreshItem(onAction)];
 }
 
 export function getDatabaseMenuItems(
-  _dbServiceEngineType: DbServiceEngineType,
+  dbServiceEngineType: DbServiceEngineType,
   callbacks: MenuCallbacks,
-  _systemObjectsState?: SystemObjectsState
+  options?: DatabaseMenuOptions
 ): PointerContextMenuItem[] {
   const { onAction } = callbacks;
-  return [refreshItem(onAction)];
+  const items: PointerContextMenuItem[] = [refreshItem(onAction)];
+
+  // Only the PostgreSQL plugin classifies System Objects; other engines keep
+  // their existing behavior (ADR 0054).
+  if (dbServiceEngineType === "POSTGRES") {
+    const revealed = options?.systemObjectsRevealed === true;
+    items.push({
+      icon: React.createElement(revealed ? EyeOff : Eye, {
+        className: "h-4 w-4",
+      }),
+      label: revealed ? "Hide system objects" : "Show system objects",
+      onClick: () => onAction("show_system_objects"),
+    });
+  }
+
+  return items;
 }
 
 export function getSchemaMenuItems(

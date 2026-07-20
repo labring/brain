@@ -20,6 +20,13 @@ var (
 	ErrAccessExportInvalidFormat    = errors.New("invalid db export format")
 )
 
+// whoDBSystemObjectMetadataKey is the transport-only marker the WhoDB
+// PostgreSQL plugin attaches to System Objects (objects provisioned by the
+// database engine, an installed extension, or platform operator tooling). It
+// is promoted to the typed AccessObject.System field at this contract
+// boundary and stripped so it never leaks into user-visible metadata.
+const whoDBSystemObjectMetadataKey = "whodb:system-object"
+
 const (
 	AccessObjectKindCollection = "collection"
 	AccessObjectKindDatabase   = "database"
@@ -97,6 +104,7 @@ type AccessObject struct {
 	HasChildren bool              `json:"hasChildren"`
 	ChildKinds  []string          `json:"childKinds,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	System      bool              `json:"system,omitempty"`
 }
 
 type AccessObjectsResult struct {
@@ -792,13 +800,25 @@ func accessObjectFromWhoDB(object WhoDBObject, kindFilter accessObjectKindFilter
 	if name == "" {
 		name = path[len(path)-1]
 	}
+	metadata := object.Metadata
+	system := false
+	if value, ok := metadata[whoDBSystemObjectMetadataKey]; ok {
+		system = value == "true"
+		metadata = make(map[string]string, len(object.Metadata)-1)
+		for key, item := range object.Metadata {
+			if key != whoDBSystemObjectMetadataKey {
+				metadata[key] = item
+			}
+		}
+	}
 	return AccessObject{
 		Ref:         AccessObjectRef{Kind: kind, Path: path},
 		Kind:        kind,
 		Name:        name,
 		DisplayName: name,
 		HasChildren: object.HasChildren,
-		Metadata:    object.Metadata,
+		Metadata:    metadata,
+		System:      system,
 	}, nil
 }
 

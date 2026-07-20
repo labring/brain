@@ -17,7 +17,6 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/service/orchestration"
-	transformdb "sealos/api/service/transform/db"
 )
 
 var dnsStyleDBNamePattern = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
@@ -340,7 +339,7 @@ func backupBelongsToSourceCluster(backup *unstructured.Unstructured, source *uns
 	if sourceUID == "" {
 		return fmt.Errorf("source DB Service UID is required")
 	}
-	backupClusterUID := strings.TrimSpace(backup.GetLabels()[transformdb.KubeBlocksBackupClusterUIDLabel])
+	backupClusterUID := strings.TrimSpace(backup.GetLabels()[orchestration.KubeBlocksBackupClusterUIDLabel])
 	if backupClusterUID != sourceUID {
 		return fmt.Errorf("DB Service Backup does not belong to the source DB Service")
 	}

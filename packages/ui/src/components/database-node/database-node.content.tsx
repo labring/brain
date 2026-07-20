@@ -33,12 +33,9 @@ import {
   databaseNodeLifecycleAvailability,
   databaseNodeQuickActionAvailability,
 } from "./database-node.availability";
+import { DatabaseConnectionRow } from "./database-node.connection-row";
 import { useDatabaseNode } from "./database-node.context";
-import { maskDatabaseConnectionString } from "./database-node.mask";
-import {
-  canCopyDatabaseNodeConnection,
-  getDatabaseNodeConnectionKey,
-} from "./database-node.root";
+import { getDatabaseNodeConnectionKey } from "./database-node.root";
 import { resolveDatabaseNodeStatus } from "./database-node.status";
 import type {
   DatabaseNodeConnection,
@@ -99,57 +96,6 @@ function formatDatabaseSubtitle({
   formattedVersion?: string;
 }) {
   return `Database ${displayEngine}${formattedVersion ? ` ${formattedVersion}` : ""}`;
-}
-
-function getConnectionDisplayValue(connection: DatabaseNodeConnection) {
-  if (connection.kind === "public" && !connection.publicAccess.enabled) {
-    return null;
-  }
-
-  if (connection.value) {
-    return (
-      connection.displayValue ?? maskDatabaseConnectionString(connection.value)
-    );
-  }
-
-  if (connection.kind === "public") {
-    return connection.provisioningMessage ?? "Provisioning connection string";
-  }
-
-  return connection.unavailableMessage ?? "Connection unavailable";
-}
-
-function DatabaseNodeConnectionValueText({
-  displayValue,
-  value,
-}: {
-  displayValue: string;
-  value?: string;
-}) {
-  if (!value || displayValue !== maskDatabaseConnectionString(value)) {
-    return <span className="min-w-0 truncate">{displayValue}</span>;
-  }
-
-  return (
-    <>
-      <span className="min-w-0 truncate group-focus-within/copyable-row:hidden group-hover/copyable-row:hidden">
-        {displayValue}
-      </span>
-      <span className="hidden min-w-0 truncate group-focus-within/copyable-row:inline group-hover/copyable-row:inline">
-        {value}
-      </span>
-    </>
-  );
-}
-
-function databaseNodeConnectionTitle(
-  displayValue: string | null,
-  value?: string
-) {
-  if (value && displayValue === maskDatabaseConnectionString(value)) {
-    return "";
-  }
-  return displayValue ?? undefined;
 }
 
 export function DatabaseNodeContent({
@@ -303,77 +249,37 @@ export function DatabaseNodeConnectionRow({
   connection: DatabaseNodeConnection;
   index: number;
 }) {
-  const { actions } = useDatabaseNode();
-  const copyable = canCopyDatabaseNodeConnection(connection);
-  const displayValue = getConnectionDisplayValue(connection);
-  const connectionTitle = databaseNodeConnectionTitle(
-    displayValue,
-    connection.value
-  );
+  const {
+    actions,
+    state: { revealedConnection },
+  } = useDatabaseNode();
   const rowKey = getDatabaseNodeConnectionKey(connection, index);
-  const publicSwitch =
-    connection.kind === "public" ? (
-      <CanvasNode.CopyableRowControl className="pointer-events-auto relative z-20 flex shrink-0 items-center">
-        <DatabaseNodePublicSwitch connection={connection} index={index} />
-      </CanvasNode.CopyableRowControl>
-    ) : null;
+  const revealedValue =
+    revealedConnection?.key === rowKey ? revealedConnection.value : undefined;
 
   return (
-    <CanvasNode.CopyableRow
-      className={cn(
-        "database-node-connection-row relative flex min-w-0 flex-col gap-2 rounded-lg bg-zinc-950/20 p-2.5 transition-colors",
-        displayValue ? "min-h-18" : "min-h-11",
-        !copyable && "database-node-connection-row-static",
-        className
-      )}
-      copyAriaLabel={`Copy ${connection.label}`}
-      copyable={copyable}
-      copyValue={connection.value}
-      data-slot="database-node-connection-row"
+    <DatabaseConnectionRow
+      className={cn("database-node-connection-row", className)}
+      connection={connection}
       onCopy={
         actions.copyConnection
           ? () => actions.copyConnection?.(connection, index)
           : undefined
       }
+      onToggleReveal={
+        actions.revealConnection
+          ? () => actions.revealConnection?.(connection, index)
+          : undefined
+      }
+      publicSwitch={
+        connection.kind === "public" ? (
+          <DatabaseNodePublicSwitch connection={connection} index={index} />
+        ) : undefined
+      }
+      revealedValue={revealedValue}
       rowKey={rowKey}
-      title={connectionTitle}
-    >
-      {({ copied, copyable: rowCopyable }) => (
-        <>
-          <div
-            className={cn(
-              "relative z-10 flex min-w-0 items-center justify-between gap-2",
-              rowCopyable ? "pointer-events-none" : "pointer-events-auto"
-            )}
-          >
-            <span className="min-w-0 truncate font-normal text-muted-foreground text-xs leading-4">
-              {connection.label}
-            </span>
-            {publicSwitch}
-          </div>
-          {displayValue ? (
-            <div
-              aria-hidden={rowCopyable ? true : undefined}
-              className={cn(
-                "relative z-10 flex h-7 min-w-0 items-center justify-between gap-2 py-1.5 text-left font-normal text-xs leading-4",
-                rowCopyable
-                  ? "pointer-events-none text-zinc-50"
-                  : "text-muted-foreground"
-              )}
-              data-copied={copied ? "true" : undefined}
-              data-slot="database-node-connection-value"
-              title={connectionTitle}
-            >
-              <DatabaseNodeConnectionValueText
-                displayValue={displayValue}
-                value={connection.value}
-              />
-              <CanvasNode.CopyableRowIndicator />
-            </div>
-          ) : null}
-        </>
-      )}
-    </CanvasNode.CopyableRow>
+      variant="node"
+    />
   );
 }
 

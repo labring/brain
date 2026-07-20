@@ -22,5 +22,4 @@ test("DB Access first version hides write, query, and advanced actions", () => {
   assert.equal(DATA_BROWSER_CAPABILITIES.actions.backendFilter, false);
   assert.equal(DATA_BROWSER_CAPABILITIES.actions.complexExport, false);
   assert.equal(DATA_BROWSER_CAPABILITIES.actions.chart, false);
-  assert.equal(DATA_BROWSER_CAPABILITIES.actions.systemObjectsToggle, false);
 });
