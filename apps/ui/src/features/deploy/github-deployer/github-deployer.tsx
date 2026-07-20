@@ -254,13 +254,7 @@ function repoDescription(repo: GithubDeployerRepo): string {
   return repo.description?.trim() || "No description provided.";
 }
 
-function GithubRepoCard({
-  featured,
-  repo,
-}: {
-  featured: boolean;
-  repo: GithubDeployerRepo;
-}) {
+function GithubRepoCard({ repo }: { repo: GithubDeployerRepo }) {
   const {
     actions: { onDeploy, onDeployTemplate },
     requestDeploy,
@@ -275,10 +269,7 @@ function GithubRepoCard({
 
   return (
     <article
-      className={cn(
-        "flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-input/30 px-3 py-2.5",
-        featured && "border-primary/35 bg-primary/5"
-      )}
+      className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-input/30 px-3 py-2.5"
       data-slot="github-deployer-repo-card"
     >
       <div className="min-w-0 flex-1">
@@ -298,7 +289,7 @@ function GithubRepoCard({
         </p>
       </div>
       <AppButton
-        className="h-8 min-w-24 rounded-lg"
+        className="min-w-24"
         data-slot="github-deployer-repo-deploy"
         disabled={!canDeploy}
         onClick={() => {
@@ -420,14 +411,14 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
       ) : null}
       {!(errorMessage || isLoading) && visibleRepos.length > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">
-          {visibleRepos.map((repo, index) => (
-            <GithubRepoCard featured={index === 0} key={repo.id} repo={repo} />
+          {visibleRepos.map((repo) => (
+            <GithubRepoCard key={repo.id} repo={repo} />
           ))}
         </div>
       ) : null}
       {canViewMore ? (
         <button
-          className="mx-auto mt-1 h-7 rounded-md px-3 text-muted-foreground text-sm hover:bg-input/30 hover:text-foreground"
+          className="inline-flex h-5 w-full shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded-lg border border-transparent bg-transparent bg-clip-padding px-2 font-medium text-muted-foreground text-xs leading-5 outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:border-ring focus-visible:bg-input/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
           data-slot="github-deployer-view-more"
           onClick={() =>
             setVisibleCount((count) =>

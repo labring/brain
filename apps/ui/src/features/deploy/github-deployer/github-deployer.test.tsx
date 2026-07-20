@@ -26,6 +26,11 @@ const PRIMARY_DEPLOY_BUTTON_RE =
 const REPO_EMPTY_RE = /data-slot="github-deployer-repo-empty"/;
 const REPO_ERROR_RE = /data-slot="github-deployer-repo-error"/;
 const VIEW_MORE_RE = /data-slot="github-deployer-view-more"/;
+const VIEW_MORE_AP_OVERFLOW_STYLE_RE =
+  /<button(?=[^>]*class="[^"]*h-5[^"]*w-full[^"]*text-xs[^"]*focus-visible:ring-2[^"]*")(?=[^>]*data-slot="github-deployer-view-more")/;
+const REPO_DEPLOY_HEIGHT_RE =
+  /data-slot="github-deployer-repo-card"[\s\S]*?<button(?=[^>]*class="[^"]*h-9[^"]*")[^>]*>[\s\S]*?Deploy<\/button>/;
+const FEATURED_REPO_STYLE_RE = /border-primary\/35|bg-primary\/5/;
 const BAD_CREDENTIALS_RE = /bad credentials/;
 const GITHUB_URL_LOCKED_RE =
   /Connect GitHub for this workspace before deploying from a repository URL\./;
@@ -81,6 +86,8 @@ test("GithubDeployer keeps URL input while showing authorized repo choices", () 
   assert.match(html, REPO_SELECT_RE);
   assert.match(html, REPO_CARD_RE);
   assert.equal(html.match(PRIMARY_DEPLOY_BUTTON_RE)?.length, 2);
+  assert.match(html, REPO_DEPLOY_HEIGHT_RE);
+  assert.doesNotMatch(html, FEATURED_REPO_STYLE_RE);
   assert.match(html, EXAMPLE_REPO_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
   assert.doesNotMatch(html, REPO_EMPTY_RE);
@@ -104,6 +111,7 @@ test("GithubDeployer shows view more for long repository lists", () => {
   );
 
   assert.match(html, VIEW_MORE_RE);
+  assert.match(html, VIEW_MORE_AP_OVERFLOW_STYLE_RE);
 });
 
 test("GithubDeployer waits for template matching before repository deploy", () => {
