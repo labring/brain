@@ -5,6 +5,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
+import { fetchOrCreateAiProxyToken } from "@/features/chat/ai-proxy/create-token";
+import { aiProxyOpenAiBaseUrl } from "@/features/chat/ai-proxy/endpoints";
+import { clusterHostnameFromKubeconfigText } from "@/features/chat/ai-proxy/kubeconfig-hostname";
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
@@ -145,6 +148,7 @@ const READ_OUTPUT_TIMEOUT_SECONDS = 30;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
 const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_DEPLOY_AI_PROXY_TOKEN_NAME = "sealos-brain";
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
   "jobs",
@@ -851,14 +855,23 @@ async function waitForRequiredResultCards(input: {
   );
 }
 
-function codexGatewayEnv(): Record<string, string> {
+export interface CodexGatewayOpenAiCredentials {
+  apiKey: string;
+  baseUrl: string;
+}
+
+export function buildCodexGatewayEnv(
+  credentials?: CodexGatewayOpenAiCredentials
+): Record<string, string> {
   const env: Record<string, string> = {};
-  const apiKey =
-    compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
-    compactEnvValue(process.env.SYSTEM_OPENAI_API_KEY);
-  const baseUrl =
-    compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
-    compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL);
+  const apiKey = credentials
+    ? credentials.apiKey
+    : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
+      compactEnvValue(process.env.SYSTEM_OPENAI_API_KEY));
+  const baseUrl = credentials
+    ? credentials.baseUrl
+    : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
+      compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL));
   const model =
     compactEnvValue(process.env.CODEX_GATEWAY_MODEL) ?? DEPLOY_GATEWAY_MODEL;
 
@@ -873,6 +886,49 @@ function codexGatewayEnv(): Record<string, string> {
   }
 
   return env;
+}
+
+export async function resolveGithubCodexGatewayCredentials(input: {
+  encodedKubeconfig: string;
+  kubeconfig: string;
+}): Promise<CodexGatewayOpenAiCredentials> {
+  const authorizationEncodedKubeconfig = input.encodedKubeconfig.trim();
+  if (authorizationEncodedKubeconfig === "") {
+    throw new Error(
+      "GitHub deployment requires a kubeconfig credential for AI Proxy."
+    );
+  }
+
+  const clusterHostname = clusterHostnameFromKubeconfigText(input.kubeconfig);
+  if (clusterHostname == null) {
+    throw new Error(
+      "Could not read the Kubernetes API server hostname required for GitHub deployment AI Proxy."
+    );
+  }
+
+  const configuredName =
+    compactEnvValue(process.env.AI_PROXY_TOKEN_NAME) ??
+    DEFAULT_DEPLOY_AI_PROXY_TOKEN_NAME;
+  const tokenName = configuredName.slice(0, 100);
+  const tokenResult = await fetchOrCreateAiProxyToken({
+    authorizationEncodedKubeconfig,
+    clusterHostname,
+    name: tokenName,
+  });
+  if (!tokenResult.ok) {
+    const status =
+      tokenResult.status >= 400 && tokenResult.status < 600
+        ? tokenResult.status
+        : 502;
+    throw new Error(
+      `Could not obtain the user's AI Proxy key for GitHub deployment (HTTP ${status}).`
+    );
+  }
+
+  return {
+    apiKey: tokenResult.token.key,
+    baseUrl: aiProxyOpenAiBaseUrl(clusterHostname),
+  };
 }
 
 function isDevboxSecretPendingError(error: unknown): error is DevboxApiError {
@@ -1427,6 +1483,7 @@ function readDeployOutputCommand(input?: { allowPartial?: boolean }): string {
 
 async function ensureDeployDevbox(input: {
   existingRuntimeName?: string | null;
+  gatewayCredentials?: CodexGatewayOpenAiCredentials;
   githubToken?: string;
   namespace: string;
   repoUrl: string;
@@ -1470,7 +1527,7 @@ async function ensureDeployDevbox(input: {
   await createDevbox(input.namespace, {
     archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
     env: {
-      ...codexGatewayEnv(),
+      ...buildCodexGatewayEnv(input.gatewayCredentials),
       ...(input.githubToken?.trim()
         ? { GITHUB_TOKEN: input.githubToken.trim() }
         : {}),
@@ -2600,6 +2657,37 @@ async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
   return token;
 }
 
+async function ensureAiDeploymentDevbox(input: {
+  encodedKubeconfig: string;
+  githubToken?: string;
+  kubeconfig: string;
+  task: DeployTaskRow;
+}): Promise<Awaited<ReturnType<typeof ensureDeployDevbox>>> {
+  const gatewayCredentials =
+    input.task.source.kind === "github"
+      ? await resolveGithubCodexGatewayCredentials({
+          encodedKubeconfig: input.encodedKubeconfig,
+          kubeconfig: input.kubeconfig,
+        })
+      : undefined;
+
+  try {
+    return await ensureDeployDevbox({
+      existingRuntimeName: input.task.runtimeName,
+      gatewayCredentials,
+      githubToken: input.githubToken,
+      namespace: input.task.namespace,
+      repoUrl: aiSourceKey(input.task),
+      taskId: input.task.id,
+    });
+  } catch (error) {
+    throw attachDeploySensitiveValues(
+      error,
+      gatewayCredentials == null ? [] : [gatewayCredentials.apiKey]
+    );
+  }
+}
+
 async function runAiDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -2627,13 +2715,11 @@ async function runAiDeploymentTask(input: {
   });
 
   const githubToken = await githubTokenForTask(input.task);
-
-  const runtime = await ensureDeployDevbox({
-    existingRuntimeName: input.task.runtimeName,
+  const runtime = await ensureAiDeploymentDevbox({
+    encodedKubeconfig: input.encodedKubeconfig,
     githubToken: githubToken ?? undefined,
-    namespace: input.task.namespace,
-    repoUrl: aiSourceKey(input.task),
-    taskId: input.task.id,
+    kubeconfig: input.kubeconfig,
+    task: input.task,
   });
 
   await updateDeployTaskState(input.task.id, {
