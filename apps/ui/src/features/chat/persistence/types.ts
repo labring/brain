@@ -13,17 +13,10 @@ export function normalizeAssistantNamespace(namespace: string): string {
   return trimmed.length > 0 ? trimmed : DEFAULT_ASSISTANT_NAMESPACE_KEY;
 }
 
-/** Max length for a client-supplied owner tag (matches the GitHub identity cap). */
-const MAX_ASSISTANT_OWNER_LEN = 256;
-
-/**
- * Normalize the client-supplied owner tag (Sealos `session.user.id`): trimmed and
- * length-capped. An empty string is the shared / no-identity bucket. This value is
- * NOT authenticated — it is a default-view partition, not a security boundary
- * (ADR 0047).
- */
-export function normalizeAssistantOwner(userId: string): string {
-  return userId.trim().slice(0, MAX_ASSISTANT_OWNER_LEN);
+/** Server-verified owner of a personal Assistant Conversation. */
+export interface AssistantConversationOwner {
+  namespace: string;
+  workspaceActor: string;
 }
 
 /** Wire shape for a thread row sent to the client. */
@@ -116,9 +109,8 @@ export function readSelectedResourceContext(
 }
 
 /**
- * Body of `POST /api/chat`. `chatId` may name a thread that does not exist yet:
- * threads materialize on their first message (see `ensureThreadInNamespace`),
- * so the id is client-minted and length-capped here.
+ * Body of `POST /api/chat`. A fresh `chatId` materializes lazily under the
+ * verified Workspace Actor; existing ids are usable only by their owner.
  */
 export const chatStreamRequestSchema = z.object({
   chatId: z.string().min(1).max(64),
@@ -126,8 +118,6 @@ export const chatStreamRequestSchema = z.object({
   message: z.unknown(),
   encodedKubeconfig: z.string().optional(),
   assistantContext: assistantContextPayloadSchema.optional(),
-  /** Owner tag (`session.user.id`) a first-message thread is created under; see {@link normalizeAssistantOwner}. */
-  userId: z.string().optional(),
 });
 export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
 

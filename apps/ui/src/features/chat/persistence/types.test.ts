@@ -8,7 +8,6 @@ import {
   isAppendableAssistantEventMessage,
   isApprovedContinuationOfPendingAssistantMessage,
   isAssistantApprovalResponseMessage,
-  normalizeAssistantOwner,
 } from "./types";
 
 const pendingApprovalMessage: UIMessage = {
@@ -213,15 +212,4 @@ test("external assistant event persistence rejects tool messages", () => {
     isAppendableAssistantEventMessage(pendingApprovalMessage),
     false
   );
-});
-
-test("owner tag is trimmed, and empty stays the shared/no-identity bucket", () => {
-  assert.equal(normalizeAssistantOwner("  user-123  "), "user-123");
-  assert.equal(normalizeAssistantOwner(""), "");
-  assert.equal(normalizeAssistantOwner("   "), "");
-});
-
-test("owner tag is length-capped so a client cannot key by an oversized value", () => {
-  const capped = normalizeAssistantOwner("u".repeat(500));
-  assert.equal(capped.length, 256);
 });

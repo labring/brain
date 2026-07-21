@@ -1,6 +1,7 @@
 import "server-only";
 
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { getAppPostgresPool } from "@/lib/app-postgres/db";
 
@@ -22,7 +23,10 @@ const assistantSchema = {
   githubOauthConnections,
 };
 
-export type AssistantPgDatabase = NodePgDatabase<typeof assistantSchema>;
+export type AssistantPgDatabase = PgDatabase<
+  PgQueryResultHKT,
+  typeof assistantSchema
+>;
 
 let assistantDbInstance: AssistantPgDatabase | undefined;
 
@@ -33,6 +37,6 @@ let assistantDbInstance: AssistantPgDatabase | undefined;
 export function getAssistantDb(): AssistantPgDatabase {
   assistantDbInstance ??= drizzle(getAppPostgresPool(), {
     schema: assistantSchema,
-  });
+  }) as AssistantPgDatabase;
   return assistantDbInstance;
 }

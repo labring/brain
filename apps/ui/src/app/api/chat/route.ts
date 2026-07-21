@@ -14,17 +14,19 @@ import {
   isSystemOpenAiConfigured,
 } from "@/features/chat/persistence/free-tier";
 import {
-  appendMessage,
-  ensureThreadInNamespace,
-  loadThreadMessages,
+  appendMessageForOwner,
+  ensureAssistantThreadForOwner,
+  loadMessagesForOwner,
   maybeAutoTitleThread,
 } from "@/features/chat/persistence/service";
 import {
+  type AssistantConversationOwner,
   buildAssistantApprovalResponseFromPending,
   chatStreamRequestSchema,
   findPendingApprovalMessageForResponse,
   isAssistantApprovalResponseMessage,
   isPersistedUIMessage,
+  normalizeAssistantNamespace,
 } from "@/features/chat/persistence/types";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import { jsonError } from "@/features/chat/runtime/errors";
@@ -37,13 +39,14 @@ import {
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
-import { resolveAuthoritativeChatNamespace } from "@/lib/resolve-chat-namespace";
+import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 
 export const maxDuration = 120;
 
 async function appendIncomingChatMessage(
   chatId: string,
-  history: Awaited<ReturnType<typeof loadThreadMessages>>,
+  history: NonNullable<Awaited<ReturnType<typeof loadMessagesForOwner>>>,
+  owner: AssistantConversationOwner,
   message: unknown
 ): Promise<Response | null> {
   if (!isPersistedUIMessage(message)) {
@@ -51,8 +54,9 @@ async function appendIncomingChatMessage(
   }
 
   if (message.role === "user") {
-    await appendMessage(chatId, message);
-    return null;
+    return (await appendMessageForOwner(chatId, message, owner))
+      ? null
+      : jsonError("Assistant conversation not found.", 404);
   }
 
   if (!isAssistantApprovalResponseMessage(message)) {
@@ -89,8 +93,9 @@ async function appendIncomingChatMessage(
       400
     );
   }
-  await appendMessage(chatId, messageToAppend);
-  return null;
+  return (await appendMessageForOwner(chatId, messageToAppend, owner))
+    ? null
+    : jsonError("Assistant conversation not found.", 404);
 }
 
 export async function POST(req: Request) {
@@ -104,63 +109,58 @@ export async function POST(req: Request) {
     return jsonError("Invalid chat request", 400, parsed.error.flatten());
   }
 
-  const {
-    assistantContext,
-    chatId,
-    encodedKubeconfig,
-    message,
-    namespace,
-    userId,
-  } = parsed.data;
+  const { assistantContext, chatId, encodedKubeconfig, message, namespace } =
+    parsed.data;
 
+  const authorization = await authorizeWorkspaceActor({
+    encodedKubeconfig,
+    expectedNamespace: namespace.trim() || undefined,
+    normalizeNamespace: normalizeAssistantNamespace,
+  });
+  if (!authorization.ok) {
+    return jsonError(authorization.message, authorization.status);
+  }
+  const owner: AssistantConversationOwner = {
+    namespace: authorization.namespace,
+    workspaceActor: authorization.workspaceActor,
+  };
   const kubeconfig = decodeKubeconfig(encodedKubeconfig);
   if (kubeconfig == null) {
-    return jsonError("Missing or invalid kubeconfig", 400);
+    return jsonError("Authentication is required.", 401);
   }
-
-  const namespaceResolved = await resolveAuthoritativeChatNamespace({
-    encodedKubeconfig,
-    clientNamespace: namespace,
-  });
-  if (!namespaceResolved.ok) {
-    return jsonError(namespaceResolved.message, namespaceResolved.status);
-  }
-  const authoritativeNamespace = namespaceResolved.namespace;
 
   try {
-    // Threads materialize on their first message; an id owned by another
-    // namespace bucket is the only rejection.
-    const threadReady = await ensureThreadInNamespace(
-      chatId,
-      authoritativeNamespace,
-      userId ?? ""
-    );
+    const threadReady = await ensureAssistantThreadForOwner(chatId, owner);
     if (!threadReady) {
-      return jsonError(
-        "Unknown or inaccessible assistant thread for this namespace.",
-        403
-      );
+      return jsonError("Assistant conversation not found.", 404);
     }
 
-    const freeTier = await getFreeTierSnapshot(authoritativeNamespace);
+    const freeTier = await getFreeTierSnapshot(owner.namespace);
     const billing: ChatBillingMode =
       freeTier.remaining > 0 && isSystemOpenAiConfigured() ? "free" : "user";
 
-    const storedHistory = await loadThreadMessages(chatId);
+    const storedHistory = await loadMessagesForOwner(chatId, owner);
+    if (storedHistory == null) {
+      return jsonError("Assistant conversation not found.", 404);
+    }
     const appendError = await appendIncomingChatMessage(
       chatId,
       storedHistory,
+      owner,
       message
     );
     if (appendError != null) {
       return appendError;
     }
 
-    const history = await loadThreadMessages(chatId);
+    const history = await loadMessagesForOwner(chatId, owner);
+    if (history == null) {
+      return jsonError("Assistant conversation not found.", 404);
+    }
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
       kubeconfig,
-      kubernetesNamespace: authoritativeNamespace,
+      kubernetesNamespace: owner.namespace,
     });
 
     const openAi = await resolveChatOpenAiConnection({
@@ -209,24 +209,30 @@ export async function POST(req: Request) {
       headers: responseHeaders,
       onFinish: async ({ responseMessage }) => {
         try {
-          await appendMessage(
+          const persisted = await appendMessageForOwner(
             chatId,
-            attachToolDurationMetrics(responseMessage, toolDurationMsByCallId)
+            attachToolDurationMetrics(responseMessage, toolDurationMsByCallId),
+            owner
           );
-          if (billing === "free") {
-            const consumed = await consumeFreeTurnIfAvailable(
-              authoritativeNamespace
+          if (!persisted) {
+            console.warn(
+              "[api/chat] assistant response not persisted: conversation unavailable"
             );
+            return;
+          }
+          if (billing === "free") {
+            const consumed = await consumeFreeTurnIfAvailable(owner.namespace);
             if (!consumed) {
               console.warn(
                 "[api/chat] free turn not recorded (limit reached concurrently):",
-                authoritativeNamespace
+                owner.namespace
               );
             }
           }
           await maybeAutoTitleThread({
             chatId,
             languageModel: titleModel,
+            owner,
             projectName: assistantContext?.projectName,
           });
         } catch (error) {

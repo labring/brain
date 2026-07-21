@@ -50,6 +50,13 @@
       "when": 1784621553615,
       "tag": "0006_old_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784625000000,
+      "tag": "0007_private_assistant_conversations",
+      "breakpoints": true
     }
   ]
 }
