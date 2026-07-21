@@ -50,9 +50,12 @@ client-supplied Desktop user id or connection id cannot select the owner.
 
 An Assistant Conversation is owned by `(namespace, Workspace Actor)`. Ownership
 is set at creation and is immutable. List, bootstrap, read, append, continue,
-and title operations enforce that owner. A conversation owned by another actor
-is indistinguishable from a missing conversation, so an opaque chat id is not a
-capability. Free Chat Turns remain a namespace-shared allowance.
+and title operations enforce that owner: on those paths a conversation owned by
+another actor is indistinguishable from a missing conversation. First-message
+creation refuses a client-minted id another actor already owns — failing closed,
+though a prober could tell that refusal apart from a fresh create; ids are
+unguessable UUIDs, so an opaque chat id is still not a capability. Free Chat
+Turns remain a namespace-shared allowance.
 
 OAuth state binds the verified Workspace Actor, namespace, identity generation,
 and expiry before the browser redirect. The callback atomically consumes that
@@ -115,7 +118,9 @@ must not be described as runtime credential isolation.
 Personal APIs fail closed when no eligible Workspace Actor can be derived.
 Authentication failure, namespace denial, ineligible actor type, missing or
 foreign personal resource, and missing GitHub Connection remain distinct error
-conditions without disclosing whether another member's resource exists.
+conditions. Read paths never disclose whether another member's resource exists;
+the accepted residual channel is conversation creation refusing an already-owned
+client-minted id, harmless while ids stay unguessable.
 
 Client fields such as `userId`, `actorUserId`, and `githubConnectionId` may be
 tolerated for one compatibility release, but their values never influence the

@@ -1,5 +1,11 @@
 # Model Deployment Task Lifecycle Actions as Cancel, Redeploy, and Retention
 
+## Status
+
+Accepted; supplemented by ADR-0056 — a Redeploy resolves a fresh Deployment
+Credential Binding from the initiating Workspace Actor and never inherits the
+predecessor's actor, credential owner, or connection reference.
+
 A Deployment Task exposes exactly two in-place actions — a Deployment Task Cancel Request and Blocking Input submission. Recovery is Redeploy, which is task creation; cleanup is Deployment Task Retention, which is automatic. `failed` and `cancelled` are pure terminal statuses with no outgoing transitions, and there is no user-facing task deletion.
 
 Cancelling stops the deploy workflow and never deletes or reverts applied resources. `queued` and `blocked` tasks cancel immediately; `running` and `applying` tasks acknowledge cooperatively at a checkpoint, with abort signals propagated into gateway turns, devbox operations, and readiness waits. The direct runner stops between resource applications; template application is one atomic provider call, so a template task cancels either before or after application with no partial state. Cancel stays available during `verify` — a phase within the `applying` status (ADR 0023), not a status of its own — where it means "stop waiting" and is symmetric with a readiness-timeout failure. There is one `cancelled` terminal status; the artifact summary and Deployment Task Timeline distinguish nothing, partially, or fully applied, and every applied resource is itemized as the basis for manual compensation. After a deadline-forced cancel that itemization is best-effort — a still-live runner's final apply can land after its recording writes are already fenced off — so the canvas, not the task record, stays the source of truth for what exists. Applied resources remain first-class canvas resources whose deletion is always an explicit canvas action.
