@@ -11,7 +11,10 @@ function activeSurfaceElement(
   selector: string
 ): HTMLElement | null {
   const element = root.querySelector<HTMLElement>(selector);
-  if (element == null || element.getAttribute("aria-hidden") === "true") {
+  // Read the surface's own `data-state`, never `aria-hidden`: a modal dialog
+  // marks everything outside its popup `aria-hidden="true"`, so reading that
+  // would make an open surface measure as absent and re-focus the canvas.
+  if (element == null || element.dataset.state === "closed") {
     return null;
   }
   return element;

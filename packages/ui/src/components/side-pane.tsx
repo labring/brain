@@ -72,6 +72,7 @@ export function SidePane({
           : "project-surface-slide-x-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]"
       )}
       data-slot="side-pane"
+      data-state={motionOpen ? "open" : "closed"}
     >
       <div
         className={cn(
