@@ -5,9 +5,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
-import { fetchOrCreateAiProxyToken } from "@/features/chat/ai-proxy/create-token";
-import { aiProxyOpenAiBaseUrl } from "@/features/chat/ai-proxy/endpoints";
-import { clusterHostnameFromKubeconfigText } from "@/features/chat/ai-proxy/kubeconfig-hostname";
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
@@ -25,6 +22,7 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
+import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_DEPLOYMENT_NAME_LABEL,
@@ -148,7 +146,6 @@ const READ_OUTPUT_TIMEOUT_SECONDS = 30;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
 const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS = 10 * 60_000;
-const DEFAULT_DEPLOY_AI_PROXY_TOKEN_NAME = "sealos-brain";
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
   "jobs",
@@ -892,42 +889,29 @@ export async function resolveGithubCodexGatewayCredentials(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
 }): Promise<CodexGatewayOpenAiCredentials> {
-  const authorizationEncodedKubeconfig = input.encodedKubeconfig.trim();
-  if (authorizationEncodedKubeconfig === "") {
-    throw new Error(
-      "GitHub deployment requires a kubeconfig credential for AI Proxy."
-    );
-  }
-
-  const clusterHostname = clusterHostnameFromKubeconfigText(input.kubeconfig);
-  if (clusterHostname == null) {
-    throw new Error(
-      "Could not read the Kubernetes API server hostname required for GitHub deployment AI Proxy."
-    );
-  }
-
-  const configuredName =
-    compactEnvValue(process.env.AI_PROXY_TOKEN_NAME) ??
-    DEFAULT_DEPLOY_AI_PROXY_TOKEN_NAME;
-  const tokenName = configuredName.slice(0, 100);
-  const tokenResult = await fetchOrCreateAiProxyToken({
-    authorizationEncodedKubeconfig,
-    clusterHostname,
-    name: tokenName,
+  const resolved = await resolveUserAiProxyCredentials({
+    encodedKubeconfig: input.encodedKubeconfig,
+    kubeconfigText: input.kubeconfig,
   });
-  if (!tokenResult.ok) {
-    const status =
-      tokenResult.status >= 400 && tokenResult.status < 600
-        ? tokenResult.status
-        : 502;
+  if (!resolved.ok) {
+    if (resolved.reason === "missing-kubeconfig") {
+      throw new Error(
+        "GitHub deployment requires a kubeconfig credential for AI Proxy."
+      );
+    }
+    if (resolved.reason === "invalid-kubeconfig") {
+      throw new Error(
+        "Could not read the Kubernetes API server hostname required for GitHub deployment AI Proxy."
+      );
+    }
     throw new Error(
-      `Could not obtain the user's AI Proxy key for GitHub deployment (HTTP ${status}).`
+      `Could not obtain the user's AI Proxy key for GitHub deployment (HTTP ${resolved.status}).`
     );
   }
 
   return {
-    apiKey: tokenResult.token.key,
-    baseUrl: aiProxyOpenAiBaseUrl(clusterHostname),
+    apiKey: resolved.credentials.apiKey,
+    baseUrl: resolved.credentials.baseUrl,
   };
 }
 

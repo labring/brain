@@ -6,7 +6,7 @@ interface KubeconfigYaml {
   "current-context"?: string;
 }
 
-/** Returns the kubeconfig cluster `server` host (no port), e.g. https://foo:6443 → foo */
+/** Returns the kubeconfig cluster `server` host without its port. */
 export function clusterHostnameFromKubeconfigText(
   yamlText: string
 ): string | null {
