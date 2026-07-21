@@ -282,6 +282,22 @@ The condition where a Settings Owner's observed desired configuration for a Sett
 
 _Avoid_: Pending failure, automatic overwrite, silent reload.
 
+## Authorization & Identity
+
+### Workspace Actor
+
+The verified human identity acting within a workspace namespace, derived from
+the authenticated subject of the request kubeconfig's bearer token. An eligible
+Workspace Actor has the subject
+`system:serviceaccount:user-system:<crName>` and uses `crName` as its stable
+subject key. Workspace Actor verification and namespace authorization are
+separate checks: one establishes who is acting, while the other establishes
+where that actor may act. A Desktop session user id, a Desktop session JWT, and
+an arbitrary namespace-authorized workload ServiceAccount are not Workspace
+Actors.
+
+_Avoid_: Desktop user id, namespace member id, ServiceAccount UID, selected actor.
+
 ## Deployment
 
 ### Deployment Task
@@ -330,9 +346,33 @@ _Avoid_: force kill, rollback, undo deployment, cancelling status.
 
 ### Redeploy
 
-Recovery for a failed or cancelled Deployment Task: a new Deployment Task cloned from the predecessor's Deployment Source and Deployment Target with recorded lineage, reusing result identities the predecessor already allocated. A Redeploy may carry edited source settings; there is no in-place retry of a terminal Deployment Task.
+Recovery for a failed or cancelled Deployment Task: a new Deployment Task cloned from the predecessor's Deployment Source and Deployment Target with recorded lineage, reusing result identities the predecessor already allocated. A Redeploy may carry edited source settings; there is no in-place retry of a terminal Deployment Task. Any namespace-authorized member may initiate it, but a GitHub Redeploy creates a new Deployment Credential Binding from the initiator's own active GitHub Connection; it never inherits the predecessor's creating actor, credential owner, or connection reference, and without the initiator's connection no new task is created.
 
 _Avoid_: retry, re-run, attempt, task restart.
+
+### Deployment Action Actor
+
+The Workspace Actor who initiates a Deployment Task or performs a collaborative
+Deployment Task action such as cancellation, Blocking Input submission, or
+Redeploy. Deployment Task events record the action actor when one is available,
+while namespace-authorized non-Workspace-Actor subjects may still perform the
+namespace-shared actions that permit them. A Deployment Action Actor describes
+who performed an action; it does not transfer or replace the task's Deployment
+Credential Binding.
+
+_Avoid_: credential owner, task owner, connection owner.
+
+### Deployment Credential Binding
+
+The immutable selection on a GitHub Deployment Task that identifies the
+credential-owning Workspace Actor, that actor's GitHub Connection reference,
+and the binding version chosen at task creation. Collaborative task actions do
+not change the binding. Redeploy creates a new task and resolves a new binding
+from its initiator rather than copying the predecessor's binding. The binding
+records credential selection and ownership; it does not imply task-scoped
+runtime credential issuance or isolation.
+
+_Avoid_: Task Credential Grant, mutable task credential, action actor.
 
 ### Deployment Task Retention
 
@@ -342,9 +382,9 @@ _Avoid_: delete task, clear history, archive task.
 
 ### GitHub Connection
 
-A per-user OAuth authorization that lets one Sealos user list and deploy from their own GitHub repositories within a namespace. A GitHub Connection is keyed by namespace and user identity: each namespace member authorizes GitHub separately, and one member's connection is not a shared namespace credential that other members deploy through. The deploying user's identity is recorded on the resulting Deployment Task.
+A personal OAuth authorization that lets one Workspace Actor list and deploy from their own GitHub repositories within a namespace. A GitHub Connection is keyed by namespace, verified Workspace Actor, and owner identity generation; no client-supplied Desktop user id or opaque connection id selects its owner. Each Workspace Actor authorizes GitHub separately, and one actor's connection is not a shared namespace credential that another actor may select for a new Deployment Task. Task creation records the resulting Deployment Credential Binding.
 
-_Avoid_: shared namespace GitHub credential, GitHub App installation connection, browser-session GitHub connection.
+_Avoid_: shared namespace GitHub credential, GitHub App installation connection, browser-session GitHub connection, Desktop-user-owned connection.
 
 ### Docker Deployment Settings
 
@@ -722,9 +762,9 @@ _Avoid_: namespace access check, kubeconfig validation, metrics permission.
 
 ### Assistant Conversation
 
-A single assistant chat thread and its messages, scoped to a namespace and owned by the individual user who started it. An Assistant Conversation is a personal artifact: by default it is listed only to its owner, unlike shared workspace artifacts such as Canvas Layout or Deployment Task, which belong to the whole namespace. Ownership is a default-view partition rather than an access boundary — access within a namespace is still governed only by namespace authorization, so an Assistant Conversation is not protected from a determined co-member and must not be presented as confidential. Ownership is fixed when the conversation is created and does not transfer when the conversation is continued.
+A private assistant chat thread and its messages, scoped to a namespace and owned by the Workspace Actor who started it. Assistant Conversation ownership is an enforced authorization boundary in addition to namespace authorization: list, bootstrap, read, append, continue, and title operations are owner-scoped, and a foreign conversation is indistinguishable from a missing one. Ownership is fixed at creation and does not transfer when the conversation is continued. Assistant Conversations are personal artifacts, unlike namespace-shared Canvas Layouts and Deployment Tasks; Free Chat Turns remain a namespace-shared allowance.
 
-_Avoid_: shared namespace chat, tenant chat, private/confidential conversation, per-namespace chat history.
+_Avoid_: shared namespace chat, tenant chat, client-selected owner, chatId capability, per-namespace chat history.
 
 ### Chat Billing Mode
 

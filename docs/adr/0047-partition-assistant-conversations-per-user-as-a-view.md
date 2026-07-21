@@ -1,16 +1,36 @@
-# Partition assistant conversations per user as a view, not a security boundary
+# Enforce Assistant Conversation Ownership per Workspace Actor
 
-Assistant chat was scoped only by namespace, so members of a shared workspace saw one another's conversations. We now tag each Assistant Conversation with the id of the Sealos user who created it (`session.user.id`) and list each user only their own — but this is a **default-view partition, not a security boundary**: the owner id is client-supplied, is not server-authenticated, and namespace RBAC remains the only enforced access control. Free Chat Turns stay per-namespace.
+## Status
+
+Accepted; the authorization boundary is revised by ADR-0056.
+
+Assistant chat was scoped only by namespace, so members of a shared workspace
+could select and read one another's conversations. Each Assistant Conversation
+is now owned by the verified Workspace Actor that creates it. Ownership is an
+enforced authorization boundary in addition to namespace authorization, not a
+client-selected default view. Free Chat Turns stay per-namespace.
 
 ## Considered Options
 
-- **Real per-user isolation** (authenticate identity via `SelfSubjectReview` → `userInfo`) — rejected: disproportionate for a semi-trusted-teammate threat model, adds a Kubernetes round-trip per request, and co-members already hold namespace RBAC (they can read the namespace's real secrets, pods, and logs directly), so the marginal protection is only over *pasted external secrets* and *the user's own questions*.
-- **Status-quo namespace grain** — rejected: users reasonably expect "my conversation with the assistant" to be private by default.
-- **Per-user entitlement** — rejected: an unauthenticated owner id is farmable (a fresh random id yields fresh free turns; sock-puppet members yield an N× grant), so a spendable resource must stay keyed on the authenticated namespace.
+- **Client-supplied owner as a default view** — rejected because a namespace
+  member can select another member's id; it neither authenticates ownership nor
+  protects a conversation reached by id.
+- **Namespace-only authorization** — rejected because shared-workspace access
+  does not imply access to another member's personal conversation.
+- **Per-user entitlement** — rejected because Free Chat Turns are a shared
+  workspace grant and remain keyed to the authenticated namespace.
 
 ## Consequences
 
-- The UI must **not over-promise confidentiality** — no "private" or "only you can see this" language. A determined co-member can still read a conversation by supplying another user's id; presenting it as private would lull users into pasting secrets into a spoofable store ("false privacy").
-- `assistant_chats` gains a non-null owner column; the thread list filters `owner = me`; an empty owner is the dev / no-identity bucket. No data migration — the product has not launched.
-- Ownership is set at creation and immutable; continuing a conversation never re-keys it. A shared thread is not offered now, but the owner-tag model leaves room to add one later (a shared sentinel or an ACL).
-- By-`chatId` fetches stay namespace-gated only (a `chatId` is an unguessable capability); only the thread *list* is owner-scoped.
+- List, bootstrap, read, append, continue, and title operations resolve the
+  owner from the authenticated kubeconfig's Workspace Actor. A foreign
+  conversation and a missing conversation both return not-found.
+- Ownership is set at creation and immutable; continuing a conversation never
+  re-keys it. An opaque `chatId` is an identifier, not a capability.
+- Assistant Conversations are personal resources and may be presented as
+  private to their owner. They remain distinct from namespace-shared resources
+  such as Deployment Tasks and Canvas Layout.
+- Legacy conversations with client-selected ownership are invalidated rather
+  than mapped to a guessed Workspace Actor.
+- Free Chat Turns remain a per-namespace allowance rather than a per-actor
+  entitlement.
