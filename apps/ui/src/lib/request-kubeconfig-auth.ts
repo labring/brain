@@ -544,7 +544,6 @@ type VerifiedKubeconfigNamespaceAuthorization =
 async function resolveKubeconfigNamespaceAuthorization(input: {
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
-  fallbackNamespace?: string;
   normalizeNamespace?: (namespace: string) => string;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<VerifiedKubeconfigNamespaceAuthorization> {
@@ -558,8 +557,7 @@ async function resolveKubeconfigNamespaceAuthorization(input: {
     return { code: "invalid_kubeconfig", ok: false };
   }
 
-  const resolvedNamespace =
-    namespaceFromKubeconfigText(kubeconfig) ?? input.fallbackNamespace?.trim();
+  const resolvedNamespace = namespaceFromKubeconfigText(kubeconfig);
   if (resolvedNamespace == null || resolvedNamespace === "") {
     return { code: "namespace_unresolved", ok: false };
   }
@@ -608,7 +606,6 @@ async function resolveKubeconfigNamespaceAuthorization(input: {
 export async function authorizeKubeconfigNamespace(input: {
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
-  fallbackNamespace?: string;
   normalizeNamespace?: (namespace: string) => string;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<ResolvedKubeconfigNamespaceAuthorization> {
@@ -631,14 +628,12 @@ export async function authorizeKubeconfigNamespace(input: {
 export async function authorizeWorkspaceActor(input: {
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
-  fallbackNamespace?: string;
   normalizeNamespace?: (namespace: string) => string;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<WorkspaceActorAuthorization> {
   const authorization = await resolveKubeconfigNamespaceAuthorization({
     encodedKubeconfig: input.encodedKubeconfig,
     expectedNamespace: input.expectedNamespace,
-    fallbackNamespace: input.fallbackNamespace,
     normalizeNamespace: input.normalizeNamespace,
     verify: input.verify,
   });
