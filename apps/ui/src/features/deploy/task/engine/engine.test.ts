@@ -7,7 +7,6 @@ import { deployTaskEvents, deployTasks } from "../schema";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
-  inspectDeployTaskAction,
   submitDeployTaskInputAction,
 } from "./actions";
 import type { DeployTaskEngineCadence } from "./constants";
@@ -592,25 +591,6 @@ test("clone copies recorded result identities and records lineage", async () => 
     clone.artifactSummary.resultIdentities?.templateInstanceName,
     "demo-abc123"
   );
-});
-
-test("inspection records the namespace member as action actor", async () => {
-  const task = await insertTaskRow(harness.db, {
-    creatingActor: "alice-cr",
-    namespace: "shared-workspace",
-  });
-
-  const result = await inspectDeployTaskAction(testCtx(), {
-    actionActor: "bob-cr",
-    namespace: "shared-workspace",
-    taskId: task.id,
-  });
-
-  assert.equal(result.kind, "inspected");
-  const inspection = (await eventsFor(task.id)).find(
-    (event) => event.kind === "deployment_task.inspected"
-  );
-  assert.equal(inspection?.payload.actionActor, "bob-cr");
 });
 
 test("cancel action: immediate on blocked, cooperative on running, idempotent, conflict on terminal", async () => {

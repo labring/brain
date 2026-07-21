@@ -19,7 +19,6 @@ import {
   runDeployTask,
 } from "@/features/deploy/task/runner";
 import {
-  getAuditedDeployTaskSnapshot,
   getDeployTaskSnapshot,
   toDeployTaskDTO,
 } from "@/features/deploy/task/service";
@@ -167,11 +166,7 @@ export function createDeployTaskTools(options: {
     inputSchema: getDeployTaskStatusToolInputSchema,
     execute: async (input) => {
       logChatToolIntention("getDeployTaskStatus", input.intention);
-      const snapshot = await getAuditedDeployTaskSnapshot({
-        actionActor,
-        namespace,
-        taskId: input.taskId,
-      });
+      const snapshot = await getDeployTaskSnapshot(input.taskId, namespace);
       return snapshot == null
         ? { ok: false, error: "Deploy task not found." }
         : { ok: true, snapshot };

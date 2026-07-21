@@ -7,7 +7,6 @@ import {
   type DeploymentTaskSource,
   type DeployTaskBlockingInput,
   type DeployTaskRow,
-  deployTaskEvents,
   deployTaskMessages,
   deployTasks,
 } from "../schema";
@@ -445,29 +444,6 @@ export async function createDeployTaskAction(
     run: (handle) => input.run(handle, current),
   });
   return { kind: "created", launched, task: current };
-}
-
-export type InspectDeployTaskActionResult =
-  | { kind: "inspected"; task: DeployTaskRow }
-  | { kind: "not-found" };
-
-/** Records a collaborative inspection without mutating task state or binding. */
-export async function inspectDeployTaskAction(
-  ctx: DeployTaskEngineContext,
-  input: { actionActor?: string; namespace: string; taskId: string }
-): Promise<InspectDeployTaskActionResult> {
-  const task = await getDeployTaskRowInNamespace(ctx.db, input);
-  if (task == null) {
-    return { kind: "not-found" };
-  }
-  await ctx.db.insert(deployTaskEvents).values({
-    kind: "deployment_task.inspected",
-    message: "Deployment task inspected.",
-    payload:
-      input.actionActor == null ? {} : { actionActor: input.actionActor },
-    taskId: task.id,
-  });
-  return { kind: "inspected", task };
 }
 
 export type CancelDeployTaskActionResult =

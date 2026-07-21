@@ -186,7 +186,7 @@ test("POST binds GitHub creation to the verified actor's active connection", asy
   }
 });
 
-test("GET records a shared-task inspection by the verified action actor", async () => {
+test("GET is a pure read: no events written, binding untouched (ADR 0037)", async () => {
   const harness = await createDeployTaskTestHarness();
   useHarness(harness);
   authorizedWorkspaceActor = "bob-cr";
@@ -212,11 +212,7 @@ test("GET records a shared-task inspection by the verified action actor", async 
       .select()
       .from(deployTaskEvents)
       .where(eq(deployTaskEvents.taskId, task.id));
-    assert.equal(
-      events.find((event) => event.kind === "deployment_task.inspected")
-        ?.payload.actionActor,
-      "bob-cr"
-    );
+    assert.equal(events.length, 0);
     const [unchanged] = await harness.db
       .select()
       .from(deployTasks)

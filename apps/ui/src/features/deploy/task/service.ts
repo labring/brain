@@ -5,7 +5,6 @@ import { generateId } from "ai";
 import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 
 import { getDeploymentTaskDb } from "./db";
-import { inspectDeployTaskAction } from "./engine/actions";
 import { getDeployTaskEngineContext } from "./engine/server";
 import { publishDeployTaskChange } from "./engine/transitions";
 import { getDeployTaskRowInNamespace } from "./lookup";
@@ -171,31 +170,6 @@ export async function getDeployTaskSnapshot(
   };
 }
 
-interface AuditedDeployTaskInspectionInput {
-  actionActor?: string;
-  namespace: string;
-  taskId: string;
-}
-
-async function auditedDeployTaskInspection<T>(
-  input: AuditedDeployTaskInspectionInput,
-  read: () => Promise<T | null>
-): Promise<T | null> {
-  const inspection = await inspectDeployTaskAction(
-    getDeployTaskEngineContext(),
-    input
-  );
-  return inspection.kind === "not-found" ? null : await read();
-}
-
-export function getAuditedDeployTaskSnapshot(
-  input: AuditedDeployTaskInspectionInput
-): Promise<DeployTaskSnapshotDTO | null> {
-  return auditedDeployTaskInspection(input, () =>
-    getDeployTaskSnapshot(input.taskId, input.namespace)
-  );
-}
-
 async function recentDeployTaskEvents(
   taskId: string
 ): Promise<DeployTaskEventDTO[]> {
@@ -236,14 +210,6 @@ export async function getDeployTaskTimelineSnapshot(
     task: toDeployTaskDTO(task),
     timeline: deploymentTaskTimelineFromTaskRecord(task),
   };
-}
-
-export function getAuditedDeployTaskTimelineSnapshot(
-  input: AuditedDeployTaskInspectionInput
-): Promise<DeploymentTaskTimelineSnapshotDTO | null> {
-  return auditedDeployTaskInspection(input, () =>
-    getDeployTaskTimelineSnapshot(input.taskId, input.namespace)
-  );
 }
 
 export interface ListDeployTasksInput {

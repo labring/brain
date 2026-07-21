@@ -65,9 +65,10 @@ GitHub Deployment Task creation records the creating Workspace Actor and an
 immutable Deployment Credential Binding: the credential owner, selected GitHub
 Connection reference, and binding version. Namespace-authorized members may
 continue to inspect a task, request cancellation, or submit Blocking Input.
-Those actions record the Deployment Action Actor when one is available, but do
-not change the task's Deployment Credential Binding. A task may therefore keep
-using member A's credential after member B supplies a shared task action.
+Cancellation and Blocking Input record the Deployment Action Actor when one is
+available; inspection stays a pure read (ADR 0037) and records nothing. No
+shared task action changes the task's Deployment Credential Binding, so a task
+may keep using member A's credential after member B supplies one.
 
 Redeploy always creates a new task. It may copy the predecessor's source,
 target, result identities, and lineage, but it must resolve a new Deployment
