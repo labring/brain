@@ -1483,10 +1483,10 @@ function readDeployOutputCommand(input?: { allowPartial?: boolean }): string {
 
 async function ensureDeployDevbox(input: {
   existingRuntimeName?: string | null;
-  gatewayCredentials?: CodexGatewayOpenAiCredentials;
   githubToken?: string;
   namespace: string;
   repoUrl: string;
+  resolveGatewayCredentials?: () => Promise<CodexGatewayOpenAiCredentials>;
   taskId: string;
 }): Promise<{ info: DevboxInfo; name: string }> {
   const existingRuntimeName = input.existingRuntimeName?.trim();
@@ -1524,36 +1524,44 @@ async function ensureDeployDevbox(input: {
     return { info, name: existing.name };
   }
 
-  await createDevbox(input.namespace, {
-    archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
-    env: {
-      ...buildCodexGatewayEnv(input.gatewayCredentials),
-      ...(input.githubToken?.trim()
-        ? { GITHUB_TOKEN: input.githubToken.trim() }
-        : {}),
-      SEALAI_DEPLOY_TASK_ID: input.taskId,
-      SEALAI_DEPLOY_WORKSPACE: DEPLOY_WORKSPACE_DIR,
-    },
-    image: getDevboxDefaultImage(),
-    kubeAccess: {
-      enabled: true,
-      roleTemplate: "edit",
-    },
-    labels: [
-      { key: "app.kubernetes.io/managed-by", value: "sealai" },
-      { key: "app.kubernetes.io/component", value: "deploy-runtime" },
-    ],
-    name,
-    pauseAt: getPauseAt(),
-    upstreamID,
-  });
+  const gatewayCredentials = await input.resolveGatewayCredentials?.();
+  try {
+    await createDevbox(input.namespace, {
+      archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
+      env: {
+        ...buildCodexGatewayEnv(gatewayCredentials),
+        ...(input.githubToken?.trim()
+          ? { GITHUB_TOKEN: input.githubToken.trim() }
+          : {}),
+        SEALAI_DEPLOY_TASK_ID: input.taskId,
+        SEALAI_DEPLOY_WORKSPACE: DEPLOY_WORKSPACE_DIR,
+      },
+      image: getDevboxDefaultImage(),
+      kubeAccess: {
+        enabled: true,
+        roleTemplate: "edit",
+      },
+      labels: [
+        { key: "app.kubernetes.io/managed-by", value: "sealai" },
+        { key: "app.kubernetes.io/component", value: "deploy-runtime" },
+      ],
+      name,
+      pauseAt: getPauseAt(),
+      upstreamID,
+    });
 
-  const info = await waitForRunningDevbox({
-    name,
-    namespace: input.namespace,
-    taskId: input.taskId,
-  });
-  return { info, name };
+    const info = await waitForRunningDevbox({
+      name,
+      namespace: input.namespace,
+      taskId: input.taskId,
+    });
+    return { info, name };
+  } catch (error) {
+    throw attachDeploySensitiveValues(
+      error,
+      gatewayCredentials == null ? [] : [gatewayCredentials.apiKey]
+    );
+  }
 }
 
 async function execOrThrow(input: {
@@ -2657,35 +2665,27 @@ async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
   return token;
 }
 
-async function ensureAiDeploymentDevbox(input: {
+export async function ensureAiDeploymentDevbox(input: {
   encodedKubeconfig: string;
   githubToken?: string;
   kubeconfig: string;
   task: DeployTaskRow;
 }): Promise<Awaited<ReturnType<typeof ensureDeployDevbox>>> {
-  const gatewayCredentials =
-    input.task.source.kind === "github"
-      ? await resolveGithubCodexGatewayCredentials({
-          encodedKubeconfig: input.encodedKubeconfig,
-          kubeconfig: input.kubeconfig,
-        })
-      : undefined;
-
-  try {
-    return await ensureDeployDevbox({
-      existingRuntimeName: input.task.runtimeName,
-      gatewayCredentials,
-      githubToken: input.githubToken,
-      namespace: input.task.namespace,
-      repoUrl: aiSourceKey(input.task),
-      taskId: input.task.id,
-    });
-  } catch (error) {
-    throw attachDeploySensitiveValues(
-      error,
-      gatewayCredentials == null ? [] : [gatewayCredentials.apiKey]
-    );
-  }
+  return await ensureDeployDevbox({
+    existingRuntimeName: input.task.runtimeName,
+    githubToken: input.githubToken,
+    namespace: input.task.namespace,
+    repoUrl: aiSourceKey(input.task),
+    resolveGatewayCredentials:
+      input.task.source.kind === "github"
+        ? () =>
+            resolveGithubCodexGatewayCredentials({
+              encodedKubeconfig: input.encodedKubeconfig,
+              kubeconfig: input.kubeconfig,
+            })
+        : undefined,
+    taskId: input.task.id,
+  });
 }
 
 async function runAiDeploymentTask(input: {
