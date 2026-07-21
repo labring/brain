@@ -1,13 +1,7 @@
 import "server-only";
 
 import type { ChatOpenAiConnection } from "@/features/chat/runtime/model";
-
-import { fetchOrCreateAiProxyToken } from "./create-token";
-import { aiProxyOpenAiBaseUrl } from "./endpoints";
-import { clusterHostnameFromKubeconfigText } from "./kubeconfig-hostname";
-
-/** Default POST /tokens `{ name }` for user-billed AI proxy turns. Idempotent server-side when name exists in group. */
-const DEFAULT_AI_PROXY_TOKEN_NAME = "sealos-brain";
+import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 
 export type ResolveChatOpenAiOutcome =
   | { ok: true; connection: ChatOpenAiConnection }
@@ -67,47 +61,34 @@ export async function resolveChatOpenAiConnection(options: {
     return resolveSystemOpenAiConnection();
   }
 
-  const authorization = options.encodedKubeconfig?.trim();
-  if (!authorization) {
-    return {
-      ok: false,
-      status: 400,
-      message: "Missing kubeconfig credential for AI proxy.",
-    };
-  }
-
-  const hostname = clusterHostnameFromKubeconfigText(options.kubeconfigText);
-  if (!hostname) {
-    return {
-      ok: false,
-      status: 400,
-      message:
-        "Could not read Kubernetes API server hostname from kubeconfig for AI proxy.",
-    };
-  }
-
-  const rawName =
-    trimmedEnv(process.env.AI_PROXY_TOKEN_NAME) ?? DEFAULT_AI_PROXY_TOKEN_NAME;
-  const tokenName = rawName.length > 100 ? rawName.slice(0, 100) : rawName;
-
-  const tokenResult = await fetchOrCreateAiProxyToken({
-    clusterHostname: hostname,
-    authorizationEncodedKubeconfig: authorization,
-    name: tokenName,
+  const userCredentials = await resolveUserAiProxyCredentials({
+    encodedKubeconfig: options.encodedKubeconfig,
+    kubeconfigText: options.kubeconfigText,
   });
-
-  if (!tokenResult.ok) {
+  if (!userCredentials.ok) {
+    if (userCredentials.reason === "missing-kubeconfig") {
+      return {
+        ok: false,
+        status: userCredentials.status,
+        message: "Missing kubeconfig credential for AI proxy.",
+      };
+    }
+    if (userCredentials.reason === "invalid-kubeconfig") {
+      return {
+        ok: false,
+        status: userCredentials.status,
+        message:
+          "Could not read Kubernetes API server hostname from kubeconfig for AI proxy.",
+      };
+    }
+    const upstreamBodyText = userCredentials.upstreamBodyText ?? "";
     const detail =
-      tokenResult.bodyText.length > 0 && tokenResult.bodyText.length < 400
-        ? tokenResult.bodyText
+      upstreamBodyText.length > 0 && upstreamBodyText.length < 400
+        ? upstreamBodyText
         : "AI proxy rejected the token request.";
-    const fallbackStatus =
-      tokenResult.status >= 400 && tokenResult.status < 600
-        ? tokenResult.status
-        : 502;
     return {
       ok: false,
-      status: fallbackStatus,
+      status: userCredentials.status,
       message: detail,
     };
   }
@@ -115,8 +96,8 @@ export async function resolveChatOpenAiConnection(options: {
   return {
     ok: true,
     connection: {
-      apiKey: tokenResult.token.key,
-      baseURL: aiProxyOpenAiBaseUrl(hostname),
+      apiKey: userCredentials.credentials.apiKey,
+      baseURL: userCredentials.credentials.baseUrl,
     },
   };
 }
