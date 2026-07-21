@@ -56,10 +56,12 @@ export interface ChatToolset {
 export async function buildChatToolset({
   kubeconfig,
   kubernetesNamespace,
+  workspaceActor,
   assistantContext,
 }: {
   kubeconfig: string;
   kubernetesNamespace: string;
+  workspaceActor: string;
   assistantContext?: AssistantContextPayload;
 }): Promise<ChatToolset> {
   const [skillIndex, { tools: bashTools }] = await Promise.all([
@@ -70,6 +72,7 @@ export async function buildChatToolset({
     assistantContext,
     kubeconfig,
     kubernetesNamespace,
+    workspaceActor,
   });
   const productTools = createChatProductTools({
     kubeconfig,

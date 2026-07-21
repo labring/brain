@@ -1,6 +1,5 @@
 "use client";
 
-import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
@@ -38,7 +37,6 @@ import {
 } from "@/features/projects/creation/project-creation-pane-state";
 import { deriveTemplateProjectDisplayName } from "@/features/projects/creation/template-project-display-name";
 import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
-import { desktopUserIdAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
@@ -135,7 +133,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 } {
   const kubeconfig = options?.kubeconfig?.trim() ?? "";
   const namespace = options?.namespace?.trim() ?? "";
-  const actorUserId = useAtomValue(desktopUserIdAtom).trim();
   const onProjectCreated = options?.onProjectCreated;
   const existingProjects = options?.existingProjects ?? EMPTY_PROJECTS;
   const hasKubeconfig = kubeconfig !== "";
@@ -157,7 +154,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 
   const {
     disconnectGithubAuth,
-    githubConnectionId,
     initiateGithubAuth,
     isAuthorized: githubAuthorized,
     isLoading: githubAuthLoading,
@@ -247,22 +243,18 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>
       runDeploymentTargetPipeline({
         adapters: deploymentAdapters,
-        actorUserId,
         credentialsReady:
           hasKubeconfig &&
           namespace !== "" &&
-          (request.kind !== "github" ||
-            (actorUserId !== "" && (githubConnectionId?.trim() ?? "") !== "")),
+          (request.kind !== "github" || githubAuthorized),
         existingProjects,
-        githubConnectionId,
         namespace,
         request,
       }),
     [
       deploymentAdapters,
-      actorUserId,
       existingProjects,
-      githubConnectionId,
+      githubAuthorized,
       hasKubeconfig,
       namespace,
     ]

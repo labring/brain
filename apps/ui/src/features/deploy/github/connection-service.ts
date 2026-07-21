@@ -294,6 +294,40 @@ export async function getGithubOAuthTokenForConnection(input: {
   return decryptGithubUserToken(row.accessTokenCiphertext);
 }
 
+export async function getGithubOAuthTokenForDeploymentBinding(input: {
+  connectionRef: string;
+  credentialOwner: string;
+  namespace: string;
+  ownerIdentityVersion: number;
+}): Promise<string | null> {
+  const [row] = await getAssistantDb()
+    .select()
+    .from(githubOauthConnections)
+    .where(
+      and(
+        eq(githubOauthConnections.id, input.connectionRef.trim()),
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(input.namespace)
+        ),
+        eq(githubOauthConnections.workspaceActor, input.credentialOwner.trim()),
+        eq(
+          githubOauthConnections.ownerIdentityVersion,
+          input.ownerIdentityVersion
+        )
+      )
+    )
+    .limit(1);
+  if (row == null) {
+    return null;
+  }
+  await getAssistantDb()
+    .update(githubOauthConnections)
+    .set({ lastUsedAt: new Date(), updatedAt: new Date() })
+    .where(eq(githubOauthConnections.id, row.id));
+  return decryptGithubUserToken(row.accessTokenCiphertext);
+}
+
 function asGithubRepo(row: GithubRepoResponse): GithubRepoDTO | null {
   if (
     typeof row.id !== "number" ||

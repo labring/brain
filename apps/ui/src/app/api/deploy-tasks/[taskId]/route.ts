@@ -5,6 +5,7 @@ import {
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
 import {
+  getAuditedDeployTaskSnapshot,
   getDeployTaskSnapshot,
   updateDeployTaskCanvasProjection,
 } from "@/features/deploy/task/service";
@@ -37,10 +38,11 @@ export async function GET(request: Request, context: RouteContext) {
   if (namespaceResolved.namespace == null) {
     return jsonError("Invalid deploy task namespace", 400);
   }
-  const snapshot = await getDeployTaskSnapshot(
+  const snapshot = await getAuditedDeployTaskSnapshot({
+    actionActor: namespaceResolved.workspaceActor,
+    namespace: namespaceResolved.namespace,
     taskId,
-    namespaceResolved.namespace
-  );
+  });
   if (snapshot == null) {
     return jsonError("Deploy task not found", 404);
   }

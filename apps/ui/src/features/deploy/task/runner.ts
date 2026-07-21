@@ -14,7 +14,7 @@ import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deploy
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
 import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
 import { renderDockerDeploymentYaml } from "@/features/deploy/docker-deployment-yaml";
-import { getGithubOAuthTokenForConnection } from "@/features/deploy/github/connection-service";
+import { getGithubOAuthTokenForDeploymentBinding } from "@/features/deploy/github/connection-service";
 import { childResourceName } from "@/features/deploy/project-child-resource-name";
 import { applyRenderedTemplateDeployment } from "@/features/deploy/template-k8s-apply";
 import {
@@ -58,6 +58,7 @@ import {
   sealosTemplateArtifactSummary,
 } from "./artifacts";
 import { buildRuntimeContract } from "./build-runtime-contract";
+import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
 import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
 import { isDeployTaskAbortError } from "./engine/errors";
 import type { DeployTaskHandle } from "./engine/handle";
@@ -2625,28 +2626,10 @@ function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
 }
 
 async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
-  if (task.source.kind !== "github") {
-    return null;
-  }
-  const githubConnectionId = task.githubConnectionId?.trim() ?? "";
-  if (githubConnectionId === "") {
-    throw new Error("GitHub connection ID is required for GitHub deployment.");
-  }
-  const actorUserId = task.actorUserId?.trim() ?? "";
-  if (actorUserId === "") {
-    throw new Error("GitHub deployment actor user ID is required.");
-  }
-  const token = await getGithubOAuthTokenForConnection({
-    connectionId: githubConnectionId,
-    namespace: task.namespace,
-    userId: actorUserId,
-  });
-  if (token == null) {
-    throw new Error(
-      "GitHub OAuth connection is not authorized for this deployment."
-    );
-  }
-  return token;
+  return await resolveGithubTokenForDeploymentTask(
+    task,
+    getGithubOAuthTokenForDeploymentBinding
+  );
 }
 
 export async function ensureAiDeploymentDevbox(input: {

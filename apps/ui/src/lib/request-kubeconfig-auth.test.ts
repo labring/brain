@@ -7,9 +7,14 @@ import {
   authorizeKubeconfigNamespace,
   authorizeRequestNamespace,
   resolveKubernetesApiServer,
+  workspaceActorFromAuthorizedKubeconfig,
 } from "./request-kubeconfig-auth";
 
-function kubeconfig(namespace: string, server = "https://example.test") {
+function kubeconfig(
+  namespace: string,
+  server = "https://example.test",
+  token = "token"
+) {
   return encodeURIComponent(`
 apiVersion: v1
 clusters:
@@ -26,9 +31,26 @@ current-context: current
 users:
   - name: user
     user:
-      token: token
+      token: ${token}
 `);
 }
+
+test("resolves the Workspace Actor from the active authorized kubeconfig user", () => {
+  const token = [
+    Buffer.from("{}").toString("base64url"),
+    Buffer.from(
+      JSON.stringify({ sub: "system:serviceaccount:user-system:alice-cr" })
+    ).toString("base64url"),
+    "signature",
+  ].join(".");
+
+  assert.equal(
+    workspaceActorFromAuthorizedKubeconfig(
+      decodeURIComponent(kubeconfig("shared-workspace", undefined, token))
+    ),
+    "alice-cr"
+  );
+});
 
 async function withJsonServer<T>(
   handler: (request: import("node:http").IncomingMessage) => unknown,

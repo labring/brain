@@ -196,6 +196,14 @@ function workspaceActorFromToken(token: string): string | null {
   }
 }
 
+/** Resolve the active token's actor after its kubeconfig has been authorized. */
+export function workspaceActorFromAuthorizedKubeconfig(
+  kubeconfig: string
+): string | null {
+  const credentials = activeKubeconfigCredentials(kubeconfig);
+  return credentials.ok ? workspaceActorFromToken(credentials.token) : null;
+}
+
 function trimTrailingSlashes(value: string): string {
   let out = value;
   while (out.endsWith("/")) {

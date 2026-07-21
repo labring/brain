@@ -161,6 +161,7 @@ export async function POST(req: Request) {
       assistantContext,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
+      workspaceActor: owner.workspaceActor,
     });
 
     const openAi = await resolveChatOpenAiConnection({

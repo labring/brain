@@ -1,7 +1,10 @@
 import "server-only";
 
 import { decodeKubeconfig } from "@/lib/kubeconfig";
-import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
+import {
+  encodedKubeconfigFromRequest,
+  workspaceActorFromAuthorizedKubeconfig,
+} from "@/lib/request-kubeconfig-auth";
 import { resolveAuthoritativeChatNamespace } from "@/lib/resolve-chat-namespace";
 
 export interface DeployTaskRequestNamespace {
@@ -9,6 +12,7 @@ export interface DeployTaskRequestNamespace {
   namespace?: string;
   ok: boolean;
   status?: number;
+  workspaceActor?: string;
 }
 
 export async function resolveDeployTaskRequestNamespace(input: {
@@ -36,9 +40,11 @@ export async function resolveDeployTaskRequestNamespace(input: {
     };
   }
 
+  const workspaceActor = workspaceActorFromAuthorizedKubeconfig(kubeconfig);
   return {
     namespace: namespaceResolved.namespace,
     ok: true,
+    ...(workspaceActor == null ? {} : { workspaceActor }),
   };
 }
 

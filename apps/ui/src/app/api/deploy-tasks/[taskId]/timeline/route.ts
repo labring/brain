@@ -4,7 +4,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
-import { getDeployTaskTimelineSnapshot } from "@/features/deploy/task/service";
+import { getAuditedDeployTaskTimelineSnapshot } from "@/features/deploy/task/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,10 +33,11 @@ export async function GET(request: Request, context: RouteContext) {
   if (namespaceResolved.namespace == null) {
     return jsonError("Invalid deploy task namespace", 400);
   }
-  const snapshot = await getDeployTaskTimelineSnapshot(
+  const snapshot = await getAuditedDeployTaskTimelineSnapshot({
+    actionActor: namespaceResolved.workspaceActor,
+    namespace: namespaceResolved.namespace,
     taskId,
-    namespaceResolved.namespace
-  );
+  });
   if (snapshot == null) {
     return jsonError("Deploy task not found", 404);
   }

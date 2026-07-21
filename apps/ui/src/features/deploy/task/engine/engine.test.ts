@@ -7,6 +7,7 @@ import { deployTaskEvents, deployTasks } from "../schema";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
+  inspectDeployTaskAction,
   submitDeployTaskInputAction,
 } from "./actions";
 import type { DeployTaskEngineCadence } from "./constants";
@@ -593,6 +594,25 @@ test("clone copies recorded result identities and records lineage", async () => 
   );
 });
 
+test("inspection records the namespace member as action actor", async () => {
+  const task = await insertTaskRow(harness.db, {
+    creatingActor: "alice-cr",
+    namespace: "shared-workspace",
+  });
+
+  const result = await inspectDeployTaskAction(testCtx(), {
+    actionActor: "bob-cr",
+    namespace: "shared-workspace",
+    taskId: task.id,
+  });
+
+  assert.equal(result.kind, "inspected");
+  const inspection = (await eventsFor(task.id)).find(
+    (event) => event.kind === "deployment_task.inspected"
+  );
+  assert.equal(inspection?.payload.actionActor, "bob-cr");
+});
+
 test("cancel action: immediate on blocked, cooperative on running, idempotent, conflict on terminal", async () => {
   const ctx = testCtx();
 
@@ -603,11 +623,18 @@ test("cancel action: immediate on blocked, cooperative on running, idempotent, c
     status: "blocked",
   });
   const blockedCancel = await cancelDeployTaskAction(ctx, {
+    actionActor: "bob-cr",
     namespace: "ns-test",
     taskId: blocked.id,
   });
   assert.equal(blockedCancel.kind, "cancelled");
   assert.equal((await taskById(blocked.id)).status, "cancelled");
+  assert.equal(
+    (await eventsFor(blocked.id)).find(
+      (event) => event.kind === "deployment_task.cancelled"
+    )?.payload.actionActor,
+    "bob-cr"
+  );
 
   const running = await insertTaskRow(harness.db, {
     leaseClaimedAt: new Date(),
@@ -617,6 +644,7 @@ test("cancel action: immediate on blocked, cooperative on running, idempotent, c
     status: "running",
   });
   const first = await cancelDeployTaskAction(ctx, {
+    actionActor: "carol-cr",
     namespace: "ns-test",
     taskId: running.id,
   });
@@ -635,6 +663,7 @@ test("cancel action: immediate on blocked, cooperative on running, idempotent, c
     (event) => event.kind === "deployment_task.cancel_requested"
   );
   assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.payload.actionActor, "carol-cr");
 
   const done = await insertTaskRow(harness.db, {
     completedAt: new Date(),
@@ -681,11 +710,18 @@ test("input submission claims blocked→running in place and hands values in mem
         type: "secret",
       },
     ],
+    creatingActor: "alice-cr",
+    credentialBinding: {
+      connectionRef: "connection-alice",
+      credentialOwner: "alice-cr",
+      version: 1,
+    },
     status: "blocked",
   });
 
   let received: Record<string, unknown> | null = null;
   const result = await submitDeployTaskInputAction(ctx, {
+    actionActor: "bob-cr",
     namespace: "ns-test",
     run: async (handle) => {
       received = { DB_PASSWORD: "s3cret-value" };
@@ -706,11 +742,22 @@ test("input submission claims blocked→running in place and hands values in mem
   const stored = await taskById(blocked.id);
   assert.equal(stored.status, "completed");
   assert.deepEqual(stored.blockingInputs, []);
+  assert.deepEqual(stored.credentialBinding, {
+    connectionRef: "connection-alice",
+    credentialOwner: "alice-cr",
+    version: 1,
+  });
 
   // Row-level secrets contract: the submitted value appears nowhere.
   const rowJson = JSON.stringify(stored);
   assert.ok(!rowJson.includes("s3cret-value"));
-  const eventsJson = JSON.stringify(await eventsFor(blocked.id));
+  const events = await eventsFor(blocked.id);
+  assert.equal(
+    events.find((event) => event.kind === "deploy_task.input_submitted")
+      ?.payload.actionActor,
+    "bob-cr"
+  );
+  const eventsJson = JSON.stringify(events);
   assert.ok(!eventsJson.includes("s3cret-value"));
 
   const conflict = await submitDeployTaskInputAction(ctx, {
