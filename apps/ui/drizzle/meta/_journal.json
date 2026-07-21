@@ -43,6 +43,13 @@
       "when": 1783682811633,
       "tag": "0005_faithful_hedge_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784621553615,
+      "tag": "0006_old_sunfire",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -159,6 +160,11 @@ export const githubOauthConnections = ns.table(
   {
     id: text("id").primaryKey(),
     namespace: text("namespace").notNull(),
+    workspaceActor: text("workspace_actor").notNull().default(""),
+    ownerIdentityVersion: integer("owner_identity_version")
+      .notNull()
+      .default(0),
+    /** Compatibility-only Desktop identity. Never use this field to authorize an owner. */
     userId: text("user_id").notNull(),
     githubLogin: text("github_login").notNull(),
     accessTokenCiphertext: text("access_token_ciphertext").notNull(),
@@ -182,6 +188,9 @@ export const githubOauthConnections = ns.table(
       table.namespace,
       table.userId
     ),
+    uniqueIndex("github_oauth_connections_current_owner_unique_idx")
+      .on(table.namespace, table.workspaceActor)
+      .where(sql`${table.ownerIdentityVersion} = 1`),
   ]
 );
 

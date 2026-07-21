@@ -16,6 +16,7 @@ import {
   type GithubOAuthTokenResponse,
   githubUserTokenHeaders,
 } from "./app-auth";
+import type { GithubConnectionOwnerIdentity } from "./owner-identity";
 import {
   decryptGithubUserToken,
   encryptGithubUserToken,
@@ -198,6 +199,29 @@ export async function getGithubConnectionForNamespace(
       )
     )
     .orderBy(desc(githubOauthConnections.updatedAt))
+    .limit(1);
+  return row == null ? null : toOauthConnectionDTO(row);
+}
+
+export async function getGithubConnectionStatusForWorkspaceActor(
+  input: GithubConnectionOwnerIdentity
+): Promise<GithubConnectionDTO | null> {
+  const [row] = await getAssistantDb()
+    .select()
+    .from(githubOauthConnections)
+    .where(
+      and(
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(input.namespace)
+        ),
+        eq(githubOauthConnections.workspaceActor, input.workspaceActor.trim()),
+        eq(
+          githubOauthConnections.ownerIdentityVersion,
+          input.ownerIdentityVersion
+        )
+      )
+    )
     .limit(1);
   return row == null ? null : toOauthConnectionDTO(row);
 }

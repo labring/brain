@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
+import { decodeJwt } from "jose";
 import { Agent } from "undici";
 import { parse } from "yaml";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -55,7 +56,25 @@ export type KubeconfigNamespaceVerification =
 export type VerifyKubeconfigNamespace = (input: {
   kubeconfig: string;
   namespace: string;
+  token: string;
 }) => Promise<KubeconfigNamespaceVerification>;
+
+export type WorkspaceActorAuthorization =
+  | {
+      namespace: string;
+      ok: true;
+      workspaceActor: string;
+    }
+  | {
+      code:
+        | "authentication_required"
+        | "namespace_authorization_failed"
+        | "namespace_forbidden"
+        | "workspace_actor_required";
+      message: string;
+      ok: false;
+      status: number;
+    };
 
 export type ResolvedKubeconfigNamespaceAuthorization =
   | {
@@ -156,6 +175,25 @@ function activeKubeconfigCredentials(kubeconfig: string):
     serverName: cluster?.["tls-server-name"]?.trim() || undefined,
     token,
   };
+}
+
+function workspaceActorFromToken(token: string): string | null {
+  try {
+    const subject = decodeJwt(token).sub;
+    if (typeof subject !== "string") {
+      return null;
+    }
+    const prefix = "system:serviceaccount:user-system:";
+    if (!subject.startsWith(prefix)) {
+      return null;
+    }
+    const workspaceActor = subject.slice(prefix.length);
+    return workspaceActor !== "" && !workspaceActor.includes(":")
+      ? workspaceActor
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function trimTrailingSlashes(value: string): string {
@@ -343,15 +381,14 @@ function verificationDispatcher(input: {
   });
 }
 
-export async function verifyKubeconfigNamespaceAccess(input: {
-  kubeconfig: string;
+async function verifyKubeconfigNamespaceAccessWithCredentials(input: {
+  credentials: Extract<
+    ReturnType<typeof activeKubeconfigCredentials>,
+    { ok: true }
+  >;
   namespace: string;
 }): Promise<KubeconfigNamespaceVerification> {
-  const credentials = activeKubeconfigCredentials(input.kubeconfig);
-  if (!credentials.ok) {
-    return { message: credentials.message, ok: false, status: 400 };
-  }
-  const apiServer = kubernetesApiServer(credentials);
+  const apiServer = kubernetesApiServer(input.credentials);
   if (!apiServer.ok) {
     return { message: apiServer.message, ok: false, status: 500 };
   }
@@ -380,7 +417,7 @@ export async function verifyKubeconfigNamespaceAccess(input: {
       dispatcher,
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${credentials.token}`,
+        Authorization: `Bearer ${input.credentials.token}`,
         "Content-Type": "application/json",
       },
       method: "POST",
@@ -444,6 +481,32 @@ export async function verifyKubeconfigNamespaceAccess(input: {
   }
 }
 
+export function verifyKubeconfigNamespaceAccess(input: {
+  kubeconfig: string;
+  namespace: string;
+  token: string;
+}): Promise<KubeconfigNamespaceVerification> {
+  const credentials = activeKubeconfigCredentials(input.kubeconfig);
+  if (!credentials.ok) {
+    return Promise.resolve({
+      message: credentials.message,
+      ok: false,
+      status: 400,
+    });
+  }
+  if (credentials.token !== input.token) {
+    return Promise.resolve({
+      message: "Kubeconfig token is not authenticated.",
+      ok: false,
+      status: 401,
+    });
+  }
+  return verifyKubeconfigNamespaceAccessWithCredentials({
+    credentials,
+    namespace: input.namespace,
+  });
+}
+
 function bearerToken(header: string | null): string {
   const value = header?.trim() ?? "";
   if (value === "") {
@@ -464,13 +527,19 @@ export function encodedKubeconfigFromRequest(request: Request): string {
  * Resolves and authorizes the active namespace carried by a request kubeconfig.
  * Callers may adapt the typed failures to their existing HTTP error contracts.
  */
-export async function authorizeKubeconfigNamespace(input: {
+type VerifiedKubeconfigNamespaceAuthorization =
+  | Exclude<ResolvedKubeconfigNamespaceAuthorization, { ok: true }>
+  | (Extract<ResolvedKubeconfigNamespaceAuthorization, { ok: true }> & {
+      token: string;
+    });
+
+async function resolveKubeconfigNamespaceAuthorization(input: {
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
   fallbackNamespace?: string;
   normalizeNamespace?: (namespace: string) => string;
   verify?: VerifyKubeconfigNamespace;
-}): Promise<ResolvedKubeconfigNamespaceAuthorization> {
+}): Promise<VerifiedKubeconfigNamespaceAuthorization> {
   const encodedKubeconfig = input.encodedKubeconfig ?? "";
   if (encodedKubeconfig === "") {
     return { code: "authentication_required", ok: false };
@@ -497,10 +566,19 @@ export async function authorizeKubeconfigNamespace(input: {
     return { code: "namespace_mismatch", ok: false };
   }
 
-  const verification = await (input.verify ?? verifyKubeconfigNamespaceAccess)({
-    kubeconfig,
-    namespace,
-  });
+  const credentials = activeKubeconfigCredentials(kubeconfig);
+  const token = credentials.ok ? credentials.token : "";
+  let verification: KubeconfigNamespaceVerification;
+  if (input.verify) {
+    verification = await input.verify({ kubeconfig, namespace, token });
+  } else if (credentials.ok) {
+    verification = await verifyKubeconfigNamespaceAccessWithCredentials({
+      credentials,
+      namespace,
+    });
+  } else {
+    verification = { message: credentials.message, ok: false, status: 400 };
+  }
   if (!verification.ok) {
     return {
       code: "verification_failed",
@@ -515,6 +593,111 @@ export async function authorizeKubeconfigNamespace(input: {
     kubeconfig,
     namespace,
     ok: true,
+    token,
+  };
+}
+
+export async function authorizeKubeconfigNamespace(input: {
+  encodedKubeconfig: string | undefined;
+  expectedNamespace?: string;
+  fallbackNamespace?: string;
+  normalizeNamespace?: (namespace: string) => string;
+  verify?: VerifyKubeconfigNamespace;
+}): Promise<ResolvedKubeconfigNamespaceAuthorization> {
+  const authorization = await resolveKubeconfigNamespaceAuthorization(input);
+  if (!authorization.ok) {
+    return authorization;
+  }
+  return {
+    encodedKubeconfig: authorization.encodedKubeconfig,
+    kubeconfig: authorization.kubeconfig,
+    namespace: authorization.namespace,
+    ok: true,
+  };
+}
+
+/**
+ * Authorizes a namespace and then resolves the individual represented by the
+ * exact bearer token supplied to that authorization attempt.
+ */
+export async function authorizeWorkspaceActor(input: {
+  encodedKubeconfig: string | undefined;
+  expectedNamespace?: string;
+  fallbackNamespace?: string;
+  normalizeNamespace?: (namespace: string) => string;
+  verify?: VerifyKubeconfigNamespace;
+}): Promise<WorkspaceActorAuthorization> {
+  const authorization = await resolveKubeconfigNamespaceAuthorization({
+    encodedKubeconfig: input.encodedKubeconfig,
+    expectedNamespace: input.expectedNamespace,
+    fallbackNamespace: input.fallbackNamespace,
+    normalizeNamespace: input.normalizeNamespace,
+    verify: input.verify,
+  });
+
+  if (!authorization.ok) {
+    if (
+      authorization.code === "authentication_required" ||
+      authorization.code === "invalid_kubeconfig" ||
+      (authorization.code === "verification_failed" &&
+        authorization.status === 401)
+    ) {
+      return {
+        code: "authentication_required",
+        message: "Authentication is required.",
+        ok: false,
+        status: 401,
+      };
+    }
+    if (
+      authorization.code === "namespace_mismatch" ||
+      (authorization.code === "verification_failed" &&
+        authorization.status === 403)
+    ) {
+      return {
+        code: "namespace_forbidden",
+        message: "Namespace is not accessible.",
+        ok: false,
+        status: 403,
+      };
+    }
+    if (authorization.code === "verification_failed") {
+      return {
+        code: "namespace_authorization_failed",
+        message: authorization.message,
+        ok: false,
+        status: authorization.status,
+      };
+    }
+    return {
+      code: "authentication_required",
+      message: "Authentication is required.",
+      ok: false,
+      status: 401,
+    };
+  }
+
+  if (authorization.token === "") {
+    return {
+      code: "authentication_required",
+      message: "Authentication is required.",
+      ok: false,
+      status: 401,
+    };
+  }
+  const workspaceActor = workspaceActorFromToken(authorization.token);
+  if (workspaceActor == null) {
+    return {
+      code: "workspace_actor_required",
+      message: "A verified Workspace Actor is required.",
+      ok: false,
+      status: 403,
+    };
+  }
+  return {
+    namespace: authorization.namespace,
+    ok: true,
+    workspaceActor,
   };
 }
 
