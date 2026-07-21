@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import {
   authorizeEncodedKubeconfigNamespace,
+  authorizeKubeconfigNamespace,
   authorizeRequestNamespace,
   resolveKubernetesApiServer,
 } from "./request-kubeconfig-auth";
@@ -82,6 +83,99 @@ function withEnv<T>(
   });
 }
 
+test("authorizes the namespace resolved from the active kubeconfig context", async () => {
+  const encodedKubeconfig = kubeconfig("ns-sdk");
+
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig,
+      verify: async () => ({ ok: true }),
+    }),
+    {
+      encodedKubeconfig,
+      kubeconfig: decodeURIComponent(encodedKubeconfig),
+      namespace: "ns-sdk",
+      ok: true,
+    }
+  );
+});
+
+test("rejects a namespace denied by Kubernetes", async () => {
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: kubeconfig("ns-sdk"),
+      verify: async () => ({
+        message: "Kubeconfig is not authorized for this namespace.",
+        ok: false,
+        status: 403,
+      }),
+    }),
+    {
+      code: "verification_failed",
+      message: "Kubeconfig is not authorized for this namespace.",
+      ok: false,
+      status: 403,
+    }
+  );
+});
+
+test("rejects a credential rejected by Kubernetes", async () => {
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: kubeconfig("ns-sdk"),
+      verify: async () => ({
+        message: "Kubeconfig token is not authenticated.",
+        ok: false,
+        status: 401,
+      }),
+    }),
+    {
+      code: "verification_failed",
+      message: "Kubeconfig token is not authenticated.",
+      ok: false,
+      status: 401,
+    }
+  );
+});
+
+test("rejects a malformed encoded kubeconfig before access review", async () => {
+  let verified = false;
+
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: "%E0%A4%A",
+      verify: () => {
+        verified = true;
+        return Promise.resolve({ ok: true });
+      },
+    }),
+    {
+      code: "invalid_kubeconfig",
+      ok: false,
+    }
+  );
+  assert.equal(verified, false);
+});
+
+test("rejects malformed kubeconfig YAML before access review", async () => {
+  let verified = false;
+
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: encodeURIComponent("contexts: ["),
+      verify: () => {
+        verified = true;
+        return Promise.resolve({ ok: true });
+      },
+    }),
+    {
+      code: "namespace_unresolved",
+      ok: false,
+    }
+  );
+  assert.equal(verified, false);
+});
+
 test("authorizes request namespace from bearer kubeconfig", async () => {
   const request = new Request("https://brain.test/api/projects", {
     headers: {
@@ -111,6 +205,22 @@ test("rejects missing request bearer kubeconfig", async () => {
         verify: async () => ({ ok: true }),
       }
     ),
+    {
+      message: "Authentication is required.",
+      ok: false,
+      status: 401,
+    }
+  );
+});
+
+test("preserves authentication rejection for whitespace generic credentials", async () => {
+  assert.deepEqual(
+    await authorizeEncodedKubeconfigNamespace({
+      encodedKubeconfig: "   ",
+      namespace: "ns-sdk",
+      subject: "Project",
+      verify: async () => ({ ok: true }),
+    }),
     {
       message: "Authentication is required.",
       ok: false,

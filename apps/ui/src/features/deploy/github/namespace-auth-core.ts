@@ -1,10 +1,8 @@
 import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
-import { decodeKubeconfig } from "@/lib/kubeconfig";
-import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 import {
+  authorizeKubeconfigNamespace,
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
-  verifyKubeconfigNamespaceAccess,
 } from "@/lib/request-kubeconfig-auth";
 
 export type GithubConnectionAuthorization =
@@ -50,28 +48,38 @@ export async function authorizeGithubConnectionIdentity(
     };
   }
 
-  const kubeconfig = decodeKubeconfig(credentials.serverEncodedKubeconfig);
-  if (kubeconfig == null) {
-    return {
-      error: "Authentication is required.",
-      ok: false,
-      status: 401,
-    };
-  }
-
-  const namespace =
-    namespaceFromKubeconfigText(kubeconfig) ??
-    (credentials.serverNamespace ?? "").trim();
-  if (namespace === "") {
-    return {
-      error: "Could not resolve namespace from authenticated workspace.",
-      ok: false,
-      status: 400,
-    };
-  }
-
-  const authoritativeNamespace = normalizeAssistantNamespace(namespace);
-  if (normalizeAssistantNamespace(requested) !== authoritativeNamespace) {
+  const authorization = await authorizeKubeconfigNamespace({
+    encodedKubeconfig: credentials.serverEncodedKubeconfig,
+    expectedNamespace: requested,
+    fallbackNamespace: credentials.serverNamespace,
+    normalizeNamespace: normalizeAssistantNamespace,
+    verify: credentials.verify,
+  });
+  if (!authorization.ok) {
+    if (authorization.code === "verification_failed") {
+      return {
+        error: authorization.message,
+        ok: false,
+        status: authorization.status,
+      };
+    }
+    if (
+      authorization.code === "authentication_required" ||
+      authorization.code === "invalid_kubeconfig"
+    ) {
+      return {
+        error: "Authentication is required.",
+        ok: false,
+        status: 401,
+      };
+    }
+    if (authorization.code === "namespace_unresolved") {
+      return {
+        error: "Could not resolve namespace from authenticated workspace.",
+        ok: false,
+        status: 400,
+      };
+    }
     return {
       error: "namespace does not match authenticated workspace.",
       ok: false,
@@ -79,22 +87,8 @@ export async function authorizeGithubConnectionIdentity(
     };
   }
 
-  const verification = await (
-    credentials.verify ?? verifyKubeconfigNamespaceAccess
-  )({
-    kubeconfig,
-    namespace: authoritativeNamespace,
-  });
-  if (!verification.ok) {
-    return {
-      error: verification.message,
-      ok: false,
-      status: verification.status,
-    };
-  }
-
   return {
-    namespace: authoritativeNamespace,
+    namespace: authorization.namespace,
     ok: true,
     serverEncodedKubeconfig: credentials.serverEncodedKubeconfig,
     userId,

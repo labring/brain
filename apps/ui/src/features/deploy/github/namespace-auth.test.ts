@@ -124,6 +124,20 @@ test("rejects unauthenticated GitHub connection namespace access", async () => {
   );
 });
 
+test("preserves unresolved namespace rejection for whitespace GitHub credentials", async () => {
+  assert.deepEqual(
+    await authorizeGithubConnectionIdentity("ns-sdk", "admin", {
+      serverEncodedKubeconfig: "   ",
+      verify: ALLOW_VERIFY,
+    }),
+    {
+      error: "Could not resolve namespace from authenticated workspace.",
+      ok: false,
+      status: 400,
+    }
+  );
+});
+
 test("rejects cross-namespace GitHub connection access", async () => {
   assert.deepEqual(
     await authorizeGithubConnectionIdentity("ns-b", "admin", {
