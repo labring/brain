@@ -28,6 +28,10 @@ export type AssistantPgDatabase = PgDatabase<
   typeof assistantSchema
 >;
 
+export type AssistantPgTransaction = Parameters<
+  Parameters<AssistantPgDatabase["transaction"]>[0]
+>[0];
+
 let assistantDbInstance: AssistantPgDatabase | undefined;
 
 /**

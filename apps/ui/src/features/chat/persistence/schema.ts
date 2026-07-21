@@ -129,8 +129,13 @@ export const githubAppInstallSessions = ns.table(
   {
     state: text("state").primaryKey(),
     namespace: text("namespace").notNull(),
+    workspaceActor: text("workspace_actor").notNull().default(""),
+    ownerIdentityVersion: integer("owner_identity_version")
+      .notNull()
+      .default(0),
     returnPath: text("return_path"),
-    userId: text("user_id").notNull(),
+    /** Compatibility-only Desktop identity. Never use this field to authorize an owner. */
+    userId: text("user_id").notNull().default(""),
     expiresAt: timestamp("expires_at", {
       mode: "date",
       withTimezone: true,
@@ -174,10 +179,6 @@ export const githubOauthConnections = ns.table(
   (table) => [
     index("github_oauth_connections_updated_at_idx").on(table.updatedAt),
     index("github_oauth_connections_github_login_idx").on(table.githubLogin),
-    uniqueIndex("github_oauth_connections_namespace_user_unique_idx").on(
-      table.namespace,
-      table.userId
-    ),
     uniqueIndex("github_oauth_connections_current_owner_unique_idx")
       .on(table.namespace, table.workspaceActor)
       .where(sql`${table.ownerIdentityVersion} = 1`),

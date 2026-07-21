@@ -1,35 +1,9 @@
-import { NextResponse } from "next/server";
-
-import { listGithubReposForNamespace } from "@/features/deploy/github/connection-service";
-import { resolveGithubConnectionIdentity } from "@/features/deploy/github/namespace-auth";
+import { createGithubRepositoryListHandler } from "@/features/deploy/github/connection-http-handlers";
+import { listGithubReposForWorkspaceActor } from "@/features/deploy/github/connection-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
-}
-
-export async function GET(request: Request) {
-  const searchParams = new URL(request.url).searchParams;
-  const identity = await resolveGithubConnectionIdentity(
-    request,
-    searchParams.get("namespace"),
-    searchParams.get("userId")
-  );
-  if (!identity.ok) {
-    return jsonError(identity.error, identity.status);
-  }
-  try {
-    const repos = await listGithubReposForNamespace(
-      identity.namespace,
-      identity.userId
-    );
-    return NextResponse.json({ repos });
-  } catch (error) {
-    return jsonError(
-      error instanceof Error ? error.message : "Could not load GitHub repos.",
-      401
-    );
-  }
-}
+export const GET = createGithubRepositoryListHandler({
+  listRepositories: listGithubReposForWorkspaceActor,
+});

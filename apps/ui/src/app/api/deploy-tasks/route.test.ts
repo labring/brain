@@ -149,24 +149,24 @@ test("POST binds GitHub creation to the verified actor's active connection", asy
     const body = (await response.json()) as {
       task: {
         creatingActor: string;
-        credentialBinding: unknown;
+        credentialBinding?: unknown;
         id: string;
       };
     };
 
     assert.equal(response.status, 201);
     assert.equal(body.task.creatingActor, "alice-cr");
-    assert.deepEqual(body.task.credentialBinding, {
-      connectionRef: "connection-alice",
-      credentialOwner: "alice-cr",
-      version: 1,
-    });
+    assert.equal("credentialBinding" in body.task, false);
     const [stored] = await harness.db
       .select()
       .from(deployTasks)
       .where(eq(deployTasks.id, body.task.id));
     assert.equal(stored?.creatingActor, "alice-cr");
-    assert.deepEqual(stored?.credentialBinding, body.task.credentialBinding);
+    assert.deepEqual(stored?.credentialBinding, {
+      connectionRef: "connection-alice",
+      credentialOwner: "alice-cr",
+      version: 1,
+    });
     const events = await harness.db
       .select()
       .from(deployTaskEvents)
@@ -359,7 +359,7 @@ test("POST redeploy binds the new task to the initiator and leaves its predecess
     const body = (await response.json()) as {
       task: {
         creatingActor: string;
-        credentialBinding: unknown;
+        credentialBinding?: unknown;
         id: string;
         retriedFromTaskId: string;
       };
@@ -368,11 +368,7 @@ test("POST redeploy binds the new task to the initiator and leaves its predecess
 
     assert.equal(response.status, 201);
     assert.equal(body.task.creatingActor, "bob-cr");
-    assert.deepEqual(body.task.credentialBinding, {
-      connectionRef: "connection-bob",
-      credentialOwner: "bob-cr",
-      version: 1,
-    });
+    assert.equal("credentialBinding" in body.task, false);
     assert.equal(body.task.retriedFromTaskId, predecessor.id);
     const [clone] = await harness.db
       .select()
@@ -382,6 +378,11 @@ test("POST redeploy binds the new task to the initiator and leaves its predecess
     assert.deepEqual(clone?.target, predecessor.target);
     assert.deepEqual(clone?.artifactSummary.resultIdentities, {
       templateInstanceName: "preserved-result",
+    });
+    assert.deepEqual(clone?.credentialBinding, {
+      connectionRef: "connection-bob",
+      credentialOwner: "bob-cr",
+      version: 1,
     });
     const cloneEvents = await harness.db
       .select()

@@ -214,7 +214,6 @@ export interface DeployTaskDTO {
   createdAt: string;
   createdFrom: DeploymentTaskCreatedFrom;
   creatingActor?: string | null;
-  credentialBinding?: DeploymentCredentialBinding | null;
   error: string | null;
   failureDetails: DeployTaskFailureDetails | null;
   gatewaySessionId: string | null;

@@ -1,9 +1,12 @@
 import "server-only";
 
 import { generateId } from "ai";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq, type SQL, sql } from "drizzle-orm";
 
-import { getAssistantDb } from "@/features/chat/persistence/db";
+import {
+  type AssistantPgTransaction,
+  getAssistantDb,
+} from "@/features/chat/persistence/db";
 import {
   type GithubConnectionRow,
   type GithubOauthConnectionRow,
@@ -16,7 +19,10 @@ import {
   type GithubOAuthTokenResponse,
   githubUserTokenHeaders,
 } from "./app-auth";
-import type { GithubConnectionOwnerIdentity } from "./owner-identity";
+import {
+  CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+  type GithubConnectionOwnerIdentity,
+} from "./owner-identity";
 import {
   decryptGithubUserToken,
   encryptGithubUserToken,
@@ -42,6 +48,12 @@ export interface GithubConnectionDTO {
   namespace: string;
   repositorySelection: string;
   updatedAt: string;
+}
+
+interface GithubOauthConnectionInput {
+  githubLogin: string;
+  owner: GithubConnectionOwnerIdentity;
+  token: GithubOAuthTokenResponse;
 }
 
 interface GithubRepoResponse {
@@ -84,16 +96,16 @@ function toAppConnectionDTO(row: GithubConnectionRow): GithubConnectionDTO {
 export async function upsertGithubAppConnection(input: {
   accountLogin: string;
   accountType?: string;
-  actorUserId: string;
   installationId: string;
   namespace: string;
   repositorySelection?: string;
+  workspaceActor: string;
 }): Promise<GithubConnectionDTO> {
   const namespace = normalizeAssistantNamespace(input.namespace);
-  const actorUserId = input.actorUserId.trim();
+  const workspaceActor = input.workspaceActor.trim();
   const installationId = input.installationId.trim();
-  if (actorUserId === "") {
-    throw new Error("GitHub App connection actor user ID is required.");
+  if (workspaceActor === "") {
+    throw new Error("GitHub App connection Workspace Actor is required.");
   }
   if (installationId === "") {
     throw new Error("GitHub App installation ID is required.");
@@ -108,7 +120,7 @@ export async function upsertGithubAppConnection(input: {
       accountType: input.accountType?.trim() || "User",
       id: generateId(),
       installationId,
-      installedByUserId: actorUserId,
+      installedByUserId: workspaceActor,
       namespace,
       repositorySelection: input.repositorySelection?.trim() || "selected",
       revokedAt: null,
@@ -121,7 +133,7 @@ export async function upsertGithubAppConnection(input: {
           input.accountLogin.trim() || `installation-${installationId}`,
         accountType: input.accountType?.trim() || "User",
         installationId,
-        installedByUserId: actorUserId,
+        installedByUserId: workspaceActor,
         repositorySelection: input.repositorySelection?.trim() || "selected",
         revokedAt: null,
         type: "github_app",
@@ -136,34 +148,37 @@ export async function upsertGithubAppConnection(input: {
   return toAppConnectionDTO(row);
 }
 
-export async function upsertGithubOauthConnection(input: {
-  githubLogin: string;
-  namespace: string;
-  token: GithubOAuthTokenResponse;
-  userId: string;
-}): Promise<GithubConnectionDTO> {
-  const namespace = normalizeAssistantNamespace(input.namespace);
-  const userId = input.userId.trim();
+export async function upsertGithubOauthConnectionInTransaction(
+  transaction: AssistantPgTransaction,
+  input: GithubOauthConnectionInput
+): Promise<GithubConnectionDTO> {
+  const namespace = normalizeAssistantNamespace(input.owner.namespace);
+  const workspaceActor = input.owner.workspaceActor.trim();
   const githubLogin = input.githubLogin.trim();
-  if (userId === "") {
-    throw new Error("GitHub OAuth connection user ID is required.");
+  if (
+    workspaceActor === "" ||
+    input.owner.ownerIdentityVersion !== CURRENT_GITHUB_OWNER_IDENTITY_VERSION
+  ) {
+    throw new Error("Current GitHub connection owner identity is required.");
   }
   if (githubLogin === "") {
     throw new Error("GitHub OAuth connection login is required.");
   }
 
   const now = new Date();
-  const [row] = await getAssistantDb()
+  const [row] = await transaction
     .insert(githubOauthConnections)
     .values({
       accessTokenCiphertext: encryptGithubUserToken(input.token.accessToken),
       githubLogin,
       id: generateId(),
       namespace,
+      ownerIdentityVersion: input.owner.ownerIdentityVersion,
       scope: input.token.scope,
       tokenType: input.token.tokenType,
       updatedAt: now,
-      userId,
+      userId: "",
+      workspaceActor,
     })
     .onConflictDoUpdate({
       set: {
@@ -173,7 +188,11 @@ export async function upsertGithubOauthConnection(input: {
         tokenType: input.token.tokenType,
         updatedAt: now,
       },
-      target: [githubOauthConnections.namespace, githubOauthConnections.userId],
+      target: [
+        githubOauthConnections.namespace,
+        githubOauthConnections.workspaceActor,
+      ],
+      targetWhere: sql`${githubOauthConnections.ownerIdentityVersion} = 1`,
     })
     .returning();
   if (row == null) {
@@ -182,148 +201,76 @@ export async function upsertGithubOauthConnection(input: {
   return toOauthConnectionDTO(row);
 }
 
-export async function getGithubConnectionForNamespace(
-  namespace: string,
-  userId: string
-): Promise<GithubConnectionDTO | null> {
-  const [row] = await getAssistantDb()
-    .select()
-    .from(githubOauthConnections)
-    .where(
-      and(
-        eq(
-          githubOauthConnections.namespace,
-          normalizeAssistantNamespace(namespace)
-        ),
-        eq(githubOauthConnections.userId, userId.trim())
-      )
-    )
-    .orderBy(desc(githubOauthConnections.updatedAt))
-    .limit(1);
-  return row == null ? null : toOauthConnectionDTO(row);
-}
-
 export async function getGithubConnectionStatusForWorkspaceActor(
   input: GithubConnectionOwnerIdentity
 ): Promise<GithubConnectionDTO | null> {
   const [row] = await getAssistantDb()
     .select()
     .from(githubOauthConnections)
-    .where(
-      and(
-        eq(
-          githubOauthConnections.namespace,
-          normalizeAssistantNamespace(input.namespace)
-        ),
-        eq(githubOauthConnections.workspaceActor, input.workspaceActor.trim()),
-        eq(
-          githubOauthConnections.ownerIdentityVersion,
-          input.ownerIdentityVersion
-        )
-      )
-    )
+    .where(githubOauthOwnerWhere(input))
     .limit(1);
   return row == null ? null : toOauthConnectionDTO(row);
 }
 
-export async function getGithubConnectionForNamespaceById(input: {
-  connectionId: string;
-  namespace: string;
-  userId: string;
-}): Promise<GithubConnectionDTO | null> {
-  const [row] = await getAssistantDb()
-    .select()
-    .from(githubOauthConnections)
-    .where(
-      and(
-        eq(githubOauthConnections.id, input.connectionId.trim()),
-        eq(
-          githubOauthConnections.namespace,
-          normalizeAssistantNamespace(input.namespace)
-        ),
-        eq(githubOauthConnections.userId, input.userId.trim())
-      )
-    )
-    .limit(1);
-  return row == null ? null : toOauthConnectionDTO(row);
-}
-
-export async function revokeGithubConnectionForNamespace(
-  namespace: string,
-  userId: string
+export async function revokeGithubConnectionForWorkspaceActor(
+  input: GithubConnectionOwnerIdentity
 ): Promise<void> {
   await getAssistantDb()
     .delete(githubOauthConnections)
-    .where(
-      and(
-        eq(
-          githubOauthConnections.namespace,
-          normalizeAssistantNamespace(namespace)
-        ),
-        eq(githubOauthConnections.userId, userId.trim())
-      )
-    );
+    .where(githubOauthOwnerWhere(input));
 }
 
-export async function getGithubOAuthTokenForConnection(input: {
-  connectionId: string;
-  namespace: string;
-  userId: string;
-}): Promise<string | null> {
-  const [row] = await getAssistantDb()
-    .select()
-    .from(githubOauthConnections)
-    .where(
-      and(
-        eq(githubOauthConnections.id, input.connectionId.trim()),
-        eq(
-          githubOauthConnections.namespace,
-          normalizeAssistantNamespace(input.namespace)
-        ),
-        eq(githubOauthConnections.userId, input.userId.trim())
-      )
-    )
-    .limit(1);
-  if (row == null) {
-    return null;
-  }
-  await getAssistantDb()
-    .update(githubOauthConnections)
-    .set({ lastUsedAt: new Date(), updatedAt: new Date() })
-    .where(eq(githubOauthConnections.id, row.id));
-  return decryptGithubUserToken(row.accessTokenCiphertext);
+export function getGithubOAuthTokenForWorkspaceActor(
+  input: GithubConnectionOwnerIdentity
+): Promise<string | null> {
+  return materializeGithubOAuthToken(githubOauthOwnerWhere(input));
 }
 
-export async function getGithubOAuthTokenForDeploymentBinding(input: {
+export function getGithubOAuthTokenForDeploymentBinding(input: {
   connectionRef: string;
   credentialOwner: string;
   namespace: string;
   ownerIdentityVersion: number;
 }): Promise<string | null> {
+  const owner = {
+    namespace: input.namespace,
+    ownerIdentityVersion: input.ownerIdentityVersion,
+    workspaceActor: input.credentialOwner,
+  } satisfies GithubConnectionOwnerIdentity;
+  return materializeGithubOAuthToken(
+    and(
+      eq(githubOauthConnections.id, input.connectionRef.trim()),
+      githubOauthOwnerWhere(owner)
+    )
+  );
+}
+
+function githubOauthOwnerWhere(owner: GithubConnectionOwnerIdentity) {
+  return and(
+    eq(
+      githubOauthConnections.namespace,
+      normalizeAssistantNamespace(owner.namespace)
+    ),
+    eq(githubOauthConnections.workspaceActor, owner.workspaceActor.trim()),
+    eq(githubOauthConnections.ownerIdentityVersion, owner.ownerIdentityVersion)
+  );
+}
+
+async function materializeGithubOAuthToken(
+  where: SQL | undefined
+): Promise<string | null> {
   const [row] = await getAssistantDb()
     .select()
     .from(githubOauthConnections)
-    .where(
-      and(
-        eq(githubOauthConnections.id, input.connectionRef.trim()),
-        eq(
-          githubOauthConnections.namespace,
-          normalizeAssistantNamespace(input.namespace)
-        ),
-        eq(githubOauthConnections.workspaceActor, input.credentialOwner.trim()),
-        eq(
-          githubOauthConnections.ownerIdentityVersion,
-          input.ownerIdentityVersion
-        )
-      )
-    )
+    .where(where)
     .limit(1);
   if (row == null) {
     return null;
   }
+  const now = new Date();
   await getAssistantDb()
     .update(githubOauthConnections)
-    .set({ lastUsedAt: new Date(), updatedAt: new Date() })
+    .set({ lastUsedAt: now, updatedAt: now })
     .where(eq(githubOauthConnections.id, row.id));
   return decryptGithubUserToken(row.accessTokenCiphertext);
 }
@@ -346,23 +293,9 @@ function asGithubRepo(row: GithubRepoResponse): GithubRepoDTO | null {
   };
 }
 
-export async function listGithubReposForNamespace(
-  namespace: string,
-  userId: string
+async function listGithubReposWithToken(
+  token: string
 ): Promise<GithubRepoDTO[]> {
-  const connection = await getGithubConnectionForNamespace(namespace, userId);
-  if (connection == null) {
-    throw new Error("GitHub OAuth connection is not authorized.");
-  }
-  const token = await getGithubOAuthTokenForConnection({
-    connectionId: connection.id,
-    namespace,
-    userId,
-  });
-  if (token == null) {
-    throw new Error("GitHub OAuth connection is not authorized.");
-  }
-
   const out: GithubRepoDTO[] = [];
   const perPage = 100;
   for (let page = 1; page <= 5; page += 1) {
@@ -399,4 +332,15 @@ export async function listGithubReposForNamespace(
     }
   }
   return out;
+}
+
+export async function listGithubReposForWorkspaceActor(
+  owner: GithubConnectionOwnerIdentity
+): Promise<GithubRepoDTO[]> {
+  const token = await getGithubOAuthTokenForWorkspaceActor(owner);
+  if (token == null) {
+    throw new Error("GitHub OAuth connection is not authorized.");
+  }
+
+  return listGithubReposWithToken(token);
 }

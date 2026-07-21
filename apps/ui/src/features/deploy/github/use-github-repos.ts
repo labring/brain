@@ -3,7 +3,7 @@
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
-import { desktopUserIdAtom, kubeconfigAtom } from "@/lib/auth-store";
+import { kubeconfigAtom } from "@/lib/auth-store";
 
 interface GithubReposResponse {
   repos: GithubDeployerRepo[];
@@ -12,23 +12,20 @@ interface GithubReposResponse {
 export function githubReposSWRKey(input: {
   kubeconfig: string;
   namespace: string;
-  userId: string;
 }) {
   const namespace = input.namespace.trim();
-  const userId = input.userId.trim();
-  return namespace !== "" && userId !== ""
-    ? (["github-user-repos", namespace, userId, input.kubeconfig] as const)
+  const kubeconfig = input.kubeconfig.trim();
+  return namespace !== "" && kubeconfig !== ""
+    ? (["github-user-repos", namespace, input.kubeconfig] as const)
     : null;
 }
 
 async function fetchRepos(
   namespace: string,
-  kubeconfig: string,
-  userId: string
+  kubeconfig: string
 ): Promise<GithubDeployerRepo[]> {
   const url = new URL("/api/github/repos", window.location.origin);
   url.searchParams.set("namespace", namespace);
-  url.searchParams.set("userId", userId);
   const response = await fetch(url.toString(), {
     cache: "no-store",
     headers:
@@ -48,15 +45,14 @@ export function useGithubRepos(input: {
   namespace: string | undefined;
 }) {
   const kubeconfig = useAtomValue(kubeconfigAtom);
-  const userId = useAtomValue(desktopUserIdAtom).trim();
   const namespace = input.namespace?.trim() ?? "";
   const swrKey = input.isAuthorized
-    ? githubReposSWRKey({ kubeconfig, namespace, userId })
+    ? githubReposSWRKey({ kubeconfig, namespace })
     : null;
 
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
-    () => fetchRepos(namespace, kubeconfig, userId),
+    () => fetchRepos(namespace, kubeconfig),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 

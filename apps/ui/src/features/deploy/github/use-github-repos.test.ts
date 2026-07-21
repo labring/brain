@@ -8,26 +8,23 @@ test("githubReposSWRKey matches the GitHub repos cache key", () => {
     githubReposSWRKey({
       kubeconfig: "kubeconfig",
       namespace: " ns-demo ",
-      userId: " admin ",
     }),
-    ["github-user-repos", "ns-demo", "admin", "kubeconfig"]
+    ["github-user-repos", "ns-demo", "kubeconfig"]
   );
 });
 
-test("githubReposSWRKey returns null without namespace or user ID", () => {
+test("githubReposSWRKey returns null without namespace or kubeconfig", () => {
   assert.equal(
     githubReposSWRKey({
       kubeconfig: "kubeconfig",
       namespace: "",
-      userId: "admin",
     }),
     null
   );
   assert.equal(
     githubReposSWRKey({
-      kubeconfig: "kubeconfig",
+      kubeconfig: "",
       namespace: "ns-demo",
-      userId: "",
     }),
     null
   );

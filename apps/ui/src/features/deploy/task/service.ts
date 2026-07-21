@@ -57,7 +57,6 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     creatingActor: row.creatingActor,
     createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
-    credentialBinding: row.credentialBinding,
     error: row.error,
     failureDetails: row.failureDetails,
     gatewaySessionId: row.gatewaySessionId,

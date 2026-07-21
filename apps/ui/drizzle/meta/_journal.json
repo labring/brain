@@ -64,6 +64,13 @@
       "when": 1784626000000,
       "tag": "0008_deployment_credential_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784627000000,
+      "tag": "0009_verified_github_oauth_state",
+      "breakpoints": true
     }
   ]
 }
