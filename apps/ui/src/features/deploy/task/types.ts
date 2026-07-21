@@ -129,9 +129,7 @@ export const deploymentTaskRunnerSchema = z.discriminatedUnion("kind", [
 ]) satisfies z.ZodType<DeploymentTaskRunner>;
 
 export const createDeployTaskInputSchema = z.object({
-  actorUserId: z.string().trim().min(1).max(256).optional(),
   createdFrom: z.enum(["api", "automation", "chat", "ui"]).optional(),
-  githubConnectionId: z.string().trim().min(1).max(256).optional(),
   namespace: z.string().trim().min(1),
   prompt: z.string().trim().max(4000).optional(),
   runner: deploymentTaskRunnerSchema,

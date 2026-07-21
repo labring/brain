@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
 
+const INVALIDATED_CONNECTION_ERROR =
+  /GitHub OAuth connection is not authorized for this deployment\./;
+
 describe("deployment task runner credential binding", () => {
   it("resolves only the GitHub credential persisted on the task", async () => {
     const lookups: unknown[] = [];
@@ -41,5 +44,30 @@ describe("deployment task runner credential binding", () => {
         ownerIdentityVersion: 1,
       },
     ]);
+  });
+
+  it("fails explicitly when a historical task's persisted credential was invalidated", async () => {
+    await assert.rejects(
+      resolveGithubTokenForDeploymentTask(
+        {
+          credentialBinding: {
+            connectionRef: "connection-cleared-by-migration",
+            credentialOwner: "alice-cr",
+            version: 1,
+          },
+          namespace: "shared-workspace",
+          source: {
+            kind: "github",
+            repo: {
+              fullName: "alice/example",
+              name: "example",
+              url: "https://github.com/alice/example",
+            },
+          },
+        },
+        () => Promise.resolve(null)
+      ),
+      INVALIDATED_CONNECTION_ERROR
+    );
   });
 });

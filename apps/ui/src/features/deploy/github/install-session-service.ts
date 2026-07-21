@@ -39,7 +39,6 @@ export async function createGithubAuthorizationSession(
       ownerIdentityVersion: input.owner.ownerIdentityVersion,
       returnPath: input.returnPath,
       state: input.state,
-      userId: "",
       workspaceActor: input.owner.workspaceActor.trim(),
     });
   });

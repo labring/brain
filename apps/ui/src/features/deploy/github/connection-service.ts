@@ -177,7 +177,6 @@ export async function upsertGithubOauthConnectionInTransaction(
       scope: input.token.scope,
       tokenType: input.token.tokenType,
       updatedAt: now,
-      userId: "",
       workspaceActor,
     })
     .onConflictDoUpdate({

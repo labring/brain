@@ -222,11 +222,9 @@ async function resolveCreateInputs(
     };
   }
   const create: CreateDeployTaskInput = {
-    actorUserId: input.create.actorUserId,
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,
     credentialBinding: input.create.credentialBinding,
-    githubConnectionId: input.create.githubConnectionId,
     namespace: input.create.namespace,
     prompt: input.create.prompt,
     runner,

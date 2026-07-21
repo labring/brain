@@ -134,8 +134,6 @@ export const githubAppInstallSessions = ns.table(
       .notNull()
       .default(0),
     returnPath: text("return_path"),
-    /** Compatibility-only Desktop identity. Never use this field to authorize an owner. */
-    userId: text("user_id").notNull().default(""),
     expiresAt: timestamp("expires_at", {
       mode: "date",
       withTimezone: true,
@@ -159,8 +157,6 @@ export const githubOauthConnections = ns.table(
     ownerIdentityVersion: integer("owner_identity_version")
       .notNull()
       .default(0),
-    /** Compatibility-only Desktop identity. Never use this field to authorize an owner. */
-    userId: text("user_id").notNull(),
     githubLogin: text("github_login").notNull(),
     accessTokenCiphertext: text("access_token_ciphertext").notNull(),
     tokenType: text("token_type").notNull().default("bearer"),

@@ -228,7 +228,7 @@ test("GET records a shared-task inspection by the verified action actor", async 
   }
 });
 
-test("POST rejects a client-selected foreign GitHub connection", async () => {
+test("POST ignores a removed client-selected GitHub connection", async () => {
   const harness = await createDeployTaskTestHarness();
   useHarness(harness);
   activeGithubConnection = githubConnection("connection-alice", "alice");
@@ -244,18 +244,18 @@ test("POST rejects a client-selected foreign GitHub connection", async () => {
       })
     );
 
-    assert.deepEqual(
-      { body: await response.json(), status: response.status },
-      {
-        body: {
-          code: "github_connection_forbidden",
-          error:
-            "The selected GitHub connection is not owned by the verified actor.",
-        },
-        status: 403,
-      }
-    );
-    assert.equal((await harness.db.select().from(deployTasks)).length, 0);
+    const body = (await response.json()) as { task: { id: string } };
+    assert.equal(response.status, 201);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, body.task.id));
+    assert.deepEqual(stored?.credentialBinding, {
+      connectionRef: "connection-alice",
+      credentialOwner: "alice-cr",
+      version: 1,
+    });
+    await runDone;
   } finally {
     clearHarness();
     await harness.close();

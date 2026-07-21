@@ -57,7 +57,6 @@ function jsonError(message: string, status: number, code?: string) {
 async function resolveCredentialBinding(input: {
   creatingActor?: string;
   namespace: string;
-  requestedConnection?: string;
   sourceKind?: DeploymentTaskSource["kind"];
 }): Promise<
   | { credentialBinding?: DeploymentCredentialBinding }
@@ -86,18 +85,6 @@ async function resolveCredentialBinding(input: {
         "Connect GitHub before creating this deployment task.",
         409,
         "github_connection_required"
-      ),
-    };
-  }
-  if (
-    input.requestedConnection != null &&
-    input.requestedConnection !== connection.id
-  ) {
-    return {
-      response: jsonError(
-        "The selected GitHub connection is not owned by the verified actor.",
-        403,
-        "github_connection_forbidden"
       ),
     };
   }
@@ -201,7 +188,6 @@ export async function POST(request: Request) {
   const bindingResolution = await resolveCredentialBinding({
     creatingActor,
     namespace: taskNamespace,
-    requestedConnection: parsed.data.githubConnectionId?.trim() || undefined,
     sourceKind: effectiveSource?.kind,
   });
   if ("response" in bindingResolution) {
@@ -209,13 +195,7 @@ export async function POST(request: Request) {
   }
   const { credentialBinding } = bindingResolution;
 
-  const {
-    actorUserId: _legacyActorUserId,
-    encodedKubeconfig,
-    githubConnectionId: _legacyGithubConnectionId,
-    predecessorTaskId,
-    ...taskInput
-  } = parsed.data;
+  const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
   const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
     create: {
       ...taskInput,
