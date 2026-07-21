@@ -47,36 +47,8 @@
     {
       "idx": 6,
       "version": "7",
-      "when": 1784621553615,
-      "tag": "0006_old_sunfire",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1784625000000,
-      "tag": "0007_private_assistant_conversations",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1784626000000,
-      "tag": "0008_deployment_credential_binding",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1784627000000,
-      "tag": "0009_verified_github_oauth_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
       "when": 1784627295271,
-      "tag": "0010_retire_legacy_identity",
+      "tag": "0006_bind_verified_workspace_actors",
       "breakpoints": true
     }
   ]

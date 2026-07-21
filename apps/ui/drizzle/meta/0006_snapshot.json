@@ -1,5 +1,5 @@
 {
-  "id": "3d5f1d0e-7ca9-4739-9294-2442d8369f2f",
+  "id": "2bee7441-3552-4a8c-907f-f812f73c16a8",
   "prevId": "b383c6cb-34dc-473f-8dca-ca835413d7ae",
   "version": "7",
   "dialect": "postgresql",
@@ -112,12 +112,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "user_id": {
-          "name": "user_id",
+        "workspace_actor": {
+          "name": "workspace_actor",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "''"
+          "notNull": true
         },
         "title": {
           "name": "title",
@@ -164,8 +163,8 @@
           "method": "btree",
           "with": {}
         },
-        "assistant_chats_namespace_user_updated_at_idx": {
-          "name": "assistant_chats_namespace_user_updated_at_idx",
+        "assistant_chats_namespace_actor_updated_at_idx": {
+          "name": "assistant_chats_namespace_actor_updated_at_idx",
           "columns": [
             {
               "expression": "namespace",
@@ -174,7 +173,7 @@
               "nulls": "last"
             },
             {
-              "expression": "user_id",
+              "expression": "workspace_actor",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -264,17 +263,25 @@
           "primaryKey": false,
           "notNull": true
         },
+        "workspace_actor": {
+          "name": "workspace_actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "owner_identity_version": {
+          "name": "owner_identity_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "return_path": {
           "name": "return_path",
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
         },
         "expires_at": {
           "name": "expires_at",
@@ -516,12 +523,6 @@
           "notNull": true,
           "default": 0
         },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "github_login": {
           "name": "github_login",
           "type": "text",
@@ -596,27 +597,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "github_oauth_connections_namespace_user_unique_idx": {
-          "name": "github_oauth_connections_namespace_user_unique_idx",
-          "columns": [
-            {
-              "expression": "namespace",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -864,6 +844,18 @@
         "project_name": {
           "name": "project_name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "creating_actor": {
+          "name": "creating_actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credential_binding": {
+          "name": "credential_binding",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

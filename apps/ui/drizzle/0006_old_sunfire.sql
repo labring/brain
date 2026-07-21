@@ -1,3 +1,0 @@
-ALTER TABLE "sealai_assistant"."github_oauth_connections" ADD COLUMN "workspace_actor" text DEFAULT '' NOT NULL;--> statement-breakpoint
-ALTER TABLE "sealai_assistant"."github_oauth_connections" ADD COLUMN "owner_identity_version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "github_oauth_connections_current_owner_unique_idx" ON "sealai_assistant"."github_oauth_connections" USING btree ("namespace","workspace_actor") WHERE "sealai_assistant"."github_oauth_connections"."owner_identity_version" = 1;

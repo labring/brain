@@ -145,7 +145,6 @@ test("ownership migration invalidates legacy conversations without resetting nam
       "0003_awesome_firebrand.sql",
       "0004_unknown_felicia_hardy.sql",
       "0005_faithful_hedge_knight.sql",
-      "0006_old_sunfire.sql",
     ]) {
       await applyMigration(name);
     }
@@ -161,7 +160,7 @@ test("ownership migration invalidates legacy conversations without resetting nam
       VALUES ('shared', 4);
     `);
 
-    await applyMigration("0007_private_assistant_conversations.sql");
+    await applyMigration("0006_bind_verified_workspace_actors.sql");
 
     const chats = await legacyDb.query<{ count: number }>(
       "SELECT count(*)::int AS count FROM sealai_assistant.assistant_chats"
