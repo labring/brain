@@ -342,6 +342,7 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
           : "project-surface-slide-y-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]"
       )}
       data-slot="exec-terminal-plane"
+      data-state={open ? "open" : "closed"}
       ref={sectionRef}
       style={{
         height: terminalHeight,
