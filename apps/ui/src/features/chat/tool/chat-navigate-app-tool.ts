@@ -12,6 +12,8 @@ export const NAVIGATE_APP_TOOL_NAME = "navigateApp" as const;
 export const NAVIGATION_PROJECT_INDEX_PATH = "/project" as const;
 
 const PATH_QUERY_HASH_SPLIT = /[?#]/;
+const NAVIGATE_APP_ERROR_MAX_LENGTH = 500;
+const NAVIGATE_APP_PATH_MAX_LENGTH = 2048;
 
 /**
  * Canonical in-app URLs for project navigation (for tool description + validation).
@@ -39,6 +41,7 @@ export const navigateAppInputSchema = z.object({
   path: z
     .string()
     .min(1)
+    .max(NAVIGATE_APP_PATH_MAX_LENGTH)
     .describe(
       [
         "In-app pathname beginning with `/` (optionally including a `?query` or `#hash`).",
@@ -49,9 +52,22 @@ export const navigateAppInputSchema = z.object({
 
 export type NavigateAppInput = z.infer<typeof navigateAppInputSchema>;
 
-export type NavigateAppToolOutput =
-  | { success: true; path: string }
-  | { success: false; error: string };
+export const navigateAppOutputSchema = z.discriminatedUnion("success", [
+  z
+    .object({
+      path: z.string().min(1).max(NAVIGATE_APP_PATH_MAX_LENGTH),
+      success: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      error: z.string().min(1).max(NAVIGATE_APP_ERROR_MAX_LENGTH),
+      success: z.literal(false),
+    })
+    .strict(),
+]);
+
+export type NavigateAppToolOutput = z.infer<typeof navigateAppOutputSchema>;
 
 function assertSafeProjectPath(path: string): string | null {
   const trimmed = path.trim();
@@ -104,4 +120,5 @@ export function runNavigateAppTool(
 export const navigateAppTool = tool({
   description: buildNavigateAppToolDescription(),
   inputSchema: navigateAppInputSchema,
+  outputSchema: navigateAppOutputSchema,
 });

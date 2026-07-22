@@ -128,6 +128,7 @@ function fallbackTitle(firstUserMessage: string): string {
  * a known fact handed to the model, not something it must infer from the text.
  */
 export async function deriveThreadTitle(input: {
+  abortSignal?: AbortSignal;
   languageModel: ChatTitleModel;
   messages: UIMessage[];
   projectName?: string;
@@ -140,6 +141,7 @@ export async function deriveThreadTitle(input: {
   const userPart = first.slice(0, FIRST_USER_PROMPT_CHARS);
   try {
     const generated = await generateText({
+      abortSignal: input.abortSignal,
       model: input.languageModel,
       system: SYSTEM_PROMPT,
       prompt:

@@ -12,6 +12,15 @@ import {
 } from "./types";
 
 type ChatTitleModel = Parameters<typeof generateText>[0]["model"];
+type AssistantConversationServiceRepository = Pick<
+  AssistantConversationRepository,
+  | "ensureThreadForOwner"
+  | "selectMessagesByOwner"
+  | "selectThreadByOwner"
+  | "selectThreadsByOwner"
+  | "updateThreadAiTitleOnceForOwner"
+  | "upsertMessageForOwner"
+>;
 
 export interface AssistantConversationServiceDependencies {
   generateChatId: () => string;
@@ -21,8 +30,9 @@ export interface AssistantConversationServiceDependencies {
   }>;
   isSystemModelConfigured: () => boolean;
   placeholderTitle: () => string;
-  repository: AssistantConversationRepository;
+  repository: AssistantConversationServiceRepository;
   titleThread: (input: {
+    abortSignal?: AbortSignal;
     languageModel: ChatTitleModel;
     messages: UIMessage[];
     projectName?: string;
@@ -120,6 +130,7 @@ export function createAssistantConversationService(
       repository.selectMessagesByOwner(normalizedOwner(owner), chatId),
 
     maybeAutoTitle: async (input: {
+      abortSignal?: AbortSignal;
       chatId: string;
       languageModel: ChatTitleModel;
       owner: AssistantConversationOwner;
@@ -138,6 +149,7 @@ export function createAssistantConversationService(
         return;
       }
       const title = await dependencies.titleThread({
+        abortSignal: input.abortSignal,
         languageModel: input.languageModel,
         messages,
         projectName: input.projectName,

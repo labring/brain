@@ -1,0 +1,1048 @@
+// @ts-expect-error Bun exposes this module at runtime; the app tsconfig omits Bun test types.
+import { beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { isDeepStrictEqual } from "node:util";
+import { simulateReadableStream, tool, type UIMessage } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+import { z } from "zod";
+
+const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
+const actualRequestKubeconfigAuth = {
+  ...(await import("@/lib/request-kubeconfig-auth")),
+};
+
+const CHAT_ID = "chat-route-test";
+const NAMESPACE = "ns-route-test";
+const WORKSPACE_ACTOR = "workspace-actor-route-test";
+
+const MOCK_USAGE = {
+  inputTokens: {
+    cacheRead: undefined,
+    cacheWrite: undefined,
+    noCache: 1,
+    total: 1,
+  },
+  outputTokens: { reasoning: undefined, text: 1, total: 1 },
+};
+
+type StreamMode =
+  | "abort"
+  | "error"
+  | "partial-abort"
+  | "partial-error"
+  | "partial-tool-error"
+  | "success";
+type TestStreamChunk =
+  Awaited<
+    ReturnType<MockLanguageModelV3["doStream"]>
+  >["stream"] extends ReadableStream<infer Chunk>
+    ? Chunk
+    : never;
+
+interface TestLease {
+  chatId: string;
+  messageId: string;
+  parts: UIMessage["parts"];
+  token: string;
+}
+
+interface TestOwner {
+  namespace: string;
+  workspaceActor: string;
+}
+
+let activeLease: TestLease | null = null;
+let appendCalls: UIMessage[] = [];
+let connectionAvailable = true;
+let consumeCalls = 0;
+let forceReplaceConflict = false;
+let history: UIMessage[] = [];
+let leaseAcquireCalls = 0;
+let leaseAcquireMutation: (() => void) | null = null;
+let leaseReleaseCalls = 0;
+let modelCalls = 0;
+let modelAbortSignals: (AbortSignal | undefined)[] = [];
+let modelPrompts: unknown[] = [];
+let replaceCalls = 0;
+let streamMode: StreamMode = "success";
+let serviceOwners: TestOwner[] = [];
+let titleCalls = 0;
+let titleWait: Promise<void> | null = null;
+let toolsetAvailable = true;
+let toolsetOwner: TestOwner | null = null;
+let transformSetup: (() => void) | null = null;
+
+const clientTool = tool({
+  description: "Test client navigation tool",
+  inputSchema: z.object({ intention: z.string(), path: z.string() }),
+  outputSchema: z.union([
+    z.object({ path: z.string(), success: z.literal(true) }),
+    z.object({ error: z.string(), success: z.literal(false) }),
+  ]),
+});
+
+function streamChunksForMode(mode: StreamMode): TestStreamChunk[] {
+  const textChunks = [
+    { id: "text-1", type: "text-start" as const },
+    {
+      delta: "Recovered response",
+      id: "text-1",
+      type: "text-delta" as const,
+    },
+    { id: "text-1", type: "text-end" as const },
+  ];
+
+  switch (mode) {
+    case "abort":
+    case "partial-abort":
+      return [];
+    case "error":
+      return [{ error: new Error("upstream failed"), type: "error" as const }];
+    case "partial-error":
+      return [
+        ...textChunks,
+        {
+          error: new Error("upstream failed late"),
+          type: "error" as const,
+        },
+      ];
+    case "partial-tool-error":
+      return [
+        ...textChunks,
+        {
+          id: "partial-tool",
+          toolName: "navigateApp",
+          type: "tool-input-start" as const,
+        },
+        {
+          delta: '{"intention":"unfinished',
+          id: "partial-tool",
+          type: "tool-input-delta" as const,
+        },
+        {
+          error: new Error("upstream failed during tool input"),
+          type: "error" as const,
+        },
+      ];
+    case "success":
+      return [
+        ...textChunks,
+        {
+          finishReason: {
+            raw: undefined,
+            unified: "stop" as const,
+          },
+          type: "finish" as const,
+          usage: MOCK_USAGE,
+        },
+      ];
+    default:
+      return mode satisfies never;
+  }
+}
+
+function testModel() {
+  return new MockLanguageModelV3({
+    doStream: (options) => {
+      modelCalls += 1;
+      modelAbortSignals.push(options.abortSignal);
+      modelPrompts.push(options.prompt);
+
+      if (streamMode === "abort" || streamMode === "partial-abort") {
+        const signal = options.abortSignal;
+        return Promise.resolve({
+          stream: new ReadableStream<TestStreamChunk>({
+            start(controller) {
+              const abort = () => controller.error(signal?.reason);
+              if (signal?.aborted) {
+                abort();
+                return;
+              }
+              if (streamMode === "partial-abort") {
+                for (const chunk of streamChunksForMode("success").slice(
+                  0,
+                  -1
+                )) {
+                  controller.enqueue(chunk);
+                }
+              }
+              signal?.addEventListener("abort", abort, { once: true });
+            },
+          }),
+        });
+      }
+
+      return Promise.resolve({
+        stream: simulateReadableStream({
+          chunks: streamChunksForMode(streamMode),
+        }),
+      });
+    },
+  });
+}
+
+function persistToHistory(message: UIMessage): void {
+  appendCalls.push(structuredClone(message));
+  const existing = history.findIndex((item) => item.id === message.id);
+  if (existing === -1) {
+    history.push(structuredClone(message));
+  } else {
+    history[existing] = structuredClone(message);
+  }
+}
+
+mock.module("server-only", () => ({}));
+mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
+  resolveChatOpenAiConnection: () => {
+    if (!connectionAvailable) {
+      return Promise.resolve({
+        message: "AI connection unavailable",
+        ok: false as const,
+        status: 503,
+      });
+    }
+    return Promise.resolve({ connection: {}, ok: true as const });
+  },
+}));
+mock.module("@/features/chat/persistence/free-tier", () => ({
+  consumeFreeTurnIfAvailable: () => {
+    consumeCalls += 1;
+    return Promise.resolve(true);
+  },
+  getFreeTierSnapshot: () =>
+    Promise.resolve({ limit: 5, remaining: 5, used: 0 }),
+  isSystemOpenAiConfigured: () => true,
+}));
+mock.module("@/features/chat/persistence/service", () => ({
+  acquireChatStreamLease: (chatId: string, owner: TestOwner) => {
+    serviceOwners.push(owner);
+    leaseAcquireCalls += 1;
+    if (activeLease != null) {
+      return Promise.resolve(null);
+    }
+    const acquired = {
+      chatId,
+      messageId: `lease-${chatId}`,
+      parts: [],
+      token: `lease-token-${leaseAcquireCalls}`,
+    };
+    activeLease = acquired;
+    leaseAcquireMutation?.();
+    return Promise.resolve(acquired);
+  },
+  commitChatMessagesIfLeaseOwned: (input: {
+    lease: TestLease;
+    replacements: {
+      expectedParts: UIMessage["parts"];
+      messageId: string;
+      replacementParts: UIMessage["parts"];
+    }[];
+    upsertMessage?: UIMessage;
+  }) => {
+    replaceCalls += input.replacements.length;
+    if (activeLease?.token !== input.lease.token || forceReplaceConflict) {
+      return Promise.resolve(null);
+    }
+
+    const nextHistory = structuredClone(history);
+    for (const replacement of input.replacements) {
+      const index = nextHistory.findIndex(
+        (message) =>
+          message.id === replacement.messageId &&
+          message.role === "assistant" &&
+          isDeepStrictEqual(message.parts, replacement.expectedParts)
+      );
+      if (index === -1) {
+        return Promise.resolve(null);
+      }
+      nextHistory[index] = {
+        ...nextHistory[index],
+        parts: structuredClone(replacement.replacementParts),
+      } as UIMessage;
+    }
+
+    if (input.upsertMessage != null) {
+      const message = structuredClone(input.upsertMessage);
+      const index = nextHistory.findIndex((item) => item.id === message.id);
+      if (index === -1) {
+        nextHistory.push(message);
+      } else {
+        nextHistory[index] = message;
+      }
+      appendCalls.push(message);
+    }
+    history = nextHistory;
+    return Promise.resolve(input.lease);
+  },
+  ensureAssistantThreadForOwner: (_chatId: string, owner: TestOwner) => {
+    serviceOwners.push(owner);
+    return Promise.resolve(true);
+  },
+  isReservedChatMessageId: (messageId: string) =>
+    messageId.startsWith("__chat_stream_lease__:"),
+  loadMessagesForOwner: (_chatId: string, owner: TestOwner) => {
+    serviceOwners.push(owner);
+    return Promise.resolve(structuredClone(history));
+  },
+  maybeAutoTitleThread: (input: { owner: TestOwner }) => {
+    serviceOwners.push(input.owner);
+    titleCalls += 1;
+    return titleWait ?? Promise.resolve();
+  },
+  persistAssistantResponseIfLeaseOwned: (input: {
+    lease: TestLease;
+    message: UIMessage;
+  }) => {
+    if (activeLease?.token !== input.lease.token) {
+      return Promise.resolve(false);
+    }
+    persistToHistory(input.message);
+    return Promise.resolve(true);
+  },
+  releaseOwnedChatStreamLease: (lease: TestLease) => {
+    if (activeLease?.token !== lease.token) {
+      return Promise.resolve(false);
+    }
+    activeLease = null;
+    leaseReleaseCalls += 1;
+    return Promise.resolve(true);
+  },
+}));
+mock.module("@/features/chat/runtime/attach-tool-duration-metrics", () => ({
+  attachToolDurationMetrics: (message: UIMessage) => message,
+}));
+mock.module("@/features/chat/runtime/inject-tool-duration-stream", () => ({
+  createInjectToolDurationStreamTransform: () => {
+    transformSetup?.();
+    return undefined;
+  },
+}));
+mock.module("@/features/chat/runtime/model", () => ({
+  CHAT_MAX_STEPS: 15,
+  chatLanguageModel: () => testModel(),
+  threadTitleLanguageModel: () => testModel(),
+}));
+mock.module("@/features/chat/runtime/tools", () => ({
+  buildChatToolset: (input: {
+    kubernetesNamespace: string;
+    workspaceActor: string;
+  }) => {
+    toolsetOwner = {
+      namespace: input.kubernetesNamespace,
+      workspaceActor: input.workspaceActor,
+    };
+    if (!toolsetAvailable) {
+      return Promise.reject(new Error("toolset unavailable"));
+    }
+    return Promise.resolve({
+      systemPrompt: "Test system prompt",
+      tools: { navigateApp: clientTool },
+    });
+  },
+}));
+mock.module("@/lib/kubeconfig", () => ({
+  ...actualKubeconfig,
+  decodeKubeconfig: (encoded: string) =>
+    encoded === "encoded-kubeconfig"
+      ? "kubeconfig"
+      : actualKubeconfig.decodeKubeconfig(encoded),
+}));
+mock.module("@/lib/request-kubeconfig-auth", () => ({
+  ...actualRequestKubeconfigAuth,
+  authorizeWorkspaceActor: (
+    input: Parameters<
+      typeof actualRequestKubeconfigAuth.authorizeWorkspaceActor
+    >[0]
+  ) =>
+    input.encodedKubeconfig === "encoded-kubeconfig"
+      ? Promise.resolve({
+          namespace: NAMESPACE,
+          ok: true as const,
+          workspaceActor: WORKSPACE_ACTOR,
+        })
+      : actualRequestKubeconfigAuth.authorizeWorkspaceActor(input),
+}));
+
+const { POST } = await import("./route");
+
+function pendingNavigationMessage(): UIMessage {
+  return {
+    id: "assistant-navigation",
+    parts: [
+      {
+        input: { intention: "open the project", path: "/project" },
+        state: "input-available",
+        toolCallId: "call-navigation",
+        type: "tool-navigateApp",
+      },
+    ],
+    role: "assistant",
+  };
+}
+
+function completedNavigationMessage(
+  input: { intention: string; path: string } = {
+    intention: "open the project",
+    path: "/project",
+  }
+): UIMessage {
+  return {
+    id: "assistant-navigation",
+    parts: [
+      {
+        input,
+        output: { path: "/project", success: true },
+        state: "output-available",
+        toolCallId: "call-navigation",
+        type: "tool-navigateApp",
+      },
+    ],
+    role: "assistant",
+  };
+}
+
+function pendingApprovalMessage(): UIMessage {
+  return {
+    id: "assistant-approval",
+    parts: [
+      {
+        approval: { id: "approval-write" },
+        input: {
+          intention: "scale the deployment",
+          operation: "patch",
+        },
+        state: "approval-requested",
+        toolCallId: "call-write",
+        type: "tool-writeProductResource",
+      },
+    ],
+    role: "assistant",
+  };
+}
+
+function approvedMessage(): UIMessage {
+  return {
+    id: "assistant-approval",
+    parts: [
+      {
+        approval: { approved: true, id: "approval-write" },
+        input: {
+          intention: "scale the deployment",
+          operation: "patch",
+        },
+        state: "approval-responded",
+        toolCallId: "call-write",
+        type: "tool-writeProductResource",
+      },
+    ],
+    role: "assistant",
+  };
+}
+
+function userMessage(id: string, text: string): UIMessage {
+  return { id, parts: [{ text, type: "text" }], role: "user" };
+}
+
+function chatRequest(message: UIMessage, signal?: AbortSignal): Request {
+  return new Request("https://brain.test/api/chat", {
+    body: JSON.stringify({
+      chatId: CHAT_ID,
+      encodedKubeconfig: "encoded-kubeconfig",
+      message,
+      namespace: NAMESPACE,
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+    ...(signal == null ? {} : { signal }),
+  });
+}
+
+async function drain(response: Response): Promise<void> {
+  await response.arrayBuffer();
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("condition was not reached");
+}
+
+beforeEach(() => {
+  activeLease = null;
+  appendCalls = [];
+  connectionAvailable = true;
+  consumeCalls = 0;
+  forceReplaceConflict = false;
+  history = [];
+  leaseAcquireCalls = 0;
+  leaseAcquireMutation = null;
+  leaseReleaseCalls = 0;
+  modelCalls = 0;
+  modelAbortSignals = [];
+  modelPrompts = [];
+  replaceCalls = 0;
+  serviceOwners = [];
+  streamMode = "success";
+  titleCalls = 0;
+  titleWait = null;
+  toolsetAvailable = true;
+  toolsetOwner = null;
+  transformSetup = null;
+});
+
+test("accepts and streams a canonical client-tool continuation", async () => {
+  history = [pendingNavigationMessage()];
+
+  const response = await POST(chatRequest(completedNavigationMessage()));
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(consumeCalls).toBe(1);
+  expect(titleCalls).toBe(1);
+  expect(JSON.stringify(modelPrompts[0])).toContain("call-navigation");
+  expect(history).toHaveLength(1);
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-available",
+      toolCallId: "call-navigation",
+    })
+  );
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({ text: "Recovered response", type: "text" })
+  );
+  expect(serviceOwners).not.toHaveLength(0);
+  expect(serviceOwners).toEqual(
+    serviceOwners.map(() => ({
+      namespace: NAMESPACE,
+      workspaceActor: WORKSPACE_ACTOR,
+    }))
+  );
+  expect(toolsetOwner).toEqual({
+    namespace: NAMESPACE,
+    workspaceActor: WORKSPACE_ACTOR,
+  });
+});
+
+test("passes a hard timeout signal to the model stream", async () => {
+  const timeoutController = new AbortController();
+  const timeoutSpy = spyOn(AbortSignal, "timeout").mockReturnValue(
+    timeoutController.signal
+  );
+
+  try {
+    const response = await POST(
+      chatRequest(userMessage("user-timeout", "inspect the cluster"))
+    );
+    expect(response.status).toBe(200);
+    await drain(response);
+
+    expect(timeoutSpy).toHaveBeenCalledWith(110_000);
+    expect(timeoutSpy).toHaveBeenCalledWith(5000);
+    const modelSignal = modelAbortSignals[0];
+    expect(modelSignal).toBeDefined();
+    expect(modelSignal).not.toBe(timeoutController.signal);
+    expect(modelSignal?.aborted).toBe(false);
+    timeoutController.abort();
+    expect(modelSignal?.aborted).toBe(true);
+  } finally {
+    timeoutSpy.mockRestore();
+  }
+});
+
+test("request abort stops the model and releases the lease", async () => {
+  streamMode = "abort";
+  const requestController = new AbortController();
+  const timeoutController = new AbortController();
+  const timeoutSpy = spyOn(AbortSignal, "timeout").mockReturnValue(
+    timeoutController.signal
+  );
+
+  try {
+    const response = await POST(
+      chatRequest(
+        userMessage("user-abort", "inspect the cluster"),
+        requestController.signal
+      )
+    );
+    expect(response.status).toBe(200);
+    expect(activeLease).not.toBeNull();
+    await waitUntil(() => modelAbortSignals.length === 1);
+
+    await response.body?.cancel();
+    requestController.abort();
+    await waitUntil(() => activeLease == null);
+
+    expect(timeoutSpy).toHaveBeenCalledWith(110_000);
+    expect(timeoutController.signal.aborted).toBe(false);
+    expect(modelAbortSignals[0]?.aborted).toBe(true);
+    expect(leaseReleaseCalls).toBe(1);
+    expect(consumeCalls).toBe(0);
+    expect(titleCalls).toBe(0);
+    expect(history.filter((message) => message.role === "assistant")).toEqual(
+      []
+    );
+  } finally {
+    timeoutSpy.mockRestore();
+  }
+});
+
+test("request abort persists partial text without billing", async () => {
+  streamMode = "partial-abort";
+  const requestController = new AbortController();
+  const timeoutController = new AbortController();
+  const timeoutSpy = spyOn(AbortSignal, "timeout").mockReturnValue(
+    timeoutController.signal
+  );
+
+  try {
+    const response = await POST(
+      chatRequest(
+        userMessage("user-partial-abort", "inspect the cluster"),
+        requestController.signal
+      )
+    );
+    expect(response.status).toBe(200);
+    await waitUntil(() => modelAbortSignals.length === 1);
+
+    await response.body?.cancel();
+    requestController.abort();
+    await waitUntil(() => activeLease == null);
+
+    expect(timeoutController.signal.aborted).toBe(false);
+    expect(leaseReleaseCalls).toBe(1);
+    expect(consumeCalls).toBe(0);
+    expect(titleCalls).toBe(0);
+    expect(history.at(-1)?.parts).toContainEqual(
+      expect.objectContaining({ text: "Recovered response", type: "text" })
+    );
+  } finally {
+    timeoutSpy.mockRestore();
+  }
+});
+
+test("releases the lease before waiting for automatic title generation", async () => {
+  let finishTitle: (() => void) | undefined;
+  titleWait = new Promise<void>((resolve) => {
+    finishTitle = resolve;
+  });
+
+  const response = await POST(
+    chatRequest(userMessage("user-title-wait", "inspect the cluster"))
+  );
+  const drained = drain(response);
+  await waitUntil(() => titleCalls === 1);
+
+  expect(activeLease).toBeNull();
+  expect(leaseReleaseCalls).toBe(1);
+  finishTitle?.();
+  await drained;
+});
+
+test("preserves the existing approval continuation path through CAS", async () => {
+  history = [pendingApprovalMessage()];
+
+  const response = await POST(chatRequest(approvedMessage()));
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(JSON.stringify(modelPrompts[0])).toContain("call-write");
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      approval: { approved: true, id: "approval-write" },
+      state: "approval-responded",
+      toolCallId: "call-write",
+    })
+  );
+});
+
+test("keeps an approval retryable when connection preflight fails", async () => {
+  history = [pendingApprovalMessage()];
+  connectionAvailable = false;
+
+  const response = await POST(chatRequest(approvedMessage()));
+
+  expect(response.status).toBe(503);
+  expect(replaceCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+  expect(history).toEqual([pendingApprovalMessage()]);
+
+  connectionAvailable = true;
+  const retryResponse = await POST(chatRequest(approvedMessage()));
+  expect(retryResponse.status).toBe(200);
+  await drain(retryResponse);
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+});
+
+test("keeps an approval retryable when toolset preflight fails", async () => {
+  history = [pendingApprovalMessage()];
+  toolsetAvailable = false;
+
+  const response = await POST(chatRequest(approvedMessage()));
+
+  expect(response.status).toBe(503);
+  expect(replaceCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+  expect(history).toEqual([pendingApprovalMessage()]);
+
+  toolsetAvailable = true;
+  const retryResponse = await POST(chatRequest(approvedMessage()));
+  expect(retryResponse.status).toBe(200);
+  await drain(retryResponse);
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+});
+
+test("validates projected history before committing an approval", async () => {
+  const incomplete = {
+    ...pendingNavigationMessage(),
+    id: "assistant-incomplete-history",
+  };
+  history = [incomplete, pendingApprovalMessage()];
+
+  const response = await POST(chatRequest(approvedMessage()));
+
+  expect(response.status).toBe(503);
+  expect(replaceCalls).toBe(0);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(history).toEqual([incomplete, pendingApprovalMessage()]);
+});
+
+test("rejects forged client-tool input before CAS or model execution", async () => {
+  history = [pendingNavigationMessage()];
+  const forged = completedNavigationMessage({
+    intention: "open a different project",
+    path: "/project/forged",
+  });
+
+  const response = await POST(chatRequest(forged));
+
+  expect(response.status).toBe(400);
+  expect(replaceCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+  expect(history).toEqual([pendingNavigationMessage()]);
+});
+
+test("rejects a stale or replayed client-tool continuation", async () => {
+  history = [completedNavigationMessage()];
+
+  const response = await POST(chatRequest(completedNavigationMessage()));
+
+  expect(response.status).toBe(409);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+});
+
+test("stops before the model when a concurrent continuation wins the CAS", async () => {
+  history = [pendingNavigationMessage()];
+  forceReplaceConflict = true;
+
+  const response = await POST(chatRequest(completedNavigationMessage()));
+
+  expect(response.status).toBe(409);
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+  expect(history).toEqual([pendingNavigationMessage()]);
+  expect(activeLease).toBeNull();
+});
+
+test("does not commit after the acquired lease is stolen", async () => {
+  history = [pendingNavigationMessage()];
+  leaseAcquireMutation = () => {
+    activeLease = {
+      chatId: CHAT_ID,
+      messageId: `lease-${CHAT_ID}`,
+      parts: [],
+      token: "replacement-owner-before-commit",
+    };
+  };
+
+  const response = await POST(chatRequest(completedNavigationMessage()));
+
+  expect(response.status).toBe(409);
+  expect(history).toEqual([pendingNavigationMessage()]);
+  expect(modelCalls).toBe(0);
+  expect(activeLease?.token).toBe("replacement-owner-before-commit");
+  expect(leaseReleaseCalls).toBe(0);
+});
+
+test("rolls a continuation back when setup fails under the same lease", async () => {
+  history = [pendingApprovalMessage()];
+  transformSetup = () => {
+    throw new Error("stream setup failed");
+  };
+
+  const response = await POST(chatRequest(approvedMessage()));
+
+  expect(response.status).toBe(503);
+  expect(history).toEqual([pendingApprovalMessage()]);
+  expect(replaceCalls).toBe(2);
+  expect(modelCalls).toBe(0);
+  expect(activeLease).toBeNull();
+  expect(leaseReleaseCalls).toBe(1);
+});
+
+test("does not roll a continuation back after its lease is stolen", async () => {
+  history = [pendingApprovalMessage()];
+  transformSetup = () => {
+    activeLease = {
+      chatId: CHAT_ID,
+      messageId: `lease-${CHAT_ID}`,
+      parts: [],
+      token: "replacement-owner-before-rollback",
+    };
+    throw new Error("stream setup failed after takeover");
+  };
+
+  const response = await POST(chatRequest(approvedMessage()));
+
+  expect(response.status).toBe(503);
+  expect(history).toEqual([approvedMessage()]);
+  expect(replaceCalls).toBe(2);
+  expect(modelCalls).toBe(0);
+  expect(activeLease?.token).toBe("replacement-owner-before-rollback");
+  expect(leaseReleaseCalls).toBe(0);
+});
+
+test("holds the chat lease after continuation CAS until the stream finishes", async () => {
+  history = [pendingNavigationMessage()];
+
+  const continuation = await POST(chatRequest(completedNavigationMessage()));
+  expect(continuation.status).toBe(200);
+  expect(activeLease).not.toBeNull();
+
+  const competingUser = userMessage(
+    "user-during-continuation",
+    "start another response"
+  );
+  const competing = await POST(chatRequest(competingUser));
+  expect(competing.status).toBe(409);
+  expect(history).not.toContainEqual(competingUser);
+  expect(consumeCalls).toBe(0);
+
+  await drain(continuation);
+  expect(activeLease).toBeNull();
+  expect(leaseReleaseCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(consumeCalls).toBe(1);
+});
+
+test("rejects a request when history changes during runtime preflight", async () => {
+  const concurrentMessage = userMessage(
+    "user-concurrent-winner",
+    "the preceding request committed"
+  );
+  leaseAcquireMutation = () => {
+    history.push(concurrentMessage);
+  };
+  const incoming = userMessage("user-stale-snapshot", "use a stale prompt");
+
+  const response = await POST(chatRequest(incoming));
+
+  expect(response.status).toBe(409);
+  expect(history).toEqual([concurrentMessage]);
+  expect(activeLease).toBeNull();
+  expect(leaseReleaseCalls).toBe(1);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+});
+
+test("recovers an old incomplete client tool before processing a new user turn", async () => {
+  history = [
+    userMessage("user-original", "open the project"),
+    pendingNavigationMessage(),
+  ];
+
+  const response = await POST(
+    chatRequest(userMessage("user-follow-up", "continue the investigation"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[1]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-error",
+      toolCallId: "call-navigation",
+    })
+  );
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).toContain("call-navigation");
+  expect(prompt).toContain("continue the investigation");
+});
+
+test("recovers an approval left responded by a crashed continuation", async () => {
+  history = [approvedMessage()];
+
+  const response = await POST(
+    chatRequest(userMessage("user-after-crash", "continue safely"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-error",
+      toolCallId: "call-write",
+    })
+  );
+  expect(JSON.stringify(modelPrompts[0])).toContain("continue safely");
+});
+
+test("rejects a new user turn when continuation recovery loses the CAS", async () => {
+  history = [
+    userMessage("user-original", "open the project"),
+    pendingNavigationMessage(),
+  ];
+  forceReplaceConflict = true;
+
+  const response = await POST(
+    chatRequest(userMessage("user-follow-up", "continue the investigation"))
+  );
+
+  expect(response.status).toBe(409);
+  expect(replaceCalls).toBe(1);
+  expect(appendCalls).toHaveLength(0);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+  expect(history).toEqual([
+    userMessage("user-original", "open the project"),
+    pendingNavigationMessage(),
+  ]);
+});
+
+test("does not persist or bill an empty assistant response on stream error", async () => {
+  streamMode = "error";
+
+  const response = await POST(
+    chatRequest(userMessage("user-error", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("5");
+  await drain(response);
+
+  expect(history).toEqual([userMessage("user-error", "inspect the cluster")]);
+  expect(appendCalls).toHaveLength(1);
+  expect(consumeCalls).toBe(0);
+  expect(titleCalls).toBe(0);
+  expect(activeLease).toBeNull();
+});
+
+test("closes an interrupted approval with a durable tool error", async () => {
+  history = [pendingApprovalMessage()];
+  streamMode = "error";
+
+  const response = await POST(chatRequest(approvedMessage()));
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-error",
+      toolCallId: "call-write",
+    })
+  );
+  expect(activeLease).toBeNull();
+  expect(consumeCalls).toBe(0);
+  expect(titleCalls).toBe(0);
+
+  streamMode = "success";
+  const followUp = await POST(
+    chatRequest(userMessage("user-after-approval-error", "try a safer path"))
+  );
+  expect(followUp.status).toBe(200);
+  await drain(followUp);
+  expect(modelCalls).toBe(2);
+  expect(consumeCalls).toBe(1);
+});
+
+test("rejects the reserved stream lease message id", async () => {
+  const response = await POST(
+    chatRequest(
+      userMessage(
+        `__chat_stream_lease__:${CHAT_ID}`,
+        "overwrite the stream lease"
+      )
+    )
+  );
+
+  expect(response.status).toBe(400);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+});
+
+test("discards a late response after its lease is stolen", async () => {
+  const user = userMessage("user-stale-owner", "inspect the cluster");
+  const response = await POST(chatRequest(user));
+  expect(response.status).toBe(200);
+  expect(activeLease).not.toBeNull();
+  activeLease = {
+    chatId: CHAT_ID,
+    messageId: `lease-${CHAT_ID}`,
+    parts: [],
+    token: "replacement-owner",
+  };
+
+  await drain(response);
+
+  expect(history).toEqual([user]);
+  expect(consumeCalls).toBe(0);
+  expect(titleCalls).toBe(0);
+  expect(activeLease?.token).toBe("replacement-owner");
+  expect(leaseReleaseCalls).toBe(0);
+});
+
+test("keeps partial assistant text but does not bill an errored stream", async () => {
+  streamMode = "partial-error";
+
+  const response = await POST(
+    chatRequest(userMessage("user-partial", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(history).toHaveLength(2);
+  expect(history[1]?.role).toBe("assistant");
+  expect(history[1]?.parts).toContainEqual(
+    expect.objectContaining({ text: "Recovered response", type: "text" })
+  );
+  expect(consumeCalls).toBe(0);
+  expect(titleCalls).toBe(0);
+});
+
+test("drops partial tool input when an errored stream has durable text", async () => {
+  streamMode = "partial-tool-error";
+
+  const response = await POST(
+    chatRequest(userMessage("user-partial-tool", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(history).toHaveLength(2);
+  expect(history[1]?.parts).toContainEqual(
+    expect.objectContaining({ text: "Recovered response", type: "text" })
+  );
+  expect(
+    history[1]?.parts.some(
+      (part) => "state" in part && part.state === "input-streaming"
+    )
+  ).toBe(false);
+  expect(consumeCalls).toBe(0);
+  expect(titleCalls).toBe(0);
+});

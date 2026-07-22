@@ -3,8 +3,36 @@ import { test } from "node:test";
 
 import {
   OPEN_PROJECT_SURFACE_TOOL_NAME,
+  openProjectSurfaceOutputSchema,
+  openProjectSurfaceTool,
   runOpenProjectSurfaceTool,
 } from "./chat-open-project-surface-tool";
+
+test("open project surface exposes a bounded strict output contract", () => {
+  assert.deepEqual(
+    openProjectSurfaceOutputSchema.parse({ ok: true, status: "handled" }),
+    { ok: true, status: "handled" }
+  );
+  assert.equal(
+    openProjectSurfaceOutputSchema.safeParse({
+      extra: true,
+      ok: true,
+      status: "handled",
+    }).success,
+    false
+  );
+  assert.equal(
+    openProjectSurfaceOutputSchema.safeParse({
+      error: "x".repeat(501),
+      ok: false,
+    }).success,
+    false
+  );
+  assert.equal(
+    Reflect.get(openProjectSurfaceTool, "outputSchema"),
+    openProjectSurfaceOutputSchema
+  );
+});
 
 test("open project surface tool routes typed AP terminal intents through the surface router", async () => {
   const received: unknown[] = [];
