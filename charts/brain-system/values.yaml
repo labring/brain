@@ -98,6 +98,8 @@ ui:
   name: brain-ui-staging
   image: ghcr.io/labring/brain-ui:latest
   imagePullPolicy: Always
+  # Forward-only identity migrations must never overlap old and new API routes.
+  strategy: Recreate
   port: 3000
   paused: false
   platformAddresses:

@@ -1,7 +1,6 @@
 "use client";
 
 import { SidePane } from "@workspace/ui/components/side-pane";
-import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
@@ -28,7 +27,6 @@ import {
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
-import { desktopUserIdAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function githubPaneTitle(input: {
@@ -75,7 +73,6 @@ export function GitHubDeploymentPane({
   redeploy?: DeploymentTaskEditRedeploy;
 }) {
   const projectIdTrimmed = projectId.trim();
-  const actorUserId = useAtomValue(desktopUserIdAtom).trim();
   const hasCurrentProject = projectIdTrimmed !== "";
   const [deploying, setDeploying] = useState(false);
   const currentProject = useCurrentProjectDisplayName({
@@ -86,7 +83,6 @@ export function GitHubDeploymentPane({
 
   const {
     disconnectGithubAuth,
-    githubConnectionId,
     initiateGithubAuth,
     isAuthorized,
     isLoading: authLoading,
@@ -135,13 +131,8 @@ export function GitHubDeploymentPane({
       try {
         const outcome = await runDeploymentTargetPipeline({
           adapters: deploymentAdapters,
-          actorUserId,
           credentialsReady:
-            kubeconfig.trim() !== "" &&
-            namespace.trim() !== "" &&
-            actorUserId !== "" &&
-            (githubConnectionId?.trim() ?? "") !== "",
-          githubConnectionId,
+            kubeconfig.trim() !== "" && namespace.trim() !== "" && isAuthorized,
           namespace,
           predecessorTaskId: redeploy?.predecessorTaskId,
           request: {
@@ -178,9 +169,8 @@ export function GitHubDeploymentPane({
     },
     [
       currentProject.resourceName,
-      actorUserId,
       deploymentAdapters,
-      githubConnectionId,
+      isAuthorized,
       kubeconfig,
       namespace,
       onClose,

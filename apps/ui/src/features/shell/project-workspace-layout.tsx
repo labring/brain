@@ -107,11 +107,7 @@ import {
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
-import {
-  desktopUserIdAtom,
-  kubeconfigAtom,
-  namespaceAtom,
-} from "@/lib/auth-store";
+import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
@@ -338,8 +334,6 @@ function ProjectAssistantChatSession({
   const { mutate: revalidateScopeSwr } = useSWRConfig();
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
-  // Owner tag for first-message thread materialization (ADR 0047 view partition).
-  const desktopUserId = useAtomValue(desktopUserIdAtom);
   const chatId = bootstrap.chatId;
   const addToolOutputRef = useRef<
     ((args: AssistantClientToolSubmission) => void | PromiseLike<void>) | null
@@ -364,12 +358,10 @@ function ProjectAssistantChatSession({
   const wireRef = useRef({
     namespace: assistantNamespaceRaw,
     projectId,
-    userId: desktopUserId,
   });
   wireRef.current = {
     namespace: assistantNamespaceRaw,
     projectId,
-    userId: desktopUserId,
   };
 
   const billingHandlerRef = useRef(onBillingHeaders);
@@ -413,7 +405,6 @@ function ProjectAssistantChatSession({
               encodedKubeconfig: encodeURIComponent(kubeconfig),
               message: last,
               namespace: wire.namespace,
-              userId: wire.userId,
             },
           };
         },
@@ -645,10 +636,6 @@ function ProjectAssistantChatSession({
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
-  // Owner tag for per-user thread partitioning (ADR 0047). Hydrated together with
-  // kubeconfig/namespace in `applySealosSdkHydration`, so it is already set when
-  // `namespaceReady` gates the fetch below; empty is the shared / dev bucket.
-  const desktopUserId = useAtomValue(desktopUserIdAtom);
   const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
@@ -667,25 +654,23 @@ function ProjectAssistantChatPane() {
       return;
     }
 
-    fetchAssistantSession(namespaceRaw, kubeconfig, desktopUserId).then(
-      (payload) => {
-        if (cancelled) {
-          return;
-        }
-        if (payload == null) {
-          setSessionError(true);
-          return;
-        }
-        setSession(payload);
-        setFreeTier(payload.freeTier);
-        prevBillingRef.current = payload.freeTier.billing;
+    fetchAssistantSession(namespaceRaw, kubeconfig).then((payload) => {
+      if (cancelled) {
+        return;
       }
-    );
+      if (payload == null) {
+        setSessionError(true);
+        return;
+      }
+      setSession(payload);
+      setFreeTier(payload.freeTier);
+      prevBillingRef.current = payload.freeTier.billing;
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [desktopUserId, kubeconfig, namespaceRaw, namespaceReady]);
+  }, [kubeconfig, namespaceRaw, namespaceReady]);
 
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
@@ -733,17 +718,15 @@ function ProjectAssistantChatPane() {
     [kubeconfig, namespaceRaw, session?.chatId]
   );
 
-  // Switch to a fresh draft thread: a new client-minted id with no messages.
-  // Nothing is persisted until the first message (create-on-first-message), so
-  // abandoned drafts never leave empty rows in the thread list.
+  // The verified actor is bound when the first message materializes this draft.
+  // Abandoned drafts therefore never leave empty persisted conversations.
   const startDraftThread = useCallback(() => {
     setSession((prev) =>
       prev == null ? prev : { ...prev, chatId: generateId(), messages: [] }
     );
   }, []);
 
-  // Project creation (pane flow) asks for a clean conversational start; the
-  // draft evaporates unless the user actually says something.
+  // Project creation (pane flow) asks for a clean owned conversation.
   const draftRequest = useAtomValue(assistantDraftThreadRequestAtom);
   const draftRequestSeenRef = useRef(draftRequest);
   useEffect(() => {
@@ -755,16 +738,12 @@ function ProjectAssistantChatPane() {
   }, [draftRequest, startDraftThread]);
 
   const refreshThreads = useCallback(async () => {
-    const threads = await fetchAssistantThreads(
-      namespaceRaw,
-      kubeconfig,
-      desktopUserId
-    );
+    const threads = await fetchAssistantThreads(namespaceRaw, kubeconfig);
     if (threads == null || threads.length === 0) {
       return;
     }
     setSession((prev) => (prev == null ? prev : { ...prev, threads }));
-  }, [desktopUserId, kubeconfig, namespaceRaw]);
+  }, [kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
     sidePaneRouter

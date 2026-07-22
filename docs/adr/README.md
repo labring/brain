@@ -29,16 +29,16 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0033 — Surface assistant billing as a free-allowance counter plus a one-time crossing notice](0033-surface-assistant-billing-as-free-allowance-only.md)
 - [0034 — Anchor Log Windows as Live or Frozen](0034-anchor-log-windows-as-live-or-frozen.md)
 - [0035 — Render Project Canvas from Canvas Runtime Stores and Stable Commands](0035-render-project-canvas-from-canvas-runtime-stores.md)
-- [0036 — Bind GitHub Integrations as User OAuth Connections](0036-bind-github-integrations-as-user-oauth-connections.md)
+- [0036 — Bind GitHub Integrations as User OAuth Connections](0036-bind-github-integrations-as-user-oauth-connections.md) *(owner identity and task credential binding revised by ADR-0056)*
 - [0037 — Execute Deployment Tasks Under Leases and Guarded Transitions](0037-execute-deployment-tasks-under-leases-and-guarded-transitions.md)
-- [0038 — Model Deployment Task Lifecycle Actions as Cancel, Redeploy, and Retention](0038-model-deployment-lifecycle-actions-as-cancel-redeploy-retention.md)
+- [0038 — Model Deployment Task Lifecycle Actions as Cancel, Redeploy, and Retention](0038-model-deployment-lifecycle-actions-as-cancel-redeploy-retention.md) *(redeploy credential resolution supplemented by ADR-0056)*
 - [0039 — Regenerate Whole-Canvas Auto Layout as a Clustered Row-Major Grid](0039-regenerate-auto-layout-as-clustered-row-major-grid.md) *(generalizes ADR-0022's placement group to clusters; 0022 stays authoritative for incremental placement)*
 - [0040 — Size Canvas Placement Footprints from the Measured Render](0040-size-placement-footprints-from-measured-render.md)
 - [0041 — Preserve Canvas Node Identity by Comparing Node Data by Value](0041-preserve-canvas-node-identity-by-value.md)
 - [0042 — Surface Deployment Failure Reasons Behind a Per-Runner Scrub Gate](0042-surface-scrubbed-deployment-failure-reasons.md)
 - [0043 — Coalesce Deployment Stream Updates into Throttled React Commits](0043-coalesce-deployment-stream-updates.md)
 - [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
-- [0047 — Partition Assistant Conversations Per User as a View, Not a Security Boundary](0047-partition-assistant-conversations-per-user-as-a-view.md)
+- [0047 — Enforce Assistant Conversation Ownership per Workspace Actor](0047-partition-assistant-conversations-per-user-as-a-view.md) *(authorization boundary revised by ADR-0056)*
 - [0048 — Side Panes Animate as Overlays; Layout Width Snaps Once](0048-side-panes-animate-as-overlays-layout-width-snaps-once.md)
 - [0049 — Scope DB Access View State to Each Session](0049-scope-db-access-view-state-to-each-session.md)
 - [0050 — Snapshot Glass: Replace the Live Backdrop-Filter Sheet with a Pre-Blurred Texture](0050-snapshot-glass-pre-blurred-backdrop-texture.md)
@@ -47,6 +47,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0053 — Serve DB connection strings as credential-free templates with explicit reveal](0053-serve-db-connection-strings-as-credential-free-templates.md)
 - [0054 — Reveal DB Access System Objects Only on Request](0054-reveal-db-access-system-objects-only-on-request.md)
 - [0055 — Mask DB Connection Rows Behind One Shared Reveal Interaction](0055-mask-db-connection-rows-behind-shared-reveal.md) *(revises the display layer of ADR-0053; the API contract stands)*
+- [0056 — Bind Personal Resources to Verified Workspace Actors](0056-bind-personal-resources-to-verified-workspace-actors.md) *(revises ADR-0036 and ADR-0047; supplements ADR-0038)*
 
 ## Conventions
 

@@ -48,12 +48,12 @@ function nowIso(value: Date | null): string | null {
 
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
   return {
-    actorUserId: row.actorUserId,
     artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary),
     blockingInputs: row.blockingInputs,
     cancelRequestedAt: nowIso(row.cancelRequestedAt),
     canvasProjection: row.canvasProjection,
     completedAt: nowIso(row.completedAt),
+    creatingActor: row.creatingActor,
     createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
     error: row.error,
@@ -62,7 +62,6 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     gatewayStateSnapshot: row.gatewayStateSnapshot,
     gatewayTurnId: row.gatewayTurnId,
     gatewayUrl: row.gatewayUrl,
-    githubConnectionId: row.githubConnectionId,
     id: row.id,
     namespace: row.namespace,
     phase: row.phase,

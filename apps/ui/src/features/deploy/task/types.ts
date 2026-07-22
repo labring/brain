@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  DeploymentCredentialBinding,
   DeploymentTaskCanvasProjection,
   DeploymentTaskCreatedFrom,
   DeploymentTaskRunner,
@@ -18,6 +19,7 @@ import type {
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 export type {
+  DeploymentCredentialBinding,
   DeploymentTaskCanvasProjection,
   DeploymentTaskCanvasProjectionEdge,
   DeploymentTaskCanvasProjectionExpectedRef,
@@ -127,9 +129,7 @@ export const deploymentTaskRunnerSchema = z.discriminatedUnion("kind", [
 ]) satisfies z.ZodType<DeploymentTaskRunner>;
 
 export const createDeployTaskInputSchema = z.object({
-  actorUserId: z.string().trim().min(1).max(256).optional(),
   createdFrom: z.enum(["api", "automation", "chat", "ui"]).optional(),
-  githubConnectionId: z.string().trim().min(1).max(256).optional(),
   namespace: z.string().trim().min(1),
   prompt: z.string().trim().max(4000).optional(),
   runner: deploymentTaskRunnerSchema,
@@ -137,7 +137,14 @@ export const createDeployTaskInputSchema = z.object({
   target: deploymentTaskTargetSchema,
 });
 
-export type CreateDeployTaskInput = z.infer<typeof createDeployTaskInputSchema>;
+export type CreateDeployTaskInput = z.infer<
+  typeof createDeployTaskInputSchema
+> & {
+  /** Server-resolved Workspace Actor; never accepted from the request body. */
+  creatingActor?: string;
+  /** Server-resolved immutable GitHub credential selection. */
+  credentialBinding?: DeploymentCredentialBinding;
+};
 
 export const deployTaskEventInputSchema = z.object({
   kind: z.string().trim().min(1).max(128),
@@ -196,7 +203,6 @@ export type UpdateDeployTaskCanvasProjectionInput = z.infer<
 >;
 
 export interface DeployTaskDTO {
-  actorUserId?: string | null;
   artifactSummary: DeployTaskArtifactSummary;
   blockingInputs: DeployTaskBlockingInput[];
   /** Server-derived "cancelling" truth (ADR 0038). */
@@ -205,13 +211,13 @@ export interface DeployTaskDTO {
   completedAt: string | null;
   createdAt: string;
   createdFrom: DeploymentTaskCreatedFrom;
+  creatingActor?: string | null;
   error: string | null;
   failureDetails: DeployTaskFailureDetails | null;
   gatewaySessionId: string | null;
   gatewayStateSnapshot: DeployTaskGatewayStateSnapshot | null;
   gatewayTurnId: string | null;
   gatewayUrl: string | null;
-  githubConnectionId?: string | null;
   id: string;
   namespace: string;
   phase: DeployTaskPhase;

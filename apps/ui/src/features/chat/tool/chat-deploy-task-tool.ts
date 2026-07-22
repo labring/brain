@@ -73,14 +73,16 @@ export function createDeployTaskTools(options: {
   };
   kubeconfig: string;
   kubernetesNamespace: string;
+  workspaceActor: string;
 }) {
   const namespace = options.kubernetesNamespace;
+  const actionActor = options.workspaceActor;
   const encodedKubeconfig = encodeURIComponent(options.kubeconfig);
 
   const createDeployTaskTool = tool({
     description: [
       "Create a long-running Deployment Task in SealAI.",
-      "Use this when the user asks to deploy from GitHub, a Docker image, a database, a template, or a prompt.",
+      "Use this when the user asks to deploy a Docker image, a database, a template, or a prompt.",
       "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
       "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",
       "If the user is already inside a Project, omit target to deploy into the current Project; otherwise provide a newProject target.",
@@ -100,7 +102,7 @@ export function createDeployTaskTools(options: {
         return {
           ok: false,
           error:
-            "GitHub deployment from chat requires the Desktop user identity. Use the GitHub deployment pane for now.",
+            "GitHub deployment creation is not available in Assistant tools. Use the GitHub deployment pane, which binds the verified Workspace Actor's connection.",
         };
       }
 
@@ -109,6 +111,7 @@ export function createDeployTaskTools(options: {
         {
           create: {
             createdFrom: "chat",
+            creatingActor: actionActor,
             namespace,
             prompt: input.prompt,
             runner: defaultRunnerForSource(input.source),
@@ -183,6 +186,7 @@ export function createDeployTaskTools(options: {
       const result = await submitDeployTaskInputAction(
         getDeployTaskEngineContext(),
         {
+          actionActor,
           namespace,
           run: (handle, task) =>
             runDeployTask(handle, {
@@ -219,7 +223,7 @@ export function createDeployTaskTools(options: {
       }
       const result = await cancelDeployTaskAction(
         getDeployTaskEngineContext(),
-        { namespace, taskId: input.taskId }
+        { actionActor, namespace, taskId: input.taskId }
       );
       switch (result.kind) {
         case "not-found":

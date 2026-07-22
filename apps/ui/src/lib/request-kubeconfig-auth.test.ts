@@ -4,11 +4,17 @@ import { test } from "node:test";
 
 import {
   authorizeEncodedKubeconfigNamespace,
+  authorizeKubeconfigNamespace,
   authorizeRequestNamespace,
   resolveKubernetesApiServer,
+  workspaceActorFromAuthorizedKubeconfig,
 } from "./request-kubeconfig-auth";
 
-function kubeconfig(namespace: string, server = "https://example.test") {
+function kubeconfig(
+  namespace: string,
+  server = "https://example.test",
+  token = "token"
+) {
   return encodeURIComponent(`
 apiVersion: v1
 clusters:
@@ -25,9 +31,26 @@ current-context: current
 users:
   - name: user
     user:
-      token: token
+      token: ${token}
 `);
 }
+
+test("resolves the Workspace Actor from the active authorized kubeconfig user", () => {
+  const token = [
+    Buffer.from("{}").toString("base64url"),
+    Buffer.from(
+      JSON.stringify({ sub: "system:serviceaccount:user-system:alice-cr" })
+    ).toString("base64url"),
+    "signature",
+  ].join(".");
+
+  assert.equal(
+    workspaceActorFromAuthorizedKubeconfig(
+      decodeURIComponent(kubeconfig("shared-workspace", undefined, token))
+    ),
+    "alice-cr"
+  );
+});
 
 async function withJsonServer<T>(
   handler: (request: import("node:http").IncomingMessage) => unknown,
@@ -82,6 +105,99 @@ function withEnv<T>(
   });
 }
 
+test("authorizes the namespace resolved from the active kubeconfig context", async () => {
+  const encodedKubeconfig = kubeconfig("ns-sdk");
+
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig,
+      verify: async () => ({ ok: true }),
+    }),
+    {
+      encodedKubeconfig,
+      kubeconfig: decodeURIComponent(encodedKubeconfig),
+      namespace: "ns-sdk",
+      ok: true,
+    }
+  );
+});
+
+test("rejects a namespace denied by Kubernetes", async () => {
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: kubeconfig("ns-sdk"),
+      verify: async () => ({
+        message: "Kubeconfig is not authorized for this namespace.",
+        ok: false,
+        status: 403,
+      }),
+    }),
+    {
+      code: "verification_failed",
+      message: "Kubeconfig is not authorized for this namespace.",
+      ok: false,
+      status: 403,
+    }
+  );
+});
+
+test("rejects a credential rejected by Kubernetes", async () => {
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: kubeconfig("ns-sdk"),
+      verify: async () => ({
+        message: "Kubeconfig token is not authenticated.",
+        ok: false,
+        status: 401,
+      }),
+    }),
+    {
+      code: "verification_failed",
+      message: "Kubeconfig token is not authenticated.",
+      ok: false,
+      status: 401,
+    }
+  );
+});
+
+test("rejects a malformed encoded kubeconfig before access review", async () => {
+  let verified = false;
+
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: "%E0%A4%A",
+      verify: () => {
+        verified = true;
+        return Promise.resolve({ ok: true });
+      },
+    }),
+    {
+      code: "invalid_kubeconfig",
+      ok: false,
+    }
+  );
+  assert.equal(verified, false);
+});
+
+test("rejects malformed kubeconfig YAML before access review", async () => {
+  let verified = false;
+
+  assert.deepEqual(
+    await authorizeKubeconfigNamespace({
+      encodedKubeconfig: encodeURIComponent("contexts: ["),
+      verify: () => {
+        verified = true;
+        return Promise.resolve({ ok: true });
+      },
+    }),
+    {
+      code: "namespace_unresolved",
+      ok: false,
+    }
+  );
+  assert.equal(verified, false);
+});
+
 test("authorizes request namespace from bearer kubeconfig", async () => {
   const request = new Request("https://brain.test/api/projects", {
     headers: {
@@ -111,6 +227,22 @@ test("rejects missing request bearer kubeconfig", async () => {
         verify: async () => ({ ok: true }),
       }
     ),
+    {
+      message: "Authentication is required.",
+      ok: false,
+      status: 401,
+    }
+  );
+});
+
+test("preserves authentication rejection for whitespace generic credentials", async () => {
+  assert.deepEqual(
+    await authorizeEncodedKubeconfigNamespace({
+      encodedKubeconfig: "   ",
+      namespace: "ns-sdk",
+      subject: "Project",
+      verify: async () => ({ ok: true }),
+    }),
     {
       message: "Authentication is required.",
       ok: false,

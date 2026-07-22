@@ -2,55 +2,19 @@ import "server-only";
 
 import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
 import {
+  authorizeKubeconfigNamespace,
   type VerifyKubeconfigNamespace,
-  verifyKubeconfigNamespaceAccess,
 } from "@/lib/request-kubeconfig-auth";
 import {
   devCredentialsFromEnv,
   hasDevCredentialBypass,
 } from "@/lib/server-credentials";
 
-import { decodeKubeconfig } from "./kubeconfig";
 import { kubeconfigCredentialsMatch } from "./kubeconfig-identity";
-import { namespaceFromKubeconfigText } from "./kubeconfig-namespace";
 
 export type ResolveChatNamespaceOutcome =
   | { ok: true; namespace: string }
   | { ok: false; status: number; message: string };
-
-/**
- * Parses kubeconfig YAML and ensures the client `namespace` field matches
- * `current-context` inside the same blob (consistency only, not authenticity).
- */
-export function resolveChatNamespaceFromKubeconfigText(options: {
-  kubeconfigText: string;
-  clientNamespace: string;
-}): ResolveChatNamespaceOutcome {
-  const fromKubeconfig = namespaceFromKubeconfigText(options.kubeconfigText);
-  if (fromKubeconfig == null) {
-    return {
-      ok: false,
-      status: 400,
-      message:
-        "Could not resolve namespace from kubeconfig (missing or invalid current-context).",
-    };
-  }
-
-  const namespace = normalizeAssistantNamespace(fromKubeconfig);
-  const clientTrimmed = options.clientNamespace.trim();
-  if (
-    clientTrimmed !== "" &&
-    normalizeAssistantNamespace(clientTrimmed) !== namespace
-  ) {
-    return {
-      ok: false,
-      status: 403,
-      message: "namespace does not match kubeconfig current context.",
-    };
-  }
-
-  return { ok: true, namespace };
-}
 
 function rejectClientNamespaceMismatch(
   clientNamespace: string,
@@ -88,43 +52,74 @@ export async function resolveAuthoritativeChatNamespace(options: {
   clientNamespace: string;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<ResolveChatNamespaceOutcome> {
-  const kubeconfigText = decodeKubeconfig(options.encodedKubeconfig);
-  if (kubeconfigText == null) {
+  const useDevCredentialBypass = hasDevCredentialBypass();
+  const devCredentials = useDevCredentialBypass
+    ? devCredentialsFromEnv()
+    : undefined;
+  const clientNamespace = options.clientNamespace.trim();
+  const authorization = await authorizeKubeconfigNamespace({
+    encodedKubeconfig: options.encodedKubeconfig,
+    expectedNamespace:
+      clientNamespace === "" ? undefined : options.clientNamespace,
+    normalizeNamespace: normalizeAssistantNamespace,
+    verify: useDevCredentialBypass
+      ? () => {
+          if (
+            devCredentials != null &&
+            devCredentials.encodedKubeconfig !== "" &&
+            !kubeconfigCredentialsMatch(
+              options.encodedKubeconfig,
+              devCredentials.encodedKubeconfig
+            )
+          ) {
+            return Promise.resolve({
+              message: "kubeconfig does not match local dev credentials.",
+              ok: false as const,
+              status: 403,
+            });
+          }
+          return Promise.resolve({ ok: true as const });
+        }
+      : options.verify,
+  });
+  if (!authorization.ok) {
+    if (authorization.code === "verification_failed") {
+      return {
+        message: authorization.message,
+        ok: false,
+        status: authorization.status,
+      };
+    }
+    if (
+      authorization.code === "authentication_required" ||
+      authorization.code === "invalid_kubeconfig"
+    ) {
+      return {
+        message: "Missing or invalid kubeconfig",
+        ok: false,
+        status: 400,
+      };
+    }
+    if (authorization.code === "namespace_unresolved") {
+      return {
+        message:
+          "Could not resolve namespace from kubeconfig (missing or invalid current-context).",
+        ok: false,
+        status: 400,
+      };
+    }
     return {
+      message: "namespace does not match kubeconfig current context.",
       ok: false,
-      status: 400,
-      message: "Missing or invalid kubeconfig",
+      status: 403,
     };
   }
 
-  const parsed = resolveChatNamespaceFromKubeconfigText({
-    kubeconfigText,
-    clientNamespace: options.clientNamespace,
-  });
-  if (!parsed.ok) {
-    return parsed;
-  }
-
-  if (hasDevCredentialBypass()) {
-    const dev = devCredentialsFromEnv();
-    if (
-      dev.encodedKubeconfig !== "" &&
-      !kubeconfigCredentialsMatch(
-        options.encodedKubeconfig,
-        dev.encodedKubeconfig
-      )
-    ) {
-      return {
-        ok: false,
-        status: 403,
-        message: "kubeconfig does not match local dev credentials.",
-      };
-    }
-
+  if (devCredentials != null) {
     const authoritativeNamespace =
-      dev.namespace === ""
-        ? parsed.namespace
-        : normalizeAssistantNamespace(dev.namespace);
+      devCredentials.namespace === ""
+        ? authorization.namespace
+        : normalizeAssistantNamespace(devCredentials.namespace);
 
     const nsMismatch = rejectClientNamespaceMismatch(
       options.clientNamespace,
@@ -137,19 +132,5 @@ export async function resolveAuthoritativeChatNamespace(options: {
     return { ok: true, namespace: authoritativeNamespace };
   }
 
-  const verification = await (
-    options.verify ?? verifyKubeconfigNamespaceAccess
-  )({
-    kubeconfig: kubeconfigText,
-    namespace: parsed.namespace,
-  });
-  if (!verification.ok) {
-    return {
-      message: verification.message,
-      ok: false,
-      status: verification.status,
-    };
-  }
-
-  return { ok: true, namespace: parsed.namespace };
+  return { ok: true, namespace: authorization.namespace };
 }

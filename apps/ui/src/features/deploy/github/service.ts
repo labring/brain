@@ -10,15 +10,20 @@ import {
   getGithubAppMetadata,
   getGithubUserLogin,
 } from "./app-auth";
+import type {
+  GithubOAuthCallbackCancel,
+  GithubOAuthCallbackComplete,
+} from "./connection-http-handlers";
 import {
   upsertGithubAppConnection,
-  upsertGithubOauthConnection,
+  upsertGithubOauthConnectionInTransaction,
 } from "./connection-service";
 import {
-  consumeGithubAppInstallSession,
-  createGithubAppInstallSession,
+  consumeAndCompleteGithubAuthorizationSession,
+  consumeGithubAuthorizationSession,
+  createGithubAuthorizationSession,
 } from "./install-session-service";
-import { authorizeGithubConnectionIdentity } from "./namespace-auth-core";
+import type { GithubConnectionOwnerIdentity } from "./owner-identity";
 import { parseInstallReturnPathParam } from "./types";
 import { buildInstallPopupCompleteUrl, getCallbackBaseUrl } from "./urls";
 
@@ -74,27 +79,10 @@ async function githubAppInstallUrl(state: string): Promise<string> {
 
 export async function createGithubOAuthSessionUrl(input: {
   baseUrl: string;
-  encodedKubeconfig: string;
-  namespace: string;
+  owner: GithubConnectionOwnerIdentity;
   returnPath: string | null;
-  userId: string;
 }): Promise<{ authorizeUrl: string; state: string }> {
-  const identity = await authorizeGithubConnectionIdentity(
-    input.namespace,
-    input.userId,
-    { serverEncodedKubeconfig: input.encodedKubeconfig }
-  );
-  if (!identity.ok) {
-    throw new Error(identity.error);
-  }
-
-  const state = randomUUID();
-  await createGithubAppInstallSession({
-    namespace: identity.namespace,
-    returnPath: parseInstallReturnPathParam(input.returnPath),
-    state,
-    userId: identity.userId,
-  });
+  const state = await createGithubAuthorizationState(input);
   return {
     authorizeUrl: buildGithubOAuthAuthorizeUrl({
       redirectUri: githubOAuthCallbackUrl(input.baseUrl),
@@ -106,28 +94,24 @@ export async function createGithubOAuthSessionUrl(input: {
 }
 
 export async function createGithubAppInstallSessionUrl(input: {
-  encodedKubeconfig: string;
-  namespace: string;
+  owner: GithubConnectionOwnerIdentity;
   returnPath: string | null;
-  userId: string;
 }): Promise<{ installUrl: string; state: string }> {
-  const identity = await authorizeGithubConnectionIdentity(
-    input.namespace,
-    input.userId,
-    { serverEncodedKubeconfig: input.encodedKubeconfig }
-  );
-  if (!identity.ok) {
-    throw new Error(identity.error);
-  }
+  const state = await createGithubAuthorizationState(input);
+  return { installUrl: await githubAppInstallUrl(state), state };
+}
 
+async function createGithubAuthorizationState(input: {
+  owner: GithubConnectionOwnerIdentity;
+  returnPath: string | null;
+}): Promise<string> {
   const state = randomUUID();
-  await createGithubAppInstallSession({
-    namespace: identity.namespace,
+  await createGithubAuthorizationSession({
+    owner: input.owner,
     returnPath: parseInstallReturnPathParam(input.returnPath),
     state,
-    userId: identity.userId,
   });
-  return { installUrl: await githubAppInstallUrl(state), state };
+  return state;
 }
 
 /** Direct setup entry is rejected; install/configure must start from an authenticated Desktop SDK session. */
@@ -139,15 +123,6 @@ export function startAuthorize(): NextResponse {
   );
 }
 
-/** Provider returned `?error=...` — redirect back to the opener. */
-export function handleProviderError(request: Request): NextResponse {
-  const baseUrl = getCallbackBaseUrl(request);
-  const response = NextResponse.redirect(
-    buildInstallPopupCompleteUrl(baseUrl, null)
-  );
-  return response;
-}
-
 /** Verify setup state, store namespace GitHub App installation, redirect. */
 export async function completeAuthorization(
   request: Request,
@@ -157,7 +132,7 @@ export async function completeAuthorization(
     state: string | null;
   }
 ): Promise<NextResponse> {
-  const session = await consumeGithubAppInstallSession(args.state ?? "");
+  const session = await consumeGithubAuthorizationSession(args.state ?? "");
   if (session == null) {
     return jsonError(
       "invalid_state",
@@ -178,10 +153,10 @@ export async function completeAuthorization(
   await upsertGithubAppConnection({
     accountLogin: installation.accountLogin,
     accountType: installation.accountType,
-    actorUserId: session.userId,
     installationId,
     namespace: session.namespace,
     repositorySelection: installation.repositorySelection,
+    workspaceActor: session.workspaceActor,
   });
 
   const baseUrl = getCallbackBaseUrl(request);
@@ -191,45 +166,52 @@ export async function completeAuthorization(
   return response;
 }
 
-export async function completeOAuthAuthorization(
-  request: Request,
-  args: {
-    code: string | null;
-    state: string | null;
-  }
-): Promise<NextResponse> {
-  const session = await consumeGithubAppInstallSession(args.state ?? "");
+export const completeOAuthAuthorization: GithubOAuthCallbackComplete = async (
+  input
+) => {
+  const baseUrl = getCallbackBaseUrl(input.request);
+  const session = await consumeAndCompleteGithubAuthorizationSession(
+    input.state,
+    async (authorization, transaction) => {
+      const token = await exchangeGithubOAuthCode({
+        code: input.code,
+        redirectUri: githubOAuthCallbackUrl(baseUrl),
+      });
+      assertRequiredOAuthScopes(token.scope);
+      const githubLogin = await getGithubUserLogin(token.accessToken);
+      await upsertGithubOauthConnectionInTransaction(transaction, {
+        githubLogin,
+        owner: {
+          namespace: authorization.namespace,
+          ownerIdentityVersion: authorization.ownerIdentityVersion,
+          workspaceActor: authorization.workspaceActor,
+        },
+        token,
+      });
+      return authorization;
+    }
+  );
   if (session == null) {
-    return jsonError(
-      "invalid_state",
-      "CSRF check failed. State mismatch or expired.",
-      400
-    );
+    return null;
   }
-  const code = args.code?.trim() ?? "";
-  if (code === "") {
-    return jsonError(
-      "missing_code",
-      "GitHub OAuth authorization code was not returned.",
-      400
-    );
-  }
-
-  const baseUrl = getCallbackBaseUrl(request);
-  const token = await exchangeGithubOAuthCode({
-    code,
-    redirectUri: githubOAuthCallbackUrl(baseUrl),
-  });
-  assertRequiredOAuthScopes(token.scope);
-  const githubLogin = await getGithubUserLogin(token.accessToken);
-  await upsertGithubOauthConnection({
-    githubLogin,
-    namespace: session.namespace,
-    token,
-    userId: session.userId,
-  });
 
   return NextResponse.redirect(
     buildInstallPopupCompleteUrl(baseUrl, session.returnPath, session.state)
   );
-}
+};
+
+export const cancelOAuthAuthorization: GithubOAuthCallbackCancel = async (
+  input
+) => {
+  const session = await consumeGithubAuthorizationSession(input.state);
+  if (session == null) {
+    return null;
+  }
+  return NextResponse.redirect(
+    buildInstallPopupCompleteUrl(
+      getCallbackBaseUrl(input.request),
+      session.returnPath,
+      session.state
+    )
+  );
+};

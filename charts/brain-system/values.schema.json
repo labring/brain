@@ -78,6 +78,10 @@
             "type": ["string", "number", "boolean", "null"]
           },
           "type": "object"
+        },
+        "strategy": {
+          "enum": ["Recreate", "RollingUpdate"],
+          "type": "string"
         }
       },
       "required": ["enabled", "image", "imagePullPolicy", "name", "port"],

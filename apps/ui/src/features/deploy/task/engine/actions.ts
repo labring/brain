@@ -1,13 +1,15 @@
 import { generateId } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 
+import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
-import type {
-  DeploymentTaskSource,
-  DeployTaskBlockingInput,
-  DeployTaskRow,
+import {
+  type DeploymentTaskSource,
+  type DeployTaskBlockingInput,
+  type DeployTaskRow,
+  deployTaskMessages,
+  deployTasks,
 } from "../schema";
-import { deployTaskMessages, deployTasks } from "../schema";
 import { withoutSensitiveArgs } from "../sensitive-inputs";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import { createDeploymentTaskTimelineForRunner } from "../timeline";
@@ -218,23 +220,42 @@ async function resolveCreateInputs(
       message: "Deploy task creation requires source, runner, and target.",
     };
   }
-  return {
-    create: {
-      actorUserId:
-        input.create.actorUserId ?? predecessor?.actorUserId ?? undefined,
-      createdFrom: input.create.createdFrom,
-      githubConnectionId:
-        input.create.githubConnectionId ??
-        predecessor?.githubConnectionId ??
-        undefined,
-      namespace: input.create.namespace,
-      prompt: input.create.prompt,
-      runner,
-      source,
-      target,
-    },
-    predecessor,
+  const create: CreateDeployTaskInput = {
+    createdFrom: input.create.createdFrom,
+    creatingActor: input.create.creatingActor,
+    credentialBinding: input.create.credentialBinding,
+    namespace: input.create.namespace,
+    prompt: input.create.prompt,
+    runner,
+    source,
+    target,
   };
+  const bindingError = invalidCredentialBinding(create);
+  return bindingError == null
+    ? { create, predecessor }
+    : { kind: "invalid", message: bindingError };
+}
+
+function invalidCredentialBinding(
+  create: CreateDeployTaskInput
+): string | null {
+  if (create.source.kind !== "github") {
+    return create.credentialBinding == null
+      ? null
+      : "Only GitHub deployment tasks may carry a credential binding.";
+  }
+  const creatingActor = create.creatingActor?.trim() ?? "";
+  const binding = create.credentialBinding;
+  if (creatingActor === "" || binding == null) {
+    return "GitHub deployment requires a verified creator and credential binding.";
+  }
+  if (
+    !isCurrentDeploymentCredentialBinding(binding) ||
+    binding.credentialOwner.trim() !== creatingActor
+  ) {
+    return "GitHub deployment credential binding is invalid.";
+  }
+  return null;
 }
 
 /**
@@ -290,6 +311,18 @@ async function resolveCreateProject(
   return null;
 }
 
+function createdTaskEventPayload(
+  task: DeployTaskRow,
+  predecessor: DeployTaskRow | null
+): Record<string, unknown> {
+  return {
+    ...(task.creatingActor == null ? {} : { actionActor: task.creatingActor }),
+    ...(predecessor == null ? {} : { retriedFromTaskId: predecessor.id }),
+    source: task.source,
+    target: task.target,
+  };
+}
+
 export async function createDeployTaskAction(
   ctx: DeployTaskEngineContext,
   input: CreateDeployTaskActionInput
@@ -319,14 +352,16 @@ export async function createDeployTaskAction(
       .insert(deployTasks)
       .values({
         id,
-        actorUserId: create.actorUserId?.trim() || null,
+        actorUserId: null,
         artifactSummary:
           inheritedIdentities == null
             ? {}
             : { resultIdentities: inheritedIdentities },
         createdAt: now,
         createdFrom: create.createdFrom ?? "api",
-        githubConnectionId: create.githubConnectionId?.trim() || null,
+        creatingActor: create.creatingActor?.trim() || null,
+        credentialBinding: create.credentialBinding ?? null,
+        githubConnectionId: null,
         namespace: create.namespace.trim(),
         phase: "queued",
         projectId: resolvedProject?.projectId ?? null,
@@ -376,11 +411,7 @@ export async function createDeployTaskAction(
     event: {
       kind: "deploy_task.created",
       message: "Deploy task queued.",
-      payload: {
-        source: task.source,
-        target: task.target,
-        ...(predecessor == null ? {} : { retriedFromTaskId: predecessor.id }),
-      },
+      payload: createdTaskEventPayload(task, predecessor),
       phase: "queued",
     },
     from: ["queued"],
@@ -431,13 +462,17 @@ async function cancelParkedTask(
   ctx: DeployTaskEngineContext,
   taskId: string,
   namespace: string,
-  from: "blocked" | "queued"
+  from: "blocked" | "queued",
+  actionActor?: string
 ): Promise<CancelDeployTaskActionResult | "retry"> {
   const transitioned = await transitionDeployTask(ctx, {
     event: {
       kind: "deployment_task.cancelled",
       message: "Deploy task cancelled before it ran.",
-      payload: { from },
+      payload: {
+        ...(actionActor == null ? {} : { actionActor }),
+        from,
+      },
     },
     from: [from],
     taskId,
@@ -461,10 +496,14 @@ async function requestLeasedTaskCancel(
   ctx: DeployTaskEngineContext,
   taskId: string,
   namespace: string,
-  row: DeployTaskRow
+  row: DeployTaskRow,
+  actionActor?: string
 ): Promise<CancelDeployTaskActionResult | "retry"> {
   if (row.cancelRequestedAt == null) {
-    const recorded = await recordDeployTaskCancelRequest(ctx, { taskId });
+    const recorded = await recordDeployTaskCancelRequest(ctx, {
+      actionActor,
+      taskId,
+    });
     if (recorded == null) {
       return "retry";
     }
@@ -497,7 +536,7 @@ function settledCancelResult(
 
 export async function cancelDeployTaskAction(
   ctx: DeployTaskEngineContext,
-  input: { namespace: string; taskId: string }
+  input: { actionActor?: string; namespace: string; taskId: string }
 ): Promise<CancelDeployTaskActionResult> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const row = await getDeployTaskRowInNamespace(ctx.db, input);
@@ -510,12 +549,19 @@ export async function cancelDeployTaskAction(
     }
     const outcome =
       row.status === "queued" || row.status === "blocked"
-        ? await cancelParkedTask(ctx, input.taskId, input.namespace, row.status)
+        ? await cancelParkedTask(
+            ctx,
+            input.taskId,
+            input.namespace,
+            row.status,
+            input.actionActor
+          )
         : await requestLeasedTaskCancel(
             ctx,
             input.taskId,
             input.namespace,
-            row
+            row,
+            input.actionActor
           );
     if (outcome !== "retry") {
       return outcome;
@@ -536,6 +582,7 @@ export type SubmitDeployTaskInputActionResult =
   | { kind: "resumed"; launched: LaunchedDeployTaskRun; task: DeployTaskRow };
 
 export interface SubmitDeployTaskInputActionInput {
+  actionActor?: string;
   namespace: string;
   /** Launches the resumed runner with the submitted values held in memory. */
   run: DeployTaskRunLauncher;
@@ -578,6 +625,9 @@ export async function submitDeployTaskInputAction(
       kind: "deploy_task.input_submitted",
       message: "Additional deploy input submitted.",
       payload: {
+        ...(input.actionActor == null
+          ? {}
+          : { actionActor: input.actionActor }),
         inputKeys: submittedKeyNames(row.blockingInputs, input.values),
         redacted: true,
       },
@@ -591,7 +641,8 @@ export async function submitDeployTaskInputAction(
     event: {
       kind: "deployment_task.resumed",
       message: "Deployment run resumed with submitted input.",
-      payload: {},
+      payload:
+        input.actionActor == null ? {} : { actionActor: input.actionActor },
       phase: "configure",
     },
     from: ["blocked"],

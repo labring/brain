@@ -43,6 +43,18 @@ export type DeployTaskPhase =
 
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
+export const CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION = 1;
+
+/**
+ * Immutable credential selection written with a GitHub Deployment Task.
+ * The reference is resolved only together with its verified owner.
+ */
+export interface DeploymentCredentialBinding {
+  connectionRef: string;
+  credentialOwner: string;
+  version: number;
+}
+
 /**
  * Result identities allocated by a run (e.g. the random-suffixed template
  * instance name), recorded first-class at allocation time — before any
@@ -214,7 +226,13 @@ export const deployTasks = ns.table(
     // the app-level contract is the Brain Project ID.
     projectId: text("project_uid"),
     projectName: text("project_name"),
+    creatingActor: text("creating_actor"),
+    credentialBinding: jsonb(
+      "credential_binding"
+    ).$type<DeploymentCredentialBinding | null>(),
+    /** Compatibility-only Desktop identity. Never use this field for authorization. */
     actorUserId: text("actor_user_id"),
+    /** Compatibility-only client selector. Never use this field for credential lookup. */
     githubConnectionId: text("github_connection_id"),
     prompt: text("prompt"),
     source: jsonb("source").notNull().$type<DeploymentTaskSource>(),

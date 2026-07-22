@@ -21,6 +21,8 @@ export interface TaskRowFixtureInput {
   cancelRequestedAt?: Date | null;
   completedAt?: Date | null;
   createdAt?: Date;
+  creatingActor?: string | null;
+  credentialBinding?: DeployTaskRow["credentialBinding"];
   id?: string;
   leaseClaimedAt?: Date | null;
   leaseEpoch?: number;

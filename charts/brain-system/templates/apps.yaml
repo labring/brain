@@ -6,6 +6,7 @@
 {{- $probes := default (dict) $cfg.probes -}}
 {{- $env := default (dict) $cfg.env -}}
 {{- $staticEnv := default (dict) $cfg.staticEnv -}}
+{{- $strategy := default "RollingUpdate" $cfg.strategy -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,10 +28,12 @@ spec:
     matchLabels:
       app: {{ $cfg.name | quote }}
   strategy:
+    type: {{ $strategy }}
+    {{- if eq $strategy "RollingUpdate" }}
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-    type: RollingUpdate
+    {{- end }}
   template:
     metadata:
       labels:

@@ -261,7 +261,7 @@ export async function renewDeployTaskLease(
  */
 export async function recordDeployTaskCancelRequest(
   ctx: DeployTaskEngineContext,
-  input: { taskId: string }
+  input: { actionActor?: string; taskId: string }
 ): Promise<DeployTaskRowLite | null> {
   const statement = sql`WITH changed AS (
     UPDATE ${TASKS}
@@ -273,7 +273,8 @@ export async function recordDeployTaskCancelRequest(
   ) ${eventInsertCte({
     kind: "deployment_task.cancel_requested",
     message: "Cancellation requested; waiting for the runner to stop.",
-    payload: {},
+    payload:
+      input.actionActor == null ? {} : { actionActor: input.actionActor },
   })} SELECT * FROM changed`;
   return await runLiteStatement(ctx, statement, { notify: true });
 }

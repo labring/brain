@@ -49,8 +49,6 @@ export type DeploymentTargetPipelineRequest =
     };
 
 export interface DeploymentTaskCreateInput {
-  actorUserId?: string;
-  githubConnectionId?: string;
   namespace: string;
   predecessorTaskId?: string;
   prompt?: string;
@@ -73,11 +71,9 @@ export interface DeploymentTargetPipelineAdapters {
 }
 
 export interface DeploymentTargetPipelineOptions {
-  actorUserId?: string;
   adapters: DeploymentTargetPipelineAdapters;
   credentialsReady: boolean;
   existingProjects?: readonly ProjectExplorerProject[];
-  githubConnectionId?: string;
   namespace: string;
   /** Redeploy clone (ADR 0038): lineage + identity reuse on the server. */
   predecessorTaskId?: string;
@@ -307,12 +303,6 @@ export async function runDeploymentTargetPipeline(
   const predecessorTaskId = options.predecessorTaskId?.trim();
   const task = await options.adapters.createDeploymentTask({
     ...taskInput,
-    ...(options.request.kind === "github"
-      ? {
-          actorUserId: options.actorUserId?.trim() ?? "",
-          githubConnectionId: options.githubConnectionId?.trim() ?? "",
-        }
-      : {}),
     namespace: options.namespace,
     ...(predecessorTaskId ? { predecessorTaskId } : {}),
     target,

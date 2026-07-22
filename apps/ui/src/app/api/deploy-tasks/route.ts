@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGithubConnectionForNamespaceById } from "@/features/deploy/github/connection-service";
+import { getGithubConnectionStatusForWorkspaceActor } from "@/features/deploy/github/connection-service";
+import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -11,6 +12,12 @@ import {
   resolveDeploymentTaskTarget,
   runDeployTask,
 } from "@/features/deploy/task/runner";
+import {
+  CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+  type DeploymentCredentialBinding,
+  type DeploymentTaskSource,
+  type DeployTaskRow,
+} from "@/features/deploy/task/schema";
 import {
   getDeployTaskByIdInNamespace,
   listDeploymentTaskProjections,
@@ -40,8 +47,54 @@ const requestSchema = createDeployTaskInputSchema
     { message: "source, target, and runner are required without a predecessor" }
   );
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+function jsonError(message: string, status: number, code?: string) {
+  return NextResponse.json(
+    { ...(code == null ? {} : { code }), error: message },
+    { status }
+  );
+}
+
+async function resolveCredentialBinding(input: {
+  creatingActor?: string;
+  namespace: string;
+  sourceKind?: DeploymentTaskSource["kind"];
+}): Promise<
+  | { credentialBinding?: DeploymentCredentialBinding }
+  | { response: NextResponse }
+> {
+  if (input.sourceKind !== "github") {
+    return {};
+  }
+  if (input.creatingActor == null) {
+    return {
+      response: jsonError(
+        "A verified Workspace Actor is required for GitHub deployment.",
+        403,
+        "workspace_actor_required"
+      ),
+    };
+  }
+  const connection = await getGithubConnectionStatusForWorkspaceActor({
+    namespace: input.namespace,
+    ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+    workspaceActor: input.creatingActor,
+  });
+  if (connection == null) {
+    return {
+      response: jsonError(
+        "Connect GitHub before creating this deployment task.",
+        409,
+        "github_connection_required"
+      ),
+    };
+  }
+  return {
+    credentialBinding: {
+      connectionRef: connection.id,
+      credentialOwner: input.creatingActor,
+      version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+    },
+  };
 }
 
 export async function GET(request: Request) {
@@ -120,8 +173,9 @@ export async function POST(request: Request) {
     );
   }
   const taskNamespace = namespaceResolved.namespace ?? parsed.data.namespace;
+  let predecessor: DeployTaskRow | null = null;
   if (parsed.data.predecessorTaskId != null) {
-    const predecessor = await getDeployTaskByIdInNamespace(
+    predecessor = await getDeployTaskByIdInNamespace(
       parsed.data.predecessorTaskId,
       taskNamespace
     );
@@ -129,36 +183,25 @@ export async function POST(request: Request) {
       return jsonError("Deploy task predecessor not found", 404);
     }
   }
-  if (parsed.data.source?.kind === "github") {
-    const actorUserId = parsed.data.actorUserId?.trim();
-    if (!actorUserId) {
-      return jsonError("Actor user ID is required for GitHub deployment.", 400);
-    }
-    const githubConnectionId = parsed.data.githubConnectionId?.trim();
-    if (!githubConnectionId) {
-      return jsonError(
-        "GitHub connection ID is required for GitHub deployment.",
-        400
-      );
-    }
-    const connection = await getGithubConnectionForNamespaceById({
-      connectionId: githubConnectionId,
-      namespace: taskNamespace,
-      userId: actorUserId,
-    });
-    if (connection == null) {
-      return jsonError(
-        "GitHub connection does not belong to this namespace.",
-        403
-      );
-    }
+  const effectiveSource = parsed.data.source ?? predecessor?.source;
+  const creatingActor = namespaceResolved.workspaceActor;
+  const bindingResolution = await resolveCredentialBinding({
+    creatingActor,
+    namespace: taskNamespace,
+    sourceKind: effectiveSource?.kind,
+  });
+  if ("response" in bindingResolution) {
+    return bindingResolution.response;
   }
+  const { credentialBinding } = bindingResolution;
 
   const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
   const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
     create: {
       ...taskInput,
       createdFrom: "ui",
+      ...(creatingActor == null ? {} : { creatingActor }),
+      ...(credentialBinding == null ? {} : { credentialBinding }),
       namespace: taskNamespace,
     },
     predecessorTaskId,

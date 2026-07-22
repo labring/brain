@@ -54,6 +54,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const result = await cancelDeployTaskAction(getDeployTaskEngineContext(), {
+    actionActor: namespaceResolved.workspaceActor,
     namespace: namespaceResolved.namespace,
     taskId,
   });

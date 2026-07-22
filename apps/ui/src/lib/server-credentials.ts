@@ -10,9 +10,16 @@ function envTrimDecoded(raw: string | undefined): string {
   }
 }
 
-/** Local dev can bypass Desktop SDK when `NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG` is set. */
+/**
+ * Local dev can bypass Desktop SDK when `NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`
+ * is set — never in production builds, where a stray env var must not replace
+ * SelfSubjectAccessReview verification.
+ */
 export function hasDevCredentialBypass(): boolean {
-  return envTrimDecoded(process.env.NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG) !== "";
+  return (
+    process.env.NODE_ENV !== "production" &&
+    envTrimDecoded(process.env.NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG) !== ""
+  );
 }
 
 /** Local dev overrides (`AuthBootstrap`); production auth comes from Desktop SDK. */

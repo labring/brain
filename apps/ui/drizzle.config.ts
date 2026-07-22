@@ -19,8 +19,8 @@ dotenv.config({ path: ".env" });
 export default defineConfig({
   dialect: "postgresql",
   schema: [
-    "./src/lib/chat-persistence/schema.ts",
-    "./src/lib/deploy-task/schema.ts",
+    "./src/features/chat/persistence/schema.ts",
+    "./src/features/deploy/task/schema.ts",
     "./src/lib/project-persistence/schema.ts",
   ],
   dbCredentials: { url: process.env.DATABASE_URL ?? "" },

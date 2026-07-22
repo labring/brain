@@ -70,6 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
   const result = await submitDeployTaskInputAction(
     getDeployTaskEngineContext(),
     {
+      actionActor: namespaceResolved.workspaceActor,
       namespace: namespaceResolved.namespace,
       run: (handle, task) =>
         runDeployTask(handle, {

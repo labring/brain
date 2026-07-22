@@ -1,11 +1,19 @@
+import { createGithubOAuthCallbackHandler } from "@/features/deploy/github/connection-http-handlers";
+import { isGithubAuthorizationSessionValid } from "@/features/deploy/github/install-session-service";
 import {
+  cancelOAuthAuthorization,
   completeAuthorization,
   completeOAuthAuthorization,
-  handleProviderError,
   startAuthorize,
 } from "@/features/deploy/github/service";
 
 export const runtime = "nodejs";
+
+const completeOAuthCallback = createGithubOAuthCallbackHandler({
+  cancelAuthorization: cancelOAuthAuthorization,
+  completeAuthorization: completeOAuthAuthorization,
+  validateState: isGithubAuthorizationSessionValid,
+});
 
 /**
  * GitHub callback:
@@ -16,14 +24,8 @@ export const runtime = "nodejs";
  */
 export function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  if (searchParams.get("error")) {
-    return handleProviderError(request);
-  }
-  if (searchParams.get("code")) {
-    return completeOAuthAuthorization(request, {
-      code: searchParams.get("code"),
-      state: searchParams.get("state"),
-    });
+  if (searchParams.has("error") || searchParams.has("code")) {
+    return completeOAuthCallback(request);
   }
   const installationId = searchParams.get("installation_id");
   if (!installationId) {

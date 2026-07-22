@@ -40,7 +40,7 @@ const messagesResponseSchema = z.object({
 
 /**
  * Namespace-scoped chat routes authorize the caller from the kubeconfig bearer
- * token (see `authorizeChatRequestNamespace`), so every request must carry it.
+ * token (see `createAssistantConversationHandlers`), so every request carries it.
  */
 function authHeaders(kubeconfig: string): Record<string, string> {
   return { Authorization: kubeconfigBearerHeader(kubeconfig) };
@@ -87,11 +87,10 @@ async function safeJsonPost<T>(
 
 export function fetchAssistantSession(
   namespaceRaw: string,
-  kubeconfig: string,
-  userId: string
+  kubeconfig: string
 ): Promise<AssistantSessionPayload | null> {
   return safeJsonGet(
-    `/api/chat/session?namespace=${encodeURIComponent(namespaceRaw)}&userId=${encodeURIComponent(userId)}`,
+    `/api/chat/session?namespace=${encodeURIComponent(namespaceRaw)}`,
     sessionResponseSchema,
     authHeaders(kubeconfig)
   );
@@ -100,11 +99,10 @@ export function fetchAssistantSession(
 /** `null` when the handler failed (HTTP error / parse failure), including DB unavailable (503). */
 export async function fetchAssistantThreads(
   namespaceRaw: string,
-  kubeconfig: string,
-  userId: string
+  kubeconfig: string
 ): Promise<AssistantThreadDTO[] | null> {
   const data = await safeJsonGet(
-    `/api/chat/threads?namespace=${encodeURIComponent(namespaceRaw)}&userId=${encodeURIComponent(userId)}`,
+    `/api/chat/threads?namespace=${encodeURIComponent(namespaceRaw)}`,
     threadsResponseSchema,
     authHeaders(kubeconfig)
   );
