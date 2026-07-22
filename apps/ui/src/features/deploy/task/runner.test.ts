@@ -3,7 +3,11 @@ import { describe, expect, it } from "bun:test";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { deployTaskFailureSummary } from "./failure-summary";
 import { deployOutputProgressSummary } from "./output-progress";
-import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
+import {
+  DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT,
+  DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
+  getDeployDevboxStorageLimitFromEnv,
+} from "./runtime-config";
 
 describe("deploy task runner failure summaries", () => {
   it("summarizes noisy skill install failures", () => {
@@ -79,6 +83,24 @@ describe("deploy task build runtime contract", () => {
 });
 
 describe("deploy task runtime config", () => {
+  it("defaults deploy Devbox storage to 10Gi", () => {
+    expect(DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT).toBe("10Gi");
+    expect(getDeployDevboxStorageLimitFromEnv({})).toBe("10Gi");
+    expect(
+      getDeployDevboxStorageLimitFromEnv({
+        DEPLOY_DEVBOX_STORAGE_LIMIT: "   ",
+      })
+    ).toBe("10Gi");
+  });
+
+  it("uses a configured deploy Devbox storage limit", () => {
+    expect(
+      getDeployDevboxStorageLimitFromEnv({
+        DEPLOY_DEVBOX_STORAGE_LIMIT: " 20Gi ",
+      })
+    ).toBe("20Gi");
+  });
+
   it("waits up to one hour for deploy DevBox runtime readiness", () => {
     expect(DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS).toBe(60 * 60_000);
   });

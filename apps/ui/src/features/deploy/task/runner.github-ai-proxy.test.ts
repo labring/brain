@@ -20,6 +20,7 @@ const ENV_KEYS = [
   "CODEX_GATEWAY_OPENAI_BASE_URL",
   "DEV_OPENAI_API_KEY",
   "DEV_OPENAI_API_BASE_URL",
+  "DEPLOY_DEVBOX_STORAGE_LIMIT",
   "DEVBOX_API_BASE_URL",
   "DEVBOX_TOKEN",
   "SYSTEM_OPENAI_API_KEY",
@@ -133,6 +134,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
     setPlatformCredentials();
     process.env.AI_PROXY_TOKEN_NAME = "github-deploy-token";
     process.env.CODEX_GATEWAY_MODEL = "deploy-model";
+    delete process.env.DEPLOY_DEVBOX_STORAGE_LIMIT;
     process.env.DEVBOX_API_BASE_URL = "https://devbox.test";
     process.env.DEVBOX_TOKEN = "devbox-test-token";
   });
@@ -333,6 +335,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
   it("requests AI Proxy credentials only when creating a Devbox", async () => {
     const requests: Request[] = [];
     let createdEnv: Record<string, string> | undefined;
+    let createdStorageLimit: string | undefined;
     installFetchHandler(async (request) => {
       requests.push(request);
       const url = new URL(request.url);
@@ -347,8 +350,10 @@ describe("GitHub deployment AI Proxy credentials", () => {
       if (url.pathname === "/api/v1/devbox" && request.method === "POST") {
         const body = (await request.json()) as {
           env?: Record<string, string>;
+          storageLimit?: string;
         };
         createdEnv = body.env;
+        createdStorageLimit = body.storageLimit;
         return devboxEnvelope({});
       }
       if (
@@ -378,5 +383,6 @@ describe("GitHub deployment AI Proxy credentials", () => {
       CODEX_GATEWAY_OPENAI_API_KEY: "new-user-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
     });
+    expect(createdStorageLimit).toBe("10Gi");
   });
 });

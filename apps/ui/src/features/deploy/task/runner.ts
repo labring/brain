@@ -96,7 +96,10 @@ import {
   updateDeployTaskState,
   updateDeployTaskTimeline,
 } from "./runner-writes";
-import { DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS } from "./runtime-config";
+import {
+  DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
+  getDeployDevboxStorageLimitFromEnv,
+} from "./runtime-config";
 import type {
   DeploymentTaskDeploymentPlan,
   DeployTaskArtifactSummary,
@@ -1532,6 +1535,7 @@ async function ensureDeployDevbox(input: {
       ],
       name,
       pauseAt: getPauseAt(),
+      storageLimit: getDeployDevboxStorageLimitFromEnv(process.env),
       upstreamID,
     });
 
