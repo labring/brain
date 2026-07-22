@@ -11,6 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "../../deploy/github/owner-identity";
 import { ASSISTANT_DB_SCHEMA } from "./types";
 
 /**
@@ -177,7 +178,9 @@ export const githubOauthConnections = ns.table(
     index("github_oauth_connections_github_login_idx").on(table.githubLogin),
     uniqueIndex("github_oauth_connections_current_owner_unique_idx")
       .on(table.namespace, table.workspaceActor)
-      .where(sql`${table.ownerIdentityVersion} = 1`),
+      .where(
+        sql`${table.ownerIdentityVersion} = ${sql.raw(String(CURRENT_GITHUB_OWNER_IDENTITY_VERSION))}`
+      ),
   ]
 );
 

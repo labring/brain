@@ -191,7 +191,7 @@ export async function upsertGithubOauthConnectionInTransaction(
         githubOauthConnections.namespace,
         githubOauthConnections.workspaceActor,
       ],
-      targetWhere: sql`${githubOauthConnections.ownerIdentityVersion} = 1`,
+      targetWhere: sql`${githubOauthConnections.ownerIdentityVersion} = ${sql.raw(String(CURRENT_GITHUB_OWNER_IDENTITY_VERSION))}`,
     })
     .returning();
   if (row == null) {
