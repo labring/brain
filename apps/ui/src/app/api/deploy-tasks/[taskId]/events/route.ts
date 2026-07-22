@@ -92,7 +92,12 @@ async function persistAndForwardSseBlock(input: {
       console.error("[deploy-tasks] failed to persist gateway event:", error);
     }
   }
-  input.controller.enqueue(input.encoder.encode(`${input.block}\n\n`));
+  // Gateway payloads may contain repository output, command errors, or
+  // credentials. The browser only needs an invalidation signal; task state is
+  // projected through the scrubbed snapshot/timeline APIs.
+  input.controller.enqueue(
+    input.encoder.encode(encodeSse("gateway-update", {}))
+  );
 }
 
 async function flushSseBlocks(input: {

@@ -3,6 +3,7 @@ import { after, afterEach, before, test } from "node:test";
 
 import { eq } from "drizzle-orm";
 
+import { deploymentFailureMessage } from "../failure-summary";
 import { deployTaskEvents, deployTasks } from "../schema";
 import {
   cancelDeployTaskAction,
@@ -32,6 +33,7 @@ import {
 let harness: DeployTaskTestHarness;
 
 const ILLEGAL_TRANSITION_RE = /Illegal deploy task transition/;
+const EMPTY_BLOCKING_INPUTS_RE = /cannot enter blocked without blocking inputs/;
 
 interface RecordingDevbox extends DeployTaskEngineDevbox {
   deleted: string[];
@@ -162,6 +164,29 @@ test("transitions reject illegal moves and stale statuses", async () => {
   assert.equal((await taskById(row.id)).status, "completed");
 });
 
+test("the status writer rejects blocked transitions without inputs", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    leaseEpoch: 1,
+    leaseOwner: "test-proc",
+    status: "running",
+  });
+
+  await assert.rejects(
+    transitionDeployTask(ctx, {
+      expectedLeaseEpoch: 1,
+      from: ["running"],
+      set: { blockingInputs: [], phase: "configure" },
+      taskId: row.id,
+      to: "blocked",
+    }),
+    EMPTY_BLOCKING_INPUTS_RE
+  );
+
+  assert.equal((await taskById(row.id)).status, "running");
+  assert.equal((await eventsFor(row.id)).length, 0);
+});
+
 test("stale lease epoch fences writes to no-ops", async () => {
   const ctx = testCtx();
   const row = await insertTaskRow(harness.db, {
@@ -257,6 +282,7 @@ test("reaper resolves expired leases: interrupted, or cancelled when intent pend
     (interruptedRow.failureDetails as { reason?: string } | null)?.reason,
     "interrupted"
   );
+  assert.equal(interruptedRow.error, deploymentFailureMessage("interrupted"));
   assert.ok(interruptedRow.completedAt != null);
 
   const cancelledRow = await taskById(cancelledPending.id);
@@ -267,6 +293,10 @@ test("reaper resolves expired leases: interrupted, or cancelled when intent pend
   const verdictEvents = await eventsFor(interrupted.id);
   assert.equal(verdictEvents.length, 1);
   assert.equal(verdictEvents[0]?.kind, "deployment_task.engine_resolved");
+  assert.equal(
+    verdictEvents[0]?.message,
+    deploymentFailureMessage("interrupted")
+  );
 });
 
 test("reaper enforces cancel-ack deadline, max active run, and start deadline", async () => {
@@ -306,12 +336,14 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
     (overrunRow.failureDetails as { reason?: string } | null)?.reason,
     "timeout"
   );
+  assert.equal(overrunRow.error, deploymentFailureMessage("timeout"));
   const neverRow = await taskById(neverStarted.id);
   assert.equal(neverRow.status, "failed");
   assert.equal(
     (neverRow.failureDetails as { reason?: string } | null)?.reason,
     "never-started"
   );
+  assert.equal(neverRow.error, deploymentFailureMessage("never-started"));
 
   // The forced cancel starves the still-live runner's writes.
   const starved = await transitionDeployTask(ctx, {
@@ -321,6 +353,84 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
     to: "completed",
   } as never).catch(() => null);
   assert.equal(starved, null);
+});
+
+test("reaper fails legacy blocked tasks without inputs and preserves valid waits", async () => {
+  const ctx = testCtx();
+  const unknown = await insertTaskRow(harness.db, {
+    blockingInputs: [],
+    phase: "plan",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    runtimeName: "deploy-invalid-blocked",
+    runtimeProvider: "devbox",
+    runtimeState: "running",
+    status: "blocked",
+  });
+  const outputMissing = await insertTaskRow(harness.db, { status: "blocked" });
+  const buildRuntime = await insertTaskRow(harness.db, { status: "blocked" });
+  const gateway = await insertTaskRow(harness.db, { status: "blocked" });
+  const valid = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      { id: "port", key: "PORT", label: "Port", required: true, type: "text" },
+    ],
+    phase: "configure",
+    status: "blocked",
+  });
+
+  for (const [taskId, kind] of [
+    [outputMissing.id, "deployment_task.output_missing"],
+    [buildRuntime.id, "deployment_task.build_runtime_unavailable"],
+    [gateway.id, "deployment_task.gateway_unavailable"],
+  ] as const) {
+    await appendDeployTaskEvent(ctx, {
+      event: { kind, message: "legacy failure", payload: {} },
+      from: ["blocked"],
+      taskId,
+    });
+  }
+
+  const summary = await runDeployTaskReaperSweep(ctx);
+
+  assert.equal(summary.invalidBlocked, 4);
+  assert.equal(summary.devboxPaused, 1);
+  const unknownRow = await taskById(unknown.id);
+  assert.equal(unknownRow.status, "failed");
+  assert.equal(unknownRow.runtimeState, "paused");
+  assert.equal(unknownRow.error, deploymentFailureMessage("unknown"));
+  assert.deepEqual(unknownRow.failureDetails, {
+    detail: "empty-blocking-inputs",
+    failureMessage: deploymentFailureMessage("unknown"),
+    reason: "unknown",
+  });
+  assert.equal((await taskById(valid.id)).status, "blocked");
+
+  const [unknownEvent] = await eventsFor(unknown.id);
+  assert.equal(unknownEvent?.kind, "deployment_task.engine_resolved");
+  assert.deepEqual(unknownEvent?.payload, {
+    detail: "empty-blocking-inputs",
+    reason: "unknown",
+    verdict: "failed",
+  });
+
+  for (const [taskId, reason] of [
+    [outputMissing.id, "deployment-output-missing"],
+    [buildRuntime.id, "build-runtime-unavailable"],
+    [gateway.id, "gateway-not-exposed"],
+  ] as const) {
+    const row = await taskById(taskId);
+    assert.equal(row.status, "failed");
+    assert.equal(row.error, deploymentFailureMessage(reason));
+    assert.equal(
+      (row.failureDetails as { reason?: string } | null)?.reason,
+      reason
+    );
+    const verdict = (await eventsFor(taskId)).at(-1);
+    assert.equal(verdict?.kind, "deployment_task.engine_resolved");
+    assert.equal(verdict?.payload.reason, reason);
+  }
+
+  const repeat = await runDeployTaskReaperSweep(ctx);
+  assert.equal(repeat.invalidBlocked, 0);
 });
 
 test("create action inserts, claims inline, launches, and completes through the handle", async () => {
@@ -358,6 +468,45 @@ test("create action inserts, claims inline, launches, and completes through the 
     "runner.progress",
     "deployment_task.completed",
   ]);
+});
+
+test("requesting inputs rejects an empty wait without releasing the lease", async () => {
+  const ctx = testCtx();
+  let rejected = false;
+  let remainedRunning = false;
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      try {
+        await handle.requestInputs({ blockingInputs: [], phase: "configure" });
+      } catch (error) {
+        rejected =
+          error instanceof Error &&
+          error.message ===
+            "Deployment task cannot enter blocked without blocking inputs.";
+      }
+      const running = await taskById(handle.taskId);
+      remainedRunning =
+        running.status === "running" && running.leaseOwner === "test-proc";
+      await handle.beginApplying();
+      await handle.complete();
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  await result.launched?.done;
+
+  assert.equal(rejected, true);
+  assert.equal(remainedRunning, true);
+  assert.equal((await taskById(result.task.id)).status, "completed");
 });
 
 test("create strips sensitive template args from every persisted form (ADR 0037)", async () => {

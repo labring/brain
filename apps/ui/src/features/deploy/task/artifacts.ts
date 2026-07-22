@@ -361,7 +361,9 @@ const BUILD_RESULT_SUCCESS_STATUSES = new Set([
   "succeeded",
 ]);
 
-function normalizeBuildResultStatus(status: string | null): string | null {
+export function normalizeBuildResultStatus(
+  status: string | null
+): string | null {
   if (status == null) {
     return null;
   }

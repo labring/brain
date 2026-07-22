@@ -144,7 +144,38 @@ export interface DeployTaskEventPayload {
   [key: string]: unknown;
 }
 
-export type DeployTaskFailureDetails = Record<string, unknown>;
+export type DeployTaskFailureReason =
+  | "github-authentication"
+  | "repository-clone-failed"
+  | "ai-proxy-unavailable"
+  | "deploy-runtime-unavailable"
+  | "build-runtime-unavailable"
+  | "deploy-skill-install-failed"
+  | "buildkit-start-failed"
+  | "image-build-failed"
+  | "gateway-not-exposed"
+  | "gateway-unavailable"
+  | "gateway-upstream-error"
+  | "gateway-timeout"
+  | "deployment-output-missing"
+  | "apply-failed"
+  | "quota-exceeded"
+  | "readiness-timeout"
+  | "interrupted"
+  | "timeout"
+  | "never-started"
+  | "runner-error"
+  | "cancelled"
+  | "unknown";
+
+export type DeployTaskFailureStage = "apply" | "readiness";
+
+export interface DeployTaskFailureDetails extends Record<string, unknown> {
+  failureMessage?: string;
+  httpStatus?: number;
+  reason?: DeployTaskFailureReason;
+  stage?: DeployTaskFailureStage;
+}
 export type DeployTaskGatewayStateSnapshot = Record<string, unknown>;
 
 export interface DeploymentTaskGithubSource {

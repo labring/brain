@@ -26,6 +26,7 @@ function deploymentTaskSource(
     namespace: "default",
     phase: "queued",
     projectId: "project-uid",
+    runner: { kind: "direct" },
     source: { kind: "docker", settings: { image: "nginx:latest" } },
     status: "queued",
     updatedAt: NOW,
@@ -52,6 +53,28 @@ test("deployment task projection includes active project tasks", () => {
     status: "queued",
     updatedAt: "2026-06-11T10:00:00.000Z",
   });
+});
+
+test("AI deployment projections hide generated build errors", () => {
+  const projection = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        buildResult: {
+          error: { message: "Bearer private-build-token" },
+          status: "failed",
+        },
+      },
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+    }),
+    NOW
+  );
+
+  assert.ok(projection);
+  assert.equal(projection.artifactSummary.buildResult, undefined);
+  assert.equal(
+    JSON.stringify(projection).includes("private-build-token"),
+    false
+  );
 });
 
 test("deployment task projection summarizes source and result resources", () => {

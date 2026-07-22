@@ -37,6 +37,12 @@ const {
   ensureAiDeploymentDevbox,
   resolveGithubCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
+const {
+  CodexGatewayApiError,
+  CodexGatewayTimeoutError,
+  codexGatewayFailureDetails,
+  gatewayStateSnapshot,
+} = requireModule("./gateway") as typeof import("./gateway");
 
 function kubeconfig(clusterHostname = "test.sealos.io"): string {
   return [
@@ -384,5 +390,61 @@ describe("GitHub deployment AI Proxy credentials", () => {
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
     });
     expect(createdStorageLimit).toBe("10Gi");
+  });
+});
+
+describe("Codex gateway failure classification", () => {
+  it("keeps only an upstream HTTP status for 5xx failures", () => {
+    expect(
+      codexGatewayFailureDetails(
+        new CodexGatewayApiError("private upstream body", 503, {
+          token: "private-token",
+        })
+      )
+    ).toEqual({
+      httpStatus: 503,
+      reason: "gateway-upstream-error",
+    });
+  });
+
+  it("classifies turn timeouts independently from upstream errors", () => {
+    expect(codexGatewayFailureDetails(new CodexGatewayTimeoutError())).toEqual({
+      reason: "gateway-timeout",
+    });
+  });
+
+  it("classifies fetch failures as unavailable", () => {
+    expect(codexGatewayFailureDetails(new TypeError("fetch failed"))).toEqual({
+      reason: "gateway-unavailable",
+    });
+  });
+
+  it("persists only allowlisted gateway state metadata", () => {
+    const snapshot = gatewayStateSnapshot({
+      sessionId: "session-31",
+      state: {
+        activeTurn: false,
+        ready: true,
+        recentEvents: [{ error: "Bearer private-token" }],
+        transcript: [
+          {
+            createdAt: 1,
+            id: "entry-1",
+            role: "assistant",
+            source: "gateway",
+            status: "failed",
+            text: "private gateway stderr",
+          },
+        ],
+      },
+    });
+
+    expect(snapshot).toMatchObject({
+      activeTurn: false,
+      ready: true,
+      sessionId: "session-31",
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("private-token");
+    expect(JSON.stringify(snapshot)).not.toContain("private gateway stderr");
   });
 });

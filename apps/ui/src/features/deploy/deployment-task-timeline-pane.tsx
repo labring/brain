@@ -44,7 +44,7 @@ import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
 } from "@/features/deploy/deployment-task-redeploy";
-import { deployRunnerSurfacesRawFailure } from "@/features/deploy/task/failure-summary";
+import { deploymentFailureTechnicalDetail } from "@/features/deploy/task/failure-details";
 import {
   deploymentTaskShortCode,
   deploymentTaskSourceSummary,
@@ -1201,15 +1201,14 @@ export function DeploymentTaskTimelinePaneContent({
   if (snapshot.timeline.steps.length === 0) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
-  // Only surface the ground-truth error for runners whose terminal error is
-  // scrubbed (ADR 0042 "scrub ⇔ raw display"); task.error is the full scrubbed
-  // message, while the step's inline event carries the short reason.
-  const rawFailure =
-    deployRunnerSurfacesRawFailure(snapshot.task.runner) &&
-    snapshot.task.error != null &&
-    snapshot.task.error.trim() !== ""
-      ? snapshot.task.error
-      : undefined;
+  const failureDetail = deploymentFailureTechnicalDetail({
+    details: snapshot.task.failureDetails,
+    error: snapshot.task.error,
+    id: snapshot.task.id,
+    phase: snapshot.task.phase,
+    runner: snapshot.task.runner,
+    status: snapshot.task.status,
+  });
   return (
     <div
       className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
@@ -1228,7 +1227,7 @@ export function DeploymentTaskTimelinePaneContent({
       </div>
       <TimelineSteps
         blockingInputs={snapshot.task.blockingInputs}
-        failureDetail={rawFailure}
+        failureDetail={failureDetail}
         kubeconfig={kubeconfig}
         namespace={namespace}
         plan={snapshot.task.artifactSummary.deploymentPlan}

@@ -1,3 +1,15 @@
+import {
+  deploymentFailureMessage,
+  isDeployTaskFailureReason,
+} from "./failure-summary";
+import type {
+  DeploymentTaskRunner,
+  DeployTaskFailureDetails,
+  DeployTaskFailureReason,
+  DeployTaskFailureStage,
+  DeployTaskStatus,
+} from "./schema";
+
 const DEPLOY_FAILURE_DETAILS_KEY = "__sealaiDeployFailureDetails";
 
 /**
@@ -6,7 +18,7 @@ const DEPLOY_FAILURE_DETAILS_KEY = "__sealaiDeployFailureDetails";
  * left partially created resources. `readiness` is the post-apply wait and
  * exists for diagnostics only.
  */
-export type DeployFailureStage = "apply" | "readiness";
+export type DeployFailureStage = DeployTaskFailureStage;
 
 /**
  * Attaches structured failure context to an error so the run's single
@@ -15,11 +27,11 @@ export type DeployFailureStage = "apply" | "readiness";
  */
 export function attachDeployFailureDetails(
   error: unknown,
-  details: Record<string, unknown> & { stage?: DeployFailureStage }
+  details: DeployTaskFailureDetails
 ): unknown {
   if (error instanceof Error) {
     const carrier = error as Error & {
-      [DEPLOY_FAILURE_DETAILS_KEY]?: Record<string, unknown>;
+      [DEPLOY_FAILURE_DETAILS_KEY]?: DeployTaskFailureDetails;
     };
     carrier[DEPLOY_FAILURE_DETAILS_KEY] = {
       ...carrier[DEPLOY_FAILURE_DETAILS_KEY],
@@ -31,14 +43,111 @@ export function attachDeployFailureDetails(
 
 export function attachedDeployFailureDetails(
   error: unknown
-): Record<string, unknown> {
+): DeployTaskFailureDetails {
   if (error instanceof Error) {
     const carrier = error as Error & {
-      [DEPLOY_FAILURE_DETAILS_KEY]?: Record<string, unknown>;
+      [DEPLOY_FAILURE_DETAILS_KEY]?: DeployTaskFailureDetails;
     };
     return carrier[DEPLOY_FAILURE_DETAILS_KEY] ?? {};
   }
   return {};
+}
+
+export function attachedDeployFailureReason(
+  error: unknown
+): DeployTaskFailureReason | null {
+  const reason = attachedDeployFailureDetails(error).reason;
+  return isDeployTaskFailureReason(reason) ? reason : null;
+}
+
+export function deployFailureError(reason: DeployTaskFailureReason): Error {
+  const error = new Error(deploymentFailureMessage(reason));
+  attachDeployFailureDetails(error, { reason });
+  return error;
+}
+
+export function publicDeployTaskFailureDetails(input: {
+  details: DeployTaskFailureDetails | null;
+  runner: DeploymentTaskRunner;
+  status: DeployTaskStatus;
+}): DeployTaskFailureDetails | null {
+  if (input.runner.kind !== "ai") {
+    return input.details;
+  }
+
+  const persistedReason = input.details?.reason;
+  let reason: DeployTaskFailureReason | null = null;
+  if (isDeployTaskFailureReason(persistedReason)) {
+    reason = persistedReason;
+  } else if (input.status === "failed") {
+    reason = "unknown";
+  }
+  if (reason == null) {
+    return null;
+  }
+
+  const httpStatus = input.details?.httpStatus;
+  const stage = input.details?.stage;
+  return {
+    failureMessage: deploymentFailureMessage(reason),
+    ...(typeof httpStatus === "number" &&
+    Number.isInteger(httpStatus) &&
+    httpStatus >= 100 &&
+    httpStatus <= 599
+      ? { httpStatus }
+      : {}),
+    reason,
+    ...(stage === "apply" || stage === "readiness" ? { stage } : {}),
+  };
+}
+
+export function publicDeployTaskError(input: {
+  details: DeployTaskFailureDetails | null;
+  error: string | null;
+  runner: DeploymentTaskRunner;
+  status: DeployTaskStatus;
+}): string | null {
+  if (input.runner.kind !== "ai") {
+    return input.error;
+  }
+  if (input.status !== "failed") {
+    return null;
+  }
+  const details = publicDeployTaskFailureDetails(input);
+  const reason = details?.reason;
+  return isDeployTaskFailureReason(reason)
+    ? deploymentFailureMessage(reason)
+    : deploymentFailureMessage("unknown");
+}
+
+export function deploymentFailureTechnicalDetail(input: {
+  details: DeployTaskFailureDetails | null;
+  error: string | null;
+  id: string;
+  phase: string;
+  runner: DeploymentTaskRunner;
+  status: DeployTaskStatus;
+}): string | undefined {
+  if (input.status !== "failed") {
+    return undefined;
+  }
+  if (input.runner.kind !== "ai") {
+    const error = input.error?.trim();
+    return error ? error : undefined;
+  }
+
+  const details = publicDeployTaskFailureDetails(input);
+  const reason = details?.reason;
+  const httpStatus = details?.httpStatus;
+  if (!isDeployTaskFailureReason(reason)) {
+    return undefined;
+  }
+  return [
+    `Reason: ${reason}`,
+    `Phase: ${input.phase}`,
+    ...(typeof httpStatus === "number" ? [`HTTP status: ${httpStatus}`] : []),
+    `Task ID: ${input.id}`,
+  ].join("\n");
 }
 
 /**

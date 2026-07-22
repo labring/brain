@@ -2,6 +2,7 @@ import { publicDeployTaskArtifactSummary } from "./public-artifact-summary";
 import type {
   DeploymentTaskCanvasProjection,
   DeploymentTaskCanvasProjectionResultMapping,
+  DeploymentTaskRunner,
   DeploymentTaskSource,
   DeployTaskArtifactSummary,
   DeployTaskPhase,
@@ -97,6 +98,7 @@ interface DeploymentTaskProjectionSource {
   phase: DeployTaskPhase;
   projectId: string | null;
   retriedFromTaskId?: string | null;
+  runner: DeploymentTaskRunner;
   source: DeploymentTaskSource;
   status: DeployTaskStatus;
   updatedAt: Date | string;
@@ -462,7 +464,12 @@ export function toDeploymentTaskProjection(
   }
 
   const completedAt = dateIso(task.completedAt);
-  const artifactSummary = publicDeployTaskArtifactSummary(task.artifactSummary);
+  const artifactSummary = publicDeployTaskArtifactSummary(
+    task.artifactSummary,
+    {
+      runner: task.runner,
+    }
+  );
   const projection: DeploymentTaskProjection = {
     artifactSummary,
     cancelRequestedAt: dateIso(task.cancelRequestedAt ?? null),

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  aiFailureReason,
+  deploymentFailureMessage,
   deploymentFailureReason,
   deployRunnerSurfacesRawFailure,
 } from "./failure-summary";
+import type { DeployTaskFailureReason } from "./schema";
+
+const UNKNOWN_FAILURE_MESSAGE =
+  "Deployment failed for an unknown reason. Copy the Task ID and contact support.";
 
 describe("deployRunnerSurfacesRawFailure", () => {
   it("surfaces raw errors for deterministic runners", () => {
@@ -33,7 +39,7 @@ describe("deploymentFailureReason", () => {
         rawMessage: "mkdir: /app already exists",
         surfacesRaw: false,
       })
-    ).toBe("Deployment task failed.");
+    ).toBe(UNKNOWN_FAILURE_MESSAGE);
   });
 
   it("maps a name conflict and an invalid-value rejection", () => {
@@ -66,7 +72,7 @@ describe("deploymentFailureReason", () => {
         rawMessage: "template provider returned 503",
         surfacesRaw: false,
       })
-    ).toBe("Deployment task failed.");
+    ).toBe(UNKNOWN_FAILURE_MESSAGE);
   });
 
   it("maps the readiness-timeout reason code for every runner", () => {
@@ -96,13 +102,15 @@ describe("deploymentFailureReason", () => {
         rawMessage: "No valid skills found. Skills require a SKILL.md",
         surfacesRaw: false,
       })
-    ).toBe("Deploy skill installation failed.");
+    ).toBe(
+      "Deploy skill installation failed. Redeploy; if the problem continues, contact support."
+    );
     expect(
       deploymentFailureReason({
         rawMessage: "some private gateway stderr",
         surfacesRaw: false,
       })
-    ).toBe("Deployment task failed.");
+    ).toBe(UNKNOWN_FAILURE_MESSAGE);
   });
 
   it("truncates an overlong first line", () => {
@@ -116,7 +124,57 @@ describe("deploymentFailureReason", () => {
 
   it("returns the generic string when there is nothing to show", () => {
     expect(deploymentFailureReason({ surfacesRaw: true })).toBe(
-      "Deployment task failed."
+      UNKNOWN_FAILURE_MESSAGE
     );
+  });
+
+  it("maps every stable reason code to a distinct user-facing explanation", () => {
+    const expectedFragments = {
+      "ai-proxy-unavailable": "credentials could not be prepared",
+      "apply-failed": "could not be applied",
+      "build-runtime-unavailable": "required build service",
+      "buildkit-start-failed": "BuildKit could not start",
+      cancelled: "was cancelled",
+      "deploy-runtime-unavailable": "workspace did not become ready",
+      "deploy-skill-install-failed": "skill installation failed",
+      "deployment-output-missing": "without a deployable result",
+      "gateway-not-exposed": "did not expose",
+      "gateway-timeout": "analysis timed out",
+      "gateway-unavailable": "service is unavailable",
+      "gateway-upstream-error": "returned an error",
+      "github-authentication": "Reconnect GitHub",
+      "image-build-failed": "image could not be built",
+      interrupted: "interrupted by the platform",
+      "never-started": "could not start",
+      "quota-exceeded": "enough quota",
+      "readiness-timeout": "didn't become ready",
+      "repository-clone-failed": "could not be cloned",
+      "runner-error": "internal error",
+      timeout: "maximum run time",
+      unknown: "unknown reason",
+    } satisfies Record<DeployTaskFailureReason, string>;
+
+    for (const reason of Object.keys(
+      expectedFragments
+    ) as DeployTaskFailureReason[]) {
+      expect(deploymentFailureMessage(reason)).toContain(
+        expectedFragments[reason]
+      );
+    }
+  });
+
+  it("classifies legacy AI boundary messages without exposing their text", () => {
+    expect(aiFailureReason("No valid skills found")).toBe(
+      "deploy-skill-install-failed"
+    );
+    expect(aiFailureReason("Timed out waiting for deploy Devbox runtime")).toBe(
+      "deploy-runtime-unavailable"
+    );
+    expect(aiFailureReason("BuildKit build could not start")).toBe(
+      "buildkit-start-failed"
+    );
+    expect(
+      aiFailureReason("Codex gateway completed without deployment output")
+    ).toBe("deployment-output-missing");
   });
 });

@@ -179,9 +179,19 @@ export function deploymentTimelineFailureStepId(input: {
     case "apply":
     case "verify":
       return "create-resources";
+    case "configure":
+      switch (input.runner.kind) {
+        case "template":
+          return "prepare-template";
+        case "ai":
+          return "generate-deployment";
+        case "direct":
+          return null;
+        default:
+          return input.runner satisfies never;
+      }
     case "queued":
     case "resolve-target":
-    case "configure":
     case "completed":
       return null;
     default:

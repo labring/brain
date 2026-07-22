@@ -7,8 +7,7 @@ import {
   throwIfDeployTaskAborted,
   updateDeployTaskState,
 } from "./runner-writes";
-import type { DeployTaskRow } from "./schema";
-import { appendDeployTaskMessage } from "./service";
+import type { DeployTaskFailureDetails, DeployTaskRow } from "./schema";
 
 const CODEX_GATEWAY_STARTUP_TIMEOUT_MS = 60_000;
 const CODEX_GATEWAY_STARTUP_RETRY_MS = 1000;
@@ -72,6 +71,36 @@ export class CodexGatewayApiError extends Error {
   }
 }
 
+export class CodexGatewayTimeoutError extends Error {
+  constructor(message = "Codex gateway response timed out.") {
+    super(message);
+    this.name = "CodexGatewayTimeoutError";
+  }
+}
+
+export function codexGatewayFailureDetails(
+  error: unknown
+): DeployTaskFailureDetails {
+  if (error instanceof CodexGatewayTimeoutError) {
+    return { reason: "gateway-timeout" };
+  }
+  if (error instanceof CodexGatewayApiError) {
+    return {
+      httpStatus: error.status,
+      reason:
+        error.status >= 500 ? "gateway-upstream-error" : "gateway-unavailable",
+    };
+  }
+  if (
+    (error instanceof DOMException && error.name === "TimeoutError") ||
+    (error instanceof Error &&
+      error.message.includes("Codex gateway response timed out"))
+  ) {
+    return { reason: "gateway-timeout" };
+  }
+  return { reason: "gateway-unavailable" };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -84,53 +113,17 @@ function objectStringValue(
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-const SENSITIVE_KEY_REGEX =
-  /(authorization|bearer|credential|dockerconfig|password|secret|token|api[_-]?key)/i;
-const BEARER_TOKEN_REGEX = /Bearer\s+[A-Za-z0-9._~+/=-]+/g;
-
-function redactGatewaySnapshot(value: unknown, depth = 0): unknown {
-  if (depth > 8) {
-    return "[MaxDepth]";
-  }
-  if (typeof value === "string") {
-    return value.replace(BEARER_TOKEN_REGEX, "Bearer [REDACTED]");
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactGatewaySnapshot(item, depth + 1));
-  }
-  if (value != null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        key,
-        SENSITIVE_KEY_REGEX.test(key)
-          ? "[REDACTED]"
-          : redactGatewaySnapshot(item, depth + 1),
-      ])
-    );
-  }
-  return value;
-}
-
-function gatewayStateSnapshot(input: {
+export function gatewayStateSnapshot(input: {
   sessionId: string;
   state: Partial<CodexGatewayState>;
 }): Record<string, unknown> {
   return {
     activeTurn: Boolean(input.state.activeTurn),
     currentTurnId: input.state.currentTurnId ?? null,
-    cwd: typeof input.state.cwd === "string" ? input.state.cwd : null,
-    lastTurnStatus: input.state.lastTurnStatus ?? null,
     ready: Boolean(input.state.ready),
-    recentEvents: Array.isArray(input.state.recentEvents)
-      ? redactGatewaySnapshot(input.state.recentEvents)
-      : [],
-    selectedModel: input.state.selectedModel ?? null,
     sessionId: input.sessionId,
     startedAt: input.state.startedAt ?? null,
     threadId: input.state.threadId ?? null,
-    transcript: Array.isArray(input.state.transcript)
-      ? redactGatewaySnapshot(input.state.transcript)
-      : [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -304,16 +297,6 @@ async function getGatewaySessionState(
   );
 }
 
-function assistantTextFromState(state: CodexGatewayState): string | null {
-  const text = state.transcript
-    .filter((entry) => entry.role === "assistant")
-    .map((entry) => entry.text.trim())
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  return text || null;
-}
-
 async function projectGatewayState(input: {
   sessionId: string;
   state: CodexGatewayState;
@@ -324,16 +307,6 @@ async function projectGatewayState(input: {
     gatewayTurnId: input.state.currentTurnId ?? null,
     gatewayStateSnapshot: gatewayStateSnapshot(input),
   });
-
-  const assistantText = assistantTextFromState(input.state);
-  if (assistantText != null) {
-    await appendDeployTaskMessage({
-      id: `gateway-${input.sessionId}-latest`,
-      parts: [{ text: assistantText, type: "text" }],
-      role: "assistant",
-      taskId: input.taskId,
-    });
-  }
 }
 
 async function waitForGatewayTurnCompletion(input: {
@@ -342,7 +315,6 @@ async function waitForGatewayTurnCompletion(input: {
   taskId: string;
 }): Promise<CodexGatewayState> {
   const deadline = Date.now() + CODEX_GATEWAY_TURN_TIMEOUT_MS;
-  let latestState: CodexGatewayState | null = null;
 
   while (Date.now() < deadline) {
     // A cancel request aborts the wait between polls; the gateway turn keeps
@@ -352,7 +324,6 @@ async function waitForGatewayTurnCompletion(input: {
       input.context,
       input.sessionId
     );
-    latestState = sessionState.state;
     await projectGatewayState({
       sessionId: input.sessionId,
       state: sessionState.state,
@@ -372,10 +343,7 @@ async function waitForGatewayTurnCompletion(input: {
     phase: "plan",
   });
 
-  if (latestState != null) {
-    return latestState;
-  }
-  throw new Error("Codex gateway response timed out.");
+  throw new CodexGatewayTimeoutError();
 }
 
 async function persistGatewayStateEvent(input: {
@@ -396,34 +364,9 @@ async function persistGatewayStateEvent(input: {
   await recordDeployTaskEvent(input.taskId, {
     kind: "deploy_task.gateway_state",
     message: "Codex gateway state updated.",
-    payload: input.payload ?? {},
+    payload: {},
     phase: "plan",
   });
-
-  if (!Array.isArray(state.transcript)) {
-    return;
-  }
-
-  const assistantText = assistantTextFromState({
-    activeTurn: Boolean(state.activeTurn),
-    currentTurnId: state.currentTurnId ?? null,
-    cwd: typeof state.cwd === "string" ? state.cwd : "",
-    lastTurnStatus: state.lastTurnStatus ?? null,
-    ready: Boolean(state.ready),
-    recentEvents: Array.isArray(state.recentEvents) ? state.recentEvents : [],
-    selectedModel: state.selectedModel ?? null,
-    startedAt: state.startedAt ?? null,
-    threadId: state.threadId ?? null,
-    transcript: state.transcript,
-  });
-  if (assistantText != null) {
-    await appendDeployTaskMessage({
-      id: `gateway-${input.sessionId}-latest`,
-      parts: [{ text: assistantText, type: "text" }],
-      role: "assistant",
-      taskId: input.taskId,
-    });
-  }
 }
 
 export async function persistDeployGatewayEvent(input: {
@@ -433,7 +376,7 @@ export async function persistDeployGatewayEvent(input: {
   taskId: string;
 }): Promise<void> {
   const common = {
-    payload: input.payload ?? {},
+    payload: {},
     phase: "plan" as const,
   };
 
@@ -513,15 +456,6 @@ export async function runDeployTaskGateway(input: {
     },
     phase: "plan",
   });
-
-  const assistantText = assistantTextFromState(turn.state);
-  if (assistantText != null) {
-    await appendDeployTaskMessage({
-      parts: [{ text: assistantText, type: "text" }],
-      role: "assistant",
-      taskId: input.task.id,
-    });
-  }
 
   const finalState = await waitForGatewayTurnCompletion({
     context: input.context,

@@ -23,6 +23,7 @@ import {
 } from "./errors";
 import {
   appendDeployTaskEvent,
+  assertDeployTaskBlockingInputs,
   DEPLOY_TASK_LEASED_STATUSES,
   type DeployTaskTransitionEvent,
   isDeployTaskTerminalStatus,
@@ -269,6 +270,7 @@ export function createDeployTaskHandle(
 
     async requestInputs(request) {
       assertLive();
+      assertDeployTaskBlockingInputs(request.blockingInputs);
       const row = await transitionDeployTask(ctx, {
         event: request.event ?? {
           kind: "deployment_task.inputs_requested",

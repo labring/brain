@@ -6,6 +6,7 @@ import {
   blockingInputsFromDeploymentPlan,
   createSealosTemplateDeploymentPlan,
   type DeployTaskArtifactContext,
+  normalizeBuildResultStatus,
   prepareDeployTaskArtifacts,
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
@@ -27,6 +28,27 @@ const UNSUPPORTED_TEMPLATE_KIND_REGEX =
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 const DEMO_WEB_TEMPLATE_INSTANCE_REGEX = /^demo-web-[a-z]{6}$/;
 const GITHUB_TEMPLATE_INSTANCE_REGEX = /^seakills-site-[a-z]{6}$/;
+
+test("build result status normalization covers failure and incomplete aliases", () => {
+  for (const status of [
+    "failed",
+    "failure",
+    "error",
+    "canceled",
+    "cancelled",
+  ]) {
+    assert.equal(normalizeBuildResultStatus(status), "failed");
+  }
+  for (const status of [
+    "building",
+    "in-progress",
+    "pending",
+    "queued",
+    "running",
+  ]) {
+    assert.equal(normalizeBuildResultStatus(status), "running");
+  }
+});
 
 const TEMPLATE_WITH_REQUIRED_INPUT = `
 apiVersion: app.sealos.io/v1

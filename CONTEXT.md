@@ -492,15 +492,15 @@ _Avoid_: Kubernetes object card, manifest card, task row, deployment placeholder
 
 ### Deployment Failure Reason
 
-The short, user-facing text on a failed Deployment Timeline Step explaining why the run ended. It is resolved by precedence: a recognized failure-class headline when one applies, otherwise the first line of the Deployment Failure Detail, and a generic fallback only when neither a reason nor any error text exists. It is not the full error detail, a raw stack trace, or an internal error code.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step. Integration boundaries and the Deployment Task Engine record the narrowest reason they can prove; an unclassified failure uses `unknown` and includes the Task ID for support. A Deployment Failure Reason is safe to persist and aggregate, and is not a raw stack trace or provider response.
 
-_Avoid_: generic failure message, stack trace, error code.
+_Avoid_: generic failure message, raw stack trace, provider response, unstructured error bucket.
 
 ### Deployment Failure Detail
 
-The full, ground-truth provider or Kubernetes error for a failed Deployment Task, shown expandably under its failed Deployment Timeline Step. It is scrubbed of known sensitive values before it is persisted or shown, and a runner surfaces it only when that runner's terminal error is scrubbed. It is not a browser-only value, an unredacted raw error, or a separate Deployment Task.
+The expandable, copyable diagnostic context under a failed Deployment Timeline Step. Direct/template runners show their known-value-scrubbed provider or Kubernetes error. The AI runner never shows its raw Gateway or command error; it shows only allowlisted fields such as reason code, phase, validated HTTP status, and Task ID. It is not a browser-only value, an unredacted AI error, or a separate Deployment Task.
 
-_Avoid_: raw error dump, unredacted error, server log line.
+_Avoid_: raw AI error dump, unredacted error, secret-bearing provider response, server log line.
 
 ### Deployment Task Display Summary
 

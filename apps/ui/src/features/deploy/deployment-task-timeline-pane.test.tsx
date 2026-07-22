@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-
+import { deploymentFailureMessage } from "@/features/deploy/task/failure-summary";
 import type { DeployTaskDTO } from "@/features/deploy/task/types";
 import {
   DeploymentTaskTimelineActions,
@@ -31,6 +31,8 @@ const FIRECRAWL_API_KEY_INPUT_NAME_RE = /name="FIRECRAWL_API_KEY"/;
 const TIMELINE_DESIGN_CARD_STYLE_RE =
   /relative overflow-hidden rounded-lg bg-white\/\[0\.05\]/;
 const TIMELINE_BORDER_BEAM_RE = /deployment-timeline-border-beam/;
+const PRIVATE_GATEWAY_STDERR_RE = /some private gateway stderr/;
+const AI_FAILURE_ACTION_RE = /deployment analysis service returned an error/i;
 const TIMELINE_BASE_BORDER_RE =
   /pointer-events-none absolute inset-px rounded-\[calc\(var\(--radius-lg\)-1px\)\] border/;
 const DEPLOYMENT_CONFIGURATION_CARD_STYLE_RE =
@@ -550,7 +552,10 @@ function failedSnapshot(
       createdAt: "2026-06-17T10:00:00.000Z",
       createdFrom: "ui",
       error,
-      failureDetails: null,
+      failureDetails:
+        runner.kind === "ai"
+          ? { httpStatus: 503, reason: "gateway-upstream-error" }
+          : null,
       gatewaySessionId: null,
       gatewayStateSnapshot: null,
       gatewayTurnId: null,
@@ -582,7 +587,10 @@ function failedSnapshot(
             {
               createdAt: "2026-06-17T10:00:02.000Z",
               id: "evt-fail",
-              message: "The deployment values were rejected as invalid.",
+              message:
+                runner.kind === "ai"
+                  ? deploymentFailureMessage("gateway-upstream-error")
+                  : "The deployment values were rejected as invalid.",
               severity: "error",
             },
           ],
@@ -614,7 +622,7 @@ test("surfaces a failure-detail affordance under a failed template step", () => 
   assert.match(html, SHOW_ERROR_DETAILS_RE);
 });
 
-test("hides the raw failure detail for the AI runner (scrub ⇔ raw display)", () => {
+test("shows only allowlisted failure detail for the AI runner", () => {
   const html = renderToStaticMarkup(
     <DeploymentTaskTimelinePaneContent
       kubeconfig="kubeconfig"
@@ -626,7 +634,10 @@ test("hides the raw failure detail for the AI runner (scrub ⇔ raw display)", (
     />
   );
 
-  assert.doesNotMatch(html, FAILURE_DETAIL_SLOT_RE);
+  assert.match(html, FAILURE_DETAIL_SLOT_RE);
+  assert.match(html, SHOW_ERROR_DETAILS_RE);
+  assert.match(html, AI_FAILURE_ACTION_RE);
+  assert.doesNotMatch(html, PRIVATE_GATEWAY_STDERR_RE);
 });
 
 const CANCEL_DEPLOYMENT_RE = /Cancel Deployment/;

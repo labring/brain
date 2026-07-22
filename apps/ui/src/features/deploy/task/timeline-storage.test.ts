@@ -96,3 +96,44 @@ test("deployment task timeline storage initializes older tasks from runner steps
   );
   assert.equal(timeline.status, "queued");
 });
+
+test("deployment task timeline storage overlays engine-resolved failures without changing revision", () => {
+  const timeline = deploymentTaskTimelineFromTaskRecord({
+    failureDetails: {
+      failureMessage: "untrusted legacy copy",
+      reason: "interrupted",
+    },
+    id: "task-interrupted",
+    phase: "plan",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "failed",
+    timelineSnapshot: {
+      revision: 9,
+      status: "running",
+      steps: [
+        {
+          events: [],
+          id: "analyze-source",
+          label: "Analyze repository",
+          order: 1,
+          status: "running",
+        },
+      ],
+      taskId: "task-interrupted",
+      updatedAt: "2026-06-17T10:00:05.000Z",
+    },
+    updatedAt: NOW,
+  });
+
+  assert.equal(timeline.revision, 9);
+  assert.equal(timeline.status, "failed");
+  assert.equal(timeline.steps[0]?.status, "failed");
+  assert.equal(
+    timeline.steps[0]?.events[0]?.message,
+    "Deployment was interrupted by the platform. Redeploy to continue."
+  );
+  assert.notEqual(
+    timeline.steps[0]?.events[0]?.message,
+    "untrusted legacy copy"
+  );
+});

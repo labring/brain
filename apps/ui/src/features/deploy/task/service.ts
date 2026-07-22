@@ -7,6 +7,10 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { getDeploymentTaskDb } from "./db";
 import { getDeployTaskEngineContext } from "./engine/server";
 import { publishDeployTaskChange } from "./engine/transitions";
+import {
+  publicDeployTaskError,
+  publicDeployTaskFailureDetails,
+} from "./failure-details";
 import { getDeployTaskRowInNamespace } from "./lookup";
 import {
   type DeploymentTaskProjection,
@@ -18,6 +22,7 @@ import {
   publicDeployTaskEventPayload,
 } from "./public-artifact-summary";
 import {
+  type DeploymentTaskRunner,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
   type DeployTaskRow,
@@ -47,8 +52,15 @@ function nowIso(value: Date | null): string | null {
 }
 
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
+  const failureDetails = publicDeployTaskFailureDetails({
+    details: row.failureDetails,
+    runner: row.runner,
+    status: row.status,
+  });
   return {
-    artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary),
+    artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary, {
+      runner: row.runner,
+    }),
     blockingInputs: row.blockingInputs,
     cancelRequestedAt: nowIso(row.cancelRequestedAt),
     canvasProjection: row.canvasProjection,
@@ -56,10 +68,16 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     creatingActor: row.creatingActor,
     createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
-    error: row.error,
-    failureDetails: row.failureDetails,
+    error: publicDeployTaskError({
+      details: failureDetails,
+      error: row.error,
+      runner: row.runner,
+      status: row.status,
+    }),
+    failureDetails,
     gatewaySessionId: row.gatewaySessionId,
-    gatewayStateSnapshot: row.gatewayStateSnapshot,
+    gatewayStateSnapshot:
+      row.runner.kind === "ai" ? null : row.gatewayStateSnapshot,
     gatewayTurnId: row.gatewayTurnId,
     gatewayUrl: row.gatewayUrl,
     id: row.id,
@@ -84,13 +102,17 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
 }
 
 export function toDeployTaskEventDTO(
-  row: DeployTaskEventRow
+  row: DeployTaskEventRow,
+  runner?: DeploymentTaskRunner
 ): DeployTaskEventDTO {
   return {
     createdAt: row.createdAt.toISOString(),
     kind: row.kind,
     message: row.message,
-    payload: publicDeployTaskEventPayload(row.payload),
+    payload: publicDeployTaskEventPayload(row.payload, {
+      eventKind: row.kind,
+      runner,
+    }),
     phase: row.phase,
     seq: row.seq,
     taskId: row.taskId,
@@ -164,14 +186,18 @@ export async function getDeployTaskSnapshot(
   ]);
 
   return {
-    events: events.reverse().map(toDeployTaskEventDTO),
-    messages: messages.map(toDeployTaskMessageDTO),
+    events: events
+      .reverse()
+      .map((event) => toDeployTaskEventDTO(event, task.runner)),
+    messages:
+      task.runner.kind === "ai" ? [] : messages.map(toDeployTaskMessageDTO),
     task: toDeployTaskDTO(task),
   };
 }
 
 async function recentDeployTaskEvents(
-  taskId: string
+  taskId: string,
+  runner: DeploymentTaskRunner
 ): Promise<DeployTaskEventDTO[]> {
   const events = await getDeploymentTaskDb()
     .select()
@@ -179,7 +205,7 @@ async function recentDeployTaskEvents(
     .where(eq(deployTaskEvents.taskId, taskId))
     .orderBy(desc(deployTaskEvents.seq))
     .limit(MAX_DEPLOY_EVENTS);
-  return events.reverse().map(toDeployTaskEventDTO);
+  return events.reverse().map((event) => toDeployTaskEventDTO(event, runner));
 }
 
 /**
@@ -206,7 +232,7 @@ export async function getDeployTaskTimelineSnapshot(
   }
 
   return {
-    events: await recentDeployTaskEvents(taskId),
+    events: await recentDeployTaskEvents(taskId, task.runner),
     task: toDeployTaskDTO(task),
     timeline: deploymentTaskTimelineFromTaskRecord(task),
   };

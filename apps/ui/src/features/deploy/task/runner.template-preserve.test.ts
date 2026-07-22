@@ -36,6 +36,7 @@ const completeCalls: unknown[] = [];
 const eventKinds: string[] = [];
 const requestInputsCalls: unknown[] = [];
 const stateWrites: Record<string, unknown>[] = [];
+const timelineEvents: Record<string, unknown>[] = [];
 
 let currentRow: DeployTaskRow;
 let deployTemplateInstanceImpl: () => Promise<{
@@ -136,7 +137,15 @@ mock.module("./runner-writes", () => ({
     } as DeployTaskRow;
     return Promise.resolve();
   },
-  updateDeployTaskTimeline: () => Promise.resolve(),
+  updateDeployTaskTimeline: (
+    _taskId: string,
+    input: { event?: Record<string, unknown> }
+  ) => {
+    if (input.event != null) {
+      timelineEvents.push(input.event);
+    }
+    return Promise.resolve();
+  },
 }));
 
 mock.module("./result-readiness", () => ({
@@ -193,6 +202,78 @@ function templateTaskRow(input: {
   } as unknown as DeployTaskRow;
 }
 
+function preparedAiTaskRow(input: {
+  buildResult: Record<string, unknown>;
+}): DeployTaskRow {
+  const outputJson = {
+    buildResult: input.buildResult,
+    deliveryManifest: { args: {} },
+    templateYaml: "apiVersion: app.sealos.io/v1\nkind: Template\n",
+  };
+  return {
+    artifactSummary: {
+      deploymentPlan: {
+        args: {},
+        inputs: [],
+        kind: "sealos-template",
+        templateName: "demo-web",
+      },
+      outputJson,
+    },
+    blockingInputs: [],
+    githubConnectionId: null,
+    id: "task-1",
+    namespace: "ns-demo",
+    phase: "configure",
+    projectId: "proj-1",
+    projectName: "proj-1",
+    runner: { kind: "ai" },
+    source: { kind: "prompt", text: "deploy this app" },
+    status: "running",
+    target: { kind: "existingProject", projectId: "proj-1" },
+    timelineSnapshot: null,
+    updatedAt: new Date("2026-07-22T00:00:00.000Z"),
+  } as unknown as DeployTaskRow;
+}
+
+function aiTaskWithCompletePlanAndInvalidOutput(): DeployTaskRow {
+  return {
+    artifactSummary: {
+      deploymentPlan: {
+        args: {},
+        inputs: [
+          {
+            key: "PORT",
+            label: "Port",
+            required: false,
+            sensitive: false,
+            type: "string",
+          },
+        ],
+        kind: "sealos-template",
+        templateName: "demo",
+      },
+      outputJson: {
+        deliveryManifest: { args: {} },
+        templateYaml: "apiVersion: app.sealos.io/v1\nkind: Template\n",
+      },
+    },
+    blockingInputs: [],
+    githubConnectionId: null,
+    id: "task-1",
+    namespace: "ns-demo",
+    phase: "configure",
+    projectId: "proj-1",
+    projectName: "proj-1",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    source: { kind: "prompt", text: "deploy demo" },
+    status: "running",
+    target: { kind: "existingProject", projectId: "proj-1" },
+    timelineSnapshot: null,
+    updatedAt: new Date("2026-07-22T00:00:00.000Z"),
+  } as unknown as DeployTaskRow;
+}
+
 function runnerHandle(): DeployTaskHandle {
   return {
     fail: (input: Record<string, unknown>) => {
@@ -236,6 +317,7 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     eventKinds.length = 0;
     requestInputsCalls.length = 0;
     stateWrites.length = 0;
+    timelineEvents.length = 0;
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
     currentRow = templateTaskRow({});
     deployTemplateInstanceImpl = () =>
@@ -320,5 +402,61 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     expect(eventKinds).toContain("deployment_task.template_cleanup_started");
     expect(failCalls).toHaveLength(1);
     expect(attachedFailureDetails().stage).toBe("apply");
+  });
+
+  it("fails malformed AI artifacts instead of re-blocking a complete input plan", async () => {
+    currentRow = aiTaskWithCompletePlanAndInvalidOutput();
+
+    await runDeployTask(runnerHandle(), {
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { PORT: "8080" },
+      taskId: currentRow.id,
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().reason).toBe("unknown");
+    expect(JSON.stringify(failCalls[0])).not.toContain(
+      "did not include buildResult"
+    );
+    const timelineFailure = timelineEvents.find(
+      (event) => event.kind === "deployment_task.failed"
+    );
+    expect(timelineFailure?.phase).toBe("configure");
+    expect(timelineFailure?.payload).toEqual({});
+  });
+});
+
+describe("AI prepared output failure handling", () => {
+  beforeEach(() => {
+    installFetchRecorder();
+    fetchCalls.length = 0;
+    failCalls.length = 0;
+    completeCalls.length = 0;
+    eventKinds.length = 0;
+    requestInputsCalls.length = 0;
+    stateWrites.length = 0;
+    timelineEvents.length = 0;
+  });
+
+  it("classifies a failed build result without persisting its raw error", async () => {
+    currentRow = preparedAiTaskRow({
+      buildResult: {
+        error: { message: "private build output" },
+        status: "failed",
+      },
+    });
+
+    await runDeployTask(runnerHandle(), {
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { TRIGGER: "apply" },
+      taskId: "task-1",
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(completeCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().reason).toBe("image-build-failed");
+    expect(JSON.stringify(failCalls[0])).not.toContain("private build output");
   });
 });

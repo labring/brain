@@ -15,12 +15,14 @@ describe("deploy task runner failure summaries", () => {
       deployTaskFailureSummary(
         new Error("No valid skills found. Skills require a SKILL.md")
       )
-    ).toBe("Deploy skill installation failed.");
+    ).toBe(
+      "Deploy skill installation failed. Redeploy; if the problem continues, contact support."
+    );
   });
 
   it("uses a generic summary for unknown failures", () => {
     expect(deployTaskFailureSummary(new Error("very long stderr"))).toBe(
-      "Deployment task failed."
+      "Deployment failed for an unknown reason. Copy the Task ID and contact support."
     );
   });
 });

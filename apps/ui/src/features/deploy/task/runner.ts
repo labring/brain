@@ -53,6 +53,7 @@ import {
   type DeploymentArtifact,
   type DeploymentTemplateInstanceArtifact,
   deployTaskStringRecordValue,
+  normalizeBuildResultStatus,
   prepareBrainManifestArtifact,
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
@@ -65,14 +66,17 @@ import type { DeployTaskHandle } from "./engine/handle";
 import {
   attachDeployFailureDetails,
   attachedDeployFailureDetails,
+  attachedDeployFailureReason,
+  deployFailureError,
   templateCleanupAllowed,
 } from "./failure-details";
 import {
+  aiFailureReason,
   deploymentFailureReason,
   deployRunnerSurfacesRawFailure,
-  deployTaskFailureSummary,
 } from "./failure-summary";
 import {
+  codexGatewayFailureDetails,
   DEPLOY_GATEWAY_MODEL,
   type GatewayContext,
   getCodexGatewayContextFromDevboxInfo,
@@ -105,6 +109,8 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
   DeployTaskEventPayload,
+  DeployTaskFailureDetails,
+  DeployTaskFailureReason,
   DeployTaskRow,
 } from "./schema";
 import {
@@ -150,6 +156,7 @@ const READ_OUTPUT_TIMEOUT_SECONDS = 30;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
 const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const APPLY_QUOTA_EXCEEDED_RE = /\bexceeded quota(?::|\b)/i;
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
   "jobs",
@@ -655,7 +662,9 @@ async function markDeployTaskFailureTimeline(input: {
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.failed",
     eventMessage: input.reasonMessage,
-    eventPayload: { error: input.detailMessage },
+    eventPayload: deployRunnerSurfacesRawFailure(input.task.runner)
+      ? { error: input.detailMessage }
+      : {},
     eventReason: "DeploymentTaskFailed",
     eventSeverity: "error",
     phase: input.task.phase,
@@ -953,7 +962,7 @@ function deployFailureDetails(input: {
   phase: DeployTaskRow["phase"];
   source: string;
   task: DeployTaskRow;
-}): Record<string, unknown> {
+}): DeployTaskFailureDetails {
   return {
     errorMessage:
       input.error instanceof Error ? input.error.message : String(input.error),
@@ -966,6 +975,38 @@ function deployFailureDetails(input: {
     taskId: input.task.id,
     timestamp: new Date().toISOString(),
   };
+}
+
+function withDeployFailureDetails(
+  error: unknown,
+  details: DeployTaskFailureDetails
+): Error {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  const existingReason = attachedDeployFailureReason(normalized);
+  return attachDeployFailureDetails(normalized, {
+    ...details,
+    ...(existingReason == null ? {} : { reason: existingReason }),
+  }) as Error;
+}
+
+async function runWithDeployFailureDetails<T>(
+  details: DeployTaskFailureDetails,
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw withDeployFailureDetails(error, details);
+  }
+}
+
+function applyFailureReason(error: unknown): DeployTaskFailureReason {
+  const message = error instanceof Error ? error.message : String(error);
+  // This classifier runs only on the provider/Kubernetes apply boundary, not
+  // arbitrary AI/Gateway output (ADR 0042).
+  return APPLY_QUOTA_EXCEEDED_RE.test(message)
+    ? "quota-exceeded"
+    : "apply-failed";
 }
 
 /**
@@ -1148,7 +1189,11 @@ async function cleanupFailedTemplateDeployment(input: {
       });
       results.push({ kind, ok: true });
     } catch (error) {
-      results.push({ error: errorMessage(error), kind, ok: false });
+      results.push(
+        input.task.runner.kind === "ai"
+          ? { kind, ok: false }
+          : { error: errorMessage(error), kind, ok: false }
+      );
     }
   }
 
@@ -1256,7 +1301,6 @@ async function waitForRunningDevbox(input: {
         message: `Still waiting for deploy Devbox runtime (${elapsedSeconds}s, state: ${state}).`,
         payload: {
           elapsedSeconds,
-          lastError: lastError instanceof Error ? lastError.message : null,
           runtimeName: input.name,
           state,
         },
@@ -1606,7 +1650,12 @@ async function readDeployOutput(input: {
     return null;
   }
 
-  const parsed = JSON.parse(result.stdout) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.stdout) as unknown;
+  } catch {
+    return null;
+  }
   if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
@@ -1669,6 +1718,12 @@ async function recordDeployOutputProgressIfPresent(input: {
     summary,
     taskId: input.taskId,
   });
+}
+
+function completeAiDeploymentOutput(
+  output: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  return deployOutputProgressSummary(output)?.complete === true ? output : null;
 }
 
 async function monitorDeployOutputProgress(input: {
@@ -1740,6 +1795,8 @@ async function runDeployTaskGatewayWithOutputProgress(input: {
       repairOutput: input.repairOutput,
       task: input.task,
     });
+  } catch (error) {
+    throw withDeployFailureDetails(error, codexGatewayFailureDetails(error));
   } finally {
     stopMonitor();
     await monitor;
@@ -1801,8 +1858,9 @@ async function completeTaskWithArtifact(input: {
       task: input.task,
     });
   } catch (error) {
-    throw attachDeployFailureDetails(error, {
+    throw withDeployFailureDetails(error, {
       artifactKind: input.artifact.kind,
+      reason: applyFailureReason(error),
       resourceCount:
         "resources" in input.artifact && Array.isArray(input.artifact.resources)
           ? input.artifact.resources.length
@@ -2008,31 +2066,6 @@ async function blockForDeploymentInputs(input: {
   });
 }
 
-async function blockForMissingAiDeploymentOutput(task: DeployTaskRow) {
-  await recordDeployTaskEvent(task.id, {
-    kind: "deployment_task.output_missing",
-    message: "Codex gateway completed without deployment output.",
-    phase: "generate-artifacts",
-  });
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.output_missing",
-    eventMessage: "Codex gateway completed without deployment output.",
-    phase: "generate-artifacts",
-    status: "blocked",
-    stepId: "generate-deployment",
-    taskId: task.id,
-  });
-  await deployTaskRequestInputs(task.id, {
-    blockingInputs: [],
-    phase: "generate-artifacts",
-    state: {
-      artifactSummary: {
-        notes: "Codex gateway completed without deployment output.",
-      },
-    },
-  });
-}
-
 async function applyAiDeploymentFromPreparedOutput(input: {
   args: Record<string, string>;
   encodedKubeconfig: string;
@@ -2071,22 +2104,14 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     if (isDeployTaskAbortError(error)) {
       throw error;
     }
-    const plan = input.task.artifactSummary.deploymentPlan;
-    if (plan != null) {
-      // Re-park on the submitted-input gate instead of failing: the values
-      // were rejected, so ask again (the legacy failed-at-configure hybrid
-      // state is gone — blocked is the only waiting state).
-      await recordDeployTaskEvent(input.task.id, {
-        kind: "deployment_task.input_rejected",
-        message: deployTaskFailureSummary(error),
-        payload: { error: errorMessage(error) },
-        phase: "configure",
+    const buildResult = objectValue(input.outputJson.buildResult);
+    const buildStatus = normalizeBuildResultStatus(
+      stringValue(buildResult?.status)
+    );
+    if (buildStatus === "failed" || buildStatus === "running") {
+      throw withDeployFailureDetails(error, {
+        reason: "image-build-failed",
       });
-      await deployTaskRequestInputs(input.task.id, {
-        blockingInputs: blockingInputsFromDeploymentPlan(plan),
-        phase: "configure",
-      });
-      return;
     }
     throw error;
   }
@@ -2177,7 +2202,6 @@ async function applyGeneratedAiDeployOutput(input: {
     deliveryManifest,
     templateYaml: requiredStringValue(input.output, "templateYaml"),
   });
-  const buildResult = requiredObjectValue(input.output, "buildResult");
   // Row-level secrets contract (ADR 0037): every persisted copy of the AI
   // output is stripped of sensitive arg values; the full manifest stays in
   // memory for the immediate apply below.
@@ -2187,7 +2211,7 @@ async function applyGeneratedAiDeployOutput(input: {
     planInputs: deploymentPlan.inputs,
   });
   const baseSummary: DeployTaskArtifactSummary = {
-    buildResult,
+    buildResult: requiredObjectValue(persistable.outputJson, "buildResult"),
     deliveryManifest: persistable.deliveryManifest,
     deploymentPlan: deploymentPlanWithPersistableArgs(
       deploymentPlan,
@@ -2630,10 +2654,19 @@ function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
 }
 
 async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
-  return await resolveGithubTokenForDeploymentTask(
-    task,
-    getGithubOAuthTokenForDeploymentBinding
-  );
+  if (task.source.kind !== "github") {
+    return null;
+  }
+  try {
+    return await resolveGithubTokenForDeploymentTask(
+      task,
+      getGithubOAuthTokenForDeploymentBinding
+    );
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      reason: "github-authentication",
+    });
+  }
 }
 
 export async function ensureAiDeploymentDevbox(input: {
@@ -2642,20 +2675,70 @@ export async function ensureAiDeploymentDevbox(input: {
   kubeconfig: string;
   task: DeployTaskRow;
 }): Promise<Awaited<ReturnType<typeof ensureDeployDevbox>>> {
-  return await ensureDeployDevbox({
-    existingRuntimeName: input.task.runtimeName,
-    githubToken: input.githubToken,
-    namespace: input.task.namespace,
-    repoUrl: aiSourceKey(input.task),
-    resolveGatewayCredentials:
-      input.task.source.kind === "github"
-        ? () =>
-            resolveGithubCodexGatewayCredentials({
-              encodedKubeconfig: input.encodedKubeconfig,
-              kubeconfig: input.kubeconfig,
-            })
-        : undefined,
-    taskId: input.task.id,
+  try {
+    return await ensureDeployDevbox({
+      existingRuntimeName: input.task.runtimeName,
+      githubToken: input.githubToken,
+      namespace: input.task.namespace,
+      repoUrl: aiSourceKey(input.task),
+      resolveGatewayCredentials:
+        input.task.source.kind === "github"
+          ? async () => {
+              try {
+                return await resolveGithubCodexGatewayCredentials({
+                  encodedKubeconfig: input.encodedKubeconfig,
+                  kubeconfig: input.kubeconfig,
+                });
+              } catch (error) {
+                throw withDeployFailureDetails(error, {
+                  reason: "ai-proxy-unavailable",
+                });
+              }
+            }
+          : undefined,
+      taskId: input.task.id,
+    });
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      ...(error instanceof DevboxApiError ? { httpStatus: error.status } : {}),
+      reason: "deploy-runtime-unavailable",
+    });
+  }
+}
+
+async function cloneAiDeploymentRepository(input: {
+  branch: string | null;
+  githubToken?: string;
+  namespace: string;
+  repoUrl: string;
+  runtimeName: string;
+  taskId: string;
+}): Promise<void> {
+  await recordDeployTaskEvent(input.taskId, {
+    kind: "deployment_task.workspace_clone_started",
+    message: "Cloning repository into deploy workspace.",
+    phase: "prepare",
+  });
+  try {
+    await execOrThrow({
+      command: cloneWorkspaceCommand({
+        branch: input.branch,
+        githubToken: input.githubToken,
+        repoUrl: input.repoUrl,
+      }),
+      namespace: input.namespace,
+      runtimeName: input.runtimeName,
+      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+    });
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      reason: "repository-clone-failed",
+    });
+  }
+  await recordDeployTaskEvent(input.taskId, {
+    kind: "deployment_task.workspace_clone_ready",
+    message: "Repository clone is ready.",
+    phase: "prepare",
   });
 }
 
@@ -2706,94 +2789,72 @@ async function runAiDeploymentTask(input: {
   });
 
   if (input.task.source.kind === "github") {
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.workspace_clone_started",
-      message: "Cloning repository into deploy workspace.",
-      phase: "prepare",
-    });
-    await execOrThrow({
-      command: cloneWorkspaceCommand({
-        branch: input.task.source.branch ?? null,
-        githubToken: githubToken ?? undefined,
-        repoUrl: input.task.source.repo.url,
-      }),
+    await cloneAiDeploymentRepository({
+      branch: input.task.source.branch ?? null,
+      githubToken: githubToken ?? undefined,
       namespace: input.task.namespace,
+      repoUrl: input.task.source.repo.url,
       runtimeName: runtime.name,
-      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
-    });
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.workspace_clone_ready",
-      message: "Repository clone is ready.",
-      phase: "prepare",
+      taskId: input.task.id,
     });
   } else {
-    await execOrThrow({
-      command: prepareEmptyWorkspaceCommand(),
-      namespace: input.task.namespace,
-      runtimeName: runtime.name,
-      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
-    });
+    await runWithDeployFailureDetails(
+      { reason: "deploy-runtime-unavailable" },
+      () =>
+        execOrThrow({
+          command: prepareEmptyWorkspaceCommand(),
+          namespace: input.task.namespace,
+          runtimeName: runtime.name,
+          timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+        })
+    );
   }
 
-  await execOrThrow({
-    command: prepareWorkspaceOutputCommand(),
-    namespace: input.task.namespace,
-    runtimeName: runtime.name,
-    timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
-  });
+  await runWithDeployFailureDetails(
+    { reason: "deploy-runtime-unavailable" },
+    () =>
+      execOrThrow({
+        command: prepareWorkspaceOutputCommand(),
+        namespace: input.task.namespace,
+        runtimeName: runtime.name,
+        timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+      })
+  );
 
-  const runtimeInfoForBuild = await getDevboxWithSecretRetry(
-    input.task.namespace,
-    runtime.name
+  const runtimeInfoForBuild = await runWithDeployFailureDetails(
+    { reason: "deploy-runtime-unavailable" },
+    () => getDevboxWithSecretRetry(input.task.namespace, runtime.name)
   );
   const apiNetworkId = runtimeInfoForBuild.network?.uniqueID?.trim() || null;
   const kubernetesNetworkId =
     apiNetworkId ??
-    (await getDevboxNetworkIdFromKubernetes({
-      encodedKubeconfig: input.encodedKubeconfig,
-      name: runtime.name,
-      namespace: input.task.namespace,
-    }));
+    (await runWithDeployFailureDetails(
+      { reason: "build-runtime-unavailable" },
+      () =>
+        getDevboxNetworkIdFromKubernetes({
+          encodedKubeconfig: input.encodedKubeconfig,
+          name: runtime.name,
+          namespace: input.task.namespace,
+        })
+    ));
   const buildRuntime = buildRuntimeContract({
     devbox: runtimeInfoForBuild,
     networkId: kubernetesNetworkId,
   });
   if (buildRuntime == null && input.task.source.kind === "github") {
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.build_runtime_unavailable",
-      message:
-        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
-      payload: { runtimeName: runtime.name },
-      phase: "prepare",
-    });
-    await markTimelineStepWithEvent({
-      eventKind: "deployment_task.build_runtime_unavailable",
-      eventMessage:
-        "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
-      phase: "prepare",
-      status: "blocked",
-      stepId: "prepare-workspace",
-      taskId: input.task.id,
-    });
-    await deployTaskRequestInputs(input.task.id, {
-      blockingInputs: [],
-      phase: "prepare",
-      state: {
-        artifactSummary: {
-          notes:
-            "Deploy runtime does not expose a DevBox S3 endpoint for kaniko build context.",
-        },
-      },
-    });
-    return;
+    throw deployFailureError("build-runtime-unavailable");
   }
   if (buildRuntime != null) {
-    await execOrThrow({
-      command: writeBuildRuntimeContractCommand(buildRuntime),
-      namespace: input.task.namespace,
-      runtimeName: runtime.name,
-      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
-    });
+    await runWithDeployFailureDetails(
+      { reason: "build-runtime-unavailable" },
+      () =>
+        execOrThrow({
+          command: writeBuildRuntimeContractCommand(buildRuntime),
+          namespace: input.task.namespace,
+          runtimeName: runtime.name,
+          timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+        })
+    );
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.build_runtime_ready",
       message: "Build runtime contract is ready.",
@@ -2811,12 +2872,18 @@ async function runAiDeploymentTask(input: {
     message: "Installing deploy skills into workspace.",
     phase: "prepare",
   });
-  await execOrThrow({
-    command: installSkillsCommand(),
-    namespace: input.task.namespace,
-    runtimeName: runtime.name,
-    timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
-  });
+  try {
+    await execOrThrow({
+      command: installSkillsCommand(),
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+    });
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      reason: "deploy-skill-install-failed",
+    });
+  }
 
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.workspace_ready",
@@ -2832,35 +2899,17 @@ async function runAiDeploymentTask(input: {
     taskId: input.task.id,
   });
 
-  const latestRuntimeInfo = await getDevboxWithSecretRetry(
-    input.task.namespace,
-    runtime.name
+  await updateDeployTaskState(input.task.id, { phase: "plan" });
+  const latestRuntimeInfo = await runWithDeployFailureDetails(
+    { reason: "deploy-runtime-unavailable" },
+    () => getDevboxWithSecretRetry(input.task.namespace, runtime.name)
   );
   const gatewayContext =
     getCodexGatewayContextFromDevboxInfo(latestRuntimeInfo);
   const outputProgressSignatures = new Set<string>();
 
   if (gatewayContext == null) {
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.gateway_unavailable",
-      message:
-        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
-      phase: "plan",
-    });
-    await markTimelineStepWithEvent({
-      eventKind: "deployment_task.gateway_unavailable",
-      eventMessage:
-        "Workspace is ready, but the Devbox did not expose a Codex gateway URL.",
-      phase: "plan",
-      status: "blocked",
-      stepId: "analyze-source",
-      taskId: input.task.id,
-    });
-    await deployTaskRequestInputs(input.task.id, {
-      blockingInputs: [],
-      phase: "plan",
-    });
-    return;
+    throw deployFailureError("gateway-not-exposed");
   }
 
   await markTimelineStepWithEvent({
@@ -2878,6 +2927,7 @@ async function runAiDeploymentTask(input: {
     seenSignatures: outputProgressSignatures,
     task: input.task,
   });
+  await updateDeployTaskState(input.task.id, { phase: "generate-artifacts" });
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.source_analysis_completed",
     eventMessage: aiAnalyzeSourceCompletedMessage(input.task),
@@ -2891,16 +2941,20 @@ async function runAiDeploymentTask(input: {
     taskId: input.task.id,
   });
 
-  const deployOutput = await readDeployOutput({
-    namespace: input.task.namespace,
-    runtimeName: runtime.name,
-  });
+  const deployOutput = await runWithDeployFailureDetails(
+    { reason: "deploy-runtime-unavailable" },
+    () =>
+      readDeployOutput({
+        namespace: input.task.namespace,
+        runtimeName: runtime.name,
+      })
+  );
   await recordDeployOutputProgressIfPresent({
     output: deployOutput,
     seenSignatures: outputProgressSignatures,
     taskId: input.task.id,
   });
-  let finalDeployOutput = deployOutput;
+  let finalDeployOutput = completeAiDeploymentOutput(deployOutput);
   if (finalDeployOutput == null) {
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.output_repair_started",
@@ -2925,20 +2979,24 @@ async function runAiDeploymentTask(input: {
       seenSignatures: outputProgressSignatures,
       task: input.task,
     });
-    finalDeployOutput = await readDeployOutput({
-      namespace: input.task.namespace,
-      runtimeName: runtime.name,
-    });
+    const repairedDeployOutput = await runWithDeployFailureDetails(
+      { reason: "deploy-runtime-unavailable" },
+      () =>
+        readDeployOutput({
+          namespace: input.task.namespace,
+          runtimeName: runtime.name,
+        })
+    );
     await recordDeployOutputProgressIfPresent({
-      output: finalDeployOutput,
+      output: repairedDeployOutput,
       seenSignatures: outputProgressSignatures,
       taskId: input.task.id,
     });
+    finalDeployOutput = completeAiDeploymentOutput(repairedDeployOutput);
   }
 
   if (finalDeployOutput == null) {
-    await blockForMissingAiDeploymentOutput(input.task);
-    return;
+    throw deployFailureError("deployment-output-missing");
   }
 
   await applyGeneratedAiDeployOutput({
@@ -3061,48 +3119,68 @@ async function resolveDeployTaskRunFailure(input: {
   const rawMessage = error instanceof Error ? error.message : String(error);
   const latestTask = (await getDeployTaskById(task.id)) ?? task;
 
-  // Scrub known sensitive values out of every persisted copy of the error
-  // before it is written (ADR 0042 extends the ADR 0037 secrets contract to
-  // error strings). Only the runner held the plaintext, and it rode up on the
-  // error; AI runs attach nothing, so their message is unchanged.
+  // Deterministic runners persist their known-value-scrubbed provider error.
+  // AI errors can contain arbitrary gateway output, so they fail closed to a
+  // reason-code presentation and never persist the raw message (ADR 0042).
   const sensitiveValues = attachedDeploySensitiveValues(error);
   const message = scrubSensitiveText(rawMessage, sensitiveValues);
 
   const surfacesRaw = deployRunnerSurfacesRawFailure(latestTask.runner);
   const attachedDetails = attachedDeployFailureDetails(error);
+  const attachedReason = attachedDeployFailureReason(error);
   const reasonCode =
-    typeof attachedDetails.reason === "string" ? attachedDetails.reason : null;
+    attachedReason ??
+    (latestTask.runner.kind === "ai"
+      ? (aiFailureReason(rawMessage) ?? "unknown")
+      : null);
   const reasonMessage = deploymentFailureReason({
     rawMessage: message,
     reasonCode,
     surfacesRaw,
   });
+  const persistedMessage = surfacesRaw ? message : reasonMessage;
+  const failureDetails: DeployTaskFailureDetails = surfacesRaw
+    ? scrubSensitiveJsonValue(
+        {
+          ...deployFailureDetails({
+            error,
+            phase: latestTask.phase,
+            source: "runDeployTask",
+            task: latestTask,
+          }),
+          ...attachedDetails,
+          failureMessage: reasonMessage,
+        },
+        sensitiveValues
+      )
+    : {
+        failureMessage: reasonMessage,
+        ...(typeof attachedDetails.httpStatus === "number"
+          ? { httpStatus: attachedDetails.httpStatus }
+          : {}),
+        reason: reasonCode ?? "unknown",
+        ...(attachedDetails.stage === "apply" ||
+        attachedDetails.stage === "readiness"
+          ? { stage: attachedDetails.stage }
+          : {}),
+      };
 
   await markDeployTaskFailureTimeline({
-    detailMessage: message,
+    detailMessage: persistedMessage,
     reasonMessage,
     task: latestTask,
   }).catch(() => false);
   await handle.fail({
-    error: message,
+    error: persistedMessage,
     event: {
       kind: "deployment_task.failed",
       message: reasonMessage,
-      payload: { error: message },
+      payload: {
+        ...(surfacesRaw ? { error: persistedMessage } : {}),
+        ...(reasonCode == null ? {} : { reason: reasonCode }),
+      },
       phase: latestTask.phase,
     },
-    failureDetails: scrubSensitiveJsonValue(
-      {
-        ...deployFailureDetails({
-          error,
-          phase: latestTask.phase,
-          source: "runDeployTask",
-          task: latestTask,
-        }),
-        ...attachedDetails,
-        failureMessage: reasonMessage,
-      },
-      sensitiveValues
-    ),
+    failureDetails,
   });
 }
