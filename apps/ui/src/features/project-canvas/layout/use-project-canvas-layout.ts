@@ -229,7 +229,12 @@ export function useProjectCanvasLayout(options: {
     saveNodesRef.current = saveNodes;
   }, [saveNodes]);
 
+  // Keyed by the same save-target identity as the SWR key: a pending
+  // debounced save must die with its target — namespace/credential switches
+  // reuse this component instance, and flushing through saveNodesRef would
+  // write the previous target's nodes into the next target's document.
   const schedulerRef = useRef<CanvasLayoutNodeSaveScheduler | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cancel the pending debounced save when the save target changes
   useEffect(() => {
     const scheduler = createCanvasLayoutNodeSaveScheduler({
       clearTimeout: (handle) =>
@@ -243,7 +248,7 @@ export function useProjectCanvasLayout(options: {
       scheduler.cancel();
       schedulerRef.current = null;
     };
-  }, []);
+  }, [credentialKey, namespace, projectId]);
 
   const scheduleNodeLayoutSave = useCallback(
     (node: Node, options?: Parameters<typeof canvasLayoutNodeFromNode>[1]) => {
