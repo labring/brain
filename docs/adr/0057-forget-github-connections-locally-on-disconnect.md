@@ -32,5 +32,10 @@ connection row.
   non-use, at most ten tokens per user × app × scope). No surveyed vendor
   documents doing it either; local-forget is the industry norm.
 
-Survey and primary sources:
-[docs/research/github-oauth-disconnect-and-account-switching.md](../research/github-oauth-disconnect-and-account-switching.md).
+Primary sources: GitHub's
+[authorize parameters](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
+(`prompt=select_account`, `login`, silent re-authorization),
+[OAuth application revocation endpoints](https://docs.github.com/en/rest/apps/oauth-applications)
+(grant deletion revokes every token for the user × app), and
+[token expiration and revocation](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/token-expiration-and-revocation)
+(one-year unused auto-revocation, ten-token cap).
