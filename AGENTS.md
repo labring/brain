@@ -1,11 +1,9 @@
 # AGENTS.md
 
-Guidance for AI coding agents working in this repo. Keep it short.
-
 ## Project
 
 `sealai` — Turbo monorepo for an internal platform (Next.js UIs + Go services).
-**Package manager: bun 1.3.5** (NOT npm/pnpm/yarn), Node ≥20.
+**Package manager:** bun — never npm/pnpm/yarn.
 
 ## Workspace layout
 
@@ -27,20 +25,16 @@ packages/
 - `bun dev` — dev servers excluding `@sealai/whodb`; `bun dev:all` — all of them
 - `bun build` / `bun lint` / `bun format` / `bun typecheck` — turbo, per-package
 - `bun check` / `bun fix` — ultracite/biome, the source of truth for code quality
-- Registry build: `cd apps/registry && bun run registry:build`
 - Go API: standard `go` toolchain in `apps/api`; WhoDB: root `bun whodb:*` scripts
 
 ## Conventions
 
 - **Boundaries:** import through package exports (`@workspace/ui/*`, `@workspace/api/*`) or app-local `@/*`; never across apps or into another package's private `src`.
-- **UI components:** reuse `packages/ui/src/components/` first; app-specific compositions stay local until a second consumer needs them.
-- **Styling:** Tailwind v4 tokens live in `packages/ui/src/styles/globals.css` — no inline color/spacing/radius/type/shadow literals; use tokens or the Tailwind scale.
-- **Registry:** items live in `apps/registry/registry/<style>/<group>/<name>` with metadata in `preview-registry.ts`.
-- **Domain:** before changing AP, DB, public access, canvas, or settings behavior, check `CONTEXT.md` and the ADRs in `docs/adr/`.
+- **Styling:** no inline color/spacing/radius/type/shadow literals — use tokens (`packages/ui/src/styles/globals.css`) or the Tailwind scale.
+- **Domain:** before changing AP, DB, public access, canvas, or settings behavior, check `CONTEXT.md` and the ADRs in `docs/adr/`; if a change would contradict an accepted ADR, stop and raise it instead of proceeding.
 - **Crossplane:** compatibility with Crossplane-era behavior, fields, routes, docs, or naming is out of scope — don't preserve it unless explicitly asked.
 
 ## When making changes
 
-- Default to editing existing files; don't introduce parallel patterns.
-- Before claiming code work is done, run `bun typecheck` and `bun check`; run focused TS/Go tests for touched behavior when available.
+- Before claiming code work is done, run `bun typecheck` and `bun check`. Run focused tests for touched behavior: TS via `bun test <path>` from the app directory (there is no `test` script), Go via `go test ./...`.
 - `output: "standalone"` is set on Next.js apps — be mindful when touching build config (Docker depends on it).
