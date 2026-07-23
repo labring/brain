@@ -97,6 +97,7 @@ test("builds GitHub OAuth authorize URL with package scopes", async () => {
       "repo read:packages write:packages"
     );
     assert.equal(url.searchParams.get("state"), "state-123");
+    assert.equal(url.searchParams.get("prompt"), "select_account");
   } finally {
     if (originalGithubOauthClientId == null) {
       delete process.env.GITHUB_OAUTH_CLIENT_ID;

@@ -437,6 +437,7 @@ function GithubDeployerRepoSelect({ className }: { className?: string }) {
 function GithubDeployerAccountStatus() {
   const {
     actions: { onDisconnect },
+    requestDisconnect,
     states: { deployedRepo, isAuthorized, isLoading },
   } = useGithubDeployer();
 
@@ -465,7 +466,7 @@ function GithubDeployerAccountStatus() {
         className="size-9 rounded-lg bg-white/5 text-muted-foreground hover:bg-input hover:text-foreground"
         data-slot="github-deployer-disconnect"
         disabled={isLoading || !onDisconnect}
-        onClick={onDisconnect}
+        onClick={requestDisconnect}
         size="icon-lg"
         type="button"
         variant="ghost"
