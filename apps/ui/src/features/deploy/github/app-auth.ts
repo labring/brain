@@ -137,6 +137,10 @@ export function buildGithubOAuthAuthorizeUrl(input: {
   url.searchParams.set("redirect_uri", input.redirectUri);
   url.searchParams.set("scope", input.scopes.join(" "));
   url.searchParams.set("state", input.state);
+  // Re-authorizing an already-authorized OAuth App otherwise completes
+  // silently with the current github.com session; the picker is the only
+  // GitHub-documented way to choose or switch accounts (ADR-0057).
+  url.searchParams.set("prompt", "select_account");
   return url.toString();
 }
 

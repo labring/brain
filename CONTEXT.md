@@ -382,7 +382,7 @@ _Avoid_: delete task, clear history, archive task.
 
 ### GitHub Connection
 
-A personal OAuth authorization that lets one Workspace Actor list and deploy from their own GitHub repositories within a namespace. A GitHub Connection is keyed by namespace, verified Workspace Actor, and owner identity generation; no client-supplied Desktop user id or opaque connection id selects its owner. Each Workspace Actor authorizes GitHub separately, and one actor's connection is not a shared namespace credential that another actor may select for a new Deployment Task. Task creation records the resulting Deployment Credential Binding.
+A personal OAuth authorization that lets one Workspace Actor list and deploy from their own GitHub repositories within a namespace. A GitHub Connection is keyed by namespace, verified Workspace Actor, and owner identity generation; no client-supplied Desktop user id or opaque connection id selects its owner. Each Workspace Actor authorizes GitHub separately, and one actor's connection is not a shared namespace credential that another actor may select for a new Deployment Task. Task creation records the resulting Deployment Credential Binding. Disconnecting forgets the connection locally; the GitHub-side authorization survives until revoked on GitHub, and choosing or switching GitHub accounts happens at connect time, never at disconnect (ADR-0057).
 
 _Avoid_: shared namespace GitHub credential, GitHub App installation connection, browser-session GitHub connection, Desktop-user-owned connection.
 
