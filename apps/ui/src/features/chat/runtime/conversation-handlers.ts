@@ -8,19 +8,11 @@ import {
   type AssistantConversationOwner,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
-  appendMessageBodySchema,
-  isAppendableAssistantEventMessage,
-  isPersistedUIMessage,
   normalizeAssistantNamespace,
 } from "../persistence/types";
 import { jsonError } from "./errors";
 
 export interface AssistantConversationHandlerDependencies {
-  append: (
-    owner: AssistantConversationOwner,
-    chatId: string,
-    message: UIMessage
-  ) => Promise<boolean>;
   bootstrap: (
     owner: AssistantConversationOwner
   ) => Promise<AssistantSessionPayload>;
@@ -85,41 +77,6 @@ export function createAssistantConversationHandlers(
       } catch {
         console.error("[api/chat/messages] persistence unavailable");
         return jsonError("Assistant chat persistence is unavailable.", 503);
-      }
-    },
-    messagesPost: async (request: Request): Promise<Response> => {
-      const body = await request.json().catch(() => null);
-      const parsed = appendMessageBodySchema.safeParse(body);
-      if (!parsed.success) {
-        return jsonError("Invalid body", 400, parsed.error.flatten());
-      }
-      if (!isPersistedUIMessage(parsed.data.message)) {
-        return jsonError("Invalid message", 400);
-      }
-      if (
-        parsed.data.message.role !== "user" &&
-        !isAppendableAssistantEventMessage(parsed.data.message)
-      ) {
-        return jsonError(
-          "Only user messages or assistant event messages accepted.",
-          400
-        );
-      }
-
-      const authorization = await authorize(request, parsed.data.namespace);
-      if (!authorization.ok) {
-        return authorization.response;
-      }
-      try {
-        const appended = await dependencies.append(
-          authorization.owner,
-          parsed.data.chatId,
-          parsed.data.message
-        );
-        return appended ? Response.json({ ok: true }) : conversationNotFound();
-      } catch {
-        console.error("[api/chat/messages] append unavailable");
-        return jsonError("Could not persist assistant message.", 503);
       }
     },
     session: async (request: Request): Promise<Response> => {

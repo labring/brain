@@ -4,4 +4,3 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export const GET = assistantConversationRouteHandlers.messagesGet;
-export const POST = assistantConversationRouteHandlers.messagesPost;

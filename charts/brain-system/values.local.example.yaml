@@ -58,6 +58,8 @@ ui:
     DEVBOX_RUNTIME_IMAGE: ""
     DEVBOX_ARCHIVE_AFTER_PAUSE_TIME: "24h"
     DEVBOX_JWT_TTL_SECONDS: "14400"
+    # Storage ceiling for newly created deployment runtimes; existing Devboxes are unchanged.
+    DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
 
 imagePullSecret:
   # App workload pods reference ghcr-cred when this chart creates it.

@@ -42,7 +42,6 @@ import { FreeTurnsIndicator } from "@/features/chat/free-turns-indicator";
 import {
   fetchAssistantSession,
   fetchAssistantThreadMessages,
-  fetchAssistantThreads,
 } from "@/features/chat/persistence/client";
 import {
   type AssistantContextPayload,
@@ -113,6 +112,11 @@ import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 
+type AssistantClientToolName =
+  | typeof NAVIGATE_APP_TOOL_NAME
+  | typeof OPEN_PROJECT_SURFACE_TOOL_NAME
+  | typeof REFRESH_FRONTEND_SWR_TOOL_NAME;
+
 type AssistantClientToolSubmission =
   | {
       tool: typeof NAVIGATE_APP_TOOL_NAME;
@@ -128,6 +132,12 @@ type AssistantClientToolSubmission =
       tool: typeof OPEN_PROJECT_SURFACE_TOOL_NAME;
       toolCallId: string;
       output: OpenProjectSurfaceToolOutput;
+    }
+  | {
+      errorText: string;
+      state: "output-error";
+      tool: AssistantClientToolName;
+      toolCallId: string;
     };
 
 // The transport is memoized so it stays stable across URL changes; its send-time
@@ -144,10 +154,45 @@ const transportLatestStore = new WeakMap<
   }
 >();
 
+const CLIENT_TOOL_ERROR_TEXT_MAX_LENGTH = 500;
 const VIEWPORT_RESIZE_SETTLE_MS = 180;
 // --project-surface-motion-enter-duration (340ms) plus scheduling slack;
 // `transitionend` normally settles the pane first, this is the fallback.
 const ASSISTANT_PANE_ENTER_SETTLE_MS = 420;
+
+function boundedClientToolErrorText(error: unknown, fallback: string): string {
+  let raw = fallback;
+  if (error instanceof Error) {
+    raw = error.message;
+  } else if (typeof error === "string") {
+    raw = error;
+  }
+  const normalized = raw.trim() || fallback;
+  return normalized.slice(0, CLIENT_TOOL_ERROR_TEXT_MAX_LENGTH);
+}
+
+function submitAssistantClientToolResult(
+  submit: (args: AssistantClientToolSubmission) => void | PromiseLike<void>,
+  submission: AssistantClientToolSubmission
+): void {
+  try {
+    // Awaiting this inside onToolCall would deadlock AI SDK's serial job queue.
+    Promise.resolve(submit(submission)).catch((error: unknown) => {
+      console.error(
+        `[${submission.tool}] addToolOutput failed:`,
+        boundedClientToolErrorText(
+          error,
+          "Client tool output submission failed."
+        )
+      );
+    });
+  } catch (error) {
+    console.error(
+      `[${submission.tool}] addToolOutput failed:`,
+      boundedClientToolErrorText(error, "Client tool output submission failed.")
+    );
+  }
+}
 
 function buildAssistantContextPayload(
   projectName: string | undefined,
@@ -457,73 +502,83 @@ function ProjectAssistantChatSession({
     async onFinish() {
       await onAssistantStreamFinished?.();
     },
-    onToolCall({ toolCall }) {
+    async onToolCall({ toolCall }) {
+      const submit = addToolOutputRef.current;
+      if (submit == null) {
+        return;
+      }
+
       if (toolCall.toolName === NAVIGATE_APP_TOOL_NAME) {
-        const result = runNavigateAppTool(toolCall.input, router.push);
-        const submit = addToolOutputRef.current;
-        if (submit == null) {
-          return;
-        }
-        Promise.resolve(
-          submit({
+        try {
+          const output = runNavigateAppTool(toolCall.input, router.push);
+          submitAssistantClientToolResult(submit, {
             tool: NAVIGATE_APP_TOOL_NAME,
             toolCallId: toolCall.toolCallId,
-            output: result,
-          })
-        ).catch((err: unknown) => {
-          console.error("[navigateApp] addToolOutput failed:", err);
-        });
+            output,
+          });
+        } catch (error) {
+          submitAssistantClientToolResult(submit, {
+            errorText: boundedClientToolErrorText(
+              error,
+              "Client navigation failed."
+            ),
+            state: "output-error",
+            tool: NAVIGATE_APP_TOOL_NAME,
+            toolCallId: toolCall.toolCallId,
+          });
+        }
         return;
       }
 
       if (toolCall.toolName === OPEN_PROJECT_SURFACE_TOOL_NAME) {
-        const submit = addToolOutputRef.current;
-        runOpenProjectSurfaceTool(toolCall.input, projectSurfaceRouter)
-          .then((output) => {
-            if (submit == null) {
-              return;
-            }
-            Promise.resolve(
-              submit({
-                tool: OPEN_PROJECT_SURFACE_TOOL_NAME,
-                toolCallId: toolCall.toolCallId,
-                output,
-              })
-            ).catch((err: unknown) => {
-              console.error("[openProjectSurface] addToolOutput failed:", err);
-            });
-          })
-          .catch((err: unknown) => {
-            console.error("[openProjectSurface] routing failed:", err);
+        try {
+          const output = await runOpenProjectSurfaceTool(
+            toolCall.input,
+            projectSurfaceRouter
+          );
+          submitAssistantClientToolResult(submit, {
+            tool: OPEN_PROJECT_SURFACE_TOOL_NAME,
+            toolCallId: toolCall.toolCallId,
+            output,
           });
+        } catch (error) {
+          submitAssistantClientToolResult(submit, {
+            errorText: boundedClientToolErrorText(
+              error,
+              "Project surface routing failed."
+            ),
+            state: "output-error",
+            tool: OPEN_PROJECT_SURFACE_TOOL_NAME,
+            toolCallId: toolCall.toolCallId,
+          });
+        }
         return;
       }
 
       if (toolCall.toolName !== REFRESH_FRONTEND_SWR_TOOL_NAME) {
         return;
       }
-      const submitRefresh = addToolOutputRef.current;
-      runRefreshFrontendSwrCachesTool(revalidateScopeSwr, toolCall.input)
-        .then((output) => {
-          if (submitRefresh == null) {
-            return;
-          }
-          Promise.resolve(
-            submitRefresh({
-              tool: REFRESH_FRONTEND_SWR_TOOL_NAME,
-              toolCallId: toolCall.toolCallId,
-              output,
-            })
-          ).catch((err: unknown) => {
-            console.error(
-              "[refreshFrontendSwrCaches] addToolOutput failed:",
-              err
-            );
-          });
-        })
-        .catch((err: unknown) => {
-          console.error("[refreshFrontendSwrCaches] mutation failed:", err);
+      try {
+        const output = runRefreshFrontendSwrCachesTool(
+          revalidateScopeSwr,
+          toolCall.input
+        );
+        submitAssistantClientToolResult(submit, {
+          tool: REFRESH_FRONTEND_SWR_TOOL_NAME,
+          toolCallId: toolCall.toolCallId,
+          output,
         });
+      } catch (error) {
+        submitAssistantClientToolResult(submit, {
+          errorText: boundedClientToolErrorText(
+            error,
+            "SWR refresh scheduling failed."
+          ),
+          state: "output-error",
+          tool: REFRESH_FRONTEND_SWR_TOOL_NAME,
+          toolCallId: toolCall.toolCallId,
+        });
+      }
     },
   });
 
@@ -664,6 +719,7 @@ function ProjectAssistantChatPane() {
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
+  const assistantStateRefreshSequenceRef = useRef(0);
   const prevBillingRef = useRef<"free" | "user" | null>(null);
 
   const sessionResetKey = `${kubeconfig}\u0000${namespaceRaw}\u0000${namespaceReady}`;
@@ -678,6 +734,7 @@ function ProjectAssistantChatPane() {
 
   useEffect(() => {
     let cancelled = false;
+    assistantStateRefreshSequenceRef.current += 1;
     prevBillingRef.current = null;
 
     if (!namespaceReady) {
@@ -699,6 +756,7 @@ function ProjectAssistantChatPane() {
 
     return () => {
       cancelled = true;
+      assistantStateRefreshSequenceRef.current += 1;
     };
   }, [kubeconfig, namespaceRaw, namespaceReady]);
 
@@ -767,12 +825,29 @@ function ProjectAssistantChatPane() {
     startDraftThread();
   }, [draftRequest, startDraftThread]);
 
-  const refreshThreads = useCallback(async () => {
-    const threads = await fetchAssistantThreads(namespaceRaw, kubeconfig);
-    if (threads == null || threads.length === 0) {
+  const refreshAssistantState = useCallback(async () => {
+    const sequence = assistantStateRefreshSequenceRef.current + 1;
+    assistantStateRefreshSequenceRef.current = sequence;
+    const refreshed = await fetchAssistantSession(namespaceRaw, kubeconfig);
+    if (
+      refreshed == null ||
+      sequence !== assistantStateRefreshSequenceRef.current
+    ) {
       return;
     }
-    setSession((prev) => (prev == null ? prev : { ...prev, threads }));
+    setSession((prev) =>
+      prev == null ? prev : { ...prev, threads: refreshed.threads }
+    );
+    setFreeTier(refreshed.freeTier);
+    if (
+      prevBillingRef.current === "free" &&
+      refreshed.freeTier.billing === "user"
+    ) {
+      toast.info("Free assistant allowance used up", {
+        description: "Further messages now use your own AI Proxy balance.",
+      });
+    }
+    prevBillingRef.current = refreshed.freeTier.billing;
   }, [kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
@@ -824,7 +899,7 @@ function ProjectAssistantChatPane() {
       bootstrap={session}
       freeTier={freeTier}
       key={session.chatId}
-      onAssistantStreamFinished={refreshThreads}
+      onAssistantStreamFinished={refreshAssistantState}
       onBillingHeaders={handleBillingHeaders}
       onCreateThread={startDraftThread}
       onDatabaseIntent={openDatabaseIntent}

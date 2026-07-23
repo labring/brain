@@ -10,6 +10,8 @@ import {
 /** AI tool id; handlers run only in `useChat` `onToolCall` — no backend `execute`. */
 export const REFRESH_FRONTEND_SWR_TOOL_NAME =
   "refreshFrontendSwrCaches" as const;
+const REFRESH_FRONTEND_SWR_ERROR_MAX_LENGTH = 500;
+const REFRESH_FRONTEND_SWR_LEGACY_ENTRY_MAX = 1_000_000;
 
 export function buildRefreshFrontendSwrToolDescription(): string {
   return [
@@ -28,47 +30,88 @@ export type RefreshFrontendSwrCachesInput = z.infer<
   typeof refreshFrontendSwrCachesInputSchema
 >;
 
-export type RefreshFrontendSwrCachesToolOutput =
-  | {
-      ok: true;
-      /** Number of underlying SWR mutate results returned for matched keys */
-      mutatedEntries: number;
-    }
-  | { ok: false; error: string };
+export const refreshFrontendSwrCachesOutputSchema = z.union([
+  z
+    .object({
+      ok: z.literal(true),
+      status: z.literal("scheduled"),
+    })
+    .strict(),
+  // Rolling deploy compatibility for tabs still running the previous bundle.
+  z
+    .object({
+      mutatedEntries: z
+        .number()
+        .int()
+        .nonnegative()
+        .max(REFRESH_FRONTEND_SWR_LEGACY_ENTRY_MAX),
+      ok: z.literal(true),
+    })
+    .strict()
+    .transform(() => ({ ok: true as const, status: "scheduled" as const })),
+  z
+    .object({
+      error: z.string().min(1).max(REFRESH_FRONTEND_SWR_ERROR_MAX_LENGTH),
+      ok: z.literal(false),
+    })
+    .strict(),
+]);
+
+export type RefreshFrontendSwrCachesToolOutput = z.infer<
+  typeof refreshFrontendSwrCachesOutputSchema
+>;
+
+function boundedRefreshFrontendSwrError(
+  error: unknown,
+  fallback: string
+): string {
+  let raw = fallback;
+  if (error instanceof Error) {
+    raw = error.message;
+  } else if (typeof error === "string") {
+    raw = error;
+  }
+  const normalized = raw.trim() || fallback;
+  return normalized.slice(0, REFRESH_FRONTEND_SWR_ERROR_MAX_LENGTH);
+}
 
 /**
- * Revalidates every active SWR key in the cache scope (matcher always true).
+ * Schedules revalidation for every active SWR key in the cache scope.
  *
  * Prefer `useSWRConfig()` mutate so nesting under `SWRConfig` stays correct.
  */
-export async function runRefreshFrontendSwrCachesTool(
+export function runRefreshFrontendSwrCachesTool(
   mutate: ScopedMutator,
   input: unknown = {}
-): Promise<RefreshFrontendSwrCachesToolOutput> {
+): RefreshFrontendSwrCachesToolOutput {
   const parsed = refreshFrontendSwrCachesInputSchema.safeParse(input);
   if (!parsed.success) {
     return {
       ok: false,
-      error: parsed.error.issues.map((issue) => issue.message).join("; "),
+      error: boundedRefreshFrontendSwrError(
+        parsed.error.issues.map((issue) => issue.message).join("; "),
+        "Invalid SWR refresh input."
+      ),
     };
   }
 
   logChatToolIntention(REFRESH_FRONTEND_SWR_TOOL_NAME, parsed.data.intention);
 
   try {
-    const batch = await mutate(
-      () => true,
-      undefined,
-      // Refetch hooks with current fetchers — do not clear cache first
-      { revalidate: true }
-    );
-    return {
-      ok: true,
-      mutatedEntries: Array.isArray(batch) ? batch.length : 0,
-    };
+    // A filter-only mutate revalidates matching keys without replacing data.
+    const revalidation = mutate(() => true);
+    Promise.resolve(revalidation).catch((error: unknown) => {
+      console.error(
+        "[refreshFrontendSwrCaches] revalidation failed:",
+        boundedRefreshFrontendSwrError(error, "SWR revalidation failed.")
+      );
+    });
+    return { ok: true, status: "scheduled" };
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "SWR mutate failed";
-    return { ok: false, error: msg };
+    return {
+      ok: false,
+      error: boundedRefreshFrontendSwrError(error, "SWR mutate failed."),
+    };
   }
 }
 
@@ -76,4 +119,5 @@ export async function runRefreshFrontendSwrCachesTool(
 export const refreshFrontendSwrCachesTool = tool({
   description: buildRefreshFrontendSwrToolDescription(),
   inputSchema: refreshFrontendSwrCachesInputSchema,
+  outputSchema: refreshFrontendSwrCachesOutputSchema,
 });

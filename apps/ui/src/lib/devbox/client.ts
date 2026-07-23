@@ -77,8 +77,19 @@ async function parseJsonResponse<T>(
   return payload as DevboxEnvelope<T>;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function isRetryableNetworkError(error: unknown): boolean {
@@ -136,6 +147,7 @@ async function devboxRequest<T>(
     attempt <= DEVBOX_NETWORK_RETRY_DELAYS_MS.length;
     attempt += 1
   ) {
+    requestInit.signal?.throwIfAborted();
     const headers = new Headers(initHeaders);
 
     if (!skipAuth) {
@@ -143,6 +155,7 @@ async function devboxRequest<T>(
         throw new Error("Devbox auth namespace is required.");
       }
       const token = await getDevboxAuthToken(authNamespace);
+      requestInit.signal?.throwIfAborted();
       headers.set("Authorization", `Bearer ${token}`);
     }
 
@@ -150,9 +163,12 @@ async function devboxRequest<T>(
       headers.set("Content-Type", "application/json");
     }
 
-    const signal =
-      requestInit.signal ??
-      AbortSignal.timeout(timeoutMs ?? DEVBOX_REQUEST_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(
+      timeoutMs ?? DEVBOX_REQUEST_TIMEOUT_MS
+    );
+    const signal = requestInit.signal
+      ? AbortSignal.any([requestInit.signal, timeoutSignal])
+      : timeoutSignal;
 
     try {
       const response = await fetch(
@@ -167,12 +183,9 @@ async function devboxRequest<T>(
 
       return await parseJsonResponse<T>(response);
     } catch (error) {
+      requestInit.signal?.throwIfAborted();
       const retryDelay = DEVBOX_NETWORK_RETRY_DELAYS_MS[attempt];
-      if (
-        !isRetryableNetworkError(error) ||
-        retryDelay === undefined ||
-        requestInit.signal != null
-      ) {
+      if (!isRetryableNetworkError(error) || retryDelay === undefined) {
         throw error;
       }
 
@@ -180,7 +193,7 @@ async function devboxRequest<T>(
         `Devbox request failed with retryable network error; retrying in ${retryDelay}ms`,
         error
       );
-      await sleep(retryDelay);
+      await sleep(retryDelay, requestInit.signal);
     }
   }
 
@@ -197,16 +210,22 @@ export async function getDevboxHealth() {
 
 export async function createDevbox(
   authNamespace: string,
-  input: CreateDevboxInput
+  input: CreateDevboxInput,
+  signal?: AbortSignal
 ) {
   return await devboxRequest<CreateDevboxResult>("", {
     authNamespace,
     body: JSON.stringify(input),
     method: "POST",
+    signal,
   });
 }
 
-export async function listDevboxes(authNamespace: string, upstreamID?: string) {
+export async function listDevboxes(
+  authNamespace: string,
+  upstreamID?: string,
+  signal?: AbortSignal
+) {
   const searchParams = new URLSearchParams();
   if (upstreamID != null && upstreamID !== "") {
     searchParams.set("upstreamID", upstreamID);
@@ -216,13 +235,19 @@ export async function listDevboxes(authNamespace: string, upstreamID?: string) {
     authNamespace,
     method: "GET",
     searchParams,
+    signal,
   });
 }
 
-export async function getDevbox(authNamespace: string, name: string) {
+export async function getDevbox(
+  authNamespace: string,
+  name: string,
+  signal?: AbortSignal
+) {
   return await devboxRequest<DevboxInfo>(`/${encodeURIComponent(name)}`, {
     authNamespace,
     method: "GET",
+    signal,
   });
 }
 
@@ -236,7 +261,8 @@ export async function pauseDevbox(authNamespace: string, name: string) {
 export async function refreshDevboxPause(
   authNamespace: string,
   name: string,
-  input: RefreshPauseInput
+  input: RefreshPauseInput,
+  signal?: AbortSignal
 ) {
   return await devboxRequest<RefreshPauseResult>(
     `/${encodeURIComponent(name)}/pause/refresh`,
@@ -244,14 +270,19 @@ export async function refreshDevboxPause(
       authNamespace,
       body: JSON.stringify(input),
       method: "POST",
+      signal,
     }
   );
 }
 
-export async function resumeDevbox(authNamespace: string, name: string) {
+export async function resumeDevbox(
+  authNamespace: string,
+  name: string,
+  signal?: AbortSignal
+) {
   return await devboxRequest<PauseDevboxResult>(
     `/${encodeURIComponent(name)}/resume`,
-    { authNamespace, method: "POST" }
+    { authNamespace, method: "POST", signal }
   );
 }
 
@@ -265,7 +296,8 @@ export async function deleteDevbox(authNamespace: string, name: string) {
 export async function execDevbox(
   authNamespace: string,
   name: string,
-  input: DevboxExecInput
+  input: DevboxExecInput,
+  signal?: AbortSignal
 ) {
   const timeoutMs = getDevboxExecRequestTimeoutMs(input.timeoutSeconds);
 
@@ -275,6 +307,7 @@ export async function execDevbox(
       authNamespace,
       body: JSON.stringify(input),
       method: "POST",
+      signal,
       timeoutMs,
     }
   );

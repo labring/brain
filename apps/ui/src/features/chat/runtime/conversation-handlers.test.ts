@@ -46,26 +46,10 @@ function authorizedRequest(path: string, workspaceActor: string): Request {
   });
 }
 
-function authorizedJsonRequest(
-  path: string,
-  workspaceActor: string,
-  body: unknown
-): Request {
-  return new Request(`https://brain.test${path}`, {
-    body: JSON.stringify(body),
-    headers: {
-      Authorization: `Bearer ${encodedKubeconfig("shared", workspaceActor)}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-}
-
 function handlerDependencies(
   overrides: Partial<AssistantConversationHandlerDependencies> = {}
 ): AssistantConversationHandlerDependencies {
   return {
-    append: () => Promise.resolve(false),
     bootstrap: () => Promise.reject(new Error("not used")),
     list: () => Promise.resolve([]),
     read: () => Promise.resolve(null),
@@ -73,6 +57,13 @@ function handlerDependencies(
     ...overrides,
   };
 }
+
+test("conversation handlers expose message reads without an unfenced write handler", () => {
+  const handlers = createAssistantConversationHandlers(handlerDependencies());
+
+  assert.equal(typeof handlers.messagesGet, "function");
+  assert.equal("messagesPost" in handlers, false);
+});
 
 test("conversation listing ignores a spoofed user id and returns only the verified actor's threads", async () => {
   const threads = new Map<string, AssistantThreadDTO[]>([
@@ -209,44 +200,6 @@ test("reading another member's conversation is indistinguishable from a missing 
   assert.deepEqual(missingBody, {
     error: "Assistant conversation not found.",
   });
-});
-
-test("appending to another member's conversation is indistinguishable from appending to a missing conversation", async () => {
-  const handlers = createAssistantConversationHandlers(
-    handlerDependencies({
-      append: (owner, chatId) =>
-        Promise.resolve(
-          `${owner.namespace}:${owner.workspaceActor}:${chatId}` ===
-            "shared:bob-cr:bob-chat"
-        ),
-    })
-  );
-  const message = {
-    id: "attacker-message",
-    role: "user",
-    parts: [{ type: "text", text: "overwrite" }],
-  };
-
-  const foreign = await handlers.messagesPost(
-    authorizedJsonRequest("/api/chat/messages", "alice-cr", {
-      chatId: "bob-chat",
-      message,
-      namespace: "shared",
-      userId: "bob-cr",
-    })
-  );
-  const missing = await handlers.messagesPost(
-    authorizedJsonRequest("/api/chat/messages", "alice-cr", {
-      chatId: "missing-chat",
-      message,
-      namespace: "shared",
-      userId: "bob-cr",
-    })
-  );
-
-  assert.equal(foreign.status, 404);
-  assert.equal(missing.status, 404);
-  assert.deepEqual(await foreign.json(), await missing.json());
 });
 
 test("a cross-namespace conversation request is forbidden before storage access", async () => {

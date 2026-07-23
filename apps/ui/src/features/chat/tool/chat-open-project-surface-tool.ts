@@ -11,6 +11,7 @@ import type {
 
 export const OPEN_PROJECT_SURFACE_TOOL_NAME = "openProjectSurface" as const;
 
+const OPEN_PROJECT_SURFACE_ERROR_MAX_LENGTH = 500;
 const resourceNameField = z.string().trim().min(1).max(253);
 const namespaceField = z.string().trim().min(1).max(253);
 
@@ -64,9 +65,38 @@ export type OpenProjectSurfaceInput = z.infer<
   typeof openProjectSurfaceInputSchema
 >;
 
-export type OpenProjectSurfaceToolOutput =
-  | { ok: true; status: "handled" | "ignored" }
-  | { error: string; ok: false };
+export const openProjectSurfaceOutputSchema = z.discriminatedUnion("ok", [
+  z
+    .object({
+      ok: z.literal(true),
+      status: z.enum(["handled", "ignored"]),
+    })
+    .strict(),
+  z
+    .object({
+      error: z.string().min(1).max(OPEN_PROJECT_SURFACE_ERROR_MAX_LENGTH),
+      ok: z.literal(false),
+    })
+    .strict(),
+]);
+
+export type OpenProjectSurfaceToolOutput = z.infer<
+  typeof openProjectSurfaceOutputSchema
+>;
+
+function boundedOpenProjectSurfaceError(
+  error: unknown,
+  fallback: string
+): string {
+  let raw = fallback;
+  if (error instanceof Error) {
+    raw = error.message;
+  } else if (typeof error === "string") {
+    raw = error;
+  }
+  const normalized = raw.trim() || fallback;
+  return normalized.slice(0, OPEN_PROJECT_SURFACE_ERROR_MAX_LENGTH);
+}
 
 function toAssistantIntent(
   input: OpenProjectSurfaceInput
@@ -122,7 +152,10 @@ export async function runOpenProjectSurfaceTool(
   const parsed = openProjectSurfaceInputSchema.safeParse(input);
   if (!parsed.success) {
     return {
-      error: parsed.error.issues.map((issue) => issue.message).join("; "),
+      error: boundedOpenProjectSurfaceError(
+        parsed.error.issues.map((issue) => issue.message).join("; "),
+        "Invalid project surface input."
+      ),
       ok: false,
     };
   }
@@ -141,10 +174,10 @@ export async function runOpenProjectSurfaceTool(
     return { ok: true, status: result.status };
   } catch (error) {
     return {
-      error:
-        error instanceof Error
-          ? error.message
-          : "Project surface router failed.",
+      error: boundedOpenProjectSurfaceError(
+        error,
+        "Project surface router failed."
+      ),
       ok: false,
     };
   }
@@ -168,4 +201,5 @@ function buildOpenProjectSurfaceToolDescription(): string {
 export const openProjectSurfaceTool = tool({
   description: buildOpenProjectSurfaceToolDescription(),
   inputSchema: openProjectSurfaceInputSchema,
+  outputSchema: openProjectSurfaceOutputSchema,
 });

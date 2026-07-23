@@ -12,6 +12,14 @@ import {
 } from "./types";
 
 type ChatTitleModel = Parameters<typeof generateText>[0]["model"];
+type AssistantConversationServiceRepository = Pick<
+  AssistantConversationRepository,
+  | "ensureThreadForOwner"
+  | "selectMessagesByOwner"
+  | "selectThreadByOwner"
+  | "selectThreadsByOwner"
+  | "updateThreadAiTitleOnceForOwner"
+>;
 
 export interface AssistantConversationServiceDependencies {
   generateChatId: () => string;
@@ -21,8 +29,9 @@ export interface AssistantConversationServiceDependencies {
   }>;
   isSystemModelConfigured: () => boolean;
   placeholderTitle: () => string;
-  repository: AssistantConversationRepository;
+  repository: AssistantConversationServiceRepository;
   titleThread: (input: {
+    abortSignal?: AbortSignal;
     languageModel: ChatTitleModel;
     messages: UIMessage[];
     projectName?: string;
@@ -56,13 +65,6 @@ export function createAssistantConversationService(
 ) {
   const repository = dependencies.repository;
   return {
-    appendMessage: (
-      chatId: string,
-      message: UIMessage,
-      owner: AssistantConversationOwner
-    ): Promise<boolean> =>
-      repository.upsertMessageForOwner(normalizedOwner(owner), chatId, message),
-
     bootstrap: async (
       ownerRaw: AssistantConversationOwner
     ): Promise<AssistantSessionPayload> => {
@@ -120,6 +122,7 @@ export function createAssistantConversationService(
       repository.selectMessagesByOwner(normalizedOwner(owner), chatId),
 
     maybeAutoTitle: async (input: {
+      abortSignal?: AbortSignal;
       chatId: string;
       languageModel: ChatTitleModel;
       owner: AssistantConversationOwner;
@@ -138,6 +141,7 @@ export function createAssistantConversationService(
         return;
       }
       const title = await dependencies.titleThread({
+        abortSignal: input.abortSignal,
         languageModel: input.languageModel,
         messages,
         projectName: input.projectName,

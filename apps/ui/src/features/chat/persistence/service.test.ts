@@ -4,6 +4,15 @@ import { test } from "node:test";
 import type { AssistantConversationRepository } from "./repository-core";
 import { createAssistantConversationService } from "./service-core";
 
+type ServiceRepository = Pick<
+  AssistantConversationRepository,
+  | "ensureThreadForOwner"
+  | "selectMessagesByOwner"
+  | "selectThreadByOwner"
+  | "selectThreadsByOwner"
+  | "updateThreadAiTitleOnceForOwner"
+>;
+
 test("first-message creation uses the verified owner and continuing cannot re-key it", async () => {
   const owners = new Map<
     string,
@@ -37,8 +46,7 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
     selectThreadsByOwner: () => Promise.resolve([]),
     selectMessagesByOwner: () => Promise.resolve(null),
     updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
-    upsertMessageForOwner: () => Promise.resolve(false),
-  } satisfies AssistantConversationRepository;
+  } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
     getFreeChatTurns: () => Promise.resolve({ limit: 10, remaining: 10 }),
@@ -79,8 +87,7 @@ test("Free Chat Turns remain a namespace allowance instead of an actor allowance
         },
       ]),
     updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
-    upsertMessageForOwner: () => Promise.resolve(false),
-  } satisfies AssistantConversationRepository;
+  } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
     getFreeChatTurns: (namespace) => {
@@ -114,6 +121,7 @@ test("Free Chat Turns remain a namespace allowance instead of an actor allowance
 test("automatic titling cannot read or rename another actor's conversation", async () => {
   const titledOwners: string[] = [];
   let generatedTitles = 0;
+  let titleAbortSignal: AbortSignal | undefined;
   const bobThread = {
     createdAt: new Date("2026-07-21T00:00:00.000Z"),
     id: "bob-chat",
@@ -148,19 +156,20 @@ test("automatic titling cannot read or rename another actor's conversation", asy
       titledOwners.push(owner.workspaceActor);
       return Promise.resolve(true);
     },
-    upsertMessageForOwner: () => Promise.resolve(false),
-  } satisfies AssistantConversationRepository;
+  } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
     getFreeChatTurns: () => Promise.resolve({ limit: 10, remaining: 10 }),
     isSystemModelConfigured: () => true,
     placeholderTitle: () => "Chat",
     repository,
-    titleThread: () => {
+    titleThread: (input) => {
       generatedTitles += 1;
+      titleAbortSignal = input.abortSignal;
       return Promise.resolve("Private title");
     },
   });
+  const titleAbortController = new AbortController();
 
   await service.maybeAutoTitle({
     chatId: "bob-chat",
@@ -168,11 +177,13 @@ test("automatic titling cannot read or rename another actor's conversation", asy
     owner: { namespace: "shared", workspaceActor: "alice-cr" },
   });
   await service.maybeAutoTitle({
+    abortSignal: titleAbortController.signal,
     chatId: "bob-chat",
     languageModel: {} as never,
     owner: { namespace: "shared", workspaceActor: "bob-cr" },
   });
 
   assert.equal(generatedTitles, 1);
+  assert.equal(titleAbortSignal, titleAbortController.signal);
   assert.deepEqual(titledOwners, ["bob-cr"]);
 });

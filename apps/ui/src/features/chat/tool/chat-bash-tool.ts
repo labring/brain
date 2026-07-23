@@ -1,6 +1,6 @@
 import "server-only";
 
-import { type Tool, tool } from "ai";
+import { type Tool, type ToolExecutionOptions, tool } from "ai";
 import {
   type BashToolkit,
   type CommandResult,
@@ -63,7 +63,11 @@ function describeChatToolError(
   return `${toolLabel}: ${jsonSnippet(error)}`;
 }
 
-function wrapChatBashTool<T>(toolDef: T, toolLabel: string): T {
+function wrapChatBashTool<T>(
+  toolDef: T,
+  toolLabel: string,
+  sandbox: ChatDevboxSandbox
+): T {
   if (toolDef === null || typeof toolDef !== "object") {
     return toolDef;
   }
@@ -75,10 +79,15 @@ function wrapChatBashTool<T>(toolDef: T, toolLabel: string): T {
     ...(toolDef as object),
     execute: async (...args: unknown[]) => {
       try {
-        return await Reflect.apply(
-          originalExecute as (...inner: unknown[]) => Promise<unknown>,
-          toolDef,
-          args
+        const executionOptions = args[1] as ToolExecutionOptions | undefined;
+        return await sandbox.runWithAbortSignal(
+          executionOptions?.abortSignal,
+          async () =>
+            await Reflect.apply(
+              originalExecute as (...inner: unknown[]) => Promise<unknown>,
+              toolDef,
+              args
+            )
         );
       } catch (error) {
         const detail = describeChatToolError(toolLabel, error);
@@ -264,15 +273,23 @@ export async function createChatBashTool(
   });
 
   const bashWithIntention = augmentBashToolWithIntention(toolkit.tools.bash);
-  const wrappedBash = wrapChatBashTool(bashWithIntention, "bash");
+  const wrappedBash = wrapChatBashTool(bashWithIntention, "bash", lazySandbox);
   const readWithIntention = augmentReadFileToolWithIntention(
     toolkit.tools.readFile
   );
-  const wrappedReadFile = wrapChatBashTool(readWithIntention, "readFile");
+  const wrappedReadFile = wrapChatBashTool(
+    readWithIntention,
+    "readFile",
+    lazySandbox
+  );
   const writeWithIntention = augmentWriteFileToolWithIntention(
     toolkit.tools.writeFile
   );
-  const wrappedWriteFile = wrapChatBashTool(writeWithIntention, "writeFile");
+  const wrappedWriteFile = wrapChatBashTool(
+    writeWithIntention,
+    "writeFile",
+    lazySandbox
+  );
 
   return {
     ...toolkit,

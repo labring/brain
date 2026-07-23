@@ -63,28 +63,6 @@ async function safeJsonGet<T>(
   }
 }
 
-async function safeJsonPost<T>(
-  url: string,
-  body: unknown,
-  schema: z.ZodType<T>,
-  headers: Record<string, string>
-): Promise<T | null> {
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      return null;
-    }
-    const parsed = schema.safeParse(await res.json());
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
-
 export function fetchAssistantSession(
   namespaceRaw: string,
   kubeconfig: string
@@ -120,19 +98,4 @@ export async function fetchAssistantThreadMessages(
     authHeaders(kubeconfig)
   );
   return data?.messages ?? null;
-}
-
-export function appendAssistantThreadMessage(input: {
-  chatId: string;
-  kubeconfig: string;
-  message: UIMessage;
-  namespace: string;
-}): Promise<{ ok: boolean } | null> {
-  const { kubeconfig, ...body } = input;
-  return safeJsonPost(
-    "/api/chat/messages",
-    body,
-    z.object({ ok: z.literal(true) }),
-    authHeaders(kubeconfig)
-  );
 }

@@ -1,6 +1,19 @@
 import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
+import {
+  NAVIGATE_APP_TOOL_NAME,
+  navigateAppOutputSchema,
+} from "@/features/chat/tool/chat-navigate-app-tool";
+import {
+  OPEN_PROJECT_SURFACE_TOOL_NAME,
+  openProjectSurfaceOutputSchema,
+} from "@/features/chat/tool/chat-open-project-surface-tool";
+import {
+  REFRESH_FRONTEND_SWR_TOOL_NAME,
+  refreshFrontendSwrCachesOutputSchema,
+} from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
+
 /** Postgres schema name for assistant chat tables (created by `drizzle/` migrations). */
 export const ASSISTANT_DB_SCHEMA = "sealai_assistant";
 
@@ -466,4 +479,453 @@ export function findPendingApprovalMessageForResponse(
     matchesPendingApprovalMessage(item, candidate)
   );
   return matches.length === 1 ? matches[0] : undefined;
+}
+
+const CLIENT_TOOL_PART_TYPES = [
+  `tool-${NAVIGATE_APP_TOOL_NAME}`,
+  `tool-${OPEN_PROJECT_SURFACE_TOOL_NAME}`,
+  `tool-${REFRESH_FRONTEND_SWR_TOOL_NAME}`,
+] as const;
+
+type ClientToolPartType = (typeof CLIENT_TOOL_PART_TYPES)[number];
+type UIMessagePart = UIMessage["parts"][number];
+
+const CLIENT_TOOL_ERROR_TEXT_MAX_LENGTH = 500;
+const clientToolErrorTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(CLIENT_TOOL_ERROR_TEXT_MAX_LENGTH);
+
+const approvalResponseDecisionSchema = z
+  .object({
+    approved: z.boolean(),
+    id: z.string().min(1),
+    reason: z.string().max(CLIENT_TOOL_ERROR_TEXT_MAX_LENGTH).optional(),
+  })
+  .strict();
+
+export const INCOMPLETE_CLIENT_TOOL_RECOVERY_ERROR =
+  "The browser tool result was not persisted. The browser action was not replayed during recovery.";
+
+function isClientToolPartType(type: string): type is ClientToolPartType {
+  return (CLIENT_TOOL_PART_TYPES as readonly string[]).includes(type);
+}
+
+function parseCanonicalClientToolOutput(
+  type: ClientToolPartType,
+  output: unknown
+): { output: unknown; success: true } | { success: false } {
+  switch (type) {
+    case `tool-${NAVIGATE_APP_TOOL_NAME}`: {
+      const parsed = navigateAppOutputSchema.safeParse(output);
+      return parsed.success
+        ? { output: parsed.data, success: true }
+        : { success: false };
+    }
+    case `tool-${OPEN_PROJECT_SURFACE_TOOL_NAME}`: {
+      const parsed = openProjectSurfaceOutputSchema.safeParse(output);
+      return parsed.success
+        ? { output: parsed.data, success: true }
+        : { success: false };
+    }
+    case `tool-${REFRESH_FRONTEND_SWR_TOOL_NAME}`: {
+      const parsed = refreshFrontendSwrCachesOutputSchema.safeParse(output);
+      return parsed.success
+        ? { output: parsed.data, success: true }
+        : { success: false };
+    }
+    default:
+      return { success: false };
+  }
+}
+
+/** True when a candidate carries a terminal result for a whitelisted browser tool. */
+export function hasClientToolResultContinuation(message: UIMessage): boolean {
+  return (
+    message.role === "assistant" &&
+    message.parts.some(
+      (part) =>
+        isToolUIPart(part) &&
+        isClientToolPartType(part.type) &&
+        (part.state === "output-available" || part.state === "output-error")
+    )
+  );
+}
+
+function hasPendingClientToolCall(message: UIMessage): boolean {
+  return (
+    message.role === "assistant" &&
+    message.parts.some(
+      (part) =>
+        isToolUIPart(part) &&
+        isClientToolPartType(part.type) &&
+        part.providerExecuted !== true &&
+        part.state === "input-available"
+    )
+  );
+}
+
+/** Lightweight routing predicate; the canonical builder performs authoritative validation. */
+export function isAssistantContinuationMessage(message: UIMessage): boolean {
+  return (
+    message.role === "assistant" &&
+    (hasClientToolResultContinuation(message) ||
+      isAssistantApprovalResponseMessage(message))
+  );
+}
+
+interface RebuiltContinuationPart {
+  part: UIMessagePart;
+  progressed: boolean;
+}
+
+function rebuildClientToolResultPart(
+  pending: UIMessagePart,
+  candidate: UIMessagePart
+): RebuiltContinuationPart | undefined {
+  if (
+    !(
+      isToolUIPart(pending) &&
+      isToolUIPart(candidate) &&
+      isClientToolPartType(pending.type)
+    ) ||
+    pending.state !== "input-available" ||
+    (candidate.state !== "output-available" &&
+      candidate.state !== "output-error") ||
+    candidate.type !== pending.type ||
+    candidate.toolCallId !== pending.toolCallId ||
+    candidate.providerExecuted !== pending.providerExecuted ||
+    !unknownRecordsEqual(candidate.input, pending.input)
+  ) {
+    return undefined;
+  }
+
+  if (candidate.state === "output-available") {
+    const parsed = parseCanonicalClientToolOutput(
+      pending.type,
+      candidate.output
+    );
+    if (!parsed.success || "errorText" in candidate) {
+      return undefined;
+    }
+    return {
+      part: {
+        ...pending,
+        output: parsed.output,
+        state: "output-available",
+      } as UIMessagePart,
+      progressed: true,
+    };
+  }
+
+  const parsedError = clientToolErrorTextSchema.safeParse(candidate.errorText);
+  if (!parsedError.success || "output" in candidate) {
+    return undefined;
+  }
+  return {
+    part: {
+      ...pending,
+      errorText: parsedError.data,
+      state: "output-error",
+    } as UIMessagePart,
+    progressed: true,
+  };
+}
+
+function rebuildApprovalResponsePart(
+  pending: UIMessagePart,
+  candidate: UIMessagePart
+): RebuiltContinuationPart | undefined {
+  if (
+    !(isToolUIPart(pending) && isToolUIPart(candidate)) ||
+    pending.state !== "approval-requested" ||
+    candidate.state !== "approval-responded" ||
+    candidate.type !== pending.type ||
+    candidate.toolCallId !== pending.toolCallId ||
+    candidate.providerExecuted !== pending.providerExecuted ||
+    !unknownRecordsEqual(candidate.input, pending.input) ||
+    "output" in candidate ||
+    "errorText" in candidate
+  ) {
+    return undefined;
+  }
+
+  const parsedDecision = approvalResponseDecisionSchema.safeParse(
+    approvalObject(candidate)
+  );
+  if (
+    !parsedDecision.success ||
+    parsedDecision.data.id !== pending.approval.id
+  ) {
+    return undefined;
+  }
+
+  return {
+    part: {
+      ...pending,
+      approval: parsedDecision.data,
+      state: "approval-responded",
+    } as UIMessagePart,
+    progressed: true,
+  };
+}
+
+function completedClientToolPartsMatch(
+  pending: UIMessagePart,
+  candidate: UIMessagePart
+): boolean {
+  if (!(isToolUIPart(pending) && isToolUIPart(candidate))) {
+    return false;
+  }
+  if (
+    !isClientToolPartType(pending.type) ||
+    pending.type !== candidate.type ||
+    pending.state !== "output-available" ||
+    candidate.state !== "output-available"
+  ) {
+    return false;
+  }
+
+  const pendingOutput = parseCanonicalClientToolOutput(
+    pending.type,
+    pending.output
+  );
+  const candidateOutput = parseCanonicalClientToolOutput(
+    pending.type,
+    candidate.output
+  );
+  return (
+    pendingOutput.success &&
+    candidateOutput.success &&
+    unknownRecordsEqual(
+      { ...pending, output: pendingOutput.output },
+      { ...candidate, output: candidateOutput.output }
+    )
+  );
+}
+
+function completedServerToolPartsMatch(
+  pending: UIMessagePart,
+  candidate: UIMessagePart
+): boolean {
+  if (
+    !(isToolUIPart(pending) && isToolUIPart(candidate)) ||
+    isClientToolPartType(pending.type) ||
+    (pending.state !== "output-available" &&
+      pending.state !== "output-error" &&
+      pending.state !== "output-denied")
+  ) {
+    return false;
+  }
+
+  return unknownRecordsEqual(
+    { ...pending, toolMetadata: undefined },
+    { ...candidate, toolMetadata: undefined }
+  );
+}
+
+function rebuildContinuationPart(
+  pending: UIMessagePart,
+  candidate: UIMessagePart
+): RebuiltContinuationPart | undefined {
+  if (pending.type !== candidate.type) {
+    return undefined;
+  }
+
+  const clientResult = rebuildClientToolResultPart(pending, candidate);
+  if (clientResult != null) {
+    return clientResult;
+  }
+
+  const approvalResponse = rebuildApprovalResponsePart(pending, candidate);
+  if (approvalResponse != null) {
+    return approvalResponse;
+  }
+
+  if (completedClientToolPartsMatch(pending, candidate)) {
+    return { part: pending, progressed: false };
+  }
+
+  if (completedServerToolPartsMatch(pending, candidate)) {
+    return { part: pending, progressed: false };
+  }
+
+  return unknownRecordsEqual(pending, candidate)
+    ? { part: pending, progressed: false }
+    : undefined;
+}
+
+function hasIncompleteNonProviderToolInLastStep(message: UIMessage): boolean {
+  const lastStepStartIndex = message.parts.reduce(
+    (lastIndex, part, index) =>
+      part.type === "step-start" ? index : lastIndex,
+    -1
+  );
+
+  return message.parts.slice(lastStepStartIndex + 1).some((part) => {
+    if (!isToolUIPart(part) || part.providerExecuted === true) {
+      return false;
+    }
+    return !(
+      part.state === "approval-responded" ||
+      part.state === "output-available" ||
+      part.state === "output-denied" ||
+      part.state === "output-error"
+    );
+  });
+}
+
+/**
+ * Rebuild an assistant continuation from the stored pending message.
+ *
+ * Candidate text, metadata, tool inputs, and server-tool results are never
+ * persisted. Only validated browser-tool results and approval decisions can
+ * advance their corresponding stored parts.
+ */
+export function buildAssistantContinuationFromPending(
+  pending: UIMessage | undefined,
+  candidate: UIMessage
+): UIMessage | undefined {
+  if (
+    pending == null ||
+    pending.id !== candidate.id ||
+    pending.role !== "assistant" ||
+    candidate.role !== "assistant" ||
+    pending.parts.length !== candidate.parts.length
+  ) {
+    return undefined;
+  }
+
+  let progressed = false;
+  const parts: UIMessagePart[] = [];
+  for (const [index, pendingPart] of pending.parts.entries()) {
+    const candidatePart = candidate.parts[index];
+    if (candidatePart == null) {
+      return undefined;
+    }
+    const rebuilt = rebuildContinuationPart(pendingPart, candidatePart);
+    if (rebuilt == null) {
+      return undefined;
+    }
+    progressed ||= rebuilt.progressed;
+    parts.push(rebuilt.part);
+  }
+
+  if (!progressed) {
+    return undefined;
+  }
+
+  const rebuilt: UIMessage = { ...pending, parts };
+  return hasIncompleteNonProviderToolInLastStep(rebuilt) ? undefined : rebuilt;
+}
+
+/**
+ * Locate the stored message a continuation may advance.
+ *
+ * Browser-tool results must keep the server message id. Pure approval payloads
+ * retain the existing unique approval-id recovery for older clients that mint a
+ * replacement message id.
+ */
+export function findPendingAssistantMessageForContinuation(
+  history: UIMessage[],
+  candidate: UIMessage
+): UIMessage | undefined {
+  if (hasClientToolResultContinuation(candidate)) {
+    const sameMessage = history.find(
+      (message) => message.role === "assistant" && message.id === candidate.id
+    );
+    if (
+      sameMessage != null &&
+      (hasPendingClientToolCall(sameMessage) ||
+        isAssistantApprovalResponseMessage(candidate))
+    ) {
+      return sameMessage;
+    }
+    return undefined;
+  }
+  return findPendingApprovalMessageForResponse(history, candidate);
+}
+
+/**
+ * Build a CAS replacement for legacy messages whose browser result was lost.
+ * The helper never executes or replays the browser action.
+ */
+export function buildRecoveredAssistantMessageForIncompleteClientTools(
+  message: UIMessage
+): UIMessage | undefined {
+  if (message.role !== "assistant") {
+    return undefined;
+  }
+
+  let recovered = false;
+  const parts = message.parts.map((part): UIMessagePart => {
+    if (
+      !(isToolUIPart(part) && isClientToolPartType(part.type)) ||
+      part.providerExecuted === true ||
+      part.state !== "input-available"
+    ) {
+      return part;
+    }
+    recovered = true;
+    return {
+      ...part,
+      errorText: INCOMPLETE_CLIENT_TOOL_RECOVERY_ERROR,
+      state: "output-error",
+    } as UIMessagePart;
+  });
+
+  return recovered ? { ...message, parts } : undefined;
+}
+
+const INTERRUPTED_TOOL_RECOVERY_ERROR =
+  "Tool execution was interrupted before a result was available.";
+
+/**
+ * Close tool states that can remain after a process dies mid-continuation.
+ * The recovery never retries an approved side effect.
+ */
+export function buildRecoveredAssistantMessageForInterruptedTools(
+  message: UIMessage
+): UIMessage | undefined {
+  if (message.role !== "assistant") {
+    return undefined;
+  }
+
+  let recovered = false;
+  const parts = message.parts.map((part): UIMessagePart => {
+    if (
+      isToolUIPart(part) &&
+      part.providerExecuted !== true &&
+      part.state === "input-available"
+    ) {
+      recovered = true;
+      return {
+        ...part,
+        errorText: isClientToolPartType(part.type)
+          ? INCOMPLETE_CLIENT_TOOL_RECOVERY_ERROR
+          : INTERRUPTED_TOOL_RECOVERY_ERROR,
+        state: "output-error",
+      } as UIMessagePart;
+    }
+
+    if (
+      !isToolUIPart(part) ||
+      part.providerExecuted === true ||
+      part.state !== "approval-responded"
+    ) {
+      return part;
+    }
+
+    recovered = true;
+    return part.approval.approved
+      ? ({
+          ...part,
+          errorText: INTERRUPTED_TOOL_RECOVERY_ERROR,
+          state: "output-error",
+        } as UIMessagePart)
+      : ({ ...part, state: "output-denied" } as UIMessagePart);
+  });
+
+  return recovered ? { ...message, parts } : undefined;
 }
