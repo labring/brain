@@ -127,3 +127,41 @@ test("a pending save dies with its save target instead of flushing into the next
     await harness.cleanup();
   }
 });
+
+/** Keep in sync with NODE_LAYOUT_SAVE_DEBOUNCE_MS in use-project-canvas-layout.ts. */
+const SAVE_DEBOUNCE_MS = 600;
+
+test("a flush firing between the target-switch commit and scheduler cleanup is dropped", async () => {
+  const capturedFlushes: Array<() => unknown> = [];
+  const realSetTimeout = globalThis.setTimeout;
+  const harness = await mountLayoutHook();
+  try {
+    // Capture the debounce timer instead of arming it, so the flush can be
+    // replayed by hand inside the race window real timers cannot hit
+    // deterministically: the insertion effect repoints saveNodesRef at the
+    // next target during commit, while the effect cleanup only cancels the
+    // old scheduler after paint — a timer landing between the two fires with
+    // the old scheduler's nodes against the new target's save.
+    globalThis.setTimeout = ((callback: () => unknown, delayMs?: number) => {
+      if (delayMs === SAVE_DEBOUNCE_MS) {
+        capturedFlushes.push(callback);
+        return 0;
+      }
+      return realSetTimeout(callback, delayMs);
+    }) as unknown as typeof setTimeout;
+
+    await actAndDrain(() => {
+      harness.latest().scheduleNodeLayoutSave(apNode("api"));
+    });
+    assert.equal(capturedFlushes.length, 1);
+
+    await harness.setNamespace("ns-b");
+    await actAndDrain(async () => {
+      await capturedFlushes[0]?.();
+    });
+    assert.equal(harness.patchCalls().length, 0);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    await harness.cleanup();
+  }
+});

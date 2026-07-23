@@ -224,23 +224,37 @@ export function useProjectCanvasLayout(options: {
     [saveNodes]
   );
 
+  // The save-target identity, matching the SWR key. A pending debounced save
+  // must die with its target: namespace/credential switches reuse this
+  // component instance, and flushing through saveNodesRef would write the
+  // previous target's nodes into the next target's document.
+  const saveTargetKey = useMemo(
+    () => `${credentialKey}\u0000${namespace}\u0000${projectId}`,
+    [credentialKey, namespace, projectId]
+  );
+
   const saveNodesRef = useRef(saveNodes);
+  const saveTargetKeyRef = useRef(saveTargetKey);
   useInsertionEffect(() => {
     saveNodesRef.current = saveNodes;
-  }, [saveNodes]);
+    saveTargetKeyRef.current = saveTargetKey;
+  }, [saveNodes, saveTargetKey]);
 
-  // Keyed by the same save-target identity as the SWR key: a pending
-  // debounced save must die with its target — namespace/credential switches
-  // reuse this component instance, and flushing through saveNodesRef would
-  // write the previous target's nodes into the next target's document.
+  // Two layers: the keyed effect cancels the pending save on target change,
+  // and the fire-time key guard covers the gap that cancel cannot — the
+  // insertion effect above repoints saveNodesRef at commit, while this
+  // effect's cleanup only cancels after paint, so a timer landing between
+  // the two would otherwise flush old nodes through the new target's save.
   const schedulerRef = useRef<CanvasLayoutNodeSaveScheduler | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cancel the pending debounced save when the save target changes
   useEffect(() => {
     const scheduler = createCanvasLayoutNodeSaveScheduler({
       clearTimeout: (handle) =>
         clearTimeout(handle as ReturnType<typeof setTimeout>),
       delayMs: NODE_LAYOUT_SAVE_DEBOUNCE_MS,
-      save: (nodes) => saveNodesRef.current(nodes),
+      save: (nodes) =>
+        saveTargetKeyRef.current === saveTargetKey
+          ? saveNodesRef.current(nodes)
+          : Promise.resolve(),
       setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
     });
     schedulerRef.current = scheduler;
@@ -248,7 +262,7 @@ export function useProjectCanvasLayout(options: {
       scheduler.cancel();
       schedulerRef.current = null;
     };
-  }, [credentialKey, namespace, projectId]);
+  }, [saveTargetKey]);
 
   const scheduleNodeLayoutSave = useCallback(
     (node: Node, options?: Parameters<typeof canvasLayoutNodeFromNode>[1]) => {
