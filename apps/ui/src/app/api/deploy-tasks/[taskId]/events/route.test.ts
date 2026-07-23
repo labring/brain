@@ -1,4 +1,3 @@
-// @ts-expect-error bun exposes mock at runtime; direct tsc in this repo lacks bun:test types.
 import { afterAll, beforeEach, expect, it, mock } from "bun:test";
 import { createRequire } from "node:module";
 
@@ -74,7 +73,7 @@ it("forwards only an empty invalidation for raw Gateway SSE payloads", async () 
   const privateToken = "private-gateway-token";
   const privateError = "private command output";
   const upstreamEventName = "state-private-event";
-  globalThis.fetch = (() =>
+  globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
     Promise.resolve(
       new Response(
         [
