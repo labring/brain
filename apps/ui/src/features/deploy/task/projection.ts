@@ -7,7 +7,7 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskPhase,
   DeployTaskStatus,
-} from "./types";
+} from "./schema";
 
 export const DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS = 60_000;
 
@@ -470,20 +470,26 @@ export function toDeploymentTaskProjection(
       runner: task.runner,
     }
   );
+  const canvasProjection =
+    task.runner.kind === "ai" ? {} : task.canvasProjection;
   const projection: DeploymentTaskProjection = {
     artifactSummary,
     cancelRequestedAt: dateIso(task.cancelRequestedAt ?? null),
-    canvasProjection: task.canvasProjection,
+    canvasProjection,
     completedAt,
-    display: deploymentTaskDisplaySummary(task),
+    display: deploymentTaskDisplaySummary({
+      artifactSummary,
+      canvasProjection,
+      source: task.source,
+    }),
     id: task.id,
     namespace: task.namespace,
     phase: task.phase,
     projectId,
     retriedFromTaskId: task.retriedFromTaskId ?? null,
-    ...((task.canvasProjection.resultMappings?.length ?? 0) === 0
+    ...((canvasProjection.resultMappings?.length ?? 0) === 0
       ? {}
-      : { resultMappings: task.canvasProjection.resultMappings }),
+      : { resultMappings: canvasProjection.resultMappings }),
     status: task.status,
     updatedAt: dateIso(task.updatedAt) ?? new Date(0).toISOString(),
   };

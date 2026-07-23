@@ -4,7 +4,11 @@ import { after, afterEach, before, test } from "node:test";
 import { eq } from "drizzle-orm";
 
 import { deploymentFailureMessage } from "../failure-summary";
-import { deployTaskEvents, deployTasks } from "../schema";
+import {
+  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  deployTaskEvents,
+  deployTasks,
+} from "../schema";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -470,6 +474,86 @@ test("create action inserts, claims inline, launches, and completes through the 
   ]);
 });
 
+test("AI timeline rich fields receive their own projection stamp", async () => {
+  const ctx = testCtx();
+  let beforeStamp: number | undefined;
+  let afterStamp: number | undefined;
+  let afterStampHasLegacyCards = true;
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      source: { kind: "prompt", text: "deploy demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      await handle.updateTimeline({
+        update: (timeline) => ({
+          ...timeline,
+          revision: timeline.revision + 1,
+        }),
+      });
+      beforeStamp = (await taskById(handle.taskId)).timelineSnapshot
+        ?.publicProjectionVersion;
+      const unstampedTimeline = (await taskById(handle.taskId))
+        .timelineSnapshot;
+      assert.ok(unstampedTimeline);
+      await handle.setState({
+        timelineSnapshot: {
+          ...unstampedTimeline,
+          steps: unstampedTimeline.steps.map((step, index) =>
+            index === 0
+              ? {
+                  ...step,
+                  resultCards: [
+                    {
+                      events: [],
+                      id: "legacy-card",
+                      required: true,
+                      resultRef: {
+                        kind: "AP",
+                        name: "abc",
+                        namespace: "ns-test",
+                      },
+                      status: "running",
+                      title: "legacy-card",
+                    },
+                  ],
+                }
+              : step
+          ),
+        },
+      });
+      await handle.setArtifacts({
+        publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+      });
+      await handle.updateTimeline({
+        update: (timeline) => ({
+          ...timeline,
+          revision: timeline.revision + 1,
+        }),
+      });
+      const stampedTimeline = (await taskById(handle.taskId)).timelineSnapshot;
+      afterStamp = stampedTimeline?.publicProjectionVersion;
+      afterStampHasLegacyCards =
+        stampedTimeline?.steps.some(
+          (step) => (step.resultCards?.length ?? 0) > 0
+        ) ?? false;
+      await handle.beginApplying();
+      await handle.complete();
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  await result.launched?.done;
+  assert.equal(beforeStamp, undefined);
+  assert.equal(afterStamp, CURRENT_AI_PUBLIC_PROJECTION_VERSION);
+  assert.equal(afterStampHasLegacyCards, false);
+});
+
 test("requesting inputs rejects an empty wait without releasing the lease", async () => {
   const ctx = testCtx();
   let rejected = false;
@@ -849,16 +933,48 @@ test("input submission claims blocked→running in place and hands values in mem
   });
 
   let received: Record<string, unknown> | null = null;
+  let receivedBlockingInputKeys: readonly string[] = [];
+  let rejectedRunCalled = false;
+  for (const values of [{}, { OTHER: "value" }, { DB_PASSWORD: null }]) {
+    const rejected = await submitDeployTaskInputAction(ctx, {
+      namespace: "ns-test",
+      run: () => {
+        rejectedRunCalled = true;
+        return Promise.resolve();
+      },
+      taskId: blocked.id,
+      values,
+    });
+    assert.equal(rejected.kind, "invalid-input");
+  }
+  assert.equal(rejectedRunCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
+
+  const shortSecret = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => Promise.resolve(),
+    taskId: blocked.id,
+    values: { DB_PASSWORD: "q7" },
+  });
+  assert.equal(shortSecret.kind, "invalid-input");
+  if (shortSecret.kind === "invalid-input") {
+    assert.ok(shortSecret.message.includes("at least 4 characters"));
+  }
+
   const result = await submitDeployTaskInputAction(ctx, {
     actionActor: "bob-cr",
     namespace: "ns-test",
-    run: async (handle) => {
-      received = { DB_PASSWORD: "s3cret-value" };
+    run: async (handle, _task, currentBlockingInputKeys, submittedValues) => {
+      received = submittedValues;
+      receivedBlockingInputKeys = currentBlockingInputKeys;
       await handle.beginApplying();
       await handle.complete();
     },
     taskId: blocked.id,
-    values: { DB_PASSWORD: "s3cret-value" },
+    values: {
+      "db-password": "s3cret-value",
+      IGNORED_EXTRA: "must-not-reach-runner",
+    },
   });
 
   assert.equal(result.kind, "resumed");
@@ -866,7 +982,8 @@ test("input submission claims blocked→running in place and hands values in mem
     return;
   }
   await result.launched.done;
-  assert.ok(received != null);
+  assert.deepEqual(received, { DB_PASSWORD: "s3cret-value" });
+  assert.deepEqual(receivedBlockingInputKeys, ["DB_PASSWORD"]);
 
   const stored = await taskById(blocked.id);
   assert.equal(stored.status, "completed");
@@ -888,6 +1005,7 @@ test("input submission claims blocked→running in place and hands values in mem
   );
   const eventsJson = JSON.stringify(events);
   assert.ok(!eventsJson.includes("s3cret-value"));
+  assert.ok(!eventsJson.includes("IGNORED_EXTRA"));
 
   const conflict = await submitDeployTaskInputAction(ctx, {
     namespace: "ns-test",
@@ -898,6 +1016,64 @@ test("input submission claims blocked→running in place and hands values in mem
     values: {},
   });
   assert.equal(conflict.kind, "conflict");
+});
+
+test("legacy AI input aliases map back only inside the resumed runner", async () => {
+  const ctx = testCtx();
+  const legacySecretKey = "abc";
+  const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {},
+    blockingInputs: [
+      {
+        id: legacySecretKey,
+        key: legacySecretKey,
+        label: legacySecretKey,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  const short = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => Promise.resolve(),
+    taskId: blocked.id,
+    values: { "configuration-1": "q7" },
+  });
+  assert.equal(short.kind, "invalid-input");
+  assert.equal(
+    short.kind === "invalid-input" && short.message.includes(legacySecretKey),
+    false
+  );
+
+  let received: Record<string, unknown> | null = null;
+  let receivedBlockingInputKeys: readonly string[] = [];
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle, _task, currentBlockingInputKeys, submittedValues) => {
+      received = submittedValues;
+      receivedBlockingInputKeys = currentBlockingInputKeys;
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "submitted-secret" },
+  });
+
+  assert.equal(result.kind, "resumed");
+  if (result.kind !== "resumed") {
+    return;
+  }
+  await result.launched.done;
+  assert.deepEqual(received, { [legacySecretKey]: "submitted-secret" });
+  assert.deepEqual(receivedBlockingInputKeys, [legacySecretKey]);
+  const inputEvent = (await eventsFor(blocked.id)).find(
+    (event) => event.kind === "deploy_task.input_submitted"
+  );
+  assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
+  assert.equal(JSON.stringify(inputEvent).includes(legacySecretKey), false);
 });
 
 test("input action treats a task from another namespace as not found", async () => {

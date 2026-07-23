@@ -8,8 +8,12 @@ import {
   getCodexGatewayContextFromDevboxInfo,
   getCodexGatewayEventStreamUrl,
   persistDeployGatewayEvent,
+  safeGatewaySessionIdentifier,
 } from "@/features/deploy/task/gateway";
-import { getDeployTaskSnapshot } from "@/features/deploy/task/service";
+import {
+  getDeployTaskByIdInNamespace,
+  getDeployTaskSnapshot,
+} from "@/features/deploy/task/service";
 import { getDevbox } from "@/lib/devbox/client";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +80,6 @@ async function persistAndForwardSseBlock(input: {
   block: string;
   controller: ReadableStreamDefaultController<Uint8Array>;
   encoder: TextEncoder;
-  gatewaySessionId: string;
   taskId: string;
 }): Promise<void> {
   const parsed = parseSseBlock(input.block);
@@ -85,7 +88,6 @@ async function persistAndForwardSseBlock(input: {
       await persistDeployGatewayEvent({
         eventName: parsed.eventName,
         payload: JSON.parse(parsed.dataText) as Record<string, unknown>,
-        sessionId: input.gatewaySessionId,
         taskId: input.taskId,
       });
     } catch (error) {
@@ -104,7 +106,6 @@ async function flushSseBlocks(input: {
   buffer: string;
   controller: ReadableStreamDefaultController<Uint8Array>;
   encoder: TextEncoder;
-  gatewaySessionId: string;
   taskId: string;
 }): Promise<string> {
   let buffer = input.buffer;
@@ -138,6 +139,13 @@ export async function GET(request: Request, context: RouteContext) {
     return jsonError("Invalid deploy task namespace", 400);
   }
 
+  const rawTask = await getDeployTaskByIdInNamespace(
+    taskId,
+    namespaceResolved.namespace
+  );
+  if (rawTask == null) {
+    return jsonError("Deploy task not found", 404);
+  }
   const snapshot = await getDeployTaskSnapshot(
     taskId,
     namespaceResolved.namespace
@@ -149,9 +157,12 @@ export async function GET(request: Request, context: RouteContext) {
   const encoder = new TextEncoder();
   const gatewayContext = await resolveGatewayContext({
     namespace: namespaceResolved.namespace,
-    runtimeName: snapshot.task.runtimeName,
+    runtimeName: rawTask.runtimeName,
   });
-  const gatewaySessionId = snapshot.task.gatewaySessionId;
+  const gatewaySessionId =
+    rawTask.runner.kind === "ai"
+      ? safeGatewaySessionIdentifier(rawTask.gatewaySessionId)
+      : null;
 
   if (gatewayContext != null && gatewaySessionId != null) {
     const upstream = await fetch(
@@ -197,7 +208,6 @@ export async function GET(request: Request, context: RouteContext) {
                 buffer: sseBuffer,
                 controller,
                 encoder,
-                gatewaySessionId,
                 taskId,
               });
             }
@@ -206,7 +216,6 @@ export async function GET(request: Request, context: RouteContext) {
               buffer: sseBuffer,
               controller,
               encoder,
-              gatewaySessionId,
               taskId,
             });
             closed = true;

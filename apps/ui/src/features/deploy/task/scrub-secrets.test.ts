@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  artifactSummaryWithScrubbedYamls,
+  artifactSummaryWithScrubbedValues,
   SCRUBBED_VALUE_PLACEHOLDER,
   scrubSensitiveJsonValue,
   scrubSensitiveText,
@@ -30,22 +30,29 @@ test("scrubSensitiveText replaces plain and base64 occurrences", () => {
   assert.ok(scrubbed.includes("keep: untouched"));
 });
 
-test("artifactSummaryWithScrubbedYamls scrubs only resourceYamls", () => {
-  const summary = artifactSummaryWithScrubbedYamls(
+test("artifactSummaryWithScrubbedValues scrubs every display copy", () => {
+  const summary = artifactSummaryWithScrubbedValues(
     {
-      notes: "keeps notes",
+      notes: `created ${SECRET}`,
+      resources: [
+        {
+          apiVersion: "apps/v1",
+          kind: "Deployment",
+          name: `app-${SECRET}`,
+          namespace: "ns-demo",
+        },
+      ],
       resourceYamls: [`stringData:\n  DB_PASSWORD: ${SECRET}`],
     },
     [SECRET]
   );
-  assert.equal(summary.notes, "keeps notes");
-  assert.ok(!JSON.stringify(summary.resourceYamls).includes(SECRET));
+  assert.ok(!JSON.stringify(summary).includes(SECRET));
+  assert.equal(summary.notes, `created ${SCRUBBED_VALUE_PLACEHOLDER}`);
 });
 
-test("artifactSummaryWithScrubbedYamls is identity without values or yamls", () => {
+test("artifactSummaryWithScrubbedValues is identity without values", () => {
   const summary = { notes: "unchanged" };
-  assert.equal(artifactSummaryWithScrubbedYamls(summary, []), summary);
-  assert.equal(artifactSummaryWithScrubbedYamls(summary, [SECRET]), summary);
+  assert.equal(artifactSummaryWithScrubbedValues(summary, []), summary);
 });
 
 test("scrubSensitiveJsonValue scrubs nested strings incl. escaped forms", () => {
@@ -63,6 +70,24 @@ test("scrubSensitiveJsonValue scrubs nested strings incl. escaped forms", () => 
   assert.ok(!text.includes(SECRET_B64));
   assert.ok(!text.includes("ss-word-1"));
   assert.ok(text.includes(SCRUBBED_VALUE_PLACEHOLDER));
+});
+
+test("scrubSensitiveJsonValue never rewrites JSON primitive structure", () => {
+  assert.deepEqual(
+    scrubSensitiveJsonValue(
+      {
+        enabled: true,
+        nested: { empty: null, secret: "true" },
+        count: 10,
+      },
+      ["true", "null", "10"]
+    ),
+    {
+      enabled: true,
+      nested: { empty: null, secret: SCRUBBED_VALUE_PLACEHOLDER },
+      count: 10,
+    }
+  );
 });
 
 test("withoutSensitiveArgs drops declared and name-heuristic keys", () => {

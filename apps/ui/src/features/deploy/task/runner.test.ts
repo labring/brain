@@ -114,13 +114,14 @@ describe("deploy task output progress summary", () => {
     expect(deployOutputProgressSummary({})).toBeNull();
   });
 
-  it("summarizes partial build output without requiring final template files", () => {
+  it("summarizes partial output using only file-presence booleans", () => {
     expect(
       deployOutputProgressSummary({
         buildResult: {
+          detail: "Bearer private-detail-token",
           image: {
             digest: "sha256:abc",
-            image_ref: "ghcr.io/zjy365/codex-recall:prepare-abc",
+            image_ref: "ghcr.io/zjy365/codex-recall:private-build-token",
           },
           kubernetes: {
             job: "kaniko-build",
@@ -131,14 +132,6 @@ describe("deploy task output progress summary", () => {
         },
       })
     ).toEqual({
-      build: {
-        digest: "sha256:abc",
-        image: "ghcr.io/zjy365/codex-recall:prepare-abc",
-        job: "kaniko-build",
-        namespace: "ns-demo",
-        pod: "kaniko-build-pod",
-        status: "succeeded",
-      },
       complete: false,
       files: {
         buildResult: true,
@@ -155,7 +148,7 @@ describe("deploy task output progress summary", () => {
         deliveryManifest: { artifacts: [] },
         templateYaml: "apiVersion: app.sealos.io/v1\nkind: Template\n",
       })
-    ).toMatchObject({
+    ).toEqual({
       complete: true,
       files: {
         buildResult: true,

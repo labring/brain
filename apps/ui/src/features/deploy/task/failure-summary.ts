@@ -56,11 +56,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Curated headlines for AI Runner failures whose raw stderr is too noisy to
- * show. Kept separate so the shared failure-reason path can reuse them while
- * `deployTaskFailureSummary` stays a stable `(error) => string`.
- */
+/** Maps recognizable legacy AI errors to stable failure reason codes. */
 export function aiFailureReason(
   message: string
 ): DeployTaskFailureReason | null {
@@ -107,8 +103,9 @@ export function deploymentFailureMessage(
  * (ADR 0042). "Scrub ⇔ raw display": only runners whose terminal error is
  * scrubbed of known sensitive values — the deterministic runners, whose
  * sensitive values are an enumerable set — surface the raw error and the
- * raw-first-line fallback. The AI Runner is excluded until its terminal
- * error string goes through gateway-style redaction (tracked separately).
+ * raw-first-line fallback. The AI Runner is excluded because arbitrary
+ * Gateway, repository, and generated text has no complete redaction contract;
+ * it exposes only allowlisted structured failure details.
  */
 export function deployRunnerSurfacesRawFailure(runner: {
   kind: DeploymentTaskRunner["kind"];
@@ -116,13 +113,6 @@ export function deployRunnerSurfacesRawFailure(runner: {
   return runner.kind === "template" || runner.kind === "direct";
 }
 
-/**
- * Reason codes a runner attaches to a failure that deserve a stable headline
- * over their raw message. These are fixed system verdicts, not raw echoes, so
- * they apply to every runner. Engine-resolved verdicts (interrupted, timeout,
- * cancelled) are written by the reaper with their own descriptive messages and
- * are not routed through here yet.
- */
 /**
  * Substring-matched failure classes, applied ONLY to runners that surface the
  * raw error (ADR 0042): the raw error corrects a wrong class guess, and the AI
@@ -177,10 +167,9 @@ function firstLine(text: string): string {
 
 /**
  * The user-facing Deployment Failure Reason shown on the failed timeline step
- * (ADR 0042), by precedence: a recognized failure-class headline, else the
- * first line of the (already scrubbed) ground-truth error for runners that
- * surface raw errors, else the generic string only when neither a reason nor
- * any error text exists.
+ * (ADR 0042), by precedence: a validated reason code or recognizable legacy AI
+ * error; then, only for runners that surface scrubbed raw errors, a recognized
+ * failure class or the raw first line; otherwise the generic support message.
  */
 export function deploymentFailureReason(input: {
   rawMessage?: string | null;

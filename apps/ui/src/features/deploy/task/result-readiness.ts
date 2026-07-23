@@ -143,6 +143,45 @@ function applyReadinessToResultCard(
   };
 }
 
+export function resultReadinessForPresentation(
+  card: DeploymentResultResourceCard,
+  readiness: DeploymentResultReadiness,
+  options: { surfaceObservationError?: boolean } = {}
+): DeploymentResultReadiness {
+  if (options.surfaceObservationError !== false) {
+    return readiness;
+  }
+  const label = resultReadinessLabel(card);
+  let statusText: string;
+  switch (readiness.status) {
+    case "running":
+      statusText = `${label} is running.`;
+      break;
+    case "failed":
+      statusText = `${label} failed readiness.`;
+      break;
+    case "blocked":
+      statusText = `${label} readiness is blocked.`;
+      break;
+    case "pending":
+    case "creating":
+      statusText = `Waiting for ${label} readiness.`;
+      break;
+    case "unknown":
+      statusText = `Waiting for ${label} observation.`;
+      break;
+    default:
+      readiness.status satisfies never;
+      statusText = `Waiting for ${label} observation.`;
+      break;
+  }
+  return {
+    eventMessage: statusText,
+    latestStatusText: statusText,
+    status: readiness.status,
+  };
+}
+
 export function resultReadinessEventReason(
   card: DeploymentResultResourceCard
 ): string {
@@ -187,9 +226,10 @@ export function isResultReadinessTerminalError(error: unknown): boolean {
 
 export function waitingForResultObservationStatus(
   card: DeploymentResultResourceCard,
-  error: unknown
+  error: unknown,
+  options: { surfaceObservationError?: boolean } = {}
 ): string {
-  return error instanceof Error
+  return options.surfaceObservationError !== false && error instanceof Error
     ? `Waiting for ${resultReadinessLabel(card)} observation: ${error.message}`
     : `Waiting for ${resultReadinessLabel(card)} observation.`;
 }
@@ -246,6 +286,7 @@ async function resultCardReadiness(input: {
 export async function observeDeploymentResultCardReadiness(input: {
   card: DeploymentResultResourceCard;
   kubeconfig: string;
+  surfaceObservationError?: boolean;
 }): Promise<{
   card: DeploymentResultResourceCard;
   eventMessage: string;
@@ -257,7 +298,12 @@ export async function observeDeploymentResultCardReadiness(input: {
   status: DeploymentResultResourceCard["status"];
 }> {
   try {
-    const readiness = await resultCardReadiness(input);
+    const observedReadiness = await resultCardReadiness(input);
+    const readiness = resultReadinessForPresentation(
+      input.card,
+      observedReadiness,
+      { surfaceObservationError: input.surfaceObservationError }
+    );
     const nextCard = applyReadinessToResultCard(input.card, readiness);
     return {
       card: nextCard,
@@ -270,7 +316,9 @@ export async function observeDeploymentResultCardReadiness(input: {
       status: readiness.status,
     };
   } catch (error) {
-    const latestStatus = waitingForResultObservationStatus(input.card, error);
+    const latestStatus = waitingForResultObservationStatus(input.card, error, {
+      surfaceObservationError: input.surfaceObservationError,
+    });
     return {
       card: {
         ...input.card,

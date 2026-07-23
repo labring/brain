@@ -4,13 +4,19 @@ import { and, eq, inArray } from "drizzle-orm";
 import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
 import {
+  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskSource,
   type DeployTaskBlockingInput,
   type DeployTaskRow,
   deployTaskMessages,
   deployTasks,
 } from "../schema";
-import { withoutSensitiveArgs } from "../sensitive-inputs";
+import {
+  isSensitiveDeploymentInput,
+  legacyAiInputAlias,
+  MIN_SENSITIVE_INPUT_LENGTH,
+  withoutSensitiveArgs,
+} from "../sensitive-inputs";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import { createDeploymentTaskTimelineForRunner } from "../timeline";
 import type { CreateDeployTaskInput } from "../types";
@@ -128,6 +134,13 @@ function isUniqueViolation(error: unknown, indexName: string): boolean {
 export type DeployTaskRunLauncher = (
   handle: DeployTaskHandle,
   task: DeployTaskRow
+) => Promise<void>;
+
+export type SubmitDeployTaskInputRunLauncher = (
+  handle: DeployTaskHandle,
+  task: DeployTaskRow,
+  currentBlockingInputKeys: readonly string[],
+  submittedValues: Record<string, string | number | boolean>
 ) => Promise<void>;
 
 export type CreateDeployTaskActionResult =
@@ -578,6 +591,7 @@ export async function cancelDeployTaskAction(
 
 export type SubmitDeployTaskInputActionResult =
   | { kind: "conflict"; task: DeployTaskRow }
+  | { kind: "invalid-input"; message: string; task: DeployTaskRow }
   | { kind: "not-found" }
   | { kind: "resumed"; launched: LaunchedDeployTaskRun; task: DeployTaskRow };
 
@@ -585,20 +599,82 @@ export interface SubmitDeployTaskInputActionInput {
   actionActor?: string;
   namespace: string;
   /** Launches the resumed runner with the submitted values held in memory. */
-  run: DeployTaskRunLauncher;
+  run: SubmitDeployTaskInputRunLauncher;
   taskId: string;
   values: Record<string, unknown>;
 }
 
-function submittedKeyNames(
-  blockingInputs: DeployTaskBlockingInput[],
-  values: Record<string, unknown>
-): string[] {
-  const known = new Set(
-    blockingInputs.flatMap((item) => [item.id, item.key ?? item.id])
+function isSubmittedScalar(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
   );
-  return Object.keys(values).filter(
-    (key) => known.has(key) || known.size === 0
+}
+
+function submittedInputValues(
+  blockingInputs: DeployTaskBlockingInput[],
+  values: Record<string, unknown>,
+  useLegacyAiAliases: boolean
+): Record<string, string | number | boolean> {
+  return Object.fromEntries(
+    blockingInputs.flatMap((item, index) => {
+      const canonicalKey = item.key ?? item.id;
+      const candidates = useLegacyAiAliases
+        ? [legacyAiInputAlias(index)]
+        : [canonicalKey, item.id];
+      for (const candidate of new Set(candidates)) {
+        const value = values[candidate];
+        if (isSubmittedScalar(value)) {
+          return [[canonicalKey, value]];
+        }
+      }
+      return [];
+    })
+  );
+}
+
+function shortSensitiveSubmittedKey(
+  blockingInputs: DeployTaskBlockingInput[],
+  values: Record<string, string | number | boolean>
+): string | null {
+  for (const item of blockingInputs) {
+    const key = item.key ?? item.id;
+    const value = values[key];
+    if (
+      value !== undefined &&
+      isSensitiveDeploymentInput({
+        key,
+        sensitive: item.sensitive,
+        type: item.type,
+      }) &&
+      String(value).length > 0 &&
+      String(value).length < MIN_SENSITIVE_INPUT_LENGTH
+    ) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function currentBlockingInputKeys(
+  blockingInputs: DeployTaskBlockingInput[]
+): string[] {
+  return [...new Set(blockingInputs.map((item) => item.key ?? item.id))];
+}
+
+function submittedEventInputKeys(input: {
+  blockingInputs: DeployTaskBlockingInput[];
+  submittedValues: Record<string, string | number | boolean>;
+  useLegacyAiAliases: boolean;
+}): string[] {
+  if (!input.useLegacyAiAliases) {
+    return Object.keys(input.submittedValues);
+  }
+  return input.blockingInputs.flatMap((item, index) =>
+    Object.hasOwn(input.submittedValues, item.key ?? item.id)
+      ? [legacyAiInputAlias(index)]
+      : []
   );
 }
 
@@ -619,6 +695,42 @@ export async function submitDeployTaskInputAction(
   if (row.status !== "blocked" || row.blockingInputs.length === 0) {
     return { kind: "conflict", task: row };
   }
+  const useLegacyAiAliases =
+    row.runner.kind === "ai" &&
+    row.artifactSummary.publicProjectionVersion !==
+      CURRENT_AI_PUBLIC_PROJECTION_VERSION;
+  const blockingInputKeys = currentBlockingInputKeys(row.blockingInputs);
+  const submittedValues = submittedInputValues(
+    row.blockingInputs,
+    input.values,
+    useLegacyAiAliases
+  );
+  const submittedInputKeys = Object.keys(submittedValues);
+  if (submittedInputKeys.length === 0) {
+    return {
+      kind: "invalid-input",
+      message: "Submit at least one requested deployment input.",
+      task: row,
+    };
+  }
+  const shortSensitiveKey = shortSensitiveSubmittedKey(
+    row.blockingInputs,
+    submittedValues
+  );
+  if (shortSensitiveKey != null) {
+    return {
+      kind: "invalid-input",
+      message: useLegacyAiAliases
+        ? `Sensitive deployment inputs must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`
+        : `Deployment input "${shortSensitiveKey}" must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`,
+      task: row,
+    };
+  }
+  const eventInputKeys = submittedEventInputKeys({
+    blockingInputs: row.blockingInputs,
+    submittedValues,
+    useLegacyAiAliases,
+  });
 
   await appendDeployTaskEvent(ctx, {
     event: {
@@ -628,7 +740,7 @@ export async function submitDeployTaskInputAction(
         ...(input.actionActor == null
           ? {}
           : { actionActor: input.actionActor }),
-        inputKeys: submittedKeyNames(row.blockingInputs, input.values),
+        inputKeys: eventInputKeys,
         redacted: true,
       },
       phase: "configure",
@@ -665,7 +777,8 @@ export async function submitDeployTaskInputAction(
   }
   const launched = launchDeployTaskRun(ctx, {
     claim,
-    run: (handle) => input.run(handle, current),
+    run: (handle) =>
+      input.run(handle, current, blockingInputKeys, submittedValues),
   });
   return { kind: "resumed", launched, task: current };
 }

@@ -306,7 +306,7 @@ A deploy workflow work unit for creating or changing Project resources from a De
 
 _Avoid_: GitHub task, deploy job, deployment request.
 
-A Deployment Task is owned by the deployment domain, not by the Project Assistant Pane or any Chat thread. Chat may create, inspect, or explain a Deployment Task through tools, but the task's lifecycle, events, artifacts, and runner transcript remain deployment records.
+A Deployment Task is owned by the deployment domain, not by the Project Assistant Pane or any Chat thread. Chat may create, inspect, or explain a Deployment Task through tools, but the task's lifecycle, events, artifacts, and Deployment Task Timeline remain deployment records. Chat inspects task progress through fixed AI event messages and the task-owned safe Timeline; a runner transcript, provider error/status, Gateway locator, and Devbox locator are not public status or progress contracts and are not projected to Chat.
 
 ### Deployment Source
 

@@ -22,6 +22,7 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
+import { TemplateInputValidationError } from "@/features/deploy/template-renderer";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -54,6 +55,7 @@ import {
   type DeploymentTemplateInstanceArtifact,
   deployTaskStringRecordValue,
   normalizeBuildResultStatus,
+  persistableSealosTemplate,
   prepareBrainManifestArtifact,
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
@@ -104,23 +106,28 @@ import {
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getDeployDevboxStorageLimitFromEnv,
 } from "./runtime-config";
-import type {
-  DeploymentTaskDeploymentPlan,
-  DeployTaskArtifactSummary,
-  DeployTaskBlockingInput,
-  DeployTaskEventPayload,
-  DeployTaskFailureDetails,
-  DeployTaskFailureReason,
-  DeployTaskRow,
+import {
+  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  type DeploymentTaskDeploymentPlan,
+  type DeployTaskArtifactSummary,
+  type DeployTaskBlockingInput,
+  type DeployTaskEventPayload,
+  type DeployTaskFailureDetails,
+  type DeployTaskFailureReason,
+  type DeployTaskRow,
 } from "./schema";
 import {
-  artifactSummaryWithScrubbedYamls,
+  artifactSummaryWithScrubbedValues,
   scrubSensitiveJsonValue,
   scrubSensitiveText,
 } from "./scrub-secrets";
 import {
+  allSensitiveArgValues,
+  isSensitiveDeploymentInput,
+  legacyAiInputAlias,
+  MIN_SENSITIVE_INPUT_LENGTH,
   type SensitiveDeploymentInputShape,
-  sensitiveArgValues,
+  shortSensitiveArgKeys,
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
@@ -170,6 +177,8 @@ const TEMPLATE_CLEANUP_KINDS = [
 ] as const;
 
 export interface StartDeployTaskRunnerInput {
+  /** Canonical keys from the blocked row immediately before its resume claim. */
+  currentBlockingInputKeys?: readonly string[];
   encodedKubeconfig?: string;
   /**
    * Full create-time template args from the credentialed request (ADR
@@ -724,6 +733,7 @@ async function observeResultCardReadiness(input: {
   kubeconfig: string;
   previousLatestStatus: string | undefined;
   previousStatus: DeploymentResultResourceCard["status"] | undefined;
+  surfaceObservationError: boolean;
   taskId: string;
 }): Promise<{
   latestStatus: string;
@@ -734,6 +744,7 @@ async function observeResultCardReadiness(input: {
     const observed = await observeDeploymentResultCardReadiness({
       card: input.card,
       kubeconfig: input.kubeconfig,
+      surfaceObservationError: input.surfaceObservationError,
     });
     // Only write when the observed state changed. An identical re-observation
     // would still bump the timeline revision and NOTIFY every stream client,
@@ -771,7 +782,9 @@ async function observeResultCardReadiness(input: {
       throw error;
     }
     return {
-      latestStatus: waitingForResultObservationStatus(input.card, error),
+      latestStatus: waitingForResultObservationStatus(input.card, error, {
+        surfaceObservationError: input.surfaceObservationError,
+      }),
       running: !input.card.required,
       status: "unknown",
     };
@@ -781,6 +794,7 @@ async function observeResultCardReadiness(input: {
 async function waitForRequiredResultCards(input: {
   cards: DeploymentResultResourceCard[];
   kubeconfig: string;
+  surfaceObservationError: boolean;
   taskId: string;
 }): Promise<void> {
   const startedAt = Date.now();
@@ -803,6 +817,7 @@ async function waitForRequiredResultCards(input: {
         kubeconfig: input.kubeconfig,
         previousLatestStatus: latestStatusByCard.get(card.id),
         previousStatus: statusByCard.get(card.id),
+        surfaceObservationError: input.surfaceObservationError,
         taskId: input.taskId,
       });
       latestStatus = observed.latestStatus;
@@ -1224,18 +1239,6 @@ function isDevboxRuntimePendingError(error: unknown): error is DevboxApiError {
   );
 }
 
-function devboxStateLabel(info: DevboxInfo | null): string {
-  if (info == null) {
-    return "unknown";
-  }
-  return (
-    [info.state.phase, info.state.status]
-      .map((value) => value.trim())
-      .filter((value) => value !== "")
-      .join("/") || "unknown"
-  );
-}
-
 async function getDevboxWithSecretRetry(
   authNamespace: string,
   name: string
@@ -1264,15 +1267,11 @@ async function waitForRunningDevbox(input: {
   taskId?: string;
 }): Promise<DevboxInfo> {
   const startedAt = Date.now();
-  let lastInfo: DevboxInfo | null = null;
-  let lastError: unknown;
   let lastEventAt = startedAt;
 
   while (Date.now() - startedAt < DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
     try {
       const info = await getDevboxWithSecretRetry(input.namespace, input.name);
-      lastInfo = info;
-      lastError = undefined;
       if (info.state.phase === "Running") {
         return info;
       }
@@ -1280,7 +1279,6 @@ async function waitForRunningDevbox(input: {
       if (!isDevboxRuntimePendingError(error)) {
         throw error;
       }
-      lastError = error;
     }
 
     const now = Date.now();
@@ -1290,20 +1288,15 @@ async function waitForRunningDevbox(input: {
     ) {
       lastEventAt = now;
       const elapsedSeconds = Math.round((now - startedAt) / 1000);
-      const state = devboxStateLabel(lastInfo);
       await updateDeployTaskState(input.taskId, {
         runtimeName: input.name,
         runtimeProvider: "devbox",
-        runtimeState: state,
+        runtimeState: "waiting",
       });
       await recordDeployTaskEvent(input.taskId, {
         kind: "deployment_task.runtime_waiting",
-        message: `Still waiting for deploy Devbox runtime (${elapsedSeconds}s, state: ${state}).`,
-        payload: {
-          elapsedSeconds,
-          runtimeName: input.name,
-          state,
-        },
+        message: `Still waiting for deploy Devbox runtime (${elapsedSeconds}s).`,
+        payload: { elapsedSeconds },
         phase: "prepare",
       });
     }
@@ -1318,13 +1311,10 @@ async function waitForRunningDevbox(input: {
     }
   }
 
-  const state = devboxStateLabel(lastInfo);
-  const lastErrorMessage =
-    lastError instanceof Error ? ` Last error: ${lastError.message}` : "";
   throw new Error(
     `Timed out waiting for deploy Devbox runtime after ${Math.round(
       DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS / 1000
-    )}s (last state: ${state}).${lastErrorMessage}`
+    )}s.`
   );
 }
 
@@ -1820,6 +1810,52 @@ async function markDeploymentGenerationStartedIfNeeded(input: {
   });
 }
 
+function artifactOperationalIdentifiers(
+  artifact: DeploymentArtifact
+): string[] {
+  switch (artifact.kind) {
+    case "brain-manifest":
+      return [];
+    case "sealos-template":
+      return [
+        artifact.instanceName,
+        artifact.templateName,
+        ...artifact.rendered.resources.flatMap((resource) => [
+          resource.metadata?.name ?? "",
+          resource.metadata?.namespace ?? "",
+        ]),
+      ];
+    case "template-instance":
+      return [
+        artifact.instanceName,
+        artifact.templateName,
+        ...artifact.resources.map((resource) => resource.name),
+      ];
+    case "template-instance-pending":
+      return [artifact.instanceName, artifact.templateName];
+    default:
+      return artifact satisfies never;
+  }
+}
+
+function assertArtifactOperationalIdentifiers(
+  artifact: DeploymentArtifact,
+  sensitiveValues: readonly string[]
+): void {
+  if (
+    artifactOperationalIdentifiers(artifact).some((identifier) =>
+      sensitiveValues.some(
+        (sensitiveValue) =>
+          sensitiveValue.length > 0 && identifier.includes(sensitiveValue)
+      )
+    )
+  ) {
+    throw new Error(
+      "Deployment resource identity cannot contain a sensitive input value."
+    );
+  }
+}
+
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   artifactSummaryExtras?: Partial<DeployTaskArtifactSummary>;
@@ -1829,10 +1865,12 @@ async function completeTaskWithArtifact(input: {
   githubToken?: string;
   kubeconfig: string;
   outputJson?: Record<string, unknown>;
-  /** Sensitive arg values to scrub from persisted rendered YAML (ADR 0037). */
+  /** Sensitive arg values to scrub from every persisted artifact copy. */
   sensitiveValues?: string[];
   task: DeployTaskRow;
 }) {
+  const sensitiveValues = input.sensitiveValues ?? [];
+  assertArtifactOperationalIdentifiers(input.artifact, sensitiveValues);
   await deployTaskCheckpoint(input.task.id);
   await deployTaskBeginApplying(input.task.id);
   await recordDeployTaskEvent(input.task.id, {
@@ -1879,13 +1917,13 @@ async function completeTaskWithArtifact(input: {
 
   // The scrubbed copy is what every persisted form gets — the row summary
   // and the completion event payload alike (ADR 0037 row-level contract).
-  const persistedSummary = artifactSummaryWithScrubbedYamls(
+  const persistedSummary = artifactSummaryWithScrubbedValues(
     applied.artifactSummary,
-    input.sensitiveValues ?? []
+    sensitiveValues
   );
-  await updateDeployTaskState(input.task.id, {
-    artifactSummary: {
-      ...persistedSummary,
+  const persistedTaskSummary = artifactSummaryWithScrubbedValues(
+    {
+      ...applied.artifactSummary,
       ...(input.artifactSummaryExtras ?? {}),
       notes: applied.notes,
       ...(input.outputJson === undefined
@@ -1894,6 +1932,10 @@ async function completeTaskWithArtifact(input: {
       // Recorded result identities survive summary rewrites (ADR 0038).
       ...appliedResultIdentities(input.task, input.artifact),
     },
+    sensitiveValues
+  );
+  await updateDeployTaskState(input.task.id, {
+    artifactSummary: persistedTaskSummary,
   });
 
   const resultCards = resultResourceCardsFromArtifactSummary(persistedSummary);
@@ -1913,6 +1955,7 @@ async function completeTaskWithArtifact(input: {
     await waitForRequiredResultCards({
       cards: resultCards,
       kubeconfig: input.kubeconfig,
+      surfaceObservationError: input.task.runner.kind !== "ai",
       taskId: input.task.id,
     });
   }
@@ -1983,16 +2026,64 @@ function deploymentPlanArgsFromTask(
 /**
  * Row-level secrets contract (ADR 0037): submitted values for sensitive plan
  * inputs must never be persisted anywhere on the task row. The full args
- * live only in process memory for the apply itself; the persisted plan keeps
- * non-sensitive args so redeploy prefill still works.
+ * live only in process memory for the apply itself. The persisted plan keeps
+ * non-sensitive args and input metadata, but omits generated default maps and
+ * sensitive input defaults.
  */
-function deploymentPlanWithPersistableArgs<
-  T extends {
-    args?: Record<string, string>;
-    inputs: SensitiveDeploymentInputShape[];
-  },
->(plan: T, args: Record<string, string>): T {
-  return { ...plan, args: withoutSensitiveArgs(args, plan.inputs) };
+function deploymentPlanWithPersistableArgs(
+  plan: DeploymentTaskDeploymentPlan,
+  args: Record<string, string>,
+  additionalSensitiveInputs: readonly SensitiveDeploymentInputShape[] = [],
+  sensitiveValues: readonly string[] = []
+): DeploymentTaskDeploymentPlan {
+  return scrubSensitiveJsonValue(
+    {
+      args: withoutSensitiveArgs(args, [
+        ...plan.inputs,
+        ...additionalSensitiveInputs,
+      ]),
+      inputs: plan.inputs.map((item) => {
+        if (!isSensitiveDeploymentInput(item)) {
+          return item;
+        }
+        const { default: _default, options: _options, ...publicInput } = item;
+        return publicInput;
+      }),
+      kind: plan.kind,
+      ...(plan.missingInputKeys == null
+        ? {}
+        : { missingInputKeys: plan.missingInputKeys }),
+      templateName: plan.templateName,
+    },
+    sensitiveValues
+  );
+}
+
+function assertPersistableSensitiveValues(values: readonly string[]): void {
+  if (values.some((value) => value.length < MIN_SENSITIVE_INPUT_LENGTH)) {
+    throw new Error(
+      "Generated deployment contains a sensitive value shorter than four characters."
+    );
+  }
+}
+
+function assertSensitiveInputLengths(input: {
+  args: Record<string, string>;
+  sensitiveInputs: readonly SensitiveDeploymentInputShape[];
+  submittedInputKeys?: ReadonlySet<string>;
+}): void {
+  const [inputKey] = shortSensitiveArgKeys(input.args, input.sensitiveInputs);
+  if (inputKey == null) {
+    return;
+  }
+  throw new TemplateInputValidationError({
+    code: "minimum-length",
+    inputKey,
+    message: `Template parameter "${inputKey}" must be at least four characters.`,
+    valueSource: input.submittedInputKeys?.has(inputKey)
+      ? "provided"
+      : "default",
+  });
 }
 
 /**
@@ -2003,29 +2094,55 @@ function deploymentPlanWithPersistableArgs<
  * in memory for the immediate apply; blocked resumes re-collect sensitive
  * values through the blocking form (US15).
  */
-function persistableAiDeployOutput(input: {
+export function persistableAiDeployOutput(input: {
   deliveryManifest: Record<string, unknown>;
   output: Record<string, unknown>;
   planInputs: SensitiveDeploymentInputShape[];
 }): {
   deliveryManifest: Record<string, unknown>;
   outputJson: Record<string, unknown>;
+  sensitiveInputs: SensitiveDeploymentInputShape[];
+  sensitiveValues: string[];
 } {
   const args = deployTaskStringRecordValue(input.deliveryManifest.args);
-  const sensitiveValues = sensitiveArgValues(args, input.planInputs);
+  const templateYaml = input.output.templateYaml;
+  const persistableTemplate =
+    typeof templateYaml === "string"
+      ? persistableSealosTemplate(templateYaml)
+      : null;
+  const sensitiveInputs = [
+    ...input.planInputs,
+    ...(persistableTemplate?.sensitiveInputs ?? []),
+  ];
+  const sensitiveValues = [
+    ...new Set([
+      ...allSensitiveArgValues(args, sensitiveInputs),
+      ...(persistableTemplate?.sensitiveValues ?? []),
+    ]),
+  ];
+  assertPersistableSensitiveValues(sensitiveValues);
   const deliveryManifest = scrubSensitiveJsonValue(
     {
       ...input.deliveryManifest,
-      args: withoutSensitiveArgs(args, input.planInputs),
+      args: withoutSensitiveArgs(args, sensitiveInputs),
     },
     sensitiveValues
   );
+  const output =
+    persistableTemplate == null
+      ? input.output
+      : {
+          ...input.output,
+          templateYaml: persistableTemplate.templateYaml,
+        };
   return {
     deliveryManifest,
     outputJson: scrubSensitiveJsonValue(
-      { ...input.output, deliveryManifest },
+      { ...output, deliveryManifest },
       sensitiveValues
     ),
+    sensitiveInputs,
+    sensitiveValues,
   };
 }
 
@@ -2066,6 +2183,83 @@ async function blockForDeploymentInputs(input: {
   });
 }
 
+async function reblockRejectedSubmittedAiInput(input: {
+  currentBlockingInputKeys?: ReadonlySet<string>;
+  error: unknown;
+  submittedInputKeys?: ReadonlySet<string>;
+  task: DeployTaskRow;
+}): Promise<boolean> {
+  if (!(input.error instanceof TemplateInputValidationError)) {
+    return false;
+  }
+  const validationError = input.error;
+  if (validationError.valueSource !== "provided") {
+    return false;
+  }
+  const plan = input.task.artifactSummary.deploymentPlan;
+  if (
+    plan == null ||
+    input.submittedInputKeys?.has(validationError.inputKey) !== true ||
+    input.currentBlockingInputKeys?.has(validationError.inputKey) !== true
+  ) {
+    return false;
+  }
+  const blockingInputs = blockingInputsFromDeploymentPlan(plan);
+  const rejectedInputIndex = blockingInputs.findIndex(
+    (item) => (item.key ?? item.id) === validationError.inputKey
+  );
+  const rejectedInput = blockingInputs[rejectedInputIndex];
+  if (rejectedInput == null) {
+    return false;
+  }
+  const inputKey = rejectedInput.key ?? rejectedInput.id;
+  const eventInputKey = aiPublicProjectionIsTrusted({ task: input.task })
+    ? inputKey
+    : legacyAiInputAlias(rejectedInputIndex);
+  await recordDeployTaskEvent(input.task.id, {
+    kind: "deployment_task.input_rejected",
+    message: "A deployment configuration value was rejected.",
+    payload: { code: validationError.code, inputKey: eventInputKey },
+    phase: "configure",
+  });
+  await deployTaskRequestInputs(input.task.id, {
+    blockingInputs,
+    phase: "configure",
+  });
+  return true;
+}
+
+function aiPublicProjectionIsTrusted(input: {
+  generatedByCurrentRunner?: boolean;
+  task: DeployTaskRow;
+}): boolean {
+  return (
+    input.generatedByCurrentRunner === true ||
+    input.task.artifactSummary.publicProjectionVersion ===
+      CURRENT_AI_PUBLIC_PROJECTION_VERSION
+  );
+}
+
+function aiPublicProjectionStamp(
+  trusted: boolean
+): Pick<DeployTaskArtifactSummary, "publicProjectionVersion"> {
+  return trusted
+    ? { publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION }
+    : {};
+}
+
+function aiArtifactSummaryExtras(input: {
+  deploymentPlan: DeploymentTaskDeploymentPlan | undefined;
+  trustedPublicProjection: boolean;
+}): Partial<DeployTaskArtifactSummary> {
+  return {
+    ...(input.deploymentPlan == null
+      ? {}
+      : { deploymentPlan: input.deploymentPlan }),
+    ...aiPublicProjectionStamp(input.trustedPublicProjection),
+  };
+}
+
 async function applyAiDeploymentFromPreparedOutput(input: {
   args: Record<string, string>;
   encodedKubeconfig: string;
@@ -2073,12 +2267,29 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   kubeconfig: string;
   outputJson: Record<string, unknown>;
   planInputs?: SensitiveDeploymentInputShape[];
+  currentBlockingInputKeys?: ReadonlySet<string>;
+  submittedInputKeys?: ReadonlySet<string>;
   task: DeployTaskRow;
+  templateYaml: string;
+  trustedPublicProjection?: boolean;
 }) {
-  const sensitiveValues = sensitiveArgValues(
-    input.args,
-    input.planInputs ?? input.task.artifactSummary.deploymentPlan?.inputs
-  );
+  const trustedPublicProjection = aiPublicProjectionIsTrusted({
+    generatedByCurrentRunner: input.trustedPublicProjection,
+    task: input.task,
+  });
+  const templateSecrets = persistableSealosTemplate(input.templateYaml);
+  const sensitiveInputs = [
+    ...(input.planInputs ??
+      input.task.artifactSummary.deploymentPlan?.inputs ??
+      []),
+    ...templateSecrets.sensitiveInputs,
+  ];
+  const sensitiveValues = [
+    ...new Set([
+      ...allSensitiveArgValues(input.args, sensitiveInputs),
+      ...templateSecrets.sensitiveValues,
+    ]),
+  ];
   // A recorded identity predates this run (clone copy per ADR 0038, or an
   // earlier run's fenced allocation), so the cleanup label selector may match
   // preserved resources this run never created.
@@ -2086,6 +2297,15 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     recordedTemplateInstanceName(input.task) === "";
   let artifact: DeploymentArtifact;
   try {
+    assertSensitiveInputLengths({
+      args: input.args,
+      sensitiveInputs,
+      submittedInputKeys: input.submittedInputKeys,
+    });
+    // New output is rejected by persistableAiDeployOutput before it reaches a
+    // row. Keep the same invariant for legacy prepared rows whose template may
+    // still contain a short sensitive default that cannot be scrubbed safely.
+    assertPersistableSensitiveValues(sensitiveValues);
     artifact = prepareSealosTemplateArtifact({
       args: input.args,
       buildResult: requiredObjectValue(input.outputJson, "buildResult"),
@@ -2098,11 +2318,21 @@ async function applyAiDeploymentFromPreparedOutput(input: {
         input.task.artifactSummary.resultIdentities?.templateInstanceName,
       routingDomain: apUserDomain(input.kubeconfig),
       task: input.task,
-      templateYaml: requiredStringValue(input.outputJson, "templateYaml"),
+      templateYaml: input.templateYaml,
     });
   } catch (error) {
     if (isDeployTaskAbortError(error)) {
       throw error;
+    }
+    if (
+      await reblockRejectedSubmittedAiInput({
+        currentBlockingInputKeys: input.currentBlockingInputKeys,
+        error,
+        submittedInputKeys: input.submittedInputKeys,
+        task: input.task,
+      })
+    ) {
+      return;
     }
     const buildResult = objectValue(input.outputJson.buildResult);
     const buildStatus = normalizeBuildResultStatus(
@@ -2117,30 +2347,34 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   }
   // Row-level secrets contract (ADR 0037): submitted Blocking Input values —
   // sensitive or not — exist only in process memory for the apply itself.
-  // The persisted plan keeps the args it already had (declared defaults and
-  // create-time source args), defensively stripped of sensitive keys.
+  // The persisted plan keeps only prior non-sensitive args and safe input
+  // metadata; generated default maps and sensitive defaults stay out of it.
   const deploymentPlan =
     input.task.artifactSummary.deploymentPlan == null
       ? undefined
       : deploymentPlanWithPersistableArgs(
           input.task.artifactSummary.deploymentPlan,
-          input.task.artifactSummary.deploymentPlan.args ?? {}
+          input.task.artifactSummary.deploymentPlan.args ?? {},
+          templateSecrets.sensitiveInputs,
+          sensitiveValues
         );
-  const summary = {
-    // Rendered YAML embeds submitted values; scrub before persisting.
-    ...artifactSummaryWithScrubbedYamls(
-      sealosTemplateArtifactSummary({ artifact }),
-      sensitiveValues
-    ),
-    ...(deploymentPlan == null ? {} : { deploymentPlan }),
-    outputJson: input.outputJson,
-    resultIdentities: {
-      ...input.task.artifactSummary.resultIdentities,
-      ...(artifact.kind === "sealos-template"
-        ? { templateInstanceName: artifact.instanceName }
-        : {}),
+  assertArtifactOperationalIdentifiers(artifact, sensitiveValues);
+  const summary = artifactSummaryWithScrubbedValues(
+    {
+      // Rendered YAML embeds submitted values; scrub before persisting.
+      ...sealosTemplateArtifactSummary({ artifact }),
+      ...(deploymentPlan == null ? {} : { deploymentPlan }),
+      outputJson: input.outputJson,
+      ...aiPublicProjectionStamp(trustedPublicProjection),
+      resultIdentities: {
+        ...input.task.artifactSummary.resultIdentities,
+        ...(artifact.kind === "sealos-template"
+          ? { templateInstanceName: artifact.instanceName }
+          : {}),
+      },
     },
-  };
+    sensitiveValues
+  );
   await updateDeployTaskState(input.task.id, {
     artifactSummary: summary,
     phase: "configure",
@@ -2155,12 +2389,15 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     taskId: input.task.id,
     timelineStatus: "running",
   });
+  const artifactSummaryExtras = aiArtifactSummaryExtras({
+    deploymentPlan,
+    trustedPublicProjection,
+  });
 
   try {
     await completeTaskWithArtifact({
       artifact,
-      artifactSummaryExtras:
-        deploymentPlan == null ? undefined : { deploymentPlan },
+      artifactSummaryExtras,
       githubToken: input.githubToken,
       kubeconfig: input.kubeconfig,
       outputJson: input.outputJson,
@@ -2200,6 +2437,7 @@ async function applyGeneratedAiDeployOutput(input: {
   );
   const deploymentPlan = createSealosTemplateDeploymentPlan({
     deliveryManifest,
+    requireFreshSensitiveValues: true,
     templateYaml: requiredStringValue(input.output, "templateYaml"),
   });
   // Row-level secrets contract (ADR 0037): every persisted copy of the AI
@@ -2210,14 +2448,18 @@ async function applyGeneratedAiDeployOutput(input: {
     output: input.output,
     planInputs: deploymentPlan.inputs,
   });
+  const persistableDeploymentPlan = deploymentPlanWithPersistableArgs(
+    deploymentPlan,
+    deploymentPlan.args ?? {},
+    persistable.sensitiveInputs,
+    persistable.sensitiveValues
+  );
   const baseSummary: DeployTaskArtifactSummary = {
     buildResult: requiredObjectValue(persistable.outputJson, "buildResult"),
     deliveryManifest: persistable.deliveryManifest,
-    deploymentPlan: deploymentPlanWithPersistableArgs(
-      deploymentPlan,
-      deploymentPlan.args ?? {}
-    ),
+    deploymentPlan: persistableDeploymentPlan,
     outputJson: persistable.outputJson,
+    publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
   };
   if ((deploymentPlan.missingInputKeys?.length ?? 0) > 0) {
     await updateDeployTaskState(input.task.id, {
@@ -2227,7 +2469,9 @@ async function applyGeneratedAiDeployOutput(input: {
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.artifacts_generated",
       message: "Generated Sealos template deployment artifact.",
-      payload: { requiredInputs: deploymentPlan.missingInputKeys },
+      payload: {
+        requiredInputs: persistableDeploymentPlan.missingInputKeys ?? [],
+      },
       phase: "generate-artifacts",
     });
     await markTimelineStepWithEvent({
@@ -2239,7 +2483,7 @@ async function applyGeneratedAiDeployOutput(input: {
       taskId: input.task.id,
     });
     await blockForDeploymentInputs({
-      deploymentPlan,
+      deploymentPlan: persistableDeploymentPlan,
       summary: baseSummary,
       task: input.task,
     });
@@ -2255,6 +2499,8 @@ async function applyGeneratedAiDeployOutput(input: {
     outputJson: persistable.outputJson,
     planInputs: deploymentPlan.inputs,
     task: input.task,
+    templateYaml: requiredStringValue(input.output, "templateYaml"),
+    trustedPublicProjection: true,
   });
 }
 
@@ -2269,15 +2515,14 @@ function directSensitiveValues(task: DeployTaskRow): string[] {
   }
   const settings = task.source.settings as unknown as DockerDeploymentSettings;
   const env = Array.isArray(settings.env) ? settings.env : [];
-  // Docker env is undeclared, so reuse the shared name-heuristic path: build a
-  // record and let sensitiveArgValues apply the same predicate and length
-  // guard the args path uses, instead of duplicating them here.
+  // Failure text is display-only, so even short values can be replaced safely;
+  // preserving a pretty provider error is less important than avoiding an echo.
   const envArgs = Object.fromEntries(
     env
       .filter((row) => typeof row?.value === "string")
       .map((row) => [row.name, row.value])
   );
-  return sensitiveArgValues(envArgs);
+  return allSensitiveArgValues(envArgs);
 }
 
 async function runDirectDeploymentTask(input: {
@@ -2346,6 +2591,7 @@ async function runDirectDeploymentTask(input: {
 async function templateDeploymentPlanForRun(input: {
   args: Record<string, string>;
   encodedKubeconfig: string;
+  sensitiveInputs: readonly SensitiveDeploymentInputShape[];
   taskId: string;
   templateName: string;
 }): Promise<DeploymentTaskDeploymentPlan | null> {
@@ -2379,7 +2625,7 @@ async function templateDeploymentPlanForRun(input: {
       eventPayload: {
         error: scrubSensitiveText(
           errorMessage(error),
-          sensitiveArgValues(input.args)
+          allSensitiveArgValues(input.args, input.sensitiveInputs)
         ),
       },
       eventSeverity: "warning",
@@ -2420,6 +2666,43 @@ function templateBlockingInputs(input: {
   ];
 }
 
+function unsatisfiedTemplateSensitiveKeys(input: {
+  mergedArgs: Record<string, string>;
+  sensitiveKeys: readonly string[];
+  shortSensitiveKeys: ReadonlySet<string>;
+  sourceArgValues?: Record<string, string>;
+  submittedInputValues?: Record<string, string>;
+}): string[] {
+  return input.sensitiveKeys.filter((key) => {
+    const absentFromMemory = !(
+      key in (input.sourceArgValues ?? {}) ||
+      key in (input.submittedInputValues ?? {})
+    );
+    return (
+      (absentFromMemory && (input.mergedArgs[key]?.trim() ?? "") === "") ||
+      input.shortSensitiveKeys.has(key)
+    );
+  });
+}
+
+async function scrubPersistedTemplateSensitiveArgs(input: {
+  plan: DeploymentTaskDeploymentPlan | null;
+  source: Extract<DeployTaskRow["source"], { kind: "template" }>;
+  taskId: string;
+}): Promise<void> {
+  if (input.plan == null) {
+    return;
+  }
+  const persistedArgs = input.source.args ?? {};
+  const scrubbedArgs = withoutSensitiveArgs(persistedArgs, input.plan.inputs);
+  if (Object.keys(scrubbedArgs).length === Object.keys(persistedArgs).length) {
+    return;
+  }
+  await updateDeployTaskState(input.taskId, {
+    source: { ...input.source, args: scrubbedArgs },
+  });
+}
+
 async function runTemplateDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -2454,40 +2737,42 @@ async function runTemplateDeploymentTask(input: {
     ...(input.sourceArgValues ?? {}),
     ...(input.submittedInputValues ?? {}),
   };
+  const sourceSensitiveInputs = (source.sensitiveKeys ?? []).map((key) => ({
+    key,
+    sensitive: true,
+  }));
   const plan = await templateDeploymentPlanForRun({
     args: mergedArgs,
     encodedKubeconfig: input.encodedKubeconfig,
+    sensitiveInputs: sourceSensitiveInputs,
     taskId: input.task.id,
     templateName,
   });
+  const sensitiveInputs = [...sourceSensitiveInputs, ...(plan?.inputs ?? [])];
+  const shortSensitiveKeys = new Set(
+    shortSensitiveArgKeys(mergedArgs, sensitiveInputs)
+  );
 
-  if (plan != null) {
-    // Runner-side authoritative scrub: template declarations are the source
-    // of truth for sensitivity, so anything the create-side strip could not
-    // see (other callers, declaration-only sensitivity) is removed here.
-    const persistedArgs = source.args ?? {};
-    const scrubbedArgs = withoutSensitiveArgs(persistedArgs, plan.inputs);
-    if (
-      Object.keys(scrubbedArgs).length !== Object.keys(persistedArgs).length
-    ) {
-      await updateDeployTaskState(input.task.id, {
-        source: { ...source, args: scrubbedArgs },
-      });
-    }
-  }
+  // Runner-side authoritative scrub: template declarations are the source of
+  // truth for sensitivity, including fields create-side callers could not see.
+  await scrubPersistedTemplateSensitiveArgs({
+    plan,
+    source,
+    taskId: input.task.id,
+  });
 
   // Keys recorded as stripped at create (ADR 0037) whose values this run
   // does not hold in memory: a clone must re-collect them — even when the
   // template's declarations are unavailable — so stripped values are never
-  // silently dropped. A key explicitly present in a memory map (even empty)
-  // is the user's answer and never re-asked.
-  const unsatisfiedSensitiveKeys = (source.sensitiveKeys ?? []).filter(
-    (key) =>
-      !(
-        key in (input.sourceArgValues ?? {}) ||
-        key in (input.submittedInputValues ?? {})
-      ) && (mergedArgs[key]?.trim() ?? "") === ""
-  );
+  // silently dropped. A non-empty short secret is re-asked because substring
+  // scrubbing it would corrupt unrelated persisted output.
+  const unsatisfiedSensitiveKeys = unsatisfiedTemplateSensitiveKeys({
+    mergedArgs,
+    sensitiveKeys: source.sensitiveKeys ?? [],
+    shortSensitiveKeys,
+    sourceArgValues: input.sourceArgValues,
+    submittedInputValues: input.submittedInputValues,
+  });
   if (
     (plan?.missingInputKeys?.length ?? 0) > 0 ||
     unsatisfiedSensitiveKeys.length > 0
@@ -2517,6 +2802,9 @@ async function runTemplateDeploymentTask(input: {
     });
     return;
   }
+
+  const sensitiveValues = allSensitiveArgValues(mergedArgs, sensitiveInputs);
+  assertPersistableSensitiveValues(sensitiveValues);
 
   // Identity allocation must stay below the blocking-input gate: a blocked
   // run ends above without applying anything, and an identity persisted
@@ -2558,7 +2846,7 @@ async function runTemplateDeploymentTask(input: {
         "Template deployment resources were created. Workload readiness continues in Kubernetes.",
       completionRecordMessage: "Template deployment resources created.",
       kubeconfig: input.kubeconfig,
-      sensitiveValues: sensitiveArgValues(mergedArgs, plan?.inputs),
+      sensitiveValues,
       task: input.task,
     });
   } catch (error) {
@@ -2579,10 +2867,7 @@ async function runTemplateDeploymentTask(input: {
     }
     // Carry this run's known sensitive values to the terminal failure write so
     // a provider/K8s error that echoed one is scrubbed before persist (ADR 0042).
-    throw attachDeploySensitiveValues(
-      error,
-      sensitiveArgValues(mergedArgs, plan?.inputs)
-    );
+    throw attachDeploySensitiveValues(error, sensitiveValues);
   }
 }
 
@@ -3064,7 +3349,10 @@ export async function runDeployTask(
             : undefined,
         kubeconfig,
         outputJson,
+        currentBlockingInputKeys: new Set(input.currentBlockingInputKeys ?? []),
+        submittedInputKeys: new Set(Object.keys(submittedInputValues)),
         task: resolvedTask,
+        templateYaml: requiredStringValue(outputJson, "templateYaml"),
       });
       return;
     }

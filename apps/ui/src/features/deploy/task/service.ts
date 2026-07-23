@@ -19,9 +19,14 @@ import {
 } from "./projection";
 import {
   publicDeployTaskArtifactSummary,
-  publicDeployTaskEventPayload,
+  publicDeployTaskBlockingInputs,
+  publicDeployTaskEventFields,
+  publicDeployTaskGatewayLocator,
+  publicDeployTaskRuntimeLocator,
+  publicDeployTaskTimelineSnapshot,
 } from "./public-artifact-summary";
 import {
+  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskRunner,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
@@ -51,19 +56,43 @@ function nowIso(value: Date | null): string | null {
   return value == null ? null : value.toISOString();
 }
 
+function hasTrustedAiArtifactProjection(row: DeployTaskRow): boolean {
+  return (
+    row.runner.kind === "ai" &&
+    row.artifactSummary.publicProjectionVersion ===
+      CURRENT_AI_PUBLIC_PROJECTION_VERSION
+  );
+}
+
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
+  const trustedAiArtifactProjection = hasTrustedAiArtifactProjection(row);
   const failureDetails = publicDeployTaskFailureDetails({
     details: row.failureDetails,
     runner: row.runner,
     status: row.status,
   });
+  const gatewayLocator = publicDeployTaskGatewayLocator(
+    {
+      gatewaySessionId: row.gatewaySessionId,
+      gatewayTurnId: row.gatewayTurnId,
+      gatewayUrl: row.gatewayUrl,
+    },
+    { runner: row.runner }
+  );
+  const runtimeLocator = publicDeployTaskRuntimeLocator(
+    { runtimeName: row.runtimeName, runtimeState: row.runtimeState },
+    { runner: row.runner }
+  );
   return {
     artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary, {
       runner: row.runner,
     }),
-    blockingInputs: row.blockingInputs,
+    blockingInputs: publicDeployTaskBlockingInputs(row.blockingInputs, {
+      runner: row.runner,
+      trustedAiProjection: trustedAiArtifactProjection,
+    }),
     cancelRequestedAt: nowIso(row.cancelRequestedAt),
-    canvasProjection: row.canvasProjection,
+    canvasProjection: row.runner.kind === "ai" ? {} : row.canvasProjection,
     completedAt: nowIso(row.completedAt),
     creatingActor: row.creatingActor,
     createdFrom: row.createdFrom,
@@ -75,11 +104,11 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
       status: row.status,
     }),
     failureDetails,
-    gatewaySessionId: row.gatewaySessionId,
+    gatewaySessionId: gatewayLocator.gatewaySessionId,
     gatewayStateSnapshot:
       row.runner.kind === "ai" ? null : row.gatewayStateSnapshot,
-    gatewayTurnId: row.gatewayTurnId,
-    gatewayUrl: row.gatewayUrl,
+    gatewayTurnId: gatewayLocator.gatewayTurnId,
+    gatewayUrl: gatewayLocator.gatewayUrl,
     id: row.id,
     namespace: row.namespace,
     phase: row.phase,
@@ -89,14 +118,19 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     resultUrl: row.resultUrl,
     retriedFromTaskId: row.retriedFromTaskId,
     runner: row.runner,
-    runtimeName: row.runtimeName,
+    runtimeName: runtimeLocator.runtimeName,
     runtimeProvider: row.runtimeProvider,
-    runtimeState: row.runtimeState,
+    runtimeState: runtimeLocator.runtimeState,
     source: row.source,
     startedAt: nowIso(row.startedAt),
     status: row.status,
     target: row.target,
-    timelineSnapshot: row.timelineSnapshot,
+    timelineSnapshot: publicDeployTaskTimelineSnapshot(row.timelineSnapshot, {
+      failureReason: failureDetails?.reason,
+      runner: row.runner,
+      taskId: row.id,
+      updatedAt: row.updatedAt.toISOString(),
+    }),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -105,14 +139,19 @@ export function toDeployTaskEventDTO(
   row: DeployTaskEventRow,
   runner?: DeploymentTaskRunner
 ): DeployTaskEventDTO {
+  const publicEvent = publicDeployTaskEventFields(
+    {
+      kind: row.kind,
+      message: row.message,
+      payload: row.payload,
+    },
+    { runner }
+  );
   return {
     createdAt: row.createdAt.toISOString(),
-    kind: row.kind,
-    message: row.message,
-    payload: publicDeployTaskEventPayload(row.payload, {
-      eventKind: row.kind,
-      runner,
-    }),
+    kind: publicEvent.kind,
+    message: publicEvent.message,
+    payload: publicEvent.payload,
     phase: row.phase,
     seq: row.seq,
     taskId: row.taskId,
@@ -231,10 +270,17 @@ export async function getDeployTaskTimelineSnapshot(
     return null;
   }
 
+  const timeline = deploymentTaskTimelineFromTaskRecord(task);
   return {
     events: await recentDeployTaskEvents(taskId, task.runner),
     task: toDeployTaskDTO(task),
-    timeline: deploymentTaskTimelineFromTaskRecord(task),
+    timeline:
+      publicDeployTaskTimelineSnapshot(timeline, {
+        failureReason: task.failureDetails?.reason,
+        runner: task.runner,
+        taskId: task.id,
+        updatedAt: task.updatedAt.toISOString(),
+      }) ?? timeline,
   };
 }
 

@@ -12,6 +12,7 @@ import {
   toDeploymentTaskProjection,
   upsertDeploymentTaskProjection,
 } from "./projection";
+import { CURRENT_AI_PUBLIC_PROJECTION_VERSION } from "./schema";
 
 const NOW = new Date("2026-06-11T10:00:00.000Z");
 
@@ -75,6 +76,48 @@ test("AI deployment projections hide generated build errors", () => {
     JSON.stringify(projection).includes("private-build-token"),
     false
   );
+});
+
+test("AI deployment projections never trust client-owned canvas fields", () => {
+  const legacySecret = "abc";
+  const projection = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+      },
+      canvasProjection: {
+        resultMappings: [
+          {
+            actualRef: {
+              kind: "AP",
+              name: legacySecret,
+              namespace: "default",
+            },
+            slotId: legacySecret,
+          },
+        ],
+        slots: [
+          {
+            expectedRef: {
+              kind: "AP",
+              name: legacySecret,
+              namespace: "default",
+            },
+            id: legacySecret,
+          },
+        ],
+      },
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+    }),
+    NOW
+  );
+
+  assert.ok(projection);
+  assert.deepEqual(projection.canvasProjection, {});
+  assert.equal(projection.resultMappings, undefined);
+  assert.equal(projection.display?.resultSummary, "Result pending");
+  assert.equal(JSON.stringify(projection).includes(legacySecret), false);
+  assert.equal("publicProjectionVersion" in projection.artifactSummary, false);
 });
 
 test("deployment task projection summarizes source and result resources", () => {

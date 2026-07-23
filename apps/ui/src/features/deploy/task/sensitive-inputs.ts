@@ -10,6 +10,12 @@ export interface SensitiveDeploymentInputShape {
   type?: string;
 }
 
+export const MIN_SENSITIVE_INPUT_LENGTH = 4;
+
+export function legacyAiInputAlias(index: number): string {
+  return `configuration-${index + 1}`;
+}
+
 export function isSensitiveDeploymentInput(
   input: SensitiveDeploymentInputShape
 ): boolean {
@@ -54,11 +60,21 @@ export function withoutSensitiveArgs(
 }
 
 /**
- * Values of sensitive args, for scrubbing persisted rendered output. Empty
- * and very short values are excluded: replacing a 1–3 character substring
- * everywhere would mangle unrelated text.
+ * Values of sensitive args that are safe to use for substring scrubbing.
+ * Empty and very short values are excluded: replacing a 1–3 character
+ * substring everywhere would mangle unrelated text. Callers that accept
+ * sensitive input must reject those short values before persistence.
  */
 export function sensitiveArgValues(
+  args: Record<string, string> | undefined,
+  inputs?: readonly SensitiveDeploymentInputShape[]
+): string[] {
+  return allSensitiveArgValues(args, inputs).filter(
+    (value) => value.length >= MIN_SENSITIVE_INPUT_LENGTH
+  );
+}
+
+export function allSensitiveArgValues(
   args: Record<string, string> | undefined,
   inputs?: readonly SensitiveDeploymentInputShape[]
 ): string[] {
@@ -66,5 +82,19 @@ export function sensitiveArgValues(
   return Object.entries(args ?? {})
     .filter(([key]) => declared.has(key) || isSensitiveDeploymentInput({ key }))
     .map(([, value]) => value)
-    .filter((value) => value.length >= 4);
+    .filter((value) => value.length > 0);
+}
+
+export function shortSensitiveArgKeys(
+  args: Record<string, string> | undefined,
+  inputs?: readonly SensitiveDeploymentInputShape[]
+): string[] {
+  const declared = sensitiveDeploymentInputKeys(inputs);
+  return Object.entries(args ?? {}).flatMap(([key, value]) =>
+    (declared.has(key) || isSensitiveDeploymentInput({ key })) &&
+    value.length > 0 &&
+    value.length < MIN_SENSITIVE_INPUT_LENGTH
+      ? [key]
+      : []
+  );
 }

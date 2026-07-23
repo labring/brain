@@ -1,15 +1,16 @@
 import { and, eq, inArray } from "drizzle-orm";
 
-import type {
-  DeploymentTaskCanvasProjection,
-  DeploymentTaskSource,
-  DeployTaskArtifactSummary,
-  DeployTaskBlockingInput,
-  DeployTaskFailureDetails,
-  DeployTaskPhase,
-  DeployTaskRow,
+import {
+  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  type DeploymentTaskCanvasProjection,
+  type DeploymentTaskSource,
+  type DeployTaskArtifactSummary,
+  type DeployTaskBlockingInput,
+  type DeployTaskFailureDetails,
+  type DeployTaskPhase,
+  type DeployTaskRow,
+  deployTasks,
 } from "../schema";
-import { deployTasks } from "../schema";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import type {
   DeploymentTaskTimelineSnapshot,
@@ -109,6 +110,20 @@ export interface CreateDeployTaskHandleInput {
   namespace: string;
   onEnded?: (outcome: DeployTaskRunOutcome) => void;
   taskId: string;
+}
+
+function timelineWithoutUntrustedResultCards(
+  timeline: DeploymentTaskTimelineSnapshot
+): DeploymentTaskTimelineSnapshot {
+  if (
+    timeline.publicProjectionVersion === CURRENT_AI_PUBLIC_PROJECTION_VERSION
+  ) {
+    return timeline;
+  }
+  return {
+    ...timeline,
+    steps: timeline.steps.map(({ resultCards: _resultCards, ...step }) => step),
+  };
 }
 
 export function createDeployTaskHandle(
@@ -340,9 +355,22 @@ export function createDeployTaskHandle(
       if (existing == null || existing.leaseEpoch !== input.leaseEpoch) {
         throw new DeployTaskRunSupersededError();
       }
-      const nextTimeline: DeploymentTaskTimelineSnapshot = timelineInput.update(
-        deploymentTaskTimelineFromTaskRecord(existing)
+      const trustedAiArtifact =
+        existing.runner.kind === "ai" &&
+        existing.artifactSummary.publicProjectionVersion ===
+          CURRENT_AI_PUBLIC_PROJECTION_VERSION;
+      const currentTimeline = deploymentTaskTimelineFromTaskRecord(existing);
+      const updatedTimeline = timelineInput.update(
+        trustedAiArtifact
+          ? timelineWithoutUntrustedResultCards(currentTimeline)
+          : currentTimeline
       );
+      const nextTimeline: DeploymentTaskTimelineSnapshot = trustedAiArtifact
+        ? {
+            ...updatedTimeline,
+            publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+          }
+        : updatedTimeline;
       await this.setState({
         ...(timelineInput.event?.phase == null
           ? {}

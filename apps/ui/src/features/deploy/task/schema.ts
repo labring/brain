@@ -44,6 +44,7 @@ export type DeployTaskPhase =
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
 export const CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION = 1;
+export const CURRENT_AI_PUBLIC_PROJECTION_VERSION = 1;
 
 /**
  * Immutable credential selection written with a GitHub Deployment Task.
@@ -74,6 +75,8 @@ export interface DeployTaskArtifactSummary {
   entrypointYaml?: string;
   notes?: string;
   outputJson?: unknown;
+  /** Server stamp proving rich AI artifact and input fields were scrubbed. */
+  publicProjectionVersion?: number;
   resources?: {
     apiVersion: string;
     kind: string;
